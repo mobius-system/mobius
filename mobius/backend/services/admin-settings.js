@@ -374,7 +374,7 @@ function parseTextRedactionEnabled(value) {
 }
 
 function normalizeTextRedactionRule(value, index) {
-  if (!isPlainObject(value)) return null
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const keyword = String(value.keyword ?? '').trim()
   if (!keyword) return null
   if (keyword.length > TEXT_REDACTION_MAX_KEYWORD_LEN) {
