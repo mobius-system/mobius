@@ -59,6 +59,8 @@ const state = {
 const $ = (id) => document.getElementById(id);
 document.documentElement.dataset.section = 'paper';
 let heroRing = null;
+const detailChats = new Map();
+const detailPending = {};
 
 function loadLocalState() {
   try {
@@ -100,6 +102,21 @@ function formatTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+function formatChatTime(value) {
+  const date = new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function timeValue(value) {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
 }
 
 function showToast(message, tone = 'ok') {
@@ -266,6 +283,58 @@ function allCompetitors() {
     ...(state.competitors.candidate || []),
     ...(state.competitors.archived || []),
   ];
+}
+
+function findPaperById(id) {
+  const item = Object.values(state.clusterPapers).flat().find((paper) => paper.id === id)
+    || (state.papers.items || []).find((paper) => paper.id === id || paper.paper_id === id || paper.source_id === id)
+    || (state.radarTopPicks || []).find((paper) => paper.id === id)
+    || (state.topPicks || []).find((paper) => paper.id === id);
+  return item ? normalizePaper(item, item.cluster_label || item.cluster || '') : null;
+}
+
+function findProductById(id) {
+  return allCompetitors().find((product) => product.id === id) || null;
+}
+
+function allPaperDiscoveries() {
+  const byId = new Map();
+  const add = (item, clusterLabel = '') => {
+    if (!item) return;
+    const paper = normalizePaper(item, item.cluster_label || item.cluster || clusterLabel);
+    if (!paper.id) return;
+    const existing = byId.get(paper.id);
+    if (!existing || scoreOf(paper) > scoreOf(existing)) byId.set(paper.id, paper);
+  };
+  (state.papers.items || []).forEach((item) => add(item));
+  Object.entries(state.clusterPapers || {}).forEach(([clusterLabel, papers]) => {
+    (papers || []).forEach((item) => add(item, clusterLabel));
+  });
+  (state.radarTopPicks || []).forEach((item) => add(item));
+  (state.topPicks || []).forEach((item) => add(item));
+  return [...byId.values()];
+}
+
+function isPaperUnprocessed(item) {
+  const local = paperLocal(item.id);
+  return !local.read
+    && !local.favorite
+    && !local.archived
+    && !local.reviewed
+    && !state.feedbacks[item.id];
+}
+
+function isProductUnprocessed(item) {
+  const local = competitorLocal(item.id);
+  return !local.read && !local.reviewed && item.status !== 'archived';
+}
+
+function discoverySort(a, b) {
+  const byWeight = (b.weight || 0) - (a.weight || 0);
+  if (byWeight) return byWeight;
+  const byTime = (b.timestamp || 0) - (a.timestamp || 0);
+  if (byTime) return byTime;
+  return String(a.title || '').localeCompare(String(b.title || ''), 'zh-CN');
 }
 
 function latestRun(scanType) {
@@ -441,29 +510,57 @@ function evolutionProjects() {
 }
 
 function radarSummary(item, fallback = '') {
-  return shortText(item.abstract || item.fetched_description || item.reason || item.diff_summary || item.summary || fallback, 138);
+  return shortText(item.abstract || item.fetched_description || item.reason || item.diff_summary || item.summary || fallback, 60);
+}
+
+function radarAuthors(authors) {
+  if (Array.isArray(authors)) return shortText(authors.slice(0, 2).join(', '), 34);
+  return shortText(authors || '', 34);
 }
 
 function buildRadarDiscoveries() {
-  const paperItems = (state.radarTopPicks.length ? state.radarTopPicks : state.topPicks || []).slice(0, 4).map((item) => ({
-    type: 'paper',
-    title: item.title,
-    summary: radarSummary(item, '高优先级论文线索'),
-    keyword: (item.matched_keywords || item.tags || ['论文'])[0] || '论文',
-  }));
-  const productItems = (state.competitors.official || []).slice(0, 3).map((item) => ({
-    type: 'product',
-    title: item.name,
-    summary: radarSummary(item, '正在跟踪的竞品'),
-    keyword: (item.tags || [labels.category[item.category] || '竞品'])[0] || '竞品',
-  }));
-  const l1Items = (state.evolution.feeds.L1 || []).slice(0, 3).map((item) => ({
-    type: 'evolution',
-    title: item.summary,
-    summary: radarSummary(item, 'L1 自进化记录'),
-    keyword: 'L1',
-  }));
-  return [...paperItems, ...productItems, ...l1Items].slice(0, 10);
+  const paperItems = allPaperDiscoveries()
+    .filter(isPaperUnprocessed)
+    .map((item) => ({
+      id: item.id,
+      type: 'paper',
+      title: item.title,
+      summary: radarSummary(item, '高优先级论文线索'),
+      keyword: (item.matched_keywords || item.tags || ['论文'])[0] || '论文',
+      weight: Number(item.priority_score ?? item.relevance ?? 0) || 0,
+      timestamp: timeValue(item.published_at || item.updated_arxiv_at || item.created_at),
+      meta: [
+        radarAuthors(item.authors) || '作者未知',
+        item.cluster_label || item.cluster || 'cluster 未知',
+        `Priority ${item.priority_score ?? item.relevance ?? 0}`,
+      ],
+    }))
+    .sort(discoverySort)
+    .slice(0, 5);
+
+  const productItems = (state.competitors.official || [])
+    .filter(isProductUnprocessed)
+    .map((item) => ({
+      id: item.id,
+      type: 'product',
+      title: item.name,
+      summary: radarSummary(item, '正在跟踪的竞品'),
+      keyword: (item.tags || [labels.category[item.category] || '竞品'])[0] || '竞品',
+      weight: Number(item.priority_score ?? item.relevance ?? 0) || 0,
+      timestamp: timeValue(item.last_scanned_at || item.updated_at || item.created_at),
+      meta: [
+        labels.category[item.category] || item.category || '其他',
+        labels.status[item.status] || item.status || '已跟踪',
+        `相关度 ${item.relevance ?? 0}/10`,
+      ],
+    }))
+    .sort(discoverySort)
+    .slice(0, 4);
+
+  return [...paperItems, ...productItems]
+    .sort(discoverySort)
+    .slice(0, 8)
+    .map(({ weight, timestamp, ...item }) => item);
 }
 
 function updateRadarDiscoveries() {
@@ -999,43 +1096,365 @@ function setTab(tab, shouldScroll = false) {
   if (shouldScroll && tab === 'competitors') $('competitor-section').scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
+function detailChatKey(kind, id) {
+  return `${kind}:${id}`;
+}
+
+function getDetailChat(kind, id) {
+  const key = detailChatKey(kind, id);
+  if (!detailChats.has(key)) {
+    detailChats.set(key, {
+      loading: false,
+      messages: [{
+        role: 'assistant',
+        content: kind === 'product'
+          ? '我已读完这个竞品的页面快照，可以问我关于定位、差异、可借鉴点等任何问题。'
+          : '我已读完这篇论文的摘要，可以问我关于方法、实验、结论等任何问题。',
+        time: new Date().toISOString(),
+      }],
+    });
+  }
+  return detailChats.get(key);
+}
+
+function renderChatMessages(chat) {
+  const rows = chat.messages.map((message) => `
+    <div class="detail-chat-message ${message.role === 'user' ? 'is-user' : 'is-ai'} ${message.tone === 'error' ? 'is-error' : ''}">
+      <div class="detail-chat-bubble">${escapeHtml(message.content)}</div>
+      <time>${escapeHtml(formatChatTime(message.time))}</time>
+    </div>
+  `);
+  if (chat.loading) {
+    rows.push(`
+      <div class="detail-chat-message is-ai is-loading">
+        <div class="detail-chat-bubble">AI 正在阅读上下文...</div>
+        <time>${escapeHtml(formatChatTime(new Date().toISOString()))}</time>
+      </div>
+    `);
+  }
+  return rows.join('');
+}
+
+function renderDetailChatSection(kind, id) {
+  const chat = getDetailChat(kind, id);
+  return `
+    <section class="detail-chat" aria-label="AI 聊天区">
+      <div class="detail-section-head">
+        <h3>向 AI 请教这${kind === 'product' ? '个竞品' : '篇论文'}</h3>
+        <span>${kind === 'product' ? 'Product context' : 'Paper context'}</span>
+      </div>
+      <div class="detail-chat-messages" id="detailChatMessages" aria-live="polite">
+        ${renderChatMessages(chat)}
+      </div>
+      <form class="detail-chat-form" data-chat-kind="${escapeHtml(kind)}" data-chat-id="${escapeHtml(id)}">
+        <textarea id="detailChatInput" rows="3" maxlength="1200" placeholder="输入你的问题，例如：这篇论文的核心方法是什么？"></textarea>
+        <button id="detailChatSubmit" class="primary-button" type="submit" ${chat.loading ? 'disabled' : ''}>${chat.loading ? '发送中' : '发送'}</button>
+      </form>
+    </section>
+  `;
+}
+
+function refreshDetailChat(kind, id) {
+  const chat = getDetailChat(kind, id);
+  const messages = $('detailChatMessages');
+  const button = $('detailChatSubmit');
+  if (!messages || !button) return;
+  messages.innerHTML = renderChatMessages(chat);
+  messages.scrollTop = messages.scrollHeight;
+  button.disabled = chat.loading;
+  button.textContent = chat.loading ? '发送中' : '发送';
+}
+
+function renderDetailActionButton(kind, id, action, label, tone, active, disabled = false) {
+  const attr = kind === 'product' ? 'data-product-detail-action' : 'data-paper-detail-action';
+  const pending = detailPending[detailChatKey(kind, id)];
+  return `
+    <button
+      type="button"
+      class="detail-action-button ${active ? 'is-active' : ''}"
+      data-tone="${escapeHtml(tone)}"
+      ${attr}="${escapeHtml(id)}"
+      data-action="${escapeHtml(action)}"
+      ${pending || disabled || active ? 'disabled' : ''}
+    >${escapeHtml(label)}</button>
+  `;
+}
+
+function renderPaperDetailActions(item) {
+  const local = paperLocal(item.id);
+  const verdict = state.feedbacks[item.id] || '';
+  const mark = item.mark || '';
+  const excludeActive = verdict === 'exclude' || !!local.excluded;
+  const boostActive = verdict === 'boost' || !!local.boost;
+  const readActive = !!local.read || mark === 'read';
+  const fusionActive = !!local.fusion || mark === 'fusion';
+  return `
+    <section class="detail-actions" aria-label="论文处理动作">
+      <div class="detail-section-head">
+        <h3>处理这篇论文</h3>
+        <span>${detailPending[detailChatKey('paper', item.id)] ? '提交中' : '本地状态实时同步雷达'}</span>
+      </div>
+      <div class="detail-action-row">
+        ${renderDetailActionButton('paper', item.id, 'exclude', excludeActive ? '不重要 ✓' : '标记不重要', 'danger', excludeActive)}
+        ${renderDetailActionButton('paper', item.id, 'boost', boostActive ? '重要 ✓' : '标记重要', 'blue', boostActive)}
+        ${renderDetailActionButton('paper', item.id, 'read', readActive ? '已读 ✓' : '标记已读', 'muted', readActive)}
+        ${renderDetailActionButton('paper', item.id, 'fusion', fusionActive ? '融合队列 ✓' : '标记需要直接融合', 'purple', fusionActive)}
+      </div>
+    </section>
+  `;
+}
+
+function renderProductDetailActions(item) {
+  const local = competitorLocal(item.id);
+  const mark = item.mark || '';
+  const excludeActive = mark === 'exclude' || !!local.excluded;
+  const boostActive = mark === 'boost' || !!local.boost;
+  const readActive = !!local.read || mark === 'read';
+  const fusionActive = mark === 'fusion' || !!local.fusion;
+  return `
+    <section class="detail-actions" aria-label="竞品处理动作">
+      <div class="detail-section-head">
+        <h3>处理这个竞品</h3>
+        <span>${detailPending[detailChatKey('product', item.id)] ? '提交中' : '动作会同步到竞品标记'}</span>
+      </div>
+      <div class="detail-action-row">
+        ${renderDetailActionButton('product', item.id, 'exclude', excludeActive ? '不重要 ✓' : '标记不重要', 'danger', excludeActive)}
+        ${renderDetailActionButton('product', item.id, 'boost', boostActive ? '重要 ✓' : '标记重要', 'blue', boostActive)}
+        ${renderDetailActionButton('product', item.id, 'read', readActive ? '已读 ✓' : '标记已读', 'muted', readActive)}
+        ${renderDetailActionButton('product', item.id, 'fusion', fusionActive ? '融合队列 ✓' : '标记需要直接融合', 'purple', fusionActive)}
+      </div>
+    </section>
+  `;
+}
+
+function renderPaperDetail(id) {
+  const item = findPaperById(id);
+  if (!item) return false;
+  $('dialogBody').dataset.detailKind = 'paper';
+  $('dialogBody').dataset.detailId = id;
+  const tags = [...new Set([...(item.matched_keywords || []), ...(item.tags || [])])].slice(0, 10);
+  $('dialogBody').innerHTML = `
+    <article class="detail-content">
+      <p class="eyebrow">Paper detail</p>
+      <h2>${escapeHtml(item.title)}</h2>
+      <p class="detail-meta">${escapeHtml(item.authors || '作者未知')} · ${escapeHtml(item.published_at || '日期未知')} · Priority ${escapeHtml(item.priority_score ?? item.relevance ?? 0)} · 相关度 ${escapeHtml(item.relevance ?? '')}</p>
+      <div class="tag-row">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
+      <section class="detail-block">
+        <h3>摘要</h3>
+        <p>${escapeHtml(item.abstract || '暂无摘要')}</p>
+      </section>
+      ${renderPaperDetailActions(item)}
+      ${renderDetailChatSection('paper', id)}
+      <div class="card-actions">${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开 arXiv</a>` : ''}</div>
+    </article>
+  `;
+  requestAnimationFrame(() => refreshDetailChat('paper', id));
+  return true;
+}
+
+function renderProductDetail(id) {
+  const item = findProductById(id);
+  if (!item) return false;
+  $('dialogBody').dataset.detailKind = 'product';
+  $('dialogBody').dataset.detailId = id;
+  $('dialogBody').innerHTML = `
+    <article class="detail-content">
+      <p class="eyebrow">Product snapshot</p>
+      <h2>${escapeHtml(item.name)}</h2>
+      <p class="detail-meta">${escapeHtml(labels.category[item.category] || item.category || '其他')} · ${escapeHtml(labels.status[item.status] || item.status)} · 相关度 ${escapeHtml(item.relevance ?? 0)}/10 · last scanned ${escapeHtml(formatTime(item.last_scanned_at))}</p>
+      <div class="tag-row">${(item.tags || []).slice(0, 10).map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
+      <section class="detail-block">
+        <h3>页面快照</h3>
+        <p><strong>页面标题</strong><br>${escapeHtml(item.fetched_title || '暂无标题快照')}</p>
+        <p><strong>页面描述</strong><br>${escapeHtml(item.fetched_description || '暂无描述快照')}</p>
+        <p><strong>入库理由</strong><br>${escapeHtml(item.reason || '暂无理由')}</p>
+        <p class="muted">发现逻辑: ${escapeHtml(item.discovery_logic || 'manual')}${item.discovered_from_url ? ` · 来源 ${escapeHtml(item.discovered_from_url)}` : ''}</p>
+      </section>
+      ${renderProductDetailActions(item)}
+      ${renderDetailChatSection('product', id)}
+      <div class="card-actions">${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开产品页</a>` : ''}</div>
+    </article>
+  `;
+  requestAnimationFrame(() => refreshDetailChat('product', id));
+  return true;
+}
+
 function openPaperDetail(id) {
-  const item = Object.values(state.clusterPapers).flat().find((paper) => paper.id === id)
-    || (state.papers.items || []).find((paper) => paper.id === id);
+  const item = findPaperById(id);
   if (!item) return;
   const local = paperLocal(id);
   local.read = true;
   saveLocalState();
-  $('dialogBody').innerHTML = `
-    <p class="eyebrow">Paper detail</p>
-    <h2>${escapeHtml(item.title)}</h2>
-    <p class="muted">${escapeHtml(item.authors || '作者未知')} · ${escapeHtml(item.published_at || '日期未知')} · 相关度 ${escapeHtml(item.relevance)}</p>
-    <p>${escapeHtml(item.abstract || '暂无摘要')}</p>
-    <div class="tag-row">${[...(item.matched_keywords || []), ...(item.tags || [])].map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
-    <div class="card-actions"><a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开 arXiv</a></div>
-  `;
-  $('detailDialog').showModal();
+  if (renderPaperDetail(id) && !$('detailDialog').open) $('detailDialog').showModal();
   renderPapers();
+  updateRadarDiscoveries();
 }
 
 function openProductDetail(id) {
-  const item = allCompetitors().find((product) => product.id === id);
+  const item = findProductById(id);
   if (!item) return;
   const local = competitorLocal(id);
   local.read = true;
   saveLocalState();
-  $('dialogBody').innerHTML = `
-    <p class="eyebrow">Product snapshot</p>
-    <h2>${escapeHtml(item.name)}</h2>
-    <p class="muted">${escapeHtml(labels.category[item.category] || item.category || '其他')} · ${escapeHtml(labels.status[item.status] || item.status)} · last scanned ${escapeHtml(formatTime(item.last_scanned_at))}</p>
-    <p><strong>页面标题</strong><br>${escapeHtml(item.fetched_title || '暂无标题快照')}</p>
-    <p><strong>页面描述</strong><br>${escapeHtml(item.fetched_description || '暂无描述快照')}</p>
-    <p><strong>入库理由</strong><br>${escapeHtml(item.reason || '暂无理由')}</p>
-    <p class="muted">发现逻辑: ${escapeHtml(item.discovery_logic || 'manual')} ${item.discovered_from_url ? ` · 来源 ${escapeHtml(item.discovered_from_url)}` : ''}</p>
-    <div class="card-actions"><a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开产品页</a></div>
-  `;
-  $('detailDialog').showModal();
+  if (renderProductDetail(id) && !$('detailDialog').open) $('detailDialog').showModal();
   renderCompetitors();
+  updateRadarDiscoveries();
+}
+
+function rerenderOpenDetail(kind, id) {
+  if (!$('detailDialog').open || $('dialogBody').dataset.detailKind !== kind || $('dialogBody').dataset.detailId !== id) return;
+  if (kind === 'paper') renderPaperDetail(id);
+  if (kind === 'product') renderProductDetail(id);
+}
+
+async function handlePaperDetailAction(id, action) {
+  const item = findPaperById(id);
+  if (!item) return;
+  const key = detailChatKey('paper', id);
+  if (detailPending[key]) return;
+  const previousLocal = { ...paperLocal(id) };
+  const previousFeedback = state.feedbacks[id];
+  detailPending[key] = action;
+
+  try {
+    const local = paperLocal(id);
+    if (action === 'exclude' || action === 'boost') {
+      const verdict = action === 'exclude' ? 'exclude' : 'boost';
+      local.reviewed = true;
+      local.excluded = verdict === 'exclude';
+      local.boost = verdict === 'boost';
+      state.feedbacks[id] = verdict;
+      saveLocalState();
+      renderPapers();
+      updateRadarDiscoveries();
+      rerenderOpenDetail('paper', id);
+      await call({ action: 'submit_feedback', paper_id: id, verdict });
+      showToast(verdict === 'exclude' ? '已标记不重要' : '已标记重要');
+    } else if (action === 'read') {
+      local.read = true;
+      saveLocalState();
+      renderPapers();
+      updateRadarDiscoveries();
+      rerenderOpenDetail('paper', id);
+      await call({ action: 'mark_paper', id, mark: 'read', note: '用户在详情页标记已读' });
+      showToast('已标记已读');
+    } else if (action === 'fusion') {
+      local.reviewed = true;
+      local.fusion = true;
+      saveLocalState();
+      renderPapers();
+      updateRadarDiscoveries();
+      rerenderOpenDetail('paper', id);
+      await call({ action: 'mark_paper', id, mark: 'fusion', note: '用户在详情页标记需要直接融合' });
+      showToast('已加入融合队列');
+    }
+  } catch (error) {
+    state.local.papers[id] = previousLocal;
+    if (previousFeedback) state.feedbacks[id] = previousFeedback;
+    else delete state.feedbacks[id];
+    saveLocalState();
+    showToast(error.message || '操作失败，已回滚', 'bad');
+  } finally {
+    delete detailPending[key];
+    renderPapers();
+    updateRadarDiscoveries();
+    rerenderOpenDetail('paper', id);
+  }
+}
+
+async function handleProductDetailAction(id, action) {
+  const item = findProductById(id);
+  if (!item) return;
+  const key = detailChatKey('product', id);
+  if (detailPending[key]) return;
+  const previousLocal = { ...competitorLocal(id) };
+  const previousCompetitors = state.competitors;
+  detailPending[key] = action;
+
+  try {
+    const local = competitorLocal(id);
+    const mark = action === 'boost' ? 'boost' : action;
+    if (action === 'read') local.read = true;
+    if (action === 'exclude') {
+      local.reviewed = true;
+      local.excluded = true;
+    }
+    if (action === 'boost') {
+      local.reviewed = true;
+      local.boost = true;
+    }
+    if (action === 'fusion') {
+      local.reviewed = true;
+      local.fusion = true;
+    }
+    saveLocalState();
+    renderCompetitors();
+    updateRadarDiscoveries();
+    rerenderOpenDetail('product', id);
+    const result = await call({ action: 'mark_product', id, mark, note: `用户在详情页标记: ${action}` });
+    state.competitors = result.competitors || state.competitors;
+    showToast(action === 'fusion' ? '已加入融合队列' : '竞品标记已更新');
+  } catch (error) {
+    state.local.competitors[id] = previousLocal;
+    state.competitors = previousCompetitors;
+    saveLocalState();
+    showToast(error.message || '竞品操作失败，已回滚', 'bad');
+  } finally {
+    delete detailPending[key];
+    renderCompetitors();
+    updateRadarDiscoveries();
+    rerenderOpenDetail('product', id);
+  }
+}
+
+async function handleDetailChatSubmit(event) {
+  const form = event.target.closest?.('.detail-chat-form');
+  if (!form) return;
+  event.preventDefault();
+  const kind = form.dataset.chatKind;
+  const id = form.dataset.chatId;
+  const input = form.querySelector('textarea');
+  const message = input?.value.trim();
+  if (!message || !kind || !id) return;
+
+  const chat = getDetailChat(kind, id);
+  if (chat.loading) return;
+  const history = chat.messages
+    .filter((item) => item.role === 'user' || item.role === 'assistant')
+    .map((item) => ({ role: item.role, content: item.content }))
+    .slice(-10);
+  chat.messages.push({ role: 'user', content: message, time: new Date().toISOString() });
+  chat.loading = true;
+  input.value = '';
+  refreshDetailChat(kind, id);
+
+  try {
+    const result = await call({
+      action: 'chat_with_paper',
+      item_type: kind,
+      paper_id: kind === 'paper' ? id : undefined,
+      product_id: kind === 'product' ? id : undefined,
+      message,
+      history,
+    });
+    chat.messages.push({
+      role: 'assistant',
+      content: result.reply || '我暂时没有生成可用回复。',
+      time: new Date().toISOString(),
+      model: result.model || '',
+    });
+  } catch (error) {
+    chat.messages.push({
+      role: 'assistant',
+      content: 'AI 暂不可用，请稍后再试。',
+      tone: 'error',
+      time: new Date().toISOString(),
+    });
+    showToast(error.message || 'AI 暂不可用，请稍后再试', 'bad');
+  } finally {
+    chat.loading = false;
+    refreshDetailChat(kind, id);
+  }
 }
 
 async function toggleCluster(label) {
@@ -1167,7 +1586,13 @@ function bindScrollEffects() {
   window.addEventListener('resize', requestActiveSectionUpdate);
   updateActiveSection();
 
-  heroRing = initMobiusRing($('heroCanvas'));
+  heroRing = initMobiusRing($('heroCanvas'), {
+    onSelect(item) {
+      if (!item?.id) return;
+      if (item.type === 'product') openProductDetail(item.id);
+      else openPaperDetail(item.id);
+    },
+  });
   const finale = initLogoBackdrop($('finaleCanvas'), 'finale');
   const sceneObserver = new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
@@ -1244,6 +1669,7 @@ function bindEvents() {
   $('detailDialog').addEventListener('click', (event) => {
     if (event.target === $('detailDialog')) $('detailDialog').close();
   });
+  $('detailDialog').addEventListener('submit', handleDetailChatSubmit);
   document.body.addEventListener('click', (event) => {
     const openCluster = event.target.closest('[data-open-cluster]');
     if (openCluster) {
@@ -1278,12 +1704,16 @@ function bindEvents() {
     const paperDetail = event.target.closest('[data-paper-detail]');
     if (paperDetail) openPaperDetail(paperDetail.dataset.paperDetail);
 
+    const paperDetailAction = event.target.closest('[data-paper-detail-action]');
+    if (paperDetailAction) handlePaperDetailAction(paperDetailAction.dataset.paperDetailAction, paperDetailAction.dataset.action);
+
     const paperRead = event.target.closest('[data-paper-read]');
     if (paperRead) {
       const local = paperLocal(paperRead.dataset.paperRead);
       local.read = !local.read;
       saveLocalState();
       renderPapers();
+      updateRadarDiscoveries();
     }
 
     const paperFavorite = event.target.closest('[data-paper-favorite]');
@@ -1292,6 +1722,7 @@ function bindEvents() {
       local.favorite = !local.favorite;
       saveLocalState();
       renderPapers();
+      updateRadarDiscoveries();
     }
 
     const paperArchive = event.target.closest('[data-paper-archive]');
@@ -1300,10 +1731,14 @@ function bindEvents() {
       local.archived = !local.archived;
       saveLocalState();
       renderPapers();
+      updateRadarDiscoveries();
     }
 
     const productDetail = event.target.closest('[data-product-detail]');
     if (productDetail) openProductDetail(productDetail.dataset.productDetail);
+
+    const productDetailAction = event.target.closest('[data-product-detail-action]');
+    if (productDetailAction) handleProductDetailAction(productDetailAction.dataset.productDetailAction, productDetailAction.dataset.action);
 
     const productRead = event.target.closest('[data-product-read]');
     if (productRead) {
@@ -1311,6 +1746,7 @@ function bindEvents() {
       local.read = !local.read;
       saveLocalState();
       renderCompetitors();
+      updateRadarDiscoveries();
     }
 
     const promote = event.target.closest('[data-promote]');
@@ -1320,6 +1756,9 @@ function bindEvents() {
     if (archive) updateCompetitor({ mode: 'archive', id: archive.dataset.archive });
   });
 }
+
+window.openPaperDetail = openPaperDetail;
+window.openProductDetail = openProductDetail;
 
 bindScrollEffects();
 bindEvents();

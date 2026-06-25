@@ -439,7 +439,7 @@ function normalizeItems(items) {
       type,
       keyword: compact(item.keyword || item.title || typeLabel(type), 22),
       title: compact(item.title || item.keyword || '雷达发现', 72),
-      summary: compact(item.summary || '暂无摘要。', 96),
+      summary: compact(item.summary || '暂无摘要。', 60),
       meta: Array.isArray(item.meta) ? item.meta.filter(Boolean).slice(0, 3) : [],
     });
   }
@@ -534,6 +534,7 @@ export function initMobiusRing(canvas) {
   const tooltip = makeTooltip(container);
 
   let markerCloud = null;
+  let discoveryItems = [];
   let markerItems = normalizeItems([]);
   let markerLabels = [];
   let markerPositions = [];
@@ -568,7 +569,7 @@ export function initMobiusRing(canvas) {
     });
   }
 
-  function rebuildMarkers(items = markerItems) {
+  function rebuildMarkers(items = discoveryItems) {
     markerItems = normalizeItems(items);
     markerCount = markerItems.length;
     markerLabels.forEach((label) => label.remove());
@@ -636,7 +637,7 @@ export function initMobiusRing(canvas) {
     camera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
     const nextCount = markerTargetCount();
-    if (markerCount && nextCount !== markerCount) rebuildMarkers(markerItems);
+    if (markerCount && nextCount !== markerCount) rebuildMarkers(discoveryItems);
     updateLabels(lastTime);
   }
 
@@ -714,6 +715,11 @@ export function initMobiusRing(canvas) {
     pointer.x = event.clientX - rect.left;
     pointer.y = event.clientY - rect.top;
     pointer.inside = true;
+    const label = event.target.closest?.('.ring-label');
+    if (label) {
+      setHovered(Number(label.dataset.markerIndex), markerPositions[Number(label.dataset.markerIndex)]);
+      return;
+    }
     updatePointerHover();
   }
 
@@ -722,7 +728,7 @@ export function initMobiusRing(canvas) {
     clearHovered();
   }
 
-  rebuildMarkers(markerItems);
+  rebuildMarkers(discoveryItems);
   resize();
   window.addEventListener('resize', resize);
   container.addEventListener('pointermove', onPointerMove);
@@ -740,7 +746,8 @@ export function initMobiusRing(canvas) {
       if (frameId) cancelAnimationFrame(frameId);
     },
     updateDiscoveries(items) {
-      rebuildMarkers(items);
+      discoveryItems = Array.isArray(items) && items.length ? items : [];
+      rebuildMarkers(discoveryItems);
       if (!running) {
         resize();
         renderer.render(scene, camera);

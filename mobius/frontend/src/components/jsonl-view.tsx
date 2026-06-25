@@ -64,11 +64,26 @@ type BashToolResult = {
   interrupted: boolean
   isImage: boolean
   noOutputExpected: boolean
+  readFile?: ReadFileResult
+}
+type ReadToolCall = {
+  id?: string
+  filePath: string
+  offset?: number
+  limit?: number
+}
+type ReadFileResult = {
+  filePath: string
+  content: string
+  numLines?: number
+  startLine?: number
+  totalLines?: number
 }
 type JsonlViewItem = {
   entry: AnyEntry
   lineNo: number
   bashResults?: BashToolResult[]
+  readResults?: BashToolResult[]
 }
 type DiffRow = {
   key: string
@@ -119,6 +134,10 @@ const START_PY_THEME = { dot: 'bg-yellow-400', border: 'border-yellow-500/40', b
 // 特例: assistant 里带 name:"Bash" 的 tool_use 卡片 (Claude Code shell 调用).
 // 用 cyan, 呼应终端/控制台意象, 与 Edit indigo、start.py yellow 都拉开, 长列表里可识别.
 const BASH_TOOL_THEME = { dot: 'bg-cyan-400', border: 'border-cyan-500/40', bg: 'bg-cyan-500/[0.06]', text: 'text-cyan-300', label: 'bash' }
+
+// 特例: assistant 里带 name:"Read" 的 tool_use 卡片.
+// 用 sky, 与 Bash cyan / Edit indigo 近邻但可区分, 方便扫文件读取操作.
+const READ_TOOL_THEME = { dot: 'bg-sky-400', border: 'border-sky-500/40', bg: 'bg-sky-500/[0.06]', text: 'text-sky-300', label: 'read' }
 
 // 特例: event_msg.payload.type === 'context_compacted' 的卡片 — 一次上下文压缩事件,
 // 在长列表里需要一眼可扫, 复用 yellow (gold) 与 start.py 同色但 label 区分.
@@ -353,6 +372,54 @@ function isBashToolUse(entry: AnyEntry): boolean {
   return extractBashCalls(entry).length > 0
 }
 
+function isReadToolUseName(name: unknown): boolean {
+  return typeof name === 'string' && name.toLowerCase() === 'read'
+}
+
+function numberField(value: any): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number.parseInt(value, 10)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+function extractReadCallFromBlock(block: any): ReadToolCall | null {
+  if (!block || block.type !== 'tool_use' || !isReadToolUseName(block.name)) return null
+  const input = block?.input && typeof block.input === 'object' ? block.input : {}
+  const filePath = stringField(input.file_path) || stringField(input.filePath) || stringField(input.path)
+  if (!filePath.trim()) return null
+  return {
+    id: stringField(block.id) || undefined,
+    filePath: filePath.trim(),
+    offset: numberField(input.offset),
+    limit: numberField(input.limit),
+  }
+}
+
+function extractReadCalls(entry: AnyEntry): ReadToolCall[] {
+  if (entry?.type !== 'assistant') return []
+  const content = entry?.message?.content
+  if (!Array.isArray(content)) return []
+  const out: ReadToolCall[] = []
+  for (const block of content) {
+    const call = extractReadCallFromBlock(block)
+    if (call) out.push(call)
+  }
+  return out
+}
+
+function readCallOneLineSummary(call: ReadToolCall): string {
+  const parts = [basename(call.filePath)]
+  const range = [
+    call.offset != null ? `offset ${call.offset}` : '',
+    call.limit != null ? `limit ${call.limit}` : '',
+  ].filter(Boolean).join(' · ')
+  if (range) parts.push(range)
+  return parts.join(' · ')
+}
+
 function stringField(value: any): string {
   return typeof value === 'string' ? value : ''
 }
@@ -364,6 +431,20 @@ function outputField(value: any): string {
     return JSON.stringify(value, null, 2)
   } catch {
     return String(value)
+  }
+}
+
+function normalizeReadFileResult(file: any): ReadFileResult | undefined {
+  if (!file || typeof file !== 'object') return undefined
+  const filePath = stringField(file.filePath) || stringField(file.file_path) || stringField(file.path)
+  const content = stringField(file.content)
+  if (!filePath && !content) return undefined
+  return {
+    filePath,
+    content,
+    numLines: numberField(file.numLines ?? file.num_lines),
+    startLine: numberField(file.startLine ?? file.start_line),
+    totalLines: numberField(file.totalLines ?? file.total_lines),
   }
 }
 
@@ -425,10 +506,11 @@ function extractBashToolResultRecords(entry: AnyEntry, lineNo: number): BashTool
   const interrupted = toolUseResult.interrupted === true
   const isImage = toolUseResult.isImage === true
   const noOutputExpected = toolUseResult.noOutputExpected === true
+  const readFile = normalizeReadFileResult(toolUseResult.file)
 
   return blocks.map((block: any) => {
     const blockContent = toolResultContentText(block?.content)
-    const fallbackContent = [stdout, stderr].filter(Boolean).join('\n')
+    const fallbackContent = [readFile?.content, stdout, stderr].filter(Boolean).join('\n')
     return {
       entry,
       lineNo,
@@ -442,17 +524,22 @@ function extractBashToolResultRecords(entry: AnyEntry, lineNo: number): BashTool
       interrupted,
       isImage,
       noOutputExpected,
+      readFile,
     }
   })
 }
 
 function mergeBashToolResultItems(visibleEntries: AnyEntry[], windowOffset: number): JsonlViewItem[] {
-  type BashSource = { index: number; uuid: string; calls: BashCall[] }
-  const sourcesByUuid = new Map<string, BashSource>()
-  const sourceByCallId = new Map<string, BashSource>()
+  type ToolCallRef = { id?: string; kind: 'bash' | 'read' }
+  type ToolSource = { index: number; uuid: string; calls: ToolCallRef[] }
+  const sourcesByUuid = new Map<string, ToolSource>()
+  const sourceByCallId = new Map<string, ToolSource>()
 
   visibleEntries.forEach((entry, index) => {
-    const calls = extractBashCalls(entry)
+    const calls: ToolCallRef[] = [
+      ...extractBashCalls(entry).map((call) => ({ id: call.id, kind: 'bash' as const })),
+      ...extractReadCalls(entry).map((call) => ({ id: call.id, kind: 'read' as const })),
+    ]
     const uuid = stringField(entry?.uuid)
     if (calls.length === 0) return
     const source = { index, uuid, calls }
@@ -463,6 +550,7 @@ function mergeBashToolResultItems(visibleEntries: AnyEntry[], windowOffset: numb
   })
 
   const resultsBySourceIndex = new Map<number, BashToolResult[]>()
+  const readResultsBySourceIndex = new Map<number, BashToolResult[]>()
   const hiddenResultEntryIndexes = new Set<number>()
 
   visibleEntries.forEach((entry, index) => {
@@ -472,7 +560,7 @@ function mergeBashToolResultItems(visibleEntries: AnyEntry[], windowOffset: numb
 
     let matchedCount = 0
     for (const record of records) {
-      let source: BashSource | undefined
+      let source: ToolSource | undefined
       let matchedCallId = record.toolUseId
 
       if (record.toolUseId) {
@@ -491,19 +579,22 @@ function mergeBashToolResultItems(visibleEntries: AnyEntry[], windowOffset: numb
 
       if (!source) continue
 
+      let matchedCall: ToolCallRef | undefined
       if (record.toolUseId) {
-        const callMatches = source.calls.some((call) => call.id === record.toolUseId)
-        if (!callMatches) continue
+        matchedCall = source.calls.find((call) => call.id === record.toolUseId)
+        if (!matchedCall) continue
       } else if (source.calls.length === 1) {
-        matchedCallId = source.calls[0].id
+        matchedCall = source.calls[0]
+        matchedCallId = matchedCall.id
       } else {
         continue
       }
 
       const next = { ...record, toolUseId: matchedCallId }
-      const existing = resultsBySourceIndex.get(source.index) || []
+      const targetMap = matchedCall.kind === 'read' ? readResultsBySourceIndex : resultsBySourceIndex
+      const existing = targetMap.get(source.index) || []
       existing.push(next)
-      resultsBySourceIndex.set(source.index, existing)
+      targetMap.set(source.index, existing)
       matchedCount += 1
     }
 
@@ -516,7 +607,8 @@ function mergeBashToolResultItems(visibleEntries: AnyEntry[], windowOffset: numb
     if (hiddenResultEntryIndexes.has(index)) return []
     const lineNo = windowOffset + index + 1
     const bashResults = resultsBySourceIndex.get(index)
-    return [{ entry, lineNo, bashResults }]
+    const readResults = readResultsBySourceIndex.get(index)
+    return [{ entry, lineNo, bashResults, readResults }]
   })
 }
 
@@ -1193,21 +1285,156 @@ function BashCallCard({ call, index, results = [] }: { call: BashCall; index: nu
   )
 }
 
-function ResultTextPreview({ text }: { text: string }) {
+function ResultTextPreview({ text, startLine = 1 }: { text: string; startLine?: number }) {
   const lines = useMemo(() => splitDiffValue(text), [text])
   const previewLines = lines.slice(0, WRITE_PREVIEW_LINE_LIMIT)
   const restLines = lines.slice(WRITE_PREVIEW_LINE_LIMIT)
   if (!text) return null
   return (
     <div className="min-w-max py-1 font-mono text-[11px] leading-[1.45]">
-      <CodePreviewRows lines={previewLines} />
+      <CodePreviewRows lines={previewLines} startLine={startLine} />
       {restLines.length > 0 && (
         <details className="border-t border-[var(--border-color)]/60">
           <summary className="cursor-pointer px-2 py-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
             展开剩余 {restLines.length} 行
           </summary>
-          <CodePreviewRows lines={restLines} startLine={WRITE_PREVIEW_LINE_LIMIT + 1} />
+          <CodePreviewRows lines={restLines} startLine={startLine + WRITE_PREVIEW_LINE_LIMIT} />
         </details>
+      )}
+    </div>
+  )
+}
+
+function JsonEntryReadCalls({ calls, results = [] }: { calls: ReadToolCall[]; results?: BashToolResult[] }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {calls.map((call, idx) => {
+        const callResults = results.filter((result) => {
+          if (result.toolUseId && call.id) return result.toolUseId === call.id
+          return calls.length === 1
+        })
+        return (
+          <ReadCallCard
+            key={(call.id || `read-${idx}`) + idx}
+            call={call}
+            index={calls.length > 1 ? idx + 1 : null}
+            results={callResults}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function ReadCallCard({ call, index, results = [] }: { call: ReadToolCall; index: number | null; results?: BashToolResult[] }) {
+  const [copied, setCopied] = useState<boolean>(false)
+  const meta = [
+    call.offset != null ? `offset ${call.offset}` : '',
+    call.limit != null ? `limit ${call.limit}` : '',
+  ].filter(Boolean).join(' · ')
+
+  return (
+    <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-1 ring-[var(--border-color)]/70">
+      <div className="flex min-w-0 items-start gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[10px]">
+        <div className="min-w-0 flex-1">
+          {index != null && (
+            <div className="font-mono text-[10px] text-[var(--text-muted)]">#{index}</div>
+          )}
+          <div className="truncate font-mono text-[12px] font-semibold text-[var(--text-secondary)]" title={call.filePath}>
+            {basename(call.filePath)}
+          </div>
+          <div className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-muted)]" title={call.filePath}>
+            {call.filePath}
+          </div>
+        </div>
+        {meta && (
+          <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
+            {meta}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            navigator.clipboard.writeText(call.filePath).then(() => {
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1000)
+            })
+          }}
+          className="flex-shrink-0 rounded border border-[var(--border-color)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-secondary)]"
+          title="复制文件路径到剪贴板"
+        >
+          {copied ? '已复制 ✓' : '复制路径'}
+        </button>
+      </div>
+      {results.length > 0 ? (
+        <div>
+          {results.map((result, idx) => (
+            <ReadResultPanel key={`${result.toolUseId || 'read-result'}-${result.lineNo}-${idx}`} result={result} fallbackPath={call.filePath} />
+          ))}
+        </div>
+      ) : (
+        <div className="px-2.5 py-2 text-[11px] font-mono text-[var(--text-muted)]">
+          等待读取结果
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ReadResultPanel({ result, fallbackPath }: { result: BashToolResult; fallbackPath: string }) {
+  const [copied, setCopied] = useState<boolean>(false)
+  const readFile = result.readFile
+  const filePath = readFile?.filePath || fallbackPath
+  const text = readFile?.content || result.content
+  const startLine = readFile?.startLine || 1
+  const lines = splitDiffValue(text)
+  const stateLabel = result.isError ? 'error' : 'ok'
+  const stateClass = result.isError ? 'text-red-300' : 'text-emerald-300'
+
+  return (
+    <div className="border-t border-[var(--border-color)]/70 first:border-t-0">
+      <div className="flex min-w-0 items-center gap-2 px-2.5 py-1.5 text-[10px]">
+        <span className="min-w-0 flex-1 truncate font-mono text-[var(--text-secondary)]" title={filePath}>
+          读取结果
+          <span className="ml-1 text-[var(--text-muted)]">#{result.lineNo}</span>
+        </span>
+        <span className={`flex-shrink-0 font-mono ${stateClass}`}>{stateLabel}</span>
+        <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
+          {lines.length} lines
+        </span>
+        {readFile?.totalLines != null && (
+          <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
+            total {readFile.totalLines}
+          </span>
+        )}
+        {text && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              navigator.clipboard.writeText(text).then(() => {
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1000)
+              })
+            }}
+            className="flex-shrink-0 rounded border border-[var(--border-color)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-secondary)]"
+            title="复制读取内容到剪贴板"
+          >
+            {copied ? '已复制 ✓' : '复制内容'}
+          </button>
+        )}
+      </div>
+      {text ? (
+        <div className="max-h-[34rem] overflow-auto">
+          <ResultTextPreview text={text} startLine={startLine} />
+        </div>
+      ) : (
+        <div className="px-2.5 pb-2 text-[11px] font-mono text-[var(--text-muted)]">
+          无内容
+        </div>
       )}
     </div>
   )
@@ -1292,21 +1519,23 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
 /**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
-function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, bashResults = [] }: {
+function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, bashResults = [], readResults = [] }: {
   entry: AnyEntry
   lineNo?: number
   defaultExpanded?: boolean
   showMeta?: boolean
   bashResults?: BashToolResult[]
+  readResults?: BashToolResult[]
 }) {
   const type = entry?.type || 'unknown'
   const headerSummary = useMemo(() => buildHeaderSummary(entry), [entry])
   const codeEdit = useMemo(() => extractCodeEdit(entry), [entry])
   const writeCall = useMemo(() => extractWriteToolCall(entry), [entry])
   const bashCalls = useMemo(() => extractBashCalls(entry), [entry])
-  // canCode 覆盖三种代码视图: Edit diff / Write 文件预览 / Bash 命令卡片.
+  const readCalls = useMemo(() => extractReadCalls(entry), [entry])
+  // canCode 覆盖代码视图: Edit diff / Write 文件预览 / Bash 命令卡片 / Read 文件读取卡片.
   // 字段模式仍是入口的兜底, 让用户随时切回看原始 JSON.
-  const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0
+  const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
   // 配色优先级: blackboard 相关 (最醒目) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
@@ -1321,6 +1550,8 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
     ? START_PY_THEME
     : bashCalls.length > 0
     ? BASH_TOOL_THEME
+    : readCalls.length > 0
+    ? READ_TOOL_THEME
     : isContextCompactedEvent(entry)
     ? CONTEXT_COMPACTED_THEME
     : (TYPE_THEME[type] || DEFAULT_THEME)
@@ -1384,7 +1615,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
             }}
             className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors flex-shrink-0"
             title={canCode
-              ? (mode === 'code' ? '切换到字段模式 (按 key 展开 JSON)' : writeCall ? '切换到代码模式 (显示 Write 文件预览)' : codeEdit ? '切换到代码模式 (显示 old_string → new_string 的编辑差异)' : '切换到代码模式 (显示 Bash 命令)')
+              ? (mode === 'code' ? '切换到字段模式 (按 key 展开 JSON)' : writeCall ? '切换到代码模式 (显示 Write 文件预览)' : codeEdit ? '切换到代码模式 (显示 old_string → new_string 的编辑差异)' : readCalls.length > 0 && bashCalls.length > 0 ? '切换到代码模式 (显示工具调用)' : readCalls.length > 0 ? '切换到代码模式 (显示 Read 文件读取)' : '切换到代码模式 (显示 Bash 命令)')
               : (mode === 'compact' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到精简模式 (显示完整摘要文本)')}>
             {canCode
               ? (mode === 'code' ? '字段模式' : '代码模式')
@@ -1398,8 +1629,15 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
             <JsonEntryCodeDiff edit={codeEdit} />
           ) : mode === 'code' && writeCall ? (
             <JsonEntryWritePreview writeCall={writeCall} />
-          ) : mode === 'code' && bashCalls.length > 0 ? (
-            <JsonEntryBashCommands calls={bashCalls} results={bashResults} />
+          ) : mode === 'code' && (bashCalls.length > 0 || readCalls.length > 0) ? (
+            <div className="flex flex-col gap-2">
+              {bashCalls.length > 0 && (
+                <JsonEntryBashCommands calls={bashCalls} results={bashResults} />
+              )}
+              {readCalls.length > 0 && (
+                <JsonEntryReadCalls calls={readCalls} results={readResults} />
+              )}
+            </div>
           ) : mode === 'compact' && canCompact && !canCode ? (
             <div className="max-h-[60vh] overflow-y-auto pr-1">
               <Suspense fallback={<CompactPlainTextFallback text={headerSummary.full} />}>
@@ -1417,7 +1655,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
 
 export const JsonEntryCard = memo(
   JsonEntryCardInner,
-  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.bashResults === next.bashResults,
+  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.bashResults === next.bashResults && prev.readResults === next.readResults,
 )
 
 // 卡片标题栏摘要: full 是不截断版, short 是给标题栏一行用的截断版.
@@ -1635,6 +1873,13 @@ function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
           const writeSummary = summarizeWriteToolInput(item?.input)
           if (writeSummary) {
             parts.push(`Write ${writeSummary}`)
+            continue
+          }
+        }
+        if (isReadToolUseName(item.name)) {
+          const call = extractReadCallFromBlock(item)
+          if (call) {
+            parts.push(`Read · ${readCallOneLineSummary(call)}`)
             continue
           }
         }
@@ -1896,6 +2141,7 @@ export function DisplayImagesCard({ images, lineNo, sourceLabel = 'display_image
 interface RoundItem {
   entry: AnyEntry
   bashResults?: BashToolResult[]
+  readResults?: BashToolResult[]
   relIdx: number  // 0 = 该轮用户问题, 1+ = agent 回复
   lineNo: number  // 全局行号 (1-based)
 }
@@ -1976,10 +2222,11 @@ function buildRounds(
   return { preItems, rounds }
 }
 
-function EntryCardWithImages({ entry, lineNo, bashResults = [], defaultExpanded = false, showMeta = true }: {
+function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], defaultExpanded = false, showMeta = true }: {
   entry: AnyEntry
   lineNo: number
   bashResults?: BashToolResult[]
+  readResults?: BashToolResult[]
   defaultExpanded?: boolean
   showMeta?: boolean
 }) {
@@ -1993,7 +2240,7 @@ function EntryCardWithImages({ entry, lineNo, bashResults = [], defaultExpanded 
       : 'display_images'
   return (
     <>
-      <JsonEntryCard entry={entry} lineNo={lineNo} defaultExpanded={defaultExpanded} showMeta={showMeta} bashResults={bashResults} />
+      <JsonEntryCard entry={entry} lineNo={lineNo} defaultExpanded={defaultExpanded} showMeta={showMeta} bashResults={bashResults} readResults={readResults} />
       {imgs.length > 0 && <DisplayImagesCard images={imgs} lineNo={lineNo} sourceLabel={sourceLabel} />}
     </>
   )
@@ -2032,13 +2279,13 @@ function ContinuationGroup({ items, onlyGroup, showMeta = true }: { items: Jsonl
 
       {open && (
         <div className="mt-0.5 pl-2 border-l border-[var(--border-color)]/40 ml-2">
-          {items.map(({ entry, lineNo, bashResults }) => (
+          {items.map(({ entry, lineNo, bashResults, readResults }) => (
             <div key={(entry?.uuid || entry?.id || entry?.timestamp || '') + '#' + lineNo} className="flex items-start gap-1.5">
               <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-7 text-right leading-none select-none">
                 ...
               </span>
               <div className="flex-1 min-w-0">
-                <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} showMeta={showMeta} />
+                <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} />
               </div>
             </div>
           ))}
@@ -2107,6 +2354,7 @@ function RoundGroup({ round, isLast, onlyGroup, showMeta = true }: { round: Roun
                       entry={item.entry}
                       lineNo={item.lineNo}
                       bashResults={item.bashResults}
+                      readResults={item.readResults}
                       showMeta={showMeta}
                     />
                   </div>
@@ -2211,9 +2459,9 @@ export function JsonlView({
       {preItems.length > 0 && hasOmittedHead ? (
         <ContinuationGroup items={preItems} onlyGroup={onlyGroup} showMeta={showMeta} />
       ) : (
-        preItems.map(({ entry, lineNo, bashResults }) => (
+        preItems.map(({ entry, lineNo, bashResults, readResults }) => (
           <Fragment key={(entry?.uuid || entry?.id || entry?.timestamp || '') + '#' + lineNo}>
-            <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} showMeta={showMeta} />
+            <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} />
           </Fragment>
         ))
       )}

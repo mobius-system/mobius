@@ -28,6 +28,7 @@ const fs = require('fs');
 const path = require('path');
 const memoriesFs = require('./memories-fs');
 const skillsFs = require('./skills-fs');
+const accessControl = require('./access-control');
 
 const FORMAT_TAG = 'imac-skill-memory-bundle';
 const FORMAT_VERSION = 1;
@@ -109,47 +110,91 @@ function readSkillFiles(sourceDir) {
 // ---- Inventory -----------------------------------------------------------
 // 列出当前管理员能用于导出的所有 Skill 与 Memory.
 // 用户级: 只列出请求者 (userId) 自己的; 项目级: 跨用户合并的全部.
-function buildInventory({ userId, projects }) {
+function buildInventory({ userId, user, projects }) {
+  const projectMap = new Map((projects || []).map((p) => [p.id, p]));
   const inventory = {
+    current_user_id: userId,
     user_scope: {
       user_id: userId,
-      memories: memoriesFs.listForUser(userId).map(shapeInventoryMemory),
-      skills: skillsFs.listForUser(userId).map(shapeInventorySkill),
+      memories: memoriesFs.listForUser(userId).map((m) => shapeInventoryMemory(m, user)),
+      skills: skillsFs.listForUser(userId).map((s) => shapeInventorySkill(s, user)),
     },
+    others_user_scopes: [],
     project_scopes: [],
   };
+  // 他人用户级: 全平台合并, 但用 canReadContextItem 过滤隐私.
+  const allUserMemories = memoriesFs.listAll();
+  const allUserSkills = skillsFs.listAll();
+  const grouped = new Map();
+  const pushInto = (ownerId, kind, item) => {
+    if (!grouped.has(ownerId)) grouped.set(ownerId, { owner_id: ownerId, memories: [], skills: [] });
+    grouped.get(ownerId)[kind === 'memory' ? 'memories' : 'skills'].push(item);
+  };
+  for (const m of allUserMemories) {
+    if (m.scope !== 'user') continue;
+    if (m.created_by === userId) continue;
+    if (user && !accessControl.canReadContextItem(user, 'memory', m)) continue;
+    pushInto(m.created_by, 'memory', shapeInventoryMemory(m, user));
+  }
+  for (const s of allUserSkills) {
+    if (s.scope !== 'user') continue;
+    if (s.created_by === userId) continue;
+    if (user && !accessControl.canReadContextItem(user, 'skill', s)) continue;
+    pushInto(s.created_by, 'skill', shapeInventorySkill(s, user));
+  }
+  for (const [ownerId, payload] of grouped) {
+    inventory.others_user_scopes.push(payload);
+  }
+  inventory.others_user_scopes.sort((a, b) => a.owner_id.localeCompare(b.owner_id));
+
   for (const p of projects) {
     inventory.project_scopes.push({
       project_id: p.id,
       project_name: p.name,
-      memories: memoriesFs.listForProject(p.id).map(shapeInventoryMemory),
-      skills: skillsFs.listForProject(p.id).map(shapeInventorySkill),
+      project_created_by: p.created_by || null,
+      is_own_project: !!p.created_by && p.created_by === userId,
+      memories: memoriesFs.listForProject(p.id).map((m) => shapeInventoryMemory(m, user, p)),
+      skills: skillsFs.listForProject(p.id).map((s) => shapeInventorySkill(s, user, p)),
     });
   }
   return inventory;
 }
 
-function shapeInventoryMemory(m) {
+function shapeInventoryMemory(m, user, project) {
+  const access = user ? accessControl.contextAccessPayload('memory', m) : null;
+  const canManage = user ? accessControl.canManageContextItem(user, 'memory', m) : false;
   return {
     id: m.id,
+    scope: m.scope,
+    owner_id: m.owner_id,
     name: m.name,
     description: m.description || '',
     body_length: (m.body || '').length,
     created_by: m.created_by,
     created_at: m.created_at,
     updated_at: m.updated_at,
+    visibility: access ? access.visibility : null,
+    can_manage: canManage,
+    project_id: project ? project.id : (m.scope === 'project' ? m.owner_id : null),
   };
 }
 
-function shapeInventorySkill(sk) {
+function shapeInventorySkill(sk, user, project) {
+  const access = user ? accessControl.contextAccessPayload('skill', sk) : null;
+  const canManage = user ? accessControl.canManageContextItem(user, 'skill', sk) : false;
   return {
     id: sk.id,
+    scope: sk.scope,
+    owner_id: sk.owner_id,
     name: sk.name,
     description: sk.description || '',
     body_length: (sk.body || '').length,
     created_by: sk.created_by,
     created_at: sk.created_at,
     updated_at: sk.updated_at,
+    visibility: access ? access.visibility : null,
+    can_manage: canManage,
+    project_id: project ? project.id : (sk.scope === 'project' ? sk.owner_id : null),
   };
 }
 
