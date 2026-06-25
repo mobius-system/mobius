@@ -173,6 +173,7 @@ code {
   font-size: 12px;
   font-style: normal;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .section-link.is-active {
@@ -372,10 +373,48 @@ code {
   height: 100%;
 }
 
+.hero-canvas {
+  z-index: 0;
+}
+
 .hero-content {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   width: min(850px, 100%);
+}
+
+.ring-tooltip {
+  position: fixed;
+  z-index: 30;
+  width: min(320px, calc(100vw - 32px));
+  border: 1px solid color-mix(in srgb, var(--paper-accent-1) 28%, transparent);
+  border-radius: 8px;
+  padding: 14px;
+  color: var(--paper-ink);
+  background: rgba(10, 10, 15, 0.82);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+}
+
+.ring-tooltip strong,
+.ring-tooltip span {
+  display: block;
+}
+
+.ring-tooltip p {
+  margin: 7px 0 10px;
+  opacity: 0.76;
+  line-height: 1.5;
+}
+
+.ring-tooltip span {
+  width: fit-content;
+  border: 1px solid color-mix(in srgb, var(--paper-accent-1) 24%, transparent);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: color-mix(in srgb, var(--paper-ink) 86%, var(--paper-accent-1));
+  font-size: 12px;
 }
 
 .eyebrow,
@@ -1234,7 +1273,7 @@ textarea:focus {
 }
 
 .finale {
-  min-height: 72vh;
+  min-height: 100vh;
   display: grid;
   align-items: center;
 }
@@ -1242,6 +1281,39 @@ textarea:focus {
 .finale .section-inner {
   position: relative;
   z-index: 1;
+}
+
+.finale-content h2 {
+  font-size: clamp(2.6rem, 6vw, 5.2rem);
+}
+
+.finale-status {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 34px 0 8px;
+}
+
+.finale-metric {
+  border: 1px solid color-mix(in srgb, var(--paper-accent-1) 18%, transparent);
+  border-radius: 8px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--paper-bg) 82%, white);
+}
+
+.finale-metric span,
+.finale-metric strong {
+  display: block;
+}
+
+.finale-metric span {
+  opacity: 0.62;
+  font-size: 0.76rem;
+}
+
+.finale-metric strong {
+  margin-top: 7px;
+  font-size: 1.15rem;
 }
 
 .detail-dialog {
@@ -1370,12 +1442,15 @@ textarea:focus {
   .work-grid,
   .competitor-columns,
   .paper-bottom-row,
-  .evolution-columns,
   .evolution-columns {
     grid-template-columns: 1fr;
   }
 
   .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .finale-status {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1388,6 +1463,19 @@ textarea:focus {
 
   .nav-links {
     display: none;
+  }
+
+  .section-switcher {
+    left: 10px;
+    right: 10px;
+    max-width: calc(100vw - 20px);
+    transform: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .section-link {
+    flex: 0 0 auto;
   }
 
   .hero,
@@ -1423,6 +1511,10 @@ textarea:focus {
   .feedback-button,
   .see-all-button {
     width: 100%;
+  }
+
+  .finale-status {
+    grid-template-columns: 1fr;
   }
 
   .evolution-toolbar,

@@ -33,7 +33,7 @@ import {
   UserPlus,
   Users as UsersIcon,
 } from 'lucide-react'
-import { api } from '../store'
+import { api, useStore } from '../store'
 import {
   TEXT_REDACTION_ENABLED_EVENT,
   TEXT_REDACTION_ENABLED_STORAGE_KEY,
@@ -44,8 +44,10 @@ import {
   exportTextRedactionRulesJson,
   mergeTextRedactionRules,
   parseTextRedactionImport,
+  pushTextRedactionRulesToBackend,
   readTextRedactionEnabled,
   readTextRedactionRules,
+  syncTextRedactionGlobalOnStartup,
   writeTextRedactionEnabled,
   writeTextRedactionRules,
   type TextRedactionRule,
@@ -4109,7 +4111,11 @@ function AdminTextRedactionPanel() {
   const [newReplacement, setNewReplacement] = useState('')
   const [importDraft, setImportDraft] = useState('')
   const [notice, setNotice] = useState('')
+  const [pushing, setPushing] = useState(false)
+  const [globalUpdatedAt, setGlobalUpdatedAt] = useState<string | null>(null)
+  const [globalUpdatedBy, setGlobalUpdatedBy] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const isAdmin = useStore((s) => s.user?.role === 'admin')
 
   useEffect(() => {
     const reload = () => setRules(readTextRedactionRules())
@@ -4134,6 +4140,19 @@ function AdminTextRedactionPanel() {
     const timer = window.setTimeout(() => setNotice(''), 2600)
     return () => window.clearTimeout(timer)
   }, [notice])
+
+  useEffect(() => {
+    let cancelled = false
+    syncTextRedactionGlobalOnStartup()
+      .then((payload) => {
+        if (cancelled || !payload) return
+        setGlobalUpdatedAt(payload.updatedAt)
+        setGlobalUpdatedBy(payload.updatedBy)
+        setRules(readTextRedactionRules())
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const activeCount = useMemo(() => (
     rules.filter((rule) => rule.enabled && rule.keyword.trim()).length
@@ -4238,6 +4257,28 @@ function AdminTextRedactionPanel() {
     setNotice(next ? '已切换到隐藏模式，规则继续生效' : '已切换到正常模式，全部规则保留未删除')
   }
 
+  const pushGlobalRules = async () => {
+    if (rules.length === 0) {
+      setNotice('当前没有可推送的规则')
+      return
+    }
+    const ok = window.confirm(
+      `将当前 ${rules.length} 条规则推送到后端？\n所有用户登录后会用这套规则覆盖本地，达到全员强制替换。`,
+    )
+    if (!ok) return
+    setPushing(true)
+    try {
+      const payload = await pushTextRedactionRulesToBackend(rules)
+      setGlobalUpdatedAt(payload.updatedAt)
+      setGlobalUpdatedBy(payload.updatedBy)
+      setNotice(`已推送 ${payload.rules.length} 条规则，其他用户下次进入应用时同步`)
+    } catch (e: any) {
+      setNotice(e?.message ? `推送失败: ${e.message}` : '推送失败')
+    } finally {
+      setPushing(false)
+    }
+  }
+
   return (
     <section
       data-text-redaction-ignore="true"
@@ -4304,6 +4345,18 @@ function AdminTextRedactionPanel() {
             <Save className="h-3.5 w-3.5" />
             保存规则
           </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={pushGlobalRules}
+              disabled={pushing || rules.length === 0}
+              title="把当前规则推送到后端，所有用户登录后会同步覆盖本地"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-amber-500/45 bg-amber-500/15 px-3 text-[12px] font-semibold text-amber-200 transition-colors hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {pushing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+              强制所有人替换
+            </button>
+          )}
           <button
             type="button"
             onClick={clearRules}
@@ -4320,7 +4373,15 @@ function AdminTextRedactionPanel() {
       <div className="space-y-4 p-4">
         <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[12px] leading-5 text-cyan-100">
           替换会立即作用于页面里的普通文本、标题提示和占位提示；不会改写输入框内容，避免误保存真实数据。
+          命中关键词的文本框会整体模糊（不改 value，仅视觉遮蔽）。
         </div>
+
+        {isAdmin && globalUpdatedAt && (
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[12px] leading-5 text-amber-100">
+            全员规则最后更新：{formatAbsolute(globalUpdatedAt)}{globalUpdatedBy ? ` · 由 ${globalUpdatedBy}` : ''}
+            <span className="ml-1 text-amber-200/70">（其他用户下次进入应用时同步）</span>
+          </div>
+        )}
 
         <form
           className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"

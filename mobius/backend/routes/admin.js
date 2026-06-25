@@ -1055,6 +1055,35 @@ router.post('/settings/light-model-api/test', adminAuth, async (req, res) => {
   }
 });
 
+// ── 文字替换隐藏: 全员强制规则 (管理员推送, 所有登录用户可读) ──
+//   GET  任意登录用户可读 — 前端 runtime 启动时拉一次同步本地.
+//   PUT  仅管理员 — 把当前规则覆盖推送到后端, 全员下次进入应用时同步.
+const { auth } = require('../middleware/auth');
+
+router.get('/text-redaction/global', auth, (req, res) => {
+  try {
+    res.json(adminSettings.getTextRedactionGlobal());
+  } catch (e) {
+    res.status(500).json({ error: e?.message || String(e) });
+  }
+});
+
+router.put('/text-redaction/global', adminAuth, (req, res) => {
+  try {
+    const rules = Array.isArray(req.body?.rules) ? req.body.rules : [];
+    const result = adminSettings.setTextRedactionGlobal({ rules, adminUserId: req.user.id });
+    AdminAuditLog.record({
+      adminId: req.user.id,
+      action: 'update',
+      resourceType: 'text-redaction',
+      resourceId: 'global',
+    });
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: e?.message || String(e) });
+  }
+});
+
 // ── Proxychains 配置文件直编: 系统 /etc/proxychains.conf + 模型 ~/proxy_claude.conf ──
 // 直接读写两个文件本身, 不引入新落盘路径, 不加 enable 开关 / availability 检测.
 const PROXYCHAINS_SYSTEM_PATH = '/etc/proxychains.conf';

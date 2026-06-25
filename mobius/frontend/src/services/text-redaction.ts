@@ -15,6 +15,10 @@ export const TEXT_REDACTION_RULES_EVENT = 'mobius:text-redaction-rules-changed'
 export const TEXT_REDACTION_ENABLED_STORAGE_KEY = 'mobius:text-redaction-enabled'
 export const TEXT_REDACTION_ENABLED_EVENT = 'mobius:text-redaction-enabled-changed'
 export const TEXT_REDACTION_IGNORE_SELECTOR = '[data-text-redaction-ignore="true"]'
+export const TEXT_REDACTION_GLOBAL_CACHE_KEY = 'mobius:text-redaction-global-cache'
+export const TEXT_REDACTION_GLOBAL_SYNC_EVENT = 'mobius:text-redaction-global-synced'
+export const TEXT_REDACTION_GLOBAL_API_PATH = '/api/admin/text-redaction/global'
+export const TEXT_REDACTION_MASK_CLASS = 'mobius-text-redaction-mask'
 
 type TextNodeState = {
   original: string
@@ -362,6 +366,118 @@ export function writeTextRedactionEnabled(enabled: boolean) {
   return enabled
 }
 
+// ── 全员规则同步 (管理员推送到后端, 当前用户 runtime 启动时拉一次覆盖本地) ──
+
+export type TextRedactionGlobalPayload = {
+  rules: TextRedactionRule[]
+  updatedAt: string | null
+  updatedBy: string | null
+}
+
+async function fetchTextRedactionGlobalFromBackend(): Promise<TextRedactionGlobalPayload | null> {
+  try {
+    const token = window.localStorage.getItem('cc-token')
+    const headers: Record<string, string> = {}
+    if (token) headers.Authorization = `Bearer ${token}`
+    const res = await fetch(TEXT_REDACTION_GLOBAL_API_PATH, { headers })
+    if (!res.ok) return null
+    const data = await res.json().catch(() => null)
+    if (!data || typeof data !== 'object') return null
+    const rawRules = Array.isArray(data.rules) ? data.rules : []
+    const rules = rawRules
+      .map((item: unknown, index: number) => normalizeRule(item, index))
+      .filter((item): item is TextRedactionRule => !!item)
+    return {
+      rules,
+      updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : null,
+      updatedBy: typeof data.updatedBy === 'string' ? data.updatedBy : null,
+    }
+  } catch (_) {
+    return null
+  }
+}
+
+function readTextRedactionGlobalCache(): { updatedAt: string | null } | null {
+  if (!canUseLocalStorage()) return null
+  try {
+    const raw = window.localStorage.getItem(TEXT_REDACTION_GLOBAL_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return { updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null }
+  } catch (_) {
+    return null
+  }
+}
+
+function writeTextRedactionGlobalCache(updatedAt: string | null) {
+  if (!canUseLocalStorage()) return
+  try {
+    window.localStorage.setItem(
+      TEXT_REDACTION_GLOBAL_CACHE_KEY,
+      JSON.stringify({ updatedAt }),
+    )
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+/**
+ * 启动时调用一次. 拉取后端全员规则:
+ *   - 如果后端没有规则 (rules 为空) → 啥也不做, 保留用户本地规则.
+ *   - 如果后端有规则, 且 updatedAt 与本地缓存不同 → 用后端规则覆盖本地 STORAGE_KEY,
+ *     并更新缓存. 同时确保 enabled=true.
+ * 返回拉取到的 payload, 调用方可用于 UI 展示 updatedAt.
+ */
+export async function syncTextRedactionGlobalOnStartup(): Promise<TextRedactionGlobalPayload | null> {
+  const payload = await fetchTextRedactionGlobalFromBackend()
+  if (!payload) return null
+  if (payload.rules.length === 0) return payload
+
+  const cache = readTextRedactionGlobalCache()
+  if (cache && cache.updatedAt && cache.updatedAt === payload.updatedAt) {
+    return payload
+  }
+
+  writeTextRedactionRules(payload.rules)
+  writeTextRedactionEnabled(true)
+  writeTextRedactionGlobalCache(payload.updatedAt)
+  try { window.dispatchEvent(new Event(TEXT_REDACTION_GLOBAL_SYNC_EVENT)) } catch (_) { /* ignore */ }
+  return payload
+}
+
+/**
+ * 管理员: 把当前本地规则推送到后端, 全员下次启动时同步.
+ */
+export async function pushTextRedactionRulesToBackend(rules: TextRedactionRule[]): Promise<TextRedactionGlobalPayload> {
+  const token = window.localStorage.getItem('cc-token')
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) headers.Authorization = `Bearer ${token}`
+  const res = await fetch(TEXT_REDACTION_GLOBAL_API_PATH, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ rules }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((data as { error?: string })?.error || `HTTP ${res.status}`)
+  }
+  const rawRules = Array.isArray((data as { rules?: unknown[] })?.rules) ? (data as { rules: unknown[] }).rules : []
+  const normalized = rawRules
+    .map((item: unknown, index: number) => normalizeRule(item, index))
+    .filter((item): item is TextRedactionRule => !!item)
+  const payload: TextRedactionGlobalPayload = {
+    rules: normalized,
+    updatedAt: typeof (data as { updatedAt?: unknown }).updatedAt === 'string'
+      ? (data as { updatedAt: string }).updatedAt : null,
+    updatedBy: typeof (data as { updatedBy?: unknown }).updatedBy === 'string'
+      ? (data as { updatedBy: string }).updatedBy : null,
+  }
+  writeTextRedactionGlobalCache(payload.updatedAt)
+  try { window.dispatchEvent(new Event(TEXT_REDACTION_GLOBAL_SYNC_EVENT)) } catch (_) { /* ignore */ }
+  return payload
+}
+
 function elementIgnoresRedaction(element: Element) {
   if (element.closest(TEXT_REDACTION_IGNORE_SELECTOR)) return true
 
@@ -454,6 +570,78 @@ export function startTextRedactionRuntime() {
     enabled = readTextRedactionEnabled()
     rules = enabled ? activeRules(readTextRedactionRules()) : []
     applySubtree(document.body)
+    applyMaskScan(document.body)
+  }
+
+  // ── 文本框 mask: textarea / 文本 input 的 value 命中关键词时, 整框视觉模糊. ──
+  // 不改 value (避免污染表单提交), 只用 CSS filter: blur().
+  const MASKABLE_INPUT_TYPES = new Set(['text', 'search', 'url', 'email', 'tel', 'number', ''])
+  const maskedElements = new Set<HTMLElement>()
+
+  function ensureMaskStyleElement() {
+    const STYLE_ID = 'mobius-text-redaction-mask-style'
+    if (document.getElementById(STYLE_ID)) return
+    const style = document.createElement('style')
+    style.id = STYLE_ID
+    style.textContent = `
+.${TEXT_REDACTION_MASK_CLASS} {
+  filter: blur(5px);
+  transition: filter .12s ease-in-out;
+}
+.${TEXT_REDACTION_MASK_CLASS}:focus {
+  filter: blur(3px);
+}
+.${TEXT_REDACTION_MASK_CLASS}::placeholder {
+  filter: none;
+}
+`.trim()
+    document.head.appendChild(style)
+  }
+
+  function isMaskableElement(element: Element): element is HTMLElement {
+    if (!(element instanceof HTMLElement)) return false
+    if (element.closest(TEXT_REDACTION_IGNORE_SELECTOR)) return false
+    const tag = element.tagName.toUpperCase()
+    if (tag === 'TEXTAREA') return true
+    if (tag === 'INPUT') {
+      const type = (element.getAttribute('type') || '').toLowerCase()
+      return MASKABLE_INPUT_TYPES.has(type)
+    }
+    return false
+  }
+
+  function elementNeedsMask(element: HTMLElement) {
+    if (!enabled || rules.length === 0) return false
+    const value = element.value || ''
+    if (!value) return false
+    for (const rule of rules) {
+      if (!rule.keyword) continue
+      if (value.includes(rule.keyword)) return true
+    }
+    return false
+  }
+
+  const applyMaskToElement = (element: HTMLElement) => {
+    if (!isMaskableElement(element)) return
+    if (elementNeedsMask(element)) {
+      if (!element.classList.contains(TEXT_REDACTION_MASK_CLASS)) {
+        element.classList.add(TEXT_REDACTION_MASK_CLASS)
+      }
+      maskedElements.add(element)
+    } else if (element.classList.contains(TEXT_REDACTION_MASK_CLASS)) {
+      element.classList.remove(TEXT_REDACTION_MASK_CLASS)
+    }
+  }
+
+  const applyMaskScan = (root: Node) => {
+    if (root.nodeType !== Node.ELEMENT_NODE && root !== document.body) return
+    const scope = root === document.body ? document.body : (root as Element)
+    if (!(scope instanceof Element)) return
+    const candidates = scope.querySelectorAll<HTMLElement>(
+      'textarea, input[type="text"], input[type="search"], input[type="url"], input[type="email"], input[type="tel"], input[type="number"], input:not([type])',
+    )
+    candidates.forEach(applyMaskToElement)
+    if (isMaskableElement(scope)) applyMaskToElement(scope)
   }
 
   const observer = new MutationObserver((mutations) => {
@@ -488,16 +676,28 @@ export function startTextRedactionRuntime() {
     }
   }
 
+  const handleInput = (event: Event) => {
+    const target = event.target
+    if (target instanceof HTMLElement) applyMaskToElement(target)
+  }
+
+  ensureMaskStyleElement()
   window.addEventListener(TEXT_REDACTION_RULES_EVENT, applyAll)
   window.addEventListener(TEXT_REDACTION_ENABLED_EVENT, applyAll)
+  window.addEventListener(TEXT_REDACTION_GLOBAL_SYNC_EVENT, applyAll)
   window.addEventListener('storage', handleStorage)
+  document.body.addEventListener('input', handleInput, true)
   applyAll()
+  // 拉一次后端全员规则. 启动时调用, 不轮询. 失败/无规则都不影响本地.
+  void syncTextRedactionGlobalOnStartup().catch(() => {})
 
   return () => {
     observer.disconnect()
     window.removeEventListener(TEXT_REDACTION_RULES_EVENT, applyAll)
     window.removeEventListener(TEXT_REDACTION_ENABLED_EVENT, applyAll)
+    window.removeEventListener(TEXT_REDACTION_GLOBAL_SYNC_EVENT, applyAll)
     window.removeEventListener('storage', handleStorage)
+    document.body.removeEventListener('input', handleInput, true)
 
     for (const node of trackedTexts) {
       const state = textStates.get(node)
@@ -514,5 +714,10 @@ export function startTextRedactionRuntime() {
         }
       }
     }
+
+    for (const element of maskedElements) {
+      element.classList.remove(TEXT_REDACTION_MASK_CLASS)
+    }
+    maskedElements.clear()
   }
 }

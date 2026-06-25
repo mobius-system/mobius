@@ -23,18 +23,18 @@
       <span>Self-Cognition</span>
     </a>
     <div class="nav-links" aria-label="主要区域">
-      <a href="#paper-section">论文</a>
-      <a href="#competitor-section">竞品</a>
-      <a href="#evolution-section">自进化</a>
+      <a href="#paper-section">论文调研</a>
+      <a href="#competitor-section">竞品调研</a>
+      <a href="#evolution-section">自进化历史</a>
     </div>
     <button class="nav-refresh" id="refreshBtn" type="button">刷新</button>
   </nav>
   <nav class="section-switcher" id="sectionSwitcher" aria-label="Section switcher">
-    <a class="section-link is-active" href="#hero" data-section-target="hero"><span>◎</span><em>Hero</em></a>
-    <a class="section-link" href="#paper-section" data-section-target="paper-section"><span>▤</span><em>论文</em></a>
-    <a class="section-link" href="#competitor-section" data-section-target="competitor-section"><span>◆</span><em>竞品</em></a>
-    <a class="section-link" href="#evolution-section" data-section-target="evolution-section"><span>⟲</span><em>自进化</em></a>
-    <a class="section-link" href="#finale" data-section-target="finale"><span>✦</span><em>Finale</em></a>
+    <a class="section-link is-active" href="#hero" data-section-target="hero"><span>◎</span><em>首页</em></a>
+    <a class="section-link" href="#paper-section" data-section-target="paper-section"><span>▤</span><em>论文调研</em></a>
+    <a class="section-link" href="#competitor-section" data-section-target="competitor-section"><span>◆</span><em>竞品调研</em></a>
+    <a class="section-link" href="#evolution-section" data-section-target="evolution-section"><span>⟲</span><em>自进化历史</em></a>
+    <a class="section-link" href="#finale" data-section-target="finale"><span>✦</span><em>尾页</em></a>
   </nav>
 
   <main>
@@ -292,10 +292,15 @@
 
     <section class="finale section-dark" id="finale" data-nav-theme="dark" data-section="paper">
       <canvas class="finale-canvas" id="finaleCanvas" aria-hidden="true"></canvas>
-      <div class="section-inner narrow reveal">
-        <p class="eyebrow">Finale</p>
-        <h2>留下最必要的两个入口，让系统继续生长。</h2>
-        <p>入口路由保持为 <code>/extension/self-cognition/</code>。页面只渲染论文跟踪和竞品跟踪两个 tab，所有数据来自精简后的 handler。</p>
+      <div class="section-inner narrow reveal finale-content">
+        <p class="eyebrow">Research log</p>
+        <h2><span class="gradient-text">雷达继续转动。</span></h2>
+        <p>这里不做结论，只保留下一次回访时需要接上的线索：论文、竞品，以及系统自己留下的改动痕迹。</p>
+        <div class="finale-status" id="finaleStatus"></div>
+        <div class="hero-actions">
+          <a class="primary-button" href="#hero">回到首页</a>
+          <button class="glass-button" id="finaleRefreshBtn" type="button">刷新扫描</button>
+        </div>
       </div>
     </section>
   </main>

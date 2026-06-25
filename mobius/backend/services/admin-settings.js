@@ -82,6 +82,11 @@ const DEFAULTS = Object.freeze({
     apiKey: '',
     model: LIGHT_MODEL_API_DEFAULT_MODEL,
   },
+  textRedaction: {
+    rules: [],
+    updatedAt: null,
+    updatedBy: null,
+  },
 })
 
 function defaultsClone() {
@@ -355,6 +360,75 @@ function normalizeLightModelApiModel(value) {
   return trimmed
 }
 
+const TEXT_REDACTION_MAX_RULES = 500
+const TEXT_REDACTION_MAX_KEYWORD_LEN = 200
+const TEXT_REDACTION_MAX_REPLACEMENT_LEN = 200
+
+function parseTextRedactionEnabled(value) {
+  if (value === null || value === undefined || value === '') return true
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  const normalized = String(value).trim().toLowerCase()
+  if (['false', '0', 'no', 'off', 'disabled', '停用', '禁用', '否'].includes(normalized)) return false
+  return true
+}
+
+function normalizeTextRedactionRule(value, index) {
+  if (!isPlainObject(value)) return null
+  const keyword = String(value.keyword ?? '').trim()
+  if (!keyword) return null
+  if (keyword.length > TEXT_REDACTION_MAX_KEYWORD_LEN) {
+    throw new Error(`关键词长度不能超过 ${TEXT_REDACTION_MAX_KEYWORD_LEN} 个字符`)
+  }
+  if (keyword.includes('\0')) throw new Error('关键词包含非法字符')
+  const replacement = String(value.replacement ?? '').slice(0, TEXT_REDACTION_MAX_REPLACEMENT_LEN)
+  if (replacement.includes('\0')) throw new Error('替换词包含非法字符')
+  const id = typeof value.id === 'string' && value.id.trim()
+    ? value.id.trim().slice(0, 64)
+    : `rule-${index}`
+  return { id, keyword, replacement, enabled: parseTextRedactionEnabled(value.enabled) }
+}
+
+function normalizeTextRedactionRulesForRead(value) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  for (let i = 0; i < value.length && out.length < TEXT_REDACTION_MAX_RULES; i += 1) {
+    try {
+      const rule = normalizeTextRedactionRule(value[i], i)
+      if (rule) out.push(rule)
+    } catch {}
+  }
+  return out
+}
+
+function normalizeTextRedactionRulesForWrite(value) {
+  if (!Array.isArray(value)) throw new Error('rules 必须是数组')
+  if (value.length > TEXT_REDACTION_MAX_RULES) {
+    throw new Error(`规则数量不能超过 ${TEXT_REDACTION_MAX_RULES} 条`)
+  }
+  const out = []
+  const seenIds = new Set()
+  for (let i = 0; i < value.length; i += 1) {
+    const rule = normalizeTextRedactionRule(value[i], i)
+    if (!rule) continue
+    if (seenIds.has(rule.id)) rule.id = `rule-${i}`
+    seenIds.add(rule.id)
+    out.push(rule)
+  }
+  return out
+}
+
+function normalizeTextRedactionForRead(value) {
+  const obj = value && typeof value === 'object' ? value : {}
+  return {
+    rules: normalizeTextRedactionRulesForRead(obj.rules),
+    updatedAt: typeof obj.updatedAt === 'string' ? obj.updatedAt
+      : (typeof obj.updated_at === 'string' ? obj.updated_at : null),
+    updatedBy: typeof obj.updatedBy === 'string' ? obj.updatedBy
+      : (typeof obj.updated_by === 'string' ? obj.updated_by : null),
+  }
+}
+
 function normalizeLightModelApiForRead(value) {
   const obj = value && typeof value === 'object' ? value : {}
   return {
@@ -403,6 +477,9 @@ function loadSettings() {
     }
     if (parsed && typeof parsed === 'object' && parsed.lightModelApi) {
       merged.lightModelApi = normalizeLightModelApiForRead(parsed.lightModelApi)
+    }
+    if (parsed && typeof parsed === 'object' && parsed.textRedaction) {
+      merged.textRedaction = normalizeTextRedactionForRead(parsed.textRedaction)
     }
     return merged
   } catch (e) {
@@ -561,6 +638,21 @@ function setLightModelApi(payload) {
   return maskLightModelApi(next.lightModelApi)
 }
 
+function getTextRedactionGlobal() {
+  return normalizeTextRedactionForRead(loadSettings().textRedaction)
+}
+
+function setTextRedactionGlobal({ rules, adminUserId }) {
+  const next = loadSettings()
+  next.textRedaction = {
+    rules: normalizeTextRedactionRulesForWrite(rules || []),
+    updatedAt: new Date().toISOString(),
+    updatedBy: adminUserId || null,
+  }
+  writeSettings(next)
+  return normalizeTextRedactionForRead(next.textRedaction)
+}
+
 module.exports = {
   MODEL_PROMPT_LIMIT_WINDOW_HOURS,
   MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
@@ -586,4 +678,6 @@ module.exports = {
   getLightModelApi,
   getLightModelApiMasked,
   setLightModelApi,
+  getTextRedactionGlobal,
+  setTextRedactionGlobal,
 }

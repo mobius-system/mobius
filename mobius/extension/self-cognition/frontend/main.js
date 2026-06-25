@@ -1,5 +1,6 @@
 import { extCall } from '/extension/_sdk/ext.js';
 import { initLogoBackdrop } from './mobius3d.js';
+import { initMobiusRing } from './mobius-ring.js';
 
 const labels = {
   category: {
@@ -28,6 +29,7 @@ const state = {
   paperClusters: [],
   clusterPapers: {},
   topPicks: [],
+  radarTopPicks: [],
   feedbacks: {},
   feedbackPending: {},
   mockClusters: null,
@@ -56,6 +58,7 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 document.documentElement.dataset.section = 'paper';
+let heroRing = null;
 
 function loadLocalState() {
   try {
@@ -306,6 +309,16 @@ async function loadPaperClusters() {
     state.backendStatus.clusters = 'mock';
     await preloadClusterLeaders();
   }
+  await loadRadarTopPicks();
+}
+
+async function loadRadarTopPicks() {
+  try {
+    const result = await call({ action: 'get_top_picks', limit: 6 });
+    state.radarTopPicks = (result.items || result.papers || []).map((item) => normalizePaper(item, item.cluster_label || item.cluster || ''));
+  } catch {
+    state.radarTopPicks = [];
+  }
 }
 
 async function preloadClusterLeaders() {
@@ -427,6 +440,36 @@ function evolutionProjects() {
   return [...ids].sort();
 }
 
+function radarSummary(item, fallback = '') {
+  return shortText(item.abstract || item.fetched_description || item.reason || item.diff_summary || item.summary || fallback, 138);
+}
+
+function buildRadarDiscoveries() {
+  const paperItems = (state.radarTopPicks.length ? state.radarTopPicks : state.topPicks || []).slice(0, 4).map((item) => ({
+    type: 'paper',
+    title: item.title,
+    summary: radarSummary(item, '高优先级论文线索'),
+    keyword: (item.matched_keywords || item.tags || ['论文'])[0] || '论文',
+  }));
+  const productItems = (state.competitors.official || []).slice(0, 3).map((item) => ({
+    type: 'product',
+    title: item.name,
+    summary: radarSummary(item, '正在跟踪的竞品'),
+    keyword: (item.tags || [labels.category[item.category] || '竞品'])[0] || '竞品',
+  }));
+  const l1Items = (state.evolution.feeds.L1 || []).slice(0, 3).map((item) => ({
+    type: 'evolution',
+    title: item.summary,
+    summary: radarSummary(item, 'L1 自进化记录'),
+    keyword: 'L1',
+  }));
+  return [...paperItems, ...productItems, ...l1Items].slice(0, 10);
+}
+
+function updateRadarDiscoveries() {
+  if (heroRing?.updateDiscoveries) heroRing.updateDiscoveries(buildRadarDiscoveries());
+}
+
 async function loadAll() {
   try {
     const data = await call({ action: 'bootstrap', skip_first_scan: true, limit: 200 });
@@ -452,6 +495,8 @@ function render() {
   renderPapers();
   renderCompetitors();
   renderEvolution();
+  renderTail();
+  updateRadarDiscoveries();
   setTab(state.tab);
 }
 
@@ -722,6 +767,23 @@ function renderEvolution() {
   if (active === 'L1') renderEvolutionL1();
   if (active === 'L2') renderEvolutionL2();
   if (active === 'L3') renderEvolutionL3();
+}
+
+function renderTail() {
+  const papers = state.papers.total || Object.values(state.clusterPapers).flat().length || 0;
+  const tracked = state.competitors.official?.length || 0;
+  const l1 = state.evolution.feeds.L1?.length || 0;
+  $('finaleStatus').innerHTML = [
+    ['当前时间', new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date())],
+    ['论文线索', papers],
+    ['跟踪竞品', tracked],
+    ['L1 改动', l1],
+  ].map(([label, value]) => `
+    <div class="finale-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `).join('');
 }
 
 function renderEvolutionProjectFilter() {
@@ -1071,25 +1133,45 @@ function bindScrollEffects() {
 
   const nav = $('topNav');
   const sectionLinks = [...document.querySelectorAll('.section-link')];
-  const themeObserver = new IntersectionObserver((entries) => {
-    const visible = entries
-      .filter((entry) => entry.isIntersecting)
-      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-    if (visible) {
-      nav.dataset.theme = visible.target.dataset.navTheme || 'light';
-      document.documentElement.dataset.section = visible.target.dataset.section || 'paper';
-      sectionLinks.forEach((link) => {
-        link.classList.toggle('is-active', link.dataset.sectionTarget === visible.target.id);
-      });
+  const trackedSections = [...document.querySelectorAll('main > section[id]')];
+  let ticking = false;
+  const updateActiveSection = () => {
+    ticking = false;
+    const viewportAnchor = window.innerHeight * 0.42;
+    let active = trackedSections[0];
+    let best = Number.POSITIVE_INFINITY;
+    for (const section of trackedSections) {
+      const rect = section.getBoundingClientRect();
+      const topDistance = Math.abs(rect.top - viewportAnchor);
+      const centerDistance = Math.abs((rect.top + rect.bottom) / 2 - window.innerHeight / 2);
+      const distance = rect.top <= viewportAnchor && rect.bottom >= viewportAnchor
+        ? topDistance * 0.35
+        : centerDistance;
+      if (distance < best) {
+        best = distance;
+        active = section;
+      }
     }
-  }, { threshold: [0.35, 0.55, 0.75] });
-  document.querySelectorAll('[data-nav-theme]').forEach((section) => themeObserver.observe(section));
+    nav.dataset.theme = active.dataset.navTheme || 'dark';
+    document.documentElement.dataset.section = active.dataset.section || 'paper';
+    sectionLinks.forEach((link) => {
+      link.classList.toggle('is-active', link.dataset.sectionTarget === active.id);
+    });
+  };
+  const requestActiveSectionUpdate = () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(updateActiveSection);
+  };
+  window.addEventListener('scroll', requestActiveSectionUpdate, { passive: true });
+  window.addEventListener('resize', requestActiveSectionUpdate);
+  updateActiveSection();
 
-  const hero = initLogoBackdrop($('heroCanvas'), 'hero');
+  heroRing = initMobiusRing($('heroCanvas'));
   const finale = initLogoBackdrop($('finaleCanvas'), 'finale');
   const sceneObserver = new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
-      const api = entry.target.id === 'heroCanvas' ? hero : finale;
+      const api = entry.target.id === 'heroCanvas' ? heroRing : finale;
       if (!api) return;
       if (entry.isIntersecting) api.start();
       else api.pause();
@@ -1101,6 +1183,7 @@ function bindScrollEffects() {
 
 function bindEvents() {
   $('refreshBtn').addEventListener('click', loadAll);
+  $('finaleRefreshBtn').addEventListener('click', loadAll);
   $('arxivScanForm').addEventListener('submit', runArxivScan);
   $('productScanForm').addEventListener('submit', runProductScan);
   $('paperKeywordsForm').addEventListener('submit', (event) => {
