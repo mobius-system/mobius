@@ -1279,6 +1279,23 @@ function renderProductDetail(id) {
   return true;
 }
 
+function shouldSyncReadMark(mark) {
+  return !['boost', 'exclude', 'fusion'].includes(mark || '');
+}
+
+function syncOpenedRead(kind, id, mark = '') {
+  if (!shouldSyncReadMark(mark)) return;
+  if (kind === 'paper') {
+    call({ action: 'mark_paper', id, mark: 'read', note: '用户打开详情页自动标记已读' }).catch(() => {});
+    return;
+  }
+  call({ action: 'mark_product', id, mark: 'read', note: '用户打开详情页自动标记已读' })
+    .then((result) => {
+      state.competitors = result.competitors || state.competitors;
+    })
+    .catch(() => {});
+}
+
 function openPaperDetail(id) {
   const item = findPaperById(id);
   if (!item) return;
@@ -1286,6 +1303,7 @@ function openPaperDetail(id) {
   local.read = true;
   saveLocalState();
   if (renderPaperDetail(id) && !$('detailDialog').open) $('detailDialog').showModal();
+  syncOpenedRead('paper', id, item.mark || '');
   renderPapers();
   updateRadarDiscoveries();
 }
@@ -1297,6 +1315,7 @@ function openProductDetail(id) {
   local.read = true;
   saveLocalState();
   if (renderProductDetail(id) && !$('detailDialog').open) $('detailDialog').showModal();
+  syncOpenedRead('product', id, item.mark || '');
   renderCompetitors();
   updateRadarDiscoveries();
 }
