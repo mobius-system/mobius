@@ -1,5 +1,6 @@
 const express = require('express');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const multer = require('multer');
 const { auth, downloadAuth } = require('../middleware/auth');
@@ -40,12 +41,19 @@ function isMobiusUploadPath(absPath) {
   return resolved === root || resolved.startsWith(root + path.sep);
 }
 
+function isSystemTempPath(absPath) {
+  const resolved = path.resolve(absPath);
+  const tmpRoot = path.resolve(os.tmpdir());
+  return resolved === tmpRoot || resolved.startsWith(tmpRoot + path.sep);
+}
+
 function canDownloadPath(req, absPath) {
   const userRoot = path.resolve(req.user.work_dir);
   return absPath === userRoot
     || absPath.startsWith(userRoot + path.sep)
     || isExtensionUserDataPath(absPath, req.user.id)
-    || isMobiusUploadPath(absPath);
+    || isMobiusUploadPath(absPath)
+    || isSystemTempPath(absPath);
 }
 
 router.post('/upload', auth, upload.single('file'), (req, res) => {
