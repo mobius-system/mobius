@@ -152,24 +152,6 @@ function createEmployeeAccount(input) {
   };
 }
 
-function isoDateOnly(date) {
-  const yyyy = date.getUTCFullYear();
-  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(date.getUTCDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function recentUtcDays(count = 7) {
-  const total = Math.max(1, Math.min(Number(count) || 7, 31));
-  const today = new Date();
-  const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  return Array.from({ length: total }, (_, index) => {
-    const d = new Date(end);
-    d.setUTCDate(end.getUTCDate() - (total - 1 - index));
-    return isoDateOnly(d);
-  });
-}
-
 function normalizeBackend(value) {
   return BACKEND_ALIASES.get(String(value || '').trim()) || null;
 }
@@ -615,62 +597,6 @@ router.get('/stats', adminAuth, (req, res) => {
     prompt_pastes_5h: promptStats.total,
     prompt_pastes_by_backend_5h: promptStats.by_backend,
   });
-});
-
-router.get('/session-activity', adminAuth, (req, res) => {
-  try {
-    const days = recentUtcDays(7);
-    const startIso = `${days[0]}T00:00:00.000Z`;
-    const users = Users.listForAdmin({ includeDeleted: false });
-    const rows = db.prepare(`
-      SELECT s.user_id,
-             substr(s.last_active, 1, 10) AS day,
-             COUNT(*) AS count
-      FROM sessions_v2 s
-      JOIN users u ON u.id = s.user_id
-      WHERE s.status = 'active'
-        AND s.last_active >= ?
-        AND (u.deleted_at IS NULL OR u.deleted_at = '')
-      GROUP BY s.user_id, day
-      ORDER BY day ASC, s.user_id ASC
-    `).all(startIso);
-    const daySet = new Set(days);
-    const counts = new Map();
-    for (const row of rows) {
-      if (!row?.user_id || !daySet.has(row.day)) continue;
-      counts.set(`${row.user_id}:${row.day}`, Number(row.count || 0));
-    }
-    const shapedUsers = users.map((user) => {
-      const series = days.map((day) => ({
-        date: day,
-        count: counts.get(`${user.id}:${day}`) || 0,
-      }));
-      const total = series.reduce((sum, item) => sum + item.count, 0);
-      return {
-        id: user.id,
-        display_name: user.display_name || user.id,
-        role: user.role,
-        group_id: user.group_id || null,
-        group_name: user.group_name || '',
-        total,
-        peak: Math.max(0, ...series.map((item) => item.count)),
-        series,
-      };
-    }).sort((a, b) => {
-      if (b.total !== a.total) return b.total - a.total;
-      return String(a.display_name || a.id).localeCompare(String(b.display_name || b.id), 'zh-Hans-CN');
-    });
-    res.json({
-      days: days.map((date) => ({ date })),
-      users: shapedUsers,
-      total: shapedUsers.reduce((sum, user) => sum + user.total, 0),
-      peak: Math.max(0, ...shapedUsers.map((user) => user.peak)),
-      window_days: days.length,
-      metric: 'active_sessions_by_last_active_day',
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message || String(e) });
-  }
 });
 
 router.get('/audit-log', adminAuth, (req, res) => {

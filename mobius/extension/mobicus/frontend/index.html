@@ -72,22 +72,20 @@
 
     /* ====== Side rail (deck mode) ====== */
     .deck {
-      display: block;
+      display: grid;
+      grid-template-columns: 1fr 220px;
+      gap: 32px;
+      align-items: start;
     }
     .deck-rail {
-      position: fixed;
-      right: 18px;
-      top: 96px;
-      width: 200px;
-      max-height: calc(100vh - 116px);
-      overflow: auto;
-      padding: 16px 12px;
+      position: sticky; top: 96px;
+      padding: 18px 14px;
       border: 1px solid var(--line);
       border-radius: 18px;
-      background: rgba(255,255,255,.86);
-      backdrop-filter: blur(10px);
-      box-shadow: 0 10px 30px rgba(29, 54, 88, .08);
-      z-index: 20;
+      background: rgba(255,255,255,.7);
+      backdrop-filter: blur(8px);
+      max-height: calc(100vh - 116px);
+      overflow: auto;
     }
     .deck-rail h4 {
       font-size: 11px; font-weight: 850; letter-spacing: .12em;
@@ -680,10 +678,9 @@
     }
 
     /* ====== Responsive ====== */
-    @media (max-width: 1280px) {
-      .deck-rail { display: none; }
-    }
     @media (max-width: 1080px) {
+      .deck { grid-template-columns: 1fr; }
+      .deck-rail { position: relative; top: auto; max-height: none; }
       .cap-grid, .value-grid { grid-template-columns: repeat(2, 1fr); }
       .five-lanes { grid-template-columns: repeat(2, 1fr); }
       .roles { grid-template-columns: repeat(2, 1fr); }

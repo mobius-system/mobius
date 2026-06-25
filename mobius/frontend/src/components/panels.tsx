@@ -279,30 +279,6 @@ type AdminUserGroup = {
   is_default?: boolean
 }
 
-type AdminSessionActivityPoint = {
-  date: string
-  count: number
-}
-
-type AdminSessionActivityUser = {
-  id: string
-  display_name: string
-  role?: string
-  group_name?: string
-  total: number
-  peak: number
-  series: AdminSessionActivityPoint[]
-}
-
-type AdminSessionActivityPayload = {
-  days: Array<{ date: string }>
-  users: AdminSessionActivityUser[]
-  total: number
-  peak: number
-  window_days: number
-  metric: string
-}
-
 type EmployeeFormState = {
   id: string
   display_name: string
@@ -321,33 +297,6 @@ function formatPromptLength(value: unknown) {
   const n = Number(value)
   if (!Number.isFinite(n) || n <= 0) return '0'
   return n.toLocaleString('zh-CN', { maximumFractionDigits: 1 })
-}
-
-function shortDayLabel(date: string) {
-  if (!date || date.length < 10) return date || '-'
-  return date.slice(5).replace('-', '/')
-}
-
-function activityLinePoints(series: AdminSessionActivityPoint[], maxValue: number) {
-  const width = 420
-  const top = 8
-  const bottom = 54
-  const denominator = Math.max(1, maxValue)
-  if (series.length <= 1) {
-    const value = series[0]?.count || 0
-    const y = bottom - (value / denominator) * (bottom - top)
-    return { points: `0,${y} ${width},${y}`, dots: [{ x: width / 2, y, count: value, date: series[0]?.date || '' }] }
-  }
-  const step = width / (series.length - 1)
-  const dots = series.map((item, index) => {
-    const x = index * step
-    const y = bottom - (toCount(item.count) / denominator) * (bottom - top)
-    return { x, y, count: toCount(item.count), date: item.date }
-  })
-  return {
-    points: dots.map((dot) => `${dot.x.toFixed(2)},${dot.y.toFixed(2)}`).join(' '),
-    dots,
-  }
 }
 
 function parseBulkEmployees(text: string) {
@@ -388,7 +337,6 @@ function parseBulkEmployees(text: string) {
 function AdminUsersPanel() {
   const [users, setUsers] = useState<AdminUserRow[]>([])
   const [groups, setGroups] = useState<AdminUserGroup[]>([])
-  const [activity, setActivity] = useState<AdminSessionActivityPayload | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -407,14 +355,12 @@ function AdminUsersPanel() {
   const refresh = async (quiet = false) => {
     if (!quiet) setLoading(true)
     try {
-      const [userData, groupData, activityData] = await Promise.all([
+      const [userData, groupData] = await Promise.all([
         api('/api/admin/users'),
         api('/api/admin/user-groups'),
-        api('/api/admin/session-activity'),
       ])
       setUsers(Array.isArray(userData) ? userData : [])
       setGroups(Array.isArray(groupData) ? groupData : [])
-      setActivity(activityData && Array.isArray(activityData.users) ? activityData : null)
       setError('')
     } catch (e: any) {
       setError(e?.message || String(e))
@@ -479,10 +425,6 @@ function AdminUsersPanel() {
   const totalEmployees = activeUsers.length
   const adminCount = activeUsers.filter((u) => u.role === 'admin').length
   const totalGroups = groups.length
-  const activityUsers = activity?.users || []
-  const activityDays = activity?.days || []
-  const activityMax = Math.max(1, activity?.peak || 0)
-  const activityTotal = toCount(activity?.total)
 
   const fieldStyle = {
     background: 'var(--input-bg)',
@@ -705,107 +647,6 @@ function AdminUsersPanel() {
           <StatTile icon={<BarChart3 className="h-4 w-4 text-sky-400" />} label="Session" value={totalSessions} sub={`活跃 ${activeSessions}`} />
           <StatTile icon={<FileText className="h-4 w-4 text-amber-400" />} label="平均提示词" value={formatPromptLength(averagePromptLength)} sub="任务单 + 执行会话字数" />
           <StatTile icon={<MessageSquare className="h-4 w-4 text-violet-400" />} label="消息" value={chartRows.reduce((sum, row) => sum + row.totalMessages, 0)} sub="全部员工累计" />
-        </div>
-
-        <div
-          className="mt-4 rounded-lg border p-3"
-          data-tour="admin-session-activity-chart"
-          style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}
-        >
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h4 className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-                <Activity className="h-3.5 w-3.5 text-emerald-400" />
-                最近一周活跃 Session 曲线
-              </h4>
-              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                按用户统计每天最后活跃的 active Session
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              <span className="rounded-md border border-[var(--border-color)] px-2 py-1">7日合计 {activityTotal}</span>
-              <span className="rounded-md border border-[var(--border-color)] px-2 py-1">单日峰值 {activity?.peak || 0}</span>
-            </div>
-          </div>
-
-          {activityUsers.length === 0 ? (
-            <div className="flex h-24 items-center justify-center text-[12px]" style={{ color: 'var(--text-muted)' }}>
-              {loading ? '加载中...' : '最近一周暂无活跃 Session'}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <div className="min-w-[760px] space-y-2">
-                {activityDays.length > 0 && (
-                  <div className="grid grid-cols-[minmax(150px,220px)_minmax(360px,1fr)_86px] items-center gap-3 px-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    <span>用户</span>
-                    <div className="grid grid-cols-7">
-                      {activityDays.map((day) => (
-                        <span key={day.date} className="text-center tabular-nums">{shortDayLabel(day.date)}</span>
-                      ))}
-                    </div>
-                    <span className="text-right">7日 / 峰值</span>
-                  </div>
-                )}
-                {activityUsers.map((row) => {
-                  const line = activityLinePoints(row.series || [], activityMax)
-                  const accent = row.role === 'admin' ? '#f59e0b' : '#22c55e'
-                  return (
-                    <div
-                      key={row.id}
-                      className="grid grid-cols-[minmax(150px,220px)_minmax(360px,1fr)_86px] items-center gap-3 rounded-md border px-3 py-2"
-                      style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate text-[12px] font-medium" title={`${row.display_name || row.id} (${row.id})`} style={{ color: 'var(--text-primary)' }}>
-                          {row.display_name || row.id}
-                        </div>
-                        <div className="truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                          {row.id} · {row.group_name || '默认组'} · {row.role === 'admin' ? '管理员' : '成员'}
-                        </div>
-                      </div>
-                      <svg
-                        viewBox="0 0 420 64"
-                        preserveAspectRatio="none"
-                        className="h-14 w-full overflow-visible"
-                        role="img"
-                        aria-label={`${row.display_name || row.id} 最近一周活跃 Session 曲线`}
-                      >
-                        <line x1="0" y1="54" x2="420" y2="54" stroke="rgba(148,163,184,0.28)" strokeWidth="1" />
-                        <line x1="0" y1="31" x2="420" y2="31" stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
-                        <polyline
-                          points={line.points}
-                          fill="none"
-                          stroke={accent}
-                          strokeWidth="3"
-                          strokeLinejoin="round"
-                          strokeLinecap="round"
-                          vectorEffect="non-scaling-stroke"
-                        />
-                        {line.dots.map((dot) => (
-                          <g key={`${row.id}:${dot.date}`}>
-                            <circle cx={dot.x} cy={dot.y} r="4" fill={accent} stroke="var(--bg-primary)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-                            {dot.count > 0 && (
-                              <text x={dot.x} y={Math.max(10, dot.y - 8)} textAnchor="middle" fontSize="10" fill="var(--text-secondary)">
-                                {dot.count}
-                              </text>
-                            )}
-                          </g>
-                        ))}
-                      </svg>
-                      <div className="text-right">
-                        <div className="text-[18px] font-semibold leading-none tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                          {row.total}
-                        </div>
-                        <div className="mt-1 text-[10px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                          峰值 {row.peak}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
         </div>
 
         {!hasRows ? (
