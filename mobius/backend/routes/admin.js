@@ -1184,15 +1184,12 @@ router.delete('/model-access/codex/:key', adminAuth, (req, res) => {
 });
 
 // ── Skill 与 Memory 备份/迁移 ──────────────────────────────────────────────
-// 列出当前管理员可用于导出的 Skill / Memory 清单 (用户级 = 自己 + 他人只读; 项目级 = 全部项目).
+// 列出当前管理员可用于导出的 Skill / Memory 清单 (用户级 = 自己; 项目级 = 全部项目).
 router.get('/skill-memory/inventory', adminAuth, (req, res) => {
   try {
-    const projects = Projects.listAll().map((p) => ({
-      id: p.id, name: p.name, created_by: p.created_by,
-    }));
+    const projects = Projects.listAll().map((p) => ({ id: p.id, name: p.name }));
     const inventory = skillMemoryMigration.buildInventory({
       userId: req.user.id,
-      user: req.user,
       projects,
     });
     res.json(inventory);

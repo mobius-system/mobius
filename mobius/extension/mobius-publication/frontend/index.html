@@ -54,7 +54,7 @@
       <h1 class="hero-title reveal">
         <span class="line">人机物智算协同的</span>
         <span class="line gradient-text">自进化</span>
-        <span class="line">超级智能体系统</span>
+        <span class="line gradient-text">超级智能体系统</span>
       </h1>
       <p class="hero-sub reveal">
         把世界中的人、机、物、智、算组织成一个可持续进化的协同智能体系统。
@@ -184,55 +184,133 @@
         </p>
       </div>
 
-      <div class="synergy-grid reveal">
-        <article class="synergy-card synergy-card--ren">
-          <div class="synergy-glyph">人</div>
-          <h3>人</h3>
-          <p class="synergy-sub">个人 · 团队 · 组织</p>
-          <p class="synergy-detail">提出目标 · 协同开发 · 验收反馈</p>
-          <span class="synergy-channel">小莫 / 自然语言交互</span>
-        </article>
+      <div class="synergy-stage reveal" aria-label="人机物智算协同拓扑">
+        <svg class="synergy-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <radialGradient id="syn-core-halo" cx="50%" cy="50%" r="50%">
+              <stop offset="0" stop-color="#a78bfa" stop-opacity=".55"/>
+              <stop offset="60%" stop-color="#22d3ee" stop-opacity=".18"/>
+              <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="syn-spoke-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0" stop-color="#22d3ee" stop-opacity=".9"/>
+              <stop offset="1" stop-color="#a78bfa" stop-opacity=".9"/>
+            </linearGradient>
+          </defs>
+
+          <!-- 自进化环形虚线（最外圈） -->
+          <circle class="syn-loop syn-loop--outer" cx="50" cy="50" r="44"/>
+          <circle class="syn-loop syn-loop--inner" cx="50" cy="50" r="34"/>
+
+          <!-- 5 spokes converging to Mobius Core (50,50) -->
+          <path class="syn-spoke syn-spoke--base syn-spoke--zhi"  d="M50 14 C 50 28, 50 38, 50 46"/>
+          <path class="syn-spoke syn-spoke--base syn-spoke--ren"  d="M14 50 C 28 50, 38 50, 46 50"/>
+          <path class="syn-spoke syn-spoke--base syn-spoke--suan" d="M86 50 C 72 50, 62 50, 54 50"/>
+          <path class="syn-spoke syn-spoke--base syn-spoke--wu"   d="M14 86 C 28 72, 38 62, 46 54"/>
+          <path class="syn-spoke syn-spoke--base syn-spoke--ji"   d="M86 86 C 72 72, 62 62, 54 54"/>
+
+          <!-- 5 流光叠加（每条 spoke 一道独立流动的色带） -->
+          <path class="syn-spoke syn-spoke--flow syn-spoke--zhi"  d="M50 14 C 50 28, 50 38, 50 46" pathLength="100"/>
+          <path class="syn-spoke syn-spoke--flow syn-spoke--ren"  d="M14 50 C 28 50, 38 50, 46 50" pathLength="100"/>
+          <path class="syn-spoke syn-spoke--flow syn-spoke--suan" d="M86 50 C 72 50, 62 50, 54 50" pathLength="100"/>
+          <path class="syn-spoke syn-spoke--flow syn-spoke--wu"   d="M14 86 C 28 72, 38 62, 46 54" pathLength="100"/>
+          <path class="syn-spoke syn-spoke--flow syn-spoke--ji"   d="M86 86 C 72 72, 62 62, 54 54" pathLength="100"/>
+        </svg>
 
         <article class="synergy-card synergy-card--zhi">
-          <div class="synergy-glyph">智</div>
-          <h3>智</h3>
+          <div class="synergy-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="6" cy="6" r="1.6"/><circle cx="6" cy="18" r="1.6"/>
+              <circle cx="18" cy="6" r="1.6"/><circle cx="18" cy="18" r="1.6"/>
+              <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>
+              <path d="M7.5 7.5L10.3 10.8M16.5 7.5L13.7 10.8M7.5 16.5L10.3 13.2M16.5 16.5L13.7 13.2"/>
+            </svg>
+          </div>
+          <h3>智 · Intelligence</h3>
           <p class="synergy-sub">Agent 编队 · AI 模型 · 知识资产</p>
           <p class="synergy-detail">拆解 · 推理 · 执行 · 沉淀</p>
           <span class="synergy-channel">多智能体工作面</span>
         </article>
 
+        <article class="synergy-card synergy-card--ren">
+          <div class="synergy-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="8" r="2.8"/>
+              <path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/>
+              <circle cx="17" cy="9.5" r="2.2"/>
+              <path d="M14.5 18c0-2.2 1.5-4 2.5-4s2.5 1.8 2.5 4"/>
+            </svg>
+          </div>
+          <h3>人 · Human</h3>
+          <p class="synergy-sub">个人 · 团队 · 组织</p>
+          <p class="synergy-detail">提出目标 · 协同开发 · 验收反馈</p>
+          <span class="synergy-channel">小莫 / 自然语言交互</span>
+        </article>
+
+        <div class="synergy-core" aria-label="Mobius Core 协同内核">
+          <div class="synergy-core-glow"></div>
+          <div class="synergy-core-ring" aria-hidden="true"></div>
+          <div class="synergy-core-orbit" aria-hidden="true">
+            <span class="orbit-dot"></span>
+            <span class="orbit-dot"></span>
+            <span class="orbit-dot"></span>
+          </div>
+          <div class="synergy-core-body">
+            <div class="synergy-core-name">Mobius</div>
+            <div class="synergy-core-sub">自进化超级智能体系统</div>
+            <div class="synergy-core-note">Agentic OS 内核 · 协同编排 · 持续生长</div>
+          </div>
+        </div>
+
         <article class="synergy-card synergy-card--suan">
-          <div class="synergy-glyph">算</div>
-          <h3>算</h3>
+          <div class="synergy-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="6" rx="1.2"/>
+              <rect x="3" y="14" width="18" height="6" rx="1.2"/>
+              <circle cx="6.5" cy="7" r=".9" fill="currentColor" stroke="none"/>
+              <circle cx="6.5" cy="17" r=".9" fill="currentColor" stroke="none"/>
+              <path d="M10 7h7M10 17h7"/>
+              <path d="M3 11v2M21 11v2" stroke-dasharray="1.5 1.5"/>
+            </svg>
+          </div>
+          <h3>算 · Compute</h3>
           <p class="synergy-sub">GPU 集群 · 云端 · 本地算力</p>
           <p class="synergy-detail">训练 · 仿真 · 测试 · 数据处理</p>
           <span class="synergy-channel">SSH / 任务分发</span>
         </article>
 
-        <article class="synergy-card synergy-card--ji">
-          <div class="synergy-glyph">机</div>
-          <h3>机</h3>
-          <p class="synergy-sub">机器人 · 工作站 · 终端设备</p>
-          <p class="synergy-detail">开发 · 调试 · 部署 · 现实动作</p>
-          <span class="synergy-channel">AIMUX / 远程终端</span>
-        </article>
-
         <article class="synergy-card synergy-card--wu">
-          <div class="synergy-glyph">物</div>
-          <h3>物</h3>
+          <div class="synergy-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="6" y="6" width="12" height="12" rx="1"/>
+              <rect x="9.5" y="9.5" width="5" height="5" rx=".3" fill="currentColor" stroke="none" opacity=".55"/>
+              <path d="M9 3v3M12 3v3M15 3v3M9 18v3M12 18v3M15 18v3M3 9h3M3 12h3M3 15h3M18 9h3M18 12h3M18 15h3"/>
+            </svg>
+          </div>
+          <h3>物 · Things</h3>
           <p class="synergy-sub">嵌入式 · 传感器 · 执行器</p>
           <p class="synergy-detail">ESP32 · 树莓派 · Jetson · 现实对象</p>
           <span class="synergy-channel">烧录 / 运行 / 观测</span>
         </article>
-      </div>
 
-      <div class="synergy-core reveal" aria-label="Mobius Core 协同内核">
-        <div class="synergy-core-glow"></div>
-        <div class="synergy-core-body">
-          <div class="synergy-core-name">Mobius Core</div>
-          <div class="synergy-core-sub">自进化超级智能体系统</div>
-          <div class="synergy-core-note">Agentic OS 内核 · 协同编排 · 持续生长</div>
-        </div>
+        <article class="synergy-card synergy-card--ji">
+          <div class="synergy-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="8" width="14" height="11" rx="2"/>
+              <path d="M12 4v4"/>
+              <circle cx="12" cy="3.4" r="1" fill="currentColor" stroke="none"/>
+              <circle cx="9.5" cy="12.5" r="1.1" fill="currentColor" stroke="none"/>
+              <circle cx="14.5" cy="12.5" r="1.1" fill="currentColor" stroke="none"/>
+              <path d="M9.3 16h5.4"/>
+              <path d="M3 11v3M21 11v3"/>
+              <path d="M8 19v2M16 19v2"/>
+            </svg>
+          </div>
+          <h3>机 · Machine</h3>
+          <p class="synergy-sub">机器人 · 工作站 · 终端设备</p>
+          <p class="synergy-detail">开发 · 调试 · 部署 · 现实动作</p>
+          <span class="synergy-channel">AIMUX / 远程终端</span>
+        </article>
       </div>
 
       <p class="lead center reveal light" style="margin-top:3rem;">

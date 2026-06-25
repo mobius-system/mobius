@@ -1,7 +1,7 @@
 {
   "name": "mobius-home",
-  "display_name": "莫比乌斯 · 会生长的生产力系统",
-  "description": "莫比乌斯企业级 AgenticOS 官方宣传页：全天候、自进化、易交互、自孵化。一个会自我生长的 AI 操作系统。",
+  "display_name": "莫比乌斯 · Publication",
+  "description": "莫比乌斯新版 publication 宣传页：自迭代、集群思考、团队作战室、深度科研、拓展系统、小莫交互与任意模型接入。",
   "version": "0.1.0",
   "icon": "favicon.svg",
   "project": {

@@ -565,10 +565,11 @@ type ProjectPortEntryButtonProps = {
   projectId?: string | null
   subPath?: string | null
   className?: string
+  label?: string
   onRequestRunProject?: (mainProjectPortPath: string) => void
 }
 
-export function ProjectPortEntryButton({ projectId, subPath, className, onRequestRunProject }: ProjectPortEntryButtonProps) {
+export function ProjectPortEntryButton({ projectId, subPath, className, label, onRequestRunProject }: ProjectPortEntryButtonProps) {
   const [bindPath, setBindPath] = useState('')
   const [vscodeWorkspacePath, setVscodeWorkspacePath] = useState('')
   const [vscodeWebUrl, setVscodeWebUrl] = useState('')
@@ -648,6 +649,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, onReques
   const worktreeFolder = sub ? `${bindPath.replace(/\/+$/, '')}/${sub}` : (vscodeWorkspacePath || bindPath)
   const mainProjectPortPath = bindPath ? `${bindPath.replace(/\/+$/, '')}/.imac/port_forward/main_project_port.txt` : ''
   const buttonClassName = className || 'h-7 px-2.5 text-[11px] border border-emerald-500/20 text-emerald-400 rounded-xl hover:bg-emerald-500/10 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-45 disabled:cursor-not-allowed'
+  const buttonLabel = label || '进入项目端口'
 
   const openProxyPort = (port: number) => {
     const url = buildCodeServerProxyUrl(vscodeWebUrl, port)
@@ -726,7 +728,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, onReques
         className={buttonClassName}
       >
         {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MonitorUp className="w-3.5 h-3.5" />}
-        进入项目端口
+        {buttonLabel}
       </button>
 
       {showDialog && (
