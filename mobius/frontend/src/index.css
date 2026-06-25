@@ -1656,8 +1656,7 @@ body::after {
   contain: layout paint;
 }
 
-/* 面板内的小莫头像：禁用无限动画，避免持续重绘拖慢输入；
-   FAB 悬浮球（右下角圆球）的动画不受影响，仍会动 */
+/* 面板内的小莫头像：禁用无限动画，避免持续重绘拖慢输入 */
 .assistant-panel .mo-avatar__particle,
 .assistant-panel .mo-avatar__ring,
 .assistant-panel .mo-avatar__field,
@@ -1665,6 +1664,19 @@ body::after {
   animation: none !important;
 }
 .assistant-panel .mo-avatar__particle {
+  box-shadow: none;
+}
+
+/* 面板打开时，FAB 悬浮球（此时被关闭按钮 X 覆盖、用户不盯着它）
+   里的 MoAvatar 也静音：mo-field-breathe 同时动画 filter+border-radius，
+   无法走 GPU 合成，会持续触发 paint，和打字重绘抢帧预算 */
+body:has(.assistant-panel) .assistant-fab .mo-avatar__particle,
+body:has(.assistant-panel) .assistant-fab .mo-avatar__ring,
+body:has(.assistant-panel) .assistant-fab .mo-avatar__field,
+body:has(.assistant-panel) .assistant-fab .mo-avatar__core {
+  animation: none !important;
+}
+body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   box-shadow: none;
 }
 .light .assistant-panel {

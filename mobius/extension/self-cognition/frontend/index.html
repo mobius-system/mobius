@@ -29,13 +29,21 @@
     </div>
     <button class="nav-refresh" id="refreshBtn" type="button">刷新</button>
   </nav>
+  <nav class="section-switcher" id="sectionSwitcher" aria-label="Section switcher">
+    <a class="section-link is-active" href="#hero" data-section-target="hero"><span>◎</span><em>Hero</em></a>
+    <a class="section-link" href="#paper-section" data-section-target="paper-section"><span>▤</span><em>论文</em></a>
+    <a class="section-link" href="#competitor-section" data-section-target="competitor-section"><span>◆</span><em>竞品</em></a>
+    <a class="section-link" href="#evolution-section" data-section-target="evolution-section"><span>⟲</span><em>自进化</em></a>
+    <a class="section-link" href="#finale" data-section-target="finale"><span>✦</span><em>Finale</em></a>
+  </nav>
 
   <main>
-    <section class="hero section-light" id="hero" data-nav-theme="light" data-section="paper">
+    <section class="hero section-dark" id="hero" data-nav-theme="dark" data-section="paper">
       <canvas class="hero-canvas" id="heroCanvas" aria-hidden="true"></canvas>
       <div class="hero-content reveal">
-        <p class="eyebrow">Mobius Research Radar</p>
-        <h1>让自我认知系统，持续追踪<span class="gradient-text">论文</span>与<span class="gradient-text">竞品</span>。</h1>
+        <p class="eyebrow">Self-Cognition</p>
+        <h1 aria-label="Mobius Research Radar">Mobius <span class="gradient-text">Research Radar</span></h1>
+        <p class="hero-subtitle">让自我认知系统，持续追踪论文与竞品。</p>
         <p class="hero-copy">只保留两个工作台：论文跟踪与竞品跟踪。每日扫描、人工筛选、收藏归档和候选晋升，都在同一条克制的研究流里完成。</p>
         <div class="hero-actions">
           <a class="primary-button" href="#paper-section">查看论文跟踪</a>
@@ -45,10 +53,9 @@
       <div class="hero-status reveal" id="scheduleStatus" aria-live="polite"></div>
     </section>
 
-    <section class="section-light workspace-section paper-tone" id="paper-section" data-nav-theme="light" data-section="paper">
+    <section class="section-dark workspace-section paper-tone" id="paper-section" data-nav-theme="dark" data-section="paper">
       <div class="section-inner">
         <div class="section-heading reveal">
-          <p class="eyebrow">核心能力一</p>
           <h2>论文跟踪</h2>
           <p>按关键词、状态、收藏筛选 arXiv 结果；查看摘要详情；用本地轻量状态完成已读、收藏、归档。</p>
         </div>
@@ -147,7 +154,6 @@
     <section class="section-dark workspace-section product-tone" id="competitor-section" data-nav-theme="dark" data-section="product">
       <div class="section-inner">
         <div class="section-heading reveal">
-          <p class="eyebrow">核心能力二</p>
           <h2>竞品跟踪</h2>
           <p>候选与已跟踪竞品并排呈现。候选项可以一键晋升，正式竞品可随时重扫产品页快照并标记已读。</p>
         </div>
@@ -254,7 +260,7 @@
       </div>
     </section>
 
-    <section class="section-light evolution-section" id="evolution-section" data-nav-theme="light" data-section="evolution">
+    <section class="section-dark evolution-section" id="evolution-section" data-nav-theme="dark" data-section="evolution">
       <div class="section-inner">
         <div class="section-heading reveal">
           <p class="eyebrow">自进化</p>
@@ -284,7 +290,7 @@
       </div>
     </section>
 
-    <section class="finale section-light" data-nav-theme="light" data-section="paper">
+    <section class="finale section-dark" id="finale" data-nav-theme="dark" data-section="paper">
       <canvas class="finale-canvas" id="finaleCanvas" aria-hidden="true"></canvas>
       <div class="section-inner narrow reveal">
         <p class="eyebrow">Finale</p>

@@ -1,8 +1,8 @@
 :root {
   color-scheme: dark light;
-  /* 论文 tab 浅色 */
-  --paper-bg: #f8f9fb;
-  --paper-ink: #1a1a2e;
+  /* 论文 tab 深色 */
+  --paper-bg: #0a0a0f;
+  --paper-ink: #e5e7eb;
   --paper-accent-1: #3b82f6;
   --paper-accent-2: #1d4ed8;
   /* 竞品 tab 深色 */
@@ -10,9 +10,9 @@
   --product-ink: #e5e7eb;
   --product-accent-1: #8b5cf6;
   --product-accent-2: #6366f1;
-  /* 自进化 section 中性 + 三层分色 */
-  --evolution-bg: #f4f4f5;
-  --evolution-ink: #27272a;
+  /* 自进化 section 深色 + 三层分色 */
+  --evolution-bg: #15151c;
+  --evolution-ink: #d4d4d8;
   --L1-accent: #f59e0b;
   --L2-accent: #ea580c;
   --L3-accent: #6b7280;
@@ -72,7 +72,7 @@ html {
 
 body {
   margin: 0;
-  color: var(--ink);
+  color: var(--paper-ink);
   background: var(--dark);
   text-rendering: geometricPrecision;
 }
@@ -125,9 +125,61 @@ code {
 }
 
 .nav[data-theme="light"] {
-  color: var(--ink);
-  background: rgba(250, 250, 249, 0.78);
-  border-bottom-color: rgba(15, 23, 42, 0.08);
+  color: var(--paper-ink);
+  background: rgba(10, 10, 15, 0.78);
+  border-bottom-color: rgba(229, 231, 235, 0.08);
+}
+
+.section-switcher {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  z-index: 19;
+  display: flex;
+  gap: 8px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(229, 231, 235, 0.12);
+  border-radius: 999px;
+  padding: 7px;
+  color: var(--paper-ink);
+  background: rgba(17, 17, 24, 0.66);
+  backdrop-filter: blur(22px);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
+}
+
+.section-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: inherit;
+  opacity: 0.64;
+  transition: opacity 220ms ease, background 220ms ease, transform 220ms ease;
+}
+
+.section-link span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(229, 231, 235, 0.14);
+  border-radius: 50%;
+  font-size: 12px;
+}
+
+.section-link em {
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.section-link.is-active {
+  opacity: 1;
+  background: linear-gradient(135deg, var(--section-accent-1), var(--section-accent-2));
+  color: #f8fafc;
+  transform: translateY(-1px);
 }
 
 .brand,
@@ -215,14 +267,14 @@ code {
 .paper-tone .cluster-card,
 .paper-tone .top-picks {
   color: var(--paper-ink);
-  background: color-mix(in srgb, var(--paper-bg) 42%, white);
-  border-color: color-mix(in srgb, var(--paper-accent-1) 16%, transparent);
-  box-shadow: 0 24px 70px color-mix(in srgb, var(--paper-accent-1) 10%, transparent);
+  background: color-mix(in srgb, var(--paper-bg) 86%, white);
+  border-color: color-mix(in srgb, var(--paper-accent-1) 26%, transparent);
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--paper-accent-1) 18%, transparent);
 }
 
 .paper-tone .top-pick-card,
 .paper-tone .metric {
-  background: color-mix(in srgb, white 88%, var(--paper-bg));
+  background: color-mix(in srgb, var(--paper-bg) 82%, white);
 }
 
 .paper-tone .feedback-button[data-verdict="boost"].is-active,
@@ -288,27 +340,28 @@ code {
 }
 
 .hero[data-section="paper"] .hero-copy,
+.hero-subtitle,
 .finale[data-section="paper"] p {
-  color: color-mix(in srgb, var(--paper-ink) 72%, transparent);
+  color: color-mix(in srgb, var(--paper-ink) 78%, transparent);
 }
 
 .hero[data-section="paper"] .hero-canvas,
 .finale[data-section="paper"] .finale-canvas {
-  opacity: 0.42;
-  mix-blend-mode: multiply;
+  opacity: 0.92;
+  mix-blend-mode: screen;
 }
 
 .hero[data-section="paper"] .hero-status {
   color: var(--paper-ink);
-  background: color-mix(in srgb, white 82%, var(--paper-bg));
-  border-color: color-mix(in srgb, var(--paper-accent-1) 18%, transparent);
-  box-shadow: 0 24px 70px color-mix(in srgb, var(--paper-accent-1) 10%, transparent);
+  background: color-mix(in srgb, var(--paper-bg) 72%, white);
+  border-color: color-mix(in srgb, var(--paper-accent-1) 26%, transparent);
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--paper-accent-1) 16%, transparent);
 }
 
 .hero[data-section="paper"] .glass-button {
   color: var(--paper-ink);
-  background: color-mix(in srgb, white 72%, var(--paper-bg));
-  border-color: color-mix(in srgb, var(--paper-accent-1) 18%, transparent);
+  background: color-mix(in srgb, var(--paper-bg) 72%, white);
+  border-color: color-mix(in srgb, var(--paper-accent-1) 26%, transparent);
 }
 
 .hero-canvas,
@@ -376,6 +429,7 @@ h3 {
 }
 
 .hero-copy,
+.hero-subtitle,
 .section-heading p,
 .lead,
 .intro-section p,
@@ -384,6 +438,12 @@ h3 {
   color: rgba(224, 231, 255, 0.76);
   font-size: clamp(1.08rem, 2vw, 1.38rem);
   line-height: 1.75;
+}
+
+.hero-subtitle {
+  margin: 22px 0 0;
+  font-size: clamp(1.25rem, 2.6vw, 1.85rem);
+  font-weight: 650;
 }
 
 .section-light .section-heading p,
@@ -913,7 +973,7 @@ textarea:focus {
   border: 1px solid color-mix(in srgb, var(--evolution-ink) 12%, transparent);
   border-radius: 999px;
   padding: 6px;
-  background: color-mix(in srgb, white 74%, var(--evolution-bg));
+  background: color-mix(in srgb, var(--evolution-bg) 86%, white);
 }
 
 .evo-tab {
@@ -969,7 +1029,7 @@ textarea:focus {
   border: 1px solid color-mix(in srgb, var(--evolution-ink) 12%, transparent);
   border-radius: 8px;
   padding: 18px;
-  background: color-mix(in srgb, white 74%, var(--evolution-bg));
+  background: color-mix(in srgb, var(--evolution-bg) 88%, white);
   box-shadow: 0 24px 70px color-mix(in srgb, var(--evolution-ink) 9%, transparent);
 }
 
@@ -1000,7 +1060,7 @@ textarea:focus {
   border: 1px solid color-mix(in srgb, var(--evolution-ink) 10%, transparent);
   border-radius: 8px;
   padding: 16px;
-  background: color-mix(in srgb, white 82%, var(--evolution-bg));
+  background: color-mix(in srgb, var(--evolution-bg) 84%, white);
 }
 
 .evo-card-head {
@@ -1271,14 +1331,14 @@ textarea:focus {
 .paper-tone .cluster-card,
 .paper-tone .top-picks {
   color: var(--paper-ink);
-  background: color-mix(in srgb, var(--paper-bg) 42%, white);
-  border-color: color-mix(in srgb, var(--paper-accent-1) 16%, transparent);
+  background: color-mix(in srgb, var(--paper-bg) 86%, white);
+  border-color: color-mix(in srgb, var(--paper-accent-1) 26%, transparent);
 }
 
 .paper-tone .top-pick-card,
 .paper-tone .metric {
   color: var(--paper-ink);
-  background: color-mix(in srgb, white 88%, var(--paper-bg));
+  background: color-mix(in srgb, var(--paper-bg) 82%, white);
 }
 
 .product-tone .results-panel,

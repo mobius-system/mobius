@@ -392,6 +392,17 @@
         </div>
       </figure>
     </div>
+    <div class="container">
+      <figure class="product-shot product-shot--dark reveal">
+        <img
+          src="./assets/screenshots/product-3.png"
+          alt="莫比乌斯创建 Research Agent 团队弹窗，左侧配置具体研究执行 Agent，右侧展示 3D 智能体团队视图"
+          loading="lazy"
+          decoding="async"
+        />
+        <figcaption>一个研究目标可以被展开为一支 Agent 团队，每个角色带着自己的任务、模型、Skill 和 Memory 启动。</figcaption>
+      </figure>
+    </div>
   </section>
 
   <!-- Highlight 3: 团队协作 max -->
@@ -445,6 +456,16 @@
         而是人类团队如何一起驾驭 AI：<br />
         每个人的想法、每个智能体的执行、每次交付的证据，都沉淀在同一个项目空间。
       </p>
+
+      <figure class="product-shot product-shot--light reveal">
+        <img
+          src="./assets/screenshots/product-1.png"
+          alt="莫比乌斯项目工作台，左侧是项目列表，中间是项目卡片，右侧是 Skill 区和小莫对话浮窗"
+          loading="lazy"
+          decoding="async"
+        />
+        <figcaption>项目、Skill、执行状态和小莫浮窗在同一屏里协作，团队不再把进度散落在个人聊天框里。</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -526,6 +547,16 @@
           </article>
         </div>
       </div>
+
+      <figure class="product-shot product-shot--dark reveal">
+        <img
+          src="./assets/screenshots/product-2.png"
+          alt="莫比乌斯深度科研页面，左侧是小莫对话，右侧是研究图谱、节点和实验图表"
+          loading="lazy"
+          decoding="async"
+        />
+        <figcaption>研究不是一段回答，而是一张可追踪的图谱：对话、证据、图表和结论都沿着节点沉淀。</figcaption>
+      </figure>
 
       <p class="lead center reveal light" style="margin-top:3rem;">
         深度科研系统是莫比乌斯能力的旗舰证明：
@@ -757,12 +788,12 @@
 
       <div class="incubate-grid reveal">
         <div class="ext-card">
-          <div class="ext-icon"><img src="/extension/threebody-sim/favicon.svg" alt="" onerror="this.style.display='none'"></div>
+          <div class="ext-icon"><img src="./assets/extension-icons/threebody-sim/favicon.svg" alt="" onerror="this.style.display='none'"></div>
           <h4>GLM 渠道</h4>
           <p>面向中文复杂任务与本土模型生态，优先作为 publication 工作流的执行渠道之一。</p>
         </div>
         <div class="ext-card">
-          <div class="ext-icon"><img src="/extension/dot-logo-3d/favicon.svg" alt="" onerror="this.style.display='none'"></div>
+          <div class="ext-icon"><img src="./assets/extension-icons/dot-logo-3d/favicon.svg" alt="" onerror="this.style.display='none'"></div>
           <h4>GPT-5.5 渠道</h4>
           <p>适合大规模代码理解、复杂工程推进和长程 agentic coding，作为强力兜底执行引擎。</p>
         </div>
@@ -781,7 +812,7 @@
           <p>企业私有部署、离线环境和内部数据任务，可以通过统一接口接入本地模型能力。</p>
         </div>
         <div class="ext-card">
-          <div class="ext-icon"><img src="/extension/finance-news-wall/favicon.svg" alt="" onerror="this.style.display='none'"></div>
+          <div class="ext-icon"><img src="./assets/extension-icons/finance-news-wall/favicon.svg" alt="" onerror="this.style.display='none'"></div>
           <h4>按任务切换</h4>
           <p>写代码、做科研、写文案、跑测试、做调研，不同任务可以调用不同模型组合。</p>
         </div>
@@ -842,8 +873,10 @@
 
       <div class="showcase-grid">
         <article class="showcase-card reveal">
-          <div class="showcase-video placeholder" data-video-slot="json-track">
-            <video controls preload="metadata" playsinline></video>
+          <div class="showcase-video" data-video-slot="json-track">
+            <video controls preload="metadata" playsinline poster="./assets/screenshots/product-1.png">
+              <source src="./assets/videos/github-replay.mp4" type="video/mp4" />
+            </video>
             <span class="showcase-badge">① JSON Track 拓展</span>
           </div>
           <h3>用小莫一键部署 GitHub 项目</h3>
@@ -855,8 +888,10 @@
         </article>
 
         <article class="showcase-card reveal">
-          <div class="showcase-video placeholder" data-video-slot="multi-agent">
-            <video controls preload="metadata" playsinline></video>
+          <div class="showcase-video" data-video-slot="multi-agent">
+            <video controls preload="metadata" playsinline poster="./assets/screenshots/product-2.png">
+              <source src="./assets/videos/research.mp4" type="video/mp4" />
+            </video>
             <span class="showcase-badge">② 多智能体 Research</span>
           </div>
           <h3>一支智能体编队跑完整项科研</h3>
@@ -868,8 +903,10 @@
         </article>
 
         <article class="showcase-card reveal">
-          <div class="showcase-video placeholder" data-video-slot="ppt">
-            <video controls preload="metadata" playsinline></video>
+          <div class="showcase-video" data-video-slot="ppt">
+            <video controls preload="metadata" playsinline>
+              <source src="./assets/videos/ppt-maker.mp4" type="video/mp4" />
+            </video>
             <span class="showcase-badge">③ PPT 制作</span>
           </div>
           <h3>一句话生成可演示的 PPT</h3>
@@ -881,8 +918,10 @@
         </article>
 
         <article class="showcase-card reveal">
-          <div class="showcase-video placeholder" data-video-slot="finance-wall">
-            <video controls preload="metadata" playsinline></video>
+          <div class="showcase-video" data-video-slot="finance-wall">
+            <video controls preload="metadata" playsinline>
+              <source src="./assets/videos/finance-wall.mp4" type="video/mp4" />
+            </video>
             <span class="showcase-badge">④ 金融新闻墙</span>
           </div>
           <h3>金融信息墙：实时聚合 + 自动投研</h3>

@@ -1070,6 +1070,7 @@ function bindScrollEffects() {
   document.querySelectorAll('.reveal').forEach((node) => revealObserver.observe(node));
 
   const nav = $('topNav');
+  const sectionLinks = [...document.querySelectorAll('.section-link')];
   const themeObserver = new IntersectionObserver((entries) => {
     const visible = entries
       .filter((entry) => entry.isIntersecting)
@@ -1077,6 +1078,9 @@ function bindScrollEffects() {
     if (visible) {
       nav.dataset.theme = visible.target.dataset.navTheme || 'light';
       document.documentElement.dataset.section = visible.target.dataset.section || 'paper';
+      sectionLinks.forEach((link) => {
+        link.classList.toggle('is-active', link.dataset.sectionTarget === visible.target.id);
+      });
     }
   }, { threshold: [0.35, 0.55, 0.75] });
   document.querySelectorAll('[data-nav-theme]').forEach((section) => themeObserver.observe(section));
