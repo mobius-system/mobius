@@ -843,6 +843,191 @@ function updateProduct(e, t, r) {
   return groupedProducts(e);
 }
 
+function chatItemRow(e, t) {
+  return t ? {
+    id: t.id,
+    type: e,
+    title: "product" === e ? t.name : t.title,
+    authors: t.authors || "",
+    published_at: t.published_at || "",
+    priority_score: Number(t.priority_score) || 0,
+    relevance: Number(t.relevance) || 0,
+    abstract: t.abstract || "",
+    fetched_title: t.fetched_title || "",
+    fetched_description: t.fetched_description || "",
+    reason: t.reason || "",
+    discovery_logic: t.discovery_logic || "",
+    source_url: t.source_url || "",
+    category: t.category || "",
+    status: t.status || "",
+    tags: arr(t.tags),
+    matched_keywords: arr(t.matched_keywords)
+  } : null;
+}
+
+function chatContext(e) {
+  if (!e) return "暂无上下文。";
+  if ("product" === e.type) return [ "【类型】竞品", `【名称】${e.title || ""}`, `【类别】${e.category || ""}`, `【状态】${e.status || ""}`, `【相关度】${e.relevance || 0}/10`, `【页面标题】${e.fetched_title || ""}`, `【页面描述】${e.fetched_description || ""}`, `【入库理由】${e.reason || ""}`, `【发现逻辑】${e.discovery_logic || ""}`, e.source_url ? `【来源 URL】${e.source_url}` : "" ].filter(Boolean).join("\n");
+  return [ "【类型】论文", `【标题】${e.title || ""}`, `【作者】${e.authors || ""}`, `【发表时间】${e.published_at || ""}`, `【Priority】${e.priority_score || 0}`, `【相关度】${e.relevance || 0}`, `【关键词】${[ ...new Set([ ...(e.matched_keywords || []), ...(e.tags || []) ]) ].join("、")}`, `【摘要】${e.abstract || ""}`, e.source_url ? `【来源 URL】${e.source_url}` : "" ].filter(Boolean).join("\n");
+}
+
+function chatHistoryText(e) {
+  const items = Array.isArray(e) ? e : [];
+  return items.slice(-8).map(t => {
+    const r = txt(t.role, 20);
+    const c = long(t.content, 1200);
+    return `${"assistant" === r ? "AI" : "用户"}: ${c}`;
+  }).join("\n");
+}
+
+function chatPrompt(e, t, r, a) {
+  return [
+    "你是 Mobius 里的单篇论文/竞品讲解助手。",
+    "你必须严格基于给定的上下文回答；不要编造上下文里没有的信息。",
+    "如果信息不足，要明确说不确定，并给出下一步应该看什么。",
+    "回答必须使用中文，优先给出结论、依据、可执行建议。",
+    "如果是论文，重点解释方法、实验、结果、局限和适合 Mobius 的借鉴点。",
+    "如果是竞品，重点解释定位、能力、差异、可借鉴功能和风险。",
+    "",
+    "【上下文】",
+    chatContext(e),
+    "",
+    a ? "【对话历史】\n" + chatHistoryText(a) : "【对话历史】\n无",
+    "",
+    "【用户问题】",
+    long(r, 1600)
+  ].join("\n");
+}
+
+function extractResponseText(e) {
+  if (e && "string" == typeof e.output_text && txt(e.output_text, 2e4)) return txt(e.output_text, 2e4);
+  const t = [];
+  const r = e => {
+    if (!e) return;
+    if ("string" == typeof e) return void t.push(e);
+    if (Array.isArray(e)) return void e.forEach(r);
+    if ("object" == typeof e) {
+      "string" == typeof e.text && t.push(e.text), "string" == typeof e.value && t.push(e.value), Array.isArray(e.content) && e.content.forEach(r), Array.isArray(e.output) && e.output.forEach(r), Array.isArray(e.parts) && e.parts.forEach(r), Array.isArray(e.items) && e.items.forEach(r), Array.isArray(e.annotations) && e.annotations.forEach(r);
+    }
+  };
+  return r(e), txt(t.join("\n"), 2e4);
+}
+
+async function fetchJson(e, t, r = 2.4e4) {
+  const a = new AbortController, s = setTimeout(() => a.abort(), r);
+  try {
+    const r = await fetch(e, {
+      ...t,
+      signal: a.signal
+    }), o = await r.text();
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${txt(o, 500)}`);
+    try {
+      return JSON.parse(o);
+    } catch {
+      throw new Error(`非 JSON 响应: ${txt(o, 240)}`);
+    }
+  } catch (e) {
+    throw "AbortError" === e?.name ? new Error("LLM 请求超时") : e;
+  } finally {
+    clearTimeout(s);
+  }
+}
+
+function chatProviders() {
+  const e = [];
+  const t = txt(process.env.RCC2_API_KEY || process.env.RIGHTCODE_API_KEY || "", 512);
+  t && e.push({
+    name: "codex:subscription",
+    type: "responses",
+    baseUrl: "https://right.codes/codex/v1",
+    apiKey: t,
+    model: txt(process.env.SELF_COGNITION_LLM_MODEL || process.env.SELF_COGNITION_CHAT_MODEL || "gpt-5.5", 120)
+  });
+  const r = txt(process.env.DASHSCOPE_API_KEY || "", 512);
+  r && e.push({
+    name: "dashscope:qwen",
+    type: "chat",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    apiKey: r,
+    model: txt(process.env.SELF_COGNITION_QWEN_MODEL || "qwen-plus", 120)
+  });
+  const a = txt(process.env.OPENAI_API_KEY || "", 512);
+  a && e.push({
+    name: "openai",
+    type: "responses",
+    baseUrl: txt(process.env.SELF_COGNITION_OPENAI_BASE_URL || "https://api.openai.com/v1", 200),
+    apiKey: a,
+    model: txt(process.env.SELF_COGNITION_OPENAI_MODEL || "gpt-5.5", 120)
+  });
+  return e;
+}
+
+async function callResponsesModel(e, t) {
+  const r = e.baseUrl.replace(/\/+$/, "") + "/responses", a = await fetchJson(r, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${e.apiKey}`
+    },
+    body: JSON.stringify({
+      model: e.model,
+      input: t,
+      max_output_tokens: 900,
+      temperature: 0.2
+    })
+  });
+  const s = extractResponseText(a);
+  if (!s) throw new Error("模型未返回可用文本");
+  return s;
+}
+
+async function callChatCompletionModel(e, t) {
+  const r = e.baseUrl.replace(/\/+$/, "") + "/chat/completions", a = await fetchJson(r, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${e.apiKey}`
+    },
+    body: JSON.stringify({
+      model: e.model,
+      messages: [ {
+        role: "system",
+        content: "你是 Mobius 里的单篇竞品讲解助手，必须严格基于给定上下文回答，不能编造信息。"
+      }, {
+        role: "user",
+        content: t
+      } ],
+      max_tokens: 900,
+      temperature: 0.2
+    })
+  }), s = a?.choices?.[0]?.message, o = Array.isArray(s?.content) ? s.content.map(e => "string" == typeof e ? e : e?.text || e?.content || "").join("") : s?.content;
+  if (!txt(o, 2e4)) throw new Error("模型未返回可用文本");
+  return txt(o, 2e4);
+}
+
+async function chatWithPaper(e, t, r) {
+  const a = txt(t.paper_id || t.product_id || t.id, 120), s = txt(t.message, 1600);
+  if (!a) throw new Error("paper_id 或 product_id 不能为空");
+  if (!s) throw new Error("message 不能为空");
+  const o = t.product_id || "product" === txt(t.item_type, 20), n = o ? chatItemRow("product", e.prepare("SELECT * FROM product_research WHERE id=?").get(a)) : chatItemRow("paper", e.prepare("SELECT * FROM arxiv_items WHERE id=? OR source_id=?").get(a, a));
+  if (!n) throw new Error(o ? "product_id 不存在" : "paper_id 不存在");
+  const i = chatPrompt(n, o ? "product" : "paper", s, Array.isArray(t.history) ? t.history : []);
+  const c = chatProviders();
+  if (!c.length) throw new Error("AI 暂不可用，请稍后再试");
+  const l = [];
+  for (const t of c) try {
+    const r = "responses" === t.type ? await callResponsesModel(t, i) : await callChatCompletionModel(t, i);
+    if (r) return {
+      reply: r,
+      model: t.model,
+      provider: t.name
+    };
+  } catch (e) {
+    l.push(`${t.name}: ${txt(e.message, 160)}`);
+  }
+  throw new Error(`AI 暂不可用，请稍后再试${l.length ? `（${l[0]}）` : ""}`);
+}
+
 async function firstScan(e, t, r) {
   if ("done" === e.prepare("SELECT value FROM install_state WHERE key=?").get(FIRST_SCAN_KEY)?.value) return null;
   const a = Date.now(), s = await scanArxiv(e, {
@@ -878,7 +1063,7 @@ async function dispatch(e, t, r, a) {
       products: listProducts(e),
       scan_runs: scans(e),
       constants: {
-        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "export_papers", "scan_arxiv", "submit_feedback", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats" ],
+        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats" ],
         schedule_ids: [ "self-cognition-arxiv-0900", "self-cognition-products-1000", "self-cognition-evolution-1100" ],
         product_table: "product_research",
         product_statuses: [ "tracked", "candidate", "archived" ]
@@ -907,6 +1092,10 @@ async function dispatch(e, t, r, a) {
   if ("submit_feedback" === s) return {
     ok: !0,
     keyword_weights: submitFeedback(e, t)
+  };
+  if ("chat_with_paper" === s) return {
+    ok: !0,
+    ...await chatWithPaper(e, t, r)
   };
   if ("get_paper_clusters" === s) return {
     ok: !0,
