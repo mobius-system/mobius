@@ -8,18 +8,18 @@ const UP = new THREE.Vector3(0, 0, 1);
 const TYPE_META = {
   paper: { label: '论文', accent: '#3b82f6', colorT: 0.2 },
   product: { label: '竞品', accent: '#8b5cf6', colorT: 0.55 },
-  evolution: { label: 'L1', accent: '#f59e0b', colorT: 0.9 },
+  evolution: { label: 'L1', accent: '#64748b', colorT: 0.9 },
 };
 
 const MARKER_LAYOUT = [
-  { u: 0.04 * TAU, v: -0.76, dx: -48, dy: -30 },
-  { u: 0.18 * TAU, v: 0.72, dx: 48, dy: -34 },
-  { u: 0.31 * TAU, v: -0.46, dx: -54, dy: 26 },
-  { u: 0.45 * TAU, v: 0.84, dx: 50, dy: -24 },
-  { u: 0.58 * TAU, v: -0.66, dx: -44, dy: 30 },
-  { u: 0.72 * TAU, v: 0.56, dx: 52, dy: 28 },
-  { u: 0.86 * TAU, v: -0.82, dx: -52, dy: -20 },
-  { u: 0.96 * TAU, v: 0.32, dx: 44, dy: 26 },
+  { u: 0.04 * TAU, v: -0.76, dx: -82, dy: -51 },
+  { u: 0.18 * TAU, v: 0.72, dx: 82, dy: -58 },
+  { u: 0.31 * TAU, v: -0.46, dx: -92, dy: 44 },
+  { u: 0.45 * TAU, v: 0.84, dx: 85, dy: -41 },
+  { u: 0.58 * TAU, v: -0.66, dx: -75, dy: 51 },
+  { u: 0.72 * TAU, v: 0.56, dx: 88, dy: 48 },
+  { u: 0.86 * TAU, v: -0.82, dx: -88, dy: -34 },
+  { u: 0.96 * TAU, v: 0.32, dx: 75, dy: 44 },
 ];
 
 const VERTEX_SHADER = /* glsl */`
@@ -243,7 +243,7 @@ function tangentLine(u, radius) {
   ).normalize();
 }
 
-function mobiusPoint(u, v, radius = 5.2, width = 0.82) {
+function mobiusPoint(u, v, radius = 10.4, width = 1.64) {
   const center = centerLine(u, radius);
   const tangent = tangentLine(u, radius);
   const side = new THREE.Vector3().crossVectors(UP, tangent);
@@ -307,9 +307,9 @@ function createPointCloud(count, options = {}) {
     fragmentShader: options.fragmentShader || FRAGMENT_SHADER,
     uniforms: {
       uTime: { value: 0 },
-      uRadius: { value: options.radius ?? 5.2 },
-      uWidth: { value: options.width ?? 0.82 },
-      uDotSize: { value: options.dotSize ?? 0.45 },
+      uRadius: { value: options.radius ?? 10.4 },
+      uWidth: { value: options.width ?? 1.64 },
+      uDotSize: { value: options.dotSize ?? 0.9 },
       uAlpha: { value: options.alpha ?? 0.62 },
       uGlow: { value: options.glow ?? 0.9 },
       uSweep: { value: 0 },
@@ -410,13 +410,6 @@ function defaultItems() {
       summary: '候选项可晋升为正式跟踪对象。',
       meta: ['竞品', 'candidate', 'review'],
     },
-    {
-      type: 'evolution',
-      keyword: 'L1 改动',
-      title: '自进化历史',
-      summary: '等待 L1 改动记录。',
-      meta: ['L1', 'recorded', 'Mobius'],
-    },
   ];
 }
 
@@ -487,7 +480,7 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-export function initMobiusRing(canvas) {
+export function initMobiusRing(canvas, options = {}) {
   if (!canvas) return null;
   const container = canvas.parentElement;
   if (!container) return null;
@@ -514,7 +507,7 @@ export function initMobiusRing(canvas) {
   scene.add(ringGroup);
 
   const baseCloud = createPointCloud(window.innerWidth < 720 ? 2800 : 4600, {
-    dotSize: window.innerWidth < 720 ? 0.42 : 0.46,
+    dotSize: window.innerWidth < 720 ? 0.84 : 0.92,
     alpha: 0.6,
   });
   ringGroup.add(baseCloud.points);
@@ -522,7 +515,7 @@ export function initMobiusRing(canvas) {
   const sweepCloud = createPointCloud(window.innerWidth < 720 ? 900 : 1500, {
     vertexShader: SWEEP_VERTEX_SHADER,
     fragmentShader: SWEEP_FRAGMENT_SHADER,
-    dotSize: window.innerWidth < 720 ? 0.58 : 0.66,
+    dotSize: window.innerWidth < 720 ? 1.16 : 1.32,
     alpha: 0.64,
     glow: 1.25,
   });
@@ -563,7 +556,7 @@ export function initMobiusRing(canvas) {
     });
     return createPointCloud(items.length, {
       geometry,
-      dotSize: window.innerWidth < 720 ? 0.68 : 0.78,
+      dotSize: window.innerWidth < 720 ? 1.36 : 1.56,
       alpha: 0.92,
       glow: 1.52,
     });
@@ -580,6 +573,11 @@ export function initMobiusRing(canvas) {
       label.addEventListener('pointerdown', (event) => {
         event.preventDefault();
         setHovered(index, markerPositions[index]);
+      });
+      label.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        selectMarker(index);
       });
       label.addEventListener('pointerleave', () => {
         if (!pointer.inside) clearHovered();
@@ -690,6 +688,27 @@ export function initMobiusRing(canvas) {
     }
   }
 
+  function nearestMarker(maxDistance = 58) {
+    let bestIndex = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    markerPositions.forEach((pos, index) => {
+      const distance = Math.hypot(pointer.x - pos.x, pointer.y - pos.y);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    });
+    return bestDistance <= maxDistance ? bestIndex : -1;
+  }
+
+  function selectMarker(index = hoveredIndex) {
+    if (index < 0 || !markerItems[index]) return;
+    const item = markerItems[index];
+    setHovered(index, markerPositions[index]);
+    if (typeof options.onSelect === 'function') options.onSelect(item);
+    container.dispatchEvent(new CustomEvent('mobius-ring-select', { detail: { item } }));
+  }
+
   function renderFrame() {
     if (!running) return;
     if (!reduced) frameId = requestAnimationFrame(renderFrame);
@@ -723,6 +742,16 @@ export function initMobiusRing(canvas) {
     updatePointerHover();
   }
 
+  function onClick(event) {
+    const rect = container.getBoundingClientRect();
+    pointer.x = event.clientX - rect.left;
+    pointer.y = event.clientY - rect.top;
+    pointer.inside = true;
+    const label = event.target.closest?.('.ring-label');
+    const index = label ? Number(label.dataset.markerIndex) : nearestMarker();
+    selectMarker(index);
+  }
+
   function onPointerLeave() {
     pointer.inside = false;
     clearHovered();
@@ -732,6 +761,7 @@ export function initMobiusRing(canvas) {
   resize();
   window.addEventListener('resize', resize);
   container.addEventListener('pointermove', onPointerMove);
+  container.addEventListener('click', onClick);
   container.addEventListener('pointerleave', onPointerLeave);
 
   return {

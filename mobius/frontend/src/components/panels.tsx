@@ -3956,9 +3956,6 @@ function MigrationManageTab() {
   )
 }
 
-function MigrationExportTab() {
-}
-
 function MigrationItemEditModal({
   kind,
   item,
