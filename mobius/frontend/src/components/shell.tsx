@@ -523,7 +523,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
       to: `/u/${p.created_by || userParam}/p/${p.id}`,
     }))
 
-  const issueItems: SwitcherItem[] = ((issuesMap[projectParam] || []) as any[])
+  const issueItems: SwitcherItem[] = ((issuesMap[projectParam ?? ''] || []) as any[])
     .filter(i => i && i.id)
     .map(i => ({
       id: i.id,
@@ -534,7 +534,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
       to: `/u/${userParam}/p/${projectParam}/i/${i.id}`,
     }))
 
-  const researchItems: SwitcherItem[] = ((researchesMap[projectParam] || []) as any[])
+  const researchItems: SwitcherItem[] = ((researchesMap[projectParam ?? ''] || []) as any[])
     .filter(r => r && r.id)
     .map(r => ({
       id: r.id,

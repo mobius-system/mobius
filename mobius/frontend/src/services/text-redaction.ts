@@ -318,7 +318,7 @@ export function readTextRedactionRules(): TextRedactionRule[] {
 
     return parsed
       .map((item, index) => normalizeRule(item, index))
-      .filter((item): item is TextRedactionRule => !!item)
+      .filter((item: unknown): item is TextRedactionRule => !!item)
   } catch (_) {
     return []
   }
@@ -386,7 +386,7 @@ async function fetchTextRedactionGlobalFromBackend(): Promise<TextRedactionGloba
     const rawRules = Array.isArray(data.rules) ? data.rules : []
     const rules = rawRules
       .map((item: unknown, index: number) => normalizeRule(item, index))
-      .filter((item): item is TextRedactionRule => !!item)
+      .filter((item: unknown): item is TextRedactionRule => !!item)
     return {
       rules,
       updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : null,
@@ -612,7 +612,7 @@ export function startTextRedactionRuntime() {
 
   function elementNeedsMask(element: HTMLElement) {
     if (!enabled || rules.length === 0) return false
-    const value = element.value || ''
+    const value = (element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value || ''
     if (!value) return false
     for (const rule of rules) {
       if (!rule.keyword) continue

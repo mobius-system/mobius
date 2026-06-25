@@ -19,7 +19,7 @@ repos:
       - id: check-case-conflict
       # 符号链接合法性
       - id: check-symlinks
-      # 行尾统一 (避免 LF/CRLF 混用) — 适用于 .ts/.js/.tsx/.py/.md 等所有文本文件
+      # 行尾统一 (避免 LF/CRLF 混用)
       - id: mixed-line-ending
         args: [--fix=lf]
       # 配置文件语法
@@ -29,8 +29,33 @@ repos:
       - id: check-json
         exclude: ^mobius/frontend/.*$|^mobius/extension/.*$
       - id: check-toml
-      # 通用清理 — 适用于 .ts/.js/.tsx 等所有源码 (排除生成产物)
+      # 通用清理 (排除生成产物)
       - id: end-of-file-fixer
         exclude: \.svg$|\.min\.js$|\.min\.css$|^mobius/frontend/dist/|^mobius/frontend/.build/|^mobius/frontend/node_modules/|^mobius/extension/.*/frontend/dist/
       - id: trailing-whitespace
         exclude: \.svg$|\.min\.js$|\.min\.css$|^mobius/frontend/dist/|^mobius/frontend/.build/|^mobius/frontend/node_modules/|^mobius/extension/.*/frontend/dist/
+
+  # TS / JS 语言检查 (本地 hook, 无需联网)
+  - repo: local
+    hooks:
+      # JS 语法检查 (node --check) — 秒级, 拦截语法错误
+      - id: node-check-js
+        name: node --check (.js 语法)
+        entry: node --check
+        language: system
+        files: \.js$
+        exclude: ^mobius/frontend/dist/|^mobius/frontend/.build/|^mobius/frontend/node_modules/|^mobius/extension/.*/frontend/dist/|^docs/|^\.trash/
+      # 前端 TS 类型检查 (tsc --noEmit) — 仅当 mobius/frontend/src 下 .ts/.tsx 改动时触发
+      - id: tsc-frontend
+        name: tsc --noEmit (前端 .ts/.tsx 类型检查)
+        entry: bash -c 'cd mobius/frontend && npx --no-install tsc --noEmit'
+        language: system
+        files: ^mobius/frontend/src/.*\.tsx?$
+        pass_filenames: false
+      # 后端 TS 类型检查 — 仅当 mobius/ 根下 .ts 改动时触发
+      - id: tsc-backend
+        name: tsc --noEmit (后端 .ts 类型检查)
+        entry: bash -c 'cd mobius && npx --no-install tsc --noEmit -p tsconfig.backend.json'
+        language: system
+        files: ^mobius/(backend|repositories|db)\.ts$|^mobius/backend/.*\.ts$|^mobius/backend/repositories/.*\.ts$
+        pass_filenames: false
