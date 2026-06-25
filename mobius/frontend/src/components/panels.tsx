@@ -3206,21 +3206,36 @@ type MigrationInventoryItem = {
   created_by?: string
   created_at?: string
   updated_at?: string
+  scope?: 'user' | 'project' | 'builtin'
+  owner_id?: string
+  visibility?: string | null
+  can_manage?: boolean
+  project_id?: string | null
 }
 
 type MigrationProjectScope = {
   project_id: string
   project_name: string
+  project_created_by?: string | null
+  is_own_project?: boolean
+  memories: MigrationInventoryItem[]
+  skills: MigrationInventoryItem[]
+}
+
+type MigrationOthersUserScope = {
+  owner_id: string
   memories: MigrationInventoryItem[]
   skills: MigrationInventoryItem[]
 }
 
 type MigrationInventory = {
+  current_user_id?: string
   user_scope: {
     user_id: string
     memories: MigrationInventoryItem[]
     skills: MigrationInventoryItem[]
   }
+  others_user_scopes?: MigrationOthersUserScope[]
   project_scopes: MigrationProjectScope[]
 }
 
@@ -3302,19 +3317,31 @@ function ChecklistRow({
 }
 
 function SkillMemoryMigrationPanel() {
-  const [mode, setMode] = useState<'export' | 'import'>('export')
+  const [mode, setMode] = useState<'manage' | 'export' | 'import'>('manage')
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Skill 与 Memory 备份和迁移
+            Skill 与 Memory 管理
           </h3>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            把自己的用户级 + 任意项目级 Skill / Memory 打包成 base64 字符串, 或从字符串导入到指定 scope.
+            管理、备份和迁移自己的用户级 / 项目级 Skill 与 Memory; 他人创建的条目仅可查看.
           </div>
         </div>
         <div className="flex rounded-md border border-[var(--border-color)] p-0.5">
+          <button
+            type="button"
+            onClick={() => setMode('manage')}
+            className="inline-flex h-7 items-center gap-1 rounded px-2.5 text-[12px] font-medium transition-colors"
+            style={{
+              background: mode === 'manage' ? 'var(--bg-hover)' : 'transparent',
+              color: mode === 'manage' ? 'var(--text-primary)' : 'var(--text-secondary)',
+            }}
+          >
+            <Settings className="h-3.5 w-3.5" />
+            管理
+          </button>
           <button
             type="button"
             onClick={() => setMode('export')}
@@ -3341,8 +3368,1078 @@ function SkillMemoryMigrationPanel() {
           </button>
         </div>
       </div>
-      {mode === 'export' ? <MigrationExportTab /> : <MigrationImportTab />}
+      {mode === 'manage' ? <MigrationManageTab /> : mode === 'export' ? <MigrationExportTab /> : <MigrationImportTab />}
     </section>
+  )
+}
+
+// ── 管理子模式 ─────────────────────────────────────────────────────────────
+// 五条权限规则在该面板的可视化落地:
+//   1. 自己的用户级: 可批量修改权限 (visible batch bar)
+//   2. 自己的用户级: 可添加/查看/修改权限/移动/删除
+//   3. 自己项目的项目级: 可添加/查看/修改权限/移动/删除
+//   4. 他人用户级: 只读 (不显示任何修改类按钮, 顶部条幅声明)
+//   5. 他人项目的项目级: 只读 (同上)
+// 后端返回的 can_manage 决定 UI 行为, 与 canManageContextItem 一致.
+function MigrationManageTab() {
+  const [inventory, setInventory] = useState<MigrationInventory | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [editingItem, setEditingItem] = useState<{ kind: 'memory' | 'skill'; item: MigrationInventoryItem } | null>(null)
+  const [accessItem, setAccessItem] = useState<{ kind: 'memory' | 'skill'; item: MigrationInventoryItem } | null>(null)
+  const [movingItem, setMovingItem] = useState<{ kind: 'memory' | 'skill'; item: MigrationInventoryItem } | null>(null)
+  const [creating, setCreating] = useState<{ kind: 'memory' | 'skill'; scope: 'user' | 'project'; project_id?: string } | null>(null)
+  const [batchAccessOpen, setBatchAccessOpen] = useState(false)
+  const [batchMoveOpen, setBatchMoveOpen] = useState(false)
+
+  const refresh = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const data = (await api('/api/admin/skill-memory/inventory')) as MigrationInventory
+      setInventory(data)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    refresh()
+    const timer = window.setTimeout(() => setNotice(''), 2400)
+    return () => window.clearTimeout(timer)
+  }, [notice])
+
+  const selfUserScope = inventory?.user_scope
+  const ownProjects = (inventory?.project_scopes ?? []).filter((s) => s.is_own_project)
+  const othersProjects = (inventory?.project_scopes ?? []).filter((s) => !s.is_own_project)
+  const othersUserScopes = inventory?.others_user_scopes ?? []
+
+  const toggleId = (id: string) => {
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelectedIds(next)
+  }
+
+  const selectMany = (ids: string[], select: boolean) => {
+    const next = new Set(selectedIds)
+    for (const id of ids) {
+      if (select) next.add(id)
+      else next.delete(id)
+    }
+    setSelectedIds(next)
+  }
+
+  const allSelfIds: string[] = useMemo(() => {
+    if (!inventory) return []
+    const ids: string[] = []
+    for (const m of inventory.user_scope.memories) if (m.can_manage) ids.push(m.id)
+    for (const s of inventory.user_scope.skills) if (s.can_manage) ids.push(s.id)
+    for (const scope of ownProjects) {
+      for (const m of scope.memories) if (m.can_manage) ids.push(m.id)
+      for (const s of scope.skills) if (s.can_manage) ids.push(s.id)
+    }
+    return ids
+  }, [inventory, ownProjects])
+
+  const selectedManageable = useMemo(() => {
+    if (!inventory) return [] as { kind: 'memory' | 'skill'; id: string; item: MigrationInventoryItem }[]
+    const all: { kind: 'memory' | 'skill'; id: string; item: MigrationInventoryItem }[] = []
+    const push = (kind: 'memory' | 'skill', list: MigrationInventoryItem[]) => {
+      for (const it of list) {
+        if (it.can_manage && selectedIds.has(it.id)) all.push({ kind, id: it.id, item: it })
+      }
+    }
+    push('memory', inventory.user_scope.memories)
+    push('skill', inventory.user_scope.skills)
+    for (const scope of ownProjects) {
+      push('memory', scope.memories)
+      push('skill', scope.skills)
+    }
+    return all
+  }, [inventory, selectedIds, ownProjects])
+
+  const handleDelete = async (kind: 'memory' | 'skill', id: string) => {
+    if (!window.confirm('确定删除该条目? 此操作不可撤销.')) return
+    try {
+      await api(`/api/${kind === 'memory' ? 'memories' : 'skills'}/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      setNotice(`已删除 ${kind === 'memory' ? 'Memory' : 'Skill'}`)
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      await refresh()
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    }
+  }
+
+  const handleMove = async (kind: 'memory' | 'skill', id: string, targetScope: 'user' | 'project', projectId?: string) => {
+    try {
+      await api(`/api/${kind === 'memory' ? 'memories' : 'skills'}/${encodeURIComponent(id)}/move`, {
+        method: 'POST',
+        body: JSON.stringify(targetScope === 'project' ? { project_id: projectId } : { scope: 'user' }),
+      })
+      setNotice(`已移动到 ${targetScope === 'user' ? '用户级' : '项目级'}`)
+      setMovingItem(null)
+      await refresh()
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    }
+  }
+
+  const handleBatchDelete = async () => {
+    if (selectedManageable.length === 0) return
+    if (!window.confirm(`将删除选中的 ${selectedManageable.length} 条, 此操作不可撤销, 是否继续?`)) return
+    let ok = 0
+    let fail = 0
+    await Promise.all(selectedManageable.map(async ({ kind, id }) => {
+      try {
+        await api(`/api/${kind === 'memory' ? 'memories' : 'skills'}/${encodeURIComponent(id)}`, { method: 'DELETE' })
+        ok += 1
+      } catch {
+        fail += 1
+      }
+    }))
+    setNotice(`批量删除完成: 成功 ${ok} 条${fail > 0 ? ` · 失败 ${fail} 条` : ''}`)
+    setSelectedIds(new Set())
+    await refresh()
+  }
+
+  const handleBatchAccess = async (visibility: string) => {
+    if (selectedManageable.length === 0) return
+    let ok = 0
+    let fail = 0
+    await Promise.all(selectedManageable.map(async ({ kind, id }) => {
+      try {
+        await api(`/api/${kind === 'memory' ? 'memories' : 'skills'}/${encodeURIComponent(id)}/access`, {
+          method: 'PATCH',
+          body: JSON.stringify({ visibility }),
+        })
+        ok += 1
+      } catch {
+        fail += 1
+      }
+    }))
+    setNotice(`批量修改权限完成: 成功 ${ok} 条${fail > 0 ? ` · 失败 ${fail} 条` : ''}`)
+    setBatchAccessOpen(false)
+    await refresh()
+  }
+
+  const handleBatchMove = async (targetScope: 'user' | 'project', projectId?: string) => {
+    if (selectedManageable.length === 0) return
+    let ok = 0
+    let fail = 0
+    await Promise.all(selectedManageable.map(async ({ kind, id, item }) => {
+      if (item.scope === targetScope && (targetScope !== 'project' || item.project_id === projectId)) {
+        fail += 1
+        return
+      }
+      try {
+        await api(`/api/${kind === 'memory' ? 'memories' : 'skills'}/${encodeURIComponent(id)}/move`, {
+          method: 'POST',
+          body: JSON.stringify(targetScope === 'project' ? { project_id: projectId } : { scope: 'user' }),
+        })
+        ok += 1
+      } catch {
+        fail += 1
+      }
+    }))
+    setNotice(`批量移动完成: 成功 ${ok} 条${fail > 0 ? ` · 失败 ${fail} 条` : ''}`)
+    setBatchMoveOpen(false)
+    setSelectedIds(new Set())
+    await refresh()
+  }
+
+  const renderRow = (kind: 'memory' | 'skill', item: MigrationInventoryItem) => {
+    const selected = selectedIds.has(item.id)
+    const canManage = !!item.can_manage
+    return (
+      <div
+        key={item.id}
+        className="flex items-start gap-2 rounded-md px-2 py-1.5"
+        style={{
+          background: selected ? 'rgba(59,130,246,0.10)' : 'transparent',
+          border: `1px solid ${selected ? 'rgba(59,130,246,0.36)' : 'var(--border-color)'}`,
+        }}
+      >
+        <input
+          type="checkbox"
+          className="mt-1 h-3.5 w-3.5 flex-shrink-0"
+          checked={selected}
+          onChange={() => toggleId(item.id)}
+          disabled={!canManage}
+          title={canManage ? '勾选后可批量操作' : '他人条目, 不可批量操作'}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              className="rounded px-1 py-px text-[10px] font-medium"
+              style={{ background: 'var(--bg-hover)', color: 'var(--text-muted)' }}
+            >
+              {kind === 'memory' ? 'MEM' : 'SKILL'}
+            </span>
+            {item.visibility && (
+              <span
+                className="rounded px-1 py-px text-[10px] font-medium"
+                style={{
+                  background: item.visibility === 'public' ? 'rgba(16,185,129,0.14)' : 'rgba(148,163,184,0.12)',
+                  color: item.visibility === 'public' ? '#34d399' : 'var(--text-muted)',
+                }}
+              >
+                {item.visibility === 'inherit' ? '继承项目'
+                  : item.visibility === 'private' ? '仅自己'
+                  : item.visibility === 'team' ? '同组'
+                  : item.visibility === 'public' ? '公开'
+                  : item.visibility === 'allowlist' ? '指定用户'
+                  : item.visibility}
+              </span>
+            )}
+            <span className="truncate text-[12.5px] font-medium" style={{ color: 'var(--text-primary)' }}>
+              {item.name}
+            </span>
+            {!canManage && (
+              <span
+                className="rounded px-1 py-px text-[10px]"
+                style={{ background: 'rgba(148,163,184,0.16)', color: 'var(--text-muted)' }}
+              >
+                只读
+              </span>
+            )}
+          </div>
+          <div className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            {migrationItemSubtitle(item, kind)}
+          </div>
+        </div>
+        {canManage ? (
+          <div className="flex flex-shrink-0 items-center gap-1">
+            <button
+              type="button"
+              title="编辑"
+              onClick={() => setEditingItem({ kind, item })}
+              className="inline-flex h-7 w-7 items-center justify-center rounded text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              <FileText className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              title="权限"
+              onClick={() => setAccessItem({ kind, item })}
+              className="inline-flex h-7 w-7 items-center justify-center rounded text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              <Eye className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              title="移动 scope"
+              onClick={() => setMovingItem({ kind, item })}
+              className="inline-flex h-7 w-7 items-center justify-center rounded text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              title="删除"
+              onClick={() => handleDelete(kind, item.id)}
+              className="inline-flex h-7 w-7 items-center justify-center rounded text-red-300 transition-colors hover:bg-red-500/10"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  const renderSection = (
+    title: string,
+    subtitle: string,
+    items: { kind: 'memory' | 'skill'; list: MigrationInventoryItem[] }[],
+    editable: boolean,
+    ids: string[] = [],
+  ) => {
+    const totalCount = items.reduce((sum, x) => sum + x.list.length, 0)
+    if (totalCount === 0 && !editable) return null
+    const allSelected = editable && ids.length > 0 && ids.every((id) => selectedIds.has(id))
+    return (
+      <div
+        className="rounded-lg border p-3"
+        style={{
+          background: 'var(--bg-secondary)',
+          borderColor: editable ? 'rgba(59,130,246,0.35)' : 'var(--border-color)',
+        }}
+      >
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{title}</span>
+              <span
+                className="rounded px-1.5 py-px text-[10px]"
+                style={{
+                  background: editable ? 'rgba(59,130,246,0.16)' : 'rgba(148,163,184,0.16)',
+                  color: editable ? '#60a5fa' : 'var(--text-muted)',
+                }}
+              >
+                {editable ? '可编辑' : '只读'}
+              </span>
+            </div>
+            <div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{subtitle}</div>
+          </div>
+          {editable && ids.length > 0 && (
+            <button
+              type="button"
+              onClick={() => selectMany(ids, !allSelected)}
+              className="rounded border border-[var(--border-color)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+            >
+              {allSelected ? '取消全选' : '全选当前分组'}
+            </button>
+          )}
+        </div>
+        {totalCount === 0 ? (
+          <div
+            className="rounded-md border border-dashed border-[var(--border-color)] px-3 py-3 text-center text-[11.5px]"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            暂无内容
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {items.map((group) => group.list.map((it) => renderRow(group.kind, it)))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3" data-tour="skill-memory-manage-panel">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={refresh}
+          disabled={loading}
+          className="inline-flex h-8 items-center gap-1 rounded-md border border-[var(--border-color)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+          刷新
+        </button>
+        <button
+          type="button"
+          onClick={() => setCreating({ kind: 'memory', scope: 'user' })}
+          className="inline-flex h-8 items-center gap-1 rounded-md border border-[var(--border-color)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          新建我的 Memory
+        </button>
+        <button
+          type="button"
+          onClick={() => setCreating({ kind: 'skill', scope: 'user' })}
+          className="inline-flex h-8 items-center gap-1 rounded-md border border-[var(--border-color)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          新建我的 Skill
+        </button>
+        {allSelfIds.length > 0 && (
+          <button
+            type="button"
+            onClick={() => selectMany(allSelfIds, !allSelfIds.every((id) => selectedIds.has(id)))}
+            className="inline-flex h-8 items-center gap-1 rounded-md border border-[var(--border-color)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          >
+            {allSelfIds.every((id) => selectedIds.has(id)) ? '取消全选我的' : '全选我的'}
+          </button>
+        )}
+        <span className="ml-auto text-[12px]" style={{ color: 'var(--text-muted)' }}>
+          已选 {selectedManageable.length} 条 (可管理)
+        </span>
+      </div>
+
+      {selectedManageable.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-2 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-2"
+        >
+          <span className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
+            批量操作 ({selectedManageable.length} 条):
+          </span>
+          <button
+            type="button"
+            onClick={() => setBatchAccessOpen(true)}
+            className="inline-flex h-7 items-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-card)] px-2 text-[11.5px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            批量修改权限
+          </button>
+          <button
+            type="button"
+            onClick={() => setBatchMoveOpen(true)}
+            className="inline-flex h-7 items-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-card)] px-2 text-[11.5px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            批量移动
+          </button>
+          <button
+            type="button"
+            onClick={handleBatchDelete}
+            className="inline-flex h-7 items-center gap-1 rounded border border-red-500/30 bg-red-500/10 px-2 text-[11.5px] text-red-300 transition-colors hover:bg-red-500/15"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            批量删除
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set())}
+            className="ml-auto inline-flex h-7 items-center rounded px-2 text-[11.5px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+          >
+            取消选择
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+
+      {notice && (
+        <div className="inline-flex items-center gap-1.5 self-start rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1.5 text-[12px] text-emerald-300">
+          <Check className="h-3.5 w-3.5" />
+          {notice}
+        </div>
+      )}
+
+      {loading && !inventory && (
+        <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          加载中…
+        </div>
+      )}
+
+      {inventory && (
+        <>
+          {/* 规则 1, 2: 自己的用户级 — 可批量改权限 + 可增删改移 */}
+          {renderSection(
+            `我的用户级 (${selfUserScope?.user_id ?? ''})`,
+            '完整管理: 添加、查看、修改权限、移动、删除; 支持批量改权限',
+            [
+              { kind: 'memory', list: selfUserScope?.memories ?? [] },
+              { kind: 'skill', list: selfUserScope?.skills ?? [] },
+            ],
+            true,
+            [
+              ...(selfUserScope?.memories ?? []).filter((m) => m.can_manage).map((m) => m.id),
+              ...(selfUserScope?.skills ?? []).filter((s) => s.can_manage).map((s) => s.id),
+            ],
+          )}
+
+          {/* 规则 3: 自己项目的项目级 — 可增删改移 */}
+          {ownProjects.map((scope) => renderSection(
+            `我创建的项目: ${scope.project_name}`,
+            scope.project_id,
+            [
+              { kind: 'memory', list: scope.memories },
+              { kind: 'skill', list: scope.skills },
+            ],
+            true,
+            [
+              ...scope.memories.filter((m) => m.can_manage).map((m) => m.id),
+              ...scope.skills.filter((s) => s.can_manage).map((s) => s.id),
+            ],
+          ))}
+
+          {/* 规则 4: 他人用户级 — 只读 */}
+          {othersUserScopes.length > 0 && (
+            <div className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-[11.5px]" style={{ color: 'var(--text-muted)' }}>
+              以下为他人用户级 Skill / Memory, 仅可查看, 不可添加、修改权限、移动或删除.
+            </div>
+          )}
+          {othersUserScopes.map((scope) => renderSection(
+            `他人用户级 (${scope.owner_id})`,
+            '只读: 不可修改权限、移动或删除',
+            [
+              { kind: 'memory', list: scope.memories },
+              { kind: 'skill', list: scope.skills },
+            ],
+            false,
+          ))}
+
+          {/* 规则 5: 他人项目的项目级 — 只读 */}
+          {othersProjects.length > 0 && (
+            <div className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-[11.5px]" style={{ color: 'var(--text-muted)' }}>
+              以下为他人项目的项目级 Skill / Memory, 仅可查看, 不可添加、修改权限、移动或删除.
+            </div>
+          )}
+          {othersProjects.map((scope) => renderSection(
+            `他人项目: ${scope.project_name}`,
+            `创建者: ${scope.project_created_by ?? '(未知)'} · 只读`,
+            [
+              { kind: 'memory', list: scope.memories },
+              { kind: 'skill', list: scope.skills },
+            ],
+            false,
+          ))}
+        </>
+      )}
+
+      {editingItem && (
+        <MigrationItemEditModal
+          kind={editingItem.kind}
+          item={editingItem.item}
+          onClose={() => setEditingItem(null)}
+          onSaved={() => {
+            setEditingItem(null)
+            refresh()
+          }}
+        />
+      )}
+
+      {creating && (
+        <MigrationItemEditModal
+          kind={creating.kind}
+          item={null}
+          defaultScope={creating.scope}
+          defaultProjectId={creating.project_id}
+          onClose={() => setCreating(null)}
+          onSaved={() => {
+            setCreating(null)
+            refresh()
+          }}
+        />
+      )}
+
+      {accessItem && (
+        <MigrationItemAccessModal
+          kind={accessItem.kind}
+          item={accessItem.item}
+          onClose={() => setAccessItem(null)}
+          onSaved={() => {
+            setAccessItem(null)
+            refresh()
+          }}
+        />
+      )}
+
+      {movingItem && (
+        <MigrationMoveTargetModal
+          inventory={inventory}
+          kind={movingItem.kind}
+          item={movingItem.item}
+          onClose={() => setMovingItem(null)}
+          onConfirm={(targetScope, projectId) => handleMove(movingItem.kind, movingItem.item.id, targetScope, projectId)}
+        />
+      )}
+
+      {batchAccessOpen && (
+        <MigrationBatchAccessModal
+          count={selectedManageable.length}
+          onClose={() => setBatchAccessOpen(false)}
+          onConfirm={(visibility) => handleBatchAccess(visibility)}
+        />
+      )}
+
+      {batchMoveOpen && (
+        <MigrationMoveTargetModal
+          inventory={inventory}
+          kind="memory"
+          item={null}
+          batchCount={selectedManageable.length}
+          onClose={() => setBatchMoveOpen(false)}
+          onConfirm={(targetScope, projectId) => handleBatchMove(targetScope, projectId)}
+        />
+      )}
+    </div>
+  )
+}
+
+function MigrationItemEditModal({
+  kind,
+  item,
+  defaultScope,
+  defaultProjectId,
+  onClose,
+  onSaved,
+}: {
+  kind: 'memory' | 'skill'
+  item: MigrationInventoryItem | null
+  defaultScope?: 'user' | 'project'
+  defaultProjectId?: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const isCreate = !item
+  const [name, setName] = useState(item?.name ?? '')
+  const [description, setDescription] = useState(item?.description ?? '')
+  const [body, setBody] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!item || kind !== 'memory') return
+    let alive = true
+    api(`/api/memories/${encodeURIComponent(item.id)}`)
+      .then((data: any) => { if (alive) setBody(data?.body ?? '') })
+      .catch((e: any) => { if (alive) setError(e?.message || String(e)) })
+    return () => { alive = false }
+  }, [item, kind])
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      setError('name 不能为空')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      if (kind === 'memory') {
+        if (isCreate) {
+          const payload: any = { name, description, body }
+          if (defaultScope === 'project' && defaultProjectId) {
+            // 项目级 memory 直接走项目路由
+            await api(`/api/projects/${encodeURIComponent(defaultProjectId)}/memories`, {
+              method: 'POST', body: JSON.stringify(payload),
+            })
+          } else {
+            await api('/api/memories', { method: 'POST', body: JSON.stringify(payload) })
+          }
+        } else {
+          await api(`/api/memories/${encodeURIComponent(item!.id)}`, {
+            method: 'PATCH', body: JSON.stringify({ name, description, body }),
+          })
+        }
+      } else {
+        // skill 编辑只支持改名 / 描述, body 由 SKILL.md 文件组成, 不在此处编辑.
+        if (isCreate) {
+          await api('/api/skills', { method: 'POST', body: JSON.stringify({ name }) })
+        } else if (item) {
+          await api(`/api/skills/${encodeURIComponent(item.id)}`, {
+            method: 'PATCH', body: JSON.stringify({ name, description }),
+          })
+        }
+      }
+      onSaved()
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        className="flex max-h-[88vh] w-full max-w-2xl flex-col gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h4 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {isCreate ? `新建 ${kind === 'memory' ? 'Memory' : 'Skill'}` : `编辑 ${kind === 'memory' ? 'Memory' : 'Skill'}`}
+          </h4>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+          >
+            关闭
+          </button>
+        </div>
+        {error && (
+          <div className="rounded-md border border-red-500/25 bg-red-500/10 px-2.5 py-1.5 text-[12px] text-red-300">
+            {error}
+          </div>
+        )}
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>名称</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="h-9 rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-[13px]"
+            style={{ color: 'var(--text-primary)' }}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>描述</span>
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="一句话描述 (可空)"
+            className="h-9 rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-[13px]"
+            style={{ color: 'var(--text-primary)' }}
+          />
+        </label>
+        {kind === 'memory' && (
+          <label className="flex min-h-0 flex-1 flex-col gap-1">
+            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>正文 (Markdown)</span>
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={12}
+              className="min-h-[200px] w-full flex-1 resize-y rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] p-2 font-mono text-[12px]"
+              style={{ color: 'var(--text-primary)' }}
+            />
+          </label>
+        )}
+        {kind === 'skill' && (
+          <div className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-[11.5px]" style={{ color: 'var(--text-muted)' }}>
+            Skill 的多文件结构不在面板内编辑. 创建会调用 npx 安装; 已存在的 Skill 可改名称与描述, body 请在文件系统中编辑.
+          </div>
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 items-center rounded-md border border-[var(--border-color)] px-3 text-[12.5px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium text-white transition-colors disabled:opacity-50"
+            style={{ background: '#2563eb' }}
+          >
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MigrationItemAccessModal({
+  kind,
+  item,
+  onClose,
+  onSaved,
+}: {
+  kind: 'memory' | 'skill'
+  item: MigrationInventoryItem
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const baseUrl = kind === 'memory' ? '/api/memories' : '/api/skills'
+  const kindLabel = kind === 'memory' ? 'Memory' : 'Skill'
+  const [visibility, setVisibility] = useState<string>(item.visibility || (item.scope === 'project' ? 'inherit' : 'private'))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const options = item.scope === 'project'
+    ? [
+        { value: 'inherit', label: '继承项目', description: '跟随所属项目的可见性。' },
+        { value: 'private', label: '仅自己', description: '只有创建者和管理员可见。' },
+        { value: 'team', label: '同组', description: '同一群组用户可见。' },
+        { value: 'public', label: '公开', description: '所有登录用户可见。' },
+        { value: 'allowlist', label: '指定用户', description: '只有创建者、管理员和允许名单中的用户可见。' },
+      ]
+    : [
+        { value: 'private', label: '仅自己', description: '只有创建者和管理员可见。' },
+        { value: 'team', label: '同组', description: '同一群组用户可见。' },
+        { value: 'public', label: '公开', description: '所有登录用户可见。' },
+        { value: 'allowlist', label: '指定用户', description: '只有创建者、管理员和允许名单中的用户可见。' },
+      ]
+
+  const handleSave = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      await api(`${baseUrl}/${encodeURIComponent(item.id)}/access`, {
+        method: 'PATCH',
+        body: JSON.stringify({ visibility }),
+      })
+      onSaved()
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        className="flex w-full max-w-lg flex-col gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h4 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            修改权限 · {kindLabel}
+          </h4>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+          >
+            关闭
+          </button>
+        </div>
+        <div className="truncate text-[12px]" style={{ color: 'var(--text-muted)' }}>
+          目标: {item.name} ({item.id})
+        </div>
+        {error && (
+          <div className="rounded-md border border-red-500/25 bg-red-500/10 px-2.5 py-1.5 text-[12px] text-red-300">
+            {error}
+          </div>
+        )}
+        <div className="flex flex-col gap-1.5">
+          {options.map((opt) => (
+            <label
+              key={opt.value}
+              className="flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 transition-colors"
+              style={{
+                background: visibility === opt.value ? 'rgba(59,130,246,0.10)' : 'transparent',
+                borderColor: visibility === opt.value ? 'rgba(59,130,246,0.36)' : 'var(--border-color)',
+              }}
+            >
+              <input
+                type="radio"
+                name="visibility"
+                value={opt.value}
+                checked={visibility === opt.value}
+                onChange={() => setVisibility(opt.value)}
+                className="mt-0.5 h-3.5 w-3.5"
+              />
+              <div className="min-w-0">
+                <div className="text-[12.5px] font-medium" style={{ color: 'var(--text-primary)' }}>{opt.label}</div>
+                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{opt.description}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 items-center rounded-md border border-[var(--border-color)] px-3 text-[12.5px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium text-white transition-colors disabled:opacity-50"
+            style={{ background: '#2563eb' }}
+          >
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            保存权限
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MigrationBatchAccessModal({
+  count,
+  onClose,
+  onConfirm,
+}: {
+  count: number
+  onClose: () => void
+  onConfirm: (visibility: string) => void
+}) {
+  const [visibility, setVisibility] = useState<string>('private')
+  const options = [
+    { value: 'private', label: '仅自己', description: '只有创建者和管理员可见' },
+    { value: 'team', label: '同组', description: '同一群组用户可见' },
+    { value: 'public', label: '公开', description: '所有登录用户可见' },
+    { value: 'allowlist', label: '指定用户', description: '只允许指定用户列表可见' },
+  ]
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        className="flex w-full max-w-lg flex-col gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h4 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            批量修改权限
+          </h4>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+          >
+            关闭
+          </button>
+        </div>
+        <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
+          将对选中的 <span style={{ color: 'var(--text-primary)' }}>{count}</span> 条 Skill / Memory 应用统一的可见性. 项目级条目同时支持「继承项目」.
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {options.map((opt) => (
+            <label
+              key={opt.value}
+              className="flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 transition-colors"
+              style={{
+                background: visibility === opt.value ? 'rgba(59,130,246,0.10)' : 'transparent',
+                borderColor: visibility === opt.value ? 'rgba(59,130,246,0.36)' : 'var(--border-color)',
+              }}
+            >
+              <input
+                type="radio"
+                name="batch-visibility"
+                value={opt.value}
+                checked={visibility === opt.value}
+                onChange={() => setVisibility(opt.value)}
+                className="mt-0.5 h-3.5 w-3.5"
+              />
+              <div className="min-w-0">
+                <div className="text-[12.5px] font-medium" style={{ color: 'var(--text-primary)' }}>{opt.label}</div>
+                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{opt.description}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 items-center rounded-md border border-[var(--border-color)] px-3 text-[12.5px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirm(visibility)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium text-white transition-colors"
+            style={{ background: '#2563eb' }}
+          >
+            <Save className="h-3.5 w-3.5" />
+            应用到 {count} 条
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MigrationMoveTargetModal({
+  inventory,
+  kind,
+  item,
+  batchCount,
+  onClose,
+  onConfirm,
+}: {
+  inventory: MigrationInventory | null
+  kind: 'memory' | 'skill'
+  item: MigrationInventoryItem | null
+  batchCount?: number
+  onClose: () => void
+  onConfirm: (targetScope: 'user' | 'project', projectId?: string) => void
+}) {
+  const [targetScope, setTargetScope] = useState<'user' | 'project'>('user')
+  const [projectId, setProjectId] = useState<string>('')
+  const ownProjects = (inventory?.project_scopes ?? []).filter((s) => s.is_own_project)
+  const kindLabel = kind === 'memory' ? 'Memory' : 'Skill'
+  const targetLabel = batchCount
+    ? `${batchCount} 条`
+    : (item?.name ?? kindLabel)
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        className="flex w-full max-w-lg flex-col gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h4 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {batchCount ? '批量移动' : `移动 · ${kindLabel}`}
+          </h4>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+          >
+            关闭
+          </button>
+        </div>
+        <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
+          目标: {targetLabel}. 只能移动到自己拥有的位置 (用户级 / 自己创建的项目).
+        </div>
+        <div className="flex flex-col gap-2">
+          <label
+            className="flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 transition-colors"
+            style={{
+              background: targetScope === 'user' ? 'rgba(59,130,246,0.10)' : 'transparent',
+              borderColor: targetScope === 'user' ? 'rgba(59,130,246,0.36)' : 'var(--border-color)',
+            }}
+          >
+            <input
+              type="radio"
+              name="move-target"
+              checked={targetScope === 'user'}
+              onChange={() => setTargetScope('user')}
+              className="mt-0.5 h-3.5 w-3.5"
+            />
+            <div>
+              <div className="text-[12.5px] font-medium" style={{ color: 'var(--text-primary)' }}>用户级</div>
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>移动到我的用户级 ({inventory?.current_user_id})</div>
+            </div>
+          </label>
+          <label
+            className="flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 transition-colors"
+            style={{
+              background: targetScope === 'project' ? 'rgba(59,130,246,0.10)' : 'transparent',
+              borderColor: targetScope === 'project' ? 'rgba(59,130,246,0.36)' : 'var(--border-color)',
+            }}
+          >
+            <input
+              type="radio"
+              name="move-target"
+              checked={targetScope === 'project'}
+              onChange={() => setTargetScope('project')}
+              className="mt-0.5 h-3.5 w-3.5"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="text-[12.5px] font-medium" style={{ color: 'var(--text-primary)' }}>我创建的项目</div>
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>项目级 (继承项目可见性)</div>
+              <select
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                disabled={targetScope !== 'project' || ownProjects.length === 0}
+                className="mt-1.5 h-8 w-full rounded border border-[var(--input-border)] bg-[var(--input-bg)] px-2 text-[12px]"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                <option value="">{ownProjects.length === 0 ? '(没有可写入的项目)' : '请选择项目'}</option>
+                {ownProjects.map((p) => (
+                  <option key={p.project_id} value={p.project_id}>{p.project_name} ({p.project_id})</option>
+                ))}
+              </select>
+            </div>
+          </label>
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 items-center rounded-md border border-[var(--border-color)] px-3 text-[12.5px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (targetScope === 'project' && !projectId) return
+              onConfirm(targetScope, targetScope === 'project' ? projectId : undefined)
+            }}
+            disabled={targetScope === 'project' && !projectId}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium text-white transition-colors disabled:opacity-50"
+            style={{ background: '#2563eb' }}
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            移动
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -4409,7 +5506,7 @@ const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[]
   { key: 'assistant', label: '管理员小莫配置', icon: <Sparkles className="h-3.5 w-3.5" /> },
   { key: 'models', label: '模型接入', icon: <Terminal className="h-3.5 w-3.5" /> },
   { key: 'extensions', label: '拓展管理', icon: <Puzzle className="h-3.5 w-3.5" /> },
-  { key: 'migration', label: 'Skill与Memory备份和迁移', icon: <Package className="h-3.5 w-3.5" /> },
+  { key: 'migration', label: 'Skill与Memory管理', icon: <Package className="h-3.5 w-3.5" /> },
 ]
 
 export function AdminPanel({ onClose }: { onClose: () => void }) {

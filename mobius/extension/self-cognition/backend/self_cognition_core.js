@@ -936,7 +936,7 @@ function parseSseResponse(e) {
   } : r.length ? r[r.length - 1] : null;
 }
 
-async function fetchJson(e, t, r = 2.4e4) {
+async function fetchJson(e, t, r = 1.25e4) {
   const a = new AbortController, s = setTimeout(() => a.abort(), r);
   try {
     const r = await fetch(e, {

@@ -379,8 +379,8 @@ code {
   position: relative;
   z-index: 2;
   width: min(1360px, 100%);
-  height: min(88vh, 780px);
-  min-height: 560px;
+  height: min(70vh, 624px);
+  min-height: 448px;
   margin: 54px auto 0;
   overflow: hidden;
   isolation: isolate;
@@ -1767,8 +1767,8 @@ textarea:focus {
 
   .hero-visual {
     width: 100%;
-    height: min(64vh, 500px);
-    min-height: 330px;
+    height: min(51vh, 400px);
+    min-height: 264px;
     margin-top: 48px;
   }
 

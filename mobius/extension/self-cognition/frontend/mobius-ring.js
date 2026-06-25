@@ -12,14 +12,14 @@ const TYPE_META = {
 };
 
 const MARKER_LAYOUT = [
-  { u: 0.04 * TAU, v: -0.76, dx: -82, dy: -51 },
-  { u: 0.18 * TAU, v: 0.72, dx: 82, dy: -58 },
-  { u: 0.31 * TAU, v: -0.46, dx: -92, dy: 44 },
-  { u: 0.45 * TAU, v: 0.84, dx: 85, dy: -41 },
-  { u: 0.58 * TAU, v: -0.66, dx: -75, dy: 51 },
-  { u: 0.72 * TAU, v: 0.56, dx: 88, dy: 48 },
-  { u: 0.86 * TAU, v: -0.82, dx: -88, dy: -34 },
-  { u: 0.96 * TAU, v: 0.32, dx: 75, dy: 44 },
+  { u: 0.04 * TAU, v: -0.76, dx: -66, dy: -41 },
+  { u: 0.18 * TAU, v: 0.72, dx: 66, dy: -46 },
+  { u: 0.31 * TAU, v: -0.46, dx: -74, dy: 35 },
+  { u: 0.45 * TAU, v: 0.84, dx: 68, dy: -33 },
+  { u: 0.58 * TAU, v: -0.66, dx: -60, dy: 41 },
+  { u: 0.72 * TAU, v: 0.56, dx: 70, dy: 38 },
+  { u: 0.86 * TAU, v: -0.82, dx: -70, dy: -27 },
+  { u: 0.96 * TAU, v: 0.32, dx: 60, dy: 35 },
 ];
 
 const VERTEX_SHADER = /* glsl */`
@@ -307,9 +307,9 @@ function createPointCloud(count, options = {}) {
     fragmentShader: options.fragmentShader || FRAGMENT_SHADER,
     uniforms: {
       uTime: { value: 0 },
-      uRadius: { value: options.radius ?? 10.4 },
-      uWidth: { value: options.width ?? 1.64 },
-      uDotSize: { value: options.dotSize ?? 0.9 },
+      uRadius: { value: options.radius ?? 8.32 },
+      uWidth: { value: options.width ?? 1.312 },
+      uDotSize: { value: options.dotSize ?? 0.72 },
       uAlpha: { value: options.alpha ?? 0.62 },
       uGlow: { value: options.glow ?? 0.9 },
       uSweep: { value: 0 },
@@ -488,7 +488,7 @@ export function initMobiusRing(canvas, options = {}) {
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x02010a, 0.035);
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
-  camera.position.set(0, 2.55, 17.2);
+  camera.position.set(0, 2.04, 13.76);
   camera.lookAt(0, 0, 0);
 
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
