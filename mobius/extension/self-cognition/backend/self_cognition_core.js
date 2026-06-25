@@ -913,6 +913,29 @@ function extractResponseText(e) {
   return r(e), txt(t.join("\n"), 2e4);
 }
 
+function parseSseResponse(e) {
+  const t = [], r = [];
+  for (const a of String(e || "").split(/\r?\n/)) {
+    if (!a.startsWith("data:")) continue;
+    const e = a.slice(5).trim();
+    if (!e || "[DONE]" === e) continue;
+    let s = null;
+    try {
+      s = JSON.parse(e);
+    } catch {
+      continue;
+    }
+    if ("response.output_text.delta" === s.type && "string" == typeof s.delta) t.push(s.delta);
+    else if ("string" == typeof s.delta) t.push(s.delta);
+    else if (!t.length && "string" == typeof s.text) t.push(s.text);
+    if (s.response) r.push(s.response);
+    r.push(s);
+  }
+  return t.length ? {
+    output_text: t.join("")
+  } : r.length ? r[r.length - 1] : null;
+}
+
 async function fetchJson(e, t, r = 2.4e4) {
   const a = new AbortController, s = setTimeout(() => a.abort(), r);
   try {
@@ -924,6 +947,8 @@ async function fetchJson(e, t, r = 2.4e4) {
     try {
       return JSON.parse(o);
     } catch {
+      const e = parseSseResponse(o);
+      if (e) return e;
       throw new Error(`非 JSON 响应: ${txt(o, 240)}`);
     }
   } catch (e) {
@@ -971,7 +996,10 @@ async function callResponsesModel(e, t) {
     },
     body: JSON.stringify({
       model: e.model,
-      input: t,
+      input: [ {
+        role: "user",
+        content: t
+      } ],
       max_output_tokens: 900,
       temperature: 0.2
     })

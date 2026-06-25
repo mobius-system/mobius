@@ -1840,6 +1840,7 @@ textarea:focus {
 
   .detail-action-row,
   .detail-chat-form {
+    display: grid;
     grid-template-columns: 1fr;
   }
 
