@@ -644,6 +644,15 @@ export function startTextRedactionRuntime() {
     if (isMaskableElement(scope)) applyMaskToElement(scope)
   }
 
+  let maskRescanTimer: number | null = null
+  const scheduleMaskRescan = () => {
+    if (maskRescanTimer != null) return
+    maskRescanTimer = window.requestAnimationFrame(() => {
+      maskRescanTimer = null
+      applyMaskScan(document.body)
+    })
+  }
+
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       if (mutation.type === 'characterData') {
@@ -653,13 +662,29 @@ export function startTextRedactionRuntime() {
 
       if (mutation.type === 'attributes') {
         applyElementAttributes(mutation.target as Element)
+        // React/框架有时通过 setAttribute('value', ...) 更新输入框, 命中也重判 mask.
+        if (mutation.attributeName === 'value') {
+          const target = mutation.target
+          if (target instanceof HTMLElement) applyMaskToElement(target)
+        }
         continue
       }
 
       for (const node of mutation.addedNodes) {
         applySubtree(node)
+        applyMaskScan(node)
       }
     }
+    // 兜底: React 等框架可能在下一帧才设置 input.value (属性变更晚于 addedNodes).
+    scheduleMaskRescan()
+  })
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: [...REDACTED_ATTRIBUTES, 'value'],
   })
 
   observer.observe(document.body, {
@@ -681,23 +706,34 @@ export function startTextRedactionRuntime() {
     if (target instanceof HTMLElement) applyMaskToElement(target)
   }
 
+  const handleChange = (event: Event) => {
+    const target = event.target
+    if (target instanceof HTMLElement) applyMaskToElement(target)
+  }
+
   ensureMaskStyleElement()
   window.addEventListener(TEXT_REDACTION_RULES_EVENT, applyAll)
   window.addEventListener(TEXT_REDACTION_ENABLED_EVENT, applyAll)
   window.addEventListener(TEXT_REDACTION_GLOBAL_SYNC_EVENT, applyAll)
   window.addEventListener('storage', handleStorage)
   document.body.addEventListener('input', handleInput, true)
+  document.body.addEventListener('change', handleChange, true)
   applyAll()
   // 拉一次后端全员规则. 启动时调用, 不轮询. 失败/无规则都不影响本地.
   void syncTextRedactionGlobalOnStartup().catch(() => {})
 
   return () => {
     observer.disconnect()
+    if (maskRescanTimer != null) {
+      window.cancelAnimationFrame(maskRescanTimer)
+      maskRescanTimer = null
+    }
     window.removeEventListener(TEXT_REDACTION_RULES_EVENT, applyAll)
     window.removeEventListener(TEXT_REDACTION_ENABLED_EVENT, applyAll)
     window.removeEventListener(TEXT_REDACTION_GLOBAL_SYNC_EVENT, applyAll)
     window.removeEventListener('storage', handleStorage)
     document.body.removeEventListener('input', handleInput, true)
+    document.body.removeEventListener('change', handleChange, true)
 
     for (const node of trackedTexts) {
       const state = textStates.get(node)
