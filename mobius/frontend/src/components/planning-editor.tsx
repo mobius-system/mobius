@@ -494,8 +494,10 @@ function HistoryModal({
             style={{ color: 'var(--text-secondary)' }}
             aria-label="关闭">✕</button>
         </header>
-        <div className="flex-1 flex min-h-0">
-          <aside className="w-[260px] border-r overflow-y-auto" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="flex-1 flex flex-col sm:flex-row min-h-0">
+          {/* 移动端 (<640px): 版本列表与 diff 纵向堆叠 — 列表整宽置顶、限高 30vh 自滚,
+              否则固定 w-[260px] 侧栏会把 ~343px 宽的弹窗主体里的 diff 挤到 ~83px. */}
+          <aside className="w-full sm:w-[260px] max-h-[30vh] sm:max-h-none overflow-y-auto border-b sm:border-b-0 sm:border-r" style={{ borderColor: 'var(--border-color)' }}>
             {loading && (
               <div className="text-[12px] p-4" style={{ color: 'var(--text-muted)' }}>加载中…</div>
             )}

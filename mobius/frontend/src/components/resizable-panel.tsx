@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import { useStore } from '../store'
 
-// 移动端默认断点 (px). 内容密集的页面 (如 ProjectPage) 可以通过
-// useMobileNavBreakpoint(1024) 调大, 让平板宽度也进入抽屉/堆叠态.
-const DEFAULT_MOBILE_BREAKPOINT = 768
+// 移动端默认断点 (px). 窗口 ≤ 此值即进入「最小移动端」(汉堡菜单 + 抽屉侧栏 +
+// 顶栏次要按钮隐藏). 内容密集的页面 (如 ProjectPage) 可通过 useMobileNavBreakpoint(1024)
+// 进一步调大, 让平板宽度也进入抽屉/堆叠态.
+const DEFAULT_MOBILE_BREAKPOINT = 900
 
 // 读取当前视口是否进入移动端. 断点来自全局 store (mobileNavBreakpoint),
 // 这样 TopNav 汉堡按钮的显隐与 ResizablePanel 抽屉态永远用同一个值, 不会错位.

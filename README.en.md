@@ -21,22 +21,24 @@
 </p>
 
 <p align="center">
-  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=22&pause=1000&color=8B5CF6&center=true&vCenter=true&random=false&width=720&lines=%E2%97%87+Perceive+%E2%86%92+Plan+%E2%86%92+Execute+%E2%86%92+Reflect+%E2%86%92+Evolve+%E2%86%BB;%E2%97%87+7%C3%9724+Long-Horizon+%7C+Self-Evolving+%7C+Source-Available;%E2%97%87+GLM-5.2+%C3%97+Mobius+%3D+Open+Opus+%E2%9A%A1" alt="Typing SVG" />
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=22&pause=1000&color=8B5CF6&center=true&vCenter=true&random=false&width=720&lines=Perceive+%E2%86%92+Plan+%E2%86%92+Execute+%E2%86%92+Reflect+%E2%86%92+Evolve;7%C3%9724+Long-Horizon+%7C+Self-Evolving+%7C+Source-Available;GLM-5.2+%C3%97+Mobius+%3D+Open+Opus" alt="Typing SVG" />
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/%F0%9F%94%A5_AgenticOS-Mobius-8B5CF6?style=for-the-badge&labelColor=0d1117" alt="AgenticOS" />
-  <img src="https://img.shields.io/badge/%E2%99%BE_Long_Horizon-7%C3%9724-06B6D4?style=for-the-badge&labelColor=0d1117" alt="Long Horizon" />
-  <img src="https://img.shields.io/badge/%F0%9F%A7%AC_Self_Evolving-3_Layers-EC4899?style=for-the-badge&labelColor=0d1117" alt="Self-Evolving" />
-  <img src="https://img.shields.io/badge/%E2%9A%A1_GLM--5.2-Open_Opus-F59E0B?style=for-the-badge&labelColor=0d1117" alt="GLM-5.2" />
+  <img src="https://img.shields.io/badge/AgenticOS-Mobius-8B5CF6?style=for-the-badge&labelColor=0d1117" alt="AgenticOS" />
+  <img src="https://img.shields.io/badge/Long_Horizon-7%C3%9724-06B6D4?style=for-the-badge&labelColor=0d1117" alt="Long Horizon" />
+  <img src="https://img.shields.io/badge/Self_Evolving-3_Layers-EC4899?style=for-the-badge&labelColor=0d1117" alt="Self-Evolving" />
+  <img src="https://img.shields.io/badge/GLM--5.2-Open_Opus-F59E0B?style=for-the-badge&labelColor=0d1117" alt="GLM-5.2" />
   <br/>
-  <a href="https://mobius.nutshellai.cn/"><img src="https://img.shields.io/badge/%F0%9F%8C%90_Website-mobius.nutshellai.cn-00FF9F?style=for-the-badge&logo=googlechrome&logoColor=white&labelColor=0d1117" alt="Website" /></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/%F0%9F%93%9C_License-Source_Available-FF6B9D?style=for-the-badge&logo=book&logoColor=white&labelColor=0d1117" alt="License" /></a>
-  <img src="https://img.shields.io/badge/%F0%9F%92%9C_Status-Beta-9D4EDD?style=for-the-badge&logo=vercel&logoColor=white&labelColor=0d1117" alt="Status" />
+  <a href="https://mobius.nutshellai.cn/"><img src="https://img.shields.io/badge/Website-mobius.nutshellai.cn-22D3EE?style=for-the-badge&logo=googlechrome&logoColor=white&labelColor=0d1117" alt="Website" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Source_Available-F59E0B?style=for-the-badge&logo=book&logoColor=white&labelColor=0d1117" alt="License" /></a>
+  <img src="https://img.shields.io/badge/Status-Beta-9D4EDD?style=for-the-badge&logo=vercel&logoColor=white&labelColor=0d1117" alt="Status" />
 </p>
 
 <p align="center">
   <a href="https://mobius.nutshellai.cn/"><strong>Website</strong></a>
+  ·
+  <a href="#human--machine--things--intelligence--compute">Synergy</a>
   ·
   <a href="#what-can-you-do-with-it">What You Can Do</a>
   ·
@@ -106,6 +108,27 @@ flowchart LR
     F --> G["Memory · Skill · Extension"]
     G -. "Deposit and flow back" .-> B
 ```
+
+<p align="right"><a href="#readme-top">Back to top ↑</a></p>
+
+## Human · Machine · Things · Intelligence · Compute
+
+Mobius organizes five originally disconnected capability nodes — Human, Machine, Things, Intelligence, Compute — into a single continuously running, continuously evolving collaborative network. Each node keeps its own role; Mobius Core provides the shared kernel that lets them collaborate inside one closed loop.
+
+<div align="center">
+  <img src="./assets/mobius-synergy.svg" alt="Mobius synergy topology" width="100%" />
+</div>
+
+| Node | What it covers | Role in Mobius |
+|---|---|---|
+| 👤 **Human** | Individuals · Teams · Organizations | Set goals, co-develop, accept feedback (via XiaoMo natural-language interface) |
+| 🧠 **Intelligence** | Agent formations · AI models · Knowledge assets | Decompose · reason · execute · deposit (multi-agent work surface) |
+| 💻 **Compute** | GPU clusters · Cloud · Local compute | Train · simulate · test · process data (SSH / task dispatch) |
+| 🤖 **Machine** | Robots · Workstations · Edge devices | Develop · debug · deploy · act in the real world (AIMUX / remote terminal) |
+| 🔌 **Things** | Embedded · Sensors · Actuators | ESP32 · Raspberry Pi · Jetson · Real-world objects (flash / run / observe) |
+
+> **Self-evolving loop**: Execute → Feedback → Deposit → New capability ↻
+> NAS / OSS (data & knowledge) and cloud servers (open web resources) attach to Mobius Core as auxiliary nodes via SSH / SFTP.
 
 <p align="right"><a href="#readme-top">Back to top ↑</a></p>
 

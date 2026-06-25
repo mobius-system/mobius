@@ -804,6 +804,25 @@ body::after {
 .btn-primary:active:not(:disabled) { transform: scale(0.97); }
 .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
 
+/* ===== 顶栏「+」新建按钮: 配色与头像完全一致 + 内容居中 =====
+   头像: bg-gradient-to-br from-blue-500/30 to-cyan-500/20, text-blue-300, border-blue-500/20.
+   此触发按钮复用同一套色值 (背景渐变 / 描边 / 文字色 全部对齐头像), 与头像一样不随主题变,
+   视觉完全一致. flex 居中内容. 仅作用于该触发按钮, 不影响全局 .btn-primary. */
+.mobius-create-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.30) 0%, rgba(6, 182, 212, 0.20) 100%);
+  color: #93c5fd;                                 /* blue-300, 同头像文字色 */
+  border: 1px solid rgba(59, 130, 246, 0.20);     /* border-blue-500/20, 同头像描边 */
+  transition: background 120ms ease, transform 80ms ease, opacity 120ms ease;
+}
+.mobius-create-trigger:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.45) 0%, rgba(6, 182, 212, 0.32) 100%);
+}
+.mobius-create-trigger:active:not(:disabled) { transform: scale(0.97); }
+.mobius-create-trigger:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ===== Mobius 品牌 Logo ===== */
 .mobius-brand-logo {
   display: inline-flex;
@@ -4869,7 +4888,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .glass { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 
 /* ===== Markdown ===== */
-.prose-chat { font-size: 0.875rem; line-height: 1.65; color: var(--text-primary); }
+.prose-chat { font-size: 0.875rem; line-height: 1.65; color: var(--text-primary); overflow-wrap: anywhere; }
 .prose-chat p { margin: .4em 0; }
 .prose-chat pre { max-width: 100%; background: var(--code-bg); border: 1px solid var(--code-border); border-radius: .5rem; padding: .75rem 1rem; overflow-x: auto; margin: .6em 0; }
 .prose-chat pre code { display: block; white-space: pre; color: var(--code-text); }
@@ -5217,7 +5236,7 @@ body.mobius-resizing .mobius-resizable-handle {
      skill/memory (flex-1 overflow-y-auto) 吃剩余空间并自滚动 → 输入框不会被裁切.
    仅 ≤768px 生效, 桌面端保持 68/32 横向不动 (!important 用以覆盖 inline width).
    ====================================================================== */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .mobius-chat-body {
     flex-direction: column;
   }
@@ -5280,6 +5299,9 @@ body.mobius-resizing .mobius-resizable-handle {
   .gc-modal-footer { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
   /* 可拖拽分割条在窄屏无意义 (已是抽屉), 缩小避免误触. */
   [class*="cursor-col-resize"] { pointer-events: none; }
+  /* 聊天消息里的 markdown 表格: 列多/单元格内容长时横向溢出气泡撑爆屏幕,
+     窄屏改成 block + 内部横向滚动 (仅 ≤768px, 桌面端保持原生表格排版). */
+  .prose-chat table { display: block; max-width: 100%; overflow-x: auto; }
 }
 
 /* ======================================================================
@@ -5289,7 +5311,7 @@ body.mobius-resizing .mobius-resizable-handle {
    把横向空间让给项目名; 项目名段改可收缩 (覆盖 flex-shrink-0), 名称过长时
    干净截断加省略号, 不再被操作区压盖. 桌面端 (≥769px) 完整面包屑不动.
    ====================================================================== */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .mobius-topnav .mobius-topnav-brandtext,
   .mobius-topnav .mobius-topnav-userlink,
   .mobius-topnav .mobius-topnav-sep-pre,
@@ -5316,10 +5338,9 @@ body.mobius-resizing .mobius-resizable-handle {
     width: auto;
     min-width: 0;
   }
-  /* 新建下拉菜单项: 触摸热区增大到 40px, 底部提示放大至 11px 提升窄屏可读性.
-     命中触发按钮的兄弟下拉面板 (div.relative > div:last-child), 不影响桌面端 (≥641px) 紧凑的 py-1.5. */
+  /* 新建下拉菜单项: 触摸热区增大到 40px, 提升窄屏可读性与可点性.
+     命中触发按钮的兄弟下拉面板 (div.relative > div:last-child), 不影响桌面端 (≥641px) 紧凑排版. */
   [data-tour="top-create"] > div:last-child button { min-height: 40px; }
-  [data-tour="top-create"] > div:last-child > div:last-child { font-size: 11px; }
 }
 
 @media (max-width: 480px) {
@@ -5328,5 +5349,30 @@ body.mobius-resizing .mobius-resizable-handle {
     width: calc(100vw - 16px) !important;
     max-width: calc(100vw - 16px) !important;
   }
+}
+
+/* ======================================================================
+   顶栏次要按钮 (帮助·系统状态·主题): ≤1200px 提前隐藏 (先于「最小移动端」900px).
+   这三项位于右侧操作区、紧邻且在用户菜单之前: 帮助 data-tour="top-guide-help"
+   / 系统状态组 data-tour="top-system-status"(磁盘/内存/版本) / 主题 data-tour="top-theme-toggle".
+   中等桌面宽度 (1200~900px) 下它们常显会与面包屑争横向空间造成拥挤, 故在 ≤1200px 先行隐藏,
+   保留新建与用户菜单两项核心. 用 !important 覆盖各元素由 useIsMobile 给出的默认 flex 态;
+   窗口继续缩到 ≤900px 时进入完整最小移动端(见下块). 桌面端 (>1200px) 不生效, 三项常显.
+   ====================================================================== */
+@media (max-width: 1200px) {
+  [data-tour="top-guide-help"],
+  [data-tour="top-system-status"],
+  [data-tour="top-theme-toggle"] { display: none !important; }
+}
+
+/* ======================================================================
+   最小移动端顶栏 (≤900px): 触控热区.
+   断点已统一提到 900 (resizable-panel DEFAULT_MOBILE_BREAKPOINT): 汉堡菜单 / 抽屉 /
+   顶栏次要按钮(帮助·系统状态·主题) / 新建与用户菜单的文字 均在 JS 侧 (useIsMobile)
+   按此断点联动显隐; 面包屑精简与 chat body 堆叠也在 ≤900px 触发 (见各自 @media 块).
+   这里补触控最小尺寸, 平板宽度下手点不误触. (手感层 ≤768 的同条规则保留, 互不冲突.)
+   ====================================================================== */
+@media (max-width: 900px) {
+  .mobius-topnav-actions button { min-height: 36px; min-width: 36px; }
 }
 

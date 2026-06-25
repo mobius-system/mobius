@@ -314,7 +314,7 @@ export const useStore = create<AppState>((set) => ({
   mutedProjectIds: [],
   branding: loadInitialBranding(),
   mobileNavOpen: false,
-  mobileNavBreakpoint: 768,
+  mobileNavBreakpoint: 900,
   setAuth: (token, user) => {
     localStorage.setItem('cc-token', token)
     set({ token, user })
@@ -328,7 +328,7 @@ export const useStore = create<AppState>((set) => ({
   setHideOthersProjects: (hide) => set({ hideOthersProjects: !!hide }),
   setMutedProjectIds: (ids) => set({ mutedProjectIds: Array.isArray(ids) ? ids : [] }),
   setMobileNavOpen: (open) => set({ mobileNavOpen: !!open }),
-  setMobileNavBreakpoint: (px) => set({ mobileNavBreakpoint: Number.isFinite(px) && px > 0 ? Math.round(px) : 768 }),
+  setMobileNavBreakpoint: (px) => set({ mobileNavBreakpoint: Number.isFinite(px) && px > 0 ? Math.round(px) : 900 }),
   setIssues: (issues) => set({ issues }),
   setIssuesMap: (projectId, issues) => set((s) => ({ issuesMap: { ...s.issuesMap, [projectId]: issues } })),
   setCurrentIssue: (issue) => set({ currentIssue: issue }),

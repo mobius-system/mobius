@@ -692,12 +692,12 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             onClick={() => setShowGuideHelp(true)}
             title="帮助与引导"
             data-tour="top-guide-help"
-            className="h-8 w-8 hidden md:flex items-center justify-center border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
+            className={`h-8 w-8 ${isMobile ? 'hidden' : 'flex'} items-center justify-center border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors`}
             style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}
           >
             <CircleQuestionMark className="w-3.5 h-3.5" />
           </button>
-          <div data-tour="top-system-status" className="hidden md:flex items-center gap-2">
+          <div data-tour="top-system-status" className={`${isMobile ? 'hidden' : 'flex'} items-center gap-2`}>
             <DiskIndicator />
             <MemoryIndicator />
             <VersionIndicator />
@@ -716,7 +716,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               title={`当前主题: ${headerLabel}。Alt+点击切换下一个主题`}
               aria-label="选择主题"
               aria-expanded={showThemeMenu}
-              className="h-8 px-2 md:min-w-[76px] hidden md:flex items-center justify-center gap-1.5 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
+              className={`h-8 px-2 ${isMobile ? 'hidden' : 'flex md:min-w-[76px]'} items-center justify-center gap-1.5 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors`}
               style={{
                 color: 'var(--text-muted)',
                 borderColor: 'var(--border-color)',
@@ -856,8 +856,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500/30 to-cyan-500/20 flex items-center justify-center text-blue-300 text-[11px] font-semibold border border-blue-500/20">
                 {user?.display_name?.[0]}
               </div>
-              <span className="text-[12px] hidden md:inline" style={{ color: 'var(--text-secondary)' }}>{user?.display_name}</span>
-              <svg className="w-3 h-3 hidden md:block" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              {!isMobile && <span className="text-[12px]" style={{ color: 'var(--text-secondary)' }}>{user?.display_name}</span>}
+              {!isMobile && <svg className="w-3 h-3" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>}
             </button>
             {showUserMenu && (
               <div className="absolute right-0 top-10 z-50 rounded-lg shadow-xl py-1 min-w-[180px]"
@@ -909,7 +909,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
       {createKind && (
         <GlobalCreateRoot
           kind={createKind}
-          ctx={{ projectId: projectParam, issueId: issueParam }}
+          ctx={{ projectId: projectParam, issueId: issueParam, researchId: researchParam }}
           onClose={() => setCreateKind(null)}
         />
       )}
