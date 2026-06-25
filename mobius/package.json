@@ -7,11 +7,13 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test:access-control": "node tests/access-control-policy.js",
-    "test:user-isolation-v3": "node tests/user-isolation-v3.js",
-    "test:assistant-running-flag": "node tests/assistant-running-flag.js",
-    "test:assistant-tts-cache": "node tests/assistant-tts-cache.js",
-    "test:code-server-workspace": "node tests/code-server-workspace.js"
+    "test:access-control": "node --require tsx/cjs tests/access-control-policy.js",
+    "test:user-isolation-v3": "node --require tsx/cjs tests/user-isolation-v3.js",
+    "test:assistant-running-flag": "node --require tsx/cjs tests/assistant-running-flag.js",
+    "test:assistant-tts-cache": "node --require tsx/cjs tests/assistant-tts-cache.js",
+    "test:code-server-workspace": "node --require tsx/cjs tests/code-server-workspace.js",
+    "typecheck": "tsc -p tsconfig.backend.json --noEmit",
+    "start:tsx": "tsx server.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -24,5 +26,11 @@
     "multer": "^1.4.5-lts.1",
     "pm2": "^7.0.1",
     "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^18.19.130",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3"
   }
 }

@@ -1,5 +1,5 @@
-const { db } = require('../../db');
-const {
+import { db } from '../../db';
+import {
   APP_DIR,
   DEFAULT_FORGOTTEN_FLAG_MESSAGE,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
@@ -14,39 +14,42 @@ const {
   FORGOTTEN_FLAG_BACKOFF_MAX,
   FORGOTTEN_FLAG_PATIENCE_MIN,
   FORGOTTEN_FLAG_PATIENCE_MAX,
-} = require('../config');
+} from '../config';
+import type { ProjectRow, ProjectRawRow } from '../types/rows';
 
-function normalizeIntervalMinutes(value, fallback, min) {
+type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist';
+
+function normalizeIntervalMinutes(value: unknown, fallback: number, min: number): number {
   const n = Number(value);
   if (Number.isInteger(n) && n >= min) return n;
   return fallback;
 }
 
-function normalizeBackoff(value, fallback) {
+function normalizeBackoff(value: unknown, fallback: number): number {
   const n = Number(value);
   if (Number.isFinite(n) && n >= FORGOTTEN_FLAG_BACKOFF_MIN && n <= FORGOTTEN_FLAG_BACKOFF_MAX) return n;
   return fallback;
 }
 
-function normalizePatience(value, fallback) {
+function normalizePatience(value: unknown, fallback: number): number {
   const n = Number(value);
   if (Number.isInteger(n) && n >= FORGOTTEN_FLAG_PATIENCE_MIN && n <= FORGOTTEN_FLAG_PATIENCE_MAX) return n;
   return fallback;
 }
 
-function parseOptionalIdArray(raw) {
+function parseOptionalIdArray(raw: string | null | undefined): string[] | null {
   if (raw === null || raw === undefined) return null;
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string' && id.length > 0) : [];
+    return Array.isArray(parsed) ? parsed.filter((id: unknown) => typeof id === 'string' && (id as string).length > 0) : [];
   } catch {
     return [];
   }
 }
 
-function uniqueIds(ids) {
-  const out = [];
-  const seen = new Set();
+function uniqueIds(ids: unknown): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
   for (const id of Array.isArray(ids) ? ids : []) {
     if (typeof id !== 'string') continue;
     const trimmed = id.trim();
@@ -57,10 +60,18 @@ function uniqueIds(ids) {
   return out;
 }
 
+type ProjectRawRowWithExtras = ProjectRawRow & {
+  starred?: number;
+  hidden?: number;
+  issue_count?: number;
+  research_count?: number;
+  created_by_name?: string;
+};
+
 // git_repos 字段在库里是 JSON 字符串，对外暴露成数组
-function hydrate(row) {
+function hydrate(row: ProjectRawRowWithExtras | null | undefined): ProjectRow | null | undefined {
   if (!row) return row;
-  let repos = [];
+  let repos: any[] = [];
   try { repos = JSON.parse(row.git_repos || '[]'); } catch { repos = []; }
   const issueInit = normalizeIntervalMinutes(
     row.forgotten_flag_issue_init_minutes ?? row.forgotten_flag_issue_interval_minutes,
@@ -92,7 +103,7 @@ function hydrate(row) {
     extension_name: row.extension_name || null,
     disabled: !!row.disabled,
     extension_default_hidden: !!row.extension_default_hidden,
-    visibility: row.visibility || 'private',
+    visibility: (row.visibility || 'private') as ProjectVisibility,
     can_post_issue: !!row.can_post_issue,
     can_run_session: !!row.can_run_session,
     // 每用户隐藏标记 (仅 kind='extension' 真正用到): 由 findById/listAll 在 userId 路径下
@@ -118,11 +129,51 @@ function hydrate(row) {
     forgotten_flag_research_backoff: researchBackoff,
     forgotten_flag_research_patience: researchPatience,
     is_self_develop: !!(row.bind_path && APP_DIR && row.bind_path === APP_DIR),
-  };
+  } as ProjectRow;
+}
+
+interface InsertArgs {
+  id: string;
+  name: string;
+  description?: string | null;
+  createdBy: string;
+  bindPath?: string;
+  bindPathManual?: boolean;
+  gitRepos?: string[];
+  defaultUseWorktree?: boolean;
+  researchEnabled?: boolean;
+  visibility?: ProjectVisibility;
+  canPostIssue?: boolean;
+  canRunSession?: boolean;
+  defaultModel?: string | null;
+}
+
+interface UpsertExtensionArgs {
+  id: string;
+  name: string;
+  description?: string | null;
+  createdBy: string;
+  bindPath: string;
+  extensionName: string;
+  defaultHidden?: boolean;
+}
+
+interface WhitelistRow {
+  skill_ids: string[] | null;
+  builtin_skill_ids: string[] | null;
+  memory_ids: string[] | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+interface SetUserContextWhitelistArgs {
+  skillIds?: string[] | null;
+  builtinSkillIds?: string[] | null;
+  memoryIds?: string[] | null;
 }
 
 const Projects = {
-  findById: (id, userId = null) => {
+  findById: (id: string, userId: string | null = null): ProjectRow | null | undefined => {
     if (userId) {
       return hydrate(db.prepare(`
         SELECT p.*,
@@ -132,14 +183,14 @@ const Projects = {
         LEFT JOIN project_user_stars pus ON pus.project_id = p.id AND pus.user_id = ?
         LEFT JOIN project_user_hidden puh ON puh.project_id = p.id AND puh.user_id = ?
         WHERE p.id = ?
-      `).get(userId, userId, id));
+      `).get(userId, userId, id) as ProjectRawRowWithExtras | undefined);
     }
-    return hydrate(db.prepare('SELECT *, 0 AS starred, 0 AS hidden FROM projects WHERE id = ?').get(id));
+    return hydrate(db.prepare('SELECT *, 0 AS starred, 0 AS hidden FROM projects WHERE id = ?').get(id) as ProjectRawRowWithExtras | undefined);
   },
 
-  listAll: (userId = null) => {
+  listAll: (userId: string | null = null): Array<ProjectRow | null | undefined> => {
     if (userId) {
-      return db.prepare(`
+      return (db.prepare(`
         SELECT p.*, u.display_name as created_by_name,
           CASE WHEN pus.user_id IS NULL THEN 0 ELSE 1 END AS starred,
           CASE WHEN puh.user_id IS NULL THEN 0 ELSE 1 END AS hidden,
@@ -150,9 +201,9 @@ const Projects = {
         LEFT JOIN project_user_stars pus ON pus.project_id = p.id AND pus.user_id = ?
         LEFT JOIN project_user_hidden puh ON puh.project_id = p.id AND puh.user_id = ?
         ORDER BY starred DESC, p.last_active DESC, p.name ASC
-      `).all(userId, userId).map(hydrate);
+      `).all(userId, userId) as ProjectRawRowWithExtras[]).map(hydrate);
     }
-    return db.prepare(`
+    return (db.prepare(`
       SELECT p.*, u.display_name as created_by_name,
       0 AS starred, 0 AS hidden,
       (SELECT COUNT(*) FROM issues WHERE project_id = p.id) as issue_count,
@@ -160,10 +211,10 @@ const Projects = {
       FROM projects p
       LEFT JOIN users u ON p.created_by = u.id
       ORDER BY p.last_active DESC, p.name ASC
-    `).all().map(hydrate);
+    `).all() as ProjectRawRowWithExtras[]).map(hydrate);
   },
 
-  insert: ({ id, name, description, createdBy, bindPath, bindPathManual, gitRepos, defaultUseWorktree, researchEnabled, visibility, canPostIssue, canRunSession, defaultModel }) => db.prepare(
+  insert: ({ id, name, description, createdBy, bindPath, bindPathManual, gitRepos, defaultUseWorktree, researchEnabled, visibility, canPostIssue, canRunSession, defaultModel }: InsertArgs) => db.prepare(
     'INSERT INTO projects (id, name, description, created_by, bind_path, bind_path_manual, git_repos, default_use_worktree, research_enabled, visibility, can_post_issue, can_run_session, default_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(id, name, description || '', createdBy, bindPath || '', bindPathManual ? 1 : 0,
     JSON.stringify(gitRepos || []), defaultUseWorktree ? 1 : 0, researchEnabled ? 1 : 0, visibility || 'private',
@@ -173,7 +224,7 @@ const Projects = {
   // ===== 拓展项目专用 =====
   // 注意: kind='extension' 行的 bind_path/default_use_worktree/research_enabled 由 registry 锁定,
   // 普通项目编辑接口 (updateBindPath/updateResearchEnabled/...) 在 routes 层会拦下来.
-  findByExtensionName: (extName, userId = null) => {
+  findByExtensionName: (extName: string, userId: string | null = null): ProjectRow | null | undefined => {
     if (userId) {
       return hydrate(db.prepare(`
         SELECT p.*,
@@ -181,15 +232,15 @@ const Projects = {
         FROM projects p
         LEFT JOIN project_user_stars pus ON pus.project_id = p.id AND pus.user_id = ?
         WHERE p.extension_name = ?
-      `).get(userId, extName));
+      `).get(userId, extName) as ProjectRawRowWithExtras | undefined);
     }
-    return hydrate(db.prepare('SELECT *, 0 AS starred FROM projects WHERE extension_name = ?').get(extName));
+    return hydrate(db.prepare('SELECT *, 0 AS starred FROM projects WHERE extension_name = ?').get(extName) as ProjectRawRowWithExtras | undefined);
   },
-  listExtensions: () => db.prepare(
+  listExtensions: (): Array<ProjectRow | null | undefined> => (db.prepare(
     "SELECT *, 0 AS starred FROM projects WHERE kind = 'extension'"
-  ).all().map(hydrate),
-  upsertExtension: ({ id, name, description, createdBy, bindPath, extensionName, defaultHidden = false }) => {
-    const existing = db.prepare('SELECT id FROM projects WHERE extension_name = ?').get(extensionName);
+  ).all() as ProjectRawRowWithExtras[]).map(hydrate),
+  upsertExtension: ({ id, name, description, createdBy, bindPath, extensionName, defaultHidden = false }: UpsertExtensionArgs): string => {
+    const existing = db.prepare('SELECT id FROM projects WHERE extension_name = ?').get(extensionName) as { id: string } | undefined;
     if (existing) {
       // 已存在: 把可能漂移的字段同步回锁定值 (name/description 来自 manifest), 并清 disabled.
       db.prepare(`
@@ -210,13 +261,13 @@ const Projects = {
     `).run(id, name, description || '', createdBy, bindPath, extensionName, defaultHidden ? 1 : 0);
     return id;
   },
-  setExtensionDisabled: (extName, disabled) => db.prepare(
+  setExtensionDisabled: (extName: string, disabled: boolean) => db.prepare(
     "UPDATE projects SET disabled = ? WHERE kind = 'extension' AND extension_name = ?"
   ).run(disabled ? 1 : 0, extName),
 
   // ===== 拓展项目: 每用户隐藏 / 彻底删除 =====
   // setHidden(false) = "撤销隐藏" (用户自己撤销或管理员撤销, 同一行 DELETE)
-  setHidden: (projectId, userId, hidden) => {
+  setHidden: (projectId: string, userId: string, hidden: boolean): void => {
     if (hidden) {
       db.prepare(`
         INSERT INTO project_user_hidden (project_id, user_id)
@@ -241,13 +292,7 @@ const Projects = {
     ORDER BY puh.hidden_at DESC
   `).all(),
   // "彻底删除": 事务删该用户在该拓展项目上的全部私有/共享数据, 再插隐藏行.
-  // 删的范围:
-  //   - sessions_v2 (用户自己的 sessions, user_id 列直接限定)
-  //   - issues + 级联 (issues 是项目共享的, 但用户选了"全删"语义 — 自己创建的 issue 也清掉; FK ON DELETE CASCADE 把 issue 下的 sessions/integrations 一并带走)
-  //   - project_user_stars (自己的星标)
-  //   - project_user_context_whitelists (自己的白名单)
-  // 不动的: 项目行本身、protected_data/extension/<name>/* (扩展全局数据, 例如吃豆人排行榜)、其他用户的数据.
-  purgeUserExtensionData: (projectId, userId) => {
+  purgeUserExtensionData: (projectId: string, userId: string): void => {
     const tx = db.transaction(() => {
       db.prepare('DELETE FROM sessions_v2 WHERE project_id = ? AND user_id = ?').run(projectId, userId);
       db.prepare('DELETE FROM issues WHERE project_id = ? AND created_by = ?').run(projectId, userId);
@@ -262,36 +307,36 @@ const Projects = {
     tx();
   },
 
-  delete: (id) => db.prepare('DELETE FROM projects WHERE id = ?').run(id),
-  updateName: (id, name) => db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name, id),
-  updateDescription: (id, desc) => db.prepare('UPDATE projects SET description = ? WHERE id = ?').run(desc, id),
+  delete: (id: string) => db.prepare('DELETE FROM projects WHERE id = ?').run(id),
+  updateName: (id: string, name: string) => db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name, id),
+  updateDescription: (id: string, desc: string) => db.prepare('UPDATE projects SET description = ? WHERE id = ?').run(desc, id),
   // manual 标记随路径一起持久化: 决定后续保存走严格还是不校验解析.
-  updateBindPath: (id, bindPath, bindPathManual) => db.prepare(
+  updateBindPath: (id: string, bindPath: string, bindPathManual: boolean) => db.prepare(
     'UPDATE projects SET bind_path = ?, bind_path_manual = ? WHERE id = ?'
   ).run(bindPath || '', bindPathManual ? 1 : 0, id),
-  updateGitRepos: (id, repos) => db.prepare('UPDATE projects SET git_repos = ? WHERE id = ?').run(JSON.stringify(repos || []), id),
-  updateDefaultUseWorktree: (id, val) => db.prepare('UPDATE projects SET default_use_worktree = ? WHERE id = ?').run(val ? 1 : 0, id),
-  updateResearchEnabled: (id, val) => db.prepare('UPDATE projects SET research_enabled = ? WHERE id = ?').run(val ? 1 : 0, id),
-  updateVisibility: (id, visibility) => db.prepare('UPDATE projects SET visibility = ? WHERE id = ?').run(visibility, id),
-  updateCanPostIssue: (id, val) => db.prepare('UPDATE projects SET can_post_issue = ? WHERE id = ?').run(val ? 1 : 0, id),
-  updateCanRunSession: (id, val) => db.prepare('UPDATE projects SET can_run_session = ? WHERE id = ?').run(val ? 1 : 0, id),
+  updateGitRepos: (id: string, repos: string[]) => db.prepare('UPDATE projects SET git_repos = ? WHERE id = ?').run(JSON.stringify(repos || []), id),
+  updateDefaultUseWorktree: (id: string, val: boolean) => db.prepare('UPDATE projects SET default_use_worktree = ? WHERE id = ?').run(val ? 1 : 0, id),
+  updateResearchEnabled: (id: string, val: boolean) => db.prepare('UPDATE projects SET research_enabled = ? WHERE id = ?').run(val ? 1 : 0, id),
+  updateVisibility: (id: string, visibility: ProjectVisibility) => db.prepare('UPDATE projects SET visibility = ? WHERE id = ?').run(visibility, id),
+  updateCanPostIssue: (id: string, val: boolean) => db.prepare('UPDATE projects SET can_post_issue = ? WHERE id = ?').run(val ? 1 : 0, id),
+  updateCanRunSession: (id: string, val: boolean) => db.prepare('UPDATE projects SET can_run_session = ? WHERE id = ?').run(val ? 1 : 0, id),
   // 项目级默认模型偏好. 空串/空白 → 存 NULL, 表示 "未指定 (跟系统全局默认)".
-  updateDefaultModel: (id, val) => {
+  updateDefaultModel: (id: string, val: string | null): void => {
     const v = (typeof val === 'string' && val.trim()) ? val.trim() : null;
     db.prepare('UPDATE projects SET default_model = ? WHERE id = ?').run(v, id);
   },
   // 空串/空白 → 存 NULL, 表示 "用 scanner 内置默认文案".
-  updateForgottenFlagMessage: (id, msg) => {
+  updateForgottenFlagMessage: (id: string, msg: string | null): void => {
     const v = (typeof msg === 'string' && msg.trim().length > 0) ? msg : null;
     db.prepare('UPDATE projects SET forgotten_flag_message = ? WHERE id = ?').run(v, id);
   },
-  updateForgottenFlagIssueIntervalMinutes: (id, minutes) => db.prepare(
+  updateForgottenFlagIssueIntervalMinutes: (id: string, minutes: number) => db.prepare(
     'UPDATE projects SET forgotten_flag_issue_interval_minutes = ?, forgotten_flag_issue_init_minutes = ? WHERE id = ?'
   ).run(minutes, minutes, id),
-  updateForgottenFlagResearchIntervalMinutes: (id, minutes) => db.prepare(
+  updateForgottenFlagResearchIntervalMinutes: (id: string, minutes: number) => db.prepare(
     'UPDATE projects SET forgotten_flag_research_interval_minutes = ?, forgotten_flag_research_init_minutes = ? WHERE id = ?'
   ).run(minutes, minutes, id),
-  updateForgottenFlagIssuePolicy: (id, { initMinutes, backoff, patience }) => db.prepare(`
+  updateForgottenFlagIssuePolicy: (id: string, { initMinutes, backoff, patience }: { initMinutes: number; backoff: number; patience: number }) => db.prepare(`
     UPDATE projects
     SET forgotten_flag_issue_interval_minutes = ?,
         forgotten_flag_issue_init_minutes = ?,
@@ -299,7 +344,7 @@ const Projects = {
         forgotten_flag_issue_patience = ?
     WHERE id = ?
   `).run(initMinutes, initMinutes, backoff, patience, id),
-  updateForgottenFlagResearchPolicy: (id, { initMinutes, backoff, patience }) => db.prepare(`
+  updateForgottenFlagResearchPolicy: (id: string, { initMinutes, backoff, patience }: { initMinutes: number; backoff: number; patience: number }) => db.prepare(`
     UPDATE projects
     SET forgotten_flag_research_interval_minutes = ?,
         forgotten_flag_research_init_minutes = ?,
@@ -307,7 +352,7 @@ const Projects = {
         forgotten_flag_research_patience = ?
     WHERE id = ?
   `).run(initMinutes, initMinutes, backoff, patience, id),
-  setStarred: (id, userId, starred) => {
+  setStarred: (id: string, userId: string, starred: boolean): void => {
     if (starred) {
       db.prepare(`
         INSERT INTO project_user_stars (project_id, user_id)
@@ -322,12 +367,12 @@ const Projects = {
     }
   },
 
-  getUserContextWhitelist: (projectId, userId) => {
+  getUserContextWhitelist: (projectId: string, userId: string): WhitelistRow => {
     const row = db.prepare(`
       SELECT skill_ids, builtin_skill_ids, memory_ids, created_at, updated_at
       FROM project_user_context_whitelists
       WHERE project_id = ? AND user_id = ?
-    `).get(projectId, userId);
+    `).get(projectId, userId) as (Omit<WhitelistRow, 'skill_ids' | 'builtin_skill_ids' | 'memory_ids'> & { skill_ids: string | null; builtin_skill_ids: string | null; memory_ids: string | null }) | undefined;
     if (!row) {
       return {
         skill_ids: null,
@@ -346,7 +391,7 @@ const Projects = {
     };
   },
 
-  setUserContextWhitelist: (projectId, userId, { skillIds = null, builtinSkillIds = null, memoryIds = null } = {}) => {
+  setUserContextWhitelist: (projectId: string, userId: string, { skillIds = null, builtinSkillIds = null, memoryIds = null }: SetUserContextWhitelistArgs = {}): WhitelistRow => {
     const nextSkillIds = Array.isArray(skillIds) ? uniqueIds(skillIds) : null;
     const nextBuiltinSkillIds = Array.isArray(builtinSkillIds) ? uniqueIds(builtinSkillIds) : null;
     const nextMemoryIds = Array.isArray(memoryIds) ? uniqueIds(memoryIds) : null;
@@ -378,12 +423,12 @@ const Projects = {
   },
 
   // 用于 canReadProject
-  isOwnedOrUsedBy: (projectId, userId) => db.prepare(`
+  isOwnedOrUsedBy: (projectId: string, userId: string): { '1': number } | undefined => db.prepare(`
     SELECT 1 FROM projects WHERE id = ? AND created_by = ?
     UNION SELECT 1 FROM sessions_v2 WHERE project_id = ? AND user_id = ?
     UNION SELECT 1 FROM researches WHERE project_id = ? AND created_by = ?
     LIMIT 1
-  `).get(projectId, userId, projectId, userId, projectId, userId),
+  `).get(projectId, userId, projectId, userId, projectId, userId) as { '1': number } | undefined,
 };
 
-module.exports = { Projects };
+export { Projects };

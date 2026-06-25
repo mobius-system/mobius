@@ -1,13 +1,13 @@
 /**
- * db.js — DB 层 (现在是主栈, 不再"实验").
+ * db.ts — DB 层 (现在是主栈, 不再"实验").
  *
- * 主 SQLite 在 <repo-root>/data/mobuis.db (v1.9 起从旧 gateway/data/ 提升到根).
+ * 主 SQLite 在 <repo-root>/data/mobius.db (v1.9 起从旧 gateway/data/ 提升到根).
  * 共享 users / projects / issues 与 sessions_v2 / messages_v2 并存.
  */
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
-const {
+import Database from 'better-sqlite3';
+import path from 'path';
+import fs from 'fs';
+import {
   DB_PATH,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
@@ -15,7 +15,7 @@ const {
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_BACKOFF,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_PATIENCE,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_PATIENCE,
-} = require('./backend/config');
+} from './backend/config';
 
 console.log(`[mobius/db] using shared SQLite at: ${DB_PATH}`);
 
@@ -23,7 +23,7 @@ console.log(`[mobius/db] using shared SQLite at: ${DB_PATH}`);
 // better-sqlite3 不会自动建目录, 否则报 "Cannot open database because the directory does not exist"。
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-const db = new Database(DB_PATH);
+const db: Database.Database = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
@@ -43,7 +43,7 @@ db.pragma('foreign_keys = ON');
 // deleted_at 非空表示账号不可登录, 管理员列表默认不显示, 历史数据仍保留。
 function migrateUsersDeletedAt() {
   try {
-    const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(users)').all().map((c: any) => c.name);
     if (!cols.includes('deleted_at')) {
       db.exec('ALTER TABLE users ADD COLUMN deleted_at TEXT');
       console.log('[mobius/db] migrate: users.deleted_at 已加 (NULL=启用, 非空=已删除)');
@@ -70,7 +70,7 @@ function migrateUserGroups() {
       INSERT OR IGNORE INTO user_groups (id, name, description)
       VALUES ('default', '默认组', '未指定群组的员工默认归属');
     `);
-    const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(users)').all().map((c: any) => c.name);
     if (!cols.includes('group_id')) {
       db.exec(`ALTER TABLE users ADD COLUMN group_id TEXT DEFAULT 'default'`);
       console.log('[mobius/db] migrate: users.group_id 已加 (默认组)');
@@ -110,17 +110,17 @@ db.exec(`
 // 老项目迁移成 public, 新建项目由 POST /api/projects 显式写入默认 private.
 function migrateResourceAccessControl() {
   try {
-    const projectCols = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
+    const projectCols = db.prepare('PRAGMA table_info(projects)').all().map((c: any) => c.name);
     if (!projectCols.includes('visibility')) {
       db.exec("ALTER TABLE projects ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
       console.log("[mobius/db] migrate: projects.visibility 已加 (存量默认 public)");
     }
-    const issueCols = db.prepare('PRAGMA table_info(issues)').all().map((c) => c.name);
+    const issueCols = db.prepare('PRAGMA table_info(issues)').all().map((c: any) => c.name);
     if (!issueCols.includes('visibility')) {
       db.exec("ALTER TABLE issues ADD COLUMN visibility TEXT NOT NULL DEFAULT 'inherit'");
       console.log("[mobius/db] migrate: issues.visibility 已加 (默认继承项目)");
     }
-    const researchCols = db.prepare('PRAGMA table_info(researches)').all().map((c) => c.name);
+    const researchCols = db.prepare('PRAGMA table_info(researches)').all().map((c: any) => c.name);
     if (!researchCols.includes('visibility')) {
       db.exec("ALTER TABLE researches ADD COLUMN visibility TEXT NOT NULL DEFAULT 'inherit'");
       console.log("[mobius/db] migrate: researches.visibility 已加 (默认继承项目)");
@@ -166,7 +166,7 @@ migrateResourceAccessControl();
 // ===== 用户隔离策略 v3: 写权限开关 / 视图偏好 / 屏蔽名单 / admin 审计 =====
 function migrateUserIsolationV3Schema() {
   try {
-    const projectCols = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
+    const projectCols = db.prepare('PRAGMA table_info(projects)').all().map((c: any) => c.name);
     if (!projectCols.includes('can_post_issue')) {
       db.exec('ALTER TABLE projects ADD COLUMN can_post_issue INTEGER NOT NULL DEFAULT 0');
       console.log('[mobius/db] migrate: projects.can_post_issue 已加 (默认关闭)');
@@ -308,7 +308,7 @@ db.exec(`
 // 注意: skills/memories 在 v1.7 起改为文件系统存储 (protected_data/), 不再是 SQLite 表, 故不查.
 function verifySharedTables() {
   const want = ['users', 'projects', 'issues', 'researches', 'sessions', 'messages'];
-  const got = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name);
+  const got = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r: any) => r.name);
   const missing = want.filter(t => !got.includes(t));
   if (missing.length) {
     console.warn(`[mobius/db] ⚠️  生产表缺失(可能影响共享读): ${missing.join(',')}`);
@@ -334,7 +334,7 @@ function ensureSessionResearchIndexes() {
 // Session 会由前端/路由按模型默认值显式写入。
 function migrateSessionsUseProxy() {
   try {
-    const cols = db.prepare('PRAGMA table_info(sessions_v2)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(sessions_v2)').all().map((c: any) => c.name);
     if (!cols.includes('use_proxy')) {
       db.exec('ALTER TABLE sessions_v2 ADD COLUMN use_proxy INTEGER NOT NULL DEFAULT 1');
       console.log('[mobius/db] migrate: sessions_v2.use_proxy 已加 (默认 1, 存量保持代理行为)');
@@ -350,7 +350,7 @@ migrateSessionsUseProxy();
 // Skill/Memory 改名、删除或内容变化. 新字段保存创建时最终启用的条目快照.
 function migrateSessionsSelectionSnapshot() {
   try {
-    const cols = db.prepare('PRAGMA table_info(sessions_v2)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(sessions_v2)').all().map((c: any) => c.name);
     if (!cols.includes('session_selection_snapshot')) {
       db.exec('ALTER TABLE sessions_v2 ADD COLUMN session_selection_snapshot TEXT');
       console.log('[mobius/db] migrate: sessions_v2.session_selection_snapshot 已加');
@@ -368,9 +368,9 @@ migrateSessionsSelectionSnapshot();
 // ===== sessions_v2 清理: 回收站机制下线, 历史 deleted Session 不再保留 =====
 function purgeDeletedSessionsTrashData() {
   try {
-    const cols = db.prepare('PRAGMA table_info(sessions_v2)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(sessions_v2)').all().map((c: any) => c.name);
     if (!cols.includes('status')) return;
-    const count = db.prepare("SELECT COUNT(*) AS c FROM sessions_v2 WHERE status = 'deleted'").get().c;
+    const count = (db.prepare("SELECT COUNT(*) AS c FROM sessions_v2 WHERE status = 'deleted'").get() as any).c;
     if (!count) return;
     const tx = db.transaction(() => {
       db.prepare(`
@@ -393,8 +393,8 @@ purgeDeletedSessionsTrashData();
 // 删除 NOT NULL 约束, 因此这里做一次幂等表重建并保留所有既有列数据.
 function migrateSessionsResearchScope() {
   try {
-    const info = db.prepare('PRAGMA table_info(sessions_v2)').all();
-    const cols = info.map((c) => c.name);
+    const info = db.prepare('PRAGMA table_info(sessions_v2)').all() as any[];
+    const cols = info.map((c: any) => c.name);
     const issueCol = info.find((c) => c.name === 'issue_id');
     const projectCol = info.find((c) => c.name === 'project_id');
     const needsRebuild =
@@ -409,8 +409,8 @@ function migrateSessionsResearchScope() {
       return;
     }
 
-    const has = (name) => cols.includes(name);
-    const expr = (name, fallback) => has(name) ? name : fallback;
+    const has = (name: string) => cols.includes(name);
+    const expr = (name: string, fallback: string) => has(name) ? name : fallback;
     const targetCols = [
       'session_id', 'issue_id', 'project_id', 'scope_type', 'research_id', 'research_role',
       'user_id', 'name', 'description', 'session_key', 'claude_session_id',
@@ -527,7 +527,7 @@ migrateSessionsResearchScope();
 // 存量 session 默认 'zh', 保持此前中文注入行为; 新建 Session 由前端/路由显式写入。
 function migrateSessionsLanguage() {
   try {
-    const cols = db.prepare('PRAGMA table_info(sessions_v2)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(sessions_v2)').all().map((c: any) => c.name);
     if (!cols.includes('language')) {
       db.exec("ALTER TABLE sessions_v2 ADD COLUMN language TEXT NOT NULL DEFAULT 'zh'");
       console.log("[mobius/db] migrate: sessions_v2.language 已加 (默认 'zh', 存量保持中文注入)");
@@ -543,7 +543,7 @@ migrateSessionsLanguage();
 // 这里幂等补两列. 缺列才 ALTER, 不重复.
 function migrateIssuesWorktree() {
   try {
-    const cols = db.prepare('PRAGMA table_info(issues)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(issues)').all().map((c: any) => c.name);
     if (!cols.includes('use_worktree')) {
       // 列默认 0: 存量 issue 保持原行为 (不动其 session cwd, 不注入 worktree 提示).
       // "新建 Issue 默认开 worktree" 由应用层保证 (前端勾选默认 true + POST 缺省 true).
@@ -575,7 +575,7 @@ migrateIssuesWorktree();
 // 缺列才 ALTER, 幂等.
 function migrateIssuesIsPlanning() {
   try {
-    const cols = db.prepare('PRAGMA table_info(issues)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(issues)').all().map((c: any) => c.name);
     if (!cols.includes('is_planning')) {
       db.exec('ALTER TABLE issues ADD COLUMN is_planning INTEGER NOT NULL DEFAULT 0');
       console.log('[mobius/db] migrate: issues.is_planning 已加 (默认 0, 存量=普通 Issue)');
@@ -591,7 +591,7 @@ migrateIssuesIsPlanning();
 // 缺列才 ALTER, 幂等.
 function migrateProjectsDefaultWorktree() {
   try {
-    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c: any) => c.name);
     if (!cols.includes('default_use_worktree')) {
       // 默认 1: 保持存量行为 —— 旧前端新建 Issue 时 worktree 勾选框 useState(true) 默认打钩,
       // 故存量项目沿用 "默认勾选". 项目创建/设置页可改成 0 (默认不勾选).
@@ -608,7 +608,7 @@ migrateProjectsDefaultWorktree();
 // 默认关闭. 只有开启后项目页才展示 Research 入口, 后端也拒绝创建 research.
 function migrateProjectsResearchEnabled() {
   try {
-    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c: any) => c.name);
     if (!cols.includes('research_enabled')) {
       db.exec('ALTER TABLE projects ADD COLUMN research_enabled INTEGER NOT NULL DEFAULT 0');
       console.log('[mobius/db] migrate: projects.research_enabled 已加 (默认关闭)');
@@ -641,7 +641,7 @@ normalizeProjectsResearchWorktreeRule();
 // session 发这条消息. NULL/空 → 用 scanner 内置默认文案. 缺列才 ALTER, 幂等.
 function migrateProjectsForgottenFlagMessage() {
   try {
-    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c: any) => c.name);
     if (!cols.includes('forgotten_flag_message')) {
       db.exec('ALTER TABLE projects ADD COLUMN forgotten_flag_message TEXT');
       console.log('[mobius/db] migrate: projects.forgotten_flag_message 已加 (NULL=用默认文案)');
@@ -657,7 +657,7 @@ migrateProjectsForgottenFlagMessage();
 // 等待倍数, patience 决定最多提醒次数. 旧 interval 列保留为 init 的兼容别名.
 function migrateProjectsForgottenFlagIntervals() {
   try {
-    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c: any) => c.name);
     if (!cols.includes('forgotten_flag_issue_interval_minutes')) {
       db.exec(`ALTER TABLE projects ADD COLUMN forgotten_flag_issue_interval_minutes INTEGER NOT NULL DEFAULT ${DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES}`);
       console.log(`[mobius/db] migrate: projects.forgotten_flag_issue_interval_minutes 已加 (默认 ${DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES} 分钟)`);
@@ -666,7 +666,7 @@ function migrateProjectsForgottenFlagIntervals() {
       db.exec(`ALTER TABLE projects ADD COLUMN forgotten_flag_research_interval_minutes INTEGER NOT NULL DEFAULT ${DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES}`);
       console.log(`[mobius/db] migrate: projects.forgotten_flag_research_interval_minutes 已加 (默认 ${DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES} 分钟)`);
     }
-    const colsAfterLegacy = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
+    const colsAfterLegacy = db.prepare('PRAGMA table_info(projects)').all().map((c: any) => c.name);
     if (!colsAfterLegacy.includes('forgotten_flag_issue_init_minutes')) {
       db.exec(`ALTER TABLE projects ADD COLUMN forgotten_flag_issue_init_minutes INTEGER NOT NULL DEFAULT ${DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES}`);
       db.exec('UPDATE projects SET forgotten_flag_issue_init_minutes = forgotten_flag_issue_interval_minutes');
@@ -705,7 +705,7 @@ migrateProjectsForgottenFlagIntervals();
 // 缺列才 ALTER, 幂等. 默认 0: 存量路径都是经严格校验进来的, 按非手动处理.
 function migrateProjectsBindPathManual() {
   try {
-    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c: any) => c.name);
     if (!cols.includes('bind_path_manual')) {
       db.exec('ALTER TABLE projects ADD COLUMN bind_path_manual INTEGER NOT NULL DEFAULT 0');
       console.log('[mobius/db] migrate: projects.bind_path_manual 已加 (默认 0, 存量按严格校验路径处理)');
@@ -722,7 +722,7 @@ migrateProjectsBindPathManual();
 // 缺列才 ALTER, 幂等.
 function migrateProjectsExtensionColumns() {
   try {
-    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c: any) => c.name);
     if (!cols.includes('kind')) {
       // SQLite ALTER ADD COLUMN 不支持 CHECK 子句 (会直接报 syntax error); 约束放在
       // schema.sql 的空库建表里, 存量迁移只保证列存在 + 默认值正确.
@@ -756,7 +756,7 @@ migrateProjectsExtensionColumns();
 // 缺列才 ALTER, 幂等.
 function migrateProjectsDefaultModel() {
   try {
-    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c: any) => c.name);
     if (!cols.includes('default_model')) {
       db.exec('ALTER TABLE projects ADD COLUMN default_model TEXT');
       console.log('[mobius/db] migrate: projects.default_model 已加 (默认 NULL, 跟随系统默认)');
@@ -828,7 +828,7 @@ function migrateProjectUserContextWhitelists() {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
-    const cols = db.prepare('PRAGMA table_info(project_user_context_whitelists)').all().map((c) => c.name);
+    const cols = db.prepare('PRAGMA table_info(project_user_context_whitelists)').all().map((c: any) => c.name);
     if (!cols.includes('builtin_skill_ids')) {
       db.exec('ALTER TABLE project_user_context_whitelists ADD COLUMN builtin_skill_ids TEXT');
       console.log('[mobius/db] migrate: project_user_context_whitelists.builtin_skill_ids 已加');
@@ -894,4 +894,4 @@ function migrateProjectTodos() {
 }
 migrateProjectTodos();
 
-module.exports = { db, DB_PATH };
+export { db, DB_PATH };

@@ -1,14 +1,34 @@
-const { db } = require('../../db');
+import { db } from '../../db';
+
+interface UserViewPrefs {
+  user_id: string;
+  hide_others_projects: boolean;
+  updated_at: string | null;
+}
+
+interface SetPrefsArgs {
+  hideOthersProjects?: boolean;
+}
+
+interface MutedProjectRow {
+  muted_at: string;
+  created_by_name?: string;
+  starred?: number;
+  hidden?: number;
+  issue_count?: number;
+  research_count?: number;
+  [key: string]: any;
+}
 
 const UserProjectView = {
-  getPrefs: (userId) => {
+  getPrefs: (userId: string): UserViewPrefs => {
     const uid = String(userId || '').trim();
-    if (!uid) return { hide_others_projects: false, updated_at: null };
+    if (!uid) return { user_id: '', hide_others_projects: false, updated_at: null };
     const row = db.prepare(`
       SELECT user_id, hide_others_projects, updated_at
       FROM user_view_prefs
       WHERE user_id = ?
-    `).get(uid);
+    `).get(uid) as { user_id: string; hide_others_projects: number; updated_at: string } | undefined;
     return {
       user_id: uid,
       hide_others_projects: !!row?.hide_others_projects,
@@ -16,7 +36,7 @@ const UserProjectView = {
     };
   },
 
-  setPrefs: (userId, { hideOthersProjects } = {}) => {
+  setPrefs: (userId: string, { hideOthersProjects }: SetPrefsArgs = {}): UserViewPrefs | null => {
     const uid = String(userId || '').trim();
     if (!uid) return null;
     db.prepare(`
@@ -29,7 +49,7 @@ const UserProjectView = {
     return UserProjectView.getPrefs(uid);
   },
 
-  isMuted: (userId, projectId) => {
+  isMuted: (userId: string, projectId: string): boolean => {
     const uid = String(userId || '').trim();
     const pid = String(projectId || '').trim();
     if (!uid || !pid) return false;
@@ -40,18 +60,18 @@ const UserProjectView = {
     `).get(uid, pid);
   },
 
-  mutedIds: (userId) => {
+  mutedIds: (userId: string): Set<string> => {
     const uid = String(userId || '').trim();
     if (!uid) return new Set();
     const rows = db.prepare(`
       SELECT project_id
       FROM user_muted_projects
       WHERE user_id = ?
-    `).all(uid);
+    `).all(uid) as Array<{ project_id: string }>;
     return new Set(rows.map((row) => row.project_id));
   },
 
-  mute: (userId, projectId) => {
+  mute: (userId: string, projectId: string): boolean => {
     const uid = String(userId || '').trim();
     const pid = String(projectId || '').trim();
     if (!uid || !pid) return false;
@@ -64,7 +84,7 @@ const UserProjectView = {
     return true;
   },
 
-  unmute: (userId, projectId) => {
+  unmute: (userId: string, projectId: string): boolean => {
     const uid = String(userId || '').trim();
     const pid = String(projectId || '').trim();
     if (!uid || !pid) return false;
@@ -75,7 +95,7 @@ const UserProjectView = {
     return true;
   },
 
-  listMutedProjects: (userId) => {
+  listMutedProjects: (userId: string): MutedProjectRow[] => {
     const uid = String(userId || '').trim();
     if (!uid) return [];
     return db.prepare(`
@@ -91,8 +111,8 @@ const UserProjectView = {
       LEFT JOIN project_user_hidden puh ON puh.project_id = p.id AND puh.user_id = ?
       WHERE m.user_id = ?
       ORDER BY m.muted_at DESC
-    `).all(uid, uid, uid);
+    `).all(uid, uid, uid) as MutedProjectRow[];
   },
 };
 
-module.exports = { UserProjectView };
+export { UserProjectView };

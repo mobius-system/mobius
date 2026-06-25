@@ -1,5 +1,5 @@
 /**
- * skills.js — Skill 仓库. 现已切换到文件系统存储 (skills-fs).
+ * skills.ts — Skill 仓库. 现已切换到文件系统存储 (skills-fs).
  * 此文件仅作为兼容层, 保持 routes/issues.js 与 session-context.js 的调用面不变.
  */
 const skillsFs = require('../services/skills-fs');
@@ -19,4 +19,4 @@ const Skills = {
   move: skillsFs.moveSkill,
 };
 
-module.exports = { Skills };
+export { Skills };

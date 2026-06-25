@@ -3,6 +3,12 @@ const path = require('path');
 const mobiusDir = __dirname;
 const entrypoint = process.env.MOBIUS_PM2_ENTRYPOINT || path.join(mobiusDir, 'pm2-entrypoint.js');
 const instances = process.env.MOBIUS_PM2_INSTANCES || '1';
+// v1.9 起数据层 (db.ts + backend/repositories/*.ts) 已迁移到 TypeScript, 后端运行时
+// 通过 tsx/cjs 即时转译 .ts, 无需构建步骤. PM2 cluster 模式下 worker 会继承
+// interpreter_args, 所以 --require tsx/cjs 在 master 和 worker 都生效.
+// 不能直接把 interpreter 设为 tsx 二进制: PM2 cluster 模式不向 worker 传递自定义
+// interpreter, 会导致 worker 仍用 node 加载 .ts 文件而失败.
+const tsxHook = process.env.MOBIUS_TSX_HOOK || `tsx/cjs`;
 // 集中日志目录: 默认 /data/logs, 被 docker-compose 挂载到宿主机 (./host-data/data/logs)。
 // 所有 PM2 out/error_file 都落在这里, 宿主机可直接查看, 无需 docker exec。
 const LOG_DIR = process.env.MOBIUS_LOG_DIR || '/data/logs';
@@ -74,6 +80,7 @@ module.exports = {
       name: 'imac-mobius',
       cwd: mobiusDir,
       script: entrypoint,
+      interpreter_args: `--require ${tsxHook}`,
       exec_mode: 'cluster',
       instances,
       autorestart: true,

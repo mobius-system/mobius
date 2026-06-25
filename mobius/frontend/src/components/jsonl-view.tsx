@@ -63,6 +63,7 @@ type BashToolResult = {
   isError: boolean
   interrupted: boolean
   isImage: boolean
+  imageUrls?: string[]
   noOutputExpected: boolean
   readFile?: ReadFileResult
 }
@@ -476,6 +477,7 @@ function isPureToolResultEntry(entry: AnyEntry): boolean {
 function extractBashToolResultRecords(entry: AnyEntry, lineNo: number): BashToolResult[] {
   if (entry?.type === 'response_item' && entry?.payload?.type === 'function_call_output') {
     const output = functionOutputBody(entry.payload?.output)
+    const imageUrls = functionOutputImageUrls(entry.payload?.output)
     return [{
       entry,
       lineNo,
@@ -485,7 +487,8 @@ function extractBashToolResultRecords(entry: AnyEntry, lineNo: number): BashTool
       content: output,
       isError: entry.payload?.status === 'failed' || entry.payload?.is_error === true,
       interrupted: false,
-      isImage: false,
+      isImage: imageUrls.length > 0,
+      imageUrls,
       noOutputExpected: false,
     }]
   }
@@ -1494,7 +1497,19 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
           </button>
         )}
       </div>
-      {displayText ? (
+      {result.imageUrls && result.imageUrls.length > 0 ? (
+        <div className="flex flex-wrap gap-2 px-2.5 py-2">
+          {result.imageUrls.map((url, i) => (
+            <a key={i} href={url} target="_blank" rel="noreferrer" className="block">
+              <img
+                src={url}
+                alt={`output image ${i + 1}`}
+                className="max-h-48 max-w-full rounded border border-[var(--border-color)] object-contain"
+              />
+            </a>
+          ))}
+        </div>
+      ) : displayText ? (
         <div className="max-h-[34rem] overflow-auto">
           {stdout && stderr ? (
             <div>
@@ -1780,10 +1795,62 @@ function summarizeWriteToolInput(input: any): string | null {
 }
 
 function functionOutputBody(output: any): string {
-  const text = String(output ?? '')
-  const marker = 'Output:'
-  const idx = text.indexOf(marker)
-  return idx >= 0 ? text.slice(idx + marker.length).trimStart() : text
+  if (typeof output === 'string') {
+    const marker = 'Output:'
+    const idx = output.indexOf(marker)
+    return idx >= 0 ? output.slice(idx + marker.length).trimStart() : output
+  }
+  if (output == null) return ''
+  // codex 偶尔把 output 写成结构化数组 (例如 [{type:'input_image', image_url:'data:...', detail:'high'}]).
+  // 直接 String() 会得到 [object Object]. 这里把每个 block 摊平成可读描述.
+  if (Array.isArray(output)) {
+    const parts: string[] = []
+    for (const block of output) {
+      if (block == null) continue
+      if (typeof block === 'string') { parts.push(block); continue }
+      const btype = block.type
+      if (btype === 'input_image' || btype === 'image' || btype === 'image_url') {
+        const url = typeof block.image_url === 'string' ? block.image_url
+          : typeof block.url === 'string' ? block.url
+          : typeof block.src === 'string' ? block.src : ''
+        const mime = (url.match(/^data:([^;,]+)/) || [])[1] || 'image'
+        const bytes = url.startsWith('data:') ? Math.max(0, Math.floor((url.length - url.indexOf(',') - 1) * 0.75)) : 0
+        const sizeStr = bytes > 0 ? ` · ${bytes >= 1024 ? `${(bytes / 1024).toFixed(1)}KB` : `${bytes}B`}` : ''
+        parts.push(`[image · ${mime}${sizeStr}]`)
+        continue
+      }
+      if (btype === 'text' && typeof block.text === 'string') { parts.push(block.text); continue }
+      if (btype === 'output_text' && typeof block.output_text === 'string') { parts.push(block.output_text); continue }
+      const textField = typeof block.text === 'string' ? block.text
+        : typeof block.output_text === 'string' ? block.output_text
+        : ''
+      if (textField) { parts.push(textField); continue }
+      try { parts.push(JSON.stringify(block)) } catch { /* ignore */ }
+    }
+    return parts.filter(Boolean).join('\n')
+  }
+  if (typeof output === 'object') {
+    if (typeof output.text === 'string') return output.text
+    if (typeof output.output_text === 'string') return output.output_text
+    try { return JSON.stringify(output) } catch { return '' }
+  }
+  return String(output ?? '')
+}
+
+// 从 codex function_call_output 数组里提取第一张图片的 data url, 用于卡片正文直接渲染.
+function functionOutputImageUrls(output: any): string[] {
+  const out: string[] = []
+  if (!Array.isArray(output)) return out
+  for (const block of output) {
+    if (!block || typeof block !== 'object') continue
+    const btype = block.type
+    if (btype !== 'input_image' && btype !== 'image' && btype !== 'image_url') continue
+    const url = typeof block.image_url === 'string' ? block.image_url
+      : typeof block.url === 'string' ? block.url
+      : typeof block.src === 'string' ? block.src : ''
+    if (url) out.push(url)
+  }
+  return out
 }
 
 function normalizeHeaderSummaryForGrouping(text: string): string {

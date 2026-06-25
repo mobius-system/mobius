@@ -103,3 +103,8 @@ host_data/
 docs/superpowers
 /docs/
 /assess_appearance/
+
+# IDE tsserver 偶发自动 emit 的 .js (我们的运行时是 tsx, 直接跑 .ts, 这些产物会遮蔽源码)
+mobius/db.js
+mobius/backend/types/*.js
+mobius/backend/repositories/*.js

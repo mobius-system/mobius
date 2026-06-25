@@ -1,10 +1,10 @@
 /**
- * memories.js — Memory 仓库. 文件系统存储 (memories-fs), 兼容层.
+ * memories.ts — Memory 仓库. 文件系统存储 (memories-fs), 兼容层.
  */
 const memoriesFs = require('../services/memories-fs');
 const { syncProjectKnowledgeForProjectId } = require('../services/project-knowledge');
 
-function listForProjectWithKnowledgeSync(projectId) {
+function listForProjectWithKnowledgeSync(projectId: string): any {
   const result = syncProjectKnowledgeForProjectId(projectId);
   if (result && !result.ok) {
     console.warn(`[memories] project knowledge sync failed for ${projectId}: ${result.error}`);
@@ -28,4 +28,4 @@ const Memories = {
   syncProjectKnowledge: syncProjectKnowledgeForProjectId,
 };
 
-module.exports = { Memories };
+export { Memories };

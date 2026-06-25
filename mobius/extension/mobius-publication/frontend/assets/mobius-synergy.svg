@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071018"/>
+      <stop offset="0.52" stop-color="#0d1520"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="50%" cy="48%" r="42%">
+      <stop offset="0" stop-color="#38d9e8" stop-opacity="0.22"/>
+      <stop offset="0.55" stop-color="#38d9e8" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#38d9e8" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,8 L11,4 z" fill="#65e4ef"/>
+    </marker>
+    <style>
+      .title{font:800 54px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;fill:#f3fbff}
+      .sub{font:500 25px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;fill:#a9bdd1}
+      .node-title{font:800 35px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;fill:#f7fdff}
+      .node-sub{font:550 22px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;fill:#b8c9d8}
+      .core{font:850 64px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;fill:#ffffff}
+      .core-sub{font:700 28px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;fill:#b7fbff}
+      .label{font:700 19px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#bdfbff}
+      .box{fill:#111c28;stroke:#496a88;stroke-width:2}
+      .cyan{fill:#11343d;stroke:#39d8e7}
+      .blue{fill:#132b4d;stroke:#5aa2ff}
+      .green{fill:#143b32;stroke:#5bdea6}
+      .amber{fill:#443517;stroke:#f3c768}
+      .rose{fill:#462631;stroke:#ff8293}
+      .line{fill:none;stroke:#65e4ef;stroke-width:4;marker-end:url(#arrow)}
+      .line-soft{fill:none;stroke:#6c8bac;stroke-width:3;stroke-dasharray:10 10}
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <rect width="1920" height="1080" fill="url(#halo)"/>
+  <g opacity="0.18">
+    <path d="M0 120H1920M0 240H1920M0 360H1920M0 480H1920M0 600H1920M0 720H1920M0 840H1920M0 960H1920" stroke="#ffffff" stroke-width="1"/>
+    <path d="M120 0V1080M240 0V1080M360 0V1080M480 0V1080M600 0V1080M720 0V1080M840 0V1080M960 0V1080M1080 0V1080M1200 0V1080M1320 0V1080M1440 0V1080M1560 0V1080M1680 0V1080M1800 0V1080" stroke="#ffffff" stroke-width="1"/>
+  </g>
+
+  <text x="90" y="92" class="title">Mobius：人机物智算协同的自进化超级智能体系统</text>
+  <text x="92" y="136" class="sub">把世界中的人、机、物、智、算组织成一个可持续进化的协同智能体系统</text>
+
+  <path d="M415 258C210 421 247 755 504 890C772 1032 1215 1004 1452 842C1674 690 1662 405 1477 260" fill="none" stroke="#38d9e8" stroke-width="9" stroke-opacity="0.24" stroke-linecap="round"/>
+  <text x="1360" y="229" class="label">自进化回路：执行 → 反馈 → 沉淀 → 新能力</text>
+
+  <ellipse cx="960" cy="540" rx="320" ry="142" fill="#0b141f" stroke="#65e4ef" stroke-width="4" filter="url(#glow)"/>
+  <ellipse cx="960" cy="540" rx="250" ry="92" fill="#101b28" stroke="#b7fbff" stroke-opacity="0.62" stroke-width="2"/>
+  <text x="960" y="520" text-anchor="middle" class="core">Mobius</text>
+  <text x="960" y="570" text-anchor="middle" class="core-sub">自进化超级智能体系统</text>
+  <text x="960" y="610" text-anchor="middle" class="sub">Agentic OS 内核 · 协同编排 · 持续生长</text>
+
+  <rect x="112" y="376" width="330" height="210" rx="24" class="box blue"/>
+  <text x="154" y="430" class="node-title">人</text>
+  <text x="154" y="472" class="node-sub">个人 / 团队 / 组织</text>
+  <text x="154" y="518" class="node-sub">提出目标 · 协同开发 · 验收反馈</text>
+  <path d="M442 486C574 462 655 476 704 512" class="line"/>
+  <text x="455" y="450" class="label">小莫 / 自然交互</text>
+
+  <rect x="760" y="166" width="400" height="178" rx="24" class="box cyan"/>
+  <text x="810" y="222" class="node-title">智</text>
+  <text x="810" y="264" class="node-sub">Agent 编队 / AI 模型 / 知识资产</text>
+  <text x="810" y="310" class="node-sub">拆解 · 推理 · 执行 · 沉淀</text>
+  <path d="M960 344V396" class="line"/>
+
+  <rect x="1382" y="278" width="390" height="212" rx="24" class="box amber"/>
+  <text x="1430" y="334" class="node-title">算</text>
+  <text x="1430" y="376" class="node-sub">GPU 集群 / 云端算力 / 本地算力</text>
+  <text x="1430" y="422" class="node-sub">训练 · 仿真 · 测试 · 数据处理</text>
+  <path d="M1280 505C1346 450 1378 420 1382 384" class="line"/>
+  <text x="1280" y="442" class="label">SSH / 任务分发</text>
+
+  <rect x="1352" y="660" width="420" height="228" rx="24" class="box green"/>
+  <text x="1400" y="718" class="node-title">机</text>
+  <text x="1400" y="760" class="node-sub">机器人 / 工作站 / 终端设备</text>
+  <text x="1400" y="806" class="node-sub">开发 · 调试 · 部署 · 现实动作</text>
+  <path d="M1262 585C1345 612 1375 658 1352 724" class="line"/>
+  <text x="1282" y="632" class="label">AIMUX / 远程终端</text>
+
+  <rect x="190" y="694" width="410" height="204" rx="24" class="box rose"/>
+  <text x="238" y="750" class="node-title">物</text>
+  <text x="238" y="792" class="node-sub">嵌入式 / 传感器 / 执行器</text>
+  <text x="238" y="838" class="node-sub">ESP32 · 树莓派 · Jetson Nx · 现实对象</text>
+  <path d="M704 602C630 644 588 692 600 754" class="line"/>
+  <text x="610" y="682" class="label">烧录 / 运行 / 观测</text>
+
+  <rect x="158" y="206" width="300" height="98" rx="20" class="box"/>
+  <text x="196" y="264" class="node-sub">NAS / OSS · 数据与知识</text>
+  <path d="M458 254C594 286 690 350 782 430" class="line-soft"/>
+  <text x="508" y="300" class="label">SSH / SFTP</text>
+
+  <rect x="1260" y="96" width="336" height="98" rx="20" class="box"/>
+  <text x="1300" y="154" class="node-sub">云服务器 / 开放网络资源</text>
+  <path d="M1278 194C1212 268 1166 354 1136 430" class="line-soft"/>
+
+  <rect x="710" y="762" width="500" height="106" rx="28" class="box cyan"/>
+  <text x="960" y="810" text-anchor="middle" class="node-title">持续开发 · 部署 · 学习 · 进化</text>
+  <text x="960" y="848" text-anchor="middle" class="node-sub">把执行结果沉淀为知识、工具、产品与机器人能力</text>
+  <path d="M960 682V762" class="line"/>
+</svg>
