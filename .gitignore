@@ -104,6 +104,12 @@ docs/superpowers
 /docs/
 /assess_appearance/
 
+# 大体积演示视频 (>100MB 会撞 GitHub 拒收, 仅本地保留)
+mobius/extension/mobius-home/frontend/assets/videos/research.mp4
+mobius/extension/mobius-home/frontend/assets/videos/github-replay.mp4
+mobius/extension/mobius-publication/frontend/assets/videos/research.mp4
+mobius/extension/mobius-publication/frontend/assets/videos/github-replay.mp4
+
 # IDE tsserver 偶发自动 emit 的 .js (我们的运行时是 tsx, 直接跑 .ts, 这些产物会遮蔽源码)
 mobius/db.js
 mobius/backend/types/*.js
