@@ -5,8 +5,8 @@
  *
  * 同步策略:
  *   - 整目录复制 (含 SKILL.md 之外的资源文件 / scripts).
- *   - 每次同步前删掉目标目录中本次未涉及的子目录, 避免上一次留下的过期 skill
- *     被 agent 误读.
+ *   - 同名 skill 覆盖 (rmSync + cpSync); 其他已存在的 skill 子目录保留,
+ *     不再因为本次未选中而删除.
  *   - 源不存在 / 复制失败的项不抛错, 通过返回值反馈给调用方.
  */
 const fs = require('fs');
@@ -27,7 +27,7 @@ function syncSkillsToWorkspace(workDir, skills) {
     return results;
   }
 
-  const keep = new Set();
+  // const keep = new Set(); // 新行为: 不再清理未选中的 skill, keep 集合停用
   for (const sk of skills) {
     const parsed = parseSkillId(sk.id);
     if (!parsed) { results.push({ id: sk.id, ok: false, reason: 'unparseable id' }); continue; }
@@ -46,7 +46,7 @@ function syncSkillsToWorkspace(workDir, skills) {
       if (sk.body) {
         fs.writeFileSync(path.join(dest, 'SKILL.md'), sk.body, 'utf8');
       }
-      keep.add(parsed.dirName);
+      // keep.add(parsed.dirName); // 新行为: 不再清理未选中的 skill, 此行停用
       results.push({
         id: sk.id,
         dirName: parsed.dirName,
@@ -59,13 +59,15 @@ function syncSkillsToWorkspace(workDir, skills) {
     }
   }
 
-  try {
-    for (const ent of fs.readdirSync(targetRoot, { withFileTypes: true })) {
-      if (ent.isDirectory() && !keep.has(ent.name)) {
-        fs.rmSync(path.join(targetRoot, ent.name), { recursive: true, force: true });
-      }
-    }
-  } catch {}
+  // 新行为标准 (按用户要求停用): 不再删除本次未选中的 skill.
+  // 同名 skill 在循环内通过 rmSync + cpSync 已经覆盖, 其他 skill 子目录原样保留.
+  // try {
+  //   for (const ent of fs.readdirSync(targetRoot, { withFileTypes: true })) {
+  //     if (ent.isDirectory() && !keep.has(ent.name)) {
+  //       fs.rmSync(path.join(targetRoot, ent.name), { recursive: true, force: true });
+  //     }
+  //   }
+  // } catch {}
 
   return results;
 }

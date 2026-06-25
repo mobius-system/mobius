@@ -1,116 +1,369 @@
 import * as THREE from 'three';
 
-const COLORS = {
-  paper: '#3b82f6',
-  product: '#8b5cf6',
-  evolution: '#f59e0b',
+const BRAND = ['#22d3ee', '#7dd3fc', '#a78bfa', '#f472b6', '#fde68a'];
+const PALETTE_MAX = 6;
+const TAU = Math.PI * 2;
+const UP = new THREE.Vector3(0, 0, 1);
+
+const TYPE_META = {
+  paper: { label: '论文', accent: '#3b82f6', colorT: 0.2 },
+  product: { label: '竞品', accent: '#8b5cf6', colorT: 0.55 },
+  evolution: { label: 'L1', accent: '#f59e0b', colorT: 0.9 },
 };
 
-function mobiusPoint(u, v, radius = 3.2, width = 0.72) {
-  const half = u * 0.5;
-  const x = (radius + v * width * Math.cos(half)) * Math.cos(u);
-  const y = (radius + v * width * Math.cos(half)) * Math.sin(u) * 0.58;
-  const z = v * width * Math.sin(half);
-  return new THREE.Vector3(x, y, z);
+const MARKER_LAYOUT = [
+  { u: 0.04 * TAU, v: -0.76, dx: -48, dy: -30 },
+  { u: 0.18 * TAU, v: 0.72, dx: 48, dy: -34 },
+  { u: 0.31 * TAU, v: -0.46, dx: -54, dy: 26 },
+  { u: 0.45 * TAU, v: 0.84, dx: 50, dy: -24 },
+  { u: 0.58 * TAU, v: -0.66, dx: -44, dy: 30 },
+  { u: 0.72 * TAU, v: 0.56, dx: 52, dy: 28 },
+  { u: 0.86 * TAU, v: -0.82, dx: -52, dy: -20 },
+  { u: 0.96 * TAU, v: 0.32, dx: 44, dy: 26 },
+];
+
+const VERTEX_SHADER = /* glsl */`
+attribute float aU;
+attribute float aV;
+attribute float aPhase;
+attribute float aSize;
+attribute float aColorT;
+
+uniform float uTime;
+uniform float uRadius;
+uniform float uWidth;
+uniform float uDotSize;
+uniform vec3 uColors[${PALETTE_MAX}];
+uniform int uColorCount;
+
+varying vec3 vColor;
+varying float vPulse;
+
+vec3 centerLine(float u) {
+  float x = uRadius * sin(u);
+  float y = 0.52 * uRadius * sin(2.0 * u);
+  float z = 0.24 * uRadius * cos(u);
+  return vec3(x, y, z);
 }
 
-function makeMobiusMesh() {
-  const uSegments = 128;
-  const vSegments = 10;
-  const positions = [];
-  const indices = [];
-  for (let i = 0; i <= uSegments; i += 1) {
-    const u = (i / uSegments) * Math.PI * 2;
-    for (let j = 0; j <= vSegments; j += 1) {
-      const v = (j / vSegments) * 2 - 1;
-      const p = mobiusPoint(u, v);
-      positions.push(p.x, p.y, p.z);
-    }
+vec3 tangentLine(float u) {
+  float dx = uRadius * cos(u);
+  float dy = 1.04 * uRadius * cos(2.0 * u);
+  float dz = -0.24 * uRadius * sin(u);
+  return normalize(vec3(dx, dy, dz));
+}
+
+vec3 mobiusPoint(float u, float v) {
+  vec3 center = centerLine(u);
+  vec3 tangent = tangentLine(u);
+  vec3 side = cross(vec3(0.0, 0.0, 1.0), tangent);
+  if (dot(side, side) < 0.0001) side = vec3(1.0, 0.0, 0.0);
+  side = normalize(side);
+  vec3 lift = normalize(cross(tangent, side));
+  float twist = u * 0.5;
+  float pinch = mix(0.78, 1.0, smoothstep(0.18, 0.62, abs(sin(u))));
+  vec3 ribbon = cos(twist) * side + sin(twist) * lift;
+  return center + ribbon * v * uWidth * pinch;
+}
+
+vec3 palette(float t) {
+  float scaled = clamp(t, 0.0, 0.999) * float(uColorCount - 1);
+  int idx = int(floor(scaled));
+  float f = fract(scaled);
+  if (idx <= 0) return mix(uColors[0], uColors[1], f);
+  if (idx == 1) return mix(uColors[1], uColors[2], f);
+  if (idx == 2) return mix(uColors[2], uColors[3], f);
+  if (idx == 3) return mix(uColors[3], uColors[4], f);
+  return mix(uColors[4], uColors[5], f);
+}
+
+void main() {
+  float u = aU + uTime * 0.08;
+  vec3 pos = mobiusPoint(u, aV);
+  vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+  gl_Position = projectionMatrix * mv;
+
+  float pulse = 0.72 + 0.28 * sin(uTime * 1.15 + aPhase);
+  vPulse = pulse;
+  vColor = palette(fract(aColorT + u * 0.04));
+
+  float dist = max(0.1, -mv.z);
+  gl_PointSize = aSize * uDotSize * (430.0 / dist) * (0.8 + pulse * 0.28);
+}
+`;
+
+const FRAGMENT_SHADER = /* glsl */`
+precision highp float;
+varying vec3 vColor;
+varying float vPulse;
+uniform float uAlpha;
+uniform float uGlow;
+
+void main() {
+  vec2 uv = gl_PointCoord - 0.5;
+  float d = length(uv);
+  if (d > 0.5) discard;
+  float core = smoothstep(0.5, 0.16, d);
+  float halo = pow(max(0.0, 1.0 - d * 2.0), 2.4);
+  vec3 color = vColor * (core * 0.92 + halo * uGlow * 0.64) * (0.72 + vPulse * 0.72);
+  float alpha = (core + halo * uGlow * 0.68) * uAlpha;
+  gl_FragColor = vec4(color, alpha);
+}
+`;
+
+const SWEEP_VERTEX_SHADER = /* glsl */`
+attribute float aU;
+attribute float aV;
+attribute float aPhase;
+attribute float aSize;
+attribute float aColorT;
+
+uniform float uTime;
+uniform float uRadius;
+uniform float uWidth;
+uniform float uDotSize;
+uniform float uSweep;
+uniform vec3 uColors[${PALETTE_MAX}];
+uniform int uColorCount;
+
+varying vec3 vColor;
+varying float vPulse;
+varying float vSweep;
+
+vec3 centerLine(float u) {
+  float x = uRadius * sin(u);
+  float y = 0.52 * uRadius * sin(2.0 * u);
+  float z = 0.24 * uRadius * cos(u);
+  return vec3(x, y, z);
+}
+
+vec3 tangentLine(float u) {
+  float dx = uRadius * cos(u);
+  float dy = 1.04 * uRadius * cos(2.0 * u);
+  float dz = -0.24 * uRadius * sin(u);
+  return normalize(vec3(dx, dy, dz));
+}
+
+vec3 mobiusPoint(float u, float v) {
+  vec3 center = centerLine(u);
+  vec3 tangent = tangentLine(u);
+  vec3 side = cross(vec3(0.0, 0.0, 1.0), tangent);
+  if (dot(side, side) < 0.0001) side = vec3(1.0, 0.0, 0.0);
+  side = normalize(side);
+  vec3 lift = normalize(cross(tangent, side));
+  float twist = u * 0.5;
+  float pinch = mix(0.78, 1.0, smoothstep(0.18, 0.62, abs(sin(u))));
+  vec3 ribbon = cos(twist) * side + sin(twist) * lift;
+  return center + ribbon * v * uWidth * pinch;
+}
+
+vec3 palette(float t) {
+  float scaled = clamp(t, 0.0, 0.999) * float(uColorCount - 1);
+  int idx = int(floor(scaled));
+  float f = fract(scaled);
+  if (idx <= 0) return mix(uColors[0], uColors[1], f);
+  if (idx == 1) return mix(uColors[1], uColors[2], f);
+  if (idx == 2) return mix(uColors[2], uColors[3], f);
+  if (idx == 3) return mix(uColors[3], uColors[4], f);
+  return mix(uColors[4], uColors[5], f);
+}
+
+void main() {
+  float u = aU + uTime * 0.08;
+  vec3 pos = mobiusPoint(u, aV);
+  vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+  gl_Position = projectionMatrix * mv;
+
+  float delta = abs(atan(sin(u - uSweep), cos(u - uSweep)));
+  float wave = 0.5 + 0.5 * sin(u * 3.0 + uTime * 0.24);
+  float sweep = smoothstep(0.5, 0.0, delta) * (0.62 + wave * 0.38);
+  float pulse = 0.72 + 0.28 * sin(uTime * 1.15 + aPhase);
+
+  vPulse = pulse;
+  vSweep = sweep;
+  vColor = palette(fract(aColorT + u * 0.04 + sweep * 0.12));
+
+  float dist = max(0.1, -mv.z);
+  gl_PointSize = aSize * uDotSize * (430.0 / dist) * (0.85 + pulse * 0.28 + sweep * 1.85);
+}
+`;
+
+const SWEEP_FRAGMENT_SHADER = /* glsl */`
+precision highp float;
+varying vec3 vColor;
+varying float vPulse;
+varying float vSweep;
+uniform float uAlpha;
+uniform float uGlow;
+
+void main() {
+  vec2 uv = gl_PointCoord - 0.5;
+  float d = length(uv);
+  if (d > 0.5) discard;
+  float core = smoothstep(0.5, 0.14, d);
+  float halo = pow(max(0.0, 1.0 - d * 2.0), 2.0);
+  vec3 color = vColor * (core * 0.9 + halo * uGlow) * (0.7 + vPulse * 0.72);
+  float alpha = (core + halo * uGlow * 0.68) * uAlpha * vSweep;
+  gl_FragColor = vec4(color, alpha);
+}
+`;
+
+function colorVec(hex) {
+  const color = new THREE.Color(hex);
+  return new THREE.Vector3(color.r, color.g, color.b);
+}
+
+function padColors(colors) {
+  const source = colors.map(colorVec);
+  const padded = [];
+  for (let i = 0; i < PALETTE_MAX; i += 1) {
+    padded.push(source[Math.min(i, source.length - 1)]);
   }
-  const row = vSegments + 1;
-  for (let i = 0; i < uSegments; i += 1) {
-    for (let j = 0; j < vSegments; j += 1) {
-      const a = i * row + j;
-      const b = (i + 1) * row + j;
-      const c = (i + 1) * row + j + 1;
-      const d = i * row + j + 1;
-      indices.push(a, b, d, b, c, d);
-    }
+  return padded;
+}
+
+function smoothstep(edge0, edge1, x) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+function centerLine(u, radius) {
+  return new THREE.Vector3(
+    radius * Math.sin(u),
+    0.52 * radius * Math.sin(2 * u),
+    0.24 * radius * Math.cos(u)
+  );
+}
+
+function tangentLine(u, radius) {
+  return new THREE.Vector3(
+    radius * Math.cos(u),
+    1.04 * radius * Math.cos(2 * u),
+    -0.24 * radius * Math.sin(u)
+  ).normalize();
+}
+
+function mobiusPoint(u, v, radius = 5.2, width = 0.82) {
+  const center = centerLine(u, radius);
+  const tangent = tangentLine(u, radius);
+  const side = new THREE.Vector3().crossVectors(UP, tangent);
+  if (side.lengthSq() < 0.0001) side.set(1, 0, 0);
+  side.normalize();
+  const lift = new THREE.Vector3().crossVectors(tangent, side).normalize();
+  const twist = u * 0.5;
+  const pinch = THREE.MathUtils.lerp(0.78, 1, smoothstep(0.18, 0.62, Math.abs(Math.sin(u))));
+  const ribbon = side.multiplyScalar(Math.cos(twist)).add(lift.multiplyScalar(Math.sin(twist)));
+  return center.add(ribbon.multiplyScalar(v * width * pinch));
+}
+
+function createPointAttributes(count, mapper) {
+  const positions = new Float32Array(count * 3);
+  const aU = new Float32Array(count);
+  const aV = new Float32Array(count);
+  const aPhase = new Float32Array(count);
+  const aSize = new Float32Array(count);
+  const aColorT = new Float32Array(count);
+
+  for (let i = 0; i < count; i += 1) {
+    const data = mapper(i);
+    aU[i] = data.u;
+    aV[i] = data.v;
+    aPhase[i] = data.phase;
+    aSize[i] = data.size;
+    aColorT[i] = data.colorT;
   }
+
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return new THREE.Mesh(
-    geometry,
-    new THREE.MeshBasicMaterial({
-      color: 0x1d4ed8,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.18,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    })
-  );
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('aU', new THREE.BufferAttribute(aU, 1));
+  geometry.setAttribute('aV', new THREE.BufferAttribute(aV, 1));
+  geometry.setAttribute('aPhase', new THREE.BufferAttribute(aPhase, 1));
+  geometry.setAttribute('aSize', new THREE.BufferAttribute(aSize, 1));
+  geometry.setAttribute('aColorT', new THREE.BufferAttribute(aColorT, 1));
+  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 120);
+  return geometry;
 }
 
-function makeGlowLine() {
-  const points = [];
-  for (let i = 0; i <= 240; i += 1) {
-    points.push(mobiusPoint((i / 240) * Math.PI * 2, 0.88));
+function createMobiusGeometry(count) {
+  return createPointAttributes(count, (i) => {
+    const t = (i + Math.random() * 0.75) / count;
+    const raw = Math.random() * 2 - 1;
+    const edge = Math.random() < 0.22;
+    return {
+      u: t * TAU,
+      v: edge
+        ? Math.sign(raw || 1) * (0.72 + Math.random() * 0.28)
+        : Math.sign(raw || 1) * Math.pow(Math.abs(raw), 0.72),
+      phase: Math.random() * TAU,
+      size: 0.72 + Math.random() * 0.72,
+      colorT: Math.random(),
+    };
+  });
+}
+
+function createPointCloud(count, options = {}) {
+  const material = new THREE.ShaderMaterial({
+    vertexShader: options.vertexShader || VERTEX_SHADER,
+    fragmentShader: options.fragmentShader || FRAGMENT_SHADER,
+    uniforms: {
+      uTime: { value: 0 },
+      uRadius: { value: options.radius ?? 5.2 },
+      uWidth: { value: options.width ?? 0.82 },
+      uDotSize: { value: options.dotSize ?? 0.45 },
+      uAlpha: { value: options.alpha ?? 0.62 },
+      uGlow: { value: options.glow ?? 0.9 },
+      uSweep: { value: 0 },
+      uColors: { value: padColors(options.colors || BRAND) },
+      uColorCount: { value: Math.min(PALETTE_MAX, (options.colors || BRAND).length) },
+    },
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const points = new THREE.Points(options.geometry || createMobiusGeometry(count), material);
+  points.frustumCulled = false;
+  return { points, uniforms: material.uniforms };
+}
+
+function createStarField(count, spread = 15) {
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i += 1) {
+    const r = Math.pow(Math.random(), 0.48) * spread;
+    const theta = Math.random() * TAU;
+    const phi = Math.acos(2 * Math.random() - 1);
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.58;
+    positions[i * 3 + 2] = r * Math.cos(phi) - spread * 0.15;
+    const color = new THREE.Color(BRAND[(Math.random() * BRAND.length) | 0]);
+    const dim = 0.28 + Math.random() * 0.38;
+    colors[i * 3] = color.r * dim;
+    colors[i * 3 + 1] = color.g * dim;
+    colors[i * 3 + 2] = color.b * dim;
   }
-  return new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(points),
-    new THREE.LineBasicMaterial({
-      color: 0x3b82f6,
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      size: 0.016,
+      vertexColors: true,
       transparent: true,
-      opacity: 0.56,
-      blending: THREE.AdditiveBlending,
-    })
-  );
-}
-
-function makePoint(type, shining = false) {
-  const color = new THREE.Color(COLORS[type] || COLORS.paper);
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(shining ? 0.07 : 0.038, 16, 16),
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: shining ? 0.96 : 0.72,
-      blending: THREE.AdditiveBlending,
+      opacity: 0.38,
       depthWrite: false,
+      blending: THREE.AdditiveBlending,
     })
   );
-  mesh.userData.baseScale = shining ? 1.25 : 0.82;
-  mesh.userData.color = color;
-  return mesh;
 }
 
-function defaultItems() {
-  return [
-    { type: 'paper', keyword: 'Top paper', title: '论文调研', summary: '等待高优先级论文线索。' },
-    { type: 'product', keyword: 'Tracked', title: '竞品调研', summary: '等待已跟踪竞品动态。' },
-    { type: 'evolution', keyword: 'L1', title: '自进化历史', summary: '等待 L1 改动记录。' },
-  ];
+function typeMeta(type) {
+  return TYPE_META[type] || TYPE_META.paper;
 }
 
-function makeTooltip(container) {
-  const tooltip = document.createElement('div');
-  tooltip.className = 'ring-tooltip';
-  tooltip.hidden = true;
-  container.parentElement.appendChild(tooltip);
-  return tooltip;
-}
-
-function renderTooltip(tooltip, item) {
-  const title = item.title || item.keyword || '发现';
-  const summary = item.summary || '';
-  tooltip.innerHTML = `
-    <strong>${escapeHtml(title)}</strong>
-    <p>${escapeHtml(summary)}</p>
-    <span>${escapeHtml(item.keyword || item.type || 'Radar')}</span>
-  `;
+function typeLabel(type) {
+  return typeMeta(type).label;
 }
 
 function escapeHtml(value) {
@@ -122,148 +375,376 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
+function compact(value, max = 48) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+}
+
+function defaultItems() {
+  return [
+    {
+      type: 'paper',
+      keyword: '论文线索',
+      title: '论文调研',
+      summary: '等待高优先级论文线索。',
+      meta: ['Top Picks', '未加载', 'Radar'],
+    },
+    {
+      type: 'paper',
+      keyword: 'Top Picks',
+      title: '跨 cluster 优先调研',
+      summary: '聚类完成后展示最需要优先阅读的论文。',
+      meta: ['论文', 'cluster', 'priority'],
+    },
+    {
+      type: 'product',
+      keyword: '已跟踪竞品',
+      title: '竞品调研',
+      summary: '等待已跟踪竞品动态。',
+      meta: ['竞品', 'official', 'snapshot'],
+    },
+    {
+      type: 'product',
+      keyword: '候选晋升',
+      title: '竞品候选区',
+      summary: '候选项可晋升为正式跟踪对象。',
+      meta: ['竞品', 'candidate', 'review'],
+    },
+    {
+      type: 'evolution',
+      keyword: 'L1 改动',
+      title: '自进化历史',
+      summary: '等待 L1 改动记录。',
+      meta: ['L1', 'recorded', 'Mobius'],
+    },
+  ];
+}
+
+function markerTargetCount() {
+  if (window.innerWidth < 720) return 5;
+  if (window.innerWidth < 1080) return 6;
+  return 7;
+}
+
+function normalizeItems(items) {
+  const source = Array.isArray(items) && items.length ? items : defaultItems();
+  const targetCount = markerTargetCount();
+  const fallback = defaultItems();
+  const out = [];
+  for (let i = 0; i < targetCount; i += 1) {
+    const item = source[i] || fallback[i % fallback.length] || source[i % source.length];
+    const type = item.type === 'product' || item.type === 'evolution' ? item.type : 'paper';
+    out.push({
+      ...item,
+      type,
+      keyword: compact(item.keyword || item.title || typeLabel(type), 22),
+      title: compact(item.title || item.keyword || '雷达发现', 72),
+      summary: compact(item.summary || '暂无摘要。', 96),
+      meta: Array.isArray(item.meta) ? item.meta.filter(Boolean).slice(0, 3) : [],
+    });
+  }
+  return out;
+}
+
+function makeTooltip(container) {
+  const tooltip = document.createElement('div');
+  tooltip.className = 'ring-tooltip';
+  tooltip.hidden = true;
+  container.appendChild(tooltip);
+  return tooltip;
+}
+
+function renderTooltip(tooltip, item) {
+  const meta = typeMeta(item.type);
+  tooltip.style.setProperty('--ring-accent', meta.accent);
+  tooltip.innerHTML = `
+    <div class="ring-card-chip">${escapeHtml(meta.label)}</div>
+    <h3>${escapeHtml(item.title || item.keyword || '雷达发现')}</h3>
+    <div class="ring-card-rule"></div>
+    <p>${escapeHtml(item.summary || '暂无摘要。')}</p>
+    <div class="ring-card-meta">
+      ${(item.meta || []).slice(0, 3).map((value) => `<span>${escapeHtml(compact(value, 34))}</span>`).join('')}
+    </div>
+  `;
+}
+
+function createLabel(layer, item, index) {
+  const meta = typeMeta(item.type);
+  const label = document.createElement('div');
+  label.className = 'ring-label';
+  label.dataset.markerIndex = String(index);
+  label.style.setProperty('--ring-accent', meta.accent);
+  label.innerHTML = `
+    <span class="ring-label-bar"></span>
+    <span class="ring-label-text">${escapeHtml(item.keyword)}</span>
+    <span class="ring-label-chip">${escapeHtml(meta.label)}</span>
+  `;
+  layer.appendChild(label);
+  return label;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
 export function initMobiusRing(canvas) {
   if (!canvas) return null;
+  const container = canvas.parentElement;
+  if (!container) return null;
+
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x0a0a0f, 0.035);
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-  camera.position.set(0, 0.35, 9.8);
+  scene.fog = new THREE.FogExp2(0x02010a, 0.035);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
+  camera.position.set(0, 2.55, 17.2);
   camera.lookAt(0, 0, 0);
 
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
   renderer.setClearColor(0x000000, 0);
 
-  const group = new THREE.Group();
-  group.rotation.x = -0.22;
-  group.rotation.z = -0.08;
-  scene.add(group);
-  group.add(makeMobiusMesh());
-  group.add(makeGlowLine());
+  const stars = createStarField(window.innerWidth < 720 ? 520 : 780, 16);
+  scene.add(stars);
 
-  const sweep = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(4.5, 0, 0)]),
-    new THREE.LineBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending })
-  );
-  sweep.position.z = 0.05;
-  group.add(sweep);
+  const ringGroup = new THREE.Group();
+  ringGroup.rotation.x = -0.15;
+  ringGroup.rotation.z = -0.04;
+  scene.add(ringGroup);
 
-  const flowCount = window.innerWidth < 720 ? 28 : 42;
-  const shineCount = window.innerWidth < 720 ? 5 : 8;
-  const flowPoints = [];
-  const shinePoints = [];
-  let discoveries = defaultItems();
-  for (let i = 0; i < flowCount; i += 1) {
-    const mesh = makePoint(i % 3 === 0 ? 'paper' : i % 3 === 1 ? 'product' : 'evolution');
-    mesh.userData.u = (i / flowCount) * Math.PI * 2;
-    mesh.userData.v = Math.sin(i * 2.1) * 0.72;
-    mesh.userData.speed = 0.18 + (i % 5) * 0.018;
-    flowPoints.push(mesh);
-    group.add(mesh);
-  }
-  for (let i = 0; i < shineCount; i += 1) {
-    const item = discoveries[i % discoveries.length];
-    const mesh = makePoint(item.type, true);
-    mesh.userData.u = (i / shineCount) * Math.PI * 2;
-    mesh.userData.v = i % 2 ? 0.82 : -0.68;
-    mesh.userData.speed = 0.08 + i * 0.006;
-    mesh.userData.discovery = item;
-    shinePoints.push(mesh);
-    group.add(mesh);
-  }
+  const baseCloud = createPointCloud(window.innerWidth < 720 ? 2800 : 4600, {
+    dotSize: window.innerWidth < 720 ? 0.42 : 0.46,
+    alpha: 0.6,
+  });
+  ringGroup.add(baseCloud.points);
 
-  const raycaster = new THREE.Raycaster();
-  const pointer = new THREE.Vector2(-10, -10);
-  const tooltip = makeTooltip(canvas);
+  const sweepCloud = createPointCloud(window.innerWidth < 720 ? 900 : 1500, {
+    vertexShader: SWEEP_VERTEX_SHADER,
+    fragmentShader: SWEEP_FRAGMENT_SHADER,
+    dotSize: window.innerWidth < 720 ? 0.58 : 0.66,
+    alpha: 0.64,
+    glow: 1.25,
+  });
+  ringGroup.add(sweepCloud.points);
+
+  const labelLayer = document.createElement('div');
+  labelLayer.className = 'ring-label-layer';
+  container.appendChild(labelLayer);
+  const tooltip = makeTooltip(container);
+
+  let markerCloud = null;
+  let markerItems = normalizeItems([]);
+  let markerLabels = [];
+  let markerPositions = [];
+  let hoveredIndex = -1;
   let running = false;
   let frameId = 0;
-  let hovered = null;
+  let lastTime = 0;
+  let markerCount = 0;
+  const pointer = { x: -10000, y: -10000, inside: false };
   const clock = new THREE.Clock();
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const projected = new THREE.Vector3();
+  const worldPoint = new THREE.Vector3();
+
+  function createMarkerCloud(items) {
+    const geometry = createPointAttributes(items.length, (index) => {
+      const layout = MARKER_LAYOUT[index % MARKER_LAYOUT.length];
+      const meta = typeMeta(items[index].type);
+      return {
+        u: layout.u,
+        v: layout.v,
+        phase: index * 1.37,
+        size: 1.22 + (index % 3) * 0.14,
+        colorT: meta.colorT,
+      };
+    });
+    return createPointCloud(items.length, {
+      geometry,
+      dotSize: window.innerWidth < 720 ? 0.68 : 0.78,
+      alpha: 0.92,
+      glow: 1.52,
+    });
+  }
+
+  function rebuildMarkers(items = markerItems) {
+    markerItems = normalizeItems(items);
+    markerCount = markerItems.length;
+    markerLabels.forEach((label) => label.remove());
+    markerLabels = markerItems.map((item, index) => createLabel(labelLayer, item, index));
+    markerLabels.forEach((label, index) => {
+      label.addEventListener('pointerenter', () => setHovered(index, markerPositions[index]));
+      label.addEventListener('pointermove', () => positionTooltip(markerPositions[index]));
+      label.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        setHovered(index, markerPositions[index]);
+      });
+      label.addEventListener('pointerleave', () => {
+        if (!pointer.inside) clearHovered();
+      });
+    });
+
+    if (markerCloud) {
+      ringGroup.remove(markerCloud.points);
+      markerCloud.points.geometry.dispose();
+      markerCloud.points.material.dispose();
+    }
+    markerCloud = createMarkerCloud(markerItems);
+    ringGroup.add(markerCloud.points);
+    updateLabels(lastTime);
+  }
+
+  function setHovered(index, anchor = null) {
+    if (index < 0 || !markerItems[index]) {
+      clearHovered();
+      return;
+    }
+    hoveredIndex = index;
+    markerLabels.forEach((label, labelIndex) => {
+      label.classList.toggle('is-hovered', labelIndex === hoveredIndex);
+    });
+    renderTooltip(tooltip, markerItems[index]);
+    tooltip.hidden = false;
+    positionTooltip(anchor || markerPositions[index]);
+  }
+
+  function clearHovered() {
+    hoveredIndex = -1;
+    tooltip.hidden = true;
+    markerLabels.forEach((label) => label.classList.remove('is-hovered'));
+  }
+
+  function positionTooltip(anchor) {
+    if (tooltip.hidden || !anchor) return;
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    const cardWidth = tooltip.offsetWidth || 268;
+    const cardHeight = tooltip.offsetHeight || 148;
+    const left = clamp(anchor.x + 18, 12, Math.max(12, width - cardWidth - 12));
+    const top = clamp(anchor.y + 16, 12, Math.max(12, height - cardHeight - 12));
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  }
 
   function resize() {
     const width = Math.max(1, canvas.clientWidth);
     const height = Math.max(1, canvas.clientHeight);
     camera.aspect = width / height;
+    camera.position.z = width < 720 ? 19.6 : 17.2;
+    camera.position.y = width < 720 ? 2.35 : 2.55;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
+    const nextCount = markerTargetCount();
+    if (markerCount && nextCount !== markerCount) rebuildMarkers(markerItems);
+    updateLabels(lastTime);
   }
 
-  function updatePoint(mesh, time, shining = false) {
-    const u = mesh.userData.u + time * mesh.userData.speed;
-    const p = mobiusPoint(u, mesh.userData.v);
-    mesh.position.copy(p);
-    const pulse = shining ? 0.7 + Math.sin(time * 2.2 + mesh.userData.u * 3.0) * 0.35 : 0.32;
-    const angleDelta = Math.abs(Math.atan2(Math.sin(u - sweep.rotation.z), Math.cos(u - sweep.rotation.z)));
-    const sweepBoost = Math.max(0, 1 - angleDelta * 2.7);
-    const scale = mesh.userData.baseScale * (1 + pulse + sweepBoost * 1.4);
-    mesh.scale.setScalar(scale);
-    mesh.material.opacity = shining ? Math.min(1, 0.62 + pulse * 0.28 + sweepBoost * 0.45) : 0.42 + sweepBoost * 0.35;
+  function markerWorldPosition(index, time) {
+    const layout = MARKER_LAYOUT[index % MARKER_LAYOUT.length];
+    const u = layout.u + time * 0.08;
+    worldPoint.copy(mobiusPoint(u, layout.v));
+    ringGroup.updateMatrixWorld();
+    return worldPoint.applyMatrix4(ringGroup.matrixWorld);
   }
 
-  function frame() {
-    if (!running) return;
-    if (!reduced) frameId = requestAnimationFrame(frame);
-    const time = clock.getElapsedTime();
-    sweep.rotation.z = (time / 8) * Math.PI * 2;
-    group.rotation.y = Math.sin(time * 0.08) * 0.18;
-    flowPoints.forEach((mesh) => updatePoint(mesh, time, false));
-    shinePoints.forEach((mesh) => updatePoint(mesh, time, true));
-
-    raycaster.setFromCamera(pointer, camera);
-    const hit = raycaster.intersectObjects(shinePoints, false)[0]?.object || null;
-    if (hit !== hovered) {
-      hovered = hit;
-      if (hovered) {
-        renderTooltip(tooltip, hovered.userData.discovery || {});
-        tooltip.hidden = false;
-      } else {
-        tooltip.hidden = true;
+  function updateLabels(time) {
+    const width = container.clientWidth || canvas.clientWidth || 1;
+    const height = container.clientHeight || canvas.clientHeight || 1;
+    markerPositions = markerItems.map((_, index) => {
+      const layout = MARKER_LAYOUT[index % MARKER_LAYOUT.length];
+      projected.copy(markerWorldPosition(index, time)).project(camera);
+      const x = (projected.x * 0.5 + 0.5) * width;
+      const y = (-projected.y * 0.5 + 0.5) * height;
+      const labelX = clamp(x + layout.dx, 8, width - 8);
+      const labelY = clamp(y + layout.dy, 8, height - 8);
+      const label = markerLabels[index];
+      if (label) {
+        const hidden = projected.z < -1 || projected.z > 1;
+        label.style.opacity = hidden ? '0' : '';
+        label.style.transform = `translate3d(${labelX}px, ${labelY}px, 0) translate(-50%, -50%) scale(var(--label-scale, 1))`;
       }
+      return { x: clamp(x, 10, width - 10), y: clamp(y, 10, height - 10), labelX, labelY };
+    });
+    if (hoveredIndex >= 0) positionTooltip(markerPositions[hoveredIndex]);
+  }
+
+  function updatePointerHover() {
+    if (!pointer.inside) return;
+    let bestIndex = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    markerPositions.forEach((pos, index) => {
+      const dx = pointer.x - pos.x;
+      const dy = pointer.y - pos.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    });
+    if (bestIndex >= 0 && bestDistance < 46) {
+      setHovered(bestIndex, markerPositions[bestIndex]);
+    } else if (hoveredIndex >= 0 && bestDistance > 72) {
+      clearHovered();
     }
+  }
+
+  function renderFrame() {
+    if (!running) return;
+    if (!reduced) frameId = requestAnimationFrame(renderFrame);
+    const time = clock.getElapsedTime();
+    lastTime = time;
+
+    baseCloud.uniforms.uTime.value = time;
+    sweepCloud.uniforms.uTime.value = time;
+    sweepCloud.uniforms.uSweep.value = (time * 0.34) % TAU;
+    if (markerCloud) markerCloud.uniforms.uTime.value = time;
+
+    ringGroup.rotation.y = Math.sin(time * 0.11) * 0.14;
+    stars.rotation.y = time * 0.012;
+    stars.rotation.x = Math.sin(time * 0.08) * 0.04;
+    updateLabels(time);
+    updatePointerHover();
     renderer.render(scene, camera);
     if (reduced) running = false;
   }
 
   function onPointerMove(event) {
-    const rect = canvas.getBoundingClientRect();
-    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
-    tooltip.style.left = `${event.clientX + 18}px`;
-    tooltip.style.top = `${event.clientY + 16}px`;
+    const rect = container.getBoundingClientRect();
+    pointer.x = event.clientX - rect.left;
+    pointer.y = event.clientY - rect.top;
+    pointer.inside = true;
+    updatePointerHover();
   }
 
   function onPointerLeave() {
-    pointer.set(-10, -10);
-    hovered = null;
-    tooltip.hidden = true;
+    pointer.inside = false;
+    clearHovered();
   }
 
+  rebuildMarkers(markerItems);
   resize();
   window.addEventListener('resize', resize);
-  canvas.addEventListener('pointermove', onPointerMove);
-  canvas.addEventListener('pointerleave', onPointerLeave);
+  container.addEventListener('pointermove', onPointerMove);
+  container.addEventListener('pointerleave', onPointerLeave);
 
   return {
     start() {
       if (running) return;
       running = true;
       clock.getDelta();
-      frame();
+      renderFrame();
     },
     pause() {
       running = false;
       if (frameId) cancelAnimationFrame(frameId);
     },
     updateDiscoveries(items) {
-      discoveries = items?.length ? items : defaultItems();
-      shinePoints.forEach((mesh, index) => {
-        const item = discoveries[index % discoveries.length];
-        mesh.userData.discovery = item;
-        const color = new THREE.Color(COLORS[item.type] || COLORS.paper);
-        mesh.material.color.copy(color);
-      });
+      rebuildMarkers(items);
+      if (!running) {
+        resize();
+        renderer.render(scene, camera);
+      }
     },
   };
 }

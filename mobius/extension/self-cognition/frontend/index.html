@@ -39,7 +39,6 @@
 
   <main>
     <section class="hero section-dark" id="hero" data-nav-theme="dark" data-section="paper">
-      <canvas class="hero-canvas" id="heroCanvas" aria-hidden="true"></canvas>
       <div class="hero-content reveal">
         <p class="eyebrow">Self-Cognition</p>
         <h1 aria-label="Mobius Research Radar">Mobius <span class="gradient-text">Research Radar</span></h1>
@@ -49,8 +48,11 @@
           <a class="primary-button" href="#paper-section">查看论文跟踪</a>
           <a class="glass-button" href="#competitor-section">查看竞品跟踪</a>
         </div>
+        <div class="hero-status reveal" id="scheduleStatus" aria-live="polite"></div>
       </div>
-      <div class="hero-status reveal" id="scheduleStatus" aria-live="polite"></div>
+      <div class="hero-visual reveal" id="heroVisual">
+        <canvas class="hero-canvas" id="heroCanvas" aria-hidden="true"></canvas>
+      </div>
     </section>
 
     <section class="section-dark workspace-section paper-tone" id="paper-section" data-nav-theme="dark" data-section="paper">
