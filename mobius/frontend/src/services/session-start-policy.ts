@@ -29,4 +29,3 @@ export function isFireAndForgetSession(sessionId?: string | null) {
   if (!sessionId) return false
   return readSessionIds().includes(sessionId)
 }
-

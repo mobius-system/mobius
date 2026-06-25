@@ -322,4 +322,3 @@ export default function ResearchBlackboard({ researchId }: { researchId: string 
     </div>
   )
 }
-

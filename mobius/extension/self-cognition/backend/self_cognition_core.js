@@ -293,7 +293,7 @@ function dbOpen(e) {
 
 function nextAt(e) {
   const t = new Date;
-  return t.setUTCHours(e, 0, 0, 0), t <= new Date && t.setUTCDate(t.getUTCDate() + 1), 
+  return t.setUTCHours(e, 0, 0, 0), t <= new Date && t.setUTCDate(t.getUTCDate() + 1),
   t.toISOString();
 }
 
@@ -446,7 +446,7 @@ async function scanArxiv(e, t, r) {
       diff_summary: `arXiv 扫描新增 ${n} 篇论文，查询条件: ${txt(a, 120)}`,
       files_changed: [ "arxiv_items", "scan_runs" ],
       proposed_by: r
-    }), run(e, o, "arxiv", a, "", s, n, d, 0, i, "ok", "", r, c), 
+    }), run(e, o, "arxiv", a, "", s, n, d, 0, i, "ok", "", r, c),
     {
       run_id: o,
       fetched: t.length,
@@ -530,7 +530,7 @@ function upsertProduct(e, t) {
     created_at: t.created_at || a,
     updated_at: a
   };
-  return e.prepare("INSERT INTO product_research (id,name,source_url,normalized_url,status,category,relevance,tags,aliases,reason,discovery_logic,discovered_from_url,fetched_title,fetched_description,mark,note,last_scanned_at,auto_discovered,created_by,created_at,updated_at) VALUES (@id,@name,@source_url,@normalized_url,@status,@category,@relevance,@tags,@aliases,@reason,@discovery_logic,@discovered_from_url,@fetched_title,@fetched_description,@mark,@note,@last_scanned_at,@auto_discovered,@created_by,@created_at,@updated_at) ON CONFLICT(normalized_url) DO UPDATE SET name=excluded.name,status=CASE WHEN product_research.status='tracked' THEN 'tracked' WHEN excluded.status='tracked' THEN 'tracked' ELSE excluded.status END,category=excluded.category,relevance=max(product_research.relevance,excluded.relevance),tags=excluded.tags,aliases=excluded.aliases,reason=CASE WHEN excluded.reason!='' THEN excluded.reason ELSE product_research.reason END,discovery_logic=excluded.discovery_logic,discovered_from_url=excluded.discovered_from_url,fetched_title=excluded.fetched_title,fetched_description=excluded.fetched_description,last_scanned_at=COALESCE(excluded.last_scanned_at,product_research.last_scanned_at),auto_discovered=max(product_research.auto_discovered,excluded.auto_discovered),updated_at=excluded.updated_at").run(o), 
+  return e.prepare("INSERT INTO product_research (id,name,source_url,normalized_url,status,category,relevance,tags,aliases,reason,discovery_logic,discovered_from_url,fetched_title,fetched_description,mark,note,last_scanned_at,auto_discovered,created_by,created_at,updated_at) VALUES (@id,@name,@source_url,@normalized_url,@status,@category,@relevance,@tags,@aliases,@reason,@discovery_logic,@discovered_from_url,@fetched_title,@fetched_description,@mark,@note,@last_scanned_at,@auto_discovered,@created_by,@created_at,@updated_at) ON CONFLICT(normalized_url) DO UPDATE SET name=excluded.name,status=CASE WHEN product_research.status='tracked' THEN 'tracked' WHEN excluded.status='tracked' THEN 'tracked' ELSE excluded.status END,category=excluded.category,relevance=max(product_research.relevance,excluded.relevance),tags=excluded.tags,aliases=excluded.aliases,reason=CASE WHEN excluded.reason!='' THEN excluded.reason ELSE product_research.reason END,discovery_logic=excluded.discovery_logic,discovered_from_url=excluded.discovered_from_url,fetched_title=excluded.fetched_title,fetched_description=excluded.fetched_description,last_scanned_at=COALESCE(excluded.last_scanned_at,product_research.last_scanned_at),auto_discovered=max(product_research.auto_discovered,excluded.auto_discovered),updated_at=excluded.updated_at").run(o),
   {
     item: prodRow(e.prepare("SELECT * FROM product_research WHERE normalized_url=?").get(r)),
     created: !s
@@ -625,7 +625,7 @@ async function scanOneProduct(e, t, r) {
       files_changed: [ "product_research", "scan_runs" ],
       proposed_by: r
     });
-    return run(e, s, "product", "", a, 0, i.created ? 1 : 0, i.created ? 0 : 1, 0, u, "ok", "", r, o), 
+    return run(e, s, "product", "", a, 0, i.created ? 1 : 0, i.created ? 0 : 1, 0, u, "ok", "", r, o),
     {
       run_id: s,
       competitor: i.item,
@@ -682,7 +682,7 @@ function listPapers(e, t = {}) {
   const r = txt(t.q, 120), a = txt(t.keyword, 80), s = [], o = [];
   if (r) {
     const e = `%${r.replace(/[%_]/g, "\\$&")}%`;
-    s.push("(title LIKE ? ESCAPE '\\' OR abstract LIKE ? ESCAPE '\\' OR authors LIKE ? ESCAPE '\\')"), 
+    s.push("(title LIKE ? ESCAPE '\\' OR abstract LIKE ? ESCAPE '\\' OR authors LIKE ? ESCAPE '\\')"),
     o.push(e, e, e);
   }
   a && (s.push("matched_keywords LIKE ?"), o.push(`%"${a.replace(/"/g, "")}"%`));
@@ -761,7 +761,7 @@ function listProducts(e, t = {}) {
   const r = status(txt(t.status || "", 20)), a = [], s = [];
   if (t.status && (a.push("status=?"), s.push(r)), t.q) {
     const e = `%${txt(t.q).replace(/[%_]/g, "\\$&")}%`;
-    a.push("(name LIKE ? ESCAPE '\\' OR reason LIKE ? ESCAPE '\\' OR fetched_description LIKE ? ESCAPE '\\')"), 
+    a.push("(name LIKE ? ESCAPE '\\' OR reason LIKE ? ESCAPE '\\' OR fetched_description LIKE ? ESCAPE '\\')"),
     s.push(e, e, e);
   }
   const o = a.length ? `WHERE ${a.join(" AND ")}` : "", c = e.prepare(`SELECT * FROM product_research ${o} ORDER BY CASE status WHEN 'tracked' THEN 1 WHEN 'candidate' THEN 2 ELSE 3 END,relevance DESC,updated_at DESC`).all(...s).map(prodRow);
@@ -1061,7 +1061,7 @@ async function firstScan(e, t, r) {
   const a = Date.now(), s = await scanArxiv(e, {
     max_results: 100
   }, r), o = await scanProducts(e, r);
-  return e.prepare("INSERT INTO install_state VALUES (?,'done',?) ON CONFLICT(key) DO UPDATE SET value='done',updated_at=excluded.updated_at").run(FIRST_SCAN_KEY, now()), 
+  return e.prepare("INSERT INTO install_state VALUES (?,'done',?) ON CONFLICT(key) DO UPDATE SET value='done',updated_at=excluded.updated_at").run(FIRST_SCAN_KEY, now()),
   syncSchedules(t, r), {
     arxiv: s,
     products: o,
@@ -1173,7 +1173,7 @@ async function dispatch(e, t, r, a) {
   } : "get_product" === s ? {
     ok: !0,
     item: prodRow(e.prepare("SELECT * FROM product_research WHERE id=?").get(txt(t.id, 120)))
-  } : "mark_paper" === s ? (e.prepare("UPDATE arxiv_items SET mark=?,note=?,updated_at=? WHERE id=?").run(txt(t.mark, 40), long(t.note, 3e3), now(), txt(t.id, 120)), 
+  } : "mark_paper" === s ? (e.prepare("UPDATE arxiv_items SET mark=?,note=?,updated_at=? WHERE id=?").run(txt(t.mark, 40), long(t.note, 3e3), now(), txt(t.id, 120)),
   {
     ok: !0
   }) : "mark_product" === s ? {

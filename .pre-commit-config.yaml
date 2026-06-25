@@ -1,0 +1,36 @@
+minimum_pre_commit_version: "3.0.0"
+
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # 大文件拦截 — GitHub 100MB 硬限制, 提前到 50MB 告警
+      - id: check-added-large-files
+        name: 拦截大文件 (>50MB, GitHub 100MB 限制)
+        args: [--maxkb=51200]
+      # 私钥/凭据泄漏拦截 — 阻止 commit AWS/SSH/PEM 等敏感 key
+      - id: detect-private-key
+        name: 拦截私钥/凭据
+      # 合并冲突标记
+      - id: check-merge-conflict
+      # 文件名大小写冲突 (跨平台问题)
+      - id: check-case-conflict
+      # 符号链接合法性
+      - id: check-symlinks
+      # 行尾统一 (避免 LF/CRLF 混用) — 适用于 .ts/.js/.tsx/.py/.md 等所有文本文件
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      # 配置文件语法
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        exclude: ^mobius/frontend/.*$
+      - id: check-json
+        exclude: ^mobius/frontend/.*$|^mobius/extension/.*$
+      - id: check-toml
+      # 通用清理 — 适用于 .ts/.js/.tsx 等所有源码 (排除生成产物)
+      - id: end-of-file-fixer
+        exclude: \.svg$|\.min\.js$|\.min\.css$|^mobius/frontend/dist/|^mobius/frontend/.build/|^mobius/frontend/node_modules/|^mobius/extension/.*/frontend/dist/
+      - id: trailing-whitespace
+        exclude: \.svg$|\.min\.js$|\.min\.css$|^mobius/frontend/dist/|^mobius/frontend/.build/|^mobius/frontend/node_modules/|^mobius/extension/.*/frontend/dist/
