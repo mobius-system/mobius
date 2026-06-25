@@ -1,85 +1,111 @@
-const express = require('express');
-const { v4: uuid } = require('uuid');
-const { auth, authOrQuery } = require('../middleware/auth');
-const { Sessions } = require('../repositories/sessions');
-const { Issues } = require('../repositories/issues');
-const { Messages } = require('../repositories/messages');
-const { bridge } = require('../bridge/instance');
-const { buildSessionContext, buildSessionSelectionSnapshot } = require('../services/session-context');
-const { audit } = require('../repositories/audit');
-const modelRegistry = require('../services/model-registry');
-const { useProxyForSession, withSessionProxyState } = require('../services/session-proxy-state');
-const agents = require('../agents');
-const fs = require('fs');
-const path = require('path');
-const { Projects } = require('../repositories/projects');
-const { recordAdminAuditIfCrossUser } = require('../services/admin-audit');
-const { gitTopLevel, isGitRepoRoot, resolveSessionWorkspace } = require('../services/workspace');
-const {
+import express from 'express';
+import { v4 as uuid } from 'uuid';
+import path from 'path';
+import { auth, authOrQuery } from '../middleware/auth';
+import { Sessions } from '../repositories/sessions';
+import { Issues } from '../repositories/issues';
+import { Messages } from '../repositories/messages';
+// @ts-ignore — bridge instance 仍是 .js
+import { bridge } from '../bridge/instance';
+// @ts-ignore — service 仍是 .js
+import { buildSessionContext, buildSessionSelectionSnapshot } from '../services/session-context';
+// @ts-ignore — repository 仍是 .js
+import { audit } from '../repositories/audit';
+// @ts-ignore — service 仍是 .js
+import * as modelRegistry from '../services/model-registry';
+// @ts-ignore — service 仍是 .js
+import { useProxyForSession, withSessionProxyState } from '../services/session-proxy-state';
+// @ts-ignore — service 仍是 .js
+import * as agents from '../agents';
+// @ts-ignore — repository 仍是 .js
+import { Projects } from '../repositories/projects';
+// @ts-ignore — service 仍是 .js
+import { recordAdminAuditIfCrossUser } from '../services/admin-audit';
+// @ts-ignore — service 仍是 .js
+import { gitTopLevel, isGitRepoRoot, resolveSessionWorkspace } from '../services/workspace';
+// @ts-ignore — service 仍是 .js
+import {
   countMergedJsonl,
   readMergedJsonlSlice,
   appendMobiusErrorEntry,
   readLastMobiusEntryType,
   DEFAULT_HISTORY_TAIL,
   MAX_HISTORY_FETCH,
-} = require('../services/mobius-jsonl');
-const { readSessionInputs } = require('../services/session-inputs');
-const sessionFeatures = require('../services/session-features');
-const { runSessionMessage } = require('../services/session-message-runner');
-const { writeSessionTransferDocument } = require('../services/session-transfer');
-const { predictNextQuestionsForSession } = require('../services/session-next-question-predictor');
-const { appendBlackboardRecord } = require('../services/research-blackboard');
-const { db } = require('../../db');
-const {
+} from '../services/mobius-jsonl';
+// @ts-ignore — service 仍是 .js
+import { readSessionInputs } from '../services/session-inputs';
+// @ts-ignore — service 仍是 .js
+import * as sessionFeatures from '../services/session-features';
+// @ts-ignore — service 仍是 .js
+import { runSessionMessage } from '../services/session-message-runner';
+// @ts-ignore — service 仍是 .js
+import { writeSessionTransferDocument } from '../services/session-transfer';
+// @ts-ignore — service 仍是 .js
+import { predictNextQuestionsForSession } from '../services/session-next-question-predictor';
+// @ts-ignore — service 仍是 .js
+import { appendBlackboardRecord } from '../services/research-blackboard';
+// @ts-ignore — db 仍是 .js (顶层 tsconfig 已 allowJs, 但 import 路径走 require 兼容)
+import { db } from '../../db';
+// @ts-ignore — service 仍是 .js
+import {
   canCreateSessionForIssue,
   canOperateSession,
   canReadIssue,
   canReadSession,
-} = require('../services/access-control');
+} from '../services/access-control';
 // flag 路径约定单一来源 (与 backend / scanner 一致): <仓库根>/.imac/flags/<sid>/{running,failed}.flag
-const {
-  flagDirOf,
-  runningFlagPathOf,
-  failedFlagPathOf,
-  readFailedFlag,
-  safeRemoveRunningFlag,
+// readJobFlagState / safeRemoveRunningFlag 均来自 utils/session-flags (已 TS 化).
+import {
   readJobFlagState,
-} = require('../utils/session-flags');
-const { DEFAULT_WINDOW_HOURS, statsSince, statsSinceMinutes } = require('../services/agent-prompt-events');
-const modelPromptLimits = require('../services/model-prompt-limits');
+  safeRemoveRunningFlag,
+} from '../utils/session-flags';
+// @ts-ignore — service 仍是 .js
+import { DEFAULT_WINDOW_HOURS, statsSince, statsSinceMinutes } from '../services/agent-prompt-events';
+// @ts-ignore — service 仍是 .js
+import * as modelPromptLimits from '../services/model-prompt-limits';
 
 const router = express.Router();
+
+// ── 类型别名 ────────────────────────────────────────────────────────────────
+// Express 4 的 Request 默认不带 user, 用 cast 兜底, 与其他 route 保持一致.
+type AnyUser = { id: string; role?: string; [k: string]: any };
+type AnySession = { [k: string]: any };
+type AnyBackend = { [k: string]: any };
+
+function userOf(req: express.Request): AnyUser {
+  return (req as any).user as AnyUser;
+}
 
 const PROMPT_STATS_BACKENDS = [
   { key: 'codex', backendName: 'tmux-codex' },
   { key: 'claude_code', backendName: 'tmux-claude-code' },
 ];
 
-function pidExists(pid) {
+function pidExists(pid: unknown): boolean {
   const n = Number(pid);
   if (!Number.isFinite(n) || n <= 0) return false;
   try {
     process.kill(n, 0);
     return true;
   } catch (e) {
-    return e?.code === 'EPERM';
+    return (e as NodeJS.ErrnoException)?.code === 'EPERM';
   }
 }
 
-function activeWindowCountForBackend(backendName) {
-  let backend;
+function activeWindowCountForBackend(backendName: string): number {
+  let backend: AnyBackend;
   try {
     backend = agents.get(backendName);
   } catch {
     return 0;
   }
-  let windows = [];
+  let windows: any[] = [];
   try {
     windows = backend.listSessions();
   } catch {
     return 0;
   }
-  return windows.filter((w) => {
+  return windows.filter((w: any) => {
     if (!w?.sessionId || w.sessionId === '_root') return false;
     if (w.paneDead) return false;
     if (!pidExists(w.pid)) return false;
@@ -88,67 +114,69 @@ function activeWindowCountForBackend(backendName) {
   }).length;
 }
 
-function activeWindowsByPromptBackend() {
+function activeWindowsByPromptBackend(): Record<string, number> {
   return Object.fromEntries(
-    PROMPT_STATS_BACKENDS.map((def) => [def.key, activeWindowCountForBackend(def.backendName)])
+    PROMPT_STATS_BACKENDS.map((def) => [def.key, activeWindowCountForBackend(def.backendName)]),
   );
 }
 
 // 全站 codex / claude-code 最近提问聚合 — 给 NewSessionModal 用.
 // 真正阻止创建的限制由 modelPromptLimits.checkCreateAllowed 统一判定.
-router.get('/prompt-stats', auth, (req, res) => {
+router.get('/prompt-stats', auth, (req: express.Request, res: express.Response) => {
   const s = statsSince(DEFAULT_WINDOW_HOURS);
   const s5 = statsSinceMinutes(modelPromptLimits.WINDOW_MINUTES);
   const activeWindows = activeWindowsByPromptBackend();
+  const byBackend: Record<string, any> = s.by_backend;
+  const byBackend5: Record<string, any> = s5.by_backend;
   res.json({
     window_hours: s.window_hours,
     window_minutes: modelPromptLimits.WINDOW_MINUTES,
     since: s.since,
-    codex: s.by_backend['tmux-codex'] || 0,
-    claude_code: s.by_backend['tmux-claude-code'] || 0,
-    codex_5min: s5.by_backend['tmux-codex'] || 0,
-    claude_code_5min: s5.by_backend['tmux-claude-code'] || 0,
+    codex: byBackend['tmux-codex'] || 0,
+    claude_code: byBackend['tmux-claude-code'] || 0,
+    codex_5min: byBackend5['tmux-codex'] || 0,
+    claude_code_5min: byBackend5['tmux-claude-code'] || 0,
     // Backward-compatible aliases for older frontends.
-    codex_2min: s5.by_backend['tmux-codex'] || 0,
-    claude_code_2min: s5.by_backend['tmux-claude-code'] || 0,
+    codex_2min: byBackend5['tmux-codex'] || 0,
+    claude_code_2min: byBackend5['tmux-claude-code'] || 0,
     total: s.total,
     active_tmux_window_count: Object.values(activeWindows).reduce((sum, count) => sum + count, 0),
     active_windows_by_backend: activeWindows,
-    model_usage_limits: modelPromptLimits.usageForUser(req.user.id),
+    model_usage_limits: modelPromptLimits.usageForUser(userOf(req).id),
   });
 });
 
-router.get('/model-options', auth, (req, res) => {
+router.get('/model-options', auth, (_req: express.Request, res: express.Response) => {
   res.json(modelRegistry.listSessionModelOptions());
 });
 
-function findSessionReadable(id, user) {
-  const session = Sessions.findById(id);
+function findSessionReadable(id: string, user: AnyUser): AnySession | null {
+  const session = Sessions.findById(id) as AnySession | undefined;
   return session && canReadSession(user, session) ? session : null;
 }
 
-function findSessionOperable(id, user) {
-  const session = Sessions.findById(id);
+function findSessionOperable(id: string, user: AnyUser): AnySession | null {
+  const session = Sessions.findById(id) as AnySession | undefined;
   return session && canOperateSession(user, session) ? session : null;
 }
 
-function auditSessionAccess(user, action, session) {
+function auditSessionAccess(user: AnyUser, action: string, session: AnySession | null | undefined): void {
   if (!session) return;
   recordAdminAuditIfCrossUser(user, action, 'session', session.session_id, session.user_id);
 }
 
-function backendForSession(session) {
+function backendForSession(session: AnySession | null | undefined): AnyBackend {
   return agents.get(modelRegistry.backendNameForSessionModel(session?.model));
 }
 
-function isTurnCompleteEntry(entry) {
+function isTurnCompleteEntry(entry: any): boolean {
   const sr = entry?.message?.stop_reason;
   if (entry?.type === 'assistant' && sr && sr !== 'tool_use') return true;
   if (entry?.type === 'event_msg' && entry?.payload?.type === 'task_complete') return true;
   return false;
 }
 
-function shapeSessionForStream(s) {
+function shapeSessionForStream(s: AnySession): Record<string, any> {
   const backend = backendForSession(s);
   return {
     session_id: s.session_id,
@@ -167,22 +195,22 @@ function shapeSessionForStream(s) {
     created_at: s.created_at,
     model: s.model,
     total_cost_usd: s.total_cost_usd,
-    use_proxy: useProxyForSession(s, backend),
+    use_proxy: useProxyForSession(s, backend as any),
     model_label: modelRegistry.labelForSessionModel(s.model),
     claude_session_id: s.claude_session_id,
     agent_backend: modelRegistry.backendNameForSessionModel(s.model),
   };
 }
 
-function sseDataLine(payload) {
+function sseDataLine(payload: any): string {
   return JSON.stringify(payload).replace(/\r?\n/g, '\ndata: ');
 }
 
-async function writeSse(res, event, payload) {
+async function writeSse(res: express.Response | null, event: string, payload: any): Promise<boolean> {
   if (!res || res.writableEnded || res.destroyed) return false;
   const frame = `event: ${event}\ndata: ${sseDataLine(payload)}\n\n`;
   if (res.write(frame)) return true;
-  await new Promise((resolve) => {
+  await new Promise<void>((resolve) => {
     const done = () => {
       res.off('drain', done);
       res.off('close', done);
@@ -194,13 +222,25 @@ async function writeSse(res, event, payload) {
   return !(res.writableEnded || res.destroyed);
 }
 
-function writeSseComment(res, text) {
+function writeSseComment(res: express.Response | null, text: string): boolean {
   if (!res || res.writableEnded || res.destroyed) return false;
   return res.write(`: ${text}\n\n`);
 }
 
-async function sendSseJsonlHistory(res, sessionId, hist) {
-  const entries = Array.isArray(hist?.entries) ? hist.entries : [];
+interface JsonlHistory {
+  entries?: any[];
+  total?: number;
+  totalApproximate?: boolean;
+  truncated?: boolean;
+  sentinel?: any;
+}
+
+async function sendSseJsonlHistory(
+  res: express.Response,
+  sessionId: string,
+  hist: JsonlHistory,
+): Promise<boolean> {
+  const entries = Array.isArray(hist?.entries) ? hist.entries! : [];
   const baseMeta = {
     event: 'jsonl_history',
     session_id: sessionId,
@@ -217,9 +257,9 @@ async function sendSseJsonlHistory(res, sessionId, hist) {
   const maxBytes = 512 * 1024;
   let chunkIndex = 0;
   let chunkBytes = 0;
-  let chunk = [];
+  let chunk: any[] = [];
 
-  const flush = async (done) => {
+  const flush = async (done: boolean): Promise<boolean> => {
     if (!chunk.length && !done) return true;
     const payload = {
       ...baseMeta,
@@ -236,7 +276,7 @@ async function sendSseJsonlHistory(res, sessionId, hist) {
   };
 
   for (const entry of entries) {
-    let encoded;
+    let encoded: string;
     try { encoded = JSON.stringify(entry); } catch { continue; }
     const entryBytes = Buffer.byteLength(encoded);
     if (chunk.length > 0 && (chunk.length >= maxEntries || chunkBytes + entryBytes > maxBytes)) {
@@ -251,22 +291,36 @@ async function sendSseJsonlHistory(res, sessionId, hist) {
 }
 
 
-router.patch('/:id', auth, (req, res) => {
-  const session = findSessionOperable(req.params.id, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'write_session', session);
-  const { name, status } = req.body;
-  if (name) Sessions.updateName(req.params.id, name);
+router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionOperable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'write_session', session);
+  const { name, status } = (req.body || {}) as { name?: string; status?: string };
+  if (name) Sessions.updateName(id, name);
   if (status !== undefined) {
     if (!['active', 'completed', 'archived'].includes(status)) {
-      return res.status(400).json({ error: '状态无效' });
+      res.status(400).json({ error: '状态无效' });
+      return;
     }
-    Sessions.updateStatus(req.params.id, status);
+    Sessions.updateStatus(id, status as any);
   }
-  res.json(Sessions.findById(req.params.id));
+  res.json(Sessions.findById(id));
 });
 
-async function closeBackgroundForDelete(session, sid, label) {
+interface BackgroundCloseResult {
+  wasAlive: boolean;
+  wasWorking: boolean;
+  terminated: boolean;
+  message: string | null;
+}
+
+async function closeBackgroundForDelete(
+  session: AnySession,
+  sid: string,
+  label: string,
+): Promise<BackgroundCloseResult> {
   const backend = backendForSession(session);
   const wasAlive = backend.isAlive(sid);
   const wasWorking = wasAlive && backend.isWorking(sid);
@@ -278,7 +332,7 @@ async function closeBackgroundForDelete(session, sid, label) {
     const r = await bridge.closeSessionAsync(session.session_key || sid, session.model);
     terminated = !!r?.killed;
   } catch (e) {
-    console.warn(`[sessions] ${label}时关闭后台 agent 失败 (${sid}): ${e.message}`);
+    console.warn(`[sessions] ${label}时关闭后台 agent 失败 (${sid}): ${(e as Error).message}`);
   }
 
   const message = wasAlive
@@ -290,7 +344,7 @@ async function closeBackgroundForDelete(session, sid, label) {
   return { wasAlive, wasWorking, terminated, message };
 }
 
-async function terminateBackgroundSession(session, sid) {
+async function terminateBackgroundSession(session: AnySession, sid: string): Promise<BackgroundCloseResult> {
   const backend = backendForSession(session);
   let wasAlive = false;
   let wasWorking = false;
@@ -304,7 +358,7 @@ async function terminateBackgroundSession(session, sid) {
     const r = await bridge.closeSessionAsync(session.session_key || sid, session.model);
     terminated = !!r?.killed;
   } catch (e) {
-    console.warn(`[sessions] 终止后台 agent 失败 (${sid}): ${e.message}`);
+    console.warn(`[sessions] 终止后台 agent 失败 (${sid}): ${(e as Error).message}`);
   }
 
   const message = wasAlive
@@ -316,16 +370,16 @@ async function terminateBackgroundSession(session, sid) {
   return { wasAlive, wasWorking, terminated, message };
 }
 
-function shouldNotifyResearchPeers(req) {
+function shouldNotifyResearchPeers(req: express.Request): boolean {
   return req.body?.notify_others === true || req.body?.notifyOthers === true;
 }
 
-function researchSessionLeftContent(session) {
+function researchSessionLeftContent(session: AnySession): string {
   const role = session.research_role === 'chief_researcher' ? 'chief_researcher' : 'research_assistant';
   return `Research Agent「${session.name || session.session_id}」已离开团队。session_id=${session.session_id}, role=${role}`;
 }
 
-function appendResearchSessionLeftNotice(session, userId) {
+function appendResearchSessionLeftNotice(session: AnySession, userId: string): any {
   if (session.scope_type !== 'research' || !session.research_id) return null;
   const role = session.research_role === 'chief_researcher' ? 'chief_researcher' : 'research_assistant';
   return appendBlackboardRecord({
@@ -343,20 +397,22 @@ function appendResearchSessionLeftNotice(session, userId) {
 }
 
 // 删除 Session = 直接永久删除, 不再进入项目回收站.
-router.delete('/:id', auth, async (req, res) => {
-  const session = findSessionOperable(req.params.id, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'delete_session', session);
+router.delete('/:id', auth, async (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionOperable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'delete_session', session);
 
-  const sid = req.params.id;
-  let noticeResult = null;
+  const sid = id;
+  let noticeResult: any = null;
   if (session.scope_type === 'research' && shouldNotifyResearchPeers(req)) {
-    noticeResult = appendResearchSessionLeftNotice(session, req.user.id);
-    if (noticeResult?.error) return res.status(500).json({ error: noticeResult.error });
+    noticeResult = appendResearchSessionLeftNotice(session, user.id);
+    if (noticeResult?.error) { res.status(500).json({ error: noticeResult.error }); return; }
   }
 
   const closed = await closeBackgroundForDelete(session, sid, '删除');
-  audit(req.user.id, 'session.delete', 'session', sid,
+  audit(user.id, 'session.delete', 'session', sid,
     JSON.stringify({
       scope_type: session.scope_type || 'issue',
       research_id: session.research_id || null,
@@ -380,24 +436,26 @@ router.delete('/:id', auth, async (req, res) => {
 });
 
 // 兼容旧调用: /permanent 仍然执行同一套硬删除逻辑.
-router.delete('/:id/permanent', auth, async (req, res) => {
-  const session = findSessionOperable(req.params.id, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'delete_session_permanent', session);
-  let noticeResult = null;
+router.delete('/:id/permanent', auth, async (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionOperable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'delete_session_permanent', session);
+  let noticeResult: any = null;
   if (session.scope_type === 'research' && shouldNotifyResearchPeers(req)) {
-    noticeResult = appendResearchSessionLeftNotice(session, req.user.id);
-    if (noticeResult?.error) return res.status(500).json({ error: noticeResult.error });
+    noticeResult = appendResearchSessionLeftNotice(session, user.id);
+    if (noticeResult?.error) { res.status(500).json({ error: noticeResult.error }); return; }
   }
-  const closed = await closeBackgroundForDelete(session, req.params.id, '永久删除');
-  audit(req.user.id, 'session.permanent_delete', 'session', req.params.id,
+  const closed = await closeBackgroundForDelete(session, id, '永久删除');
+  audit(user.id, 'session.permanent_delete', 'session', id,
     JSON.stringify({
       scope_type: session.scope_type || 'issue',
       research_id: session.research_id || null,
       notify_others: !!noticeResult,
       terminated: closed.terminated,
     }));
-  Sessions.permanentDelete(req.params.id);
+  Sessions.permanentDelete(id);
   const noticeMessage = noticeResult ? '已由 HR 在 Blackboard 写入该 Research Agent 已离开团队。' : null;
   res.json({
     ok: true,
@@ -410,23 +468,25 @@ router.delete('/:id/permanent', auth, async (req, res) => {
   });
 });
 
-router.post('/:id/terminate', auth, async (req, res) => {
-  const session = findSessionOperable(req.params.id, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'terminate_session', session);
+router.post('/:id/terminate', auth, async (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionOperable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'terminate_session', session);
 
-  const sid = req.params.id;
+  const sid = id;
   const closed = await terminateBackgroundSession(session, sid);
-  try { Sessions.setIdle(sid, session.user_id || req.user.id); } catch {}
+  try { Sessions.setIdle(sid, session.user_id || user.id); } catch {}
   try {
     Messages.insertSystem(
       sid,
-      closed.message,
-      null,
+      closed.message as any,
+      null as any,
       '终止执行',
     );
   } catch {}
-  audit(req.user.id, 'session.terminate', 'session', sid,
+  audit(user.id, 'session.terminate', 'session', sid,
     JSON.stringify({
       was_alive: closed.wasAlive,
       was_working: closed.wasWorking,
@@ -442,17 +502,19 @@ router.post('/:id/terminate', auth, async (req, res) => {
   });
 });
 
-router.post('/:id/stop', auth, async (req, res) => {
-  const session = findSessionOperable(req.params.id, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'stop_session', session);
+router.post('/:id/stop', auth, async (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionOperable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'stop_session', session);
 
-  const sessionId = req.params.id;
+  const sessionId = id;
   const backend = backendForSession(session);
-  let workDir;
-  let flagRoot;
+  let workDir: string | undefined;
+  let flagRoot: string | undefined;
   try {
-    const workspace = resolveSessionWorkspace(req.user, sessionId);
+    const workspace = resolveSessionWorkspace(user, sessionId);
     if (!workspace.error) {
       workDir = workspace.workDir;
       flagRoot = workspace.projectRoot || workspace.workDir;
@@ -469,15 +531,15 @@ router.post('/:id/stop', auth, async (req, res) => {
     });
   } catch (e) {
     ok = false;
-    console.warn('[sessions/stop] stop failed:', e.message);
+    console.warn('[sessions/stop] stop failed:', (e as Error).message);
   }
 
-  try { Sessions.setIdle(sessionId, session.user_id || req.user.id); } catch {}
+  try { Sessions.setIdle(sessionId, session.user_id || user.id); } catch {}
   try {
     Messages.insertSystem(
       sessionId,
       ok ? '已发 C-c × 3 给后台智能体 (软停).' : 'Stop 失败.',
-      null,
+      null as any,
       '终止执行',
     );
   } catch {}
@@ -485,11 +547,12 @@ router.post('/:id/stop', auth, async (req, res) => {
   res.json({ ok, task_id: sessionId });
 });
 
-router.get('/:id/events', authOrQuery, async (req, res) => {
-  const sessionId = req.params.id;
-  const session = findSessionReadable(sessionId, req.user);
-  if (!session) return res.status(404).json({ error: `session ${sessionId} 不存在或不属于你` });
-  auditSessionAccess(req.user, 'read_session_events', session);
+router.get('/:id/events', authOrQuery, async (req: express.Request, res: express.Response) => {
+  const sessionId = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(sessionId, user);
+  if (!session) { res.status(404).json({ error: `session ${sessionId} 不存在或不属于你` }); return; }
+  auditSessionAccess(user, 'read_session_events', session);
 
   res.status(200);
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -500,7 +563,7 @@ router.get('/:id/events', authOrQuery, async (req, res) => {
   if (req.socket) req.socket.setTimeout(0);
 
   let closed = false;
-  let unsub = null;
+  let unsub: (() => void) | null = null;
   const keepalive = setInterval(() => writeSseComment(res, 'keepalive'), 25000);
   const cleanup = () => {
     if (closed) return;
@@ -520,15 +583,15 @@ router.get('/:id/events', authOrQuery, async (req, res) => {
 
   try {
     const backend = backendForSession(session);
-    const workspace = resolveSessionWorkspace(req.user, sessionId);
+    const workspace = resolveSessionWorkspace(user, sessionId);
 
-    if (!writeSseComment(res, 'connected')) return endStream();
+    if (!writeSseComment(res, 'connected')) { endStream(); return; }
 
     const subscribed = await writeSse(res, 'subscribed', {
       event: 'subscribed',
       session: shapeSessionForStream(session),
     });
-    if (!subscribed || closed) return endStream();
+    if (!subscribed || closed) { endStream(); return; }
 
     const history = Messages.listForTask(sessionId, 200);
     const historySent = await writeSse(res, 'history', {
@@ -536,7 +599,7 @@ router.get('/:id/events', authOrQuery, async (req, res) => {
       messages: history,
       total: history.length,
     });
-    if (!historySent || closed) return endStream();
+    if (!historySent || closed) { endStream(); return; }
 
     if (workspace.error) {
       await writeSse(res, 'server_error', {
@@ -544,7 +607,8 @@ router.get('/:id/events', authOrQuery, async (req, res) => {
         message: workspace.error,
         category: 'workspace',
       });
-      return endStream();
+      endStream();
+      return;
     }
 
     // count-then-tail: 先发 cheap total (不 parse, 只数 \n), 让前端立刻显示 "N entries / X 轮".
@@ -570,15 +634,15 @@ router.get('/:id/events', authOrQuery, async (req, res) => {
             tail_count: DEFAULT_HISTORY_TAIL,
             jsonl_path: counted?.paths?.primary || histPath || null,
           });
-          if (!metaSent || closed) return endStream();
+          if (!metaSent || closed) { endStream(); return; }
         }
       } catch (e) {
-        console.warn(`[sessions/events] jsonl_meta count failed (${sessionId}): ${e.message}`);
+        console.warn(`[sessions/events] jsonl_meta count failed (${sessionId}): ${(e as Error).message}`);
       }
     }
 
     const histOpts = fullHistory ? {} : { tailCount: DEFAULT_HISTORY_TAIL };
-    const hist = backend.getHistory(sessionId, histOpts);
+    const hist = backend.getHistory(sessionId, histOpts) as JsonlHistory;
     // 把 cheap total 覆盖回 hist.total, 让 sendSseJsonlHistory 的 baseMeta.total 跟 jsonl_meta 一致.
     if (!fullHistory && metaTotal > 0) {
       hist.total = metaTotal;
@@ -586,11 +650,11 @@ router.get('/:id/events', authOrQuery, async (req, res) => {
       hist.truncated = metaTotal > (hist.entries?.length || 0);
     }
     const jsonlHistorySent = await sendSseJsonlHistory(res, sessionId, hist);
-    if (!jsonlHistorySent || closed) return endStream();
+    if (!jsonlHistorySent || closed) { endStream(); return; }
 
     unsub = backend.getAgentRawThoughtStream(
       sessionId,
-      (entry) => {
+      (entry: any) => {
         writeSse(res, 'jsonl_entry', { event: 'jsonl_entry', session_id: sessionId, entry }).catch(() => cleanup());
         if (isTurnCompleteEntry(entry)) {
           writeSse(res, 'typing', { event: 'typing', active: false }).catch(() => cleanup());
@@ -603,25 +667,28 @@ router.get('/:id/events', authOrQuery, async (req, res) => {
       { fromSentinel: hist.sentinel },
     );
   } catch (e) {
-    console.warn(`[sessions/events] stream failed (${sessionId}): ${e.message}`);
-    try { await writeSse(res, 'server_error', { event: 'error', message: e.message || String(e) }); } catch {}
+    console.warn(`[sessions/events] stream failed (${sessionId}): ${(e as Error).message}`);
+    try { await writeSse(res, 'server_error', { event: 'error', message: (e as Error).message || String(e) }); } catch {}
     endStream();
   }
 });
 
 // jsonl-history REST — "展开全部" 时按需补齐. SSE 默认只回灌末尾 DEFAULT_HISTORY_TAIL,
 // 前端要看完整历史时调用这个端点拉指定窗口 [from, from+limit).
-router.get('/:id/jsonl-history', auth, (req, res) => {
-  const session = findSessionReadable(req.params.id, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'read_session_jsonl_history', session);
+router.get('/:id/jsonl-history', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'read_session_jsonl_history', session);
 
   const backend = backendForSession(session);
   const histPath = typeof backend._resolveJsonlPath === 'function'
-    ? backend._resolveJsonlPath(req.params.id)
+    ? backend._resolveJsonlPath(id)
     : null;
   if (!histPath) {
-    return res.json({ entries: [], total: 0, from: 0, returned: 0, has_more: false });
+    res.json({ entries: [], total: 0, from: 0, returned: 0, has_more: false });
+    return;
   }
 
   const fromIndex = Math.max(0, Math.floor(Number(req.query.from) || 0));
@@ -631,61 +698,73 @@ router.get('/:id/jsonl-history', auth, (req, res) => {
   try {
     const slice = readMergedJsonlSlice(histPath, { fromIndex, limit });
     if (slice.exceeded) {
-      return res.status(413).json({
+      res.status(413).json({
         error: 'jsonl 文件超过安全上限, 无法整文件解析. 请联系管理员或缩小窗口.',
         total: slice.total,
       });
+      return;
     }
-    return res.json({
-      session_id: req.params.id,
+    res.json({
+      session_id: id,
       entries: slice.entries,
       total: slice.total,
       from: slice.from,
       returned: slice.returned,
       has_more: slice.from + slice.returned < slice.total,
     });
+    return;
   } catch (e) {
-    console.warn(`[sessions/jsonl-history] failed (${req.params.id}): ${e.message}`);
-    return res.status(500).json({ error: e.message || String(e) });
+    console.warn(`[sessions/jsonl-history] failed (${id}): ${(e as Error).message}`);
+    res.status(500).json({ error: (e as Error).message || String(e) });
+    return;
   }
 });
 
-function sessionJsonlPath(session, sessionId) {
+function sessionJsonlPath(session: AnySession, sessionId: string): string | null {
   const backend = backendForSession(session);
   return typeof backend._resolveJsonlPath === 'function'
     ? backend._resolveJsonlPath(sessionId)
     : null;
 }
 
-router.post('/:id/predicted-next-questions', auth, async (req, res) => {
-  const sessionId = req.params.id;
-  const session = findSessionOperable(sessionId, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'predict_next_questions', session);
+router.post('/:id/predicted-next-questions', auth, async (req: express.Request, res: express.Response) => {
+  const sessionId = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionOperable(sessionId, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'predict_next_questions', session);
 
   const jsonlPath = sessionJsonlPath(session, sessionId);
   try {
     const result = await predictNextQuestionsForSession({ session, jsonlPath });
-    return res.json({
+    res.json({
       session_id: sessionId,
       questions: result.questions,
       meta: result.meta,
     });
+    return;
   } catch (e) {
-    const status = Number(e?.status) || 500;
-    return res.status(status).json({ error: e?.message || String(e) });
+    const err = e as any;
+    const status = Number(err?.status) || 500;
+    res.status(status).json({ error: err?.message || String(e) });
+    return;
   }
 });
 
-function featureWorkspaceForSession(user, sessionId) {
+function featureWorkspaceForSession(user: AnyUser, sessionId: string): {
+  workspace: any;
+  workDir: string | null;
+  gitRoot: string | null;
+  error: string | null;
+} {
   const workspace = resolveSessionWorkspace(user, sessionId);
   if (workspace.error) return { workspace, workDir: null, gitRoot: null, error: workspace.error };
-  let gitRoot = null;
-  try { gitRoot = gitTopLevel(workspace.workDir); } catch {}
-  return { workspace, workDir: workspace.workDir, gitRoot, error: null };
+  let gitRoot: string | null = null;
+  try { gitRoot = gitTopLevel(workspace.workDir) as any; } catch {}
+  return { workspace, workDir: workspace.workDir as any, gitRoot, error: null };
 }
 
-function queryFiles(value) {
+function queryFiles(value: any): string[] {
   if (Array.isArray(value)) return value.map((v) => String(v || '')).filter(Boolean);
   if (typeof value === 'string' && value.trim()) return [value.trim()];
   return [];
@@ -693,15 +772,16 @@ function queryFiles(value) {
 
 // 从当前 session 的 codex / claude-code JSONL 中抽取文件修改特征.
 // 特征缓存写入同目录同名 .feature.jsonl; diff 内容不写缓存, 由 /features/git-diff 实时问 git.
-router.get('/:id/features/files', auth, (req, res) => {
-  const sessionId = req.params.id;
-  const session = findSessionReadable(sessionId, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'read_session_file_features', session);
+router.get('/:id/features/files', auth, (req: express.Request, res: express.Response) => {
+  const sessionId = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(sessionId, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'read_session_file_features', session);
 
   const jsonlPath = sessionJsonlPath(session, sessionId);
   if (!jsonlPath) {
-    return res.json({
+    res.json({
       session_id: sessionId,
       files: [],
       total: 0,
@@ -710,16 +790,17 @@ router.get('/:id/features/files', auth, (req, res) => {
       feature_jsonl: null,
       workspace_error: null,
     });
+    return;
   }
 
   try {
     const scanned = sessionFeatures.scanSessionFeatures(jsonlPath);
-    const workspace = featureWorkspaceForSession(req.user, sessionId);
+    const workspace = featureWorkspaceForSession(user, sessionId);
     const files = sessionFeatures.summarizeFileChanges(scanned.entries, {
       workDir: workspace.workDir,
       gitRoot: workspace.gitRoot,
     });
-    return res.json({
+    res.json({
       session_id: sessionId,
       files,
       total: files.length,
@@ -730,22 +811,25 @@ router.get('/:id/features/files', auth, (req, res) => {
       git_root: workspace.gitRoot,
       workspace_error: workspace.error,
     });
+    return;
   } catch (e) {
-    console.warn(`[sessions/features/files] failed (${sessionId}): ${e.message}`);
-    return res.status(500).json({ error: e.message || String(e) });
+    console.warn(`[sessions/features/files] failed (${sessionId}): ${(e as Error).message}`);
+    res.status(500).json({ error: (e as Error).message || String(e) });
+    return;
   }
 });
 
 // 从当前 session JSONL 中抽取 Bash / shell 命令特征, 按时间顺序返回.
-router.get('/:id/features/bash', auth, (req, res) => {
-  const sessionId = req.params.id;
-  const session = findSessionReadable(sessionId, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'read_session_bash_features', session);
+router.get('/:id/features/bash', auth, (req: express.Request, res: express.Response) => {
+  const sessionId = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(sessionId, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'read_session_bash_features', session);
 
   const jsonlPath = sessionJsonlPath(session, sessionId);
   if (!jsonlPath) {
-    return res.json({
+    res.json({
       session_id: sessionId,
       commands: [],
       total: 0,
@@ -753,12 +837,13 @@ router.get('/:id/features/bash', auth, (req, res) => {
       source_jsonl: null,
       feature_jsonl: null,
     });
+    return;
   }
 
   try {
     const scanned = sessionFeatures.scanSessionFeatures(jsonlPath);
     const commands = sessionFeatures.listBashCommands(scanned.entries);
-    return res.json({
+    res.json({
       session_id: sessionId,
       commands,
       total: commands.length,
@@ -767,35 +852,39 @@ router.get('/:id/features/bash', auth, (req, res) => {
       source_jsonl: scanned.source_jsonl,
       feature_jsonl: scanned.feature_jsonl,
     });
+    return;
   } catch (e) {
-    console.warn(`[sessions/features/bash] failed (${sessionId}): ${e.message}`);
-    return res.status(500).json({ error: e.message || String(e) });
+    console.warn(`[sessions/features/bash] failed (${sessionId}): ${(e as Error).message}`);
+    res.status(500).json({ error: (e as Error).message || String(e) });
+    return;
   }
 });
 
 // 按文件修改特征清单限定路径, 实时读取 git diff.
 // mode: unstaged | staged | last_commit | last_two_commits
-router.get('/:id/features/git-diff', auth, (req, res) => {
-  const sessionId = req.params.id;
-  const session = findSessionReadable(sessionId, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'read_session_feature_git_diff', session);
+router.get('/:id/features/git-diff', auth, (req: express.Request, res: express.Response) => {
+  const sessionId = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(sessionId, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'read_session_feature_git_diff', session);
 
   const jsonlPath = sessionJsonlPath(session, sessionId);
   if (!jsonlPath) {
-    return res.json({ session_id: sessionId, mode: sessionFeatures.normalizeDiffMode(req.query.mode), diffs: [], files: [] });
+    res.json({ session_id: sessionId, mode: sessionFeatures.normalizeDiffMode(req.query.mode), diffs: [], files: [] });
+    return;
   }
 
   try {
     const scanned = sessionFeatures.scanSessionFeatures(jsonlPath);
-    const workspace = featureWorkspaceForSession(req.user, sessionId);
-    if (workspace.error) return res.status(400).json({ error: workspace.error });
+    const workspace = featureWorkspaceForSession(user, sessionId);
+    if (workspace.error) { res.status(400).json({ error: workspace.error }); return; }
 
     const files = sessionFeatures.summarizeFileChanges(scanned.entries, {
       workDir: workspace.workDir,
       gitRoot: workspace.gitRoot,
     });
-    const allowed = new Map();
+    const allowed = new Map<string, string>();
     for (const file of files) {
       allowed.set(file.path, file.path);
       allowed.set(file.display_path, file.path);
@@ -805,9 +894,10 @@ router.get('/:id/features/git-diff', auth, (req, res) => {
     const requested = queryFiles(req.query.file);
     const targetFiles = requested.length
       ? requested.map((file) => allowed.get(file)).filter(Boolean)
-      : files.map((file) => file.path);
+      : files.map((file: any) => file.path);
     if (requested.length && targetFiles.length === 0) {
-      return res.status(400).json({ error: '请求的文件不在当前 Session 文件修改清单中' });
+      res.status(400).json({ error: '请求的文件不在当前 Session 文件修改清单中' });
+      return;
     }
 
     const result = sessionFeatures.gitDiffForFiles(
@@ -815,31 +905,35 @@ router.get('/:id/features/git-diff', auth, (req, res) => {
       [...new Set(targetFiles)],
       req.query.mode,
     );
-    return res.json({
+    res.json({
       session_id: sessionId,
       files,
       ...result,
     });
+    return;
   } catch (e) {
-    console.warn(`[sessions/features/git-diff] failed (${sessionId}): ${e.message}`);
-    return res.status(500).json({ error: e.message || String(e) });
+    console.warn(`[sessions/features/git-diff] failed (${sessionId}): ${(e as Error).message}`);
+    res.status(500).json({ error: (e as Error).message || String(e) });
+    return;
   }
 });
 
 // 进程存活 + PID — 前端轮询此接口作为"是否执行中"的唯一真相源.
 // 不读 sessions_v2.agent_status (那个不可靠), 直接问 agent backend.
 // (agents/backend 已在文件顶部 require, 删除路由也用到.)
-router.get('/:id/status', auth, (req, res) => {
-  const session = findSessionReadable(req.params.id, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'read_session_status', session);
+router.get('/:id/status', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'read_session_status', session);
   const backend = backendForSession(session);
-  const alive = backend.isAlive(req.params.id);
+  const alive = backend.isAlive(id);
   // working: 进程活的前提下, 是否还在 turn 中. alive && !working = "alive 待命".
-  const working = alive && backend.isWorking(req.params.id);
-  let pid = null;
+  const working = alive && backend.isWorking(id);
+  let pid: number | null = null;
   if (alive) {
-    const found = backend.listSessions().find(s => s.sessionId === req.params.id);
+    const found = backend.listSessions().find((s: any) => s.sessionId === id);
     pid = found?.pid ?? null;
   }
   // 任务标记位: running.flag 在 → 未完成; 删除且无 failed.flag → 已结束(成功);
@@ -847,26 +941,29 @@ router.get('/:id/status', auth, (req, res) => {
   // 真相源优先用项目 bind_path 仓库根直接看 flag 文件 (运行时无关 — reopen 的
   // 历史会话/后端没 runtime 条目时也准, 比 backend.isXxx 只认 runtime map 更可靠);
   // 没 bind_path 才回退到 backend 抽象方法.
-  let jobAccomplished, jobFailed, failedReason = '', failedAt = null;
-  const proj = session.project_id ? Projects.findById(session.project_id) : null;
+  let jobAccomplished: boolean;
+  let jobFailed: boolean;
+  let failedReason = '';
+  let failedAt: string | null = null;
+  const proj = session.project_id ? (Projects.findById(session.project_id) as any) : null;
   const root = (proj && proj.bind_path) ? path.resolve(proj.bind_path) : null;
-  const issue = session.issue_id ? Issues.findById(session.issue_id) : null;
+  const issue = session.issue_id ? (Issues.findById(session.issue_id) as any) : null;
   const worktreeIgnored = !!(issue?.use_worktree && root && !isGitRepoRoot(root));
   if (root) {
     try {
-      jobAccomplished = readJobFlagState(root, req.params.id).accomplished;
+      jobAccomplished = readJobFlagState(root, id).accomplished;
     }
-    catch { jobAccomplished = backend.isJobGoalAccomplished(req.params.id); }
+    catch { jobAccomplished = backend.isJobGoalAccomplished(id); }
     try {
-      const st = readJobFlagState(root, req.params.id);
+      const st = readJobFlagState(root, id);
       jobFailed = st.failed;
       failedReason = st.failedReason;
       failedAt = st.failedAt || null;
     }
-    catch { jobFailed = backend.isFailed(req.params.id); }
+    catch { jobFailed = backend.isFailed(id); }
   } else {
-    jobAccomplished = backend.isJobGoalAccomplished(req.params.id);
-    jobFailed = backend.isFailed(req.params.id);
+    jobAccomplished = backend.isJobGoalAccomplished(id);
+    jobFailed = backend.isFailed(id);
   }
 
   // 错误扫描: agent 进程在但当前不在 turn 中 (isWorking=false), 且 .mobius.jsonl
@@ -875,29 +972,29 @@ router.get('/:id/status', auth, (req, res) => {
   // tmux-claude-code 的 getRecentError 恒 null, 整段自动跳过.
   if (alive && !working) {
     try {
-      const jsonlPath = backend._lookupPersistedJsonlPath(req.params.id)
+      const jsonlPath = backend._lookupPersistedJsonlPath(id);
       if (jsonlPath && readLastMobiusEntryType(jsonlPath) !== 'error') {
-        const err = backend.getRecentError(req.params.id)
+        const err = backend.getRecentError(id);
         if (err) {
-          const p = backend._lookupPersistedEntry(req.params.id) || {}
+          const p = backend._lookupPersistedEntry(id) || {};
           appendMobiusErrorEntry({
             jsonlPath,
-            sessionId: req.params.id,
+            sessionId: id,
             agentSessionId: p.agentSessionId || null,
             cwd: p.cwd || null,
             backendName: backend.name,
             error: err,
-          })
-          console.log(`[sessions/status] error_scan hit sid=${req.params.id} backend=${backend.name} msg="${String(err.message).slice(0, 120)}"`)
+          });
+          console.log(`[sessions/status] error_scan hit sid=${id} backend=${backend.name} msg="${String(err.message).slice(0, 120)}"`);
         }
       }
     } catch (e) {
-      console.warn(`[sessions/status] error_scan failed sid=${req.params.id}: ${e.message}`)
+      console.warn(`[sessions/status] error_scan failed sid=${id}: ${(e as Error).message}`);
     }
   }
 
   res.json({
-    session_id: req.params.id,
+    session_id: id,
     alive,
     working,
     job_accomplished: jobAccomplished,
@@ -906,78 +1003,85 @@ router.get('/:id/status', auth, (req, res) => {
     failed_at: failedAt || null,
     pid,
     agent_backend: backend.name,
-    use_proxy: useProxyForSession(session, backend),
+    use_proxy: useProxyForSession(session, backend as any),
     claude_session_id: session.claude_session_id || null,
     worktree_ignored: worktreeIgnored,
   });
 });
 
-router.get('/:id/turns', auth, (req, res) => {
-  const session = findSessionReadable(req.params.id, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'read_session_turns', session);
-  res.json(Messages.turnsForSession(req.params.id));
+router.get('/:id/turns', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'read_session_turns', session);
+  res.json(Messages.turnsForSession(id));
 });
 
-router.get('/:id/inputs', auth, (req, res) => {
-  const session = findSessionReadable(req.params.id, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'read_session_inputs', session);
-  if (!session.project_id) return res.status(400).json({ error: '当前 Session 未关联项目, 无法读取输入回放' });
+router.get('/:id/inputs', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'read_session_inputs', session);
+  if (!session.project_id) { res.status(400).json({ error: '当前 Session 未关联项目, 无法读取输入回放' }); return; }
 
-  const project = Projects.findById(session.project_id);
+  const project = Projects.findById(session.project_id) as any;
   const bindPath = (project?.bind_path || '').trim();
-  if (!bindPath) return res.status(400).json({ error: '当前 Session 所属项目未配置 bind_path, 无法读取输入回放' });
+  if (!bindPath) { res.status(400).json({ error: '当前 Session 所属项目未配置 bind_path, 无法读取输入回放' }); return; }
 
   try {
-    const { entries, filePath } = readSessionInputs(bindPath, req.params.id);
-    const fileTurns = new Set(
+    const { entries, filePath } = readSessionInputs(bindPath, id);
+    const fileTurns = new Set<number>(
       entries
-        .map((entry) => Number(entry?.turn_number))
-        .filter((turn) => Number.isFinite(turn) && turn > 0)
+        .map((entry: any) => Number(entry?.turn_number))
+        .filter((turn: number) => Number.isFinite(turn) && turn > 0),
     );
-    const fileTextKeys = new Set(
+    const fileTextKeys = new Set<string>(
       entries
-        .map((entry) => String(entry?.input_text || entry?.content || '').trim())
-        .filter(Boolean)
+        .map((entry: any) => String(entry?.input_text || entry?.content || '').trim())
+        .filter(Boolean),
     );
-    const dbEntries = Messages.userInputsForTask(req.params.id)
-      .filter((row) => {
+    const dbEntries = Messages.userInputsForTask(id)
+      .filter((row: any) => {
         const turn = Number(row?.turn_number);
         if (Number.isFinite(turn) && turn > 0 && fileTurns.has(turn)) return false;
         const text = String(row?.content || '').trim();
         return text && !fileTextKeys.has(text);
       })
-      .map((row) => ({
+      .map((row: any) => ({
         id: `message-${row.id}`,
-        session_id: req.params.id,
+        session_id: id,
         input_text: '',
         content: row.content || '',
         created_at: row.created_at || '',
         request_id: null,
         turn_number: Number.isFinite(Number(row.turn_number)) ? Number(row.turn_number) : null,
       }));
-    const newestFirst = entries.concat(dbEntries).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    const newestFirst = entries.concat(dbEntries).sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
     res.json({ entries: newestFirst, file_path: filePath });
   } catch (e) {
-    res.status(500).json({ error: e.message || '读取输入回放失败', file_path: e.filePath || null });
+    const err = e as any;
+    res.status(500).json({ error: err.message || '读取输入回放失败', file_path: err.filePath || null });
   }
 });
 
 // 注入预览/快照:
 //   - 已写过快照 (首轮发过消息): 返回快照本体, applied=true
 //   - 未写过快照 (从未发消息): 按 Session 创建时保存的选择快照构建, applied=false
-router.get('/:id/context-preview', auth, (req, res) => {
-  const session = findSessionReadable(req.params.id, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'read_session_context_preview', session);
+router.get('/:id/context-preview', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'read_session_context_preview', session);
 
-  const userMsgCount = Messages.countUserMessagesFor(req.params.id);
-  const snap = Sessions.getContextSnapshot(req.params.id);
+  const userMsgCount = Messages.countUserMessagesFor(id);
+  const snap = Sessions.getContextSnapshot(id) as any;
   if (snap && snap.context_snapshot_at) {
-    let sources = null;
+    let sources: any = null;
     try { sources = snap.context_snapshot_sources ? JSON.parse(snap.context_snapshot_sources) : null; } catch {}
-    return res.json({
+    res.json({
       body: snap.context_snapshot_body || '',
       sources,
       applied: true,
@@ -985,9 +1089,10 @@ router.get('/:id/context-preview', auth, (req, res) => {
       snapshot_at: snap.context_snapshot_at,
       user_message_count: userMsgCount,
     });
+    return;
   }
 
-  const ctx = buildSessionContext(req.user, req.params.id);
+  const ctx = buildSessionContext(user, id);
   res.json({
     body: ctx.body,
     sources: ctx.sources,
@@ -1001,19 +1106,21 @@ router.get('/:id/context-preview', auth, (req, res) => {
 // Session 右栏 Skill / Memory 只读快照:
 // 新 Session 直接读创建时写入的 session_selection_snapshot.
 // 老 Session 没有该字段时, 优先回退到首轮 context 快照; 再没有才实时构建一次作为兼容展示.
-router.get('/:id/selection-snapshot', auth, (req, res) => {
-  const session = findSessionReadable(req.params.id, req.user);
-  if (!session) return res.status(404).json({ error: '未找到' });
-  auditSessionAccess(req.user, 'read_session_selection_snapshot', session);
+router.get('/:id/selection-snapshot', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'read_session_selection_snapshot', session);
 
-  const stripBodies = (snapshot) => {
+  const stripBodies = (snapshot: any) => {
     const src = snapshot && typeof snapshot === 'object' ? snapshot : {};
     const skills = Array.isArray(src.skills) ? src.skills : [];
     const memories = Array.isArray(src.memories) ? src.memories : [];
-    const allSkills = Array.isArray(src.all_skills) ? src.all_skills : skills.map((s) => ({ ...s, enabled: true }));
-    const allMemories = Array.isArray(src.all_memories) ? src.all_memories : memories.map((m) => ({ ...m, enabled: true }));
+    const allSkills = Array.isArray(src.all_skills) ? src.all_skills : skills.map((s: any) => ({ ...s, enabled: true }));
+    const allMemories = Array.isArray(src.all_memories) ? src.all_memories : memories.map((m: any) => ({ ...m, enabled: true }));
     const totals = src.totals && typeof src.totals === 'object' ? src.totals : {};
-    const mapSkill = (s) => ({
+    const mapSkill = (s: any) => ({
       id: s.id,
       scope: s.scope,
       name: s.name,
@@ -1021,7 +1128,7 @@ router.get('/:id/selection-snapshot', auth, (req, res) => {
       dirName: s.dirName || null,
       enabled: s.enabled !== false,
     });
-    const mapMemory = (m) => ({
+    const mapMemory = (m: any) => ({
       id: m.id,
       scope: m.scope,
       name: m.name,
@@ -1030,10 +1137,10 @@ router.get('/:id/selection-snapshot', auth, (req, res) => {
     });
     return {
       version: src.version || 1,
-      skills: skills.map((s) => mapSkill({ ...s, enabled: true })).filter((s) => s.id && s.name),
-      memories: memories.map((m) => mapMemory({ ...m, enabled: true })).filter((m) => m.id && m.name),
-      all_skills: allSkills.map(mapSkill).filter((s) => s.id && s.name),
-      all_memories: allMemories.map(mapMemory).filter((m) => m.id && m.name),
+      skills: skills.map((s: any) => mapSkill({ ...s, enabled: true })).filter((s: any) => s.id && s.name),
+      memories: memories.map((m: any) => mapMemory({ ...m, enabled: true })).filter((m: any) => m.id && m.name),
+      all_skills: allSkills.map(mapSkill).filter((s: any) => s.id && s.name),
+      all_memories: allMemories.map(mapMemory).filter((m: any) => m.id && m.name),
       totals: {
         skills: Number.isFinite(Number(totals.skills)) ? Number(totals.skills) : allSkills.length,
         memories: Number.isFinite(Number(totals.memories)) ? Number(totals.memories) : allMemories.length,
@@ -1041,25 +1148,26 @@ router.get('/:id/selection-snapshot', auth, (req, res) => {
     };
   };
 
-  const stored = Sessions.getSelectionSnapshot(req.params.id);
+  const stored = Sessions.getSelectionSnapshot(id) as any;
   if (stored?.session_selection_snapshot) {
     try {
-      return res.json({
+      res.json({
         snapshot: stripBodies(JSON.parse(stored.session_selection_snapshot)),
         snapshot_at: stored.session_selection_snapshot_at || null,
         source: 'created',
         legacy: false,
       });
+      return;
     } catch (e) {
-      console.warn(`[sessions] selection snapshot parse failed (${req.params.id}): ${e.message}`);
+      console.warn(`[sessions] selection snapshot parse failed (${id}): ${(e as Error).message}`);
     }
   }
 
-  const snap = Sessions.getContextSnapshot(req.params.id);
+  const snap = Sessions.getContextSnapshot(id) as any;
   if (snap?.context_snapshot_sources) {
     try {
       const sources = JSON.parse(snap.context_snapshot_sources);
-      return res.json({
+      res.json({
         snapshot: stripBodies({
           skills: sources?.skills || [],
           memories: sources?.memories || [],
@@ -1069,19 +1177,20 @@ router.get('/:id/selection-snapshot', auth, (req, res) => {
         source: 'context',
         legacy: true,
       });
+      return;
     } catch (e) {
-      console.warn(`[sessions] context snapshot sources parse failed (${req.params.id}): ${e.message}`);
+      console.warn(`[sessions] context snapshot sources parse failed (${id}): ${(e as Error).message}`);
     }
   }
 
-  const ctx = buildSessionContext(req.user, req.params.id);
+  const ctx = buildSessionContext(user, id);
   res.json({
     snapshot: stripBodies({
       skills: ctx.sources?.skills || [],
       memories: ctx.sources?.memories || [],
       totals: {
-        skills: ctx.sources?.selection_totals?.skills ?? (ctx.sources?.skills || []).length,
-        memories: ctx.sources?.selection_totals?.memories ?? (ctx.sources?.memories || []).length,
+        skills: (ctx.sources as any)?.selection_totals?.skills ?? (ctx.sources?.skills || []).length,
+        memories: (ctx.sources as any)?.selection_totals?.memories ?? (ctx.sources?.memories || []).length,
       },
     }),
     snapshot_at: null,
@@ -1100,8 +1209,9 @@ router.get('/:id/selection-snapshot', auth, (req, res) => {
 //   6) 同步 backend 内部 agent session id 回 DB
 // 不做流式响应 — 请求成功即表示后端已接收; 后续 jsonl 由 /api/sessions/:id/events SSE 推送.
 // Body: { content: string, input_text?: string, request_id?: string, attachments?: Array }
-router.post('/:id/messages', auth, async (req, res) => {
-  const sessionId = req.params.id;
+router.post('/:id/messages', auth, async (req: express.Request, res: express.Response) => {
+  const sessionId = String(req.params.id);
+  const user = userOf(req);
   const content = typeof req.body?.content === 'string' ? req.body.content : '';
   const requestId = typeof req.body?.request_id === 'string' ? req.body.request_id : null;
   const hasInputText = Object.prototype.hasOwnProperty.call(req.body || {}, 'input_text');
@@ -1109,7 +1219,7 @@ router.post('/:id/messages', auth, async (req, res) => {
 
   try {
     const result = await runSessionMessage({
-      user: req.user,
+      user,
       sessionId,
       content,
       inputText,
@@ -1118,31 +1228,36 @@ router.post('/:id/messages', auth, async (req, res) => {
       attachments: req.body?.attachments,
       source: 'http.session.messages',
       logger: console,
-    });
-    auditSessionAccess(req.user, 'send_session_message', Sessions.findById(sessionId));
-    return res.json(result);
+    } as any);
+    auditSessionAccess(user, 'send_session_message', Sessions.findById(sessionId) as any);
+    res.json(result);
+    return;
   } catch (e) {
-    return res.status(e.status || 500).json({ error: e.message || '启动失败', category: e.category || undefined });
+    const err = e as any;
+    res.status(err.status || 500).json({ error: err.message || '启动失败', category: err.category || undefined });
+    return;
   }
 });
 
 // 嵌在 /api/issues/:issueId/sessions 下
 const issueScoped = express.Router({ mergeParams: true });
 
-issueScoped.get('/', auth, (req, res) => {
-  const issue = Issues.findById(req.params.issueId);
-  if (!issue) return res.status(404).json({ error: '未找到' });
-  if (!canReadIssue(req.user, issue)) return res.status(404).json({ error: '未找到' });
-  const list = Sessions.listForIssue(req.params.issueId).filter((session) => canReadSession(req.user, session));
+issueScoped.get('/', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const issueId = String(req.params.issueId);
+  const issue = Issues.findById(issueId) as any;
+  if (!issue) { res.status(404).json({ error: '未找到' }); return; }
+  if (!canReadIssue(user, issue)) { res.status(404).json({ error: '未找到' }); return; }
+  const list = (Sessions.listForIssue(issueId) as any[]).filter((session) => canReadSession(user, session));
   // 列表里的 session 多数已不在后端 runtime (历史会话), 故不走 backend.isXxx
   // (那依赖 runtime map), 直接按项目 bind_path 仓库根看 flag 文件 — 运行时无关,
   // 历史会话也能正确反映最终态. running.flag 在=未结束; 不在=已结束; failed.flag 在=失败.
   // 无 bind_path → 两字段给 null, 前端回退到原 agent_status 显示 (不破坏现状).
-  const proj = issue.project_id ? Projects.findById(issue.project_id) : null;
+  const proj = issue.project_id ? (Projects.findById(issue.project_id) as any) : null;
   const root = (proj && proj.bind_path) ? path.resolve(proj.bind_path) : null;
   const enriched = list.map((s) => {
-    let job_accomplished = null;
-    let job_failed = null;
+    let job_accomplished: boolean | null = null;
+    let job_failed: boolean | null = null;
     if (root) {
       try {
         job_accomplished = readJobFlagState(root, s.session_id).accomplished;
@@ -1156,56 +1271,68 @@ issueScoped.get('/', auth, (req, res) => {
   res.json(enriched);
 });
 
-issueScoped.post('/', auth, async (req, res) => {
-  const issue = Issues.findById(req.params.issueId);
-  if (!issue) return res.status(404).json({ error: '未找到' });
-  if (!canCreateSessionForIssue(req.user, issue)) return res.status(403).json({ error: '无权在此 Issue 创建 Session' });
+issueScoped.post('/', auth, async (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const issueId = String(req.params.issueId);
+  const issue = Issues.findById(issueId) as any;
+  if (!issue) { res.status(404).json({ error: '未找到' }); return; }
+  if (!canCreateSessionForIssue(user, issue)) { res.status(403).json({ error: '无权在此 Issue 创建 Session' }); return; }
 
-  const { name, description, excluded_skill_ids, excluded_memory_ids, model, language } = req.body;
-  if (!name) return res.status(400).json({ error: '请填写会话名称' });
+  const { name, description, excluded_skill_ids, excluded_memory_ids, model, language } = (req.body || {}) as {
+    name?: string;
+    description?: string;
+    excluded_skill_ids?: any;
+    excluded_memory_ids?: any;
+    model?: any;
+    language?: string;
+  };
+  if (!name) { res.status(400).json({ error: '请填写会话名称' }); return; }
 
   // 前端传内置短键或管理员导入模型 key; 非法/缺省回退默认模型.
   // 导入模型仍来自管理员白名单, 不直接把用户串塞进 --model.
   const resolvedModel = modelRegistry.resolveSessionModelForCreate(model);
   if (!resolvedModel) {
-    return res.status(503).json({ error: '没有可用的模型，请先在管理后台配置模型（或检查 ~/.claude/mobiusdefault.settings.json 是否存在）' });
+    res.status(503).json({ error: '没有可用的模型，请先在管理后台配置模型（或检查 ~/.claude/mobiusdefault.settings.json 是否存在）' });
+    return;
   }
-  const limitCheck = modelPromptLimits.checkCreateAllowed(req.user.id, resolvedModel.key);
+  const limitCheck = modelPromptLimits.checkCreateAllowed(user.id, resolvedModel.key);
   if (!limitCheck.allowed) {
-    return res.status(limitCheck.status).json({
+    res.status(limitCheck.status as any).json({
       error: limitCheck.error,
       code: limitCheck.code,
       usage: limitCheck.usage,
     });
+    return;
   }
   // 注入上下文语言: 仅 zh/en, 缺省中文.
   const sessionLanguage = language === 'en' ? 'en' : 'zh';
 
   const sessionId = uuid().slice(0, 8);
-  const sessionKey = `web:${req.user.id}:${sessionId}`;
+  const sessionKey = `web:${user.id}:${sessionId}`;
 
   // Wizard 勾选状态: 用户在 Issue 默认集合上取消勾选的 skill/memory id 列表.
   // 留空 = 全部启用 (兼容现有调用方).
-  const sanitizeIds = (arr) => Array.isArray(arr) ? arr.filter(x => typeof x === 'string' && x.length > 0) : [];
+  const sanitizeIds = (arr: any): string[] => Array.isArray(arr) ? arr.filter((x: any) => typeof x === 'string' && x.length > 0) : [];
   const excludedSkillIds = sanitizeIds(excluded_skill_ids);
   const excludedMemoryIds = sanitizeIds(excluded_memory_ids);
-  const selectionSnapshot = buildSessionSelectionSnapshot(req.user, req.params.issueId, excludedSkillIds, excludedMemoryIds);
+  const selectionSnapshot = buildSessionSelectionSnapshot(user, issueId, excludedSkillIds, excludedMemoryIds);
   const continueFromSessionId = typeof req.body?.continue_from_session_id === 'string'
     ? req.body.continue_from_session_id.trim()
     : '';
-  let sourceSession = null;
-  let transferResult = null;
+  let sourceSession: AnySession | null = null;
+  let transferResult: any = null;
   if (continueFromSessionId) {
-    sourceSession = findSessionOperable(continueFromSessionId, req.user);
-    if (!sourceSession) return res.status(404).json({ error: '旧 Session 不存在或无权操作' });
-    if (sourceSession.issue_id !== req.params.issueId || sourceSession.scope_type !== 'issue') {
-      return res.status(400).json({ error: '只能从当前 Issue 下的旧 Session 继续' });
+    sourceSession = findSessionOperable(continueFromSessionId, user);
+    if (!sourceSession) { res.status(404).json({ error: '旧 Session 不存在或无权操作' }); return; }
+    if (sourceSession.issue_id !== issueId || sourceSession.scope_type !== 'issue') {
+      res.status(400).json({ error: '只能从当前 Issue 下的旧 Session 继续' });
+      return;
     }
-    const project = Projects.findById(issue.project_id);
+    const project = Projects.findById(issue.project_id) as any;
     const bindPath = (project?.bind_path || '').trim();
-    if (!bindPath) return res.status(400).json({ error: '当前项目未绑定路径, 无法创建 Session 转接文档' });
+    if (!bindPath) { res.status(400).json({ error: '当前项目未绑定路径, 无法创建 Session 转接文档' }); return; }
     const jsonlPath = sessionJsonlPath(sourceSession, continueFromSessionId);
-    if (!jsonlPath) return res.status(400).json({ error: '旧 Session 没有可读取的 JSONL 记录' });
+    if (!jsonlPath) { res.status(400).json({ error: '旧 Session 没有可读取的 JSONL 记录' }); return; }
     try {
       transferResult = writeSessionTransferDocument({
         bindPath,
@@ -1214,16 +1341,17 @@ issueScoped.post('/', auth, async (req, res) => {
         jsonlPath,
       });
     } catch (e) {
-      console.warn(`[sessions] create transfer document failed (${continueFromSessionId}): ${e.message}`);
-      return res.status(500).json({ error: e.message || '创建 Session 转接文档失败' });
+      console.warn(`[sessions] create transfer document failed (${continueFromSessionId}): ${(e as Error).message}`);
+      res.status(500).json({ error: (e as Error).message || '创建 Session 转接文档失败' });
+      return;
     }
   }
 
   Sessions.insert({
     session_id: sessionId,
-    issue_id: req.params.issueId,
+    issue_id: issueId,
     project_id: issue.project_id,
-    user_id: req.user.id,
+    user_id: user.id,
     name,
     description,
     session_key: sessionKey,
@@ -1232,7 +1360,7 @@ issueScoped.post('/', auth, async (req, res) => {
     selection_snapshot: selectionSnapshot,
     model: resolvedModel.sessionModelValue,
     language: sessionLanguage,
-  });
+  } as any);
   if (sourceSession && transferResult?.filePath) {
     try {
       Messages.insertSystem(
@@ -1245,27 +1373,27 @@ issueScoped.post('/', auth, async (req, res) => {
           entry_count: transferResult.entryCount,
           truncated: transferResult.truncated,
         }),
-        null,
+        null as any,
         'session_transfer',
       );
     } catch (e) {
-      console.warn(`[sessions] save transfer marker failed (${sessionId}): ${e.message}`);
+      console.warn(`[sessions] save transfer marker failed (${sessionId}): ${(e as Error).message}`);
     }
     const closed = await terminateBackgroundSession(sourceSession, sourceSession.session_id);
     try {
-      const project = Projects.findById(issue.project_id);
+      const project = Projects.findById(issue.project_id) as any;
       if (project?.bind_path) safeRemoveRunningFlag(path.resolve(project.bind_path), sourceSession.session_id, 'session-transfer');
     } catch {}
-    try { Sessions.setIdle(sourceSession.session_id, sourceSession.user_id || req.user.id); } catch {}
+    try { Sessions.setIdle(sourceSession.session_id, sourceSession.user_id || user.id); } catch {}
     try {
       Messages.insertSystem(
         sourceSession.session_id,
         `${closed.message}\n已创建更换模型继续的转接文档: ${transferResult.filePath}`,
-        null,
+        null as any,
         '修改模型并继续',
       );
     } catch {}
-    audit(req.user.id, 'session.continue_with_model', 'session', sessionId,
+    audit(user.id, 'session.continue_with_model', 'session', sessionId,
       JSON.stringify({
         from_session_id: sourceSession.session_id,
         transfer_path: transferResult.filePath,
@@ -1277,28 +1405,30 @@ issueScoped.post('/', auth, async (req, res) => {
     if (startContent) {
       try {
         await runSessionMessage({
-          user: req.user,
+          user,
           sessionId,
           content: startContent,
           inputText: startContent,
           hasInputText: true,
-          requestId: `continue-${sourceSession.session_id}-${Date.now()}`,
+          requestId: `continue-${sourceSession.session_id}-${Date.now()}` as any,
           source: 'http.session.continue_with_model',
           logger: console,
-        });
+        } as any);
       } catch (e) {
-        console.warn(`[sessions] auto start continued session failed (${sessionId}): ${e.message}`);
-        return res.status(e.status || 500).json({ error: e.message || '启动新 Session 失败', category: e.category || undefined });
+        const err = e as any;
+        console.warn(`[sessions] auto start continued session failed (${sessionId}): ${(e as Error).message}`);
+        res.status(err.status || 500).json({ error: err.message || '启动新 Session 失败', category: err.category || undefined });
+        return;
       }
     }
   }
-  recordAdminAuditIfCrossUser(req.user, 'create_session', 'issue', issue.id, issue.created_by);
-  Issues.touchActiveAndIncrement(req.params.issueId);
+  recordAdminAuditIfCrossUser(user, 'create_session', 'issue', issue.id, issue.created_by);
+  Issues.touchActiveAndIncrement(issueId);
   res.json({
-    ...withSessionProxyState(Sessions.findById(sessionId)),
+    ...(withSessionProxyState(Sessions.findById(sessionId)) as any),
     continue_from_session_id: sourceSession?.session_id || null,
     transfer_path: transferResult?.filePath || null,
   });
 });
 
-module.exports = { router, issueScoped };
+export { router, issueScoped };

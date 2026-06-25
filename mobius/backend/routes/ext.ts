@@ -1,5 +1,5 @@
 /**
- * routes/ext.js — 拓展系统的三入口路由集合.
+ * routes/ext.ts — 拓展系统的三入口路由集合.
  *
  *   metaRouter   → /api/extensions           列表 / 单 manifest / build-status / admin reload
  *   invokeRouter → /api/ext                  统一调用入口 (POST), worker_thread 跑 handler
@@ -10,20 +10,25 @@
  *   app.use('/api/ext',        ext.invokeRouter);
  *   app.use('/extension',      ext.staticRouter);
  */
-const express = require('express');
-const multer = require('multer');
-const { auth, adminAuth } = require('../middleware/auth');
-const registry = require('../services/extension-registry');
-const { invokeHandler } = require('../services/extension-invoker');
-const buildPipeline = require('../services/extension-build-pipeline');
-const { runSessionMessage } = require('../services/session-message-runner');
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
-const {
+import express from 'express';
+// @ts-ignore — multer 无 @types
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
+import { auth, adminAuth } from '../middleware/auth';
+import {
   EXTENSION_HANDLER_MAX_PAYLOAD_BYTES,
   EXTENSION_INVOKE_RATE_PER_SEC,
-} = require('../config');
+} from '../config';
+// @ts-ignore — service 仍是 .js
+import * as registry from '../services/extension-registry';
+// @ts-ignore — service 仍是 .js
+import { invokeHandler } from '../services/extension-invoker';
+// @ts-ignore — service 仍是 .js
+import * as buildPipeline from '../services/extension-build-pipeline';
+// @ts-ignore — service 仍是 .js
+import { runSessionMessage } from '../services/session-message-runner';
 
 // ===== meta router =====
 const metaRouter = express.Router();
@@ -32,16 +37,16 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
-function safeUserSegment(username) {
+function safeUserSegment(username: unknown): string {
   return String(username || 'unknown').replace(/[^A-Za-z0-9_.@-]/g, '_').slice(0, 120) || 'unknown';
 }
 
-function safeFileName(name) {
-  const base = path.basename(String(name || 'source.bin')).replace(/[^\w\u4e00-\u9fff .@()+,-]/g, '_').trim();
+function safeFileName(name: unknown): string {
+  const base = path.basename(String(name || 'source.bin')).replace(/[^\w一-鿿 .@()+,-]/g, '_').trim();
   return (base || 'source.bin').slice(0, 180);
 }
 
-function safeResolveUnder(root, ...parts) {
+function safeResolveUnder(root: string, ...parts: string[]): string | null {
   const base = path.resolve(root);
   const abs = path.resolve(base, ...parts);
   if (abs !== base && !abs.startsWith(base + path.sep)) return null;
@@ -49,7 +54,7 @@ function safeResolveUnder(root, ...parts) {
 }
 
 // 拓展列表 (公开给已登录用户; 拓展项目卡片在前端项目页就要它).
-metaRouter.get('/', auth, (req, res) => {
+metaRouter.get('/', auth, (req: express.Request, res: express.Response) => {
   res.json({
     extensions: registry.getAll(),
     errors: registry.getLastReloadErrors(),
@@ -57,9 +62,12 @@ metaRouter.get('/', auth, (req, res) => {
 });
 
 // 单个拓展 manifest (前端 loading 页轮询会用)
-metaRouter.get('/:name', auth, (req, res) => {
+metaRouter.get('/:name', auth, (req: express.Request, res: express.Response) => {
   const entry = registry.get(req.params.name);
-  if (!entry) return res.status(404).json({ error: '未找到该拓展' });
+  if (!entry) {
+    res.status(404).json({ error: '未找到该拓展' });
+    return;
+  }
   res.json({
     name: entry.name,
     display_name: entry.display_name,
@@ -71,46 +79,57 @@ metaRouter.get('/:name', auth, (req, res) => {
 });
 
 // 编译状态 (loading 页轮询)
-metaRouter.get('/:name/build-status', auth, (req, res) => {
+metaRouter.get('/:name/build-status', auth, (req: express.Request, res: express.Response) => {
   const entry = registry.get(req.params.name);
-  if (!entry) return res.status(404).json({ error: '未找到该拓展' });
+  if (!entry) {
+    res.status(404).json({ error: '未找到该拓展' });
+    return;
+  }
   res.json(buildPipeline.getStatus(entry));
 });
 
-metaRouter.post('/:name/upload', auth, upload.single('file'), (req, res) => {
+metaRouter.post('/:name/upload', auth, upload.single('file'), (req: express.Request, res: express.Response) => {
   const entry = registry.get(req.params.name);
+  const file = (req as any).file as { path: string; originalname: string; size: number; mimetype?: string } | undefined;
   if (!entry) {
-    if (req.file) try { fs.unlinkSync(req.file.path); } catch {}
-    return res.status(404).json({ ok: false, error: '未找到该拓展' });
+    if (file) try { fs.unlinkSync(file.path); } catch { /* noop */ }
+    res.status(404).json({ ok: false, error: '未找到该拓展' });
+    return;
   }
-  if (!req.file) return res.status(400).json({ ok: false, error: 'No file' });
+  if (!file) {
+    res.status(400).json({ ok: false, error: 'No file' });
+    return;
+  }
 
-  const userSegment = safeUserSegment(req.user.id);
+  const user = (req as any).user as { id: string; [k: string]: any };
+  const userSegment = safeUserSegment(user.id);
   const uploadDir = safeResolveUnder(entry.data_dir, 'users', userSegment, 'uploads');
   if (!uploadDir) {
-    try { fs.unlinkSync(req.file.path); } catch {}
-    return res.status(400).json({ ok: false, error: 'bad upload path' });
+    try { fs.unlinkSync(file.path); } catch { /* noop */ }
+    res.status(400).json({ ok: false, error: 'bad upload path' });
+    return;
   }
   try {
     fs.mkdirSync(uploadDir, { recursive: true });
-    const originalName = safeFileName(req.file.originalname);
+    const originalName = safeFileName(file.originalname);
     const stampedName = `${Date.now()}-${originalName}`;
     const dest = safeResolveUnder(uploadDir, stampedName);
     if (!dest) throw new Error('bad destination');
-    fs.renameSync(req.file.path, dest);
+    fs.renameSync(file.path, dest);
     res.json({
       ok: true,
       file: {
         path: dest,
         name: originalName,
         stored_name: stampedName,
-        size: req.file.size,
-        mime_type: req.file.mimetype || '',
+        size: file.size,
+        mime_type: file.mimetype || '',
       },
     });
   } catch (e) {
-    try { fs.unlinkSync(req.file.path); } catch {}
-    res.status(500).json({ ok: false, error: e.message || 'upload failed' });
+    try { fs.unlinkSync(file.path); } catch { /* noop */ }
+    const err = e as Error;
+    res.status(500).json({ ok: false, error: err.message || 'upload failed' });
   }
 });
 
@@ -118,37 +137,45 @@ metaRouter.post('/:name/upload', auth, upload.single('file'), (req, res) => {
 // 路径不与 GET /:name 冲突 (express 按注册顺序, /:name 只匹配单段;
 // 但 "hidden" 万一被当成扩展名匹到 /:name 也会 404, 故为稳妥起见放在前面).
 // 即:实际放置在 GET /:name 注册之前的位置, 见上方 staticRouter 之前的注册顺序补丁.
-metaRouter.get('/_admin/hidden', adminAuth, (req, res) => {
+metaRouter.get('/_admin/hidden', adminAuth, (_req: express.Request, res: express.Response) => {
+  // Projects 仓库按需 require, 避免顶层循环依赖. TS 下用 dynamic require.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { Projects } = require('../repositories/projects');
   res.json({ hidden: Projects.listHidden() });
 });
 
 // 管理员: 撤销某用户对某拓展项目的隐藏 (DELETE 该行). 不恢复彻底删除的数据.
-metaRouter.post('/_admin/hidden/:projectId/:userId/restore', adminAuth, (req, res) => {
+metaRouter.post('/_admin/hidden/:projectId/:userId/restore', adminAuth, (req: express.Request, res: express.Response) => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { Projects } = require('../repositories/projects');
   const project = Projects.findById(req.params.projectId);
   if (!project || project.kind !== 'extension') {
-    return res.status(404).json({ error: '未找到拓展项目' });
+    res.status(404).json({ error: '未找到拓展项目' });
+    return;
   }
   Projects.setHidden(req.params.projectId, req.params.userId, false);
   res.json({ ok: true });
 });
 
 // 管理员: 强制重新扫描 mobius/extension/ 并 diff DB
-metaRouter.post('/reload', adminAuth, (req, res) => {
+metaRouter.post('/reload', adminAuth, (_req: express.Request, res: express.Response) => {
   const result = registry.reload();
   res.json(result);
 });
 
 // 管理员: 强制重新编译某个拓展前端 (清掉 dist 再 build)
-metaRouter.post('/:name/rebuild', adminAuth, async (req, res) => {
+metaRouter.post('/:name/rebuild', adminAuth, async (req: express.Request, res: express.Response) => {
   const entry = registry.get(req.params.name);
-  if (!entry) return res.status(404).json({ error: '未找到该拓展' });
+  if (!entry) {
+    res.status(404).json({ error: '未找到该拓展' });
+    return;
+  }
   try {
     await buildPipeline.forceRebuild(entry);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    const err = e as Error;
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -161,8 +188,8 @@ const POST_ACTIONS_KEY = '__mobius_post_actions';
 const POST_ACTION_RESULT_KEY_RE = /^[A-Za-z][A-Za-z0-9_]{0,60}$/;
 
 // 每用户简单令牌桶速率限制 (每秒 N 次). 内存即可, 重启丢失无所谓.
-const rateMap = new Map(); // user_id → { count, windowStartMs }
-function rateAllow(userId) {
+const rateMap = new Map<string, { count: number; windowStartMs: number }>(); // user_id → { count, windowStartMs }
+function rateAllow(userId: string): boolean {
   const now = Date.now();
   const rec = rateMap.get(userId);
   if (!rec || now - rec.windowStartMs >= 1000) {
@@ -174,13 +201,13 @@ function rateAllow(userId) {
   return true;
 }
 
-async function runPostActions(value, req) {
+async function runPostActions(value: any, req: express.Request): Promise<any> {
   if (!value || typeof value !== 'object') return value;
   const actions = Array.isArray(value[POST_ACTIONS_KEY]) ? value[POST_ACTIONS_KEY] : [];
   delete value[POST_ACTIONS_KEY];
   if (!actions.length) return value;
 
-  const results = [];
+  const results: any[] = [];
   for (const action of actions.slice(0, 5)) {
     if (!action || action.type !== 'session_message') continue;
     const requestedResultKey = typeof action.result_key === 'string' ? action.result_key.trim() : '';
@@ -190,7 +217,7 @@ async function runPostActions(value, req) {
     try {
       const hasInputText = Object.prototype.hasOwnProperty.call(action, 'input_text');
       const started = await runSessionMessage({
-        user: req.user,
+        user: (req as any).user,
         sessionId: String(action.session_id || ''),
         content: String(action.content || ''),
         inputText: hasInputText ? String(action.input_text || '') : '',
@@ -198,7 +225,7 @@ async function runPostActions(value, req) {
         requestId: typeof action.request_id === 'string' ? action.request_id : null,
         source: typeof action.source === 'string' ? action.source : 'extension.post_action.session_message',
         logger: console,
-      });
+      } as any);
       const publicResult = {
         type: action.type,
         ok: true,
@@ -214,13 +241,14 @@ async function runPostActions(value, req) {
         value.session.start_result = publicResult;
       }
     } catch (e) {
+      const err = e as any;
       const publicResult = {
         type: action.type,
         ok: false,
         session_id: String(action.session_id || ''),
-        error: e.message || '后端启动 Session 失败',
-        status: e.status || 500,
-        category: e.category || 'backend',
+        error: err.message || '后端启动 Session 失败',
+        status: err.status || 500,
+        category: err.category || 'backend',
       };
       results.push(publicResult);
       if (resultKey) value[resultKey] = publicResult;
@@ -239,40 +267,52 @@ async function runPostActions(value, req) {
   return value;
 }
 
-invokeRouter.post('/', auth, async (req, res) => {
-  const { extension_name, ext_main_payload } = req.body || {};
+invokeRouter.post('/', auth, async (req: express.Request, res: express.Response) => {
+  const { extension_name, ext_main_payload } = (req.body || {}) as {
+    extension_name?: string;
+    ext_main_payload?: any;
+  };
   if (typeof extension_name !== 'string') {
-    return res.status(400).json({ ok: false, error: 'extension_name 必填且必须是字符串' });
+    res.status(400).json({ ok: false, error: 'extension_name 必填且必须是字符串' });
+    return;
   }
   if (!registry.EXT_NAME_RE.test(extension_name)) {
-    return res.status(400).json({ ok: false, error: 'extension_name 非法' });
+    res.status(400).json({ ok: false, error: 'extension_name 非法' });
+    return;
   }
   const entry = registry.get(extension_name);
   if (!entry) {
-    return res.status(404).json({ ok: false, error: '未找到该拓展或已被禁用' });
+    res.status(404).json({ ok: false, error: '未找到该拓展或已被禁用' });
+    return;
   }
-  if (!rateAllow(req.user.id)) {
-    return res.status(429).json({ ok: false, error: '调用频率超限, 请稍后重试' });
+  const user = (req as any).user as { id: string; display_name?: string; [k: string]: any };
+  if (!rateAllow(user.id)) {
+    res.status(429).json({ ok: false, error: '调用频率超限, 请稍后重试' });
+    return;
   }
   try {
     const result = await invokeHandler({
       entry,
-      username: req.user.id,
-      display_name: req.user.display_name,
+      username: user.id,
+      display_name: user.display_name,
       ext_main_payload: ext_main_payload === undefined ? {} : ext_main_payload,
     });
     if (result.__timeout) {
-      return res.status(504).json({ ok: false, error: 'handler timeout (>30s)' });
+      res.status(504).json({ ok: false, error: 'handler timeout (>30s)' });
+      return;
     }
     if (result.__oversize) {
-      return res.status(502).json({ ok: false, error: 'handler 返回值过大' });
+      res.status(502).json({ ok: false, error: 'handler 返回值过大' });
+      return;
     }
     if (result.__error) {
-      return res.status(500).json({ ok: false, error: result.__error });
+      res.status(500).json({ ok: false, error: result.__error });
+      return;
     }
     res.json(await runPostActions(result.value, req));
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    const err = e as Error;
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
@@ -324,14 +364,14 @@ const SDK_JS = [
   '',
 ].join('\n');
 
-staticRouter.get('/_sdk/ext.js', (req, res) => {
+staticRouter.get('/_sdk/ext.js', (_req: express.Request, res: express.Response) => {
   res.set('content-type', 'application/javascript; charset=utf-8');
   res.send(SDK_JS);
 });
 
 // /extension/<name>/        → loading 或 index.html (注入 window.__EXT_NAME__)
 // /extension/<name>/<asset> → dist/<asset> (mime 白名单)
-const MIME = {
+const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js':   'application/javascript; charset=utf-8',
   '.mjs':  'application/javascript; charset=utf-8',
@@ -353,8 +393,8 @@ const MIME = {
   '.ogg':  'video/ogg',
 };
 
-function buildLoadingHtml(entry) {
-  const safeName = entry.name.replace(/[^a-z0-9-]/g, '');
+function buildLoadingHtml(entry: any): string {
+  const safeName = String(entry.name).replace(/[^a-z0-9-]/g, '');
   return `<!doctype html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
@@ -405,7 +445,7 @@ tick();
 </body></html>`;
 }
 
-function safeResolveAsset(distDir, rel) {
+function safeResolveAsset(distDir: string, rel: string): string | null {
   const abs = path.resolve(distDir, rel.replace(/^\/+/, ''));
   if (abs !== distDir && !abs.startsWith(distDir + path.sep)) return null;
   return abs;
@@ -418,20 +458,27 @@ function safeResolveAsset(distDir, rel) {
 //   - /<name>/<rel>                  → rel 资源
 //
 // 必须先注册 /:name/* 路由 (匹配 /<name>/...), 否则 /:name 会先吃掉 /<name>/.
-staticRouter.get('/:name/*', async (req, res) => {
+staticRouter.get('/:name/*', async (req: express.Request, res: express.Response) => {
   // /<name>/<rel> 走资源/index 分支 (rel='' 即尾斜杠 → index)
-  await serveExtension(req, res, req.params.name, req.params[0] || '');
+  const rel = (req.params as any)[0] || '';
+  await serveExtension(req, res, String(req.params.name), rel);
 });
 
-staticRouter.get('/:name', (req, res) => {
+staticRouter.get('/:name', (req: express.Request, res: express.Response) => {
   // /<name> (无尾斜杠) → 301 到 /<name>/
   res.redirect(301, `/extension/${req.params.name}/`);
 });
 
-async function serveExtension(req, res, name, rel) {
-  if (!registry.EXT_NAME_RE.test(name)) return res.status(400).send('bad extension name');
+async function serveExtension(req: express.Request, res: express.Response, name: string, rel: string): Promise<void> {
+  if (!registry.EXT_NAME_RE.test(name)) {
+    res.status(400).send('bad extension name');
+    return;
+  }
   const entry = registry.get(name);
-  if (!entry) return res.status(404).send('extension not found');
+  if (!entry) {
+    res.status(404).send('extension not found');
+    return;
+  }
 
   const distDir = path.join(entry.frontend_dir, 'dist');
   const isIndex = !rel || rel === '' || rel === '/' || rel.endsWith('/');
@@ -442,9 +489,11 @@ async function serveExtension(req, res, name, rel) {
     buildPipeline.enqueue(entry);
     if (isIndex) {
       res.set('content-type', 'text/html; charset=utf-8');
-      return res.send(buildLoadingHtml(entry));
+      res.send(buildLoadingHtml(entry));
+      return;
     }
-    return res.status(503).send('extension not built yet');
+    res.status(503).send('extension not built yet');
+    return;
   }
 
   // index.html: 注入 window.__EXT_NAME__
@@ -459,15 +508,21 @@ async function serveExtension(req, res, name, rel) {
       res.set('content-type', 'text/html; charset=utf-8');
       // 缓存安全: 用 no-store, 避免开发期 dist 重建后浏览器拿到老 html.
       res.set('cache-control', 'no-store');
-      return res.send(injected);
+      res.send(injected);
+      return;
     } catch (e) {
-      return res.status(500).send('failed to read index.html: ' + e.message);
+      const err = e as Error;
+      res.status(500).send('failed to read index.html: ' + err.message);
+      return;
     }
   }
 
   // 普通静态资源
   let abs = safeResolveAsset(distDir, rel);
-  if (!abs) return res.status(400).send('bad path');
+  if (!abs) {
+    res.status(400).send('bad path');
+    return;
+  }
   if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
     // Next.js 静态导出等 SPA 框架把 page 存为 <name>.html, 链接可能不带 .html 后缀.
     // 仅对"无扩展名"路径尝试补 .html, assets (.css/.js/.png 等) 不受影响.
@@ -476,15 +531,20 @@ async function serveExtension(req, res, name, rel) {
       if (fs.existsSync(withHtml) && fs.statSync(withHtml).isFile()) {
         abs = withHtml;
       } else {
-        return res.status(404).send('not found');
+        res.status(404).send('not found');
+        return;
       }
     } else {
-      return res.status(404).send('not found');
+      res.status(404).send('not found');
+      return;
     }
   }
   const ext = path.extname(abs).toLowerCase();
   const mime = MIME[ext];
-  if (!mime) return res.status(403).send('mime not allowed');
+  if (!mime) {
+    res.status(403).send('mime not allowed');
+    return;
+  }
   res.set('content-type', mime);
   // SVG 走严格 CSP, 防 svg xss
   if (ext === '.svg') res.set('content-security-policy', "default-src 'none'");
@@ -493,47 +553,63 @@ async function serveExtension(req, res, name, rel) {
 
 // 静态资源带 HTTP Range 支持 — 浏览器 <video>/<audio> 必须靠 Range 分块流式播放,
 // 否则会卡在缓冲(对大视频尤甚). 同时补 Content-Length / Accept-Ranges 头.
-function streamAssetWithRange(req, res, abs) {
-  let stat;
-  try { stat = fs.statSync(abs); } catch (e) { return res.status(404).send('not found'); }
-  if (!stat.isFile()) return res.status(404).send('not found');
+function streamAssetWithRange(req: express.Request, res: express.Response, abs: string): void {
+  let stat: fs.Stats;
+  try { stat = fs.statSync(abs); } catch {
+    res.status(404).send('not found');
+    return;
+  }
+  if (!stat.isFile()) {
+    res.status(404).send('not found');
+    return;
+  }
   const total = stat.size;
   res.set('accept-ranges', 'bytes');
 
-  const rangeHdr = req.headers.range || req.headers['range'];
+  const rangeHdr = (req.headers.range || (req.headers as any)['range']) as string | undefined;
   if (!rangeHdr) {
     res.set('content-length', String(total));
-    if (req.method === 'HEAD') return res.end();
-    return fs.createReadStream(abs).pipe(res);
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+    fs.createReadStream(abs).pipe(res);
+    return;
   }
   // 解析 Range: bytes=start-end
   const m = /^bytes=(\d*)-(\d*)$/.exec(String(rangeHdr).trim());
   if (!m) {
     res.set('content-range', `bytes */${total}`);
-    return res.status(416).end();
+    res.status(416).end();
+    return;
   }
   let start = m[1] === '' ? NaN : parseInt(m[1], 10);
   let end = m[2] === '' ? NaN : parseInt(m[2], 10);
   if (Number.isNaN(start) && Number.isNaN(end)) {
     res.set('content-range', `bytes */${total}`);
-    return res.status(416).end();
+    res.status(416).end();
+    return;
   }
   // 后缀式: bytes=-N → 最后 N 字节
   if (Number.isNaN(start)) {
-    start = Math.max(0, total - end);
+    start = Math.max(0, total - (end as number));
     end = total - 1;
   }
   // 开放式: bytes=N- → 到末尾
   if (Number.isNaN(end)) end = total - 1;
   if (start > end || start < 0 || end >= total) {
     res.set('content-range', `bytes */${total}`);
-    return res.status(416).end();
+    res.status(416).end();
+    return;
   }
   const length = end - start + 1;
   res.status(206);
   res.set('content-range', `bytes ${start}-${end}/${total}`);
   res.set('content-length', String(length));
-  if (req.method === 'HEAD') return res.end();
+  if (req.method === 'HEAD') {
+    res.end();
+    return;
+  }
   fs.createReadStream(abs, { start, end }).pipe(res);
 }
 
@@ -549,14 +625,18 @@ function streamAssetWithRange(req, res, abs) {
 // frontend/dist/_next/<rel>, 第一个匹配的静态文件直接返回. 多 extension
 // 同名文件按 registry 顺序, 通常不会冲突; 必要的时候再用 Referer 锁定.
 const unprefixedNextRouter = express.Router();
-unprefixedNextRouter.get('/*', (req, res) => {
-  const rel = (req.params[0] || '').replace(/^\/+/, '');
-  if (!rel) return res.status(404).send('not found');
+unprefixedNextRouter.get('/*', (req: express.Request, res: express.Response) => {
+  const rel = (String((req.params as any)[0] || '')).replace(/^\/+/, '');
+  if (!rel) {
+    res.status(404).send('not found');
+    return;
+  }
   // 防穿越: 只允许 _next/static, _next/data 这类合法子路径
   if (rel.split('/').some((seg) => seg === '..' || seg === '')) {
-    return res.status(400).send('bad path');
+    res.status(400).send('bad path');
+    return;
   }
-  for (const entry of registry.getAll()) {
+  for (const entry of registry.getAll() as any[]) {
     if (!entry?.frontend_dir) continue;
     const distDir = path.join(entry.frontend_dir, 'dist');
     const nextRoot = path.resolve(distDir, '_next');
@@ -565,12 +645,16 @@ unprefixedNextRouter.get('/*', (req, res) => {
     if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
       const ext = path.extname(abs).toLowerCase();
       const mime = MIME[ext];
-      if (!mime) return res.status(403).send('mime not allowed');
+      if (!mime) {
+        res.status(403).send('mime not allowed');
+        return;
+      }
       res.set('content-type', mime);
-      return fs.createReadStream(abs).pipe(res);
+      fs.createReadStream(abs).pipe(res);
+      return;
     }
   }
-  return res.status(404).send('not found');
+  res.status(404).send('not found');
 });
 
-module.exports = { metaRouter, invokeRouter, staticRouter, unprefixedNextRouter };
+export { metaRouter, invokeRouter, staticRouter, unprefixedNextRouter };

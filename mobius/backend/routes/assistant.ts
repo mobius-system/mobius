@@ -1,39 +1,49 @@
-const express = require('express');
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const multer = require('multer');
-const { v4: uuid } = require('uuid');
-const { auth } = require('../middleware/auth');
-const { Projects } = require('../repositories/projects');
-const { Issues } = require('../repositories/issues');
-const { Sessions } = require('../repositories/sessions');
-const { Messages } = require('../repositories/messages');
-const { bridge } = require('../bridge/instance');
-const agents = require('../agents');
-const modelRegistry = require('../services/model-registry');
-const modelPromptLimits = require('../services/model-prompt-limits');
-const {
+import express from 'express';
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+const multer = require('multer') as any;
+import { v4 as uuid } from 'uuid';
+import { auth } from '../middleware/auth';
+import { Projects } from '../repositories/projects';
+import { Issues } from '../repositories/issues';
+import { Sessions } from '../repositories/sessions';
+import { Messages } from '../repositories/messages';
+// @ts-ignore — bridge instance 仍是 .js
+import { bridge } from '../bridge/instance';
+// @ts-ignore — agents 仍是 .js
+import agents from '../agents';
+// @ts-ignore — service 仍是 .js
+import modelRegistry from '../services/model-registry';
+// @ts-ignore — service 仍是 .js
+import modelPromptLimits from '../services/model-prompt-limits';
+// @ts-ignore — service 仍是 .js
+import {
   buildIssueContextPreview,
   buildSessionContext,
   buildSessionSelectionSnapshot,
   wrapUserMessage,
-} = require('../services/session-context');
-const { syncSkillsToWorkspace } = require('../services/session-skills-sync');
-const {
+} from '../services/session-context';
+// @ts-ignore — service 仍是 .js
+import { syncSkillsToWorkspace } from '../services/session-skills-sync';
+// @ts-ignore — service 仍是 .js
+import {
   ASSISTANT_SESSION_KEY_PREFIX,
   assistantSessionKeyLike,
   isAssistantSession,
-} = require('../services/assistant-session');
-const { safeRemoveRunningFlag, safeWriteFailedFlag, readJobFlagState } = require('../utils/session-flags');
-const { APP_DIR, CORE_DATA_PATH } = require('../config');
-const { AsrError, transcribeBrowserAudio } = require('../services/doubao-asr');
-const { DEFAULT_VOICE, TtsError, getTtsVoices, synthesizeSpeech } = require('../services/doubao-tts');
-const {
+} from '../services/assistant-session';
+import { safeRemoveRunningFlag, safeWriteFailedFlag, readJobFlagState } from '../utils/session-flags';
+import { APP_DIR, CORE_DATA_PATH } from '../config';
+// @ts-ignore — service 仍是 .js
+import { AsrError, transcribeBrowserAudio } from '../services/doubao-asr';
+// @ts-ignore — service 仍是 .js
+import { DEFAULT_VOICE, TtsError, getTtsVoices, synthesizeSpeech } from '../services/doubao-tts';
+// @ts-ignore — service 仍是 .js
+import {
   normalizeSessionAttachments,
   sessionContentWithAttachments,
-} = require('../services/session-attachments');
-const { db } = require('../../db');
+} from '../services/session-attachments';
+import { db } from '../../db';
 
 const router = express.Router();
 const assistantVoiceUpload = multer({
@@ -103,25 +113,25 @@ const ASSISTANT_PERSONALITY_MAP = new Map(
   ASSISTANT_PERSONALITY_OPTIONS.map((option) => [option.key, option]),
 );
 
-function assistantSessionKey(userId, sessionId) {
+function assistantSessionKey(userId: string, sessionId: string): string {
   return `${ASSISTANT_SESSION_KEY_PREFIX}:${userId}:${sessionId}`;
 }
 
-function isMainAssistantSessionName(name) {
+function isMainAssistantSessionName(name: unknown): boolean {
   return String(name || '').trim() === MAIN_ASSISTANT_SESSION_NAME;
 }
 
-function isAssistantCloneSessionName(name) {
+function isAssistantCloneSessionName(name: unknown): boolean {
   return String(name || '').trim().startsWith(ASSISTANT_CLONE_SESSION_PREFIX);
 }
 
-function assistantSessionRole(session) {
+function assistantSessionRole(session: any): string {
   if (isMainAssistantSessionName(session?.name)) return 'main';
   if (isAssistantCloneSessionName(session?.name)) return 'clone';
   return isAssistantSession(session) ? 'main' : 'clone';
 }
 
-function isAssistantCloneSession(session, user) {
+function isAssistantCloneSession(session: any, user: any): boolean {
   if (!session || !user?.id || session.user_id !== user.id) return false;
   if (!isAssistantCloneSessionName(session.name)) return false;
   const project = findAssistantProject(user);
@@ -130,33 +140,33 @@ function isAssistantCloneSession(session, user) {
   return !!issue && session.issue_id === issue.id;
 }
 
-function isAssistantVisibleSession(session, user) {
+function isAssistantVisibleSession(session: any, user: any): boolean {
   return isAssistantSession(session, user) || isAssistantCloneSession(session, user);
 }
 
-function normalizeLimit(value, fallback = DEFAULT_HISTORY_LIMIT, max = 80) {
+function normalizeLimit(value: unknown, fallback: number = DEFAULT_HISTORY_LIMIT, max: number = 80): number {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.min(Math.floor(n), max);
 }
 
-function stableAssistantProjectId(userId) {
+function stableAssistantProjectId(userId: string): string {
   const hash = crypto.createHash('sha1').update(String(userId || '')).digest('hex').slice(0, 10);
   return `xm-${hash}`;
 }
 
-function assistantProjectName(user) {
+function assistantProjectName(user: any): string {
   const base = String(user?.display_name || user?.id || '').trim() || '用户';
   return `${base}的小莫助理`;
 }
 
-function assistantWorkDir() {
+function assistantWorkDir(): string {
   const dir = path.resolve(APP_DIR);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-function findAssistantProject(user) {
+function findAssistantProject(user: any): any {
   const stableId = stableAssistantProjectId(user.id);
   const byId = Projects.findById(stableId, user.id);
   if (byId && byId.created_by === user.id) return byId;
@@ -167,14 +177,14 @@ function findAssistantProject(user) {
       AND description IN (?, ?)
     ORDER BY created_at ASC
     LIMIT 1
-  `).get(user.id, ASSISTANT_PROJECT_DESCRIPTION, LEGACY_ASSISTANT_PROJECT_DESCRIPTION);
+  `).get(user.id, ASSISTANT_PROJECT_DESCRIPTION, LEGACY_ASSISTANT_PROJECT_DESCRIPTION) as { id?: string } | undefined;
   return row?.id ? Projects.findById(row.id, user.id) : null;
 }
 
-function safeIdList(value) {
+function safeIdList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  const out = [];
-  const seen = new Set();
+  const out: string[] = [];
+  const seen = new Set<string>();
   for (const item of value) {
     if (typeof item !== 'string') continue;
     const id = item.trim();
@@ -185,32 +195,32 @@ function safeIdList(value) {
   return out;
 }
 
-function normalizeAssistantPersonality(value) {
+function normalizeAssistantPersonality(value: unknown): string {
   const key = typeof value === 'string' ? value.trim() : '';
   return ASSISTANT_PERSONALITY_MAP.has(key) ? key : DEFAULT_ASSISTANT_PERSONALITY;
 }
 
-function assistantPersonalityOption(value) {
+function assistantPersonalityOption(value: unknown): typeof ASSISTANT_PERSONALITY_OPTIONS[number] {
   return ASSISTANT_PERSONALITY_MAP.get(normalizeAssistantPersonality(value))
-    || ASSISTANT_PERSONALITY_MAP.get(DEFAULT_ASSISTANT_PERSONALITY);
+    || ASSISTANT_PERSONALITY_MAP.get(DEFAULT_ASSISTANT_PERSONALITY)!;
 }
 
-function parseStoredIdList(raw) {
+function parseStoredIdList(raw: unknown): string[] {
   if (!raw) return [];
   try {
-    return safeIdList(JSON.parse(raw));
+    return safeIdList(JSON.parse(raw as string));
   } catch {
     return [];
   }
 }
 
-function sameIdSet(a, b) {
+function sameIdSet(a: unknown, b: unknown): boolean {
   const left = safeIdList(a).slice().sort();
   const right = safeIdList(b).slice().sort();
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function parseStoredJson(raw) {
+function parseStoredJson(raw: unknown): any {
   if (!raw) return null;
   try {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -220,7 +230,7 @@ function parseStoredJson(raw) {
   }
 }
 
-function assistantSessionPersonality(session) {
+function assistantSessionPersonality(session: any): string {
   const snapshot = parseStoredJson(session?.session_selection_snapshot);
   return normalizeAssistantPersonality(
     snapshot?.assistant?.personality
@@ -229,17 +239,17 @@ function assistantSessionPersonality(session) {
   );
 }
 
-function isAssistantRequiredSkillId(id) {
+function isAssistantRequiredSkillId(id: unknown): boolean {
   const normalized = String(id || '').replace(/_/g, '-');
   return normalized === ASSISTANT_REQUIRED_BUILTIN_SKILL_ID
     || normalized.endsWith(':mobius-assistant');
 }
 
-function sanitizeAssistantExcludedSkillIds(value) {
+function sanitizeAssistantExcludedSkillIds(value: unknown): string[] {
   return safeIdList(value).filter((id) => !isAssistantRequiredSkillId(id));
 }
 
-function prefersMinimaxM3(option) {
+function prefersMinimaxM3(option: any): boolean {
   const haystack = [
     option?.key,
     option?.value,
@@ -252,9 +262,9 @@ function prefersMinimaxM3(option) {
   return compact.includes('minimaxm3') || compact.includes('minimax03');
 }
 
-function preferredAssistantModelKey() {
-  let options = [];
-  try { options = modelRegistry.listSessionModelOptions(); } catch {}
+function preferredAssistantModelKey(): string {
+  let options: any[] = [];
+  try { options = modelRegistry.listSessionModelOptions(); } catch { /* ignore */ }
   const minimaxM3 = options.find(prefersMinimaxM3);
   if (minimaxM3?.key) return minimaxM3.key;
   // Fall back to the first available (configured) model, then the default key.
@@ -262,15 +272,15 @@ function preferredAssistantModelKey() {
   return modelRegistry.DEFAULT_MODEL_KEY || 'codex';
 }
 
-function availableModelKeys() {
+function availableModelKeys(): Set<string> {
   try {
-    return new Set(modelRegistry.listSessionModelOptions().map((option) => option.key).filter(Boolean));
+    return new Set(modelRegistry.listSessionModelOptions().map((option: any) => option.key).filter(Boolean));
   } catch {
     return new Set(['codex']);
   }
 }
 
-function assistantDefaultSelectionExclusions(user, issueId) {
+function assistantDefaultSelectionExclusions(user: any, issueId: string | null): { excluded_skill_ids: string[]; excluded_memory_ids: string[] } {
   if (!issueId) return { excluded_skill_ids: [], excluded_memory_ids: [] };
   try {
     const ctx = buildIssueContextPreview(user, issueId, null, [], [], 'zh');
@@ -278,10 +288,10 @@ function assistantDefaultSelectionExclusions(user, issueId) {
     const memories = Array.isArray(ctx.sources?.memories) ? ctx.sources.memories : [];
     return {
       excluded_skill_ids: skills
-        .map((skill) => skill?.id)
-        .filter((id) => id && !isAssistantRequiredSkillId(id)),
+        .map((skill: any) => skill?.id)
+        .filter((id: any) => id && !isAssistantRequiredSkillId(id)),
       excluded_memory_ids: memories
-        .map((memory) => memory?.id)
+        .map((memory: any) => memory?.id)
         .filter(Boolean),
     };
   } catch {
@@ -289,7 +299,21 @@ function assistantDefaultSelectionExclusions(user, issueId) {
   }
 }
 
-function normalizeAssistantPreset(input = {}, defaultExclusions = {}) {
+interface AssistantPresetNormalized {
+  name: string;
+  description: string;
+  personality: string;
+  model: string;
+  role: 'chief_researcher' | 'research_assistant';
+  language: 'zh' | 'en';
+  existing_session_action: string;
+  excluded_skill_ids: string[];
+  excluded_memory_ids: string[];
+  required_skill_ids: string[];
+  saved_at?: string;
+}
+
+function normalizeAssistantPreset(input: any = {}, defaultExclusions: { excluded_skill_ids?: string[]; excluded_memory_ids?: string[] } = {}): AssistantPresetNormalized {
   const src = input && typeof input === 'object' ? input : {};
   const modelKeys = availableModelKeys();
   const preferredModel = preferredAssistantModelKey();
@@ -328,12 +352,12 @@ function normalizeAssistantPreset(input = {}, defaultExclusions = {}) {
   };
 }
 
-function assistantPresetFile(userId) {
+function assistantPresetFile(userId: string): string {
   const hash = crypto.createHash('sha1').update(String(userId || '')).digest('hex');
   return path.join(ASSISTANT_PRESET_DIR, `${hash}.json`);
 }
 
-function readStoredAssistantPreset(user) {
+function readStoredAssistantPreset(user: any): any {
   try {
     const file = assistantPresetFile(user.id);
     if (!fs.existsSync(file)) return null;
@@ -344,14 +368,14 @@ function readStoredAssistantPreset(user) {
   }
 }
 
-function readAssistantPreset(user, issueId = null) {
+function readAssistantPreset(user: any, issueId: string | null = null): AssistantPresetNormalized {
   return normalizeAssistantPreset(
     readStoredAssistantPreset(user) || {},
     assistantDefaultSelectionExclusions(user, issueId),
   );
 }
 
-function writeAssistantPreset(user, preset, defaultExclusions = {}) {
+function writeAssistantPreset(user: any, preset: any, defaultExclusions: { excluded_skill_ids?: string[]; excluded_memory_ids?: string[] } = {}): AssistantPresetNormalized {
   fs.mkdirSync(ASSISTANT_PRESET_DIR, { recursive: true });
   const normalized = normalizeAssistantPreset({
     ...preset,
@@ -366,7 +390,7 @@ function writeAssistantPreset(user, preset, defaultExclusions = {}) {
   return normalized;
 }
 
-function canonicalAssistantPreset(preset) {
+function canonicalAssistantPreset(preset: any) {
   const normalized = normalizeAssistantPreset(preset);
   return {
     name: normalized.name,
@@ -380,24 +404,24 @@ function canonicalAssistantPreset(preset) {
   };
 }
 
-function assistantPresetChanged(before, after) {
+function assistantPresetChanged(before: any, after: any): boolean {
   return JSON.stringify(canonicalAssistantPreset(before)) !== JSON.stringify(canonicalAssistantPreset(after));
 }
 
-function sessionSelectionIncludesRequiredAssistantSkill(session) {
+function sessionSelectionIncludesRequiredAssistantSkill(session: any): boolean {
   try {
     const snapshot = JSON.parse(session?.session_selection_snapshot || '{}');
     const skills = [
       ...(Array.isArray(snapshot.skills) ? snapshot.skills : []),
       ...(Array.isArray(snapshot.all_skills) ? snapshot.all_skills : []),
     ];
-    return skills.some((skill) => isAssistantRequiredSkillId(skill?.id));
+    return skills.some((skill: any) => isAssistantRequiredSkillId(skill?.id));
   } catch {
     return false;
   }
 }
 
-function assistantSessionMatchesPreset(session, preset) {
+function assistantSessionMatchesPreset(session: any, preset: any): boolean {
   if (!session) return true;
   const normalized = normalizeAssistantPreset(preset);
   const resolved = modelRegistry.resolveSessionModel(session.model);
@@ -411,7 +435,7 @@ function assistantSessionMatchesPreset(session, preset) {
     && sameIdSet(parseStoredIdList(session.session_excluded_memories), normalized.excluded_memory_ids);
 }
 
-function ensureAssistantProject(user) {
+function ensureAssistantProject(user: any): any {
   const bindPath = assistantWorkDir();
   const name = assistantProjectName(user);
   const existing = findAssistantProject(user);
@@ -440,7 +464,7 @@ function ensureAssistantProject(user) {
   return Projects.findById(id, user.id);
 }
 
-function ensureAssistantIssue(project, user) {
+function ensureAssistantIssue(project: any, user: any): any {
   const existing = Issues.findByProjectAndTitle(project.id, ASSISTANT_ISSUE_TITLE);
   if (existing) return existing;
   const issueId = uuid().slice(0, 8);
@@ -456,11 +480,11 @@ function ensureAssistantIssue(project, user) {
   return Issues.findById(issueId);
 }
 
-function backendForSession(session) {
+function backendForSession(session: any): any {
   return agents.get(modelRegistry.backendNameForSessionModel(session?.model));
 }
 
-function normalizeAssistantClientContext(raw, user, authorizationHeader = '') {
+function normalizeAssistantClientContext(raw: any, user: any, authorizationHeader: string = ''): any {
   const src = raw && typeof raw === 'object' ? raw : {};
   const auth = src.auth && typeof src.auth === 'object' ? src.auth : {};
   const token = typeof auth.token === 'string' ? auth.token : '';
@@ -483,9 +507,9 @@ function normalizeAssistantClientContext(raw, user, authorizationHeader = '') {
   };
 }
 
-function assistantClientContextText(clientContext) {
+function assistantClientContextText(clientContext: any): string {
   if (!clientContext || typeof clientContext !== 'object') return '';
-  const lines = [];
+  const lines: string[] = [];
   if (clientContext.current_url) lines.push(`- 当前浏览 URL: ${clientContext.current_url}`);
   if (clientContext.origin) lines.push(`- 当前站点 Origin: ${clientContext.origin}`);
   if (clientContext.pathname) lines.push(`- 当前路径: ${clientContext.pathname}`);
@@ -500,7 +524,7 @@ function assistantClientContextText(clientContext) {
   return lines.join('\n');
 }
 
-function assistantPersonalityPromptLines(personality) {
+function assistantPersonalityPromptLines(personality: unknown): string[] {
   const option = assistantPersonalityOption(personality);
   return [
     `当前小莫性格预设：${option.label}`,
@@ -509,7 +533,7 @@ function assistantPersonalityPromptLines(personality) {
   ];
 }
 
-function assistantPrompt(question, sessionId, clientContext = null, personality = DEFAULT_ASSISTANT_PERSONALITY) {
+function assistantPrompt(question: string, sessionId: string, clientContext: any = null, personality: unknown = DEFAULT_ASSISTANT_PERSONALITY): string {
   const text = String(question || '').trim();
   if (text.startsWith('/compact')) return text;
   const clientContextBlock = assistantClientContextText(clientContext);
@@ -536,18 +560,18 @@ function assistantPrompt(question, sessionId, clientContext = null, personality 
   ].join('\n');
 }
 
-function normalizeAssistantAttachments(raw, user, project) {
+function normalizeAssistantAttachments(raw: any, user: any, project: any): any[] {
   return normalizeSessionAttachments(raw, user, [project?.bind_path]);
 }
 
-function assistantQuestionWithAttachments(question, attachments) {
+function assistantQuestionWithAttachments(question: string, attachments: any[]): string {
   return sessionContentWithAttachments(question, attachments);
 }
 
-function contentBlocksText(content) {
+function contentBlocksText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
-  return content.map((block) => {
+  return content.map((block: any) => {
     if (!block || typeof block !== 'object') return String(block ?? '');
     if (block.type && block.type !== 'text' && block.type !== 'output_text') return '';
     if (typeof block.text === 'string') return block.text;
@@ -556,7 +580,7 @@ function contentBlocksText(content) {
   }).filter(Boolean).join('\n');
 }
 
-function assistantTextsFromEntry(entry) {
+function assistantTextsFromEntry(entry: any): string[] {
   if (!entry || typeof entry !== 'object') return [];
 
   if (entry.type === 'assistant') {
@@ -586,8 +610,8 @@ function assistantTextsFromEntry(entry) {
   return [];
 }
 
-function assistantResponsesFromEntries(entries) {
-  const responses = [];
+function assistantResponsesFromEntries(entries: any[]): any[] {
+  const responses: any[] = [];
   let previous = '';
   for (let i = 0; i < entries.length; i += 1) {
     const entry = entries[i];
@@ -607,14 +631,14 @@ function assistantResponsesFromEntries(entries) {
   return responses;
 }
 
-function sessionStatus(session) {
+function sessionStatus(session: any): { alive: boolean; working: boolean; failed: boolean; agent_status: string } {
   const backend = backendForSession(session);
   let alive = false;
   let working = false;
   let failed = false;
-  try { alive = !!backend.isAlive(session.session_id); } catch {}
-  try { working = alive && !!backend.isWorking(session.session_id); } catch {}
-  try { failed = !!backend.isFailed(session.session_id); } catch {}
+  try { alive = !!backend.isAlive(session.session_id); } catch { /* ignore */ }
+  try { working = alive && !!backend.isWorking(session.session_id); } catch { /* ignore */ }
+  try { failed = !!backend.isFailed(session.session_id); } catch { /* ignore */ }
   return {
     alive,
     working,
@@ -623,27 +647,27 @@ function sessionStatus(session) {
   };
 }
 
-function readQuestion(sessionId) {
+function readQuestion(sessionId: string): { content: string; created_at: string | null } {
   const row = db.prepare(`
     SELECT content, created_at
     FROM messages_v2
     WHERE task_id = ? AND role = 'user'
     ORDER BY id ASC
     LIMIT 1
-  `).get(sessionId);
+  `).get(sessionId) as { content?: string; created_at?: string } | undefined;
   return {
     content: row?.content || '',
     created_at: row?.created_at || null,
   };
 }
 
-function readUserMessages(sessionId) {
-  return db.prepare(`
+function readUserMessages(sessionId: string): any[] {
+  return (db.prepare(`
     SELECT id, content, created_at, turn_number
     FROM messages_v2
     WHERE task_id = ? AND role = 'user'
     ORDER BY id ASC
-  `).all(sessionId).map((row) => ({
+  `).all(sessionId) as Array<{ id: string; content: string; created_at: string; turn_number: number }>).map((row) => ({
     id: `user:${row.id}`,
     role: 'user',
     content: row.content || '',
@@ -652,7 +676,7 @@ function readUserMessages(sessionId) {
   }));
 }
 
-function conversationMessages(sessionId, responses) {
+function conversationMessages(sessionId: string, responses: any[]): any[] {
   const users = readUserMessages(sessionId);
   const assistant = responses.map((response, index) => ({
     id: `assistant:${response.id}`,
@@ -670,10 +694,10 @@ function conversationMessages(sessionId, responses) {
   });
 }
 
-function readAssistantSnapshot(user, sessionId) {
+function readAssistantSnapshot(user: any, sessionId: string): any {
   const session = Sessions.findByIdForUser(sessionId, user.id);
   if (!isAssistantVisibleSession(session, user)) {
-    const err = new Error('未找到当前用户的小莫 Session');
+    const err = new Error('未找到当前用户的小莫 Session') as Error & { status: number };
     err.status = 404;
     throw err;
   }
@@ -687,8 +711,8 @@ function readAssistantSnapshot(user, sessionId) {
   const status = sessionStatus(session);
   // 与 /api/sessions/:id/status 一致:优先看项目 bind_path 仓库根下的 flag 目录。
   // 没 bind_path 则给 null,前端回退到 status.agent_status 显示。
-  let job_accomplished = null;
-  const proj = session.project_id ? Projects.findById(session.project_id) : null;
+  let job_accomplished: boolean | null = null;
+  const proj = (session as any)?.project_id ? Projects.findById((session as any).project_id) : null;
   const root = (proj && proj.bind_path) ? path.resolve(proj.bind_path) : null;
   if (root) {
     try { job_accomplished = readJobFlagState(root, sessionId).accomplished; }
@@ -698,15 +722,15 @@ function readAssistantSnapshot(user, sessionId) {
   }
   return {
     session: {
-      session_id: session.session_id,
-      name: session.name,
-      project_id: session.project_id || null,
-      issue_id: session.issue_id || null,
-      assistant_role: assistantSessionRole(session),
-      model: session.model,
-      model_label: modelRegistry.labelForSessionModel(session.model),
-      created_at: session.created_at,
-      last_active: session.last_active,
+      session_id: (session as any).session_id,
+      name: (session as any).name,
+      project_id: (session as any).project_id || null,
+      issue_id: (session as any).issue_id || null,
+      assistant_role: assistantSessionRole(session as any),
+      model: (session as any).model,
+      model_label: modelRegistry.labelForSessionModel((session as any).model),
+      created_at: (session as any).created_at,
+      last_active: (session as any).last_active,
     },
     question,
     messages,
@@ -722,7 +746,7 @@ function readAssistantSnapshot(user, sessionId) {
   };
 }
 
-function listAssistantSessions(user, limit) {
+function listAssistantSessions(user: any, limit: number): any[] {
   const assistantProject = findAssistantProject(user);
   const assistantProjectId = assistantProject?.id || stableAssistantProjectId(user.id);
   return db.prepare(`
@@ -759,10 +783,10 @@ function listAssistantSessions(user, limit) {
     MAIN_ASSISTANT_SESSION_NAME,
     `${ASSISTANT_CLONE_SESSION_PREFIX}%`,
     limit,
-  );
+  ) as any[];
 }
 
-function findReusableAssistantSession(user) {
+function findReusableAssistantSession(user: any): any {
   return db.prepare(`
     SELECT *
     FROM sessions_v2
@@ -774,10 +798,10 @@ function findReusableAssistantSession(user) {
       last_active DESC,
       created_at DESC
     LIMIT 1
-  `).get(user.id, assistantSessionKeyLike(user.id), MAIN_ASSISTANT_SESSION_NAME);
+  `).get(user.id, assistantSessionKeyLike(user.id), MAIN_ASSISTANT_SESSION_NAME) as any;
 }
 
-function shapeAssistantSessionSummary(session) {
+function shapeAssistantSessionSummary(session: any): any {
   if (!session) return null;
   return {
     session_id: session.session_id,
@@ -792,7 +816,7 @@ function shapeAssistantSessionSummary(session) {
   };
 }
 
-function currentAssistantPresetPayload(user) {
+function currentAssistantPresetPayload(user: any): any {
   const project = ensureAssistantProject(user);
   const issue = ensureAssistantIssue(project, user);
   const preset = readAssistantPreset(user, issue.id);
@@ -807,7 +831,7 @@ function currentAssistantPresetPayload(user) {
   };
 }
 
-async function deleteReusableAssistantSession(user) {
+async function deleteReusableAssistantSession(user: any): Promise<any> {
   const session = findReusableAssistantSession(user);
   if (!session) return null;
 
@@ -818,16 +842,16 @@ async function deleteReusableAssistantSession(user) {
     const backend = backendForSession(session);
     wasAlive = !!backend.isAlive(session.session_id);
     wasWorking = wasAlive && !!backend.isWorking(session.session_id);
-  } catch {}
+  } catch { /* ignore */ }
 
   try {
     const result = await bridge.closeSessionAsync(session.session_key || session.session_id, session.model);
     terminated = !!result?.killed;
   } catch (e) {
-    console.warn(`[assistant/preset] 删除当前小莫 Session 前关闭后台失败 (${session.session_id}): ${e.message}`);
+    console.warn(`[assistant/preset] 删除当前小莫 Session 前关闭后台失败 (${session.session_id}): ${(e as Error).message}`);
   }
 
-  try { safeRemoveRunningFlag(assistantWorkDir(), session.session_id, 'assistant/preset'); } catch {}
+  try { safeRemoveRunningFlag(assistantWorkDir(), session.session_id, 'assistant/preset'); } catch { /* ignore */ }
   Sessions.permanentDelete(session.session_id);
   return {
     ...shapeAssistantSessionSummary(session),
@@ -837,9 +861,10 @@ async function deleteReusableAssistantSession(user) {
   };
 }
 
-function handleAssistantPresetContextPreview(req, res) {
-  const project = ensureAssistantProject(req.user);
-  const issue = ensureAssistantIssue(project, req.user);
+function handleAssistantPresetContextPreview(req: express.Request, res: express.Response): void {
+  const user = (req as any).user;
+  const project = ensureAssistantProject(user);
+  const issue = ensureAssistantIssue(project, user);
   const src = (req.method === 'POST' && req.body && typeof req.body === 'object')
     ? req.body
     : req.query;
@@ -851,7 +876,7 @@ function handleAssistantPresetContextPreview(req, res) {
   const excludedMemoryIds = safeIdList(src.excluded_memory_ids);
   const language = src.language === 'en' ? 'en' : 'zh';
   const ctx = buildIssueContextPreview(
-    req.user,
+    user,
     issue.id,
     draftSession,
     excludedSkillIds,
@@ -861,7 +886,8 @@ function handleAssistantPresetContextPreview(req, res) {
   res.json({ body: ctx.body, sources: ctx.sources });
 }
 
-async function startAssistantSession(req, session, questionText, requestId, workDir, clientContext = null, attachments = [], userContent = '') {
+async function startAssistantSession(req: express.Request, session: any, questionText: string, requestId: string, workDir: string, clientContext: any = null, attachments: any[] = [], userContent: string = ''): Promise<void> {
+  const user = (req as any).user;
   const launch = modelRegistry.launchOptionsForSession(session);
   const backend = agents.get(launch.backend);
   const isCompactCommand = String(questionText || '').trim().startsWith('/compact');
@@ -882,21 +908,21 @@ async function startAssistantSession(req, session, questionText, requestId, work
     attachments,
     requestId,
     turnNumber,
-    userId: req.user.id,
+    userId: user.id,
     timestamp: new Date().toISOString(),
   };
 
   if (!isCompactCommand && Messages.countUserMessagesFor(session.session_id) <= 1) {
-    const ctx = buildSessionContext(req.user, session.session_id);
-    if (workDir && ctx.sources?.skills?.length > 0) {
-      try { syncSkillsToWorkspace(workDir, ctx.sources.skills); }
-      catch (e) { console.warn(`[assistant/messages] sync skills failed: ${e.message}`); }
+    const ctx = buildSessionContext(user, session.session_id);
+    if (workDir && (ctx as any).sources?.skills?.length > 0) {
+      try { syncSkillsToWorkspace(workDir, (ctx as any).sources.skills); }
+      catch (e) { console.warn(`[assistant/messages] sync skills failed: ${(e as Error).message}`); }
     }
     if (ctx.body) {
       try {
-        Sessions.writeContextSnapshot(session.session_id, ctx.body, ctx.sources ? JSON.stringify(ctx.sources) : null);
+        Sessions.writeContextSnapshot(session.session_id, ctx.body as any, (ctx.sources ? JSON.stringify(ctx.sources) : null) as any);
       } catch (e) {
-        console.warn(`[assistant/messages] writeContextSnapshot failed (${session.session_id}): ${e.message}`);
+        console.warn(`[assistant/messages] writeContextSnapshot failed (${session.session_id}): ${(e as Error).message}`);
       }
       finalPrompt = wrapUserMessage(ctx.body, finalPrompt, ctx.language);
     }
@@ -922,129 +948,137 @@ async function startAssistantSession(req, session, questionText, requestId, work
       mobiusJsonl,
     });
 
-    const runtimeInfo = backend.listSessions().find((item) => item.sessionId === session.session_id);
+    const runtimeInfo = backend.listSessions().find((item: any) => item.sessionId === session.session_id);
     const newAgentSid = runtimeInfo?.agentSessionId || null;
     if (newAgentSid && newAgentSid !== session.claude_session_id) {
       db.prepare('UPDATE sessions_v2 SET claude_session_id=? WHERE session_id=?').run(newAgentSid, session.session_id);
     }
   } catch (e) {
     safeRemoveRunningFlag(workDir, session.session_id, 'assistant/messages');
-    safeWriteFailedFlag(workDir, session.session_id, { backend: backend.name, reason: e.message || String(e) }, 'assistant/messages');
-    try { Sessions.setIdle(session.session_id, req.user.id); } catch {}
-    try { Messages.insertSystem(session.session_id, e.message || '小莫 Session 启动失败', turnNumber, '启动失败'); } catch {}
+    safeWriteFailedFlag(workDir, session.session_id, { backend: backend.name, reason: (e as Error).message || String(e) }, 'assistant/messages');
+    try { Sessions.setIdle(session.session_id, user.id); } catch { /* ignore */ }
+    try { Messages.insertSystem(session.session_id, (e as Error).message || '小莫 Session 启动失败', turnNumber, '启动失败'); } catch { /* ignore */ }
     throw e;
   }
 }
 
-router.get('/sessions', auth, (req, res) => {
+router.get('/sessions', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
   try {
     const limit = normalizeLimit(req.query.limit);
-    const sessions = listAssistantSessions(req.user, limit);
+    const sessions = listAssistantSessions(user, limit);
     res.json({
-      sessions: sessions.map((session) => readAssistantSnapshot(req.user, session.session_id)),
+      sessions: sessions.map((session) => readAssistantSnapshot(user, session.session_id)),
     });
   } catch (e) {
-    console.error('[assistant/sessions:list] error:', e.message);
-    res.status(500).json({ error: e.message || '读取小莫 Session 失败' });
+    console.error('[assistant/sessions:list] error:', (e as Error).message);
+    res.status(500).json({ error: (e as Error).message || '读取小莫 Session 失败' });
   }
 });
 
-router.get('/workspace', auth, (req, res) => {
+router.get('/workspace', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
   try {
-    const project = ensureAssistantProject(req.user);
-    const issue = ensureAssistantIssue(project, req.user);
+    const project = ensureAssistantProject(user);
+    const issue = ensureAssistantIssue(project, user);
     res.json({ project, issue });
   } catch (e) {
-    console.error('[assistant/workspace] error:', e.message);
-    res.status(500).json({ error: e.message || '初始化小莫项目失败' });
+    console.error('[assistant/workspace] error:', (e as Error).message);
+    res.status(500).json({ error: (e as Error).message || '初始化小莫项目失败' });
   }
 });
 
-router.get('/preset', auth, (req, res) => {
+router.get('/preset', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
   try {
-    res.json(currentAssistantPresetPayload(req.user));
+    res.json(currentAssistantPresetPayload(user));
   } catch (e) {
-    console.error('[assistant/preset:get] error:', e.message);
-    res.status(500).json({ error: e.message || '读取小莫预设失败' });
+    console.error('[assistant/preset:get] error:', (e as Error).message);
+    res.status(500).json({ error: (e as Error).message || '读取小莫预设失败' });
   }
 });
 
-router.post('/preset', auth, async (req, res) => {
+router.post('/preset', auth, async (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
   try {
-    const project = ensureAssistantProject(req.user);
-    const issue = ensureAssistantIssue(project, req.user);
-    const defaultExclusions = assistantDefaultSelectionExclusions(req.user, issue.id);
-    const before = readAssistantPreset(req.user, issue.id);
-    const next = normalizeAssistantPreset(req.body?.preset || req.body || {}, defaultExclusions);
+    const project = ensureAssistantProject(user);
+    const issue = ensureAssistantIssue(project, user);
+    const defaultExclusions = assistantDefaultSelectionExclusions(user, issue.id);
+    const before = readAssistantPreset(user, issue.id);
+    const next = normalizeAssistantPreset((req.body as any)?.preset || req.body || {}, defaultExclusions);
     const changed = assistantPresetChanged(before, next);
-    const currentSession = findReusableAssistantSession(req.user);
+    const currentSession = findReusableAssistantSession(user);
     const sessionOutdated = currentSession ? !assistantSessionMatchesPreset(currentSession, next) : false;
     const requiresSessionDelete = !!currentSession && (changed || sessionOutdated);
-    if (requiresSessionDelete && req.body?.delete_current_session !== true) {
-      return res.status(409).json({
+    if (requiresSessionDelete && (req.body as any)?.delete_current_session !== true) {
+      res.status(409).json({
         error: '保存小莫预设需要删除当前用户的小莫助理 Session。确认后系统会关闭后台执行并永久删除该 Session。',
         code: 'ASSISTANT_PRESET_REQUIRES_SESSION_DELETE',
         current_session: shapeAssistantSessionSummary(currentSession),
         session_outdated: sessionOutdated,
       });
+      return;
     }
 
     const deletedSession = requiresSessionDelete
-      ? await deleteReusableAssistantSession(req.user)
+      ? await deleteReusableAssistantSession(user)
       : null;
-    const preset = writeAssistantPreset(req.user, next, defaultExclusions);
+    const preset = writeAssistantPreset(user, next, defaultExclusions);
     res.json({
       ok: true,
       changed,
       session_outdated: sessionOutdated,
       deleted_session: deletedSession,
-      ...currentAssistantPresetPayload(req.user),
+      ...currentAssistantPresetPayload(user),
       preset,
       model_label: modelRegistry.labelForSessionModel(preset.model),
     });
   } catch (e) {
-    console.error('[assistant/preset:save] error:', e.message);
-    res.status(500).json({ error: e.message || '保存小莫预设失败' });
+    console.error('[assistant/preset:save] error:', (e as Error).message);
+    res.status(500).json({ error: (e as Error).message || '保存小莫预设失败' });
   }
 });
 
-router.get('/preset/context-preview', auth, handleAssistantPresetContextPreview);
-router.post('/preset/context-preview', auth, handleAssistantPresetContextPreview);
+router.get('/preset/context-preview', auth, handleAssistantPresetContextPreview as express.RequestHandler);
+router.post('/preset/context-preview', auth, handleAssistantPresetContextPreview as express.RequestHandler);
 
-router.get('/preset/session-selection-defaults', auth, (req, res) => {
+router.get('/preset/session-selection-defaults', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
   try {
-    const project = ensureAssistantProject(req.user);
-    const issue = ensureAssistantIssue(project, req.user);
+    const project = ensureAssistantProject(user);
+    const issue = ensureAssistantIssue(project, user);
     res.json({
       inherited: false,
       source_session: null,
-      ...assistantDefaultSelectionExclusions(req.user, issue.id),
+      ...assistantDefaultSelectionExclusions(user, issue.id),
     });
   } catch (e) {
-    console.error('[assistant/preset:selection-defaults] error:', e.message);
-    res.status(500).json({ error: e.message || '读取小莫预设默认资料失败' });
+    console.error('[assistant/preset:selection-defaults] error:', (e as Error).message);
+    res.status(500).json({ error: (e as Error).message || '读取小莫预设默认资料失败' });
   }
 });
 
-router.get('/sessions/:id', auth, (req, res) => {
+router.get('/sessions/:id', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
   try {
-    res.json(readAssistantSnapshot(req.user, req.params.id));
+    res.json(readAssistantSnapshot(user, String(req.params.id)));
   } catch (e) {
-    res.status(e.status && e.status >= 400 && e.status < 500 ? e.status : 500).json({
-      error: e.message || '读取小莫 Session 失败',
+    const status = (e as any).status;
+    res.status(status && status >= 400 && status < 500 ? status : 500).json({
+      error: (e as Error).message || '读取小莫 Session 失败',
     });
   }
 });
 
-function publicAsrError(error) {
+function publicAsrError(error: unknown): { status: number; body: any } {
   if (error instanceof AsrError) {
     return {
-      status: error.status || 500,
+      status: (error as any).status || 500,
       body: {
         ok: false,
-        code: error.code,
-        error: error.message,
-        ...(error.logId ? { provider_log_id: error.logId } : {}),
+        code: (error as any).code,
+        error: (error as any).message,
+        ...((error as any).logId ? { provider_log_id: (error as any).logId } : {}),
       },
     };
   }
@@ -1058,15 +1092,15 @@ function publicAsrError(error) {
   };
 }
 
-function publicTtsError(error) {
+function publicTtsError(error: unknown): { status: number; body: any } {
   if (error instanceof TtsError) {
     return {
-      status: error.status || 500,
+      status: (error as any).status || 500,
       body: {
         ok: false,
-        code: error.code,
-        error: error.message,
-        ...(error.logId ? { provider_log_id: error.logId } : {}),
+        code: (error as any).code,
+        error: (error as any).message,
+        ...((error as any).logId ? { provider_log_id: (error as any).logId } : {}),
       },
     };
   }
@@ -1080,45 +1114,49 @@ function publicTtsError(error) {
   };
 }
 
-router.post('/transcribe', auth, (req, res) => {
-  assistantVoiceUpload(req, res, async (uploadError) => {
+router.post('/transcribe', auth, (req: express.Request, res: express.Response) => {
+  assistantVoiceUpload(req, res, (uploadError: any) => {
     if (uploadError) {
-      return res.status(400).json({
+      res.status(400).json({
         ok: false,
         code: 'ASR_UPLOAD_INVALID',
         error: uploadError.code === 'LIMIT_FILE_SIZE'
           ? '录音文件过大，请缩短录音后重试。'
           : '录音上传失败，请重新录制。',
       });
+      return;
     }
-    if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
-      return res.status(400).json({
+    if (!(req as any).file || !(req as any).file.buffer || (req as any).file.buffer.length === 0) {
+      res.status(400).json({
         ok: false,
         code: 'ASR_AUDIO_EMPTY',
         error: '录音内容为空，请重新录制一段清晰语音。',
       });
+      return;
     }
 
-    try {
-      const result = await transcribeBrowserAudio({ file: req.file });
-      return res.json({
-        ok: true,
-        text: result.text,
-        alternatives: result.alternatives || [],
-        request_id: result.request_id,
-        ...(result.provider_log_id ? { provider_log_id: result.provider_log_id } : {}),
-      });
-    } catch (error) {
-      const { status, body } = publicAsrError(error);
-      const code = body.code || 'ASR_FAILED';
-      const providerLog = body.provider_log_id ? ` provider_log_id=${body.provider_log_id}` : '';
-      console.warn(`[assistant/transcribe] ${code}${providerLog}`);
-      return res.status(status).json(body);
-    }
+    (async () => {
+      try {
+        const result = await transcribeBrowserAudio({ file: (req as any).file } as any);
+        res.json({
+          ok: true,
+          text: result.text,
+          alternatives: result.alternatives || [],
+          request_id: result.request_id,
+          ...((result as any).provider_log_id ? { provider_log_id: (result as any).provider_log_id } : {}),
+        });
+      } catch (error) {
+        const { status, body } = publicAsrError(error);
+        const code = body.code || 'ASR_FAILED';
+        const providerLog = body.provider_log_id ? ` provider_log_id=${body.provider_log_id}` : '';
+        console.warn(`[assistant/transcribe] ${code}${providerLog}`);
+        res.status(status).json(body);
+      }
+    })();
   });
 });
 
-router.get('/tts/voices', auth, (_req, res) => {
+router.get('/tts/voices', auth, (_req: express.Request, res: express.Response) => {
   res.json({
     ok: true,
     default_voice: DEFAULT_VOICE,
@@ -1126,73 +1164,79 @@ router.get('/tts/voices', auth, (_req, res) => {
   });
 });
 
-router.post('/speak', auth, async (req, res) => {
-  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
-  const voice = typeof req.body?.voice === 'string' ? req.body.voice.trim() : undefined;
+router.post('/speak', auth, async (req: express.Request, res: express.Response) => {
+  const text = typeof (req.body as any)?.text === 'string' ? (req.body as any).text.trim() : '';
+  const voice = typeof (req.body as any)?.voice === 'string' ? (req.body as any).voice.trim() : undefined;
   if (!text) {
-    return res.status(400).json({
+    res.status(400).json({
       ok: false,
       code: 'TTS_TEXT_EMPTY',
       error: '播报文本为空。',
     });
+    return;
   }
 
   try {
-    const result = await synthesizeSpeech({ text, voice });
+    const result = await synthesizeSpeech({ text, voice } as any);
     res.setHeader('Content-Type', result.mimeType);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Mobius-TTS-Request-Id', result.request_id);
     res.setHeader('X-Mobius-TTS-Cache', result.cache_hit ? 'hit' : 'miss');
     if (result.provider_log_id) res.setHeader('X-Mobius-TTS-Provider-Log-Id', result.provider_log_id);
-    return res.send(result.audio);
+    res.send(result.audio);
   } catch (error) {
     const { status, body } = publicTtsError(error);
     const code = body.code || 'TTS_FAILED';
     const providerLog = body.provider_log_id ? ` provider_log_id=${body.provider_log_id}` : '';
     console.warn(`[assistant/speak] ${code}${providerLog}`);
-    return res.status(status).json(body);
+    res.status(status).json(body);
   }
 });
 
-router.post('/messages', auth, async (req, res) => {
-  const content = typeof req.body?.content === 'string' ? req.body.content.trim() : '';
-  const inputText = typeof req.body?.input_text === 'string' ? req.body.input_text.trim() : '';
-  const clientContext = normalizeAssistantClientContext(req.body?.client_context, req.user, req.get('authorization') || '');
+router.post('/messages', auth, async (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
+  const body = (req.body || {}) as any;
+  const content = typeof body.content === 'string' ? body.content.trim() : '';
+  const inputText = typeof body.input_text === 'string' ? body.input_text.trim() : '';
+  const clientContext = normalizeAssistantClientContext(body.client_context, user, req.get('authorization') || '');
 
-  const requestId = typeof req.body?.request_id === 'string' && req.body.request_id
-    ? req.body.request_id
+  const requestId = typeof body.request_id === 'string' && body.request_id
+    ? body.request_id
     : `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   try {
-    const project = ensureAssistantProject(req.user);
-    const issue = ensureAssistantIssue(project, req.user);
-    const attachments = normalizeAssistantAttachments(req.body?.attachments, req.user, project);
+    const project = ensureAssistantProject(user);
+    const issue = ensureAssistantIssue(project, user);
+    const attachments = normalizeAssistantAttachments(body.attachments, user, project);
     const question = inputText || content;
     if (!question && attachments.length === 0) {
-      return res.status(400).json({ error: 'content 不能为空' });
+      res.status(400).json({ error: 'content 不能为空' });
+      return;
     }
-    const preset = readAssistantPreset(req.user, issue.id);
-    let session = findReusableAssistantSession(req.user);
+    const preset = readAssistantPreset(user, issue.id);
+    let session = findReusableAssistantSession(user);
     let created = false;
     if (!session) {
-      const resolvedModel = modelRegistry.resolveSessionModelForCreate(req.body?.model || preset.model);
+      const resolvedModel = modelRegistry.resolveSessionModelForCreate(body.model || preset.model);
       if (!resolvedModel) {
-        return res.status(503).json({ error: '没有可用的模型，请先在管理后台配置模型（或检查 ~/.claude/mobiusdefault.settings.json 是否存在）' });
+        res.status(503).json({ error: '没有可用的模型，请先在管理后台配置模型（或检查 ~/.claude/mobiusdefault.settings.json 是否存在）' });
+        return;
       }
-      const limitCheck = modelPromptLimits.checkCreateAllowed(req.user.id, resolvedModel.key);
+      const limitCheck = modelPromptLimits.checkCreateAllowed(user.id, resolvedModel.key);
       if (!limitCheck.allowed) {
-        return res.status(limitCheck.status).json({
+        res.status(limitCheck.status as any).json({
           error: limitCheck.error,
           code: limitCheck.code,
           usage: limitCheck.usage,
         });
+        return;
       }
       const sessionId = uuid().slice(0, 8);
       const excludedSkillIds = safeIdList(preset.excluded_skill_ids);
       const excludedMemoryIds = safeIdList(preset.excluded_memory_ids);
-      const selectionSnapshot = buildSessionSelectionSnapshot(req.user, issue.id, excludedSkillIds, excludedMemoryIds);
-      selectionSnapshot.assistant = {
-        ...(selectionSnapshot.assistant && typeof selectionSnapshot.assistant === 'object' ? selectionSnapshot.assistant : {}),
+      const selectionSnapshot = buildSessionSelectionSnapshot(user, issue.id, excludedSkillIds, excludedMemoryIds);
+      (selectionSnapshot as any).assistant = {
+        ...((selectionSnapshot as any).assistant && typeof (selectionSnapshot as any).assistant === 'object' ? (selectionSnapshot as any).assistant : {}),
         personality: normalizeAssistantPersonality(preset.personality),
       };
       const sessionName = MAIN_ASSISTANT_SESSION_NAME;
@@ -1200,16 +1244,16 @@ router.post('/messages', auth, async (req, res) => {
         session_id: sessionId,
         issue_id: issue.id,
         project_id: project.id,
-        user_id: req.user.id,
+        user_id: user.id,
         name: sessionName,
         description: preset.description || DEFAULT_ASSISTANT_PRESET_DESCRIPTION,
-        session_key: assistantSessionKey(req.user.id, sessionId),
+        session_key: assistantSessionKey(user.id, sessionId),
         excluded_skill_ids: excludedSkillIds,
         excluded_memory_ids: excludedMemoryIds,
         selection_snapshot: selectionSnapshot,
         model: resolvedModel.sessionModelValue,
         language: preset.language || 'zh',
-      });
+      } as any);
       Issues.touchActiveAndIncrement(issue.id);
       session = Sessions.findById(sessionId);
       created = true;
@@ -1218,7 +1262,7 @@ router.post('/messages', auth, async (req, res) => {
         UPDATE sessions_v2
         SET project_id = ?, issue_id = ?
         WHERE session_id = ? AND user_id = ?
-      `).run(project.id, issue.id, session.session_id, req.user.id);
+      `).run(project.id, issue.id, session.session_id, user.id);
       session = Sessions.findById(session.session_id);
     }
 
@@ -1229,12 +1273,12 @@ router.post('/messages', auth, async (req, res) => {
       request_id: requestId,
       project,
       issue,
-      ...readAssistantSnapshot(req.user, session.session_id),
+      ...readAssistantSnapshot(user, session.session_id),
     });
   } catch (e) {
-    console.error('[assistant/messages:create] error:', e.message);
-    res.status(500).json({ error: e.message || '创建小莫 Session 失败' });
+    console.error('[assistant/messages:create] error:', (e as Error).message);
+    res.status(500).json({ error: (e as Error).message || '创建小莫 Session 失败' });
   }
 });
 
-module.exports = router;
+export = router;

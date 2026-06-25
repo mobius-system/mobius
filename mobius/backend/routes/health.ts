@@ -1,12 +1,13 @@
-const express = require('express');
-const fs = require('fs');
-const os = require('os');
-const { execFileSync } = require('child_process');
-const { bridge } = require('../bridge/instance');
+import express from 'express';
+import fs from 'fs';
+import os from 'os';
+import { execFileSync } from 'child_process';
+// @ts-ignore — bridge instance 仍是 .js
+import { bridge } from '../bridge/instance';
 
 const router = express.Router();
 
-router.get('/', (req, res) => {
+router.get('/', (_req: express.Request, res: express.Response) => {
   res.json({ status: 'ok', agent_backend: bridge.isConnected(), timestamp: new Date().toISOString() });
 });
 
@@ -15,24 +16,31 @@ router.get('/', (req, res) => {
 // 这里用模块级 60s 缓存兜底: 无论多少前端 / 标签页并发轮询,
 // /proc/meminfo 实际最多每 60s 被读取一次。
 const MEM_CACHE_TTL_MS = 60 * 1000;
-let memCache = { ts: 0, payload: null };
+let memCache: { ts: number; payload: any } = { ts: 0, payload: null };
 const DISK_CACHE_TTL_MS = 60 * 1000;
 const DISK_SAMPLE_PATH = process.env.MOBIUS_DISK_SAMPLE_PATH || '/';
-let diskCache = { ts: 0, payload: null };
+let diskCache: { ts: number; payload: any } = { ts: 0, payload: null };
 
-function round1(value) {
+function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-function bytesToGb(bytes) {
+function bytesToGb(bytes: number): number {
   return round1(bytes / 1073741824);
 }
 
-function readMemoryUsage() {
+interface MemUsage {
+  totalMb: number;
+  usedMb: number;
+  availMb: number;
+  usedPercent: number;
+}
+
+function readMemoryUsage(): MemUsage {
   // 优先用 /proc/meminfo 的 MemAvailable (计入可回收的 buffer/cache, 最贴近真实可用内存)
   try {
     const info = fs.readFileSync('/proc/meminfo', 'utf8');
-    const get = (k) => {
+    const get = (k: string): number | null => {
       const m = info.match(new RegExp('^' + k + ':\\s+(\\d+)\\s*kB', 'm'));
       return m ? parseInt(m[1], 10) * 1024 : null;
     };
@@ -47,7 +55,7 @@ function readMemoryUsage() {
         usedPercent: Math.round((used / total) * 1000) / 10,
       };
     }
-  } catch (_) { /* 读取失败则回退到 os 模块 */ }
+  } catch { /* 读取失败则回退到 os 模块 */ }
   // 兜底: os 模块 (freemem 不含 buffer/cache, 占用率偏高但始终可用)
   const total = os.totalmem();
   const free = os.freemem();
@@ -60,7 +68,7 @@ function readMemoryUsage() {
   };
 }
 
-router.get('/memory', (req, res) => {
+router.get('/memory', (_req: express.Request, res: express.Response) => {
   const now = Date.now();
   const fresh = !memCache.payload || now - memCache.ts >= MEM_CACHE_TTL_MS;
   if (fresh) {
@@ -75,27 +83,45 @@ router.get('/memory', (req, res) => {
 // ── 系统主盘占用 ──
 // 以根目录所在文件系统作为系统主盘。优先用 statfs 读取, 回退到 POSIX df。
 // 与内存端点一样使用模块级 60s 缓存, 避免多标签页并发时频繁采样。
-function diskPercent(usedBytes, availBytes, totalBytes) {
+function diskPercent(usedBytes: number, availBytes: number, totalBytes: number): number {
   const basis = (usedBytes + availBytes) > 0 ? usedBytes + availBytes : totalBytes;
   if (!basis) return 0;
   return round1((usedBytes / basis) * 100);
 }
 
-function shapeDiskUsage({ totalBytes, usedBytes, availBytes, targetPath, mountPath, source }) {
+interface DiskUsage {
+  totalGb: number;
+  usedGb: number;
+  availGb: number;
+  usedPercent: number;
+  targetPath: string;
+  mountPath: string;
+  source: string;
+}
+
+function shapeDiskUsage(args: {
+  totalBytes: number;
+  usedBytes: number;
+  availBytes: number;
+  targetPath: string;
+  mountPath: string;
+  source: string;
+}): DiskUsage {
   return {
-    totalGb: bytesToGb(totalBytes),
-    usedGb: bytesToGb(usedBytes),
-    availGb: bytesToGb(availBytes),
-    usedPercent: diskPercent(usedBytes, availBytes, totalBytes),
-    targetPath,
-    mountPath,
-    source,
+    totalGb: bytesToGb(args.totalBytes),
+    usedGb: bytesToGb(args.usedBytes),
+    availGb: bytesToGb(args.availBytes),
+    usedPercent: diskPercent(args.usedBytes, args.availBytes, args.totalBytes),
+    targetPath: args.targetPath,
+    mountPath: args.mountPath,
+    source: args.source,
   };
 }
 
-function readDiskUsageWithStatfs() {
-  if (typeof fs.statfsSync !== 'function') throw new Error('statfsSync unavailable');
-  const stat = fs.statfsSync(DISK_SAMPLE_PATH);
+function readDiskUsageWithStatfs(): DiskUsage {
+  const anyFs = fs as any;
+  if (typeof anyFs.statfsSync !== 'function') throw new Error('statfsSync unavailable');
+  const stat = anyFs.statfsSync(DISK_SAMPLE_PATH);
   const blockSize = Number(stat.bsize || stat.frsize || 0);
   const totalBlocks = Number(stat.blocks);
   const freeBlocks = Number(stat.bfree);
@@ -116,7 +142,7 @@ function readDiskUsageWithStatfs() {
   });
 }
 
-function readDiskUsageWithDf() {
+function readDiskUsageWithDf(): DiskUsage {
   const out = execFileSync('df', ['-kP', DISK_SAMPLE_PATH], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
@@ -141,15 +167,15 @@ function readDiskUsageWithDf() {
   });
 }
 
-function readDiskUsage() {
+function readDiskUsage(): DiskUsage {
   try {
     return readDiskUsageWithStatfs();
-  } catch (_) {
+  } catch {
     return readDiskUsageWithDf();
   }
 }
 
-router.get('/disk', (req, res) => {
+router.get('/disk', (_req: express.Request, res: express.Response) => {
   const now = Date.now();
   const fresh = !diskCache.payload || now - diskCache.ts >= DISK_CACHE_TTL_MS;
   if (fresh) {
@@ -158,12 +184,16 @@ router.get('/disk', (req, res) => {
         ts: now,
         payload: { ...readDiskUsage(), sampledAt: new Date(now).toISOString() },
       };
-    } catch (_) {
-      if (!diskCache.payload) return res.status(500).json({ error: '磁盘采样失败' });
-      return res.json({ ...diskCache.payload, cached: true, stale: true });
+    } catch {
+      if (!diskCache.payload) {
+        res.status(500).json({ error: '磁盘采样失败' });
+        return;
+      }
+      res.json({ ...diskCache.payload, cached: true, stale: true });
+      return;
     }
   }
   res.json({ ...diskCache.payload, cached: !fresh });
 });
 
-module.exports = router;
+export = router;

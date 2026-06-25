@@ -1,12 +1,12 @@
-const fs = require('fs');
-const path = require('path');
-const { TEST_ROOT } = require('../config');
+import fs from 'fs';
+import path from 'path';
+import { TEST_ROOT } from '../config';
 
-function nowIso() {
+function nowIso(): string {
   return new Date().toISOString();
 }
 
-function currentBaseRevision() {
+function currentBaseRevision(): string {
   try {
     const gitHead = path.join(TEST_ROOT, '.git', 'HEAD');
     if (fs.existsSync(gitHead)) {
@@ -21,9 +21,9 @@ function currentBaseRevision() {
   return `test-main@${nowIso()}`;
 }
 
-function normalizeChangedFile(filePath) {
+function normalizeChangedFile(filePath: unknown): string | null {
   if (!filePath || typeof filePath !== 'string') return null;
-  let p = filePath.trim().replace(/^["'`]+|["'`]+$/g, '');
+  let p: string = filePath.trim().replace(/^["'`]+|["'`]+$/g, '');
   if (!p) return null;
   p = p.replace(/\\/g, '/');
   p = p.replace(/^\/home\/user\/imac-test\//, '');
@@ -34,7 +34,9 @@ function normalizeChangedFile(filePath) {
   return p;
 }
 
-function fileRisk(filePath) {
+type FileRisk = 'schema' | 'config' | 'high' | 'medium' | 'low';
+
+function fileRisk(filePath: string): FileRisk {
   if (/(^|\/)(db\.js|schema|migration)/i.test(filePath)) return 'schema';
   if (/config|\.toml$|\.env|gateway-manager\.sh|package(-lock)?\.json$/i.test(filePath)) return 'config';
   if (/server\.js$|bridge-client\.js$/.test(filePath)) return 'high';
@@ -42,19 +44,26 @@ function fileRisk(filePath) {
   return 'low';
 }
 
-function conflictId(leftId, rightId, filePath) {
+interface ConflictKind {
+  type: 'schema' | 'config' | 'same_symbol' | 'same_file';
+  severity: 'blocking' | 'warn';
+}
+
+function conflictId(leftId: string, rightId: string, filePath: string): string {
   const [a, b] = [leftId, rightId].sort();
   return `${a}:${b}:${Buffer.from(filePath).toString('base64url').slice(0, 32)}`;
 }
 
-function conflictKind(filePath, risk) {
+function conflictKind(filePath: string, risk: FileRisk): ConflictKind {
   if (risk === 'schema') return { type: 'schema', severity: 'blocking' };
   if (risk === 'config') return { type: 'config', severity: 'blocking' };
   if (/server\.js$|db\.js$/.test(filePath)) return { type: 'same_symbol', severity: 'blocking' };
   return { type: 'same_file', severity: 'warn' };
 }
 
-function permissionContentFromValue(value) {
+type PermissionContent = 'allow' | 'deny' | 'allow all' | '';
+
+function permissionContentFromValue(value: unknown): PermissionContent {
   switch (String(value || '').trim()) {
     case 'perm:allow':
     case 'allow':
@@ -71,13 +80,13 @@ function permissionContentFromValue(value) {
   }
 }
 
-function extractTaskId(sessionKey) {
+function extractTaskId(sessionKey: string | null | undefined): string {
   // web:userId:taskId → taskId
   const parts = (sessionKey || '').split(':');
-  return parts.length >= 3 ? parts[2] : sessionKey;
+  return parts.length >= 3 ? parts[2] : (sessionKey || '');
 }
 
-module.exports = {
+export {
   nowIso,
   currentBaseRevision,
   normalizeChangedFile,
@@ -87,3 +96,5 @@ module.exports = {
   permissionContentFromValue,
   extractTaskId,
 };
+
+export type { FileRisk, ConflictKind, PermissionContent };

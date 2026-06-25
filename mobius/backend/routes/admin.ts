@@ -1,31 +1,39 @@
-const express = require('express');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const bcrypt = require('bcryptjs');
-const { adminAuth } = require('../middleware/auth');
-const { Users } = require('../repositories/users');
-const { Sessions } = require('../repositories/sessions');
-const { Messages } = require('../repositories/messages');
-const { bridge } = require('../bridge/instance');
-const { db } = require('../../db');
-const agents = require('../agents');
-const { homeWorkDirFor } = require('../config');
-const adminSettings = require('../services/admin-settings');
-const modelAccess = require('../services/model-access');
-const modelPromptLimits = require('../services/model-prompt-limits');
-const skillMemoryMigration = require('../services/skill-memory-migration');
-const { Projects } = require('../repositories/projects');
-const { AdminAuditLog } = require('../repositories/admin-audit-log');
-const { useProxyForSession } = require('../services/session-proxy-state');
-const {
+import express from 'express';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import bcrypt from 'bcryptjs';
+import { adminAuth, auth } from '../middleware/auth';
+import { Users } from '../repositories/users';
+import { Sessions } from '../repositories/sessions';
+import { Messages } from '../repositories/messages';
+// @ts-ignore — bridge instance 仍是 .js
+import { bridge } from '../bridge/instance';
+import { db } from '../../db';
+// @ts-ignore — agents 仍是 .js
+import agents from '../agents';
+import { homeWorkDirFor } from '../config';
+// @ts-ignore — service 仍是 .js
+import adminSettings from '../services/admin-settings';
+// @ts-ignore — service 仍是 .js
+import modelAccess from '../services/model-access';
+// @ts-ignore — service 仍是 .js
+import modelPromptLimits from '../services/model-prompt-limits';
+// @ts-ignore — service 仍是 .js
+import skillMemoryMigration from '../services/skill-memory-migration';
+import { Projects } from '../repositories/projects';
+import { AdminAuditLog } from '../repositories/admin-audit-log';
+// @ts-ignore — service 仍是 .js
+import { useProxyForSession } from '../services/session-proxy-state';
+// @ts-ignore — service 仍是 .js
+import {
   DEFAULT_WINDOW_HOURS,
   countsBySessionSince,
   normalizeHours,
   statsSince,
   statsSinceMinutes,
-} = require('../services/agent-prompt-events');
-const { runningFlagPathOf, failedFlagPathOf, readFailedFlag } = require('../utils/session-flags');
+} from '../services/agent-prompt-events';
+import { runningFlagPathOf, failedFlagPathOf, readFailedFlag } from '../utils/session-flags';
 
 const router = express.Router();
 
@@ -34,7 +42,7 @@ const BACKENDS = [
   { key: 'claude_code', backendName: 'tmux-claude-code', label: 'Claude Code' },
 ];
 
-const BACKEND_ALIASES = new Map([
+const BACKEND_ALIASES = new Map<string, typeof BACKENDS[number]>([
   ['codex', BACKENDS[0]],
   ['tmux-codex', BACKENDS[0]],
   ['claude', BACKENDS[1]],
@@ -43,13 +51,17 @@ const BACKEND_ALIASES = new Map([
   ['tmux-claude-code', BACKENDS[1]],
 ]);
 
-function errorWithStatus(message, status = 400) {
-  const e = new Error(message);
+interface RepoError extends Error {
+  status: number;
+}
+
+function errorWithStatus(message: string, status: number = 400): RepoError {
+  const e = new Error(message) as RepoError;
   e.status = status;
   return e;
 }
 
-function normalizeEmployeeId(value) {
+function normalizeEmployeeId(value: unknown): string {
   const id = String(value || '').trim();
   if (!id) throw errorWithStatus('员工 ID 不能为空');
   if (id.length > 64) throw errorWithStatus('员工 ID 最多 64 个字符');
@@ -60,17 +72,17 @@ function normalizeEmployeeId(value) {
   return id;
 }
 
-function normalizeEmployeeRole(value) {
+function normalizeEmployeeRole(value: unknown): 'admin' | 'user' {
   return value === 'admin' ? 'admin' : 'user';
 }
 
-function normalizeDisplayName(value, id) {
+function normalizeDisplayName(value: unknown, id: string): string {
   const name = String(value || '').trim() || id;
   if (name.length > 80) throw errorWithStatus('显示名称最多 80 个字符');
   return name;
 }
 
-function normalizeEmployeeWorkDir(value) {
+function normalizeEmployeeWorkDir(value: unknown): string {
   if (value === undefined || value === null || value === '') return '';
   const raw = String(value).trim();
   if (!raw) return '';
@@ -80,21 +92,40 @@ function normalizeEmployeeWorkDir(value) {
   return path.resolve(raw);
 }
 
-function normalizeEmployeePayload(input) {
-  const id = normalizeEmployeeId(input?.id ?? input?.username);
-  const password = String(input?.password || '');
+interface EmployeeInput {
+  id?: unknown;
+  username?: unknown;
+  password?: unknown;
+  work_dir?: unknown;
+  workDir?: unknown;
+  group_id?: unknown;
+  groupId?: unknown;
+  group_name?: unknown;
+  groupName?: unknown;
+  group?: unknown;
+  create_group_if_missing?: unknown;
+  createIfMissing?: unknown;
+  display_name?: unknown;
+  name?: unknown;
+  role?: unknown;
+}
+
+function normalizeEmployeePayload(input: EmployeeInput | null | undefined): any {
+  const src = input || {};
+  const id = normalizeEmployeeId(src.id ?? src.username);
+  const password = String(src.password || '');
   if (password.length < 6) throw errorWithStatus('密码至少 6 位');
-  const explicitWorkDir = normalizeEmployeeWorkDir(input?.work_dir ?? input?.workDir);
+  const explicitWorkDir = normalizeEmployeeWorkDir(src.work_dir ?? src.workDir);
   const group = Users.resolveGroup({
-    group_id: input?.group_id ?? input?.groupId,
-    group_name: input?.group_name ?? input?.groupName ?? input?.group,
-    create_if_missing: input?.create_group_if_missing ?? input?.createIfMissing ?? true,
+    group_id: src.group_id ?? src.groupId,
+    group_name: src.group_name ?? src.groupName ?? src.group,
+    create_if_missing: (src.create_group_if_missing ?? src.createIfMissing ?? true) as boolean,
   });
   return {
     id,
-    display_name: normalizeDisplayName(input?.display_name ?? input?.name, id),
+    display_name: normalizeDisplayName(src.display_name ?? src.name, id),
     password,
-    role: normalizeEmployeeRole(input?.role),
+    role: normalizeEmployeeRole(src.role),
     work_dir: explicitWorkDir || homeWorkDirFor(id),
     work_dir_explicit: !!explicitWorkDir,
     group_id: group.id,
@@ -103,16 +134,16 @@ function normalizeEmployeePayload(input) {
   };
 }
 
-function tryCreateWorkDir(workDir) {
+function tryCreateWorkDir(workDir: string): string | null {
   try {
     fs.mkdirSync(workDir, { recursive: true });
     return null;
   } catch (e) {
-    return `工作目录暂未创建: ${e.message}`;
+    return `工作目录暂未创建: ${(e as Error).message}`;
   }
 }
 
-function createEmployeeAccount(input) {
+function createEmployeeAccount(input: EmployeeInput | null | undefined): any {
   const payload = normalizeEmployeePayload(input);
   const result = Users.createOrRestore({
     id: payload.id,
@@ -152,11 +183,11 @@ function createEmployeeAccount(input) {
   };
 }
 
-function normalizeBackend(value) {
+function normalizeBackend(value: unknown): typeof BACKENDS[number] | null {
   return BACKEND_ALIASES.get(String(value || '').trim()) || null;
 }
 
-function loadSessionContexts(sessionIds) {
+function loadSessionContexts(sessionIds: Array<string>): Map<string, any> {
   const ids = Array.from(new Set(sessionIds.filter((id) => id && id !== '_root')));
   if (!ids.length) return new Map();
   const placeholders = ids.map(() => '?').join(',');
@@ -175,36 +206,36 @@ function loadSessionContexts(sessionIds) {
     LEFT JOIN issues i ON s.issue_id = i.id
     LEFT JOIN researches r ON s.research_id = r.id
     WHERE s.session_id IN (${placeholders})
-  `).all(...ids);
+  `).all(...ids) as Array<any>;
   return new Map(rows.map((row) => [row.session_id, row]));
 }
 
-function runtimeEntryFor(backend, sessionId) {
+function runtimeEntryFor(backend: any, sessionId: string): any {
   try {
     if (backend?.runtime?.get) return backend.runtime.get(sessionId) || null;
-  } catch {}
+  } catch { /* ignore */ }
   return null;
 }
 
-function runtimeEntries(backend) {
+function runtimeEntries(backend: any): Array<[string, any]> {
   try {
-    if (backend?.runtime?.entries) return Array.from(backend.runtime.entries());
-  } catch {}
+    if (backend?.runtime?.entries) return Array.from(backend.runtime.entries()) as Array<[string, any]>;
+  } catch { /* ignore */ }
   return [];
 }
 
-function pidExists(pid) {
+function pidExists(pid: unknown): boolean {
   const n = Number(pid);
   if (!Number.isFinite(n) || n <= 0) return false;
   try {
     process.kill(n, 0);
     return true;
   } catch (e) {
-    return e?.code === 'EPERM';
+    return (e as any)?.code === 'EPERM';
   }
 }
 
-function subjectFor(row) {
+function subjectFor(row: any): any {
   if (!row) return null;
   if (row.scope_type === 'research' || row.research_id) {
     return {
@@ -222,7 +253,7 @@ function subjectFor(row) {
   };
 }
 
-function shapeContext(row) {
+function shapeContext(row: any): any {
   if (!row) return null;
   return {
     session_id: row.session_id,
@@ -244,15 +275,15 @@ function shapeContext(row) {
   };
 }
 
-function openWindowStatus(backend, sessionId, windowInfo) {
+function openWindowStatus(backend: any, sessionId: string, windowInfo: any): any {
   const tmuxOpen = true;
   const tuiAgentPidExists = pidExists(windowInfo.pid);
   let backendAlive = false;
-  try { backendAlive = !!backend.isAlive(sessionId); } catch {}
+  try { backendAlive = !!backend.isAlive(sessionId); } catch { /* ignore */ }
   const tuiAgentAlive = tmuxOpen && tuiAgentPidExists && backendAlive && !windowInfo.paneDead;
   let working = false;
   if (tuiAgentAlive) {
-    try { working = !!backend.isWorking(sessionId); } catch {}
+    try { working = !!backend.isWorking(sessionId); } catch { /* ignore */ }
   }
   return {
     state: tuiAgentAlive ? (working ? 'busy' : 'idle') : 'terminated',
@@ -263,7 +294,7 @@ function openWindowStatus(backend, sessionId, windowInfo) {
   };
 }
 
-function flagStateFor(root, sessionId) {
+function flagStateFor(root: string | null | undefined, sessionId: string | null | undefined): any {
   if (!root || !sessionId) {
     return {
       flag_state: 'success',
@@ -274,8 +305,8 @@ function flagStateFor(root, sessionId) {
   }
   let running = false;
   let failed = false;
-  try { running = fs.existsSync(runningFlagPathOf(root, sessionId)); } catch {}
-  try { failed = fs.existsSync(failedFlagPathOf(root, sessionId)); } catch {}
+  try { running = fs.existsSync(runningFlagPathOf(root, sessionId)); } catch { /* ignore */ }
+  try { failed = fs.existsSync(failedFlagPathOf(root, sessionId)); } catch { /* ignore */ }
   const failedInfo = failed ? readFailedFlag(root, sessionId) : null;
   return {
     flag_state: running ? 'running' : (failed ? 'failed' : 'success'),
@@ -285,7 +316,7 @@ function flagStateFor(root, sessionId) {
   };
 }
 
-function shapeWindow(def, backend, windowInfo, contextRow, questionCount) {
+function shapeWindow(def: typeof BACKENDS[number], backend: any, windowInfo: any, contextRow: any, questionCount: number): any {
   const sessionId = windowInfo.sessionId;
   const runtime = runtimeEntryFor(backend, sessionId);
   const status = openWindowStatus(backend, sessionId, windowInfo);
@@ -327,7 +358,7 @@ function shapeWindow(def, backend, windowInfo, contextRow, questionCount) {
   };
 }
 
-function shapeClosedRuntime(def, sessionId, runtime, contextRow, questionCount) {
+function shapeClosedRuntime(def: typeof BACKENDS[number], sessionId: string, runtime: any, contextRow: any, questionCount: number): any {
   const startedAt = Number(runtime?.startedAt);
   const startedAtIso = Number.isFinite(startedAt) && startedAt > 0
     ? new Date(startedAt).toISOString()
@@ -369,8 +400,8 @@ function shapeClosedRuntime(def, sessionId, runtime, contextRow, questionCount) 
   };
 }
 
-function listBackendWindows(def, questionCounts) {
-  let backend;
+function listBackendWindows(def: typeof BACKENDS[number], questionCounts: Map<string, number>): any {
+  let backend: any;
   try {
     backend = agents.get(def.backendName);
   } catch (e) {
@@ -379,7 +410,7 @@ function listBackendWindows(def, questionCounts) {
       backend_name: def.backendName,
       label: def.label,
       available: false,
-      error: e.message || String(e),
+      error: (e as Error).message || String(e),
       windows: [],
       window_count: 0,
       active_window_count: 0,
@@ -388,7 +419,7 @@ function listBackendWindows(def, questionCounts) {
     };
   }
 
-  let windows = [];
+  let windows: any[] = [];
   try {
     windows = backend.listSessions();
   } catch (e) {
@@ -397,7 +428,7 @@ function listBackendWindows(def, questionCounts) {
       backend_name: def.backendName,
       label: def.label,
       available: true,
-      error: e.message || String(e),
+      error: (e as Error).message || String(e),
       windows: [],
       window_count: 0,
       active_window_count: 0,
@@ -411,7 +442,7 @@ function listBackendWindows(def, questionCounts) {
   const closedRuntimeRows = runtimeEntries(backend)
     .filter(([sessionId]) => sessionId && sessionId !== '_root' && !openSessionIds.has(sessionId));
   const contexts = loadSessionContexts([
-    ...openSessionIds,
+    ...Array.from(openSessionIds),
     ...closedRuntimeRows.map(([sessionId]) => sessionId),
   ]);
   const openRows = openWindows
@@ -439,52 +470,62 @@ function listBackendWindows(def, questionCounts) {
   };
 }
 
-router.get('/user-groups', adminAuth, (req, res) => {
+function adminReqUser(req: express.Request): { id: string; role: string; [k: string]: any } {
+  return (req as any).user as { id: string; role: string; [k: string]: any };
+}
+
+router.get('/user-groups', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     res.json(Users.listGroups());
   } catch (e) {
-    res.status(e.status || 400).json({ error: e.message || String(e) });
+    const err = e as RepoError;
+    res.status(err.status || 400).json({ error: err.message || String(e) });
   }
 });
 
-router.post('/user-groups', adminAuth, (req, res) => {
+router.post('/user-groups', adminAuth, (req: express.Request, res: express.Response) => {
   try {
+    const { name, description } = (req.body || {}) as { name?: unknown; description?: unknown };
     const group = Users.createGroup({
-      name: req.body?.name,
-      description: req.body?.description,
+      name,
+      description,
     });
     res.status(201).json({ ok: true, group });
   } catch (e) {
-    res.status(e.status || 400).json({ error: e.message || String(e) });
+    const err = e as RepoError;
+    res.status(err.status || 400).json({ error: err.message || String(e) });
   }
 });
 
-router.patch('/user-groups/:id', adminAuth, (req, res) => {
+router.patch('/user-groups/:id', adminAuth, (req: express.Request, res: express.Response) => {
   try {
+    const { name, description } = (req.body || {}) as { name?: unknown; description?: unknown };
     const group = Users.updateGroup(req.params.id, {
-      name: req.body?.name,
-      description: req.body?.description,
+      name,
+      description,
     });
     res.json({ ok: true, group });
   } catch (e) {
-    res.status(e.status || 400).json({ error: e.message || String(e) });
+    const err = e as RepoError;
+    res.status(err.status || 400).json({ error: err.message || String(e) });
   }
 });
 
-router.delete('/user-groups/:id', adminAuth, (req, res) => {
+router.delete('/user-groups/:id', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     const result = Users.deleteGroup(req.params.id);
     res.json(result);
   } catch (e) {
-    res.status(e.status || 400).json({ error: e.message || String(e) });
+    const err = e as RepoError;
+    res.status(err.status || 400).json({ error: err.message || String(e) });
   }
 });
 
-router.get('/users', adminAuth, (req, res) => {
+router.get('/users', adminAuth, (req: express.Request, res: express.Response) => {
   const includeDeleted = req.query.include_deleted === '1' || req.query.include_deleted === 'true';
   const users = Users.listForAdmin({ includeDeleted });
   const userTasks = Users.taskStats();
-  const taskMap = {};
+  const taskMap: Record<string, any> = {};
   for (const ut of userTasks) taskMap[ut.user_id] = ut;
   const emptyStats = {
     session_count: 0,
@@ -501,24 +542,26 @@ router.get('/users', adminAuth, (req, res) => {
   res.json(users.map(u => ({ ...u, stats: taskMap[u.id] || emptyStats })));
 });
 
-router.post('/users', adminAuth, (req, res) => {
+router.post('/users', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     const user = createEmployeeAccount(req.body || {});
     res.status(user.status === 'created' ? 201 : 200).json({ ok: true, user });
   } catch (e) {
-    res.status(e.status || 400).json({ error: e.message || String(e) });
+    const err = e as RepoError;
+    res.status(err.status || 400).json({ error: err.message || String(e) });
   }
 });
 
-router.post('/users/bulk', adminAuth, (req, res) => {
-  const employees = Array.isArray(req.body?.employees) ? req.body.employees : [];
-  if (!employees.length) return res.status(400).json({ error: '请提供 employees 数组' });
-  if (employees.length > 200) return res.status(400).json({ error: '单次最多批量添加 200 个员工' });
+router.post('/users/bulk', adminAuth, (req: express.Request, res: express.Response) => {
+  const body = (req.body || {}) as { employees?: any[] };
+  const employees = Array.isArray(body.employees) ? body.employees : [];
+  if (!employees.length) { res.status(400).json({ error: '请提供 employees 数组' }); return; }
+  if (employees.length > 200) { res.status(400).json({ error: '单次最多批量添加 200 个员工' }); return; }
 
-  const created = [];
-  const restored = [];
-  const failed = [];
-  const seen = new Set();
+  const created: any[] = [];
+  const restored: any[] = [];
+  const failed: any[] = [];
+  const seen = new Set<string>();
 
   for (let i = 0; i < employees.length; i += 1) {
     const row = employees[i] || {};
@@ -533,7 +576,7 @@ router.post('/users/bulk', adminAuth, (req, res) => {
       failed.push({
         index: i,
         id: row.id || row.username || '',
-        error: e.message || String(e),
+        error: (e as Error).message || String(e),
       });
     }
   }
@@ -552,39 +595,49 @@ router.post('/users/bulk', adminAuth, (req, res) => {
   });
 });
 
-router.patch('/users/:id/group', adminAuth, (req, res) => {
+router.patch('/users/:id/group', adminAuth, (req: express.Request, res: express.Response) => {
   try {
+    const body = (req.body || {}) as {
+      group_id?: unknown;
+      groupId?: unknown;
+      group_name?: unknown;
+      groupName?: unknown;
+      group?: unknown;
+    };
     const result = Users.assignGroup(req.params.id, {
-      group_id: req.body?.group_id ?? req.body?.groupId,
-      group_name: req.body?.group_name ?? req.body?.groupName ?? req.body?.group,
+      group_id: body.group_id ?? body.groupId,
+      group_name: body.group_name ?? body.groupName ?? body.group,
       create_if_missing: false,
     });
     res.json({ ok: true, ...result });
   } catch (e) {
-    res.status(e.status || 400).json({ error: e.message || String(e) });
+    const err = e as RepoError;
+    res.status(err.status || 400).json({ error: err.message || String(e) });
   }
 });
 
-router.delete('/users/:id', adminAuth, (req, res) => {
+router.delete('/users/:id', adminAuth, (req: express.Request, res: express.Response) => {
+  const user = adminReqUser(req);
   const id = String(req.params.id || '').trim();
-  if (id === req.user.id) return res.status(400).json({ error: '不能删除当前登录账号' });
+  if (id === user.id) { res.status(400).json({ error: '不能删除当前登录账号' }); return; }
   const target = Users.findById(id);
-  if (!target) return res.status(404).json({ error: '员工账号不存在或已删除' });
+  if (!target) { res.status(404).json({ error: '员工账号不存在或已删除' }); return; }
   if (target.role === 'admin' && Users.activeAdminCount() <= 1) {
-    return res.status(400).json({ error: '不能删除最后一个管理员账号' });
+    res.status(400).json({ error: '不能删除最后一个管理员账号' });
+    return;
   }
-  const result = Users.softDelete(id);
-  if (result.changes <= 0) return res.status(404).json({ error: '员工账号不存在或已删除' });
+  const result = Users.softDelete(id) as { changes?: number };
+  if ((result.changes ?? 0) <= 0) { res.status(404).json({ error: '员工账号不存在或已删除' }); return; }
   res.json({ ok: true });
 });
 
-router.get('/tasks', adminAuth, (req, res) => {
-  const status = req.query.status;
-  const limit = Math.min(parseInt(req.query.limit || '200', 10), 1000);
+router.get('/tasks', adminAuth, (req: express.Request, res: express.Response) => {
+  const status = req.query.status as string | undefined;
+  const limit = Math.min(parseInt(String(req.query.limit || '200'), 10), 1000);
   res.json(Sessions.listAllForAdmin({ status, limit }));
 });
 
-router.get('/stats', adminAuth, (req, res) => {
+router.get('/stats', adminAuth, (_req: express.Request, res: express.Response) => {
   const promptStats = statsSince(DEFAULT_WINDOW_HOURS);
   res.json({
     users: Users.countAll(),
@@ -599,7 +652,7 @@ router.get('/stats', adminAuth, (req, res) => {
   });
 });
 
-router.get('/audit-log', adminAuth, (req, res) => {
+router.get('/audit-log', adminAuth, (req: express.Request, res: express.Response) => {
   res.json({
     total: AdminAuditLog.count(),
     items: AdminAuditLog.list({
@@ -609,7 +662,7 @@ router.get('/audit-log', adminAuth, (req, res) => {
   });
 });
 
-router.get('/admin-audit-log', adminAuth, (req, res) => {
+router.get('/admin-audit-log', adminAuth, (req: express.Request, res: express.Response) => {
   res.json({
     total: AdminAuditLog.count(),
     items: AdminAuditLog.list({
@@ -619,12 +672,12 @@ router.get('/admin-audit-log', adminAuth, (req, res) => {
   });
 });
 
-router.get('/tmux', adminAuth, (req, res) => {
+router.get('/tmux', adminAuth, (req: express.Request, res: express.Response) => {
   const hours = normalizeHours(req.query.hours, DEFAULT_WINDOW_HOURS);
   const promptStats = statsSince(hours);
   const promptStats2min = statsSinceMinutes(2);
   const questionCounts = countsBySessionSince(hours);
-  const backends = {};
+  const backends: Record<string, any> = {};
   for (const def of BACKENDS) backends[def.key] = listBackendWindows(def, questionCounts);
   const backendValues = Object.values(backends);
   const allWindows = backendValues.flatMap((b) => b.windows || []);
@@ -637,13 +690,13 @@ router.get('/tmux', adminAuth, (req, res) => {
     since: promptStats.since,
     question_count: promptStats.total,
     questions_by_backend: {
-      codex: promptStats.by_backend['tmux-codex'] || 0,
-      claude_code: promptStats.by_backend['tmux-claude-code'] || 0,
+      codex: (promptStats.by_backend as any)['tmux-codex'] || 0,
+      claude_code: (promptStats.by_backend as any)['tmux-claude-code'] || 0,
     },
-    questions_2min: (promptStats2min.by_backend['tmux-codex'] || 0) + (promptStats2min.by_backend['tmux-claude-code'] || 0),
+    questions_2min: ((promptStats2min.by_backend as any)['tmux-codex'] || 0) + ((promptStats2min.by_backend as any)['tmux-claude-code'] || 0),
     questions_by_backend_2min: {
-      codex: promptStats2min.by_backend['tmux-codex'] || 0,
-      claude_code: promptStats2min.by_backend['tmux-claude-code'] || 0,
+      codex: (promptStats2min.by_backend as any)['tmux-codex'] || 0,
+      claude_code: (promptStats2min.by_backend as any)['tmux-claude-code'] || 0,
     },
     window_count: allWindows.filter((w) => w.tmux_open).length,
     active_tmux_window_count: allWindows.filter((w) => w.tui_agent_alive).length,
@@ -654,21 +707,22 @@ router.get('/tmux', adminAuth, (req, res) => {
   });
 });
 
-router.delete('/tmux/:backend/:sessionId', adminAuth, async (req, res) => {
+router.delete('/tmux/:backend/:sessionId', adminAuth, async (req: express.Request, res: express.Response) => {
   const def = normalizeBackend(req.params.backend);
-  if (!def) return res.status(400).json({ error: 'unknown backend' });
+  if (!def) { res.status(400).json({ error: 'unknown backend' }); return; }
   const sessionId = req.params.sessionId;
-  if (!sessionId || sessionId === '_root') return res.status(400).json({ error: 'hub root window cannot be closed' });
+  if (!sessionId || sessionId === '_root') { res.status(400).json({ error: 'hub root window cannot be closed' }); return; }
 
-  let backend;
+  let backend: any;
   try {
     backend = agents.get(def.backendName);
   } catch (e) {
-    return res.status(503).json({ error: e.message || String(e) });
+    res.status(503).json({ error: (e as Error).message || String(e) });
+    return;
   }
 
   let wasWorking = false;
-  try { wasWorking = !!backend.isWorking(sessionId); } catch {}
+  try { wasWorking = !!backend.isWorking(sessionId); } catch { /* ignore */ }
 
   try {
     const result = await backend.terminateSession(sessionId);
@@ -680,34 +734,34 @@ router.delete('/tmux/:backend/:sessionId', adminAuth, async (req, res) => {
         WHERE session_id = ?
       `).run(sessionId);
     } catch (e) {
-      console.warn(`[admin] failed to mark session idle (${sessionId}): ${e.message}`);
+      console.warn(`[admin] failed to mark session idle (${sessionId}): ${(e as Error).message}`);
     }
     try {
-      const exists = Sessions.findById(sessionId);
+      const exists = Sessions.findById(sessionId as any);
       if (exists) {
-        const turnNum = (Messages.maxTurnFor(sessionId) || 0) + 1;
+        const turnNum = (Messages.maxTurnFor(sessionId as any) || 0) + 1;
         Messages.insertSystem(
-          sessionId,
+          sessionId as any,
           `管理员已关闭后台 ${def.label} tmux window (window=${sessionId}, wasWorking=${wasWorking ? 'true' : 'false'}).`,
           turnNum,
           '管理员关闭后台进程',
         );
       }
     } catch (e) {
-      console.warn(`[admin] failed to write close message (${sessionId}): ${e.message}`);
+      console.warn(`[admin] failed to write close message (${sessionId}): ${(e as Error).message}`);
     }
     res.json({ ok: true, backend: def.backendName, session_id: sessionId, was_working: wasWorking, ...result });
   } catch (e) {
-    res.status(500).json({ error: e.message || String(e) });
+    res.status(500).json({ error: (e as Error).message || String(e) });
   }
 });
 
 // ── 每模型创建 Session 限制: 4 个硬提问数限制 + 1 个 tmux 软提醒 ──
-router.get('/settings/model-prompt-limits', adminAuth, (req, res) => {
+router.get('/settings/model-prompt-limits', adminAuth, (_req: express.Request, res: express.Response) => {
   res.json(modelPromptLimits.adminLimitsPayload());
 });
 
-router.put('/settings/model-prompt-limits', adminAuth, (req, res) => {
+router.put('/settings/model-prompt-limits', adminAuth, (req: express.Request, res: express.Response) => {
   const {
     model,
     key,
@@ -727,7 +781,7 @@ router.put('/settings/model-prompt-limits', adminAuth, (req, res) => {
     max_prompts_per_5h,
     useProxy,
     use_proxy,
-  } = req.body || {};
+  } = (req.body || {}) as any;
   try {
     const modelKey = model || key;
     const hasNewLimits = Object.prototype.hasOwnProperty.call(req.body || {}, 'limits')
@@ -765,87 +819,95 @@ router.put('/settings/model-prompt-limits', adminAuth, (req, res) => {
     }
     res.json(modelPromptLimits.adminLimitsPayload());
   } catch (e) {
-    res.status(400).json({ error: e.message || String(e) });
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 
 // ── 管理员小莫: 是否接收全站 Session 完成/失败回调 ──
-router.get('/settings/admin-assistant-callbacks', adminAuth, (req, res) => {
+router.get('/settings/admin-assistant-callbacks', adminAuth, (req: express.Request, res: express.Response) => {
   try {
-    res.json(adminSettings.getAdminAssistantCallbackForUser(req.user.id));
+    res.json(adminSettings.getAdminAssistantCallbackForUser(adminReqUser(req).id));
   } catch (e) {
-    res.status(400).json({ error: e.message || String(e) });
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 
-router.put('/settings/admin-assistant-callbacks', adminAuth, (req, res) => {
+router.put('/settings/admin-assistant-callbacks', adminAuth, (req: express.Request, res: express.Response) => {
   try {
-    const enabled = req.body?.enabled ?? req.body?.receiveAllSessionCallbacks ?? req.body?.receive_all_session_callbacks;
-    res.json(adminSettings.setAdminAssistantCallbackForUser(req.user.id, enabled === true));
+    const body = (req.body || {}) as {
+      enabled?: unknown;
+      receiveAllSessionCallbacks?: unknown;
+      receive_all_session_callbacks?: unknown;
+    };
+    const enabled = body.enabled ?? body.receiveAllSessionCallbacks ?? body.receive_all_session_callbacks;
+    res.json(adminSettings.setAdminAssistantCallbackForUser(adminReqUser(req).id, enabled === true));
   } catch (e) {
-    res.status(400).json({ error: e.message || String(e) });
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 
 // ── 豆包 ASR / TTS 凭证: 管理中心 → 管理员小莫配置 ──
 
-router.get('/settings/doubao-voice', adminAuth, (req, res) => {
+router.get('/settings/doubao-voice', adminAuth, (_req: express.Request, res: express.Response) => {
   try {
     res.json(adminSettings.getDoubaoVoiceMasked());
   } catch (e) {
-    res.status(500).json({ error: e.message || String(e) });
+    res.status(500).json({ error: (e as Error).message || String(e) });
   }
 });
 
-router.get('/settings/doubao-voice/reveal', adminAuth, (req, res) => {
+router.get('/settings/doubao-voice/reveal', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     AdminAuditLog.record({
-      adminId: req.user.id,
+      adminId: adminReqUser(req).id,
       action: 'reveal',
       resourceType: 'doubao-voice',
       resourceId: 'all',
     });
     res.json(adminSettings.getDoubaoVoice());
   } catch (e) {
-    res.status(500).json({ error: e.message || String(e) });
+    res.status(500).json({ error: (e as Error).message || String(e) });
   }
 });
 
-router.put('/settings/doubao-voice/asr', adminAuth, (req, res) => {
+router.put('/settings/doubao-voice/asr', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     const masked = adminSettings.setDoubaoVoiceAsr(req.body || {});
     AdminAuditLog.record({
-      adminId: req.user.id,
+      adminId: adminReqUser(req).id,
       action: 'update-asr',
       resourceType: 'doubao-voice',
       resourceId: 'asr',
     });
     res.json(masked);
   } catch (e) {
-    res.status(400).json({ error: e.message || String(e) });
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 
-router.put('/settings/doubao-voice/tts', adminAuth, (req, res) => {
+router.put('/settings/doubao-voice/tts', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     const masked = adminSettings.setDoubaoVoiceTts(req.body || {});
     AdminAuditLog.record({
-      adminId: req.user.id,
+      adminId: adminReqUser(req).id,
       action: 'update-tts',
       resourceType: 'doubao-voice',
       resourceId: 'tts',
     });
     res.json(masked);
   } catch (e) {
-    res.status(400).json({ error: e.message || String(e) });
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 
-router.post('/settings/doubao-voice/test', adminAuth, async (req, res) => {
-  const service = String(req.body?.service || '').toLowerCase();
+router.post('/settings/doubao-voice/test', adminAuth, async (req: express.Request, res: express.Response) => {
+  const body = (req.body || {}) as any;
+  const service = String(body.service || '').toLowerCase();
   const payload = req.body || {};
+  const adminId = adminReqUser(req).id;
   try {
     if (service === 'asr') {
+      // @ts-ignore — service 仍是 .js
       const { transcribePcmWithCredentials } = require('../services/doubao-asr');
       const credentials = {
         appId: String(payload.appId || '').trim(),
@@ -867,17 +929,18 @@ router.post('/settings/doubao-voice/test', adminAuth, async (req, res) => {
       try {
         await transcribePcmWithCredentials(pcm, credentials);
         AdminAuditLog.record({
-          adminId: req.user.id,
+          adminId,
           action: 'test-asr',
           resourceType: 'doubao-voice',
           resourceId: 'asr',
         });
         return res.json({ ok: true });
       } catch (e) {
-        return res.json({ ok: false, error: e?.message || String(e) });
+        return res.json({ ok: false, error: (e as Error)?.message || String(e) });
       }
     }
     if (service === 'tts') {
+      // @ts-ignore — service 仍是 .js
       const { synthesizeSpeech } = require('../services/doubao-tts');
       const credentials = {
         appId: String(payload.appId || '').trim(),
@@ -899,19 +962,19 @@ router.post('/settings/doubao-voice/test', adminAuth, async (req, res) => {
           voice,
         });
         AdminAuditLog.record({
-          adminId: req.user.id,
+          adminId,
           action: 'test-tts',
           resourceType: 'doubao-voice',
           resourceId: 'tts',
         });
         return res.json({ ok: true, audio_bytes: result.audio.length });
       } catch (e) {
-        return res.json({ ok: false, error: e?.message || String(e) });
+        return res.json({ ok: false, error: (e as Error)?.message || String(e) });
       }
     }
     return res.status(400).json({ ok: false, error: 'service 必须是 asr 或 tts' });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: e?.message || String(e) });
+    return res.status(500).json({ ok: false, error: (e as Error)?.message || String(e) });
   }
 });
 
@@ -923,90 +986,93 @@ router.post('/settings/doubao-voice/test', adminAuth, async (req, res) => {
 //    这是只有架构师才能使用的旁支功能，绝对禁止参与Mobius的主体代码」
 // 本组路由仅负责读写配置 + 测试按钮验证凭证, 不得给任何业务模块开放调用入口.
 
-router.get('/settings/light-model-api', adminAuth, (req, res) => {
+router.get('/settings/light-model-api', adminAuth, (_req: express.Request, res: express.Response) => {
   try {
     res.json(adminSettings.getLightModelApiMasked());
   } catch (e) {
-    res.status(500).json({ error: e.message || String(e) });
+    res.status(500).json({ error: (e as Error).message || String(e) });
   }
 });
 
-router.get('/settings/light-model-api/reveal', adminAuth, (req, res) => {
+router.get('/settings/light-model-api/reveal', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     AdminAuditLog.record({
-      adminId: req.user.id,
+      adminId: adminReqUser(req).id,
       action: 'reveal',
       resourceType: 'light-model-api',
       resourceId: 'all',
     });
     res.json(adminSettings.getLightModelApi());
   } catch (e) {
-    res.status(500).json({ error: e.message || String(e) });
+    res.status(500).json({ error: (e as Error).message || String(e) });
   }
 });
 
-router.put('/settings/light-model-api', adminAuth, (req, res) => {
+router.put('/settings/light-model-api', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     const masked = adminSettings.setLightModelApi(req.body || {});
     AdminAuditLog.record({
-      adminId: req.user.id,
+      adminId: adminReqUser(req).id,
       action: 'update',
       resourceType: 'light-model-api',
       resourceId: 'all',
     });
     res.json(masked);
   } catch (e) {
-    res.status(400).json({ error: e.message || String(e) });
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 
-router.post('/settings/light-model-api/test', adminAuth, async (req, res) => {
+router.post('/settings/light-model-api/test', adminAuth, async (req: express.Request, res: express.Response) => {
   try {
     const cfg = adminSettings.getLightModelApi();
-    const model = String(req.body?.model || cfg.model || '').trim();
+    const body = (req.body || {}) as { model?: unknown };
+    const model = String(body.model || cfg.model || '').trim();
     if (!model) {
       return res.status(400).json({ ok: false, error: '测试时需要填一个模型名 (例如 GLM-4.7-FlashX)' });
     }
+    // @ts-ignore — service 仍是 .js
     const { testLightModelApi } = require('../services/light-model-api-test');
     const result = await testLightModelApi({ ...cfg, model });
     AdminAuditLog.record({
-      adminId: req.user.id,
+      adminId: adminReqUser(req).id,
       action: 'test',
       resourceType: 'light-model-api',
       resourceId: 'all',
     });
     return res.json({ ok: !!result.ok, summary: result.summary, reason: result.reason });
   } catch (e) {
-    return res.json({ ok: false, error: e?.message || String(e) });
+    return res.json({ ok: false, error: (e as Error)?.message || String(e) });
   }
 });
 
 // ── 文字替换隐藏: 全员强制规则 (管理员推送, 所有登录用户可读) ──
 //   GET  任意登录用户可读 — 前端 runtime 启动时拉一次同步本地.
 //   PUT  仅管理员 — 把当前规则覆盖推送到后端, 全员下次进入应用时同步.
-const { auth } = require('../middleware/auth');
+// (inline `require('../middleware/auth')` 已迁移为顶层 ESM import, 见文件头部.)
 
-router.get('/text-redaction/global', auth, (req, res) => {
+router.get('/text-redaction/global', auth, (req: express.Request, res: express.Response) => {
   try {
     res.json(adminSettings.getTextRedactionGlobal());
   } catch (e) {
-    res.status(500).json({ error: e?.message || String(e) });
+    res.status(500).json({ error: (e as Error)?.message || String(e) });
   }
 });
 
-router.put('/text-redaction/global', adminAuth, (req, res) => {
+router.put('/text-redaction/global', adminAuth, (req: express.Request, res: express.Response) => {
   try {
-    const rules = Array.isArray(req.body?.rules) ? req.body.rules : [];
-    const result = adminSettings.setTextRedactionGlobal({ rules, adminUserId: req.user.id });
+    const body = (req.body || {}) as { rules?: unknown };
+    const rules = Array.isArray(body.rules) ? body.rules : [];
+    const result = adminSettings.setTextRedactionGlobal({ rules, adminUserId: adminReqUser(req).id });
     AdminAuditLog.record({
-      adminId: req.user.id,
+      adminId: adminReqUser(req).id,
       action: 'update',
       resourceType: 'text-redaction',
       resourceId: 'global',
     });
     res.json(result);
   } catch (e) {
-    res.status(400).json({ error: e?.message || String(e) });
+    res.status(400).json({ error: (e as Error)?.message || String(e) });
   }
 });
 
@@ -1015,27 +1081,33 @@ router.put('/text-redaction/global', adminAuth, (req, res) => {
 const PROXYCHAINS_SYSTEM_PATH = '/etc/proxychains.conf';
 const PROXYCHAINS_MODEL_PATH = path.join(os.homedir(), 'proxy_claude.conf');
 
-function readProxyFile(p) {
+interface ProxyFileReadResult {
+  content: string;
+  exists: boolean;
+  error?: string;
+}
+
+function readProxyFile(p: string): ProxyFileReadResult {
   try {
     if (!fs.existsSync(p)) return { content: '', exists: false };
     return { content: fs.readFileSync(p, 'utf8'), exists: true };
   } catch (e) {
-    return { content: '', exists: false, error: e.message };
+    return { content: '', exists: false, error: (e as Error).message };
   }
 }
 
-function writeProxyFile(p, content) {
+function writeProxyFile(p: string, content: unknown): void {
   const text = String(content ?? '');
   if (text.includes('\0')) throw new Error('配置不能包含 NUL 字符');
   if (Buffer.byteLength(text, 'utf8') > 256 * 1024) throw new Error('配置过大 (256KB 以内)');
   const dir = path.dirname(p);
-  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  try { fs.mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
   const tmp = `${p}.imac-tmp-${process.pid}-${Date.now()}`;
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, p);
 }
 
-function proxyFileWritable(p) {
+function proxyFileWritable(p: string): boolean {
   try {
     if (fs.existsSync(p)) return fs.accessSync(p, fs.constants.W_OK), true;
     const dir = path.dirname(p);
@@ -1046,7 +1118,7 @@ function proxyFileWritable(p) {
   }
 }
 
-router.get('/settings/proxy-files', adminAuth, (req, res) => {
+router.get('/settings/proxy-files', adminAuth, (_req: express.Request, res: express.Response) => {
   try {
     const system = readProxyFile(PROXYCHAINS_SYSTEM_PATH);
     const model = readProxyFile(PROXYCHAINS_MODEL_PATH);
@@ -1063,14 +1135,15 @@ router.get('/settings/proxy-files', adminAuth, (req, res) => {
       modelWritable: proxyFileWritable(PROXYCHAINS_MODEL_PATH),
     });
   } catch (e) {
-    res.status(500).json({ error: e?.message || String(e) });
+    res.status(500).json({ error: (e as Error)?.message || String(e) });
   }
 });
 
-router.put('/settings/proxy-files', adminAuth, (req, res) => {
+router.put('/settings/proxy-files', adminAuth, (req: express.Request, res: express.Response) => {
   try {
-    const body = req.body || {};
-    const out = {};
+    const body = (req.body || {}) as { system?: unknown; model?: unknown };
+    const out: Record<string, any> = {};
+    const adminId = adminReqUser(req).id;
     if (Object.prototype.hasOwnProperty.call(body, 'system')) {
       writeProxyFile(PROXYCHAINS_SYSTEM_PATH, body.system);
       const r = readProxyFile(PROXYCHAINS_SYSTEM_PATH);
@@ -1078,7 +1151,7 @@ router.put('/settings/proxy-files', adminAuth, (req, res) => {
       out.systemExists = !!r.exists;
       out.systemWritable = proxyFileWritable(PROXYCHAINS_SYSTEM_PATH);
       AdminAuditLog.record({
-        adminId: req.user.id,
+        adminId,
         action: 'update-system',
         resourceType: 'proxy-files',
         resourceId: PROXYCHAINS_SYSTEM_PATH,
@@ -1091,7 +1164,7 @@ router.put('/settings/proxy-files', adminAuth, (req, res) => {
       out.modelExists = !!r.exists;
       out.modelWritable = proxyFileWritable(PROXYCHAINS_MODEL_PATH);
       AdminAuditLog.record({
-        adminId: req.user.id,
+        adminId,
         action: 'update-model',
         resourceType: 'proxy-files',
         resourceId: PROXYCHAINS_MODEL_PATH,
@@ -1099,143 +1172,153 @@ router.put('/settings/proxy-files', adminAuth, (req, res) => {
     }
     res.json(out);
   } catch (e) {
-    res.status(400).json({ error: e?.message || String(e) });
+    res.status(400).json({ error: (e as Error)?.message || String(e) });
   }
 });
 
 // ── Claude Code 模型接入 (raw settings JSON, 不做 secret 管理) ──
-router.get('/model-access/claude-code', adminAuth, (req, res) => {
+router.get('/model-access/claude-code', adminAuth, (_req: express.Request, res: express.Response) => {
   res.json(modelAccess.listClaudeCodeModels({ includeSettings: false }));
 });
 
-router.post('/model-access/claude-code', adminAuth, (req, res) => {
+router.post('/model-access/claude-code', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     res.json(modelAccess.upsertClaudeCodeModel(req.body || {}));
   } catch (e) {
-    res.status(400).json({ error: e.message || String(e) });
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 
-router.get('/model-access/claude-code/:key', adminAuth, (req, res) => {
+router.get('/model-access/claude-code/:key', adminAuth, (req: express.Request, res: express.Response) => {
   const row = modelAccess.findClaudeCodeModel(req.params.key, { includeSettings: true });
-  if (!row) return res.status(404).json({ error: '模型配置不存在' });
+  if (!row) { res.status(404).json({ error: '模型配置不存在' }); return; }
   res.json(row);
 });
 
-router.put('/model-access/claude-code/:key', adminAuth, (req, res) => {
+router.put('/model-access/claude-code/:key', adminAuth, (req: express.Request, res: express.Response) => {
   try {
-    res.json(modelAccess.upsertClaudeCodeModel(req.body || {}, { existingKey: req.params.key }));
+    res.json(modelAccess.upsertClaudeCodeModel(req.body || {}, { existingKey: req.params.key as any }));
   } catch (e) {
-    res.status(400).json({ error: e.message || String(e) });
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 
-router.delete('/model-access/claude-code/:key', adminAuth, (req, res) => {
+router.delete('/model-access/claude-code/:key', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     if (req.params.key === 'mobiusdefault') {
-      return res.status(400).json({ error: 'mobiusdefault 默认 Claude Code 配置只能修改, 不能删除' });
+      res.status(400).json({ error: 'mobiusdefault 默认 Claude Code 配置只能修改, 不能删除' });
+      return;
     }
     const ok = modelAccess.deleteClaudeCodeModel(req.params.key);
-    if (!ok) return res.status(404).json({ error: '模型配置不存在' });
+    if (!ok) { res.status(404).json({ error: '模型配置不存在' }); return; }
     res.json({ ok: true });
   } catch (e) {
-    res.status(400).json({ error: e.message || String(e) });
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 
 // ── Codex 模型接入 (TOML 配置, --profile 加载) ──
-router.get('/model-access/codex', adminAuth, (req, res) => {
+router.get('/model-access/codex', adminAuth, (_req: express.Request, res: express.Response) => {
   res.json(modelAccess.listCodexModels({ includeConfig: false }));
 });
 
-router.post('/model-access/codex', adminAuth, (req, res) => {
+router.post('/model-access/codex', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     res.json(modelAccess.upsertCodexModel(req.body || {}));
   } catch (e) {
-    res.status(400).json({ error: e.message || String(e) });
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 
-router.get('/model-access/codex/:key', adminAuth, (req, res) => {
+router.get('/model-access/codex/:key', adminAuth, (req: express.Request, res: express.Response) => {
   const row = modelAccess.findCodexModel(req.params.key, { includeConfig: true });
-  if (!row) return res.status(404).json({ error: '模型配置不存在' });
+  if (!row) { res.status(404).json({ error: '模型配置不存在' }); return; }
   res.json(row);
 });
 
-router.put('/model-access/codex/:key', adminAuth, (req, res) => {
+router.put('/model-access/codex/:key', adminAuth, (req: express.Request, res: express.Response) => {
   try {
-    res.json(modelAccess.upsertCodexModel(req.body || {}, { existingKey: req.params.key }));
+    res.json(modelAccess.upsertCodexModel(req.body || {}, { existingKey: req.params.key as any }));
   } catch (e) {
-    res.status(400).json({ error: e.message || String(e) });
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 
-router.delete('/model-access/codex/:key', adminAuth, (req, res) => {
+router.delete('/model-access/codex/:key', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     if (req.params.key === 'mobiusdefault') {
-      return res.status(400).json({ error: 'mobiusdefault 默认 Codex 配置只能修改, 不能删除' });
+      res.status(400).json({ error: 'mobiusdefault 默认 Codex 配置只能修改, 不能删除' });
+      return;
     }
     const ok = modelAccess.deleteCodexModel(req.params.key);
-    if (!ok) return res.status(404).json({ error: '模型配置不存在' });
+    if (!ok) { res.status(404).json({ error: '模型配置不存在' }); return; }
     res.json({ ok: true });
   } catch (e) {
-    res.status(400).json({ error: e.message || String(e) });
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 
 // ── Skill 与 Memory 备份/迁移 ──────────────────────────────────────────────
 // 列出当前管理员可用于导出的 Skill / Memory 清单 (用户级 = 自己 + 他人只读; 项目级 = 全部项目).
-router.get('/skill-memory/inventory', adminAuth, (req, res) => {
+router.get('/skill-memory/inventory', adminAuth, (req: express.Request, res: express.Response) => {
   try {
-    const projects = Projects.listAll().map((p) => ({
+    const projects = Projects.listAll().map((p: any) => ({
       id: p.id, name: p.name, created_by: p.created_by,
     }));
+    const user = adminReqUser(req);
     const inventory = skillMemoryMigration.buildInventory({
-      userId: req.user.id,
-      user: req.user,
+      userId: user.id,
+      user,
       projects,
     });
     res.json(inventory);
   } catch (e) {
-    res.status(500).json({ error: e.message || String(e) });
+    res.status(500).json({ error: (e as Error).message || String(e) });
   }
 });
 
 // 按勾选的 memory_ids / skill_ids 生成 base64 字符串.
-router.post('/skill-memory/export', adminAuth, (req, res) => {
-  const { memory_ids, skill_ids } = req.body || {};
+router.post('/skill-memory/export', adminAuth, (req: express.Request, res: express.Response) => {
+  const { memory_ids, skill_ids } = (req.body || {}) as { memory_ids?: unknown; skill_ids?: unknown };
   const result = skillMemoryMigration.buildExportBundle({
-    userId: req.user.id,
+    userId: adminReqUser(req).id,
     memoryIds: Array.isArray(memory_ids) ? memory_ids : [],
     skillIds: Array.isArray(skill_ids) ? skill_ids : [],
   });
-  if (!result.ok) return res.status(400).json({ error: result.error, skipped: result.skipped });
+  if (!result.ok) { res.status(400).json({ error: (result as any).error, skipped: (result as any).skipped }); return; }
   res.json(result);
 });
 
 // 预览备份字符串中的条目, 不写盘.
-router.post('/skill-memory/preview', adminAuth, (req, res) => {
-  const { bundle } = req.body || {};
+router.post('/skill-memory/preview', adminAuth, (req: express.Request, res: express.Response) => {
+  const { bundle } = (req.body || {}) as { bundle?: unknown };
   const result = skillMemoryMigration.previewBundle(bundle || '');
-  if (!result.ok) return res.status(400).json({ error: result.error });
+  if (!result.ok) { res.status(400).json({ error: (result as any).error }); return; }
   res.json(result);
 });
 
 // 把勾选条目导入到指定 scope: { scope: 'user'|'project', project_id?, indexes? }.
-router.post('/skill-memory/import', adminAuth, (req, res) => {
-  const { bundle, target, indexes } = req.body || {};
+router.post('/skill-memory/import', adminAuth, (req: express.Request, res: express.Response) => {
+  const body = (req.body || {}) as {
+    bundle?: unknown;
+    target?: any;
+    indexes?: unknown;
+  };
+  const { bundle, target, indexes } = body;
   if (!target || typeof target !== 'object') {
-    return res.status(400).json({ error: '请指定导入目标 (用户级 或 某项目)' });
+    res.status(400).json({ error: '请指定导入目标 (用户级 或 某项目)' });
+    return;
   }
   if (target.scope === 'project') {
     const pid = String(target.project_id || '').trim();
-    if (!pid) return res.status(400).json({ error: '请选择目标项目' });
-    if (!Projects.findById(pid)) return res.status(404).json({ error: '目标项目不存在' });
+    if (!pid) { res.status(400).json({ error: '请选择目标项目' }); return; }
+    if (!Projects.findById(pid)) { res.status(404).json({ error: '目标项目不存在' }); return; }
   } else if (target.scope !== 'user') {
-    return res.status(400).json({ error: 'scope 必须是 user 或 project' });
+    res.status(400).json({ error: 'scope 必须是 user 或 project' });
+    return;
   }
   const result = skillMemoryMigration.importBundle({
-    requesterUserId: req.user.id,
+    requesterUserId: adminReqUser(req).id,
     base64: bundle || '',
     target: {
       scope: target.scope,
@@ -1243,8 +1326,8 @@ router.post('/skill-memory/import', adminAuth, (req, res) => {
     },
     selectedIndexes: Array.isArray(indexes) ? indexes : null,
   });
-  if (!result.ok) return res.status(400).json({ error: result.error, skipped: result.skipped });
+  if (!result.ok) { res.status(400).json({ error: (result as any).error, skipped: (result as any).skipped }); return; }
   res.json(result);
 });
 
-module.exports = router;
+export = router;

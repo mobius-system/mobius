@@ -8,7 +8,7 @@
  *   /client/register, /client/events (SSE), /client/result.
  *
  * 鉴权两层:
- *   外部 → mobius auth 中间件 (JWT, 见 backend/middleware/auth.js)
+ *   外部 → mobius auth 中间件 (JWT, 见 backend/middleware/auth)
  *   内部 → 注入 bridge Bearer token (从 runtime.json 读)
  *
  * runtime.json 由 aimux bridge broker 自己原子写, 路径来自 env.AIMUX_BRIDGE_RUNTIME.
@@ -19,12 +19,12 @@
  *   这里手动 buffer + write 给 upstream, 而不是 pipe — pipe 在某些 express 状态下会丢数据.
  *   SSE 走 GET, 无 body, 走另一条流式 pipe 通路.
  */
-const express = require('express');
-const fs = require('fs');
-const http = require('http');
-const path = require('path');
-const url = require('url');
-const { auth, authOrQuery } = require('../middleware/auth');
+import express from 'express';
+import fs from 'fs';
+import http from 'http';
+import path from 'path';
+import url from 'url';
+import { auth, authOrQuery } from '../middleware/auth';
 
 const router = express.Router();
 
@@ -36,42 +36,53 @@ const HOP_BY_HOP_HEADERS = new Set([
   'te', 'trailer', 'transfer-encoding', 'upgrade', 'host', 'content-length',
 ]);
 
-function redactPath(rawPath) {
+interface BridgeTarget {
+  baseUrl: string;
+  token: string;
+  hostname: string;
+  port: number;
+}
+
+interface BridgeError extends Error {
+  code: string;
+}
+
+function redactPath(rawPath: unknown): string {
   return String(rawPath || '').replace(/([?&]token=)[^&]+/g, '$1<redacted>');
 }
 
-function shouldLogPath(rawPath) {
+function shouldLogPath(rawPath: unknown): boolean {
   const p = String(rawPath || '');
   return p.startsWith('/client/register') ||
     p.startsWith('/client/events') ||
     p.startsWith('/client/result');
 }
 
-function logBridgeProxy(req, message, extra = '') {
+function logBridgeProxy(req: express.Request, message: string, extra: string = ''): void {
   if (!shouldLogPath(req.url)) return;
   const suffix = extra ? ` ${extra}` : '';
   console.log(`[aimux-bridge-proxy] ${message}: ${req.method} ${redactPath(req.url)}${suffix}`);
 }
 
-function readBridgeTarget() {
-  let raw;
+function readBridgeTarget(): BridgeTarget {
+  let raw: string;
   try {
     raw = fs.readFileSync(RUNTIME_PATH, 'utf-8');
-  } catch (e) {
-    const err = new Error('aimux bridge broker is not running (runtime.json missing)');
+  } catch {
+    const err = new Error('aimux bridge broker is not running (runtime.json missing)') as BridgeError;
     err.code = 'BRIDGE_DOWN';
     throw err;
   }
-  let data;
+  let data: any;
   try {
     data = JSON.parse(raw);
-  } catch (e) {
-    const err = new Error('aimux bridge runtime.json is corrupt');
+  } catch {
+    const err = new Error('aimux bridge runtime.json is corrupt') as BridgeError;
     err.code = 'BRIDGE_DOWN';
     throw err;
   }
   if (!data || !data.url || !data.token) {
-    const err = new Error('aimux bridge runtime.json missing url/token');
+    const err = new Error('aimux bridge runtime.json missing url/token') as BridgeError;
     err.code = 'BRIDGE_DOWN';
     throw err;
   }
@@ -84,30 +95,32 @@ function readBridgeTarget() {
   };
 }
 
-function buildUpstreamPath(req) {
+function buildUpstreamPath(req: express.Request): string {
   return req.url;
 }
 
-function proxyRequest(req, res) {
-  let target;
+function proxyRequest(req: express.Request, res: express.Response): void {
+  let target: BridgeTarget;
   try {
     target = readBridgeTarget();
   } catch (e) {
-    return res.status(503).json({
+    const err = e as BridgeError;
+    res.status(503).json({
       error: {
         kind: 'remote_disconnected',
-        message: e.message,
+        message: err.message,
         code: 2,
       },
     });
+    return;
   }
 
   const upstreamPath = buildUpstreamPath(req);
   const isSSE = req.method === 'GET' && upstreamPath.startsWith('/client/events');
 
-  const headers = { ...req.headers };
+  const headers: http.OutgoingHttpHeaders = { ...req.headers };
   for (const h of Object.keys(headers)) {
-    if (HOP_BY_HOP_HEADERS.has(h.toLowerCase())) delete headers[h];
+    if (HOP_BY_HOP_HEADERS.has(h.toLowerCase())) delete (headers as any)[h];
   }
   headers.host = `${target.hostname}:${target.port}`;
   headers.authorization = `Bearer ${target.token}`;
@@ -128,16 +141,16 @@ function proxyRequest(req, res) {
       // nginx 默认 proxy_buffering on 会缓冲 SSE 响应, 导致反向连接的 client 收不到任务事件
       // (session.create / send-keys / capture) → broker 端 30s 超时, 表现为"连上了却下发不了指令".
       // X-Accel-Buffering: no 让 nginx 对该响应关闭缓冲, 心跳/事件即时 flush 到 client.
-      const responseHeaders = {
+      const responseHeaders: http.OutgoingHttpHeaders = {
         ...upstreamRes.headers,
         'cache-control': 'no-cache, no-transform',
         'x-accel-buffering': 'no',
       };
-      res.writeHead(upstreamRes.statusCode, responseHeaders);
+      res.writeHead(upstreamRes.statusCode || 200, responseHeaders);
       upstreamRes.pipe(res);
       upstreamRes.on('end', () => logBridgeProxy(req, 'sse upstream end'));
     });
-    upstreamReq.on('error', (err) => {
+    upstreamReq.on('error', (err: Error) => {
       logBridgeProxy(req, 'sse upstream error', err.message);
       if (res.headersSent) { res.end(); return; }
       res.status(502).json({
@@ -155,10 +168,10 @@ function proxyRequest(req, res) {
   }
 
   // 非 SSE: 完整 buffer body 再转发, 避免 pipe 在 express 下丢数据
-  const bodyChunks = [];
+  const bodyChunks: Buffer[] = [];
   let totalLen = 0;
-  req.on('data', (chunk) => { bodyChunks.push(chunk); totalLen += chunk.length; });
-  req.on('error', (err) => {
+  req.on('data', (chunk: Buffer) => { bodyChunks.push(chunk); totalLen += chunk.length; });
+  req.on('error', (err: Error) => {
     logBridgeProxy(req, 'request read error', err.message);
     if (res.headersSent) return;
     res.status(400).json({ error: { kind: 'bad_request', message: `request read error: ${err.message}`, code: 1 } });
@@ -176,10 +189,10 @@ function proxyRequest(req, res) {
       headers,
     }, (upstreamRes) => {
       logBridgeProxy(req, 'upstream response', `status=${upstreamRes.statusCode}`);
-      res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
+      res.writeHead(upstreamRes.statusCode || 200, upstreamRes.headers);
       upstreamRes.pipe(res);
     });
-    upstreamReq.on('error', (err) => {
+    upstreamReq.on('error', (err: Error) => {
       logBridgeProxy(req, 'upstream error', err.message);
       if (res.headersSent) { res.end(); return; }
       res.status(502).json({
@@ -198,4 +211,4 @@ function proxyRequest(req, res) {
 router.get('/client/events', authOrQuery, proxyRequest);
 router.use(auth, proxyRequest);
 
-module.exports = router;
+export = router;

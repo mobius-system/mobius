@@ -1,25 +1,29 @@
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const { spawn, spawnSync } = require('child_process');
-const bcrypt = require('bcryptjs');
-const { v4: uuid } = require('uuid');
-const { auth } = require('../middleware/auth');
-const { Projects } = require('../repositories/projects');
-const { ProjectTodos } = require('../repositories/project-todos');
-const { Issues } = require('../repositories/issues');
-const { Skills } = require('../repositories/skills');
-const { Memories } = require('../repositories/memories');
-const { Users } = require('../repositories/users');
-const {
+import express from 'express';
+import fs from 'fs';
+import path from 'path';
+import { spawn, spawnSync } from 'child_process';
+import bcrypt from 'bcryptjs';
+import { v4 as uuid } from 'uuid';
+import { auth } from '../middleware/auth';
+import { Projects } from '../repositories/projects';
+import { ProjectTodos } from '../repositories/project-todos';
+import { Issues } from '../repositories/issues';
+import { Skills } from '../repositories/skills';
+import { Memories } from '../repositories/memories';
+import { Users } from '../repositories/users';
+// @ts-ignore — service 仍是 .js
+import {
   buildIssueContextPreview,
   buildIssueSelectionDefaults,
   buildProjectIssueContextPreview,
   buildProjectIssueSelectionDefaults,
-} = require('../services/session-context');
-const { ensureGuidedDemoAssets } = require('../services/guided-demo-assets');
-const { defaultCodeServerWorkspace } = require('../services/code-server-workspace');
-const {
+} from '../services/session-context';
+// @ts-ignore — service 仍是 .js
+import { ensureGuidedDemoAssets } from '../services/guided-demo-assets';
+// @ts-ignore — service 仍是 .js
+import { defaultCodeServerWorkspace } from '../services/code-server-workspace';
+// @ts-ignore — service 仍是 .js
+import {
   canReadProject,
   canManageProject,
   canCreateIssue,
@@ -30,15 +34,18 @@ const {
   setHidden,
   setProjectAccess,
   uniqStringList,
-} = require('../services/access-control');
-const {
+} from '../services/access-control';
+// @ts-ignore — service 仍是 .js
+import {
   UserProjectView,
   filterProjectListForUser,
   normalizeProjectSearch,
-} = require('../services/user-project-view');
-const { recordAdminAuditIfCrossUser } = require('../services/admin-audit');
-const modelRegistry = require('../services/model-registry');
-const {
+} from '../services/user-project-view';
+// @ts-ignore — service 仍是 .js
+import { recordAdminAuditIfCrossUser } from '../services/admin-audit';
+// @ts-ignore — service 仍是 .js
+import modelRegistry from '../services/model-registry';
+import {
   APP_DIR,
   BACKEND_WORKER_LOG_DIR,
   ENABLE_PASSWORD_LOGIN,
@@ -54,18 +61,23 @@ const {
   FORGOTTEN_FLAG_BACKOFF_MAX,
   FORGOTTEN_FLAG_PATIENCE_MIN,
   FORGOTTEN_FLAG_PATIENCE_MAX,
-} = require('../config');
+} from '../config';
 
 const router = express.Router();
 const MAIN_PROJECT_PORT_REL = path.join('.imac', 'port_forward', 'main_project_port.txt');
 
-function normalizeRollbackHash(value) {
+// 统一取当前用户 (auth 中间件已塞到 req.user)
+function userOf(req: express.Request): any {
+  return (req as any).user;
+}
+
+function normalizeRollbackHash(value: unknown): string {
   const hash = String(value || '').trim();
   if (!/^[0-9a-f]{7,40}$/i.test(hash)) return '';
   return hash;
 }
 
-function spawnProductOtherVersion(gitHash) {
+function spawnProductOtherVersion(gitHash: string): { pid: number | undefined; log_path: string } {
   const logDir = BACKEND_WORKER_LOG_DIR;
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, 'deploy_other_version.log');
@@ -80,7 +92,7 @@ function spawnProductOtherVersion(gitHash) {
   return { pid: child.pid, log_path: logPath };
 }
 
-function normalizeProjectPort(value) {
+function normalizeProjectPort(value: unknown): number | null {
   const text = String(value ?? '').trim();
   if (!/^[0-9]{1,5}$/.test(text)) return null;
   const port = Number(text);
@@ -88,7 +100,13 @@ function normalizeProjectPort(value) {
   return port;
 }
 
-function parseMobiusSshUrl(value) {
+interface ParsedSshUrl {
+  raw: string;
+  host: string;
+  port: number | null;
+}
+
+function parseMobiusSshUrl(value: unknown): ParsedSshUrl {
   const raw = String(value || '').trim();
   if (!raw) return { raw, host: '', port: null };
 
@@ -124,7 +142,7 @@ function parseMobiusSshUrl(value) {
   return { raw, host: withoutUser.trim(), port: null };
 }
 
-function readSshPrivateKey() {
+function readSshPrivateKey(): { privateKey: string; privateKeyExists: boolean } {
   const keyPath = String(MOBIUS_SSH_PRIVATE_KEY_PATH || '').trim();
   if (!keyPath) return { privateKey: '', privateKeyExists: false };
   try {
@@ -138,12 +156,12 @@ function readSshPrivateKey() {
   }
 }
 
-function mainProjectPortPath(project) {
+function mainProjectPortPath(project: any): string {
   if (!project?.bind_path) return '';
   return path.join(project.bind_path, MAIN_PROJECT_PORT_REL);
 }
 
-function spawnProductHardReset(gitHash) {
+function spawnProductHardReset(gitHash: string): { pid: number | undefined; log_path: string } {
   const logDir = BACKEND_WORKER_LOG_DIR;
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, 'hard_reset_version.log');
@@ -160,7 +178,10 @@ function spawnProductHardReset(gitHash) {
 
 // 在项目 bind_path 内解析子路径, 返回 { absPath, relPath } 或 { error }.
 // 允许的字符: 任何 (用 path.resolve 规范化), 但绝对值必须落在 bind_path 子树.
-function resolveProjectPath(bindPath, rawPath = '/') {
+function resolveProjectPath(
+  bindPath: string | null | undefined,
+  rawPath: unknown = '/',
+): { error: string } | { root: string; relPath: string; absPath: string } {
   if (!bindPath) return { error: '项目未绑定路径' };
   const root = path.resolve(bindPath);
   const relPath = String(rawPath || '/').replace(/\.\./g, '');
@@ -169,12 +190,12 @@ function resolveProjectPath(bindPath, rawPath = '/') {
   return { root, relPath: '/' + path.relative(root, absPath).replace(/\\/g, '/'), absPath };
 }
 
-function isProjectImportDemoBindPath(bindPath) {
+function isProjectImportDemoBindPath(bindPath: unknown): boolean {
   const normalized = path.resolve(String(bindPath || '')).replace(/\\/g, '/');
   return normalized.endsWith('/imac-demo/todomvc-import');
 }
 
-function fileIncludes(absPath, marker) {
+function fileIncludes(absPath: string, marker: string): boolean {
   try {
     return fs.readFileSync(absPath, 'utf8').includes(marker);
   } catch {
@@ -182,18 +203,18 @@ function fileIncludes(absPath, marker) {
   }
 }
 
-function removePathIfExists(absPath, root, removed) {
+function removePathIfExists(absPath: string, root: string, removed: string[]): void {
   if (!absPath || absPath === root || !absPath.startsWith(root + path.sep)) return;
   if (!fs.existsSync(absPath)) return;
   fs.rmSync(absPath, { recursive: true, force: true });
   removed.push('/' + path.relative(root, absPath).replace(/\\/g, '/'));
 }
 
-function clearProjectImportUploadedSample(project) {
+function clearProjectImportUploadedSample(project: any): string[] {
   const resolved = resolveProjectPath(project.bind_path, '/');
-  if (resolved.error) throw new Error(resolved.error);
+  if ('error' in resolved) throw new Error(resolved.error);
   const { root } = resolved;
-  const removed = [];
+  const removed: string[] = [];
 
   removePathIfExists(path.join(root, 'vanilla-todomvc'), root, removed);
   removePathIfExists(path.join(root, 'vanilla-todomvc-upload-sample.zip'), root, removed);
@@ -217,29 +238,33 @@ function clearProjectImportUploadedSample(project) {
 // 新建项目可传 createIfMissing，在确认创建时同步创建目录。
 // rawPath 可以是绝对路径（必须在 work_dir 下），或相对家目录的路径（如 "/imac-test"，会被解析到 work_dir 下）。
 // 规范化 git 仓库数组：[{url, name?}, ...]。空 URL 项被丢弃；非数组抛错。
-function normalizeGitRepos(raw) {
+function normalizeGitRepos(raw: unknown): Array<{ url: string; name?: string }> | null {
   if (raw === undefined || raw === null) return null;
   if (!Array.isArray(raw)) throw new Error('git 仓库列表格式错误');
-  const out = [];
+  const out: Array<{ url: string; name?: string }> = [];
   for (const item of raw) {
     if (!item) continue;
-    const url = typeof item === 'string' ? item : (typeof item.url === 'string' ? item.url : '');
+    const url = typeof item === 'string' ? item : (typeof (item as any).url === 'string' ? (item as any).url : '');
     const trimmed = url.trim();
     if (!trimmed) continue;
     if (trimmed.length > 500) throw new Error('git 仓库地址过长');
-    const name = (typeof item === 'object' && typeof item.name === 'string') ? item.name.trim().slice(0, 100) : '';
+    const name = (typeof item === 'object' && typeof (item as any).name === 'string') ? (item as any).name.trim().slice(0, 100) : '';
     out.push(name ? { url: trimmed, name } : { url: trimmed });
   }
   return out;
 }
 
-function resolveBindPath(rawPath, userWorkDir, options = {}) {
+interface ResolveBindPathOptions {
+  createIfMissing?: boolean;
+}
+
+function resolveBindPath(rawPath: unknown, userWorkDir: unknown, options: ResolveBindPathOptions = {}): string {
   if (rawPath === undefined || rawPath === null || rawPath === '') throw new Error('绑定路径为必填项');
   if (typeof rawPath !== 'string') throw new Error('绑定路径格式错误');
   if (!userWorkDir) throw new Error('用户尚未配置 work_dir, 无法绑定项目路径');
   const createIfMissing = !!options.createIfMissing;
-  const userRoot = path.resolve(userWorkDir);
-  let abs;
+  const userRoot = path.resolve(String(userWorkDir));
+  let abs: string;
   if (path.isAbsolute(rawPath) && (rawPath === userRoot || rawPath.startsWith(userRoot + path.sep))) {
     abs = path.resolve(rawPath);
   } else {
@@ -252,7 +277,7 @@ function resolveBindPath(rawPath, userWorkDir, options = {}) {
     try {
       fs.mkdirSync(abs, { recursive: true });
     } catch (e) {
-      throw new Error(`创建绑定路径失败: ${e.message}`);
+      throw new Error(`创建绑定路径失败: ${(e as Error).message}`);
     }
   }
   if (!fs.statSync(abs).isDirectory()) throw new Error('绑定路径必须是目录');
@@ -261,7 +286,7 @@ function resolveBindPath(rawPath, userWorkDir, options = {}) {
 
 // 手动输入的绑定路径: 用户显式选择"不校验" —— 不检查是否存在 / 是否目录 /
 // 是否落在 work_dir 内, 把控制权完全交给用户. 仅做非空与(绝对路径)规范化.
-function resolveBindPathManual(rawPath) {
+function resolveBindPathManual(rawPath: unknown): string {
   if (rawPath === undefined || rawPath === null || rawPath === '') throw new Error('绑定路径为必填项');
   if (typeof rawPath !== 'string') throw new Error('绑定路径格式错误');
   const p = rawPath.trim();
@@ -269,7 +294,11 @@ function resolveBindPathManual(rawPath) {
   return path.isAbsolute(p) ? path.resolve(p) : p;
 }
 
-function removeDemoWorkspaceIfRequested(project, user, cleanupRequested) {
+function removeDemoWorkspaceIfRequested(
+  project: any,
+  user: any,
+  cleanupRequested: boolean,
+): { removed: boolean; reason?: string; path?: string } {
   if (!cleanupRequested) return { removed: false };
   const bindPath = (project?.bind_path || '').trim();
   const workDir = (user?.work_dir || '').trim();
@@ -290,7 +319,7 @@ function removeDemoWorkspaceIfRequested(project, user, cleanupRequested) {
   return { removed: false };
 }
 
-function normalizeIntervalMinutes(raw, label, min) {
+function normalizeIntervalMinutes(raw: unknown, label: string, min: number): number {
   const n = Number(raw);
   if (!Number.isInteger(n)) throw new Error(`${label}必须是整数分钟`);
   if (n < min) throw new Error(`${label}不能小于 ${min} 分钟`);
@@ -300,7 +329,7 @@ function normalizeIntervalMinutes(raw, label, min) {
   return n;
 }
 
-function normalizeBackoff(raw, label) {
+function normalizeBackoff(raw: unknown, label: string): number {
   const n = Number(raw);
   if (!Number.isFinite(n)) throw new Error(`${label}必须是数字`);
   if (n < FORGOTTEN_FLAG_BACKOFF_MIN) throw new Error(`${label}不能小于 ${FORGOTTEN_FLAG_BACKOFF_MIN}`);
@@ -308,7 +337,7 @@ function normalizeBackoff(raw, label) {
   return n;
 }
 
-function normalizePatience(raw, label) {
+function normalizePatience(raw: unknown, label: string): number {
   const n = Number(raw);
   if (!Number.isInteger(n)) throw new Error(`${label}必须是整数`);
   if (n < FORGOTTEN_FLAG_PATIENCE_MIN) throw new Error(`${label}不能小于 ${FORGOTTEN_FLAG_PATIENCE_MIN}`);
@@ -316,12 +345,18 @@ function normalizePatience(raw, label) {
   return n;
 }
 
-function accessList(body, snakeKey, camelKey) {
+function accessList(body: any, snakeKey: string, camelKey: string): string[] {
   return uniqStringList(body?.[snakeKey] ?? body?.[camelKey]);
 }
 
-function projectAccessBody(body = {}) {
-  const maybeList = (snakeKey, camelKey) => (
+interface ProjectAccessBodyResult {
+  visibility: unknown;
+  allowUserIds: string[] | undefined;
+  allowGroupIds: string[] | undefined;
+}
+
+function projectAccessBody(body: any = {}): ProjectAccessBodyResult {
+  const maybeList = (snakeKey: string, camelKey: string): string[] | undefined => (
     Object.prototype.hasOwnProperty.call(body, snakeKey) || Object.prototype.hasOwnProperty.call(body, camelKey)
       ? accessList(body, snakeKey, camelKey)
       : undefined
@@ -338,11 +373,11 @@ const TODO_DESCRIPTION_MAX_LENGTH = 4000;
 const EXTENSION_DISPLAY_NAME_MAX_LENGTH = 120;
 const EXTENSION_DESCRIPTION_MAX_LENGTH = 1000;
 
-function hasOwn(obj, key) {
+function hasOwn(obj: any, key: string): boolean {
   return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-function normalizeTodoTitle(raw) {
+function normalizeTodoTitle(raw: unknown): string {
   if (typeof raw !== 'string') throw new Error('待办标题格式错误');
   const title = raw.trim();
   if (!title) throw new Error('请填写待办标题');
@@ -350,44 +385,44 @@ function normalizeTodoTitle(raw) {
   return title;
 }
 
-function normalizeTodoDescription(raw) {
+function normalizeTodoDescription(raw: unknown): string {
   if (raw === undefined || raw === null) return '';
   if (typeof raw !== 'string') throw new Error('待办描述格式错误');
   if (raw.length > TODO_DESCRIPTION_MAX_LENGTH) throw new Error(`待办描述不能超过 ${TODO_DESCRIPTION_MAX_LENGTH} 字符`);
   return raw;
 }
 
-function normalizeTodoSortOrder(raw) {
+function normalizeTodoSortOrder(raw: unknown): number {
   const n = Number(raw);
   if (!Number.isInteger(n)) throw new Error('待办排序值必须是整数');
   return n;
 }
 
-function boolFromBody(body, snakeKey, camelKey, fallback = false) {
+function boolFromBody(body: any, snakeKey: string, camelKey: string, fallback = false): boolean {
   if (hasOwn(body, snakeKey)) return !!body[snakeKey];
   if (hasOwn(body, camelKey)) return !!body[camelKey];
   return fallback;
 }
 
-function hasBoolField(body, snakeKey, camelKey) {
+function hasBoolField(body: any, snakeKey: string, camelKey: string): boolean {
   return hasOwn(body, snakeKey) || hasOwn(body, camelKey);
 }
 
 // 项目级默认模型偏好: 接受 null/空串 (表示"未指定, 跟系统默认"), 或 model-registry
 // listSessionModelOptions() 暴露的某个 key. 不在白名单 → 抛 400.
-function normalizeDefaultModel(raw) {
+function normalizeDefaultModel(raw: unknown): string | null | undefined {
   if (raw === undefined) return undefined;
   if (raw === null) return null;
   const trimmed = String(raw).trim();
   if (!trimmed) return null;
-  const allowed = modelRegistry.listSessionModelOptions().map((opt) => opt.key);
+  const allowed = modelRegistry.listSessionModelOptions().map((opt: any) => opt.key);
   if (!allowed.includes(trimmed)) {
     throw new Error(`默认模型偏好必须是可选模型之一: ${allowed.join(', ') || '(暂无可选模型)'}`);
   }
   return trimmed;
 }
 
-function shapeProjectForUser(project, user, opts = {}) {
+function shapeProjectForUser(project: any, user: any, opts: { mutedIds?: Set<string> } = {}): any {
   if (!project) return project;
   const canCreate = canCreateIssue(user, project);
   const muted = opts.mutedIds
@@ -410,25 +445,48 @@ function shapeProjectForUser(project, user, opts = {}) {
   };
 }
 
-function normalizeText(value, fallback, maxLength) {
+function normalizeText(value: unknown, fallback: string, maxLength: number): string {
   const text = typeof value === 'string' ? value.trim() : '';
   return (text || fallback).slice(0, maxLength);
 }
 
-function writeFileExclusive(filePath, content) {
+function writeFileExclusive(filePath: string, content: string): void {
   fs.writeFileSync(filePath, content, { flag: 'wx' });
 }
 
-function createExtensionSkeleton({ extensionName, displayName, description }) {
+interface ExtensionSkeletonArgs {
+  extensionName: string;
+  displayName: unknown;
+  description: unknown;
+}
+
+interface ExtensionManifest {
+  name: string;
+  display_name: string;
+  description: string;
+  version: string;
+}
+
+interface ExtensionSkeletonResult {
+  extRoot: string;
+  manifest: ExtensionManifest;
+}
+
+interface HttpError extends Error {
+  statusCode?: number;
+}
+
+function createExtensionSkeleton({ extensionName, displayName, description }: ExtensionSkeletonArgs): ExtensionSkeletonResult {
+  // 局部 require 以避免顶层导入未迁移的 .js service
   const { EXTENSION_ROOT } = require('../config');
   const extRoot = path.join(EXTENSION_ROOT, extensionName);
   if (fs.existsSync(extRoot)) {
-    throw Object.assign(new Error(`拓展目录已存在：mobius/extension/${extensionName}/`), { statusCode: 400 });
+    throw Object.assign(new Error(`拓展目录已存在：mobius/extension/${extensionName}/`), { statusCode: 400 }) as HttpError;
   }
 
   const safeDisplayName = normalizeText(displayName, extensionName, EXTENSION_DISPLAY_NAME_MAX_LENGTH);
   const safeDescription = typeof description === 'string' ? description.trim().slice(0, EXTENSION_DESCRIPTION_MAX_LENGTH) : '';
-  const manifest = {
+  const manifest: ExtensionManifest = {
     name: extensionName,
     display_name: safeDisplayName,
     description: safeDescription,
@@ -690,20 +748,22 @@ button:hover {
   }
 }
 
-function loadReadableProject(req, res, id, notFoundText = '项目未找到') {
-  const project = Projects.findById(id, req.user?.id);
-  if (!project || !canReadProject(req.user, project)) {
+function loadReadableProject(req: express.Request, res: express.Response, id: string, notFoundText = '项目未找到'): any | null {
+  const user = userOf(req);
+  const project = Projects.findById(id, user?.id);
+  if (!project || !canReadProject(user, project)) {
     res.status(404).json({ error: notFoundText });
     return null;
   }
-  recordAdminAuditIfCrossUser(req.user, 'read_project', 'project', project.id, project.created_by);
+  recordAdminAuditIfCrossUser(user, 'read_project', 'project', project.id, project.created_by);
   return project;
 }
 
-function loadManageableProject(req, res, id) {
+function loadManageableProject(req: express.Request, res: express.Response, id: string): any | null {
   const project = loadReadableProject(req, res, id);
   if (!project) return null;
-  if (!canManageProject(req.user, project)) {
+  const user = userOf(req);
+  if (!canManageProject(user, project)) {
     res.status(403).json({ error: '只有项目 owner/admin 可以修改项目待办' });
     return null;
   }
@@ -741,26 +801,26 @@ const GIT_SCAN_SKIP_DIRS = new Set([
   'vendor',
 ]);
 
-function normalizeCommitLimit(raw) {
+function normalizeCommitLimit(raw: unknown): number {
   const n = Number(raw);
   if (!Number.isFinite(n)) return GIT_COMMIT_LIMIT_DEFAULT;
   return Math.min(Math.max(Math.floor(n), 1), GIT_COMMIT_LIMIT_MAX);
 }
 
-function isWithinPath(parent, child) {
+function isWithinPath(parent: string, child: string): boolean {
   const rel = path.relative(path.resolve(parent), path.resolve(child));
   return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-function packageZipDir(root) {
+function packageZipDir(root: string): string {
   return path.join(root, PACKAGE_ZIP_RELATIVE_DIR);
 }
 
-function isPackageZipPath(root, target) {
+function isPackageZipPath(root: string, target: string): boolean {
   return isWithinPath(packageZipDir(root), target);
 }
 
-function packageEntryType(dirent, absPath) {
+function packageEntryType(dirent: fs.Dirent, absPath: string): 'symlink' | 'dir' | 'file' | 'other' {
   if (dirent.isSymbolicLink()) return 'symlink';
   if (dirent.isDirectory()) return 'dir';
   if (dirent.isFile()) return 'file';
@@ -773,7 +833,7 @@ function packageEntryType(dirent, absPath) {
   return 'other';
 }
 
-function safePackageName(name) {
+function safePackageName(name: unknown): string {
   const raw = String(name || 'project').trim() || 'project';
   const cleaned = raw
     .replace(/[\\/:*?"<>|\x00-\x1f]+/g, '-')
@@ -783,10 +843,10 @@ function safePackageName(name) {
   return cleaned || 'project';
 }
 
-function normalizePackageEntryNames(rawNames) {
+function normalizePackageEntryNames(rawNames: unknown): string[] {
   if (!Array.isArray(rawNames)) throw new Error('请选择要打包的文件或文件夹');
-  const out = [];
-  const seen = new Set();
+  const out: string[] = [];
+  const seen = new Set<string>();
   for (const raw of rawNames) {
     const name = String(raw || '').trim();
     if (!name || name === '.' || name === '..') continue;
@@ -802,9 +862,9 @@ function normalizePackageEntryNames(rawNames) {
   return out;
 }
 
-function directorySizeWithoutPackageZip(root, target) {
+function directorySizeWithoutPackageZip(root: string, target: string): number {
   if (isPackageZipPath(root, target)) return 0;
-  let st;
+  let st: fs.Stats;
   try {
     st = fs.lstatSync(target);
   } catch {
@@ -820,7 +880,7 @@ function directorySizeWithoutPackageZip(root, target) {
   if (st.isFile()) return st.size;
   if (!st.isDirectory()) return 0;
   let total = 0;
-  let children = [];
+  let children: string[] = [];
   try {
     children = fs.readdirSync(target);
   } catch {
@@ -832,20 +892,29 @@ function directorySizeWithoutPackageZip(root, target) {
   return total;
 }
 
-function projectPackageRoot(project) {
+function projectPackageRoot(project: any): string {
   if (!project?.bind_path) throw new Error('项目未绑定路径');
   const root = path.resolve(project.bind_path);
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new Error('项目绑定路径不存在或不是目录');
   return root;
 }
 
-function listPackageEntries(project) {
+interface PackageListEntry {
+  name: string;
+  type: 'symlink' | 'dir' | 'file' | 'other';
+  size: number;
+  modified: Date;
+  default_selected: boolean;
+  excluded_children: string[];
+}
+
+function listPackageEntries(project: any): { root: string; entries: PackageListEntry[] } {
   const root = projectPackageRoot(project);
   const entries = fs.readdirSync(root, { withFileTypes: true })
-    .map((dirent) => {
+    .map((dirent): PackageListEntry | null => {
       const absPath = path.join(root, dirent.name);
       const type = packageEntryType(dirent, absPath);
-      let st;
+      let st: fs.Stats;
       try {
         st = fs.lstatSync(absPath);
       } catch {
@@ -858,9 +927,9 @@ function listPackageEntries(project) {
         modified: st.mtime,
         default_selected: dirent.name !== '.imac',
         excluded_children: dirent.name === '.imac' ? [PACKAGE_ZIP_RELATIVE_DIR.replace(/\\/g, '/')] : [],
-      };
+      } as PackageListEntry;
     })
-    .filter(Boolean)
+    .filter((x): x is PackageListEntry => x !== null)
     .sort((a, b) => {
       const aDir = a.type === 'dir';
       const bDir = b.type === 'dir';
@@ -870,11 +939,24 @@ function listPackageEntries(project) {
   return { root, entries };
 }
 
-function estimatePackageSelection(project, rawNames) {
+interface PackageSelectionEntry {
+  name: string;
+  size: number;
+}
+
+interface EstimatePackageResult {
+  names: string[];
+  selected: PackageSelectionEntry[];
+  total_size: number;
+  warning_threshold: number;
+  over_warning_threshold: boolean;
+}
+
+function estimatePackageSelection(project: any, rawNames: unknown): EstimatePackageResult {
   const root = projectPackageRoot(project);
   const names = normalizePackageEntryNames(rawNames);
   let totalSize = 0;
-  const selected = [];
+  const selected: PackageSelectionEntry[] = [];
   for (const name of names) {
     const absPath = path.join(root, name);
     if (!isWithinPath(root, absPath) || !fs.existsSync(absPath)) {
@@ -990,7 +1072,13 @@ with zipfile.ZipFile(out_path, "w", compression=compression, allowZip64=True) as
 print(json.dumps({"ok": True, "size": os.path.getsize(out_path)}))
 `;
 
-function createPackageZip(project, rawNames) {
+interface CreatePackageZipResult extends EstimatePackageResult {
+  file_name: string;
+  file_path: string;
+  zip_size: number | null;
+}
+
+function createPackageZip(project: any, rawNames: unknown): CreatePackageZipResult {
   const estimate = estimatePackageSelection(project, rawNames);
   const root = projectPackageRoot(project);
   const outDir = packageZipDir(root);
@@ -1004,7 +1092,7 @@ function createPackageZip(project, rawNames) {
     timeout: 30 * 60 * 1000,
     maxBuffer: 1024 * 1024,
   });
-  if (result.error) throw new Error(`创建压缩包失败: ${result.error.message}`);
+  if (result.error) throw new Error(`创建压缩包失败: ${(result.error as Error).message}`);
   if (result.status !== 0) {
     const stderr = String(result.stderr || '').trim();
     const stdout = String(result.stdout || '').trim();
@@ -1018,7 +1106,20 @@ function createPackageZip(project, rawNames) {
   };
 }
 
-function runGit(cwd, args, opts = {}) {
+interface GitRunOptions {
+  timeout?: number;
+  maxBuffer?: number;
+}
+
+interface GitRunResult {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  status?: number;
+  error?: string;
+}
+
+function runGit(cwd: string, args: string[], opts: GitRunOptions = {}): GitRunResult {
   try {
     const result = spawnSync('git', ['-C', cwd, ...args], {
       encoding: 'utf8',
@@ -1028,24 +1129,30 @@ function runGit(cwd, args, opts = {}) {
     const stdout = typeof result.stdout === 'string' ? result.stdout : '';
     const stderr = typeof result.stderr === 'string' ? result.stderr : '';
     if (result.error) {
-      return { ok: false, stdout, stderr, error: result.error.message };
+      return { ok: false, stdout, stderr, error: (result.error as Error).message };
     }
     if (result.status !== 0) {
       return {
         ok: false,
         stdout,
         stderr,
-        status: result.status,
+        status: result.status ?? undefined,
         error: stderr.trim() || `git exited with status ${result.status}`,
       };
     }
     return { ok: true, stdout, stderr };
   } catch (e) {
-    return { ok: false, stdout: '', stderr: '', error: e.message };
+    return { ok: false, stdout: '', stderr: '', error: (e as Error).message };
   }
 }
 
-const PROJECT_GIT_ACTIONS = Object.freeze({
+interface GitActionSpec {
+  label: string;
+  args: string[];
+  timeout: number;
+}
+
+const PROJECT_GIT_ACTIONS = Object.freeze<Record<string, GitActionSpec>>({
   pull: {
     label: '拉取',
     args: ['pull', '--ff-only'],
@@ -1063,17 +1170,17 @@ const PROJECT_GIT_ACTIONS = Object.freeze({
   },
 });
 
-function compactGitOutput(...parts) {
+function compactGitOutput(...parts: unknown[]): string {
   const text = parts.map((part) => String(part || '').trim()).filter(Boolean).join('\n');
   if (!text) return '';
   return text.length > 4000 ? `${text.slice(0, 4000)}\n...` : text;
 }
 
-function projectGitActionError(message, statusCode = 400) {
-  return Object.assign(new Error(message), { statusCode });
+function projectGitActionError(message: string, statusCode = 400): HttpError {
+  return Object.assign(new Error(message), { statusCode }) as HttpError;
 }
 
-function runProjectGitAction(project, action) {
+function runProjectGitAction(project: any, action: string): any {
   const spec = PROJECT_GIT_ACTIONS[action];
   if (!spec) {
     throw projectGitActionError('不支持的 Git 操作');
@@ -1084,7 +1191,7 @@ function runProjectGitAction(project, action) {
     throw projectGitActionError(discovered.reason || '绑定路径下未检测到 Git 仓库');
   }
 
-  const result = runGit(discovered.repo_path, spec.args, {
+  const result = runGit(discovered.repo_path!, spec.args, {
     timeout: spec.timeout,
     maxBuffer: 4 * 1024 * 1024,
   });
@@ -1107,7 +1214,7 @@ function runProjectGitAction(project, action) {
   };
 }
 
-function hasGitMarker(dir) {
+function hasGitMarker(dir: string): boolean {
   try {
     return fs.existsSync(path.join(dir, '.git'));
   } catch {
@@ -1115,13 +1222,13 @@ function hasGitMarker(dir) {
   }
 }
 
-function discoverNestedGitRepo(root) {
-  const queue = [{ dir: root, depth: 0 }];
-  const seen = new Set();
+function discoverNestedGitRepo(root: string): string | null {
+  const queue: Array<{ dir: string; depth: number }> = [{ dir: root, depth: 0 }];
+  const seen = new Set<string>();
   let scanned = 0;
 
   while (queue.length > 0 && scanned < GIT_REPO_SCAN_MAX_DIRS) {
-    const { dir, depth } = queue.shift();
+    const { dir, depth } = queue.shift()!;
     const resolved = path.resolve(dir);
     if (seen.has(resolved)) continue;
     seen.add(resolved);
@@ -1136,7 +1243,7 @@ function discoverNestedGitRepo(root) {
     }
 
     if (depth >= GIT_REPO_SCAN_MAX_DEPTH) continue;
-    let entries = [];
+    let entries: fs.Dirent[] = [];
     try {
       entries = fs.readdirSync(resolved, { withFileTypes: true });
     } catch {
@@ -1153,11 +1260,19 @@ function discoverNestedGitRepo(root) {
   return null;
 }
 
-function discoverGitRepo(bindPath) {
+interface DiscoveredGitRepo {
+  available: boolean;
+  bind_path?: string;
+  repo_path?: string;
+  source?: string;
+  reason?: string;
+}
+
+function discoverGitRepo(bindPath: unknown): DiscoveredGitRepo {
   if (!bindPath) {
     return { available: false, reason: '项目未绑定路径' };
   }
-  const root = path.resolve(bindPath);
+  const root = path.resolve(String(bindPath));
   try {
     if (!fs.existsSync(root)) {
       return { available: false, bind_path: root, reason: '绑定路径不存在' };
@@ -1166,7 +1281,7 @@ function discoverGitRepo(bindPath) {
       return { available: false, bind_path: root, reason: '绑定路径不是目录' };
     }
   } catch (e) {
-    return { available: false, bind_path: root, reason: `无法读取绑定路径: ${e.message}` };
+    return { available: false, bind_path: root, reason: `无法读取绑定路径: ${(e as Error).message}` };
   }
 
   const containing = runGit(root, ['rev-parse', '--show-toplevel']);
@@ -1192,9 +1307,16 @@ function discoverGitRepo(bindPath) {
   return { available: false, bind_path: root, reason: '绑定路径下未检测到 Git 仓库' };
 }
 
-function parseGitStatus(stdout) {
+interface GitStatusSummary {
+  dirty_count: number;
+  staged_count: number;
+  unstaged_count: number;
+  untracked_count: number;
+}
+
+function parseGitStatus(stdout: unknown): GitStatusSummary {
   const lines = String(stdout || '').split(/\r?\n/).filter(Boolean);
-  const summary = { dirty_count: lines.length, staged_count: 0, unstaged_count: 0, untracked_count: 0 };
+  const summary: GitStatusSummary = { dirty_count: lines.length, staged_count: 0, unstaged_count: 0, untracked_count: 0 };
   for (const line of lines) {
     if (line.startsWith('??')) {
       summary.untracked_count += 1;
@@ -1206,7 +1328,18 @@ function parseGitStatus(stdout) {
   return summary;
 }
 
-function parseGitCommits(stdout) {
+interface GitCommitInfo {
+  hash: string;
+  short_hash: string;
+  author_name: string;
+  author_email: string;
+  date: string;
+  relative_date: string;
+  subject: string;
+  refs: string[];
+}
+
+function parseGitCommits(stdout: unknown): GitCommitInfo[] {
   return String(stdout || '')
     .split(GIT_RECORD_SEPARATOR)
     .map((record) => record.trim())
@@ -1231,7 +1364,7 @@ function parseGitCommits(stdout) {
     .filter((commit) => commit.hash);
 }
 
-function readProjectGitTracking(project, rawLimit) {
+function readProjectGitTracking(project: any, rawLimit: unknown): any {
   const limit = normalizeCommitLimit(rawLimit);
   const discovered = discoverGitRepo(project.bind_path);
   const base = {
@@ -1248,14 +1381,14 @@ function readProjectGitTracking(project, rawLimit) {
     staged_count: 0,
     unstaged_count: 0,
     untracked_count: 0,
-    commits: [],
+    commits: [] as GitCommitInfo[],
     updated_at: new Date().toISOString(),
   };
   if (!discovered.available) {
     return { ...base, reason: discovered.reason || '未检测到 Git 仓库' };
   }
 
-  const repoPath = discovered.repo_path;
+  const repoPath = discovered.repo_path!;
   const branch = runGit(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
   const head = runGit(repoPath, ['rev-parse', '--short', 'HEAD']);
   const remote = runGit(repoPath, ['config', '--get', 'remote.origin.url']);
@@ -1289,7 +1422,15 @@ function readProjectGitTracking(project, rawLimit) {
   };
 }
 
-function shapeContextItem(row) {
+interface ContextItemRow {
+  id: string;
+  scope: string;
+  owner_id: string;
+  name: string;
+  description?: string | null;
+}
+
+function shapeContextItem(row: ContextItemRow): ContextItemRow {
   return {
     id: row.id,
     scope: row.scope,
@@ -1299,10 +1440,10 @@ function shapeContextItem(row) {
   };
 }
 
-function idsAllowedByAvailable(raw, available) {
+function idsAllowedByAvailable(raw: unknown, available: ContextItemRow[]): string[] {
   const allowed = new Set(available.map((item) => item.id));
-  const out = [];
-  const seen = new Set();
+  const out: string[] = [];
+  const seen = new Set<string>();
   for (const id of Array.isArray(raw) ? raw : []) {
     if (typeof id !== 'string') continue;
     const trimmed = id.trim();
@@ -1313,7 +1454,20 @@ function idsAllowedByAvailable(raw, available) {
   return out;
 }
 
-function buildUserContextWhitelistPayload(projectId, userId) {
+interface UserContextWhitelistPayload {
+  skill_whitelist_enabled: boolean;
+  builtin_skill_whitelist_enabled: boolean;
+  memory_whitelist_enabled: boolean;
+  skill_ids: string[];
+  builtin_skill_ids: string[];
+  memory_ids: string[];
+  available_skills: ContextItemRow[];
+  available_builtin_skills: ContextItemRow[];
+  available_memories: ContextItemRow[];
+  updated_at: string | null;
+}
+
+function buildUserContextWhitelistPayload(projectId: string, userId: string): UserContextWhitelistPayload {
   const whitelist = Projects.getUserContextWhitelist(projectId, userId);
   const availableSkills = Skills.listForUser(userId).map(shapeContextItem);
   const availableBuiltinSkills = Skills.listBuiltin().map(shapeContextItem);
@@ -1341,11 +1495,11 @@ function buildUserContextWhitelistPayload(projectId, userId) {
   };
 }
 
-function findArchitectureIssue(projectId) {
+function findArchitectureIssue(projectId: string): any {
   return Issues.findByProjectAndTitle(projectId, ARCHITECTURE_ISSUE_TITLE);
 }
 
-function ensureArchitectureIssue(projectId, userId) {
+function ensureArchitectureIssue(projectId: string, userId: string): { issue: any; created: boolean } {
   const existing = findArchitectureIssue(projectId);
   if (existing) return { issue: existing, created: false };
   const issueId = uuid().slice(0, 8);
@@ -1357,19 +1511,19 @@ function ensureArchitectureIssue(projectId, userId) {
     created_by: userId,
     use_worktree: false,
     worktree_branch: '',
-  });
+  } as any);
   return { issue: Issues.findById(issueId), created: true };
 }
 
-function toIdList(value) {
-  if (Array.isArray(value)) return value.map(v => String(v).trim()).filter(Boolean);
+function toIdList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((v: any) => String(v).trim()).filter(Boolean);
   if (typeof value === 'string' && value.length > 0) {
-    return value.split(',').map(v => v.trim()).filter(Boolean);
+    return value.split(',').map((v) => v.trim()).filter(Boolean);
   }
   return [];
 }
 
-function contentTypeForFigure(file) {
+function contentTypeForFigure(file: string): string {
   const ext = path.extname(file).toLowerCase();
   if (ext === '.html' || ext === '.htm') return 'text/html; charset=utf-8';
   if (ext === '.svg') return 'image/svg+xml; charset=utf-8';
@@ -1381,14 +1535,21 @@ function contentTypeForFigure(file) {
   return 'application/octet-stream';
 }
 
-function figureKind(file) {
+function figureKind(file: string): 'html' | 'svg' | 'image' {
   const ext = path.extname(file).toLowerCase();
   if (ext === '.html' || ext === '.htm') return 'html';
   if (ext === '.svg') return 'svg';
   return 'image';
 }
 
-function findArchitectureFigure(project) {
+interface ArchitectureFigure {
+  absPath: string;
+  name: string;
+  ext: string;
+  stat: fs.Stats;
+}
+
+function findArchitectureFigure(project: any): ArchitectureFigure | null {
   const bindPath = (project?.bind_path || '').trim();
   if (!bindPath) return null;
   const dir = path.resolve(bindPath, '.imac', 'generated_figures');
@@ -1396,7 +1557,7 @@ function findArchitectureFigure(project) {
     if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return null;
     const entries = fs.readdirSync(dir, { withFileTypes: true })
       .filter(entry => entry.isFile())
-      .map(entry => {
+      .map((entry): ArchitectureFigure | null => {
         const absPath = path.join(dir, entry.name);
         const ext = path.extname(entry.name).toLowerCase();
         if (!ARCHITECTURE_FIGURE_EXTENSIONS.includes(ext)) return null;
@@ -1404,7 +1565,7 @@ function findArchitectureFigure(project) {
         const stat = fs.statSync(absPath);
         return { absPath, name: entry.name, ext, stat };
       })
-      .filter(Boolean)
+      .filter((x): x is ArchitectureFigure => x !== null)
       .sort((a, b) => {
         const pa = ARCHITECTURE_FIGURE_EXTENSIONS.indexOf(a.ext);
         const pb = ARCHITECTURE_FIGURE_EXTENSIONS.indexOf(b.ext);
@@ -1417,70 +1578,100 @@ function findArchitectureFigure(project) {
   }
 }
 
-function readableProjectsForUser(user) {
-  return Projects.listAll(user.id).filter((project) => canReadProject(user, project));
+function readableProjectsForUser(user: any): any[] {
+  return Projects.listAll(user.id).filter((project: any) => canReadProject(user, project));
 }
 
-function shapeProjectList(projects, req) {
-  const mutedIds = UserProjectView.mutedIds(req.user.id);
-  return projects.map((project) => shapeProjectForUser(project, req.user, { mutedIds }));
+function shapeProjectList(projects: any[], req: express.Request): any[] {
+  const user = userOf(req);
+  const mutedIds = UserProjectView.mutedIds(user.id);
+  return projects.map((project) => shapeProjectForUser(project, user, { mutedIds }));
 }
 
-function auditAdminProjectList(req, action, projects) {
-  if (req.user?.role !== 'admin') return;
-  if (!projects.some((project) => project.created_by && project.created_by !== req.user.id)) return;
-  recordAdminAuditIfCrossUser(req.user, action, 'project', '*', '');
+function auditAdminProjectList(req: express.Request, action: string, projects: any[]): void {
+  const user = userOf(req);
+  if (user?.role !== 'admin') return;
+  if (!projects.some((project) => project.created_by && project.created_by !== user.id)) return;
+  recordAdminAuditIfCrossUser(user, action, 'project', '*', '');
 }
 
-function projectSearchResults(req) {
+function projectSearchResults(req: express.Request): any[] {
+  const user = userOf(req);
   const query = req.query.q ?? req.query.search ?? '';
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-  return filterProjectListForUser(readableProjectsForUser(req.user), req.user, { query })
+  return filterProjectListForUser(readableProjectsForUser(user), user, { query: String(query) } as any)
     .slice(0, limit);
 }
 
-function sendProjectSearch(req, res) {
+function sendProjectSearch(req: express.Request, res: express.Response): void {
   const projects = projectSearchResults(req);
   auditAdminProjectList(req, 'search_projects', projects);
   res.json(shapeProjectList(projects, req));
 }
 
-router.get('/', auth, (req, res) => {
+router.get('/', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
   if (normalizeProjectSearch(req.query.q ?? req.query.search ?? '')) {
     return sendProjectSearch(req, res);
   }
   // ?all=true: 跳过 user_view_prefs.hide_others_projects, 让当前用户拿到自己可见的全部项目
   // (默认 /api/projects 仍然尊重该偏好, 用于 chip 筛选等窄视角场景).
   const showAll = String(req.query.all || '').toLowerCase() === 'true' || req.query.all === '1';
-  const projects = filterProjectListForUser(readableProjectsForUser(req.user), req.user, { showAll })
-    .filter((project) => !isHidden(req.user.id, 'project', project.id));
+  const projects = filterProjectListForUser(readableProjectsForUser(user), user, { showAll })
+    .filter((project: any) => !isHidden(user.id, 'project', project.id));
   auditAdminProjectList(req, 'list_projects', projects);
   res.json(shapeProjectList(projects, req));
 });
 
 router.get('/search', auth, sendProjectSearch);
 
-router.get('/view-prefs', auth, (req, res) => {
-  res.json(UserProjectView.getPrefs(req.user.id));
+router.get('/view-prefs', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  res.json(UserProjectView.getPrefs(user.id));
 });
 
-router.patch('/view-prefs', auth, (req, res) => {
+router.patch('/view-prefs', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
   if (!hasBoolField(req.body || {}, 'hide_others_projects', 'hideOthersProjects')) {
     return res.status(400).json({ error: 'hide_others_projects 必须是布尔值' });
   }
-  res.json(UserProjectView.setPrefs(req.user.id, {
+  res.json(UserProjectView.setPrefs(user.id, {
     hideOthersProjects: boolFromBody(req.body || {}, 'hide_others_projects', 'hideOthersProjects'),
   }));
 });
 
-router.get('/muted', auth, (req, res) => {
-  const mutedIds = UserProjectView.mutedIds(req.user.id);
-  const projects = readableProjectsForUser(req.user).filter((project) => mutedIds.has(project.id));
+router.get('/muted', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const mutedIds = UserProjectView.mutedIds(user.id);
+  const projects = readableProjectsForUser(user).filter((project: any) => mutedIds.has(project.id));
   res.json(shapeProjectList(projects, req));
 });
 
-router.post('/', auth, (req, res) => {
-  const { name, description, bindPath, bindPathManual, gitRepos, defaultUseWorktree, researchEnabled, guidedDemoKind, kind, extensionName } = req.body;
+router.post('/', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const {
+    name,
+    description,
+    bindPath,
+    bindPathManual,
+    gitRepos,
+    defaultUseWorktree,
+    researchEnabled,
+    guidedDemoKind,
+    kind,
+    extensionName,
+  } = (req.body || {}) as {
+    name?: string;
+    description?: string;
+    bindPath?: string;
+    bindPathManual?: boolean;
+    gitRepos?: unknown;
+    defaultUseWorktree?: boolean;
+    researchEnabled?: boolean;
+    guidedDemoKind?: string;
+    kind?: string;
+    extensionName?: string;
+  };
   if (!name) return res.status(400).json({ error: '请填写项目名称' });
   const visibility = normalizeProjectVisibility(req.body?.visibility, 'private');
   const canPostIssue = boolFromBody(req.body || {}, 'can_post_issue', 'canPostIssue', false);
@@ -1488,7 +1679,7 @@ router.post('/', auth, (req, res) => {
 
   // ── 莫比乌斯拓展项目 ──────────────────────────────────────────────────────
   if (kind === 'extension') {
-    if (req.user.role !== 'admin') {
+    if (user.role !== 'admin') {
       return res.status(403).json({ error: '只有管理员可以创建莫比乌斯拓展项目' });
     }
     if (hasBoolField(req.body || {}, 'can_post_issue', 'canPostIssue')
@@ -1510,33 +1701,34 @@ router.post('/', auth, (req, res) => {
         description,
       });
       const reloadResult = registry.reload();
-      const project = Projects.findByExtensionName(normalizedExtensionName, req.user.id);
+      const project = Projects.findByExtensionName(normalizedExtensionName, user.id);
       if (!project) {
-        const error = reloadResult?.errors?.find((item) => item?.name === normalizedExtensionName)?.error || '拓展注册失败';
+        const error = reloadResult?.errors?.find((item: any) => item?.name === normalizedExtensionName)?.error || '拓展注册失败';
         return res.status(500).json({ error });
       }
       setProjectAccess(project.id, { ...projectAccessBody(req.body), visibility });
       return res.json({
-        ...shapeProjectForUser(Projects.findById(project.id, req.user.id), req.user),
+        ...shapeProjectForUser(Projects.findById(project.id, user.id), user),
         extension_reload: reloadResult,
       });
     } catch (e) {
-      return res.status(e.statusCode || 500).json({ error: '创建拓展项目失败：' + e.message });
+      const err = e as HttpError;
+      return res.status(err.statusCode || 500).json({ error: '创建拓展项目失败：' + err.message });
     }
   }
 
   // ── 普通 / Research 项目 ──────────────────────────────────────────────────
   let resolvedPath = '';
-  let repos = [];
-  let normalizedDefaultModel;
+  let repos: Array<{ url: string; name?: string }> = [];
+  let normalizedDefaultModel: string | null | undefined;
   try {
     resolvedPath = bindPathManual
       ? resolveBindPathManual(bindPath)
-      : resolveBindPath(bindPath, req.user.work_dir, { createIfMissing: true });
+      : resolveBindPath(bindPath, user.work_dir, { createIfMissing: true });
     repos = normalizeGitRepos(gitRepos) || [];
     normalizedDefaultModel = normalizeDefaultModel(req.body?.default_model ?? req.body?.defaultModel);
   } catch (e) {
-    return res.status(400).json({ error: e.message });
+    return res.status(400).json({ error: (e as Error).message });
   }
   const projectId = uuid().slice(0, 8);
   // 未显式传则默认 true (保持存量行为: 新建 Issue 时 worktree 勾选框默认打钩)
@@ -1548,40 +1740,42 @@ router.post('/', auth, (req, res) => {
     id: projectId,
     name,
     description,
-    createdBy: req.user.id,
+    createdBy: user.id,
     bindPath: resolvedPath,
     bindPathManual: !!bindPathManual,
-    gitRepos: repos,
+    gitRepos: repos as any,
     defaultUseWorktree: defWt,
     researchEnabled: nextResearchEnabled,
-    visibility,
+    visibility: visibility as any,
     canPostIssue,
     canRunSession,
     defaultModel: normalizedDefaultModel,
   });
   setProjectAccess(projectId, { ...projectAccessBody(req.body), visibility });
-  const project = Projects.findById(projectId, req.user.id);
+  const project = Projects.findById(projectId, user.id);
   const guidedKind = typeof guidedDemoKind === 'string' ? guidedDemoKind.trim() : '';
-  let guidedDemoAssets = null;
+  let guidedDemoAssets: any = null;
   if (guidedKind) {
-    guidedDemoAssets = ensureGuidedDemoAssets({ kind: guidedKind, project, user: req.user });
+    guidedDemoAssets = ensureGuidedDemoAssets({ kind: guidedKind, project, user });
     if (!guidedDemoAssets.ok) {
       try {
         Skills.deleteForProject(projectId);
         Memories.deleteForProject(projectId);
-        removeDemoWorkspaceIfRequested(project, req.user, true);
+        removeDemoWorkspaceIfRequested(project, user, true);
         Projects.delete(projectId);
       } catch {}
       return res.status(400).json({ error: guidedDemoAssets.error || '演示项目资料准备失败' });
     }
   }
-  res.json({ ...shapeProjectForUser(project, req.user), guided_demo_assets: guidedDemoAssets });
+  res.json({ ...shapeProjectForUser(project, user), guided_demo_assets: guidedDemoAssets });
 });
 
-router.delete('/:id', auth, (req, res) => {
-  const project = Projects.findById(req.params.id);
+router.delete('/:id', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
   if (!project) return res.status(404).json({ error: '未找到' });
-  if (project.created_by !== req.user.id) {
+  if (project.created_by !== user.id) {
     return res.status(403).json({ error: '只有项目创建者可以删除项目' });
   }
   if (project.id === FIXED_LOGO_REVIEW_PROJECT_ID) {
@@ -1593,7 +1787,7 @@ router.delete('/:id', auth, (req, res) => {
     return res.status(400).json({ error: '拓展项目由 mobius/extension/ 目录管理, 请删除对应目录后 reload' });
   }
 
-  const { password, confirm } = req.body || {};
+  const { password, confirm } = req.body || {} as { password?: string; confirm?: string };
   const normalizedConfirm = String(confirm || '').trim();
   const accepted = new Set([project.name, project.id].filter(Boolean).map(String));
   if (!accepted.has(normalizedConfirm)) {
@@ -1602,7 +1796,7 @@ router.delete('/:id', auth, (req, res) => {
 
   if (ENABLE_PASSWORD_LOGIN) {
     if (!password) return res.status(400).json({ error: '请输入密码' });
-    const fullUser = Users.findById(req.user.id);
+    const fullUser = Users.findById(user.id);
     if (!fullUser?.password_hash || !bcrypt.compareSync(password, fullUser.password_hash)) {
       return res.status(401).json({ error: '密码错误' });
     }
@@ -1610,65 +1804,75 @@ router.delete('/:id', auth, (req, res) => {
 
   try {
     const contextCleanup = {
-      skills: Skills.deleteForProject(req.params.id),
-      memories: Memories.deleteForProject(req.params.id),
+      skills: Skills.deleteForProject(id),
+      memories: Memories.deleteForProject(id),
     };
-    const workspaceCleanup = removeDemoWorkspaceIfRequested(project, req.user, !!req.body?.cleanup_demo_workspace);
-    recordAdminAuditIfCrossUser(req.user, 'delete_project', 'project', project.id, project.created_by);
-    Projects.delete(req.params.id);
+    const workspaceCleanup = removeDemoWorkspaceIfRequested(project, user, !!req.body?.cleanup_demo_workspace);
+    recordAdminAuditIfCrossUser(user, 'delete_project', 'project', project.id, project.created_by);
+    Projects.delete(id);
     res.json({ ok: true, context_cleanup: contextCleanup, workspace_cleanup: workspaceCleanup });
   } catch (e) {
-    res.status(500).json({ error: e.message || '删除项目失败' });
+    res.status(500).json({ error: (e as Error).message || '删除项目失败' });
   }
 });
 
 // 拓展项目: 每用户隐藏 (隐藏卡片, 不动数据). 可被同一用户自己撤销, 也可被管理员撤销.
-router.post('/:id/hide', auth, (req, res) => {
-  const project = Projects.findById(req.params.id);
+router.post('/:id/hide', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
   if (!project) return res.status(404).json({ error: '未找到' });
-  if (!canReadProject(req.user, project)) return res.status(404).json({ error: '未找到' });
-  if (project.kind === 'extension') Projects.setHidden(req.params.id, req.user.id, true);
-  UserProjectView.mute(req.user.id, req.params.id);
-  setHidden(req.user.id, 'project', req.params.id, true);
-  recordAdminAuditIfCrossUser(req.user, 'mute_project', 'project', project.id, project.created_by);
+  if (!canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+  if (project.kind === 'extension') Projects.setHidden(id, user.id, true);
+  UserProjectView.mute(user.id, id);
+  setHidden(user.id, 'project', id, true);
+  recordAdminAuditIfCrossUser(user, 'mute_project', 'project', project.id, project.created_by);
   res.json({ ok: true, muted: true });
 });
 
-router.post('/:id/unhide', auth, (req, res) => {
-  const project = Projects.findById(req.params.id);
+router.post('/:id/unhide', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
   if (!project) return res.status(404).json({ error: '未找到' });
-  if (!canReadProject(req.user, project)) return res.status(404).json({ error: '未找到' });
-  if (project.kind === 'extension') Projects.setHidden(req.params.id, req.user.id, false);
-  UserProjectView.unmute(req.user.id, req.params.id);
-  setHidden(req.user.id, 'project', req.params.id, false);
-  recordAdminAuditIfCrossUser(req.user, 'unmute_project', 'project', project.id, project.created_by);
+  if (!canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+  if (project.kind === 'extension') Projects.setHidden(id, user.id, false);
+  UserProjectView.unmute(user.id, id);
+  setHidden(user.id, 'project', id, false);
+  recordAdminAuditIfCrossUser(user, 'unmute_project', 'project', project.id, project.created_by);
   res.json({ ok: true, muted: false });
 });
 
-router.post('/:id/mute', auth, (req, res) => {
-  const project = Projects.findById(req.params.id);
+router.post('/:id/mute', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
   if (!project) return res.status(404).json({ error: '未找到' });
-  if (!canReadProject(req.user, project)) return res.status(404).json({ error: '未找到' });
-  UserProjectView.mute(req.user.id, req.params.id);
-  setHidden(req.user.id, 'project', req.params.id, true);
-  recordAdminAuditIfCrossUser(req.user, 'mute_project', 'project', project.id, project.created_by);
+  if (!canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+  UserProjectView.mute(user.id, id);
+  setHidden(user.id, 'project', id, true);
+  recordAdminAuditIfCrossUser(user, 'mute_project', 'project', project.id, project.created_by);
   res.json({ ok: true, muted: true });
 });
 
-router.post('/:id/unmute', auth, (req, res) => {
-  const project = Projects.findById(req.params.id);
+router.post('/:id/unmute', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
   if (!project) return res.status(404).json({ error: '未找到' });
-  if (!canReadProject(req.user, project)) return res.status(404).json({ error: '未找到' });
-  UserProjectView.unmute(req.user.id, req.params.id);
-  setHidden(req.user.id, 'project', req.params.id, false);
-  recordAdminAuditIfCrossUser(req.user, 'unmute_project', 'project', project.id, project.created_by);
+  if (!canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+  UserProjectView.unmute(user.id, id);
+  setHidden(user.id, 'project', id, false);
+  recordAdminAuditIfCrossUser(user, 'unmute_project', 'project', project.id, project.created_by);
   res.json({ ok: true, muted: false });
 });
 
 // 拓展项目: 彻底删除 = 事务删该用户在此拓展上的全部私有/共享数据 + 标记隐藏.
 // 不可逆 (管理员撤销隐藏只能恢复卡片可见, 不能恢复数据).
-router.post('/:id/purge', auth, (req, res) => {
-  const project = Projects.findById(req.params.id);
+router.post('/:id/purge', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
   if (!project) return res.status(404).json({ error: '未找到' });
   if (project.kind !== 'extension') {
     return res.status(400).json({ error: '只能对拓展项目执行彻底删除' });
@@ -1682,28 +1886,32 @@ router.post('/:id/purge', auth, (req, res) => {
     return res.status(400).json({ error: '请输入拓展名以确认' });
   }
   try {
-    Projects.purgeUserExtensionData(req.params.id, req.user.id);
+    Projects.purgeUserExtensionData(id, user.id);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: (e as Error).message });
   }
 });
 
-router.patch('/:id/star', auth, (req, res) => {
-  const project = Projects.findById(req.params.id);
+router.patch('/:id/star', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
   if (!project) return res.status(404).json({ error: '未找到' });
-  if (!canReadProject(req.user, project)) return res.status(404).json({ error: '未找到' });
+  if (!canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
   if (typeof req.body?.starred !== 'boolean') {
     return res.status(400).json({ error: '星标状态格式错误' });
   }
-  Projects.setStarred(req.params.id, req.user.id, req.body.starred);
-  res.json(shapeProjectForUser(Projects.findById(req.params.id, req.user.id), req.user));
+  Projects.setStarred(id, user.id, req.body.starred);
+  res.json(shapeProjectForUser(Projects.findById(id, user.id), user));
 });
 
-router.patch('/:id', auth, (req, res) => {
-  const project = Projects.findById(req.params.id);
+router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
   if (!project) return res.status(404).json({ error: '未找到' });
-  if (!canManageProject(req.user, project)) return res.status(403).json({ error: '只有项目 owner/admin 可以修改项目设置' });
+  if (!canManageProject(user, project)) return res.status(403).json({ error: '只有项目 owner/admin 可以修改项目设置' });
   const {
     name,
     description,
@@ -1725,11 +1933,32 @@ router.patch('/:id', auth, (req, res) => {
     forgottenFlagResearchInitMinutes,
     forgottenFlagResearchBackoff,
     forgottenFlagResearchPatience,
-  } = req.body;
+  } = (req.body || {}) as {
+    name?: string;
+    description?: string;
+    bindPath?: string;
+    bindPathManual?: boolean;
+    gitRepos?: unknown;
+    defaultUseWorktree?: boolean;
+    researchEnabled?: boolean;
+    canPostIssue?: unknown;
+    canRunSession?: unknown;
+    visibility?: unknown;
+    defaultModel?: unknown;
+    forgottenFlagMessage?: string;
+    forgottenFlagIssueIntervalMinutes?: unknown;
+    forgottenFlagResearchIntervalMinutes?: unknown;
+    forgottenFlagIssueInitMinutes?: unknown;
+    forgottenFlagIssueBackoff?: unknown;
+    forgottenFlagIssuePatience?: unknown;
+    forgottenFlagResearchInitMinutes?: unknown;
+    forgottenFlagResearchBackoff?: unknown;
+    forgottenFlagResearchPatience?: unknown;
+  };
   // 拓展项目: name/description/bindPath/gitRepos/defaultUseWorktree/researchEnabled 由 registry 锁定,
   // 任何尝试修改这些字段的请求都拒掉. forgotten_flag.* 与星标仍允许.
   if (project.kind === 'extension') {
-    const locked = [
+    const locked: Array<[string, unknown]> = [
       ['name', name],
       ['description', description],
       ['bindPath', bindPath],
@@ -1753,9 +1982,9 @@ router.patch('/:id', auth, (req, res) => {
   if (defaultModel !== undefined || req.body?.default_model !== undefined) {
     try {
       const normalized = normalizeDefaultModel(defaultModel ?? req.body?.default_model);
-      Projects.updateDefaultModel(req.params.id, normalized);
+      Projects.updateDefaultModel(id, normalized as any);
     } catch (e) {
-      return res.status(400).json({ error: e.message });
+      return res.status(400).json({ error: (e as Error).message });
     }
   }
   if (forgottenFlagMessage !== undefined) {
@@ -1765,7 +1994,7 @@ router.patch('/:id', auth, (req, res) => {
     if (forgottenFlagMessage.length > 4000) {
       return res.status(400).json({ error: '被遗忘 flag 提醒消息过长 (上限 4000 字符)' });
     }
-    Projects.updateForgottenFlagMessage(req.params.id, forgottenFlagMessage);
+    Projects.updateForgottenFlagMessage(id, forgottenFlagMessage);
   }
   const issuePolicyTouched = (
     forgottenFlagIssueIntervalMinutes !== undefined ||
@@ -1791,9 +2020,9 @@ router.patch('/:id', auth, (req, res) => {
           'Issue Session Patience',
         ),
       };
-      Projects.updateForgottenFlagIssuePolicy(req.params.id, policy);
+      Projects.updateForgottenFlagIssuePolicy(id, policy);
     } catch (e) {
-      return res.status(400).json({ error: e.message });
+      return res.status(400).json({ error: (e as Error).message });
     }
   }
   const researchPolicyTouched = (
@@ -1820,82 +2049,84 @@ router.patch('/:id', auth, (req, res) => {
           'Research Agent Patience',
         ),
       };
-      Projects.updateForgottenFlagResearchPolicy(req.params.id, policy);
+      Projects.updateForgottenFlagResearchPolicy(id, policy);
     } catch (e) {
-      return res.status(400).json({ error: e.message });
+      return res.status(400).json({ error: (e as Error).message });
     }
   }
   if (bindPath !== undefined) {
     try {
       const resolvedPath = bindPathManual
         ? resolveBindPathManual(bindPath)
-        : resolveBindPath(bindPath, req.user.work_dir);
-      Projects.updateBindPath(req.params.id, resolvedPath, !!bindPathManual);
+        : resolveBindPath(bindPath, user.work_dir);
+      Projects.updateBindPath(id, resolvedPath, !!bindPathManual);
     } catch (e) {
-      return res.status(400).json({ error: e.message });
+      return res.status(400).json({ error: (e as Error).message });
     }
   }
   if (gitRepos !== undefined) {
     try {
       const repos = normalizeGitRepos(gitRepos);
-      if (repos !== null) Projects.updateGitRepos(req.params.id, repos);
+      if (repos !== null) Projects.updateGitRepos(id, repos as any);
     } catch (e) {
-      return res.status(400).json({ error: e.message });
+      return res.status(400).json({ error: (e as Error).message });
     }
   }
   // 项目级规则: Research 启用时强制禁用 worktree.
   // 先算出本次 PATCH 后 research 的最终值, 再据此决定 worktree 是否要强制 false.
   const nextResearchEnabled = (researchEnabled !== undefined) ? !!researchEnabled : !!project.research_enabled;
-  if (researchEnabled !== undefined) Projects.updateResearchEnabled(req.params.id, nextResearchEnabled);
+  if (researchEnabled !== undefined) Projects.updateResearchEnabled(id, nextResearchEnabled);
   if (nextResearchEnabled) {
     // Research 开启时, 忽略请求中的 defaultUseWorktree, 强制写入 false
-    Projects.updateDefaultUseWorktree(req.params.id, false);
+    Projects.updateDefaultUseWorktree(id, false);
   } else if (defaultUseWorktree !== undefined) {
-    Projects.updateDefaultUseWorktree(req.params.id, !!defaultUseWorktree);
+    Projects.updateDefaultUseWorktree(id, !!defaultUseWorktree);
   }
   if (hasBoolField(req.body || {}, 'can_post_issue', 'canPostIssue')) {
-    Projects.updateCanPostIssue(req.params.id, boolFromBody(req.body || {}, 'can_post_issue', 'canPostIssue'));
+    Projects.updateCanPostIssue(id, boolFromBody(req.body || {}, 'can_post_issue', 'canPostIssue'));
   }
   if (hasBoolField(req.body || {}, 'can_run_session', 'canRunSession')) {
-    Projects.updateCanRunSession(req.params.id, boolFromBody(req.body || {}, 'can_run_session', 'canRunSession'));
+    Projects.updateCanRunSession(id, boolFromBody(req.body || {}, 'can_run_session', 'canRunSession'));
   }
-  if (name) Projects.updateName(req.params.id, name);
-  if (description !== undefined) Projects.updateDescription(req.params.id, description);
+  if (name) Projects.updateName(id, name);
+  if (description !== undefined) Projects.updateDescription(id, description);
   if (visibility !== undefined
     || req.body?.allow_user_ids !== undefined || req.body?.allowUserIds !== undefined
     || req.body?.allow_group_ids !== undefined || req.body?.allowGroupIds !== undefined) {
-    setProjectAccess(req.params.id, projectAccessBody(req.body));
+    setProjectAccess(id, projectAccessBody(req.body));
   }
-  recordAdminAuditIfCrossUser(req.user, 'write_project', 'project', project.id, project.created_by);
-  res.json(shapeProjectForUser(Projects.findById(req.params.id, req.user.id), req.user));
+  recordAdminAuditIfCrossUser(user, 'write_project', 'project', project.id, project.created_by);
+  res.json(shapeProjectForUser(Projects.findById(id, user.id), user));
 });
 
-router.get('/:id/git-tracking', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.get('/:id/git-tracking', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   try {
     res.json(readProjectGitTracking(project, req.query.limit));
   } catch (e) {
-    res.status(500).json({ error: e.message || '读取 Git 追踪信息失败' });
+    res.status(500).json({ error: (e as Error).message || '读取 Git 追踪信息失败' });
   }
 });
 
-router.post('/:id/git-action', auth, (req, res) => {
-  const project = loadManageableProject(req, res, req.params.id);
+router.post('/:id/git-action', auth, (req: express.Request, res: express.Response) => {
+  const project = loadManageableProject(req, res, String(req.params.id));
   if (!project) return;
   const action = String(req.body?.action || '').trim();
   try {
     res.json(runProjectGitAction(project, action));
   } catch (e) {
-    res.status(e.statusCode || 500).json({ error: e.message || '执行 Git 操作失败' });
+    const err = e as HttpError;
+    res.status(err.statusCode || 500).json({ error: err.message || '执行 Git 操作失败' });
   }
 });
 
-router.post('/:id/deploy-version', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.post('/:id/deploy-version', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.is_self_develop) return res.status(400).json({ error: '只有 Mobius 自迭代项目可以回退版本' });
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: '只有管理员可以回退 Mobius 版本' });
+  if (user?.role !== 'admin') return res.status(403).json({ error: '只有管理员可以回退 Mobius 版本' });
 
   const gitHash = normalizeRollbackHash(req.body?.git_hash || req.body?.hash || req.body?.commit);
   if (!gitHash) return res.status(400).json({ error: 'git_hash 必须是 7-40 位 commit hash' });
@@ -1910,15 +2141,16 @@ router.post('/:id/deploy-version', auth, (req, res) => {
       message: `已开始回退到 ${gitHash}`,
     });
   } catch (e) {
-    res.status(500).json({ error: e.message || '启动版本回退失败' });
+    res.status(500).json({ error: (e as Error).message || '启动版本回退失败' });
   }
 });
 
-router.post('/:id/hard-reset-version', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.post('/:id/hard-reset-version', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.is_self_develop) return res.status(400).json({ error: '只有 Mobius 自迭代项目可以硬回退版本' });
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: '只有管理员可以硬回退 Mobius 版本' });
+  if (user?.role !== 'admin') return res.status(403).json({ error: '只有管理员可以硬回退 Mobius 版本' });
 
   const gitHash = normalizeRollbackHash(req.body?.git_hash || req.body?.hash || req.body?.commit);
   if (!gitHash) return res.status(400).json({ error: 'git_hash 必须是 7-40 位 commit hash' });
@@ -1933,56 +2165,58 @@ router.post('/:id/hard-reset-version', auth, (req, res) => {
       message: `已开始硬回退到 ${gitHash}, 当前版本会先保存到 discard/<timestamp> 分支`,
     });
   } catch (e) {
-    res.status(500).json({ error: e.message || '启动版本硬回退失败' });
+    res.status(500).json({ error: (e as Error).message || '启动版本硬回退失败' });
   }
 });
 
-router.get('/:id/todos', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.get('/:id/todos', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   res.json({ items: ProjectTodos.listForProject(project.id) });
 });
 
-router.post('/:id/todos', auth, (req, res) => {
-  const project = loadManageableProject(req, res, req.params.id);
+router.post('/:id/todos', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const project = loadManageableProject(req, res, String(req.params.id));
   if (!project) return;
 
-  let title;
-  let description;
+  let title: string;
+  let descriptionValue: string;
   try {
     title = normalizeTodoTitle(req.body?.title);
-    description = normalizeTodoDescription(req.body?.description);
+    descriptionValue = normalizeTodoDescription(req.body?.description);
   } catch (e) {
-    return res.status(400).json({ error: e.message });
+    return res.status(400).json({ error: (e as Error).message });
   }
 
   const completed = typeof req.body?.completed === 'boolean' ? req.body.completed : false;
-  let sortOrder;
+  let sortOrder: number | undefined;
   if (hasOwn(req.body, 'sort_order') || hasOwn(req.body, 'sortOrder')) {
     try {
       sortOrder = normalizeTodoSortOrder(req.body.sort_order ?? req.body.sortOrder);
     } catch (e) {
-      return res.status(400).json({ error: e.message });
+      return res.status(400).json({ error: (e as Error).message });
     }
   }
 
-  const id = uuid().slice(0, 8);
+  const todoId = uuid().slice(0, 8);
   res.json(ProjectTodos.insert({
-    id,
+    id: todoId,
     projectId: project.id,
     title,
-    description,
+    description: descriptionValue,
     completed,
     sortOrder,
-    createdBy: req.user.id,
-  }));
+    createdBy: user.id,
+  } as any));
 });
 
-router.patch('/:id/todos/:todoId', auth, (req, res) => {
-  const project = loadManageableProject(req, res, req.params.id);
+router.patch('/:id/todos/:todoId', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const project = loadManageableProject(req, res, String(req.params.id));
   if (!project) return;
 
-  const patch = {};
+  const patch: any = {};
   try {
     if (hasOwn(req.body, 'title')) patch.title = normalizeTodoTitle(req.body.title);
     if (hasOwn(req.body, 'description')) patch.description = normalizeTodoDescription(req.body.description);
@@ -1994,35 +2228,35 @@ router.patch('/:id/todos/:todoId', auth, (req, res) => {
       patch.sortOrder = normalizeTodoSortOrder(req.body.sort_order ?? req.body.sortOrder);
     }
   } catch (e) {
-    return res.status(400).json({ error: e.message });
+    return res.status(400).json({ error: (e as Error).message });
   }
 
-  const todo = ProjectTodos.update(project.id, req.params.todoId, patch, req.user.id);
+  const todo = ProjectTodos.update(project.id, String(req.params.todoId), patch, user.id);
   if (!todo) return res.status(404).json({ error: '待办不存在' });
   res.json(todo);
 });
 
-router.delete('/:id/todos/:todoId', auth, (req, res) => {
-  const project = loadManageableProject(req, res, req.params.id);
+router.delete('/:id/todos/:todoId', auth, (req: express.Request, res: express.Response) => {
+  const project = loadManageableProject(req, res, String(req.params.id));
   if (!project) return;
-  const result = ProjectTodos.delete(project.id, req.params.todoId);
+  const result = ProjectTodos.delete(project.id, String(req.params.todoId));
   if (result.changes === 0) return res.status(404).json({ error: '待办不存在' });
   res.json({ ok: true });
 });
 
-router.put('/:id/todos/reorder', auth, (req, res) => {
-  const project = loadManageableProject(req, res, req.params.id);
+router.put('/:id/todos/reorder', auth, (req: express.Request, res: express.Response) => {
+  const project = loadManageableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!Array.isArray(req.body?.ids)) return res.status(400).json({ error: '待办排序列表格式错误' });
   try {
     res.json({ items: ProjectTodos.reorder(project.id, req.body.ids) });
   } catch (e) {
-    res.status(400).json({ error: e.message || '待办排序失败' });
+    res.status(400).json({ error: (e as Error).message || '待办排序失败' });
   }
 });
 
-router.get('/:id/package/items', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.get('/:id/package/items', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   try {
     const { root, entries } = listPackageEntries(project);
@@ -2034,39 +2268,40 @@ router.get('/:id/package/items', auth, (req, res) => {
       entries,
     });
   } catch (e) {
-    res.status(400).json({ error: e.message || '读取可打包文件失败' });
+    res.status(400).json({ error: (e as Error).message || '读取可打包文件失败' });
   }
 });
 
-router.post('/:id/package/estimate', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.post('/:id/package/estimate', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   try {
     res.json(estimatePackageSelection(project, req.body?.names));
   } catch (e) {
-    res.status(400).json({ error: e.message || '统计打包大小失败' });
+    res.status(400).json({ error: (e as Error).message || '统计打包大小失败' });
   }
 });
 
-router.post('/:id/package/download', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.post('/:id/package/download', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
-  let created;
+  let created: CreatePackageZipResult;
   try {
     created = createPackageZip(project, req.body?.names);
   } catch (e) {
-    return res.status(400).json({ error: e.message || '创建压缩包失败' });
+    return res.status(400).json({ error: (e as Error).message || '创建压缩包失败' });
   }
   res.setHeader('Content-Type', 'application/zip');
   res.download(created.file_path, created.file_name, (err) => {
     if (err && !res.headersSent) {
-      res.status(500).json({ error: err.message || '下载压缩包失败' });
+      res.status(500).json({ error: (err as Error).message || '下载压缩包失败' });
     }
   });
 });
 
-function handleArchitectureSessionPresetContextPreview(req, res) {
-  const project = loadReadableProject(req, res, req.params.id);
+function handleArchitectureSessionPresetContextPreview(req: express.Request, res: express.Response): void {
+  const user = userOf(req);
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   const src = (req.method === 'POST' && req.body && typeof req.body === 'object')
     ? req.body : req.query;
@@ -2079,9 +2314,9 @@ function handleArchitectureSessionPresetContextPreview(req, res) {
   const language = src.language === 'en' ? 'en' : 'zh';
   const existingIssue = findArchitectureIssue(project.id);
   const ctx = existingIssue
-    ? buildIssueContextPreview(req.user, existingIssue.id, draftSession, excludedSkillIds, excludedMemoryIds, language)
+    ? buildIssueContextPreview(user, existingIssue.id, draftSession, excludedSkillIds, excludedMemoryIds, language)
     : buildProjectIssueContextPreview(
-      req.user,
+      user,
       project.id,
       { title: ARCHITECTURE_ISSUE_TITLE, description: ARCHITECTURE_ISSUE_DESCRIPTION },
       draftSession,
@@ -2095,27 +2330,29 @@ function handleArchitectureSessionPresetContextPreview(req, res) {
 router.get('/:id/architecture-session-preset/context-preview', auth, handleArchitectureSessionPresetContextPreview);
 router.post('/:id/architecture-session-preset/context-preview', auth, handleArchitectureSessionPresetContextPreview);
 
-router.get('/:id/architecture-session-preset/session-selection-defaults', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.get('/:id/architecture-session-preset/session-selection-defaults', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   const existingIssue = findArchitectureIssue(project.id);
-  if (existingIssue) return res.json(buildIssueSelectionDefaults(req.user, existingIssue.id));
-  res.json(buildProjectIssueSelectionDefaults(req.user, project.id, {
+  if (existingIssue) return res.json(buildIssueSelectionDefaults(user, existingIssue.id));
+  res.json(buildProjectIssueSelectionDefaults(user, project.id, {
     title: ARCHITECTURE_ISSUE_TITLE,
     description: ARCHITECTURE_ISSUE_DESCRIPTION,
   }));
 });
 
-router.post('/:id/architecture-issue', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.post('/:id/architecture-issue', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
-  if (!canCreateIssue(req.user, project)) return res.status(403).json({ error: '无权在此项目创建 Issue' });
-  const result = ensureArchitectureIssue(project.id, req.user.id);
+  if (!canCreateIssue(user, project)) return res.status(403).json({ error: '无权在此项目创建 Issue' });
+  const result = ensureArchitectureIssue(project.id, user.id);
   res.json(result);
 });
 
-router.get('/:id/architecture-figure', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.get('/:id/architecture-figure', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   const figure = findArchitectureFigure(project);
   if (!figure) return res.status(404).json({ error: '项目结构图不存在或正在绘制中' });
@@ -2137,19 +2374,23 @@ router.get('/:id/architecture-figure', auth, (req, res) => {
 
 // 项目设置中的"用户级 Skill 与 Memory 白名单".
 // 只影响当前用户的用户级条目和平台内置 Skill; 项目级 Skill/Memory 始终保留.
-router.get('/:id/user-context-whitelist', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.get('/:id/user-context-whitelist', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = loadReadableProject(req, res, id);
   if (!project) return;
-  res.json(buildUserContextWhitelistPayload(req.params.id, req.user.id));
+  res.json(buildUserContextWhitelistPayload(id, user.id));
 });
 
-router.patch('/:id/user-context-whitelist', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.patch('/:id/user-context-whitelist', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = loadReadableProject(req, res, id);
   if (!project) return;
 
-  const availableSkills = Skills.listForUser(req.user.id).map(shapeContextItem);
+  const availableSkills = Skills.listForUser(user.id).map(shapeContextItem);
   const availableBuiltinSkills = Skills.listBuiltin().map(shapeContextItem);
-  const availableMemories = Memories.listForUser(req.user.id).map(shapeContextItem);
+  const availableMemories = Memories.listForUser(user.id).map(shapeContextItem);
   const skillEnabled = !!req.body?.skill_whitelist_enabled;
   const builtinSkillEnabled = !!req.body?.builtin_skill_whitelist_enabled;
   const memoryEnabled = !!req.body?.memory_whitelist_enabled;
@@ -2157,12 +2398,12 @@ router.patch('/:id/user-context-whitelist', auth, (req, res) => {
   const builtinSkillIds = builtinSkillEnabled ? idsAllowedByAvailable(req.body?.builtin_skill_ids, availableBuiltinSkills) : null;
   const memoryIds = memoryEnabled ? idsAllowedByAvailable(req.body?.memory_ids, availableMemories) : null;
 
-  Projects.setUserContextWhitelist(req.params.id, req.user.id, { skillIds, builtinSkillIds, memoryIds });
-  res.json(buildUserContextWhitelistPayload(req.params.id, req.user.id));
+  Projects.setUserContextWhitelist(id, user.id, { skillIds, builtinSkillIds, memoryIds });
+  res.json(buildUserContextWhitelistPayload(id, user.id));
 });
 
-router.post('/:id/guided-demo/import/clear-upload-sample', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.post('/:id/guided-demo/import/clear-upload-sample', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!isProjectImportDemoBindPath(project.bind_path)) {
     return res.status(400).json({ error: '只能清理导入演示项目的上传样例' });
@@ -2171,7 +2412,7 @@ router.post('/:id/guided-demo/import/clear-upload-sample', auth, (req, res) => {
     const removed = clearProjectImportUploadedSample(project);
     res.json({ ok: true, removed });
   } catch (e) {
-    res.status(500).json({ error: e.message || '清理上传样例失败' });
+    res.status(500).json({ error: (e as Error).message || '清理上传样例失败' });
   }
 });
 
@@ -2183,8 +2424,9 @@ router.post('/:id/guided-demo/import/clear-upload-sample', auth, (req, res) => {
 // 新增字段:
 //   - bind_path_writable: bind_path 对服务进程是否可写 (不可写则前端屏蔽"打开"按钮)
 //   - cs_url_token_required: 前端首次 navigate 必须把 JWT 当 ?_jwt=<token> 拼上
-router.get('/:id/files', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.get('/:id/files', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.bind_path) {
     return res.json({
@@ -2198,19 +2440,19 @@ router.get('/:id/files', auth, (req, res) => {
   let writable = false;
   try { fs.accessSync(project.bind_path, fs.constants.W_OK); writable = true; } catch {}
 
-  const csUrl = `/code-server/${req.user.id}__${project.id}`;
+  const csUrl = `/code-server/${user.id}__${project.id}`;
   const vscodeWorkspacePath = defaultCodeServerWorkspace(project);
 
   const resolved = resolveProjectPath(project.bind_path, req.query.path || '/');
-  if (resolved.error) return res.status(400).json({ error: resolved.error });
+  if ('error' in resolved) return res.status(400).json({ error: resolved.error });
   const { absPath, relPath } = resolved;
   if (!fs.existsSync(absPath) || !fs.statSync(absPath).isDirectory()) return res.status(404).json({ error: 'Not found' });
   try {
     const entries = fs.readdirSync(absPath, { withFileTypes: true })
-      .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules')
-      .map(e => {
+      .filter((e: fs.Dirent) => !e.name.startsWith('.') && e.name !== 'node_modules')
+      .map((e: fs.Dirent) => {
         const full = path.join(absPath, e.name);
-        let stat;
+        let stat: fs.Stats;
         try { stat = fs.statSync(full); } catch { return null; }
         return {
           name: e.name,
@@ -2220,7 +2462,7 @@ router.get('/:id/files', auth, (req, res) => {
           abs_path: full,
         };
       })
-      .filter(Boolean)
+      .filter((x): x is NonNullable<typeof x> => x !== null)
       .sort((a, b) => a.type !== b.type ? (a.type === 'dir' ? -1 : 1) : a.name.localeCompare(b.name));
     res.json({
       bind_path: project.bind_path,
@@ -2237,8 +2479,8 @@ router.get('/:id/files', auth, (req, res) => {
   }
 });
 
-router.get('/:id/main-project-port', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.get('/:id/main-project-port', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   const filePath = mainProjectPortPath(project);
   if (!filePath) return res.json({ port: null, valid: false, exists: false });
@@ -2250,19 +2492,19 @@ router.get('/:id/main-project-port', auth, (req, res) => {
     const port = normalizeProjectPort(raw);
     return res.json({ port, valid: port !== null, exists: true });
   } catch (e) {
-    return res.status(500).json({ error: e.message || '读取项目端口失败' });
+    return res.status(500).json({ error: (e as Error).message || '读取项目端口失败' });
   }
 });
 
-router.get('/:id/ssh-forward-config', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.get('/:id/ssh-forward-config', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
 
   const parsed = parseMobiusSshUrl(MOBIUS_SSH_URL);
   const invalidUrlPort = parsed.port === 443;
   const sshPort = invalidUrlPort ? null : (parsed.port || MOBIUS_SSH_PORT || null);
   const key = readSshPrivateKey();
-  const missing = [];
+  const missing: string[] = [];
   if (!parsed.host) missing.push('MOBIUS_SSH_URL');
   if (invalidUrlPort) missing.push('MOBIUS_SSH_URL_port_must_not_be_443');
   if (!sshPort) missing.push('MOBIUS_SSH_PORT');
@@ -2282,8 +2524,8 @@ router.get('/:id/ssh-forward-config', auth, (req, res) => {
   });
 });
 
-router.post('/:id/main-project-port', auth, (req, res) => {
-  const project = loadReadableProject(req, res, req.params.id);
+router.post('/:id/main-project-port', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.bind_path) return res.status(400).json({ error: '项目未配置 bind_path' });
   const port = normalizeProjectPort(req.body?.port);
@@ -2294,8 +2536,8 @@ router.post('/:id/main-project-port', auth, (req, res) => {
     fs.writeFileSync(filePath, `${port}\n`, 'utf8');
     return res.json({ port, valid: true, exists: true });
   } catch (e) {
-    return res.status(500).json({ error: e.message || '保存项目端口失败' });
+    return res.status(500).json({ error: (e as Error).message || '保存项目端口失败' });
   }
 });
 
-module.exports = router;
+export = router;

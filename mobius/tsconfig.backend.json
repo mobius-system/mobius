@@ -20,7 +20,10 @@
   "include": [
     "db.ts",
     "backend/repositories/**/*.ts",
-    "backend/types/**/*.ts"
+    "backend/types/**/*.ts",
+    "backend/routes/**/*.ts",
+    "backend/middleware/**/*.ts",
+    "backend/utils/**/*.ts"
   ],
   "exclude": [
     "node_modules",
