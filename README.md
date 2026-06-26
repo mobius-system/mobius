@@ -88,17 +88,17 @@
   - PC端 Windows + MacOS (开发中)
   - 移动端 IOS + Android (测试中)
 
-![alt text](image-1.png)
+![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-1.png)
 
 
-<video controls src="docs/self-evolution-demo-v1.mp4" title="Title"></video>
+<video controls src="https://serve.gptacademic.cn/publish/shared/video/334599/self-evolution-demo-v1.mp4" title="Title"></video>
 ↑ 上面这个演示视频也是小莫制作的，提示词参考这个[SKILL](skills/mobius-self-evo-demo/SKILL.md)，录制过程无人类参与，略有瑕疵，我们正在替换素材。
 
 ## 任意模型，任意CodingAgent
 
 轻松接入最强开源模型 GLM-5.2，也支持GPT-5.5、Claude-Opus等。
 
-![alt text](image-2.png)
+![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-2.png)
 
 
 
@@ -144,15 +144,15 @@ flowchart LR
 - 一键连接自己的个人PC（无条件连接，无论是Windows，MacOS，能运行Python即可）
 - 一键连接嵌入式开发板（搭载NX等嵌入式设备的无人机、无人车等）
 
-![alt text](image-3.png)
+![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-3.png)
 
 ## 管理你的团队
 
 无论是一人之军，还是跟人类同事们协同作战，「莫比乌斯 AI」让团队协作更加轻松透明。
 
-![alt text](image-4.png)
-![alt text](image-6.png)
-![alt text](image-7.png)
+![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-4.png)
+![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-6.png)
+![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-7.png)
 
 ### 部署
 
