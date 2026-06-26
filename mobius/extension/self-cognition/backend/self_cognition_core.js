@@ -1057,8 +1057,8 @@ const UPDATE_INSPIRATION_TOOL = {
       match: { type: "string", description: "匹配启发 title 的子串" },
       index: { type: "integer", minimum: 0, description: "匹配启发 index (0-based)，与 match 二选一" },
       priority: { type: "string", enum: ["high", "medium", "low"] },
-      direction: { type: "string" },
-      mobius_use: { type: "string" },
+      direction: { type: "string", description: "概括性方向描述, 一两句话娓娓道来, 不放具体文件名/接口名/库名等技术细节" },
+      mobius_use: { type: "string", description: "具体落实到莫比乌斯的细节: 目标文件 / 模块 / 关键接口 / 可参考实现等技术细节都放这里" },
       title: { type: "string" }
     },
     required: ["kind", "scope_id"]
@@ -1074,8 +1074,8 @@ const ADD_INSPIRATION_TOOL = {
       kind: { type: "string", enum: ["paper", "product"] },
       scope_id: { type: "string" },
       title: { type: "string", description: "启发标题（一句话）" },
-      direction: { type: "string", description: "对莫比乌斯的方向（可选）" },
-      mobius_use: { type: "string", description: "对莫比乌斯的具体应用（可选）" },
+      direction: { type: "string", description: "概括性方向描述, 一两句话娓娓道来, 不放具体技术细节（可选）" },
+      mobius_use: { type: "string", description: "具体落实到莫比乌斯的技术细节: 目标文件 / 模块 / 接口 / 参考实现（可选）" },
       priority: { type: "string", enum: ["high", "medium", "low"], description: "默认 medium" }
     },
     required: ["kind", "scope_id", "title"]
@@ -1411,6 +1411,143 @@ function saveInspiration(e, table, id, inspiration) {
   }
 }
 
+const INSPIRATION_REWRITE_KEY = "inspiration_rewrite_v1";
+
+function parseRewriteBatchJson(text) {
+  if (!text) return null;
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const raw = (fenced ? fenced[1] : text).trim();
+  const start = raw.indexOf("[");
+  const end = raw.lastIndexOf("]");
+  if (start < 0 || end < 0) return null;
+  try {
+    const parsed = JSON.parse(raw.slice(start, end + 1));
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter(it => it && typeof it === "object" && typeof it.key === "string");
+  } catch { return null; }
+}
+
+async function rewriteInspirationStyle(e, t) {
+  const provider = findProvider(txt(t.model_key, 200));
+  const force = !!t.force;
+  if (!force && "done" === e.prepare("SELECT value FROM install_state WHERE key=?").get(INSPIRATION_REWRITE_KEY)?.value) {
+    return { ok: true, skipped: true, reason: "已跑过, 传 force=true 可重跑" };
+  }
+  const sysPrompt = [
+    "你是莫比乌斯写作助手, 任务是把每条 ai_inspiration 改写成新的两层写作风格。",
+    "",
+    "## 输入",
+    "你会收到一个 JSON 数组, 每个元素形如 {\"key\": \"<rowId>#<idx>\", \"title\": ..., \"direction\": ..., \"mobius_use\": ..., \"priority\": ...}。",
+    "",
+    "## 改写规则",
+    "1. **title 与 priority 字段必须原样保留, 一个字符都不能改**。",
+    "2. **direction 改写**: 概括性方向描述, 一两句话娓娓道来。把原来 direction 里的具体文件名 / 模块路径 / 接口名 / 库或版本号 / API 名称剥离出来, 只保留方向感的叙事, 让人扫一眼就知道这条启发在讲什么、对莫比乌斯哪方面有借鉴意义。不要在 direction 里出现具体路径或技术名词。",
+    "3. **mobius_use 改写**: 把从 direction 剥离出来的技术细节合并进去, 整理成 \"具体可在 ... 模块参考其 ..., 改动路径: ...\" 这种带文件 / 接口 / 实现细节的句子。mobius_use 原本就含的技术细节要保留, 不能丢失。",
+    "4. 如果 direction 本来就够概括、没有具体技术细节, 不用强行改写; 但要保证 mobius_use 含足够细节。",
+    "5. 不要新增或删除条目, 数量必须一致; 每条输出的 key 必须和输入完全一致。",
+    "",
+    "## 输出",
+    "返回纯 JSON 数组 (可以包 ```json 代码块), 每个元素形如 {\"key\": \"<原 key>\", \"title\": ..., \"direction\": ..., \"mobius_use\": ..., \"priority\": ...}。"
+  ].join("\n");
+  const LIMIT = 5;
+  const tables = [ { table: "arxiv_items", kind: "paper" }, { table: "product_research", kind: "product" } ];
+  const samples = [];
+  let totalRowsRewritten = 0, totalRowsProcessed = 0, totalItemsRewritten = 0, batchFailures = 0;
+  for (const { table } of tables) {
+    const rows = e.prepare(`SELECT id, ai_inspiration FROM ${table} WHERE ai_inspiration IS NOT NULL AND ai_inspiration != '' AND ai_inspiration != '[]'`).all();
+    for (let i = 0; i < rows.length; i += LIMIT) {
+      const batch = rows.slice(i, i + LIMIT);
+      const items = [];
+      const rowItemsMap = new Map();
+      for (const row of batch) {
+        const list = parseStoredInspiration(row.ai_inspiration);
+        if (!list.length) continue;
+        const rowOrig = [];
+        for (let j = 0; j < list.length; j++) {
+          const key = `${row.id}#${j}`;
+          items.push({
+            key,
+            title: list[j].title || "",
+            direction: list[j].direction || "",
+            mobius_use: list[j].mobius_use || "",
+            priority: list[j].priority || "medium"
+          });
+          rowOrig.push({ idx: j, original: { ...list[j] } });
+        }
+        rowItemsMap.set(row.id, rowOrig);
+      }
+      if (!items.length) continue;
+      const userText = "请改写以下启发条目为新的两层风格, 输出纯 JSON 数组:\n\n" + JSON.stringify(items);
+      let resp;
+      try {
+        resp = await callAnthropicMessages({
+          provider,
+          system: sysPrompt,
+          messages: [{ role: "user", content: userText }],
+          maxTokens: 4096,
+          maxRounds: 1
+        });
+      } catch (err) {
+        batchFailures++;
+        continue;
+      }
+      const text = extractAgentText(resp.content);
+      const rewritten = parseRewriteBatchJson(text);
+      if (!rewritten) { batchFailures++; continue; }
+      const byRow = new Map();
+      for (const item of rewritten) {
+        const m = String(item.key || "").match(/^(.+)#(\d+)$/);
+        if (!m) continue;
+        const rowId = m[1], idx = Number(m[2]);
+        if (!byRow.has(rowId)) byRow.set(rowId, []);
+        byRow.get(rowId).push({ idx, item });
+      }
+      for (const [rowId, arr] of byRow.entries()) {
+        const rowOrig = rowItemsMap.get(rowId);
+        if (!rowOrig) continue;
+        const newList = rowOrig.map(o => ({ ...o.original }));
+        let rowChanged = false;
+        for (const { idx, item } of arr) {
+          if (idx < 0 || idx >= newList.length) continue;
+          const before = { ...newList[idx] };
+          const newDirection = txt(item.direction, 600);
+          const newMobiusUse = txt(item.mobius_use, 1200);
+          if (!newDirection && !newMobiusUse) continue;
+          newList[idx] = {
+            title: before.title,
+            direction: newDirection || before.direction,
+            mobius_use: newMobiusUse || before.mobius_use,
+            priority: before.priority
+          };
+          const changed = newList[idx].direction !== before.direction || newList[idx].mobius_use !== before.mobius_use;
+          if (changed) {
+            totalItemsRewritten++;
+            rowChanged = true;
+            if (samples.length < 4) samples.push({ table, row_id: rowId, idx, before, after: { ...newList[idx] } });
+          }
+        }
+        if (rowChanged) {
+          saveInspiration(e, table, rowId, newList);
+          totalRowsRewritten++;
+        }
+      }
+      totalRowsProcessed += batch.length;
+    }
+  }
+  const stamp = now();
+  e.prepare("INSERT INTO install_state VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value='done',updated_at=excluded.updated_at").run(INSPIRATION_REWRITE_KEY, stamp, stamp);
+  return {
+    ok: true,
+    rows_processed: totalRowsProcessed,
+    rows_rewritten: totalRowsRewritten,
+    items_rewritten: totalItemsRewritten,
+    batch_failures: batchFailures,
+    samples,
+    provider: provider.label,
+    model: provider.model
+  };
+}
+
 function buildScanSystemPrompt({ kind }) {
   return [
     "你是莫比乌斯 (Mobius) 自进化插件的 L2 研究 Agent。",
@@ -1422,8 +1559,16 @@ function buildScanSystemPrompt({ kind }) {
     "## 工作流",
     "1. 仔细阅读提供的论文/竞品内容 + 注入的项目 memory",
     "2. 必要时调用 read_file 工具读取莫比乌斯真实代码确认现状",
-    "3. 给出 3-5 条对莫比乌斯的借鉴方向, 每条包含: title(简短标签) / direction(方向描述) / mobius_use(具体怎么用到莫比乌斯, 含目标文件或模块) / priority(high|medium|low)",
+    "3. 给出 3-5 条对莫比乌斯的借鉴方向, 每条包含: title(简短标签) / direction(概括方向) / mobius_use(具体落实) / priority(high|medium|low)",
     "4. 如果该论文/竞品对莫比乌斯毫无借鉴价值, 直接返回空数组 []",
+    "",
+    "## direction 与 mobius_use 的写作风格 (重要)",
+    "这两个字段要分层, 不要写得一样长、一样具体:",
+    "- direction: 概括性的方向描述, 一两句话娓娓道来。讲清楚这条启发关注的是哪个方向、对莫比乌斯的哪些方面有借鉴意义, 像叙事一样自然。不要点名具体文件名 / 模块路径 / 接口名 / 库或版本号 / API 名称。让人扫一眼 direction 就能感到这条启发在讲什么。",
+    "  示例: \"这条启发关注的是 [Agent 自我反思的环节], 对莫比乌斯在任务结束后沉淀经验、指导下一次迭代的方向上有借鉴意义。\"",
+    "- mobius_use: 把具体怎么落到莫比乌斯写清楚, 包含目标文件 / 模块路径 / 关键接口 / 可参考的实现细节 / 数据流。技术名词、文件路径、库名、版本号都放这里, 不要放 direction。",
+    "  示例: \"具体可在 mobius/extension/self-cognition/backend/self_cognition_core.js 的 aiScanArxiv 流程之后追加一次 reflect 步骤, 读取最近 N 次 agent_runs 的失败 tool_use, 调 LLM 总结成一条 install_state 记录...\"",
+    "简言之: direction 讲\"在讲什么、为什么重要\", mobius_use 讲\"具体怎么改、改哪里\"。",
     "",
     "## 输出格式 (必须严格遵守)",
     "在最终回复中输出 JSON 代码块:",
@@ -1906,7 +2051,7 @@ async function dispatch(e, t, r, a) {
       products: listProducts(e),
       scan_runs: scans(e),
       constants: {
-        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats", "list_ai_channels", "ai_scan_arxiv", "ai_scan_products", "discover_competitors_via_agent", "chat_with_agent", "export_agent_prompt", "list_agent_runs", "get_agent_messages" ],
+        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats", "list_ai_channels", "ai_scan_arxiv", "ai_scan_products", "discover_competitors_via_agent", "chat_with_agent", "rewrite_inspiration_style", "export_agent_prompt", "list_agent_runs", "get_agent_messages" ],
         schedule_ids: [ "self-cognition-arxiv-0900", "self-cognition-products-1000", "self-cognition-evolution-1100" ],
         product_table: "product_research",
         product_statuses: [ "tracked", "candidate", "archived" ]
@@ -1966,6 +2111,10 @@ async function dispatch(e, t, r, a) {
   if ("chat_with_agent" === s) return {
     ok: !0,
     ...(await chatWithAgent(e, t, r))
+  };
+  if ("rewrite_inspiration_style" === s) return {
+    ok: !0,
+    ...(await rewriteInspirationStyle(e, t))
   };
   if ("export_agent_prompt" === s) return {
     ok: !0,

@@ -2156,6 +2156,17 @@ textarea:focus {
   color: rgb(134, 239, 172);
 }
 
+.direction-label {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  background: rgba(129, 140, 248, 0.18);
+  color: rgb(165, 180, 252);
+}
+
 .detail-inspiration {
   border: 1px solid rgba(129, 140, 248, 0.3);
   border-radius: 8px;

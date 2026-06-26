@@ -887,8 +887,8 @@ function renderInspirationBlock(rawInspiration, markExcluded) {
         <span class="priority-tag ${it.priority}">${it.priority === 'high' ? '高' : it.priority === 'medium' ? '中' : '低'}</span>
         <strong>${escapeHtml(it.title || it.direction.slice(0, 40))}</strong>
       </div>
-      ${it.direction ? `<p class="inspiration-direction">${escapeHtml(it.direction)}</p>` : ''}
-      ${it.mobius_use ? `<p class="inspiration-mobius-use"><span class="mobius-use-label">对莫比乌斯:</span> ${escapeHtml(it.mobius_use)}</p>` : ''}
+      ${it.direction ? `<p class="inspiration-direction"><span class="direction-label">启发方向</span> ${escapeHtml(it.direction)}</p>` : ''}
+      ${it.mobius_use ? `<p class="inspiration-mobius-use"><span class="mobius-use-label">具体落实</span> ${escapeHtml(it.mobius_use)}</p>` : ''}
     </li>
   `).join('');
   return `
@@ -1750,8 +1750,8 @@ function renderInspirationDetailBlock(rawInspiration, markExcluded, kind) {
         <span class="priority-tag ${it.priority}">${it.priority === 'high' ? '高优先' : it.priority === 'medium' ? '中优先' : '低优先'}</span>
         <strong>${escapeHtml(it.title || it.direction.slice(0, 40))}</strong>
       </div>
-      ${it.direction ? `<p class="inspiration-direction">${escapeHtml(it.direction)}</p>` : ''}
-      ${it.mobius_use ? `<p class="inspiration-mobius-use"><span class="mobius-use-label">对莫比乌斯:</span> ${escapeHtml(it.mobius_use)}</p>` : ''}
+      ${it.direction ? `<p class="inspiration-direction"><span class="direction-label">启发方向</span> ${escapeHtml(it.direction)}</p>` : ''}
+      ${it.mobius_use ? `<p class="inspiration-mobius-use"><span class="mobius-use-label">具体落实</span> ${escapeHtml(it.mobius_use)}</p>` : ''}
     </li>
   `).join('');
   return `<section class="detail-block detail-inspiration is-loaded">
