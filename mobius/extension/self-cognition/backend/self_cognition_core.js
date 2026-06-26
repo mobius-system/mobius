@@ -1452,17 +1452,19 @@ async function chatWithAgent(e, t, r) {
   appendAgentMessage(e, { runId: run.id, role: "user", content: userTurn, toolCalls: "" });
   const memContext = buildMobiusMemoryContext();
   const systemPrompt = buildScanSystemPrompt({ kind }) + "\n\n## 注入的莫比乌斯 Memory\n\n" + memContext + "\n\n你现在正在和用户对话, 之前已经扫描过若干" + (kind === "paper" ? "论文" : "竞品") + ", 直接基于已有上下文回答, 不要再输出 JSON 启发格式, 用自然中文回答。如果用户问到的内容你之前没扫过, 再调用 read_file 工具或基于已有 memory 回答。";
+  const conversationMessages = priorMessages.concat([{ role: "user", content: userTurn }]);
   try {
     const resp = await callAnthropicMessages({
       provider,
       system: systemPrompt,
-      messages: [{ role: "user", content: userTurn }],
+      messages: conversationMessages,
       tools: [READ_FILE_TOOL],
       maxTokens: 2000,
       maxRounds: 5
     });
     const text = extractAgentText(resp.content);
-    appendAgentMessage(e, { runId: run.id, role: "assistant", content: text, toolCalls: "" });
+    const toolCallCount = (resp.content || []).filter(b => b && b.type === "tool_use").length;
+    appendAgentMessage(e, { runId: run.id, role: "assistant", content: text, toolCalls: String(toolCallCount) });
     e.prepare("UPDATE agent_runs SET updated_at=? WHERE id=?").run(now(), run.id);
     return {
       ok: true,
@@ -1471,7 +1473,9 @@ async function chatWithAgent(e, t, r) {
       reply: text,
       model: provider.model,
       provider: provider.label,
-      tokens: { input: resp.usage.input_tokens || 0, output: resp.usage.output_tokens || 0 }
+      tokens: { input: resp.usage.input_tokens || 0, output: resp.usage.output_tokens || 0 },
+      tool_calls: toolCallCount,
+      context_messages: priorMessages.length
     };
   } catch (err) {
     appendAgentMessage(e, { runId: run.id, role: "assistant", content: `错误: ${err.message}` });

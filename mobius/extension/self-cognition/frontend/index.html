@@ -17,6 +17,24 @@
   <script type="module" src="main.js"></script>
 </head>
 <body>
+  <div class="app-loading-overlay" id="appLoadingOverlay" aria-hidden="false">
+    <div class="app-loading-inner">
+      <div class="app-loading-ring" aria-hidden="true"></div>
+      <div class="app-loading-ring app-loading-ring--orbit" aria-hidden="true"></div>
+      <div class="app-loading-text">
+        <strong id="appLoadingTitle">莫比乌斯正在苏醒</strong>
+        <span id="appLoadingHint">初始化 Research Radar 数据通道…</span>
+      </div>
+      <ul class="app-loading-steps" id="appLoadingSteps" aria-label="加载步骤">
+        <li data-step="channels"><span class="dot"></span>读取 AI 渠道配置</li>
+        <li data-step="papers"><span class="dot"></span>载入论文库与聚类</li>
+        <li data-step="products"><span class="dot"></span>载入竞品与种子库</li>
+        <li data-step="evolution"><span class="dot"></span>对齐自进化历史</li>
+        <li data-step="ai"><span class="dot"></span>同步最近 Agent 上下文</li>
+      </ul>
+    </div>
+  </div>
+
   <nav class="nav" id="topNav" aria-label="页面导航">
     <a class="brand" href="#hero" aria-label="回到顶部">
       <span class="brand-mark"></span>

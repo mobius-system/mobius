@@ -695,6 +695,9 @@ function updateRadarDiscoveries() {
 }
 
 async function loadAll() {
+  const overlay = ensureLoadingOverlay();
+  overlay.start('莫比乌斯正在苏醒', '初始化 Research Radar 数据通道…');
+  overlay.activate('papers');
   try {
     const data = await call({ action: 'bootstrap', skip_first_scan: true, limit: 200 });
     state.summary = data.summary || {};
@@ -704,14 +707,70 @@ async function loadAll() {
     state.products = data.products || { items: [], total: 0 };
     state.scanRuns = data.scan_runs || [];
     state.constants = data.constants || {};
+    overlay.done('papers');
+    overlay.activate('products');
     await loadMyFeedbacks();
+    overlay.done('products');
+    overlay.activate('evolution');
     await loadPaperClusters();
     await loadEvolutionAll();
+    overlay.done('evolution');
+    overlay.activate('ai');
     await loadAiChannels();
+    overlay.done('ai');
+    overlay.finish('L2 Agent 就绪，可以开聊');
     render();
   } catch (error) {
+    overlay.error(error.message || '加载失败');
     showToast(error.message || '加载失败', 'bad');
   }
+}
+
+function ensureLoadingOverlay() {
+  if (state.loadingOverlay) return state.loadingOverlay;
+  const el = $('appLoadingOverlay');
+  if (!el) return { start() {}, activate() {}, done() {}, finish() {}, error() {} };
+  const titleEl = $('appLoadingTitle');
+  const hintEl = $('appLoadingHint');
+  const stepEls = {};
+  el.querySelectorAll('[data-step]').forEach((li) => { stepEls[li.dataset.step] = li; });
+  document.body.classList.add('is-app-loading');
+  const overlay = {
+    start(title, hint) {
+      if (titleEl) titleEl.textContent = title || '莫比乌斯正在苏醒';
+      if (hintEl) hintEl.textContent = hint || '初始化 Research Radar 数据通道…';
+      Object.values(stepEls).forEach((li) => li.classList.remove('is-active', 'is-done'));
+      el.classList.remove('is-hiding');
+      el.setAttribute('aria-hidden', 'false');
+    },
+    activate(step) {
+      Object.values(stepEls).forEach((li) => li.classList.remove('is-active'));
+      const target = stepEls[step];
+      if (target) target.classList.add('is-active');
+    },
+    done(step) {
+      const target = stepEls[step];
+      if (!target) return;
+      target.classList.remove('is-active');
+      target.classList.add('is-done');
+    },
+    finish(hint) {
+      if (hintEl) hintEl.textContent = hint || '已就绪';
+      Object.values(stepEls).forEach((li) => li.classList.remove('is-active'));
+      Object.values(stepEls).forEach((li) => li.classList.add('is-done'));
+      setTimeout(() => {
+        el.classList.add('is-hiding');
+        el.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('is-app-loading');
+      }, 360);
+    },
+    error(msg) {
+      if (hintEl) hintEl.textContent = msg || '加载出错，请刷新重试';
+      Object.values(stepEls).forEach((li) => li.classList.remove('is-active'));
+    },
+  };
+  state.loadingOverlay = overlay;
+  return overlay;
 }
 
 function render() {
@@ -1222,10 +1281,16 @@ async function doAiScan(kind, { button } = {}) {
       inspiration_count: r.inspiration_count,
       excluded: r.excluded,
     }));
-    if (kind === 'paper') await loadPaperClusters();
-    else {
-      const comp = await call({ action: 'get_competitors' });
-      state.competitors = comp.competitors || state.competitors;
+    if (kind === 'paper') {
+      const fresh = await call({ action: 'bootstrap', skip_first_scan: true, limit: 200 });
+      state.papers = fresh.arxiv || state.papers;
+      state.summary = fresh.summary || state.summary;
+      await loadPaperClusters();
+    } else {
+      const fresh = await call({ action: 'bootstrap', skip_first_scan: true, limit: 200 });
+      state.products = fresh.products || state.products;
+      state.competitors = fresh.competitors || state.competitors;
+      state.summary = fresh.summary || state.summary;
     }
     render();
     renderLatestBatch(kind === 'paper' ? 'paper' : 'product', items, `本轮 AI 阅读 ${result.scanned} 条 · ${items.length} 条有启发`);
@@ -1537,12 +1602,16 @@ function getDetailChat(kind, id) {
 }
 
 function renderChatMessages(chat) {
-  const rows = chat.messages.map((message) => `
-    <div class="detail-chat-message ${message.role === 'user' ? 'is-user' : 'is-ai'} ${message.tone === 'error' ? 'is-error' : ''}">
-      <div class="detail-chat-bubble">${escapeHtml(message.content)}</div>
+  const rows = chat.messages.map((message) => {
+    const toneClass = message.tone === 'error' ? 'is-error' : (message.tone === 'warn' ? 'is-warn' : '');
+    const metaHtml = message.meta ? `<div class="detail-chat-meta">${escapeHtml(message.meta)}</div>` : '';
+    return `
+    <div class="detail-chat-message ${message.role === 'user' ? 'is-user' : 'is-ai'} ${toneClass}">
+      <div class="detail-chat-bubble">${escapeHtml(message.content)}${metaHtml}</div>
       <time>${escapeHtml(formatChatTime(message.time))}</time>
     </div>
-  `);
+  `;
+  });
   if (chat.loading) {
     rows.push(`
       <div class="detail-chat-message is-ai is-loading">
@@ -1910,20 +1979,36 @@ async function handleDetailChatSubmit(event) {
       message,
       model_key: state.aiChannel[kind],
     });
+    let reply = (result.reply || '').trim();
+    const toolCalls = Number(result.tool_calls || 0);
+    if (!reply) {
+      reply = toolCalls > 0
+        ? `（Agent 已调用 ${toolCalls} 次 read_file 工具查阅代码，但本轮没有输出文字回答。可以换个具体问题，例如：它具体做了什么 / 跟莫比乌斯对标的字段在哪 / 实现成本估算。）`
+        : '（Agent 本轮没有生成可用回复。可以换个更具体的问法，或在 AI 渠道下拉换一个模型再试。）';
+    }
+    const meta = [];
+    if (result.provider) meta.push(result.provider);
+    if (result.context_messages) meta.push(`已带上下文 ${result.context_messages} 条`);
+    if (result.tokens?.input || result.tokens?.output) meta.push(`tokens in/out=${result.tokens.input}/${result.tokens.output}`);
     chat.messages.push({
       role: 'assistant',
-      content: result.reply || '我暂时没有生成可用回复。',
+      content: reply,
+      meta: meta.length ? meta.join(' · ') : '',
       time: new Date().toISOString(),
       model: result.model || '',
+      tone: !result.reply ? 'warn' : undefined,
     });
   } catch (error) {
+    const reason = (error.message || '').toLowerCase().includes('agent run')
+      ? '尚未跑过 AI Agent 扫描，请先点 "AI 深度阅读" 按钮。'
+      : (error.message || 'AI 暂不可用，请稍后再试');
     chat.messages.push({
       role: 'assistant',
-      content: 'AI 暂不可用，请稍后再试。',
+      content: `AI 暂不可用：${reason}`,
       tone: 'error',
       time: new Date().toISOString(),
     });
-    showToast(error.message || 'AI 暂不可用，请稍后再试', 'bad');
+    showToast(reason, 'bad');
   } finally {
     chat.loading = false;
     refreshDetailChat(kind, id);

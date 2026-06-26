@@ -1614,6 +1614,23 @@ textarea:focus {
   background: rgba(190, 18, 60, 0.3);
 }
 
+.detail-chat-message.is-warn .detail-chat-bubble {
+  color: #fef3c7;
+  background: rgba(217, 119, 6, 0.18);
+  border-color: rgba(252, 211, 77, 0.35);
+}
+
+.detail-chat-meta {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: rgba(148, 163, 184, 0.72);
+  letter-spacing: 0.02em;
+}
+
+.detail-chat-message.is-warn .detail-chat-meta {
+  color: rgba(252, 211, 77, 0.78);
+}
+
 .detail-chat-message time {
   color: rgba(226, 232, 240, 0.46);
   font-size: 0.72rem;
@@ -2237,4 +2254,155 @@ textarea:focus {
   border: 1px solid rgba(129, 140, 248, 0.35);
   border-top: none;
   border-radius: 0 0 14px 14px;
+}
+
+.app-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, rgba(67, 56, 202, 0.45), rgba(2, 6, 23, 0.96) 60%, rgba(2, 6, 23, 1) 100%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: opacity 420ms ease, visibility 420ms ease;
+}
+
+.app-loading-overlay.is-hiding {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.app-loading-inner {
+  position: relative;
+  width: min(420px, 86vw);
+  padding: 38px 34px 32px;
+  text-align: center;
+  color: rgba(226, 232, 240, 0.92);
+  border-radius: 22px;
+  background: linear-gradient(160deg, rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.65));
+  border: 1px solid rgba(129, 140, 248, 0.28);
+  box-shadow: 0 30px 80px -20px rgba(15, 23, 42, 0.9), 0 0 60px -10px rgba(129, 140, 248, 0.35);
+}
+
+.app-loading-ring,
+.app-loading-ring--orbit {
+  position: absolute;
+  top: -42px;
+  left: 50%;
+  width: 96px;
+  height: 96px;
+  margin-left: -48px;
+  border-radius: 50%;
+  border: 2px solid rgba(129, 140, 248, 0.4);
+  border-top-color: rgba(196, 181, 253, 0.95);
+  border-right-color: rgba(96, 165, 250, 0.85);
+  animation: app-loading-spin 1.4s linear infinite;
+  box-shadow: 0 0 28px rgba(129, 140, 248, 0.35);
+}
+
+.app-loading-ring--orbit {
+  width: 132px;
+  height: 132px;
+  top: -60px;
+  margin-left: -66px;
+  border-color: rgba(56, 189, 248, 0.25);
+  border-bottom-color: rgba(125, 211, 252, 0.95);
+  border-left-color: rgba(56, 189, 248, 0.7);
+  animation-direction: reverse;
+  animation-duration: 2.4s;
+}
+
+@keyframes app-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+.app-loading-text {
+  margin-top: 50px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.app-loading-text strong {
+  font-size: 1.25rem;
+  letter-spacing: 0.04em;
+  color: rgba(241, 245, 249, 0.98);
+}
+
+.app-loading-text span {
+  font-size: 0.88rem;
+  color: rgba(148, 163, 184, 0.92);
+}
+
+.app-loading-steps {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-loading-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.84rem;
+  color: rgba(148, 163, 184, 0.78);
+  transition: color 240ms ease;
+}
+
+.app-loading-steps li .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.35);
+  box-shadow: 0 0 0 0 rgba(129, 140, 248, 0);
+  transition: background 240ms ease, box-shadow 320ms ease, transform 240ms ease;
+}
+
+.app-loading-steps li.is-active {
+  color: rgba(226, 232, 240, 0.95);
+}
+
+.app-loading-steps li.is-active .dot {
+  background: rgba(129, 140, 248, 0.9);
+  box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.18);
+  transform: scale(1.2);
+  animation: app-loading-pulse 1.2s ease-in-out infinite;
+}
+
+.app-loading-steps li.is-done {
+  color: rgba(125, 211, 252, 0.92);
+}
+
+.app-loading-steps li.is-done .dot {
+  background: rgba(56, 189, 248, 0.95);
+}
+
+@keyframes app-loading-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.18); }
+  50% { box-shadow: 0 0 0 8px rgba(129, 140, 248, 0.04); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-loading-ring,
+  .app-loading-ring--orbit {
+    animation-duration: 6s;
+  }
+  .app-loading-steps li.is-active .dot {
+    animation: none;
+  }
+}
+
+body.is-app-loading {
+  overflow: hidden;
+}
+
+body:not(.is-app-loading) .app-loading-overlay {
+  display: none;
 }
