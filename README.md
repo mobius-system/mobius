@@ -28,13 +28,13 @@
 >
 > 我们塑造「莫比乌斯 AI」的今天；**而您，真正的 AI 驾驭者，不满足于“预制” AI 系统的突破者**，可以用自然语言+截图发出指令，按照您的意愿打磨「莫比乌斯 AI」的每一个棱角，塑炼它的每行代码和每个像素，打造所向披靡的 Agent 平台。
 
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-9.png)
+<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-9.png" width="500" alt="alt text" />
 
 
 ## 会生长、可进化的生产力系统
 
 开发项目，处理数据，优化前端，复现论文实验，嵌入式研发，跨设备团队协同攻关，云服务器管理，Deep Research，Auto Research ...
-这些都可以在「莫比乌斯 AI」系统中一站式搞定。在这里，你将成为 AI 的用户变成 Agent 的指挥官，任意多的**开发项目**、任意多的**服务器/PC/嵌入式设备**、任意多的普通任务（Issue）和研究任务（Research），只需要一句话，让您的想法即刻在正确的地方生根。
+这些都可以在「莫比乌斯 AI」系统中一站式搞定。在这里，你将从 AI 的用户变成 Agent 的指挥官，任意多的**开发项目**、任意多的**服务器/PC/嵌入式设备**、任意多的普通任务（Issue）和研究任务（Research），只需要一句话，让您的想法即刻在正确的地方生根。
 
 而这些，仅仅只是「莫比乌斯 AI」的基础能力。
 在模型能力极速增强的浪潮之下，无论多完善的 Agent 框架，都可能一夜之间被模型能力的突破进展“吞噬”。
@@ -47,7 +47,7 @@
 亦或者抛出**博客网址**告诉「莫比乌斯 AI」今日最潮流的Agent用法，
 「莫比乌斯 AI」将竭尽所能**自我塑炼**，
 在不影响其他进行中的工作的情况下，低调完成自我进化。
-每一次与「莫比乌斯 AI」的交互，你都可以替换掉这艘「忒修斯之船」上的一块木板，直到它只属于你（和你领导的团队）。
+每一次与「莫比乌斯 AI」的交互，你都可以替换掉这艘「忒修斯之船」上的一块木板，直到它成为你（和你领导的团队）的利器。
 
 <video controls src="https://mobius.nutshellai.cn/assets/v1/self-evolution.mp4" title="Title"></video>
 
@@ -59,17 +59,17 @@
 
 - 「莫比乌斯 AI」指挥多个Agent建立自主协同网络
 
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-10.png)
+<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-10.png" width="500" alt="alt text" />
 
 - 「莫比乌斯 AI」自动绘制研究进展
 
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-11.png)
+<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-11.png" width="500" alt="alt text" />
 
 - 「莫比乌斯 AI」做调研
 
 <video controls src="https://mobius.nutshellai.cn/assets/v1/research-back.mp4" title="Title"></video>
 
-## 小莫助理：高中生都能使用的的开发中枢和管理中枢
+## 小莫助理：高中生都能使用的开发中枢和管理中枢
 
 
 - 「莫比乌斯 AI」的“第二前端”与智慧中心
@@ -88,7 +88,7 @@
   - PC端 Windows + MacOS (开发中)
   - 移动端 IOS + Android (测试中)
 
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-1.png)
+<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-1.png" width="500" alt="alt text" />
 
 
 <video controls src="https://serve.gptacademic.cn/publish/shared/video/334599/self-evolution-demo-v1.mp4" title="Title"></video>
@@ -98,7 +98,7 @@
 
 轻松接入最强开源模型 GLM-5.2，也支持GPT-5.5、Claude-Opus等。
 
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-2.png)
+<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-2.png" width="500" alt="alt text" />
 
 
 
@@ -108,7 +108,7 @@
 莫比乌斯不仅调度浏览器和终端，也可以把 GPU 集群、NX 开发板、NAS/OSS、云服务器与员工工作站纳入同一个任务网络。通过 SSH/SFTP、AIMUX 和可控代理，小莫可以远程配置环境、下发实验、回收日志与产物，让算力、设备和数据都成为可被 Agent 调用的触手。无论任务发生在云端机房，还是一块边缘开发板上，都能被统一感知、编排和复盘。
 
 ```mermaid
-flowchart LR
+flowchart TD
   M["莫比乌斯<br/>（小莫）"]
 
   subgraph P["触达协议与通道"]
@@ -144,15 +144,15 @@ flowchart LR
 - 一键连接自己的个人PC（无条件连接，无论是Windows，MacOS，能运行Python即可）
 - 一键连接嵌入式开发板（搭载NX等嵌入式设备的无人机、无人车等）
 
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-3.png)
+<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-3.png" width="500" alt="alt text" />
 
 ## 管理你的团队
 
 无论是一人之军，还是跟人类同事们协同作战，「莫比乌斯 AI」让团队协作更加轻松透明。
 
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-4.png)
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-6.png)
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-7.png)
+<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-4.png" width="500" alt="alt text" />
+<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-6.png" width="500" alt="alt text" />
+<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-7.png" width="500" alt="alt text" />
 
 ### 部署
 
