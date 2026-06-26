@@ -15,9 +15,13 @@ import { RingGeometry } from 'three/src/geometries/RingGeometry.js'
 import { SphereGeometry } from 'three/src/geometries/SphereGeometry.js'
 import { OctahedronGeometry } from 'three/src/geometries/OctahedronGeometry.js'
 import { TorusKnotGeometry } from 'three/src/geometries/TorusKnotGeometry.js'
+import { ExtrudeGeometry } from 'three/src/geometries/ExtrudeGeometry.js'
+import { IcosahedronGeometry } from 'three/src/geometries/IcosahedronGeometry.js'
+import { LatheGeometry } from 'three/src/geometries/LatheGeometry.js'
 import { LineBasicMaterial } from 'three/src/materials/LineBasicMaterial.js'
 import { MeshBasicMaterial } from 'three/src/materials/MeshBasicMaterial.js'
 import { MeshStandardMaterial } from 'three/src/materials/MeshStandardMaterial.js'
+import { MeshPhysicalMaterial } from 'three/src/materials/MeshPhysicalMaterial.js'
 import { PointsMaterial } from 'three/src/materials/PointsMaterial.js'
 import { SpriteMaterial } from 'three/src/materials/SpriteMaterial.js'
 import { PerspectiveCamera } from 'three/src/cameras/PerspectiveCamera.js'
@@ -38,7 +42,10 @@ import { WebGLRenderer } from 'three/src/renderers/WebGLRenderer.js'
 import { Scene } from 'three/src/scenes/Scene.js'
 import { FogExp2 } from 'three/src/scenes/FogExp2.js'
 import { CanvasTexture } from 'three/src/textures/CanvasTexture.js'
+import { Shape } from 'three/src/extras/core/Shape.js'
+import { PMREMGenerator } from 'three/src/extras/PMREMGenerator.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { ThemeName } from '../theme'
 
 export type ResearchTeamSceneAgent = {
@@ -57,8 +64,8 @@ export type ResearchTeamSceneAgent = {
 export type SceneKind = 'city' | 'lab' | 'space' | 'neon' | 'galaxy' | 'ocean' | 'aurora' | 'hangar' | 'grid'
 // 二十二个截然不同的形象: 方块机器人 / 能量球体 / 晶体核心 / 扭结核心 / 钻石体 / 卫星体 / 双螺旋 /
 // 四旋翼无人机 / 人形机甲 / 探测车 / 宇航机器人 / 飞碟 / 火箭 / 水母 / 原子 / 花朵 /
-// 蘑菇 / 幽灵 / 企鹅 / 蜘蛛 / 外星人 / 齿轮.
-export type AvatarKind = 'robot' | 'orb' | 'crystal' | 'knot' | 'diamond' | 'satellite' | 'helix' | 'drone' | 'mech' | 'rover' | 'droid' | 'ufo' | 'rocket' | 'jellyfish' | 'atom' | 'flower' | 'mushroom' | 'ghost' | 'penguin' | 'spider' | 'alien' | 'gear'
+// 蘑菇 / 幽灵 / 企鹅 / 蜘蛛 / 外星人 / 齿轮 / 莲花 / 琉璃花瓶 / 水晶簇 / 蝴蝶 / 雪花 (精致).
+export type AvatarKind = 'robot' | 'orb' | 'crystal' | 'knot' | 'diamond' | 'satellite' | 'helix' | 'drone' | 'mech' | 'rover' | 'droid' | 'ufo' | 'rocket' | 'jellyfish' | 'atom' | 'flower' | 'mushroom' | 'ghost' | 'penguin' | 'spider' | 'alien' | 'gear' | 'lotus' | 'vase' | 'shard' | 'butterfly' | 'snowflake'
 
 export const SCENE_KIND_OPTIONS: { value: SceneKind; label: string }[] = [
   { value: 'city', label: '城市天际线' },
@@ -94,6 +101,11 @@ export const AVATAR_KIND_OPTIONS: { value: AvatarKind; label: string }[] = [
   { value: 'spider', label: '蜘蛛' },
   { value: 'alien', label: '外星人' },
   { value: 'gear', label: '齿轮' },
+  { value: 'lotus', label: '莲花' },
+  { value: 'vase', label: '琉璃花瓶' },
+  { value: 'shard', label: '水晶簇' },
+  { value: 'butterfly', label: '蝴蝶' },
+  { value: 'snowflake', label: '雪花' },
 ]
 
 type SceneProps = {
@@ -1170,6 +1182,30 @@ function makeFormationLines(positions: Vector3[], palette: Palette, theme: Scene
 
 type AvatarBuild = { group: Group; clickable: Object3D[]; animate?: (t: number) => void }
 
+// 虹彩珠光材质 (清漆层 + iridescence 油膜虹彩): 用于花瓣/翅膀/冰晶等"精致"形象.
+function pearlMat(color: number, selected: boolean, side: number = 0): MeshPhysicalMaterial {
+  const mat = new MeshPhysicalMaterial({
+    color, metalness: 0.25, roughness: 0.18,
+    clearcoat: 1, clearcoatRoughness: 0.08,
+    iridescence: 1, iridescenceIOR: 1.3, iridescenceThicknessRange: [120, 420],
+    emissive: new Color(color).multiplyScalar(selected ? 0.12 : 0.05),
+  })
+  if (side) mat.side = side
+  return mat
+}
+
+// 真玻璃材质 (transmission 折射透过背景 + 虹彩): 用于琉璃花瓶.
+function glassMat(color: number, selected: boolean): MeshPhysicalMaterial {
+  return new MeshPhysicalMaterial({
+    color, metalness: 0, roughness: 0.05,
+    transmission: 0.9, thickness: 0.5, ior: 1.45,
+    clearcoat: 1, clearcoatRoughness: 0.04,
+    iridescence: 0.7, iridescenceIOR: 1.25, iridescenceThicknessRange: [100, 400],
+    transparent: true, side: DoubleSide,
+    emissive: new Color(color).multiplyScalar(selected ? 0.08 : 0.03),
+  })
+}
+
 function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected: boolean, theme: SceneProps['theme'], avatarKind: AvatarKind = 'robot', phase = 0): AvatarBuild {
   const bodyColor = agent.locked ? LOCKED_COLOR : color
   const glow = new Color(bodyColor)
@@ -1573,6 +1609,102 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
     pivot.add(gg)
     clickable.push(disc, hub)
     spin(gg, 1.1)
+  } else if (avatarKind === 'lotus') {
+    // 莲花: 三层虹彩花瓣 + 花蕊 + 雄蕊, 柔和自转绽放.
+    const lotus = new Group(); lotus.position.y = 0.55
+    const petalMatP = pearlMat(bodyColor, selected)
+    const petalGeo = new SphereGeometry(0.22, 20, 16)
+    const addRing = (n: number, r: number, tilt: number, y: number, rot: number) => {
+      for (let i = 0; i < n; i += 1) {
+        const a = i / n * Math.PI * 2 + rot
+        const p = new Mesh(petalGeo, petalMatP)
+        p.scale.set(1, 0.14, 0.7)
+        p.position.set(Math.cos(a) * r, y, Math.sin(a) * r)
+        p.rotation.y = -a
+        p.rotation.x = -tilt
+        lotus.add(p); clickable.push(p)
+      }
+    }
+    addRing(8, 0.34, 1.0, 0.0, 0)
+    addRing(6, 0.22, 0.6, 0.12, 0.35)
+    addRing(5, 0.12, 0.25, 0.22, 0)
+    const pollen = new MeshStandardMaterial({ color: 0xfbbf24, emissive: new Color(0xfbbf24).multiplyScalar(0.5), roughness: 0.4 })
+    const core = new Mesh(new SphereGeometry(0.1, 18, 14), pollen); core.position.y = 0.3; lotus.add(core); clickable.push(core)
+    const stamenMat = new MeshBasicMaterial({ color: 0xfde047 })
+    for (let i = 0; i < 8; i += 1) { const a = i / 8 * Math.PI * 2; const s = new Mesh(new SphereGeometry(0.025, 8, 8), stamenMat); s.position.set(Math.cos(a) * 0.1, 0.36, Math.sin(a) * 0.1); lotus.add(s) }
+    pivot.add(lotus)
+    spin(lotus, 0.18)
+    updaters.push((t) => { lotus.scale.setScalar(1 + Math.sin(t * 1.0) * 0.04) })
+  } else if (avatarKind === 'vase') {
+    // 琉璃花瓶: 旋转体(Lathe)玻璃瓶身(真折射) + 瓶内发光核心, 缓慢转动显折射变化.
+    const profile = [
+      new Vector2(0.001, 0.0), new Vector2(0.26, 0.03), new Vector2(0.30, 0.12),
+      new Vector2(0.18, 0.34), new Vector2(0.13, 0.6), new Vector2(0.20, 0.86),
+      new Vector2(0.28, 1.0), new Vector2(0.30, 1.08), new Vector2(0.22, 1.12),
+    ]
+    const vase = new Mesh(new LatheGeometry(profile, 56), glassMat(bodyColor, selected)); vase.position.y = -0.05
+    const innerMat = new MeshBasicMaterial({ color: selected ? 0x38bdf8 : bodyColor, transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false })
+    const inner = new Mesh(new SphereGeometry(0.13, 18, 14), innerMat); inner.position.y = 0.5
+    pivot.add(vase, inner)
+    clickable.push(vase)
+    spin(vase, 0.25)
+    updaters.push((t) => { inner.scale.setScalar(0.9 + Math.sin(t * 1.6) * 0.15); innerMat.opacity = 0.7 + Math.abs(Math.sin(t * 1.6)) * 0.3 })
+  } else if (avatarKind === 'shard') {
+    // 水晶簇: 基岩上簇生的六棱水晶柱(虹彩清漆) + 尖端宝石, 缓慢自转.
+    const cluster = new Group(); cluster.position.y = 0.1
+    const gemMatP = pearlMat(bodyColor, selected); gemMatP.roughness = 0.1; gemMatP.metalness = 0.1
+    const rock = new Mesh(new IcosahedronGeometry(0.4, 0), new MeshStandardMaterial({ color: theme === 'light' ? 0x64748b : 0x1e293b, roughness: 0.9, metalness: 0.1 })); cluster.add(rock)
+    const cfg: Array<[number, number, number, number, number]> = [[0, 0.5, 0, 0.95, 0], [0.32, 0.42, 0.12, 0.6, 0.3], [-0.3, 0.46, 0.1, 0.55, -0.25], [0.12, 0.5, -0.3, 0.66, 0.15], [-0.16, 0.44, -0.24, 0.5, -0.4], [0.28, 0.4, -0.2, 0.48, 0.5]]
+    cfg.forEach(([x, y, z, s, rot]) => {
+      const c = new Mesh(new ConeGeometry(s * 0.22, s, 6), gemMatP)
+      c.position.set(x, y, z); c.rotation.z = rot * 0.4; c.rotation.x = rot * 0.25
+      cluster.add(c); clickable.push(c)
+      const tip = new Mesh(new OctahedronGeometry(s * 0.1, 0), gemMatP); tip.position.set(x + Math.sin(rot) * 0.1, y + s * 0.5, z); cluster.add(tip)
+    })
+    pivot.add(cluster)
+    clickable.push(rock)
+    spin(cluster, 0.2)
+  } else if (avatarKind === 'butterfly') {
+    // 蝴蝶: bezier 翼形挤出的虹彩双翅 + 身躯 + 头 + 触角, 拍翅.
+    const wingMatP = pearlMat(bodyColor, selected, DoubleSide)
+    const wingShape = new Shape()
+    wingShape.moveTo(0, 0)
+    wingShape.bezierCurveTo(0.4, 0.35, 0.62, 0.22, 0.6, -0.02)
+    wingShape.bezierCurveTo(0.62, -0.34, 0.36, -0.42, 0.08, -0.12)
+    wingShape.lineTo(0, 0)
+    const wingGeo = new ExtrudeGeometry(wingShape, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 1 })
+    const wingL = new Mesh(wingGeo, wingMatP); wingL.scale.x = -1
+    const wingR = new Mesh(wingGeo, wingMatP)
+    const wings = new Group(); wings.position.y = 0.8; wings.add(wingL, wingR)
+    const body = new Mesh(new CylinderGeometry(0.045, 0.05, 0.55, 10), topMat); body.position.y = 0.78
+    const head = new Mesh(new SphereGeometry(0.09, 14, 12), topMat); head.position.y = 1.08
+    const eyeMat = new MeshBasicMaterial({ color: 0x0f172a })
+    const eL = new Mesh(new SphereGeometry(0.02, 8, 8), eyeMat); eL.position.set(-0.04, 1.1, 0.07)
+    const eR = new Mesh(new SphereGeometry(0.02, 8, 8), eyeMat); eR.position.set(0.04, 1.1, 0.07)
+    const antL = new Mesh(new CylinderGeometry(0.006, 0.006, 0.18, 6), topMat); antL.position.set(-0.03, 1.2, 0); antL.rotation.z = 0.3
+    const antR = new Mesh(new CylinderGeometry(0.006, 0.006, 0.18, 6), topMat); antR.position.set(0.03, 1.2, 0); antR.rotation.z = -0.3
+    pivot.add(wings, body, head, eL, eR, antL, antR)
+    clickable.push(body, wingL, wingR)
+    updaters.push((t) => { const f = Math.sin(t * 7) * 0.5; wingL.rotation.y = f; wingR.rotation.y = f })
+  } else if (avatarKind === 'snowflake') {
+    // 雪花: 六瓣对称冰晶(主干+分支+尖端宝石)+ 核心, 虹彩清漆, 缓慢自转.
+    const flake = new Group(); flake.position.y = 0.9
+    const fm = pearlMat(bodyColor, selected)
+    const armGeo = new BoxGeometry(0.5, 0.05, 0.05)
+    const branchGeo = new BoxGeometry(0.15, 0.045, 0.045)
+    for (let i = 0; i < 6; i += 1) {
+      const arm = new Group(); arm.rotation.z = i * Math.PI / 3
+      const main = new Mesh(armGeo, fm); main.position.x = 0.28; arm.add(main); clickable.push(main)
+      const tip = new Mesh(new OctahedronGeometry(0.07, 0), fm); tip.position.x = 0.52; arm.add(tip)
+      for (const s of [-1, 1]) {
+        const b = new Mesh(branchGeo, fm); b.position.set(0.22, 0, 0); b.rotation.z = s * 0.5; arm.add(b)
+        const bt = new Mesh(new OctahedronGeometry(0.04, 0), fm); bt.position.set(0.32, s * 0.1, 0); arm.add(bt)
+      }
+      flake.add(arm)
+    }
+    const center = new Mesh(new IcosahedronGeometry(0.1, 0), fm); flake.add(center); clickable.push(center)
+    pivot.add(flake)
+    spin(flake, 0.3)
   } else {
     // robot (默认): 方块机器人
     const base = new Mesh(new BoxGeometry(0.82, 0.2, 0.72), bodyMat); base.position.y = 0.15
@@ -1683,6 +1815,12 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
     key.position.set(4.8, 9, 6.5)
     scene.add(key)
 
+    // 环境贴图: PMREM 处理的 RoomEnvironment, 给金属/玻璃/宝石材质提供柔和反射 (让"精致"形象有真实质感).
+    const pmrem = new PMREMGenerator(renderer)
+    const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04)
+    scene.environment = envRT.texture
+    scene.environmentIntensity = theme === 'light' ? 0.6 : 0.5
+
     const stageRoot = new Group()
     const pieceRoot = new Group()
     scene.add(stageRoot, pieceRoot)
@@ -1754,6 +1892,8 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
       disposeObject(pieceRoot)
       if (skyTexRef.current) { skyTexRef.current.dispose(); skyTexRef.current = null }
       scene.clear()
+      envRT.dispose()
+      pmrem.dispose()
       renderer.dispose()
       renderer.domElement.remove()
       rendererRef.current = null
