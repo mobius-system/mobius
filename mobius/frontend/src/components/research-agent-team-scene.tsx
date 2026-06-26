@@ -55,9 +55,10 @@ export type ResearchTeamSceneAgent = {
 // 九个截然不同的场景 (灵感取自 threejs.org 经典示例: 城市天际线 / 研究实验室 / 深空星港 /
 // 霓虹合成波网格 / 螺旋粒子星河 / 镜面海面 / 极光山谷 / 机械机库 / 全息训练场).
 export type SceneKind = 'city' | 'lab' | 'space' | 'neon' | 'galaxy' | 'ocean' | 'aurora' | 'hangar' | 'grid'
-// 十六个截然不同的形象: 方块机器人 / 能量球体 / 晶体核心 / 扭结核心 / 钻石体 / 卫星体 / 双螺旋 /
-// 四旋翼无人机 / 人形机甲 / 探测车 / 宇航机器人 / 飞碟 / 火箭 / 水母 / 原子 / 花朵.
-export type AvatarKind = 'robot' | 'orb' | 'crystal' | 'knot' | 'diamond' | 'satellite' | 'helix' | 'drone' | 'mech' | 'rover' | 'droid' | 'ufo' | 'rocket' | 'jellyfish' | 'atom' | 'flower'
+// 二十二个截然不同的形象: 方块机器人 / 能量球体 / 晶体核心 / 扭结核心 / 钻石体 / 卫星体 / 双螺旋 /
+// 四旋翼无人机 / 人形机甲 / 探测车 / 宇航机器人 / 飞碟 / 火箭 / 水母 / 原子 / 花朵 /
+// 蘑菇 / 幽灵 / 企鹅 / 蜘蛛 / 外星人 / 齿轮.
+export type AvatarKind = 'robot' | 'orb' | 'crystal' | 'knot' | 'diamond' | 'satellite' | 'helix' | 'drone' | 'mech' | 'rover' | 'droid' | 'ufo' | 'rocket' | 'jellyfish' | 'atom' | 'flower' | 'mushroom' | 'ghost' | 'penguin' | 'spider' | 'alien' | 'gear'
 
 export const SCENE_KIND_OPTIONS: { value: SceneKind; label: string }[] = [
   { value: 'city', label: '城市天际线' },
@@ -87,6 +88,12 @@ export const AVATAR_KIND_OPTIONS: { value: AvatarKind; label: string }[] = [
   { value: 'jellyfish', label: '水母' },
   { value: 'atom', label: '原子' },
   { value: 'flower', label: '花朵' },
+  { value: 'mushroom', label: '蘑菇' },
+  { value: 'ghost', label: '幽灵' },
+  { value: 'penguin', label: '企鹅' },
+  { value: 'spider', label: '蜘蛛' },
+  { value: 'alien', label: '外星人' },
+  { value: 'gear', label: '齿轮' },
 ]
 
 type SceneProps = {
@@ -1472,6 +1479,100 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
     clickable.push(center)
     spin(bloom, 0.25)
     updaters.push((t) => { bloom.scale.setScalar(1 + Math.sin(t * 1.2) * 0.05) })
+  } else if (avatarKind === 'mushroom') {
+    // 蘑菇: 圆盖(带白斑) + 茎 + 底座 (柔和呼吸).
+    const stem = new Mesh(new CylinderGeometry(0.2, 0.28, 0.6, 18), new MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 })); stem.position.y = 0.4
+    const base = new Mesh(new SphereGeometry(0.3, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2), new MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 })); base.scale.set(1, 0.5, 1); base.position.y = 0.12
+    const cap = new Mesh(new SphereGeometry(0.62, 30, 22, 0, Math.PI * 2, 0, Math.PI / 2), bodyMat); cap.scale.set(1, 0.78, 1); cap.position.y = 0.7
+    const spotMat = new MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.55 })
+    const spots: Array<[number, number, number, number]> = [[0, 0.92, 0, 0.11], [0.3, 0.84, 0.05, 0.08], [-0.3, 0.84, 0.08, 0.085], [0.18, 0.86, -0.26, 0.08], [-0.16, 0.83, -0.22, 0.075], [0.02, 0.8, 0.32, 0.07]]
+    spots.forEach(([x, y, z, r]) => { const s = new Mesh(new SphereGeometry(r, 12, 10), spotMat); s.position.set(x, y, z); pivot.add(s); clickable.push(s) })
+    pivot.add(stem, base, cap)
+    clickable.push(cap, stem)
+    updaters.push((t) => { const p = 1 + Math.sin(t * 1.5 + phase) * 0.04; cap.scale.set(p, 0.78 + Math.sin(t * 1.5 + phase) * 0.03, p) })
+  } else if (avatarKind === 'ghost') {
+    // 幽灵: 半透明白色身躯 + 波浪底摆 + 黑眼睛 (漂浮摇摆).
+    const sheet = new MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5, transparent: true, opacity: 0.9, emissive: new Color(0xffffff).multiplyScalar(theme === 'light' ? 0.04 : 0.08) })
+    const body = new Mesh(new SphereGeometry(0.5, 26, 22), sheet); body.scale.set(1, 1.2, 1); body.position.y = 0.85
+    const drips: Mesh[] = []
+    ;[[-0.32, -0.16], [-0.12, -0.2], [0.1, -0.18], [0.3, -0.16], [0, -0.14]].forEach(([x, off]) => {
+      const d = new Mesh(new SphereGeometry(0.14, 14, 12), sheet); d.position.set(x, 0.42 + off, 0); pivot.add(d); drips.push(d)
+    })
+    const eyeMat = new MeshBasicMaterial({ color: 0x0f172a })
+    const eL = new Mesh(new SphereGeometry(0.06, 14, 14), eyeMat); eL.position.set(-0.16, 0.95, 0.44); eL.scale.set(1, 1.4, 0.6)
+    const eR = new Mesh(new SphereGeometry(0.06, 14, 14), eyeMat); eR.position.set(0.16, 0.95, 0.44); eR.scale.set(1, 1.4, 0.6)
+    pivot.add(body, eL, eR)
+    clickable.push(body)
+    updaters.push((t) => {
+      pivot.rotation.z = Math.sin(t * 1.0 + phase) * 0.08
+      drips.forEach((d, i) => { d.position.y = 0.42 + Math.sin(t * 2 + i) * 0.04 })
+    })
+  } else if (avatarKind === 'penguin') {
+    // 企鹅: 椭圆身 + 白腹 + 头 + 橙喙 + 双翅 + 橙脚 (左右摇摆走).
+    const bellyMat = new MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 })
+    const beakMat = new MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.4 })
+    const body = new Mesh(new SphereGeometry(0.46, 24, 22), bodyMat); body.scale.set(1, 1.25, 0.92); body.position.y = 0.6
+    const belly = new Mesh(new SphereGeometry(0.34, 20, 18), bellyMat); belly.scale.set(0.6, 1.1, 0.5); belly.position.set(0, 0.58, 0.28)
+    const head = new Mesh(new SphereGeometry(0.3, 22, 20), bodyMat); head.position.y = 1.2
+    const eyeMat = new MeshBasicMaterial({ color: 0x0f172a })
+    const eL = new Mesh(new SphereGeometry(0.035, 10, 10), eyeMat); eL.position.set(-0.1, 1.26, 0.26)
+    const eR = new Mesh(new SphereGeometry(0.035, 10, 10), eyeMat); eR.position.set(0.1, 1.26, 0.26)
+    const beak = new Mesh(new ConeGeometry(0.07, 0.18, 10), beakMat); beak.rotation.x = Math.PI / 2; beak.position.set(0, 1.16, 0.3)
+    const wingL = new Mesh(new SphereGeometry(0.22, 14, 12), bodyMat); wingL.scale.set(0.25, 1, 0.7); wingL.position.set(-0.42, 0.62, 0)
+    const wingR = new Mesh(new SphereGeometry(0.22, 14, 12), bodyMat); wingR.scale.set(0.25, 1, 0.7); wingR.position.set(0.42, 0.62, 0)
+    const footL = new Mesh(new BoxGeometry(0.12, 0.06, 0.2), beakMat); footL.position.set(-0.13, 0.06, 0.06)
+    const footR = new Mesh(new BoxGeometry(0.12, 0.06, 0.2), beakMat); footR.position.set(0.13, 0.06, 0.06)
+    pivot.add(body, belly, head, eL, eR, beak, wingL, wingR, footL, footR)
+    clickable.push(body, head, beak)
+    updaters.push((t) => { pivot.rotation.z = Math.sin(t * 2.2 + phase) * 0.08 })
+  } else if (avatarKind === 'spider') {
+    // 蜘蛛: 头胸 + 腹部 + 8 条节肢腿 (交替步态).
+    const abdomen = new Mesh(new SphereGeometry(0.4, 22, 18), bodyMat); abdomen.position.set(0, 0.5, -0.18)
+    const spiderHead = new Mesh(new SphereGeometry(0.26, 18, 16), bodyMat); spiderHead.position.set(0, 0.55, 0.22)
+    const eyeMat = new MeshBasicMaterial({ color: 0xfde047 })
+    ;[[-0.08, 0.6, 0.42], [0.08, 0.6, 0.42], [-0.13, 0.66, 0.4], [0.13, 0.66, 0.4]].forEach(([x, y, z]) => { const e = new Mesh(new SphereGeometry(0.025, 8, 8), eyeMat); e.position.set(x, y, z); pivot.add(e) })
+    const legGeo = new CylinderGeometry(0.022, 0.012, 0.7, 8)
+    const legs: Mesh[] = []
+    for (let i = 0; i < 8; i += 1) {
+      const side = i < 4 ? -1 : 1
+      const idx = i % 4
+      const zOff = (1.5 - idx) * 0.13
+      const leg = new Mesh(legGeo, bodyMat)
+      leg.position.set(side * 0.14, 0.42, 0.05 + zOff)
+      leg.rotation.z = side * 0.9
+      leg.rotation.x = (1.5 - idx) * 0.12
+      pivot.add(leg); legs.push(leg); clickable.push(leg)
+    }
+    pivot.add(abdomen, spiderHead)
+    clickable.push(abdomen, spiderHead)
+    updaters.push((t) => { legs.forEach((leg, i) => { leg.rotation.x = (1.5 - (i % 4)) * 0.12 + Math.sin(t * 5 + (i < 4 ? 0 : Math.PI)) * 0.22 }) })
+  } else if (avatarKind === 'alien') {
+    // 外星人: 大头 + 大黑杏眼 + 小身 + 细肢 (悬浮, 头部晃动).
+    const head = new Mesh(new SphereGeometry(0.46, 28, 24), bodyMat); head.scale.set(1, 1.15, 1); head.position.y = 1.1
+    const bodyMesh = new Mesh(new SphereGeometry(0.26, 18, 16), bodyMat); bodyMesh.scale.set(1, 1.2, 1); bodyMesh.position.y = 0.62
+    const eyeMat = new MeshBasicMaterial({ color: 0x0b1220 })
+    const eL = new Mesh(new SphereGeometry(0.12, 16, 14), eyeMat); eL.scale.set(0.7, 1.5, 0.6); eL.position.set(-0.14, 1.16, 0.36)
+    const eR = new Mesh(new SphereGeometry(0.12, 16, 14), eyeMat); eR.scale.set(0.7, 1.5, 0.6); eR.position.set(0.14, 1.16, 0.36)
+    const armL = new Mesh(new CylinderGeometry(0.03, 0.025, 0.4, 8), bodyMat); armL.position.set(-0.26, 0.6, 0); armL.rotation.z = 0.4
+    const armR = new Mesh(new CylinderGeometry(0.03, 0.025, 0.4, 8), bodyMat); armR.position.set(0.26, 0.6, 0); armR.rotation.z = -0.4
+    pivot.add(head, bodyMesh, eL, eR, armL, armR)
+    clickable.push(head, bodyMesh)
+    updaters.push((t) => { head.rotation.z = Math.sin(t * 0.8 + phase) * 0.06; head.position.x = Math.sin(t * 0.8 + phase) * 0.02 })
+  } else if (avatarKind === 'gear') {
+    // 齿轮: 圆盘 + 12 齿 + 中心光孔, 高速自转 (机械感).
+    const gg = new Group(); gg.position.y = 0.9
+    const disc = new Mesh(new CylinderGeometry(0.42, 0.42, 0.2, 24), bodyMat); gg.add(disc)
+    for (let i = 0; i < 12; i += 1) {
+      const a = i / 12 * Math.PI * 2
+      const tooth = new Mesh(new BoxGeometry(0.14, 0.22, 0.16), bodyMat)
+      tooth.position.set(Math.cos(a) * 0.46, 0, Math.sin(a) * 0.46); tooth.rotation.y = -a
+      gg.add(tooth); clickable.push(tooth)
+    }
+    const hub = new Mesh(new CylinderGeometry(0.14, 0.14, 0.24, 20), topMat); gg.add(hub)
+    const hole = new Mesh(new TorusGeometry(0.1, 0.018, 8, 20), glowMat.clone()); hole.rotation.x = Math.PI / 2; hole.position.y = 0.13; gg.add(hole)
+    pivot.add(gg)
+    clickable.push(disc, hub)
+    spin(gg, 1.1)
   } else {
     // robot (默认): 方块机器人
     const base = new Mesh(new BoxGeometry(0.82, 0.2, 0.72), bodyMat); base.position.y = 0.15
