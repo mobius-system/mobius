@@ -926,7 +926,7 @@ function renderPaperCard(item, options = {}) {
         </div>
         <span class="status-pill">${isExcluded ? 'AI 排除' : (local.archived ? '归档' : (isRead ? '已读' : '未读'))}</span>
       </div>
-      ${hasInsp ? renderInspirationBlock(item.ai_inspiration, false) : (isExcluded ? renderInspirationBlock(null, true) : '')}
+      ${hasInsp ? renderInspirationBlock(item.ai_inspiration, false) : (isExcluded ? renderInspirationBlock(null, true) : renderInspirationBlock(null, false))}
       <p>${escapeHtml(shortText(item.abstract, options.compact ? 150 : 280))}</p>
       <div class="tag-row">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
       <div class="paper-bottom-row">
@@ -1062,7 +1062,7 @@ function productCard(item) {
         </div>
         <span class="status-pill">${isExcluded ? 'AI 排除' : escapeHtml(labels.status[item.status] || item.status)}</span>
       </div>
-      ${hasInsp ? renderInspirationBlock(item.ai_inspiration, false) : (isExcluded ? renderInspirationBlock(null, true) : '')}
+      ${hasInsp ? renderInspirationBlock(item.ai_inspiration, false) : (isExcluded ? renderInspirationBlock(null, true) : renderInspirationBlock(null, false))}
       <p>${escapeHtml(shortText(snapshot, 240))}</p>
       <div class="tag-row">${(item.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
       <div class="card-actions">
