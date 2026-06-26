@@ -92,7 +92,21 @@
                     <input id="scanCompetitorsAfterArxiv" type="checkbox">
                     <span>扫描后同步刷新正式竞品</span>
                   </label>
+                  <label class="check-row">
+                    <input id="arxivScanWithAi" type="checkbox" checked>
+                    <span>扫描后追加 AI 深度阅读</span>
+                  </label>
+                  <label>
+                    <span>AI 渠道</span>
+                    <select id="paperAiChannel"></select>
+                  </label>
                   <button class="primary-button full" type="submit">立即扫描论文</button>
+                  <div class="ai-scan-divider"><span>或仅对未读做 AI 阅读</span></div>
+                  <label class="check-row">
+                    <span>未读条数 N</span>
+                    <input id="paperAiN" type="number" min="1" max="50" value="10">
+                  </label>
+                  <button class="glass-button full" id="paperAiScanBtn" type="button">AI 深度阅读未读论文</button>
                 </form>
               </div>
 
@@ -143,6 +157,10 @@
                 <label class="search-label">
                   <span>搜索</span>
                   <input id="paperSearch" type="search" placeholder="标题、作者、摘要">
+                </label>
+                <label class="check-row inline-check">
+                  <input id="paperShowExcluded" type="checkbox">
+                  <span>显示 AI 排除</span>
                 </label>
               </div>
               <section class="top-picks" id="topPicksWrap">
@@ -210,6 +228,16 @@
                   </label>
                 </div>
                 <button class="primary-button full" type="submit">扫描并入库</button>
+                <div class="ai-scan-divider"><span>或对已入库未读做 AI 阅读</span></div>
+                <label>
+                  <span>AI 渠道</span>
+                  <select id="productAiChannel"></select>
+                </label>
+                <label class="check-row">
+                  <span>未读条数 N</span>
+                  <input id="productAiN" type="number" min="1" max="30" value="5">
+                </label>
+                <button class="glass-button full" id="productAiScanBtn" type="button">AI 深度阅读未读竞品</button>
               </form>
 
               <form class="panel" id="productKeywordsForm">
@@ -258,7 +286,15 @@
                   <input id="competitorSearch" type="search" placeholder="名称、理由、快照">
                 </label>
                 <button class="glass-button light" id="refreshCompetitorsBtn" type="button">刷新竞品</button>
+                <label class="check-row inline-check">
+                  <input id="productScanWithAi" type="checkbox" checked>
+                  <span>同步 AI 阅读</span>
+                </label>
                 <button class="primary-button" id="productBulkScanBtn" type="button">重扫所有已跟踪竞品</button>
+                <label class="check-row inline-check">
+                  <input id="competitorShowExcluded" type="checkbox">
+                  <span>显示 AI 排除</span>
+                </label>
               </div>
               <div class="metric-grid" id="competitorMetrics"></div>
               <div class="competitor-columns">
@@ -334,6 +370,12 @@
           <a class="primary-button" href="#hero">回到首页</a>
           <button class="glass-button" id="finaleRefreshBtn" type="button">一键扫描</button>
         </div>
+        <div class="finale-options">
+          <label class="check-row inline-check">
+            <input id="oneClickAiAlso" type="checkbox" checked>
+            <span>同时执行 AI 深度阅读</span>
+          </label>
+        </div>
       </div>
     </section>
   </main>
@@ -352,6 +394,22 @@
         <button type="submit" id="confirmOk" class="primary-button" value="ok">确认</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog class="prompt-export-dialog" id="promptExportDialog">
+    <div class="prompt-export-head">
+      <div>
+        <p class="micro">Export to 小莫</p>
+        <h3>实际修改执行指令</h3>
+      </div>
+      <button class="dialog-close" id="promptExportClose" type="button" aria-label="关闭">×</button>
+    </div>
+    <p class="prompt-export-tip">复制以下内容粘贴给小莫（执行 Agent），它会按指令落地代码改动。原 L2 Agent 不参与实际修改。</p>
+    <div id="promptExportBody" class="prompt-export-body"></div>
+    <div class="prompt-export-actions">
+      <button type="button" id="promptExportCancel" class="glass-button">关闭</button>
+      <button type="button" id="promptExportCopy" class="primary-button" disabled>复制全部</button>
+    </div>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

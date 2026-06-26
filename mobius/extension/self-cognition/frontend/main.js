@@ -54,6 +54,10 @@ const state = {
     paper: { q: '', keyword: '', status: '', favorite: '' },
     competitor: { q: '', status: '', read: '' },
   },
+  aiChannels: [],
+  aiChannel: { paper: '', product: '' },
+  aiScanning: { paper: false, product: false },
+  showExcluded: { paper: false, competitor: false },
   local: loadLocalState(),
 };
 
@@ -62,6 +66,31 @@ document.documentElement.dataset.section = 'paper';
 let heroRing = null;
 const detailChats = new Map();
 const detailPending = {};
+
+const DEFAULT_CHANNEL_LABEL_FALLBACK = 'GLM-5.2';
+
+function parseInspiration(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((it) => it && typeof it === 'object').map((it) => ({
+      title: String(it.title || it.direction || '').slice(0, 200),
+      direction: String(it.direction || it.title || '').slice(0, 600),
+      mobius_use: String(it.mobius_use || it.use || it.application || '').slice(0, 1200),
+      priority: ['high', 'medium', 'low'].includes(it.priority) ? it.priority : 'medium',
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function inspirationBadgeCount(items) {
+  const high = items.filter((i) => i.priority === 'high').length;
+  const med = items.filter((i) => i.priority === 'medium').length;
+  const low = items.filter((i) => i.priority === 'low').length;
+  return { high, med, low, total: items.length };
+}
 
 function loadLocalState() {
   try {
@@ -188,6 +217,47 @@ async function call(payload) {
   const result = await extCall(payload);
   if (!result.ok) throw new Error(result.error || '调用失败');
   return result;
+}
+
+async function loadAiChannels() {
+  try {
+    const result = await call({ action: 'list_ai_channels' });
+    state.aiChannels = Array.isArray(result.channels) ? result.channels : [];
+    if (!state.aiChannel.paper) state.aiChannel.paper = result.default_key || state.aiChannels[0]?.key || '';
+    if (!state.aiChannel.product) state.aiChannel.product = result.default_key || state.aiChannels[0]?.key || '';
+  } catch {
+    state.aiChannels = [];
+  }
+  renderAiChannelSelectors();
+}
+
+function renderAiChannelSelectors() {
+  for (const kind of ['paper', 'product']) {
+    const select = $(`${kind}AiChannel`);
+    if (!select) continue;
+    const current = state.aiChannel[kind];
+    select.innerHTML = state.aiChannels.length
+      ? state.aiChannels.map((c) => `<option value="${escapeHtml(c.key)}"${c.key === current ? ' selected' : ''}>${escapeHtml(c.label || c.key)}</option>`).join('')
+      : '<option value="">无可用渠道</option>';
+    if (current) select.value = current;
+  }
+}
+
+function estimateAiCost({ kind, count }) {
+  const perItem = kind === 'paper' ? 18 : 32;
+  const seconds = Math.max(8, Math.round(count * perItem));
+  const inTokens = count * 17000;
+  const outTokens = count * 480;
+  return { seconds, inTokens, outTokens };
+}
+
+function formatAiCost({ seconds, inTokens, outTokens }) {
+  const min = Math.floor(seconds / 60);
+  const sec = seconds % 60;
+  const time = min > 0 ? `${min}分${sec.toString().padStart(2, '0')}秒` : `${sec}秒`;
+  const inK = Math.round(inTokens / 1000);
+  const outK = Math.round(outTokens / 1000);
+  return `${time} · 输入 ~${inK}k · 输出 ~${outK}k tokens`;
 }
 
 async function loadMockClusters() {
@@ -637,6 +707,7 @@ async function loadAll() {
     await loadMyFeedbacks();
     await loadPaperClusters();
     await loadEvolutionAll();
+    await loadAiChannels();
     render();
   } catch (error) {
     showToast(error.message || '加载失败', 'bad');
@@ -692,6 +763,7 @@ function filteredPapers() {
   const papers = Object.values(state.clusterPapers).flat();
   return papers.filter((item) => {
     const local = paperLocal(item.id);
+    if (item.mark === 'excluded' && !state.showExcluded.paper) return false;
     if (state.filters.paper.status === 'read' && !local.read) return false;
     if (state.filters.paper.status === 'unread' && local.read) return false;
     if (state.filters.paper.status === 'archived' && !local.archived) return false;
@@ -738,21 +810,60 @@ function feedbackButtons(item) {
   `;
 }
 
+function renderInspirationBlock(rawInspiration, markExcluded) {
+  if (markExcluded) {
+    return `<div class="inspiration-block is-excluded"><p class="inspiration-head"><span class="priority-tag muted">AI 已排除</span> <span>该条目经 L2 Agent 阅读后判定对莫比乌斯暂无借鉴价值。</span></p></div>`;
+  }
+  const items = parseInspiration(rawInspiration);
+  if (!items.length) {
+    return `<div class="inspiration-block is-pending"><p class="inspiration-head"><span class="priority-tag pending">未读</span> <span>尚未经过 L2 Agent 深度阅读。</span></p></div>`;
+  }
+  const counts = inspirationBadgeCount(items);
+  const head = [
+    counts.high ? `<span class="priority-tag high">高 ${counts.high}</span>` : '',
+    counts.med ? `<span class="priority-tag medium">中 ${counts.med}</span>` : '',
+    counts.low ? `<span class="priority-tag low">低 ${counts.low}</span>` : '',
+  ].filter(Boolean).join('');
+  const list = items.map((it) => `
+    <li class="inspiration-item priority-${it.priority}">
+      <div class="inspiration-item-head">
+        <span class="priority-tag ${it.priority}">${it.priority === 'high' ? '高' : it.priority === 'medium' ? '中' : '低'}</span>
+        <strong>${escapeHtml(it.title || it.direction.slice(0, 40))}</strong>
+      </div>
+      ${it.direction ? `<p class="inspiration-direction">${escapeHtml(it.direction)}</p>` : ''}
+      ${it.mobius_use ? `<p class="inspiration-mobius-use"><span class="mobius-use-label">对莫比乌斯:</span> ${escapeHtml(it.mobius_use)}</p>` : ''}
+    </li>
+  `).join('');
+  return `
+    <details class="inspiration-block is-loaded">
+      <summary class="inspiration-head">
+        <span>${head || '<span class="priority-tag pending">已读</span>'}</span>
+        <span class="inspiration-toggle">查看对莫比乌斯的借鉴方向 ›</span>
+      </summary>
+      <ul class="inspiration-list">${list}</ul>
+    </details>
+  `;
+}
+
 function renderPaperCard(item, options = {}) {
   const local = paperLocal(item.id);
   const tags = [...(item.matched_keywords || []), ...(item.tags || []).slice(0, 3)];
   const score = item.priority_score ?? item.relevance ?? 0;
   const clusterLine = item.cluster_label ? ` · ${item.cluster_label}` : '';
+  const isExcluded = item.mark === 'excluded';
+  const insp = parseInspiration(item.ai_inspiration);
+  const hasInsp = insp.length > 0;
   return `
-    <article class="paper-card ${options.compact ? 'is-compact' : ''}" data-archived="${local.archived ? 'true' : 'false'}">
+    <article class="paper-card ${options.compact ? 'is-compact' : ''} ${isExcluded ? 'is-excluded' : ''} ${hasInsp ? 'has-inspiration' : ''}" data-archived="${local.archived ? 'true' : 'false'}">
       <div class="card-head">
         <div>
-          <div class="card-meta">Priority ${escapeHtml(score)} · ${escapeHtml(item.published_at || '日期未知')}${clusterLine} · ${local.read ? '已读' : '未读'}${local.favorite ? ' · 已收藏' : ''}</div>
+          <div class="card-meta">Priority ${escapeHtml(score)} · ${escapeHtml(item.published_at || '日期未知')}${clusterLine} · ${local.read ? '已读' : '未读'}${local.favorite ? ' · 已收藏' : ''}${isExcluded ? ' · AI 排除' : ''}</div>
           <h3 class="${options.gradient ? 'gradient-text' : ''}">${escapeHtml(item.title)}</h3>
         </div>
-        <span class="status-pill">${local.archived ? '归档' : (local.read ? '已读' : '未读')}</span>
+        <span class="status-pill">${isExcluded ? 'AI 排除' : (local.archived ? '归档' : (local.read ? '已读' : '未读'))}</span>
       </div>
-      <p>${escapeHtml(shortText(item.abstract, options.compact ? 150 : 360))}</p>
+      ${hasInsp ? renderInspirationBlock(item.ai_inspiration, false) : (isExcluded ? renderInspirationBlock(null, true) : '')}
+      <p>${escapeHtml(shortText(item.abstract, options.compact ? 150 : 280))}</p>
       <div class="tag-row">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
       <div class="paper-bottom-row">
         <div class="card-actions">
@@ -848,6 +959,7 @@ function filteredCompetitors() {
   const q = state.filters.competitor.q.toLowerCase();
   return allCompetitors().filter((item) => {
     const local = competitorLocal(item.id);
+    if (item.mark === 'excluded' && !state.showExcluded.competitor) return false;
     if (state.filters.competitor.status && item.status !== state.filters.competitor.status) return false;
     if (state.filters.competitor.read === 'read' && !local.read) return false;
     if (state.filters.competitor.read === 'unread' && local.read) return false;
@@ -862,20 +974,24 @@ function filteredCompetitors() {
 function productCard(item) {
   const local = competitorLocal(item.id);
   const snapshot = item.fetched_description || item.reason || '暂无产品页摘要，建议重扫产品页。';
+  const isExcluded = item.mark === 'excluded';
+  const insp = parseInspiration(item.ai_inspiration);
+  const hasInsp = insp.length > 0;
   return `
-    <article class="product-card" data-archived="${item.status === 'archived' ? 'true' : 'false'}">
+    <article class="product-card ${isExcluded ? 'is-excluded' : ''} ${hasInsp ? 'has-inspiration' : ''}" data-archived="${item.status === 'archived' ? 'true' : 'false'}">
       <div class="card-head">
         <div>
-          <div class="card-meta">${escapeHtml(labels.category[item.category] || item.category || '其他')} · ${escapeHtml(labels.status[item.status] || item.status)} · 相关度 ${escapeHtml(item.relevance)}/10 · ${local.read ? '已读' : '未读'}</div>
+          <div class="card-meta">${escapeHtml(labels.category[item.category] || item.category || '其他')} · ${escapeHtml(labels.status[item.status] || item.status)} · 相关度 ${escapeHtml(item.relevance)}/10 · ${local.read ? '已读' : '未读'}${isExcluded ? ' · AI 排除' : ''}</div>
           <h3>${escapeHtml(item.name)}</h3>
         </div>
-        <span class="status-pill">${escapeHtml(labels.status[item.status] || item.status)}</span>
+        <span class="status-pill">${isExcluded ? 'AI 排除' : escapeHtml(labels.status[item.status] || item.status)}</span>
       </div>
-      <p>${escapeHtml(shortText(snapshot, 300))}</p>
+      ${hasInsp ? renderInspirationBlock(item.ai_inspiration, false) : (isExcluded ? renderInspirationBlock(null, true) : '')}
+      <p>${escapeHtml(shortText(snapshot, 240))}</p>
       <div class="tag-row">${(item.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
       <div class="card-actions">
         ${item.status === 'candidate' ? `<button type="button" data-promote="${escapeHtml(item.id)}">一键晋升为正式</button>` : ''}
-        <button type="button" data-product-detail="${escapeHtml(item.id)}">产品页快照</button>
+        <button type="button" data-product-detail="${escapeHtml(item.id)}">查看详情 / 追问</button>
         <button type="button" data-product-read="${escapeHtml(item.id)}">${local.read ? '标记未读' : '标记已读'}</button>
         ${item.status !== 'archived' ? `<button type="button" data-archive="${escapeHtml(item.id)}">归档</button>` : ''}
         <a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开页面</a>
@@ -1060,13 +1176,84 @@ async function runArxivScan(event) {
   const button = event.submitter;
   const query = $('arxivQuery').value;
   const max = Number($('arxivMax').value || 100);
+  const withAi = $('arxivScanWithAi').checked;
+  const aiCost = withAi ? estimateAiCost({ kind: 'paper', count: Math.min(max, 50) }) : null;
+  const body = withAi
+    ? `将以已启用关键词真实拉取 arXiv（最多 ${max} 条，~10 秒），随后用 ${channelLabel('paper')} 对新增论文做深度阅读并产出对莫比乌斯的借鉴方向。AI 阶段预计 ${aiCost ? formatAiCost(aiCost) : '20-90 秒'}。`
+    : `将以已启用关键词真实拉取 arXiv，最多 ${max} 条，预计 5-15 秒（不做 AI 阅读）。`;
   const ok = await confirmDialog({
-    title: '立即扫描论文？',
-    body: `将以已启用关键词真实拉取 arXiv，最多 ${max} 条，预计 5-15 秒。`,
+    title: withAi ? '扫描 + AI 深度阅读论文？' : '立即扫描论文？',
+    body,
     confirmText: '确认扫描',
   });
   if (!ok) return;
   await doArxivScan({ button, query, max });
+  if (withAi) await doAiScan('paper', { button });
+}
+
+function channelLabel(kind) {
+  const key = state.aiChannel[kind];
+  const found = state.aiChannels.find((c) => c.key === key);
+  return found?.label || DEFAULT_CHANNEL_LABEL_FALLBACK;
+}
+
+async function doAiScan(kind, { button } = {}) {
+  if (state.aiScanning[kind]) return;
+  const action = kind === 'paper' ? 'ai_scan_arxiv' : 'ai_scan_products';
+  const defaultN = kind === 'paper' ? 10 : 5;
+  const n = Number($(`${kind}AiN`)?.value || defaultN);
+  const btn = button || $(`${kind}AiScanBtn`);
+  state.aiScanning[kind] = true;
+  if (btn) {
+    btn.disabled = true;
+    btn.dataset.originalText = btn.textContent;
+    btn.textContent = 'AI 阅读中...';
+  }
+  try {
+    const result = await call({
+      action,
+      model_key: state.aiChannel[kind],
+      limit: n,
+    });
+    const items = (result.results || []).filter((r) => r.inspiration_count > 0).map((r) => ({
+      id: r.id,
+      title: r.title || r.name || '',
+      inspiration: r.inspiration || [],
+      inspiration_count: r.inspiration_count,
+      excluded: r.excluded,
+    }));
+    if (kind === 'paper') await loadPaperClusters();
+    else {
+      const comp = await call({ action: 'get_competitors' });
+      state.competitors = comp.competitors || state.competitors;
+    }
+    render();
+    renderLatestBatch(kind === 'paper' ? 'paper' : 'product', items, `本轮 AI 阅读 ${result.scanned} 条 · ${items.length} 条有启发`);
+    showToast(`AI 阅读完成: ${result.summary || ''}`);
+    return { ok: true, scanned: result.scanned };
+  } catch (error) {
+    showToast(error.message || 'AI 阅读失败', 'bad');
+    return { ok: false, error: error.message };
+  } finally {
+    state.aiScanning[kind] = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = btn.dataset.originalText || 'AI 深度阅读';
+    }
+  }
+}
+
+async function runAiScan(kind) {
+  if (state.aiScanning[kind]) return;
+  const n = Number($(`${kind}AiN`)?.value || (kind === 'paper' ? 10 : 5));
+  const cost = estimateAiCost({ kind, count: n });
+  const ok = await confirmDialog({
+    title: kind === 'paper' ? 'AI 深度阅读论文？' : 'AI 深度阅读竞品？',
+    body: `将用 ${channelLabel(kind)} 对 ${n} 个未读 ${kind === 'paper' ? '论文' : '竞品'} 做完整阅读，注入莫比乌斯 Memory 后产出"对莫比乌斯的借鉴方向"。预计 ${formatAiCost(cost)}。无借鉴价值的会标记为排除。`,
+    confirmText: '确认 AI 阅读',
+  });
+  if (!ok) return;
+  await doAiScan(kind, {});
 }
 
 async function doArxivScan({ button, query, max } = {}) {
@@ -1159,13 +1346,19 @@ async function runProductScan(event) {
 async function runProductBulkScan() {
   const button = $('productBulkScanBtn');
   const tracked = (state.competitors?.official || []).length;
+  const withAi = $('productScanWithAi').checked;
+  const aiCost = withAi ? estimateAiCost({ kind: 'product', count: Math.min(tracked || 5, 10) }) : null;
+  const body = withAi
+    ? `将真实抓取所有 ${tracked} 个已跟踪竞品的产品页快照（${Math.max(5, tracked * 3)} 秒），随后用 ${channelLabel('product')} 对重扫竞品做深度阅读。AI 阶段预计 ${aiCost ? formatAiCost(aiCost) : '60-180 秒'}。`
+    : `将真实抓取所有 ${tracked} 个已跟踪竞品的产品页快照，可能耗时 ${Math.max(5, tracked * 3)} 秒（不做 AI 阅读）。`;
   const ok = await confirmDialog({
-    title: '重扫所有已跟踪竞品？',
-    body: `将真实抓取所有 ${tracked} 个已跟踪竞品的产品页快照，可能耗时 ${Math.max(5, tracked * 3)} 秒。`,
+    title: withAi ? '重扫 + AI 深度阅读竞品？' : '重扫所有已跟踪竞品？',
+    body,
     confirmText: '确认重扫',
   });
   if (!ok) return;
   await doProductBulkScan({ button });
+  if (withAi) await doAiScan('product', { button: $('productAiScanBtn') });
 }
 
 async function doProductBulkScan({ button } = {}) {
@@ -1244,10 +1437,17 @@ async function doEvolutionScan({ button } = {}) {
 async function runOneClickScan() {
   const button = $('finaleRefreshBtn');
   const tracked = (state.competitors?.official || []).length;
-  const totalSec = 15 + Math.max(5, tracked * 3) + 5;
+  const paperN = 10;
+  const productN = Math.min(tracked || 5, 5);
+  const aiOn = $('oneClickAiAlso')?.checked !== false;
+  const aiCostPaper = aiOn ? estimateAiCost({ kind: 'paper', count: paperN }) : null;
+  const aiCostProd = aiOn ? estimateAiCost({ kind: 'product', count: productN }) : null;
+  const aiTotalSec = aiOn ? (aiCostPaper.seconds + aiCostProd.seconds) : 0;
+  const totalSec = 15 + Math.max(5, tracked * 3) + 5 + aiTotalSec;
+  const aiLine = aiOn ? `；④ 论文+竞品 AI 深度阅读（${channelLabel('paper')}，~${Math.round(aiTotalSec / 60)} 分钟）` : '';
   const ok = await confirmDialog({
-    title: '一键扫描全部？',
-    body: `将依次执行：① 论文 arXiv 拉取，② ${tracked} 个已跟踪竞品产品页抓取，③ git log 同步自进化。预计共 ${totalSec} 秒，会真实发起外部网络请求。`,
+    title: aiOn ? '一键扫描 + AI 阅读？' : '一键扫描全部？',
+    body: `将依次执行：① 论文 arXiv 拉取；② ${tracked} 个已跟踪竞品产品页抓取；③ git log 同步自进化${aiLine}。预计共 ${Math.round(totalSec / 60)} 分钟，会真实发起外部网络请求与 AI 调用。`,
     confirmText: '确认一键扫描',
   });
   if (!ok) return;
@@ -1260,7 +1460,9 @@ async function runOneClickScan() {
   try {
     const results = [];
     results.push(['论文', await doArxivScan({ button: $('arxivScanForm').querySelector('button[type="submit"]') })]);
+    if (aiOn) results.push(['论文 AI', await doAiScan('paper', { button: $('paperAiScanBtn') })]);
     results.push(['竞品', await doProductBulkScan({ button: $('productBulkScanBtn') })]);
+    if (aiOn) results.push(['竞品 AI', await doAiScan('product', { button: $('productAiScanBtn') })]);
     results.push(['自进化', await doEvolutionScan({ button: $('evolutionScanBtn') })]);
     const failed = results.filter(([, r]) => !r?.ok);
     if (failed.length) {
@@ -1444,18 +1646,56 @@ function renderProductDetailActions(item) {
   `;
 }
 
+function renderInspirationDetailBlock(rawInspiration, markExcluded, kind) {
+  if (markExcluded) {
+    return `<section class="detail-block detail-inspiration is-excluded">
+      <h3>对莫比乌斯的借鉴方向</h3>
+      <p class="muted">L2 Agent 阅读后判定该${kind === 'product' ? '竞品' : '论文'}暂无借鉴价值，已自动标记为排除。</p>
+    </section>`;
+  }
+  const items = parseInspiration(rawInspiration);
+  if (!items.length) {
+    return `<section class="detail-block detail-inspiration is-pending">
+      <h3>对莫比乌斯的借鉴方向</h3>
+      <p class="muted">尚未经过 L2 Agent 深度阅读。可以在追问区直接提问，或回到列表点 "AI 深度阅读"。</p>
+    </section>`;
+  }
+  const list = items.map((it) => `
+    <li class="inspiration-item priority-${it.priority}">
+      <div class="inspiration-item-head">
+        <span class="priority-tag ${it.priority}">${it.priority === 'high' ? '高优先' : it.priority === 'medium' ? '中优先' : '低优先'}</span>
+        <strong>${escapeHtml(it.title || it.direction.slice(0, 40))}</strong>
+      </div>
+      ${it.direction ? `<p class="inspiration-direction">${escapeHtml(it.direction)}</p>` : ''}
+      ${it.mobius_use ? `<p class="inspiration-mobius-use"><span class="mobius-use-label">对莫比乌斯:</span> ${escapeHtml(it.mobius_use)}</p>` : ''}
+    </li>
+  `).join('');
+  return `<section class="detail-block detail-inspiration is-loaded">
+    <div class="detail-section-head">
+      <h3>对莫比乌斯的借鉴方向</h3>
+      <span>L2 Agent · ${items.length} 条</span>
+    </div>
+    <ul class="inspiration-list">${list}</ul>
+    <div class="detail-inspiration-actions">
+      <button type="button" class="primary-button" data-export-prompt="${escapeHtml(kind)}">实际修改（导出给小莫）</button>
+    </div>
+  </section>`;
+}
+
 function renderPaperDetail(id) {
   const item = findPaperById(id);
   if (!item) return false;
   $('dialogBody').dataset.detailKind = 'paper';
   $('dialogBody').dataset.detailId = id;
   const tags = [...new Set([...(item.matched_keywords || []), ...(item.tags || [])])].slice(0, 10);
+  const isExcluded = item.mark === 'excluded';
   $('dialogBody').innerHTML = `
     <article class="detail-content">
-      <p class="eyebrow">Paper detail</p>
+      <p class="eyebrow">Paper detail · L2 Agent 已${isExcluded ? '排除' : (item.ai_inspiration ? '阅读' : '未读')}</p>
       <h2>${escapeHtml(item.title)}</h2>
       <p class="detail-meta">${escapeHtml(item.authors || '作者未知')} · ${escapeHtml(item.published_at || '日期未知')} · Priority ${escapeHtml(item.priority_score ?? item.relevance ?? 0)} · 相关度 ${escapeHtml(item.relevance ?? '')}</p>
       <div class="tag-row">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
+      ${renderInspirationDetailBlock(item.ai_inspiration, isExcluded, 'paper')}
       <section class="detail-block">
         <h3>摘要</h3>
         <p>${escapeHtml(item.abstract || '暂无摘要')}</p>
@@ -1474,12 +1714,14 @@ function renderProductDetail(id) {
   if (!item) return false;
   $('dialogBody').dataset.detailKind = 'product';
   $('dialogBody').dataset.detailId = id;
+  const isExcluded = item.mark === 'excluded';
   $('dialogBody').innerHTML = `
     <article class="detail-content">
-      <p class="eyebrow">Product snapshot</p>
+      <p class="eyebrow">Product snapshot · L2 Agent 已${isExcluded ? '排除' : (item.ai_inspiration ? '阅读' : '未读')}</p>
       <h2>${escapeHtml(item.name)}</h2>
       <p class="detail-meta">${escapeHtml(labels.category[item.category] || item.category || '其他')} · ${escapeHtml(labels.status[item.status] || item.status)} · 相关度 ${escapeHtml(item.relevance ?? 0)}/10 · last scanned ${escapeHtml(formatTime(item.last_scanned_at))}</p>
       <div class="tag-row">${(item.tags || []).slice(0, 10).map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
+      ${renderInspirationDetailBlock(item.ai_inspiration, isExcluded, 'product')}
       <section class="detail-block">
         <h3>页面快照</h3>
         <p><strong>页面标题</strong><br>${escapeHtml(item.fetched_title || '暂无标题快照')}</p>
@@ -1655,10 +1897,6 @@ async function handleDetailChatSubmit(event) {
 
   const chat = getDetailChat(kind, id);
   if (chat.loading) return;
-  const history = chat.messages
-    .filter((item) => item.role === 'user' || item.role === 'assistant')
-    .map((item) => ({ role: item.role, content: item.content }))
-    .slice(-10);
   chat.messages.push({ role: 'user', content: message, time: new Date().toISOString() });
   chat.loading = true;
   input.value = '';
@@ -1666,12 +1904,11 @@ async function handleDetailChatSubmit(event) {
 
   try {
     const result = await call({
-      action: 'chat_with_paper',
-      item_type: kind,
-      paper_id: kind === 'paper' ? id : undefined,
-      product_id: kind === 'product' ? id : undefined,
+      action: 'chat_with_agent',
+      kind,
+      scope_id: id,
       message,
-      history,
+      model_key: state.aiChannel[kind],
     });
     chat.messages.push({
       role: 'assistant',
@@ -1690,6 +1927,58 @@ async function handleDetailChatSubmit(event) {
   } finally {
     chat.loading = false;
     refreshDetailChat(kind, id);
+  }
+}
+
+async function handleExportPrompt(kind) {
+  const dialog = $('promptExportDialog');
+  const body = $('promptExportBody');
+  const copyBtn = $('promptExportCopy');
+  if (!dialog || !body) return;
+  body.innerHTML = '<p class="muted">小莫总结 Agent 正在提炼执行指令...</p>';
+  copyBtn.disabled = true;
+  if (!dialog.open) dialog.showModal();
+  try {
+    const result = await call({
+      action: 'export_agent_prompt',
+      kind,
+      model_key: state.aiChannel[kind],
+    });
+    const prompt = result.prompt || '(Agent 未输出可执行的指令)';
+    body.dataset.prompt = prompt;
+    body.innerHTML = `<pre class="prompt-export-pre">${escapeHtml(prompt)}</pre>`;
+    copyBtn.disabled = false;
+    showToast(`执行指令已生成 (${prompt.length} 字)`);
+  } catch (error) {
+    body.innerHTML = `<p class="muted">生成失败: ${escapeHtml(error.message || '未知错误')}</p>`;
+    showToast(error.message || '生成执行指令失败', 'bad');
+  }
+}
+
+function bindPromptExportDialog() {
+  const dialog = $('promptExportDialog');
+  const copyBtn = $('promptExportCopy');
+  $('promptExportClose')?.addEventListener('click', () => dialog.close());
+  $('promptExportCancel')?.addEventListener('click', () => dialog.close());
+  copyBtn?.addEventListener('click', async () => {
+    const text = $('promptExportBody').dataset.prompt || '';
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('已复制到剪贴板，可粘贴到小莫');
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); showToast('已复制'); } catch { showToast('复制失败', 'bad'); }
+      ta.remove();
+    }
+  });
+  if (dialog) {
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) dialog.close();
+    });
   }
 }
 
@@ -1849,6 +2138,13 @@ function bindEvents() {
   $('productScanForm').addEventListener('submit', runProductScan);
   $('productBulkScanBtn').addEventListener('click', runProductBulkScan);
   $('evolutionScanBtn').addEventListener('click', runEvolutionScan);
+  $('paperAiScanBtn')?.addEventListener('click', () => runAiScan('paper'));
+  $('productAiScanBtn')?.addEventListener('click', () => runAiScan('product'));
+  $('paperAiChannel')?.addEventListener('change', (e) => { state.aiChannel.paper = e.target.value; });
+  $('productAiChannel')?.addEventListener('change', (e) => { state.aiChannel.product = e.target.value; });
+  $('paperShowExcluded')?.addEventListener('change', (e) => { state.showExcluded.paper = e.target.checked; renderPapers(); });
+  $('competitorShowExcluded')?.addEventListener('change', (e) => { state.showExcluded.competitor = e.target.checked; renderCompetitors(); });
+  bindPromptExportDialog();
   document.querySelectorAll('[data-close-latest]').forEach((btn) => {
     btn.addEventListener('click', () => closeLatestBatch(btn.dataset.closeLatest));
   });
@@ -1995,6 +2291,9 @@ function bindEvents() {
 
     const archive = event.target.closest('[data-archive]');
     if (archive) updateCompetitor({ mode: 'archive', id: archive.dataset.archive });
+
+    const exportPrompt = event.target.closest('[data-export-prompt]');
+    if (exportPrompt) handleExportPrompt(exportPrompt.dataset.exportPrompt);
   });
 }
 

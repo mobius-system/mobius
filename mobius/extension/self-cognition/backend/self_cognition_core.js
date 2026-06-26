@@ -1,4 +1,4 @@
-const path = require("path"), fs = require("fs"), crypto = require("crypto"), { execFileSync } = require("child_process"), Database = require("better-sqlite3"), DB_FILE = "self-cognition.db", FIRST_SCAN_KEY = "first_scan_v4", REPO_ROOT = path.resolve(__dirname, "../../../.."), EXT_PATH = "mobius/extension/self-cognition", PROJECTS = {
+const path = require("path"), fs = require("fs"), os = require("os"), crypto = require("crypto"), { execFileSync } = require("child_process"), Database = require("better-sqlite3"), DB_FILE = "self-cognition.db", FIRST_SCAN_KEY = "first_scan_v4", REPO_ROOT = path.resolve(__dirname, "../../../.."), EXT_PATH = "mobius/extension/self-cognition", PROJECTS = {
   "imac-self-develop": {
     id: "imac-self-develop",
     repo: REPO_ROOT,
@@ -50,7 +50,8 @@ function all(e, t) {
 function init(e) {
   e.exec("\n    CREATE TABLE IF NOT EXISTS keywords (id TEXT PRIMARY KEY, scope TEXT NOT NULL, keyword TEXT NOT NULL, query TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(scope, keyword));\n    CREATE TABLE IF NOT EXISTS arxiv_items (id TEXT PRIMARY KEY, title TEXT NOT NULL, source_url TEXT NOT NULL, source_id TEXT NOT NULL DEFAULT '', authors TEXT NOT NULL DEFAULT '', published_at TEXT, updated_arxiv_at TEXT, abstract TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '[]', matched_keywords TEXT NOT NULL DEFAULT '[]', relevance INTEGER NOT NULL DEFAULT 0, cluster_label TEXT NOT NULL DEFAULT '', priority_score REAL NOT NULL DEFAULT 0, cluster_keywords TEXT NOT NULL DEFAULT '[]', citations INTEGER NOT NULL DEFAULT 0, mark TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', auto_fetched INTEGER NOT NULL DEFAULT 1, fetched_at TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n    CREATE UNIQUE INDEX IF NOT EXISTS idx_arxiv_source_id ON arxiv_items(source_id) WHERE source_id != '';\n    CREATE TABLE IF NOT EXISTS product_research (id TEXT PRIMARY KEY, name TEXT NOT NULL, source_url TEXT NOT NULL, normalized_url TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'candidate', category TEXT NOT NULL DEFAULT 'other', relevance INTEGER NOT NULL DEFAULT 3, tags TEXT NOT NULL DEFAULT '[]', aliases TEXT NOT NULL DEFAULT '[]', reason TEXT NOT NULL DEFAULT '', discovery_logic TEXT NOT NULL DEFAULT '', discovered_from_url TEXT NOT NULL DEFAULT '', fetched_title TEXT NOT NULL DEFAULT '', fetched_description TEXT NOT NULL DEFAULT '', mark TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', last_scanned_at TEXT, auto_discovered INTEGER NOT NULL DEFAULT 0, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n    CREATE TABLE IF NOT EXISTS scan_runs (id TEXT PRIMARY KEY, scan_type TEXT NOT NULL, query TEXT NOT NULL DEFAULT '', source_url TEXT NOT NULL DEFAULT '', max_results INTEGER NOT NULL DEFAULT 0, inserted INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL DEFAULT 0, skipped INTEGER NOT NULL DEFAULT 0, candidates_added INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL, created_at TEXT NOT NULL);\n    CREATE TABLE IF NOT EXISTS install_state (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL);\n    CREATE TABLE IF NOT EXISTS user_feedback (id TEXT PRIMARY KEY, paper_id TEXT NOT NULL, verdict TEXT NOT NULL CHECK(verdict IN ('boost','neutral','exclude')), note TEXT, created_at TEXT NOT NULL, source_session TEXT);\n    CREATE TABLE IF NOT EXISTS keyword_weights (keyword TEXT PRIMARY KEY, weight REAL NOT NULL, updated_at TEXT NOT NULL);\n  ");
   e.exec("\n    CREATE TABLE IF NOT EXISTS evolution_events (id TEXT PRIMARY KEY, level TEXT NOT NULL CHECK(level IN ('L1','L2','L3')), source TEXT NOT NULL, status TEXT NOT NULL, project_id TEXT, issue_id TEXT, session_id TEXT, commit_sha TEXT, version TEXT, summary TEXT NOT NULL, diff_summary TEXT, files_changed TEXT, proposed_by TEXT, approved_by TEXT, approved_at TEXT, created_at TEXT NOT NULL, promoted_from TEXT);\n    CREATE INDEX IF NOT EXISTS idx_evolution_level_status ON evolution_events(level,status,created_at);\n    CREATE INDEX IF NOT EXISTS idx_evolution_project ON evolution_events(project_id,created_at);\n  ");
-  for (const [t, r, a] of [ [ "arxiv_items", "mark", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "note", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "cluster_label", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "priority_score", "REAL NOT NULL DEFAULT 0" ], [ "arxiv_items", "cluster_keywords", "TEXT NOT NULL DEFAULT '[]'" ], [ "arxiv_items", "citations", "INTEGER NOT NULL DEFAULT 0" ], [ "product_research", "normalized_url", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "aliases", "TEXT NOT NULL DEFAULT '[]'" ], [ "product_research", "reason", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "discovery_logic", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "discovered_from_url", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "mark", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "note", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "last_scanned_at", "TEXT" ], [ "product_research", "auto_discovered", "INTEGER NOT NULL DEFAULT 0" ], [ "scan_runs", "scan_type", "TEXT NOT NULL DEFAULT 'arxiv'" ], [ "scan_runs", "source_url", "TEXT NOT NULL DEFAULT ''" ], [ "scan_runs", "updated", "INTEGER NOT NULL DEFAULT 0" ], [ "scan_runs", "candidates_added", "INTEGER NOT NULL DEFAULT 0" ] ]) e.prepare(`PRAGMA table_info(${t})`).all().some(e => e.name === r) || e.exec(`ALTER TABLE ${t} ADD COLUMN ${r} ${a}`);
+  e.exec("\n    CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('paper','product')), scope_ids TEXT NOT NULL DEFAULT '[]', model_key TEXT NOT NULL, model_label TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'running', summary TEXT NOT NULL DEFAULT '', prompt_for_xiaomo TEXT NOT NULL DEFAULT '', token_usage TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n    CREATE INDEX IF NOT EXISTS idx_agent_runs_kind_created ON agent_runs(kind, created_at);\n    CREATE TABLE IF NOT EXISTS agent_messages (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', tool_calls TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);\n    CREATE INDEX IF NOT EXISTS idx_agent_messages_run ON agent_messages(run_id, created_at);\n  ");
+  for (const [t, r, a] of [ [ "arxiv_items", "mark", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "note", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "cluster_label", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "priority_score", "REAL NOT NULL DEFAULT 0" ], [ "arxiv_items", "cluster_keywords", "TEXT NOT NULL DEFAULT '[]'" ], [ "arxiv_items", "citations", "INTEGER NOT NULL DEFAULT 0" ], [ "arxiv_items", "ai_inspiration", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "normalized_url", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "aliases", "TEXT NOT NULL DEFAULT '[]'" ], [ "product_research", "reason", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "discovery_logic", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "discovered_from_url", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "mark", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "note", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "last_scanned_at", "TEXT" ], [ "product_research", "auto_discovered", "INTEGER NOT NULL DEFAULT 0" ], [ "product_research", "ai_inspiration", "TEXT NOT NULL DEFAULT ''" ], [ "scan_runs", "scan_type", "TEXT NOT NULL DEFAULT 'arxiv'" ], [ "scan_runs", "source_url", "TEXT NOT NULL DEFAULT ''" ], [ "scan_runs", "updated", "INTEGER NOT NULL DEFAULT 0" ], [ "scan_runs", "candidates_added", "INTEGER NOT NULL DEFAULT 0" ] ]) e.prepare(`PRAGMA table_info(${t})`).all().some(e => e.name === r) || e.exec(`ALTER TABLE ${t} ADD COLUMN ${r} ${a}`);
   e.exec("UPDATE product_research SET normalized_url=source_url WHERE normalized_url=''; UPDATE product_research SET status='tracked' WHERE status='official'; UPDATE product_research SET status='candidate' WHERE status NOT IN ('tracked','candidate','archived'); CREATE UNIQUE INDEX IF NOT EXISTS idx_product_research_normalized_url ON product_research(normalized_url); CREATE UNIQUE INDEX IF NOT EXISTS idx_arxiv_source_id_full ON arxiv_items(source_id);");
   const t = now(), r = e.prepare("INSERT OR IGNORE INTO keywords VALUES (@id,@scope,@keyword,@query,1,@sort_order,@created_at,@updated_at)");
   PAPER_KWS.forEach((e, a) => r.run({
@@ -989,31 +990,144 @@ async function fetchJson(e, t, r = 1.25e4) {
 
 function chatProviders() {
   const e = [];
+  const accessPath = txt(process.env.MODEL_ACCESS_PATH || path.join(REPO_ROOT, ".deploy_data/data/model-access.json"), 512);
+  try {
+    if (fs.existsSync(accessPath)) {
+      const access = JSON.parse(fs.readFileSync(accessPath, "utf8"));
+      for (const m of access.claudeCodeModels || []) {
+        if (!m.enabled || !m.imported) continue;
+        const settingsFile = path.join(os.homedir(), ".claude", `settings-${m.key}.json`);
+        if (!fs.existsSync(settingsFile)) continue;
+        let settings;
+        try { settings = JSON.parse(fs.readFileSync(settingsFile, "utf8")); } catch { continue; }
+        const env = settings.env || {};
+        if (!env.ANTHROPIC_BASE_URL || !env.ANTHROPIC_AUTH_TOKEN) continue;
+        e.push({
+          key: m.key,
+          name: `anthropic:${m.key}`,
+          label: m.label || m.key,
+          type: "anthropic",
+          baseUrl: env.ANTHROPIC_BASE_URL,
+          authToken: env.ANTHROPIC_AUTH_TOKEN,
+          model: settings.model || env.ANTHROPIC_DEFAULT_SONNET_MODEL || m.claude_model || "GLM-5.2"
+        });
+      }
+    }
+  } catch {}
   const t = txt(process.env.RCC2_API_KEY || process.env.RIGHTCODE_API_KEY || "", 512);
   t && e.push({
+    key: "env:codex",
     name: "codex:subscription",
+    label: "Codex (env)",
     type: "responses",
     baseUrl: "https://right.codes/codex/v1",
     apiKey: t,
     model: txt(process.env.SELF_COGNITION_LLM_MODEL || process.env.SELF_COGNITION_CHAT_MODEL || "gpt-5.5", 120)
   });
-  const r = txt(process.env.DASHSCOPE_API_KEY || "", 512);
-  r && e.push({
-    name: "dashscope:qwen",
-    type: "chat",
-    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    apiKey: r,
-    model: txt(process.env.SELF_COGNITION_QWEN_MODEL || "qwen-plus", 120)
-  });
-  const a = txt(process.env.OPENAI_API_KEY || "", 512);
-  a && e.push({
-    name: "openai",
-    type: "responses",
-    baseUrl: txt(process.env.SELF_COGNITION_OPENAI_BASE_URL || "https://api.openai.com/v1", 200),
-    apiKey: a,
-    model: txt(process.env.SELF_COGNITION_OPENAI_MODEL || "gpt-5.5", 120)
-  });
   return e;
+}
+
+function findProvider(modelKey) {
+  const providers = chatProviders();
+  if (!providers.length) throw new Error("没有可用的 AI 渠道 (检查 model-access.json)");
+  if (!modelKey) return providers[0];
+  return providers.find(p => p.key === modelKey || p.name === modelKey) || providers[0];
+}
+
+const READ_FILE_TOOL = {
+  name: "read_file",
+  description: "读取莫比乌斯项目仓库内的代码 / memory / 文档文件。path 必须是相对仓库根 (例如 mobius/extension/self-cognition/backend/self_cognition_core.js) 或 .imac/ / .deploy_data/ 开头的绝对相对路径。单次最多返回 8000 字符。",
+  input_schema: {
+    type: "object",
+    properties: {
+      path: { type: "string", description: "相对仓库根的路径" }
+    },
+    required: ["path"]
+  }
+};
+
+function resolveRepoPath(p) {
+  const cleaned = txt(p, 400).replace(/^\.\/+/, "").replace(/^\/+/, "");
+  if (!cleaned || cleaned.includes("..")) return null;
+  const candidates = [
+    path.join(REPO_ROOT, cleaned),
+    path.join(REPO_ROOT, ".imac", cleaned),
+    path.join(REPO_ROOT, ".deploy_data", cleaned)
+  ];
+  for (const c of candidates) {
+    const resolved = path.resolve(c);
+    if (!resolved.startsWith(REPO_ROOT)) continue;
+    if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) return resolved;
+  }
+  return null;
+}
+
+function handleReadFile({ path: p }) {
+  const resolved = resolveRepoPath(p);
+  if (!resolved) return { error: `路径不可达或不存在: ${p}` };
+  try {
+    const content = fs.readFileSync(resolved, "utf8");
+    const trimmed = content.length > 8000 ? `${content.slice(0, 8000)}\n\n[... 截断, 共 ${content.length} 字符]` : content;
+    return { path: resolved.replace(REPO_ROOT + "/", ""), content: trimmed, size: content.length };
+  } catch (e) {
+    return { error: `读取失败: ${e.message}` };
+  }
+}
+
+function buildMobiusMemoryContext() {
+  const parts = [];
+  const pkFile = path.join(REPO_ROOT, ".imac/project_knowledge.md");
+  try { parts.push("# 莫比乌斯项目知识 (.imac/project_knowledge.md)\n" + fs.readFileSync(pkFile, "utf8")); } catch {}
+  const memIdx = path.join(os.homedir(), ".claude/projects/-home-user-imac-test/memory/MEMORY.md");
+  try { parts.push("# Agent 长期 memory 索引 (~/.claude/.../memory/MEMORY.md)\n" + fs.readFileSync(memIdx, "utf8")); } catch {}
+  return parts.join("\n\n---\n\n").slice(0, 24000);
+}
+
+async function callAnthropicMessages({ provider, system, messages, tools, maxTokens = 4096, maxRounds = 8 }) {
+  const url = provider.baseUrl.replace(/\/+$/, "") + "/v1/messages";
+  const allMessages = [...messages];
+  let totalInput = 0, totalOutput = 0;
+  for (let round = 0; round < maxRounds; round++) {
+    const body = {
+      model: provider.model,
+      max_tokens: maxTokens,
+      system,
+      messages: allMessages,
+      tools: tools || undefined
+    };
+    const resp = await fetchJson(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": provider.authToken,
+        "anthropic-version": "2023-06-01",
+        Authorization: `Bearer ${provider.authToken}`
+      },
+      body: JSON.stringify(body)
+    }, 9e4);
+    if (resp.usage) {
+      totalInput += Number(resp.usage.input_tokens || 0);
+      totalOutput += Number(resp.usage.output_tokens || 0);
+    }
+    const content = Array.isArray(resp.content) ? resp.content : [];
+    allMessages.push({ role: "assistant", content });
+    const toolUseBlocks = content.filter(b => b.type === "tool_use");
+    if (resp.stop_reason !== "tool_use" || !toolUseBlocks.length) {
+      return { content, stop_reason: resp.stop_reason, usage: { input_tokens: totalInput, output_tokens: totalOutput }, messages: allMessages };
+    }
+    const toolResults = [];
+    for (const tu of toolUseBlocks) {
+      const result = tu.name === "read_file" ? handleReadFile(tu.input || {}) : { error: `未知工具 ${tu.name}` };
+      toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(result).slice(0, 8000) });
+    }
+    allMessages.push({ role: "user", content: toolResults });
+  }
+  return { content: [], stop_reason: "max_rounds", usage: { input_tokens: totalInput, output_tokens: totalOutput }, messages: allMessages };
+}
+
+function extractAgentText(content) {
+  if (!Array.isArray(content)) return "";
+  return content.filter(b => b.type === "text" && typeof b.text === "string").map(b => b.text).join("\n").trim();
 }
 
 async function callResponsesModel(e, t) {
@@ -1060,6 +1174,360 @@ async function callChatCompletionModel(e, t) {
   }), s = a?.choices?.[0]?.message, o = Array.isArray(s?.content) ? s.content.map(e => "string" == typeof e ? e : e?.text || e?.content || "").join("") : s?.content;
   if (!txt(o, 2e4)) throw new Error("模型未返回可用文本");
   return txt(o, 2e4);
+}
+
+const AGENT_RUN_KINDS = ["paper", "product"];
+
+function createAgentRun(e, { kind, scopeIds, modelKey, modelLabel, createdBy }) {
+  const runId = id("agent_run", `${kind}:${scopeIds.join(",")}:${Date.now()}:${Math.random()}`);
+  const stamp = now();
+  e.prepare("INSERT INTO agent_runs (id,kind,scope_ids,model_key,model_label,status,summary,prompt_for_xiaomo,token_usage,error,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").run(runId, kind, JSON.stringify(scopeIds || []), modelKey, modelLabel || "", "running", "", "", "", "", createdBy || "system", stamp, stamp);
+  return runId;
+}
+
+function appendAgentMessage(e, { runId, role, content, toolCalls }) {
+  const msgId = id("agent_msg", `${runId}:${role}:${Date.now()}:${Math.random()}`);
+  e.prepare("INSERT INTO agent_messages (id,run_id,role,content,tool_calls,created_at) VALUES (?,?,?,?,?,?)").run(msgId, runId, role, typeof content === "string" ? content : JSON.stringify(content), typeof toolCalls === "string" ? toolCalls : JSON.stringify(toolCalls || []), now());
+}
+
+function finalizeAgentRun(e, { runId, status, summary, promptForXiaomo, tokenUsage, error }) {
+  e.prepare("UPDATE agent_runs SET status=?,summary=?,prompt_for_xiaomo=?,token_usage=?,error=?,updated_at=? WHERE id=?").run(status, txt(summary, 6e4), txt(promptForXiaomo, 2e5), txt(tokenUsage, 200), txt(error, 2e3), now(), runId);
+}
+
+function latestAgentRun(e, kind) {
+  return e.prepare("SELECT * FROM agent_runs WHERE kind=? ORDER BY created_at DESC,id DESC LIMIT 1").get(kind);
+}
+
+function listAgentRuns(e, t = {}) {
+  const kind = txt(t.kind, 10);
+  const limit = int(t.limit, 20, 1, 100);
+  return (kind ? e.prepare("SELECT * FROM agent_runs WHERE kind=? ORDER BY created_at DESC LIMIT ?").all(kind, limit) : e.prepare("SELECT * FROM agent_runs ORDER BY created_at DESC LIMIT ?").all(limit)).map(r => ({ ...r, scope_ids: arr(r.scope_ids) }));
+}
+
+function getAgentMessages(e, { run_id }) {
+  const runId = txt(run_id, 120);
+  if (!runId) return [];
+  return e.prepare("SELECT id,role,content,tool_calls,created_at FROM agent_messages WHERE run_id=? ORDER BY created_at,id").all(runId).map(m => ({ ...m, tool_calls: arr(m.tool_calls) }));
+}
+
+function parseInspirationJson(text) {
+  if (!text) return null;
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const raw = (fenced ? fenced[1] : text).trim();
+  const start = raw.indexOf("[");
+  const end = raw.lastIndexOf("]");
+  if (start < 0 || end < 0) return null;
+  try {
+    const parsed = JSON.parse(raw.slice(start, end + 1));
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter(it => it && typeof it === "object").slice(0, 8).map(it => ({
+      title: txt(it.title || it.direction || it.name || "", 200),
+      direction: txt(it.direction || it.title || it.summary || "", 600),
+      mobius_use: txt(it.mobius_use || it.use || it.application || "", 1200),
+      priority: txt(it.priority || "medium", 20)
+    }));
+  } catch { return null; }
+}
+
+function saveInspiration(e, table, id, inspiration) {
+  const stamp = now();
+  const json = JSON.stringify(inspiration);
+  if (table === "arxiv_items") {
+    if (inspiration && inspiration.length) {
+      e.prepare("UPDATE arxiv_items SET ai_inspiration=?,updated_at=? WHERE id=?").run(json, stamp, id);
+    } else {
+      e.prepare("UPDATE arxiv_items SET ai_inspiration='',mark='excluded',updated_at=? WHERE id=?").run(stamp, id);
+    }
+  } else if (table === "product_research") {
+    if (inspiration && inspiration.length) {
+      e.prepare("UPDATE product_research SET ai_inspiration=?,updated_at=? WHERE id=?").run(json, stamp, id);
+    } else {
+      e.prepare("UPDATE product_research SET ai_inspiration='',mark='excluded',updated_at=? WHERE id=?").run(stamp, id);
+    }
+  }
+}
+
+function buildScanSystemPrompt({ kind }) {
+  return [
+    "你是莫比乌斯 (Mobius) 自进化插件的 L2 研究 Agent。",
+    "目标: 评估给定" + (kind === "paper" ? "arXiv 论文" : "竞品产品") + "对莫比乌斯的真实借鉴价值, 并产出可直接落实到莫比乌斯代码的启发。",
+    "",
+    "## 莫比乌斯当前状况",
+    "莫比乌斯是自进化 Agent 工作台, 把项目/任务单/执行会话串起来; 核心代码在 mobius/, 自我认知插件在 mobius/extension/self-cognition/。",
+    "",
+    "## 工作流",
+    "1. 仔细阅读提供的论文/竞品内容 + 注入的项目 memory",
+    "2. 必要时调用 read_file 工具读取莫比乌斯真实代码确认现状",
+    "3. 给出 3-5 条对莫比乌斯的借鉴方向, 每条包含: title(简短标签) / direction(方向描述) / mobius_use(具体怎么用到莫比乌斯, 含目标文件或模块) / priority(high|medium|low)",
+    "4. 如果该论文/竞品对莫比乌斯毫无借鉴价值, 直接返回空数组 []",
+    "",
+    "## 输出格式 (必须严格遵守)",
+    "在最终回复中输出 JSON 代码块:",
+    "```json",
+    "[",
+    "  {",
+    "    \"title\": \"...\",",
+    "    \"direction\": \"...\",",
+    "    \"mobius_use\": \"...\",",
+    "    \"priority\": \"medium\"",
+    "  }",
+    "]",
+    "```",
+    "JSON 之外可以加 1-2 句简短总评, 但启发本身必须在 JSON 里。"
+  ].join("\n");
+}
+
+function buildPaperContext(paper) {
+  return [
+    `## 论文: ${paper.title}`,
+    `Source: ${paper.source_url}`,
+    `Authors: ${paper.authors || "unknown"}`,
+    `Published: ${paper.published_at || "unknown"}`,
+    `Matched keywords: ${arr(paper.matched_keywords).join(", ") || "none"}`,
+    `Priority score: ${paper.priority_score}`,
+    "",
+    "### Abstract",
+    paper.abstract || "(无摘要)"
+  ].join("\n");
+}
+
+function buildProductContext(product) {
+  return [
+    `## 竞品: ${product.name}`,
+    `URL: ${product.source_url}`,
+    `Category: ${product.category}`,
+    `Status: ${product.status}`,
+    `Tags: ${arr(product.tags).join(", ")}`,
+    "",
+    "### 页面标题",
+    product.fetched_title || "(无)",
+    "",
+    "### 页面描述",
+    product.fetched_description || "(无)",
+    "",
+    "### 入库理由",
+    product.reason || "(自动扫描入库)"
+  ].join("\n");
+}
+
+async function aiScanArxiv(e, t, r) {
+  const modelKey = txt(t.model_key, 200);
+  const limit = int(t.limit, 10, 1, 50);
+  const provider = findProvider(modelKey);
+  const papers = e.prepare("SELECT * FROM arxiv_items WHERE (ai_inspiration IS NULL OR ai_inspiration='' OR ai_inspiration='[]') AND mark!='excluded' ORDER BY priority_score DESC, relevance DESC LIMIT ?").all(limit);
+  if (!papers.length) return { ok: true, scanned: 0, results: [], provider: provider.label, model: provider.model };
+  const memContext = buildMobiusMemoryContext();
+  const systemPrompt = buildScanSystemPrompt({ kind: "paper" }) + "\n\n## 注入的莫比乌斯 Memory\n\n" + memContext;
+  const runId = createAgentRun(e, { kind: "paper", scopeIds: papers.map(p => p.id), modelKey: provider.key, modelLabel: provider.label, createdBy: r });
+  appendAgentMessage(e, { runId, role: "user", content: `开始扫描 ${papers.length} 篇论文, 模型 ${provider.label} (${provider.model})` });
+  const results = [];
+  let totalIn = 0, totalOut = 0;
+  for (const paper of papers) {
+    const userMsg = [
+      "请评估以下论文, 调用 read_file 工具确认莫比乌斯代码现状后, 给出 JSON 格式的启发。",
+      buildPaperContext(paper)
+    ].join("\n\n");
+    try {
+      const resp = await callAnthropicMessages({
+        provider,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMsg }],
+        tools: [READ_FILE_TOOL],
+        maxTokens: 3000,
+        maxRounds: 6
+      });
+      totalIn += resp.usage.input_tokens || 0;
+      totalOut += resp.usage.output_tokens || 0;
+      const text = extractAgentText(resp.content);
+      const inspiration = parseInspirationJson(text) || [];
+      saveInspiration(e, "arxiv_items", paper.id, inspiration);
+      appendAgentMessage(e, { runId, role: "assistant", content: `**${paper.title.slice(0, 80)}** → ${inspiration.length} 条启发 ${inspiration.length ? "(" + inspiration.map(i => i.title).join(" / ") + ")" : "[mark=excluded]"}`, toolCalls: "" });
+      results.push({ id: paper.id, title: paper.title, inspiration_count: inspiration.length, inspiration, excluded: !inspiration.length });
+    } catch (err) {
+      appendAgentMessage(e, { runId, role: "assistant", content: `**${paper.title.slice(0, 80)}** → 错误: ${err.message}` });
+      results.push({ id: paper.id, title: paper.title, error: err.message });
+    }
+  }
+  const summary = `L2 AI 扫描完成: ${papers.length} 篇论文, ${results.filter(x => x.inspiration_count > 0).length} 篇有启发, ${results.filter(x => x.excluded).length} 篇排除`;
+  finalizeAgentRun(e, { runId, status: "completed", summary, tokenUsage: `in=${totalIn},out=${totalOut}`, error: "" });
+  addL2Event(e, {
+    source: "ai_scan",
+    summary,
+    diff_summary: `使用 ${provider.label} 对 ${papers.length} 篇论文做 L2 AI 阅读评估`,
+    files_changed: ["arxiv_items.ai_inspiration", "agent_runs"],
+    proposed_by: r
+  });
+  return {
+    ok: true,
+    run_id: runId,
+    scanned: papers.length,
+    results: results.slice(0, 20),
+    provider: provider.label,
+    model: provider.model,
+    tokens: { input: totalIn, output: totalOut },
+    summary
+  };
+}
+
+async function aiScanProducts(e, t, r) {
+  const modelKey = txt(t.model_key, 200);
+  const limit = int(t.limit, 5, 1, 30);
+  const provider = findProvider(modelKey);
+  const products = e.prepare("SELECT * FROM product_research WHERE status IN ('tracked','candidate') AND (ai_inspiration IS NULL OR ai_inspiration='' OR ai_inspiration='[]') AND mark!='excluded' ORDER BY CASE status WHEN 'tracked' THEN 1 ELSE 2 END, relevance DESC LIMIT ?").all(limit);
+  if (!products.length) return { ok: true, scanned: 0, results: [], provider: provider.label, model: provider.model };
+  const memContext = buildMobiusMemoryContext();
+  const systemPrompt = buildScanSystemPrompt({ kind: "product" }) + "\n\n## 注入的莫比乌斯 Memory\n\n" + memContext;
+  const runId = createAgentRun(e, { kind: "product", scopeIds: products.map(p => p.id), modelKey: provider.key, modelLabel: provider.label, createdBy: r });
+  appendAgentMessage(e, { runId, role: "user", content: `开始扫描 ${products.length} 个竞品, 模型 ${provider.label} (${provider.model})` });
+  const results = [];
+  let totalIn = 0, totalOut = 0;
+  for (const product of products) {
+    const userMsg = [
+      "请评估以下竞品产品, 调用 read_file 工具确认莫比乌斯代码现状后, 给出 JSON 格式的启发。",
+      buildProductContext(product)
+    ].join("\n\n");
+    try {
+      const resp = await callAnthropicMessages({
+        provider,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMsg }],
+        tools: [READ_FILE_TOOL],
+        maxTokens: 3000,
+        maxRounds: 6
+      });
+      totalIn += resp.usage.input_tokens || 0;
+      totalOut += resp.usage.output_tokens || 0;
+      const text = extractAgentText(resp.content);
+      const inspiration = parseInspirationJson(text) || [];
+      saveInspiration(e, "product_research", product.id, inspiration);
+      appendAgentMessage(e, { runId, role: "assistant", content: `**${product.name}** → ${inspiration.length} 条启发 ${inspiration.length ? "(" + inspiration.map(i => i.title).join(" / ") + ")" : "[mark=excluded]"}` });
+      results.push({ id: product.id, name: product.name, inspiration_count: inspiration.length, inspiration, excluded: !inspiration.length });
+    } catch (err) {
+      appendAgentMessage(e, { runId, role: "assistant", content: `**${product.name}** → 错误: ${err.message}` });
+      results.push({ id: product.id, name: product.name, error: err.message });
+    }
+  }
+  const summary = `L2 AI 扫描完成: ${products.length} 个竞品, ${results.filter(x => x.inspiration_count > 0).length} 个有启发, ${results.filter(x => x.excluded).length} 个排除`;
+  finalizeAgentRun(e, { runId, status: "completed", summary, tokenUsage: `in=${totalIn},out=${totalOut}`, error: "" });
+  addL2Event(e, {
+    source: "ai_scan",
+    summary,
+    diff_summary: `使用 ${provider.label} 对 ${products.length} 个竞品做 L2 AI 阅读评估`,
+    files_changed: ["product_research.ai_inspiration", "agent_runs"],
+    proposed_by: r
+  });
+  return {
+    ok: true,
+    run_id: runId,
+    scanned: products.length,
+    results: results.slice(0, 20),
+    provider: provider.label,
+    model: provider.model,
+    tokens: { input: totalIn, output: totalOut },
+    summary
+  };
+}
+
+async function chatWithAgent(e, t, r) {
+  const kind = txt(t.kind, 10) === "product" ? "product" : "paper";
+  const message = txt(t.message, 4000);
+  const scopeId = txt(t.scope_id, 120);
+  if (!message) throw new Error("message 不能为空");
+  const provider = findProvider(txt(t.model_key, 200));
+  const run = latestAgentRun(e, kind);
+  if (!run) throw new Error(`暂无 ${kind} 的 AI Agent run, 请先跑一次 ai_scan_${kind === "product" ? "products" : "arxiv"}`);
+  const priorMessages = getAgentMessages(e, { run_id: run.id }).filter(m => m.role === "user" || m.role === "assistant").map(m => ({
+    role: m.role,
+    content: m.content
+  })).slice(-20);
+  let injection = "";
+  if (scopeId) {
+    const alreadyMentioned = priorMessages.some(m => String(m.content).includes(scopeId));
+    if (!alreadyMentioned) {
+      const item = kind === "paper" ? e.prepare("SELECT * FROM arxiv_items WHERE id=? OR source_id=?").get(scopeId, scopeId) : e.prepare("SELECT * FROM product_research WHERE id=?").get(scopeId);
+      if (item) injection = (kind === "paper" ? buildPaperContext(item) : buildProductContext(item)) + "\n\n";
+    }
+  }
+  const userTurn = injection + (scopeId ? `用户在 ${kind === "paper" ? "论文" : "竞品"} ${scopeId} 上追问: ` : "用户追问: ") + message;
+  appendAgentMessage(e, { runId: run.id, role: "user", content: userTurn, toolCalls: "" });
+  const memContext = buildMobiusMemoryContext();
+  const systemPrompt = buildScanSystemPrompt({ kind }) + "\n\n## 注入的莫比乌斯 Memory\n\n" + memContext + "\n\n你现在正在和用户对话, 之前已经扫描过若干" + (kind === "paper" ? "论文" : "竞品") + ", 直接基于已有上下文回答, 不要再输出 JSON 启发格式, 用自然中文回答。如果用户问到的内容你之前没扫过, 再调用 read_file 工具或基于已有 memory 回答。";
+  try {
+    const resp = await callAnthropicMessages({
+      provider,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userTurn }],
+      tools: [READ_FILE_TOOL],
+      maxTokens: 2000,
+      maxRounds: 5
+    });
+    const text = extractAgentText(resp.content);
+    appendAgentMessage(e, { runId: run.id, role: "assistant", content: text, toolCalls: "" });
+    e.prepare("UPDATE agent_runs SET updated_at=? WHERE id=?").run(now(), run.id);
+    return {
+      ok: true,
+      run_id: run.id,
+      kind,
+      reply: text,
+      model: provider.model,
+      provider: provider.label,
+      tokens: { input: resp.usage.input_tokens || 0, output: resp.usage.output_tokens || 0 }
+    };
+  } catch (err) {
+    appendAgentMessage(e, { runId: run.id, role: "assistant", content: `错误: ${err.message}` });
+    throw err;
+  }
+}
+
+async function exportAgentPrompt(e, t, r) {
+  const runId = txt(t.run_id, 120);
+  const run = runId ? e.prepare("SELECT * FROM agent_runs WHERE id=?").get(runId) : latestAgentRun(e, txt(t.kind, 10) === "product" ? "product" : "paper");
+  if (!run) throw new Error("未找到 agent run");
+  const provider = findProvider(txt(t.model_key, 200));
+  const history = getAgentMessages(e, { run_id: run.id }).map(m => ({ role: m.role, content: m.content })).slice(-30);
+  const summarizerSystem = [
+    "你是莫比乌斯自进化助手的总结 Agent。",
+    "用户和 L2 Agent 聊过之后, 你需要把达成的共识转成一段详细的执行指令, 让另一个执行 Agent (小莫) 可以照着做。",
+    "",
+    "## 输出要求",
+    "- 用第二人称描述 (\"你需要...\"), 假设小莫是执行者",
+    "- 含具体目标、文件范围、验收标准、禁止事项",
+    "- 不要含代码片段, 但要含文件路径和模块名",
+    "- 用 markdown 格式, 标题 \"## 执行指令\"",
+    "- 长度控制在 400-1200 字"
+  ].join("\n");
+  const memContext = buildMobiusMemoryContext();
+  const userTurn = [
+    "下面是用户和 L2 Agent 关于 " + run.kind + " 的对话历史。请提炼出执行指令。",
+    "",
+    "## 莫比乌斯 Memory (供你确认现状)",
+    memContext,
+    "",
+    "## 对话历史",
+    JSON.stringify(history, null, 2)
+  ].join("\n");
+  try {
+    const resp = await callAnthropicMessages({
+      provider,
+      system: summarizerSystem,
+      messages: [{ role: "user", content: userTurn }],
+      tools: [READ_FILE_TOOL],
+      maxTokens: 2500,
+      maxRounds: 5
+    });
+    const text = extractAgentText(resp.content) || "(Agent 未输出可执行的指令)";
+    e.prepare("UPDATE agent_runs SET prompt_for_xiaomo=?,updated_at=? WHERE id=?").run(txt(text, 2e5), now(), run.id);
+    return {
+      ok: true,
+      run_id: run.id,
+      kind: run.kind,
+      prompt: text,
+      model: provider.model,
+      provider: provider.label
+    };
+  } catch (err) {
+    throw new Error(`导出执行指令失败: ${err.message}`);
+  }
 }
 
 async function chatWithPaper(e, t, r) {
@@ -1120,7 +1588,7 @@ async function dispatch(e, t, r, a) {
       products: listProducts(e),
       scan_runs: scans(e),
       constants: {
-        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats" ],
+        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats", "list_ai_channels", "ai_scan_arxiv", "ai_scan_products", "chat_with_agent", "export_agent_prompt", "list_agent_runs", "get_agent_messages" ],
         schedule_ids: [ "self-cognition-arxiv-0900", "self-cognition-products-1000", "self-cognition-evolution-1100" ],
         product_table: "product_research",
         product_statuses: [ "tracked", "candidate", "archived" ]
@@ -1153,6 +1621,41 @@ async function dispatch(e, t, r, a) {
   if ("chat_with_paper" === s) return {
     ok: !0,
     ...await chatWithPaper(e, t, r)
+  };
+  if ("list_ai_channels" === s) return {
+    ok: !0,
+    channels: chatProviders().map(p => ({
+      key: p.key,
+      label: p.label,
+      model: p.model,
+      type: p.type,
+      is_default: p === chatProviders()[0]
+    })),
+    default_key: chatProviders()[0]?.key || null
+  };
+  if ("ai_scan_arxiv" === s) return {
+    ok: !0,
+    ...(await aiScanArxiv(e, t, r))
+  };
+  if ("ai_scan_products" === s) return {
+    ok: !0,
+    ...(await aiScanProducts(e, t, r))
+  };
+  if ("chat_with_agent" === s) return {
+    ok: !0,
+    ...(await chatWithAgent(e, t, r))
+  };
+  if ("export_agent_prompt" === s) return {
+    ok: !0,
+    ...(await exportAgentPrompt(e, t, r))
+  };
+  if ("list_agent_runs" === s) return {
+    ok: !0,
+    runs: listAgentRuns(e, t)
+  };
+  if ("get_agent_messages" === s) return {
+    ok: !0,
+    messages: getAgentMessages(e, t)
   };
   if ("get_paper_clusters" === s) return {
     ok: !0,
