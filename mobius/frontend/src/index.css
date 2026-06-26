@@ -1423,7 +1423,7 @@ body::after {
 }
 
 /* ===== 滚动条 ===== */
-::-webkit-scrollbar { width: 2.5px; }
+::-webkit-scrollbar { width: 2.5px; height: 2.5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }

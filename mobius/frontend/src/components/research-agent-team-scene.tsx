@@ -1983,12 +1983,14 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
         map: texture, transparent: true, depthTest: false, depthWrite: false,
       }))
       sprite.renderOrder = 4
-      sprite.position.set(0, 2.05, 0.08)
-      sprite.scale.set(2.4, 0.6, 1)
+      // 浮窗下移贴近可点击的十字(原 y=2.05 离十字 y≈0.78 过远, 点到浮窗文字会落空), 并让浮窗本身也参与点击
+      sprite.position.set(0, 1.45, 0.08)
+      sprite.scale.set(2.0, 0.5, 1)
+      sprite.userData.addNode = true
       group.add(sprite)
 
       pieceRoot.add(group)
-      clickableRef.current.push(...clickable)
+      clickableRef.current.push(...clickable, sprite)
     }
 
     animatorsRef.current = animators
