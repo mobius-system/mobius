@@ -1806,27 +1806,107 @@ textarea:focus {
     padding-bottom: 5rem;
   }
 
-  .filters-row,
-  .filters-row.compact,
-  .form-grid,
-  .metric-grid,
-  .panel-head,
-  .card-head,
-  .top-pick-card,
-  .cluster-head {
-    grid-template-columns: 1fr;
-    display: grid;
+  /* 移动端：让结果列表（论文 / 竞品）先出现，控制台表单（关键词、扫描设置）放后面
+     原本 grid 单列时 control-rail 在前会让用户先滚过 1000+ px 表单才看到论文 */
+  .work-grid {
+    display: flex;
+    flex-direction: column;
   }
 
-  .feedback-actions,
-  .top-pick-card,
+  .work-grid > .control-rail {
+    order: 2;
+  }
+
+  .work-grid > .results-panel {
+    order: 1;
+  }
+
+  /* 控制台在移动端可折叠：默认折叠，用户点击 summary 展开 */
+  .control-rail > .panel {
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .control-rail > .panel > .panel-head {
+    cursor: pointer;
+  }
+
+  /* 筛选行：移动端默认两列网格，避免 5~7 个下拉框全堆在一列 */
+  .filters-row,
+  .filters-row.compact {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 12px;
+    align-items: end;
+  }
+
+  /* 搜索框跨两列；超长复选框也跨两列，避免被挤窄 */
+  .filters-row .search-label,
+  .filters-row .inline-check,
+  .filters-row > .glass-button,
+  .filters-row > .primary-button {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  /* form-grid / metric-grid 仍允许 2 列 */
+  .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 标题行保留 flex：title + 按钮（保存/扫描状态）并排，按钮不独占整行 */
+  .panel-head,
+  .card-head,
+  .column-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px 12px;
+  }
+
+  /* cluster-head 也保留 flex，让标题和 stats 胶囊并排而非上下堆叠 */
   .cluster-head {
-    justify-content: stretch;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+  }
+
+  .cluster-head h3 {
+    font-size: 1.1rem;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* top-pick-card：保留 rank + main 两列，第三列按钮换行到下一行 */
+  .top-pick-card {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 10px 12px;
+  }
+
+  .top-pick-card .see-all-button,
+  .top-pick-card > .glass-button,
+  .top-pick-card > .primary-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  /* feedback 动作按钮不再强制 330px 最小宽度，跟随卡片宽度 */
+  .feedback-actions {
+    min-width: 0;
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .feedback-button,
   .see-all-button {
-    width: 100%;
+    width: auto;
   }
 
   .finale-status {
@@ -1848,8 +1928,63 @@ textarea:focus {
     min-width: 128px;
   }
 
+  /* 详情弹窗：移动端做接近全屏的展示，留出更多内容区 */
+  .detail-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    max-height: 100vh;
+    margin: 0;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-top: none;
+    border-bottom: none;
+  }
+
+  .detail-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.72);
+  }
+
+  .dialog-close {
+    top: 10px;
+    right: 10px;
+    width: 38px;
+    height: 38px;
+    background: rgba(15, 23, 42, 0.78);
+    z-index: 2;
+  }
+
   #dialogBody {
-    padding: 28px 20px;
+    padding: 22px 14px 24px;
+  }
+
+  #dialogBody h2 {
+    font-size: clamp(1.35rem, 5.4vw, 1.8rem);
+    line-height: 1.18;
+    padding-right: 36px;
+  }
+
+  .detail-meta {
+    font-size: 0.78rem;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-content {
+    gap: 14px;
+  }
+
+  .detail-block,
+  .detail-actions,
+  .detail-chat {
+    padding: 14px;
+    border-radius: 8px;
+  }
+
+  .detail-section-head {
+    margin-bottom: 10px;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
   .detail-action-row,
@@ -1863,8 +1998,102 @@ textarea:focus {
     width: 100%;
   }
 
+  .detail-chat-messages {
+    max-height: 220px;
+    padding: 10px;
+  }
+
   .detail-chat-message {
-    max-width: 92%;
+    max-width: 90%;
+  }
+
+  /* tag / pill / meta 等行内元素允许换行，避免长字段挤出视窗 */
+  .tag-row,
+  .card-actions,
+  .column-head {
+    min-width: 0;
+  }
+
+  .tag-row span,
+  .status-pill,
+  .column-head span {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* confirm 弹窗也避免被挤窄 */
+  .confirm-dialog {
+    width: min(460px, calc(100% - 24px));
+  }
+
+  /* prompt-export 弹窗移动端更窄 */
+  .prompt-export-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    max-height: 100vh;
+  }
+
+  .prompt-export-dialog .prompt-export-head,
+  .prompt-export-tip,
+  .prompt-export-body,
+  .prompt-export-actions {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .prompt-export-pre {
+    font-size: 0.78rem;
+  }
+}
+
+/* 超窄屏（iPhone SE / 折叠屏外屏）：筛选回到单列，避免被压成两列后过窄 */
+@media (max-width: 420px) {
+  .filters-row,
+  .filters-row.compact,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .top-pick-card {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .top-rank {
+    width: 36px;
+    height: 36px;
+  }
+
+  .panel,
+  .results-panel,
+  .paper-card,
+  .product-card,
+  .top-picks,
+  .cluster-card {
+    padding: 14px;
+  }
+
+  .cluster-head {
+    padding: 14px;
+  }
+
+  .cluster-card[data-expanded="true"] .cluster-body-inner {
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-bottom: 14px;
+  }
+
+  .metric strong {
+    font-size: 1.3rem;
+  }
+
+  .nav {
+    padding: 0 10px;
+  }
+
+  .hero,
+  .section-inner {
+    padding-left: 14px;
+    padding-right: 14px;
   }
 }
 
