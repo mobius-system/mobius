@@ -1749,7 +1749,8 @@ function makeAddNode(theme: SceneProps['theme']) {
   const barV = new Mesh(new BoxGeometry(0.16, 0.72, 0.16), barMat.clone()); barV.position.y = 0.78
   group.add(pad, ring, barH, barV)
 
-  const clickable: Object3D[] = [barH, barV]
+  // 可点击区: 除十字 bar 外, 把整个光圈(pad)/圆环(ring)也纳入 —— 否则用户点显眼的大圆盘几乎都点空(pad/ring 不在 clickable 里), 只有命中 0.16 宽的细 bar 才生效. onAdd 逻辑不变(三者均经 traverse 带 userData.addNode).
+  const clickable: Object3D[] = [pad, ring, barH, barV]
   group.traverse((child) => { child.userData.addNode = true })
   return { group, clickable }
 }

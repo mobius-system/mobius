@@ -1423,7 +1423,7 @@ body::after {
 }
 
 /* ===== 滚动条 ===== */
-::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar { width: 2.5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
@@ -1858,7 +1858,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   scrollbar-color: rgba(148, 163, 184, .34) transparent;
 }
 .assistant-session-sidebar__list::-webkit-scrollbar {
-  width: 4px;
+  width: 2px;
 }
 .assistant-session-sidebar__list::-webkit-scrollbar-track {
   background: transparent;
@@ -2821,8 +2821,8 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .assistant-session-message__content::-webkit-scrollbar,
 .assistant-session-input__textarea::-webkit-scrollbar,
 .assistant-session-log pre::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 2px;
+  height: 2px;
 }
 .assistant-session-log::-webkit-scrollbar-track,
 .assistant-session-message__content::-webkit-scrollbar-track,
