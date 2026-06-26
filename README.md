@@ -28,7 +28,7 @@
 >
 > 我们塑造「莫比乌斯 AI」的今天；**而您，真正的 AI 驾驭者，不满足于“预制” AI 系统的突破者**，可以用自然语言+截图发出指令，按照您的意愿打磨「莫比乌斯 AI」的每一个棱角，塑炼它的每行代码和每个像素，打造所向披靡的 Agent 平台。
 
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-1.png)
+![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-9.png)
 
 
 ## 会生长、可进化的生产力系统
@@ -59,11 +59,11 @@
 
 - 「莫比乌斯 AI」指挥多个Agent建立自主协同网络
 
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-3.png)
+![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-10.png)
 
 - 「莫比乌斯 AI」自动绘制研究进展
 
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-2.png)
+![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-11.png)
 
 - 「莫比乌斯 AI」做调研
 
