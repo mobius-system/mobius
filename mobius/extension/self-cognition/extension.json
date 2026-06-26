@@ -26,6 +26,17 @@
         "all_tracked": true,
         "discover": true
       }
+    },
+    {
+      "id": "self-cognition-evolution-0030",
+      "time": "00:30",
+      "timezone": "UTC",
+      "interval_minutes": 30,
+      "payload": {
+        "action": "seed_evolution_from_git",
+        "since": "auto",
+        "limit": 80
+      }
     }
   ],
   "project": {

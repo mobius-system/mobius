@@ -1853,3 +1853,105 @@ textarea:focus {
     max-width: 92%;
   }
 }
+
+.confirm-dialog {
+  width: min(460px, calc(100% - 32px));
+  border: 1px solid rgba(226, 232, 240, 0.18);
+  border-radius: 10px;
+  padding: 0;
+  color: #e0e7ff;
+  background: rgba(8, 7, 18, 0.96);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.48);
+}
+
+.confirm-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(8px);
+}
+
+#confirmForm {
+  padding: 26px 28px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.confirm-title {
+  margin: 0;
+  font-size: 1.18rem;
+  line-height: 1.35;
+}
+
+.confirm-body {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.65;
+  opacity: 0.82;
+}
+
+.confirm-dialog .dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.latest-batch {
+  margin-bottom: 18px;
+  padding: 14px 16px 12px;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-left: 3px solid rgb(129, 140, 248);
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.latest-batch-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.latest-batch-head h3 {
+  margin: 2px 0 0;
+  font-size: 1rem;
+}
+
+.latest-batch-head .text-button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 8px;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.latest-batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.latest-batch-item {
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.latest-batch-item:hover {
+  background: rgba(129, 140, 248, 0.18);
+}
+
+.latest-batch-more {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  opacity: 0.6;
+  text-align: right;
+}

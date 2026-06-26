@@ -109,6 +109,16 @@
             </aside>
 
             <section class="results-panel">
+              <section class="latest-batch" id="latestBatchPaper" hidden>
+                <div class="latest-batch-head">
+                  <div>
+                    <p class="micro">Latest batch</p>
+                    <h3 id="latestBatchPaperTitle">本轮新增</h3>
+                  </div>
+                  <button class="text-button" type="button" data-close-latest="paper" aria-label="关闭">×</button>
+                </div>
+                <div class="latest-batch-list" id="latestBatchPaperList"></div>
+              </section>
               <div class="filters-row">
                 <label>
                   <span>关键词</span>
@@ -215,6 +225,16 @@
             </aside>
 
             <section class="results-panel">
+              <section class="latest-batch" id="latestBatchProduct" hidden>
+                <div class="latest-batch-head">
+                  <div>
+                    <p class="micro">Latest batch</p>
+                    <h3 id="latestBatchProductTitle">本轮重扫</h3>
+                  </div>
+                  <button class="text-button" type="button" data-close-latest="product" aria-label="关闭">×</button>
+                </div>
+                <div class="latest-batch-list" id="latestBatchProductList"></div>
+              </section>
               <div class="filters-row compact">
                 <label>
                   <span>竞品状态</span>
@@ -238,6 +258,7 @@
                   <input id="competitorSearch" type="search" placeholder="名称、理由、快照">
                 </label>
                 <button class="glass-button light" id="refreshCompetitorsBtn" type="button">刷新竞品</button>
+                <button class="primary-button" id="productBulkScanBtn" type="button">重扫所有已跟踪竞品</button>
               </div>
               <div class="metric-grid" id="competitorMetrics"></div>
               <div class="competitor-columns">
@@ -286,7 +307,18 @@
               </select>
             </label>
             <span class="status-pill" id="evolutionSourcePill">加载中</span>
+            <button class="primary-button" id="evolutionScanBtn" type="button">扫描最新自进化</button>
           </div>
+          <section class="latest-batch" id="latestBatchEvolution" hidden>
+            <div class="latest-batch-head">
+              <div>
+                <p class="micro">Latest batch</p>
+                <h3 id="latestBatchEvolutionTitle">本轮新增</h3>
+              </div>
+              <button class="text-button" type="button" data-close-latest="evolution" aria-label="关闭">×</button>
+            </div>
+            <div class="latest-batch-list" id="latestBatchEvolutionList"></div>
+          </section>
           <div id="evolutionContent" class="evolution-content"></div>
         </section>
       </div>
@@ -310,6 +342,17 @@
   <dialog class="detail-dialog" id="detailDialog">
     <button class="dialog-close" id="dialogClose" type="button" aria-label="关闭">×</button>
     <div id="dialogBody"></div>
+  </dialog>
+
+  <dialog class="confirm-dialog" id="confirmDialog">
+    <form method="dialog" id="confirmForm">
+      <h3 id="confirmTitle" class="confirm-title"></h3>
+      <p id="confirmBody" class="confirm-body"></p>
+      <div class="dialog-actions">
+        <button type="button" id="confirmCancel" class="glass-button" value="cancel">取消</button>
+        <button type="submit" id="confirmOk" class="primary-button" value="ok">确认</button>
+      </div>
+    </form>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

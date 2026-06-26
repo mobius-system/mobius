@@ -184,11 +184,21 @@ function gitDiffSummary(e, t, r, a) {
   return txt(`${n}${c ? `；涉及 ${c}${a.length > 6 ? ` 等 ${a.length} 个文件` : ""}` : ""}`, 200);
 }
 
+const EVOLUTION_SCAN_KEY = "last_evolution_scan_at";
+
 function seedEvolutionFromGit(e, t = {}) {
   const r = int(t.limit, 80, 1, 300), a = [];
+  let sinceArg = "";
+  if ("auto" === String(t.since || "").trim()) {
+    const prev = e.prepare("SELECT value FROM install_state WHERE key=?").get(EVOLUTION_SCAN_KEY)?.value;
+    if (prev) sinceArg = txt(prev, 80);
+  } else if (t.since) {
+    sinceArg = txt(t.since, 80);
+  }
+  const newIds = [];
   for (const s of projectList(t)) {
     const o = [ "log", `--pretty=format:%H|%an|%ae|%at|%s`, `-${r}` ];
-    t.since && o.push(`--since=${txt(t.since, 80)}`);
+    sinceArg && o.push(`--since=${sinceArg}`);
     s.pathspec && o.push("--", s.pathspec);
     const c = git(s.repo, o).split("\n").map(e => e.trim()).filter(Boolean);
     let n = 0;
@@ -208,7 +218,10 @@ function seedEvolutionFromGit(e, t = {}) {
         approved_at: new Date(1e3 * Number(d)).toISOString(),
         created_at: new Date(1e3 * Number(d)).toISOString()
       });
-      p && p.commit_sha === r && n++;
+      if (p && p.commit_sha === r) {
+        n++;
+        p.created_at >= sinceArg && newIds.push(p.id);
+      }
     }
     a.push({
       project_id: s.id,
@@ -216,9 +229,15 @@ function seedEvolutionFromGit(e, t = {}) {
       inserted_or_existing: n
     });
   }
+  const stamp = now();
+  e.prepare("INSERT INTO install_state VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").run(EVOLUTION_SCAN_KEY, stamp, stamp);
   return {
     projects: a,
-    total_scanned: a.reduce((e, t) => e + t.scanned, 0)
+    total_scanned: a.reduce((e, t) => e + t.scanned, 0),
+    since: sinceArg || null,
+    scanned_at: stamp,
+    new_events: newIds.slice(0, 20).map(eid => evolutionRow(e.prepare("SELECT * FROM evolution_events WHERE id=?").get(eid))).filter(Boolean),
+    new_count: newIds.length
   };
 }
 
@@ -416,12 +435,14 @@ function scorePaper(e, t, r = {}) {
 async function scanArxiv(e, t, r) {
   const a = txt(t.query, 1500) || kwQuery(e), s = int(t.max_results, 100, 1, 500), o = id("scan", `${Date.now()}${Math.random()}`), c = now();
   let n = 0, d = 0, i = 0;
+  const g = [];
   try {
     const p = recalcKeywordWeights(e), t = parseArxiv(await fetchText(`https://export.arxiv.org/api/query?search_query=${encodeURIComponent(a)}&start=0&max_results=${s}&sortBy=relevance&sortOrder=descending`, 22e3)), u = rows(e, "paper"), l = e.prepare("INSERT INTO arxiv_items (id,title,source_url,source_id,authors,published_at,updated_arxiv_at,abstract,tags,matched_keywords,relevance,cluster_label,priority_score,cluster_keywords,fetched_at,created_by,created_at,updated_at) VALUES (@id,@title,@source_url,@source_id,@authors,@published_at,@updated_arxiv_at,@abstract,@tags,@matched_keywords,@relevance,@cluster_label,@priority_score,@cluster_keywords,@fetched_at,@created_by,@created_at,@updated_at) ON CONFLICT(source_id) DO UPDATE SET title=excluded.title,source_url=excluded.source_url,authors=excluded.authors,published_at=excluded.published_at,updated_arxiv_at=excluded.updated_arxiv_at,abstract=excluded.abstract,tags=excluded.tags,matched_keywords=excluded.matched_keywords,relevance=excluded.relevance,cluster_label=excluded.cluster_label,priority_score=excluded.priority_score,cluster_keywords=excluded.cluster_keywords,fetched_at=excluded.fetched_at,updated_at=excluded.updated_at");
     return e.transaction(() => t.forEach(t => {
       const a = scorePaper(t, u, p), s = e.prepare("SELECT id FROM arxiv_items WHERE source_id=?").get(t.source_id);
+      const paperId = id("arxiv", t.source_id || t.source_url);
       l.run({
-        id: id("arxiv", t.source_id || t.source_url),
+        id: paperId,
         title: txt(t.title, 300),
         source_url: url(t.source_url),
         source_id: txt(t.source_id, 120),
@@ -439,7 +460,7 @@ async function scanArxiv(e, t, r) {
         created_by: r,
         created_at: c,
         updated_at: c
-      }), s ? d++ : n++;
+      }), s ? d++ : (n++, g.push(paperId));
     }))(), i = discoverFromCorpus(e), n > 5 && addL2Event(e, {
       source: "auto_scan",
       summary: `发现 ${n} 篇新论文`,
@@ -455,7 +476,9 @@ async function scanArxiv(e, t, r) {
       skipped: 0,
       candidates_added: i,
       max_results: s,
-      query: a
+      query: a,
+      new_items: g.slice(0, 20).map(pid => paperOut(e.prepare("SELECT * FROM arxiv_items WHERE id=?").get(pid))).filter(Boolean),
+      new_count: g.length
     };
   } catch (t) {
     throw run(e, o, "arxiv", a, "", s, 0, 0, 0, 0, "error", t.message, r, c), new Error(`arXiv 扫描失败: ${txt(t.message, 180)}`);
@@ -629,7 +652,8 @@ async function scanOneProduct(e, t, r) {
     {
       run_id: s,
       competitor: i.item,
-      candidates_added: u
+      candidates_added: u,
+      touched_ids: i.item?.id ? [ i.item.id ] : []
     };
   } catch (t) {
     throw run(e, s, "product", "", a, 0, 0, 0, 0, 0, "error", t.message, r, o), new Error(`竞品扫描失败: ${txt(t.message, 180)}`);
@@ -666,9 +690,14 @@ async function scanProductAction(e, t, r) {
       files_changed: [ "product_research", "scan_runs" ],
       proposed_by: r
     });
+    const touched = [ ...new Set(a.flatMap(p => p.touched_ids || []).filter(Boolean)) ];
+    const touched_items = touched.slice(0, 20).map(pid => prodRow(e.prepare("SELECT * FROM product_research WHERE id=?").get(pid))).filter(Boolean);
     return {
       products: a,
-      candidates_added: s
+      candidates_added: s,
+      touched_ids: touched,
+      touched_items,
+      touched_count: touched.length
     };
   }
   return scanOneProduct(e, t, r);
@@ -1148,7 +1177,11 @@ async function dispatch(e, t, r, a) {
   if ("seed_evolution_from_git" === s) return {
     ok: !0,
     seed: seedEvolutionFromGit(e, t),
-    stats: evolutionStats(e)
+    stats: evolutionStats(e),
+    feed: getEvolutionFeed(e, {
+      level: "L1",
+      limit: 20
+    })
   };
   if ("get_L3_placeholder" === s) return {
     ok: !0,
