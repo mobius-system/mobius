@@ -27,13 +27,58 @@
 >
 > 我们塑造「莫比乌斯 AI」的今天；**而您，真正的 AI 驾驭者，不满足于“预制” AI 系统的突破者**，可以用自然语言+截图发出指令，按照您的意愿打磨「莫比乌斯 AI」的每一个棱角，塑炼它的每行代码和每个像素，打造所向披靡的 Agent 平台。
 
+![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-1.png)
 
 ## 会生长、可进化的生产力系统
 
 
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-1.png)
+
+## 真正意义 Auto Research 能力
+
+只会写文章还不够，合纵连横多个机器，能在超级GPU集群上跑实验、复现论文，才是真正的 Auto Research 能力。
+
+- 指挥多个Agent建立自主协同网络
+
+![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-3.png)
+
+- 自动绘制
 
 ![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-2.png)
+
+<video controls src="https://mobius.nutshellai.cn/assets/v1/research-back.mp4" title="Title"></video>
+
+## 小莫助理：高中生都能使用的的开发中枢和管理中枢
+
+
+- 系统的“第二前端”与智慧中心
+  - 界面点击能做的所有事情，小莫可以做；前端做不了的事情，小莫还可以做
+
+- 任务完成时语音提醒：日理万机的你，需要一个贴心的秘书
+  - 网页端语音提醒
+  - 手机端通知消息+语音提醒
+  - 可选提醒粒度
+
+- 你说，小莫执行
+  - 支持语音输入功能
+
+- 多端互联，随时登陆
+  - WEB端
+  - PC端 Windows + MacOS (开发中)
+  - 移动端 IOS + Android (测试中)
+
+![alt text](image-1.png)
+
+
+<video controls src="docs/self-evolution-demo-v1.mp4" title="Title"></video>
+↑ 上面这个演示视频也是小莫制作的，提示词参考这个[SKILL](skills/mobius-self-evo-demo/SKILL.md)，录制过程无人类参与，略有瑕疵，我们正在替换素材。
+
+## 任意模型，任意CodingAgent
+
+轻松接入最强开源模型 GLM-5.2，也支持GPT-5.5、Claude-Opus等。
+
+![alt text](image-2.png)
+
+
 
 
 ## 从GPU集群到NX开发板，神经中枢的触手，无处不可达
@@ -52,7 +97,7 @@ flowchart LR
 
   subgraph R["远端与本地资源"]
     GPU["GPU 算力集群<br/>训练 / 推理 / 实验"]
-    NX["NX 开发板<br/>边缘部署 / 设备调试"]
+    NX["NX 等嵌入式开发板<br/>边缘部署 / 设备调试"]
     NAS["NAS / OSS / 云存储<br/>数据与产物归档"]
     CLOUD["云服务器<br/>任务执行 / 服务部署"]
     PC["员工工作站<br/>Mac / Windows / Linux"]
@@ -72,42 +117,12 @@ flowchart LR
 
 ```
 
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-3.png)
+在项目记忆中，侦测和管理计算资源：
+- 连接普通SSH（云服务器，轻量应用服务器，NAS，GPU集群）
+- 一键连接自己的个人PC（无条件连接，无论是Windows，MacOS，能运行Python即可）
+- 一键连接嵌入式开发板（搭载NX等嵌入式设备的无人机、无人车等）
 
-
-## 面向真实项目协作的企业级人机物协同 Agent 操作系统
-
-
-
-
-## 小莫助理：高中生都能使用的的开发中枢和管理中枢
-
-
-- 系统的“第二前端”与智慧中心
-  - 界面点击能做的所有事情，小莫可以做；前端做不了的事情，小莫还可以做
-
-- 任务完成时语音提醒：日理万机的你，需要一个贴心的秘书
-  - 网页端语音提醒
-  - 手机端通知消息+语音提醒
-  - 可选提醒
-
-- 你说，小莫执行
-  - 语音输入功能
-
-- 多端互联，随时登陆
-  - WEB端
-  - PC端 Windows + MacOS (开发中)
-  - 移动端 IOS + Android (测试中)
-
-![alt text](image-1.png)
-
-
-## 任意模型，任意CodingAgent
-
-轻松接入最强开源模型 GLM-5.2，也支持GPT-5.5、Claude-Opus等。
-
-![alt text](image-2.png)
-
+![alt text](image-3.png)
 
 
 
