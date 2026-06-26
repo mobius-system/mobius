@@ -908,6 +908,32 @@ textarea:focus {
   opacity: 0.62;
 }
 
+.paper-card.is-read,
+.product-card.is-read {
+  opacity: 0.78;
+}
+
+.paper-card.is-read h3,
+.product-card.is-read h3 {
+  font-weight: 500;
+}
+
+.paper-card.is-unread h3,
+.product-card.is-unread h3 {
+  font-weight: 700;
+}
+
+.unread-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0a84ff, #5e5ce6);
+  margin-right: 8px;
+  vertical-align: middle;
+  box-shadow: 0 0 6px rgba(10, 132, 255, 0.5);
+}
+
 .paper-card h3,
 .product-card h3 {
   margin: 8px 0 10px;

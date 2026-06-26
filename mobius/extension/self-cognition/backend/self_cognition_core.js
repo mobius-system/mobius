@@ -51,7 +51,7 @@ function init(e) {
   e.exec("\n    CREATE TABLE IF NOT EXISTS keywords (id TEXT PRIMARY KEY, scope TEXT NOT NULL, keyword TEXT NOT NULL, query TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(scope, keyword));\n    CREATE TABLE IF NOT EXISTS arxiv_items (id TEXT PRIMARY KEY, title TEXT NOT NULL, source_url TEXT NOT NULL, source_id TEXT NOT NULL DEFAULT '', authors TEXT NOT NULL DEFAULT '', published_at TEXT, updated_arxiv_at TEXT, abstract TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '[]', matched_keywords TEXT NOT NULL DEFAULT '[]', relevance INTEGER NOT NULL DEFAULT 0, cluster_label TEXT NOT NULL DEFAULT '', priority_score REAL NOT NULL DEFAULT 0, cluster_keywords TEXT NOT NULL DEFAULT '[]', citations INTEGER NOT NULL DEFAULT 0, mark TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', auto_fetched INTEGER NOT NULL DEFAULT 1, fetched_at TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n    CREATE UNIQUE INDEX IF NOT EXISTS idx_arxiv_source_id ON arxiv_items(source_id) WHERE source_id != '';\n    CREATE TABLE IF NOT EXISTS product_research (id TEXT PRIMARY KEY, name TEXT NOT NULL, source_url TEXT NOT NULL, normalized_url TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'candidate', category TEXT NOT NULL DEFAULT 'other', relevance INTEGER NOT NULL DEFAULT 3, tags TEXT NOT NULL DEFAULT '[]', aliases TEXT NOT NULL DEFAULT '[]', reason TEXT NOT NULL DEFAULT '', discovery_logic TEXT NOT NULL DEFAULT '', discovered_from_url TEXT NOT NULL DEFAULT '', fetched_title TEXT NOT NULL DEFAULT '', fetched_description TEXT NOT NULL DEFAULT '', mark TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', last_scanned_at TEXT, auto_discovered INTEGER NOT NULL DEFAULT 0, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n    CREATE TABLE IF NOT EXISTS scan_runs (id TEXT PRIMARY KEY, scan_type TEXT NOT NULL, query TEXT NOT NULL DEFAULT '', source_url TEXT NOT NULL DEFAULT '', max_results INTEGER NOT NULL DEFAULT 0, inserted INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL DEFAULT 0, skipped INTEGER NOT NULL DEFAULT 0, candidates_added INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL, created_at TEXT NOT NULL);\n    CREATE TABLE IF NOT EXISTS install_state (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL);\n    CREATE TABLE IF NOT EXISTS user_feedback (id TEXT PRIMARY KEY, paper_id TEXT NOT NULL, verdict TEXT NOT NULL CHECK(verdict IN ('boost','neutral','exclude')), note TEXT, created_at TEXT NOT NULL, source_session TEXT);\n    CREATE TABLE IF NOT EXISTS keyword_weights (keyword TEXT PRIMARY KEY, weight REAL NOT NULL, updated_at TEXT NOT NULL);\n  ");
   e.exec("\n    CREATE TABLE IF NOT EXISTS evolution_events (id TEXT PRIMARY KEY, level TEXT NOT NULL CHECK(level IN ('L1','L2','L3')), source TEXT NOT NULL, status TEXT NOT NULL, project_id TEXT, issue_id TEXT, session_id TEXT, commit_sha TEXT, version TEXT, summary TEXT NOT NULL, diff_summary TEXT, files_changed TEXT, proposed_by TEXT, approved_by TEXT, approved_at TEXT, created_at TEXT NOT NULL, promoted_from TEXT);\n    CREATE INDEX IF NOT EXISTS idx_evolution_level_status ON evolution_events(level,status,created_at);\n    CREATE INDEX IF NOT EXISTS idx_evolution_project ON evolution_events(project_id,created_at);\n  ");
   e.exec("\n    CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('paper','product')), scope_ids TEXT NOT NULL DEFAULT '[]', model_key TEXT NOT NULL, model_label TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'running', summary TEXT NOT NULL DEFAULT '', prompt_for_xiaomo TEXT NOT NULL DEFAULT '', token_usage TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n    CREATE INDEX IF NOT EXISTS idx_agent_runs_kind_created ON agent_runs(kind, created_at);\n    CREATE TABLE IF NOT EXISTS agent_messages (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', tool_calls TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);\n    CREATE INDEX IF NOT EXISTS idx_agent_messages_run ON agent_messages(run_id, created_at);\n  ");
-  for (const [t, r, a] of [ [ "arxiv_items", "mark", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "note", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "cluster_label", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "priority_score", "REAL NOT NULL DEFAULT 0" ], [ "arxiv_items", "cluster_keywords", "TEXT NOT NULL DEFAULT '[]'" ], [ "arxiv_items", "citations", "INTEGER NOT NULL DEFAULT 0" ], [ "arxiv_items", "ai_inspiration", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "normalized_url", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "aliases", "TEXT NOT NULL DEFAULT '[]'" ], [ "product_research", "reason", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "discovery_logic", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "discovered_from_url", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "mark", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "note", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "last_scanned_at", "TEXT" ], [ "product_research", "auto_discovered", "INTEGER NOT NULL DEFAULT 0" ], [ "product_research", "ai_inspiration", "TEXT NOT NULL DEFAULT ''" ], [ "scan_runs", "scan_type", "TEXT NOT NULL DEFAULT 'arxiv'" ], [ "scan_runs", "source_url", "TEXT NOT NULL DEFAULT ''" ], [ "scan_runs", "updated", "INTEGER NOT NULL DEFAULT 0" ], [ "scan_runs", "candidates_added", "INTEGER NOT NULL DEFAULT 0" ] ]) e.prepare(`PRAGMA table_info(${t})`).all().some(e => e.name === r) || e.exec(`ALTER TABLE ${t} ADD COLUMN ${r} ${a}`);
+  for (const [t, r, a] of [ [ "arxiv_items", "mark", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "note", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "cluster_label", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "priority_score", "REAL NOT NULL DEFAULT 0" ], [ "arxiv_items", "cluster_keywords", "TEXT NOT NULL DEFAULT '[]'" ], [ "arxiv_items", "citations", "INTEGER NOT NULL DEFAULT 0" ], [ "arxiv_items", "ai_inspiration", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "read_at", "TEXT" ], [ "product_research", "normalized_url", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "aliases", "TEXT NOT NULL DEFAULT '[]'" ], [ "product_research", "reason", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "discovery_logic", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "discovered_from_url", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "mark", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "note", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "last_scanned_at", "TEXT" ], [ "product_research", "auto_discovered", "INTEGER NOT NULL DEFAULT 0" ], [ "product_research", "ai_inspiration", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "read_at", "TEXT" ], [ "scan_runs", "scan_type", "TEXT NOT NULL DEFAULT 'arxiv'" ], [ "scan_runs", "source_url", "TEXT NOT NULL DEFAULT ''" ], [ "scan_runs", "updated", "INTEGER NOT NULL DEFAULT 0" ], [ "scan_runs", "candidates_added", "INTEGER NOT NULL DEFAULT 0" ] ]) e.prepare(`PRAGMA table_info(${t})`).all().some(e => e.name === r) || e.exec(`ALTER TABLE ${t} ADD COLUMN ${r} ${a}`);
   e.exec("UPDATE product_research SET normalized_url=source_url WHERE normalized_url=''; UPDATE product_research SET status='tracked' WHERE status='official'; UPDATE product_research SET status='candidate' WHERE status NOT IN ('tracked','candidate','archived'); CREATE UNIQUE INDEX IF NOT EXISTS idx_product_research_normalized_url ON product_research(normalized_url); CREATE UNIQUE INDEX IF NOT EXISTS idx_arxiv_source_id_full ON arxiv_items(source_id);");
   const t = now(), r = e.prepare("INSERT OR IGNORE INTO keywords VALUES (@id,@scope,@keyword,@query,1,@sort_order,@created_at,@updated_at)");
   PAPER_KWS.forEach((e, a) => r.run({
@@ -526,7 +526,8 @@ function prodRow(e) {
     relevance: Number(e.relevance) || 0,
     tags: arr(e.tags),
     aliases: arr(e.aliases),
-    auto_discovered: !!e.auto_discovered
+    auto_discovered: !!e.auto_discovered,
+    read_at: e.read_at || null
   } : null;
 }
 
@@ -723,7 +724,8 @@ function listPapers(e, t = {}) {
       tags: arr(e.tags),
       matched_keywords: arr(e.matched_keywords),
       cluster_keywords: arr(e.cluster_keywords),
-      priority_score: Number(e.priority_score) || 0
+      priority_score: Number(e.priority_score) || 0,
+      read_at: e.read_at || null
     })),
     total: e.prepare(`SELECT COUNT(*) n FROM arxiv_items ${c}`).get(...o).n
   };
@@ -735,8 +737,19 @@ function paperOut(e) {
     tags: arr(e.tags),
     matched_keywords: arr(e.matched_keywords),
     cluster_keywords: arr(e.cluster_keywords),
-    priority_score: Number(e.priority_score) || 0
+    priority_score: Number(e.priority_score) || 0,
+    read_at: e.read_at || null
   } : null;
+}
+
+function markPaperRead(e, id, read) {
+  const stamp = read ? now() : null;
+  e.prepare("UPDATE arxiv_items SET read_at=?,updated_at=? WHERE id=?").run(stamp, stamp || now(), id);
+}
+
+function markProductRead(e, id, read) {
+  const stamp = read ? now() : null;
+  e.prepare("UPDATE product_research SET read_at=?,updated_at=? WHERE id=?").run(stamp, stamp || now(), id);
 }
 
 function submitFeedback(e, t) {
@@ -1394,20 +1407,13 @@ function parseInspirationJson(text) {
 }
 
 function saveInspiration(e, table, id, inspiration) {
+  // 启发和 mark / 已读状态是三个独立维度, 这里只动 ai_inspiration, 不要联动 mark='excluded'。
   const stamp = now();
-  const json = JSON.stringify(inspiration);
+  const json = inspiration && inspiration.length ? JSON.stringify(inspiration) : "";
   if (table === "arxiv_items") {
-    if (inspiration && inspiration.length) {
-      e.prepare("UPDATE arxiv_items SET ai_inspiration=?,updated_at=? WHERE id=?").run(json, stamp, id);
-    } else {
-      e.prepare("UPDATE arxiv_items SET ai_inspiration='',mark='excluded',updated_at=? WHERE id=?").run(stamp, id);
-    }
+    e.prepare("UPDATE arxiv_items SET ai_inspiration=?,updated_at=? WHERE id=?").run(json, stamp, id);
   } else if (table === "product_research") {
-    if (inspiration && inspiration.length) {
-      e.prepare("UPDATE product_research SET ai_inspiration=?,updated_at=? WHERE id=?").run(json, stamp, id);
-    } else {
-      e.prepare("UPDATE product_research SET ai_inspiration='',mark='excluded',updated_at=? WHERE id=?").run(stamp, id);
-    }
+    e.prepare("UPDATE product_research SET ai_inspiration=?,updated_at=? WHERE id=?").run(json, stamp, id);
   }
 }
 
@@ -2051,7 +2057,7 @@ async function dispatch(e, t, r, a) {
       products: listProducts(e),
       scan_runs: scans(e),
       constants: {
-        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats", "list_ai_channels", "ai_scan_arxiv", "ai_scan_products", "discover_competitors_via_agent", "chat_with_agent", "rewrite_inspiration_style", "export_agent_prompt", "list_agent_runs", "get_agent_messages" ],
+        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "mark_paper_read", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "mark_product_read", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats", "list_ai_channels", "ai_scan_arxiv", "ai_scan_products", "discover_competitors_via_agent", "chat_with_agent", "rewrite_inspiration_style", "export_agent_prompt", "list_agent_runs", "get_agent_messages" ],
         schedule_ids: [ "self-cognition-arxiv-0900", "self-cognition-products-1000", "self-cognition-evolution-1100" ],
         product_table: "product_research",
         product_statuses: [ "tracked", "candidate", "archived" ]
@@ -2174,13 +2180,27 @@ async function dispatch(e, t, r, a) {
   } : "list_product_items" === s || "list_products" === s ? {
     ok: !0,
     ...listProducts(e, t)
-  } : "get_paper" === s ? {
-    ok: !0,
-    item: paperOut(e.prepare("SELECT * FROM arxiv_items WHERE id=? OR source_id=?").get(txt(t.id, 120), txt(t.id, 120)) || null)
-  } : "get_product" === s ? {
-    ok: !0,
-    item: prodRow(e.prepare("SELECT * FROM product_research WHERE id=?").get(txt(t.id, 120)))
-  } : "mark_paper" === s ? (e.prepare("UPDATE arxiv_items SET mark=?,note=?,updated_at=? WHERE id=?").run(txt(t.mark, 40), long(t.note, 3e3), now(), txt(t.id, 120)),
+  } : "get_paper" === s ? (() => {
+    const row = e.prepare("SELECT * FROM arxiv_items WHERE id=? OR source_id=?").get(txt(t.id, 120), txt(t.id, 120)) || null;
+    if (row) markPaperRead(e, row.id, !0);
+    const fresh = row ? e.prepare("SELECT * FROM arxiv_items WHERE id=?").get(row.id) : null;
+    return { ok: !0, item: paperOut(fresh) };
+  })() : "get_product" === s ? (() => {
+    const row = e.prepare("SELECT * FROM product_research WHERE id=?").get(txt(t.id, 120)) || null;
+    if (row) markProductRead(e, row.id, !0);
+    const fresh = row ? e.prepare("SELECT * FROM product_research WHERE id=?").get(row.id) : null;
+    return { ok: !0, item: prodRow(fresh) };
+  })() : "mark_paper_read" === s ? (() => {
+    const row = e.prepare("SELECT id FROM arxiv_items WHERE id=? OR source_id=?").get(txt(t.id, 120), txt(t.id, 120));
+    if (!row) return { ok: !1, error: "未找到论文" };
+    markPaperRead(e, row.id, !1 !== t.read);
+    return { ok: !0, item: paperOut(e.prepare("SELECT * FROM arxiv_items WHERE id=?").get(row.id)) };
+  })() : "mark_product_read" === s ? (() => {
+    const row = e.prepare("SELECT id FROM product_research WHERE id=?").get(txt(t.id, 120));
+    if (!row) return { ok: !1, error: "未找到产品" };
+    markProductRead(e, row.id, !1 !== t.read);
+    return { ok: !0, item: prodRow(e.prepare("SELECT * FROM product_research WHERE id=?").get(row.id)) };
+  })() : "mark_paper" === s ? (e.prepare("UPDATE arxiv_items SET mark=?,note=?,updated_at=? WHERE id=?").run(txt(t.mark, 40), long(t.note, 3e3), now(), txt(t.id, 120)),
   {
     ok: !0
   }) : "mark_product" === s ? {

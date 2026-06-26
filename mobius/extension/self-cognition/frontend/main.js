@@ -312,7 +312,7 @@ function normalizeKeywords(value) {
 
 function normalizePaper(item, clusterLabel = '') {
   const id = paperId(item);
-  return {
+  const normalized = {
     ...item,
     id,
     paper_id: id,
@@ -323,7 +323,13 @@ function normalizePaper(item, clusterLabel = '') {
     relevance: Number(item.relevance ?? item.priority_score ?? 0) || 0,
     matched_keywords: normalizeKeywords(item.matched_keywords || item.keywords || item.cluster_keywords),
     tags: normalizeKeywords(item.tags),
+    read_at: item.read_at || null,
   };
+  if (id && typeof item.read_at !== 'undefined') {
+    const local = paperLocal(id);
+    local.read = !!item.read_at;
+  }
+  return normalized;
 }
 
 function clusterTitle(label) {
@@ -910,14 +916,15 @@ function renderPaperCard(item, options = {}) {
   const isExcluded = item.mark === 'excluded';
   const insp = parseInspiration(item.ai_inspiration);
   const hasInsp = insp.length > 0;
+  const isRead = !!local.read;
   return `
-    <article class="paper-card ${options.compact ? 'is-compact' : ''} ${isExcluded ? 'is-excluded' : ''} ${hasInsp ? 'has-inspiration' : ''}" data-archived="${local.archived ? 'true' : 'false'}">
+    <article class="paper-card ${options.compact ? 'is-compact' : ''} ${isExcluded ? 'is-excluded' : ''} ${hasInsp ? 'has-inspiration' : ''} ${isRead ? 'is-read' : 'is-unread'}" data-archived="${local.archived ? 'true' : 'false'}">
       <div class="card-head">
         <div>
-          <div class="card-meta">Priority ${escapeHtml(score)} · ${escapeHtml(item.published_at || '日期未知')}${clusterLine} · ${local.read ? '已读' : '未读'}${local.favorite ? ' · 已收藏' : ''}${isExcluded ? ' · AI 排除' : ''}</div>
+          <div class="card-meta">${isRead ? '' : '<span class="unread-dot" aria-hidden="true"></span>'}Priority ${escapeHtml(score)} · ${escapeHtml(item.published_at || '日期未知')}${clusterLine} · ${isRead ? '已读' : '未读'}${local.favorite ? ' · 已收藏' : ''}${isExcluded ? ' · AI 排除' : ''}</div>
           <h3 class="${options.gradient ? 'gradient-text' : ''}">${escapeHtml(item.title)}</h3>
         </div>
-        <span class="status-pill">${isExcluded ? 'AI 排除' : (local.archived ? '归档' : (local.read ? '已读' : '未读'))}</span>
+        <span class="status-pill">${isExcluded ? 'AI 排除' : (local.archived ? '归档' : (isRead ? '已读' : '未读'))}</span>
       </div>
       ${hasInsp ? renderInspirationBlock(item.ai_inspiration, false) : (isExcluded ? renderInspirationBlock(null, true) : '')}
       <p>${escapeHtml(shortText(item.abstract, options.compact ? 150 : 280))}</p>
@@ -925,7 +932,7 @@ function renderPaperCard(item, options = {}) {
       <div class="paper-bottom-row">
         <div class="card-actions">
           <button type="button" data-paper-detail="${escapeHtml(item.id)}">查看详情</button>
-          <button type="button" data-paper-read="${escapeHtml(item.id)}">${local.read ? '标记未读' : '标记已读'}</button>
+          <button type="button" data-paper-read="${escapeHtml(item.id)}">${isRead ? '标记未读' : '标记已读'}</button>
           <button type="button" data-paper-favorite="${escapeHtml(item.id)}">${local.favorite ? '取消收藏' : '收藏'}</button>
           <button type="button" data-paper-archive="${escapeHtml(item.id)}">${local.archived ? '取消归档' : '归档'}</button>
           ${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">原文</a>` : ''}
@@ -955,6 +962,17 @@ function renderTopPicks() {
 
 function renderPapers() {
   computeTopPicks();
+  // 后端 read_at 是已读状态的唯一真相源, 每次渲染前同步 local.read。
+  for (const item of Object.values(state.clusterPapers).flat()) {
+    if (item?.id && typeof item.read_at !== 'undefined') {
+      paperLocal(item.id).read = !!item.read_at;
+    }
+  }
+  for (const item of (state.papers.items || [])) {
+    if (item?.id && typeof item.read_at !== 'undefined') {
+      paperLocal(item.id).read = !!item.read_at;
+    }
+  }
   renderTopPicks();
   const all = Object.values(state.clusterPapers).flat();
   const items = filteredPapers();
@@ -1034,11 +1052,12 @@ function productCard(item) {
   const isExcluded = item.mark === 'excluded';
   const insp = parseInspiration(item.ai_inspiration);
   const hasInsp = insp.length > 0;
+  const isRead = !!local.read;
   return `
-    <article class="product-card ${isExcluded ? 'is-excluded' : ''} ${hasInsp ? 'has-inspiration' : ''}">
+    <article class="product-card ${isExcluded ? 'is-excluded' : ''} ${hasInsp ? 'has-inspiration' : ''} ${isRead ? 'is-read' : 'is-unread'}">
       <div class="card-head">
         <div>
-          <div class="card-meta">${escapeHtml(labels.category[item.category] || item.category || '其他')} · ${escapeHtml(labels.status[item.status] || item.status)} · 相关度 ${escapeHtml(item.relevance)}/10 · ${local.read ? '已读' : '未读'}${isExcluded ? ' · AI 排除' : ''}</div>
+          <div class="card-meta">${isRead ? '' : '<span class="unread-dot" aria-hidden="true"></span>'}${escapeHtml(labels.category[item.category] || item.category || '其他')} · ${escapeHtml(labels.status[item.status] || item.status)} · 相关度 ${escapeHtml(item.relevance)}/10 · ${isRead ? '已读' : '未读'}${isExcluded ? ' · AI 排除' : ''}</div>
           <h3>${escapeHtml(item.name)}</h3>
         </div>
         <span class="status-pill">${isExcluded ? 'AI 排除' : escapeHtml(labels.status[item.status] || item.status)}</span>
@@ -1049,7 +1068,7 @@ function productCard(item) {
       <div class="card-actions">
         ${item.status === 'candidate' ? `<button type="button" data-promote="${escapeHtml(item.id)}">一键晋升为正式</button>` : ''}
         <button type="button" data-product-detail="${escapeHtml(item.id)}">查看详情 / 追问</button>
-        <button type="button" data-product-read="${escapeHtml(item.id)}">${local.read ? '标记未读' : '标记已读'}</button>
+        <button type="button" data-product-read="${escapeHtml(item.id)}">${isRead ? '标记未读' : '标记已读'}</button>
         <a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开页面</a>
       </div>
     </article>
@@ -1057,6 +1076,12 @@ function productCard(item) {
 }
 
 function renderCompetitors() {
+  // 后端 read_at 是已读状态的唯一真相源, 每次渲染前同步 local.read。
+  for (const item of allCompetitors()) {
+    if (item?.id && typeof item.read_at !== 'undefined') {
+      competitorLocal(item.id).read = !!item.read_at;
+    }
+  }
   const filtered = filteredCompetitors();
   const official = filtered.filter((item) => item.status === 'official');
   const candidate = filtered.filter((item) => item.status === 'candidate');
@@ -1828,15 +1853,27 @@ function shouldSyncReadMark(mark) {
 
 function syncOpenedRead(kind, id, mark = '') {
   if (!shouldSyncReadMark(mark)) return;
-  if (kind === 'paper') {
-    call({ action: 'mark_paper', id, mark: 'read', note: '用户打开详情页自动标记已读' }).catch(() => {});
-    return;
-  }
-  call({ action: 'mark_product', id, mark: 'read', note: '用户打开详情页自动标记已读' })
-    .then((result) => {
-      state.competitors = result.competitors || state.competitors;
-    })
-    .catch(() => {});
+  // 走 read_at 通道, 不要再覆盖 mark 列。
+  const action = kind === 'paper' ? 'mark_paper_read' : 'mark_product_read';
+  call({ action, id, read: true }).then((result) => {
+    if (result?.item) {
+      if (kind === 'paper') {
+        for (const clusterKey of Object.keys(state.clusterPapers || {})) {
+          const arr = state.clusterPapers[clusterKey] || [];
+          const idx = arr.findIndex((p) => p.id === id);
+          if (idx >= 0) state.clusterPapers[clusterKey][idx] = { ...arr[idx], ...result.item };
+        }
+      } else {
+        for (const bucket of ['official', 'candidate', 'archived']) {
+          const arr = state.competitors[bucket] || [];
+          const idx = arr.findIndex((p) => p.id === id);
+          if (idx >= 0) state.competitors[bucket][idx] = { ...arr[idx], ...result.item };
+        }
+      }
+      if (kind === 'paper') renderPapers(); else renderCompetitors();
+      updateRadarDiscoveries();
+    }
+  }).catch(() => {});
 }
 
 function openPaperDetail(id) {
@@ -1898,7 +1935,14 @@ async function handlePaperDetailAction(id, action) {
       renderPapers();
       updateRadarDiscoveries();
       rerenderOpenDetail('paper', id);
-      await call({ action: 'mark_paper', id, mark: 'read', note: '用户在详情页标记已读' });
+      const result = await call({ action: 'mark_paper_read', id, read: true });
+      if (result?.item) {
+        for (const clusterKey of Object.keys(state.clusterPapers || {})) {
+          const arr = state.clusterPapers[clusterKey] || [];
+          const idx = arr.findIndex((p) => p.id === id);
+          if (idx >= 0) state.clusterPapers[clusterKey][idx] = { ...arr[idx], ...result.item };
+        }
+      }
       showToast('已标记已读');
     } else if (action === 'fusion') {
       local.reviewed = true;
@@ -1953,8 +1997,20 @@ async function handleProductDetailAction(id, action) {
     renderCompetitors();
     updateRadarDiscoveries();
     rerenderOpenDetail('product', id);
-    const result = await call({ action: 'mark_product', id, mark, note: `用户在详情页标记: ${action}` });
-    state.competitors = result.competitors || state.competitors;
+    if (action === 'read') {
+      // read 走 read_at 通道, 不要覆盖 mark 列。
+      const readResult = await call({ action: 'mark_product_read', id, read: true });
+      if (readResult?.item) {
+        for (const bucket of ['official', 'candidate', 'archived']) {
+          const arr = state.competitors[bucket] || [];
+          const idx = arr.findIndex((p) => p.id === id);
+          if (idx >= 0) state.competitors[bucket][idx] = { ...arr[idx], ...readResult.item };
+        }
+      }
+    } else {
+      const result = await call({ action: 'mark_product', id, mark, note: `用户在详情页标记: ${action}` });
+      state.competitors = result.competitors || state.competitors;
+    }
     showToast(action === 'fusion' ? '已加入融合队列' : '产品标记已更新');
   } catch (error) {
     state.local.competitors[id] = previousLocal;
@@ -2395,11 +2451,23 @@ function bindEvents() {
 
     const paperRead = event.target.closest('[data-paper-read]');
     if (paperRead) {
-      const local = paperLocal(paperRead.dataset.paperRead);
-      local.read = !local.read;
+      const id = paperRead.dataset.paperRead;
+      const nextRead = !paperLocal(id).read;
+      paperLocal(id).read = nextRead;
       saveLocalState();
       renderPapers();
       updateRadarDiscoveries();
+      call({ action: 'mark_paper_read', id, read: nextRead }).then((result) => {
+        if (result?.item) {
+          for (const clusterKey of Object.keys(state.clusterPapers || {})) {
+            const arr = state.clusterPapers[clusterKey] || [];
+            const idx = arr.findIndex((p) => p.id === id);
+            if (idx >= 0) state.clusterPapers[clusterKey][idx] = { ...arr[idx], ...result.item };
+          }
+          renderPapers();
+          updateRadarDiscoveries();
+        }
+      }).catch(() => {});
     }
 
     const paperFavorite = event.target.closest('[data-paper-favorite]');
@@ -2428,11 +2496,23 @@ function bindEvents() {
 
     const productRead = event.target.closest('[data-product-read]');
     if (productRead) {
-      const local = competitorLocal(productRead.dataset.productRead);
-      local.read = !local.read;
+      const id = productRead.dataset.productRead;
+      const nextRead = !competitorLocal(id).read;
+      competitorLocal(id).read = nextRead;
       saveLocalState();
       renderCompetitors();
       updateRadarDiscoveries();
+      call({ action: 'mark_product_read', id, read: nextRead }).then((result) => {
+        if (result?.item) {
+          for (const bucket of ['official', 'candidate', 'archived']) {
+            const arr = state.competitors[bucket] || [];
+            const idx = arr.findIndex((p) => p.id === id);
+            if (idx >= 0) state.competitors[bucket][idx] = { ...arr[idx], ...result.item };
+          }
+          renderCompetitors();
+          updateRadarDiscoveries();
+        }
+      }).catch(() => {});
     }
 
     const promote = event.target.closest('[data-promote]');
