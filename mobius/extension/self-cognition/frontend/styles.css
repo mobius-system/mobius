@@ -294,8 +294,7 @@ code {
 }
 
 .product-tone .status-pill,
-.product-tone .column-head span,
-.product-tone .product-card[data-archived="false"] .status-pill {
+.product-tone .column-head span {
   color: var(--product-ink);
   background: linear-gradient(135deg, var(--product-accent-1), var(--product-accent-2));
   border-color: transparent;
@@ -905,8 +904,7 @@ textarea:focus {
   padding: 18px;
 }
 
-.paper-card[data-archived="true"],
-.product-card[data-archived="true"] {
+.paper-card[data-archived="true"] {
   opacity: 0.62;
 }
 
@@ -1363,7 +1361,6 @@ textarea:focus {
   border-color: transparent;
 }
 
-.card-actions [data-archive],
 .card-actions [data-paper-archive] {
   color: var(--danger);
 }

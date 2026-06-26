@@ -15,7 +15,6 @@ const labels = {
   status: {
     official: '已跟踪',
     candidate: '候选',
-    archived: '归档',
   },
 };
 
@@ -24,7 +23,7 @@ const localKey = 'mobius-self-cognition-ui-state-v2';
 const state = {
   summary: {},
   keywords: { paper: [], product: [] },
-  competitors: { official: [], candidate: [], archived: [] },
+  competitors: { official: [], candidate: [] },
   papers: { items: [], total: 0 },
   paperClusters: [],
   clusterPapers: {},
@@ -407,7 +406,6 @@ function allCompetitors() {
   return [
     ...(state.competitors.official || []),
     ...(state.competitors.candidate || []),
-    ...(state.competitors.archived || []),
   ];
 }
 
@@ -1037,7 +1035,7 @@ function productCard(item) {
   const insp = parseInspiration(item.ai_inspiration);
   const hasInsp = insp.length > 0;
   return `
-    <article class="product-card ${isExcluded ? 'is-excluded' : ''} ${hasInsp ? 'has-inspiration' : ''}" data-archived="${item.status === 'archived' ? 'true' : 'false'}">
+    <article class="product-card ${isExcluded ? 'is-excluded' : ''} ${hasInsp ? 'has-inspiration' : ''}">
       <div class="card-head">
         <div>
           <div class="card-meta">${escapeHtml(labels.category[item.category] || item.category || '其他')} · ${escapeHtml(labels.status[item.status] || item.status)} · 相关度 ${escapeHtml(item.relevance)}/10 · ${local.read ? '已读' : '未读'}${isExcluded ? ' · AI 排除' : ''}</div>
@@ -1052,7 +1050,6 @@ function productCard(item) {
         ${item.status === 'candidate' ? `<button type="button" data-promote="${escapeHtml(item.id)}">一键晋升为正式</button>` : ''}
         <button type="button" data-product-detail="${escapeHtml(item.id)}">查看详情 / 追问</button>
         <button type="button" data-product-read="${escapeHtml(item.id)}">${local.read ? '标记未读' : '标记已读'}</button>
-        ${item.status !== 'archived' ? `<button type="button" data-archive="${escapeHtml(item.id)}">归档</button>` : ''}
         <a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开页面</a>
       </div>
     </article>
@@ -1063,14 +1060,12 @@ function renderCompetitors() {
   const filtered = filteredCompetitors();
   const official = filtered.filter((item) => item.status === 'official');
   const candidate = filtered.filter((item) => item.status === 'candidate');
-  const archived = filtered.filter((item) => item.status === 'archived');
   const readCount = allCompetitors().filter((item) => competitorLocal(item.id).read).length;
 
   $('competitorMetrics').innerHTML = [
     ['已跟踪', state.competitors.official?.length || 0],
     ['候选', state.competitors.candidate?.length || 0],
     ['已读', readCount],
-    ['归档', state.competitors.archived?.length || 0],
   ].map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
 
   $('officialCount').textContent = official.length;
@@ -1080,7 +1075,7 @@ function renderCompetitors() {
     : '<div class="quiet-empty">暂无匹配的已跟踪竞品</div>';
   $('candidateCompetitors').innerHTML = candidate.length
     ? candidate.map(productCard).join('')
-    : `<div class="quiet-empty">暂无匹配候选${archived.length ? `，当前筛选中另有归档 ${archived.length} 个` : ''}</div>`;
+    : '<div class="quiet-empty">暂无匹配候选</div>';
 }
 
 function renderEvolution() {
@@ -1368,9 +1363,12 @@ async function runProductScan(event) {
   const name = $('productName').value;
   const category = $('productCategory').value;
   const statusValue = $('productStatus').value;
+  const hasUrl = Boolean(url && url.trim());
   const ok = await confirmDialog({
-    title: '扫描并入库该竞品？',
-    body: `将真实抓取 ${url} 的产品页元信息并入库。`,
+    title: hasUrl ? '立即扫描该竞品？' : '立即扫描竞品？',
+    body: hasUrl
+      ? `将真实抓取 ${url} 的产品页元信息并入库。`
+      : '将让 AI Agent 基于关键词和已跟踪竞品，从自身知识里捞出潜在新竞品并抓取入库。预计 30 秒到几分钟。',
     confirmText: '确认扫描',
   });
   if (!ok) return;
@@ -1379,31 +1377,48 @@ async function runProductScan(event) {
   button.textContent = '扫描中...';
   renderSchedule();
   try {
-    const result = await call({
-      action: 'scan_product_url',
-      source_url: url,
-      name,
-      category,
-      status: statusValue,
-      as_official: statusValue === 'official',
-    });
-    state.competitors = result.competitors || state.competitors;
-    state.products = result.products || state.products;
-    state.scanRuns = result.scan_runs || state.scanRuns;
-    state.summary = result.summary || state.summary;
-    $('productUrl').value = '';
-    $('productName').value = '';
-    render();
-    const touched = result.product_scan?.touched_ids || [];
-    const items = touched.length ? (state.competitors.tracked || []).concat(state.competitors.candidate || []).filter(p => touched.includes(p.id)) : (result.product_scan?.competitor ? [result.product_scan.competitor] : []);
-    renderLatestBatch('product', items, '本轮入库');
-    showToast(`竞品扫描完成: 新候选 ${result.product_scan.candidates_added || 0}`);
+    if (hasUrl) {
+      const result = await call({
+        action: 'scan_product_url',
+        source_url: url,
+        name,
+        category,
+        status: statusValue,
+        as_official: statusValue === 'official',
+      });
+      state.competitors = result.competitors || state.competitors;
+      state.products = result.products || state.products;
+      state.scanRuns = result.scan_runs || state.scanRuns;
+      state.summary = result.summary || state.summary;
+      $('productUrl').value = '';
+      $('productName').value = '';
+      render();
+      const touched = result.product_scan?.touched_ids || [];
+      const items = touched.length
+        ? (state.competitors.official || []).concat(state.competitors.candidate || []).filter((p) => touched.includes(p.id))
+        : (result.product_scan?.competitor ? [result.product_scan.competitor] : []);
+      renderLatestBatch('product', items, '本轮入库');
+      showToast(`竞品扫描完成: 新候选 ${result.product_scan.candidates_added || 0}`);
+    } else {
+      const result = await call({
+        action: 'discover_competitors_via_agent',
+        max_results: Number($('productAiN')?.value) || 10,
+      });
+      state.competitors = result.competitors || state.competitors;
+      state.products = result.products || state.products;
+      state.scanRuns = result.scan_runs || state.scanRuns;
+      state.summary = result.summary || state.summary;
+      render();
+      const items = Array.isArray(result.discovery?.items) ? result.discovery.items : [];
+      renderLatestBatch('product', items, `本轮 Agent 发现 ${items.length} 条 · 新候选 +${result.discovery?.candidates_added || 0}`);
+      showToast(`Agent 智能发现 ${items.length} 条新候选 (model: ${result.discovery?.model || '?'})`);
+    }
   } catch (error) {
     showToast(error.message || '扫描失败', 'bad');
   } finally {
     state.scanning.product = false;
     button.disabled = false;
-    button.textContent = '扫描并入库';
+    button.textContent = '立即扫描竞品';
     renderSchedule();
   }
 }
@@ -2373,9 +2388,6 @@ function bindEvents() {
 
     const promote = event.target.closest('[data-promote]');
     if (promote) updateCompetitor({ mode: 'promote', id: promote.dataset.promote });
-
-    const archive = event.target.closest('[data-archive]');
-    if (archive) updateCompetitor({ mode: 'archive', id: archive.dataset.archive });
 
     const exportPrompt = event.target.closest('[data-export-prompt]');
     if (exportPrompt) handleExportPrompt(exportPrompt.dataset.exportPrompt);

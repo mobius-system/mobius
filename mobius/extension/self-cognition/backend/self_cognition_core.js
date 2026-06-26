@@ -1428,6 +1428,137 @@ async function aiScanProducts(e, t, r) {
   };
 }
 
+async function discoverCompetitorsViaAgent(e, t, r) {
+  const maxResults = int(t.max_results, 10, 3, 30);
+  const provider = findProvider(txt(t.model_key, 200));
+  const productKeywords = rows(e, "product").filter(k => k.enabled).map(k => k.keyword || k.query).filter(Boolean);
+  const trackedNames = e.prepare("SELECT name FROM product_research WHERE status='tracked' ORDER BY relevance DESC").all().map(row => row.name).filter(Boolean);
+  const systemPrompt = [
+    "你是莫比乌斯 (Mobius) AI 产品调研助手。",
+    "目标: 基于给定的关键词和已知竞品, 列出最多 " + maxResults + " 个潜在 AI Agent 类竞品 (不限于已知清单, 优先给出和关键词强相关、近期活跃、有公开产品页的产品)。",
+    "对每个候选给出 name / source_url / category / reason 四个字段:",
+    "- name: 产品名 (中英文均可, 不超过 60 字)",
+    "- source_url: 必须是 https:// 开头的真实可访问产品官网或文档首页 (不要给 GitHub repo 除非产品本身就是开源项目主入口)",
+    "- category: 必须从 [office-agent, coding-agent, general-agent, workflow-agent, personal-agent, research-agent, other] 中选一个",
+    "- reason: 一句话 (不超过 120 字) 说明它为什么可能是莫比乌斯的竞品或可借鉴对象",
+    "",
+    "## 严格输出格式",
+    "只输出一个 JSON 数组, 不要任何额外文字, 不要 markdown code fence:",
+    "[",
+    "  {\"name\": \"...\", \"source_url\": \"https://...\", \"category\": \"coding-agent\", \"reason\": \"...\"}",
+    "]",
+    "",
+    "## 已知关键词 (作为参考方向, 不要被它限死)",
+    JSON.stringify(productKeywords.slice(0, 30)),
+    "",
+    "## 已跟踪竞品 (避免重复推荐, 但可以列同类或竞品)",
+    JSON.stringify(trackedNames.slice(0, 30))
+  ].join("\n");
+  const userMsg = `请列出 ${maxResults} 个潜在竞品 (JSON 数组)。`;
+  let discovery = null;
+  let totalIn = 0, totalOut = 0;
+  for (let attempt = 0; attempt < 2 && !discovery; attempt++) {
+    try {
+      const resp = await callAnthropicMessages({
+        provider,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMsg }],
+        tools: [],
+        maxTokens: 2000,
+        maxRounds: 1
+      });
+      totalIn += resp.usage.input_tokens || 0;
+      totalOut += resp.usage.output_tokens || 0;
+      const text = extractAgentText(resp.content);
+      discovery = parseDiscoveryJson(text);
+    } catch (err) {
+      if (attempt === 1) throw new Error(`Agent 发现失败: ${err.message}`);
+    }
+  }
+  if (!discovery || !discovery.length) {
+    addL2Event(e, {
+      source: "ai_scan",
+      summary: "Agent 智能发现竞品: 无候选",
+      diff_summary: `使用 ${provider.label} 试图发现新竞品, 但模型未给出有效 JSON 候选`,
+      files_changed: [],
+      proposed_by: r
+    });
+    return {
+      ok: true,
+      discovery: { candidates_added: 0, items: [], model: provider.model, provider: provider.label },
+      competitors: groupedProducts(e),
+      products: listProducts(e),
+      scan_runs: scans(e),
+      summary: summary(e)
+    };
+  }
+  const items = [];
+  let candidatesAdded = 0;
+  const seenUrls = new Set();
+  for (const raw of discovery.slice(0, maxResults)) {
+    let cleanUrl = "";
+    try { cleanUrl = url(raw.source_url); } catch { continue; }
+    if (!cleanUrl || seenUrls.has(cleanUrl)) continue;
+    seenUrls.add(cleanUrl);
+    try {
+      const res = await scanOneProduct(e, {
+        source_url: cleanUrl,
+        name: txt(raw.name, 180),
+        category: txt(raw.category || "other", 40),
+        status: "candidate",
+        as_official: false,
+        reason: txt(raw.reason || "Agent 智能发现候选", 600),
+        discovery_logic: "llm_agent_discovery"
+      }, r);
+      if (res.competitor) items.push(res.competitor);
+      if (res.candidates_added > 0 || res.run_id) candidatesAdded += 1;
+    } catch (err) {
+      items.push({ name: txt(raw.name, 180), source_url: cleanUrl, error: err.message });
+    }
+  }
+  addL2Event(e, {
+    source: "ai_scan",
+    summary: `Agent 智能发现竞品: 抓取入库 ${items.length} 条`,
+    diff_summary: `使用 ${provider.label} (${provider.model}) 智能列出 ${discovery.length} 条候选, 成功抓取入库 ${items.length} 条`,
+    files_changed: ["product_research", "scan_runs"],
+    proposed_by: r
+  });
+  return {
+    ok: true,
+    discovery: {
+      candidates_added: candidatesAdded,
+      items: items.slice(0, 20),
+      proposed_count: discovery.length,
+      model: provider.model,
+      provider: provider.label,
+      tokens: { input: totalIn, output: totalOut }
+    },
+    competitors: groupedProducts(e),
+    products: listProducts(e),
+    scan_runs: scans(e),
+    summary: summary(e)
+  };
+}
+
+function parseDiscoveryJson(text) {
+  if (!text) return null;
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const raw = (fenced ? fenced[1] : text).trim();
+  const start = raw.indexOf("[");
+  const end = raw.lastIndexOf("]");
+  if (start < 0 || end < 0) return null;
+  try {
+    const parsed = JSON.parse(raw.slice(start, end + 1));
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter(it => it && typeof it === "object" && typeof it.source_url === "string").slice(0, 30).map(it => ({
+      name: typeof it.name === "string" ? it.name : "",
+      source_url: String(it.source_url || "").trim(),
+      category: typeof it.category === "string" ? it.category : "other",
+      reason: typeof it.reason === "string" ? it.reason : ""
+    }));
+  } catch { return null; }
+}
+
 async function chatWithAgent(e, t, r) {
   const kind = txt(t.kind, 10) === "product" ? "product" : "paper";
   const message = txt(t.message, 4000);
@@ -1592,7 +1723,7 @@ async function dispatch(e, t, r, a) {
       products: listProducts(e),
       scan_runs: scans(e),
       constants: {
-        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats", "list_ai_channels", "ai_scan_arxiv", "ai_scan_products", "chat_with_agent", "export_agent_prompt", "list_agent_runs", "get_agent_messages" ],
+        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats", "list_ai_channels", "ai_scan_arxiv", "ai_scan_products", "discover_competitors_via_agent", "chat_with_agent", "export_agent_prompt", "list_agent_runs", "get_agent_messages" ],
         schedule_ids: [ "self-cognition-arxiv-0900", "self-cognition-products-1000", "self-cognition-evolution-1100" ],
         product_table: "product_research",
         product_statuses: [ "tracked", "candidate", "archived" ]
@@ -1644,6 +1775,10 @@ async function dispatch(e, t, r, a) {
   if ("ai_scan_products" === s) return {
     ok: !0,
     ...(await aiScanProducts(e, t, r))
+  };
+  if ("discover_competitors_via_agent" === s) return {
+    ok: !0,
+    ...(await discoverCompetitorsViaAgent(e, t, r))
   };
   if ("chat_with_agent" === s) return {
     ok: !0,
