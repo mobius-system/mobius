@@ -28,7 +28,9 @@
 >
 > 我们塑造「莫比乌斯 AI」的今天；**而您，真正的 AI 驾驭者，不满足于“预制” AI 系统的突破者**，可以用自然语言+截图发出指令，按照您的意愿打磨「莫比乌斯 AI」的每一个棱角，塑炼它的每行代码和每个像素，打造所向披靡的 Agent 平台。
 
-<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-9.png" width="500" alt="alt text" />
+<p align="center">
+  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-9.png" width="700" alt="alt text" />
+</p>
 
 
 ## 会生长、可进化的生产力系统
@@ -59,11 +61,15 @@
 
 - 「莫比乌斯 AI」指挥多个Agent建立自主协同网络
 
-<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-10.png" width="500" alt="alt text" />
+<p align="center">
+  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-10.png" width="700" alt="alt text" />
+</p>
 
 - 「莫比乌斯 AI」自动绘制研究进展
 
-<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-11.png" width="500" alt="alt text" />
+<p align="center">
+  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-11.png" width="700" alt="alt text" />
+</p>
 
 - 「莫比乌斯 AI」做调研
 
@@ -88,7 +94,9 @@
   - PC端 Windows + MacOS (开发中)
   - 移动端 IOS + Android (测试中)
 
-<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-1.png" width="500" alt="alt text" />
+<p align="center">
+  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-1.png" width="700" alt="alt text" />
+</p>
 
 
 <video controls src="https://serve.gptacademic.cn/publish/shared/video/334599/self-evolution-demo-v1.mp4" title="Title"></video>
@@ -98,7 +106,9 @@
 
 轻松接入最强开源模型 GLM-5.2，也支持GPT-5.5、Claude-Opus等。
 
-<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-2.png" width="500" alt="alt text" />
+<p align="center">
+  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-2.png" width="700" alt="alt text" />
+</p>
 
 
 
@@ -144,15 +154,23 @@ flowchart TD
 - 一键连接自己的个人PC（无条件连接，无论是Windows，MacOS，能运行Python即可）
 - 一键连接嵌入式开发板（搭载NX等嵌入式设备的无人机、无人车等）
 
-<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-3.png" width="500" alt="alt text" />
+<p align="center">
+  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-3.png" width="700" alt="alt text" />
+</p>
 
 ## 管理你的团队
 
 无论是一人之军，还是跟人类同事们协同作战，「莫比乌斯 AI」让团队协作更加轻松透明。
 
-<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-4.png" width="500" alt="alt text" />
-<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-6.png" width="500" alt="alt text" />
-<img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-7.png" width="500" alt="alt text" />
+<p align="center">
+  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-4.png" width="700" alt="alt text" />
+</p>
+<p align="center">
+  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-6.png" width="700" alt="alt text" />
+</p>
+<p align="center">
+  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-7.png" width="700" alt="alt text" />
+</p>
 
 ### 部署
 
