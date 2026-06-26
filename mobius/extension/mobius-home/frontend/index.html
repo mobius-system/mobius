@@ -63,6 +63,12 @@
         <a class="btn btn-primary" href="#features">了解莫比乌斯</a>
         <a class="btn btn-ghost" href="https://github.com/nutshellai-tech/mobius" target="_blank" rel="noreferrer">GitHub 仓库</a>
       </div>
+
+      <div class="hero-demo-video reveal" aria-label="莫比乌斯多智能体科研演示">
+        <video autoplay loop muted playsinline preload="metadata">
+          <source src="./assets/videos/research.mp4" type="video/mp4" />
+        </video>
+      </div>
     </div>
   </header>
 
@@ -184,11 +190,134 @@
         </p>
       </div>
 
-      <div class="synergy-artwork reveal" aria-label="人机物智算协同拓扑">
-        <img src="./assets/mobius-synergy.svg"
-             alt="Mobius 人机物智算协同拓扑：人 / 智 / 算 / 机 / 物 五个节点通过 Mobius Core 形成自进化回路" />
-      </div>
+      <div class="synergy-stage reveal" aria-label="人机物智算协同拓扑">
+        <svg class="synergy-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <radialGradient id="syn-core-halo" cx="50%" cy="50%" r="50%">
+              <stop offset="0" stop-color="#a78bfa" stop-opacity=".55"/>
+              <stop offset="60%" stop-color="#22d3ee" stop-opacity=".18"/>
+              <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="syn-spoke-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0" stop-color="#22d3ee" stop-opacity=".9"/>
+              <stop offset="1" stop-color="#a78bfa" stop-opacity=".9"/>
+            </linearGradient>
+          </defs>
 
+          <!-- 自进化环形虚线（最外圈） -->
+          <circle class="syn-loop syn-loop--outer" cx="50" cy="50" r="44"/>
+          <circle class="syn-loop syn-loop--inner" cx="50" cy="50" r="34"/>
+
+          <!-- 5 spokes converging to Mobius Core (50,50) -->
+          <path class="syn-spoke syn-spoke--base syn-spoke--zhi"  d="M50 14 C 50 28, 50 38, 50 46"/>
+          <path class="syn-spoke syn-spoke--base syn-spoke--ren"  d="M14 50 C 28 50, 38 50, 46 50"/>
+          <path class="syn-spoke syn-spoke--base syn-spoke--suan" d="M86 50 C 72 50, 62 50, 54 50"/>
+          <path class="syn-spoke syn-spoke--base syn-spoke--wu"   d="M14 86 C 28 72, 38 62, 46 54"/>
+          <path class="syn-spoke syn-spoke--base syn-spoke--ji"   d="M86 86 C 72 72, 62 62, 54 54"/>
+
+          <!-- 5 流光叠加（每条 spoke 一道独立流动的色带） -->
+          <path class="syn-spoke syn-spoke--flow syn-spoke--zhi"  d="M50 14 C 50 28, 50 38, 50 46" pathLength="100"/>
+          <path class="syn-spoke syn-spoke--flow syn-spoke--ren"  d="M14 50 C 28 50, 38 50, 46 50" pathLength="100"/>
+          <path class="syn-spoke syn-spoke--flow syn-spoke--suan" d="M86 50 C 72 50, 62 50, 54 50" pathLength="100"/>
+          <path class="syn-spoke syn-spoke--flow syn-spoke--wu"   d="M14 86 C 28 72, 38 62, 46 54" pathLength="100"/>
+          <path class="syn-spoke syn-spoke--flow syn-spoke--ji"   d="M86 86 C 72 72, 62 62, 54 54" pathLength="100"/>
+        </svg>
+
+        <article class="synergy-card synergy-card--zhi">
+          <div class="synergy-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="6" cy="6" r="1.6"/><circle cx="6" cy="18" r="1.6"/>
+              <circle cx="18" cy="6" r="1.6"/><circle cx="18" cy="18" r="1.6"/>
+              <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>
+              <path d="M7.5 7.5L10.3 10.8M16.5 7.5L13.7 10.8M7.5 16.5L10.3 13.2M16.5 16.5L13.7 13.2"/>
+            </svg>
+          </div>
+          <h3>智 · Intelligence</h3>
+          <p class="synergy-sub">Agent 编队 · AI 模型 · 知识资产</p>
+          <p class="synergy-detail">拆解 · 推理 · 执行 · 沉淀</p>
+          <span class="synergy-channel">多智能体工作面</span>
+        </article>
+
+        <article class="synergy-card synergy-card--ren">
+          <div class="synergy-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="8" r="2.8"/>
+              <path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/>
+              <circle cx="17" cy="9.5" r="2.2"/>
+              <path d="M14.5 18c0-2.2 1.5-4 2.5-4s2.5 1.8 2.5 4"/>
+            </svg>
+          </div>
+          <h3>人 · Human</h3>
+          <p class="synergy-sub">个人 · 团队 · 组织</p>
+          <p class="synergy-detail">提出目标 · 协同开发 · 验收反馈</p>
+          <span class="synergy-channel">小莫 / 自然语言交互</span>
+        </article>
+
+        <div class="synergy-core" aria-label="Mobius Core 协同内核">
+          <div class="synergy-core-glow"></div>
+          <div class="synergy-core-ring" aria-hidden="true"></div>
+          <div class="synergy-core-orbit" aria-hidden="true">
+            <span class="orbit-dot"></span>
+            <span class="orbit-dot"></span>
+            <span class="orbit-dot"></span>
+          </div>
+          <div class="synergy-core-body">
+            <div class="synergy-core-name">Mobius</div>
+            <div class="synergy-core-sub">自进化超级智能体系统</div>
+            <div class="synergy-core-note">Agentic OS 内核 · 协同编排 · 持续生长</div>
+          </div>
+        </div>
+
+        <article class="synergy-card synergy-card--suan">
+          <div class="synergy-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="6" rx="1.2"/>
+              <rect x="3" y="14" width="18" height="6" rx="1.2"/>
+              <circle cx="6.5" cy="7" r=".9" fill="currentColor" stroke="none"/>
+              <circle cx="6.5" cy="17" r=".9" fill="currentColor" stroke="none"/>
+              <path d="M10 7h7M10 17h7"/>
+              <path d="M3 11v2M21 11v2" stroke-dasharray="1.5 1.5"/>
+            </svg>
+          </div>
+          <h3>算 · Compute</h3>
+          <p class="synergy-sub">GPU 集群 · 云端 · 本地算力</p>
+          <p class="synergy-detail">训练 · 仿真 · 测试 · 数据处理</p>
+          <span class="synergy-channel">SSH / 任务分发</span>
+        </article>
+
+        <article class="synergy-card synergy-card--wu">
+          <div class="synergy-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="6" y="6" width="12" height="12" rx="1"/>
+              <rect x="9.5" y="9.5" width="5" height="5" rx=".3" fill="currentColor" stroke="none" opacity=".55"/>
+              <path d="M9 3v3M12 3v3M15 3v3M9 18v3M12 18v3M15 18v3M3 9h3M3 12h3M3 15h3M18 9h3M18 12h3M18 15h3"/>
+            </svg>
+          </div>
+          <h3>物 · Things</h3>
+          <p class="synergy-sub">嵌入式 · 传感器 · 执行器</p>
+          <p class="synergy-detail">ESP32 · 树莓派 · Jetson · 现实对象</p>
+          <span class="synergy-channel">烧录 / 运行 / 观测</span>
+        </article>
+
+        <article class="synergy-card synergy-card--ji">
+          <div class="synergy-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="8" width="14" height="11" rx="2"/>
+              <path d="M12 4v4"/>
+              <circle cx="12" cy="3.4" r="1" fill="currentColor" stroke="none"/>
+              <circle cx="9.5" cy="12.5" r="1.1" fill="currentColor" stroke="none"/>
+              <circle cx="14.5" cy="12.5" r="1.1" fill="currentColor" stroke="none"/>
+              <path d="M9.3 16h5.4"/>
+              <path d="M3 11v3M21 11v3"/>
+              <path d="M8 19v2M16 19v2"/>
+            </svg>
+          </div>
+          <h3>机 · Machine</h3>
+          <p class="synergy-sub">机器人 · 工作站 · 终端设备</p>
+          <p class="synergy-detail">开发 · 调试 · 部署 · 现实动作</p>
+          <span class="synergy-channel">AIMUX / 远程终端</span>
+        </article>
+      </div>
 
       <p class="lead center reveal light" style="margin-top:3rem;">
         <span class="gradient-text">执行 → 反馈 → 沉淀 → 新能力</span><br />
@@ -568,7 +697,8 @@
         </p>
       </div>
 
-      <div class="media-placeholder media-cluster reveal" aria-label="算力群体协同 + 智力群体协同：双轮驱动 Mobius Core">
+      <div class="feat-4-split reveal">
+        <div class="media-placeholder media-cluster" aria-label="算力群体协同 + 智力群体协同：双轮驱动 Mobius Core">
         <svg viewBox="0 0 440 380" class="cluster-svg" aria-hidden="true">
           <defs>
             <linearGradient id="comp-g" x1="0" y1="0" x2="1" y2="1">
@@ -687,6 +817,7 @@
         />
         <figcaption>研究不是一段回答，而是一张可追踪的图谱：对话、证据、图表和结论都沿着节点沉淀。</figcaption>
       </figure>
+      </div>
 
       <p class="lead center reveal light" style="margin-top:3rem;">
         深度科研系统是莫比乌斯能力的旗舰证明：
@@ -899,7 +1030,12 @@
         </div>
         <div class="ext-card">
           <div class="ext-icon">
-            <img src="https://cdn.simpleicons.org/openai" alt="OpenAI" onerror="this.style.display='none'" />
+            <svg viewBox="0 0 36 36" aria-hidden="true">
+              <rect width="36" height="36" rx="8" fill="#10A37F"/>
+              <g transform="translate(6 6)" fill="#fff">
+                <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.965 5.965 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.787a4.5 4.5 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.685zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0l-5.843 3.369V7.011a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.682 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08-4.778 2.758a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z"/>
+              </g>
+            </svg>
           </div>
           <h4>GPT · OpenAI</h4>
           <p>适合大规模代码理解、复杂工程推进和长程 agentic coding，作为强力兜底执行引擎。</p>
@@ -1046,29 +1182,6 @@
         视频里看到的每一步，<br />
         都是莫比乌斯在你自己机器上能复现的真实能力。
       </p>
-    </div>
-  </section>
-
-  <!-- Research spotlight -->
-  <section class="section section-dark section-padded" id="research-spotlight">
-    <div class="container narrow center">
-      <div class="feature-head">
-        <p class="kicker reveal light">② 多智能体 Research</p>
-        <h2 class="display reveal light">
-          一支智能体编队<br /><span class="gradient-text">跑完整项科研。</span>
-        </h2>
-        <p class="lead reveal light" style="max-width:64ch;margin:1.4rem auto 0;">
-          一个研究问题进来，<strong>拆题 / 检索 / 分析 / 收敛</strong>多智能体并行上工，
-          通过共享黑板异步对齐，最终把"从问题到结论"的整条演化路径沉淀成可视研究图谱——
-          这是企业级的稳定链路，不是 demo。
-        </p>
-      </div>
-
-      <div class="research-spotlight-video reveal" aria-label="多智能体科研链路完整演示">
-        <video autoplay loop muted playsinline preload="metadata">
-          <source src="./assets/videos/research.mp4" type="video/mp4" />
-        </video>
-      </div>
     </div>
   </section>
 

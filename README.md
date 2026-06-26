@@ -56,6 +56,7 @@ Mobius：
 Mobius 自己也用 Mobius 开发 Mobius。它不只是在完成任务，也在用任务反过来塑造自己。
 
 <div align="center">
+  <!-- 注：GIF 在 GitHub 上因仓库不收录大文件而无法显示，本地查看可见 -->
   <img src="./mobius/extension/mobius-home/frontend/assets/research-preview.gif" alt="莫比乌斯多智能体科研演示" width="100%" />
   <sub>一支智能体编队跑完整项科研：拆题 / 检索 / 分析 / 收敛，最终沉淀成可视研究图谱。</sub>
 </div>
