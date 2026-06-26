@@ -1046,6 +1046,57 @@ const READ_FILE_TOOL = {
   }
 };
 
+const UPDATE_INSPIRATION_TOOL = {
+  name: "update_inspiration",
+  description: "修改指定论文/竞品的某条 ai_inspiration 启发。按 title 子串或 index 匹配 (二选一)。可改 priority (high/medium/low) / direction / mobius_use / title。修改后立即在数据库生效，前端聊天结束后会刷新。",
+  input_schema: {
+    type: "object",
+    properties: {
+      kind: { type: "string", enum: ["paper", "product"], description: "目标类型" },
+      scope_id: { type: "string", description: "论文/竞品 ID" },
+      match: { type: "string", description: "匹配启发 title 的子串" },
+      index: { type: "integer", minimum: 0, description: "匹配启发 index (0-based)，与 match 二选一" },
+      priority: { type: "string", enum: ["high", "medium", "low"] },
+      direction: { type: "string" },
+      mobius_use: { type: "string" },
+      title: { type: "string" }
+    },
+    required: ["kind", "scope_id"]
+  }
+};
+
+const ADD_INSPIRATION_TOOL = {
+  name: "add_inspiration",
+  description: "为指定论文/竞品追加一条新启发到 ai_inspiration 数组末尾。返回追加后的总条数。前端聊天结束后会刷新。",
+  input_schema: {
+    type: "object",
+    properties: {
+      kind: { type: "string", enum: ["paper", "product"] },
+      scope_id: { type: "string" },
+      title: { type: "string", description: "启发标题（一句话）" },
+      direction: { type: "string", description: "对莫比乌斯的方向（可选）" },
+      mobius_use: { type: "string", description: "对莫比乌斯的具体应用（可选）" },
+      priority: { type: "string", enum: ["high", "medium", "low"], description: "默认 medium" }
+    },
+    required: ["kind", "scope_id", "title"]
+  }
+};
+
+const DELETE_INSPIRATION_TOOL = {
+  name: "delete_inspiration",
+  description: "删除指定论文/竞品的一条 ai_inspiration 启发。按 title 子串或 index 匹配 (二选一)。如果删除后数组为空，自动 mark='excluded'。前端聊天结束后会刷新。",
+  input_schema: {
+    type: "object",
+    properties: {
+      kind: { type: "string", enum: ["paper", "product"] },
+      scope_id: { type: "string" },
+      match: { type: "string" },
+      index: { type: "integer", minimum: 0 }
+    },
+    required: ["kind", "scope_id"]
+  }
+};
+
 function resolveRepoPath(p) {
   const cleaned = txt(p, 400).replace(/^\.\/+/, "").replace(/^\/+/, "");
   if (!cleaned || cleaned.includes("..")) return null;
@@ -1074,6 +1125,94 @@ function handleReadFile({ path: p }) {
   }
 }
 
+function getInspirationRow(e, kind, scopeId) {
+  if (kind === "paper") {
+    return e.prepare("SELECT id,ai_inspiration,mark FROM arxiv_items WHERE id=? OR source_id=?").get(scopeId, scopeId);
+  }
+  if (kind === "product") {
+    return e.prepare("SELECT id,ai_inspiration,mark FROM product_research WHERE id=?").get(scopeId);
+  }
+  return null;
+}
+
+function parseStoredInspiration(raw) {
+  if (!raw || typeof raw !== "string") return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(it => it && typeof it === "object").map(it => ({
+      title: txt(it.title || it.direction || it.name || "", 200),
+      direction: txt(it.direction || it.title || it.summary || "", 600),
+      mobius_use: txt(it.mobius_use || it.use || it.application || "", 1200),
+      priority: ["high", "medium", "low"].includes(it.priority) ? it.priority : "medium"
+    }));
+  } catch { return []; }
+}
+
+function findInspirationIndex(list, { match, index }) {
+  if (typeof index === "number" && Number.isFinite(index)) {
+    if (index < 0 || index >= list.length) return -1;
+    return index;
+  }
+  if (typeof match === "string" && match.trim()) {
+    const needle = match.toLowerCase();
+    return list.findIndex(it => String(it.title || "").toLowerCase().includes(needle));
+  }
+  return -1;
+}
+
+function handleUpdateInspiration(input, e) {
+  const kind = txt(input?.kind, 10) === "product" ? "product" : "paper";
+  const scopeId = txt(input?.scope_id, 120);
+  if (!scopeId) return { error: "scope_id 必填" };
+  const row = getInspirationRow(e, kind, scopeId);
+  if (!row) return { error: `找不到 ${kind} ${scopeId}` };
+  const list = parseStoredInspiration(row.ai_inspiration);
+  const idx = findInspirationIndex(list, { match: input?.match, index: input?.index });
+  if (idx < 0) return { error: `未匹配到启发 (match=${input?.match || ""} index=${input?.index ?? ""})` };
+  const before = { ...list[idx] };
+  if (typeof input?.title === "string" && input.title.trim()) list[idx].title = txt(input.title, 200);
+  if (typeof input?.direction === "string" && input.direction.trim()) list[idx].direction = txt(input.direction, 600);
+  if (typeof input?.mobius_use === "string" && input.mobius_use.trim()) list[idx].mobius_use = txt(input.mobius_use, 1200);
+  if (["high", "medium", "low"].includes(input?.priority)) list[idx].priority = input.priority;
+  saveInspiration(e, kind === "paper" ? "arxiv_items" : "product_research", row.id, list);
+  return { ok: true, action: "update_inspiration", index: idx, before, after: { ...list[idx] }, total: list.length };
+}
+
+function handleAddInspiration(input, e) {
+  const kind = txt(input?.kind, 10) === "product" ? "product" : "paper";
+  const scopeId = txt(input?.scope_id, 120);
+  const title = txt(input?.title, 200);
+  if (!scopeId) return { error: "scope_id 必填" };
+  if (!title) return { error: "title 必填" };
+  const row = getInspirationRow(e, kind, scopeId);
+  if (!row) return { error: `找不到 ${kind} ${scopeId}` };
+  const list = parseStoredInspiration(row.ai_inspiration);
+  const item = {
+    title,
+    direction: txt(input?.direction, 600) || title,
+    mobius_use: txt(input?.mobius_use, 1200) || "",
+    priority: ["high", "medium", "low"].includes(input?.priority) ? input.priority : "medium"
+  };
+  list.push(item);
+  saveInspiration(e, kind === "paper" ? "arxiv_items" : "product_research", row.id, list);
+  return { ok: true, action: "add_inspiration", item, index: list.length - 1, total: list.length };
+}
+
+function handleDeleteInspiration(input, e) {
+  const kind = txt(input?.kind, 10) === "product" ? "product" : "paper";
+  const scopeId = txt(input?.scope_id, 120);
+  if (!scopeId) return { error: "scope_id 必填" };
+  const row = getInspirationRow(e, kind, scopeId);
+  if (!row) return { error: `找不到 ${kind} ${scopeId}` };
+  const list = parseStoredInspiration(row.ai_inspiration);
+  const idx = findInspirationIndex(list, { match: input?.match, index: input?.index });
+  if (idx < 0) return { error: `未匹配到启发 (match=${input?.match || ""} index=${input?.index ?? ""})` };
+  const removed = list.splice(idx, 1)[0];
+  saveInspiration(e, kind === "paper" ? "arxiv_items" : "product_research", row.id, list);
+  return { ok: true, action: "delete_inspiration", index: idx, removed, total: list.length };
+}
+
 function buildMobiusMemoryContext() {
   const parts = [];
   const pkFile = path.join(REPO_ROOT, ".imac/project_knowledge.md");
@@ -1083,10 +1222,11 @@ function buildMobiusMemoryContext() {
   return parts.join("\n\n---\n\n").slice(0, 24000);
 }
 
-async function callAnthropicMessages({ provider, system, messages, tools, maxTokens = 4096, maxRounds = 8 }) {
+async function callAnthropicMessages({ provider, system, messages, tools, maxTokens = 4096, maxRounds = 8, toolContext }) {
   const url = provider.baseUrl.replace(/\/+$/, "") + "/v1/messages";
   const allMessages = [...messages];
   let totalInput = 0, totalOutput = 0;
+  const toolResultsById = new Map();
   for (let round = 0; round < maxRounds; round++) {
     const body = {
       model: provider.model,
@@ -1113,16 +1253,40 @@ async function callAnthropicMessages({ provider, system, messages, tools, maxTok
     allMessages.push({ role: "assistant", content });
     const toolUseBlocks = content.filter(b => b.type === "tool_use");
     if (resp.stop_reason !== "tool_use" || !toolUseBlocks.length) {
-      return { content, stop_reason: resp.stop_reason, usage: { input_tokens: totalInput, output_tokens: totalOutput }, messages: allMessages };
+      return { content, stop_reason: resp.stop_reason, usage: { input_tokens: totalInput, output_tokens: totalOutput }, messages: allMessages, toolResultsById };
     }
     const toolResults = [];
     for (const tu of toolUseBlocks) {
-      const result = tu.name === "read_file" ? handleReadFile(tu.input || {}) : { error: `未知工具 ${tu.name}` };
+      let result;
+      if (tu.name === "read_file") {
+        result = handleReadFile(tu.input || {});
+      } else if (tu.name === "update_inspiration") {
+        if (toolContext?.db && toolContext.scopeId && txt(tu.input?.scope_id, 120) !== toolContext.scopeId) {
+          result = { error: "scope_id 与当前对话上下文不一致, 拒绝跨 scope 改启发" };
+        } else {
+          result = handleUpdateInspiration(tu.input || {}, toolContext?.db);
+        }
+      } else if (tu.name === "add_inspiration") {
+        if (toolContext?.db && toolContext.scopeId && txt(tu.input?.scope_id, 120) !== toolContext.scopeId) {
+          result = { error: "scope_id 与当前对话上下文不一致, 拒绝跨 scope 改启发" };
+        } else {
+          result = handleAddInspiration(tu.input || {}, toolContext?.db);
+        }
+      } else if (tu.name === "delete_inspiration") {
+        if (toolContext?.db && toolContext.scopeId && txt(tu.input?.scope_id, 120) !== toolContext.scopeId) {
+          result = { error: "scope_id 与当前对话上下文不一致, 拒绝跨 scope 改启发" };
+        } else {
+          result = handleDeleteInspiration(tu.input || {}, toolContext?.db);
+        }
+      } else {
+        result = { error: `未知工具 ${tu.name}` };
+      }
+      toolResultsById.set(tu.id, result);
       toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(result).slice(0, 8000) });
     }
     allMessages.push({ role: "user", content: toolResults });
   }
-  return { content: [], stop_reason: "max_rounds", usage: { input_tokens: totalInput, output_tokens: totalOutput }, messages: allMessages };
+  return { content: [], stop_reason: "max_rounds", usage: { input_tokens: totalInput, output_tokens: totalOutput }, messages: allMessages, toolResultsById };
 }
 
 function extractAgentText(content) {
@@ -1582,31 +1746,50 @@ async function chatWithAgent(e, t, r) {
   const userTurn = injection + (scopeId ? `用户在 ${kind === "paper" ? "论文" : "竞品"} ${scopeId} 上追问: ` : "用户追问: ") + message;
   appendAgentMessage(e, { runId: run.id, role: "user", content: userTurn, toolCalls: "" });
   const memContext = buildMobiusMemoryContext();
-  const systemPrompt = buildScanSystemPrompt({ kind }) + "\n\n## 注入的莫比乌斯 Memory\n\n" + memContext + "\n\n你现在正在和用户对话, 之前已经扫描过若干" + (kind === "paper" ? "论文" : "竞品") + ", 直接基于已有上下文回答, 不要再输出 JSON 启发格式, 用自然中文回答。如果用户问到的内容你之前没扫过, 再调用 read_file 工具或基于已有 memory 回答。";
+  const systemPrompt = buildScanSystemPrompt({ kind }) + "\n\n## 注入的莫比乌斯 Memory\n\n" + memContext + "\n\n你现在正在和用户对话, 之前已经扫描过若干" + (kind === "paper" ? "论文" : "竞品") + ", 直接基于已有上下文回答, 不要再输出 JSON 启发格式, 用自然中文回答。如果用户问到的内容你之前没扫过, 再调用 read_file 工具或基于已有 memory 回答。\n\n## 启发管理工具\n除了 read_file, 你还拥有 update_inspiration / add_inspiration / delete_inspiration 三个工具, 用来在用户要求修改当前 " + (kind === "paper" ? "论文" : "竞品") + " 的 ai_inspiration 启发时直接落到数据库, 而不只是口头描述。工具入参 schema 已经给出, scope_id 必须用 `" + (scopeId || "") + "` (即当前对话上下文), 跨 scope 会被拒绝。用户如果说\"把第 N 条优先级改成 medium\"/\"加一条新启发: xxx\"/\"删掉第 N 条\", 你应该直接调用对应工具而不是只回复文字。调用后请用一句话告诉用户你做了什么。";
   const conversationMessages = priorMessages.concat([{ role: "user", content: userTurn }]);
   try {
     const resp = await callAnthropicMessages({
       provider,
       system: systemPrompt,
       messages: conversationMessages,
-      tools: [READ_FILE_TOOL],
+      tools: [READ_FILE_TOOL, UPDATE_INSPIRATION_TOOL, ADD_INSPIRATION_TOOL, DELETE_INSPIRATION_TOOL],
       maxTokens: 2000,
-      maxRounds: 5
+      maxRounds: 5,
+      toolContext: { db: e, scopeId: scopeId || "" }
     });
     const text = extractAgentText(resp.content);
-    const toolCallCount = (resp.content || []).filter(b => b && b.type === "tool_use").length;
+    const toolUseBlocks = (resp.content || []).filter(b => b && b.type === "tool_use");
+    const allToolUseBlocks = [];
+    for (const m of (resp.messages || [])) {
+      if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
+      for (const b of m.content) if (b && b.type === "tool_use") allToolUseBlocks.push(b);
+    }
+    const toolCallCount = allToolUseBlocks.length || toolUseBlocks.length;
+    const inspirationBlocks = allToolUseBlocks.filter(b => ["update_inspiration", "add_inspiration", "delete_inspiration"].includes(b.name));
+    const inspirationOps = inspirationBlocks
+      .map(b => {
+        const result = resp.toolResultsById?.get(b.id);
+        const input = b.input || {};
+        const title = result && (result.after?.title || result.item?.title || result.removed?.title) || input.title || input.match || "";
+        const priority = result && (result.after?.priority || result.item?.priority) || input.priority || "";
+        return { action: b.name, title, priority, ok: !!(result && result.ok), error: result?.error || "", result };
+      });
     appendAgentMessage(e, { runId: run.id, role: "assistant", content: text, toolCalls: String(toolCallCount) });
     e.prepare("UPDATE agent_runs SET updated_at=? WHERE id=?").run(now(), run.id);
     return {
       ok: true,
       run_id: run.id,
       kind,
+      scope_id: scopeId,
       reply: text,
       model: provider.model,
       provider: provider.label,
       tokens: { input: resp.usage.input_tokens || 0, output: resp.usage.output_tokens || 0 },
       tool_calls: toolCallCount,
-      context_messages: priorMessages.length
+      context_messages: priorMessages.length,
+      inspiration_changed: inspirationOps.some(op => op.ok),
+      inspiration_diff: inspirationOps
     };
   } catch (err) {
     appendAgentMessage(e, { runId: run.id, role: "assistant", content: `错误: ${err.message}` });

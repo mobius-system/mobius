@@ -1998,13 +1998,62 @@ async function handleDetailChatSubmit(event) {
     const toolCalls = Number(result.tool_calls || 0);
     if (!reply) {
       reply = toolCalls > 0
-        ? `（Agent 已调用 ${toolCalls} 次 read_file 工具查阅代码，但本轮没有输出文字回答。可以换个具体问题，例如：它具体做了什么 / 跟莫比乌斯对标的字段在哪 / 实现成本估算。）`
+        ? `（Agent 已调用 ${toolCalls} 次工具查阅代码 / 修改启发，但本轮没有输出文字回答。可以换个具体问题，例如：它具体做了什么 / 跟莫比乌斯对标的字段在哪 / 实现成本估算。）`
         : '（Agent 本轮没有生成可用回复。可以换个更具体的问法，或在 AI 渠道下拉换一个模型再试。）';
     }
     const meta = [];
     if (result.provider) meta.push(result.provider);
     if (result.context_messages) meta.push(`已带上下文 ${result.context_messages} 条`);
     if (result.tokens?.input || result.tokens?.output) meta.push(`tokens in/out=${result.tokens.input}/${result.tokens.output}`);
+    const inspirationDiff = Array.isArray(result.inspiration_diff) ? result.inspiration_diff : [];
+    const okOps = inspirationDiff.filter((op) => op.ok);
+    for (const op of inspirationDiff) {
+      const verb = op.action === 'update_inspiration' ? '修改' : op.action === 'add_inspiration' ? '新增' : '删除';
+      const title = op.title || '';
+      const tail = op.action === 'delete_inspiration' ? '' : ` → ${op.priority || ''}`;
+      const flag = op.ok ? '' : ' (失败)';
+      meta.push(`已${verb}启发${title ? '：' + title : ''}${tail}${flag}`);
+    }
+    if (result.inspiration_changed && okOps.length) {
+      try {
+        if (kind === 'paper') {
+          const fresh = await call({ action: 'get_paper', id });
+          const updated = fresh?.item;
+          if (updated) {
+            const items = Array.isArray(state.papers.items) ? state.papers.items : [];
+            const idx = items.findIndex((it) => it.id === updated.id || it.source_id === updated.id);
+            if (idx >= 0) state.papers.items[idx] = { ...items[idx], ...updated };
+            const radar = Array.isArray(state.radarTopPicks) ? state.radarTopPicks : [];
+            const rIdx = radar.findIndex((it) => it.id === updated.id);
+            if (rIdx >= 0) state.radarTopPicks[rIdx] = { ...radar[rIdx], ...updated };
+            for (const clusterKey of Object.keys(state.clusterPapers || {})) {
+              const arr2 = state.clusterPapers[clusterKey] || [];
+              const cIdx = arr2.findIndex((it) => it.id === updated.id);
+              if (cIdx >= 0) state.clusterPapers[clusterKey][cIdx] = { ...arr2[cIdx], ...updated };
+            }
+            renderPapers();
+            rerenderOpenDetail('paper', id);
+            updateRadarDiscoveries?.();
+          }
+        } else if (kind === 'product') {
+          const fresh = await call({ action: 'get_product', id });
+          const updated = fresh?.item;
+          if (updated) {
+            const normalizedStatus = updated.tracked_status === 'tracked' ? 'official' : updated.tracked_status;
+            const bucketKey = normalizedStatus === 'official' ? 'official' : 'candidate';
+            const bucket = Array.isArray(state.competitors?.[bucketKey]) ? state.competitors[bucketKey] : [];
+            const idx = bucket.findIndex((it) => it.id === updated.id);
+            if (idx >= 0) state.competitors[bucketKey][idx] = { ...bucket[idx], ...updated };
+            renderCompetitors();
+            rerenderOpenDetail('product', id);
+            updateRadarDiscoveries?.();
+          }
+        }
+        showToast(`已更新 ${okOps.length} 条启发`);
+      } catch (refreshErr) {
+        showToast(`启发已写入但刷新失败: ${refreshErr.message || ''}`, 'bad');
+      }
+    }
     chat.messages.push({
       role: 'assistant',
       content: reply,
