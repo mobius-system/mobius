@@ -2913,7 +2913,7 @@ export function ChatArea() {
             projectKnowledgeSending={projectKnowledgeSending}
             canSendProjectKnowledge={jsonlEntries.length > 0 && !!currentProjectId && connectionStatus === 'connected'}
             onContinueWithOtherModel={() => setContinueModalOpen(true)}
-            canContinueWithOtherModel={!!currentSession?.session_id && !!currentIssueId}
+            canContinueWithOtherModel={!!currentSession?.session_id && (!!currentIssueId || !!(currentSession as any)?.research_id)}
             onStop={handleStopSession}
             canStop={!!sessionId}
           />
@@ -3392,9 +3392,10 @@ export function ChatArea() {
         />
       )}
 
-      {continueModalOpen && currentSession?.session_id && currentIssueId && (
+      {continueModalOpen && currentSession?.session_id && (currentIssueId || !!(currentSession as any)?.research_id) && (
         <NewSessionModal
-          issueId={currentIssueId}
+          issueId={currentIssueId || undefined}
+          researchId={(currentSession as any)?.research_id || undefined}
           onClose={() => setContinueModalOpen(false)}
           onCreated={handleContinueSessionCreated}
           defaultName={continueSessionName(currentSession)}

@@ -6,10 +6,26 @@ import { auth, downloadAuth } from '../middleware/auth';
 import { Researches } from '../repositories/researches';
 import { Projects } from '../repositories/projects';
 import { Sessions } from '../repositories/sessions';
+import { Messages } from '../repositories/messages';
 // @ts-ignore — service 仍是 .js
 import modelRegistry from '../services/model-registry';
 // @ts-ignore — service 仍是 .js
 import modelPromptLimits from '../services/model-prompt-limits';
+// @ts-ignore — service 仍是 .js
+import { audit } from '../repositories/audit';
+// @ts-ignore — service 仍是 .js
+import { writeSessionTransferDocument } from '../services/session-transfer';
+// @ts-ignore — service 仍是 .js
+import { runSessionMessage } from '../services/session-message-runner';
+import {
+  safeRemoveRunningFlag,
+} from '../utils/session-flags';
+import {
+  findSessionOperable,
+  sessionJsonlPath,
+  terminateBackgroundSession,
+  type AnySession,
+} from './sessions';
 // @ts-ignore — service 仍是 .js
 import {
   buildResearchContextPreview,
@@ -221,6 +237,9 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
     language?: string;
   };
   const suppressJoinNotice = req.body?.suppress_join_notice === true || req.body?.suppressJoinNotice === true;
+  const continueFromSessionId = typeof req.body?.continue_from_session_id === 'string'
+    ? req.body.continue_from_session_id.trim()
+    : '';
   if (!name) { res.status(400).json({ error: '请填写会话名称' }); return; }
   if (!['chief_researcher', 'research_assistant'].includes(role as string)) {
     res.status(400).json({ error: 'Research Session role 非法' });
@@ -252,6 +271,37 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
     excludedSkillIds,
     excludedMemoryIds,
   );
+
+  let sourceSession: AnySession | null = null;
+  let transferResult: any = null;
+  if (continueFromSessionId) {
+    sourceSession = findSessionOperable(continueFromSessionId, user);
+    if (!sourceSession) { res.status(404).json({ error: '旧 Session 不存在或无权操作' }); return; }
+    if (
+      String(sourceSession.research_id || '') !== String(req.params.researchId)
+      || sourceSession.scope_type !== 'research'
+    ) {
+      res.status(400).json({ error: '只能从当前 Research 下的旧 Session 继续' });
+      return;
+    }
+    const project = Projects.findById(research.project_id) as any;
+    const bindPath = (project?.bind_path || '').trim();
+    if (!bindPath) { res.status(400).json({ error: '当前项目未绑定路径, 无法创建 Session 转接文档' }); return; }
+    const jsonlPath = sessionJsonlPath(sourceSession, continueFromSessionId);
+    if (!jsonlPath) { res.status(400).json({ error: '旧 Session 没有可读取的 JSONL 记录' }); return; }
+    try {
+      transferResult = writeSessionTransferDocument({
+        bindPath,
+        sourceSession,
+        targetSessionId: sessionId,
+        jsonlPath,
+      });
+    } catch (e) {
+      console.warn(`[researches] create transfer document failed (${continueFromSessionId}): ${(e as Error).message}`);
+      res.status(500).json({ error: (e as Error).message || '创建 Session 转接文档失败' });
+      return;
+    }
+  }
 
   try {
     Sessions.insert({
@@ -289,7 +339,72 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
     });
     if ((blackboardResult as any).error) { res.status(500).json({ error: (blackboardResult as any).error }); return; }
   }
-  res.json(withSessionProxyState(Sessions.findById(sessionId)));
+  if (sourceSession && transferResult?.filePath) {
+    try {
+      Messages.insertSystem(
+        sessionId,
+        JSON.stringify({
+          type: 'session_transfer',
+          from_session_id: sourceSession.session_id,
+          path: transferResult.filePath,
+          section_count: transferResult.sectionCount,
+          entry_count: transferResult.entryCount,
+          truncated: transferResult.truncated,
+        }),
+        null as any,
+        'session_transfer',
+      );
+    } catch (e) {
+      console.warn(`[researches] save transfer marker failed (${sessionId}): ${(e as Error).message}`);
+    }
+    const closed = await terminateBackgroundSession(sourceSession, sourceSession.session_id);
+    try {
+      const project = Projects.findById(research.project_id) as any;
+      if (project?.bind_path) safeRemoveRunningFlag(path.resolve(project.bind_path), sourceSession.session_id, 'session-transfer');
+    } catch {}
+    try { Sessions.setIdle(sourceSession.session_id, sourceSession.user_id || user.id); } catch {}
+    try {
+      Messages.insertSystem(
+        sourceSession.session_id,
+        `${closed.message}\n已创建更换模型继续的转接文档: ${transferResult.filePath}`,
+        null as any,
+        '修改模型并继续',
+      );
+    } catch {}
+    audit(user.id, 'session.continue_with_model', 'session', sessionId,
+      JSON.stringify({
+        from_session_id: sourceSession.session_id,
+        transfer_path: transferResult.filePath,
+        background_was_alive: closed.wasAlive,
+        background_was_working: closed.wasWorking,
+        background_terminated: closed.terminated,
+      }));
+    const startContent = [name, description].map((part) => String(part || '').trim()).filter(Boolean).join('\n\n');
+    if (startContent) {
+      try {
+        await runSessionMessage({
+          user,
+          sessionId,
+          content: startContent,
+          inputText: startContent,
+          hasInputText: true,
+          requestId: `continue-${sourceSession.session_id}-${Date.now()}` as any,
+          source: 'http.research_session.continue_with_model',
+          logger: console,
+        } as any);
+      } catch (e) {
+        const err = e as any;
+        console.warn(`[researches] auto start continued session failed (${sessionId}): ${(e as Error).message}`);
+        res.status(err.status || 500).json({ error: err.message || '启动新 Session 失败', category: err.category || undefined });
+        return;
+      }
+    }
+  }
+  res.json({
+    ...(withSessionProxyState(Sessions.findById(sessionId)) as any),
+    continue_from_session_id: sourceSession?.session_id || null,
+    transfer_path: transferResult?.filePath || null,
+  });
 });
 
 function handleContextPreview(req: express.Request, res: express.Response): void {

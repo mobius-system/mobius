@@ -69,7 +69,7 @@ const router = express.Router();
 // ── 类型别名 ────────────────────────────────────────────────────────────────
 // Express 4 的 Request 默认不带 user, 用 cast 兜底, 与其他 route 保持一致.
 type AnyUser = { id: string; role?: string; [k: string]: any };
-type AnySession = { [k: string]: any };
+export type AnySession = { [k: string]: any };
 type AnyBackend = { [k: string]: any };
 
 function userOf(req: express.Request): AnyUser {
@@ -155,7 +155,7 @@ function findSessionReadable(id: string, user: AnyUser): AnySession | null {
   return session && canReadSession(user, session) ? session : null;
 }
 
-function findSessionOperable(id: string, user: AnyUser): AnySession | null {
+export function findSessionOperable(id: string, user: AnyUser): AnySession | null {
   const session = Sessions.findById(id) as AnySession | undefined;
   return session && canOperateSession(user, session) ? session : null;
 }
@@ -344,7 +344,7 @@ async function closeBackgroundForDelete(
   return { wasAlive, wasWorking, terminated, message };
 }
 
-async function terminateBackgroundSession(session: AnySession, sid: string): Promise<BackgroundCloseResult> {
+export async function terminateBackgroundSession(session: AnySession, sid: string): Promise<BackgroundCloseResult> {
   const backend = backendForSession(session);
   let wasAlive = false;
   let wasWorking = false;
@@ -720,7 +720,7 @@ router.get('/:id/jsonl-history', auth, (req: express.Request, res: express.Respo
   }
 });
 
-function sessionJsonlPath(session: AnySession, sessionId: string): string | null {
+export function sessionJsonlPath(session: AnySession, sessionId: string): string | null {
   const backend = backendForSession(session);
   return typeof backend._resolveJsonlPath === 'function'
     ? backend._resolveJsonlPath(sessionId)
