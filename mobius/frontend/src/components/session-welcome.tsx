@@ -325,6 +325,8 @@ export function SessionSkillMemoryEditor({
   const [legacy, setLegacy] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  // 按钮三态: idle / sending / done. key = `${kind}:${itemId}`
+  const [emphasizeState, setEmphasizeState] = useState<Record<string, 'idle' | 'sending' | 'done'>>({})
 
   useEffect(() => {
     let cancelled = false
@@ -374,9 +376,40 @@ export function SessionSkillMemoryEditor({
     return () => { cancelled = true }
   }, [sessionId])
 
+  const handleEmphasize = useCallback(async (kind: 'skill' | 'memory', itemId: string) => {
+    if (!sessionId) return
+    const key = `${kind}:${itemId}`
+    setEmphasizeState((prev) => ({ ...prev, [key]: 'sending' }))
+    try {
+      await api(`/api/sessions/${sessionId}/emphasize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, id: itemId }),
+      })
+      setEmphasizeState((prev) => ({ ...prev, [key]: 'done' }))
+      setTimeout(() => {
+        setEmphasizeState((prev) => {
+          if (prev[key] !== 'done') return prev
+          const next = { ...prev }
+          delete next[key]
+          return next
+        })
+      }, 1500)
+    } catch (e: any) {
+      setEmphasizeState((prev) => {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+      // 简单的错误提示: 不阻断其他按钮, 用 alert 兜底
+      window.alert?.(e?.message || '发送失败')
+    }
+  }, [sessionId])
+
   const renderList = (
     items: EditorItem[],
     emptyText: string,
+    kind: 'skill' | 'memory',
   ) => {
     if (loading) return <div className="text-[11px] py-2 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
     if (error) return <div className="text-[11px] py-2 text-center text-red-400">{error}</div>
@@ -386,6 +419,10 @@ export function SessionSkillMemoryEditor({
         {items.map(it => {
           const enabled = it.enabled !== false
           const scopeStyle = SCOPE_STYLE[it.scope] || SCOPE_STYLE.user
+          const stateKey = `${kind}:${it.id}`
+          const btnState = emphasizeState[stateKey] || 'idle'
+          const btnLabel = btnState === 'sending' ? '发送中...' : btnState === 'done' ? '✓' : (enabled ? '强调' : '追加')
+          const btnDisabled = !sessionId || btnState === 'sending' || btnState === 'done'
           return (
             <div key={it.id}
               className={`flex items-start gap-2 px-2 py-1.5 rounded border text-[11px] ${enabled ? '' : 'opacity-50'}`}
@@ -426,6 +463,19 @@ export function SessionSkillMemoryEditor({
                   <div className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{it.description}</div>
                 )}
               </div>
+              <button
+                type="button"
+                disabled={btnDisabled}
+                onClick={() => handleEmphasize(kind, it.id)}
+                className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded border transition-colors disabled:opacity-50 disabled:cursor-wait"
+                style={{
+                  color: btnState === 'done' ? '#22c55e' : 'var(--text-muted)',
+                  borderColor: 'var(--border-color)',
+                  background: btnState === 'done' ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.02)',
+                }}
+              >
+                {btnLabel}
+              </button>
             </div>
           )
         })}
@@ -452,13 +502,13 @@ export function SessionSkillMemoryEditor({
         <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>
           Skill ({enabledSkills}/{totals.skills || skills.length} 启用)
         </div>
-        {renderList(skills, '暂无 Skill')}
+        {renderList(skills, '暂无 Skill', 'skill')}
       </section>
       <section>
         <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>
           Memory ({enabledMemories}/{totals.memories || memories.length} 启用)
         </div>
-        {renderList(memories, '暂无 Memory')}
+        {renderList(memories, '暂无 Memory', 'memory')}
       </section>
     </div>
   )

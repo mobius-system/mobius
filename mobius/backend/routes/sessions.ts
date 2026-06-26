@@ -19,6 +19,12 @@ import { useProxyForSession, withSessionProxyState } from '../services/session-p
 import * as agents from '../agents';
 // @ts-ignore — repository 仍是 .js
 import { Projects } from '../repositories/projects';
+// @ts-ignore — repository 仍是 .js (通过 skills-fs / memories-fs 兼容层)
+import { Skills } from '../repositories/skills';
+// @ts-ignore — repository 仍是 .js
+import { Memories } from '../repositories/memories';
+// @ts-ignore — service 仍是 .js
+import { syncSkillsToWorkspace } from '../services/session-skills-sync';
 // @ts-ignore — service 仍是 .js
 import { recordAdminAuditIfCrossUser } from '../services/admin-audit';
 // @ts-ignore — service 仍是 .js
@@ -1235,6 +1241,83 @@ router.post('/:id/messages', auth, async (req: express.Request, res: express.Res
   } catch (e) {
     const err = e as any;
     res.status(err.status || 500).json({ error: err.message || '启动失败', category: err.category || undefined });
+    return;
+  }
+});
+
+// Session 进行中临时把某个 skill / memory "再喂一遍" 给 agent.
+// 已启用 = "强调", 未启用 = "追加", 两者后端行为一致:
+//   - skill: 复制源目录到 <workDir>/.imac/skills/<dirName>/, 消息正文带相对路径
+//   - memory: 不写文件, 消息正文直接含 memory body
+// 消息发送交给 runSessionMessage 复用同一套 (turn 分配 / context wrap / backend dispatch).
+router.post('/:id/emphasize', auth, async (req: express.Request, res: express.Response) => {
+  const sessionId = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionOperable(sessionId, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'emphasize_session_skill_memory', session);
+
+  const kind = String(req.body?.kind || '').trim();
+  const id = String(req.body?.id || '').trim();
+  if (!kind || !id) { res.status(400).json({ error: 'kind 与 id 必填' }); return; }
+  if (kind !== 'skill' && kind !== 'memory') {
+    res.status(400).json({ error: 'kind 只能是 skill / memory' });
+    return;
+  }
+
+  let workDir: string | null = null;
+  try {
+    const workspace = resolveSessionWorkspace(user, sessionId);
+    if (!workspace.error) workDir = workspace.workDir || null;
+  } catch {}
+  if (kind === 'skill' && !workDir) {
+    res.status(500).json({ error: '工作目录不可用, 无法复制 skill' });
+    return;
+  }
+
+  let messageContent: string;
+  let relPath: string | null = null;
+  if (kind === 'skill') {
+    const skill = Skills.findById(id) as any;
+    if (!skill) { res.status(400).json({ error: 'skill 不存在' }); return; }
+    const syncResults = syncSkillsToWorkspace(workDir as string, [{ id: skill.id }]);
+    const hit = syncResults.find((r: any) => r.id === skill.id && r.ok);
+    if (!hit) { res.status(500).json({ error: '复制 skill 到 session 工作目录失败' }); return; }
+    relPath = hit.relPath;
+    messageContent = `用户要求你重视 ${relPath} 文件中的 skill`;
+  } else {
+    const memory = Memories.findById(id) as any;
+    if (!memory) { res.status(400).json({ error: 'memory 不存在' }); return; }
+    const memoryBody = typeof memory.body === 'string' ? memory.body : '';
+    messageContent = `用户要求你重视一下记忆：\n\n${memoryBody}`;
+  }
+
+  try {
+    const result = await runSessionMessage({
+      user,
+      sessionId,
+      content: messageContent,
+      hasInputText: false,
+      requestId: `emphasize-${kind}-${id}-${Date.now()}` as any,
+      source: 'http.session.emphasize',
+      logger: console,
+    } as any);
+    res.json({
+      ok: true,
+      kind,
+      id,
+      rel_path: relPath,
+      turn_number: result?.turn_number ?? null,
+      request_id: result?.request_id ?? null,
+      backend: result?.backend ?? null,
+    });
+    return;
+  } catch (e) {
+    const err = e as any;
+    res.status(err.status || 500).json({
+      error: err.message || '启动失败',
+      category: err.category || undefined,
+    });
     return;
   }
 });

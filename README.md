@@ -29,7 +29,23 @@
 
 ![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-1.png)
 
+
 ## 会生长、可进化的生产力系统
+
+开发项目，处理数据，优化前端，复现论文实验，嵌入式研发，跨设备团队协同攻关，云服务器管理，Deep Research，Auto Research ...
+
+这些都可以在「莫比乌斯 AI」系统中一站式搞定。在这里，你将成为 AI 的用户变成 Agent 的指挥官，任意多的**开发项目**、任意多的**服务器或PC**、任意多的**任务和Issue**，只需要一句话，让您的想法即刻在正确的地方生根。
+
+而这些，仅仅只是「莫比乌斯 AI」的基础能力。**自迭代，自生长**是莫比乌斯的另外一个重要亮点：它不是一次性交付的 AI 工具，而是能在真实使用中持续吸收、持续替换、持续变强的系统。
+系统管理员使用**自然语言**提出需求，或者提供**截图**告诉「莫比乌斯 AI」你感觉它哪里不够好，亦或者您想试试某个**博客网址**中提到的今日最新潮的Agent用法，「莫比乌斯 AI」将竭尽所能**自我塑炼**，在不影响其他进行中的工作的情况下，低调完成自我进化。
+
+这就是「莫比乌斯 AI」的自生长闭环，每一次使用都不只是完成一次任务，而是在替换这艘 AI 忒修斯之船上的一块新木板。
+
+AI的浪潮下，有的 Agent 框架希望用户永远在自己划定的圈子中，有的 Agent
+
+
+<video controls src="https://mobius.nutshellai.cn/assets/v1/self-evolution.mp4" title="Title"></video>
+
 
 
 
@@ -37,20 +53,22 @@
 
 只会写文章还不够，合纵连横多个机器，能在超级GPU集群上跑实验、复现论文，才是真正的 Auto Research 能力。
 
-- 指挥多个Agent建立自主协同网络
+- 「莫比乌斯 AI」指挥多个Agent建立自主协同网络
 
 ![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-3.png)
 
-- 自动绘制
+- 「莫比乌斯 AI」自动绘制研究进展
 
 ![alt text](https://serve.gptacademic.cn/publish/auto/mobiusreadme/image-2.png)
+
+- 「莫比乌斯 AI」做调研
 
 <video controls src="https://mobius.nutshellai.cn/assets/v1/research-back.mp4" title="Title"></video>
 
 ## 小莫助理：高中生都能使用的的开发中枢和管理中枢
 
 
-- 系统的“第二前端”与智慧中心
+- 「莫比乌斯 AI」的“第二前端”与智慧中心
   - 界面点击能做的所有事情，小莫可以做；前端做不了的事情，小莫还可以做
 
 - 任务完成时语音提醒：日理万机的你，需要一个贴心的秘书
@@ -124,7 +142,13 @@ flowchart LR
 
 ![alt text](image-3.png)
 
+## 管理你的团队
 
+无论是一人之军，还是跟人类同事们协同作战，「莫比乌斯 AI」让团队协作更加轻松透明。
+
+![alt text](image-4.png)
+![alt text](image-6.png)
+![alt text](image-7.png)
 
 ### 部署
 
