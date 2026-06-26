@@ -382,6 +382,7 @@ const MIME: Record<string, string> = {
   '.jpg':  'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
+  '.gif':  'image/gif',
   '.woff2':'font/woff2',
   '.wasm': 'application/wasm',
   '.ico':  'image/x-icon',
