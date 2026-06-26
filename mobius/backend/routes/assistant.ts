@@ -749,20 +749,22 @@ function readAssistantSnapshot(user: any, sessionId: string): any {
 function listAssistantSessions(user: any, limit: number): any[] {
   const assistantProject = findAssistantProject(user);
   const assistantProjectId = assistantProject?.id || stableAssistantProjectId(user.id);
+  // 分身通过 POST /api/issues/:issueId/sessions/ 创建，其 session_key 为 `web:<uid>:<sid>`，
+  // 不匹配 assistant-question 前缀（条件 A），只能靠条件 B（issue + name 前缀）进入列表。
+  // 但 name 是用户可自定义的（前端「分身名称」输入框），一旦不以「分身小莫 #」开头，
+  // 分身便会创建成功却从列表永久消失（移动端/Web 都看不到）。小莫对话 issue 下的所有
+  // active session 都属于该用户的小莫会话/分身，故条件 B 只看 issue、不再强制 name 前缀。
   return db.prepare(`
     SELECT *
     FROM sessions_v2
     WHERE user_id = ?
       AND (
         session_key LIKE ?
-        OR (
-          issue_id IN (
-            SELECT id
-            FROM issues
-            WHERE project_id = ?
-              AND title = ?
-          )
-          AND name LIKE ?
+        OR issue_id IN (
+          SELECT id
+          FROM issues
+          WHERE project_id = ?
+            AND title = ?
         )
       )
       AND status = 'active'
@@ -779,7 +781,6 @@ function listAssistantSessions(user: any, limit: number): any[] {
     assistantSessionKeyLike(user.id),
     assistantProjectId,
     ASSISTANT_ISSUE_TITLE,
-    `${ASSISTANT_CLONE_SESSION_PREFIX}%`,
     MAIN_ASSISTANT_SESSION_NAME,
     `${ASSISTANT_CLONE_SESSION_PREFIX}%`,
     limit,
