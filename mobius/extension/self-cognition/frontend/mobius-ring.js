@@ -7,7 +7,7 @@ const UP = new THREE.Vector3(0, 0, 1);
 
 const TYPE_META = {
   paper: { label: '论文', accent: '#3b82f6', colorT: 0.2 },
-  product: { label: '竞品', accent: '#8b5cf6', colorT: 0.55 },
+  product: { label: '产品', accent: '#8b5cf6', colorT: 0.55 },
   evolution: { label: 'L1', accent: '#64748b', colorT: 0.9 },
 };
 
@@ -398,17 +398,17 @@ function defaultItems() {
     },
     {
       type: 'product',
-      keyword: '已跟踪竞品',
-      title: '竞品调研',
-      summary: '等待已跟踪竞品动态。',
-      meta: ['竞品', 'official', 'snapshot'],
+      keyword: '已跟踪产品',
+      title: '产品调研',
+      summary: '等待已跟踪产品动态。',
+      meta: ['产品', 'official', 'snapshot'],
     },
     {
       type: 'product',
       keyword: '候选晋升',
-      title: '竞品候选区',
+      title: '产品候选区',
       summary: '候选项可晋升为正式跟踪对象。',
-      meta: ['竞品', 'candidate', 'review'],
+      meta: ['产品', 'candidate', 'review'],
     },
   ];
 }

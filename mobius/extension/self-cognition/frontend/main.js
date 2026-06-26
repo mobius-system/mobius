@@ -669,8 +669,8 @@ function buildRadarDiscoveries() {
       id: item.id,
       type: 'product',
       title: item.name,
-      summary: radarSummary(item, '正在跟踪的竞品'),
-      keyword: (item.tags || [labels.category[item.category] || '竞品'])[0] || '竞品',
+      summary: radarSummary(item, '正在跟踪的产品'),
+      keyword: (item.tags || [labels.category[item.category] || '产品'])[0] || '产品',
       weight: Number(item.priority_score ?? item.relevance ?? 0) || 0,
       timestamp: timeValue(item.last_scanned_at || item.updated_at || item.created_at),
       meta: [
@@ -792,7 +792,7 @@ function renderSchedule() {
     <div class="schedule-card">
       <strong>${statusText}</strong>
       <span>上次论文扫描: ${escapeHtml(formatTime(lastArxiv?.created_at))}</span>
-      <span>上次竞品扫描: ${escapeHtml(formatTime(lastProduct?.created_at))}</span>
+      <span>上次产品扫描: ${escapeHtml(formatTime(lastProduct?.created_at))}</span>
       <em>下次扫描时间: ${escapeHtml(formatTime(next))}</em>
     </div>
   `;
@@ -1072,7 +1072,7 @@ function renderCompetitors() {
   $('candidateCount').textContent = candidate.length;
   $('officialCompetitors').innerHTML = official.length
     ? official.map(productCard).join('')
-    : '<div class="quiet-empty">暂无匹配的已跟踪竞品</div>';
+    : '<div class="quiet-empty">暂无匹配的已跟踪产品</div>';
   $('candidateCompetitors').innerHTML = candidate.length
     ? candidate.map(productCard).join('')
     : '<div class="quiet-empty">暂无匹配候选</div>';
@@ -1100,7 +1100,7 @@ function renderTail() {
   $('finaleStatus').innerHTML = [
     ['当前时间', formatNow()],
     ['论文线索', papers],
-    ['跟踪竞品', tracked],
+    ['跟踪产品', tracked],
     ['L1 改动', l1],
   ].map(([label, value]) => `
     <div class="finale-metric">
@@ -1308,8 +1308,8 @@ async function runAiScan(kind) {
   const n = Number($(`${kind}AiN`)?.value || (kind === 'paper' ? 10 : 5));
   const cost = estimateAiCost({ kind, count: n });
   const ok = await confirmDialog({
-    title: kind === 'paper' ? 'AI 深度阅读论文？' : 'AI 深度阅读竞品？',
-    body: `将用 ${channelLabel(kind)} 对 ${n} 个未读 ${kind === 'paper' ? '论文' : '竞品'} 做完整阅读，注入莫比乌斯 Memory 后产出"对莫比乌斯的借鉴方向"。预计 ${formatAiCost(cost)}。无借鉴价值的会标记为排除。`,
+    title: kind === 'paper' ? 'AI 深度阅读论文？' : 'AI 深度阅读产品？',
+    body: `将用 ${channelLabel(kind)} 对 ${n} 个未读 ${kind === 'paper' ? '论文' : '产品'} 做完整阅读，注入莫比乌斯 Memory 后产出"对莫比乌斯的借鉴方向"。预计 ${formatAiCost(cost)}。无借鉴价值的会标记为排除。`,
     confirmText: '确认 AI 阅读',
   });
   if (!ok) return;
@@ -1365,10 +1365,10 @@ async function runProductScan(event) {
   const statusValue = $('productStatus').value;
   const hasUrl = Boolean(url && url.trim());
   const ok = await confirmDialog({
-    title: hasUrl ? '立即扫描该竞品？' : '立即扫描竞品？',
+    title: hasUrl ? '立即扫描该产品？' : '立即扫描产品？',
     body: hasUrl
       ? `将真实抓取 ${url} 的产品页元信息并入库。`
-      : '将让 AI Agent 基于关键词和已跟踪竞品，从自身知识里捞出潜在新竞品并抓取入库。预计 30 秒到几分钟。',
+      : '将让 AI Agent 基于关键词和已跟踪产品，从自身知识里捞出潜在新产品并抓取入库。预计 30 秒到几分钟。',
     confirmText: '确认扫描',
   });
   if (!ok) return;
@@ -1398,7 +1398,7 @@ async function runProductScan(event) {
         ? (state.competitors.official || []).concat(state.competitors.candidate || []).filter((p) => touched.includes(p.id))
         : (result.product_scan?.competitor ? [result.product_scan.competitor] : []);
       renderLatestBatch('product', items, '本轮入库');
-      showToast(`竞品扫描完成: 新候选 ${result.product_scan.candidates_added || 0}`);
+      showToast(`产品扫描完成: 新候选 ${result.product_scan.candidates_added || 0}`);
     } else {
       const result = await call({
         action: 'discover_competitors_via_agent',
@@ -1418,7 +1418,7 @@ async function runProductScan(event) {
   } finally {
     state.scanning.product = false;
     button.disabled = false;
-    button.textContent = '立即扫描竞品';
+    button.textContent = '立即扫描产品';
     renderSchedule();
   }
 }
@@ -1429,10 +1429,10 @@ async function runProductBulkScan() {
   const withAi = $('productScanWithAi').checked;
   const aiCost = withAi ? estimateAiCost({ kind: 'product', count: Math.min(tracked || 5, 10) }) : null;
   const body = withAi
-    ? `将真实抓取所有 ${tracked} 个已跟踪竞品的产品页快照（${Math.max(5, tracked * 3)} 秒），随后用 ${channelLabel('product')} 对重扫竞品做深度阅读。AI 阶段预计 ${aiCost ? formatAiCost(aiCost) : '60-180 秒'}。`
-    : `将真实抓取所有 ${tracked} 个已跟踪竞品的产品页快照，可能耗时 ${Math.max(5, tracked * 3)} 秒（不做 AI 阅读）。`;
+    ? `将真实抓取所有 ${tracked} 个已跟踪产品的页面快照（${Math.max(5, tracked * 3)} 秒），随后用 ${channelLabel('product')} 对重扫产品做深度阅读。AI 阶段预计 ${aiCost ? formatAiCost(aiCost) : '60-180 秒'}。`
+    : `将真实抓取所有 ${tracked} 个已跟踪产品的页面快照，可能耗时 ${Math.max(5, tracked * 3)} 秒（不做 AI 阅读）。`;
   const ok = await confirmDialog({
-    title: withAi ? '重扫 + AI 深度阅读竞品？' : '重扫所有已跟踪竞品？',
+    title: withAi ? '重扫 + AI 深度阅读产品？' : '重扫所有已跟踪产品？',
     body,
     confirmText: '确认重扫',
   });
@@ -1460,7 +1460,7 @@ async function doProductBulkScan({ button } = {}) {
     state.summary = result.summary || state.summary;
     render();
     renderLatestBatch('product', result.product_scan?.touched_items || [], `本轮重扫 ${result.product_scan?.touched_count ?? 0} 条`);
-    showToast(`竞品重扫完成: 涉及 ${result.product_scan?.touched_count ?? 0} 条, 新候选 +${result.product_scan?.candidates_added || 0}`);
+    showToast(`产品重扫完成: 涉及 ${result.product_scan?.touched_count ?? 0} 条, 新候选 +${result.product_scan?.candidates_added || 0}`);
     return { ok: true, touched: result.product_scan?.touched_count ?? 0 };
   } catch (error) {
     showToast(error.message || '批量重扫失败', 'bad');
@@ -1468,7 +1468,7 @@ async function doProductBulkScan({ button } = {}) {
   } finally {
     state.scanning.product = false;
     btn.disabled = false;
-    btn.textContent = originalText || '重扫所有已跟踪竞品';
+    btn.textContent = originalText || '重扫所有已跟踪产品';
     renderSchedule();
   }
 }
@@ -1524,10 +1524,10 @@ async function runOneClickScan() {
   const aiCostProd = aiOn ? estimateAiCost({ kind: 'product', count: productN }) : null;
   const aiTotalSec = aiOn ? (aiCostPaper.seconds + aiCostProd.seconds) : 0;
   const totalSec = 15 + Math.max(5, tracked * 3) + 5 + aiTotalSec;
-  const aiLine = aiOn ? `；④ 论文+竞品 AI 深度阅读（${channelLabel('paper')}，~${Math.round(aiTotalSec / 60)} 分钟）` : '';
+  const aiLine = aiOn ? `；④ 论文+产品 AI 深度阅读（${channelLabel('paper')}，~${Math.round(aiTotalSec / 60)} 分钟）` : '';
   const ok = await confirmDialog({
     title: aiOn ? '一键扫描 + AI 阅读？' : '一键扫描全部？',
-    body: `将依次执行：① 论文 arXiv 拉取；② ${tracked} 个已跟踪竞品产品页抓取；③ git log 同步自进化${aiLine}。预计共 ${Math.round(totalSec / 60)} 分钟，会真实发起外部网络请求与 AI 调用。`,
+    body: `将依次执行：① 论文 arXiv 拉取；② ${tracked} 个已跟踪产品的页面抓取；③ git log 同步自进化${aiLine}。预计共 ${Math.round(totalSec / 60)} 分钟，会真实发起外部网络请求与 AI 调用。`,
     confirmText: '确认一键扫描',
   });
   if (!ok) return;
@@ -1541,8 +1541,8 @@ async function runOneClickScan() {
     const results = [];
     results.push(['论文', await doArxivScan({ button: $('arxivScanForm').querySelector('button[type="submit"]') })]);
     if (aiOn) results.push(['论文 AI', await doAiScan('paper', { button: $('paperAiScanBtn') })]);
-    results.push(['竞品', await doProductBulkScan({ button: $('productBulkScanBtn') })]);
-    if (aiOn) results.push(['竞品 AI', await doAiScan('product', { button: $('productAiScanBtn') })]);
+    results.push(['产品', await doProductBulkScan({ button: $('productBulkScanBtn') })]);
+    if (aiOn) results.push(['产品 AI', await doAiScan('product', { button: $('productAiScanBtn') })]);
     results.push(['自进化', await doEvolutionScan({ button: $('evolutionScanBtn') })]);
     const failed = results.filter(([, r]) => !r?.ok);
     if (failed.length) {
@@ -1575,7 +1575,7 @@ async function updateCompetitor(payload) {
     state.products = result.products || state.products;
     state.summary = result.summary || state.summary;
     renderCompetitors();
-    showToast('竞品状态已更新');
+    showToast('产品状态已更新');
   } catch (error) {
     showToast(error.message || '更新失败', 'bad');
   }
@@ -1607,7 +1607,7 @@ function getDetailChat(kind, id) {
       messages: [{
         role: 'assistant',
         content: kind === 'product'
-          ? '我已读完这个竞品的页面快照，可以问我关于定位、差异、可借鉴点等任何问题。'
+          ? '我已读完这个产品的页面快照，可以问我关于定位、差异、可借鉴点等任何问题。'
           : '我已读完这篇论文的摘要，可以问我关于方法、实验、结论等任何问题。',
         time: new Date().toISOString(),
       }],
@@ -1643,7 +1643,7 @@ function renderDetailChatSection(kind, id) {
   return `
     <section class="detail-chat" aria-label="AI 聊天区">
       <div class="detail-section-head">
-        <h3>向 AI 请教这${kind === 'product' ? '个竞品' : '篇论文'}</h3>
+        <h3>向 AI 请教这${kind === 'product' ? '个产品' : '篇论文'}</h3>
         <span>${kind === 'product' ? 'Product context' : 'Paper context'}</span>
       </div>
       <div class="detail-chat-messages" id="detailChatMessages" aria-live="polite">
@@ -1715,10 +1715,10 @@ function renderProductDetailActions(item) {
   const readActive = !!local.read || mark === 'read';
   const fusionActive = mark === 'fusion' || !!local.fusion;
   return `
-    <section class="detail-actions" aria-label="竞品处理动作">
+    <section class="detail-actions" aria-label="产品处理动作">
       <div class="detail-section-head">
-        <h3>处理这个竞品</h3>
-        <span>${detailPending[detailChatKey('product', item.id)] ? '提交中' : '动作会同步到竞品标记'}</span>
+        <h3>处理这个产品</h3>
+        <span>${detailPending[detailChatKey('product', item.id)] ? '提交中' : '动作会同步到产品标记'}</span>
       </div>
       <div class="detail-action-row">
         ${renderDetailActionButton('product', item.id, 'exclude', excludeActive ? '不重要 ✓' : '标记不重要', 'danger', excludeActive)}
@@ -1734,7 +1734,7 @@ function renderInspirationDetailBlock(rawInspiration, markExcluded, kind) {
   if (markExcluded) {
     return `<section class="detail-block detail-inspiration is-excluded">
       <h3>对莫比乌斯的借鉴方向</h3>
-      <p class="muted">L2 Agent 阅读后判定该${kind === 'product' ? '竞品' : '论文'}暂无借鉴价值，已自动标记为排除。</p>
+      <p class="muted">L2 Agent 阅读后判定该${kind === 'product' ? '产品' : '论文'}暂无借鉴价值，已自动标记为排除。</p>
     </section>`;
   }
   const items = parseInspiration(rawInspiration);
@@ -1955,12 +1955,12 @@ async function handleProductDetailAction(id, action) {
     rerenderOpenDetail('product', id);
     const result = await call({ action: 'mark_product', id, mark, note: `用户在详情页标记: ${action}` });
     state.competitors = result.competitors || state.competitors;
-    showToast(action === 'fusion' ? '已加入融合队列' : '竞品标记已更新');
+    showToast(action === 'fusion' ? '已加入融合队列' : '产品标记已更新');
   } catch (error) {
     state.local.competitors[id] = previousLocal;
     state.competitors = previousCompetitors;
     saveLocalState();
-    showToast(error.message || '竞品操作失败，已回滚', 'bad');
+    showToast(error.message || '产品操作失败，已回滚', 'bad');
   } finally {
     delete detailPending[key];
     renderCompetitors();
@@ -2309,7 +2309,7 @@ function bindEvents() {
     const result = await call({ action: 'get_competitors' });
     state.competitors = result.competitors || state.competitors;
     renderCompetitors();
-    showToast('竞品清单已刷新');
+    showToast('产品清单已刷新');
   });
   $('paperSearch').addEventListener('input', (event) => {
     state.filters.paper.q = event.target.value.trim();

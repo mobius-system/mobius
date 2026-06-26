@@ -28,7 +28,7 @@
       <ul class="app-loading-steps" id="appLoadingSteps" aria-label="加载步骤">
         <li data-step="channels"><span class="dot"></span>读取 AI 渠道配置</li>
         <li data-step="papers"><span class="dot"></span>载入论文库与聚类</li>
-        <li data-step="products"><span class="dot"></span>载入竞品与种子库</li>
+        <li data-step="products"><span class="dot"></span>载入产品与种子库</li>
         <li data-step="evolution"><span class="dot"></span>对齐自进化历史</li>
         <li data-step="ai"><span class="dot"></span>同步最近 Agent 上下文</li>
       </ul>
@@ -42,7 +42,7 @@
     </a>
     <div class="nav-links" aria-label="主要区域">
       <a href="#paper-section">论文调研</a>
-      <a href="#competitor-section">竞品调研</a>
+      <a href="#competitor-section">产品调研</a>
       <a href="#evolution-section">自进化历史</a>
     </div>
     <button class="nav-refresh" id="refreshBtn" type="button">刷新</button>
@@ -50,7 +50,7 @@
   <nav class="section-switcher" id="sectionSwitcher" aria-label="Section switcher">
     <a class="section-link is-active" href="#hero" data-section-target="hero"><span>◎</span><em>首页</em></a>
     <a class="section-link" href="#paper-section" data-section-target="paper-section"><span>▤</span><em>论文调研</em></a>
-    <a class="section-link" href="#competitor-section" data-section-target="competitor-section"><span>◆</span><em>竞品调研</em></a>
+    <a class="section-link" href="#competitor-section" data-section-target="competitor-section"><span>◆</span><em>产品调研</em></a>
     <a class="section-link" href="#evolution-section" data-section-target="evolution-section"><span>⟲</span><em>自进化历史</em></a>
     <a class="section-link" href="#finale" data-section-target="finale"><span>✦</span><em>尾页</em></a>
   </nav>
@@ -60,11 +60,11 @@
       <div class="hero-content reveal">
         <p class="eyebrow">Self-Cognition</p>
         <h1 aria-label="Mobius Research Radar">Mobius <span class="gradient-text">Research Radar</span></h1>
-        <p class="hero-subtitle">让自我认知系统，持续追踪论文与竞品。</p>
-        <p class="hero-copy">只保留两个工作台：论文跟踪与竞品跟踪。每日扫描、人工筛选、收藏归档和候选晋升，都在同一条克制的研究流里完成。</p>
+        <p class="hero-subtitle">让自我认知系统，持续追踪论文与产品。</p>
+        <p class="hero-copy">只保留两个工作台：论文跟踪与产品跟踪。每日扫描、人工筛选、收藏归档和候选晋升，都在同一条克制的研究流里完成。</p>
         <div class="hero-actions">
           <a class="primary-button" href="#paper-section">查看论文跟踪</a>
-          <a class="glass-button" href="#competitor-section">查看竞品跟踪</a>
+          <a class="glass-button" href="#competitor-section">查看产品跟踪</a>
         </div>
         <div class="hero-status reveal" id="scheduleStatus" aria-live="polite"></div>
       </div>
@@ -82,7 +82,7 @@
 
         <div class="tab-strip reveal" role="tablist" aria-label="工作台">
           <button class="tab is-active" id="tab-papers" type="button" role="tab" aria-selected="true" aria-controls="panel-papers" data-tab="papers">论文跟踪</button>
-          <button class="tab" id="tab-competitors" type="button" role="tab" aria-selected="false" aria-controls="panel-competitors" data-tab="competitors">竞品跟踪</button>
+          <button class="tab" id="tab-competitors" type="button" role="tab" aria-selected="false" aria-controls="panel-competitors" data-tab="competitors">产品跟踪</button>
         </div>
 
         <section class="tab-panel is-active reveal" id="panel-papers" role="tabpanel" aria-labelledby="tab-papers">
@@ -108,7 +108,7 @@
                   </label>
                   <label class="check-row">
                     <input id="scanCompetitorsAfterArxiv" type="checkbox">
-                    <span>扫描后同步刷新正式竞品</span>
+                    <span>扫描后同步刷新正式产品</span>
                   </label>
                   <label class="check-row">
                     <input id="arxivScanWithAi" type="checkbox" checked>
@@ -202,8 +202,8 @@
     <section class="section-dark workspace-section product-tone" id="competitor-section" data-nav-theme="dark" data-section="product">
       <div class="section-inner">
         <div class="section-heading reveal">
-          <h2>竞品跟踪</h2>
-          <p>候选与已跟踪竞品并排呈现。候选项可以一键晋升，正式竞品可随时重扫产品页快照并标记已读。</p>
+          <h2>产品跟踪</h2>
+          <p>候选与已跟踪产品并排呈现。候选项可以一键晋升，正式产品可随时重扫产品页快照并标记已读。</p>
         </div>
 
         <section class="tab-panel competitor-panel reveal" id="panel-competitors" role="tabpanel" aria-labelledby="tab-competitors">
@@ -213,7 +213,7 @@
                 <div class="panel-head">
                   <div>
                     <p class="micro">Product page</p>
-                    <h3>竞品清单管理</h3>
+                    <h3>产品清单管理</h3>
                   </div>
                 </div>
                 <label>
@@ -245,7 +245,7 @@
                     </select>
                   </label>
                 </div>
-                <button class="primary-button full" type="submit">立即扫描竞品</button>
+                <button class="primary-button full" type="submit">立即扫描产品</button>
                 <div class="ai-scan-divider"><span>或对已入库未读做 AI 阅读</span></div>
                 <label>
                   <span>AI 渠道</span>
@@ -255,14 +255,14 @@
                   <span>未读条数 N</span>
                   <input id="productAiN" type="number" min="1" max="30" value="5">
                 </label>
-                <button class="glass-button full" id="productAiScanBtn" type="button">AI 深度阅读未读竞品</button>
+                <button class="glass-button full" id="productAiScanBtn" type="button">AI 深度阅读未读产品</button>
               </form>
 
               <form class="panel" id="productKeywordsForm">
                 <div class="panel-head">
                   <div>
                     <p class="micro">Discovery</p>
-                    <h3>竞品关键词</h3>
+                    <h3>产品关键词</h3>
                   </div>
                   <button class="text-button" type="submit">保存</button>
                 </div>
@@ -283,7 +283,7 @@
               </section>
               <div class="filters-row compact">
                 <label>
-                  <span>竞品状态</span>
+                  <span>产品状态</span>
                   <select id="competitorStatusFilter">
                     <option value="">全部</option>
                     <option value="official">已跟踪</option>
@@ -302,12 +302,12 @@
                   <span>搜索</span>
                   <input id="competitorSearch" type="search" placeholder="名称、理由、快照">
                 </label>
-                <button class="glass-button light" id="refreshCompetitorsBtn" type="button">刷新竞品</button>
+                <button class="glass-button light" id="refreshCompetitorsBtn" type="button">刷新产品</button>
                 <label class="check-row inline-check">
                   <input id="productScanWithAi" type="checkbox" checked>
                   <span>同步 AI 阅读</span>
                 </label>
-                <button class="primary-button" id="productBulkScanBtn" type="button">重扫所有已跟踪竞品</button>
+                <button class="primary-button" id="productBulkScanBtn" type="button">重扫所有已跟踪产品</button>
                 <label class="check-row inline-check">
                   <input id="competitorShowExcluded" type="checkbox">
                   <span>显示 AI 排除</span>
@@ -317,14 +317,14 @@
               <div class="competitor-columns">
                 <section>
                   <div class="column-head">
-                    <h3>已跟踪竞品</h3>
+                    <h3>已跟踪产品</h3>
                     <span id="officialCount">0</span>
                   </div>
                   <div class="product-list" id="officialCompetitors"></div>
                 </section>
                 <section>
                   <div class="column-head">
-                    <h3>候选竞品区</h3>
+                    <h3>候选产品区</h3>
                     <span id="candidateCount">0</span>
                   </div>
                   <div class="product-list" id="candidateCompetitors"></div>
