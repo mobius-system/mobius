@@ -41,6 +41,7 @@ const state = {
     source: 'unknown',
     feeds: { L1: [], L2: [], L3: [] },
     offsets: { L1: 0, L2: 0, L3: 0 },
+    totals: { L1: 0, L2: 0, L3: 0 },
     expanded: {},
     pending: {},
   },
@@ -527,6 +528,7 @@ async function loadEvolutionLevel(level, options = {}) {
       ? [...state.evolution.feeds[level], ...items]
       : items;
     state.evolution.offsets[level] = state.evolution.feeds[level].length;
+    state.evolution.totals[level] = Number.isFinite(result.total) ? result.total : state.evolution.feeds[level].length;
     state.evolution.source = 'backend';
   } catch {
     const mock = await loadMockEvolution();
@@ -924,9 +926,9 @@ function renderEvolution() {
 function renderTail() {
   const papers = state.papers.total || Object.values(state.clusterPapers).flat().length || 0;
   const tracked = state.competitors.official?.length || 0;
-  const l1 = state.evolution.feeds.L1?.length || 0;
+  const l1 = state.evolution.totals.L1 || 0;
   $('finaleStatus').innerHTML = [
-    ['当前时间', new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date())],
+    ['当前时间', formatNow()],
     ['论文线索', papers],
     ['跟踪竞品', tracked],
     ['L1 改动', l1],
@@ -937,6 +939,16 @@ function renderTail() {
     </div>
   `).join('');
 }
+
+function formatNow() {
+  return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date());
+}
+
+setInterval(() => {
+  if (document.hidden) return;
+  const node = document.querySelector('#finaleStatus .finale-metric:first-child strong');
+  if (node) node.textContent = formatNow();
+}, 30_000);
 
 function renderEvolutionProjectFilter() {
   const projects = evolutionProjects();
@@ -1054,9 +1066,17 @@ async function runArxivScan(event) {
     confirmText: '确认扫描',
   });
   if (!ok) return;
+  await doArxivScan({ button, query, max });
+}
+
+async function doArxivScan({ button, query, max } = {}) {
+  const btn = button || $('arxivScanForm').querySelector('button[type="submit"]');
+  query = query ?? $('arxivQuery').value;
+  max = max ?? Number($('arxivMax').value || 100);
   state.scanning.paper = true;
-  button.disabled = true;
-  button.textContent = '扫描中...';
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = '扫描中...';
   renderSchedule();
   try {
     const result = await call({
@@ -1077,12 +1097,14 @@ async function runArxivScan(event) {
     render();
     renderLatestBatch('paper', result.scan?.new_items || [], `本轮新增 ${result.scan?.new_count ?? result.scan?.inserted ?? 0} 条`);
     showToast(`论文扫描完成: 新增 ${result.scan.inserted}, 更新 ${result.scan.updated}`);
+    return { ok: true, inserted: result.scan?.inserted ?? 0 };
   } catch (error) {
     showToast(error.message || '扫描失败', 'bad');
+    return { ok: false, error: error.message };
   } finally {
     state.scanning.paper = false;
-    button.disabled = false;
-    button.textContent = '立即扫描论文';
+    btn.disabled = false;
+    btn.textContent = originalText || '立即扫描论文';
     renderSchedule();
   }
 }
@@ -1143,9 +1165,15 @@ async function runProductBulkScan() {
     confirmText: '确认重扫',
   });
   if (!ok) return;
+  await doProductBulkScan({ button });
+}
+
+async function doProductBulkScan({ button } = {}) {
+  const btn = button || $('productBulkScanBtn');
   state.scanning.product = true;
-  button.disabled = true;
-  button.textContent = '扫描中...';
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = '扫描中...';
   renderSchedule();
   try {
     const result = await call({
@@ -1160,12 +1188,14 @@ async function runProductBulkScan() {
     render();
     renderLatestBatch('product', result.product_scan?.touched_items || [], `本轮重扫 ${result.product_scan?.touched_count ?? 0} 条`);
     showToast(`竞品重扫完成: 涉及 ${result.product_scan?.touched_count ?? 0} 条, 新候选 +${result.product_scan?.candidates_added || 0}`);
+    return { ok: true, touched: result.product_scan?.touched_count ?? 0 };
   } catch (error) {
     showToast(error.message || '批量重扫失败', 'bad');
+    return { ok: false, error: error.message };
   } finally {
     state.scanning.product = false;
-    button.disabled = false;
-    button.textContent = '重扫所有已跟踪竞品';
+    btn.disabled = false;
+    btn.textContent = originalText || '重扫所有已跟踪竞品';
     renderSchedule();
   }
 }
@@ -1178,8 +1208,14 @@ async function runEvolutionScan() {
     confirmText: '确认扫描',
   });
   if (!ok) return;
-  button.disabled = true;
-  button.textContent = '扫描中...';
+  await doEvolutionScan({ button });
+}
+
+async function doEvolutionScan({ button } = {}) {
+  const btn = button || $('evolutionScanBtn');
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = '扫描中...';
   try {
     const result = await call({
       action: 'seed_evolution_from_git',
@@ -1189,16 +1225,52 @@ async function runEvolutionScan() {
     if (Array.isArray(result.feed?.items)) {
       state.evolution.feeds.L1 = result.feed.items.map((item, index) => normalizeEvolutionEvent(item, 'L1', index));
       state.evolution.offsets.L1 = state.evolution.feeds.L1.length;
+      state.evolution.totals.L1 = Number.isFinite(result.feed?.total) ? result.feed.total : state.evolution.feeds.L1.length;
       state.evolution.source = 'backend';
     }
     renderEvolution();
     renderLatestBatch('evolution', result.seed?.new_events || [], `本轮新增 ${result.seed?.new_count ?? 0} 条`);
     showToast(`自进化扫描完成: 新增 ${result.seed?.new_count ?? 0} / 读取 ${result.seed?.total_scanned ?? 0}`);
+    return { ok: true, newCount: result.seed?.new_count ?? 0 };
   } catch (error) {
     showToast(error.message || '自进化扫描失败', 'bad');
+    return { ok: false, error: error.message };
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText || '扫描最新自进化';
+  }
+}
+
+async function runOneClickScan() {
+  const button = $('finaleRefreshBtn');
+  const tracked = (state.competitors?.official || []).length;
+  const totalSec = 15 + Math.max(5, tracked * 3) + 5;
+  const ok = await confirmDialog({
+    title: '一键扫描全部？',
+    body: `将依次执行：① 论文 arXiv 拉取，② ${tracked} 个已跟踪竞品产品页抓取，③ git log 同步自进化。预计共 ${totalSec} 秒，会真实发起外部网络请求。`,
+    confirmText: '确认一键扫描',
+  });
+  if (!ok) return;
+  button.disabled = true;
+  const originalText = button.textContent;
+  button.textContent = '扫描中...';
+  closeLatestBatch('paper');
+  closeLatestBatch('product');
+  closeLatestBatch('evolution');
+  try {
+    const results = [];
+    results.push(['论文', await doArxivScan({ button: $('arxivScanForm').querySelector('button[type="submit"]') })]);
+    results.push(['竞品', await doProductBulkScan({ button: $('productBulkScanBtn') })]);
+    results.push(['自进化', await doEvolutionScan({ button: $('evolutionScanBtn') })]);
+    const failed = results.filter(([, r]) => !r?.ok);
+    if (failed.length) {
+      showToast(`一键扫描完成，${failed.length} 项失败: ${failed.map(([n]) => n).join('、')}`, 'bad');
+    } else {
+      showToast('一键扫描完成');
+    }
   } finally {
     button.disabled = false;
-    button.textContent = '扫描最新自进化';
+    button.textContent = originalText || '一键扫描';
   }
 }
 
@@ -1772,7 +1844,7 @@ function bindScrollEffects() {
 
 function bindEvents() {
   $('refreshBtn').addEventListener('click', loadAll);
-  $('finaleRefreshBtn').addEventListener('click', loadAll);
+  $('finaleRefreshBtn').addEventListener('click', runOneClickScan);
   $('arxivScanForm').addEventListener('submit', runArxivScan);
   $('productScanForm').addEventListener('submit', runProductScan);
   $('productBulkScanBtn').addEventListener('click', runProductBulkScan);
