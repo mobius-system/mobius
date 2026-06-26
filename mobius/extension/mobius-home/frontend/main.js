@@ -118,24 +118,28 @@ window.setShowcaseVideo = function (slot, url) {
   const toc = document.getElementById('pageToc');
   if (!toc) return;
 
-  // 收集所有 <section id="..."> + hero header
-  const heroEl = document.querySelector('header.hero[id]');
-  const sections = Array.from(document.querySelectorAll('section[id]'));
-  const targets = [];
-  if (heroEl) targets.push({ el: heroEl, label: '概览' });
-  for (const s of sections) targets.push({ el: s, label: labelFromSection(s) });
+  // 显式 section → TOC 显示文字映射表（按指定顺序）
+  const TOC_LABELS = {
+    'hero': '概览',
+    'prologue': '时代之问',
+    'synergy': '人机物智算协同',
+    'features': '七大亮点',
+    'feat-1': '自生长',
+    'feat-2': 'Agent集群协作',
+    'feat-3': '人类团队协作',
+    'feat-4': '深度科研系统',
+    'feat-5': '自孵化拓展系统',
+    'feat-6': '智能小莫',
+    'feat-7': '兼容性',
+    'feat-showcase': '真实案例',
+    'finale': '莫比乌斯环'
+  };
 
-  // 从每个 section 里取 h2.display 或 h2 标题做目录文字，截断到 14 个汉字
-  function labelFromSection(sec) {
-    const h2 = sec.querySelector('h2.display') || sec.querySelector('h2');
-    if (!h2) return sec.id;
-    let text = h2.textContent.replace(/\s+/g, ' ').trim();
-    const grad = h2.querySelector('.gradient-text, .gradient-text-dark');
-    if (grad && grad.textContent.trim()) text = grad.textContent.trim();
-    // 去掉分隔符
-    text = text.replace(/[—\-·•,，。.、；;:：！!？?]+$/g, '').trim();
-    if (text.length > 14) text = text.slice(0, 14) + '…';
-    return text || sec.id;
+  // 仅收集出现在映射表中的元素，按 TOC_LABELS 定义的顺序输出
+  const targets = [];
+  for (const id of Object.keys(TOC_LABELS)) {
+    const el = document.getElementById(id);
+    if (el) targets.push({ el, label: TOC_LABELS[id] });
   }
 
   // 生成 DOM
