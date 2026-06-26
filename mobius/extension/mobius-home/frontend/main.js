@@ -112,3 +112,70 @@ window.setShowcaseVideo = function (slot, url) {
   wrap.classList.remove('placeholder');
   return true;
 };
+
+/* ---------- 8. 右侧 Apple 风滚动目录（scroll-spy TOC） ---------- */
+(function buildPageToc() {
+  const toc = document.getElementById('pageToc');
+  if (!toc) return;
+
+  // 收集所有 <section id="..."> + hero header
+  const heroEl = document.querySelector('header.hero[id]');
+  const sections = Array.from(document.querySelectorAll('section[id]'));
+  const targets = [];
+  if (heroEl) targets.push({ el: heroEl, label: '概览' });
+  for (const s of sections) targets.push({ el: s, label: labelFromSection(s) });
+
+  // 从每个 section 里取 h2.display 或 h2 标题做目录文字，截断到 14 个汉字
+  function labelFromSection(sec) {
+    const h2 = sec.querySelector('h2.display') || sec.querySelector('h2');
+    if (!h2) return sec.id;
+    let text = h2.textContent.replace(/\s+/g, ' ').trim();
+    const grad = h2.querySelector('.gradient-text, .gradient-text-dark');
+    if (grad && grad.textContent.trim()) text = grad.textContent.trim();
+    // 去掉分隔符
+    text = text.replace(/[—\-·•,，。.、；;:：！!？?]+$/g, '').trim();
+    if (text.length > 14) text = text.slice(0, 14) + '…';
+    return text || sec.id;
+  }
+
+  // 生成 DOM
+  for (const t of targets) {
+    const a = document.createElement('a');
+    a.className = 'page-toc-item';
+    a.href = '#' + t.el.id;
+    a.dataset.target = t.el.id;
+    a.textContent = t.label;
+    a.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      t.el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    toc.appendChild(a);
+  }
+
+  const items = Array.from(toc.querySelectorAll('.page-toc-item'));
+
+  // 高亮当前 section + 同步明暗主题
+  let activeId = null;
+  const spy = new IntersectionObserver((entries) => {
+    // 找出当前视口中占比最大、且 intersectionRatio >= 0.4 的那个
+    let best = null;
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      if (e.intersectionRatio < 0.4) continue;
+      if (!best || e.intersectionRatio > best.intersectionRatio) best = e;
+    }
+    if (!best) return;
+    const id = best.target.id;
+    if (id === activeId) return;
+    activeId = id;
+    items.forEach((it) => it.classList.toggle('is-active', it.dataset.target === id));
+    // 同步 TOC 的明暗主题
+    const onLight = best.target.classList.contains('section-light')
+                 || best.target.classList.contains('section-light-2');
+    toc.classList.toggle('on-light', onLight);
+  }, { threshold: [0.4, 0.6, 0.8] });
+  targets.forEach((t) => spy.observe(t.el));
+
+  // 初始默认高亮 hero
+  if (items.length) items[0].classList.add('is-active');
+})();

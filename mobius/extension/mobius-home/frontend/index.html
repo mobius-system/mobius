@@ -39,12 +39,14 @@
     </a>
     <ul class="topnav-links">
       <li><a href="#prologue">写在前面</a></li>
-      <li><a href="#concept">工作面</a></li>
       <li><a href="#features">七大亮点</a></li>
       <li><a href="#feat-showcase">真实案例</a></li>
       <li><a href="#finale">所想可生长</a></li>
     </ul>
   </nav>
+
+  <!-- 右侧滚动目录（Apple 风） -->
+  <aside class="page-toc" id="pageToc" aria-label="页面目录"></aside>
 
   <!-- Hero -->
   <header class="hero section-dark" id="hero">
@@ -63,120 +65,61 @@
         <a class="btn btn-primary" href="#features">了解莫比乌斯</a>
         <a class="btn btn-ghost" href="https://github.com/nutshellai-tech/mobius" target="_blank" rel="noreferrer">GitHub 仓库</a>
       </div>
-
-      <div class="hero-demo-video reveal" aria-label="莫比乌斯多智能体科研演示">
-        <video autoplay loop muted playsinline preload="metadata">
-          <source src="./assets/videos/research.mp4" type="video/mp4" />
-        </video>
-      </div>
     </div>
   </header>
 
-  <!-- 写在前面 -->
+  <!-- 写在前面 · 时代之问（文案参考 mobicus） -->
   <section class="section section-light section-padded" id="prologue">
-    <div class="container narrow">
-      <p class="kicker reveal">写在前面</p>
-      <h2 class="display reveal">
-        Agentic OS 之后，<br />
-        <span class="gradient-text-dark">下一站是什么？</span>
-      </h2>
-      <p class="prologue-thesis reveal">
-        莫比乌斯不是普通 AI 助手，而是一个连接人类、智能体、机器、知识、算力和物理终端的自进化超级智能体系统。
-      </p>
-      <p class="lead reveal">
-        今天的大多数 AI 工具仍然停留在单点能力：会写代码、会回答问题、会控制某个设备，或在一个任务里完成 Agent Loop。它们很强，但仍然是孤立的工具。
-      </p>
-      <p class="lead reveal">
-        莫比乌斯（Mobius）不是要成为解决问题环路中的一个节点，而是把这些节点——人类团队、多个 Agent、代码环境、知识资产、远程算力、机器人、真实物理终端——组织成一个可持续进化的协同智能体系统。
-      </p>
-      <p class="lead reveal">
-        在 Mobius 中，人提出目标，Agent 拆解和执行任务，算力集群承载重负载工作，终端设备和机器人进入真实场景，知识资产和历史任务持续沉淀为系统能力。每一次执行不只是完成任务，也会反过来增强 Mobius 本身。Mobius 不是一个普通 AI 助手，也不只是一个 Agentic OS。Agentic OS 是它的内核，而 Mobius 的完整形态，是一个人机物智算协同的自进化超级智能体系统。
-      </p>
-    </div>
-  </section>
-
-  <!-- 概念：点状问答 vs 智能体工作面 -->
-  <section class="section section-dark section-padded" id="concept">
     <div class="container">
-      <p class="kicker light reveal">从点状问答，到智能体工作面</p>
-      <h2 class="display light reveal">
-        单点模型负责回答，<br />
-        <span class="gradient-text">莫比乌斯</span>负责组织生产。
-      </h2>
+      <div class="section-head">
+        <div class="section-head-title reveal">
+          <p class="kicker">00 · 时代之问</p>
+          <h2 class="display">AI 时代，到底谁在定义系统？</h2>
+        </div>
+        <p class="section-head-lead reveal">
+          大模型让执行能力变得便宜，但系统如何被组织、被操作、被进化，仍然没有被解决。
+          真正的问题不是"有没有 AI"，而是"谁能操作 AI，并让系统持续进化"。
+        </p>
+      </div>
 
-      <div class="concept-grid">
-        <div class="concept-card reveal">
-          <div class="concept-3d" id="concept-torus" aria-hidden="true"></div>
-          <h3>普通 AI 助手</h3>
-          <p>一个输入，一个模型，一条输出。</p><p>问题被单线回答，过程结束后很难沉淀为系统能力。</p>
-          <div class="loop-flow" aria-label="普通 Agent Loop 流程">
-            <span class="node">输入</span>
-            <i class="arrow">→</i>
-            <span class="node">生成</span>
-            <i class="arrow">→</i>
-            <span class="node">输出</span>
-            <i class="arrow">→</i>
-            <span class="node">结束</span>
-            <span class="ellipsis" aria-label="省略若干循环">⋯</span>
-            <span class="node end">遗忘</span>
+      <div class="panel problem-layout reveal">
+        <div class="problem-band">
+          <div class="problem-band-text">
+            <h3>Agent 很强，但仍然停留在工具形态</h3>
+            <p>Cursor、Claude Code 等工具提高了开发者效率，但普通人和组织仍缺少一个可操作、可沉淀、可协同的系统层。</p>
+          </div>
+          <div class="problem-pills">
+            <span class="chip pill-cyan">上下文管理门槛高</span>
+            <span class="chip pill-violet">更像单人效率工具</span>
+            <span class="chip pill-pink">产出难以反哺系统</span>
+            <span class="chip pill-indigo">组织协同缺少系统层</span>
           </div>
         </div>
 
-        <div class="concept-card highlight reveal">
-          <div class="concept-3d" id="concept-mobius" aria-hidden="true"></div>
-          <h3>莫比乌斯 AgenticOS</h3>
-          <p>一个目标展开成一张智能体工作面。</p><p>执行、验证、交接和产物都会回流，成为系统继续生长的一部分。</p>
-          <div class="loop-flow mobius" aria-label="莫比乌斯环流程">
-            <span class="node">拆解</span>
-            <i class="arrow">→</i>
-            <span class="node">并行</span>
-            <i class="arrow">→</i>
-            <span class="node">验证</span>
-            <i class="arrow">→</i>
-            <span class="node">沉淀</span>
-            <i class="arrow circ">↻</i>
-            <span class="node ascend">继续生长</span>
+        <div class="cards">
+          <div class="info-card">
+            <strong>管理者的新问题</strong>
+            <p>AI 时代不只管理人和进度，还要管理 Agent、Token、知识、算力、安全边界和 AI 熟练度。</p>
+          </div>
+          <div class="info-card">
+            <strong>个人用户的新问题</strong>
+            <p>系统为什么不能越用越像我？个人用户需要的是可以被自己塑形的研究、生活、提醒与长期陪伴系统。</p>
+          </div>
+          <div class="info-card info-card--accent">
+            <strong>Mobius 的回答</strong>
+            <p>用自进化 Agent OS 作为内核，把人、机、物、智、算组织成一个可持续进化的协同智能体系统。</p>
           </div>
         </div>
       </div>
 
-      <p class="lead center light reveal" style="margin-top:5rem;">
-        它不只是在“完成任务”，也在让任务反过来塑造系统。<br />
-        这就是为什么莫比乌斯不是更聪明的聊天框，<br />
-        而是一个会自我生长的 <strong class="gradient-text">AgenticOS</strong>。
+      <p class="lead center reveal" style="margin-top:3.5rem;">
+        这不是新工具，而是新的系统形态。<br />
+        莫比乌斯（Mobius）要做的，就是把这层系统真正造出来。
       </p>
-
-      <div class="section-bridge reveal" aria-hidden="true"></div>
-
-      <h2 class="display light reveal" style="margin-top:1rem;">
-        这条没有尽头的<span class="gradient-text">莫比乌斯环</span>，<br />
-        刻画了莫比乌斯最底层的三种能力。
-      </h2>
-
-      <div class="trinity-grid">
-        <article class="trinity-card reveal">
-          <div class="trinity-num">01</div>
-          <div class="trinity-3d" id="trinity-1" data-mode="loop" aria-hidden="true"></div>
-          <h3>持续运行</h3>
-          <p>系统可以围绕长期目标<strong>连续推进</strong>。</p>
-        </article>
-
-        <article class="trinity-card reveal">
-          <div class="trinity-num">02</div>
-          <div class="trinity-3d" id="trinity-2" data-mode="dimension" aria-hidden="true"></div>
-          <h3>自我迭代</h3>
-          <p>每次执行都能成为下一轮能力升级的材料。</p>
-        </article>
-
-        <article class="trinity-card reveal">
-          <div class="trinity-num">03</div>
-          <div class="trinity-3d" id="trinity-3" data-mode="stars" aria-hidden="true"></div>
-          <h3>产物回流</h3>
-          <p>内容、工具、产品和科研成果都能沉淀进系统。</p>
-        </article>
-      </div>
     </div>
   </section>
+
+  <!-- （原 #concept 已并入 #finale「莫比乌斯命名」） -->
 
   <!-- 人机物智算协同 -->
   <section class="section section-dark section-padded" id="synergy">
@@ -1126,10 +1069,103 @@
     </div>
   </section>
 
-  <!-- Finale -->
+  <!-- Finale（含「莫比乌斯命名」：原 #concept 主体已并入此处） -->
   <section class="section section-dark section-padded finale" id="finale">
     <canvas id="finale-canvas" aria-hidden="true"></canvas>
-    <div class="container narrow center">
+
+    <!-- 莫比乌斯命名 / Naming Mobius：原 #concept 内容 -->
+    <div class="container finale-naming">
+      <div class="finale-naming-head">
+        <p class="kicker light reveal">莫比乌斯命名 · Naming Mobius</p>
+        <h2 class="display light reveal">
+          从点状问答，到智能体工作面 ——<br />
+          这条没有尽头的<span class="gradient-text">莫比乌斯环</span>。
+        </h2>
+      </div>
+
+      <div class="finale-naming-body">
+        <p class="kicker light reveal">从点状问答，到智能体工作面</p>
+        <h2 class="display light reveal">
+          单点模型负责回答，<br />
+          <span class="gradient-text">莫比乌斯</span>负责组织生产。
+        </h2>
+
+        <div class="concept-grid">
+          <div class="concept-card reveal">
+            <div class="concept-3d" id="concept-torus" aria-hidden="true"></div>
+            <h3>普通 AI 助手</h3>
+            <p>一个输入，一个模型，一条输出。</p><p>问题被单线回答，过程结束后很难沉淀为系统能力。</p>
+            <div class="loop-flow" aria-label="普通 Agent Loop 流程">
+              <span class="node">输入</span>
+              <i class="arrow">→</i>
+              <span class="node">生成</span>
+              <i class="arrow">→</i>
+              <span class="node">输出</span>
+              <i class="arrow">→</i>
+              <span class="node">结束</span>
+              <span class="ellipsis" aria-label="省略若干循环">⋯</span>
+              <span class="node end">遗忘</span>
+            </div>
+          </div>
+
+          <div class="concept-card highlight reveal">
+            <div class="concept-3d" id="concept-mobius" aria-hidden="true"></div>
+            <h3>莫比乌斯 AgenticOS</h3>
+            <p>一个目标展开成一张智能体工作面。</p><p>执行、验证、交接和产物都会回流，成为系统继续生长的一部分。</p>
+            <div class="loop-flow mobius" aria-label="莫比乌斯环流程">
+              <span class="node">拆解</span>
+              <i class="arrow">→</i>
+              <span class="node">并行</span>
+              <i class="arrow">→</i>
+              <span class="node">验证</span>
+              <i class="arrow">→</i>
+              <span class="node">沉淀</span>
+              <i class="arrow circ">↻</i>
+              <span class="node ascend">继续生长</span>
+            </div>
+          </div>
+        </div>
+
+        <p class="lead center light reveal" style="margin-top:5rem;">
+          它不只是在“完成任务”，也在让任务反过来塑造系统。<br />
+          这就是为什么莫比乌斯不是更聪明的聊天框，<br />
+          而是一个会自我生长的 <strong class="gradient-text">AgenticOS</strong>。
+        </p>
+
+        <div class="section-bridge reveal" aria-hidden="true"></div>
+
+        <h2 class="display light reveal" style="margin-top:1rem;">
+          这条没有尽头的<span class="gradient-text">莫比乌斯环</span>，<br />
+          刻画了莫比乌斯最底层的三种能力。
+        </h2>
+
+        <div class="trinity-grid">
+          <article class="trinity-card reveal">
+            <div class="trinity-num">01</div>
+            <div class="trinity-3d" id="trinity-1" data-mode="loop" aria-hidden="true"></div>
+            <h3>持续运行</h3>
+            <p>系统可以围绕长期目标<strong>连续推进</strong>。</p>
+          </article>
+
+          <article class="trinity-card reveal">
+            <div class="trinity-num">02</div>
+            <div class="trinity-3d" id="trinity-2" data-mode="dimension" aria-hidden="true"></div>
+            <h3>自我迭代</h3>
+            <p>每次执行都能成为下一轮能力升级的材料。</p>
+          </article>
+
+          <article class="trinity-card reveal">
+            <div class="trinity-num">03</div>
+            <div class="trinity-3d" id="trinity-3" data-mode="stars" aria-hidden="true"></div>
+            <h3>产物回流</h3>
+            <p>内容、工具、产品和科研成果都能沉淀进系统。</p>
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <!-- 尾声：开源可见，所想可生长 -->
+    <div class="container narrow center finale-tail">
       <h2 class="display light xl reveal">
         <span class="gradient-text">开源可见，</span><br />
         <span class="gradient-text">所想可生长。</span>
