@@ -190,134 +190,9 @@
         </p>
       </div>
 
-      <div class="synergy-stage reveal" aria-label="人机物智算协同拓扑">
-        <svg class="synergy-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <defs>
-            <radialGradient id="syn-core-halo" cx="50%" cy="50%" r="50%">
-              <stop offset="0" stop-color="#a78bfa" stop-opacity=".55"/>
-              <stop offset="60%" stop-color="#22d3ee" stop-opacity=".18"/>
-              <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
-            </radialGradient>
-            <linearGradient id="syn-spoke-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0" stop-color="#22d3ee" stop-opacity=".9"/>
-              <stop offset="1" stop-color="#a78bfa" stop-opacity=".9"/>
-            </linearGradient>
-          </defs>
-
-          <!-- 自进化环形虚线（最外圈） -->
-          <circle class="syn-loop syn-loop--outer" cx="50" cy="50" r="44"/>
-          <circle class="syn-loop syn-loop--inner" cx="50" cy="50" r="34"/>
-
-          <!-- 5 spokes converging to Mobius Core (50,50) -->
-          <path class="syn-spoke syn-spoke--base syn-spoke--zhi"  d="M50 14 C 50 28, 50 38, 50 46"/>
-          <path class="syn-spoke syn-spoke--base syn-spoke--ren"  d="M14 50 C 28 50, 38 50, 46 50"/>
-          <path class="syn-spoke syn-spoke--base syn-spoke--suan" d="M86 50 C 72 50, 62 50, 54 50"/>
-          <path class="syn-spoke syn-spoke--base syn-spoke--wu"   d="M14 86 C 28 72, 38 62, 46 54"/>
-          <path class="syn-spoke syn-spoke--base syn-spoke--ji"   d="M86 86 C 72 72, 62 62, 54 54"/>
-
-          <!-- 5 流光叠加（每条 spoke 一道独立流动的色带） -->
-          <path class="syn-spoke syn-spoke--flow syn-spoke--zhi"  d="M50 14 C 50 28, 50 38, 50 46" pathLength="100"/>
-          <path class="syn-spoke syn-spoke--flow syn-spoke--ren"  d="M14 50 C 28 50, 38 50, 46 50" pathLength="100"/>
-          <path class="syn-spoke syn-spoke--flow syn-spoke--suan" d="M86 50 C 72 50, 62 50, 54 50" pathLength="100"/>
-          <path class="syn-spoke syn-spoke--flow syn-spoke--wu"   d="M14 86 C 28 72, 38 62, 46 54" pathLength="100"/>
-          <path class="syn-spoke syn-spoke--flow syn-spoke--ji"   d="M86 86 C 72 72, 62 62, 54 54" pathLength="100"/>
-        </svg>
-
-        <article class="synergy-card synergy-card--zhi">
-          <div class="synergy-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="6" cy="6" r="1.6"/><circle cx="6" cy="18" r="1.6"/>
-              <circle cx="18" cy="6" r="1.6"/><circle cx="18" cy="18" r="1.6"/>
-              <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>
-              <path d="M7.5 7.5L10.3 10.8M16.5 7.5L13.7 10.8M7.5 16.5L10.3 13.2M16.5 16.5L13.7 13.2"/>
-            </svg>
-          </div>
-          <h3>智 · Intelligence</h3>
-          <p class="synergy-sub">Agent 编队 · AI 模型 · 知识资产</p>
-          <p class="synergy-detail">拆解 · 推理 · 执行 · 沉淀</p>
-          <span class="synergy-channel">多智能体工作面</span>
-        </article>
-
-        <article class="synergy-card synergy-card--ren">
-          <div class="synergy-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="9" cy="8" r="2.8"/>
-              <path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/>
-              <circle cx="17" cy="9.5" r="2.2"/>
-              <path d="M14.5 18c0-2.2 1.5-4 2.5-4s2.5 1.8 2.5 4"/>
-            </svg>
-          </div>
-          <h3>人 · Human</h3>
-          <p class="synergy-sub">个人 · 团队 · 组织</p>
-          <p class="synergy-detail">提出目标 · 协同开发 · 验收反馈</p>
-          <span class="synergy-channel">小莫 / 自然语言交互</span>
-        </article>
-
-        <div class="synergy-core" aria-label="Mobius Core 协同内核">
-          <div class="synergy-core-glow"></div>
-          <div class="synergy-core-ring" aria-hidden="true"></div>
-          <div class="synergy-core-orbit" aria-hidden="true">
-            <span class="orbit-dot"></span>
-            <span class="orbit-dot"></span>
-            <span class="orbit-dot"></span>
-          </div>
-          <div class="synergy-core-body">
-            <div class="synergy-core-name">Mobius</div>
-            <div class="synergy-core-sub">自进化超级智能体系统</div>
-            <div class="synergy-core-note">Agentic OS 内核 · 协同编排 · 持续生长</div>
-          </div>
-        </div>
-
-        <article class="synergy-card synergy-card--suan">
-          <div class="synergy-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="4" width="18" height="6" rx="1.2"/>
-              <rect x="3" y="14" width="18" height="6" rx="1.2"/>
-              <circle cx="6.5" cy="7" r=".9" fill="currentColor" stroke="none"/>
-              <circle cx="6.5" cy="17" r=".9" fill="currentColor" stroke="none"/>
-              <path d="M10 7h7M10 17h7"/>
-              <path d="M3 11v2M21 11v2" stroke-dasharray="1.5 1.5"/>
-            </svg>
-          </div>
-          <h3>算 · Compute</h3>
-          <p class="synergy-sub">GPU 集群 · 云端 · 本地算力</p>
-          <p class="synergy-detail">训练 · 仿真 · 测试 · 数据处理</p>
-          <span class="synergy-channel">SSH / 任务分发</span>
-        </article>
-
-        <article class="synergy-card synergy-card--wu">
-          <div class="synergy-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="6" y="6" width="12" height="12" rx="1"/>
-              <rect x="9.5" y="9.5" width="5" height="5" rx=".3" fill="currentColor" stroke="none" opacity=".55"/>
-              <path d="M9 3v3M12 3v3M15 3v3M9 18v3M12 18v3M15 18v3M3 9h3M3 12h3M3 15h3M18 9h3M18 12h3M18 15h3"/>
-            </svg>
-          </div>
-          <h3>物 · Things</h3>
-          <p class="synergy-sub">嵌入式 · 传感器 · 执行器</p>
-          <p class="synergy-detail">ESP32 · 树莓派 · Jetson · 现实对象</p>
-          <span class="synergy-channel">烧录 / 运行 / 观测</span>
-        </article>
-
-        <article class="synergy-card synergy-card--ji">
-          <div class="synergy-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="5" y="8" width="14" height="11" rx="2"/>
-              <path d="M12 4v4"/>
-              <circle cx="12" cy="3.4" r="1" fill="currentColor" stroke="none"/>
-              <circle cx="9.5" cy="12.5" r="1.1" fill="currentColor" stroke="none"/>
-              <circle cx="14.5" cy="12.5" r="1.1" fill="currentColor" stroke="none"/>
-              <path d="M9.3 16h5.4"/>
-              <path d="M3 11v3M21 11v3"/>
-              <path d="M8 19v2M16 19v2"/>
-            </svg>
-          </div>
-          <h3>机 · Machine</h3>
-          <p class="synergy-sub">机器人 · 工作站 · 终端设备</p>
-          <p class="synergy-detail">开发 · 调试 · 部署 · 现实动作</p>
-          <span class="synergy-channel">AIMUX / 远程终端</span>
-        </article>
-      </div>
+      <figure class="synergy-poster reveal" aria-label="人机物智算协同拓扑">
+        <img src="./assets/mobius-synergy.svg" alt="Mobius：人机物智算协同的自进化超级智能体系统拓扑图" loading="lazy" decoding="async" />
+      </figure>
 
       <p class="lead center reveal light" style="margin-top:3rem;">
         <span class="gradient-text">执行 → 反馈 → 沉淀 → 新能力</span><br />
@@ -544,66 +419,123 @@
           <div class="fleet-banner">
             <span class="banner-tag">SHARED BOARD · ASYNC</span>
             <span class="banner-title">共享黑板 · 异步对齐</span>
-            <span class="banner-meta">所有智能体在独立工作站作业，通过一块黑板异步交换进展、对齐结论</span>
+            <span class="banner-meta">首席统管 · 流水线协同 · 算力支撑 · 共享黑板异步交换进展</span>
           </div>
 
-          <div class="research-grid">
-            <article class="research-card">
-              <div class="research-icon"><span class="ic-en">Chief</span><span class="ic-cn">首席</span></div>
-              <div class="research-body">
-                <h4>首席研究员</h4>
-                <p>统筹研究主线，拆任务、调度各智能体</p>
+          <div class="fleet-topo">
+            <!-- L1: 首席统管 -->
+            <div class="topo-layer topo-chief">
+              <article class="research-card research-card--chief">
+                <div class="research-icon"><span class="ic-en">Chief</span><span class="ic-cn">首席</span></div>
+                <div class="research-body">
+                  <h4>首席研究员</h4>
+                  <p>统筹研究主线，拆任务、调度各智能体</p>
+                </div>
+              </article>
+            </div>
+
+            <div class="topo-trunk" aria-hidden="true"></div>
+
+            <!-- L2: 记录 + 输出 -->
+            <div class="topo-layer topo-pair">
+              <article class="research-card">
+                <div class="research-icon"><span class="ic-en">Graph</span><span class="ic-cn">图谱</span></div>
+                <div class="research-body">
+                  <h4>研究图谱记录员</h4>
+                  <p>实时绘制图谱，沉淀"问题→结论"演化</p>
+                </div>
+              </article>
+              <article class="research-card">
+                <div class="research-icon"><span class="ic-en">Draw</span><span class="ic-cn">绘图</span></div>
+                <div class="research-body">
+                  <h4>专业绘图 Agent</h4>
+                  <p>把数据和结论转化为可发布的图表</p>
+                </div>
+              </article>
+            </div>
+
+            <div class="topo-trunk" aria-hidden="true"></div>
+
+            <!-- L3: 调研→实验→撰写→校验→排版 流水线 -->
+            <div class="topo-layer topo-pipeline">
+              <article class="research-card research-card--mini">
+                <div class="research-icon"><span class="ic-en">Survey</span><span class="ic-cn">调研</span></div>
+                <div class="research-body">
+                  <h4>调研 Agent</h4>
+                  <p>多源检索文献与资料</p>
+                </div>
+              </article>
+              <span class="topo-arrow" aria-hidden="true">→</span>
+              <article class="research-card research-card--mini">
+                <div class="research-icon"><span class="ic-en">Exp</span><span class="ic-cn">实验</span></div>
+                <div class="research-body">
+                  <h4>实验 Agent</h4>
+                  <p>设计实验、采集数据</p>
+                </div>
+              </article>
+              <span class="topo-arrow" aria-hidden="true">→</span>
+              <article class="research-card research-card--mini">
+                <div class="research-icon"><span class="ic-en">Write</span><span class="ic-cn">撰写</span></div>
+                <div class="research-body">
+                  <h4>论文撰写 Agent</h4>
+                  <p>把结论整理成论文或报告</p>
+                </div>
+              </article>
+              <span class="topo-arrow" aria-hidden="true">→</span>
+              <article class="research-card research-card--mini">
+                <div class="research-icon"><span class="ic-en">Check</span><span class="ic-cn">校验</span></div>
+                <div class="research-body">
+                  <h4>校验 Agent</h4>
+                  <p>复算、对齐引用、检查事实</p>
+                </div>
+              </article>
+              <span class="topo-arrow" aria-hidden="true">→</span>
+              <article class="research-card research-card--mini">
+                <div class="research-icon"><span class="ic-en">Type</span><span class="ic-cn">排版</span></div>
+                <div class="research-body">
+                  <h4>排版编译 Agent</h4>
+                  <p>排版编译、产出最终文档</p>
+                </div>
+              </article>
+            </div>
+
+            <div class="topo-trunk topo-trunk--dashed" aria-hidden="true"></div>
+
+            <!-- L4: 算力群体支撑 -->
+            <div class="topo-layer topo-compute">
+              <span class="compute-label">COMPUTE · 算力群体</span>
+              <div class="compute-nodes">
+                <div class="compute-node">
+                  <span class="cn-name">A100 × 8</span>
+                  <span class="cn-sub">GPU · N1</span>
+                  <span class="cn-dot cn-dot--cyan"></span>
+                </div>
+                <div class="compute-node">
+                  <span class="cn-name">H100 × 4</span>
+                  <span class="cn-sub">GPU · N2</span>
+                  <span class="cn-dot cn-dot--indigo"></span>
+                </div>
+                <div class="compute-node">
+                  <span class="cn-name">TPU v4 Pod</span>
+                  <span class="cn-sub">TPU · N3</span>
+                  <span class="cn-dot cn-dot--cyan"></span>
+                </div>
+                <div class="compute-node">
+                  <span class="cn-name">CPU 64C</span>
+                  <span class="cn-sub">通用 · N4</span>
+                  <span class="cn-dot cn-dot--indigo"></span>
+                </div>
               </div>
-            </article>
-            <article class="research-card">
-              <div class="research-icon"><span class="ic-en">Graph</span><span class="ic-cn">图谱</span></div>
-              <div class="research-body">
-                <h4>研究图谱记录员</h4>
-                <p>实时绘制图谱，沉淀"问题→结论"的演化</p>
-              </div>
-            </article>
-            <article class="research-card">
-              <div class="research-icon"><span class="ic-en">Draw</span><span class="ic-cn">绘图</span></div>
-              <div class="research-body">
-                <h4>专业绘图 Agent</h4>
-                <p>把数据和结论转化为可发布的图表</p>
-              </div>
-            </article>
-            <article class="research-card">
-              <div class="research-icon"><span class="ic-en">Survey</span><span class="ic-cn">调研</span></div>
-              <div class="research-body">
-                <h4>调研 Agent</h4>
-                <p>多源检索文献与资料，归纳研究背景</p>
-              </div>
-            </article>
-            <article class="research-card">
-              <div class="research-icon"><span class="ic-en">Exp</span><span class="ic-cn">实验</span></div>
-              <div class="research-body">
-                <h4>实验 Agent</h4>
-                <p>设计并跑实验，采集数据、迭代验证</p>
-              </div>
-            </article>
-            <article class="research-card">
-              <div class="research-icon"><span class="ic-en">Write</span><span class="ic-cn">撰写</span></div>
-              <div class="research-body">
-                <h4>论文撰写 Agent</h4>
-                <p>把结论整理成可读的论文或报告</p>
-              </div>
-            </article>
-            <article class="research-card">
-              <div class="research-icon"><span class="ic-en">Check</span><span class="ic-cn">校验</span></div>
-              <div class="research-body">
-                <h4>校验 Agent</h4>
-                <p>复算、对齐引用、检查事实与逻辑</p>
-              </div>
-            </article>
-            <article class="research-card">
-              <div class="research-icon"><span class="ic-en">Type</span><span class="ic-cn">排版</span></div>
-              <div class="research-body">
-                <h4>排版编译 Agent</h4>
-                <p>排版、编译，产出可交付的最终文档</p>
-              </div>
-            </article>
+            </div>
+
+            <div class="topo-trunk topo-trunk--dashed" aria-hidden="true"></div>
+
+            <!-- L5: 共享黑板 -->
+            <div class="shared-board" aria-label="异步共享黑板">
+              <span class="board-pulse" aria-hidden="true"></span>
+              <span class="board-label">SHARED BOARD</span>
+              <span class="board-text">所有 Agent 在独立工作站作业 · 通过一块黑板异步交换进展 · 对齐结论</span>
+            </div>
           </div>
         </div>
       </figure>
@@ -687,17 +619,32 @@
 
   <!-- Highlight 4: 深度科研系统 -->
   <section class="section section-dark section-padded feature" id="feat-4">
-    <div class="container">
-      <div class="feature-head">
+    <div class="container feature-grid">
+      <div class="feature-text">
         <p class="kicker reveal light">亮点四</p>
         <h2 class="display small reveal light">深度科研系统，<br /><span class="gradient-text">触手无处不可达。</span></h2>
-        <p class="lead reveal light" style="max-width:62ch;margin:0 auto;">
+        <p class="lead reveal light">
           一句科研想法进入莫比乌斯，可以展开成一支研究组、一片算力集群和一条可追踪的科研流水线：
           调研、推导、复现、验证、证伪或证实，最后沉淀成文章。
         </p>
+
+        <ul class="tier-list">
+          <li class="reveal">
+            <div class="tier-tag">研究组 · 智力群体</div>
+            <p>首席、调研、实验、撰写、校验、排版，多智能体分工协同。</p>
+          </li>
+          <li class="reveal">
+            <div class="tier-tag">算力集群 · 算力群体</div>
+            <p>A100 / H100 / TPU / CPU 节点群，承担训练、仿真与数据处理。</p>
+          </li>
+          <li class="reveal">
+            <div class="tier-tag">流水线 · 可追踪</div>
+            <p>调研 → 推导 → 复现 → 验证 → 证伪或证实 → 沉淀成文。</p>
+          </li>
+        </ul>
       </div>
 
-      <div class="feat-4-split reveal">
+      <figure class="feature-media reveal">
         <div class="media-placeholder media-cluster" aria-label="算力群体协同 + 智力群体协同：双轮驱动 Mobius Core">
         <svg viewBox="0 0 440 380" class="cluster-svg" aria-hidden="true">
           <defs>
@@ -807,7 +754,10 @@
           <span class="tag-pill">协同驱动 Mobius Core</span>
         </div>
       </div>
+      </figure>
+    </div>
 
+    <div class="container">
       <figure class="product-shot product-shot--dark reveal">
         <img
           src="./assets/screenshots/product-2.png"
@@ -817,7 +767,6 @@
         />
         <figcaption>研究不是一段回答，而是一张可追踪的图谱：对话、证据、图表和结论都沿着节点沉淀。</figcaption>
       </figure>
-      </div>
 
       <p class="lead center reveal light" style="margin-top:3rem;">
         深度科研系统是莫比乌斯能力的旗舰证明：
@@ -832,82 +781,74 @@
 
   <!-- Highlight 5: 灵活的拓展系统 -->
   <section class="section section-light section-padded feature" id="feat-5">
-    <div class="container feature-grid">
-      <div class="feature-text">
+    <div class="container">
+      <div class="feature-head">
         <p class="kicker reveal">亮点五</p>
         <h2 class="display small reveal">灵活的<br /><span class="gradient-text-dark">拓展系统。</span></h2>
-        <p class="lead reveal">
+        <p class="lead reveal" style="max-width:62ch;margin:1.4rem auto 0;">
           莫比乌斯不把能力封死在出厂清单里。
-          它可以带着一堆拓展应用，也可以带着一堆你自己“说出来”的 App。
+          它可以带着一堆拓展应用，也可以带着一堆你自己"说出来"的 App。
+          一个拓展可以是一面金融新闻墙、一个 PPT 生成器、一个科研工作台、一个 3D 可视化空间，
+          也可以是团队内部临时孵化的专用工具。
         </p>
-        <p class="body reveal">
-          一个拓展可以是一面金融新闻墙、一个 PPT 生成器、一个科研工作台、
-          一个 3D 可视化空间，也可以是团队内部临时孵化的专用工具。
-        </p>
-        <p class="body reveal">
-          拓展系统让 Mobius 的边界不再由平台预设决定，
-          而是由用户的业务、数据、流程和想象力决定。
-        </p>
-        <p class="lead reveal" style="margin-top:2rem;">
-          说出想法，形成应用；<br />
-          应用继续被使用、迭代、组合，<br />
+        <p class="lead reveal" style="margin-top:1.6rem;">
+          说出想法，形成应用；应用继续被使用、迭代、组合，<br />
           最终变成属于你的 <strong>AI 产品平台</strong>。
         </p>
       </div>
-      <figure class="feature-media reveal">
-        <div class="incubate-grid" aria-label="灵活拓展系统：一句话孵化出的应用矩阵">
-          <div class="ext-card">
-            <div class="ext-icon"><img src="./assets/extension-icons/threebody-sim/favicon.svg" alt="" onerror="this.style.display='none'"></div>
-            <h4>三体 N 体模拟</h4>
-            <p>基于物理引擎的 N=2..50 三体三维仿真，星空背景 + 拖尾粒子 + 碰撞爆炸特效。</p>
-          </div>
-          <div class="ext-card">
-            <div class="ext-icon"><img src="./assets/extension-icons/dot-logo-3d/favicon.svg" alt="" onerror="this.style.display='none'"></div>
-            <h4>3D 光点 ∞ 莫比乌斯空间</h4>
-            <p>扭成无穷符号的莫比乌斯光带，无数光点沿带流动并按呼吸节奏明暗变化，可自由调参。</p>
-          </div>
-          <div class="ext-card">
-            <div class="ext-icon">
-              <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="fbg5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><path d="M8 16 q0 -6 6 -6 q5 0 6 4 l4 -2 l-1 4 l3 0 l-3 2 l1 3 l-4 -2 q-1 4 -6 4 q-6 0 -6 -7 Z" fill="url(#fbg5)"/></svg>
-            </div>
-            <h4>Flappy Bird 3D</h4>
-            <p>3D 赛博朋克风格的 Flappy Bird，含完整道具系统、能量加速与关卡设计。</p>
-          </div>
-          <div class="ext-card">
-            <div class="ext-icon">
-              <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="ylg5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><path d="M16 5 L21 12 L29 13 L23 19 L25 27 L16 23 L7 27 L9 19 L3 13 L11 12 Z" fill="url(#ylg5)"/></svg>
-            </div>
-            <h4>人类共鸣计划</h4>
-            <p>面向特定人群的中文共鸣内容 Agent 工作台：自动找共鸣点、抓数据、产文案、剧情、歌曲、视频方案。</p>
-          </div>
-          <div class="ext-card">
-            <div class="ext-icon"><img src="./assets/extension-icons/finance-news-wall/favicon.svg" alt="" onerror="this.style.display='none'"></div>
-            <h4>金融新闻墙</h4>
-            <p>实时金融新闻聚合 + 影响评分 + 定时触发，由 Agent 自动完成深度分析并产出投研观点。</p>
-          </div>
-          <div class="ext-card">
-            <div class="ext-icon">
-              <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="wcg5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><path d="M11 8 H21 V13 C21 16 18.5 18 16 18 C13.5 18 11 16 11 13 Z" fill="none" stroke="url(#wcg5)" stroke-width="1.6"/><path d="M16 18 V22 M12 22 H20 M16 22 V25 M12 25 H20" fill="none" stroke="url(#wcg5)" stroke-width="1.6" stroke-linecap="round"/></svg>
-            </div>
-            <h4>世界杯赛事中心</h4>
-            <p>实时赛程、比分直播、球星数据与夺冠概率可视化，把整个世界杯装进一块大屏。</p>
-          </div>
-          <div class="ext-card">
-            <div class="ext-icon">
-              <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="matchg5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><circle cx="13" cy="16" r="6.5" fill="none" stroke="url(#matchg5)" stroke-width="1.6" opacity=".55"/><circle cx="19" cy="16" r="6.5" fill="none" stroke="url(#matchg5)" stroke-width="1.6" opacity=".95"/></svg>
-            </div>
-            <h4>灵犀相亲</h4>
-            <p>基于价值观与兴趣的智能匹配，从破冰话题到约会规划，让相遇不止于算法。</p>
-          </div>
-          <div class="ext-card">
-            <div class="ext-icon">
-              <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="pptg5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><rect x="6" y="7" width="20" height="13" rx="1.5" fill="none" stroke="url(#pptg5)" stroke-width="1.6"/><path d="M11 14 L14 11 L17 13 L21 9" fill="none" stroke="url(#pptg5)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 20 L11 25 M20 20 L21 25 M9 25 H23" fill="none" stroke="url(#pptg5)" stroke-width="1.6" stroke-linecap="round"/></svg>
-            </div>
-            <h4>PPT Maker</h4>
-            <p>一句话生成可演示 PPT：自动起大纲、找素材、配版式，从想法到投屏一条龙。</p>
-          </div>
+
+      <div class="incubate-grid incubate-grid--center reveal" aria-label="灵活拓展系统：一句话孵化出的应用矩阵">
+        <div class="ext-card">
+          <div class="ext-icon"><img src="./assets/extension-icons/threebody-sim/favicon.svg" alt="" onerror="this.style.display='none'"></div>
+          <h4>三体 N 体模拟</h4>
+          <p>基于物理引擎的 N=2..50 三体三维仿真，星空背景 + 拖尾粒子 + 碰撞爆炸特效。</p>
         </div>
-      </figure>
+        <div class="ext-card">
+          <div class="ext-icon"><img src="./assets/extension-icons/dot-logo-3d/favicon.svg" alt="" onerror="this.style.display='none'"></div>
+          <h4>3D 光点 ∞ 莫比乌斯空间</h4>
+          <p>扭成无穷符号的莫比乌斯光带，无数光点沿带流动并按呼吸节奏明暗变化，可自由调参。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="fbg5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><path d="M8 16 q0 -6 6 -6 q5 0 6 4 l4 -2 l-1 4 l3 0 l-3 2 l1 3 l-4 -2 q-1 4 -6 4 q-6 0 -6 -7 Z" fill="url(#fbg5)"/></svg>
+          </div>
+          <h4>Flappy Bird 3D</h4>
+          <p>3D 赛博朋克风格的 Flappy Bird，含完整道具系统、能量加速与关卡设计。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="ylg5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><path d="M16 5 L21 12 L29 13 L23 19 L25 27 L16 23 L7 27 L9 19 L3 13 L11 12 Z" fill="url(#ylg5)"/></svg>
+          </div>
+          <h4>人类共鸣计划</h4>
+          <p>面向特定人群的中文共鸣内容 Agent 工作台：自动找共鸣点、抓数据、产文案、剧情、歌曲、视频方案。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon"><img src="./assets/extension-icons/finance-news-wall/favicon.svg" alt="" onerror="this.style.display='none'"></div>
+          <h4>金融新闻墙</h4>
+          <p>实时金融新闻聚合 + 影响评分 + 定时触发，由 Agent 自动完成深度分析并产出投研观点。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="wcg5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><path d="M11 8 H21 V13 C21 16 18.5 18 16 18 C13.5 18 11 16 11 13 Z" fill="none" stroke="url(#wcg5)" stroke-width="1.6"/><path d="M16 18 V22 M12 22 H20 M16 22 V25 M12 25 H20" fill="none" stroke="url(#wcg5)" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </div>
+          <h4>世界杯赛事中心</h4>
+          <p>实时赛程、比分直播、球星数据与夺冠概率可视化，把整个世界杯装进一块大屏。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="matchg5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><circle cx="13" cy="16" r="6.5" fill="none" stroke="url(#matchg5)" stroke-width="1.6" opacity=".55"/><circle cx="19" cy="16" r="6.5" fill="none" stroke="url(#matchg5)" stroke-width="1.6" opacity=".95"/></svg>
+          </div>
+          <h4>灵犀相亲</h4>
+          <p>基于价值观与兴趣的智能匹配，从破冰话题到约会规划，让相遇不止于算法。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="pptg5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><rect x="6" y="7" width="20" height="13" rx="1.5" fill="none" stroke="url(#pptg5)" stroke-width="1.6"/><path d="M11 14 L14 11 L17 13 L21 9" fill="none" stroke="url(#pptg5)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 20 L11 25 M20 20 L21 25 M9 25 H23" fill="none" stroke="url(#pptg5)" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </div>
+          <h4>PPT Maker</h4>
+          <p>一句话生成可演示 PPT：自动起大纲、找素材、配版式，从想法到投屏一条龙。</p>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -1215,15 +1156,27 @@
         <span>莫比乌斯</span>
       </div>
       <p class="footer-tagline">
-        <a href="#feat-1">自生长</a>
+        <span class="footer-keyword" tabindex="0" data-key="synergy">
+          <span class="footer-keyword-name">协同</span>
+          <span class="footer-keyword-card" role="tooltip">Mobius 的核心能力不是单个智能体变强，而是让人类团队、Agent 编队、知识资产、算力资源和物理终端共同完成更复杂的目标。</span>
+        </span>
         <span class="dot" aria-hidden="true">·</span>
-        <a href="#feat-2">工作面</a>
+        <span class="footer-keyword" tabindex="0" data-key="evo">
+          <span class="footer-keyword-name">自进化</span>
+          <span class="footer-keyword-card" role="tooltip">每一次任务执行、项目交付、设备部署、用户反馈和知识沉淀，都会反过来成为系统继续生长的材料。</span>
+        </span>
         <span class="dot" aria-hidden="true">·</span>
-        <a href="#feat-3">团队作战室</a>
+        <span class="footer-keyword" tabindex="0" data-key="incubate">
+          <span class="footer-keyword-name">自孵化</span>
+          <span class="footer-keyword-card" role="tooltip">Mobius 产出的不是一次性回答，而是可以继续运行、继续迭代、继续扩展的工具、产品、研究成果和机器人能力。</span>
+        </span>
         <span class="dot" aria-hidden="true">·</span>
-        <a href="#feat-7">模型接入</a>
+        <span class="footer-keyword" tabindex="0" data-key="coevolution">
+          <span class="footer-keyword-name">共同进化</span>
+          <span class="footer-keyword-card" role="tooltip">Mobius 不只是系统自己升级，而是人与 Agent、系统与用户、组织与知识资产共同进化。系统越用越理解用户，用户也越用越会驾驭 Agent。</span>
+        </span>
       </p>
-      <p class="footer-copy">莫比乌斯 AgenticOS · github.com/nutshellai-tech/mobius</p>
+      <p class="footer-copy">莫比乌斯 AgenticOS · <a href="https://github.com/nutshellai-tech/mobius" target="_blank" rel="noreferrer">github.com/nutshellai-tech/mobius</a></p>
       <p class="footer-contact">
         联系我们：<a href="mailto:service@nutshellai.cn">service@nutshellai.cn</a>
       </p>
