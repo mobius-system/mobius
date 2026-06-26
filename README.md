@@ -49,10 +49,9 @@
 在不影响其他进行中的工作的情况下，低调完成自我进化。
 每一次与「莫比乌斯 AI」的交互，你都可以替换掉这艘「忒修斯之船」上的一块木板，直到它只属于你（和你领导的团队）。
 
-
 <video controls src="https://mobius.nutshellai.cn/assets/v1/self-evolution.mp4" title="Title"></video>
 
-
+[例子](docs/self-evo-demo.md)正在补充中。
 
 ## 真正意义 Auto Research 能力
 
