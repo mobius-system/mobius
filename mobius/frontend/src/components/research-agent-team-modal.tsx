@@ -708,20 +708,6 @@ export function ResearchAgentTeamModal({
         ) : (
           <div className="grid flex-1 min-h-0 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(430px,0.42fr)_minmax(0,0.58fr)]">
             <section className="flex min-h-0 flex-col gap-3">
-              {/* 模式切换: 单个 Agent / Agent 团队 (双模式共用本页) */}
-              <div className="grid grid-cols-2 gap-1.5 rounded-lg p-1" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
-                {([['single', '单个 Agent'], ['team', 'Agent 团队']] as const).map(([k, label]) => {
-                  const active = mode === k
-                  return (
-                    <button key={k} type="button" onClick={() => switchMode(k)} disabled={submitting}
-                      className="h-8 rounded-md text-[12px] font-medium transition-colors disabled:opacity-40"
-                      style={active ? { background: 'var(--bg-card-hover)', color: 'var(--text-primary)' } : { color: 'var(--text-muted)' }}>
-                      {label}
-                    </button>
-                  )
-                })}
-              </div>
-
               {/* Tab 栏: 一个 Agent 一个 Tab, 可水平滚动(用全局统一滚动条样式); 切 Tab 同步高亮右侧 3D 形象, 添加入口移至 3D 画布的 + 占位槽 */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
                 {agents.map((agent, index) => {

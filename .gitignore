@@ -35,6 +35,8 @@ mobius/uploads/
 
 # Runtime task flags (每个 session 的 running.flag 等运行期标记, 非源码)
 .imac/
+.mobius/
+
 accepted_setting.log
 
 # 用户数据 (skill 文件树 + memory 文件树, 含个人 SKILL.md / MEMORY 内容)
@@ -75,6 +77,7 @@ temp/
 .agent
 .cursor
 .imac
+.mobius
 
 # Local external checkouts / machine-specific helpers
 /jsoncrack
@@ -94,6 +97,7 @@ deploy/minimal/codex/config.toml
 .claude/scheduled_tasks.lock
 .claude/
 .imac/session_inputs
+.mobius/session_inputs
 mobius/.build/public.next
 deploy/host-data
 projects/

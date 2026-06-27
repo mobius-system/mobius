@@ -16,9 +16,16 @@ function isWithinPath(rootPath: any, targetPath: any): boolean {
   return target === root || target.startsWith(root + path.sep);
 }
 
+// /tmp 下的路径一律放行: 临时产物/日志/导出等不归 bind_path 管.
+const TMP_ROOT = '/tmp';
+function isWithinTmp(targetPath: any): boolean {
+  return isWithinPath(TMP_ROOT, targetPath);
+}
+
 function isAllowedWorkspacePath(project: any, targetPath: any): boolean {
-  const bindRoot = normalizeAbsPath(project?.bind_path);
   const target = normalizeAbsPath(targetPath);
+  if (isWithinTmp(target)) return true;
+  const bindRoot = normalizeAbsPath(project?.bind_path);
   if (!bindRoot || !target) return false;
   if (isWithinPath(bindRoot, target)) return true;
   return target === path.dirname(bindRoot);
@@ -88,8 +95,9 @@ function extractPayloadPath(value: any): string {
 function validateCodeServerPayload(project: any, payloadValue: any, workspacePath: any): { ok: boolean; error?: string; code?: string } {
   const filePath = extractPayloadPath(payloadValue);
   if (!filePath) return { ok: true };
-  const allowedRoot = payloadRootForWorkspace(project, workspacePath);
   const target = normalizeAbsPath(filePath);
+  if (isWithinTmp(target)) return { ok: true };
+  const allowedRoot = payloadRootForWorkspace(project, workspacePath);
   if (!allowedRoot || !target || !isWithinPath(allowedRoot, target)) {
     return { ok: false, error: 'VSCode 打开文件不在当前允许的工作区内', code: 'BIND_PATH_DENIED' };
   }

@@ -6,6 +6,9 @@ logs
 .imac/flags
 .imac/blackboard
 .imac-app-init
+.mobius/flags
+.mobius/blackboard
+.mobius-app-init
 mobius/uploads
 mobius/frontend/dist
 mobius/public/assets
