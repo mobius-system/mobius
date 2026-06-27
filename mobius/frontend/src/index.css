@@ -1424,22 +1424,6 @@ body::after {
 /* Firefox 等价: thin + themed color (Chrome/Safari 走上面的 ::-webkit-scrollbar) */
 * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
 
-/* ===== 自定义开关 (label + sr-only checkbox): 修复点击跳屏 + 补回键盘焦点可见性 =====
-   这类开关把真复选框用 Tailwind .sr-only (position:absolute + 自动偏移) 隐藏, 引入两个问题:
-   1) 跳屏: 点击 label 让隐藏框获焦, 浏览器据此 scrollIntoView, 却把 position:absolute /
-      auto-offset 元素的位置误算到文档原点 → 整页向上跳出视口 (开关越靠下越明显).
-      → 给 label 建立 relative 包含块并把框锚定 top/left:0, 焦点落在可视位置, 不再滚动.
-   2) 焦点不可见: .sr-only 的 clip 把复选框原生焦点环也裁掉了, 键盘用户看不到当前聚焦的开关
-      (旧可见复选框有原生 focus ring). → 用 :focus-visible (仅键盘聚焦, 鼠标点击不触发, 避免噪音)
-      给 label 补一个焦点环. 覆盖全站现在与未来的同类开关 (转换可见复选框→sr-only 开关时的共性缺陷). */
-label:has(> input[type="checkbox"].sr-only) { position: relative; }
-input[type="checkbox"].sr-only { top: 0; left: 0; }
-label:has(> input[type="checkbox"].sr-only:focus-visible) {
-  outline: 2px solid #3b82f6;
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-
 /* ===== 流式光标 ===== */
 .streaming-cursor::after {
   content: "▊";
