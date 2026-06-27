@@ -162,6 +162,14 @@ function windowExists(name) {
 const LIST_WINDOWS_TTL_MS = 3 * 1000
 let _listWindowsCache = null // { ts: number, rows: string[][] }
 
+// isWorking 反向扫描 transcript 的尾部窗口. 必须远大于单条记录: claude-code 的
+// 上下文注入 user 条目 (🚁🍕 项目+memory 注入) 与长篇 assistant 输出单行可达 30KB+,
+// 旧的 16KB 窗口连一条都装不下 → 第一个 thinking 阶段唯一的 user 标记被挤出窗口,
+// 窗口里只剩元数据 (attachment/mode/permission-mode/ai-title...) → 扫不到标记 →
+// working 误判 false, 卡"待命"数分钟直到首条 assistant 落盘. 256KB 足以跨过巨型注入
+// 条目看到最近的 user/assistant 标记, 读取代价可忽略 (纯文件读, 无 tmux 子进程).
+const CLAUDE_WORKING_TAIL_BYTES = 256 * 1024
+
 function listWindowsRowsCached() {
   const now = Date.now()
   if (_listWindowsCache && now - _listWindowsCache.ts < LIST_WINDOWS_TTL_MS) {
@@ -349,7 +357,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       if (!fs.existsSync(entry.jsonlPath)) return false
       const stat = fs.statSync(entry.jsonlPath)
       if (stat.size === 0) return false
-      const len = Math.min(stat.size, 16 * 1024)
+      const len = Math.min(stat.size, CLAUDE_WORKING_TAIL_BYTES)
       const buf = Buffer.alloc(len)
       const fd = fs.openSync(entry.jsonlPath, 'r')
       try { fs.readSync(fd, buf, 0, len, stat.size - len) } finally { fs.closeSync(fd) }

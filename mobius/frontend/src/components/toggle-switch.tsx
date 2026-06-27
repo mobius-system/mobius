@@ -52,7 +52,7 @@ export function ToggleSwitch({
       aria-checked={checked}
       disabled={disabled}
       // disabled 按钮不会触发 onClick, 这里再挡一层 loading, 保证保存中不被切换
-      onClick={() => { if (!loading) onChange(!checked) }}
+      onClick={() => { const next = !checked; console.debug('[diag] ToggleSwitch click', { checked, next, disabled, loading }); if (!loading) onChange(next) }}
       className={`select-none text-left ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${className}`}
       {...rest}
     >

@@ -54,6 +54,11 @@ const CODEX_CHANNEL_RE = /^[A-Za-z]+$/
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 // Codex TUI 错误扫描只看尾部 N 行: 状态接口会反复触发 getRecentError, 全量抓 scrollback 太重.
 const CODEX_ERROR_SCAN_TAIL_LINES = 50
+// rollout 文件"新鲜度"窗口: _readWorkingFromJsonl 在尾部找不到明确标记(多为密集流式
+// agent_message/token_count, 或后端重启后 entry.working 失效) 时, 若文件在此窗口内被写过,
+// 判定 codex 仍在产出 → working. 选 20s: 大于前端最长轮询间隔(待命态 5s)数倍, 又小于
+// 典型 turn 间隙, 避免 turn 结束后误判仍 working (task_complete 作为末行会先命中返回 false).
+const CODEX_WORKING_FRESH_MS = 20000
 
 const READY_POLL_MS = 250
 const READY_TIMEOUT_MS = 25000
@@ -542,9 +547,10 @@ class TmuxCodexBackend extends AgentBackend {
 
   _readWorkingFromJsonl(jsonlPath) {
     if (!jsonlPath || !fs.existsSync(jsonlPath)) return null
+    let stat
     let lines
     try {
-      const stat = fs.statSync(jsonlPath)
+      stat = fs.statSync(jsonlPath)
       if (stat.size === 0) return null
       const len = Math.min(stat.size, 64 * 1024)
       const buf = Buffer.alloc(len)
@@ -560,10 +566,15 @@ class TmuxCodexBackend extends AgentBackend {
       if (isCodexTaskStart(e)) return true
       if (e.type === 'response_item') {
         const pt = e.payload?.type
-        if (['function_call', 'function_call_output', 'reasoning', 'message'].includes(pt)) return true
+        if (['function_call', 'function_call_output', 'reasoning', 'message', 'custom_tool_call', 'custom_tool_call_output'].includes(pt)) return true
       }
       if (e.type === 'turn_context') return true
     }
+    // 尾部 64KB 内无明确标记: 多为密集流式 agent_message/token_count 把标记挤出窗口,
+    // 或后端重启后 entry.working 失效. 此时若 rollout 仍在被写 (mtime 很新) 说明 codex
+    // 正在产出 → 视为 working, 避免卡片在流、状态却卡"待命". 文件冷 (turn 已结束未再写)
+    // 才回落 entry.working (isWorking 内处理).
+    if (stat && Date.now() - stat.mtimeMs < CODEX_WORKING_FRESH_MS) return true
     return null
   }
 
@@ -974,7 +985,7 @@ class TmuxCodexBackend extends AgentBackend {
     else if (isCodexTaskStart(raw)) entry.working = true
     else if (raw?.type === 'response_item') {
       const pt = raw.payload?.type
-      if (['function_call', 'function_call_output', 'reasoning', 'message'].includes(pt)) entry.working = true
+      if (['function_call', 'function_call_output', 'reasoning', 'message', 'custom_tool_call', 'custom_tool_call_output'].includes(pt)) entry.working = true
     }
   }
 

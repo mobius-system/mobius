@@ -1143,6 +1143,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   // 对齐 NewSessionModal 的 defaultModel 优先级, 修复顶栏快捷"忽略项目模型设置".
   const projectDefaultModel = selectedProject?.default_model
   useEffect(() => {
+    console.debug('[diag] CreateSessionForm model effect', { touched: modelUserTouchedRef.current, projectDefaultModel, model })
     if (modelUserTouchedRef.current) return
     if (typeof projectDefaultModel === 'string' && projectDefaultModel.trim()) setModel(projectDefaultModel.trim())
   }, [projectDefaultModel])
@@ -1315,6 +1316,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   // 项目确定/切换后, 若用户未手动改模型且无草稿 → 回落项目级默认模型偏好 (default_model).
   const projectDefaultModel = selectedProject?.default_model
   useEffect(() => {
+    console.debug('[diag] CreateResearchForm model effect', { touched: modelUserTouchedRef.current, projectDefaultModel, model })
     if (modelUserTouchedRef.current) return
     if (typeof projectDefaultModel === 'string' && projectDefaultModel.trim()) setModel(projectDefaultModel.trim())
   }, [projectDefaultModel])
@@ -1363,6 +1365,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
     api(`/api/researches/${researchId}/sessions`).then((list: any) => {
       if (!alive || roleUserTouchedRef.current) return
       const chiefExists = Array.isArray(list) && list.some((s: any) => s.research_role === 'chief_researcher')
+      console.debug('[diag] CreateResearchForm role effect', { isArray: Array.isArray(list), count: Array.isArray(list) ? list.length : null, chiefExists, setRole: chiefExists ? 'research_assistant' : 'chief_researcher' })
       setRole(chiefExists ? 'research_assistant' : 'chief_researcher')
     }).catch(() => {})
     return () => { alive = false }
