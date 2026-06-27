@@ -859,6 +859,16 @@ function readAssistantSnapshotForList(user: any, session: any): any | null {
   }
 }
 
+function readAssistantSnapshotOrUnavailable(user: any, sessionId: string): any {
+  try {
+    return readAssistantSnapshot(user, sessionId);
+  } catch (e) {
+    const session = Sessions.findByIdForUser(sessionId, user.id);
+    if (!isAssistantVisibleSession(session, user)) throw e;
+    return unavailableAssistantSnapshot(session, (e as Error).message || '读取小莫 Session 失败');
+  }
+}
+
 function findReusableAssistantSession(user: any): any {
   return db.prepare(`
     SELECT *
@@ -1136,7 +1146,7 @@ router.get('/preset/session-selection-defaults', auth, (req: express.Request, re
 router.get('/sessions/:id', auth, (req: express.Request, res: express.Response) => {
   const user = (req as any).user;
   try {
-    res.json(readAssistantSnapshot(user, String(req.params.id)));
+    res.json(readAssistantSnapshotOrUnavailable(user, String(req.params.id)));
   } catch (e) {
     const status = (e as any).status;
     res.status(status && status >= 400 && status < 500 ? status : 500).json({
