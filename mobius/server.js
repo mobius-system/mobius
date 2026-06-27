@@ -70,6 +70,11 @@ app.use((req, res, next) => {
   return defaultJsonParser(req, res, next);
 });
 
+// REST JSON 响应 gzip 压缩. 必须在路由之前挂载 (惰性拦截 res.end).
+// 中间件内部显式跳过 text/event-stream / 已编码响应, 不影响 sessions.ts 的流式 SSE gzip.
+const apiGzip = require('./backend/middleware/api-gzip').apiGzip;
+app.use(apiGzip);
+
 // ── mount v1 backend/routes (auth/projects/issues/skills/memories/files/health) ──
 // 这些路由读 users/projects/issues 等共享表, 不动 sessions, 完全可复用.
 const authRoutes = require('./backend/routes/auth');
