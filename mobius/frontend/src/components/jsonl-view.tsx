@@ -2486,6 +2486,14 @@ export function JsonlView({
   const hasContinuationGroup = preItems.length > 0 && hasOmittedHead
   const totalGroups = rounds.length + (hasContinuationGroup ? 1 : 0)
   const onlyGroup = totalGroups === 1 || rounds.length === 1
+  // 末轮用户摘要: 最后一组 RoundGroup 的用户问题一句话, 展示在 header 右侧, 让用户在
+  // "只显示尾部 / 加载全部" 时无需展开就能知道当前最末一轮在问什么. 与 RoundGroup 内
+  // buildHeaderSummary(userItem.entry).short 同源, 视觉一致.
+  const lastRoundUserSummary = useMemo(() => {
+    if (rounds.length === 0) return ''
+    const userItem = rounds[rounds.length - 1].items[0]
+    return userItem ? buildHeaderSummary(userItem.entry).short : ''
+  }, [rounds])
 
   if (entries.length === 0) {
     if (emptyLoadingText) {
@@ -2532,6 +2540,14 @@ export function JsonlView({
           <button onClick={() => setShowAll(true)} className="text-[11px] px-2 py-0.5 rounded border border-[var(--border-color)] hover:bg-[var(--bg-hover)] text-[var(--text-muted)]">
             展开全部 ({entries.length})
           </button>
+        )}
+        {lastRoundUserSummary && (
+          <span
+            className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-muted)]"
+            title={lastRoundUserSummary}
+          >
+            <span className="opacity-60">末轮 ·</span> {lastRoundUserSummary}
+          </span>
         )}
       </div>
       {preItems.length > 0 && hasOmittedHead ? (

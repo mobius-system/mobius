@@ -32,7 +32,7 @@ const code = bundled.outputFiles[0].text
 const dataUrl = 'data:text/javascript;base64,' + Buffer.from(code).toString('base64')
 const helpers = await import(dataUrl)
 
-const { BLACKBOARD_MARKER, isBlackboardReminder, isNewRound } = helpers
+const { BLACKBOARD_MARKER, RUNNING_FLAG_REMINDER_MARKER, isBlackboardReminder, isRunningFlagReminder, isNewRound } = helpers
 
 let passed = 0
 let failed = 0
@@ -52,6 +52,10 @@ function test(name, fn) {
 // ── BLACKBOARD_MARKER 常量 ─────────────────────────────────────────────────
 test('BLACKBOARD_MARKER: 与后端 research-blackboard.js 提醒前缀一致', () => {
   assert.equal(BLACKBOARD_MARKER, '[Research Blackboard 更新提醒]')
+})
+
+test('RUNNING_FLAG_REMINDER_MARKER: 取自后端 config.js forgotten-flag 提醒核心句', () => {
+  assert.equal(RUNNING_FLAG_REMINDER_MARKER, 'It seems that the running flag is still present')
 })
 
 // ── Issue 必须兼容的两个样例: 不能开新轮 ─────────────────────────────────
@@ -122,6 +126,58 @@ test('Blackboard 提醒嵌在 user.content 数组的 input_text 块里 → 不�
       role: 'user',
       content: [
         { type: 'input_text', input_text: '[Research Blackboard 更新提醒] input_text 形态' },
+      ],
+    },
+  }
+  assert.equal(isNewRound(entry), false)
+})
+
+// ── forgotten-flag (running flag) 系统提醒: 同样不能开新轮 ────────────────
+// 与 Blackboard 提醒同理: 后端 forgotten-flag-scanner 检测到 "agent 停工但 running.flag
+// 未删" 时, 会自动把 DEFAULT_FORGOTTEN_FLAG_MESSAGE 以 user_message / type:user 形态注入,
+// 语义上是系统提醒而非人类提问, 不应触发新 Round.
+test('running flag 提醒: 完整 DEFAULT_FORGOTTEN_FLAG_MESSAGE 文案 → 不开新轮', () => {
+  const fullText =
+    '[A message that comes from the system, not the user]: ' +
+    'It seems that the running flag is still present, did you encounter any problems? ' +
+    '(1) If you cannot solve the problem, please delete `running.flag` and add a `failed.flag`.'
+  const entry = {
+    type: 'user',
+    message: { role: 'user', content: fullText },
+  }
+  assert.equal(isNewRound(entry), false, 'forgotten-flag 系统提醒不应触发新 Round')
+})
+
+test('running flag 提醒: event_msg.user_message 形态 → 不开新轮', () => {
+  const entry = {
+    type: 'event_msg',
+    payload: {
+      type: 'user_message',
+      message: 'It seems that the running flag is still present, did you encounter any problems?',
+    },
+  }
+  assert.equal(isNewRound(entry), false)
+})
+
+test('running flag 提醒: response_item.message[role=user] 形态 → 不开新轮', () => {
+  const entry = {
+    type: 'response_item',
+    payload: {
+      type: 'message',
+      role: 'user',
+      content: '[A message that comes from the system, not the user]: It seems that the running flag is still present',
+    },
+  }
+  assert.equal(isNewRound(entry), false)
+})
+
+test('running flag 提醒: type:user 数组 (text 块) 形态 → 不开新轮', () => {
+  const entry = {
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'It seems that the running flag is still present, did you finish?' },
       ],
     },
   }
@@ -208,6 +264,36 @@ test('isBlackboardReminder: null/undefined 安全返回 false', () => {
   assert.equal(isBlackboardReminder(null), false)
   assert.equal(isBlackboardReminder(undefined), false)
   assert.equal(isBlackboardReminder({}), false)
+})
+
+// ── isRunningFlagReminder 直接测试 ──────────────────────────────────────────
+test('isRunningFlagReminder: forgotten-flag 提醒命中', () => {
+  assert.equal(isRunningFlagReminder({
+    type: 'event_msg',
+    payload: { type: 'user_message', message: 'It seems that the running flag is still present' },
+  }), true)
+  assert.equal(isRunningFlagReminder({
+    type: 'user',
+    message: { role: 'user', content: '[A message that comes from the system, not the user]: It seems that the running flag is still present' },
+  }), true)
+})
+
+test('isRunningFlagReminder: 普通用户消息 / Blackboard 提醒都不命中', () => {
+  assert.equal(isRunningFlagReminder({
+    type: 'event_msg',
+    payload: { type: 'user_message', message: '普通提问' },
+  }), false)
+  // Blackboard 提醒不应被误判为 running flag 提醒, 二者 marker 互不重叠.
+  assert.equal(isRunningFlagReminder({
+    type: 'user',
+    message: { role: 'user', content: '[Research Blackboard 更新提醒] hi' },
+  }), false)
+})
+
+test('isRunningFlagReminder: null/undefined 安全返回 false', () => {
+  assert.equal(isRunningFlagReminder(null), false)
+  assert.equal(isRunningFlagReminder(undefined), false)
+  assert.equal(isRunningFlagReminder({}), false)
 })
 
 console.log(`\n${passed} passed, ${failed} failed`)

@@ -9,6 +9,12 @@
 // system 提醒消息都以此开头 (见后端 research-blackboard.js buildNotifyPrompt / insertSystem).
 export const BLACKBOARD_MARKER = '[Research Blackboard 更新提醒]'
 
+// forgotten-flag-scanner 在 "agent 停工但 running.flag 未删" 时自动发给 session 的系统提醒
+// (见后端 config.js DEFAULT_FORGOTTEN_FLAG_MESSAGE). 文案以 "[A message that comes from the
+// system, not the user]" 开头, 语义上是系统注入而非人类提问, 与 Blackboard 提醒同理,
+// 在对话轮次分组里不应开新轮. 取核心句做 marker, 既覆盖带/不带方括号的写法, 也足够特异.
+export const RUNNING_FLAG_REMINDER_MARKER = 'It seems that the running flag is still present'
+
 // 收集 entry 里所有可能"承载用户可见文本"的字段, 用于判断是否为 Blackboard 提醒.
 // 覆盖三种 entry 形态:
 //   1. event_msg.payload.message / event_msg.payload.content (字符串)
@@ -52,20 +58,38 @@ function collectEntryUserTexts(entry: any, out: string[]): void {
   }
 }
 
+// 收集 entry 用户文本后, 判断是否命中给定 marker 子串 (大小写敏感). 复用 collectEntryUserTexts
+// 对三种 entry 形态的覆盖, 让 Blackboard / running flag 等所有系统提醒共用同一套文本抽取.
+function entryIncludesMarker(entry: any, marker: string): boolean {
+  const texts: string[] = []
+  collectEntryUserTexts(entry, texts)
+  return texts.some((t) => typeof t === 'string' && t.includes(marker))
+}
+
 // 该 entry 是否为 Research Blackboard 更新提醒.
 // Blackboard 提醒后端会以 event_msg.user_message / type:user / response_item.message[role=user]
 // 三种形态投递, 但语义上是"系统注入"而非"人类提问", 在对话轮次分组里不应开新轮.
 export function isBlackboardReminder(entry: any): boolean {
-  const texts: string[] = []
-  collectEntryUserTexts(entry, texts)
-  return texts.some((t) => typeof t === 'string' && t.includes(BLACKBOARD_MARKER))
+  return entryIncludesMarker(entry, BLACKBOARD_MARKER)
 }
 
-// 判断是否为真正的用户问题 (而非 tool_result 回调或 Blackboard 系统提醒).
+// 该 entry 是否为 forgotten-flag-scanner 注入的 running flag 系统提醒.
+// 与 Blackboard 同理: 套了 user_message / type:user 的壳, 但不是人类提问, 不应开新轮.
+export function isRunningFlagReminder(entry: any): boolean {
+  return entryIncludesMarker(entry, RUNNING_FLAG_REMINDER_MARKER)
+}
+
+// 统一: 任何"系统注入提醒"都不开新轮. 后续新增系统提醒文案时, 在这里 OR 一条 isXxxReminder
+// 即可, 无需改动 isNewRound 的主体分支逻辑.
+function isSystemReminder(entry: any): boolean {
+  return isBlackboardReminder(entry) || isRunningFlagReminder(entry)
+}
+
+// 判断是否为真正的用户问题 (而非 tool_result 回调或系统提醒).
 // Claude API 把 tool result 也包在 type==="user" 的 message 里 — 只有含 text 块的才算新一轮;
-// 同理, Research Blackboard 提醒虽然套了 user_message / type:user 的壳, 也不算新一轮.
+// 同理, Blackboard / forgotten-flag 等系统提醒虽然套了 user_message / type:user 的壳, 也不算新一轮.
 export function isNewRound(e: any): boolean {
-  if (isBlackboardReminder(e)) return false
+  if (isSystemReminder(e)) return false
   if (e?.type === 'event_msg' && e?.payload?.type === 'user_message') return true
   if (e?.type === 'response_item' && e?.payload?.type === 'message' && e?.payload?.role === 'user') {
     const c = e?.payload?.content
