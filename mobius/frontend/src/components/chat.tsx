@@ -1304,27 +1304,33 @@ export function MessageBubble({
 // =====================================================================
 // Session 列表行
 // =====================================================================
-export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, isCompleted = false, pinnedIds, onTogglePinned }: {
+export function isSessionNameMuted(agentStatus?: string | null) {
+  const status = agentStatus || 'idle'
+  return status === 'failed' || status === 'idle' || status === 'completed'
+}
+
+export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pinnedIds, onTogglePinned }: {
   session: any; isSelected: boolean; onSelect: (s: any) => void;
   onEdit?: (s: any) => void; onDelete?: (s: any) => void;
-  isCompleted?: boolean; pinnedIds?: Set<string>; onTogglePinned?: (s: any) => void
+  pinnedIds?: Set<string>; onTogglePinned?: (s: any) => void
 }) {
   const { theme } = useStore()
   const textPrimary = theme !== 'light' ? '#f1f5f9' : '#1e293b'
   const textMuted = theme !== 'light' ? '#6b7280' : '#94a3b8'
   const modelLabel = sessionModelLabel(session.model, session.model_label)
   const proxyLabel = sessionProxyLabel(session.use_proxy, session.model)
+  const nameMuted = isSessionNameMuted(session.agent_status)
 
   return (
     <div onClick={() => onSelect(session)}
       className={`group flex h-[54px] items-center gap-1.5 overflow-hidden px-2 py-1.5 rounded-lg cursor-pointer mb-0.5 transition-colors ${
         isSelected ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-[var(--bg-card-hover)] border border-transparent'
-      } ${isCompleted ? 'opacity-75' : ''}`}>
+      } ${nameMuted ? 'opacity-75' : ''}`}>
       <div className="flex-shrink-0">
         <AgentStatusDot agentStatus={session.agent_status} />
       </div>
       <div className="flex-1 min-w-0 overflow-hidden">
-        <div className="text-[11px] font-medium leading-[13px] line-clamp-2 break-all" style={{ color: isCompleted ? textMuted : textPrimary }}>{session.name}</div>
+        <div className="text-[11px] font-medium leading-[13px] line-clamp-2 break-all" style={{ color: nameMuted ? textMuted : textPrimary }}>{session.name}</div>
         <div className="text-[10px] leading-[12px] mt-0.5 truncate" style={{ color: textMuted }}>{session.message_count} 消息 · {timeAgo(session.last_active)}</div>
       </div>
       <div className="relative h-6 w-[88px] flex-shrink-0 overflow-hidden">

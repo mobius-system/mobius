@@ -1090,6 +1090,12 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const [language, setLanguage] = useState<SessionLanguage>(d.language || 'zh')
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set(d.excluded_skills || []))
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set(d.excluded_memories || []))
+  // selectionReady: 用户是否手动改过 Skill/Memory 勾选. true → 重开沿用草稿勾选快照;
+  // false → 沿用后端 session-selection-defaults (同 Issue 最新 Session 继承 + 内置 Skill 默认排除).
+  // 与 NewSessionModal 的 initialDraft.selection_ready 语义对齐, 避免顶栏快捷菜单"全选/全不选"而忽略默认筛选.
+  const [selectionReady, setSelectionReady] = useState<boolean>(!!d.selection_ready)
+  const selectionReadyRef = useRef(selectionReady)
+  selectionReadyRef.current = selectionReady
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
@@ -1100,26 +1106,42 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const selectedProject = projects.list.find((p: any) => p.id === projectId)
   const selectedIssue = issues.list.find((i: any) => i.id === issueId)
 
-  // Skill/Memory 全集: 选完 issue 后拉 context-preview (POST, 拿 sources)
+  // Skill/Memory 全集: 选完 issue 后拉 context-preview (POST, 拿 sources) + session-selection-defaults (GET, 拿默认排除集).
+  // 默认排除集沿用后端"同 Issue 最新 Session 继承 + 内置 Skill 默认排除"机制, 与 NewSessionModal goPreview 一致,
+  // 避免顶栏快捷菜单全选/全不选而忽略传统菜单的默认筛选.
   const [availSkills, setAvailSkills] = useState<PickItem[]>([])
   const [availMemories, setAvailMemories] = useState<PickItem[]>([])
   useEffect(() => {
     if (!issueId) { setAvailSkills([]); setAvailMemories([]); return }
     let alive = true
-    api(`/api/issues/${issueId}/context-preview`, { method: 'POST', body: JSON.stringify({ name: name || ' ', description: desc || ' ', excluded_skill_ids: [], excluded_memory_ids: [] }) })
-      .then((p: any) => {
-        if (!alive) return
-        setAvailSkills((p?.sources?.skills || []).map((s: any) => ({ id: s.id, name: s.name, description: s.description, scope: s.scope || 'project' })))
-        setAvailMemories((p?.sources?.memories || []).map((m: any) => ({ id: m.id, name: m.name, description: m.description, scope: m.scope || 'project' })))
-      }).catch(() => { if (alive) { setAvailSkills([]); setAvailMemories([]) } })
+    Promise.all([
+      api(`/api/issues/${issueId}/context-preview`, { method: 'POST', body: JSON.stringify({ name: name || ' ', description: desc || ' ', excluded_skill_ids: [], excluded_memory_ids: [] }) }),
+      api(`/api/issues/${issueId}/session-selection-defaults`).catch(() => null),
+    ]).then(([p, defaults]: any) => {
+      if (!alive) return
+      const skills = (p?.sources?.skills || []).map((s: any) => ({ id: s.id, name: s.name, description: s.description, scope: s.scope || 'project' }))
+      const memories = (p?.sources?.memories || []).map((m: any) => ({ id: m.id, name: m.name, description: m.description, scope: m.scope || 'project' }))
+      setAvailSkills(skills)
+      setAvailMemories(memories)
+      const skillIds = new Set(skills.map((s: any) => s.id))
+      const memIds = new Set(memories.map((m: any) => m.id))
+      // 重开且用户此前已定稿勾选 → 沿用草稿快照; 否则 → 沿用后端默认选择机制.
+      if (selectionReadyRef.current && ((d.excluded_skills && d.excluded_skills.length) || (d.excluded_memories && d.excluded_memories.length))) {
+        setExcludedSkills(new Set((d.excluded_skills || []).filter((id: string) => skillIds.has(id))))
+        setExcludedMemories(new Set((d.excluded_memories || []).filter((id: string) => memIds.has(id))))
+      } else {
+        setExcludedSkills(new Set((defaults?.excluded_skill_ids || []).filter((id: string) => skillIds.has(id))))
+        setExcludedMemories(new Set((defaults?.excluded_memory_ids || []).filter((id: string) => memIds.has(id))))
+      }
+    }).catch(() => { if (alive) { setAvailSkills([]); setAvailMemories([]) } })
     return () => { alive = false }
     // 仅在 issueId 变化时拉全集; 勾选/改名不重拉.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issueId])
 
   useEffect(() => {
-    draftSave(DRAFT_KEY, { projectId, issueId, name, desc, model, language, excluded_skills: Array.from(excludedSkills), excluded_memories: Array.from(excludedMemories) }, { minChars: 0 })
-  }, [projectId, issueId, name, desc, model, language, excludedSkills, excludedMemories])
+    draftSave(DRAFT_KEY, { projectId, issueId, name, desc, model, language, excluded_skills: Array.from(excludedSkills), excluded_memories: Array.from(excludedMemories), selection_ready: selectionReady }, { minChars: 0 })
+  }, [projectId, issueId, name, desc, model, language, excludedSkills, excludedMemories, selectionReady])
 
   const toggle = (set: Set<string>, id: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
     const n = new Set(set); n.has(id) ? n.delete(id) : n.add(id); setter(n)
@@ -1166,7 +1188,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
       <SelectShell label="目标 Issue" current={selectedIssue?.title} loading={issues.loading} onRefresh={issues.refresh} dark={dark} hint={projectId ? '' : '请先选择项目'}>
         <DropdownSelect
           value={issueId}
-          onChange={v => { setIssueId(v); setErr('') }}
+          onChange={v => { setIssueId(v); setSelectionReady(false); setErr('') }}
           disabled={!projectId}
           dark={dark}
           placeholder={projectId ? '— 选择 Issue —' : '请先选择项目'}
@@ -1203,8 +1225,8 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
           memories={availMemories}
           excludedSkills={excludedSkills}
           excludedMemories={excludedMemories}
-          onToggleSkill={id => toggle(excludedSkills, id, setExcludedSkills)}
-          onToggleMemory={id => toggle(excludedMemories, id, setExcludedMemories)}
+          onToggleSkill={id => { toggle(excludedSkills, id, setExcludedSkills); setSelectionReady(true) }}
+          onToggleMemory={id => { toggle(excludedMemories, id, setExcludedMemories); setSelectionReady(true) }}
           disabled={!issueId}
           dark={dark}
         />
@@ -1255,20 +1277,28 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
     }
   }, [projectId, selectedProject, researchEnabled])
 
-  // 选 research 后拉 agent-skills + context-preview 全集
+  // 选 research 后拉 agent-skills + context-preview 全集 + session-selection-defaults (默认排除集).
+  // 默认排除集沿用后端"同 Research 最新 Session 继承 + 内置 Skill 默认排除"机制, 与 NewSessionModal 一致.
   useEffect(() => {
-    if (!researchId) { setAgentSkills([]); setAvailSkills([]); setAvailMemories([]); setChosenMainSkill(null); return }
+    if (!researchId) { setAgentSkills([]); setAvailSkills([]); setAvailMemories([]); setChosenMainSkill(null); setExcludedSkills(new Set()); setExcludedMemories(new Set()); return }
     let alive = true
     Promise.all([
       api(`/api/researches/${researchId}/research-agent-skills`).catch(() => []),
       api(`/api/researches/${researchId}/context-preview`, { method: 'POST', body: JSON.stringify({ name: name || ' ', description: desc || ' ', role, excluded_skill_ids: [], excluded_memory_ids: [] }) }).catch(() => null),
-    ]).then(([ask, prev]: any) => {
+      api(`/api/researches/${researchId}/session-selection-defaults`).catch(() => null),
+    ]).then(([ask, prev, defaults]: any) => {
       if (!alive) return
-      const skills = (Array.isArray(ask) ? ask : []).map((s: any) => ({ id: s.id, name: s.name, description: s.description, scope: s.scope || 'project', research_role: s.research_role }))
-      setAgentSkills(skills)
-      setAvailSkills((prev?.sources?.skills || []).map((s: any) => ({ id: s.id, name: s.name, description: s.description, scope: s.scope || 'project', research_role: s.research_role })))
-      setAvailMemories((prev?.sources?.memories || []).map((m: any) => ({ id: m.id, name: m.name, description: m.description, scope: m.scope || 'project' })))
-      setExcludedSkills(new Set()); setExcludedMemories(new Set())
+      const agentSkillList = (Array.isArray(ask) ? ask : []).map((s: any) => ({ id: s.id, name: s.name, description: s.description, scope: s.scope || 'project', research_role: s.research_role }))
+      const previewSkills = (prev?.sources?.skills || []).map((s: any) => ({ id: s.id, name: s.name, description: s.description, scope: s.scope || 'project', research_role: s.research_role }))
+      const previewMemories = (prev?.sources?.memories || []).map((m: any) => ({ id: m.id, name: m.name, description: m.description, scope: m.scope || 'project' }))
+      setAgentSkills(agentSkillList)
+      setAvailSkills(previewSkills)
+      setAvailMemories(previewMemories)
+      const skillIds = new Set(previewSkills.map((s: any) => s.id))
+      const memIds = new Set(previewMemories.map((m: any) => m.id))
+      setExcludedSkills(new Set((defaults?.excluded_skill_ids || []).filter((id: string) => skillIds.has(id))))
+      setExcludedMemories(new Set((defaults?.excluded_memory_ids || []).filter((id: string) => memIds.has(id))))
+      setChosenMainSkill(null)
     })
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1321,7 +1351,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
       }) })
       if (s?.error) { setErr(s.error); return }
       draftClear(DRAFT_KEY)
-      onDone(s, s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/r/${researchId}` : undefined)
+      onDone(s, s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/r/${researchId}?session=${s.session_id}` : undefined)
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
   }
 
@@ -1508,12 +1538,16 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
   )
 }
 
-// 根调度: 4 类创建均走自定义单页表单 (CreateProjectForm / CreateIssueForm / CreateSessionForm / CreateResearchForm);
-// 创建成功 → 次级确认弹窗, 「跳转详情」新开浏览器 Tab.
-export function GlobalCreateRoot({ kind, ctx, onClose }: {
+// 根调度: 4 类创建均走自定义单页表单 (CreateProjectForm / CreateIssueForm / CreateSessionForm / CreateResearchForm).
+// session / research agent 创建成功 → 经 onNavigate 在 SPA 内直接进入该 Session, 触发 ChatArea 的
+//   SessionStartModal 自动启动 (4s 倒计时自动执行), 不再走"成功弹窗 + 新开 Tab".
+// project / issue 创建成功 → 仍走次级确认弹窗, 「跳转详情」新开浏览器 Tab.
+// 传统「新建 Session · 第 1 步 / 共 2 步」菜单 (modals.tsx) 走自己的 onCreated/goToSession, 不受此处影响.
+export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate }: {
   kind: CreateKind | null
   ctx: { projectId?: string; issueId?: string; researchId?: string }
   onClose: () => void
+  onNavigate?: (path: string) => void
 }) {
   const [success, setSuccess] = useState<{ entity: any; detailUrl?: string; name: string } | null>(null)
 
@@ -1521,6 +1555,12 @@ export function GlobalCreateRoot({ kind, ctx, onClose }: {
     return <CreateSuccessDialog kind={kind || 'project'} name={success.name} detailUrl={success.detailUrl} onClose={() => { setSuccess(null); onClose() }} />
   }
   const handleDone = (entity: any, detailUrl?: string) => {
+    // session / research agent: SPA 内进入新建的 Session, 让既有自动启动机制接管 (跳过成功弹窗 + 新开 Tab).
+    if ((kind === 'session' || kind === 'research') && detailUrl && onNavigate) {
+      onNavigate(detailUrl)
+      onClose()
+      return
+    }
     setSuccess({ entity, detailUrl, name: entity?.name || entity?.title || '' })
   }
 

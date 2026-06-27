@@ -910,6 +910,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           kind={createKind}
           ctx={{ projectId: projectParam, issueId: issueParam, researchId: researchParam }}
           onClose={() => setCreateKind(null)}
+          onNavigate={navigate}
         />
       )}
       <OverlayPanels />

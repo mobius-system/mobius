@@ -7,7 +7,7 @@ import { ResizablePanel } from '../components/resizable-panel'
 import {
   NewSessionModal, RenameSessionModal, RenameIssueModal, ConfirmModal,
 } from '../components/modals'
-import { ChatArea, SessionRow } from '../components/chat'
+import { ChatArea, SessionRow, isSessionNameMuted } from '../components/chat'
 import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
@@ -321,7 +321,6 @@ export default function IssuePage() {
                 onSelect={onSelectSession}
                 onEdit={(s) => setEditingSession(s)}
                 onDelete={(s) => setDeletingSession(s)}
-                isCompleted={s.job_accomplished === true}
               />
             ))}
 
@@ -464,6 +463,7 @@ function SessionOverview({ sessions, issueId, onOpenSession, onNewSession, onEdi
                 const isRunning = _st === 'running'
                 const isCompleted = _st === 'completed'
                 const isWaiting = _st === 'waiting'
+                const nameMuted = isSessionNameMuted(_st)
                 const isLogoReviewSessionCard = projectId === LOGO_REVIEW_PROJECT_ID
                   && String(s.name || '').includes(LOGO_REVIEW_SESSION_NAME)
                 const isGuidedOrReviewSession = isGuidedDemoSession(s.session_id) || isLogoReviewSessionCard
@@ -479,7 +479,7 @@ function SessionOverview({ sessions, issueId, onOpenSession, onNewSession, onEdi
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className={`text-[14px] font-semibold truncate ${isCompleted ? 'line-through' : ''}`}
-                          style={{ color: isCompleted ? 'var(--text-muted)' : 'var(--text-primary)' }}>{s.name}</div>
+                          style={{ color: nameMuted ? 'var(--text-muted)' : 'var(--text-primary)' }}>{s.name}</div>
                         <div className="text-[10px] mt-0.5 flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
                           {isFailed && <span className="text-red-400">● 任务失败</span>}
                           {!isFailed && isRunning && <span className="text-green-400">● 执行中</span>}

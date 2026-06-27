@@ -4,7 +4,7 @@ import { Bot, Users, Trash2 } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
 import { ErrBanner, NewSessionModal, RenameSessionModal, RenameResearchModal } from '../components/modals'
-import { ChatArea, SessionRow } from '../components/chat'
+import { ChatArea, SessionRow, isSessionNameMuted } from '../components/chat'
 import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
@@ -252,7 +252,6 @@ export default function ResearchPage() {
                 onSelect={(session) => goToSession(session.session_id)}
                 onEdit={(session) => setEditingSession(session)}
                 onDelete={(session) => setDeletingSession(session)}
-                isCompleted={s.job_accomplished === true}
               />
             ))}
           </div>
@@ -431,6 +430,7 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
               const isFailed = _st === 'failed'
               const isCompleted = _st === 'completed'
               const isWaiting = _st === 'waiting'
+              const nameMuted = isSessionNameMuted(_st)
               return (
                 <div key={s.session_id}
                   onClick={() => onOpenSession(s.session_id)}
@@ -441,7 +441,8 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
                       <AgentStatusDot agentStatus={s.agent_status} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[14px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</div>
+                      <div className={`text-[14px] font-semibold truncate ${isCompleted ? 'line-through' : ''}`}
+                        style={{ color: nameMuted ? 'var(--text-muted)' : 'var(--text-primary)' }}>{s.name}</div>
                       <div className="text-[10px] mt-0.5 flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
                         {isFailed && <span className="text-red-400">● 任务失败</span>}
                         {!isFailed && isRunning && <span className="text-green-400">● 执行中</span>}
