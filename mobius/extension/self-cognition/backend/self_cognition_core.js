@@ -1047,9 +1047,12 @@ function findProvider(modelKey) {
   return providers.find(p => p.key === modelKey || p.name === modelKey) || providers[0];
 }
 
+// 隐藏工作缓存目录名, 与 backend/config.js 的 HIDDEN_FOLDER_NAME 一致 (本机 .imac / 新装 .mobius).
+const HIDDEN = process.env.MOBIUS_HIDDEN_FOLDER_NAME || ".mobius";
+
 const READ_FILE_TOOL = {
   name: "read_file",
-  description: "读取莫比乌斯项目仓库内的代码 / memory / 文档文件。path 必须是相对仓库根 (例如 mobius/extension/self-cognition/backend/self_cognition_core.js) 或 .imac/ / .deploy_data/ 开头的绝对相对路径。单次最多返回 8000 字符。",
+  description: `读取莫比乌斯项目仓库内的代码 / memory / 文档文件。path 必须是相对仓库根 (例如 mobius/extension/self-cognition/backend/self_cognition_core.js) 或 ${HIDDEN}/ / .deploy_data/ 开头的绝对相对路径。单次最多返回 8000 字符。`,
   input_schema: {
     type: "object",
     properties: {
@@ -1115,7 +1118,7 @@ function resolveRepoPath(p) {
   if (!cleaned || cleaned.includes("..")) return null;
   const candidates = [
     path.join(REPO_ROOT, cleaned),
-    path.join(REPO_ROOT, process.env.MOBIUS_HIDDEN_FOLDER_NAME || ".mobius", cleaned),
+    path.join(REPO_ROOT, HIDDEN, cleaned),
     path.join(REPO_ROOT, ".deploy_data", cleaned)
   ];
   for (const c of candidates) {
@@ -1228,8 +1231,8 @@ function handleDeleteInspiration(input, e) {
 
 function buildMobiusMemoryContext() {
   const parts = [];
-  const pkFile = path.join(REPO_ROOT, (process.env.MOBIUS_HIDDEN_FOLDER_NAME || ".mobius") + "/project_knowledge.md");
-  try { parts.push("# 莫比乌斯项目知识 (.imac/project_knowledge.md)\n" + fs.readFileSync(pkFile, "utf8")); } catch {}
+  const pkFile = path.join(REPO_ROOT, HIDDEN, "project_knowledge.md");
+  try { parts.push(("# 莫比乌斯项目知识 (" + HIDDEN + "/project_knowledge.md)\n") + fs.readFileSync(pkFile, "utf8")); } catch {}
   const memIdx = path.join(os.homedir(), ".claude/projects/-home-user-imac-test/memory/MEMORY.md");
   try { parts.push("# Agent 长期 memory 索引 (~/.claude/.../memory/MEMORY.md)\n" + fs.readFileSync(memIdx, "utf8")); } catch {}
   return parts.join("\n\n---\n\n").slice(0, 24000);

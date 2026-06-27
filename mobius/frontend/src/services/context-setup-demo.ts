@@ -1,3 +1,5 @@
+import { HIDDEN_FOLDER_NAME } from '../store'
+
 export const CONTEXT_SETUP_DEMO_TOUR_EVENT = 'imac:context-setup-demo-tour:start'
 export const CONTEXT_SETUP_DEMO_STATE_KEY = 'imac-demo:context-setup'
 
@@ -35,8 +37,8 @@ export const CONTEXT_SETUP_DEMO_DEFAULTS = {
   projectName: '莫比乌斯开发资料配置案例',
   projectDescription: '学习把莫比乌斯开发项目知识和拓展开发方法导入项目，让新的执行会话带上这些资料。',
   projectRelPath: '/imac-demo/context-setup',
-  projectKnowledgeRelPath: '/imac-demo/context-setup/.imac/project_knowledge.md',
-  skillSourceRelPath: '/imac-demo/context-setup/.imac/uploaded-skills/mobius-extension',
+  projectKnowledgeRelPath: `/imac-demo/context-setup/${HIDDEN_FOLDER_NAME}/project_knowledge.md`,
+  skillSourceRelPath: `/imac-demo/context-setup/${HIDDEN_FOLDER_NAME}/uploaded-skills/mobius-extension`,
   memoryMaterialRelPath: 'context-materials/project_knowledge.md',
   skillMaterialRelPath: 'context-materials/mobius-extension/SKILL.md',
   materialsZipRelPath: 'context-materials/context-setup-materials.zip',

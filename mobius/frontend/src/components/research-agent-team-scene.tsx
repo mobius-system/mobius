@@ -340,8 +340,8 @@ function hexToCss(hex: number) {
   return `#${hex.toString(16).padStart(6, '0')}`
 }
 
-// 共享舞台平台贴图: 不透明灰底(径向渐变, 中心略亮) + 同心环 + 径向辐条.
-// 灰底 × palette.stage = 平台主色, 亮色环/辐条提供"一点纹理"; 材质 opacity 提供"一点透明".
+// 共享舞台平台贴图: 不透明灰底(径向渐变, 中心略亮) + 方格网格 (主/次两级).
+// 灰底 × palette.stage = 平台主色, 网格线提供"一点纹理"; 材质 opacity 提供"一点透明".
 function makeStageTexture(theme: SceneProps['theme']) {
   const size = 512
   const canvas = document.createElement('canvas')
@@ -353,27 +353,26 @@ function makeStageTexture(theme: SceneProps['theme']) {
   ctx.clearRect(0, 0, size, size)
   // 底盘: 不透明灰底径向渐变 (中心略亮)
   const grad = ctx.createRadialGradient(c, c, 6, c, c, R)
-  grad.addColorStop(0, theme === 'light' ? 'rgb(225,225,225)' : 'rgb(205,205,205)')
-  grad.addColorStop(0.7, theme === 'light' ? 'rgb(195,195,195)' : 'rgb(170,170,170)')
-  grad.addColorStop(1, theme === 'light' ? 'rgb(165,165,165)' : 'rgb(135,135,135)')
+  grad.addColorStop(0, theme === 'light' ? 'rgb(228,228,228)' : 'rgb(208,208,208)')
+  grad.addColorStop(0.7, theme === 'light' ? 'rgb(198,198,198)' : 'rgb(172,172,172)')
+  grad.addColorStop(1, theme === 'light' ? 'rgb(168,168,168)' : 'rgb(138,138,138)')
   ctx.fillStyle = grad
   ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.fill()
-  // 同心环 (亮线)
-  ctx.strokeStyle = 'rgba(250,250,250,0.9)'
-  ctx.lineWidth = 2.5
-  for (let i = 1; i <= 4; i += 1) {
-    ctx.beginPath(); ctx.arc(c, c, R * (i / 5), 0, Math.PI * 2); ctx.stroke()
+  // 次级网格线 (细)
+  ctx.strokeStyle = 'rgba(242,242,242,0.45)'
+  ctx.lineWidth = 1
+  const minor = 32
+  for (let p = minor; p < size; p += minor) {
+    ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, size); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(size, p); ctx.stroke()
   }
-  // 径向辐条
-  ctx.strokeStyle = 'rgba(240,240,240,0.65)'
-  ctx.lineWidth = 1.5
-  const spokes = 16
-  for (let i = 0; i < spokes; i += 1) {
-    const ang = (i / spokes) * Math.PI * 2
-    ctx.beginPath()
-    ctx.moveTo(c + Math.cos(ang) * 22, c + Math.sin(ang) * 22)
-    ctx.lineTo(c + Math.cos(ang) * R, c + Math.sin(ang) * R)
-    ctx.stroke()
+  // 主级网格线 (粗, 每 4 格)
+  ctx.strokeStyle = 'rgba(250,250,250,0.85)'
+  ctx.lineWidth = 2
+  const major = minor * 4
+  for (let p = major; p < size; p += major) {
+    ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, size); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(size, p); ctx.stroke()
   }
   const tex = new CanvasTexture(canvas)
   tex.colorSpace = SRGBColorSpace
