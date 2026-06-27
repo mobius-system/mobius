@@ -727,14 +727,14 @@ router.delete('/tmux/:backend/:sessionId', adminAuth, async (req: express.Reques
   try {
     const result = await backend.terminateSession(sessionId);
     try {
+      // agent_status 现由 agent-status-syncer 统一管; 这里只刷新 last_agent_event 留痕.
       db.prepare(`
         UPDATE sessions_v2
-        SET agent_status = 'idle',
-            last_agent_event = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        SET last_agent_event = strftime('%Y-%m-%dT%H:%M:%fZ','now')
         WHERE session_id = ?
       `).run(sessionId);
     } catch (e) {
-      console.warn(`[admin] failed to mark session idle (${sessionId}): ${(e as Error).message}`);
+      console.warn(`[admin] failed to refresh session last_agent_event (${sessionId}): ${(e as Error).message}`);
     }
     try {
       const exists = Sessions.findById(sessionId as any);

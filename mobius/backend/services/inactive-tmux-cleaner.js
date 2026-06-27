@@ -203,11 +203,11 @@ function thresholdText(ms) {
 }
 
 function markDbIdle(sessionId) {
+  // agent_status 现由 agent-status-syncer 统一管; 巡检杀窗后这里只刷新 last_agent_event 留痕.
   try {
     db.prepare(`
       UPDATE sessions_v2
-      SET agent_status = 'idle',
-          last_agent_event = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+      SET last_agent_event = strftime('%Y-%m-%dT%H:%M:%fZ','now')
       WHERE session_id = ?
     `).run(sessionId);
   } catch (e) {

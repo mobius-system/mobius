@@ -238,29 +238,13 @@ const Sessions = {
     db.prepare('DELETE FROM sessions_v2 WHERE session_id = ?').run(id);
   },
 
-  touchActive: (id: string) => db.prepare("UPDATE sessions_v2 SET last_active = strftime('%Y-%m-%dT%H:%M:%fZ','now'), message_count = message_count + 1, agent_status = 'running' WHERE session_id = ?").run(id),
+  // agent_status 现由 backend/services/agent-status-syncer.ts 统一重算写入,
+  // 这里只刷新 last_active / message_count (发消息活动痕迹).
+  touchActive: (id: string) => db.prepare("UPDATE sessions_v2 SET last_active = strftime('%Y-%m-%dT%H:%M:%fZ','now'), message_count = message_count + 1 WHERE session_id = ?").run(id),
 
-  touchAssistantConversation: (id: string) => db.prepare(`
-    UPDATE sessions_v2
-    SET last_active = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
-        agent_status = 'idle',
-        message_count = (SELECT COUNT(*) FROM messages_v2 WHERE task_id = ?),
-        turn_count = COALESCE((SELECT MAX(turn_number) FROM messages_v2 WHERE task_id = ?), turn_count)
-    WHERE session_id = ?
-  `).run(id, id, id),
-
-  resetAssistantConversation: (id: string) => db.prepare(`
-    UPDATE sessions_v2
-    SET last_active = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
-        agent_status = 'idle',
-        message_count = 0,
-        turn_count = 0
-    WHERE session_id = ?
-  `).run(id),
-
-  // stop 信号: 强制把 agent 状态切回 idle, 同时更新 last_agent_event
+  // stop 信号: 不再写 agent_status (由 syncer 统一管), 只刷新 last_agent_event 留痕.
   setIdle: (id: string, userId: string) => db.prepare(
-    "UPDATE sessions_v2 SET agent_status = 'idle', last_agent_event = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE session_id = ? AND user_id = ?"
+    "UPDATE sessions_v2 SET last_agent_event = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE session_id = ? AND user_id = ?"
   ).run(id, userId),
 
   // Admin

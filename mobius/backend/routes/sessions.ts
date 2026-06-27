@@ -17,6 +17,7 @@ import * as modelRegistry from '../services/model-registry';
 import { useProxyForSession, withSessionProxyState } from '../services/session-proxy-state';
 // @ts-ignore — service 仍是 .js
 import * as agents from '../agents';
+import { computeSessionRuntimeStatus } from '../utils/session-runtime-status';
 // @ts-ignore — repository 仍是 .js
 import { Projects } from '../repositories/projects';
 // @ts-ignore — repository 仍是 .js (通过 skills-fs / memories-fs 兼容层)
@@ -665,8 +666,9 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
         if (isTurnCompleteEntry(entry)) {
           writeSse(res, 'typing', { event: 'typing', active: false }).catch(() => cleanup());
           try {
-            db.prepare('UPDATE sessions_v2 SET agent_status=?, last_agent_event=strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE session_id=?')
-              .run('idle', sessionId);
+            // agent_status 现由 agent-status-syncer 统一管; turn 完成只刷新 last_agent_event 留痕.
+            db.prepare('UPDATE sessions_v2 SET last_agent_event=strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE session_id=?')
+              .run(sessionId);
           } catch {}
         }
       },
@@ -933,44 +935,27 @@ router.get('/:id/status', auth, (req: express.Request, res: express.Response) =>
   const session = findSessionReadable(id, user);
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
   auditSessionAccess(user, 'read_session_status', session);
+  const proj = session.project_id ? (Projects.findById(session.project_id) as any) : null;
+  const root = (proj && proj.bind_path) ? path.resolve(proj.bind_path) : null;
+  // 真相源: 与 agent-status-syncer 共用 computeSessionRuntimeStatus, 保证 sessions_v2
+  // .agent_status 字段与本接口返回一致. 详情见 backend/utils/session-runtime-status.ts.
+  // 显式取 session_id / model 构造入参, 与 agent-status-syncer 一致: AnySession 是索引
+  // 签名类型, 直接整体传入会被 TS 拒绝 (不保证 session_id 存在, TS2345).
+  const st = computeSessionRuntimeStatus({ session_id: session.session_id, model: session.model }, root);
   const backend = backendForSession(session);
-  const alive = backend.isAlive(id);
-  // working: 进程活的前提下, 是否还在 turn 中. alive && !working = "alive 待命".
-  const working = alive && backend.isWorking(id);
+  const alive = st.alive;
+  const working = st.working;
+  const jobAccomplished = st.jobAccomplished;
+  const jobFailed = st.failed;
+  const failedReason = st.failedReason;
+  const failedAt = st.failedAt;
   let pid: number | null = null;
   if (alive) {
     const found = backend.listSessions().find((s: any) => s.sessionId === id);
     pid = found?.pid ?? null;
   }
-  // 任务标记位: running.flag 在 → 未完成; 删除且无 failed.flag → 已结束(成功);
-  // failed.flag 在 → 失败. 三者据 flag 文件判定.
-  // 真相源优先用项目 bind_path 仓库根直接看 flag 文件 (运行时无关 — reopen 的
-  // 历史会话/后端没 runtime 条目时也准, 比 backend.isXxx 只认 runtime map 更可靠);
-  // 没 bind_path 才回退到 backend 抽象方法.
-  let jobAccomplished: boolean;
-  let jobFailed: boolean;
-  let failedReason = '';
-  let failedAt: string | null = null;
-  const proj = session.project_id ? (Projects.findById(session.project_id) as any) : null;
-  const root = (proj && proj.bind_path) ? path.resolve(proj.bind_path) : null;
   const issue = session.issue_id ? (Issues.findById(session.issue_id) as any) : null;
   const worktreeIgnored = !!(issue?.use_worktree && root && !isGitRepoRoot(root));
-  if (root) {
-    try {
-      jobAccomplished = readJobFlagState(root, id).accomplished;
-    }
-    catch { jobAccomplished = backend.isJobGoalAccomplished(id); }
-    try {
-      const st = readJobFlagState(root, id);
-      jobFailed = st.failed;
-      failedReason = st.failedReason;
-      failedAt = st.failedAt || null;
-    }
-    catch { jobFailed = backend.isFailed(id); }
-  } else {
-    jobAccomplished = backend.isJobGoalAccomplished(id);
-    jobFailed = backend.isFailed(id);
-  }
 
   // 错误扫描: agent 进程在但当前不在 turn 中 (isWorking=false), 且 .mobius.jsonl
   // 末条不是 error (去重) 时, 调 backend.getRecentError 扫 TUI 屏幕.

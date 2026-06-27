@@ -228,7 +228,7 @@ db.exec(`
     -- per-session 注入上下文语言: 新建 Session 时由前端选 (zh/en), 缺省中文
     language TEXT NOT NULL DEFAULT 'zh' CHECK(language IN ('zh','en')),
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','completed','archived')),
-    agent_status TEXT NOT NULL DEFAULT 'idle' CHECK(agent_status IN ('idle','running','stale')),
+    agent_status TEXT NOT NULL DEFAULT 'idle' CHECK(agent_status IN ('idle','running','stale','completed','failed','waiting')),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     last_active TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     last_agent_event TEXT,
@@ -476,7 +476,7 @@ function migrateSessionsResearchScope() {
           -- DEPRECATED, 见上方 schema 同名列的注释.
           use_proxy INTEGER NOT NULL DEFAULT 1 CHECK(use_proxy IN (0,1)),
           status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','completed','archived')),
-          agent_status TEXT NOT NULL DEFAULT 'idle' CHECK(agent_status IN ('idle','running','stale')),
+          agent_status TEXT NOT NULL DEFAULT 'idle' CHECK(agent_status IN ('idle','running','stale','completed','failed','waiting')),
           created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
           last_active TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
           last_agent_event TEXT,
@@ -522,6 +522,88 @@ function migrateSessionsResearchScope() {
   }
 }
 migrateSessionsResearchScope();
+
+// ===== sessions_v2 结构迁移: 扩展 agent_status 枚举值 =====
+// 旧表 agent_status CHECK 只允许 ('idle','running','stale'). 现新增 'completed' /
+// 'failed' / 'waiting' (由 backend/services/agent-status-syncer.ts 写入), 需放宽 CHECK.
+// SQLite 无法 ALTER 修改 CHECK, 这里做一次幂等表重建, 复用 migrateSessionsResearchScope
+// 的重建模式: 列结构不变, 仅放宽 agent_status CHECK.
+function migrateSessionsV2AgentStatusEnum() {
+  try {
+    const row = db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions_v2'"
+    ).get() as { sql?: string } | undefined;
+    const ddl = row?.sql || '';
+    if (!ddl) return; // 表尚未建 (db.ts bootstrap 会建), 跳过
+    if (ddl.includes("'completed'") && ddl.includes("'failed'") && ddl.includes("'waiting'")) {
+      return; // 已迁移过
+    }
+
+    // 列结构不变: 用 PRAGMA 动态拿列名做全列复制 (新表包含旧表所有列)
+    const info = db.prepare('PRAGMA table_info(sessions_v2)').all() as any[];
+    const colList = info.map((c: any) => c.name).join(', ');
+
+    db.pragma('foreign_keys = OFF');
+    const tx = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE sessions_v2_new (
+          session_id TEXT PRIMARY KEY,
+          issue_id TEXT,
+          project_id TEXT,
+          scope_type TEXT NOT NULL DEFAULT 'issue' CHECK(scope_type IN ('issue','research')),
+          research_id TEXT,
+          research_role TEXT CHECK(research_role IS NULL OR research_role IN ('chief_researcher','research_assistant')),
+          user_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT DEFAULT '',
+          session_key TEXT NOT NULL UNIQUE,
+          claude_session_id TEXT,
+          model TEXT DEFAULT 'gpt-5.5',
+          use_proxy INTEGER NOT NULL DEFAULT 1 CHECK(use_proxy IN (0,1)),
+          language TEXT NOT NULL DEFAULT 'zh' CHECK(language IN ('zh','en')),
+          status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','completed','archived')),
+          agent_status TEXT NOT NULL DEFAULT 'idle' CHECK(agent_status IN ('idle','running','stale','completed','failed','waiting')),
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          last_active TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          last_agent_event TEXT,
+          message_count INTEGER NOT NULL DEFAULT 0,
+          turn_count INTEGER NOT NULL DEFAULT 0,
+          context_snapshot_body TEXT,
+          context_snapshot_sources TEXT,
+          context_snapshot_at TEXT,
+          session_selection_snapshot TEXT,
+          session_selection_snapshot_at TEXT,
+          session_excluded_skills TEXT,
+          session_excluded_memories TEXT,
+          total_cost_usd REAL NOT NULL DEFAULT 0,
+          original_issue_id TEXT,
+          original_project_id TEXT,
+          deleted_at TEXT,
+          completed_at TEXT,
+          FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+          FOREIGN KEY (research_id) REFERENCES researches(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+      `);
+      db.prepare(`INSERT INTO sessions_v2_new (${colList}) SELECT ${colList} FROM sessions_v2`).run();
+      db.exec('DROP TABLE sessions_v2;');
+      db.exec('ALTER TABLE sessions_v2_new RENAME TO sessions_v2;');
+    });
+    tx();
+    db.pragma('foreign_keys = ON');
+    // DROP TABLE 会连带删除索引, 重建
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_sessions_v2_issue ON sessions_v2(issue_id);
+      CREATE INDEX IF NOT EXISTS idx_sessions_v2_user ON sessions_v2(user_id);
+    `);
+    ensureSessionResearchIndexes();
+    console.log('[mobius/db] migrate: sessions_v2 agent_status 枚举已扩展 (idle/running/stale/completed/failed/waiting)');
+  } catch (e) {
+    try { db.pragma('foreign_keys = ON'); } catch {}
+    console.warn('[mobius/db] ⚠️  sessions_v2 agent_status 枚举迁移失败:', e.message);
+  }
+}
+migrateSessionsV2AgentStatusEnum();
 
 // ===== sessions_v2 轻量迁移: 每个 Session 的注入上下文语言 =====
 // 存量 session 默认 'zh', 保持此前中文注入行为; 新建 Session 由前端/路由显式写入。
