@@ -367,7 +367,7 @@ function previewBundle(base64: any): any {
 
 // ---- Import --------------------------------------------------------------
 // target: { scope: 'user'|'project', project_id?: '...' }
-function importBundle({ requesterUserId, base64, target, selectedIndexes }: { requesterUserId: string; base64: any; target: { scope: string; project_id?: string }; selectedIndexes?: any[] }): any {
+function importBundle({ requesterUserId, base64, target, selectedIndexes }: { requesterUserId: string; base64: any; target: { scope: string; project_id?: string | null }; selectedIndexes?: any[] | null }): any {
   const decoded = decodeBundle(base64);
   if (!decoded.ok) return decoded;
   const scope = target && target.scope === 'project' ? 'project' : 'user';

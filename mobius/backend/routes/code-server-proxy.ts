@@ -21,7 +21,7 @@ import { Projects } from '../repositories/projects';
 // @ts-ignore — service 仍是 .js
 import { canReadProject } from '../services/access-control';
 // @ts-ignore — service 仍是 .js
-import pool from '../services/code-server-pool';
+import * as pool from '../services/code-server-pool';
 // @ts-ignore — service 仍是 .js
 import { resolveCodeServerWorkspace, validateCodeServerPayload } from '../services/code-server-workspace';
 
@@ -217,7 +217,7 @@ router.use(async (req: express.Request, res: express.Response, next: express.Nex
 
   let entry: { port: number; [k: string]: any };
   try {
-    entry = await pool.ensure(user, parsed.projectId, workspace.workspacePath);
+    entry = await pool.ensure(user, parsed.projectId!, workspace.workspacePath!);
   } catch (e) {
     const err = e as Error & { code?: string };
     console.error('[cs-proxy] pool.ensure failed:', err.message);
@@ -262,7 +262,7 @@ async function handleUpgrade(req: any, socket: any, head: Buffer): Promise<void>
 
   let entry: { port: number; [k: string]: any };
   try {
-    entry = await pool.ensure(user, parsed.projectId, workspace.workspacePath);
+    entry = await pool.ensure(user, parsed.projectId!, workspace.workspacePath!);
   } catch (e) {
     console.error('[cs-proxy/ws] ensure failed:', (e as Error).message);
     socket.destroy();

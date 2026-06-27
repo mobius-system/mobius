@@ -1,7 +1,7 @@
 import express from 'express';
 import { auth } from '../middleware/auth';
 // @ts-ignore — service 仍是 .js, 无类型声明
-import aimuxRemote from '../services/aimux-remote';
+import * as aimuxRemote from '../services/aimux-remote';
 
 const router = express.Router();
 

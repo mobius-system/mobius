@@ -20,7 +20,7 @@ import * as modelAccess from '../services/model-access';
 // @ts-ignore — service 仍是 .js
 import modelPromptLimits from '../services/model-prompt-limits';
 // @ts-ignore — service 仍是 .js
-import skillMemoryMigration from '../services/skill-memory-migration';
+import * as skillMemoryMigration from '../services/skill-memory-migration';
 import { Projects } from '../repositories/projects';
 import { AdminAuditLog } from '../repositories/admin-audit-log';
 // @ts-ignore — service 仍是 .js
