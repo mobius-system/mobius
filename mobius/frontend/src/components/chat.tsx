@@ -1458,6 +1458,9 @@ export function ChatArea() {
   const [backendFailedAt, setBackendFailedAt] = useState('')
   const [backendPid, setBackendPid] = useState<number | null>(null)
   const [pendingSendAt, setPendingSendAt] = useState<number | null>(null)
+  // 发送阶段提示: 自发送瞬间起计时, 按耗时显示黄字阶段 (正在发送 / 正在唤醒中 / 唤醒超时).
+  // pendingSendAt 与 messageSubmitting 全部解除 (发送按钮恢复) 时置回 null, 还原原提示.
+  const [sendingHint, setSendingHint] = useState<string | null>(null)
   const [backendWorktreeIgnored, setBackendWorktreeIgnored] = useState(false)
   const [lastSendError, setLastSendError] = useState('')
   const [dismissedBackendFailureKeys, setDismissedBackendFailureKeys] = useState<Record<string, string>>({})
@@ -1585,6 +1588,25 @@ export function ChatArea() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [sessionId, pendingSendAt])
+
+  // 发送阶段黄字提示: 发送按钮灰着 (pendingSendAt 或 messageSubmitting 任一为真) 期间,
+  // 按自发送瞬间起的耗时显示三阶段文字; 两者都解除 (按钮恢复) 瞬间 setSendingHint(null) 还原原提示.
+  useEffect(() => {
+    if (!pendingSendAt && !messageSubmitting) {
+      setSendingHint(null)
+      return
+    }
+    const start = pendingSendAt ?? Date.now()
+    const tick = () => {
+      const elapsed = Date.now() - start
+      if (elapsed < 1500) setSendingHint('正在发送')
+      else if (elapsed < 5000) setSendingHint('正在唤醒中')
+      else setSendingHint('唤醒时间长于预期，请检查网络链接。')
+    }
+    tick()
+    const id = window.setInterval(tick, 250)
+    return () => window.clearInterval(id)
+  }, [pendingSendAt, messageSubmitting])
 
   useEffect(() => {
     setStopFeedbackActive(false)
@@ -2510,9 +2532,11 @@ export function ChatArea() {
     setPendingSendAt(Date.now())
     setMessageSubmitting(true)
     setTyping(true)
+    // 发送瞬间立即清空输入框, 给用户即时反馈. 原来放在 .then() 里,
+    // 要等后端 POST /messages 返回才清空, 体感是"字过了一会儿才消失".
+    clearSessionInputDraft(sentSessionId, sentInput)
     postSessionMessage({ content, inputText: text, requestId })
       .then(() => {
-        clearSessionInputDraft(sentSessionId, sentInput)
         setEditingMsg(null)
         clearAttachments()
         inputRef.current?.focus()
@@ -3176,8 +3200,8 @@ export function ChatArea() {
                 )
               })()}
             </div>
-            <div className="px-3 pb-3 pt-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-              草稿自动保存 · Enter 发送 · Shift+Enter 换行 · Ctrl/⌘+V 粘贴文件
+            <div className="px-3 pb-3 pt-0.5 text-[10px]" style={{ color: sendingHint ? '#facc15' : 'var(--text-muted)' }}>
+              {sendingHint ?? '草稿自动保存 · Enter 发送 · Shift+Enter 换行 · Ctrl/⌘+V 粘贴文件'}
             </div>
           </div>
           <div className="mt-2 grid grid-cols-2 items-stretch gap-1.5 px-1">
