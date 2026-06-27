@@ -259,6 +259,18 @@ def bootstrap_users(root: Path) -> None:
     print(f"=== [bootstrap] 已写初始化标记: {bootstrap_flag_path(root)} ===", flush=True)
 
 
+def bootstrap_self_evolve(root: Path) -> None:
+    # 直接部署路径漏跑了 docker-entrypoint.sh 里的 bootstrap-self-evolve, 全新部署时
+    # admin 看不到默认的 "Mobius Self Evolve" 自迭代项目。bootstrap-self-evolve.js 自身
+    # 已做 admin 检查 + bind_path 幂等, 每次启动跑一次是安全的, 不需要 flag 文件。
+    script = root / "mobius" / "scripts" / "bootstrap-self-evolve.js"
+    if not script.is_file():
+        print(f"=== [bootstrap] 跳过 self-evolve seed: {script} 不存在 ===", flush=True)
+        return
+    print("=== [bootstrap] seed 默认 Mobius Self Evolve 项目 (幂等) ===", flush=True)
+    run(["node", "scripts/bootstrap-self-evolve.js"], cwd=root / "mobius", env=dict(os.environ))
+
+
 def code_server_is_healthy() -> bool:
     # 健康判定要同时满足两个条件：tmux 会话还在 + 端口真的能连上。
     # 单看 tmux 会进程已死但 session 残留；单看端口可能撞上别的服务。
@@ -473,6 +485,7 @@ def main(
             print(f"=== [1/1] 更新 mobius 前端 (compile + replace :{os.environ['MOBIUS_PORT']}) ===")
         else:
             bootstrap_users(root)
+            bootstrap_self_evolve(root)
             print(f"=== [1/3] 起 mobius (compile + serve :{os.environ['MOBIUS_PORT']}) ===")
         # 显式 flush：start_mobius 内部 run 会阻塞编译，这里先确保步骤标题被打印出去再阻塞。
         sys.stdout.flush()

@@ -1588,56 +1588,67 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const tourTarget = jsonEntryTourTarget(entry)
 
   // 默认折叠 (第一张 user 卡片除外). summary 可选中: select-text 显式覆盖某些浏览器/OS 默认禁选.
+  //
+  // a11y 注意: <button> 不能嵌套在 <summary> 里 (HTML 规范禁止 interactive content 作为
+  // summary 后代 — Chrome DevTools Issues tab 会标 "InteractiveContentSummaryDescendant").
+  // 旧版把「复制」和「切换模式」两个按钮塞进 summary, 每张展开的卡片都会触发 1 条 a11y issue,
+  // 用户在 F12 Issues 里看到"卡片数 ≈ 错误数". 现在把按钮 absolute 到 details 右上角,
+  // 视觉位置不变, 但 DOM 上 button 是 details 的直接子元素而非 summary 后代, 规范合规.
+  const hasHeaderAction = open && ((mode === 'compact') || canCompact || canCode)
   return (
     <details
       data-tour={tourTarget}
       open={open}
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
-      className={`mb-2 rounded-2xl border card-enter ${theme.border} ${theme.bg}`}>
-      <summary className="cursor-pointer px-3 py-1.5 flex items-center gap-2 text-[12px] select-text">
+      className={`relative mb-2 rounded-2xl border card-enter ${theme.border} ${theme.bg}`}>
+      <summary className={`cursor-pointer px-3 py-1.5 flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
         {showMeta && typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
         {showMeta && ts && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
         <span className={`w-1.5 h-1.5 rounded-full ${theme.dot} flex-shrink-0`}></span>
         <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>
         {headerSummary.short && <span className="text-[11px] text-[var(--text-muted)] truncate flex-1">{headerSummary.short}</span>}
-        {open && mode === 'compact' && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              navigator.clipboard.writeText(headerSummary.full).then(() => {
-                setCopied(true)
-                setTimeout(() => setCopied(false), 1000)
-              })
-            }}
-            className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors flex-shrink-0"
-            title="复制渲染前的原始 markdown 源"
-          >
-            {copied ? '已复制 ✓' : '复制'}
-          </button>
-        )}
-        {open && (canCompact || canCode) && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              setMode(m => {
-                if (canCode) return m === 'code' ? 'field' : 'code'
-                return m === 'compact' ? 'field' : 'compact'
-              })
-            }}
-            className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors flex-shrink-0"
-            title={canCode
-              ? (mode === 'code' ? '切换到字段模式 (按 key 展开 JSON)' : writeCall ? '切换到代码模式 (显示 Write 文件预览)' : codeEdit ? '切换到代码模式 (显示 old_string → new_string 的编辑差异)' : readCalls.length > 0 && bashCalls.length > 0 ? '切换到代码模式 (显示工具调用)' : readCalls.length > 0 ? '切换到代码模式 (显示 Read 文件读取)' : '切换到代码模式 (显示 Bash 命令)')
-              : (mode === 'compact' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到精简模式 (显示完整摘要文本)')}>
-            {canCode
-              ? (mode === 'code' ? '字段模式' : '代码模式')
-              : (mode === 'compact' ? '字段模式' : '精简模式')}
-          </button>
-        )}
       </summary>
+      {hasHeaderAction && (
+        <div className="absolute top-1 right-2 flex items-center gap-1.5 z-[5]">
+          {open && mode === 'compact' && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                navigator.clipboard.writeText(headerSummary.full).then(() => {
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1000)
+                })
+              }}
+              className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
+              title="复制渲染前的原始 markdown 源"
+            >
+              {copied ? '已复制 ✓' : '复制'}
+            </button>
+          )}
+          {open && (canCompact || canCode) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setMode(m => {
+                  if (canCode) return m === 'code' ? 'field' : 'code'
+                  return m === 'compact' ? 'field' : 'compact'
+                })
+              }}
+              className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
+              title={canCode
+                ? (mode === 'code' ? '切换到字段模式 (按 key 展开 JSON)' : writeCall ? '切换到代码模式 (显示 Write 文件预览)' : codeEdit ? '切换到代码模式 (显示 old_string → new_string 的编辑差异)' : readCalls.length > 0 && bashCalls.length > 0 ? '切换到代码模式 (显示工具调用)' : readCalls.length > 0 ? '切换到代码模式 (显示 Read 文件读取)' : '切换到代码模式 (显示 Bash 命令)')
+                : (mode === 'compact' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到精简模式 (显示完整摘要文本)')}>
+              {canCode
+                ? (mode === 'code' ? '字段模式' : '代码模式')
+                : (mode === 'compact' ? '字段模式' : '精简模式')}
+            </button>
+          )}
+        </div>
+      )}
       {open && (
         <div className="px-3 pb-2 pt-1">
           {mode === 'code' && codeEdit ? (
