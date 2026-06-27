@@ -106,7 +106,7 @@ function windowExists(name) {
 // 阻塞 Node 单事件循环). 缓存解析结果 12s 内复用, 把单次 /status 的 spawnSync 降到 0~1 次,
 // 消除"偶发某次 tmux 慢 → 事件循环被占 → 期间请求全部排队"的雪崩.
 // 控制流 (create/terminate/pause/recovery 里的 windowExists) 仍走实时查询, 不受 TTL 影响.
-const LIST_WINDOWS_TTL_MS = 12 * 1000
+const LIST_WINDOWS_TTL_MS = 3 * 1000
 let _listWindowsCache = null // { ts: number, rows: string[][] }
 
 function listWindowsRowsCached() {
