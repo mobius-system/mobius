@@ -15,6 +15,7 @@ const LOG_DIR = process.env.MOBIUS_LOG_DIR || '/data/logs';
 
 const envKeys = [
   'APP_DIR',
+  'MOBIUS_HIDDEN_FOLDER_NAME',
   'MOBIUS_PORT',
   'VITE_PORT',
   'VITE_HOST',
