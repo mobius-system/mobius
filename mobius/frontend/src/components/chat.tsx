@@ -3145,13 +3145,6 @@ export function ChatArea() {
                       <Archive className="h-3.5 w-3.5" strokeWidth={2} />
                       <span>压缩上文</span>
                     </button>
-                    <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); setInputReplayOpen(true) }}
-                      disabled={!sessionId}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
-                      style={{ color: 'var(--text-primary)' }}>
-                      <History className="h-3.5 w-3.5" strokeWidth={2} />
-                      <span>回放输入</span>
-                    </button>
                     <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); toggleInputExpanded() }}
                       className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--bg-card-hover)]"
                       style={{ color: 'var(--text-primary)' }}>
@@ -3161,6 +3154,20 @@ export function ChatArea() {
                   </div>
                 )}
               </div>
+              <button type="button"
+                onClick={() => setInputReplayOpen(true)}
+                disabled={!sessionId}
+                title="回放输入"
+                aria-label="回放输入"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  color: theme !== 'light' ? '#d1d5db' : '#374151',
+                  border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
+                  background: 'transparent',
+                }}
+              >
+                <History className="w-[17px] h-[17px]" strokeWidth={2} />
+              </button>
               <button type="button"
                 onClick={toggleVoiceRecording}
                 disabled={messageSubmitting || voiceState === 'transcribing'}
