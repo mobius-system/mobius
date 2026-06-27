@@ -1416,11 +1416,13 @@ body::after {
   border-right-color: transparent;
 }
 
-/* ===== 滚动条 ===== */
-::-webkit-scrollbar { width: 2.5px; height: 2.5px; }
+/* ===== 滚动条 (单一来源; 各处滚动条都走这套, 主题色见 :root --scrollbar-thumb) ===== */
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+/* Firefox 等价: thin + themed color (Chrome/Safari 走上面的 ::-webkit-scrollbar) */
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
 
 /* ===== 流式光标 ===== */
 .streaming-cursor::after {
@@ -1848,18 +1850,6 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   overflow: visible auto;
   padding: 6px 7px;
   margin: -6px -7px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, .34) transparent;
-}
-.assistant-session-sidebar__list::-webkit-scrollbar {
-  width: 2px;
-}
-.assistant-session-sidebar__list::-webkit-scrollbar-track {
-  background: transparent;
-}
-.assistant-session-sidebar__list::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(148, 163, 184, .34);
 }
 .assistant-session-list-item {
   width: 100%;
@@ -2790,28 +2780,6 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   gap: .55rem;
   overflow-y: auto;
   padding: .75rem .85rem .85rem;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, .32) transparent;
-}
-.assistant-session-log::-webkit-scrollbar,
-.assistant-session-message__content::-webkit-scrollbar,
-.assistant-session-input__textarea::-webkit-scrollbar,
-.assistant-session-log pre::-webkit-scrollbar {
-  width: 2px;
-  height: 2px;
-}
-.assistant-session-log::-webkit-scrollbar-track,
-.assistant-session-message__content::-webkit-scrollbar-track,
-.assistant-session-input__textarea::-webkit-scrollbar-track,
-.assistant-session-log pre::-webkit-scrollbar-track {
-  background: transparent;
-}
-.assistant-session-log::-webkit-scrollbar-thumb,
-.assistant-session-message__content::-webkit-scrollbar-thumb,
-.assistant-session-input__textarea::-webkit-scrollbar-thumb,
-.assistant-session-log pre::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(148, 163, 184, .32);
 }
 .assistant-session-placeholder {
   padding: 2rem 1rem;
@@ -2894,8 +2862,6 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .assistant-session-message__content {
   max-height: 220px;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, .30) transparent;
   color: var(--text-primary);
   font-size: 12px;
   line-height: 1.55;
