@@ -1183,7 +1183,7 @@ function makeFormationLines(positions: Vector3[], palette: Palette, theme: Scene
 type AvatarBuild = { group: Group; clickable: Object3D[]; animate?: (t: number) => void }
 
 // 虹彩珠光材质 (清漆层 + iridescence 油膜虹彩): 用于花瓣/翅膀/冰晶等"精致"形象.
-function pearlMat(color: number, selected: boolean, side: number = 0): MeshPhysicalMaterial {
+function pearlMat(color: number, selected: boolean, side: 0 | 1 | 2 = 0): MeshPhysicalMaterial {
   const mat = new MeshPhysicalMaterial({
     color, metalness: 0.25, roughness: 0.18,
     clearcoat: 1, clearcoatRoughness: 0.08,

@@ -13,16 +13,15 @@
 // 不改动 modals.tsx 现有组件 (页面内创建流程零风险), 仅复用其底层 export.
 // =====================================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
-import { ErrBanner, PathPickerModal, NewIssueModal } from './modals'
+import { ErrBanner, PathPickerModal } from './modals'
 import { ExpandableTextarea } from './expandable-textarea'
 import {
   Plus, ChevronDown, FolderPlus, CircleDot, MessagesSquare, FlaskConical,
   X, Eye, RefreshCw, Paperclip, Image as ImageIcon, Upload, Trash2,
-  CheckCircle2, ExternalLink, Lock, Ban, Search,
+  CheckCircle2, ExternalLink, Lock, Ban, Search, Puzzle, Dices, FolderOpen,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------
@@ -37,6 +36,65 @@ const VISIBILITY_OPTIONS: { value: Visibility; label: string; desc: string }[] =
   { value: 'public', label: '公开', desc: '所有登录用户可见' },
   { value: 'allowlist', label: '指定用户', desc: '仅指定用户/组可见' },
 ]
+
+// Issue 可见性: inherit 跟随项目, 其余档位不能比父项目更宽 (反向放大禁止)
+type IssueVisibility = 'inherit' | Visibility
+const ISSUE_VISIBILITY_OPTIONS: { value: IssueVisibility; label: string; desc: string }[] = [
+  { value: 'inherit', label: '继承项目', desc: '跟随所属项目的可见性' },
+  { value: 'private', label: '仅自己', desc: '仅创建者与项目 owner / 管理员可见' },
+  { value: 'team', label: '同组', desc: '同一群组用户可见（前提是能看到项目）' },
+  { value: 'public', label: '项目可见者', desc: '所有能看到项目的登录用户都可见' },
+  { value: 'allowlist', label: '指定用户', desc: '仅允许名单中的用户可见' },
+]
+
+// 项目类型预设: 顶栏单页新建项目时, 用横向 3 卡片一页内完成类型 + 字段选择
+type ProjectKind = 'default' | 'research' | 'extension'
+const PROJECT_KIND_PRESETS: Array<{
+  kind: ProjectKind
+  label: string
+  desc: string
+  note: string
+  accent: string
+  icon: React.ReactNode
+}> = [
+  {
+    kind: 'default',
+    label: '经典项目',
+    desc: '导入或新建项目，后续可转 Research',
+    note: '默认不开 Research',
+    accent: '#60a5fa',
+    icon: <FolderPlus className="w-4 h-4" strokeWidth={1.8} />,
+  },
+  {
+    kind: 'research',
+    label: 'Research 项目',
+    desc: '多智能体长周期开放研究',
+    note: '自动启用 Research',
+    accent: '#34d399',
+    icon: <FlaskConical className="w-4 h-4" strokeWidth={1.8} />,
+  },
+  {
+    kind: 'extension',
+    label: '拓展项目',
+    desc: '有前端 + 后端的莫比乌斯拓展',
+    note: '仅管理员可创建',
+    accent: '#a78bfa',
+    icon: <Puzzle className="w-4 h-4" strokeWidth={1.8} />,
+  },
+]
+
+// 项目随机绑定路径生成器 (对齐 modals.tsx 行为)
+const RANDOM_PROJECT_ADJECTIVES = ['bright', 'calm', 'clever', 'cozy', 'fresh', 'gentle', 'lively', 'lovely', 'lucky', 'merry', 'neat', 'quiet', 'rapid', 'smart', 'sunny', 'tidy', 'warm', 'wise']
+const RANDOM_PROJECT_NOUNS = ['bird', 'brook', 'cloud', 'field', 'forest', 'garden', 'harbor', 'lake', 'leaf', 'meadow', 'moon', 'mountain', 'river', 'seed', 'snake', 'spark', 'star', 'stone', 'sun', 'tree', 'valley', 'wave', 'wind']
+function randomProjectSlug() {
+  const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)] || arr[0]
+  return `${pick(RANDOM_PROJECT_ADJECTIVES)}_${pick(RANDOM_PROJECT_NOUNS)}`
+}
+function randomProjectBindPath(workDir?: string | null) {
+  const root = (workDir || '').trim().replace(/\/+$/, '')
+  if (!root) return ''
+  return `${root}/${randomProjectSlug()}`.replace(/\/{2,}/g, '/')
+}
 
 type SessionLanguage = 'zh' | 'en'
 const LANGUAGE_CHOICES: { key: SessionLanguage; title: string }[] = [
@@ -221,10 +279,10 @@ function SelectShell({ label, hint, current, placeholder, loading, onRefresh, ch
   )
 }
 
-function NativeSelect({ value, onChange, children, dark }: { value: string; onChange: (v: string) => void; children: React.ReactNode; dark: boolean }) {
+function NativeSelect({ value, onChange, children, dark, disabled }: { value: string; onChange: (v: string) => void; children: React.ReactNode; dark: boolean; disabled?: boolean }) {
   return (
-    <select value={value} onChange={e => onChange(e.target.value)}
-      className="w-full h-10 px-2.5 rounded-xl text-[13px] focus:outline-none focus:border-blue-500/40"
+    <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
+      className="w-full h-10 px-2.5 rounded-xl text-[13px] focus:outline-none focus:border-blue-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }}>
       {children}
     </select>
@@ -580,38 +638,81 @@ function Footer({ loading, submitText, onClose, onSubmit, disabled }: { loading:
 }
 
 // =====================================================================
-// 表单 1: 创建 Project (无上下文限制, 无 Skill/Memory)
+// 表单 1: 创建 Project (单页 + 3 类项目类型横向卡片)
 // =====================================================================
 export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void }) {
   const { theme, user } = useStore()
   const dark = theme !== 'light'
+  const canCreateExtension = user?.role === 'admin'
   const DRAFT_KEY = 'gc:new-project'
   const d = draftLoad<any>(DRAFT_KEY) || {}
+  const initialKind: ProjectKind = (d.projectKind === 'research' || (d.projectKind === 'extension' && canCreateExtension)) ? d.projectKind : 'default'
+  const [projectKind, setProjectKind] = useState<ProjectKind>(initialKind)
   const [name, setName] = useState(d.name || '')
   const [desc, setDesc] = useState(d.desc || '')
-  const [bindPath, setBindPath] = useState(d.bindPath || '')
+  const [bindPath, setBindPath] = useState(d.bindPath || randomProjectBindPath(user?.work_dir))
   const [bindPathManual, setBindPathManual] = useState(!!d.bindPathManual)
-  const [researchEnabled, setResearchEnabled] = useState(!!d.researchEnabled)
+  const [researchEnabled, setResearchEnabled] = useState(projectKind === 'research' || !!d.researchEnabled)
   const [defaultUseWorktree, setDefaultUseWorktree] = useState(!!d.defaultUseWorktree)
   const [visibility, setVisibility] = useState<Visibility>(d.visibility || 'private')
+  const [extensionName, setExtensionName] = useState(d.extensionName || '')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
+  // 切换项目类型时联动 research / worktree / extensionName, 但不动 name/desc 等输入
+  const chooseKind = (kind: ProjectKind) => {
+    if (kind === 'extension' && !canCreateExtension) return
+    setProjectKind(kind)
+    setErr('')
+    if (kind === 'default') {
+      setResearchEnabled(false); setDefaultUseWorktree(false); setExtensionName('')
+    } else if (kind === 'research') {
+      setResearchEnabled(true); setDefaultUseWorktree(false); setExtensionName('')
+    }
+  }
+
   useEffect(() => {
-    draftSave(DRAFT_KEY, { name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility }, { minChars: 0 })
-  }, [name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility])
+    draftSave(DRAFT_KEY, { projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, extensionName }, { minChars: 0 })
+  }, [projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, extensionName])
+
+  // 自动随机路径未填则补上 (extension 不需要 bindPath)
+  useEffect(() => {
+    if (projectKind === 'extension') return
+    if (bindPath.trim() || !user?.work_dir) return
+    setBindPath(randomProjectBindPath(user.work_dir))
+    setBindPathManual(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectKind])
+
+  const refreshRandomBindPath = () => {
+    const next = randomProjectBindPath(user?.work_dir)
+    if (!next) { setErr('当前用户尚未配置工作目录，无法生成随机绑定路径'); return }
+    setBindPath(next); setBindPathManual(false); setErr('')
+  }
 
   const submit = async () => {
     if (!name.trim()) { setErr('请输入项目名称'); return }
-    if (!bindPath.trim()) { setErr('请选择项目绑定路径'); return }
+    if (projectKind === 'extension') {
+      if (!canCreateExtension) { setErr('只有管理员可以创建莫比乌斯拓展项目'); return }
+      if (!extensionName.trim()) { setErr('请输入拓展标识名'); return }
+      if (!/^[a-z][a-z0-9-]{0,31}$/.test(extensionName.trim())) { setErr('拓展标识名: 小写字母开头, 含小写字母/数字/连字符, 1-32 字符'); return }
+    } else if (!bindPath.trim()) { setErr('请选择项目绑定路径'); return }
     setLoading(true); setErr('')
     try {
-      const p = await api('/api/projects', { method: 'POST', body: JSON.stringify({
-        name, description: desc, visibility, bindPath, bindPathManual,
-        defaultUseWorktree: researchEnabled ? false : defaultUseWorktree,
-        researchEnabled, can_post_issue: false, can_run_session: false,
-      }) })
+      const body: any = { name, description: desc, visibility }
+      if (projectKind === 'extension') {
+        body.kind = 'extension'
+        body.extensionName = extensionName.trim()
+      } else {
+        body.bindPath = bindPath
+        body.bindPathManual = bindPathManual
+        body.defaultUseWorktree = researchEnabled ? false : defaultUseWorktree
+        body.researchEnabled = projectKind === 'research' ? true : researchEnabled
+        body.can_post_issue = false
+        body.can_run_session = false
+      }
+      const p = await api('/api/projects', { method: 'POST', body: JSON.stringify(body) })
       if (p?.error) { setErr(p.error); return }
       draftClear(DRAFT_KEY)
       onDone(p, p?.id && p?.created_by ? `/u/${p.created_by}/p/${p.id}` : undefined)
@@ -619,53 +720,99 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   }
 
   return (
-    <CreateModalShell title="新建项目" onClose={onClose} dark={dark}
+    <CreateModalShell title={projectKind === 'extension' ? '新建拓展项目' : projectKind === 'research' ? '新建 Research 项目' : '新建项目'} onClose={onClose} dark={dark} width={600}
       footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} />}>
+      {/* 项目类型: 横向 3 卡片, 单页内一选即定, 不分步 */}
       <div>
-        <SectionLabel>项目名称</SectionLabel>
-        <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="例如：营销活动策划" autoFocus dark={dark} />
-      </div>
-      <div>
-        <SectionLabel hint="选填">项目描述</SectionLabel>
-        <ExpandableTextarea value={desc} onValueChange={setDesc} placeholder="一句话描述这个项目" overlayTitle="编辑项目描述"
-          className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
-          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }} />
-      </div>
-      <div>
-        <SectionLabel hint="agent 的工作目录">绑定路径</SectionLabel>
-        <div className="flex gap-2">
-          <TextInput value={bindPath} onChange={v => { setBindPath(v); setBindPathManual(true); setErr('') }} placeholder="点击右侧选择，或手动输入绝对路径" dark={dark} />
-          <button type="button" onClick={() => setPickerOpen(true)}
-            className="h-10 px-3 rounded-xl border flex items-center gap-1 text-[12px] shrink-0 hover:bg-[var(--bg-card-hover)]"
-            style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
-            <FolderPlus className="w-3.5 h-3.5" /> 选择
-          </button>
-        </div>
-      </div>
-      <div>
-        <SectionLabel hint="谁能看到这个项目">可见性</SectionLabel>
-        <div className="grid grid-cols-4 gap-1.5">
-          {VISIBILITY_OPTIONS.map(opt => {
-            const active = visibility === opt.value
+        <SectionLabel hint="选定后下方字段自动联动">项目类型</SectionLabel>
+        <div className="grid grid-cols-3 gap-1.5">
+          {PROJECT_KIND_PRESETS.map(opt => {
+            const active = projectKind === opt.kind
+            const disabled = opt.kind === 'extension' && !canCreateExtension
             return (
-              <button key={opt.value} type="button" title={opt.desc} onClick={() => setVisibility(opt.value)}
-                className="h-8 rounded-lg border text-[12px] transition-colors"
-                style={active ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' } : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-                {opt.label}
+              <button key={opt.kind} type="button" disabled={disabled} onClick={() => chooseKind(opt.kind)}
+                title={disabled ? '仅管理员可创建' : opt.note}
+                className="rounded-lg border p-2 text-left transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                style={active
+                  ? { background: 'rgba(59,130,246,0.10)', borderColor: `${opt.accent}88`, color: dark ? '#f1f5f9' : '#1e293b' }
+                  : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span style={{ color: opt.accent }}>{opt.icon}</span>
+                  <span className="text-[12px] font-medium truncate">{opt.label}</span>
+                </div>
+                <p className="text-[10px] leading-tight truncate" style={{ color: 'var(--text-muted)' }}>{opt.desc}</p>
               </button>
             )
           })}
         </div>
       </div>
-      <label className="flex items-start gap-2 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-        <input type="checkbox" checked={researchEnabled} onChange={e => setResearchEnabled(e.target.checked)} className="w-4 h-4 mt-0.5 accent-blue-500" />
-        <span><span className="font-medium">启用 Research 系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建 Research Agent 团队</span></span>
-      </label>
-      {!researchEnabled && (
-        <label className="flex items-center gap-2 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-          <input type="checkbox" checked={defaultUseWorktree} onChange={e => setDefaultUseWorktree(e.target.checked)} className="w-4 h-4 accent-blue-500" />
-          默认使用 git worktree（新建 Issue 时在绑定路径下开独立工作区）
-        </label>
+      <div>
+        <SectionLabel>项目名称</SectionLabel>
+        <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="例如：营销活动策划" autoFocus dark={dark} />
+      </div>
+      {projectKind === 'extension' ? (
+        <div>
+          <SectionLabel hint="小写字母开头, 1-32 字符">拓展标识名</SectionLabel>
+          <TextInput value={extensionName} onChange={v => { setExtensionName(v.toLowerCase().replace(/[^a-z0-9-]/g, '')); setErr('') }} placeholder="例如：my-awesome-ext" dark={dark} />
+          <p className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>创建后在 mobius/extension/ 下生成拓展骨架，可在主页直接打开</p>
+        </div>
+      ) : (
+        <>
+          <div>
+            <SectionLabel hint="选填">项目描述</SectionLabel>
+            <ExpandableTextarea value={desc} onValueChange={setDesc} placeholder="一句话描述这个项目" overlayTitle="编辑项目描述"
+              className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }} />
+          </div>
+          <div>
+            <SectionLabel hint="agent 的工作目录">绑定路径</SectionLabel>
+            <div className="flex gap-2">
+              <TextInput value={bindPath} onChange={v => { setBindPath(v); setBindPathManual(true); setErr('') }} placeholder="点击右侧选择，或手动输入绝对路径" dark={dark} />
+              <button type="button" onClick={() => setPickerOpen(true)} title="选择路径"
+                className="h-10 px-3 rounded-xl border flex items-center gap-1 text-[12px] shrink-0 hover:bg-[var(--bg-card-hover)]"
+                style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
+                <FolderOpen className="w-3.5 h-3.5" />
+              </button>
+              <button type="button" onClick={refreshRandomBindPath} title="换一个随机路径"
+                className="h-10 w-10 shrink-0 rounded-xl border flex items-center justify-center hover:bg-[var(--bg-card-hover)]"
+                style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
+                <Dices className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          <div>
+            <SectionLabel hint="谁能看到这个项目">可见性</SectionLabel>
+            <div className="grid grid-cols-4 gap-1.5">
+              {VISIBILITY_OPTIONS.map(opt => {
+                const active = visibility === opt.value
+                return (
+                  <button key={opt.value} type="button" title={opt.desc} onClick={() => setVisibility(opt.value)}
+                    className="h-8 rounded-lg border text-[12px] transition-colors"
+                    style={active ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' } : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          {projectKind === 'default' && (
+            <label className="flex items-start gap-2 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+              <input type="checkbox" checked={researchEnabled} onChange={e => { setResearchEnabled(e.target.checked); if (e.target.checked) setDefaultUseWorktree(false) }} className="w-4 h-4 mt-0.5 accent-blue-500" />
+              <span><span className="font-medium">启用 Research 系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建 Research Agent 团队</span></span>
+            </label>
+          )}
+          {projectKind === 'research' && (
+            <div className="rounded-xl px-3 py-2 text-[11px] flex items-center gap-2" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
+              <FlaskConical className="w-3.5 h-3.5" /> Research 项目已自动启用 Research 系统并禁用 git worktree
+            </div>
+          )}
+          {!researchEnabled && (
+            <label className="flex items-center gap-2 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+              <input type="checkbox" checked={defaultUseWorktree} onChange={e => setDefaultUseWorktree(e.target.checked)} className="w-4 h-4 accent-blue-500" />
+              默认使用 git worktree（新建 Issue 时在绑定路径下开独立工作区）
+            </label>
+          )}
+        </>
       )}
       {err && <ErrBanner>{err}</ErrBanner>}
       {pickerOpen && (
@@ -676,7 +823,163 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   )
 }
 
-// 表单 2 (创建 Issue) 已移除: 顶栏新建 Issue 改为复用 modals.tsx 的标准 NewIssueModal (见 GlobalCreateRoot 的 issue 分支).
+// =====================================================================
+// 表单 2: 创建 Issue (单页: 目标项目 + 标题 + 描述 + 可见性 + worktree + 规划)
+// 替代旧 TargetPicker(选项目) → NewIssueModal(填字段) 两步流程.
+// =====================================================================
+export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void; defaultProjectId?: string }) {
+  const { theme, user, projects: storeProjects } = useStore()
+  const dark = theme !== 'light'
+  const userParam = user?.id
+  const DRAFT_KEY = 'gc:new-issue'
+  const d = draftLoad<any>(DRAFT_KEY) || {}
+  const [projectId, setProjectId] = useState(defaultProjectId || d.projectId || '')
+  const [title, setTitle] = useState(d.title || '')
+  const [desc, setDesc] = useState(d.desc || '')
+  const [descTouched, setDescTouched] = useState(!!d.descTouched)
+  const [useWorktree, setUseWorktree] = useState(typeof d.useWorktree === 'boolean' ? d.useWorktree : true)
+  const [branch, setBranch] = useState(d.branch || '')
+  const [isPlanning, setIsPlanning] = useState(!!d.isPlanning)
+  const [visibility, setVisibility] = useState<IssueVisibility>(d.visibility || 'inherit')
+  const [permissionOpen, setPermissionOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+
+  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [])
+  const selectedProject = projects.list.find((p: any) => p.id === projectId) || (storeProjects || []).find((p: any) => p.id === projectId)
+  const parentVisibility: Visibility =
+    selectedProject?.visibility === 'team' || selectedProject?.visibility === 'public' || selectedProject?.visibility === 'allowlist'
+      ? selectedProject.visibility
+      : 'private'
+  // 反向放大: 仅当父项目允许时才显示对应档位
+  const allowedVisibilities: IssueVisibility[] = ['inherit']
+  if (parentVisibility === 'private') allowedVisibilities.push('private')
+  if (parentVisibility === 'team') allowedVisibilities.push('private', 'team')
+  if (parentVisibility === 'public') allowedVisibilities.push('private', 'team', 'public')
+  if (parentVisibility === 'allowlist') allowedVisibilities.push('private', 'allowlist')
+
+  // 切换项目时: 重置 visibility 到 inherit (新项目可能档位不同), 重置 worktree 默认值跟随项目
+  useEffect(() => {
+    if (!selectedProject) return
+    if (!allowedVisibilities.includes(visibility)) setVisibility('inherit')
+    if (typeof d.useWorktree !== 'boolean') setUseWorktree(!!selectedProject.default_use_worktree)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
+  useEffect(() => {
+    draftSave(DRAFT_KEY, { projectId, title, desc: descTouched ? desc : '', descTouched, useWorktree, branch, isPlanning, visibility }, { minChars: 0 })
+  }, [projectId, title, desc, descTouched, useWorktree, branch, isPlanning, visibility])
+
+  const effectiveDesc = descTouched ? desc : title
+  const issueVisibilityOptions = ISSUE_VISIBILITY_OPTIONS.filter(opt => allowedVisibilities.includes(opt.value))
+  const visibilityOption = issueVisibilityOptions.find(opt => opt.value === visibility) || ISSUE_VISIBILITY_OPTIONS[0]
+  const parentVisibilityLabel = parentVisibility === 'private' ? '仅自己' : parentVisibility === 'team' ? '同组' : parentVisibility === 'public' ? '公开' : '指定用户'
+
+  const submit = async () => {
+    if (!projectId) { setErr('请选择目标项目'); return }
+    if (!title.trim()) { setErr('请填写 Issue 标题'); return }
+    if (!effectiveDesc.trim()) { setErr('请填写 Issue 描述'); return }
+    setLoading(true); setErr('')
+    try {
+      const iss = await api(`/api/projects/${projectId}/issues`, { method: 'POST', body: JSON.stringify({
+        title, description: effectiveDesc,
+        use_worktree: isPlanning ? false : useWorktree,
+        worktree_branch: (!isPlanning && useWorktree) ? branch.trim() : '',
+        visibility, is_planning: isPlanning,
+      }) })
+      if (iss?.error) { setErr(iss.error); return }
+      draftClear(DRAFT_KEY)
+      onDone(iss, iss?.id && userParam ? `/u/${userParam}/p/${projectId}/i/${iss.id}` : undefined)
+    } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
+  }
+
+  const issuePermissionModal = permissionOpen ? (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setPermissionOpen(false)} />
+      <div className="relative w-[420px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
+        onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h4 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>修改 Issue 权限</h4>
+        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个 Issue。可选范围受所属项目权限限制。</p>
+        <div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {issueVisibilityOptions.map(opt => {
+              const active = visibility === opt.value
+              return (
+                <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value); setErr('') }} title={opt.desc}
+                  className="h-8 rounded-lg border text-[12px] transition-colors"
+                  style={active ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' } : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>父项目可见性为「{parentVisibilityLabel}」，本任务单可选范围已自动收窄。</p>
+        </div>
+        <div className="mt-5 flex gap-2">
+          <button type="button" onClick={() => setPermissionOpen(false)} className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors">完成</button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
+  return (
+    <CreateModalShell title="新建 Issue" onClose={onClose} dark={dark} width={600}
+      footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} disabled={!projectId} />}>
+      <SelectShell label="目标项目" current={selectedProject?.name} loading={projects.loading} onRefresh={projects.refresh} dark={dark}
+        hint={!defaultProjectId ? '可在任意项目下创建' : undefined}>
+        <NativeSelect value={projectId} onChange={v => { setProjectId(v); setErr('') }} dark={dark}>
+          <option value="">— 选择项目 —</option>
+          {projects.list.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </NativeSelect>
+      </SelectShell>
+      <div>
+        <SectionLabel>Issue 标题</SectionLabel>
+        <TextInput value={title} onChange={v => { setTitle(v); setErr('') }} placeholder="一句话说清这次任务" autoFocus dark={dark} />
+      </div>
+      <div>
+        <SectionLabel hint="默认同标题, 选填">Issue 描述</SectionLabel>
+        <ExpandableTextarea value={effectiveDesc} onValueChange={v => { setDesc(v); setDescTouched(true); setErr('') }} placeholder="详细说明任务目标与约束" overlayTitle="编辑 Issue 描述"
+          className="w-full h-24 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
+          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }} />
+      </div>
+      <button type="button" onClick={() => projectId && setPermissionOpen(true)} disabled={!projectId}
+        className="flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
+        style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
+        <Eye className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[12px] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>修改 Issue 权限</span>
+          <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            {visibilityOption.label} · 项目为{parentVisibilityLabel}，可选范围已收窄
+          </span>
+        </span>
+        <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
+      </button>
+      <label className="flex items-start gap-2 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+        <input type="checkbox" checked={isPlanning} onChange={e => { setIsPlanning(e.target.checked); setErr('') }} className="w-4 h-4 mt-0.5 accent-blue-500" />
+        <span>
+          <span className="font-medium">系统宏观规划模式</span>
+          <span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>创建后自动生成规划 Session（仅 mobius-planner + 全量 Memory，专注维护 project_knowledge.md）</span>
+        </span>
+      </label>
+      {!isPlanning && (
+        <>
+          <label className="flex items-center gap-2 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+            <input type="checkbox" checked={useWorktree} onChange={e => { setUseWorktree(e.target.checked); setErr('') }} className="w-4 h-4 accent-blue-500" />
+            使用 git worktree（在绑定路径下为本 Issue 开独立工作区）
+          </label>
+          {useWorktree && (
+            <div>
+              <SectionLabel hint="留空则用 Issue 标识">分支名称</SectionLabel>
+              <TextInput value={branch} onChange={v => { setBranch(v); setErr('') }} placeholder="例如：feature/login" dark={dark} />
+            </div>
+          )}
+        </>
+      )}
+      {err && <ErrBanner>{err}</ErrBanner>}
+      {issuePermissionModal}
+    </CreateModalShell>
+  )
+}
 
 // =====================================================================
 // 表单 3: 创建 Session (两级联动 Project→Issue + 单页 + Skill/Memory 浮层 + 附件)
@@ -766,12 +1069,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
         <SectionLabel>Session 名称</SectionLabel>
         <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="给这个会话起个名字" autoFocus dark={dark} />
       </div>
-      <div>
-        <SectionLabel hint="选填">目的 / 问题描述</SectionLabel>
-        <ExpandableTextarea value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个会话完成什么" overlayTitle="编辑 Session 目的"
-          className="w-full h-24 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
-          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }} />
-      </div>
+      <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个会话完成什么" attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
       <div className="grid grid-cols-2 gap-3">
         <div>
           <SectionLabel hint="创建后不可更改">模型</SectionLabel>
@@ -1070,81 +1368,14 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
   )
 }
 
-// 目标选择器: 顶栏全局新建 Issue 时若无当前项目上下文, 先选目标项目再开 NewIssueModal.
-function TargetPicker({ need, onClose, onPicked }: {
-  need: 'issue' | 'session' | 'research'
-  onClose: () => void
-  onPicked: (ids: { projectId: string; issueId?: string; researchId?: string }) => void
-}) {
-  const dark = useStore(s => s.theme) !== 'light'
-  const [projectId, setProjectId] = useState('')
-  const [issueId, setIssueId] = useState('')
-  const [researchId, setResearchId] = useState('')
-  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [])
-  const needIssue = need === 'session'
-  const needResearch = need === 'research'
-  const issues = useAsyncList<any>(() => (projectId && needIssue) ? api(`/api/projects/${projectId}/issues?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.issues || [])) : Promise.resolve([]), [projectId])
-  const researches = useAsyncList<any>(() => (projectId && needResearch) ? api(`/api/projects/${projectId}/researches?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.researches || [])) : Promise.resolve([]), [projectId])
-  const canConfirm = !!projectId && (!needIssue || !!issueId) && (!needResearch || !!researchId)
-  const titleMap = { issue: '选择目标项目', session: '选择目标项目 / Issue', research: '选择目标项目 / Research' } as const
-  const selectCls = 'w-full h-10 px-2.5 rounded-xl text-[13px] focus:outline-none focus:border-blue-500/40'
-  const selectStyle = { background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' } as React.CSSProperties
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-[440px] max-w-[calc(100vw-24px)] rounded-2xl shadow-2xl flex flex-col" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <h3 className="text-[15px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{titleMap[need]}</h3>
-          <button type="button" onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}><X className="w-4 h-4" /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3.5">
-          <div>
-            <SectionLabel>项目</SectionLabel>
-            <select value={projectId} onChange={e => { setProjectId(e.target.value); setIssueId(''); setResearchId('') }} className={selectCls} style={selectStyle}>
-              <option value="">— 选择项目 —</option>
-              {projects.list.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-          {needIssue && (
-            <div>
-              <SectionLabel>Issue</SectionLabel>
-              <select value={issueId} onChange={e => setIssueId(e.target.value)} className={selectCls} style={selectStyle}>
-                <option value="">— 选择 Issue —</option>
-                {issues.list.map((i: any) => <option key={i.id} value={i.id}>{i.title}</option>)}
-              </select>
-            </div>
-          )}
-          {needResearch && (
-            <div>
-              <SectionLabel>Research</SectionLabel>
-              <select value={researchId} onChange={e => setResearchId(e.target.value)} className={selectCls} style={selectStyle}>
-                <option value="">— 选择 Research —</option>
-                {researches.list.map((r: any) => <option key={r.id} value={r.id}>{r.title}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-        <div className="px-5 py-3 border-t flex gap-2" style={{ borderColor: 'var(--border-color)' }}>
-          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] border transition-colors hover:bg-[var(--bg-card-hover)]" style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>取消</button>
-          <button onClick={() => canConfirm && onPicked({ projectId, issueId: needIssue ? issueId : undefined, researchId: needResearch ? researchId : undefined })} disabled={!canConfirm} className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">下一步</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// 根调度: 根据 kind 渲染对应表单; issue 复用系统标准 NewIssueModal, 其余用自定义表单; 创建成功 → 次级确认弹窗
+// 根调度: 4 类创建均走自定义单页表单 (CreateProjectForm / CreateIssueForm / CreateSessionForm / CreateResearchForm);
+// 创建成功 → 次级确认弹窗, 「跳转详情」新开浏览器 Tab.
 export function GlobalCreateRoot({ kind, ctx, onClose }: {
   kind: CreateKind | null
-  ctx: { projectId?: string; issueId?: string }
+  ctx: { projectId?: string; issueId?: string; researchId?: string }
   onClose: () => void
 }) {
-  const navigate = useNavigate()
-  const user = useStore(s => s.user)
-  const [target, setTarget] = useState<{ projectId?: string }>({})
-  const projectId = target.projectId || ctx.projectId
   const [success, setSuccess] = useState<{ entity: any; detailUrl?: string; name: string } | null>(null)
-  const dark = useStore(s => s.theme) !== 'light'
 
   if (success) {
     return <CreateSuccessDialog kind={kind || 'project'} name={success.name} detailUrl={success.detailUrl} onClose={() => { setSuccess(null); onClose() }} />
@@ -1154,11 +1385,7 @@ export function GlobalCreateRoot({ kind, ctx, onClose }: {
   }
 
   if (kind === 'project') return <CreateProjectForm onClose={onClose} onDone={handleDone} />
-  if (kind === 'issue') {
-    // issue 复用系统标准 NewIssueModal (与页面内「新建 Issue」一致); 无当前项目 → 先弹 TargetPicker 选项目.
-    if (!projectId) return <TargetPicker need="issue" onClose={onClose} onPicked={t => setTarget({ projectId: t.projectId })} />
-    return <NewIssueModal projectId={projectId} onClose={onClose} onCreated={(iss: any) => { onClose(); if (iss?.id) navigate(`/u/${user?.id}/p/${projectId}/i/${iss.id}`) }} />
-  }
+  if (kind === 'issue') return <CreateIssueForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />
   if (kind === 'session') return <CreateSessionForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} defaultIssueId={ctx.issueId} />
   if (kind === 'research') return <CreateResearchForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />
   return null

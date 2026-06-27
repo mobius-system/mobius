@@ -3219,7 +3219,7 @@ export function ChatArea() {
                   onClick={() => setFileChangesOpen(true)}
                   disabled={!sessionId}
                   title="查看当前session所有文件修改"
-                  className="min-h-12 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-blue-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
+                  className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-blue-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
                   style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
                   <FileDiff className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
                   <span className="min-w-0 whitespace-nowrap">查看文件修改</span>
@@ -3229,7 +3229,7 @@ export function ChatArea() {
                   onClick={() => setBashCommandsOpen(true)}
                   disabled={!sessionId}
                   title="查看当前session运行的所有Bash命令"
-                  className="min-h-12 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
+                  className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
                   style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
                   <Terminal className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
                   <span className="min-w-0 whitespace-nowrap">查看运行命令</span>
@@ -3239,7 +3239,7 @@ export function ChatArea() {
                     projectId={currentProjectId}
                     subPath={currentVscodeSubPath}
                     label="进入项目端口"
-                    className="min-h-12 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
+                    className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
                     onRequestRunProject={sendRunProjectPortPrompt}
                   />
                 )}
@@ -3248,7 +3248,7 @@ export function ChatArea() {
                   onClick={requestPredictedNextQuestions}
                   disabled={!sessionId || nextQuestionLoading}
                   title="智能下一个用户提问"
-                  className="min-h-12 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-cyan-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
+                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-cyan-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
                 >
                   {nextQuestionLoading ? (
                     <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-cyan-400" strokeWidth={1.9} />
