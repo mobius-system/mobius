@@ -1304,9 +1304,8 @@ export function MessageBubble({
 // =====================================================================
 // Session 列表行
 // =====================================================================
-export function isSessionNameMuted(agentStatus?: string | null) {
-  const status = agentStatus || 'idle'
-  return status === 'failed' || status === 'idle' || status === 'completed'
+export function isSessionNameMuted(_agentStatus?: string | null) {
+  return false
 }
 
 function runtimeStatusForSessionList(r: any) {
