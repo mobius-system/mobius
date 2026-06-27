@@ -21,9 +21,9 @@
 
 > Trying to build a once-and-for-all perfect AI Harness system is, like trying to find the end of a Möbius strip, ultimately futile.
 >
-> Here we present Mobius — as far as we know, the world's first **self-evolving** open-source Agent operating system, an Agent OS that can continuously self-iterate according to your personalized needs.
+> Here we present Mobius — as far as we know, the world's first **self-evolving** open-source Agent operating system, an AI workbench that can continuously self-iterate according to personalized needs.
 >
-> We shape "Mobius AI" today; **and you — the true AI wielder, the breaker who is not satisfied with "pre-made" AI systems — can issue commands via natural language and screenshots, refine every edge of "Mobius AI" to your will, forge every line of code and every pixel, and build an unstoppable Agent platform.**
+> Open source shapes "Mobius AI" today; **and you — the true AI wielder, the breaker who is not satisfied with "pre-made" AI systems — can issue commands via natural language and screenshots, refine every edge of "Mobius AI" to your will, forge every line of code and every pixel, and build an unstoppable Agent operating system.**
 
 <p align="center">
   <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-9.png" width="700" alt="alt text" />
@@ -33,22 +33,22 @@
 ## A Growing, Evolvable Productivity System
 
 Developing projects, processing data, optimizing frontends, reproducing paper experiments, embedded R&D, cross-device team collaboration, cloud server management, Deep Research, Auto Research ...
-All of these can be done in one stop inside "Mobius AI". Here, you go from being an AI user to becoming a commander of Agents: any number of **development projects**, any number of **servers / PCs / embedded devices**, any number of ordinary tasks (Issues) and research tasks (Research) — with a single sentence, your idea immediately takes root in the right place.
+All of these can be done in one stop inside "Mobius AI". Here, the role shifts from AI user to Agent commander: any number of **development projects**, any number of **servers / PCs / embedded devices**, any number of ordinary tasks (Issues) and research tasks (Research) — with a single sentence, an idea immediately takes root in the right place.
 
 And these are only the foundational capabilities of "Mobius AI".
 In the wave of rapidly accelerating model capabilities, no matter how complete an Agent framework is, it may be "swallowed" overnight by a breakthrough in model capability.
-As the true AI wielder and commander leading countless Agents, you do not need to wait for Agent developers and architects to prepare mass-market "pre-made dishes" for you.
-Inside "Mobius AI", you will unlock the underlying permissions of the Agent operating system — how Agents are scheduled is defined by you.
+And as the true AI wielder and commander leading countless Agents, you do not need to wait for Agent developers and architects to prepare mass-market "pre-made dishes".
+Inside "Mobius AI", the underlying permissions of the Agent operating system are entirely within grasp — how Agents are scheduled is for you to define.
+
+<video controls src="https://mobius.nutshellai.cn/assets/v1/self-evolution.mp4" title="Title"></video>
 
 "Open source visible, what you imagine is what you get" is another key highlight of Mobius: it is not a one-time-delivered AI tool, but a system that can continuously absorb, continuously replace, and continuously grow stronger in real use.
-State your needs in **natural language**,
-or provide a **screenshot** telling "Mobius AI" where you think it falls short,
+State needs in **natural language**,
+or provide a **screenshot** telling "Mobius AI" where it falls short,
 or throw out a **blog URL** telling "Mobius AI" today's trendiest Agent usage,
 "Mobius AI" will do its best to **self-forge**,
 quietly completing its self-evolution without affecting other in-progress work.
-Every interaction with "Mobius AI" lets you replace a plank on this "Ship of Theseus", until it becomes a sharp tool for you (and the team you lead).
-
-<video controls src="https://mobius.nutshellai.cn/assets/v1/self-evolution.mp4" title="Title"></video>
+Every interaction with "Mobius AI" can replace a plank on this "Ship of Theseus", until it becomes the sharp tool of you (and the team you lead).
 
 [Examples](docs/self-evo-demo.md) are being supplemented.
 
@@ -78,13 +78,14 @@ Just writing articles is not enough — allying with multiple machines, running 
 - The "second frontend" and intelligence center of "Mobius AI"
   - Anything clickable on the interface, XiaoMo can do; things the frontend cannot do, XiaoMo can still do
 
-- Voice reminders when tasks complete: as a busy person, you need a caring secretary
+- Voice reminders when tasks complete: a busy person needs a caring secretary
   - Web voice reminders
   - Mobile notification + voice reminders
   - Configurable reminder granularity
 
-- You speak, XiaoMo executes
+- Speak, XiaoMo handles it
   - Voice input supported
+  - Deep thinking combined with fast thinking
 
 - Multi-end interconnection, log in anytime
   - Web
@@ -155,7 +156,7 @@ Inside project memory, detect and manage compute resources:
   <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-3.png" width="700" alt="alt text" />
 </p>
 
-## Manage Your Team
+## Team Management
 
 Whether you are a one-person army or working alongside human colleagues, "Mobius AI" makes team collaboration easier and more transparent.
 
