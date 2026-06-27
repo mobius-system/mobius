@@ -340,49 +340,41 @@ function hexToCss(hex: number) {
   return `#${hex.toString(16).padStart(6, '0')}`
 }
 
-// Agent 脚下圆盘贴图: 半透明底盘(径向渐变) + 同心环 + 径向辐条 + 外缘亮环 (科技全息质感).
-function makePadTexture(colorHex: number, selected: boolean) {
-  const size = 256
+// 共享舞台平台贴图: 不透明灰底(径向渐变, 中心略亮) + 同心环 + 径向辐条.
+// 灰底 × palette.stage = 平台主色, 亮色环/辐条提供"一点纹理"; 材质 opacity 提供"一点透明".
+function makeStageTexture(theme: SceneProps['theme']) {
+  const size = 512
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
   const ctx = canvas.getContext('2d')!
   const c = size / 2
-  const rgba = (a: number) => {
-    const r = (colorHex >> 16) & 255
-    const g = (colorHex >> 8) & 255
-    const b = colorHex & 255
-    return `rgba(${r},${g},${b},${a})`
-  }
+  const R = c - 2
   ctx.clearRect(0, 0, size, size)
-  // 底盘: 径向渐变, 中心略亮、边缘渐隐 (整体半透明, 能透出地面).
-  const grad = ctx.createRadialGradient(c, c, 2, c, c, c - 4)
-  grad.addColorStop(0, rgba(selected ? 0.6 : 0.45))
-  grad.addColorStop(0.7, rgba(selected ? 0.4 : 0.28))
-  grad.addColorStop(1, rgba(0))
+  // 底盘: 不透明灰底径向渐变 (中心略亮)
+  const grad = ctx.createRadialGradient(c, c, 6, c, c, R)
+  grad.addColorStop(0, theme === 'light' ? 'rgb(225,225,225)' : 'rgb(205,205,205)')
+  grad.addColorStop(0.7, theme === 'light' ? 'rgb(195,195,195)' : 'rgb(170,170,170)')
+  grad.addColorStop(1, theme === 'light' ? 'rgb(165,165,165)' : 'rgb(135,135,135)')
   ctx.fillStyle = grad
-  ctx.beginPath(); ctx.arc(c, c, c - 4, 0, Math.PI * 2); ctx.fill()
-  // 同心环
-  ctx.strokeStyle = rgba(selected ? 1 : 0.82)
+  ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.fill()
+  // 同心环 (亮线)
+  ctx.strokeStyle = 'rgba(250,250,250,0.9)'
   ctx.lineWidth = 2.5
-  for (let i = 1; i <= 3; i += 1) {
-    ctx.beginPath(); ctx.arc(c, c, (c - 6) * (i / 4), 0, Math.PI * 2); ctx.stroke()
+  for (let i = 1; i <= 4; i += 1) {
+    ctx.beginPath(); ctx.arc(c, c, R * (i / 5), 0, Math.PI * 2); ctx.stroke()
   }
   // 径向辐条
-  ctx.strokeStyle = rgba(selected ? 0.85 : 0.65)
-  ctx.lineWidth = 2
-  const spokes = 12
+  ctx.strokeStyle = 'rgba(240,240,240,0.65)'
+  ctx.lineWidth = 1.5
+  const spokes = 16
   for (let i = 0; i < spokes; i += 1) {
     const ang = (i / spokes) * Math.PI * 2
     ctx.beginPath()
-    ctx.moveTo(c + Math.cos(ang) * 10, c + Math.sin(ang) * 10)
-    ctx.lineTo(c + Math.cos(ang) * (c - 6), c + Math.sin(ang) * (c - 6))
+    ctx.moveTo(c + Math.cos(ang) * 22, c + Math.sin(ang) * 22)
+    ctx.lineTo(c + Math.cos(ang) * R, c + Math.sin(ang) * R)
     ctx.stroke()
   }
-  // 外缘亮环
-  ctx.strokeStyle = rgba(selected ? 1 : 0.92)
-  ctx.lineWidth = 3
-  ctx.beginPath(); ctx.arc(c, c, c - 4, 0, Math.PI * 2); ctx.stroke()
   const tex = new CanvasTexture(canvas)
   tex.colorSpace = SRGBColorSpace
   return tex
@@ -1170,7 +1162,8 @@ function makeStage(target: SceneTarget, palette: Palette, theme: SceneProps['the
   const radius = target.stageRadius
 
   const platform = new Mesh(new CircleGeometry(radius, 96), new MeshStandardMaterial({
-    color: palette.stage, roughness: 0.52, metalness: 0.18,
+    color: palette.stage, map: makeStageTexture(theme), transparent: true, opacity: 0.8,
+    roughness: 0.52, metalness: 0.18,
     emissive: new Color(palette.platform).multiplyScalar(theme === 'light' ? 0.025 : 0.06),
     polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 1,
   }))
@@ -1258,11 +1251,7 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
   const pivot = new Group() // 浮动 pivot (放身体, 地面光圈保持静止)
   group.add(pivot)
 
-  const padMat = new MeshBasicMaterial({
-    map: makePadTexture(bodyColor, selected),
-    transparent: true, opacity: selected ? 1 : 0.95, side: DoubleSide, depthWrite: false,
-  })
-  const pad = new Mesh(new CircleGeometry(selected ? 0.82 : 0.74, 56), padMat)
+  const pad = new Mesh(new CircleGeometry(selected ? 0.82 : 0.74, 56), glowMat)
   pad.rotation.x = -Math.PI / 2
   pad.scale.z = 0.48
   pad.position.y = 0.03
