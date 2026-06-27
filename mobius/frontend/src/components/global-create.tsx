@@ -13,6 +13,7 @@
 // 不改动 modals.tsx 现有组件 (页面内创建流程零风险), 仅复用其底层 export.
 // =====================================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
@@ -278,6 +279,150 @@ function NativeSelect({ value, onChange, children, dark, disabled }: { value: st
       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }}>
       {children}
     </select>
+  )
+}
+
+// 自定义下拉 (portal) — 替代 native <select>, 解决:
+//   1. native 下拉被 modal overflow-y-auto 裁切 (portal 渲染到 body, 逃出裁切)
+//   2. 长列表无搜索 (内置 Search 过滤, 列表 ≥ 7 项自动出现搜索框)
+//   3. native 下拉用 OS 主题, dark 下变白底 (本组件完全跟随主题)
+//   4. 列表项只能纯文本 (本组件支持 description / badge / disabled)
+// 自动反向展开: 若下方空间不足且上方足够, 自动向上展开.
+type DropdownOption = {
+  value: string
+  label: string
+  description?: string
+  disabled?: boolean
+  badge?: { text: string; color: string; bg: string }
+}
+function DropdownSelect({
+  value, onChange, options, placeholder, dark, disabled, emptyText, forceSearch,
+}: {
+  value: string
+  onChange: (v: string) => void
+  options: DropdownOption[]
+  placeholder?: string
+  dark: boolean
+  disabled?: boolean
+  emptyText?: string
+  forceSearch?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  const selected = options.find(o => o.value === value)
+  const showSearch = !!forceSearch || options.length > 6
+
+  // 计算 panel 位置 (开/关/滚动/resize 时刷新), 自动判断反向展开
+  useEffect(() => {
+    if (!open) return
+    const update = () => {
+      const el = triggerRef.current; if (!el) return
+      const r = el.getBoundingClientRect()
+      const panelH = Math.min(340, options.length * 48 + (showSearch ? 56 : 0) + 16)
+      const openUp = r.bottom + panelH + 12 > window.innerHeight && r.top - panelH > 8
+      setPos({ top: openUp ? Math.max(8, r.top - panelH - 4) : r.bottom + 4, left: r.left, width: r.width })
+    }
+    update()
+    const onScroll = () => update()
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onScroll)
+    return () => {
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [open, options.length, showSearch])
+
+  // 外部点击 / Escape 关闭
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (triggerRef.current?.contains(t) || panelRef.current?.contains(t)) return
+      setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  useEffect(() => { if (!open) setQ('') }, [open])
+
+  const filtered = useMemo(() => {
+    const kw = q.trim().toLowerCase()
+    if (!kw) return options
+    return options.filter(o => `${o.label} ${o.description || ''}`.toLowerCase().includes(kw))
+  }, [options, q])
+
+  const onPick = (opt: DropdownOption) => {
+    if (opt.disabled) return
+    onChange(opt.value); setOpen(false)
+  }
+
+  return (
+    <>
+      <button ref={triggerRef} type="button" disabled={disabled} onClick={() => setOpen(v => !v)}
+        className="w-full h-10 px-2.5 rounded-xl text-[13px] text-left flex items-center justify-between gap-2 focus:outline-none focus:border-blue-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors hover:border-[var(--border-color-strong,#475569)]"
+        style={{ background: 'var(--input-bg)', border: open ? '1px solid rgba(59,130,246,0.55)' : '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }}>
+        <span className={`truncate ${selected ? '' : 'opacity-60'}`}>
+          {selected ? selected.label : (placeholder || '— 请选择 —')}
+        </span>
+        <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
+      </button>
+      {open && pos && createPortal(
+        <div ref={panelRef} className="fixed z-[100]" style={{ top: pos.top, left: pos.left, width: pos.width }}>
+          <div className="rounded-xl shadow-2xl overflow-hidden flex flex-col"
+            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxHeight: 340, boxShadow: '0 12px 32px -8px rgba(0,0,0,0.45)' }}>
+            {showSearch && (
+              <div className="p-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="flex items-center gap-1.5 rounded-lg px-2 h-8" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
+                  <Search className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                  <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜索…" autoFocus
+                    className="flex-1 bg-transparent text-[12px] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
+                    style={{ color: dark ? '#f1f5f9' : '#1e293b' }} />
+                  {q && (
+                    <button type="button" onClick={() => setQ('')} className="flex-shrink-0 rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="flex-1 min-h-0 overflow-y-auto py-1">
+              {filtered.length === 0 ? (
+                <p className="text-[11px] italic px-3 py-4 text-center" style={{ color: 'var(--text-muted)' }}>{emptyText || '无匹配项'}</p>
+              ) : filtered.map(opt => {
+                const active = opt.value === value
+                return (
+                  <button key={opt.value} type="button" disabled={opt.disabled} onClick={() => onPick(opt)}
+                    className="w-full px-2.5 py-1.5 text-left flex items-start gap-2 transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                    style={{ background: active ? 'rgba(59,130,246,0.10)' : 'transparent' }}>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="truncate text-[12px]" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{opt.label}</span>
+                        {opt.badge && (
+                          <span className="text-[9px] px-1 py-0.5 rounded shrink-0" style={{ background: opt.badge.bg, color: opt.badge.color }}>{opt.badge.text}</span>
+                        )}
+                      </div>
+                      {opt.description && <div className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{opt.description}</div>}
+                    </div>
+                    {active && <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#60a5fa' }} />}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
   )
 }
 
@@ -989,10 +1134,22 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
       footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} disabled={!projectId} />}>
       <SelectShell label="目标项目" current={selectedProject?.name} loading={projects.loading} onRefresh={projects.refresh} dark={dark}
         hint={!defaultProjectId ? '可在任意项目下创建' : undefined}>
-        <NativeSelect value={projectId} onChange={v => { setProjectId(v); setErr('') }} dark={dark}>
-          <option value="">— 选择项目 —</option>
-          {projects.list.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </NativeSelect>
+        <DropdownSelect
+          value={projectId}
+          onChange={v => { setProjectId(v); setErr('') }}
+          dark={dark}
+          placeholder="— 选择项目 —"
+          emptyText="暂无可用项目"
+          options={[
+            { value: '', label: '— 选择项目 —', description: '取消选择' },
+            ...projects.list.map((p: any) => ({
+              value: String(p.id),
+              label: String(p.name),
+              description: p.description ? String(p.description) : undefined,
+              badge: p.research_enabled ? { text: 'Research', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : undefined,
+            })),
+          ]}
+        />
       </SelectShell>
       <div>
         <SectionLabel>Issue 标题</SectionLabel>
@@ -1116,16 +1273,40 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
     <CreateModalShell title="新建 Session" onClose={onClose} dark={dark} width={600}
       footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} disabled={!projectId || !issueId} />}>
       <SelectShell label="目标项目" current={selectedProject?.name} loading={projects.loading} onRefresh={projects.refresh} dark={dark}>
-        <NativeSelect value={projectId} onChange={v => { setProjectId(v); setIssueId(''); setErr('') }} dark={dark}>
-          <option value="">— 选择项目 —</option>
-          {projects.list.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </NativeSelect>
+        <DropdownSelect
+          value={projectId}
+          onChange={v => { setProjectId(v); setIssueId(''); setErr('') }}
+          dark={dark}
+          placeholder="— 选择项目 —"
+          emptyText="暂无可用项目"
+          options={[
+            { value: '', label: '— 选择项目 —', description: '取消选择' },
+            ...projects.list.map((p: any) => ({
+              value: String(p.id),
+              label: String(p.name),
+              description: p.description ? String(p.description) : undefined,
+              badge: p.research_enabled ? { text: 'Research', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : undefined,
+            })),
+          ]}
+        />
       </SelectShell>
       <SelectShell label="目标 Issue" current={selectedIssue?.title} loading={issues.loading} onRefresh={issues.refresh} dark={dark} hint={projectId ? '' : '请先选择项目'}>
-        <NativeSelect value={issueId} onChange={v => { setIssueId(v); setErr('') }} disabled={!projectId} dark={dark}>
-          <option value="">— 选择 Issue —</option>
-          {issues.list.map((i: any) => <option key={i.id} value={i.id}>{i.title}</option>)}
-        </NativeSelect>
+        <DropdownSelect
+          value={issueId}
+          onChange={v => { setIssueId(v); setErr('') }}
+          disabled={!projectId}
+          dark={dark}
+          placeholder={projectId ? '— 选择 Issue —' : '请先选择项目'}
+          emptyText={projectId ? '该项目下暂无 Issue' : '请先选择项目'}
+          options={[
+            { value: '', label: projectId ? '— 选择 Issue —' : '请先选择项目', description: '取消选择' },
+            ...issues.list.map((i: any) => ({
+              value: String(i.id),
+              label: String(i.title),
+              description: i.description ? String(i.description) : undefined,
+            })),
+          ]}
+        />
       </SelectShell>
       <div>
         <SectionLabel>Session 名称</SectionLabel>
@@ -1359,9 +1540,9 @@ const MENU_ITEMS: { kind: CreateKind; label: string; icon: any }[] = [
   { kind: 'research', label: '新建 Research Agent', icon: FlaskConical },
 ]
 
-export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, currentProject, researchEnabled }: {
+export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, currentProject }: {
   open: boolean; onOpenChange: (v: boolean) => void; onPick: (kind: CreateKind) => void
-  inProject: boolean; currentProject: any; researchEnabled: boolean
+  inProject: boolean; currentProject: any
 }) {
   // 移动端 (≤ 断点): 触发按钮只留 [+] 图标, 隐藏「新建」文字与下拉箭头, 极简化顶栏.
   const isMobile = useIsMobile()
@@ -1372,14 +1553,11 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
     return () => document.removeEventListener('click', close)
   }, [open, onOpenChange])
 
+  // Research Agent 入口始终可点 — 表单内由用户自行选择 Project + Research,
+  // 即使当前所在项目未启用 Research, 也可在表单里切换到其他项目.
   const canPick = (kind: CreateKind): boolean => {
     if (kind === 'issue') return inProject ? currentProject?.can_create_issue !== false : true
-    if (kind === 'research') return inProject ? (researchEnabled && currentProject?.can_create_research !== false) : true
     return true
-  }
-  const hintFor = (kind: CreateKind): string | undefined => {
-    if (kind === 'research' && inProject && !researchEnabled) return '未启用 Research'
-    return undefined
   }
 
   return (
@@ -1400,7 +1578,6 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
           {MENU_ITEMS.map(item => {
             const Icon = item.icon
             const ok = canPick(item.kind)
-            const hint = hintFor(item.kind)
             return (
               <button key={item.kind} type="button"
                 disabled={!ok}
@@ -1409,7 +1586,6 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
                 style={{ color: 'var(--text-primary)' }}>
                 <Icon className="w-3.5 h-3.5 flex-shrink-0" />
                 <span>{item.label}</span>
-                {hint && <span className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>{hint}</span>}
               </button>
             )
           })}

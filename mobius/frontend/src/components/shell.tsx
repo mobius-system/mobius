@@ -685,7 +685,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             onPick={setCreateKind}
             inProject={inProject}
             currentProject={currentProject}
-            researchEnabled={researchEnabled}
           />
           <button
             type="button"

@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, ComponentPropsWithoutRef, CSSProperties, DragEvent as ReactDragEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
@@ -652,6 +653,7 @@ function AssistantTooltip({
 }) {
   const tooltipRef = useRef<HTMLSpanElement | null>(null)
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
+  const [visible, setVisible] = useState(false)
 
   const updatePosition = useCallback(() => {
     const node = tooltipRef.current
@@ -667,7 +669,8 @@ function AssistantTooltip({
   }, [align, side])
 
   useEffect(() => {
-    if (!position) return
+    if (!visible) return
+    updatePosition()
     const handleUpdate = () => updatePosition()
     window.addEventListener('resize', handleUpdate)
     window.addEventListener('scroll', handleUpdate, true)
@@ -675,7 +678,7 @@ function AssistantTooltip({
       window.removeEventListener('resize', handleUpdate)
       window.removeEventListener('scroll', handleUpdate, true)
     }
-  }, [position, updatePosition])
+  }, [visible, updatePosition])
 
   const tooltipStyle = position
     ? ({
@@ -690,13 +693,34 @@ function AssistantTooltip({
       className="assistant-tooltip"
       data-align={align}
       data-side={side}
-      title={label}
-      style={tooltipStyle}
-      onMouseEnter={updatePosition}
-      onFocusCapture={updatePosition}
+      data-visible={visible ? 'true' : 'false'}
+      onMouseEnter={() => {
+        updatePosition()
+        setVisible(true)
+      }}
+      onMouseLeave={() => setVisible(false)}
+      onFocusCapture={() => {
+        updatePosition()
+        setVisible(true)
+      }}
+      onBlurCapture={() => setVisible(false)}
     >
       {children}
-      <span className="assistant-tooltip__bubble" role="tooltip">{label}</span>
+      {typeof document === 'undefined'
+        ? null
+        : createPortal(
+            <span
+              className="assistant-tooltip__bubble"
+              role="tooltip"
+              data-align={align}
+              data-side={side}
+              data-visible={visible ? 'true' : 'false'}
+              style={tooltipStyle}
+            >
+              {label}
+            </span>,
+            document.body,
+          )}
     </span>
   )
 }
