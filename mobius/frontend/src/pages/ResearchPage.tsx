@@ -433,7 +433,6 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
               const isRunning = _st === 'running'
               const isFailed = _st === 'failed'
               const isCompleted = _st === 'completed'
-              const isWaiting = _st === 'waiting'
               const nameMuted = isSessionNameMuted(_st)
               return (
                 <div key={s.session_id}
@@ -451,8 +450,7 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
                         {isFailed && <span className="text-red-400">● 任务失败</span>}
                         {!isFailed && isRunning && <span className="text-green-400">● 执行中</span>}
                         {!isFailed && !isRunning && isCompleted && <span>已完成</span>}
-                        {isWaiting && <span className="text-amber-400">● 等待输入</span>}
-                        {!isFailed && !isRunning && !isCompleted && !isWaiting && <span>{s.research_role === 'chief_researcher' ? 'chief_researcher' : 'research_assistant'}</span>}
+                        {!isFailed && !isRunning && !isCompleted && <span>{s.research_role === 'chief_researcher' ? 'chief_researcher' : 'research_assistant'}</span>}
                       </div>
                     </div>
                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">

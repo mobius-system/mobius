@@ -462,7 +462,6 @@ function SessionOverview({ sessions, issueId, onOpenSession, onNewSession, onEdi
                 const isFailed = _st === 'failed'
                 const isRunning = _st === 'running'
                 const isCompleted = _st === 'completed'
-                const isWaiting = _st === 'waiting'
                 const nameMuted = isSessionNameMuted(_st)
                 const isLogoReviewSessionCard = projectId === LOGO_REVIEW_PROJECT_ID
                   && String(s.name || '').includes(LOGO_REVIEW_SESSION_NAME)
@@ -484,8 +483,7 @@ function SessionOverview({ sessions, issueId, onOpenSession, onNewSession, onEdi
                           {isFailed && <span className="text-red-400">● 任务失败</span>}
                           {!isFailed && isRunning && <span className="text-green-400">● 执行中</span>}
                           {!isFailed && !isRunning && isCompleted && <span>已完成</span>}
-                          {isWaiting && <span className="text-amber-400">● 等待输入</span>}
-                          {!isFailed && !isRunning && !isCompleted && !isWaiting && <span>{s.status === 'active' ? '活跃' : s.status}</span>}
+                          {!isFailed && !isRunning && !isCompleted && <span>{s.status === 'active' ? '活跃' : s.status}</span>}
                         </div>
                       </div>
                       <div className={`flex items-center gap-0.5 transition-opacity flex-shrink-0 ${isGuidedOrReviewSession ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>

@@ -1444,17 +1444,6 @@ body::after {
   100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
 }
 
-/* agent_status=waiting: 进程在但等输入 (agent-status-syncer 派生态) */
-.pulse-amber {
-  width: 8px; height: 8px; border-radius: 50%; background: #F59E0B;
-  animation: pulse-ring-amber 2s infinite;
-}
-@keyframes pulse-ring-amber {
-  0% { box-shadow: 0 0 0 0 rgba(245,158,11,0.45); }
-  70% { box-shadow: 0 0 0 5px rgba(245,158,11,0); }
-  100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
-}
-
 /* ===== 打字指示 ===== */
 .typing-dots span {
   display: inline-block; width: 5px; height: 5px; border-radius: 50%;
