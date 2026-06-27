@@ -161,8 +161,16 @@ function resolveSessionModelForCreate(modelOrKey: any): any {
 
 function backendNameForSessionModel(modelOrKey: any): any {
   const resolved = resolveSessionModel(modelOrKey)
-  if (!resolved) throw new Error(`模型未配置或配置文件缺失: ${modelOrKey || DEFAULT_MODEL_KEY}`)
-  return resolved.backend
+  if (resolved) return resolved.backend
+  // 模型配置缺失 (典型场景: 管理员删除/禁用了某些会话仍在引用的导入模型).
+  // 本函数用于会话列表 / 事件流 / 历史 / flag 扫描 / bridge 解析等只读热路径,
+  // 不应因单个坏模型让整条列表或 SSE 流整体失败 (会回 500 / stream failed).
+  // 按模型名前缀兜底选 backend; 仍无法判断时回退默认 backend.
+  // 真正启动会话的 launchOptionsForSession 仍会抛错, 这里只解决"读已有会话".
+  const k = String(modelOrKey || '')
+  if (k.startsWith('codex:') || k === 'codex' || k === 'gpt-5.5') return 'tmux-codex'
+  if (k.startsWith('claude-code:') || k.startsWith('claude-') || k === 'opus') return 'tmux-claude-code'
+  return DEFAULT_AGENT_BACKEND
 }
 
 function labelForSessionModel(modelOrKey: any): string {

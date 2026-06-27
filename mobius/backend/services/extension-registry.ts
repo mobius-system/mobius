@@ -79,11 +79,10 @@ function validateManifest(name: string, manifest: any, dir: string): string[] {
   if (!fs.existsSync(handler)) {
     errs.push(`handler 文件缺失: ${HANDLER_RELATIVE}`);
   }
-  // frontend 目录必须存在 (即使 dist/ 未编译也行)
-  const frontendDir = path.join(dir, FRONTEND_RELATIVE);
-  if (!fs.existsSync(frontendDir)) {
-    errs.push(`frontend 目录缺失: ${FRONTEND_RELATIVE}`);
-  }
+  // frontend 目录是可选的: 纯后端拓展 (如 virtual-pet) 可以没有 frontend/.
+  // 静态服务 (routes/ext.ts) 已对缺失的 frontend_dir/dist 做了 existsSync 兜底, 不会 500;
+  // 之前把它当硬性校验会让这类拓展被 scanFilesystem 的 continue 直接跳过注册,
+  // 并且每次启动都在 server.js 里 console.warn 刷一条 "frontend 目录缺失".
   return errs;
 }
 
