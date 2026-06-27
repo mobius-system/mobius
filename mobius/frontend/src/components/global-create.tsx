@@ -208,13 +208,16 @@ function ModelSelect({ value, onChange, dark }: { value: string; onChange: (v: s
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return (
-    <NativeSelect value={value} onChange={onChange} dark={dark}>
-      {options.map(opt => (
-        <option key={opt.key} value={opt.key} title={opt.title || opt.label}>
-          {opt.label}{opt.sub ? `（${opt.sub}）` : ''}
-        </option>
-      ))}
-    </NativeSelect>
+    <DropdownSelect
+      value={value}
+      onChange={onChange}
+      dark={dark}
+      options={options.map(opt => ({
+        value: opt.key,
+        label: opt.label,
+        description: opt.sub ? `${opt.title || opt.label} · ${opt.sub}` : opt.title,
+      }))}
+    />
   )
 }
 
@@ -269,16 +272,6 @@ function SelectShell({ label, hint, current, placeholder, loading, onRefresh, ch
       {children}
       {current && <p className="mt-1 text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>当前: {current}</p>}
     </div>
-  )
-}
-
-function NativeSelect({ value, onChange, children, dark, disabled }: { value: string; onChange: (v: string) => void; children: React.ReactNode; dark: boolean; disabled?: boolean }) {
-  return (
-    <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
-      className="w-full h-10 px-2.5 rounded-xl text-[13px] focus:outline-none focus:border-blue-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
-      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }}>
-      {children}
-    </select>
   )
 }
 
@@ -945,12 +938,25 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
       {/* 项目类型: 下拉菜单, 选定后下方字段自动联动 */}
       <div>
         <SectionLabel hint="选定后下方字段自动联动">项目类型</SectionLabel>
-        <NativeSelect value={projectKind} onChange={v => chooseKind(v as ProjectKind)} dark={dark}>
-          {PROJECT_KIND_PRESETS.map(opt => {
+        <DropdownSelect
+          value={projectKind}
+          onChange={v => chooseKind(v as ProjectKind)}
+          dark={dark}
+          options={PROJECT_KIND_PRESETS.map(opt => {
             const disabled = opt.kind === 'extension' && !canCreateExtension
-            return <option key={opt.kind} value={opt.kind} disabled={disabled}>{opt.label}{disabled ? '（仅管理员）' : ` · ${opt.note}`}</option>
+            return {
+              value: opt.kind,
+              label: opt.label,
+              description: `${opt.desc} · ${disabled ? '仅管理员' : opt.note}`,
+              disabled,
+              badge: opt.kind === 'research'
+                ? { text: '自动', color: '#10b981', bg: 'rgba(16,185,129,0.15)' }
+                : opt.kind === 'extension'
+                ? { text: '管理员', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' }
+                : undefined,
+            }
           })}
-        </NativeSelect>
+        />
         <p className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>{PROJECT_KIND_PRESETS.find(p => p.kind === projectKind)?.desc}</p>
       </div>
       <div>
@@ -1457,10 +1463,24 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
     <CreateModalShell title="新建 Research Agent" onClose={onClose} dark={dark} width={600}
       footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} disabled={!!blockedReason || !researchId} />}>
       <SelectShell label="目标项目" current={selectedProject?.name} loading={projects.loading} onRefresh={projects.refresh} dark={dark}>
-        <NativeSelect value={projectId} onChange={v => { setProjectId(v); setResearchId(''); setErr('') }} dark={dark}>
-          <option value="">— 选择项目 —</option>
-          {projects.list.map((p: any) => <option key={p.id} value={p.id}>{p.name}{p.research_enabled ? '' : '（未启用 Research）'}</option>)}
-        </NativeSelect>
+        <DropdownSelect
+          value={projectId}
+          onChange={v => { setProjectId(v); setResearchId(''); setErr('') }}
+          dark={dark}
+          placeholder="— 选择项目 —"
+          emptyText="暂无可用项目"
+          options={[
+            { value: '', label: '— 选择项目 —', description: '取消选择' },
+            ...projects.list.map((p: any) => ({
+              value: String(p.id),
+              label: String(p.name),
+              description: p.research_enabled
+                ? (p.description ? String(p.description) : undefined)
+                : (p.description ? `${String(p.description)} · 未启用 Research` : '未启用 Research'),
+              badge: p.research_enabled ? { text: 'Research', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : { text: '未启用', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+            })),
+          ]}
+        />
       </SelectShell>
       {projectId && !researchEnabled && (
         <div className="rounded-xl px-3 py-2 text-[12px] flex items-center gap-2" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444' }}>
@@ -1468,10 +1488,22 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
         </div>
       )}
       <SelectShell label="目标 Research" current={selectedResearch?.title} loading={researches.loading} onRefresh={researches.refresh} dark={dark} hint={researchEnabled ? '已激活的 Research' : ''}>
-        <NativeSelect value={researchId} onChange={v => { setResearchId(v); setErr('') }} disabled={!researchEnabled} dark={dark}>
-          <option value="">— 选择 Research —</option>
-          {researches.list.map((r: any) => <option key={r.id} value={r.id}>{r.title}</option>)}
-        </NativeSelect>
+        <DropdownSelect
+          value={researchId}
+          onChange={v => { setResearchId(v); setErr('') }}
+          disabled={!researchEnabled}
+          dark={dark}
+          placeholder={researchEnabled ? '— 选择 Research —' : '请先选择已启用 Research 的项目'}
+          emptyText={researchEnabled ? '该项目下暂无激活的 Research' : '请先选择已启用 Research 的项目'}
+          options={[
+            { value: '', label: researchEnabled ? '— 选择 Research —' : '请先选择已启用 Research 的项目', description: '取消选择' },
+            ...researches.list.map((r: any) => ({
+              value: String(r.id),
+              label: String(r.title),
+              description: r.description ? String(r.description) : undefined,
+            })),
+          ]}
+        />
       </SelectShell>
       <div>
         <SectionLabel>Agent 名称</SectionLabel>
@@ -1490,24 +1522,39 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
       </div>
       <div>
         <SectionLabel hint="创建后不可更改">角色</SectionLabel>
-        <NativeSelect value={role} onChange={v => setRole(v as 'research_assistant' | 'chief_researcher')} disabled={!researchId} dark={dark}>
-          <option value="research_assistant">研究助理</option>
-          <option value="chief_researcher">首席研究员</option>
-        </NativeSelect>
+        <DropdownSelect
+          value={role}
+          onChange={v => setRole(v as 'research_assistant' | 'chief_researcher')}
+          disabled={!researchId}
+          dark={dark}
+          options={[
+            { value: 'research_assistant', label: '研究助理' },
+            { value: 'chief_researcher', label: '首席研究员' },
+          ]}
+        />
       </div>
       <div>
         <SectionLabel hint={researchId ? '选定后关联 Skill 自动锁定、冲突 Skill 自动互斥' : '选择 Research 后可配置'}>主 Skill</SectionLabel>
-        <NativeSelect
+        <DropdownSelect
           value={chosenMainSkill?.id || ''}
           onChange={v => {
             const sk = agentSkills.find(s => s.id === v) || null
             chooseMainSkill(sk)
           }}
           disabled={!researchId || agentSkills.length === 0}
-          dark={dark}>
-          <option value="">{agentSkills.length === 0 ? '该 Research 无可用 Agent Skill' : '不选择主 Skill（完全自定义）'}</option>
-          {agentSkills.map(sk => <option key={sk.id} value={sk.id}>{sk.name}{sk.research_role ? ` · ${sk.research_role}` : ''}</option>)}
-        </NativeSelect>
+          dark={dark}
+          placeholder={agentSkills.length === 0 ? '该 Research 无可用 Agent Skill' : '不选择主 Skill（完全自定义）'}
+          emptyText="该 Research 无可用 Agent Skill"
+          options={[
+            { value: '', label: agentSkills.length === 0 ? '该 Research 无可用 Agent Skill' : '不选择主 Skill（完全自定义）', description: '完全自定义' },
+            ...agentSkills.map(sk => ({
+              value: String(sk.id),
+              label: String(sk.name),
+              description: sk.description ? String(sk.description) : undefined,
+              badge: sk.research_role ? { text: sk.research_role, color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : undefined,
+            })),
+          ]}
+        />
       </div>
       <div>
         <SectionLabel hint={researchId ? '主 Skill 关联锁定 / 冲突互斥, 点击展开选择' : '选择 Research 后可配置'}>Skill / Memory</SectionLabel>
