@@ -48,7 +48,7 @@ export function TruncatedText({
   if (expanded) {
     return (
       <div className={className}>
-        <div className="whitespace-pre-wrap break-words">{text}</div>
+        <div className="whitespace-pre-wrap break-words max-h-[220px] overflow-y-auto pr-1">{text}</div>
         <button
           type="button"
           onClick={(e) => {
