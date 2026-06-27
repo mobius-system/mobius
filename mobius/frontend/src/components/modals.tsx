@@ -3303,7 +3303,6 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
 //   - 而是走 mobius 反代 /aimux_bridge/*, 用当前用户的 mobius JWT 作 --token
 //   - mobius proxy 内部把 JWT 换成 bridge Bearer 再转发
 // =====================================================================
-const AIMUX_IDENTIFIER_DEFAULT = 'my-windows-box'
 const AIMUX_IDENTIFIER_STORAGE_KEY = 'mobius.aimux.guide.identifier'
 
 export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
@@ -3311,13 +3310,16 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
   const [copied, setCopied] = useState<string>('')
   const [remotes, setRemotes] = useState<Array<{ name: string; status: string; platform: string; default_profile?: string; last_seen?: string }>>([])
   const [remotesErr, setRemotesErr] = useState('')
+  // 默认 identifier 随机生成 (复用 randomProjectSlug → adjective_noun, 字符为字母+_, 符合 identifier 规则),
+  // 避免多台外部机器都叫 my-windows-box 在 mobius 里重名; 用户可自行覆盖, 留空则回退到该随机值
+  const defaultIdentifier = useMemo(() => randomProjectSlug(), [])
   const [identifier, setIdentifier] = useState<string>(() => {
-    if (typeof window === 'undefined') return AIMUX_IDENTIFIER_DEFAULT
+    if (typeof window === 'undefined') return defaultIdentifier
     try {
       const saved = window.localStorage.getItem(AIMUX_IDENTIFIER_STORAGE_KEY)
-      return saved && saved.trim() ? saved : AIMUX_IDENTIFIER_DEFAULT
+      return saved && saved.trim() ? saved : defaultIdentifier
     } catch {
-      return AIMUX_IDENTIFIER_DEFAULT
+      return defaultIdentifier
     }
   })
 
@@ -3354,7 +3356,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
     : '443'
   const userJwt = typeof window !== 'undefined' ? (localStorage.getItem('cc-token') || '<未登录>') : '<JWT>'
   // 输入为空时回退到默认值, 避免生成 --identifier 空参数导致命令非法
-  const effectiveIdentifier = identifier.trim() || AIMUX_IDENTIFIER_DEFAULT
+  const effectiveIdentifier = identifier.trim() || defaultIdentifier
 
   const installCmd = 'pip install --force-reinstall aimux==0.1.7'
   const connectCmd = `aimux reverse connect ${baseUrl} --identifier ${effectiveIdentifier} --token ${userJwt}`
@@ -3425,11 +3427,11 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
 
         <SectionTitle>2. 启动反向连接 (走 mobius /aimux_bridge 反代)</SectionTitle>
         <div className="mb-2">
-          <div className="text-[11px] mb-1" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>identifier ( mobius 以此名字显示该机器, 留空回退 {AIMUX_IDENTIFIER_DEFAULT} )</div>
+          <div className="text-[11px] mb-1" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>identifier ( mobius 以此名字显示该机器, 默认随机生成, 留空回退 {defaultIdentifier} )</div>
           <input
             value={identifier}
             onChange={e => handleIdentifierChange(e.target.value)}
-            placeholder={AIMUX_IDENTIFIER_DEFAULT}
+            placeholder={defaultIdentifier}
             spellCheck={false}
             autoComplete="off"
             className="w-full h-8 px-3 rounded-xl text-[13px] font-mono border outline-none focus:border-blue-400"

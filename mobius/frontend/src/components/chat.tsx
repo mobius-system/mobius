@@ -1606,8 +1606,8 @@ export function ChatArea() {
     const start = pendingSendAt ?? Date.now()
     const tick = () => {
       const elapsed = Date.now() - start
-      if (elapsed < 1500) setSendingHint('正在发送')
-      else if (elapsed < 5000) setSendingHint('正在唤醒中')
+      if (elapsed < 3000) setSendingHint('正在发送')
+      else if (elapsed < 10000) setSendingHint('正在唤醒中')
       else setSendingHint('唤醒时间长于预期，可能上下文过长，或网络不通畅。')
     }
     tick()
