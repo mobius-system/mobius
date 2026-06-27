@@ -1,5 +1,5 @@
 /**
- * jsonl-watcher.js — tail 一个 JSONL 文件, 按行增量推 entry.
+ * jsonl-watcher.ts — tail 一个 JSONL 文件, 按行增量推 entry.
  *
  * 用法:
  *   const w = watch({ path, onEntry, onError })
@@ -12,19 +12,19 @@
  *   - 不完整行 (尾部无 \n): 保留为 buffer, 下次拼上
  *   - JSON.parse 失败: onError 抛出, 继续后面行
  */
-const fs = require('fs')
+import * as fs from 'fs'
 
 const DEFAULT_TAIL_CHUNK_BYTES = 256 * 1024
 const DEFAULT_TAIL_MAX_BYTES = 16 * 1024 * 1024
 // count-then-tail: count 阶段允许扫到 64MB, 覆盖典型 jsonl 体积; 超过即标记 approximate.
 const DEFAULT_COUNT_MAX_BYTES = 64 * 1024 * 1024
 
-function positiveInt(value, fallback) {
+function positiveInt(value: any, fallback: number): number {
   const n = Number(value)
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback
 }
 
-function watch(opts) {
+function watch(opts: any): { stop: () => void; state: () => any } {
   const { path: filePath, onEntry, onError = () => {}, startOffset = 0 } = opts
   if (!filePath || typeof onEntry !== 'function') {
     throw new Error('watch 需要 { path, onEntry }')
@@ -32,14 +32,14 @@ function watch(opts) {
 
   // startOffset: 上游若已经通过 readAll() 拿到了开头 N 字节, 应该把那 N 传进来,
   // 这样初始 readAvailable 只读 (N, ∞) 那段, 不会把已发过的历史再发一遍.
-  let byteOffset = startOffset
+  let byteOffset: any = startOffset
   let lineNo = 0
   let buffer = ''
-  let fileWatcher = null
-  let pollHandle = null
+  let fileWatcher: fs.FSWatcher | null = null
+  let pollHandle: NodeJS.Timeout | null = null
   let stopped = false
 
-  function readAvailable() {
+  function readAvailable(): void {
     if (stopped) return
     let stat
     try { stat = fs.statSync(filePath) } catch { return }
@@ -71,7 +71,7 @@ function watch(opts) {
       lineNo += 1
       let entry
       try { entry = JSON.parse(line) }
-      catch (e) {
+      catch (e: any) {
         onError(new Error(`JSON.parse line ${lineNo}: ${e.message}; raw=${line.slice(0, 200)}`))
         continue
       }
@@ -79,7 +79,7 @@ function watch(opts) {
     }
   }
 
-  function startFileWatcher() {
+  function startFileWatcher(): void {
     try {
       fileWatcher = fs.watch(filePath, () => readAvailable())
     } catch (e) {
@@ -95,7 +95,7 @@ function watch(opts) {
     pollHandle = setInterval(() => {
       if (stopped) return
       if (fs.existsSync(filePath)) {
-        clearInterval(pollHandle); pollHandle = null
+        if (pollHandle) { clearInterval(pollHandle); pollHandle = null }
         startFileWatcher()
       }
     }, 200)
@@ -112,7 +112,7 @@ function watch(opts) {
   }
 }
 
-function countNewlines(buf) {
+function countNewlines(buf: Buffer): number {
   let count = 0
   for (let i = 0; i < buf.length; i++) {
     if (buf[i] === 10) count += 1
@@ -120,7 +120,7 @@ function countNewlines(buf) {
   return count
 }
 
-function parseLines(lines) {
+function parseLines(lines: string[]): any[] {
   const entries = []
   for (const line of lines) {
     try { entries.push(JSON.parse(line)) } catch {}
@@ -128,7 +128,7 @@ function parseLines(lines) {
   return entries
 }
 
-function readFull(filePath, maxLines, tailCount = 0) {
+function readFull(filePath: string, maxLines: number, tailCount: number = 0): any {
   // 用 readFileSync 返回 Buffer (而非 utf8 字符串), 这样我们能拿到准确的字节数,
   // 作为后续 watch() 的 startOffset — 跟 history 范围无缝衔接, 既不重复也不漏行.
   const buf = fs.readFileSync(filePath)
@@ -150,7 +150,7 @@ function readFull(filePath, maxLines, tailCount = 0) {
   }
 }
 
-function readTailWindow(filePath, maxLines, size, chunkSize, maxTailBytes, tailCount = 0) {
+function readTailWindow(filePath: string, maxLines: number, size: number, chunkSize: number, maxTailBytes: number, tailCount: number = 0): any {
   const effectiveLimit = tailCount > 0
     ? (maxLines > 0 ? Math.min(maxLines, tailCount) : tailCount)
     : maxLines
@@ -158,7 +158,7 @@ function readTailWindow(filePath, maxLines, size, chunkSize, maxTailBytes, tailC
     return { entries: [], total: 0, totalApproximate: size > 0, truncated: size > 0, size, scannedBytes: 0 }
   }
 
-  const chunks = []
+  const chunks: Buffer[] = []
   let position = size
   let scannedBytes = 0
   let newlineCount = 0
@@ -213,7 +213,7 @@ function readTailWindow(filePath, maxLines, size, chunkSize, maxTailBytes, tailC
  * @param {number} [opts.maxTailBytes=16777216] 大文件最多扫描尾部字节数
  * @returns {{ entries: object[], total: number, totalApproximate: boolean, truncated: boolean, size: number }}
  */
-function readAll(filePath, opts = {}) {
+function readAll(filePath: string, opts: any = {}): any {
   const maxLines = Math.max(0, Math.floor(Number.isFinite(Number(opts.maxLines)) ? Number(opts.maxLines) : 10000))
   const tailCount = Math.max(0, Math.floor(Number.isFinite(Number(opts.tailCount)) ? Number(opts.tailCount) : 0))
   const chunkSize = Math.max(16 * 1024, Math.floor(Number.isFinite(Number(opts.chunkSize)) ? Number(opts.chunkSize) : 256 * 1024))
@@ -237,7 +237,7 @@ function readAll(filePath, opts = {}) {
  * @param {number} [opts.chunkBytes=262144]
  * @returns {{ entries: object[], total: number, truncated: boolean, size: number, totalApproximate: boolean, scannedBytes: number }}
  */
-function readTail(filePath, opts = {}) {
+function readTail(filePath: string, opts: any = {}): any {
   const maxLines = positiveInt(opts.maxLines, 10000)
   const maxBytes = positiveInt(opts.maxBytes ?? opts.maxTailBytes, DEFAULT_TAIL_MAX_BYTES)
   const chunkBytes = positiveInt(opts.chunkBytes ?? opts.chunkSize, DEFAULT_TAIL_CHUNK_BYTES)
@@ -265,7 +265,7 @@ function readTail(filePath, opts = {}) {
  * @param {number} [opts.maxScanBytes=67108864] 最大扫描字节; 超过即 approximate
  * @returns {{ count: number, size: number, approximate: boolean, scannedBytes: number }}
  */
-function countLines(filePath, opts = {}) {
+function countLines(filePath: string, opts: any = {}): any {
   const chunkBytes = positiveInt(opts.chunkBytes ?? opts.chunkSize, DEFAULT_TAIL_CHUNK_BYTES)
   const maxScanBytes = positiveInt(opts.maxScanBytes ?? opts.maxBytes, DEFAULT_COUNT_MAX_BYTES)
   if (!filePath || !fs.existsSync(filePath)) {
@@ -320,7 +320,7 @@ function countLines(filePath, opts = {}) {
  * @param {number} [opts.maxBytes=67108864] 文件超过这个大小拒绝服务 (避免内存爆)
  * @returns {{ entries: object[], total: number, from: number, returned: number, size: number, exceeded: boolean }}
  */
-function readSlice(filePath, opts = {}) {
+function readSlice(filePath: string, opts: any = {}): any {
   const fromIndex = Math.max(0, Math.floor(Number.isFinite(Number(opts.fromIndex)) ? Number(opts.fromIndex) : 0))
   const limit = Math.max(0, Math.floor(Number.isFinite(Number(opts.limit)) ? Number(opts.limit) : 200))
   const maxBytes = positiveInt(opts.maxBytes, DEFAULT_COUNT_MAX_BYTES)
@@ -347,4 +347,4 @@ function readSlice(filePath, opts = {}) {
   }
 }
 
-module.exports = { watch, readAll, readTail, countLines, readSlice }
+export { watch, readAll, readTail, countLines, readSlice }

@@ -268,6 +268,19 @@ function launchOptionsForSession(session: any): any {
   }
 }
 
+const modelRegistry = {
+  MODELS,
+  DEFAULT_MODEL_KEY,
+  listSessionModelOptions,
+  resolveSessionModel,
+  resolveSessionModelForCreate,
+  backendNameForSessionModel,
+  labelForSessionModel,
+  isImportedClaudeCodeModel,
+  isImportedCodexModel,
+  launchOptionsForSession,
+}
+
 export {
   MODELS,
   DEFAULT_MODEL_KEY,
@@ -280,3 +293,5 @@ export {
   isImportedCodexModel,
   launchOptionsForSession,
 }
+
+export default modelRegistry

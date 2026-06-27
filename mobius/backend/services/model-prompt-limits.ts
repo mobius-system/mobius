@@ -272,6 +272,19 @@ function checkCreateAllowed(userId: any, modelOrKey: any): any {
   }
 }
 
+const modelPromptLimits = {
+  WINDOW_HOURS,
+  WINDOW_MINUTES,
+  adminLimitsPayload,
+  checkCreateAllowed,
+  countAllPromptsForModelSinceHours,
+  countAllPromptsForModelSinceMinutes,
+  countUserPromptsForModelSince,
+  countUserPromptsForModelSinceMinutes,
+  usageForUser,
+  usageEntryForUserModel,
+}
+
 export {
   WINDOW_HOURS,
   WINDOW_MINUTES,
@@ -284,3 +297,5 @@ export {
   usageForUser,
   usageEntryForUserModel,
 }
+
+export default modelPromptLimits

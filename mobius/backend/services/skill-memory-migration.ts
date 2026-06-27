@@ -1,5 +1,5 @@
 /**
- * skill-memory-migration.js — Skill 与 Memory 的备份/迁移序列化层.
+ * skill-memory-migration.ts — Skill 与 Memory 的备份/迁移序列化层.
  *
  * 把分散在不同 user/scope/project 目录下的 Skill 与 Memory 打包成「不分级、不分项目」
  * 的扁平 JSON, 再以 base64 字符串呈现给用户. 反向则从 base64 解析并按用户选择写入
@@ -24,11 +24,11 @@
  *   - 跳过常见臃肿目录 (.venv/node_modules/__pycache__/.git) 的导出与导入
  *   - dir_name 必须是合法目录名 (与 skills-fs 一致的字符集), name 必填.
  */
-const fs = require('fs');
-const path = require('path');
-const memoriesFs = require('./memories-fs');
-const skillsFs = require('./skills-fs');
-const accessControl = require('./access-control');
+import * as fs from 'fs';
+import * as path from 'path';
+import * as memoriesFs from './memories-fs';
+import * as skillsFs from './skills-fs';
+import * as accessControl from './access-control';
 
 const FORMAT_TAG = 'imac-skill-memory-bundle';
 const FORMAT_VERSION = 1;
@@ -40,7 +40,7 @@ const MAX_SKILL_TOTAL_BYTES = 8 * 1024 * 1024;
 const MAX_SKILL_FILES = 200;
 const MAX_PATH_LENGTH = 256;
 
-function sanitizeDirName(name) {
+function sanitizeDirName(name: any): string {
   return String(name || '')
     .trim()
     .replace(/[/\\]/g, '')
@@ -49,7 +49,7 @@ function sanitizeDirName(name) {
     .replace(/^-+|-+$/g, '');
 }
 
-function sanitizeRelativePath(rel) {
+function sanitizeRelativePath(rel: any): string | null {
   if (typeof rel !== 'string' || !rel) return null;
   if (rel.length > MAX_PATH_LENGTH) return null;
   const normalized = rel.replace(/\\/g, '/').replace(/^\/+/, '');
@@ -65,10 +65,10 @@ function sanitizeRelativePath(rel) {
 }
 
 // 递归收集 skill 目录内的相对路径 (跳过臃肿目录).
-function walkSkillFiles(dir) {
-  const out = [];
-  const visit = (current, rel) => {
-    let entries;
+function walkSkillFiles(dir: string): { full: string; rel: string }[] {
+  const out: { full: string; rel: string }[] = [];
+  const visit = (current: string, rel: string): void => {
+    let entries: fs.Dirent[];
     try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       if (SKIP_DIR_NAMES.has(e.name)) continue;
@@ -82,14 +82,14 @@ function walkSkillFiles(dir) {
   return out.sort((a, b) => a.rel.localeCompare(b.rel));
 }
 
-function readSkillFiles(sourceDir) {
+function readSkillFiles(sourceDir: string): { ok: true; files: { path: string; content_base64: string }[] } | { ok: false; error: string } {
   const fileList = walkSkillFiles(sourceDir);
   if (fileList.length === 0) return { ok: false, error: 'skill 目录为空' };
   if (fileList.length > MAX_SKILL_FILES) return { ok: false, error: `skill 文件过多 (上限 ${MAX_SKILL_FILES})` };
   let total = 0;
-  const files = [];
+  const files: { path: string; content_base64: string }[] = [];
   for (const item of fileList) {
-    let stat;
+    let stat: fs.Stats;
     try { stat = fs.statSync(item.full); } catch { continue; }
     if (stat.size > MAX_SKILL_FILE_BYTES) {
       return { ok: false, error: `文件 ${item.rel} 超过 ${MAX_SKILL_FILE_BYTES} 字节, 无法打包` };
@@ -98,7 +98,7 @@ function readSkillFiles(sourceDir) {
     if (total > MAX_SKILL_TOTAL_BYTES) {
       return { ok: false, error: `skill 内容超过 ${MAX_SKILL_TOTAL_BYTES} 字节, 无法打包` };
     }
-    let buf;
+    let buf: Buffer;
     try { buf = fs.readFileSync(item.full); } catch (e) {
       return { ok: false, error: `读取文件 ${item.rel} 失败: ${e.message}` };
     }
@@ -110,14 +110,14 @@ function readSkillFiles(sourceDir) {
 // ---- Inventory -----------------------------------------------------------
 // 列出当前管理员能用于导出的所有 Skill 与 Memory.
 // 用户级: 只列出请求者 (userId) 自己的; 项目级: 跨用户合并的全部.
-function buildInventory({ userId, user, projects }) {
+function buildInventory({ userId, user, projects }: { userId: string; user: any; projects: any[] }): any {
   const projectMap = new Map((projects || []).map((p) => [p.id, p]));
-  const inventory = {
+  const inventory: any = {
     current_user_id: userId,
     user_scope: {
       user_id: userId,
-      memories: memoriesFs.listForUser(userId).map((m) => shapeInventoryMemory(m, user)),
-      skills: skillsFs.listForUser(userId).map((s) => shapeInventorySkill(s, user)),
+      memories: memoriesFs.listForUser(userId).map((m: any) => shapeInventoryMemory(m, user)),
+      skills: skillsFs.listForUser(userId).map((s: any) => shapeInventorySkill(s, user)),
     },
     others_user_scopes: [],
     project_scopes: [],
@@ -125,10 +125,10 @@ function buildInventory({ userId, user, projects }) {
   // 他人用户级: 全平台合并, 但用 canReadContextItem 过滤隐私.
   const allUserMemories = memoriesFs.listAll();
   const allUserSkills = skillsFs.listAll();
-  const grouped = new Map();
-  const pushInto = (ownerId, kind, item) => {
+  const grouped = new Map<string, any>();
+  const pushInto = (ownerId: string, kind: string, item: any): void => {
     if (!grouped.has(ownerId)) grouped.set(ownerId, { owner_id: ownerId, memories: [], skills: [] });
-    grouped.get(ownerId)[kind === 'memory' ? 'memories' : 'skills'].push(item);
+    grouped.get(ownerId)![kind === 'memory' ? 'memories' : 'skills'].push(item);
   };
   for (const m of allUserMemories) {
     if (m.scope !== 'user') continue;
@@ -145,7 +145,7 @@ function buildInventory({ userId, user, projects }) {
   for (const [ownerId, payload] of grouped) {
     inventory.others_user_scopes.push(payload);
   }
-  inventory.others_user_scopes.sort((a, b) => a.owner_id.localeCompare(b.owner_id));
+  inventory.others_user_scopes.sort((a: any, b: any) => a.owner_id.localeCompare(b.owner_id));
 
   for (const p of projects) {
     inventory.project_scopes.push({
@@ -153,14 +153,14 @@ function buildInventory({ userId, user, projects }) {
       project_name: p.name,
       project_created_by: p.created_by || null,
       is_own_project: !!p.created_by && p.created_by === userId,
-      memories: memoriesFs.listForProject(p.id).map((m) => shapeInventoryMemory(m, user, p)),
-      skills: skillsFs.listForProject(p.id).map((s) => shapeInventorySkill(s, user, p)),
+      memories: memoriesFs.listForProject(p.id).map((m: any) => shapeInventoryMemory(m, user, p)),
+      skills: skillsFs.listForProject(p.id).map((s: any) => shapeInventorySkill(s, user, p)),
     });
   }
   return inventory;
 }
 
-function shapeInventoryMemory(m, user, project) {
+function shapeInventoryMemory(m: any, user: any, project?: any): any {
   const access = user ? accessControl.contextAccessPayload('memory', m) : null;
   const canManage = user ? accessControl.canManageContextItem(user, 'memory', m) : false;
   return {
@@ -179,7 +179,7 @@ function shapeInventoryMemory(m, user, project) {
   };
 }
 
-function shapeInventorySkill(sk, user, project) {
+function shapeInventorySkill(sk: any, user: any, project?: any): any {
   const access = user ? accessControl.contextAccessPayload('skill', sk) : null;
   const canManage = user ? accessControl.canManageContextItem(user, 'skill', sk) : false;
   return {
@@ -200,15 +200,15 @@ function shapeInventorySkill(sk, user, project) {
 
 // ---- Export --------------------------------------------------------------
 // 根据用户勾选的 memory_ids / skill_ids 生成 bundle, 返回 base64 字符串.
-function buildExportBundle({ userId, memoryIds, skillIds }) {
+function buildExportBundle({ userId, memoryIds, skillIds }: { userId: string; memoryIds?: string[]; skillIds?: string[] }): any {
   const memIds = Array.from(new Set((memoryIds || []).filter(Boolean)));
   const skIds = Array.from(new Set((skillIds || []).filter(Boolean)));
   if (memIds.length === 0 && skIds.length === 0) {
     return { ok: false, error: '请至少勾选一条 skill 或 memory' };
   }
 
-  const items = [];
-  const skippedSources = [];
+  const items: any[] = [];
+  const skippedSources: any[] = [];
 
   for (const id of memIds) {
     const m = memoriesFs.findById(id);
@@ -268,7 +268,7 @@ function buildExportBundle({ userId, memoryIds, skillIds }) {
 }
 
 // ---- Preview -------------------------------------------------------------
-function decodeBundle(base64) {
+function decodeBundle(base64: any): any {
   if (typeof base64 !== 'string' || !base64.trim()) {
     return { ok: false, error: '请输入备份字符串' };
   }
@@ -276,13 +276,13 @@ function decodeBundle(base64) {
   if (cleaned.length > MAX_BUNDLE_BASE64_BYTES) {
     return { ok: false, error: '备份字符串过大 (上限 20MB)' };
   }
-  let json;
+  let json: string;
   try {
     json = Buffer.from(cleaned, 'base64').toString('utf8');
   } catch (e) {
     return { ok: false, error: `base64 解码失败: ${e.message}` };
   }
-  let obj;
+  let obj: any;
   try { obj = JSON.parse(json); }
   catch (e) { return { ok: false, error: `不是合法的备份 JSON: ${e.message}` }; }
   if (!obj || typeof obj !== 'object') return { ok: false, error: '备份内容为空' };
@@ -291,7 +291,7 @@ function decodeBundle(base64) {
   if (!Array.isArray(obj.items)) return { ok: false, error: '备份缺少 items 列表' };
   if (obj.items.length === 0) return { ok: false, error: '备份不包含任何条目' };
 
-  const items = [];
+  const items: any[] = [];
   for (let i = 0; i < obj.items.length; i++) {
     const it = obj.items[i] || {};
     const kind = it.kind;
@@ -308,7 +308,7 @@ function decodeBundle(base64) {
     } else if (kind === 'skill') {
       const files = Array.isArray(it.files) ? it.files : [];
       if (files.length === 0 || files.length > MAX_SKILL_FILES) continue;
-      const cleanFiles = [];
+      const cleanFiles: { path: string; buffer: Buffer }[] = [];
       let total = 0;
       let bad = false;
       for (const f of files) {
@@ -317,7 +317,7 @@ function decodeBundle(base64) {
         if (!rel) { bad = true; break; }
         const b64 = typeof f.content_base64 === 'string' ? f.content_base64.replace(/\s+/g, '') : '';
         if (!b64) { bad = true; break; }
-        let buf;
+        let buf: Buffer;
         try { buf = Buffer.from(b64, 'base64'); } catch { bad = true; break; }
         if (buf.length > MAX_SKILL_FILE_BYTES) { bad = true; break; }
         total += buf.length;
@@ -346,14 +346,14 @@ function decodeBundle(base64) {
   };
 }
 
-function previewBundle(base64) {
+function previewBundle(base64: any): any {
   const decoded = decodeBundle(base64);
   if (!decoded.ok) return decoded;
   return {
     ok: true,
     exported_at: decoded.exported_at,
     exported_by: decoded.exported_by,
-    items: decoded.items.map((it) => ({
+    items: decoded.items.map((it: any) => ({
       index: it.index,
       kind: it.kind,
       name: it.name,
@@ -367,21 +367,21 @@ function previewBundle(base64) {
 
 // ---- Import --------------------------------------------------------------
 // target: { scope: 'user'|'project', project_id?: '...' }
-function importBundle({ requesterUserId, base64, target, selectedIndexes }) {
+function importBundle({ requesterUserId, base64, target, selectedIndexes }: { requesterUserId: string; base64: any; target: { scope: string; project_id?: string }; selectedIndexes?: any[] }): any {
   const decoded = decodeBundle(base64);
   if (!decoded.ok) return decoded;
   const scope = target && target.scope === 'project' ? 'project' : 'user';
   const projectId = scope === 'project' ? String(target.project_id || '').trim() : null;
   if (scope === 'project' && !projectId) return { ok: false, error: '导入到项目级时必须指定 project_id' };
 
-  let indexes = Array.isArray(selectedIndexes) ? selectedIndexes : null;
-  if (indexes === null) indexes = decoded.items.map((it) => it.index); // 默认全选
-  const pickSet = new Set(indexes.map(Number).filter((n) => Number.isInteger(n) && n >= 0));
-  const picked = decoded.items.filter((it) => pickSet.has(it.index));
+  let indexes: any[] = Array.isArray(selectedIndexes) ? selectedIndexes : null as any;
+  if (indexes === null) indexes = decoded.items.map((it: any) => it.index); // 默认全选
+  const pickSet = new Set<number>(indexes.map(Number).filter((n) => Number.isInteger(n) && n >= 0));
+  const picked = decoded.items.filter((it: any) => pickSet.has(it.index));
   if (picked.length === 0) return { ok: false, error: '没有勾选任何条目' };
 
-  const imported = [];
-  const skipped = [];
+  const imported: any[] = [];
+  const skipped: any[] = [];
 
   for (const it of picked) {
     if (it.kind === 'memory') {
@@ -417,8 +417,8 @@ function importBundle({ requesterUserId, base64, target, selectedIndexes }) {
   return { ok: true, imported, skipped };
 }
 
-function writeSkillFromBundle({ requesterUserId, projectId, item }) {
-  const skillsRoot = skillsFs.ROOT;
+function writeSkillFromBundle({ requesterUserId, projectId, item }: { requesterUserId: string; projectId: string | null; item: any }): any {
+  const skillsRoot = (skillsFs as any).ROOT;
   const userBase = projectId
     ? path.join(skillsRoot, `user=${requesterUserId}`, `project=${projectId}`, '.claude', 'skills')
     : path.join(skillsRoot, `user=${requesterUserId}`, 'default_project', '.claude', 'skills');
@@ -430,7 +430,7 @@ function writeSkillFromBundle({ requesterUserId, projectId, item }) {
   if (!path.resolve(destDir).startsWith(rootResolved)) return { ok: false, error: '目标路径非法' };
   if (fs.existsSync(destDir)) {
     // 自动追加 -import 后缀避免覆盖, 最多尝试 50 次
-    let candidate = null;
+    let candidate: string | null = null;
     for (let i = 1; i <= 50; i++) {
       const trial = path.join(userBase, `${dirName}-import-${i}`);
       if (!fs.existsSync(trial)) { candidate = trial; break; }
@@ -465,7 +465,7 @@ function writeSkillFromBundle({ requesterUserId, projectId, item }) {
   return { ok: true, skill: shaped };
 }
 
-module.exports = {
+export {
   FORMAT_TAG,
   FORMAT_VERSION,
   buildInventory,

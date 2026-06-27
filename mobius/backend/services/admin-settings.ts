@@ -653,6 +653,35 @@ function setTextRedactionGlobal({ rules, adminUserId }: any): any {
   return normalizeTextRedactionForRead(next.textRedaction)
 }
 
+const adminSettings = {
+  MODEL_PROMPT_LIMIT_WINDOW_HOURS,
+  MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
+  DEFAULT_MODEL_TMUX_WINDOW_LIMIT,
+  LIGHT_MODEL_API_TYPES,
+  LIGHT_MODEL_API_DEFAULT_TYPE,
+  loadSettings,
+  getModelPromptLimits,
+  getModelPromptLimit,
+  getModelPromptLimitConfig,
+  setModelPromptLimit,
+  setModelPromptLimitConfig,
+  getModelNetworkProxy,
+  setModelNetworkProxy,
+  getAdminAssistantCallbacks,
+  listAdminAssistantCallbackUserIds,
+  getAdminAssistantCallbackForUser,
+  setAdminAssistantCallbackForUser,
+  getDoubaoVoice,
+  getDoubaoVoiceMasked,
+  setDoubaoVoiceAsr,
+  setDoubaoVoiceTts,
+  getLightModelApi,
+  getLightModelApiMasked,
+  setLightModelApi,
+  getTextRedactionGlobal,
+  setTextRedactionGlobal,
+}
+
 export {
   MODEL_PROMPT_LIMIT_WINDOW_HOURS,
   MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
@@ -681,3 +710,5 @@ export {
   getTextRedactionGlobal,
   setTextRedactionGlobal,
 }
+
+export default adminSettings
