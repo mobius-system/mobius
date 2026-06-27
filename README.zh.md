@@ -9,12 +9,6 @@
 
 <a id="readme-top"></a>
 
-<p align="right">
-  <sub>
-    <b>简体中文</b> · <a href="./README.md">English</a>
-  </sub>
-</p>
-
 <h1 align="center">
   <a href="https://mobius.nutshellai.cn/">
     <img src="mobius/public/logo.png" width="40" alt="莫比乌斯 Logo" />
@@ -24,6 +18,8 @@
 
 <p align="center">
   <a href="https://mobius.nutshellai.cn/"><strong>官方网站</strong></a>
+  ·
+  <sub><b>简体中文</b> · <a href="./README.md">English</a></sub>
 </p>
 
 
