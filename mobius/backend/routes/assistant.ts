@@ -694,6 +694,61 @@ function conversationMessages(sessionId: string, responses: any[]): any[] {
   });
 }
 
+function safeSessionModelLabel(model: unknown): string {
+  try {
+    return modelRegistry.labelForSessionModel(model) || String(model || '');
+  } catch {
+    return String(model || '');
+  }
+}
+
+function assistantSessionModelUnavailableReason(session: any): string | null {
+  try {
+    if (modelRegistry.resolveSessionModel(session?.model)) return null;
+  } catch {
+    // Treat registry failures as unavailable for read paths; launch still fails
+    // with the original error when the user tries to run that exact session.
+  }
+  return `模型配置已失效: ${session?.model || modelRegistry.DEFAULT_MODEL_KEY || 'codex'}`;
+}
+
+function unavailableAssistantSnapshot(session: any, reason: string): any {
+  const question = readQuestion(session.session_id);
+  return {
+    session: {
+      session_id: session.session_id,
+      name: session.name,
+      project_id: session.project_id || null,
+      issue_id: session.issue_id || null,
+      assistant_role: assistantSessionRole(session),
+      model: session.model,
+      model_label: safeSessionModelLabel(session.model),
+      model_available: false,
+      model_error: reason,
+      created_at: session.created_at,
+      last_active: session.last_active,
+    },
+    question,
+    messages: conversationMessages(session.session_id, []),
+    responses: [],
+    status: {
+      alive: false,
+      working: false,
+      failed: true,
+      agent_status: 'failed',
+      model_unavailable: true,
+    },
+    job_accomplished: null,
+    unavailable_reason: reason,
+    jsonl: {
+      total: 0,
+      total_approximate: false,
+      truncated: false,
+      response_count: 0,
+    },
+  };
+}
+
 function readAssistantSnapshot(user: any, sessionId: string): any {
   const session = Sessions.findByIdForUser(sessionId, user.id);
   if (!isAssistantVisibleSession(session, user)) {
@@ -709,6 +764,7 @@ function readAssistantSnapshot(user: any, sessionId: string): any {
   const question = readQuestion(sessionId);
   const messages = conversationMessages(sessionId, responses);
   const status = sessionStatus(session);
+  const modelUnavailableReason = assistantSessionModelUnavailableReason(session);
   // 与 /api/sessions/:id/status 一致:优先看项目 bind_path 仓库根下的 flag 目录。
   // 没 bind_path 则给 null,前端回退到 status.agent_status 显示。
   let job_accomplished: boolean | null = null;
@@ -728,15 +784,20 @@ function readAssistantSnapshot(user: any, sessionId: string): any {
       issue_id: (session as any).issue_id || null,
       assistant_role: assistantSessionRole(session as any),
       model: (session as any).model,
-      model_label: modelRegistry.labelForSessionModel((session as any).model),
+      model_label: safeSessionModelLabel((session as any).model),
+      model_available: !modelUnavailableReason,
+      model_error: modelUnavailableReason,
       created_at: (session as any).created_at,
       last_active: (session as any).last_active,
     },
     question,
     messages,
     responses,
-    status,
+    status: modelUnavailableReason
+      ? { ...status, model_unavailable: true }
+      : status,
     job_accomplished,
+    unavailable_reason: modelUnavailableReason,
     jsonl: {
       total: history?.total ?? entries.length,
       total_approximate: !!history?.totalApproximate,
@@ -785,6 +846,17 @@ function listAssistantSessions(user: any, limit: number): any[] {
     `${ASSISTANT_CLONE_SESSION_PREFIX}%`,
     limit,
   ) as any[];
+}
+
+function readAssistantSnapshotForList(user: any, session: any): any | null {
+  try {
+    return readAssistantSnapshot(user, session.session_id);
+  } catch (e) {
+    const reason = (e as Error).message || '读取小莫 Session 失败';
+    console.warn(`[assistant/sessions:list] degraded snapshot ${session?.session_id || ''}: ${reason}`);
+    if (!isAssistantVisibleSession(session, user)) return null;
+    return unavailableAssistantSnapshot(session, reason);
+  }
 }
 
 function findReusableAssistantSession(user: any): any {
@@ -969,7 +1041,9 @@ router.get('/sessions', auth, (req: express.Request, res: express.Response) => {
     const limit = normalizeLimit(req.query.limit);
     const sessions = listAssistantSessions(user, limit);
     res.json({
-      sessions: sessions.map((session) => readAssistantSnapshot(user, session.session_id)),
+      sessions: sessions
+        .map((session) => readAssistantSnapshotForList(user, session))
+        .filter(Boolean),
     });
   } catch (e) {
     console.error('[assistant/sessions:list] error:', (e as Error).message);

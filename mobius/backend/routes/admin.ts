@@ -61,6 +61,38 @@ function errorWithStatus(message: string, status: number = 400): RepoError {
   return e;
 }
 
+function activeSessionUsageForModel(sessionModel: string) {
+  const model = String(sessionModel || '').trim();
+  if (!model) return { count: 0, examples: [] as any[] };
+  const count = (db.prepare(`
+    SELECT COUNT(*) AS n
+    FROM sessions_v2
+    WHERE model = ?
+      AND status = 'active'
+  `).get(model) as { n?: number } | undefined)?.n || 0;
+  const examples = db.prepare(`
+    SELECT session_id, name, user_id, project_id, issue_id, last_active
+    FROM sessions_v2
+    WHERE model = ?
+      AND status = 'active'
+    ORDER BY last_active DESC
+    LIMIT 8
+  `).all(model) as any[];
+  return { count, examples };
+}
+
+function sendModelInUse(res: express.Response, sessionModel: string, usage: { count: number; examples: any[] }): boolean {
+  if (usage.count <= 0) return false;
+  res.status(409).json({
+    error: `模型仍被 ${usage.count} 个 active Session 使用。请先迁移这些 Session 的 model，或禁用新建而不要删除配置。`,
+    code: 'MODEL_IN_USE',
+    session_model: sessionModel,
+    active_session_count: usage.count,
+    examples: usage.examples,
+  });
+  return true;
+}
+
 function normalizeEmployeeId(value: unknown): string {
   const id = String(value || '').trim();
   if (!id) throw errorWithStatus('员工 ID 不能为空');
@@ -1209,7 +1241,11 @@ router.delete('/model-access/claude-code/:key', adminAuth, (req: express.Request
       res.status(400).json({ error: 'mobiusdefault 默认 Claude Code 配置只能修改, 不能删除' });
       return;
     }
-    const ok = modelAccess.deleteClaudeCodeModel(req.params.key);
+    const key = String(req.params.key || '');
+    const sessionModel = modelAccess.sessionModelForKey(key);
+    const usage = activeSessionUsageForModel(sessionModel);
+    if (sendModelInUse(res, sessionModel, usage)) return;
+    const ok = modelAccess.deleteClaudeCodeModel(key);
     if (!ok) { res.status(404).json({ error: '模型配置不存在' }); return; }
     res.json({ ok: true });
   } catch (e) {
@@ -1250,7 +1286,11 @@ router.delete('/model-access/codex/:key', adminAuth, (req: express.Request, res:
       res.status(400).json({ error: 'mobiusdefault 默认 Codex 配置只能修改, 不能删除' });
       return;
     }
-    const ok = modelAccess.deleteCodexModel(req.params.key);
+    const key = String(req.params.key || '');
+    const sessionModel = modelAccess.sessionModelForCodexKey(key);
+    const usage = activeSessionUsageForModel(sessionModel);
+    if (sendModelInUse(res, sessionModel, usage)) return;
+    const ok = modelAccess.deleteCodexModel(key);
     if (!ok) { res.status(404).json({ error: '模型配置不存在' }); return; }
     res.json({ ok: true });
   } catch (e) {

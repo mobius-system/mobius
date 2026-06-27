@@ -3176,12 +3176,16 @@ export function AssistantChat() {
 
   const openCloneModal = useCallback(() => {
     setCloneCreateErr('')
+    const currentSessionModel = currentSnapshot?.session.model || ''
+    const fallbackModel = cloneModelOptions[0]?.key || 'codex'
     setCloneDraft(current => ({
       ...current,
       task: input.trim() || current.task,
       model: cloneModelOptions.some(option => option.key === current.model)
         ? current.model
-        : (currentSnapshot?.session.model || cloneModelOptions[0]?.key || 'codex'),
+        : (currentSessionModel && cloneModelOptions.some(option => option.key === currentSessionModel)
+          ? currentSessionModel
+          : fallbackModel),
       language: 'zh',
     }))
     setCloneModalOpen(true)
