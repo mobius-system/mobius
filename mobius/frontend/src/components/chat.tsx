@@ -7,8 +7,9 @@ import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor } from './session-welcome'
 import { NewSessionModal } from './modals'
 import { OpenInVSCodeButton, ProjectPortEntryButton } from './project-files'
-import { JsonlView, JsonlLiveTailCard, jsonlEntrySummaryKey } from './jsonl-view'
-import { VSCodeOpenProvider } from './jsonl-vscode-link'
+import { SessionJsonlPanel } from './session-jsonl-panel'
+import { useVisibleJsonl } from './session-jsonl-filter'
+import { SessionStatusChip } from './session-status-chip'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { MobiusLogo } from './mobius-logo'
 import { PlanningEditor } from './planning-editor'
@@ -25,63 +26,6 @@ import {
 } from '../services/assistant-voice'
 
 const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
-
-// "重要"的 JSONL 条目类型: 不在该集合内的一律视为次要条目, 默认隐藏.
-// "隐藏次要条目" 的展示过滤不修改源数据.
-const MAJOR_JSONL_TYPES = new Set([
-  'user', 'assistant', 'attachment', 'system', 'queue-operation',
-  'session_meta', 'turn_context', 'event_msg', 'response_item', 'error',
-])
-// 连续重复 entry 也按次要条目处理. 这里额外忽略可能由后端附加的顶层行号字段,
-// 避免 "除了序号不同以外完全一致" 的卡片逃过合并.
-const JSONL_SEQUENCE_KEYS = new Set(['line_no', 'lineNo', '_line_no', '_lineNo', '__line_no', '__lineNo'])
-const JSONL_DUPLICATE_SIGNATURE_CACHE = new WeakMap<object, string>()
-
-function normalizeJsonlForDuplicateCheck(value: any, depth = 0): any {
-  if (value === null || typeof value !== 'object') return value
-  if (Array.isArray(value)) return value.map(item => normalizeJsonlForDuplicateCheck(item, depth + 1))
-
-  const out: Record<string, any> = {}
-  for (const key of Object.keys(value).sort()) {
-    if (depth === 0 && JSONL_SEQUENCE_KEYS.has(key)) continue
-    const child = value[key]
-    if (typeof child !== 'undefined') out[key] = normalizeJsonlForDuplicateCheck(child, depth + 1)
-  }
-  return out
-}
-
-function jsonlDuplicateSignature(entry: any): string {
-  if (entry && typeof entry === 'object') {
-    const cached = JSONL_DUPLICATE_SIGNATURE_CACHE.get(entry)
-    if (cached !== undefined) return cached
-  }
-  try {
-    const encoded = JSON.stringify(normalizeJsonlForDuplicateCheck(entry))
-    const signature = typeof encoded === 'string' ? encoded : String(entry)
-    if (entry && typeof entry === 'object') JSONL_DUPLICATE_SIGNATURE_CACHE.set(entry, signature)
-    return signature
-  } catch {
-    const signature = String(entry)
-    if (entry && typeof entry === 'object') JSONL_DUPLICATE_SIGNATURE_CACHE.set(entry, signature)
-    return signature
-  }
-}
-
-function userMessageContentForEventMirror(entry: any): string | null {
-  if (entry?.type !== 'user') return null
-  const content = entry?.message?.content
-  return typeof content === 'string' ? content : null
-}
-
-function entryHasMobiusField(entry: any): boolean {
-  return Boolean(entry && Object.prototype.hasOwnProperty.call(entry, 'mobius') && entry.mobius)
-}
-
-function eventMsgMirrorsPreviousUser(entry: any, previousUserMessages: Set<string>): boolean {
-  if (entry?.type !== 'event_msg') return false
-  const message = entry?.payload?.message
-  return typeof message === 'string' && previousUserMessages.has(message)
-}
 
 function sessionModelLabel(model?: string | null, explicitLabel?: string | null) {
   if (explicitLabel) return explicitLabel
@@ -1482,71 +1426,8 @@ export function ChatArea() {
       ? '正在转写并发送语音'
       : '语音输入'
 
-  // 次要条目过滤: 隐藏时剔除不在 MAJOR_JSONL_TYPES 中的类型、连续重复 entry、
-  // 连续等摘要 entry、以及重复前序 user.message.content 的 event_msg, 源数据 jsonlEntries 不动.
-  const { visibleJsonl, minorCount } = useMemo(() => {
-    const hiddenIndexes = new Set<number>()
-    const visible: any[] = []
-    let hiddenCount = 0
-
-    let runStart = 0
-    let previousEntrySignature: string | null = null
-    let previousSummaryKey = ''
-
-    const closeRun = (endExclusive: number) => {
-      if (endExclusive - runStart <= 1) return
-      for (let i = runStart; i < endExclusive - 1; i++) hiddenIndexes.add(i)
-    }
-
-    for (let i = 0; i < jsonlEntries.length; i++) {
-      const entry = jsonlEntries[i]
-      const signature = jsonlDuplicateSignature(entry)
-      const summaryKey = jsonlEntrySummaryKey(entry)
-      const sameAsPrevious = i > 0 && (
-        signature === previousEntrySignature
-        || (!!summaryKey && summaryKey === previousSummaryKey)
-      )
-
-      if (!sameAsPrevious) {
-        closeRun(i)
-        runStart = i
-      }
-
-      previousEntrySignature = signature
-      previousSummaryKey = summaryKey
-    }
-    closeRun(jsonlEntries.length)
-
-    // 先收集所有 "纯 user 卡" (没有 mobius 元数据字段) 的 content.
-    // 当一条 user 卡同时存在带 mobius 和不带 mobius 两个版本时, 隐藏带 mobius 的那个.
-    const plainUserContents = new Set<string>()
-    for (const entry of jsonlEntries) {
-      if (entry?.type !== 'user') continue
-      const content = userMessageContentForEventMirror(entry)
-      if (content === null) continue
-      if (!entryHasMobiusField(entry)) plainUserContents.add(content)
-    }
-
-    const previousUserMessages = new Set<string>()
-    for (let i = 0; i < jsonlEntries.length; i++) {
-      const entry = jsonlEntries[i]
-      const mirroredUserMessage = eventMsgMirrorsPreviousUser(entry, previousUserMessages)
-      const duplicateMobiusCard =
-        entry?.type === 'user' &&
-        entryHasMobiusField(entry) &&
-        plainUserContents.has(userMessageContentForEventMirror(entry) ?? '')
-      const isMinor =
-        !MAJOR_JSONL_TYPES.has(entry?.type) || hiddenIndexes.has(i) || mirroredUserMessage || duplicateMobiusCard
-
-      if (isMinor) hiddenCount += 1
-      if (!hideMinorJsonl || !isMinor) visible.push(entry)
-
-      const userMessage = userMessageContentForEventMirror(entry)
-      if (userMessage !== null) previousUserMessages.add(userMessage)
-    }
-
-    return { visibleJsonl: visible, minorCount: hiddenCount }
-  }, [jsonlEntries, hideMinorJsonl])
+  // 次要条目过滤: 普通 SSE append 走增量快路径; 切 session / 加载全部 / 切过滤开关时完整重算.
+  const { visibleJsonl, minorCount } = useVisibleJsonl(jsonlEntries, hideMinorJsonl)
 
   // 状态唯一真相源: 后端 GET /api/sessions/:id/status.
   //   alive   = hub.isAlive       — 进程存活 (TUI 可接收输入)
@@ -2505,6 +2386,22 @@ export function ChatArea() {
     }
   }, [messages, streamContent, isTyping, jsonlEntries.length])
 
+  const handleJsonlScrollPositionChange = useCallback((nextUserScrolledUp: boolean) => {
+    if (nextUserScrolledUp) {
+      setUserScrolledUp(true)
+    } else {
+      setUserScrolledUp(false)
+      setHasNewMessages(false)
+    }
+  }, [])
+
+  const jumpToJsonlBottom = useCallback(() => {
+    const el = chatContainerRef.current
+    if (el) el.scrollTop = el.scrollHeight
+    setUserScrolledUp(false)
+    setHasNewMessages(false)
+  }, [])
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return
@@ -2913,41 +2810,14 @@ export function ChatArea() {
                 {currentModelLabel}
               </span>
             )}
-            {/* 单一统一状态 chip — 优先级: 断开 > 失败 > pending > working > waiting > done > idle */}
-            {(() => {
-              const disconnected = connectionStatus !== 'connected'
-              const failed = backendJobFailed === true
-              const pending = !!pendingSendAt
-              const working = !!(backendAlive && backendWorking)
-              const waiting = !!(backendAlive && !backendWorking)
-              const done = backendJobDone === true && !backendAlive
-              type Tone = 'gray' | 'red' | 'amber' | 'green' | 'sky' | 'emerald'
-              let label = '空闲', tone: Tone = 'gray', pulse = false
-              if (disconnected) { label = '已断开'; tone = 'gray' }
-              else if (failed) { label = '失败'; tone = 'red' }
-              else if (pending) { label = '启动中'; tone = 'amber'; pulse = true }
-              else if (working) { label = '执行中'; tone = 'green'; pulse = true }
-              else if (waiting) { label = '待命'; tone = 'sky' }
-              else if (done) { label = '已结束'; tone = 'emerald' }
-              const toneMap: Record<Tone, { text: string; bg: string; border: string; dot: string }> = {
-                gray:    { text: 'text-gray-400',    bg: 'bg-gray-500/10',    border: 'border-gray-500/20',    dot: 'bg-gray-400' },
-                red:     { text: 'text-red-400',     bg: 'bg-red-500/10',     border: 'border-red-500/20',     dot: 'bg-red-400' },
-                amber:   { text: 'text-amber-400',   bg: 'bg-amber-500/10',   border: 'border-amber-500/20',   dot: 'bg-amber-400' },
-                green:   { text: 'text-green-400',   bg: 'bg-green-500/10',   border: 'border-green-500/20',   dot: 'bg-green-400' },
-                sky:     { text: 'text-sky-400',     bg: 'bg-sky-500/10',     border: 'border-sky-500/20',     dot: 'bg-sky-400' },
-                emerald: { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', dot: 'bg-emerald-400' },
-              }
-              const t = toneMap[tone]
-              return (
-                <span data-tour="session-status" className={`text-[11px] px-2 py-0.5 rounded-full flex-shrink-0 border inline-flex items-center gap-1.5 ${t.text} ${t.bg} ${t.border}`}>
-                  <span className="relative inline-flex w-1.5 h-1.5">
-                    {pulse && <span className={`absolute inset-0 rounded-full ${t.dot} animate-ping opacity-75`} />}
-                    <span className={`relative inline-flex rounded-full w-1.5 h-1.5 ${t.dot}`} />
-                  </span>
-                  {label}
-                </span>
-              )
-            })()}
+            <SessionStatusChip
+              connected={connectionStatus === 'connected'}
+              failed={backendJobFailed === true}
+              pending={!!pendingSendAt}
+              working={!!(backendAlive && backendWorking)}
+              waiting={!!(backendAlive && !backendWorking)}
+              done={backendJobDone === true && !backendAlive}
+            />
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -3051,51 +2921,25 @@ export function ChatArea() {
       {/* body: 横向分 68% JsonlView + 32% (输入 + skill/memory 编辑). 窄屏改纵向堆叠 (见 index.css .mobius-chat-body). */}
       <div className="mobius-chat-body flex-1 flex min-h-0">
         {/* 左 68%: JSONL 视图 */}
-        <div data-tour="session-jsonl-view" className="mobius-chat-history flex flex-col min-w-0" style={{ width: '68%' }}>
-          <div className="flex-1 overflow-y-auto relative" ref={chatContainerRef}
-            onScroll={(e) => {
-              const el = e.currentTarget
-              const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-              if (distFromBottom > 200) setUserScrolledUp(true)
-              else { setUserScrolledUp(false); setHasNewMessages(false) }
-            }}>
-            <div className="px-6 py-6">
-              <VSCodeOpenProvider projectId={currentProjectId}>
-                <JsonlView
-                  entries={visibleJsonl}
-                  title=""
-                  emptyLoadingText={jsonlEmptyLoadingText}
-                  total={jsonlTotal > jsonlEntries.length ? jsonlTotal - (jsonlEntries.length - visibleJsonl.length) : undefined}
-                  onLoadMore={handleLoadAllJsonl}
-                  loadingMore={jsonlLoadingMore}
-                  showMeta={showJsonlMeta}
-                />
-              {/* live tail: 只在真正 working 时挂, alive 但不 working (待命) 时不出 — 否则
-                  会一直累计沉默时长造成误读. */}
-              {backendAlive && backendWorking && (
-                <JsonlLiveTailCard
-                  lastTimestamp={jsonlEntries[jsonlEntries.length - 1]?.timestamp}
-                  pid={backendPid}
-                />
-              )}
-              <div ref={endRef} />
-              </VSCodeOpenProvider>
-            </div>
-          </div>
-          {hasNewMessages && (
-            <div className="flex justify-center py-1 flex-shrink-0">
-              <button onClick={() => {
-                const el = chatContainerRef.current
-                if (el) el.scrollTop = el.scrollHeight
-                setUserScrolledUp(false)
-                setHasNewMessages(false)
-              }} className="px-4 py-1.5 text-[12px] bg-blue-500/90 text-white rounded-full hover:bg-blue-500 transition-colors shadow-md flex items-center gap-1.5">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
-                新消息
-              </button>
-            </div>
-          )}
-        </div>
+        <SessionJsonlPanel
+          currentProjectId={currentProjectId}
+          chatContainerRef={chatContainerRef}
+          endRef={endRef}
+          visibleJsonl={visibleJsonl}
+          loadedJsonlCount={jsonlEntries.length}
+          jsonlTotal={jsonlTotal}
+          jsonlEmptyLoadingText={jsonlEmptyLoadingText}
+          jsonlLoadingMore={jsonlLoadingMore}
+          showJsonlMeta={showJsonlMeta}
+          backendAlive={backendAlive}
+          backendWorking={backendWorking}
+          backendPid={backendPid}
+          lastTimestamp={jsonlEntries[jsonlEntries.length - 1]?.timestamp}
+          hasNewMessages={hasNewMessages}
+          onLoadAllJsonl={handleLoadAllJsonl}
+          onScrollPositionChange={handleJsonlScrollPositionChange}
+          onJumpToBottom={jumpToJsonlBottom}
+        />
 
         {/* 右 32%: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽 (见 index.css .mobius-chat-input). */}
         <div className="mobius-chat-input flex flex-col border-l flex-shrink-0" style={{ width: '32%', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>

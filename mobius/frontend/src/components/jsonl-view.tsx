@@ -19,6 +19,7 @@
 import { Fragment, Suspense, lazy, memo, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { diffLines } from 'diff'
+import { VirtualizedBlockList } from './jsonl-virtual-list'
 
 type AnyEntry = Record<string, any>
 type CardMode = 'compact' | 'field' | 'code'
@@ -2229,6 +2230,11 @@ interface Round {
   items: RoundItem[]
 }
 
+type JsonlRenderBlock =
+  | { key: string; kind: 'continuation'; items: JsonlViewItem[] }
+  | { key: string; kind: 'preItem'; item: JsonlViewItem }
+  | { key: string; kind: 'round'; round: Round; index: number }
+
 // 判断是否为真正的用户问题 (而非 tool_result 回调 / Blackboard 系统提醒).
 // 实现已抽到 ./jsonl-round-helpers.ts, 这里直接复用导出的 isNewRound, 让 Node 测试与
 // 渲染层共享同一份实现. Blackboard 提醒 (event_msg.user_message / type:user /
@@ -2495,6 +2501,56 @@ export function JsonlView({
     return userItem ? buildHeaderSummary(userItem.entry).short : ''
   }, [rounds])
 
+  const renderBlocks = useMemo<JsonlRenderBlock[]>(() => {
+    const blocks: JsonlRenderBlock[] = []
+    if (preItems.length > 0 && hasOmittedHead) {
+      blocks.push({ key: 'continuation', kind: 'continuation', items: preItems })
+    } else {
+      preItems.forEach((item) => {
+        blocks.push({
+          key: `pre:${item.entry?.uuid || item.entry?.id || item.entry?.timestamp || item.lineNo}`,
+          kind: 'preItem',
+          item,
+        })
+      })
+    }
+    rounds.forEach((round, index) => {
+      blocks.push({
+        key: `round:${round.items[0]?.entry?.uuid || round.items[0]?.lineNo || round.roundNum}`,
+        kind: 'round',
+        round,
+        index,
+      })
+    })
+    return blocks
+  }, [hasOmittedHead, preItems, rounds])
+
+  const renderBlock = (block: JsonlRenderBlock) => {
+    if (block.kind === 'continuation') {
+      return <ContinuationGroup items={block.items} onlyGroup={onlyGroup} showMeta={showMeta} />
+    }
+    if (block.kind === 'preItem') {
+      const { entry, lineNo, bashResults, readResults } = block.item
+      return (
+        <EntryCardWithImages
+          entry={entry}
+          lineNo={lineNo}
+          bashResults={bashResults}
+          readResults={readResults}
+          showMeta={showMeta}
+        />
+      )
+    }
+    return (
+      <RoundGroup
+        round={block.round}
+        isLast={block.index === rounds.length - 1}
+        onlyGroup={onlyGroup}
+        showMeta={showMeta}
+      />
+    )
+  }
+
   if (entries.length === 0) {
     if (emptyLoadingText) {
       return (
@@ -2550,24 +2606,7 @@ export function JsonlView({
           </span>
         )}
       </div>
-      {preItems.length > 0 && hasOmittedHead ? (
-        <ContinuationGroup items={preItems} onlyGroup={onlyGroup} showMeta={showMeta} />
-      ) : (
-        preItems.map(({ entry, lineNo, bashResults, readResults }) => (
-          <Fragment key={(entry?.uuid || entry?.id || entry?.timestamp || '') + '#' + lineNo}>
-            <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} />
-          </Fragment>
-        ))
-      )}
-      {rounds.map((round, i) => (
-        <RoundGroup
-          key={round.items[0]?.entry?.uuid ?? String(round.roundNum)}
-          round={round}
-          isLast={i === rounds.length - 1}
-          onlyGroup={onlyGroup}
-          showMeta={showMeta}
-        />
-      ))}
+      <VirtualizedBlockList blocks={renderBlocks} renderBlock={renderBlock} />
     </div>
   )
 }

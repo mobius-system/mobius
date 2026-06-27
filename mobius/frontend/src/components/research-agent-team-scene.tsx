@@ -62,10 +62,8 @@ export type ResearchTeamSceneAgent = {
 // 九个截然不同的场景 (灵感取自 threejs.org 经典示例: 城市天际线 / 研究实验室 / 深空星港 /
 // 霓虹合成波网格 / 螺旋粒子星河 / 镜面海面 / 极光山谷 / 机械机库 / 全息训练场).
 export type SceneKind = 'city' | 'lab' | 'space' | 'neon' | 'galaxy' | 'ocean' | 'aurora' | 'hangar' | 'grid'
-// 二十二个截然不同的形象: 方块机器人 / 能量球体 / 晶体核心 / 扭结核心 / 钻石体 / 卫星体 / 双螺旋 /
-// 四旋翼无人机 / 人形机甲 / 探测车 / 宇航机器人 / 飞碟 / 火箭 / 水母 / 原子 / 花朵 /
-// 蘑菇 / 幽灵 / 企鹅 / 蜘蛛 / 外星人 / 齿轮 / 莲花 / 琉璃花瓶 / 水晶簇 / 蝴蝶 / 雪花 (精致).
-export type AvatarKind = 'robot' | 'orb' | 'crystal' | 'knot' | 'diamond' | 'satellite' | 'helix' | 'drone' | 'mech' | 'rover' | 'droid' | 'ufo' | 'rocket' | 'jellyfish' | 'atom' | 'flower' | 'mushroom' | 'ghost' | 'penguin' | 'spider' | 'alien' | 'gear' | 'lotus' | 'vase' | 'shard' | 'butterfly' | 'snowflake'
+// 七个截然不同的形象: 方块机器人 / 晶体核心 / 双螺旋 / 宇航机器人 / 水母 / 蘑菇 / 企鹅.
+export type AvatarKind = 'robot' | 'crystal' | 'helix' | 'droid' | 'jellyfish' | 'mushroom' | 'penguin'
 
 export const SCENE_KIND_OPTIONS: { value: SceneKind; label: string }[] = [
   { value: 'city', label: '城市天际线' },
@@ -80,32 +78,12 @@ export const SCENE_KIND_OPTIONS: { value: SceneKind; label: string }[] = [
 ]
 export const AVATAR_KIND_OPTIONS: { value: AvatarKind; label: string }[] = [
   { value: 'robot', label: '方块机器人' },
-  { value: 'orb', label: '能量球体' },
   { value: 'crystal', label: '晶体核心' },
-  { value: 'knot', label: '扭结核心' },
-  { value: 'diamond', label: '钻石体' },
-  { value: 'satellite', label: '卫星体' },
   { value: 'helix', label: '双螺旋' },
-  { value: 'drone', label: '四旋翼无人机' },
-  { value: 'mech', label: '人形机甲' },
-  { value: 'rover', label: '探测车' },
   { value: 'droid', label: '宇航机器人' },
-  { value: 'ufo', label: '飞碟' },
-  { value: 'rocket', label: '火箭' },
   { value: 'jellyfish', label: '水母' },
-  { value: 'atom', label: '原子' },
-  { value: 'flower', label: '花朵' },
   { value: 'mushroom', label: '蘑菇' },
-  { value: 'ghost', label: '幽灵' },
   { value: 'penguin', label: '企鹅' },
-  { value: 'spider', label: '蜘蛛' },
-  { value: 'alien', label: '外星人' },
-  { value: 'gear', label: '齿轮' },
-  { value: 'lotus', label: '莲花' },
-  { value: 'vase', label: '琉璃花瓶' },
-  { value: 'shard', label: '水晶簇' },
-  { value: 'butterfly', label: '蝴蝶' },
-  { value: 'snowflake', label: '雪花' },
 ]
 
 type SceneProps = {
@@ -1243,60 +1221,13 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
   const updaters: Array<(t: number) => void> = []
   const spin = (obj: Object3D, speed: number, axis: 'x' | 'y' | 'z' = 'y') => updaters.push((t) => { obj.rotation[axis] = t * speed })
 
-  if (avatarKind === 'orb') {
-    const body = new Mesh(new SphereGeometry(0.62, 48, 48), bodyMat); body.position.y = 0.78
-    const top = new Mesh(new SphereGeometry(0.2, 32, 32), topMat); top.position.y = 1.42
-    const shell = new Mesh(new SphereGeometry(0.68, 48, 48), panelMat.clone()); shell.position.y = 0.78
-    pivot.add(body, top, shell)
-    clickable.push(body, top, shell)
-    spin(body, 0.3)
-  } else if (avatarKind === 'crystal') {
+  if (avatarKind === 'crystal') {
     const body = new Mesh(new OctahedronGeometry(0.66, 0), bodyMat); body.position.y = 0.82
     const top = new Mesh(new OctahedronGeometry(0.26, 0), topMat); top.position.y = 1.5
     const shell = new Mesh(new OctahedronGeometry(0.72, 0), panelMat.clone()); shell.position.y = 0.82
     pivot.add(body, top, shell)
     clickable.push(body, top, shell)
     spin(body, 0.3)
-  } else if (avatarKind === 'knot') {
-    // 扭结核心: three.js 标志性的 TorusKnot, 金属发光, 持续旋转.
-    const knot = new Mesh(new TorusKnotGeometry(0.42, 0.14, 140, 18), bodyMat)
-    knot.position.y = 0.86
-    const shell = new Mesh(new TorusKnotGeometry(0.5, 0.05, 80, 12), panelMat.clone())
-    shell.position.y = 0.86
-    pivot.add(knot, shell)
-    clickable.push(knot, shell)
-    spin(knot, 0.7)
-    updaters.push((t) => { knot.rotation.x = Math.sin(t * 0.4) * 0.25 })
-  } else if (avatarKind === 'diamond') {
-    // 钻石体: 冠部(浅锥) + 亭部(深锥) + 腰线环, 高金属低粗糙 = 闪亮宝石. 冠/亭共享 bodyMat(就地改质感, 随宿主一起 dispose).
-    bodyMat.roughness = 0.12
-    bodyMat.metalness = 0.92
-    const crown = new Mesh(new ConeGeometry(0.56, 0.42, 6), bodyMat); crown.position.y = 1.06
-    const pavilion = new Mesh(new ConeGeometry(0.56, 0.96, 6), bodyMat); pavilion.position.y = 0.37; pavilion.rotation.x = Math.PI
-    const girdle = new Mesh(new TorusGeometry(0.55, 0.03, 8, 6), topMat); girdle.position.y = 0.86; girdle.rotation.x = Math.PI / 2
-    pivot.add(crown, pavilion, girdle)
-    clickable.push(crown, pavilion, girdle)
-    spin(pivot, 0.5)
-  } else if (avatarKind === 'satellite') {
-    // 卫星体: 球形核心 + 倾斜轨道环 + 两侧太阳能板 + 天线, 环绕旋转.
-    const core = new Mesh(new SphereGeometry(0.42, 36, 36), bodyMat); core.position.y = 0.9
-    const orbit = new Group(); orbit.position.y = 0.9
-    const orbitRing = new Mesh(new TorusGeometry(0.66, 0.02, 8, 64), glowMat.clone()); orbitRing.rotation.x = Math.PI / 2.3
-    const moon = new Mesh(new SphereGeometry(0.09, 16, 16), topMat)
-    orbit.add(orbitRing, moon)
-    const panelMatL = bodyMat.clone()
-    const panelL = new Mesh(new BoxGeometry(0.5, 0.34, 0.03), panelMatL); panelL.position.set(-0.62, 0.9, 0)
-    const panelR = new Mesh(new BoxGeometry(0.5, 0.34, 0.03), panelMatL.clone()); panelR.position.set(0.62, 0.9, 0)
-    const panelStripe = (p: Mesh) => { const s = new Mesh(new BoxGeometry(0.5, 0.34, 0.035), topMat.clone()); s.position.copy(p.position); return s }
-    const antenna = new Mesh(new CylinderGeometry(0.012, 0.012, 0.4, 8), topMat); antenna.position.set(0, 1.32, 0)
-    const tip = new Mesh(new SphereGeometry(0.05, 12, 12), glowMat.clone()); tip.position.set(0, 1.54, 0)
-    pivot.add(core, orbit, panelL, panelR, panelStripe(panelL), panelStripe(panelR), antenna, tip)
-    clickable.push(core, orbitRing, panelL, panelR, antenna)
-    // 卫星专有动画: 轨道环旋转 + 小月沿环跑.
-    updaters.push((t) => {
-      orbit.rotation.y = t * 0.9
-      moon.position.set(Math.cos(t * 0.9) * 0.66, Math.sin(t * 0.9) * 0.66 * Math.cos(Math.PI / 2.3), Math.sin(t * 0.9) * 0.66 * Math.sin(Math.PI / 2.3))
-    })
   } else if (avatarKind === 'helix') {
     // 双螺旋: 两条相位相反的螺旋珠链 + 连接横档, 整体绕 Y 旋转 (DNA/生物科技感).
     const turns = 2.6
@@ -1338,68 +1269,6 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
       }
     }
     spin(pivot, 0.55)
-  } else if (avatarKind === 'drone') {
-    // 四旋翼无人机: 八边形机身 + 4 机臂 + 4 高速旋翼 + 前置云台镜头 + 下方发光圈 (悬浮).
-    const hub = new Mesh(new CylinderGeometry(0.34, 0.4, 0.2, 8), bodyMat); hub.position.y = 1.0
-    const cap = new Mesh(new SphereGeometry(0.17, 20, 16), topMat); cap.position.y = 1.12
-    const eye = new Mesh(new SphereGeometry(0.09, 16, 16), visorMat); eye.position.set(0, 0.97, 0.33)
-    pivot.add(hub, cap, eye)
-    clickable.push(hub, cap, eye)
-    for (let i = 0; i < 4; i += 1) {
-      const ang = i * Math.PI / 2 + Math.PI / 4
-      const len = 0.52
-      const arm = new Mesh(new BoxGeometry(len, 0.04, 0.06), bodyMat)
-      arm.position.set(Math.cos(ang) * len / 2, 1.0, Math.sin(ang) * len / 2)
-      arm.rotation.y = -ang
-      pivot.add(arm); clickable.push(arm)
-      const tx = Math.cos(ang) * len, tz = Math.sin(ang) * len
-      const housing = new Mesh(new CylinderGeometry(0.1, 0.1, 0.05, 16), topMat); housing.position.set(tx, 1.02, tz)
-      pivot.add(housing)
-      const rotor = new Group(); rotor.position.set(tx, 1.07, tz)
-      const bladeA = new Mesh(new BoxGeometry(0.28, 0.012, 0.03), glowMat.clone())
-      const bladeB = new Mesh(new BoxGeometry(0.28, 0.012, 0.03), glowMat.clone()); bladeB.rotation.y = Math.PI / 2
-      rotor.add(bladeA, bladeB); pivot.add(rotor)
-      spin(rotor, 14)
-    }
-    const under = new Mesh(new CircleGeometry(0.32, 24), glowMat.clone()); under.rotation.x = -Math.PI / 2; under.position.y = 0.88
-    pivot.add(under)
-  } else if (avatarKind === 'mech') {
-    // 人形机甲: 双腿 + 躯干(胸口反应堆) + 双肩 + 双臂 + 头(发光面罩). 站立微摆 + 头部环视.
-    const legGeo = new BoxGeometry(0.22, 0.7, 0.24)
-    const legL = new Mesh(legGeo, bodyMat); legL.position.set(-0.18, 0.35, 0)
-    const legR = new Mesh(legGeo, bodyMat); legR.position.set(0.18, 0.35, 0)
-    const hip = new Mesh(new BoxGeometry(0.52, 0.2, 0.42), topMat); hip.position.y = 0.74
-    const torso = new Mesh(new BoxGeometry(0.7, 0.72, 0.5), bodyMat); torso.position.y = 1.12
-    const core = new Mesh(new BoxGeometry(0.18, 0.18, 0.06), visorMat); core.position.set(0, 1.16, 0.27)
-    const shL = new Mesh(new BoxGeometry(0.22, 0.24, 0.26), topMat); shL.position.set(-0.46, 1.4, 0)
-    const shR = new Mesh(new BoxGeometry(0.22, 0.24, 0.26), topMat); shR.position.set(0.46, 1.4, 0)
-    const armL = new Mesh(new BoxGeometry(0.16, 0.52, 0.18), bodyMat); armL.position.set(-0.46, 1.0, 0)
-    const armR = new Mesh(new BoxGeometry(0.16, 0.52, 0.18), bodyMat); armR.position.set(0.46, 1.0, 0)
-    const head = new Mesh(new BoxGeometry(0.34, 0.3, 0.32), topMat); head.position.y = 1.66
-    const visor = new Mesh(new BoxGeometry(0.26, 0.07, 0.04), visorMat); visor.position.set(0, 1.68, 0.17)
-    pivot.add(legL, legR, hip, torso, core, shL, shR, armL, armR, head, visor)
-    clickable.push(torso, head, core, armL, armR, legL, legR)
-    updaters.push((t) => {
-      pivot.rotation.z = Math.sin(t * 1.0 + phase) * 0.03
-      head.rotation.y = Math.sin(t * 0.6) * 0.14
-    })
-  } else if (avatarKind === 'rover') {
-    // 探测车: 车身 + 顶部太阳能板 + 桅杆 + 相机头(发光镜头) + 6 轮(滚动). 火星巡视器.
-    const body = new Mesh(new BoxGeometry(0.92, 0.3, 0.6), bodyMat); body.position.y = 0.5
-    const deck = new Mesh(new BoxGeometry(0.82, 0.04, 0.5), topMat); deck.position.y = 0.66
-    const mast = new Mesh(new CylinderGeometry(0.03, 0.03, 0.5, 8), topMat); mast.position.set(0, 0.92, 0.08)
-    const camHead = new Mesh(new BoxGeometry(0.18, 0.14, 0.14), bodyMat); camHead.position.set(0, 1.2, 0.08)
-    const lens = new Mesh(new CylinderGeometry(0.045, 0.045, 0.06, 14), visorMat); lens.rotation.x = Math.PI / 2; lens.position.set(0, 1.2, 0.18)
-    pivot.add(body, deck, mast, camHead, lens)
-    clickable.push(body, camHead, mast)
-    const wheelGeo = new CylinderGeometry(0.17, 0.17, 0.1, 18)
-    ;[[-0.34, -0.2], [0, -0.2], [0.34, -0.2], [-0.34, 0.2], [0, 0.2], [0.34, 0.2]].forEach(([x, z]) => {
-      const wp = new Group(); wp.position.set(x, 0.17, z); wp.rotation.x = Math.PI / 2
-      const w = new Mesh(wheelGeo, topMat)
-      wp.add(w); pivot.add(wp)
-      spin(w, 2.2)
-    })
-    updaters.push((t) => { camHead.rotation.y = Math.sin(t * 0.5) * 0.3 })
   } else if (avatarKind === 'droid') {
     // 宇航机器人: 球形机体(滚动) + 装饰环 + 顶部小头(独眼+天线). BB-8/球童式.
     const bodySpin = new Group(); bodySpin.position.y = 0.5
@@ -1416,48 +1285,6 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
     clickable.push(ball, dome)
     spin(bodySpin, 0.4)
     updaters.push((t) => { head.rotation.z = Math.sin(t * 0.8 + phase) * 0.06; head.position.x = Math.sin(t * 0.8 + phase) * 0.03 })
-  } else if (avatarKind === 'ufo') {
-    // 飞碟: 扁球碟身 + 顶部圆顶 + 旋转闪烁的舷灯环 + 底部反向旋转光圈 (悬浮).
-    const saucer = new Mesh(new SphereGeometry(0.58, 32, 24), bodyMat); saucer.scale.set(1, 0.34, 1); saucer.position.y = 0.72
-    const dome = new Mesh(new SphereGeometry(0.26, 24, 18), topMat); dome.scale.set(1, 0.85, 1); dome.position.y = 0.96
-    const domeRing = new Mesh(new TorusGeometry(0.27, 0.02, 8, 32), glowMat.clone()); domeRing.rotation.x = Math.PI / 2; domeRing.position.y = 0.86
-    const rim = new Group(); rim.position.y = 0.66
-    const ledMats: MeshBasicMaterial[] = []
-    for (let i = 0; i < 8; i += 1) {
-      const a = i / 8 * Math.PI * 2
-      const mat = glowMat.clone()
-      const led = new Mesh(new SphereGeometry(0.04, 10, 10), mat); led.position.set(Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5)
-      rim.add(led); ledMats.push(mat)
-    }
-    const under = new Mesh(new TorusGeometry(0.4, 0.03, 8, 40), glowMat.clone()); under.rotation.x = Math.PI / 2; under.position.y = 0.5
-    pivot.add(saucer, dome, domeRing, rim, under)
-    clickable.push(saucer, dome)
-    spin(rim, 0.8); spin(under, -1.3)
-    updaters.push((t) => { ledMats.forEach((m, i) => { m.opacity = 0.3 + Math.abs(Math.sin(t * 3 + i * 0.6)) * 0.6 }) })
-  } else if (avatarKind === 'rocket') {
-    // 火箭: 圆柱箭体 + 锥形头 + 舷窗 + 3 尾翼 + 尾焰(外橙内黄, 闪烁抖动). 微摆如待发射.
-    const hull = new Mesh(new CylinderGeometry(0.22, 0.24, 0.9, 20), bodyMat); hull.position.y = 0.82
-    const nose = new Mesh(new ConeGeometry(0.22, 0.42, 20), bodyMat); nose.position.y = 1.48
-    const belt = new Mesh(new TorusGeometry(0.245, 0.03, 8, 24), topMat); belt.rotation.x = Math.PI / 2; belt.position.y = 1.0
-    const port = new Mesh(new CircleGeometry(0.085, 20), visorMat); port.position.set(0, 1.05, 0.235)
-    const finGeo = new BoxGeometry(0.04, 0.32, 0.24)
-    for (let i = 0; i < 3; i += 1) {
-      const a = i / 3 * Math.PI * 2
-      const fin = new Mesh(finGeo, topMat); fin.position.set(Math.cos(a) * 0.26, 0.55, Math.sin(a) * 0.26); fin.rotation.y = -a
-      pivot.add(fin); clickable.push(fin)
-    }
-    const flameOutMat = new MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.7, blending: AdditiveBlending, depthWrite: false })
-    const flameInMat = new MeshBasicMaterial({ color: 0xfde047, transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false })
-    const flameOut = new Mesh(new ConeGeometry(0.18, 0.5, 16), flameOutMat); flameOut.rotation.x = Math.PI; flameOut.position.y = 0.2
-    const flameIn = new Mesh(new ConeGeometry(0.1, 0.34, 16), flameInMat); flameIn.rotation.x = Math.PI; flameIn.position.y = 0.26
-    pivot.add(hull, nose, belt, port, flameOut, flameIn)
-    clickable.push(hull, nose, belt)
-    updaters.push((t) => {
-      pivot.rotation.z = Math.sin(t * 2 + phase) * 0.04
-      const f = 0.8 + Math.sin(t * 18) * 0.22
-      flameOut.scale.set(f, 0.9 + Math.sin(t * 16) * 0.18, f); flameOutMat.opacity = 0.5 + Math.abs(Math.sin(t * 13)) * 0.3
-      flameIn.scale.set(f, 0.9 + Math.sin(t * 21) * 0.2, f)
-    })
   } else if (avatarKind === 'jellyfish') {
     // 水母: 半球形伞盖(半透明发光) + 8 条飘动触手 (空灵漂浮).
     const bellMat = bodyMat.clone(); bellMat.transparent = true; bellMat.opacity = 0.82
@@ -1479,42 +1306,6 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
       bell.scale.set(p, 1 + Math.sin(t * 1.4) * 0.09, p); inner.scale.copy(bell.scale)
       tentacles.forEach((tg, i) => { tg.rotation.x = Math.sin(t * 1.2 + i) * 0.22; tg.rotation.z = Math.cos(t * 1.0 + i) * 0.22 })
     })
-  } else if (avatarKind === 'atom') {
-    // 原子: 发光原子核 + 3 条倾斜电子轨道环 + 各自电子绕行 (科技感).
-    const nucleus = new Mesh(new SphereGeometry(0.24, 28, 22), bodyMat); nucleus.position.y = 0.85
-    const halo = new Mesh(new SphereGeometry(0.3, 20, 16), glowMat.clone()); halo.position.y = 0.85
-    for (let i = 0; i < 3; i += 1) {
-      const og = new Group(); og.position.y = 0.85
-      og.rotation.x = Math.PI / 3 * i + 0.3
-      og.rotation.y = Math.PI / 4 * i
-      const ring = new Mesh(new TorusGeometry(0.62, 0.012, 8, 64), glowMat.clone()); og.add(ring)
-      const sg = new Group(); og.add(sg)
-      const el = new Mesh(new SphereGeometry(0.06, 12, 12), visorMat); el.position.x = 0.62; sg.add(el)
-      pivot.add(og)
-      updaters.push((t) => { sg.rotation.z = t * (1.4 + i * 0.6) })
-    }
-    pivot.add(nucleus, halo)
-    clickable.push(nucleus)
-  } else if (avatarKind === 'flower') {
-    // 花朵: 花心(黄) + 7 片花瓣 + 2 片叶 (柔和自转绽放).
-    const bloom = new Group(); bloom.position.y = 0.95
-    const pollen = new MeshStandardMaterial({ color: 0xfbbf24, emissive: new Color(0xfbbf24).multiplyScalar(0.45), roughness: 0.4, metalness: 0.1 })
-    const center = new Mesh(new SphereGeometry(0.2, 24, 18), pollen); bloom.add(center)
-    const petalGeo = new SphereGeometry(0.24, 16, 12)
-    for (let i = 0; i < 7; i += 1) {
-      const a = i / 7 * Math.PI * 2
-      const petal = new Mesh(petalGeo, bodyMat); petal.scale.set(1, 0.22, 0.55)
-      petal.position.set(Math.cos(a) * 0.3, 0, Math.sin(a) * 0.3); petal.rotation.y = -a; petal.rotation.x = -0.45
-      bloom.add(petal); clickable.push(petal)
-    }
-    const leafGeo = new SphereGeometry(0.2, 14, 10)
-    const leafL = new Mesh(leafGeo, topMat); leafL.scale.set(1, 0.18, 0.5); leafL.position.set(-0.42, -0.18, 0); leafL.rotation.z = 0.6
-    const leafR = new Mesh(leafGeo, topMat); leafR.scale.set(1, 0.18, 0.5); leafR.position.set(0.42, -0.18, 0); leafR.rotation.z = -0.6
-    bloom.add(leafL, leafR)
-    pivot.add(bloom)
-    clickable.push(center)
-    spin(bloom, 0.25)
-    updaters.push((t) => { bloom.scale.setScalar(1 + Math.sin(t * 1.2) * 0.05) })
   } else if (avatarKind === 'mushroom') {
     // 蘑菇: 圆盖(带白斑) + 茎 + 底座 (柔和呼吸).
     const stem = new Mesh(new CylinderGeometry(0.2, 0.28, 0.6, 18), new MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 })); stem.position.y = 0.4
@@ -1526,23 +1317,6 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
     pivot.add(stem, base, cap)
     clickable.push(cap, stem)
     updaters.push((t) => { const p = 1 + Math.sin(t * 1.5 + phase) * 0.04; cap.scale.set(p, 0.78 + Math.sin(t * 1.5 + phase) * 0.03, p) })
-  } else if (avatarKind === 'ghost') {
-    // 幽灵: 半透明白色身躯 + 波浪底摆 + 黑眼睛 (漂浮摇摆).
-    const sheet = new MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5, transparent: true, opacity: 0.9, emissive: new Color(0xffffff).multiplyScalar(theme === 'light' ? 0.04 : 0.08) })
-    const body = new Mesh(new SphereGeometry(0.5, 26, 22), sheet); body.scale.set(1, 1.2, 1); body.position.y = 0.85
-    const drips: Mesh[] = []
-    ;[[-0.32, -0.16], [-0.12, -0.2], [0.1, -0.18], [0.3, -0.16], [0, -0.14]].forEach(([x, off]) => {
-      const d = new Mesh(new SphereGeometry(0.14, 14, 12), sheet); d.position.set(x, 0.42 + off, 0); pivot.add(d); drips.push(d)
-    })
-    const eyeMat = new MeshBasicMaterial({ color: 0x0f172a })
-    const eL = new Mesh(new SphereGeometry(0.06, 14, 14), eyeMat); eL.position.set(-0.16, 0.95, 0.44); eL.scale.set(1, 1.4, 0.6)
-    const eR = new Mesh(new SphereGeometry(0.06, 14, 14), eyeMat); eR.position.set(0.16, 0.95, 0.44); eR.scale.set(1, 1.4, 0.6)
-    pivot.add(body, eL, eR)
-    clickable.push(body)
-    updaters.push((t) => {
-      pivot.rotation.z = Math.sin(t * 1.0 + phase) * 0.08
-      drips.forEach((d, i) => { d.position.y = 0.42 + Math.sin(t * 2 + i) * 0.04 })
-    })
   } else if (avatarKind === 'penguin') {
     // 企鹅: 椭圆身 + 白腹 + 头 + 橙喙 + 双翅 + 橙脚 (左右摇摆走).
     const bellyMat = new MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 })
@@ -1561,150 +1335,6 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
     pivot.add(body, belly, head, eL, eR, beak, wingL, wingR, footL, footR)
     clickable.push(body, head, beak)
     updaters.push((t) => { pivot.rotation.z = Math.sin(t * 2.2 + phase) * 0.08 })
-  } else if (avatarKind === 'spider') {
-    // 蜘蛛: 头胸 + 腹部 + 8 条节肢腿 (交替步态).
-    const abdomen = new Mesh(new SphereGeometry(0.4, 22, 18), bodyMat); abdomen.position.set(0, 0.5, -0.18)
-    const spiderHead = new Mesh(new SphereGeometry(0.26, 18, 16), bodyMat); spiderHead.position.set(0, 0.55, 0.22)
-    const eyeMat = new MeshBasicMaterial({ color: 0xfde047 })
-    ;[[-0.08, 0.6, 0.42], [0.08, 0.6, 0.42], [-0.13, 0.66, 0.4], [0.13, 0.66, 0.4]].forEach(([x, y, z]) => { const e = new Mesh(new SphereGeometry(0.025, 8, 8), eyeMat); e.position.set(x, y, z); pivot.add(e) })
-    const legGeo = new CylinderGeometry(0.022, 0.012, 0.7, 8)
-    const legs: Mesh[] = []
-    for (let i = 0; i < 8; i += 1) {
-      const side = i < 4 ? -1 : 1
-      const idx = i % 4
-      const zOff = (1.5 - idx) * 0.13
-      const leg = new Mesh(legGeo, bodyMat)
-      leg.position.set(side * 0.14, 0.42, 0.05 + zOff)
-      leg.rotation.z = side * 0.9
-      leg.rotation.x = (1.5 - idx) * 0.12
-      pivot.add(leg); legs.push(leg); clickable.push(leg)
-    }
-    pivot.add(abdomen, spiderHead)
-    clickable.push(abdomen, spiderHead)
-    updaters.push((t) => { legs.forEach((leg, i) => { leg.rotation.x = (1.5 - (i % 4)) * 0.12 + Math.sin(t * 5 + (i < 4 ? 0 : Math.PI)) * 0.22 }) })
-  } else if (avatarKind === 'alien') {
-    // 外星人: 大头 + 大黑杏眼 + 小身 + 细肢 (悬浮, 头部晃动).
-    const head = new Mesh(new SphereGeometry(0.46, 28, 24), bodyMat); head.scale.set(1, 1.15, 1); head.position.y = 1.1
-    const bodyMesh = new Mesh(new SphereGeometry(0.26, 18, 16), bodyMat); bodyMesh.scale.set(1, 1.2, 1); bodyMesh.position.y = 0.62
-    const eyeMat = new MeshBasicMaterial({ color: 0x0b1220 })
-    const eL = new Mesh(new SphereGeometry(0.12, 16, 14), eyeMat); eL.scale.set(0.7, 1.5, 0.6); eL.position.set(-0.14, 1.16, 0.36)
-    const eR = new Mesh(new SphereGeometry(0.12, 16, 14), eyeMat); eR.scale.set(0.7, 1.5, 0.6); eR.position.set(0.14, 1.16, 0.36)
-    const armL = new Mesh(new CylinderGeometry(0.03, 0.025, 0.4, 8), bodyMat); armL.position.set(-0.26, 0.6, 0); armL.rotation.z = 0.4
-    const armR = new Mesh(new CylinderGeometry(0.03, 0.025, 0.4, 8), bodyMat); armR.position.set(0.26, 0.6, 0); armR.rotation.z = -0.4
-    pivot.add(head, bodyMesh, eL, eR, armL, armR)
-    clickable.push(head, bodyMesh)
-    updaters.push((t) => { head.rotation.z = Math.sin(t * 0.8 + phase) * 0.06; head.position.x = Math.sin(t * 0.8 + phase) * 0.02 })
-  } else if (avatarKind === 'gear') {
-    // 齿轮: 圆盘 + 12 齿 + 中心光孔, 高速自转 (机械感).
-    const gg = new Group(); gg.position.y = 0.9
-    const disc = new Mesh(new CylinderGeometry(0.42, 0.42, 0.2, 24), bodyMat); gg.add(disc)
-    for (let i = 0; i < 12; i += 1) {
-      const a = i / 12 * Math.PI * 2
-      const tooth = new Mesh(new BoxGeometry(0.14, 0.22, 0.16), bodyMat)
-      tooth.position.set(Math.cos(a) * 0.46, 0, Math.sin(a) * 0.46); tooth.rotation.y = -a
-      gg.add(tooth); clickable.push(tooth)
-    }
-    const hub = new Mesh(new CylinderGeometry(0.14, 0.14, 0.24, 20), topMat); gg.add(hub)
-    const hole = new Mesh(new TorusGeometry(0.1, 0.018, 8, 20), glowMat.clone()); hole.rotation.x = Math.PI / 2; hole.position.y = 0.13; gg.add(hole)
-    pivot.add(gg)
-    clickable.push(disc, hub)
-    spin(gg, 1.1)
-  } else if (avatarKind === 'lotus') {
-    // 莲花: 三层虹彩花瓣 + 花蕊 + 雄蕊, 柔和自转绽放.
-    const lotus = new Group(); lotus.position.y = 0.55
-    const petalMatP = pearlMat(bodyColor, selected)
-    const petalGeo = new SphereGeometry(0.22, 20, 16)
-    const addRing = (n: number, r: number, tilt: number, y: number, rot: number) => {
-      for (let i = 0; i < n; i += 1) {
-        const a = i / n * Math.PI * 2 + rot
-        const p = new Mesh(petalGeo, petalMatP)
-        p.scale.set(1, 0.14, 0.7)
-        p.position.set(Math.cos(a) * r, y, Math.sin(a) * r)
-        p.rotation.y = -a
-        p.rotation.x = -tilt
-        lotus.add(p); clickable.push(p)
-      }
-    }
-    addRing(8, 0.34, 1.0, 0.0, 0)
-    addRing(6, 0.22, 0.6, 0.12, 0.35)
-    addRing(5, 0.12, 0.25, 0.22, 0)
-    const pollen = new MeshStandardMaterial({ color: 0xfbbf24, emissive: new Color(0xfbbf24).multiplyScalar(0.5), roughness: 0.4 })
-    const core = new Mesh(new SphereGeometry(0.1, 18, 14), pollen); core.position.y = 0.3; lotus.add(core); clickable.push(core)
-    const stamenMat = new MeshBasicMaterial({ color: 0xfde047 })
-    for (let i = 0; i < 8; i += 1) { const a = i / 8 * Math.PI * 2; const s = new Mesh(new SphereGeometry(0.025, 8, 8), stamenMat); s.position.set(Math.cos(a) * 0.1, 0.36, Math.sin(a) * 0.1); lotus.add(s) }
-    pivot.add(lotus)
-    spin(lotus, 0.18)
-    updaters.push((t) => { lotus.scale.setScalar(1 + Math.sin(t * 1.0) * 0.04) })
-  } else if (avatarKind === 'vase') {
-    // 琉璃花瓶: 旋转体(Lathe)玻璃瓶身(真折射) + 瓶内发光核心, 缓慢转动显折射变化.
-    const profile = [
-      new Vector2(0.001, 0.0), new Vector2(0.26, 0.03), new Vector2(0.30, 0.12),
-      new Vector2(0.18, 0.34), new Vector2(0.13, 0.6), new Vector2(0.20, 0.86),
-      new Vector2(0.28, 1.0), new Vector2(0.30, 1.08), new Vector2(0.22, 1.12),
-    ]
-    const vase = new Mesh(new LatheGeometry(profile, 56), glassMat(bodyColor, selected)); vase.position.y = -0.05
-    const innerMat = new MeshBasicMaterial({ color: selected ? 0x38bdf8 : bodyColor, transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false })
-    const inner = new Mesh(new SphereGeometry(0.13, 18, 14), innerMat); inner.position.y = 0.5
-    pivot.add(vase, inner)
-    clickable.push(vase)
-    spin(vase, 0.25)
-    updaters.push((t) => { inner.scale.setScalar(0.9 + Math.sin(t * 1.6) * 0.15); innerMat.opacity = 0.7 + Math.abs(Math.sin(t * 1.6)) * 0.3 })
-  } else if (avatarKind === 'shard') {
-    // 水晶簇: 基岩上簇生的六棱水晶柱(虹彩清漆) + 尖端宝石, 缓慢自转.
-    const cluster = new Group(); cluster.position.y = 0.1
-    const gemMatP = pearlMat(bodyColor, selected); gemMatP.roughness = 0.1; gemMatP.metalness = 0.1
-    const rock = new Mesh(new IcosahedronGeometry(0.4, 0), new MeshStandardMaterial({ color: theme === 'light' ? 0x64748b : 0x1e293b, roughness: 0.9, metalness: 0.1 })); cluster.add(rock)
-    const cfg: Array<[number, number, number, number, number]> = [[0, 0.5, 0, 0.95, 0], [0.32, 0.42, 0.12, 0.6, 0.3], [-0.3, 0.46, 0.1, 0.55, -0.25], [0.12, 0.5, -0.3, 0.66, 0.15], [-0.16, 0.44, -0.24, 0.5, -0.4], [0.28, 0.4, -0.2, 0.48, 0.5]]
-    cfg.forEach(([x, y, z, s, rot]) => {
-      const c = new Mesh(new ConeGeometry(s * 0.22, s, 6), gemMatP)
-      c.position.set(x, y, z); c.rotation.z = rot * 0.4; c.rotation.x = rot * 0.25
-      cluster.add(c); clickable.push(c)
-      const tip = new Mesh(new OctahedronGeometry(s * 0.1, 0), gemMatP); tip.position.set(x + Math.sin(rot) * 0.1, y + s * 0.5, z); cluster.add(tip)
-    })
-    pivot.add(cluster)
-    clickable.push(rock)
-    spin(cluster, 0.2)
-  } else if (avatarKind === 'butterfly') {
-    // 蝴蝶: bezier 翼形挤出的虹彩双翅 + 身躯 + 头 + 触角, 拍翅.
-    const wingMatP = pearlMat(bodyColor, selected, DoubleSide)
-    const wingShape = new Shape()
-    wingShape.moveTo(0, 0)
-    wingShape.bezierCurveTo(0.4, 0.35, 0.62, 0.22, 0.6, -0.02)
-    wingShape.bezierCurveTo(0.62, -0.34, 0.36, -0.42, 0.08, -0.12)
-    wingShape.lineTo(0, 0)
-    const wingGeo = new ExtrudeGeometry(wingShape, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 1 })
-    const wingL = new Mesh(wingGeo, wingMatP); wingL.scale.x = -1
-    const wingR = new Mesh(wingGeo, wingMatP)
-    const wings = new Group(); wings.position.y = 0.8; wings.add(wingL, wingR)
-    const body = new Mesh(new CylinderGeometry(0.045, 0.05, 0.55, 10), topMat); body.position.y = 0.78
-    const head = new Mesh(new SphereGeometry(0.09, 14, 12), topMat); head.position.y = 1.08
-    const eyeMat = new MeshBasicMaterial({ color: 0x0f172a })
-    const eL = new Mesh(new SphereGeometry(0.02, 8, 8), eyeMat); eL.position.set(-0.04, 1.1, 0.07)
-    const eR = new Mesh(new SphereGeometry(0.02, 8, 8), eyeMat); eR.position.set(0.04, 1.1, 0.07)
-    const antL = new Mesh(new CylinderGeometry(0.006, 0.006, 0.18, 6), topMat); antL.position.set(-0.03, 1.2, 0); antL.rotation.z = 0.3
-    const antR = new Mesh(new CylinderGeometry(0.006, 0.006, 0.18, 6), topMat); antR.position.set(0.03, 1.2, 0); antR.rotation.z = -0.3
-    pivot.add(wings, body, head, eL, eR, antL, antR)
-    clickable.push(body, wingL, wingR)
-    updaters.push((t) => { const f = Math.sin(t * 7) * 0.5; wingL.rotation.y = f; wingR.rotation.y = f })
-  } else if (avatarKind === 'snowflake') {
-    // 雪花: 六瓣对称冰晶(主干+分支+尖端宝石)+ 核心, 虹彩清漆, 缓慢自转.
-    const flake = new Group(); flake.position.y = 0.9
-    const fm = pearlMat(bodyColor, selected)
-    const armGeo = new BoxGeometry(0.5, 0.05, 0.05)
-    const branchGeo = new BoxGeometry(0.15, 0.045, 0.045)
-    for (let i = 0; i < 6; i += 1) {
-      const arm = new Group(); arm.rotation.z = i * Math.PI / 3
-      const main = new Mesh(armGeo, fm); main.position.x = 0.28; arm.add(main); clickable.push(main)
-      const tip = new Mesh(new OctahedronGeometry(0.07, 0), fm); tip.position.x = 0.52; arm.add(tip)
-      for (const s of [-1, 1]) {
-        const b = new Mesh(branchGeo, fm); b.position.set(0.22, 0, 0); b.rotation.z = s * 0.5; arm.add(b)
-        const bt = new Mesh(new OctahedronGeometry(0.04, 0), fm); bt.position.set(0.32, s * 0.1, 0); arm.add(bt)
-      }
-      flake.add(arm)
-    }
-    const center = new Mesh(new IcosahedronGeometry(0.1, 0), fm); flake.add(center); clickable.push(center)
-    pivot.add(flake)
-    spin(flake, 0.3)
   } else {
     // robot (默认): 方块机器人
     const base = new Mesh(new BoxGeometry(0.82, 0.2, 0.72), bodyMat); base.position.y = 0.15
