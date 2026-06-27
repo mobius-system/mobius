@@ -4,8 +4,9 @@ import { type ThemeName, nextThemeName, normalizeTheme } from './theme'
 const BACKGROUND_FLOW_STORAGE_KEY = 'cc-background-flow'
 
 function loadBackgroundFlowEnabled() {
+  // 默认关闭; localStorage 中未存储过 (新用户) 时不开启背景光流.
   const stored = localStorage.getItem(BACKGROUND_FLOW_STORAGE_KEY)
-  return stored == null ? true : stored === '1'
+  return stored == null ? false : stored === '1'
 }
 
 // Branding: 由 index.html 头部同步阻塞 script 注入到 window.__BRANDING__,

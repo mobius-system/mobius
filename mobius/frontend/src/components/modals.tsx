@@ -1448,9 +1448,6 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
             <ModalSwitch checked={isPlanning} />
             <span>
               <span className="font-medium">系统宏观规划模式</span>
-              <span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                创建后自动生成规划 Session（仅启用 mobius-planner SKILL + 全量 Memory，不可执行代码，专注维护 project_knowledge.md）
-              </span>
             </span>
           </label>
 

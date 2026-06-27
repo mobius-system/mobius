@@ -74,7 +74,14 @@ function WhitelistGroup({
   return (
     <div className="rounded-lg border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-primary)' }}>
       <div className="flex items-center gap-2 mb-2">
-        <label className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: 'var(--text-primary)' }}>
+        {/* onMouseDown 阻止默认聚焦: 隐藏的 sr-only checkbox 被点击获焦后, 浏览器会把它滚动进视口.
+            该面板可能内联渲染在 ProjectPage 这类「无 positioned 祖先」的长滚动页里, 此时 absolute 的
+            sr-only input 包含块回退到文档原点, 聚焦会让整页向上跳到屏幕外. 阻止 mousedown 默认行为
+            既消除跳屏, 又不影响 label→input 的合成 click 切换, 键盘 Tab 仍可正常聚焦. */}
+        <label
+          onMouseDown={e => e.preventDefault()}
+          className="flex items-center gap-3 text-[13px] cursor-pointer select-none"
+          style={{ color: 'var(--text-primary)' }}>
           <input type="checkbox" checked={enabled} onChange={e => {
             const nextEnabled = e.target.checked
             onEnabledChange(nextEnabled)
