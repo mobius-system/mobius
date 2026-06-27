@@ -3568,7 +3568,7 @@ export function AssistantChat() {
                 </div>
               </div>
               <div className="assistant-header__actions">
-                <AssistantTooltip label={openSessionTip} align="left">
+                <AssistantTooltip label={openSessionTip} align="left" side="top">
                   <button
                     type="button"
                     onClick={openCurrentSession}
@@ -3582,7 +3582,7 @@ export function AssistantChat() {
                   </button>
                 </AssistantTooltip>
                 {user?.role === 'admin' ? (
-                  <AssistantTooltip label="用 VSCode 打开小莫的技能（mobius-assistant）" align="left">
+                  <AssistantTooltip label="用 VSCode 打开小莫的技能（mobius-assistant）" align="left" side="top">
                     <button
                       type="button"
                       onClick={openSkillEditor}
@@ -3595,7 +3595,7 @@ export function AssistantChat() {
                     </button>
                   </AssistantTooltip>
                 ) : null}
-                <AssistantTooltip label="预设配置">
+                <AssistantTooltip label="预设配置" side="top">
                   <button
                     type="button"
                     onClick={() => setPresetOpen(true)}
@@ -3607,7 +3607,7 @@ export function AssistantChat() {
                     <span>预设配置</span>
                   </button>
                 </AssistantTooltip>
-                <AssistantTooltip label="压缩上文">
+                <AssistantTooltip label="压缩上文" side="top">
                   <button
                     type="button"
                     onClick={() => setCompactConfirmOpen(true)}
@@ -3620,7 +3620,7 @@ export function AssistantChat() {
                     <span>压缩上文</span>
                   </button>
                 </AssistantTooltip>
-                <AssistantTooltip label={deleteSessionTip}>
+                <AssistantTooltip label={deleteSessionTip} side="top">
                   <button
                     type="button"
                     onClick={() => {
@@ -3636,7 +3636,7 @@ export function AssistantChat() {
                     <span>删除</span>
                   </button>
                 </AssistantTooltip>
-                <AssistantTooltip label="刷新" align="right">
+                <AssistantTooltip label="刷新" align="right" side="top">
                   <button
                     type="button"
                     onClick={() => void loadHistory()}
@@ -3649,7 +3649,7 @@ export function AssistantChat() {
                     <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                   </button>
                 </AssistantTooltip>
-                <AssistantTooltip label={resizeTip} align="right">
+                <AssistantTooltip label={resizeTip} align="right" side="top">
                   <button
                     type="button"
                     onClick={() => setPanelSize(value => nextAssistantPanelSize(value))}
@@ -3661,7 +3661,7 @@ export function AssistantChat() {
                     {panelSize === 'fullscreen' ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
                   </button>
                 </AssistantTooltip>
-                <AssistantTooltip label="关闭" align="right">
+                <AssistantTooltip label="关闭" align="right" side="top">
                   <button
                     type="button"
                     onClick={() => setOpen(false)}

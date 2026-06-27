@@ -1349,11 +1349,8 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
   }
 
   setAgentId(group, agent.id)
-  const animate = (t: number) => {
-    pivot.position.y = Math.sin(t * 1.1 + phase) * 0.05
-    for (const u of updaters) u(t)
-  }
-  return { group, clickable, animate }
+  // avatar 禁止乱动: 关闭漂浮 + 所有自旋/摆动, 形象保持静止.
+  return { group, clickable }
 }
 
 // "+" 占位槽: emerald 光圈/虚线感圆环 + 3D 十字(立在 xy 平面, 从相机侧 +z 看是完整加号). 点击触发 onAdd.
