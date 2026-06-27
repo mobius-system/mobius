@@ -35,6 +35,7 @@ const MAJOR_JSONL_TYPES = new Set([
 // 连续重复 entry 也按次要条目处理. 这里额外忽略可能由后端附加的顶层行号字段,
 // 避免 "除了序号不同以外完全一致" 的卡片逃过合并.
 const JSONL_SEQUENCE_KEYS = new Set(['line_no', 'lineNo', '_line_no', '_lineNo', '__line_no', '__lineNo'])
+const JSONL_DUPLICATE_SIGNATURE_CACHE = new WeakMap<object, string>()
 
 function normalizeJsonlForDuplicateCheck(value: any, depth = 0): any {
   if (value === null || typeof value !== 'object') return value
@@ -50,11 +51,19 @@ function normalizeJsonlForDuplicateCheck(value: any, depth = 0): any {
 }
 
 function jsonlDuplicateSignature(entry: any): string {
+  if (entry && typeof entry === 'object') {
+    const cached = JSONL_DUPLICATE_SIGNATURE_CACHE.get(entry)
+    if (cached !== undefined) return cached
+  }
   try {
     const encoded = JSON.stringify(normalizeJsonlForDuplicateCheck(entry))
-    return typeof encoded === 'string' ? encoded : String(entry)
+    const signature = typeof encoded === 'string' ? encoded : String(entry)
+    if (entry && typeof entry === 'object') JSONL_DUPLICATE_SIGNATURE_CACHE.set(entry, signature)
+    return signature
   } catch {
-    return String(entry)
+    const signature = String(entry)
+    if (entry && typeof entry === 'object') JSONL_DUPLICATE_SIGNATURE_CACHE.set(entry, signature)
+    return signature
   }
 }
 
@@ -1428,6 +1437,9 @@ export function ChatArea() {
   // 后端在 jsonl_meta 里附带的真实 jsonl 文件绝对路径, 用于原始数据弹窗标题展示.
   const [jsonlPath, setJsonlPath] = useState<string | null>(null)
   const [jsonlLoadingMore, setJsonlLoadingMore] = useState<boolean>(false)
+  const pendingJsonlEntriesRef = useRef<any[]>([])
+  const pendingJsonlTotalIncrementRef = useRef(0)
+  const pendingJsonlFlushTimerRef = useRef<number | null>(null)
   const [showRaw, setShowRaw] = useState(false)
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
   const [fileChangesOpen, setFileChangesOpen] = useState(false)
@@ -2277,6 +2289,36 @@ export function ChatArea() {
     }
   })
 
+  const flushPendingJsonlEntries = useCallback(() => {
+    if (pendingJsonlFlushTimerRef.current !== null) {
+      window.clearTimeout(pendingJsonlFlushTimerRef.current)
+      pendingJsonlFlushTimerRef.current = null
+    }
+    if (pendingJsonlEntriesRef.current.length === 0) return
+    const batch = pendingJsonlEntriesRef.current
+    const totalIncrement = pendingJsonlTotalIncrementRef.current
+    pendingJsonlEntriesRef.current = []
+    pendingJsonlTotalIncrementRef.current = 0
+    setJsonlEntries(prev => prev.concat(batch))
+    if (totalIncrement > 0) setJsonlTotal(prev => prev + totalIncrement)
+  }, [])
+
+  const clearPendingJsonlEntries = useCallback(() => {
+    if (pendingJsonlFlushTimerRef.current !== null) {
+      window.clearTimeout(pendingJsonlFlushTimerRef.current)
+      pendingJsonlFlushTimerRef.current = null
+    }
+    pendingJsonlEntriesRef.current = []
+    pendingJsonlTotalIncrementRef.current = 0
+  }, [])
+
+  const enqueueJsonlEntry = useCallback((entry: any) => {
+    pendingJsonlEntriesRef.current.push(entry)
+    pendingJsonlTotalIncrementRef.current += 1
+    if (pendingJsonlFlushTimerRef.current !== null) return
+    pendingJsonlFlushTimerRef.current = window.setTimeout(flushPendingJsonlEntries, 50)
+  }, [flushPendingJsonlEntries])
+
   const connectEventStream = useCallback((sid: string) => {
     // sid 必须有效: 防止 subscribe {task_id: undefined} 触发后端 "session undefined 不存在或不属于你".
     if (!sid) return
@@ -2331,8 +2373,10 @@ export function ChatArea() {
           const entries = Array.isArray(msg.entries) ? msg.entries : []
           const isChunked = typeof msg.chunk_index === 'number' || typeof msg.done === 'boolean'
           if (!isChunked) {
+            clearPendingJsonlEntries()
             setJsonlEntries(entries)
           } else if (msg.reset) {
+            clearPendingJsonlEntries()
             setJsonlEntries(entries)
           } else if (entries.length > 0) {
             setJsonlEntries(prev => prev.concat(entries))
@@ -2347,9 +2391,8 @@ export function ChatArea() {
           // backend 写入新 entry, 追加. 后端带 session_id, 与本 stream 订阅的 sid 不符则丢弃 (双保险).
           if (msg.session_id && msg.session_id !== sid) return
           if (typeof msg.entry === 'undefined') return
-          setJsonlEntries(prev => prev.concat(msg.entry))
-          // live 增量: total 也 +1 (服务端不会重发 jsonl_meta)
-          setJsonlTotal(prev => prev + 1)
+          // live 增量合批写入 state: 高频工具输出时避免一条 entry 触发一次 React render.
+          enqueueJsonlEntry(msg.entry)
         }
         else if (msg.event === 'error') {
           const text = formatSendError(msg)
@@ -2367,7 +2410,7 @@ export function ChatArea() {
       setTyping(false)
       setConnectionStatus('disconnected')
     }
-  }, [addMessage])
+  }, [addMessage, clearPendingJsonlEntries, enqueueJsonlEntry])
 
   // 标记当前 session 的历史消息是否已成功从后端取回过 (至少一次).
   // 用来防止 SessionStartModal 在切换 session / 首次进入的清空-加载窗口期
@@ -2405,6 +2448,7 @@ export function ChatArea() {
   const handleLoadAllJsonl = useCallback(async () => {
     const sid = currentSession?.session_id || currentTask?.task_id
     if (!sid) return
+    flushPendingJsonlEntries()
     if (jsonlLoadingMore) return
     if (jsonlTotal <= jsonlEntries.length) return
     setJsonlLoadingMore(true)
@@ -2424,11 +2468,12 @@ export function ChatArea() {
     } finally {
       setJsonlLoadingMore(false)
     }
-  }, [currentSession?.session_id, currentTask?.task_id, jsonlLoadingMore, jsonlTotal, jsonlEntries.length])
+  }, [currentSession?.session_id, currentTask?.task_id, flushPendingJsonlEntries, jsonlLoadingMore, jsonlTotal, jsonlEntries.length])
 
   useEffect(() => {
     const sid = currentSession?.session_id || currentTask?.task_id
     if (!sid) return
+    clearPendingJsonlEntries()
     setStreamContent('')
     setTyping(false)
     setMessages([])
@@ -2440,9 +2485,10 @@ export function ChatArea() {
     loadHistory()
     connectEventStream(sid)
     return () => {
+      clearPendingJsonlEntries()
       eventSourceRef.current?.close(); eventSourceRef.current = null; setConnectionStatus('disconnected')
     }
-  }, [currentSession?.session_id, currentTask?.task_id, loadHistory, connectEventStream])
+  }, [currentSession?.session_id, currentTask?.task_id, clearPendingJsonlEntries, loadHistory, connectEventStream])
 
   // 卡片数量变化 (jsonlEntries.length) 时自动滚到末尾, 同时也覆盖原有 messages/stream/typing 触发.
   // userScrolledUp=true 时不抢滚条, 改在顶部显示"新消息"按钮.

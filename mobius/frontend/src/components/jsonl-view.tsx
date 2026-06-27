@@ -2468,7 +2468,7 @@ export function JsonlView({
   showMeta?: boolean
 }) {
   const [showAll, setShowAll] = useState(false)
-  const recent = entries.slice(-(showAll ? entries.length : 200))
+  const recent = useMemo(() => entries.slice(-(showAll ? entries.length : 200)), [entries, showAll])
   const windowOffset = entries.length - recent.length
   const headerTitle = title === undefined ? 'JSONL' : title
   const visibleItems = useMemo(() => mergeBashToolResultItems(recent, windowOffset), [recent, windowOffset])
