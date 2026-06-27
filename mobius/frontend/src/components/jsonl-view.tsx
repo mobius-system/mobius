@@ -10,6 +10,7 @@
  *    特例: assistant 里 name:"Edit" 的 tool_use 卡片用专属 indigo 色 (文件改动易扫);
  *    特例: assistant 里 Bash tool_use 且 command 包含 "start.py" 的卡片用专属 gold 色 (产品构建易扫).
  *    特例: assistant 响应文本命中关键词时用专属 gold 色 (关键回复易扫).
+ *    特例: assistant 结束消息 stop_reason:"end_turn" 复用 turn_duration 的 gold 色 (轮次结束易扫).
  *  - 卡片整体默认折叠, 唯独"第一张 user 卡片"(会话起始 prompt) 与"最后一张
  *    assistant 卡片"(最新回复) 默认展开 — 一头一尾最值得先看;
  *    展开态受控于卡片本地 state, 用户手动折叠后保持折叠, 不被实时轮询重渲染强制掀开.
@@ -144,6 +145,10 @@ const READ_TOOL_THEME = { dot: 'bg-sky-400', border: 'border-sky-500/40', bg: 'b
 // 特例: event_msg.payload.type === 'context_compacted' 的卡片 — 一次上下文压缩事件,
 // 在长列表里需要一眼可扫, 复用 yellow (gold) 与 start.py 同色但 label 区分.
 const CONTEXT_COMPACTED_THEME = { ...START_PY_THEME, label: 'ctx·compact' }
+
+// 特例: Claude assistant 最终结束消息. 复用 system/turn_duration 的 amber gold 主题,
+// 让 stop_reason:"end_turn" 的卡片在长列表中和轮次耗时卡片一样容易扫到.
+const ASSISTANT_END_TURN_THEME = { ...TYPE_THEME.system, label: 'end_turn' }
 
 // 特例: assistant 响应文本命中这些关键词时整卡复用 gold 主题.
 // 只检查 assistant 文本响应, 不把 tool_use/input.command 当作本规则的命中范围.
@@ -618,6 +623,10 @@ function mergeBashToolResultItems(visibleEntries: AnyEntry[], windowOffset: numb
 
 function isContextCompactedEvent(entry: AnyEntry): boolean {
   return entry?.type === 'event_msg' && entry?.payload?.type === 'context_compacted'
+}
+
+function isAssistantEndTurnEntry(entry: AnyEntry): boolean {
+  return entry?.type === 'assistant' && entry?.message?.stop_reason === 'end_turn'
 }
 
 function assistantResponseText(content: any): string {
@@ -1554,10 +1563,12 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
-  // 配色优先级: blackboard 相关 (最醒目) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
+  // 配色优先级: blackboard 相关 (最醒目) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
   // start.py 必须排在 Bash 之前: 它本身也是 Bash, 但语义更具体, 不能被 cyan 普通主题盖掉.
   const theme = isBlackboard
     ? BLACKBOARD_THEME
+    : isAssistantEndTurnEntry(entry)
+    ? ASSISTANT_END_TURN_THEME
     : isAssistantResponseGoldKeyword(entry)
     ? ASSISTANT_RESPONSE_KEYWORD_THEME
     : isEditToolUse(entry)

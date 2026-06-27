@@ -2248,9 +2248,7 @@ export function ChatArea() {
     if (!token) return
     // 开新连接前先关掉可能残留的旧连接, 避免两个 stream 并存把别的 session 数据混进来.
     if (eventSourceRef.current) { try { eventSourceRef.current.close() } catch {} eventSourceRef.current = null }
-    // sse_gzip=1: 显式要求后端对 SSE 做流式 gzip. 浏览器对 EventSource 本就自动带
-    // Accept-Encoding: gzip, 这里加 query 是兜底——即便中间 nginx 重写/抹掉该头, 压缩仍能触发.
-    const source = new EventSource(`/api/sessions/${encodeURIComponent(sid)}/events?token=${encodeURIComponent(token)}&sse_gzip=1`)
+    const source = new EventSource(`/api/sessions/${encodeURIComponent(sid)}/events?token=${encodeURIComponent(token)}`)
     eventSourceRef.current = source
     setConnectionStatus('connecting')
     source.onopen = () => {

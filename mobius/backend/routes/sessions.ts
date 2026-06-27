@@ -1,7 +1,6 @@
 import express from 'express';
 import { v4 as uuid } from 'uuid';
 import path from 'path';
-import zlib from 'zlib';
 import { auth, authOrQuery } from '../middleware/auth';
 import { Sessions } from '../repositories/sessions';
 import { Issues } from '../repositories/issues';
@@ -214,55 +213,25 @@ function sseDataLine(payload: any): string {
   return JSON.stringify(payload).replace(/\r?\n/g, '\ndata: ');
 }
 
-// SSE 写入目标: 既可以是裸 express.Response, 也可以是 gzip transform 流 (它带 .flush()).
-// gzip sink 必须在每一帧之后显式 flush (Z_SYNC_FLUSH), 否则压缩器要攒满内部 buffer 才吐字节,
-// SSE 的实时投递会被毁掉——这正是全局 compression 中间件绝对不能套在 SSE 上的原因.
-type SseSink = {
-  write: (chunk: any, ...rest: any[]) => boolean;
-  once: (event: string | symbol, listener: (...args: any[]) => void) => void;
-  off?: (event: string | symbol, listener: (...args: any[]) => void) => void;
-  end?: (...args: any[]) => any;
-  flush?: (callback?: () => void) => void;
-  writableEnded?: boolean;
-  destroyed?: boolean;
-};
-
-// gzip sink 写完一帧后强制 flush, 让浏览器立刻拿到这一帧 (压缩器默认会攒数据).
-async function flushSseSink(sink: SseSink): Promise<void> {
-  if (typeof sink.flush !== 'function') return;
-  await new Promise<void>((resolve) => {
-    let settled = false;
-    const done = () => { if (!settled) { settled = true; resolve(); } };
-    try { sink.flush!(done); } catch { done(); }
-    // flush 回调在极端情况 (下游已关) 下可能不回, 加一个兜底防卡死整条流.
-    setTimeout(done, 1000);
-  });
-}
-
-async function writeSse(sink: SseSink | null, event: string, payload: any): Promise<boolean> {
-  if (!sink || sink.writableEnded || sink.destroyed) return false;
+async function writeSse(res: express.Response | null, event: string, payload: any): Promise<boolean> {
+  if (!res || res.writableEnded || res.destroyed) return false;
   const frame = `event: ${event}\ndata: ${sseDataLine(payload)}\n\n`;
-  const ok = sink.write(frame);
-  await flushSseSink(sink);
-  if (ok && !(sink.writableEnded || sink.destroyed)) return true;
-  // 背压: 等下游 drain. express.Response / gzip 都会 emit 'drain' / 'close'.
+  if (res.write(frame)) return true;
   await new Promise<void>((resolve) => {
     const done = () => {
-      try { sink.off?.('drain', done); } catch {}
-      try { sink.off?.('close', done); } catch {}
+      res.off('drain', done);
+      res.off('close', done);
       resolve();
     };
-    sink.once('drain', done);
-    sink.once('close', done);
+    res.once('drain', done);
+    res.once('close', done);
   });
-  return !(sink.writableEnded || sink.destroyed);
+  return !(res.writableEnded || res.destroyed);
 }
 
-async function writeSseComment(sink: SseSink | null, text: string): Promise<boolean> {
-  if (!sink || sink.writableEnded || sink.destroyed) return false;
-  const ok = sink.write(`: ${text}\n\n`);
-  await flushSseSink(sink);
-  return ok && !(sink.writableEnded || sink.destroyed);
+function writeSseComment(res: express.Response | null, text: string): boolean {
+  if (!res || res.writableEnded || res.destroyed) return false;
+  return res.write(`: ${text}\n\n`);
 }
 
 interface JsonlHistory {
@@ -274,7 +243,7 @@ interface JsonlHistory {
 }
 
 async function sendSseJsonlHistory(
-  sink: SseSink,
+  res: express.Response,
   sessionId: string,
   hist: JsonlHistory,
 ): Promise<boolean> {
@@ -288,7 +257,7 @@ async function sendSseJsonlHistory(
   };
 
   if (entries.length === 0) {
-    return writeSse(sink, 'jsonl_history', { ...baseMeta, reset: true, done: true, chunk_index: 0, entries: [] });
+    return writeSse(res, 'jsonl_history', { ...baseMeta, reset: true, done: true, chunk_index: 0, entries: [] });
   }
 
   const maxEntries = 250;
@@ -310,7 +279,7 @@ async function sendSseJsonlHistory(
     chunkIndex += 1;
     chunkBytes = 0;
     chunk = [];
-    return writeSse(sink, 'jsonl_history', payload);
+    return writeSse(res, 'jsonl_history', payload);
   };
 
   for (const entry of entries) {
@@ -598,43 +567,26 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no'); // 告诉 nginx 不要缓冲本响应, 否则 SSE 实时性会被毁
 
-  // 流式 gzip: 客户端声明接受 gzip, 或前端用 ?sse_gzip=1 显式要求时开启.
-  // 浏览器对 EventSource 始终自动带 Accept-Encoding: gzip, 故一定能正确解压;
-  // sse_gzip=1 是前端兜底信号——即便中间 nginx 重写/抹掉了 Accept-Encoding, 压缩仍能触发.
-  // 每帧 Z_SYNC_FLUSH (见 flushSseSink) 保证事件逐条实时到达, 不会因压缩器攒数据而卡顿.
-  const acceptEnc = String(req.headers['accept-encoding'] || '');
-  const acceptTokens = acceptEnc.toLowerCase().split(',').map((s) => s.split(';')[0].trim());
-  const wantGzip = acceptTokens.includes('gzip') || String(req.query.sse_gzip || '') === '1';
-  let gzip: ReturnType<typeof zlib.createGzip> | null = null;
-  let sink: SseSink = res as unknown as SseSink;
-  if (wantGzip) {
-    gzip = zlib.createGzip({ level: 6 });
-    gzip.on('error', () => { try { res.destroy(); } catch {} });
-    gzip.pipe(res);
-    sink = gzip as unknown as SseSink;
-    res.setHeader('Content-Encoding', 'gzip');
-    res.setHeader('Vary', 'Accept-Encoding');
-  }
-
+  // 注意: SSE (text/event-stream) 绝不能套 Content-Encoding: gzip. 浏览器对 EventSource 的
+  // gzip 解压是按块缓冲的——即便后端每帧 Z_SYNC_FLUSH, 浏览器仍会攒到连接关闭才把解压后的事件
+  // 交给 onmessage, 导致实时 jsonl_entry 永远到不了前端 (只有手动刷新网页, 重开连接拿到初始
+  // jsonl_history 才看得到更新). 这是浏览器层的行为, 后端 flush 无解. REST JSON 的 gzip
+  // (见 middleware/api-gzip.ts, 已显式跳过 text/event-stream) 不受影响, 继续保留.
   if (typeof res.flushHeaders === 'function') res.flushHeaders();
   if (req.socket) req.socket.setTimeout(0);
 
   let closed = false;
   let unsub: (() => void) | null = null;
-  const keepalive = setInterval(() => { writeSseComment(sink, 'keepalive').catch(() => {}); }, 25000);
+  const keepalive = setInterval(() => writeSseComment(res, 'keepalive'), 25000);
   const cleanup = () => {
     if (closed) return;
     closed = true;
     clearInterval(keepalive);
-    if (gzip) { try { gzip.destroy(); } catch {} }
     if (unsub) { try { unsub(); } catch {} }
     unsub = null;
   };
   const endStream = () => {
     cleanup();
-    // gzip 是 pipe 到 res 的数据源: 先 end gzip (会 flush 尾部校验并通过 pipe 关闭 res),
-    // 直接 res.end() 会丢掉 gzip 还没吐完的字节. 非 gzip 路径才直接 res.end().
-    if (gzip && !gzip.writableEnded) { try { gzip.end(); } catch {} return; }
     if (!res.writableEnded && !res.destroyed) {
       try { res.end(); } catch {}
     }
@@ -646,16 +598,16 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
     const backend = backendForSession(session);
     const workspace = resolveSessionWorkspace(user, sessionId);
 
-    if (!(await writeSseComment(sink, 'connected'))) { endStream(); return; }
+    if (!writeSseComment(res, 'connected')) { endStream(); return; }
 
-    const subscribed = await writeSse(sink, 'subscribed', {
+    const subscribed = await writeSse(res,'subscribed', {
       event: 'subscribed',
       session: shapeSessionForStream(session),
     });
     if (!subscribed || closed) { endStream(); return; }
 
     const history = Messages.listForTask(sessionId, 200);
-    const historySent = await writeSse(sink, 'history', {
+    const historySent = await writeSse(res,'history', {
       event: 'history',
       messages: history,
       total: history.length,
@@ -663,7 +615,7 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
     if (!historySent || closed) { endStream(); return; }
 
     if (workspace.error) {
-      await writeSse(sink, 'server_error', {
+      await writeSse(res,'server_error', {
         event: 'error',
         message: workspace.error,
         category: 'workspace',
@@ -687,7 +639,7 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
           const counted = countMergedJsonl(histPath);
           metaTotal = counted.total;
           metaApproximate = counted.totalApproximate;
-          const metaSent = await writeSse(sink, 'jsonl_meta', {
+          const metaSent = await writeSse(res,'jsonl_meta', {
             event: 'jsonl_meta',
             session_id: sessionId,
             total: metaTotal,
@@ -710,15 +662,15 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
       hist.totalApproximate = metaApproximate;
       hist.truncated = metaTotal > (hist.entries?.length || 0);
     }
-    const jsonlHistorySent = await sendSseJsonlHistory(sink, sessionId, hist);
+    const jsonlHistorySent = await sendSseJsonlHistory(res,sessionId, hist);
     if (!jsonlHistorySent || closed) { endStream(); return; }
 
     unsub = backend.getAgentRawThoughtStream(
       sessionId,
       (entry: any) => {
-        writeSse(sink, 'jsonl_entry', { event: 'jsonl_entry', session_id: sessionId, entry }).catch(() => cleanup());
+        writeSse(res,'jsonl_entry', { event: 'jsonl_entry', session_id: sessionId, entry }).catch(() => cleanup());
         if (isTurnCompleteEntry(entry)) {
-          writeSse(sink, 'typing', { event: 'typing', active: false }).catch(() => cleanup());
+          writeSse(res,'typing', { event: 'typing', active: false }).catch(() => cleanup());
           try {
             // agent_status 现由 agent-status-syncer 统一管; turn 完成只刷新 last_agent_event 留痕.
             db.prepare('UPDATE sessions_v2 SET last_agent_event=strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE session_id=?')
@@ -730,7 +682,7 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
     );
   } catch (e) {
     console.warn(`[sessions/events] stream failed (${sessionId}): ${(e as Error).message}`);
-    try { await writeSse(sink, 'server_error', { event: 'error', message: (e as Error).message || String(e) }); } catch {}
+    try { await writeSse(res,'server_error', { event: 'error', message: (e as Error).message || String(e) }); } catch {}
     endStream();
   }
 });

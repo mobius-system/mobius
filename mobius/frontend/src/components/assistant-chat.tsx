@@ -2835,8 +2835,7 @@ export function AssistantChat() {
     }
 
     const sid = currentSessionId
-    // sse_gzip=1: 显式要求后端对 SSE 做流式 gzip (见 sessions.ts, 浏览器自带 Accept-Encoding: gzip).
-    const source = new EventSource(`/api/sessions/${encodeURIComponent(sid)}/events?token=${encodeURIComponent(token)}&sse_gzip=1`)
+    const source = new EventSource(`/api/sessions/${encodeURIComponent(sid)}/events?token=${encodeURIComponent(token)}`)
     eventSourceRef.current = source
     setStreamSessionId('')
 
