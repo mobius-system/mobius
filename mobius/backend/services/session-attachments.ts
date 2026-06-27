@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { APP_DIR } from '../config';
+import { APP_DIR, HIDDEN_FOLDER_NAME } from '../config';
 
 const SESSION_ATTACHMENT_MAX_COUNT = 6;
 const SESSION_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
@@ -16,7 +16,7 @@ function normalizeSessionAttachments(raw: any, user: any, extraRoots: string[] =
   const allowedRoots = [
     ...extraRoots,
     user?.work_dir,
-    path.join(APP_DIR, '.imac', 'upload'),
+    path.join(APP_DIR, HIDDEN_FOLDER_NAME, 'upload'),
   ].filter(Boolean).map((item) => path.resolve(item as string));
   const out: any[] = [];
   const seen = new Set<string>();

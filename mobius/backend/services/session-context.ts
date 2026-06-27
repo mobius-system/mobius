@@ -11,7 +11,7 @@ import { Researches } from '../repositories/researches';
 import { Projects } from '../repositories/projects';
 import { Skills } from '../repositories/skills';
 import { Memories } from '../repositories/memories';
-import { PORT } from '../config';
+import { PORT, HIDDEN_FOLDER_NAME } from '../config';
 import { resolveEffectiveSkills } from './skill-resolver';
 import { parseSkillId } from './skills-fs';
 import { TARGET_SUBDIR as SKILLS_SUBDIR } from './session-skills-sync';
@@ -199,7 +199,7 @@ function zh_add_research_blackboard_info(lines: string[], research: any, session
   const url = researchBlackboardUrl(research.id);
   const author = session?.research_role || 'research_assistant';
   lines.push('## Research Blackboard');
-  lines.push(`当前研究的 Blackboard 只能通过 Mobius HTTP API 读写。不要直接编辑 \`.imac/blackboard/${research.id}/blackboard.jsonl\` 文件。`);
+  lines.push(`当前研究的 Blackboard 只能通过 Mobius HTTP API 读写。不要直接编辑 \`${HIDDEN_FOLDER_NAME}/blackboard/${research.id}/blackboard.jsonl\` 文件。`);
   lines.push('');
   lines.push('读取完整 Blackboard:');
   lines.push('');
@@ -246,7 +246,7 @@ function zh_add_memory_info(lines: string[], memories: any[], project: any): voi
     }
   });
   if (project && project.bind_path) {
-    lines.push(`此外，如果需要记住一些信息供未来使用，请写入 ${project.bind_path}/.imac/project_knowledge.md，不要写入 ~/.codex 或者 ~/.claude。`);
+    lines.push(`此外，如果需要记住一些信息供未来使用，请写入 ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md，不要写入 ~/.codex 或者 ~/.claude。`);
     lines.push('');
   }
 }
@@ -312,7 +312,7 @@ function zh_add_worktree_info(lines: string[], issue: any, project: any, session
   lines.push('若合并有冲突, 必须解决全部冲突后再完成合并; 合并完成后重新运行测试验证需求是否满足. 若仍有冲突或测试不通过, 继续修复 → 重新合并 → 重新测试, **直到没有冲突且测试通过为止**.');
   lines.push('一切结束后，尝试git push，如果因为认证，失败了也没关系，跳过即可。');
   if (!isAssistantSession(session)) {
-    lines.push(`提示: running.flag 位于仓库根 \`${wt.root}/.imac/...\`, 不在 worktree 内 — 重建/删除 worktree 目录时不要误删它.`);
+    lines.push(`提示: running.flag 位于仓库根 \`${wt.root}/${HIDDEN_FOLDER_NAME}/...\`, 不在 worktree 内 — 重建/删除 worktree 目录时不要误删它.`);
   }
   lines.push('');
 }
@@ -321,7 +321,7 @@ function zh_add_completion_flag_info(lines: string[], session: any, project: any
   if (!(session && session.session_id && session.session_id !== '(待创建)')) return;
   if (isAssistantSession(session)) return;
   const flagRoot = (project && project.bind_path) ? project.bind_path : '.';
-  const flagPath = `${flagRoot}/.imac/flags/${session.session_id}/running.flag`;
+  const flagPath = `${flagRoot}/${HIDDEN_FOLDER_NAME}/flags/${session.session_id}/running.flag`;
   lines.push('## 当任务完成时的最后一步');
   lines.push(`当任务最终成功或者最终失败时，你需要删除标记文件 ${flagPath}。但是，不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。`);
 }
@@ -399,7 +399,7 @@ function en_add_research_blackboard_info(lines: string[], research: any, session
   const url = researchBlackboardUrl(research.id);
   const author = session?.research_role || 'research_assistant';
   lines.push('## Research Blackboard');
-  lines.push(`This research's Blackboard can only be read and written through the Mobius HTTP API. Do not directly edit the \`.imac/blackboard/${research.id}/blackboard.jsonl\` file.`);
+  lines.push(`This research's Blackboard can only be read and written through the Mobius HTTP API. Do not directly edit the \`${HIDDEN_FOLDER_NAME}/blackboard/${research.id}/blackboard.jsonl\` file.`);
   lines.push('');
   lines.push('Read the full Blackboard:');
   lines.push('');
@@ -446,7 +446,7 @@ function en_add_memory_info(lines: string[], memories: any[], project: any): voi
     }
   });
   if (project && project.bind_path) {
-    lines.push(`Additionally, if you need to remember additional information for future sessions, please write to ${project.bind_path}/.imac/project_knowledge.md, do not write to ~/.codex or ~/.claude.`);
+    lines.push(`Additionally, if you need to remember additional information for future sessions, please write to ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md, do not write to ~/.codex or ~/.claude.`);
     lines.push('');
   }
 }
@@ -512,7 +512,7 @@ function en_add_worktree_info(lines: string[], issue: any, project: any, session
   lines.push('If the merge has conflicts, you must resolve all of them before completing the merge; after merging, re-run the tests to verify the requirements are met. If conflicts remain or tests fail, keep fixing → re-merging → re-testing, **until there are no conflicts and the tests pass**.');
   lines.push('When everything is done, try git push; if it fails due to authentication, that is fine, just skip it.');
   if (!isAssistantSession(session)) {
-    lines.push(`Note: running.flag lives at the repo root \`${wt.root}/.imac/...\`, not inside the worktree — do not accidentally delete it when rebuilding/removing the worktree directory.`);
+    lines.push(`Note: running.flag lives at the repo root \`${wt.root}/${HIDDEN_FOLDER_NAME}/...\`, not inside the worktree — do not accidentally delete it when rebuilding/removing the worktree directory.`);
   }
   lines.push('');
 }
@@ -521,7 +521,7 @@ function en_add_completion_flag_info(lines: string[], session: any, project: any
   if (!(session && session.session_id && session.session_id !== '(待创建)')) return;
   if (isAssistantSession(session)) return;
   const flagRoot = (project && project.bind_path) ? project.bind_path : '.';
-  const flagPath = `${flagRoot}/.imac/flags/${session.session_id}/running.flag`;
+  const flagPath = `${flagRoot}/${HIDDEN_FOLDER_NAME}/flags/${session.session_id}/running.flag`;
   lines.push('## Final step when the task is complete');
   lines.push(`When the task ultimately succeeds or ultimately fails, you must delete the marker file ${flagPath}. But do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue.`);
 }

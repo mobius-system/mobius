@@ -16,7 +16,7 @@ import multer from 'multer';
 import { auth } from '../middleware/auth';
 import { Skills } from '../repositories/skills';
 import { Projects } from '../repositories/projects';
-import { UPLOAD_DIR } from '../config';
+import { UPLOAD_DIR, HIDDEN_FOLDER_NAME } from '../config';
 // @ts-ignore — service 仍是 .js
 import { parseFrontmatter } from '../services/skill-loader';
 // @ts-ignore — service 仍是 .js
@@ -322,7 +322,7 @@ function skillUploadRoot({ userId, project }: { userId: string; project?: any })
   if (project) {
     const bindPath = (project.bind_path || '').trim();
     if (!bindPath) return { ok: false, error: '项目未绑定路径' };
-    const uploadRoot = safeResolveUnder(bindPath, '.imac', 'uploaded-skills');
+    const uploadRoot = safeResolveUnder(bindPath, HIDDEN_FOLDER_NAME, 'uploaded-skills');
     if (!uploadRoot) return { ok: false, error: '项目路径非法' };
     return { ok: true, uploadRoot };
   }

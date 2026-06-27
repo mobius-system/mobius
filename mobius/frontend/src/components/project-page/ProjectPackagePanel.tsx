@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Archive, Download, File, Folder, RefreshCw } from 'lucide-react'
-import { api } from '../../store'
+import { api, HIDDEN_FOLDER_NAME } from '../../store'
 
 type PackageEntry = {
   name: string
@@ -126,7 +126,7 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
         body: JSON.stringify({ names }),
       })
       const totalSize = Number(estimate?.total_size || 0)
-      const proceed = window.confirm(`将打包 ${names.length} 个表层条目，文件总大小约 ${formatBytes(totalSize)}。压缩包会保存到项目目录的 .imac/package_zip 下。是否继续？`)
+      const proceed = window.confirm(`将打包 ${names.length} 个表层条目，文件总大小约 ${formatBytes(totalSize)}。压缩包会保存到项目目录的 ${HIDDEN_FOLDER_NAME}/package_zip 下。是否继续？`)
       if (!proceed) return
       if (totalSize > Number(estimate?.warning_threshold || 500 * 1024 * 1024)) {
         const proceedLarge = window.confirm(`本次打包超过 ${formatBytes(Number(estimate.warning_threshold || 500 * 1024 * 1024))}，生成和下载可能较慢。确认继续打包下载？`)
@@ -177,7 +177,7 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
             )}
           </div>
           <div className="mt-1 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
-            只显示项目绑定目录下的表层文件和文件夹。.imac 默认不选（莫比乌斯的工作缓存路径）；如果选择 .imac，系统仍会跳过 .imac/package_zip。
+            只显示项目绑定目录下的表层文件和文件夹。{HIDDEN_FOLDER_NAME} 默认不选（莫比乌斯的工作缓存路径）；如果选择{HIDDEN_FOLDER_NAME}，系统仍会跳过 {HIDDEN_FOLDER_NAME}/package_zip。
           </div>
         </div>
         <button
@@ -262,7 +262,7 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-[13px] truncate" title={entry.name}>{entry.name}</span>
-                      {entry.name === '.imac' && (
+                      {entry.name === HIDDEN_FOLDER_NAME && (
                         <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/25 bg-amber-500/10 text-amber-500">
                           莫比乌斯的工作缓存路径
                         </span>
@@ -286,7 +286,7 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
       </div>
 
       <div className="text-[11px] leading-5 rounded-lg border px-3 py-2" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-        压缩包会保存在 {data?.package_dir || '.imac/package_zip'}。该目录永远不会被写入新的压缩包，避免把历史压缩包重复套进去。
+        压缩包会保存在 {data?.package_dir || `${HIDDEN_FOLDER_NAME}/package_zip`}。该目录永远不会被写入新的压缩包，避免把历史压缩包重复套进去。
       </div>
     </div>
   )

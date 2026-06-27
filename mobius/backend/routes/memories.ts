@@ -17,7 +17,7 @@ import { auth } from '../middleware/auth';
 import { Memories } from '../repositories/memories';
 import { Projects } from '../repositories/projects';
 // @ts-ignore — config 仍是 .js
-import { UPLOAD_DIR } from '../config';
+import { UPLOAD_DIR, HIDDEN_FOLDER_NAME } from '../config';
 // @ts-ignore — service 仍是 .js
 import {
   projectKnowledgePath,
@@ -370,7 +370,7 @@ projectScoped.get('/project-knowledge/lock', auth, (req: express.Request, res: e
   if (!bindPath) {
     return res.json({ locked: false, locked_at: null, reason: '项目未绑定路径' });
   }
-  const lockPath = path.join(path.resolve(bindPath), '.imac', '.planning_lock');
+  const lockPath = path.join(path.resolve(bindPath), HIDDEN_FOLDER_NAME, '.planning_lock');
   try {
     if (!fs.existsSync(lockPath)) return res.json({ locked: false, locked_at: null });
     const stat = fs.statSync(lockPath);

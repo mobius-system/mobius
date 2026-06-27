@@ -102,7 +102,9 @@ def load_configuration(run_cwd: Path, script_name: str) -> tuple[EnvFileLoader, 
     code_server_port = os.environ["CODE_SERVER_PORT"]
 
     # 派生默认值：仅在用户没显式设过时才写入（set_default 内部判断）。
-    loader.set_default("IMAC_DEBUG_ENV_FILE", f"{app_dir}/.imac/debug-env.json")
+    # debug-env.json 落到隐藏工作缓存目录下 (.imac / .mobius, 由 MOBIUS_HIDDEN_FOLDER_NAME 决定)。
+    _hidden_folder = os.environ.get("MOBIUS_HIDDEN_FOLDER_NAME", ".mobius")
+    loader.set_default("IMAC_DEBUG_ENV_FILE", f"{app_dir}/{_hidden_folder}/debug-env.json")
     loader.set_default("VITE_API_TARGET", f"http://0.0.0.0:{mobius_port}")
     # code-server 监听地址（host:port 格式），仅本机回环，避免裸暴露到外网。
     loader.set_default("CODE_SERVER_BIND", f"127.0.0.1:{code_server_port}")
@@ -118,7 +120,7 @@ def env_snapshot_keys(loader: EnvFileLoader) -> list[str]:
 
 
 def write_runtime_env_file(file_path: Path, loader: EnvFileLoader, generated_by: str) -> None:
-    # 把当前实际生效的环境写一份到 .imac/debug-env.json，便于事后排查"为什么是这个值"。
+    # 把当前实际生效的环境写一份到 <隐藏缓存目录>/debug-env.json，便于事后排查"为什么是这个值"。
     env = {
         key: os.environ[key]
         for key in env_snapshot_keys(loader)

@@ -16,7 +16,7 @@
  *
  * 不新增第三方包. 100% Tailwind + headless React, 跟项目其他组件配色一致.
  */
-import { Fragment, Suspense, lazy, memo, useEffect, useMemo, useState } from 'react'
+import { Fragment, Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { diffLines } from 'diff'
 import { VirtualizedBlockList } from './jsonl-virtual-list'
@@ -2380,15 +2380,23 @@ function ContinuationGroup({ items, onlyGroup, showMeta = true }: { items: Jsonl
 }
 
 function RoundGroup({ round, isLast, onlyGroup, showMeta = true }: { round: Round; isLast: boolean; onlyGroup: boolean; showMeta?: boolean }) {
-  // onlyGroup 时强制展开, 禁止折叠; 其它场景保留"最新轮展开, 其余折叠"原行为
+  // 追踪用户是否手动点击过折叠/展开. 一旦手动操作, 后续不再被 isLast 自动接管.
+  // 实现"最后一个 group 自动展开, 除非人为折叠": 最新轮默认展开, 其余默认折叠;
+  // 某轮从非最新升为最新时自动展开; 用户手动操作过的轮尊重用户, 不再自动改.
+  const userToggledRef = useRef(false)
   const [open, setOpen] = useState(isLast || onlyGroup)
 
-  // 当本轮不再是最新轮时自动折叠; 用户手动展开后不再受后续轮次影响
-  // onlyGroup 时永远保持展开, 不再被后续轮次"挤"折叠
+  // onlyGroup 时永远保持展开; 否则跟随 isLast 自动展开/折叠, 但用户手动操作过则尊重用户.
   useEffect(() => {
-    if (onlyGroup) setOpen(true)
-    else if (!isLast) setOpen(false)
+    if (onlyGroup) { setOpen(true); return }
+    if (userToggledRef.current) return
+    setOpen(isLast)
   }, [isLast, onlyGroup])
+
+  const toggle = () => {
+    userToggledRef.current = true
+    setOpen(o => !o)
+  }
 
   const userItem = round.items[0]
   const agentCount = round.items.length - 1
@@ -2398,7 +2406,7 @@ function RoundGroup({ round, isLast, onlyGroup, showMeta = true }: { round: Roun
     <div className="mb-1">
       <button
         type="button"
-        onClick={onlyGroup ? undefined : () => setOpen(o => !o)}
+        onClick={onlyGroup ? undefined : toggle}
         disabled={onlyGroup}
         className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-xl transition-colors text-left group ${onlyGroup ? 'cursor-default' : 'hover:bg-[var(--bg-card-hover)]'}`}
       >

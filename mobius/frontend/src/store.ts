@@ -14,6 +14,7 @@ interface Branding {
   hideLogo: boolean
   systemNameZh: string
   systemNameEn: string
+  hiddenFolderName: string
 }
 
 declare global {
@@ -26,6 +27,7 @@ const DEFAULT_BRANDING: Branding = {
   hideLogo: false,
   systemNameZh: '莫比乌斯AI',
   systemNameEn: 'Mobius',
+  hiddenFolderName: '.mobius',
 }
 
 function loadInitialBranding(): Branding {
@@ -35,8 +37,13 @@ function loadInitialBranding(): Branding {
     hideLogo: !!injected.hideLogo,
     systemNameZh: typeof injected.systemNameZh === 'string' ? injected.systemNameZh : DEFAULT_BRANDING.systemNameZh,
     systemNameEn: typeof injected.systemNameEn === 'string' ? injected.systemNameEn : DEFAULT_BRANDING.systemNameEn,
+    hiddenFolderName: typeof injected.hiddenFolderName === 'string' && injected.hiddenFolderName ? injected.hiddenFolderName : DEFAULT_BRANDING.hiddenFolderName,
   }
 }
+
+// 隐藏工作缓存目录名 (.imac / .mobius): 由 index.html 同步注入 window.__BRANDING__, 启动时定型,
+// 运行期不再变化, 故作为模块级常量导出; 组件拼 <bindPath>/<HIDDEN_FOLDER_NAME>/... 路径时直接 import 使用.
+export const HIDDEN_FOLDER_NAME = loadInitialBranding().hiddenFolderName
 
 interface User {
   id: string

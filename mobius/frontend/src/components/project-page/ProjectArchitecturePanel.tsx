@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Download, ExternalLink, FileCode2, Image, RefreshCw, Settings } from 'lucide-react'
-import { api } from '../../store'
+import { api, HIDDEN_FOLDER_NAME } from '../../store'
 import {
   EXISTING_SESSION_ACTION_LABEL,
   NewSessionModal,
@@ -66,7 +66,7 @@ function architecturePrompt(preset: SessionPresetConfig) {
   return [
     preset.description.trim(),
     '请现在开始执行：分析当前项目结构，生成或刷新系统结构剖析图。必须使用当前 Session 注入的 Mobius 内置 Skill「mobius-architecture-draw」作为执行规范，不要依赖 Codex 或 Claude Code 自身的 Skill/Memory 系统。',
-    '请优先生成单文件 HTML/SVG 架构图，并保存到 .imac/generated_figures/arch.html；如需要兼容截图或封面，可额外保存 arch.svg / arch.png / arch.jpg。完成后删除本 session 的 running.flag。',
+    `请优先生成单文件 HTML/SVG 架构图，并保存到 ${HIDDEN_FOLDER_NAME}/generated_figures/arch.html；如需要兼容截图或封面，可额外保存 arch.svg / arch.png / arch.jpg。完成后删除本 session 的 running.flag。`,
   ].filter(Boolean).join('\n\n')
 }
 
@@ -354,7 +354,7 @@ export function ProjectArchitecturePanel({
           initialPreset={preset}
           requiredSkill={ARCHITECTURE_REQUIRED_SKILL}
           defaultName="项目结构绘制"
-          defaultDescription="请分析当前项目结构，生成或刷新系统结构剖析图。优先生成单文件 HTML/SVG 架构图并保存到 .imac/generated_figures/arch.html；可额外保存 arch.svg / arch.png / arch.jpg 作为兼容预览。"
+          defaultDescription={`请分析当前项目结构，生成或刷新系统结构剖析图。优先生成单文件 HTML/SVG 架构图并保存到 ${HIDDEN_FOLDER_NAME}/generated_figures/arch.html；可额外保存 arch.svg / arch.png / arch.jpg 作为兼容预览。`}
           onClose={() => setShowPresetModal(false)}
           onCreated={() => {}}
           onPresetSaved={savePreset}

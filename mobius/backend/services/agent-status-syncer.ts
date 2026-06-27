@@ -21,8 +21,7 @@ import { db } from '../../db';
 import { BACKEND_WORKER_LOG_DIR } from '../config';
 import {
   computeSessionRuntimeStatus,
-  runtimeStatusToAgentStatus,
-  type AgentStatusValue,
+  syncAgentStatusIfChanged,
 } from '../utils/session-runtime-status';
 
 const SCAN_INTERVAL_MS = 60 * 1000;          // 活跃集扫描间隔
@@ -71,13 +70,8 @@ function loadSessions(statuses: string[]): SessionRow[] {
   `).all(...statuses) as SessionRow[];
 }
 
-function updateAgentStatus(sessionId: string, status: AgentStatusValue): void {
-  db.prepare(
-    "UPDATE sessions_v2 SET agent_status = ?, last_agent_event = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE session_id = ?"
-  ).run(status, sessionId);
-}
-
-// 同步一批 session. 只在状态值变化时写库 (减少无效写). 单 session 故障不拖垮整批.
+// 写回 sessions_v2.agent_status 的逻辑统一在 syncAgentStatusIfChanged (util),
+// 与 /status 接口共用, 这里只调用它. 单 session 故障不拖垮整批.
 async function syncBatch(batch: SessionRow[], batchLabel: string): Promise<{ checked: number; changed: number }> {
   let checked = 0;
   let changed = 0;
@@ -89,9 +83,8 @@ async function syncBatch(batch: SessionRow[], batchLabel: string): Promise<{ che
         { session_id: s.session_id, model: s.model },
         bindPath,
       );
-      const next = runtimeStatusToAgentStatus(runtime);
-      if (next !== s.agent_status) {
-        updateAgentStatus(s.session_id, next);
+      const { changed: didChange, next } = syncAgentStatusIfChanged(s.session_id, s.agent_status, runtime);
+      if (didChange) {
         changed++;
         appendLog(
           `[${nowIso()}] ${batchLabel} sid=${s.session_id} ${s.agent_status} -> ${next} ` +

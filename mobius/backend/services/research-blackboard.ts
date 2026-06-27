@@ -6,7 +6,7 @@ import { db } from '../../db';
 import { Researches } from '../repositories/researches';
 import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
-import { BACKEND_WORKER_LOG_DIR, PORT } from '../config';
+import { BACKEND_WORKER_LOG_DIR, PORT, HIDDEN_FOLDER_NAME } from '../config';
 import modelRegistry from './model-registry';
 import { resolveSessionWorkspace } from './workspace';
 import agents from '../agents';
@@ -32,8 +32,8 @@ function resolveBlackboardFile(researchId: string): any {
   return {
     research,
     root,
-    dir: path.join(root, '.imac', 'blackboard', researchId),
-    file: path.join(root, '.imac', 'blackboard', researchId, 'blackboard.jsonl'),
+    dir: path.join(root, HIDDEN_FOLDER_NAME, 'blackboard', researchId),
+    file: path.join(root, HIDDEN_FOLDER_NAME, 'blackboard', researchId, 'blackboard.jsonl'),
   };
 }
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { ErrBanner } from './modals'
 import { timeAgoPrecise } from './shell'
+import { HIDDEN_FOLDER_NAME } from '../store'
 
 interface DeliveryState {
   status?: string
@@ -214,7 +215,7 @@ export default function ResearchBlackboard({ researchId }: { researchId: string 
               {entries.length === 0 ? '当前 Research 尚无 Blackboard 记录' : '当前筛选下无记录'}
             </div>
             <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-              文件位置: <code>.imac/blackboard/{researchId}/blackboard.jsonl</code>
+              文件位置: <code>{HIDDEN_FOLDER_NAME}/blackboard/{researchId}/blackboard.jsonl</code>
             </div>
           </div>
         ) : (

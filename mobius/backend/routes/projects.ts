@@ -61,10 +61,11 @@ import {
   FORGOTTEN_FLAG_BACKOFF_MAX,
   FORGOTTEN_FLAG_PATIENCE_MIN,
   FORGOTTEN_FLAG_PATIENCE_MAX,
+  HIDDEN_FOLDER_NAME,
 } from '../config';
 
 const router = express.Router();
-const MAIN_PROJECT_PORT_REL = path.join('.imac', 'port_forward', 'main_project_port.txt');
+const MAIN_PROJECT_PORT_REL = path.join(HIDDEN_FOLDER_NAME, 'port_forward', 'main_project_port.txt');
 
 // 统一取当前用户 (auth 中间件已塞到 req.user)
 function userOf(req: express.Request): any {
@@ -777,18 +778,18 @@ const GIT_COMMIT_LIMIT_MAX = 30;
 const ARCHITECTURE_ISSUE_TITLE = '项目结构绘制';
 const ARCHITECTURE_ISSUE_DESCRIPTION = [
   '自动生成或刷新项目系统结构剖析图。',
-  '请分析当前项目结构，优先输出单文件 HTML/SVG 架构图到项目绑定路径下的 .imac/generated_figures/arch.html。',
+  `请分析当前项目结构，优先输出单文件 HTML/SVG 架构图到项目绑定路径下的 ${HIDDEN_FOLDER_NAME}/generated_figures/arch.html。`,
   '如需兼容截图或封面，也可以额外输出 arch.svg、arch.png、arch.jpg、arch.jpeg、arch.webp 等常见预览格式。',
 ].join('\n');
 const FIXED_LOGO_REVIEW_PROJECT_ID = '9986bdc3';
 const ARCHITECTURE_FIGURE_EXTENSIONS = ['.html', '.htm', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'];
 const GIT_FIELD_SEPARATOR = '\x1f';
 const GIT_RECORD_SEPARATOR = '\x1e';
-const PACKAGE_ZIP_RELATIVE_DIR = path.join('.imac', 'package_zip');
+const PACKAGE_ZIP_RELATIVE_DIR = path.join(HIDDEN_FOLDER_NAME, 'package_zip');
 const PACKAGE_SIZE_WARNING_BYTES = 500 * 1024 * 1024;
 const GIT_SCAN_SKIP_DIRS = new Set([
   '.git',
-  '.imac',
+  HIDDEN_FOLDER_NAME,
   '.cache',
   '.next',
   '.nuxt',
@@ -925,8 +926,8 @@ function listPackageEntries(project: any): { root: string; entries: PackageListE
         type,
         size: directorySizeWithoutPackageZip(root, absPath),
         modified: st.mtime,
-        default_selected: dirent.name !== '.imac',
-        excluded_children: dirent.name === '.imac' ? [PACKAGE_ZIP_RELATIVE_DIR.replace(/\\/g, '/')] : [],
+        default_selected: dirent.name !== HIDDEN_FOLDER_NAME,
+        excluded_children: dirent.name === HIDDEN_FOLDER_NAME ? [PACKAGE_ZIP_RELATIVE_DIR.replace(/\\/g, '/')] : [],
       } as PackageListEntry;
     })
     .filter((x): x is PackageListEntry => x !== null)
@@ -987,7 +988,7 @@ payload = json.load(sys.stdin)
 root = os.path.abspath(payload["root"])
 out_path = os.path.abspath(payload["out_path"])
 names = payload["names"]
-package_dir = os.path.realpath(os.path.join(root, ".imac", "package_zip"))
+package_dir = os.path.realpath(os.path.join(root, "${HIDDEN_FOLDER_NAME}", "package_zip"))
 
 def is_inside_package(path):
     real = os.path.realpath(path)
@@ -1552,7 +1553,7 @@ interface ArchitectureFigure {
 function findArchitectureFigure(project: any): ArchitectureFigure | null {
   const bindPath = (project?.bind_path || '').trim();
   if (!bindPath) return null;
-  const dir = path.resolve(bindPath, '.imac', 'generated_figures');
+  const dir = path.resolve(bindPath, HIDDEN_FOLDER_NAME, 'generated_figures');
   try {
     if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return null;
     const entries = fs.readdirSync(dir, { withFileTypes: true })

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Square, Plus, Paperclip } from 'lucide-react'
-import { useStore, api } from '../store'
+import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor } from './session-welcome'
@@ -2182,7 +2182,7 @@ export function ChatArea() {
       const bindPath = (p?.bind_path || '').trim()
       if (bindPath) return bindPath
     }
-    throw new Error('当前项目未绑定路径, 无法定位 .imac/project_knowledge.md')
+    throw new Error(`当前项目未绑定路径, 无法定位 ${HIDDEN_FOLDER_NAME}/project_knowledge.md`)
   }, [currentProjectId, projectForSession?.bind_path, setProjects])
 
   const messageSignature = (items: any[]) => items.map(m => [
@@ -2553,8 +2553,8 @@ export function ChatArea() {
       const bindPath = await resolveProjectBindPath()
       const normalizedBindPath = bindPath.replace(/\/+$/, '') || '/'
       const knowledgePath = normalizedBindPath === '/'
-        ? '/.imac/project_knowledge.md'
-        : `${normalizedBindPath}/.imac/project_knowledge.md`
+        ? `/${HIDDEN_FOLDER_NAME}/project_knowledge.md`
+        : `${normalizedBindPath}/${HIDDEN_FOLDER_NAME}/project_knowledge.md`
       const content = buildProjectKnowledgePrompt(knowledgePath)
 
       const requestId = makeSendRequestId()

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { APP_DIR } from '../config';
+import { APP_DIR, HIDDEN_FOLDER_NAME } from '../config';
 import { Memories } from '../repositories/memories';
 import { Skills } from '../repositories/skills';
 
@@ -622,8 +622,8 @@ function ensureLogoDemoAssets({ project, user }: any): any {
 
   const changedFiles: any[] = [];
   copyExtensionStarter(LOGO_DEMO_EXTENSION_SOURCE, bindPath, changedFiles);
-  if (writeFileIfChanged(path.join(bindPath, '.imac', 'project_knowledge.md'), LOGO_DEMO_PROJECT_KNOWLEDGE)) {
-    changedFiles.push(path.join(bindPath, '.imac', 'project_knowledge.md'));
+  if (writeFileIfChanged(path.join(bindPath, HIDDEN_FOLDER_NAME, 'project_knowledge.md'), LOGO_DEMO_PROJECT_KNOWLEDGE)) {
+    changedFiles.push(path.join(bindPath, HIDDEN_FOLDER_NAME, 'project_knowledge.md'));
   }
   for (const [rel, content] of Object.entries(LOGO_DEMO_EXTRA_FILES)) {
     const target = path.join(bindPath, rel);

@@ -17,7 +17,7 @@ import * as modelRegistry from '../services/model-registry';
 import { useProxyForSession, withSessionProxyState } from '../services/session-proxy-state';
 // @ts-ignore — service 仍是 .js
 import * as agents from '../agents';
-import { computeSessionRuntimeStatus } from '../utils/session-runtime-status';
+import { computeSessionRuntimeStatus, syncAgentStatusIfChanged } from '../utils/session-runtime-status';
 // @ts-ignore — repository 仍是 .js
 import { Projects } from '../repositories/projects';
 // @ts-ignore — repository 仍是 .js (通过 skills-fs / memories-fs 兼容层)
@@ -942,6 +942,9 @@ router.get('/:id/status', auth, (req: express.Request, res: express.Response) =>
   // 显式取 session_id / model 构造入参, 与 agent-status-syncer 一致: AnySession 是索引
   // 签名类型, 直接整体传入会被 TS 拒绝 (不保证 session_id 存在, TS2345).
   const st = computeSessionRuntimeStatus({ session_id: session.session_id, model: session.model }, root);
+  // 顺便写回 agent_status: 前端打开会话时每 ~2s 调本接口, 借此让被查看 session 的
+  // agent_status 近乎实时更新 (列表小圆点读 DB, 不再只靠 syncer 60s 兜底). 仅变化时写.
+  syncAgentStatusIfChanged(id, session.agent_status, st);
   const backend = backendForSession(session);
   const alive = st.alive;
   const working = st.working;

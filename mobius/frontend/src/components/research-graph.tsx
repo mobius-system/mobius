@@ -19,7 +19,7 @@ import '@xyflow/react/dist/style.css'
 import dagre from 'dagre'
 import ReactMarkdown from 'react-markdown'
 import { Settings } from 'lucide-react'
-import { api } from '../store'
+import { api, HIDDEN_FOLDER_NAME } from '../store'
 
 type VisualEffect = 'in_progress' | 'completed' | 'failed' | 'successful'
 
@@ -665,7 +665,7 @@ function GraphInner({ researchId }: { researchId: string }) {
           {state.exists ? 'research-graph.yml 中暂无有效节点' : '当前 Research 尚未创建 research-graph.yml'}
         </div>
         <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-          文件位置: <code>.imac/blackboard/{researchId}/research-graph.yml</code>
+          文件位置: <code>{HIDDEN_FOLDER_NAME}/blackboard/{researchId}/research-graph.yml</code>
         </div>
         <button onClick={fetchGraph} className="h-8 px-3 rounded-md text-[12px] bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 transition-colors">
           重新加载

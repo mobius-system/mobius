@@ -5,14 +5,16 @@
  * `agent-status-syncer.ts` 共用本函数, 保证 `sessions_v2.agent_status` 字段
  * 与实时 /status 接口返回的结果始终一致 (谁改了判定逻辑, 改这一处即可).
  *
- * 设计: 纯判定, 无副作用. error_scan 这种会写 .mobius.jsonl 的副作用仍留在
- * /status handler (那是会话内实时职责), 这里只算 alive/working/accomplished/failed.
+ * 设计: computeSessionRuntimeStatus 纯判定无副作用; syncAgentStatusIfChanged 负责
+ * 把判定结果写回 sessions_v2.agent_status (仅变化时写, /status 与 syncer 共用).
+ * error_scan 这种写 .mobius.jsonl 的副作用仍留在 /status handler (会话内实时职责).
  *
  * 入参:
  *   session  - sessions_v2 行 (至少含 session_id 和用于选 backend 的 model)
  *   bindPath - 已 resolve 的项目 bind_path 仓库根 (真相源优先, flag 文件判定);
  *              null/空 则回退到 backend 抽象方法 (isJobGoalAccomplished / isFailed)
  */
+import { db } from '../../db';
 import * as agents from '../agents';
 import * as modelRegistry from '../services/model-registry';
 import { readJobFlagState } from './session-flags';
@@ -82,4 +84,27 @@ export function runtimeStatusToAgentStatus(st: RuntimeStatus): AgentStatusValue 
   if (st.jobAccomplished) return 'completed';
   if (st.alive) return 'waiting';
   return 'idle';
+}
+
+// 把判定结果写回 sessions_v2.agent_status (单一真相源). 仅在值变化时写, 避免高频
+// 调用方 (如 /status 每 2s 一次) 反复写同值. /status 接口和 agent-status-syncer 共用
+// 本函数, 保证"写回"逻辑只有这一处 (判定逻辑见上, 也只一处).
+//
+// 关键作用: /status 是前端打开会话时的高频查询, 顺便写回让"被查看的 session"的
+// agent_status 近乎实时更新, 列表小圆点读 DB 即可跟上, 不再只靠 syncer 60s 兜底.
+export function syncAgentStatusIfChanged(
+  sessionId: string,
+  currentAgentStatus: string | null | undefined,
+  st: RuntimeStatus,
+): { changed: boolean; next: AgentStatusValue } {
+  const next = runtimeStatusToAgentStatus(st);
+  if (next === currentAgentStatus) return { changed: false, next };
+  try {
+    db.prepare(
+      "UPDATE sessions_v2 SET agent_status = ?, last_agent_event = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE session_id = ?"
+    ).run(next, sessionId);
+  } catch {
+    return { changed: false, next };
+  }
+  return { changed: true, next };
 }

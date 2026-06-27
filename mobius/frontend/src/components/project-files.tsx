@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Check, Copy, ExternalLink, KeyRound, Loader2, MonitorUp, Play, TerminalSquare } from 'lucide-react'
-import { api } from '../store'
+import { api, HIDDEN_FOLDER_NAME } from '../store'
 
 // =====================================================================
 // ProjectFilesCard — 浏览项目 bind_path 下的文件树.
@@ -647,7 +647,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, o
   const ready = !!projectId && !!vscodeWebUrl && !!bindPath
   const sub = (subPath || '').trim().replace(/^\/+|\/+$/g, '')
   const worktreeFolder = sub ? `${bindPath.replace(/\/+$/, '')}/${sub}` : (vscodeWorkspacePath || bindPath)
-  const mainProjectPortPath = bindPath ? `${bindPath.replace(/\/+$/, '')}/.imac/port_forward/main_project_port.txt` : ''
+  const mainProjectPortPath = bindPath ? `${bindPath.replace(/\/+$/, '')}/${HIDDEN_FOLDER_NAME}/port_forward/main_project_port.txt` : ''
   const buttonClassName = className || 'h-7 px-2.5 text-[11px] border border-emerald-500/20 text-emerald-400 rounded-xl hover:bg-emerald-500/10 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-45 disabled:cursor-not-allowed'
   const buttonLabel = label || '进入项目端口'
 
@@ -788,7 +788,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, o
                   手动输入端口
                 </div>
                 <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  保存到 .imac/port_forward/main_project_port.txt 后打开
+                  保存到 {HIDDEN_FOLDER_NAME}/port_forward/main_project_port.txt 后打开
                 </div>
               </button>
 

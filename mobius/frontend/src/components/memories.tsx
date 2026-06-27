@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Activity, CheckCircle2, Cpu, FolderOpen, Plus, RefreshCw, Server, Upload } from 'lucide-react'
-import { api } from '../store'
+import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { ContextAccessModal } from './context-access'
 import { MoveScopeModal } from './modals'
 import { CopyFromCatalogModal } from './copy-catalog'
@@ -214,7 +214,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
           <button onClick={refreshProjectKnowledge}
             disabled={projectKnowledgeRefreshing || !projectId}
             className="text-[11px] px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title="读取项目绑定路径下的 .imac/project_knowledge.md, 并同步为项目级 Memory">
+            title={`读取项目绑定路径下的 ${HIDDEN_FOLDER_NAME}/project_knowledge.md, 并同步为项目级 Memory`}>
             {projectKnowledgeRefreshing ? '刷新中...' : '刷新项目知识沉淀'}
           </button>
           {projectKnowledgeInfo && (

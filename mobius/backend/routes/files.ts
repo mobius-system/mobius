@@ -12,6 +12,7 @@ import {
   APP_DIR,
   UPLOAD_DIR,
   EXTENSION_DATA_ROOT,
+  HIDDEN_FOLDER_NAME,
 } from '../config';
 
 const router = express.Router();
@@ -51,7 +52,7 @@ function isExtensionUserDataPath(absPath: string, userId: string | number): bool
 
 function isMobiusUploadPath(absPath: string): boolean {
   const resolved = path.resolve(absPath);
-  const root = path.resolve(APP_DIR, '.imac', 'upload');
+  const root = path.resolve(APP_DIR, HIDDEN_FOLDER_NAME, 'upload');
   return resolved === root || resolved.startsWith(root + path.sep);
 }
 
@@ -89,7 +90,7 @@ router.post('/upload', auth, upload.single('file'), (req: express.Request, res: 
     if (!canReadProject(user, project)) { cleanupTemp(); res.status(403).json({ error: '无权访问此项目' }); return; }
     const bindPath = (project.bind_path || '').trim();
     if (!bindPath) { cleanupTemp(); res.status(400).json({ error: '项目未配置 bind_path' }); return; }
-    uploadDir = path.join(bindPath, '.imac', 'upload');
+    uploadDir = path.join(bindPath, HIDDEN_FOLDER_NAME, 'upload');
   } else {
     uploadDir = path.join(user.work_dir, 'uploads');
   }

@@ -40,6 +40,11 @@ from typing import Any, Mapping, Optional
 # ---------------------------------------------------------------------------
 # Path helpers
 # ---------------------------------------------------------------------------
+# TODO(mobius-rename): 本模块仍硬编码 ".imac", 尚未迁移到 MOBIUS_HIDDEN_FOLDER_NAME
+# (JS 侧 backend/utils/session-flags.ts 已迁移). 当前本机 .env 设为 .imac, 故 JS / py 两端
+# 一致, 不影响; 但新装若用默认 .mobius, 此处会写 .imac/flags 而 JS 后端读 .mobius/flags,
+# 导致 flag 完成检测断裂. 迁移只需把下行 ".imac" 换成
+# os.environ.get("MOBIUS_HIDDEN_FOLDER_NAME", ".mobius"). 暂按用户要求"忽略 agents_py".
 def flag_dir_of(root: str | os.PathLike[str], session_id: str) -> str:
     """Return the absolute path of ``<root>/.imac/flags/<session_id>/``."""
     return os.path.join(os.path.abspath(str(root)), ".imac", "flags", session_id)
