@@ -11,6 +11,7 @@ import { SessionJsonlPanel } from './session-jsonl-panel'
 import { useVisibleJsonl } from './session-jsonl-filter'
 import { SessionStatusChip } from './session-status-chip'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
+import { readJsonlCacheSync, readJsonlCacheFromIdb, writeJsonlCache } from '../services/session-jsonl-cache'
 import { MobiusLogo } from './mobius-logo'
 import { PlanningEditor } from './planning-editor'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
@@ -1384,6 +1385,17 @@ export function ChatArea() {
   const pendingJsonlEntriesRef = useRef<any[]>([])
   const pendingJsonlTotalIncrementRef = useRef(0)
   const pendingJsonlFlushTimerRef = useRef<number | null>(null)
+  // JSONL 浏览器缓存 (stale-while-revalidate): 切 session 时先秒开缓存里的尾部.
+  // 最新值镜像 ref: switch effect 的 cleanup 在离开 session 时写回缓存, 但 cleanup 闭包
+  // 捕获的是进入时的旧值, 必须从 ref 取最新. 每次渲染同步刷新.
+  const jsonlEntriesRef = useRef<any[]>([])
+  jsonlEntriesRef.current = jsonlEntries
+  const jsonlTotalRef = useRef(0)
+  jsonlTotalRef.current = jsonlTotal
+  const jsonlPathRef = useRef<string | null>(null)
+  jsonlPathRef.current = jsonlPath
+  // 当前 session 是否已收到 SSE 权威 jsonl_history (reset). true 后缓存兜底不再覆盖, 避免用旧值盖掉新值.
+  const freshHistoryReceivedRef = useRef(false)
   const [showRaw, setShowRaw] = useState(false)
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
   const [fileChangesOpen, setFileChangesOpen] = useState(false)
@@ -2256,9 +2268,11 @@ export function ChatArea() {
           if (!isChunked) {
             clearPendingJsonlEntries()
             setJsonlEntries(entries)
+            freshHistoryReceivedRef.current = true
           } else if (msg.reset) {
             clearPendingJsonlEntries()
             setJsonlEntries(entries)
+            freshHistoryReceivedRef.current = true
           } else if (entries.length > 0) {
             setJsonlEntries(prev => prev.concat(entries))
           }
@@ -2355,18 +2369,45 @@ export function ChatArea() {
     const sid = currentSession?.session_id || currentTask?.task_id
     if (!sid) return
     clearPendingJsonlEntries()
+    freshHistoryReceivedRef.current = false
     setStreamContent('')
     setTyping(false)
     setMessages([])
-    setJsonlEntries([])
-    setJsonlTotal(0)
-    setJsonlPath(null)
+    // stale-while-revalidate: 先同步读内存缓存, 命中则立刻展示上次尾部 (零延迟秒开);
+    // 未命中再异步兜底 IndexedDB (跨刷新), 仍命中则在 SSE 权威数据到达前补上.
+    // SSE jsonl_history (reset) 到达后会覆盖, 是唯一真相源.
+    const cachedSync = readJsonlCacheSync(sid)
+    if (cachedSync && cachedSync.entries.length > 0) {
+      setJsonlEntries(cachedSync.entries)
+      setJsonlTotal(cachedSync.total || cachedSync.entries.length)
+      setJsonlPath(cachedSync.path)
+    } else {
+      setJsonlEntries([])
+      setJsonlTotal(0)
+      setJsonlPath(null)
+      readJsonlCacheFromIdb(sid).then((snap) => {
+        // 仍停留在同一个 session, 且 SSE 权威历史还没到, 才用缓存兜底, 避免旧值盖新值.
+        const stillActive = useStore.getState().currentSession?.session_id === sid
+          || useStore.getState().currentTask?.task_id === sid
+        if (!snap || !stillActive || freshHistoryReceivedRef.current) return
+        if (snap.entries.length === 0) return
+        setJsonlEntries(snap.entries)
+        setJsonlTotal(snap.total || snap.entries.length)
+        setJsonlPath(snap.path)
+      }).catch(() => {})
+    }
     setJsonlLoadingMore(false)
     setHistoryLoaded(false)
     loadHistory()
     connectEventStream(sid)
     return () => {
       clearPendingJsonlEntries()
+      // 离开当前 session: 把最新尾部写回浏览器缓存, 下次切回秒开 (只缓存尾部 200 条).
+      const leavingSid = sid
+      const latest = jsonlEntriesRef.current
+      if (leavingSid && latest.length > 0) {
+        writeJsonlCache(leavingSid, latest, jsonlTotalRef.current, jsonlPathRef.current)
+      }
       eventSourceRef.current?.close(); eventSourceRef.current = null; setConnectionStatus('disconnected')
     }
   }, [currentSession?.session_id, currentTask?.task_id, clearPendingJsonlEntries, loadHistory, connectEventStream])

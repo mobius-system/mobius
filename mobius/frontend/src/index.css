@@ -4750,6 +4750,14 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   background: rgba(239, 68, 68, .08);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .03);
 }
+/* 亮色主题: 终止按钮改用深色文字, 覆盖 chat.tsx 里的 text-red-300 / hover:text-red-100,
+   后者在浅色背景下对比度不足几乎不可读. :not(--active) 排除"已触发"反馈态(白字+深红渐变底, 亮暗通用). */
+.light .session-stop-button:not(.session-stop-button--active) {
+  color: #dc2626;
+}
+.light .session-stop-button:not(.session-stop-button--active):hover:not(:disabled) {
+  color: #b91c1c;
+}
 .session-stop-button--active {
   color: #fff;
   background:
