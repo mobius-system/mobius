@@ -2437,11 +2437,12 @@ export function NewSessionModal({
       data-tour="session-description-input"
       placeholder={`${isResearch ? `${displayEntityLabel} 目的` : 'Session目的'}/要解决的问题（必填）`}
       overlayTitle={`编辑 ${displayEntityLabel} 目的/问题描述`}
+      expandButtonClassName="w-20"
       innerControl={canDeferPurpose ? (
         <button
           type="button"
           onClick={() => { setDeferPurpose(!deferPurpose); setErr('') }}
-          className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-lg border px-1.5 text-[10px] transition-colors hover:bg-blue-500/10"
+          className="inline-flex h-6 w-20 items-center gap-1 whitespace-nowrap rounded-lg border px-1.5 text-[10px] transition-colors hover:bg-blue-500/10"
           style={{
             color: 'var(--text-muted)',
             borderColor: 'var(--input-border)',

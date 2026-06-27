@@ -11,6 +11,7 @@ type ExpandableTextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>,
   overlayStyle?: CSSProperties
   innerControl?: ReactNode
   innerControlClassName?: string
+  expandButtonClassName?: string
 }
 
 export function ExpandableTextarea({
@@ -25,6 +26,7 @@ export function ExpandableTextarea({
   overlayStyle,
   innerControl,
   innerControlClassName = '',
+  expandButtonClassName = '',
   ...textareaProps
 }: ExpandableTextareaProps) {
   const [expanded, setExpanded] = useState(false)
@@ -64,7 +66,7 @@ export function ExpandableTextarea({
           onClick={() => setExpanded(true)}
           disabled={disabled}
           title={expandTitle}
-          className={`absolute right-2 inline-flex h-6 items-center gap-1 rounded-lg border px-1.5 text-[10px] transition-colors disabled:hidden hover:bg-blue-500/10 ${compact ? 'top-1.5' : 'top-2'}`}
+          className={`absolute right-2 inline-flex h-6 items-center gap-1 rounded-lg border px-1.5 text-[10px] transition-colors disabled:hidden hover:bg-blue-500/10 ${compact ? 'top-1.5' : 'top-2'} ${expandButtonClassName}`}
           style={{
             color: 'var(--text-muted)',
             borderColor: 'var(--input-border)',

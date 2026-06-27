@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Square, Plus, Paperclip } from 'lucide-react'
 import { useStore, api } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
+import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor } from './session-welcome'
 import { NewSessionModal } from './modals'
 import { OpenInVSCodeButton, ProjectPortEntryButton } from './project-files'
@@ -1320,9 +1321,7 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, is
         isSelected ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-[var(--bg-card-hover)] border border-transparent'
       } ${isCompleted ? 'opacity-75' : ''}`}>
       <div className="flex-shrink-0">
-        {session.agent_status === 'running' ? <div className="pulse-green" />
-          : isCompleted ? <div className="w-2 h-2 rounded-full bg-green-500/60" />
-          : <div className="w-2 h-2 rounded-full bg-blue-400/60" />}
+        <AgentStatusDot agentStatus={session.agent_status} />
       </div>
       <div className="flex-1 min-w-0 overflow-hidden">
         <div className="text-[11px] font-medium leading-[13px] line-clamp-2 break-all" style={{ color: isCompleted ? textMuted : textPrimary }}>{session.name}</div>

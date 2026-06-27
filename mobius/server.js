@@ -203,6 +203,7 @@ const { startForgottenFlagScanner } = require('./backend/services/forgotten-flag
 const { startInactiveTmuxCleaner } = require('./backend/services/inactive-tmux-cleaner');
 const { startResearchBlackboardDeliveryScanner } = require('./backend/services/research-blackboard');
 const { startExtensionScheduler } = require('./backend/services/extension-scheduler');
+const { startAgentStatusSyncer } = require('./backend/services/agent-status-syncer');
 
 // ===== 启动 =====
 const server = http.createServer(app);
@@ -240,6 +241,9 @@ server.listen(PORT, () => {
   // 拓展通用定时器: 扫描 protected_data/extension/<name>/schedules/*.json,
   // 到点后以对应用户身份触发该拓展 handler.
   startExtensionScheduler();
+  // agent_status 单一真相源: 每 60s 用与 /api/sessions/:id/status 相同的判定重算
+  // 活跃态 session 的 agent_status 并写回; 终态(failed/stale)每小时扫一次.
+  startAgentStatusSyncer();
 });
 
 // 优雅退出
