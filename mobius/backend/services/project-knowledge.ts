@@ -4,7 +4,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import memoriesFs from './memories-fs';
+import * as memoriesFs from './memories-fs';
 import { Projects } from '../repositories/projects';
 import {
   MAX_MEMORY_MARKDOWN_BYTES,
@@ -89,7 +89,7 @@ function cleanupHistorySnapshots(dir: string): void {
     entries.sort((a: any, b: any) => b.mtime.getTime() - a.mtime.getTime());
     const toDelete = entries.slice(HISTORY_RETAIN);
     for (const e of toDelete) {
-      try { fs.unlinkSync(e.fullPath); } catch {}
+      try { fs.unlinkSync((e as any).fullPath); } catch {}
     }
   } catch {}
 }

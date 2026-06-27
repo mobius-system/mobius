@@ -86,7 +86,7 @@ async function runSessionMessage({
   const workspace = resolveSessionWorkspace(user, normalizedSessionId);
   if (workspace.error) {
     try { Sessions.setIdle(normalizedSessionId, user.id); } catch {}
-    try { Messages.insertSystem(normalizedSessionId, workspace.error, null, '工作目录不可用'); } catch {}
+    try { Messages.insertSystem(normalizedSessionId, workspace.error, null as any, '工作目录不可用'); } catch {}
     throw httpError(workspace.error, 400, 'workspace');
   }
   const workDir = workspace.workDir;
@@ -148,7 +148,7 @@ async function runSessionMessage({
         Sessions.writeContextSnapshot(
           normalizedSessionId,
           ctx.body,
-          ctx.sources ? JSON.stringify(ctx.sources) : null,
+          (ctx.sources ? JSON.stringify(ctx.sources) : null) as any,
         );
       } catch (e) {
         logger?.warn?.(`[sessions/messages] writeContextSnapshot: ${e.message}`);

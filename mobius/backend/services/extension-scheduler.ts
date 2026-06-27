@@ -17,7 +17,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import registry from './extension-registry';
+import * as registry from './extension-registry';
 import { invokeHandler } from './extension-invoker';
 import { Users } from '../repositories/users';
 import { EXTENSION_DATA_ROOT } from '../config';

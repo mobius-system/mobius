@@ -106,12 +106,12 @@ function extractCodexFunctionArgs(payload: any): any {
 }
 
 function extractFeaturesFromEntry(entry: any, meta: any): any[] {
-  const features = [];
+  const features: any[] = [];
 
   if (entry?.type === 'event_msg' && entry?.payload?.type === 'patch_apply_end') {
     const changes = entry?.payload?.changes;
     if (entry?.payload?.success !== false && changes && typeof changes === 'object' && !Array.isArray(changes)) {
-      for (const [filePath, change] of Object.entries(changes)) {
+      for (const [filePath, change] of Object.entries(changes) as [string, any][]) {
         pushFileFeature(features, entry, meta, 'codex.patch_apply_end', filePath, {
           change_type: stringValue(change?.type) || null,
           move_path: stringValue(change?.move_path) || null,
@@ -289,7 +289,7 @@ function scanSessionFeatures(jsonlPath: any): any {
 
   const known = new Set(existing.map(featureKey).concat(existing.map(legacyFeatureKey)));
   const lastMs = timestampMs(lastTimestamp);
-  const appended = [];
+  const appended: any[] = [];
   scanSourceBuffer(buffer, jsonlPath, startOffset, (entry, meta) => {
     const entryTs = timestampOf(entry);
     const entryMs = timestampMs(entryTs);
@@ -307,7 +307,7 @@ function scanSessionFeatures(jsonlPath: any): any {
     }
   });
 
-  appendFeatureEntries(featurePath, appended);
+  appendFeatureEntries(featurePath || '', appended);
   return {
     source_jsonl: jsonlPath,
     feature_jsonl: featurePath,
@@ -443,7 +443,7 @@ function gitTopLevel(abs: string): string | null {
   return top ? path.resolve(top) : null;
 }
 
-function gitDiffForFiles(workDir: string, files: any, mode: any): any {
+function gitDiffForFiles(workDir: any, files: any, mode: any): any {
   if (!workDir) throw new Error('缺少工作目录, 无法读取 git diff');
   const gitRoot = gitTopLevel(workDir);
   if (!gitRoot) throw new Error(`工作目录不是 Git 仓库: ${workDir}`);

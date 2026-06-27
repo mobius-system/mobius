@@ -620,7 +620,7 @@ function ensureLogoDemoAssets({ project, user }: any): any {
   if (!fs.existsSync(LOGO_DEMO_EXTENSION_SOURCE)) return { ok: false, error: `示例拓展不存在: ${LOGO_DEMO_EXTENSION_SOURCE}` };
   if (!fs.existsSync(LOGO_DEMO_SKILL_SOURCE)) return { ok: false, error: `示例技能不存在: ${LOGO_DEMO_SKILL_SOURCE}` };
 
-  const changedFiles = [];
+  const changedFiles: any[] = [];
   copyExtensionStarter(LOGO_DEMO_EXTENSION_SOURCE, bindPath, changedFiles);
   if (writeFileIfChanged(path.join(bindPath, '.imac', 'project_knowledge.md'), LOGO_DEMO_PROJECT_KNOWLEDGE)) {
     changedFiles.push(path.join(bindPath, '.imac', 'project_knowledge.md'));

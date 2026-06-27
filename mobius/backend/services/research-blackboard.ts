@@ -166,7 +166,7 @@ function appendBlackboardRecord({ researchId, author, content, metadata }: any):
   const safeContent = typeof content === 'string' ? content : '';
   if (!safeContent.trim()) return { error: 'content 不能为空' };
   if (safeContent.length > MAX_CONTENT_LEN) return { error: `content 过长 (上限 ${MAX_CONTENT_LEN} 字符)` };
-  const record = {
+  const record: any = {
     id: uuid().slice(0, 12),
     research_id: researchId,
     author: safeAuthor,

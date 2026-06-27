@@ -18,7 +18,7 @@ import {
   modelKeyFor,
 } from '../config'
 import adminSettings from './admin-settings'
-import modelAccess from './model-access'
+import * as modelAccess from './model-access'
 
 const BUILTIN_ORDER = ['codex', 'opus']
 
@@ -49,7 +49,7 @@ function fileExists(file: any): boolean {
 function builtinEntryFor(modelOrKey: any): any {
   const key = modelKeyFor(modelOrKey)
   if (!key) return null
-  const opt = MODEL_OPTIONS[key]
+  const opt = (MODEL_OPTIONS as Record<string, any>)[key]
   if (!opt) return null
   const settingsPath = opt.backend === 'tmux-claude-code' ? builtinClaudeSettingsPath() : null
   const codexConfigPath = opt.backend === 'tmux-codex' && opt.profileKey ? builtinCodexConfigPath(opt.profileKey) : null
@@ -179,7 +179,7 @@ function isImportedCodexModel(modelOrKey: any): boolean {
 
 function listSessionModelOptions(): any[] {
   const builtins = BUILTIN_ORDER
-    .filter((key) => MODEL_OPTIONS[key])
+    .filter((key) => (MODEL_OPTIONS as Record<string, any>)[key])
     .map((key) => builtinEntryFor(key))
     .filter(Boolean)
 
@@ -189,12 +189,12 @@ function listSessionModelOptions(): any[] {
   // 避免与内置 codex 重复显示. 该项仍可在 admin 面板编辑.
   const builtinCodexProfileKey = (MODEL_OPTIONS.codex && MODEL_OPTIONS.codex.profileKey) || null
   const codexDynamics = modelAccess.listCodexModels({ enabledOnly: true })
-    .map((m) => dynamicCodexEntryFor(m.session_model))
+    .map((m: any) => dynamicCodexEntryFor(m.session_model))
     .filter(Boolean)
-    .filter((m) => !builtinCodexProfileKey || m.model !== builtinCodexProfileKey)
+    .filter((m: any) => !builtinCodexProfileKey || m.model !== builtinCodexProfileKey)
 
   const claudeDynamics = modelAccess.listClaudeCodeModels({ enabledOnly: true })
-    .map((m) => dynamicEntryFor(m.session_model))
+    .map((m: any) => dynamicEntryFor(m.session_model))
     .filter(Boolean)
 
   const builtinCodex = builtins.filter((m) => m.key === 'codex')

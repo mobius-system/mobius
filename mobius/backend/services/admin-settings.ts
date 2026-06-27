@@ -182,7 +182,7 @@ function normalizeModelPromptLimitsForRead(value: any): any {
   const out = {
     windowHours: MODEL_PROMPT_LIMIT_WINDOW_HOURS,
     windowMinutes: MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
-    perModel: {},
+    perModel: {} as Record<string, any>,
   }
   const rawMap = value?.perModel || value?.models || {}
   if (rawMap && typeof rawMap === 'object') {
@@ -198,14 +198,14 @@ function normalizeModelPromptLimitsForRead(value: any): any {
 }
 
 function normalizeModelNetworkProxyForRead(value: any): any {
-  const out = { perModel: {} }
-  const rawMap = value?.perModel || value?.models || {}
+  const out: { perModel: Record<string, any> } = { perModel: {} }
+  const rawMap: any = value?.perModel || value?.models || {}
   if (rawMap && typeof rawMap === 'object') {
     for (const [rawKey, rawValue] of Object.entries(rawMap)) {
       try {
         const key = normalizeModelKey(rawKey)
         const value = rawValue && typeof rawValue === 'object'
-          ? (rawValue.useProxy ?? rawValue.use_proxy)
+          ? ((rawValue as any).useProxy ?? (rawValue as any).use_proxy)
           : rawValue
         if (typeof value === 'boolean') out.perModel[key] = value
       } catch {}

@@ -16,7 +16,7 @@ import { homeWorkDirFor } from '../config';
 // @ts-ignore — service 仍是 .js
 import adminSettings from '../services/admin-settings';
 // @ts-ignore — service 仍是 .js
-import modelAccess from '../services/model-access';
+import * as modelAccess from '../services/model-access';
 // @ts-ignore — service 仍是 .js
 import modelPromptLimits from '../services/model-prompt-limits';
 // @ts-ignore — service 仍是 .js

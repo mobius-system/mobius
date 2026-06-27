@@ -370,7 +370,7 @@ function copyToScope({ sourceId, targetUserId, targetProjectId }: any): any {
 // 递归收集目录下的 .md 文件 (跳过隐藏项 / node_modules, 带深度与数量上限防爆).
 // 顺序稳定 (按完整路径排序), 便于批量导入结果可预期.
 function walkMarkdownFiles(root: string, { maxFiles = 500, maxDepth = 8 }: any = {}): string[] {
-  const out = [];
+  const out: any[] = [];
   const visit = (dir: string, depth: number) => {
     if (depth > maxDepth || out.length >= maxFiles) return;
     let entries;

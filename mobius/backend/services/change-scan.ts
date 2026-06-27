@@ -60,8 +60,8 @@ function recomputeProjectConflicts(projectId: any): void {
   for (let i = 0; i < changes.length; i++) {
     for (let j = i + 1; j < changes.length; j++) {
       const left = changes[i], right = changes[j];
-      const leftFiles = filesByChange.get(left.id) || [];
-      const rightPaths = new Map((filesByChange.get(right.id) || []).map(f => [f.file_path, f]));
+      const leftFiles = (filesByChange.get(left.id) || []) as any[];
+      const rightPaths = new Map<string, any>((filesByChange.get(right.id) || []).map((f: any) => [f.file_path, f]));
       for (const lf of leftFiles) {
         const rf = rightPaths.get(lf.file_path);
         if (!rf) continue;
@@ -93,7 +93,7 @@ function refreshIssueIntegration(issueId: any): any {
   const integrationId = existing?.id || uuid().slice(0, 12);
 
   const counts = IssueIntegrations.conflictCounts(issueId);
-  const changeStats = IssueIntegrations.changeStats(issueId);
+  const changeStats = IssueIntegrations.changeStats(issueId) as any;
 
   const internal = Number(counts?.internal_count || 0);
   const external = Number(counts?.external_count || 0);

@@ -70,7 +70,7 @@ function readMergedJsonlHistory(jsonlPath: string | null | undefined, opts: Read
   // tailCount > 0 时, 单侧读取也按 tailCount 截尾 — 合并后再二次截尾即可,
   // 不必双侧都读满 maxLines 浪费 parse.
   const sideOpts = { ...opts, maxLines, tailCount };
-  const primary = watcher.readAll(jsonlPath, sideOpts);
+  const primary = watcher.readAll(jsonlPath as any, sideOpts);
   const mobius = mobiusPath ? watcher.readAll(mobiusPath, sideOpts) : { entries: [], total: 0, totalApproximate: false, truncated: false, size: 0 };
   const records: MergeRecord[] = [];
 
@@ -108,7 +108,7 @@ function readMergedJsonlHistory(jsonlPath: string | null | undefined, opts: Read
  */
 function countMergedJsonl(jsonlPath: string | null | undefined, opts: any = {}): any {
   const mobiusPath = mobiusJsonlPathOf(jsonlPath);
-  const p = watcher.countLines(jsonlPath, opts);
+  const p = watcher.countLines(jsonlPath as any, opts);
   const m = mobiusPath ? watcher.countLines(mobiusPath, opts) : { count: 0, size: 0, approximate: false };
   return {
     total: (p.count || 0) + (m.count || 0),
@@ -155,7 +155,7 @@ function readMergedJsonlSlice(jsonlPath: string | null | undefined, opts: ReadSl
   // 单侧拿全文件 (上限受 readSlice.maxBytes 保护). 这里 limit 给一个很大的值,
   // 因为我们需要 merge 后再取窗口, 不能只取单侧前 N 行.
   const sliceOpts = { fromIndex: 0, limit: Number.MAX_SAFE_INTEGER, ...(opts.maxBytes ? { maxBytes: opts.maxBytes } : {}) };
-  const p = watcher.readSlice(jsonlPath, sliceOpts);
+  const p = watcher.readSlice(jsonlPath as any, sliceOpts);
   const m = mobiusPath ? watcher.readSlice(mobiusPath, sliceOpts) : { entries: [], total: 0, exceeded: false };
   if (p.exceeded || m.exceeded) {
     return { entries: [], total: (p.total || 0) + (m.total || 0), from: fromIndex, returned: 0, exceeded: true };

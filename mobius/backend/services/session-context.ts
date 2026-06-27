@@ -786,7 +786,7 @@ function listBuiltinContextSkills(user: any, projectId: any): any {
   const userWhitelist = getProjectUserContextWhitelist(projectId, user);
   return filterBuiltinByWhitelist(
     Skills.listBuiltin(),
-    userWhitelist.builtin_skill_ids,
+    (userWhitelist as any).builtin_skill_ids,
   );
 }
 
@@ -1038,7 +1038,7 @@ function buildSessionContext(user: any, sessionId: string): any {
 
 // 新建 Session Wizard 用: 在 session 还没创建时, 用 issue + 输入框中的 name/desc + 勾选状态预览注入内容.
 // excludedSkillIds / excludedMemoryIds: 用户在 Wizard Step 2 中取消勾选的 id 列表.
-function buildIssueContextPreview(user: any, issueId: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language: any): any {
+function buildIssueContextPreview(user: any, issueId: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language?: any): any {
   const issue = Issues.findById(issueId);
   if (!issue) return { body: '', sources: null };
   const issueSources = gatherIssueSources(user, issue, {
@@ -1091,7 +1091,7 @@ function buildProjectIssueContextPreview(user: any, projectId: any, draftIssue: 
   return { body: formatBody(sources), sources };
 }
 
-function buildResearchContextPreview(user: any, researchId: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language: any): any {
+function buildResearchContextPreview(user: any, researchId: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language?: any): any {
   const research = Researches.findById(researchId);
   if (!research) return { body: '', sources: null };
   const researchSources = gatherResearchSources(user, research, {
@@ -1160,8 +1160,8 @@ function buildIssueSelectionDefaults(user: any, issueId: any): any {
   if (!issue) return { inherited: false, source_session: null, excluded_skill_ids: [], excluded_memory_ids: [] };
 
   const currentSources = gatherIssueSources(user, issue, { skills: [], memories: [] });
-  const currentSkillIds = new Set((currentSources.skills || []).map((sk: any) => sk.id));
-  const currentMemoryIds = new Set((currentSources.memories || []).map((memory: any) => memory.id));
+  const currentSkillIds = new Set<string>((currentSources.skills || []).map((sk: any) => sk.id));
+  const currentMemoryIds = new Set<string>((currentSources.memories || []).map((memory: any) => memory.id));
 
   const latest = Sessions.findLatestReusableSelectionForIssue(issueId);
   if (!latest) {
@@ -1209,8 +1209,8 @@ function buildResearchSelectionDefaults(user: any, researchId: any): any {
   if (!research) return { inherited: false, source_session: null, excluded_skill_ids: [], excluded_memory_ids: [] };
 
   const currentSources = gatherResearchSources(user, research, { skills: [], memories: [] });
-  const currentSkillIds = new Set((currentSources.skills || []).map((sk: any) => sk.id));
-  const currentMemoryIds = new Set((currentSources.memories || []).map((memory: any) => memory.id));
+  const currentSkillIds = new Set<string>((currentSources.skills || []).map((sk: any) => sk.id));
+  const currentMemoryIds = new Set<string>((currentSources.memories || []).map((memory: any) => memory.id));
 
   const latest = Sessions.findLatestReusableSelectionForResearch(researchId);
   if (!latest) {
@@ -1268,7 +1268,7 @@ function buildProjectIssueSelectionDefaults(user: any, projectId: any, draftIssu
     worktree_branch: '',
   };
   const currentSources = gatherIssueSources(user, issue, { skills: [], memories: [] });
-  const currentSkillIds = new Set((currentSources.skills || []).map((sk: any) => sk.id));
+  const currentSkillIds = new Set<string>((currentSources.skills || []).map((sk: any) => sk.id));
   return {
     inherited: false,
     source_session: null,

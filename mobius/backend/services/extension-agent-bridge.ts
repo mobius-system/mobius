@@ -259,6 +259,7 @@ function createExtensionAnalysisSession(input: any = {}): any {
     session_id: sessionId,
     issue_id: issue.id,
     project_id: project.id,
+    scope_type: 'issue',
     user_id: user.id,
     name: sessionName,
     description: sessionDescription,

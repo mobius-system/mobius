@@ -184,7 +184,7 @@ function routeBlock(source, routeMarker) {
 }
 
 function verifyWriteRouteGuards() {
-  const integrationPath = path.join(__dirname, '..', 'backend', 'routes', 'integration.js')
+  const integrationPath = path.join(__dirname, '..', 'backend', 'routes', 'integration.ts')
   const integration = fs.readFileSync(integrationPath, 'utf8')
   expectContains(
     'session change scan route should require operable session',

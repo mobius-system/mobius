@@ -161,11 +161,11 @@ function syncWithDb(found: Map<string, any>): void {
   // 2. 目录已消失的拓展 → 标 disabled, 保留行 (用户数据不丢)
   const dbRows = Projects.listExtensions();
   for (const row of dbRows) {
-    const entry = row.extension_name ? found.get(row.extension_name) : null;
+    const entry = row!.extension_name ? found.get(row!.extension_name) : null;
     const stillThere = !!(entry && (!entry.project || entry.project.sync !== false));
     const shouldDisable = !stillThere;
-    if (shouldDisable !== row.disabled) {
-      Projects.setExtensionDisabled(row.extension_name, shouldDisable);
+    if (shouldDisable !== row!.disabled) {
+      Projects.setExtensionDisabled(row!.extension_name || '', shouldDisable);
     }
   }
 }
@@ -194,7 +194,7 @@ function getAll(): any[] {
   }));
 }
 
-function get(name: string): any {
+function get(name: any): any {
   return registry.get(name) || null;
 }
 

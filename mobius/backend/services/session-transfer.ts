@@ -125,7 +125,7 @@ function addSection(sections: any[], title: string, body: any): void {
 }
 
 function entrySections(entry: any, index: number): any[] {
-  const sections = [];
+  const sections: any[] = [];
   const type = entry?.type;
   const payload = entry?.payload;
   const prefix = `#${index + 1}`;

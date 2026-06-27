@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 
 import { Researches } from '../repositories/researches';
 
@@ -50,7 +50,7 @@ function normalizeNode(raw: any): any {
 
   const parentNodes = (Array.isArray(raw.parent_nodes) ? raw.parent_nodes : [])
     .map(asIntId)
-    .filter((v) => v != null);
+    .filter((v: any) => v != null);
 
   const visualEffects = asStringList(raw.visual_effects)
     .filter((v) => ALLOWED_VISUAL_EFFECTS.includes(v));

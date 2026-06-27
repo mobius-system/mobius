@@ -183,7 +183,7 @@ function parseResponse(data: any): any {
   const flags = data[1] & 0x0f;
   const serialization = data[2] >> 4;
   const compression = data[2] & 0x0f;
-  let payload = data.slice(headerBytes);
+  let payload: any = data.slice(headerBytes);
   const result: any = {
     message_type: messageType,
     flags,
