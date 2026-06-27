@@ -1,25 +1,25 @@
-const fs = require('fs');
-const path = require('path');
-const { APP_DIR } = require('../config');
+import * as fs from 'fs';
+import * as path from 'path';
+import { APP_DIR } from '../config';
 
 const SESSION_ATTACHMENT_MAX_COUNT = 6;
 const SESSION_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 
-function isPathInside(parent, child) {
+function isPathInside(parent: string, child: string): boolean {
   if (!parent || !child) return false;
   const rel = path.relative(path.resolve(parent), path.resolve(child));
   return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-function normalizeSessionAttachments(raw, user, extraRoots = []) {
+function normalizeSessionAttachments(raw: any, user: any, extraRoots: string[] = []): any[] {
   const arr = Array.isArray(raw) ? raw : [];
   const allowedRoots = [
     ...extraRoots,
     user?.work_dir,
     path.join(APP_DIR, '.imac', 'upload'),
-  ].filter(Boolean).map((item) => path.resolve(item));
-  const out = [];
-  const seen = new Set();
+  ].filter(Boolean).map((item) => path.resolve(item as string));
+  const out: any[] = [];
+  const seen = new Set<string>();
 
   for (const item of arr) {
     if (out.length >= SESSION_ATTACHMENT_MAX_COUNT) break;
@@ -50,12 +50,12 @@ function normalizeSessionAttachments(raw, user, extraRoots = []) {
   return out;
 }
 
-function sessionAttachmentPromptBlock(attachments) {
-  const files = Array.isArray(attachments) ? attachments.filter((item) => item?.path) : [];
+function sessionAttachmentPromptBlock(attachments: any): string {
+  const files = Array.isArray(attachments) ? attachments.filter((item: any) => item?.path) : [];
   if (files.length === 0) return '';
   return [
     '用户随本轮消息上传了以下附件。你可以直接读取这些本机绝对路径来理解内容；图片需要向用户展示时可使用 `display_images <图片路径>`。',
-    ...files.map((file, index) => {
+    ...files.map((file: any, index: number) => {
       const label = file.name ? ` (${file.name})` : '';
       const kind = file.type === 'image' ? '图片' : '文件';
       return `${index + 1}. [${kind}] ${file.path}${label}`;
@@ -63,13 +63,13 @@ function sessionAttachmentPromptBlock(attachments) {
   ].join('\n');
 }
 
-function sessionContentWithAttachments(content, attachments) {
+function sessionContentWithAttachments(content: string, attachments: any): string {
   const block = sessionAttachmentPromptBlock(attachments);
   if (!block) return content;
   return [block, String(content || '').trim()].filter(Boolean).join('\n\n');
 }
 
-module.exports = {
+export {
   SESSION_ATTACHMENT_MAX_COUNT,
   normalizeSessionAttachments,
   sessionAttachmentPromptBlock,

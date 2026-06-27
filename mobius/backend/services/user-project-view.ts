@@ -1,10 +1,10 @@
-const { UserProjectView } = require('../repositories/user-project-view');
+import { UserProjectView } from '../repositories/user-project-view';
 
-function normalizeProjectSearch(raw) {
+function normalizeProjectSearch(raw: any): string {
   return String(raw || '').trim().toLowerCase();
 }
 
-function projectMatchesSearch(project, query) {
+function projectMatchesSearch(project: any, query: any): boolean {
   const q = normalizeProjectSearch(query);
   if (!q) return true;
   return [
@@ -16,7 +16,11 @@ function projectMatchesSearch(project, query) {
   ].some((value) => String(value || '').toLowerCase().includes(q));
 }
 
-function filterProjectListForUser(projects, user, { query = '', showAll = false } = {}) {
+function filterProjectListForUser(
+  projects: any[],
+  user: any,
+  { query = '', showAll = false }: { query?: string; showAll?: boolean } = {},
+): any[] {
   const prefs = UserProjectView.getPrefs(user?.id);
   const mutedIds = UserProjectView.mutedIds(user?.id);
   const searching = !!normalizeProjectSearch(query);
@@ -32,7 +36,7 @@ function filterProjectListForUser(projects, user, { query = '', showAll = false 
     });
 }
 
-module.exports = {
+export {
   UserProjectView,
   filterProjectListForUser,
   projectMatchesSearch,

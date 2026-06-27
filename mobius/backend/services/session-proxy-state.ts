@@ -1,14 +1,14 @@
-const modelRegistry = require('./model-registry')
-const agents = require('../agents')
+import modelRegistry from './model-registry';
+import agents from '../agents';
 
-function normalizeUseProxy(value) {
+function normalizeUseProxy(value: any): boolean | null {
   if (value === true || value === 1 || value === '1' || value === 'true') return true
   if (value === false || value === 0 || value === '0' || value === 'false') return false
   return null
 }
 
-function useProxyForSession(session, backend = null) {
-  let launch
+function useProxyForSession(session: any, backend: any = null): number {
+  let launch: any
   try {
     launch = modelRegistry.launchOptionsForSession(session)
   } catch {
@@ -29,9 +29,9 @@ function useProxyForSession(session, backend = null) {
   return 0
 }
 
-function withSessionProxyState(session) {
+function withSessionProxyState(session: any): any {
   if (!session) return session
-  let launch
+  let launch: any
   try {
     launch = modelRegistry.launchOptionsForSession(session)
   } catch {
@@ -50,11 +50,11 @@ function withSessionProxyState(session) {
   }
 }
 
-function withSessionProxyStates(sessions) {
+function withSessionProxyStates(sessions: any): any[] {
   return Array.isArray(sessions) ? sessions.map(withSessionProxyState) : []
 }
 
-module.exports = {
+export {
   useProxyForSession,
   withSessionProxyState,
   withSessionProxyStates,

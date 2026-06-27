@@ -1,14 +1,10 @@
 const ASSISTANT_SESSION_KEY_PREFIX = 'assistant-question';
 
-function assistantSessionKeyPrefixForUser(userId) {
+function assistantSessionKeyPrefixForUser(userId: string): string {
   return `${ASSISTANT_SESSION_KEY_PREFIX}:${userId}:`;
 }
 
-function assistantSessionKeyLike(userId) {
-  return `${assistantSessionKeyPrefixForUser(userId)}%`;
-}
-
-function isAssistantSession(session, user = null) {
+function isAssistantSession(session: any, user: any = null): boolean {
   if (!session || typeof session.session_key !== 'string') return false;
   if (user?.id) {
     return session.user_id === user.id
@@ -17,7 +13,11 @@ function isAssistantSession(session, user = null) {
   return session.session_key.startsWith(`${ASSISTANT_SESSION_KEY_PREFIX}:`);
 }
 
-module.exports = {
+function assistantSessionKeyLike(userId: string): string {
+  return `${assistantSessionKeyPrefixForUser(userId)}%`;
+}
+
+export {
   ASSISTANT_SESSION_KEY_PREFIX,
   assistantSessionKeyLike,
   isAssistantSession,

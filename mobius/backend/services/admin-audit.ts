@@ -1,6 +1,12 @@
-const { AdminAuditLog } = require('../repositories/admin-audit-log');
+import { AdminAuditLog } from '../repositories/admin-audit-log';
 
-function recordAdminAuditIfCrossUser(user, action, resourceType, resourceId, ownerId) {
+function recordAdminAuditIfCrossUser(
+  user: any,
+  action: string,
+  resourceType: string,
+  resourceId: string | number | null,
+  ownerId: string | number | null,
+): any {
   if (!user || user.role !== 'admin') return null;
   const owner = String(ownerId || '').trim();
   if (owner && owner === user.id) return null;
@@ -9,7 +15,7 @@ function recordAdminAuditIfCrossUser(user, action, resourceType, resourceId, own
       adminId: user.id,
       action,
       resourceType,
-      resourceId,
+      resourceId: String(resourceId ?? ''),
     });
   } catch (e) {
     console.warn(`[admin-audit] record failed: ${e.message}`);
@@ -17,4 +23,4 @@ function recordAdminAuditIfCrossUser(user, action, resourceType, resourceId, own
   }
 }
 
-module.exports = { recordAdminAuditIfCrossUser };
+export { recordAdminAuditIfCrossUser };

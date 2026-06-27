@@ -249,11 +249,11 @@ function VersionIndicator() {
       title={title}
       style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
       <span className="text-[10px] font-semibold tracking-wide" style={{ color: 'var(--text-dimmed)' }}>ver</span>
-      <span className="text-[12px] tabular-nums font-semibold truncate" style={{ color: 'var(--text-secondary)' }}>
+      <span className="text-[12px] tabular-nums truncate" style={{ color: 'var(--text-secondary)' }}>
         {version}
       </span>
       <span className="text-[10px]" style={{ color: 'var(--text-dimmed)' }}>up</span>
-      <span className="text-[12px] tabular-nums font-semibold" style={{ color: 'var(--text-secondary)' }}>
+      <span className="text-[12px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>
         {uptime}
       </span>
     </div>

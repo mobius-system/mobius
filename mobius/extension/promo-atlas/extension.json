@@ -1,0 +1,11 @@
+{
+  "name": "promo-atlas",
+  "display_name": "莫比乌斯宣传内容全景图",
+  "description": "梳理莫比乌斯所有宣传素材的网页化调研：真实能力分层、24 个拓展的宣传价值评级、README 独有卖点、视频素材矩阵、被低估的金矿建议。",
+  "version": "0.1.0",
+  "icon": "favicon.svg",
+  "project": {
+    "sync": true,
+    "default_hidden": true
+  }
+}

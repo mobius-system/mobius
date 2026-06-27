@@ -123,4 +123,5 @@ mobius/extension/mobius-home/frontend/assets/v1/*.mp4
 mobius/db.js
 mobius/backend/types/*.js
 mobius/backend/repositories/*.js
+mobius/backend/services/*.js
 image*.png

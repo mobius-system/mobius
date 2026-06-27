@@ -1,16 +1,16 @@
-const fs = require('fs');
-const path = require('path');
-const { TURNS_SUMMARY_DIR } = require('../config');
-const { Messages } = require('../repositories/messages');
+import * as fs from 'fs';
+import * as path from 'path';
+import { TURNS_SUMMARY_DIR } from '../config';
+import { Messages } from '../repositories/messages';
 
 // 读取 Citadel turn-summary.js hook 写入的 enriched summary, 落到 messages.turn_summary
-function pollTurnSummaries(sessionId) {
+function pollTurnSummaries(sessionId: string): void {
   try {
     if (!fs.existsSync(TURNS_SUMMARY_DIR)) return;
-    const files = fs.readdirSync(TURNS_SUMMARY_DIR).filter(f => f.startsWith(`${sessionId}-`) && f.endsWith('.json'));
+    const files = fs.readdirSync(TURNS_SUMMARY_DIR).filter((f) => f.startsWith(`${sessionId}-`) && f.endsWith('.json'));
     for (const file of files) {
       const filePath = path.join(TURNS_SUMMARY_DIR, file);
-      let summaryData;
+      let summaryData: any;
       try {
         summaryData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
       } catch {
@@ -32,4 +32,4 @@ function pollTurnSummaries(sessionId) {
   } catch { /* non-critical */ }
 }
 
-module.exports = { pollTurnSummaries };
+export { pollTurnSummaries };

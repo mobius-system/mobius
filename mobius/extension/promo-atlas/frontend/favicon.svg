@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Promo Atlas">
+  <defs>
+    <linearGradient id="ag" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="0.5" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#f472b6"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0a0a18"/>
+  <g transform="translate(32 32)">
+    <path d="M -14 0 C -14 -10, -4 -10, 0 0 C 4 10, 14 10, 14 0 C 14 -10, 4 -10, 0 0 C -4 10, -14 10, -14 0 Z"
+          fill="none" stroke="url(#ag)" stroke-width="2.4"/>
+    <circle cx="0" cy="0" r="3" fill="url(#ag)"/>
+    <circle cx="-14" cy="0" r="1.6" fill="#22d3ee"/>
+    <circle cx="14" cy="0" r="1.6" fill="#f472b6"/>
+  </g>
+</svg>

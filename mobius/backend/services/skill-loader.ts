@@ -1,5 +1,5 @@
 /**
- * skill-loader.js — 解析 SKILL.md 文本.
+ * skill-loader.ts — 解析 SKILL.md 文本.
  *
  * 一个 Skill 是一段 SKILL.md 文本, 必须以 YAML frontmatter 开头:
  *   ---
@@ -13,12 +13,12 @@
  * 注入到 prompt 时直接拼接.
  */
 
-function parseFrontmatter(text) {
+function parseFrontmatter(text: string): { meta: Record<string, string>; body: string } {
   const match = text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);
   if (!match) return { meta: {}, body: text };
   const block = match[1];
   const body = text.slice(match[0].length);
-  const meta = {};
+  const meta: Record<string, string> = {};
   for (const line of block.split(/\r?\n/)) {
     const m = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
     if (!m) continue;
@@ -31,7 +31,7 @@ function parseFrontmatter(text) {
 }
 
 // 从 SKILL.md 文本提取 { name, description, body } (body = 原文整段).
-function loadSkillFromText(text) {
+function loadSkillFromText(text: string): { name: string; description: string; body: string } {
   if (typeof text !== 'string' || !text.trim()) {
     throw new Error('SKILL.md 内容不能为空');
   }
@@ -43,4 +43,4 @@ function loadSkillFromText(text) {
   return { name, description, body: raw };
 }
 
-module.exports = { loadSkillFromText, parseFrontmatter };
+export { loadSkillFromText, parseFrontmatter };

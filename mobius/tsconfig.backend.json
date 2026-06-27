@@ -23,7 +23,8 @@
     "backend/types/**/*.ts",
     "backend/routes/**/*.ts",
     "backend/middleware/**/*.ts",
-    "backend/utils/**/*.ts"
+    "backend/utils/**/*.ts",
+    "backend/services/**/*.ts"
   ],
   "exclude": [
     "node_modules",

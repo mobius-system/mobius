@@ -1,5 +1,5 @@
 /**
- * skill-resolver.js — 把 (用户级 + 项目级) skill 列表与 issue 上的 selected / excluded
+ * skill-resolver.ts — 把 (用户级 + 项目级) skill 列表与 issue 上的 selected / excluded
  * 化简成 "本次 session 实际要注入的 skills".
  *
  * 规则:
@@ -9,16 +9,19 @@
  *   3) 同 name 的 skill 去重 (保留先出现的; 列表已按 scope DESC 排序, 用户级先出现).
  */
 
-function resolveEffectiveSkills(allSkills, { selected = [], excluded = [] } = {}) {
+function resolveEffectiveSkills(
+  allSkills: any[],
+  { selected = [], excluded = [] }: { selected?: string[]; excluded?: string[] } = {},
+): any[] {
   const selectedSet = new Set(selected);
   const excludedSet = new Set(excluded);
   let out = allSkills.slice();
   if (selectedSet.size > 0) {
-    out = out.filter(s => selectedSet.has(s.id));
+    out = out.filter((s) => selectedSet.has(s.id));
   }
-  out = out.filter(s => !excludedSet.has(s.id));
-  const seen = new Set();
-  const dedup = [];
+  out = out.filter((s) => !excludedSet.has(s.id));
+  const seen = new Set<string>();
+  const dedup: any[] = [];
   for (const s of out) {
     if (seen.has(s.name)) continue;
     seen.add(s.name);
@@ -27,4 +30,4 @@ function resolveEffectiveSkills(allSkills, { selected = [], excluded = [] } = {}
   return dedup;
 }
 
-module.exports = { resolveEffectiveSkills };
+export { resolveEffectiveSkills };

@@ -1,5 +1,5 @@
 /**
- * session-skills-sync.js — 把当前 session 解析后的 effective skills (用户级 + 项目级)
+ * session-skills-sync.ts — 把当前 session 解析后的 effective skills (用户级 + 项目级)
  * 镜像到 session 工作目录下的 `.imac/skills/<dirName>/`, 让 agent 通过相对路径自取
  * SKILL.md, 取代之前把整段 SKILL.md 内嵌进首轮 prompt 的做法.
  *
@@ -9,21 +9,21 @@
  *     不再因为本次未选中而删除.
  *   - 源不存在 / 复制失败的项不抛错, 通过返回值反馈给调用方.
  */
-const fs = require('fs');
-const path = require('path');
-const { getSourceDir, parseSkillId } = require('./skills-fs');
+import * as fs from 'fs';
+import * as path from 'path';
+import { getSourceDir, parseSkillId } from './skills-fs';
 
 // 用 POSIX 形式给 agent 看到相对路径, 跨平台时也保持一致.
 const TARGET_SUBDIR = '.imac/skills';
 
-function syncSkillsToWorkspace(workDir, skills) {
-  const results = [];
+function syncSkillsToWorkspace(workDir: string, skills: any[]): any[] {
+  const results: any[] = [];
   if (!workDir || !Array.isArray(skills)) return results;
 
   const targetRoot = path.resolve(workDir, TARGET_SUBDIR);
   try {
     fs.mkdirSync(targetRoot, { recursive: true });
-  } catch (e) {
+  } catch {
     return results;
   }
 
@@ -72,4 +72,4 @@ function syncSkillsToWorkspace(workDir, skills) {
   return results;
 }
 
-module.exports = { syncSkillsToWorkspace, TARGET_SUBDIR };
+export { syncSkillsToWorkspace, TARGET_SUBDIR };
