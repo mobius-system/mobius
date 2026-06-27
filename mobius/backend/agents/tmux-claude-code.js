@@ -153,6 +153,28 @@ function windowExists(name) {
   return r.stdout.split('\n').includes(name)
 }
 
+// list-windows 结果缓存 (仅状态查询用).
+// /status / syncer 每 2~5s 轮询, 一次 /status 内 isAlive + isWorking(内部再 isAlive)
+// + listSessions 会重复 list-windows 3 次 (全是 spawnSync, 阻塞 Node 单事件循环).
+// 缓存 list-windows 解析结果 12s 内复用, 把单次 /status 的 spawnSync 降到 0~1 次,
+// 消除"偶发某次 tmux 慢 → 事件循环被占 → 期间到达的请求全部排队"的雪崩.
+// 控制流 (create/terminate/pause/recovery 里的 windowExists) 仍走实时查询, 不受 TTL 影响.
+const LIST_WINDOWS_TTL_MS = 12 * 1000
+let _listWindowsCache = null // { ts: number, rows: string[][] }
+
+function listWindowsRowsCached() {
+  const now = Date.now()
+  if (_listWindowsCache && now - _listWindowsCache.ts < LIST_WINDOWS_TTL_MS) {
+    return _listWindowsCache.rows
+  }
+  const r = tmux(['list-windows', '-t', HUB, '-F', '#{window_name}|#{pane_pid}|#{window_index}|#{window_activity}|#{pane_dead}|#{pane_current_command}'])
+  const rows = r.status === 0
+    ? r.stdout.trim().split('\n').filter(Boolean).map((l) => l.split('|'))
+    : []
+  _listWindowsCache = { ts: now, rows }
+  return rows
+}
+
 // cwd → ~/.claude/projects/ 下子目录名. 所有非字母数字字符替换为 '-'.
 // 例: /home/u/cc-workspace/foo_bar → -home-u-cc-workspace-foo-bar
 function encodeCwd(cwd) {
@@ -314,7 +336,8 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
   // ── 状态查询 (不上锁, 跟写操作并发安全) ─────────────
   isAlive(sessionId) {
-    return windowExists(sessionId)
+    // 状态查询走缓存 (12s TTL); 控制流 (create/terminate 等) 请用 windowExists (实时).
+    return listWindowsRowsCached().some((cols) => cols[0] === sessionId)
   }
 
   isWorking(sessionId) {
@@ -376,10 +399,8 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   listSessions() {
-    const r = tmux(['list-windows', '-t', HUB, '-F', '#{window_name}|#{pane_pid}|#{window_index}|#{window_activity}|#{pane_dead}|#{pane_current_command}'])
-    if (r.status !== 0) return []
-    return r.stdout.trim().split('\n').filter(Boolean).map(line => {
-      const [name, pid, idx, activity, paneDead, paneCurrentCommand] = line.split('|')
+    return listWindowsRowsCached().map(cols => {
+      const [name, pid, idx, activity, paneDead, paneCurrentCommand] = cols
       const entry = this.runtime.get(name)
       const lastActivitySec = Number(activity)
       const lastActivityMs = Number.isFinite(lastActivitySec) && lastActivitySec > 0
