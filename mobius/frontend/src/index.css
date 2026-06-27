@@ -1424,6 +1424,16 @@ body::after {
 /* Firefox 等价: thin + themed color (Chrome/Safari 走上面的 ::-webkit-scrollbar) */
 * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
 
+/* ===== 自定义开关 (label + sr-only checkbox) 防止点击跳屏 =====
+   Tailwind 的 .sr-only 用 position:absolute + 自动偏移 (auto) 隐藏复选框. 当这类开关
+   渲染在嵌套滚动容器 (如 ProjectPage 的 <main overflow-y-auto>) 且无 positioned 祖先时,
+   点击 label 会让隐藏 checkbox 获焦, 浏览器据此执行 scrollIntoView, 却把元素位置算到
+   文档原点 → 整页向上跳出视口 (开关越靠下跳得越明显). 修复: 给这类 label 建立 relative
+   包含块, 并把 checkbox 锚定到 label 左上角 (显式 top/left:0), 使焦点落在可视位置,
+   不再触发滚动. 切换逻辑、视觉、键盘可达性均不受影响. */
+label:has(> input[type="checkbox"].sr-only) { position: relative; }
+input[type="checkbox"].sr-only { top: 0; left: 0; }
+
 /* ===== 流式光标 ===== */
 .streaming-cursor::after {
   content: "▊";
