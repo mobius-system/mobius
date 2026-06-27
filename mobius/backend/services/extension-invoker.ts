@@ -1,5 +1,5 @@
 /**
- * extension-invoker.js — /api/ext 的执行内核.
+ * extension-invoker.ts — /api/ext 的执行内核.
  *
  * 给定一个 registry entry 和调用上下文, 在隔离的 worker_thread 里跑
  *   mobius/extension/<name>/backend/extension_backend_handler.js
@@ -18,21 +18,24 @@
  *   __oversize?: true,
  *   __error?: <handler 内抛错的 message>,
  * }
+ *
+ * 注: WORKER_BOOT_FILE 故意保持 .js — worker_thread 不继承主进程的 tsx 加载器,
+ *     必须是 Node 能原生运行的 .js 引导脚本 (见 extension-invoker-worker.js).
  */
-const path = require('path');
-const fs = require('fs');
-const { Worker } = require('worker_threads');
-const {
+import * as path from 'path';
+import * as fs from 'fs';
+import { Worker } from 'worker_threads';
+import {
   EXTENSION_HANDLER_TIMEOUT_MS,
   EXTENSION_HANDLER_MAX_RESULT_BYTES,
-} = require('../config');
+} from '../config';
 
 const WORKER_BOOT_FILE = path.join(__dirname, 'extension-invoker-worker.js');
 
-function invokeHandler({ entry, username, display_name, ext_main_payload }) {
+function invokeHandler({ entry, username, display_name, ext_main_payload }: any): Promise<any> {
   return new Promise((resolve) => {
     let settled = false;
-    let timeout;
+    let timeout: NodeJS.Timeout;
 
     // workerData 必须可结构化克隆, 已是 JSON 安全的对象
     const worker = new Worker(WORKER_BOOT_FILE, {
@@ -56,7 +59,7 @@ function invokeHandler({ entry, username, display_name, ext_main_payload }) {
       stderr: false,
     });
 
-    function done(payload) {
+    function done(payload: any): void {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
@@ -64,10 +67,10 @@ function invokeHandler({ entry, username, display_name, ext_main_payload }) {
       resolve(payload);
     }
 
-    worker.on('message', (msg) => {
+    worker.on('message', (msg: any) => {
       if (msg && msg.__kind === 'result') {
         // 大小校验: stringify 一次, 把序列化后字节数算清楚
-        let serialized;
+        let serialized: string;
         try { serialized = JSON.stringify(msg.value); }
         catch (e) { return done({ __error: 'result not JSON-serializable: ' + e.message }); }
         if (Buffer.byteLength(serialized, 'utf8') > EXTENSION_HANDLER_MAX_RESULT_BYTES) {
@@ -80,8 +83,8 @@ function invokeHandler({ entry, username, display_name, ext_main_payload }) {
       }
     });
 
-    worker.on('error', (err) => done({ __error: err.message }));
-    worker.on('exit', (code) => {
+    worker.on('error', (err: Error) => done({ __error: err.message }));
+    worker.on('exit', (code: number) => {
       if (!settled) {
         // 没有 message 就退出 = handler 异常退出
         done({ __error: `worker exited with code ${code}` });
@@ -93,10 +96,10 @@ function invokeHandler({ entry, username, display_name, ext_main_payload }) {
 }
 
 // 预跑期校验: handler 文件存在 (registry 阶段已校验, 这里二次保险, 防 race)
-function preflight(entry) {
+function preflight(entry: any): void {
   if (!fs.existsSync(entry.handler_path)) {
     throw new Error('handler 文件已消失: ' + entry.handler_path);
   }
 }
 
-module.exports = { invokeHandler, preflight };
+export { invokeHandler, preflight };

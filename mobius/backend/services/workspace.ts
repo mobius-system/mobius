@@ -1,16 +1,28 @@
-const fs = require('fs');
-const path = require('path');
-const { spawnSync } = require('child_process');
-const { db } = require('../../db');
+import * as fs from 'fs';
+import * as path from 'path';
+import { spawnSync } from 'child_process';
+import { db } from '../../db';
 
-function gitTopLevel(abs) {
+interface SessionWorkspaceRow {
+  project_id: string | null;
+  issue_id: string | null;
+  scope_type: string | null;
+  research_id: string | null;
+  project_name: string | null;
+  bind_path: string | null;
+  use_worktree: number | null;
+  worktree_branch: string | null;
+  research_title: string | null;
+}
+
+function gitTopLevel(abs: string): string | null {
   const r = spawnSync('git', ['-C', abs, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
   if (r.status !== 0) return null;
   const top = (r.stdout || '').trim();
   return top ? path.resolve(top) : null;
 }
 
-function isGitRepoRoot(abs) {
+function isGitRepoRoot(abs: string): boolean {
   return gitTopLevel(abs) === path.resolve(abs);
 }
 
@@ -26,7 +38,7 @@ function isGitRepoRoot(abs) {
 //   任一前置条件不满足 → 返回 { error }, 由调用方拒绝执行并提示用户去补齐.
 // 返回 { workDir, projectRoot, worktree, branch, projectName } 或 { error }.
 //   projectRoot — bind_path 仓库根 (running.flag 锚定在此, 不随 worktree 漂移)
-function resolveSessionWorkspace(user, sessionId) {
+function resolveSessionWorkspace(user: any, sessionId: string): any {
   const session = db.prepare(`
     SELECT s.project_id, s.issue_id, s.scope_type, s.research_id,
            p.name as project_name, p.bind_path as bind_path,
@@ -37,7 +49,7 @@ function resolveSessionWorkspace(user, sessionId) {
     LEFT JOIN issues i ON s.issue_id = i.id
     LEFT JOIN researches r ON s.research_id = r.id
     WHERE s.session_id = ?
-  `).get(sessionId);
+  `).get(sessionId) as SessionWorkspaceRow | undefined;
 
   if (!session || !session.project_id) {
     return { error: 'Session 未关联到项目, 无法确定工作目录' };
@@ -74,7 +86,7 @@ function resolveSessionWorkspace(user, sessionId) {
   if (useWorktree) {
     const resolvedGitRoot = gitTopLevel(abs);
     if (resolvedGitRoot !== abs) {
-      const branch = (session.worktree_branch || '').trim() || session.issue_id;
+      const branch = ((session.worktree_branch || '').trim() || session.issue_id) as string;
       return {
         workDir: abs,
         projectRoot: abs,
@@ -87,7 +99,7 @@ function resolveSessionWorkspace(user, sessionId) {
       };
     }
 
-    const branch = (session.worktree_branch || '').trim() || session.issue_id;
+    const branch = ((session.worktree_branch || '').trim() || session.issue_id) as string;
     const wtPath = path.join(abs, branch);
     if (wtPath !== abs && !wtPath.startsWith(abs + path.sep)) {
       return { error: `worktree 分支名非法 (路径越界): ${branch}` };
@@ -116,4 +128,4 @@ function resolveSessionWorkspace(user, sessionId) {
   };
 }
 
-module.exports = { resolveSessionWorkspace, gitTopLevel, isGitRepoRoot };
+export { resolveSessionWorkspace, gitTopLevel, isGitRepoRoot };

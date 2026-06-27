@@ -1,22 +1,22 @@
-const fs = require('fs');
-const path = require('path');
-const { APP_DIR, EXTENSION_ROOT } = require('../config');
+import * as fs from 'fs';
+import * as path from 'path';
+import { APP_DIR, EXTENSION_ROOT } from '../config';
 
-function normalizeAbsPath(value) {
+function normalizeAbsPath(value: any): string {
   if (typeof value !== 'string') return '';
   const trimmed = value.trim();
   if (!trimmed) return '';
   return path.resolve(trimmed);
 }
 
-function isWithinPath(rootPath, targetPath) {
+function isWithinPath(rootPath: any, targetPath: any): boolean {
   const root = normalizeAbsPath(rootPath);
   const target = normalizeAbsPath(targetPath);
   if (!root || !target) return false;
   return target === root || target.startsWith(root + path.sep);
 }
 
-function isAllowedWorkspacePath(project, targetPath) {
+function isAllowedWorkspacePath(project: any, targetPath: any): boolean {
   const bindRoot = normalizeAbsPath(project?.bind_path);
   const target = normalizeAbsPath(targetPath);
   if (!bindRoot || !target) return false;
@@ -24,14 +24,14 @@ function isAllowedWorkspacePath(project, targetPath) {
   return target === path.dirname(bindRoot);
 }
 
-function payloadRootForWorkspace(project, workspacePath) {
+function payloadRootForWorkspace(project: any, workspacePath: any): string {
   const bindRoot = normalizeAbsPath(project?.bind_path);
   const workspaceRoot = normalizeAbsPath(workspacePath);
   if (workspaceRoot && isAllowedWorkspacePath(project, workspaceRoot)) return workspaceRoot;
   return bindRoot;
 }
 
-function extensionWorkspacePath(project) {
+function extensionWorkspacePath(project: any): string {
   const extensionName = typeof project?.extension_name === 'string' ? project.extension_name.trim() : '';
   if (!extensionName || !/^[a-z][a-z0-9-]{0,31}$/.test(extensionName)) return '';
   const base = normalizeAbsPath(EXTENSION_ROOT || path.join(APP_DIR, 'mobius', 'extension'));
@@ -39,7 +39,7 @@ function extensionWorkspacePath(project) {
   return isWithinPath(base, target) ? target : '';
 }
 
-function defaultCodeServerWorkspace(project) {
+function defaultCodeServerWorkspace(project: any): string {
   if (!project?.bind_path) return '';
   if (project.kind === 'extension') {
     const extPath = extensionWorkspacePath(project);
@@ -48,7 +48,7 @@ function defaultCodeServerWorkspace(project) {
   return normalizeAbsPath(project.bind_path);
 }
 
-function resolveCodeServerWorkspace(project, requestedFolder) {
+function resolveCodeServerWorkspace(project: any, requestedFolder: any): { error: string; code: string } | { workspacePath: string } {
   const bindRoot = normalizeAbsPath(project?.bind_path);
   if (!bindRoot) {
     return { error: '项目未配置 bind_path', code: 'BIND_PATH_INVALID' };
@@ -67,7 +67,7 @@ function resolveCodeServerWorkspace(project, requestedFolder) {
   return { workspacePath: candidate };
 }
 
-function extractPayloadPath(value) {
+function extractPayloadPath(value: any): string {
   if (typeof value !== 'string' || !value.trim()) return '';
   try {
     const payload = JSON.parse(value);
@@ -85,7 +85,7 @@ function extractPayloadPath(value) {
   return '';
 }
 
-function validateCodeServerPayload(project, payloadValue, workspacePath) {
+function validateCodeServerPayload(project: any, payloadValue: any, workspacePath: any): { ok: boolean; error?: string; code?: string } {
   const filePath = extractPayloadPath(payloadValue);
   if (!filePath) return { ok: true };
   const allowedRoot = payloadRootForWorkspace(project, workspacePath);
@@ -96,7 +96,7 @@ function validateCodeServerPayload(project, payloadValue, workspacePath) {
   return { ok: true };
 }
 
-module.exports = {
+export {
   defaultCodeServerWorkspace,
   resolveCodeServerWorkspace,
   validateCodeServerPayload,

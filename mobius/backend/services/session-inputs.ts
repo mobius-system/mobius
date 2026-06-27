@@ -1,15 +1,15 @@
-const fs = require('fs');
-const path = require('path');
+import * as fs from 'fs';
+import * as path from 'path';
 
 const INPUT_LIST_FILE = 'session_input_list.json';
 
-function safeSessionId(sessionId) {
+function safeSessionId(sessionId: any): string {
   const sid = String(sessionId || '').trim();
   if (!/^[A-Za-z0-9_-]+$/.test(sid)) throw new Error('session_id 格式非法');
   return sid;
 }
 
-function resolveSessionInputListPath(projectRoot, sessionId) {
+function resolveSessionInputListPath(projectRoot: any, sessionId: any): { sessionId: string; dir: string; filePath: string } {
   const rawRoot = String(projectRoot || '').trim();
   if (!rawRoot) throw new Error('项目未绑定路径');
 
@@ -27,7 +27,7 @@ function resolveSessionInputListPath(projectRoot, sessionId) {
   };
 }
 
-function normalizeEntry(entry, index, sessionId) {
+function normalizeEntry(entry: any, index: number, sessionId: string): any {
   if (typeof entry === 'string') {
     return {
       id: `legacy-${index}`,
@@ -56,7 +56,7 @@ function normalizeEntry(entry, index, sessionId) {
   };
 }
 
-function readSessionInputs(projectRoot, sessionId) {
+function readSessionInputs(projectRoot: any, sessionId: any): { entries: any[]; filePath: string } {
   const resolved = resolveSessionInputListPath(projectRoot, sessionId);
   if (!fs.existsSync(resolved.filePath)) {
     return { entries: [], filePath: resolved.filePath };
@@ -65,7 +65,7 @@ function readSessionInputs(projectRoot, sessionId) {
   const raw = fs.readFileSync(resolved.filePath, 'utf8');
   if (!raw.trim()) return { entries: [], filePath: resolved.filePath };
 
-  let parsed;
+  let parsed: any;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
@@ -78,13 +78,20 @@ function readSessionInputs(projectRoot, sessionId) {
     ? parsed
     : (Array.isArray(parsed?.inputs) ? parsed.inputs : []);
   const entries = list
-    .map((entry, index) => normalizeEntry(entry, index, resolved.sessionId))
+    .map((entry: any, index: number) => normalizeEntry(entry, index, resolved.sessionId))
     .filter(Boolean);
 
   return { entries, filePath: resolved.filePath };
 }
 
-function appendSessionInput({ projectRoot, sessionId, inputText = '', content = '', requestId = null, turnNumber = null }) {
+function appendSessionInput({ projectRoot, sessionId, inputText = '', content = '', requestId = null, turnNumber = null }: {
+  projectRoot: any;
+  sessionId: any;
+  inputText?: string;
+  content?: string;
+  requestId?: any;
+  turnNumber?: any;
+}): any {
   const resolved = resolveSessionInputListPath(projectRoot, sessionId);
   const body = String(content || '');
   const typed = String(inputText || '');
@@ -110,7 +117,7 @@ function appendSessionInput({ projectRoot, sessionId, inputText = '', content = 
   return entry;
 }
 
-module.exports = {
+export {
   appendSessionInput,
   readSessionInputs,
   resolveSessionInputListPath,
