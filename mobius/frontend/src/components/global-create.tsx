@@ -17,7 +17,7 @@ import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
-import { ErrBanner, PathPickerModal } from './modals'
+import { ErrBanner, PathPickerModal, ModalSwitch } from './modals'
 import { ExpandableTextarea } from './expandable-textarea'
 import { type Attachment, newAttId, formatFileSize, uploadAttachmentFile, appendAttachmentsToDesc } from './attachments'
 import {
@@ -871,8 +871,9 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             </button>
           </div>
           {projectKind === 'default' && (
-            <label className="flex items-start gap-2 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-              <input type="checkbox" checked={researchEnabled} onChange={e => { setResearchEnabled(e.target.checked); if (e.target.checked) setDefaultUseWorktree(false) }} className="w-4 h-4 mt-0.5 accent-blue-500" />
+            <label className="flex items-start gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+              <input type="checkbox" checked={researchEnabled} onChange={e => { setResearchEnabled(e.target.checked); if (e.target.checked) setDefaultUseWorktree(false) }} className="sr-only" />
+              <ModalSwitch checked={researchEnabled} />
               <span><span className="font-medium">启用 Research 系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建 Research Agent 团队</span></span>
             </label>
           )}
@@ -882,8 +883,9 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             </div>
           )}
           {!researchEnabled && (
-            <label className="flex items-center gap-2 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-              <input type="checkbox" checked={defaultUseWorktree} onChange={e => setDefaultUseWorktree(e.target.checked)} className="w-4 h-4 accent-blue-500" />
+            <label className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+              <input type="checkbox" checked={defaultUseWorktree} onChange={e => setDefaultUseWorktree(e.target.checked)} className="sr-only" />
+              <ModalSwitch checked={defaultUseWorktree} />
               默认使用 git worktree（新建 Issue 时在绑定路径下开独立工作区）
             </label>
           )}
@@ -1051,8 +1053,9 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
       </label>
       {!isPlanning && (
         <>
-          <label className="flex items-center gap-2 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-            <input type="checkbox" checked={useWorktree} onChange={e => { setUseWorktree(e.target.checked); setErr('') }} className="w-4 h-4 accent-blue-500" />
+          <label className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+            <input type="checkbox" checked={useWorktree} onChange={e => { setUseWorktree(e.target.checked); setErr('') }} className="sr-only" />
+            <ModalSwitch checked={useWorktree} />
             使用 git worktree（在绑定路径下为本 Issue 开独立工作区）
           </label>
           {useWorktree && (

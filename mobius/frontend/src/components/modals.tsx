@@ -96,7 +96,7 @@ function middleEllipsisPath(value: string, maxLength = 64) {
   return `${text.slice(0, headLength)}...${text.slice(-tailLength)}`
 }
 
-function ModalSwitch({ checked, disabled }: { checked: boolean; disabled?: boolean }) {
+export function ModalSwitch({ checked, disabled }: { checked: boolean; disabled?: boolean }) {
   return (
     <span
       className="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors"
@@ -940,10 +940,11 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
             </div>
           </div>
           <div>
-            <label className={`flex items-center gap-2 text-[13px] select-none ${researchEnabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`} style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
+            <label className={`flex items-center gap-3 text-[13px] select-none ${researchEnabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`} style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
               <input type="checkbox" checked={!researchEnabled && defaultUseWorktree} disabled={researchEnabled}
                 onChange={e => { setDefaultUseWorktree(e.target.checked); setErr('') }}
-                className="w-4 h-4 accent-blue-500 cursor-pointer disabled:cursor-not-allowed" />
+                className="sr-only" />
+              <ModalSwitch checked={!researchEnabled && defaultUseWorktree} disabled={researchEnabled} />
               默认使用 git worktree
             </label>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
@@ -953,9 +954,10 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
             </p>
           </div>
           <div>
-            <label className="flex items-center gap-2 text-[13px] cursor-pointer select-none" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
+            <label className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
               <input type="checkbox" checked={researchEnabled} onChange={e => { setResearchEnabled(e.target.checked); setErr('') }}
-                className="w-4 h-4 accent-blue-500 cursor-pointer" />
+                className="sr-only" />
+              <ModalSwitch checked={researchEnabled} />
               启用 Research 系统
             </label>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示 Research 入口；Research 与 Issues 并列管理。启用时会自动禁用 git worktree</p>
@@ -1420,9 +1422,10 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
             <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
           </button>
 
-          <label data-tour="issue-worktree-toggle" className="flex items-center gap-2 text-[13px] cursor-pointer select-none" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
+          <label data-tour="issue-worktree-toggle" className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
             <input type="checkbox" checked={useWorktree} onChange={e => { setUseWorktree(e.target.checked); setErr('') }}
-              className="w-4 h-4 accent-blue-500 cursor-pointer" />
+              className="sr-only" />
+            <ModalSwitch checked={useWorktree} />
             使用 git worktree（在绑定路径下为本 Issue 开独立工作区）
           </label>
           {useWorktree && (
