@@ -404,7 +404,6 @@ export function ResearchAgentTeamModal({
   }
 
   const addAssistant = () => {
-    console.debug('[diag] ResearchTeam addAssistant', { agentsLength: agents.length, max: MAX_TEAM_SIZE })
     if (agents.length >= MAX_TEAM_SIZE) return
     const index = agents.filter(agent => agent.role === 'research_assistant').length + 1
     const next: TeamAgent = {

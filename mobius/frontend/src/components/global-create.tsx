@@ -106,6 +106,9 @@ const FALLBACK_MODELS: ModelOption[] = [
   { key: 'minimax-m27-high', label: 'MiniMax-M2.7-high', title: 'MiniMax-M2.7-high', backend: 'claude_code' },
   { key: 'minimax-m3', label: 'MiniMax-M3', title: 'MiniMax-M3', backend: 'claude_code' },
 ]
+// 全局默认模型 (项目无 default_model 且用户未手动改/无草稿时回落). 与 modals.tsx 的 DEFAULT_SESSION_MODEL 同值 'codex';
+// 取 FALLBACK_MODELS 首项避免散落硬编码. 顶栏快捷的模型默认优先级: 草稿 > 项目 default_model > 此全局默认.
+const GLOBAL_DEFAULT_MODEL = FALLBACK_MODELS[0]?.key || 'codex'
 
 type PickItem = {
   id: string
@@ -1118,7 +1121,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   // 后端创建 Session 时不回落项目 default_model (只回落全局 codex), 故模型默认完全靠前端预填.
   // 顶栏快捷是"先选项目再建 Session", 项目在异步下拉里 → 用 effect 在项目确定后回落项目偏好;
   // modelUserTouchedRef 记录用户是否手动改过模型 (或已有草稿), 改过则不再被项目偏好覆盖.
-  const [model, setModel] = useState(d.model || 'codex')
+  const [model, setModel] = useState(d.model || GLOBAL_DEFAULT_MODEL)
   const modelUserTouchedRef = useRef(!!d.model)
   const [language, setLanguage] = useState<SessionLanguage>(d.language || 'zh')
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set(d.excluded_skills || []))
@@ -1143,9 +1146,11 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   // 对齐 NewSessionModal 的 defaultModel 优先级, 修复顶栏快捷"忽略项目模型设置".
   const projectDefaultModel = selectedProject?.default_model
   useEffect(() => {
-    console.debug('[diag] CreateSessionForm model effect', { touched: modelUserTouchedRef.current, projectDefaultModel, model })
     if (modelUserTouchedRef.current) return
-    if (typeof projectDefaultModel === 'string' && projectDefaultModel.trim()) setModel(projectDefaultModel.trim())
+    // 草稿/手动改过则不覆盖; 否则按 项目 default_model > 全局默认 回落.
+    // 关键: 切到无 default_model 的项目时也要回落全局默认, 否则上一个项目的模型会残留 (stale).
+    const next = (typeof projectDefaultModel === 'string' && projectDefaultModel.trim()) ? projectDefaultModel.trim() : GLOBAL_DEFAULT_MODEL
+    setModel(next)
   }, [projectDefaultModel])
 
   // Skill/Memory 全集: 选完 issue 后拉 context-preview (POST, 拿 sources) + session-selection-defaults (GET, 拿默认排除集).
@@ -1295,7 +1300,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   // 角色默认值 (对齐 NewSessionModal): 若该 Research 尚无 chief_researcher 且用户未手动选过角色(也无草稿) → 默认首席.
   const roleUserTouchedRef = useRef(!!d.role)
   // 模型默认值: 草稿 > 项目级默认模型偏好 > 全局 'codex' (同 CreateSessionForm, 对齐 NewSessionModal).
-  const [model, setModel] = useState(d.model || 'codex')
+  const [model, setModel] = useState(d.model || GLOBAL_DEFAULT_MODEL)
   const modelUserTouchedRef = useRef(!!d.model)
   const [language, setLanguage] = useState<SessionLanguage>(d.language || 'zh')
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -1316,9 +1321,10 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   // 项目确定/切换后, 若用户未手动改模型且无草稿 → 回落项目级默认模型偏好 (default_model).
   const projectDefaultModel = selectedProject?.default_model
   useEffect(() => {
-    console.debug('[diag] CreateResearchForm model effect', { touched: modelUserTouchedRef.current, projectDefaultModel, model })
     if (modelUserTouchedRef.current) return
-    if (typeof projectDefaultModel === 'string' && projectDefaultModel.trim()) setModel(projectDefaultModel.trim())
+    // 草稿/手动改过则不覆盖; 否则按 项目 default_model > 全局默认 回落. 切到无 default_model 的项目也要回落全局默认, 避免上一个项目的模型残留.
+    const next = (typeof projectDefaultModel === 'string' && projectDefaultModel.trim()) ? projectDefaultModel.trim() : GLOBAL_DEFAULT_MODEL
+    setModel(next)
   }, [projectDefaultModel])
   const researches = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/researches?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.researches || [])) : Promise.resolve([]), [projectId])
   const selectedResearch = researches.list.find((r: any) => r.id === researchId)
@@ -1365,7 +1371,6 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
     api(`/api/researches/${researchId}/sessions`).then((list: any) => {
       if (!alive || roleUserTouchedRef.current) return
       const chiefExists = Array.isArray(list) && list.some((s: any) => s.research_role === 'chief_researcher')
-      console.debug('[diag] CreateResearchForm role effect', { isArray: Array.isArray(list), count: Array.isArray(list) ? list.length : null, chiefExists, setRole: chiefExists ? 'research_assistant' : 'chief_researcher' })
       setRole(chiefExists ? 'research_assistant' : 'chief_researcher')
     }).catch(() => {})
     return () => { alive = false }
