@@ -93,6 +93,8 @@ const adminRoutes = require('./backend/routes/admin');
 const extRoutes = require('./backend/routes/ext');
 const aimuxRoutes = require('./backend/routes/aimux');
 const aimuxBridgeProxy = require('./backend/routes/aimux-bridge-proxy');
+// 黑客帝国数字雨: /api/token_stream 反代到本机 token-proxy (server.ts).
+const { router: tokenStreamProxyRouter } = require('./backend/routes/token-stream-proxy');
 const extensionRegistry = require('./backend/services/extension-registry');
 
 app.use('/api/auth', authRoutes);
@@ -115,6 +117,8 @@ app.use('/api/skills', skillsRoutes);
 app.use('/api/memories', memoryJsonParser, memoriesRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/aimux', aimuxRoutes);
+// /api/token_stream → 本机 token-proxy (数字雨 token 环形缓冲, SSE live tail).
+app.use('/api/token_stream', tokenStreamProxyRouter);
 // /aimux_bridge/* → 内置 aimux bridge broker (127.0.0.1:AIMUX_BRIDGE_PORT).
 //   外层走 mobius JWT auth; 转发时注入 bridge Bearer token.
 //   支持 SSE 长连接 (client/events), 见 routes/aimux-bridge-proxy.js.

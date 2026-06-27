@@ -18,6 +18,8 @@ import adminSettings from '../services/admin-settings';
 // @ts-ignore — service 仍是 .js
 import * as modelAccess from '../services/model-access';
 // @ts-ignore — service 仍是 .js
+import modelRegistry from '../services/model-registry';
+// @ts-ignore — service 仍是 .js
 import modelPromptLimits from '../services/model-prompt-limits';
 // @ts-ignore — service 仍是 .js
 import * as skillMemoryMigration from '../services/skill-memory-migration';
@@ -813,6 +815,8 @@ router.put('/settings/model-prompt-limits', adminAuth, (req: express.Request, re
     max_prompts_per_5h,
     useProxy,
     use_proxy,
+    captureStream,
+    capture_stream,
   } = (req.body || {}) as any;
   try {
     const modelKey = model || key;
@@ -848,6 +852,24 @@ router.put('/settings/model-prompt-limits', adminAuth, (req: express.Request, re
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'useProxy')
       || Object.prototype.hasOwnProperty.call(req.body || {}, 'use_proxy')) {
       adminSettings.setModelNetworkProxy(modelKey, (useProxy ?? use_proxy) === true);
+    }
+    // 黑客帝国数字雨 · 捕获实时输出 (仅 claude code). 开启=生成 .withproxy.json,
+    // 关闭=删除. 持久化到 admin-settings.modelCaptureStream, 启动时由 model-registry 选用.
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'captureStream')
+      || Object.prototype.hasOwnProperty.call(req.body || {}, 'capture_stream')) {
+      const captureOn = (captureStream ?? capture_stream) === true;
+      adminSettings.setModelCaptureStream(modelKey, captureOn);
+      try {
+        const resolved = modelRegistry.resolveSessionModel(modelKey);
+        const settingsPath = resolved?.backend === 'tmux-claude-code' ? (resolved.settingsPath || null) : null;
+        if (settingsPath) {
+          if (captureOn) modelAccess.ensureWithProxyForSettingsPath(settingsPath);
+          else modelAccess.removeWithProxyForSettingsPath(settingsPath);
+        }
+      } catch (e) {
+        // 仅 claude-code 模型可生成 withproxy; 解析不到配置就跳过, 不阻断开关保存.
+        console.warn(`[admin] captureStream withproxy 生成跳过 (${modelKey}): ${(e as Error).message}`);
+      }
     }
     res.json(modelPromptLimits.adminLimitsPayload());
   } catch (e) {

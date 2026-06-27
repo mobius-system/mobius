@@ -1,0 +1,11 @@
+{
+  "name": "matrix-rain",
+  "display_name": "黑客帝国数字雨",
+  "description": "实时抓取 claude code 流式 token, 渲染成黑客帝国数字瀑布雨. 数据来自通用 /api/token_stream 端点.",
+  "version": "0.1.0",
+  "icon": "favicon.svg",
+  "project": {
+    "sync": true,
+    "default_hidden": false
+  }
+}

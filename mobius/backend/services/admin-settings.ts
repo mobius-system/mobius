@@ -56,6 +56,11 @@ const DEFAULTS: any = Object.freeze({
   modelNetworkProxy: {
     perModel: {},
   },
+  // 黑客帝国数字雨 · 每模型是否开启"捕获实时输出" (仅 claude code).
+  // 开启后该模型启动 cc 时改用 .withproxy.json, 请求经 token-proxy 中转并被抓取流式 token.
+  modelCaptureStream: {
+    perModel: {},
+  },
   adminAssistantCallbacks: {
     enabledAdminUserIds: [],
   },
@@ -206,6 +211,24 @@ function normalizeModelNetworkProxyForRead(value: any): any {
         const key = normalizeModelKey(rawKey)
         const value = rawValue && typeof rawValue === 'object'
           ? ((rawValue as any).useProxy ?? (rawValue as any).use_proxy)
+          : rawValue
+        if (typeof value === 'boolean') out.perModel[key] = value
+      } catch {}
+    }
+  }
+  return out
+}
+
+// "捕获实时输出" (数字雨) 的 perModel 布尔归一化, 结构与 modelNetworkProxy 完全一致.
+function normalizeModelCaptureStreamForRead(value: any): any {
+  const out: { perModel: Record<string, any> } = { perModel: {} }
+  const rawMap: any = value?.perModel || value?.models || {}
+  if (rawMap && typeof rawMap === 'object') {
+    for (const [rawKey, rawValue] of Object.entries(rawMap)) {
+      try {
+        const key = normalizeModelKey(rawKey)
+        const value = rawValue && typeof rawValue === 'object'
+          ? ((rawValue as any).captureStream ?? (rawValue as any).capture_stream)
           : rawValue
         if (typeof value === 'boolean') out.perModel[key] = value
       } catch {}
@@ -469,6 +492,9 @@ function loadSettings(): any {
     if (parsed && typeof parsed === 'object' && parsed.modelNetworkProxy) {
       merged.modelNetworkProxy = normalizeModelNetworkProxyForRead(parsed.modelNetworkProxy)
     }
+    if (parsed && typeof parsed === 'object' && parsed.modelCaptureStream) {
+      merged.modelCaptureStream = normalizeModelCaptureStreamForRead(parsed.modelCaptureStream)
+    }
     if (parsed && typeof parsed === 'object' && parsed.adminAssistantCallbacks) {
       merged.adminAssistantCallbacks = normalizeAdminAssistantCallbacksForRead(parsed.adminAssistantCallbacks)
     }
@@ -527,6 +553,29 @@ function setModelNetworkProxy(modelKey: any, value: any): any {
   next.modelNetworkProxy.perModel[key] = value
   writeSettings(next)
   return next.modelNetworkProxy
+}
+
+function getModelCaptureStream(modelKey: any, fallback: boolean = false): boolean {
+  const key = normalizeModelKey(modelKey)
+  const cap = loadSettings().modelCaptureStream || normalizeModelCaptureStreamForRead({})
+  return Object.prototype.hasOwnProperty.call(cap.perModel || {}, key)
+    ? cap.perModel[key] === true
+    : !!fallback
+}
+
+function setModelCaptureStream(modelKey: any, value: any): any {
+  const key = normalizeModelKey(modelKey)
+  if (typeof value !== 'boolean') {
+    throw new Error(`captureStream 必须是 boolean, 收到: ${typeof value}`)
+  }
+  const next = loadSettings()
+  if (!next.modelCaptureStream) next.modelCaptureStream = normalizeModelCaptureStreamForRead({})
+  if (!next.modelCaptureStream.perModel || typeof next.modelCaptureStream.perModel !== 'object') {
+    next.modelCaptureStream.perModel = {}
+  }
+  next.modelCaptureStream.perModel[key] = value
+  writeSettings(next)
+  return next.modelCaptureStream
 }
 
 function setModelPromptLimit(modelKey: any, value: any): any {
@@ -667,6 +716,8 @@ const adminSettings = {
   setModelPromptLimitConfig,
   getModelNetworkProxy,
   setModelNetworkProxy,
+  getModelCaptureStream,
+  setModelCaptureStream,
   getAdminAssistantCallbacks,
   listAdminAssistantCallbackUserIds,
   getAdminAssistantCallbackForUser,
@@ -696,6 +747,8 @@ export {
   setModelPromptLimitConfig,
   getModelNetworkProxy,
   setModelNetworkProxy,
+  getModelCaptureStream,
+  setModelCaptureStream,
   getAdminAssistantCallbacks,
   listAdminAssistantCallbackUserIds,
   getAdminAssistantCallbackForUser,

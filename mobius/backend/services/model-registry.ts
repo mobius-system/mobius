@@ -30,6 +30,17 @@ function modelUseProxy(key: any, fallback: any): any {
   return adminSettings.getModelNetworkProxy(key, fallback)
 }
 
+// 黑客帝国数字雨 · 若该模型开启了"捕获实时输出"且 .withproxy.json 已生成 (保存开关时落盘),
+// 启动 cc 时改用 withproxy 变体 → 请求经 token-proxy 中转并被抓取流式 token.
+// 找不到 withproxy 文件 (例如尚未保存) 就安全回落原 settings, 不阻断启动.
+function effectiveClaudeSettingsPath(resolved: any): any {
+  const base = resolved?.settingsPath
+  if (!base) return base
+  if (!adminSettings.getModelCaptureStream(resolved.key)) return base
+  const withProxy = modelAccess.withProxyPathFor(base)
+  return fileExists(withProxy) ? withProxy : base
+}
+
 function codexHome(): string {
   return process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
 }
@@ -252,7 +263,7 @@ function launchOptionsForSession(session: any): any {
     return {
       backend: resolved.backend,
       model: resolved.claudeModel,
-      settingsPath: resolved.settingsPath,
+      settingsPath: effectiveClaudeSettingsPath(resolved),
       useProxy: resolved.useProxy,
       forceNoProxy: false,
       imported: true,
@@ -263,7 +274,7 @@ function launchOptionsForSession(session: any): any {
   return {
     backend: resolved.backend,
     model: resolved.model,
-    settingsPath: resolved.settingsPath || undefined,
+    settingsPath: effectiveClaudeSettingsPath(resolved) || undefined,
     useProxy: resolved.useProxy,
     codexProfileKey: resolved.codexProfileKey || undefined,
     codexChannel: resolved.codexChannel || resolved.codexProfileKey || undefined,

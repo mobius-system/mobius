@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>黑客帝国数字雨 · mobius</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: #000; color: #00ff41;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    overflow: hidden;
+  }
+  #rain { position: fixed; inset: 0; display: block; }
+  .hud {
+    position: fixed; top: 14px; left: 16px; z-index: 10;
+    font-size: 12px; line-height: 1.7; color: #6efb8e;
+    text-shadow: 0 0 6px rgba(0,255,65,0.55);
+    pointer-events: none; user-select: none;
+  }
+  .hud h1 { margin: 0 0 4px; font-size: 15px; color: #adff2f; letter-spacing: 1px; }
+  .hud .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .dot.on { background: #00ff41; box-shadow: 0 0 8px #00ff41; }
+  .dot.off { background: #ff3b3b; box-shadow: 0 0 8px #ff3b3b; }
+  .dot.wait { background: #888; }
+  .hint {
+    position: fixed; bottom: 12px; left: 0; right: 0; z-index: 10;
+    text-align: center; font-size: 11px; color: #2f6e3f;
+    pointer-events: none; user-select: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="rain"></canvas>
+<div class="hud">
+  <h1>矩阵 · MATRIX RAIN</h1>
+  <div><span id="proxy-dot" class="dot wait"></span><span id="proxy-text">检测 token-proxy…</span></div>
+  <div>实时 token: <span id="tok-count">0</span></div>
+  <div>数据源: <code style="color:#5cff7a">/api/token_stream</code></div>
+</div>
+<div class="hint">在「管理中心 → 系统设置」为某个 claude-code 模型开启「捕获实时输出」, 它的流式输出就会化为数字雨</div>
+<script type="module" src="main.js"></script>
+</body>
+</html>

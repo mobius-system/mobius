@@ -243,6 +243,7 @@ function adminLimitsPayload(): any {
       backend: opt.backend,
       imported: !!opt.imported,
       use_proxy: opt.use_proxy === true || opt.use_proxy === 1 ? 1 : 0,
+      capture_stream: adminSettings.getModelCaptureStream(opt.key) ? 1 : 0,
       config_path: configPathForOption(opt),
       limits: Object.prototype.hasOwnProperty.call(limits.perModel, opt.key)
         ? limits.perModel[opt.key]

@@ -106,6 +106,8 @@ RUNTIME_SETTINGS = ordered_unique(
         "IMAC_BOOTSTRAP_USERS",
         "NPM_REGISTRY",
         "MOBIUS_LOG_DIR",
+        "MOBIUS_TOKEN_PROXY_HOST",
+        "MOBIUS_TOKEN_PROXY_PORT",
     ]
 )
 

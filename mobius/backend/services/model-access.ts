@@ -10,7 +10,8 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { MODEL_ACCESS_PATH, MODEL_OPTIONS } from '../config'
+import { MODEL_ACCESS_PATH, MODEL_OPTIONS, TOKEN_PROXY_BASE_URL } from '../config'
+import { encodeProxyToken } from '../token-proxy/encoding'
 
 const DATA_FILE = MODEL_ACCESS_PATH
 const HOME = os.homedir()
@@ -303,6 +304,58 @@ function writeSettingsJson(key: string, parsedSettings: any): string {
   return file
 }
 
+// ── 黑客帝国数字雨 · .withproxy.json 生成 ─────────────────────────────────
+// 把一份原始 settings 克隆成"走 token-proxy"的变体: BASE_URL 指向本机 token-proxy,
+// AUTH_TOKEN 替换成 mpx1.<编码整个原始 settings> (server.ts 解码后还原真实上游).
+// 用户要求: 保存开关时把原 settings-<key>.json 复制成 settings-<key>.withproxy.json.
+// 按 settings 路径操作 (而非 key), 对导入模型和内置 claude 模型 (mobiusdefault) 都通用.
+function withProxyPathFor(settingsPath: string): string {
+  return String(settingsPath || '').replace(/\.json$/, '.withproxy.json')
+}
+
+function writeJsonPrivate(filePath: string, obj: any): void {
+  const dir = path.dirname(filePath)
+  fs.mkdirSync(dir, { recursive: true })
+  const tmp = `${filePath}.imac-tmp-${process.pid}-${Date.now()}`
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2))
+  fs.renameSync(tmp, filePath)
+  try { fs.chmodSync(filePath, 0o600) } catch {}
+}
+
+function ensureWithProxyForSettingsPath(settingsPath: string): string {
+  const src = String(settingsPath || '').trim()
+  if (!src) throw new Error('settings 路径为空, 无法生成 withproxy 变体')
+  let original: any = { env: {} }
+  if (fs.existsSync(src)) {
+    try {
+      original = JSON.parse(fs.readFileSync(src, 'utf8')) || { env: {} }
+    } catch {
+      original = { env: {} }
+    }
+  }
+  let cloned: any = JSON.parse(JSON.stringify(original))
+  if (!cloned || typeof cloned !== 'object') cloned = {}
+  if (!cloned.env || typeof cloned.env !== 'object') cloned.env = {}
+  // 用"原始 settings"编码进 token —— server.ts 依赖它还原真实 BASE_URL + AUTH_TOKEN.
+  cloned.env.ANTHROPIC_BASE_URL = TOKEN_PROXY_BASE_URL
+  cloned.env.ANTHROPIC_AUTH_TOKEN = encodeProxyToken(original)
+  // 显式删掉 ANTHROPIC_API_KEY (若存在), 避免 cc 同时发 x-api-key 与编码 bearer 造成歧义.
+  delete cloned.env.ANTHROPIC_API_KEY
+  const out = withProxyPathFor(src)
+  writeJsonPrivate(out, cloned)
+  return out
+}
+
+function removeWithProxyForSettingsPath(settingsPath: string): boolean {
+  const out = withProxyPathFor(String(settingsPath || ''))
+  try {
+    if (fs.existsSync(out)) { fs.unlinkSync(out); return true }
+  } catch (e) {
+    console.warn(`[model-access] 删除 withproxy 失败 (${out}): ${e.message}`)
+  }
+  return false
+}
+
 function readCodexConfigToml(key: string): string {
   const file = codexConfigPathForKey(key)
   if (!fs.existsSync(file)) return ''
@@ -529,6 +582,9 @@ export {
   sessionModelForKey,
   keyFromSessionModel,
   settingsPathForKey,
+  withProxyPathFor,
+  ensureWithProxyForSettingsPath,
+  removeWithProxyForSettingsPath,
   listCodexModels,
   findCodexModel,
   upsertCodexModel,

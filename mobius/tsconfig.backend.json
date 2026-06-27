@@ -24,7 +24,8 @@
     "backend/routes/**/*.ts",
     "backend/middleware/**/*.ts",
     "backend/utils/**/*.ts",
-    "backend/services/**/*.ts"
+    "backend/services/**/*.ts",
+    "backend/token-proxy/**/*.ts"
   ],
   "exclude": [
     "node_modules",

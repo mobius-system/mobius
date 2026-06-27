@@ -68,6 +68,8 @@ const envKeys = [
   'AIMUX_BRIDGE_PORT',
   'AIMUX_BRIDGE_RUNTIME',
   'MOBIUS_LOG_DIR',
+  'MOBIUS_TOKEN_PROXY_HOST',
+  'MOBIUS_TOKEN_PROXY_PORT',
 ];
 
 const inheritedEnv = {};
@@ -112,6 +114,28 @@ module.exports = {
       error_file: path.join(LOG_DIR, 'mobius-bridge-error.log'),
       merge_logs: true,
       env: {
+        ...inheritedEnv,
+      },
+    },
+    {
+      // 黑客帝国数字雨 · token 中转代理 (server.ts). cc 用 .withproxy.json 把请求发到
+      // 127.0.0.1:MOBIUS_TOKEN_PROXY_PORT, 本进程解码 mpx1. token 后转发到真实模型上游,
+      // 流式回传给 cc 的同时旁路抓取 text_delta 到环形缓冲, /token_stream 供数字雨消费.
+      // 隔离为独立进程: 流式转发不压主后端单 worker 事件循环.
+      name: 'imac-mobius-tokenproxy',
+      cwd: mobiusDir,
+      script: path.join(mobiusDir, 'backend', 'token-proxy', 'entry.js'),
+      interpreter_args: `--require ${tsxHook}`,
+      exec_mode: 'fork',
+      instances: '1',
+      autorestart: true,
+      kill_timeout: 5000,
+      max_memory_restart: '256M',
+      out_file: path.join(LOG_DIR, 'mobius-token-proxy.log'),
+      error_file: path.join(LOG_DIR, 'mobius-token-proxy-error.log'),
+      merge_logs: true,
+      env: {
+        NODE_ENV: 'production',
         ...inheritedEnv,
       },
     },

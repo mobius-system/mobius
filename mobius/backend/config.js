@@ -60,6 +60,13 @@ const CORE_DATA_PATH = process.env.CORE_DATA_PATH || '/data/protected_data';
 const MODEL_ACCESS_PATH = process.env.MODEL_ACCESS_PATH || path.join(MOBIUS_DATA_PATH, 'model-access.json');
 const BACKEND_WORKER_LOG_DIR = path.join(CORE_DATA_PATH, 'backend_worker_log');
 
+// 黑客帝国数字雨 · token 中转代理监听地址 (独立 pm2 进程 imac-mobius-tokenproxy).
+// .withproxy.json 会把 ANTHROPIC_BASE_URL 指向这里, server.ts 解码后转发到真实上游.
+// 仅 127.0.0.1 loopback. 三道闸: boot_utils RUNTIME_SETTINGS + ecosystem envKeys + 本处.
+const TOKEN_PROXY_HOST = process.env.MOBIUS_TOKEN_PROXY_HOST || '127.0.0.1';
+const TOKEN_PROXY_PORT = parseInt(process.env.MOBIUS_TOKEN_PROXY_PORT || '45630', 10);
+const TOKEN_PROXY_BASE_URL = `http://${TOKEN_PROXY_HOST}:${TOKEN_PROXY_PORT}`;
+
 function parseMobiusSshPort(raw) {
   const text = String(raw || '').trim();
   if (!text) return null;
@@ -206,6 +213,11 @@ module.exports = {
   FORGOTTEN_FLAG_BACKOFF_MAX: 100,
   FORGOTTEN_FLAG_PATIENCE_MIN: 1,
   FORGOTTEN_FLAG_PATIENCE_MAX: 1000,
+
+  // 黑客帝国数字雨 · token 中转代理 (imac-mobius-tokenproxy).
+  TOKEN_PROXY_HOST,
+  TOKEN_PROXY_PORT,
+  TOKEN_PROXY_BASE_URL,
 
   TEST_ROOT,
 };

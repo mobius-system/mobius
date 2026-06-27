@@ -1137,6 +1137,7 @@ type ModelPromptLimitRow = {
   backend: string
   imported?: boolean
   use_proxy?: number | boolean
+  capture_stream?: number | boolean
   config_path?: string
   limits: ModelPromptLimitConfig
 }
@@ -1162,6 +1163,7 @@ function ModelPromptLimitsCard() {
   const [loading, setLoading] = useState(false)
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [savingProxyKey, setSavingProxyKey] = useState<string | null>(null)
+  const [savingCaptureKey, setSavingCaptureKey] = useState<string | null>(null)
   const [error, setError] = useState('')
 
   const fieldKey = (modelKey: string, field: keyof ModelPromptLimitConfig) => `${modelKey}::${field}`
@@ -1299,6 +1301,25 @@ function ModelPromptLimitsCard() {
     }
   }
 
+  // 黑客帝国数字雨 · 捕获实时输出 (仅 claude code). 开启后该模型请求经 token-proxy 中转,
+  // 流式 token 被 /api/token_stream 暴露, matrix-rain 拓展渲染成数字瀑布雨.
+  const toggleCapture = async (row: ModelPromptLimitRow, nextCapture: boolean) => {
+    setSavingCaptureKey(row.key)
+    try {
+      const next = await api('/api/admin/settings/model-prompt-limits', {
+        method: 'PUT',
+        body: JSON.stringify({ model: row.key, captureStream: nextCapture }),
+      }) as ModelPromptLimitsPayload
+      setPayload(next)
+      syncInputs(next)
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSavingCaptureKey(null)
+    }
+  }
+
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1324,8 +1345,11 @@ function ModelPromptLimitsCard() {
         {(payload?.models || []).map(row => {
           const saving = savingKey === row.key
           const savingProxy = savingProxyKey === row.key
+          const savingCapture = savingCaptureKey === row.key
           const configured = hasCustomLimits(row)
           const useProxy = row.use_proxy === true || row.use_proxy === 1
+          const capture = row.capture_stream === true || row.capture_stream === 1
+          const isClaudeCode = row.backend === 'tmux-claude-code'
           return (
             <div key={row.key}
               className="rounded-lg border px-3 py-2.5"
@@ -1387,6 +1411,24 @@ function ModelPromptLimitsCard() {
                   {useProxy ? '使用 proxychains' : '直连'}
                 </span>
               </ToggleSwitch>
+              {isClaudeCode && (
+                <ToggleSwitch
+                  checked={capture}
+                  disabled={savingCapture || loading}
+                  loading={savingCapture}
+                  onChange={next => toggleCapture(row, next)}
+                  switchPosition="end"
+                  activeColor="#00ff41"
+                  className="mb-2 flex items-center justify-between gap-3 rounded-md border px-2 py-1.5"
+                  style={{
+                    background: capture ? 'rgba(0,255,65,0.10)' : 'var(--bg-card)',
+                    borderColor: capture ? 'rgba(0,255,65,0.40)' : 'var(--input-border)',
+                  }}>
+                  <span className="text-[11px]" style={{ color: capture ? '#00ff41' : 'var(--text-muted)' }}>
+                    {capture ? '捕获实时输出 · 数字雨' : '捕获实时输出'}
+                  </span>
+                </ToggleSwitch>
+              )}
               <div className="flex items-center gap-2">
                 <button type="button" title="保存限制" onClick={() => save(row)} disabled={saving || loading}
                   className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md bg-blue-600 px-3 text-[12px] text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
