@@ -701,6 +701,9 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   const [defaultUseWorktree, setDefaultUseWorktree] = useState(!!d.defaultUseWorktree)
   const [visibility, setVisibility] = useState<Visibility>(d.visibility || 'private')
   const [extensionName, setExtensionName] = useState(d.extensionName || '')
+  // 读者写权限 (对齐 NewProjectModal): owner/admin 永远可写, 此开关只对"非 owner 读者"生效. 默认 false (安全默认).
+  const [canPostIssue, setCanPostIssue] = useState(!!d.canPostIssue)
+  const [canRunSession, setCanRunSession] = useState(!!d.canRunSession)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [permissionOpen, setPermissionOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -719,8 +722,8 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   }
 
   useEffect(() => {
-    draftSave(DRAFT_KEY, { projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, extensionName }, { minChars: 0 })
-  }, [projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, extensionName])
+    draftSave(DRAFT_KEY, { projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, extensionName, canPostIssue, canRunSession }, { minChars: 0 })
+  }, [projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, extensionName, canPostIssue, canRunSession])
 
   // 自动随机路径未填则补上 (extension 不需要 bindPath)
   useEffect(() => {
@@ -755,8 +758,8 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
         body.bindPathManual = bindPathManual
         body.defaultUseWorktree = researchEnabled ? false : defaultUseWorktree
         body.researchEnabled = projectKind === 'research' ? true : researchEnabled
-        body.can_post_issue = false
-        body.can_run_session = false
+        body.can_post_issue = canPostIssue
+        body.can_run_session = canRunSession
       }
       const p = await api('/api/projects', { method: 'POST', body: JSON.stringify(body) })
       if (p?.error) { setErr(p.error); return }
@@ -773,7 +776,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
       <div className="relative w-[440px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
         onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <h4 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>修改项目权限</h4>
-        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个项目。</p>
+        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个项目，以及读者是否可创建任务单 / 启动会话。</p>
         <div>
           <div className="grid grid-cols-2 gap-1.5">
             {VISIBILITY_OPTIONS.map(opt => {
@@ -788,6 +791,23 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             })}
           </div>
           <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{visibilityOption.desc}</p>
+        </div>
+        {/* 读者写权限: owner/admin 永远可写, 此开关仅对非 owner 读者生效 (private 永远只允许 owner). */}
+        <div className="mt-4 space-y-2">
+          <ToggleSwitch
+            checked={canPostIssue}
+            onChange={setCanPostIssue}
+            className="flex items-start gap-3 text-[12px]"
+            style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+            <span>读者可创建任务单<span className="block text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>仅影响非 owner 读者；private 永远只允许 owner</span></span>
+          </ToggleSwitch>
+          <ToggleSwitch
+            checked={canRunSession}
+            onChange={setCanRunSession}
+            className="flex items-start gap-3 text-[12px]"
+            style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+            <span>读者可启动执行会话<span className="block text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>同上，仅影响非 owner 读者</span></span>
+          </ToggleSwitch>
         </div>
         <div className="mt-5 flex justify-end">
           <button type="button" onClick={() => setPermissionOpen(false)} className="h-9 px-5 rounded-xl text-[13px] btn-primary transition-colors">完成</button>
@@ -1271,6 +1291,8 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const [name, setName] = useState(d.name || '')
   const [desc, setDesc] = useState(d.desc || '')
   const [role, setRole] = useState<'chief_researcher' | 'research_assistant'>(d.role || 'research_assistant')
+  // 角色默认值 (对齐 NewSessionModal): 若该 Research 尚无 chief_researcher 且用户未手动选过角色(也无草稿) → 默认首席.
+  const roleUserTouchedRef = useRef(!!d.role)
   // 模型默认值: 草稿 > 项目级默认模型偏好 > 全局 'codex' (同 CreateSessionForm, 对齐 NewSessionModal).
   const [model, setModel] = useState(d.model || 'codex')
   const modelUserTouchedRef = useRef(!!d.model)
@@ -1332,6 +1354,20 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [researchId, role])
+
+  // 选 research 后: 拉现有 sessions 判断是否已有 chief_researcher, 若无且用户未手动选过角色 → 默认首席 (对齐 NewSessionModal).
+  // 后端创建时若已有 chief 会 409; 这里前端预判, 避免提交才报错. 不依赖 role, 避免与上面 effect 循环.
+  useEffect(() => {
+    if (!researchId) return
+    let alive = true
+    api(`/api/researches/${researchId}/sessions`).then((list: any) => {
+      if (!alive || roleUserTouchedRef.current) return
+      const chiefExists = Array.isArray(list) && list.some((s: any) => s.research_role === 'chief_researcher')
+      setRole(chiefExists ? 'research_assistant' : 'chief_researcher')
+    }).catch(() => {})
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [researchId])
 
   useEffect(() => {
     draftSave(DRAFT_KEY, { projectId, researchId, name, desc, role, model, language }, { minChars: 0 })
@@ -1449,7 +1485,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
         <SectionLabel hint="创建后不可更改">角色</SectionLabel>
         <DropdownSelect
           value={role}
-          onChange={v => setRole(v as 'research_assistant' | 'chief_researcher')}
+          onChange={v => { setRole(v as 'research_assistant' | 'chief_researcher'); roleUserTouchedRef.current = true }}
           disabled={!researchId}
           dark={dark}
           options={[
