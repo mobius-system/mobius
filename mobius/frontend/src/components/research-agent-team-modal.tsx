@@ -288,7 +288,7 @@ export function ResearchAgentTeamModal({
   const [agents, setAgents] = useState<TeamAgent[]>([])
   const [editingTarget, setEditingTarget] = useState<EditingTarget | null>(null)
   const [mode, setMode] = useState<'single' | 'team'>('team')
-  const [sceneKind, setSceneKind] = useState<SceneKind>('city')
+  const [sceneKind, setSceneKind] = useState<SceneKind>('space')
   const [avatarKind, setAvatarKind] = useState<AvatarKind>('robot')
   const [selectionPanel, setSelectionPanel] = useState<SelectionPanel | null>(null)
   const initializedRef = useRef(false)

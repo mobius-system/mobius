@@ -340,6 +340,54 @@ function hexToCss(hex: number) {
   return `#${hex.toString(16).padStart(6, '0')}`
 }
 
+// Agent 脚下圆盘贴图: 半透明底盘(径向渐变) + 同心环 + 径向辐条 + 外缘亮环 (科技全息质感).
+function makePadTexture(colorHex: number, selected: boolean) {
+  const size = 256
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')!
+  const c = size / 2
+  const rgba = (a: number) => {
+    const r = (colorHex >> 16) & 255
+    const g = (colorHex >> 8) & 255
+    const b = colorHex & 255
+    return `rgba(${r},${g},${b},${a})`
+  }
+  ctx.clearRect(0, 0, size, size)
+  // 底盘: 径向渐变, 中心略亮、边缘渐隐 (整体半透明, 能透出地面).
+  const grad = ctx.createRadialGradient(c, c, 2, c, c, c - 4)
+  grad.addColorStop(0, rgba(selected ? 0.5 : 0.32))
+  grad.addColorStop(0.7, rgba(selected ? 0.3 : 0.18))
+  grad.addColorStop(1, rgba(0))
+  ctx.fillStyle = grad
+  ctx.beginPath(); ctx.arc(c, c, c - 4, 0, Math.PI * 2); ctx.fill()
+  // 同心环
+  ctx.strokeStyle = rgba(selected ? 0.85 : 0.6)
+  ctx.lineWidth = 1.5
+  for (let i = 1; i <= 3; i += 1) {
+    ctx.beginPath(); ctx.arc(c, c, (c - 6) * (i / 4), 0, Math.PI * 2); ctx.stroke()
+  }
+  // 径向辐条
+  ctx.strokeStyle = rgba(selected ? 0.6 : 0.42)
+  ctx.lineWidth = 1
+  const spokes = 12
+  for (let i = 0; i < spokes; i += 1) {
+    const ang = (i / spokes) * Math.PI * 2
+    ctx.beginPath()
+    ctx.moveTo(c + Math.cos(ang) * 10, c + Math.sin(ang) * 10)
+    ctx.lineTo(c + Math.cos(ang) * (c - 6), c + Math.sin(ang) * (c - 6))
+    ctx.stroke()
+  }
+  // 外缘亮环
+  ctx.strokeStyle = rgba(selected ? 0.95 : 0.7)
+  ctx.lineWidth = 2
+  ctx.beginPath(); ctx.arc(c, c, c - 4, 0, Math.PI * 2); ctx.stroke()
+  const tex = new CanvasTexture(canvas)
+  tex.colorSpace = SRGBColorSpace
+  return tex
+}
+
 function makeLabelTexture(agent: ResearchTeamSceneAgent, selected: boolean, theme: SceneProps['theme']) {
   const canvas = document.createElement('canvas')
   canvas.width = 512
@@ -1210,7 +1258,11 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
   const pivot = new Group() // 浮动 pivot (放身体, 地面光圈保持静止)
   group.add(pivot)
 
-  const pad = new Mesh(new CircleGeometry(selected ? 0.82 : 0.74, 56), glowMat)
+  const padMat = new MeshBasicMaterial({
+    map: makePadTexture(bodyColor, selected),
+    transparent: true, opacity: selected ? 0.92 : 0.72, side: DoubleSide, depthWrite: false,
+  })
+  const pad = new Mesh(new CircleGeometry(selected ? 0.82 : 0.74, 56), padMat)
   pad.rotation.x = -Math.PI / 2
   pad.scale.z = 0.48
   pad.position.y = 0.03
