@@ -1601,7 +1601,7 @@ export function ChatArea() {
       const elapsed = Date.now() - start
       if (elapsed < 1500) setSendingHint('正在发送')
       else if (elapsed < 5000) setSendingHint('正在唤醒中')
-      else setSendingHint('唤醒时间长于预期，请检查网络链接。')
+      else setSendingHint('唤醒时间长于预期，可能上下文过长，或网络不通畅。')
     }
     tick()
     const id = window.setInterval(tick, 250)

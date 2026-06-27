@@ -839,6 +839,7 @@ export function ResearchAgentTeamModal({
                   avatarKind={avatarKind}
                   onAdd={addAssistant}
                   addDisabled={submitting || agents.length >= MAX_TEAM_SIZE}
+                  onDelete={deleteAgent}
                 />
               </Suspense>
               <div className="min-h-[96px] rounded-lg border p-3" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>

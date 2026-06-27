@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { AdditiveBlending, DoubleSide, RepeatWrapping, SRGBColorSpace } from 'three/src/constants.js'
 import { AmbientLight } from 'three/src/lights/AmbientLight.js'
 import { DirectionalLight } from 'three/src/lights/DirectionalLight.js'
@@ -97,6 +97,7 @@ type SceneProps = {
   canAdd?: boolean
   onAdd?: () => void
   addDisabled?: boolean
+  onDelete?: (id: string) => void
 }
 
 type SceneTarget = {
@@ -1123,6 +1124,7 @@ function makeStage(target: SceneTarget, palette: Palette, theme: SceneProps['the
   const platform = new Mesh(new CircleGeometry(radius, 96), new MeshStandardMaterial({
     color: palette.stage, roughness: 0.52, metalness: 0.18,
     emissive: new Color(palette.platform).multiplyScalar(theme === 'light' ? 0.025 : 0.06),
+    polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 1,
   }))
   platform.rotation.x = -Math.PI / 2
   platform.scale.z = 0.55
@@ -1211,7 +1213,7 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
   const pad = new Mesh(new CircleGeometry(selected ? 0.82 : 0.74, 56), glowMat)
   pad.rotation.x = -Math.PI / 2
   pad.scale.z = 0.48
-  pad.position.y = 0.012
+  pad.position.y = 0.03
   const ring = new Mesh(new TorusGeometry(selected ? 0.72 : 0.58, selected ? 0.025 : 0.014, 8, 96), glowMat.clone())
   ring.rotation.x = Math.PI / 2
   ring.scale.z = 0.6
@@ -1384,7 +1386,7 @@ function makeAddNode(theme: SceneProps['theme']) {
   return { group, clickable }
 }
 
-export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sceneKind, avatarKind = 'robot', canAdd = false, onAdd, addDisabled = false }: SceneProps) {
+export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sceneKind, avatarKind = 'robot', canAdd = false, onAdd, addDisabled = false, onDelete }: SceneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<WebGLRenderer | null>(null)
   const sceneRef = useRef<Scene | null>(null)
@@ -1625,6 +1627,8 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
     animatorsRef.current = animators
   }, [agents, positions, selectedId, theme, sceneKind, avatarKind, canAdd])
 
+  const deletableSelected = agents.find(a => a.id === selectedId && !a.locked && a.role !== 'chief_researcher') || null
+
   return (
     <div className="relative h-full min-h-[360px] overflow-hidden rounded-lg border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
       <div ref={hostRef} className="absolute inset-0" />
@@ -1633,14 +1637,28 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
           暂无 Agent
         </div>
       )}
-      {onAdd && (
-        <button type="button" onClick={onAdd} disabled={addDisabled}
-          title={addDisabled ? '已达团队上限' : '添加 Agent'}
-          className="absolute bottom-3 left-1/2 inline-flex h-9 -translate-x-1/2 items-center gap-1.5 rounded-full border px-4 text-[13px] font-medium shadow-lg backdrop-blur-sm transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-          style={{ borderColor: 'rgba(16,185,129,0.55)', background: theme === 'dark' ? 'rgba(16,185,129,0.18)' : 'rgba(16,185,129,0.95)', color: theme === 'dark' ? '#34d399' : '#ffffff' }}>
-          <Plus className="h-4 w-4" strokeWidth={2.2} />
-          添加 Agent
-        </button>
+      {/* HUD: 右上角操作区 (添加 / 删除当前选中) */}
+      {(onAdd || (onDelete && deletableSelected)) && (
+        <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
+          {onDelete && deletableSelected && (
+            <button type="button" onClick={() => onDelete(deletableSelected.id)}
+              title="删除当前选中的 Agent"
+              className="inline-flex h-8 items-center gap-1 rounded-full border px-3 text-[12px] font-medium shadow-lg backdrop-blur-sm transition-colors hover:brightness-110"
+              style={{ borderColor: 'rgba(248,113,113,0.55)', background: theme === 'dark' ? 'rgba(248,113,113,0.2)' : 'rgba(248,113,113,0.95)', color: theme === 'dark' ? '#fca5a5' : '#ffffff' }}>
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+              删除
+            </button>
+          )}
+          {onAdd && (
+            <button type="button" onClick={onAdd} disabled={addDisabled}
+              title={addDisabled ? '已达团队上限' : '添加 Agent'}
+              className="inline-flex h-8 items-center gap-1 rounded-full border px-3 text-[12px] font-medium shadow-lg backdrop-blur-sm transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ borderColor: 'rgba(16,185,129,0.55)', background: theme === 'dark' ? 'rgba(16,185,129,0.18)' : 'rgba(16,185,129,0.95)', color: theme === 'dark' ? '#34d399' : '#ffffff' }}>
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
+              添加
+            </button>
+          )}
+        </div>
       )}
     </div>
   )
