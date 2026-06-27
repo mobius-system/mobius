@@ -405,7 +405,7 @@ function DescriptionWithAttachments({ value, onValueChange, placeholder, attachm
     })
   }, [projectId, setAttachments])
 
-  // 全局粘贴: 仅图片 (与 attachments.tsx 的 AttachmentZone 行为一致)
+  // 全局粘贴: 仅图片 (与 attachments.tsx 的 AttachmentComposer 行为一致)
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const items = e.clipboardData?.items
@@ -1044,8 +1044,9 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
         </span>
         <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
       </button>
-      <label className="flex items-start gap-2 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-        <input type="checkbox" checked={isPlanning} onChange={e => { setIsPlanning(e.target.checked); setErr('') }} className="w-4 h-4 mt-0.5 accent-blue-500" />
+      <label className="flex items-start gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+        <input type="checkbox" checked={isPlanning} onChange={e => { setIsPlanning(e.target.checked); setErr('') }} className="sr-only" />
+        <ModalSwitch checked={isPlanning} />
         <span>
           <span className="font-medium">系统宏观规划模式</span>
           <span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>创建后自动生成规划 Session（仅 mobius-planner + 全量 Memory，专注维护 project_knowledge.md）</span>
