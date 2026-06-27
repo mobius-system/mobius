@@ -10,9 +10,9 @@
  *
  * 落盘: MOBIUS_DATA_PATH/admin-settings.json (与 hub-runtime.json 同目录), tmp+rename 原子写.
  */
-const fs = require('fs')
-const path = require('path')
-const { MOBIUS_DATA_PATH } = require('../config')
+import * as fs from 'fs'
+import * as path from 'path'
+import { MOBIUS_DATA_PATH } from '../config'
 
 const SETTINGS_FILE = path.join(MOBIUS_DATA_PATH, 'admin-settings.json')
 
@@ -47,7 +47,7 @@ const LIGHT_MODEL_API_TYPES = Object.freeze([
 const LIGHT_MODEL_API_DEFAULT_TYPE = 'openai-chat-completion'
 const LIGHT_MODEL_API_DEFAULT_MODEL = 'GLM-4.7-FlashX'
 
-const DEFAULTS = Object.freeze({
+const DEFAULTS: any = Object.freeze({
   modelPromptLimits: {
     windowHours: MODEL_PROMPT_LIMIT_WINDOW_HOURS,
     windowMinutes: MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
@@ -89,18 +89,18 @@ const DEFAULTS = Object.freeze({
   },
 })
 
-function defaultsClone() {
+function defaultsClone(): any {
   return JSON.parse(JSON.stringify(DEFAULTS))
 }
 
-function normalizeModelLimitForRead(value) {
+function normalizeModelLimitForRead(value: any): number | null {
   if (value === null || value === undefined || value === '') return null
   const n = Number(value)
   if (!Number.isFinite(n) || n < 0) return null
   return Math.min(Math.floor(n), MODEL_PROMPT_LIMIT_MAX)
 }
 
-function normalizeModelLimitForWrite(value) {
+function normalizeModelLimitForWrite(value: any): number | null {
   if (value === null || value === undefined || value === '') return null
   const n = Number(value)
   if (!Number.isFinite(n) || n < 0) {
@@ -109,17 +109,17 @@ function normalizeModelLimitForWrite(value) {
   return Math.min(Math.floor(n), MODEL_PROMPT_LIMIT_MAX)
 }
 
-function normalizeTmuxWindowLimitForRead(value) {
+function normalizeTmuxWindowLimitForRead(value: any): number {
   const n = normalizeModelLimitForRead(value)
   return n === null ? DEFAULT_MODEL_TMUX_WINDOW_LIMIT : n
 }
 
-function normalizeTmuxWindowLimitForWrite(value) {
+function normalizeTmuxWindowLimitForWrite(value: any): number {
   if (value === null || value === undefined || value === '') return DEFAULT_MODEL_TMUX_WINDOW_LIMIT
-  return normalizeModelLimitForWrite(value)
+  return normalizeModelLimitForWrite(value) as number
 }
 
-function normalizeModelKey(value) {
+function normalizeModelKey(value: any): string {
   const key = String(value || '').trim()
   if (!key) throw new Error('模型 key 不能为空')
   if (key.length > 160) throw new Error('模型 key 最多 160 个字符')
@@ -127,7 +127,7 @@ function normalizeModelKey(value) {
   return key
 }
 
-function normalizeModelLimitConfigForRead(value) {
+function normalizeModelLimitConfigForRead(value: any): any {
   if (typeof value === 'number' || typeof value === 'string' || value === null) {
     const migrated = normalizeModelLimitForRead(value)
     return {
@@ -159,7 +159,7 @@ function normalizeModelLimitConfigForRead(value) {
   }
 }
 
-function normalizeModelLimitConfigForWrite(value) {
+function normalizeModelLimitConfigForWrite(value: any): any {
   const obj = value && typeof value === 'object' ? value : {}
   return {
     allUsers5h: normalizeModelLimitForWrite(obj.allUsers5h ?? obj.all_users_5h),
@@ -170,7 +170,7 @@ function normalizeModelLimitConfigForWrite(value) {
   }
 }
 
-function isDefaultModelLimitConfig(cfg) {
+function isDefaultModelLimitConfig(cfg: any): boolean {
   return cfg.allUsers5h === null
     && cfg.allUsers5m === null
     && cfg.perUser5h === null
@@ -178,7 +178,7 @@ function isDefaultModelLimitConfig(cfg) {
     && cfg.tmuxWindows === DEFAULT_MODEL_TMUX_WINDOW_LIMIT
 }
 
-function normalizeModelPromptLimitsForRead(value) {
+function normalizeModelPromptLimitsForRead(value: any): any {
   const out = {
     windowHours: MODEL_PROMPT_LIMIT_WINDOW_HOURS,
     windowMinutes: MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
@@ -197,7 +197,7 @@ function normalizeModelPromptLimitsForRead(value) {
   return out
 }
 
-function normalizeModelNetworkProxyForRead(value) {
+function normalizeModelNetworkProxyForRead(value: any): any {
   const out = { perModel: {} }
   const rawMap = value?.perModel || value?.models || {}
   if (rawMap && typeof rawMap === 'object') {
@@ -214,7 +214,7 @@ function normalizeModelNetworkProxyForRead(value) {
   return out
 }
 
-function normalizeUserId(value) {
+function normalizeUserId(value: any): string {
   const id = String(value || '').trim()
   if (!id) throw new Error('用户 ID 不能为空')
   if (id.length > 64) throw new Error('用户 ID 最多 64 个字符')
@@ -222,11 +222,11 @@ function normalizeUserId(value) {
   return id
 }
 
-function normalizeAdminAssistantCallbacksForRead(value) {
+function normalizeAdminAssistantCallbacksForRead(value: any): any {
   const rawIds = Array.isArray(value?.enabledAdminUserIds)
     ? value.enabledAdminUserIds
     : (Array.isArray(value?.enabled_admin_user_ids) ? value.enabled_admin_user_ids : [])
-  const ids = []
+  const ids: string[] = []
   const seen = new Set()
   for (const rawId of rawIds) {
     try {
@@ -241,7 +241,7 @@ function normalizeAdminAssistantCallbacksForRead(value) {
   return { enabledAdminUserIds: ids }
 }
 
-function normalizeDoubaoString(value, maxLength = 512) {
+function normalizeDoubaoString(value: any, maxLength: number = 512): string {
   const trimmed = String(value ?? '').trim()
   if (trimmed.length > maxLength) {
     throw new Error(`字段长度不能超过 ${maxLength} 个字符`)
@@ -250,7 +250,7 @@ function normalizeDoubaoString(value, maxLength = 512) {
   return trimmed
 }
 
-function normalizeDoubaoEndpoint(value, expectedProtocol) {
+function normalizeDoubaoEndpoint(value: any, expectedProtocol: string): string {
   const trimmed = String(value ?? '').trim()
   if (!trimmed) return ''
   const re = expectedProtocol === 'wss'
@@ -263,7 +263,7 @@ function normalizeDoubaoEndpoint(value, expectedProtocol) {
   return trimmed
 }
 
-function normalizeDoubaoVoiceSubForRead(value, defaults) {
+function normalizeDoubaoVoiceSubForRead(value: any, defaults: any): any {
   const obj = value && typeof value === 'object' ? value : {}
   return {
     appId: String(obj.appId ?? obj.app_id ?? '').trim(),
@@ -277,9 +277,9 @@ function normalizeDoubaoVoiceSubForRead(value, defaults) {
   }
 }
 
-function normalizeDoubaoVoiceSubForWrite(value, defaults, expectedProtocol) {
+function normalizeDoubaoVoiceSubForWrite(value: any, defaults: any, expectedProtocol: string): any {
   const obj = value && typeof value === 'object' ? value : {}
-  const out = {
+  const out: any = {
     appId: normalizeDoubaoString(obj.appId ?? obj.app_id ?? ''),
     accessToken: normalizeDoubaoString(obj.accessToken ?? obj.access_token ?? ''),
     secretKey: normalizeDoubaoString(obj.secretKey ?? obj.secret_key ?? ''),
@@ -292,7 +292,7 @@ function normalizeDoubaoVoiceSubForWrite(value, defaults, expectedProtocol) {
   return out
 }
 
-function normalizeDoubaoVoiceForRead(value) {
+function normalizeDoubaoVoiceForRead(value: any): any {
   const obj = value && typeof value === 'object' ? value : {}
   return {
     asr: normalizeDoubaoVoiceSubForRead(obj.asr, DEFAULTS.doubaoVoice.asr),
@@ -300,15 +300,15 @@ function normalizeDoubaoVoiceForRead(value) {
   }
 }
 
-function maskSecret(value) {
+function maskSecret(value: any): any {
   const str = String(value ?? '')
   if (!str) return { isSet: false, preview: '' }
   const last = str.slice(-4)
   return { isSet: true, preview: `••••${last}` }
 }
 
-function maskDoubaoVoiceSub(sub) {
-  const out = {}
+function maskDoubaoVoiceSub(sub: any): any {
+  const out: any = {}
   for (const [key, value] of Object.entries(sub)) {
     if (DOUBAO_SECRET_FIELDS.includes(key)) {
       out[key] = maskSecret(value)
@@ -319,7 +319,7 @@ function maskDoubaoVoiceSub(sub) {
   return out
 }
 
-function maskDoubaoVoice(value) {
+function maskDoubaoVoice(value: any): any {
   const normalized = normalizeDoubaoVoiceForRead(value)
   return {
     asr: maskDoubaoVoiceSub(normalized.asr),
@@ -327,14 +327,14 @@ function maskDoubaoVoice(value) {
   }
 }
 
-function normalizeLightModelApiType(value) {
+function normalizeLightModelApiType(value: any): string {
   const trimmed = String(value ?? '').trim()
   if (!trimmed) return LIGHT_MODEL_API_DEFAULT_TYPE
   if (LIGHT_MODEL_API_TYPES.includes(trimmed)) return trimmed
   throw new Error(`type 必须是 ${LIGHT_MODEL_API_TYPES.join(' / ')} 中的一个`)
 }
 
-function normalizeLightModelApiBaseUrl(value) {
+function normalizeLightModelApiBaseUrl(value: any): string {
   const trimmed = String(value ?? '').trim()
   if (!trimmed) return ''
   if (trimmed.length > 1024) throw new Error('base_url 长度不能超过 1024 个字符')
@@ -345,14 +345,14 @@ function normalizeLightModelApiBaseUrl(value) {
   return trimmed
 }
 
-function normalizeLightModelApiKeyValue(value) {
+function normalizeLightModelApiKeyValue(value: any): string {
   const trimmed = String(value ?? '').trim()
   if (trimmed.length > 512) throw new Error('api_key 长度不能超过 512 个字符')
   if (trimmed.includes('\0')) throw new Error('api_key 包含非法字符')
   return trimmed
 }
 
-function normalizeLightModelApiModel(value) {
+function normalizeLightModelApiModel(value: any): string {
   const trimmed = String(value ?? '').trim()
   if (!trimmed) return LIGHT_MODEL_API_DEFAULT_MODEL
   if (trimmed.length > 200) throw new Error('model 长度不能超过 200 个字符')
@@ -364,7 +364,7 @@ const TEXT_REDACTION_MAX_RULES = 500
 const TEXT_REDACTION_MAX_KEYWORD_LEN = 200
 const TEXT_REDACTION_MAX_REPLACEMENT_LEN = 200
 
-function parseTextRedactionEnabled(value) {
+function parseTextRedactionEnabled(value: any): boolean {
   if (value === null || value === undefined || value === '') return true
   if (typeof value === 'boolean') return value
   if (typeof value === 'number') return value !== 0
@@ -373,7 +373,7 @@ function parseTextRedactionEnabled(value) {
   return true
 }
 
-function normalizeTextRedactionRule(value, index) {
+function normalizeTextRedactionRule(value: any, index: number): any {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const keyword = String(value.keyword ?? '').trim()
   if (!keyword) return null
@@ -389,7 +389,7 @@ function normalizeTextRedactionRule(value, index) {
   return { id, keyword, replacement, enabled: parseTextRedactionEnabled(value.enabled) }
 }
 
-function normalizeTextRedactionRulesForRead(value) {
+function normalizeTextRedactionRulesForRead(value: any): any[] {
   if (!Array.isArray(value)) return []
   const out = []
   for (let i = 0; i < value.length && out.length < TEXT_REDACTION_MAX_RULES; i += 1) {
@@ -401,7 +401,7 @@ function normalizeTextRedactionRulesForRead(value) {
   return out
 }
 
-function normalizeTextRedactionRulesForWrite(value) {
+function normalizeTextRedactionRulesForWrite(value: any): any[] {
   if (!Array.isArray(value)) throw new Error('rules 必须是数组')
   if (value.length > TEXT_REDACTION_MAX_RULES) {
     throw new Error(`规则数量不能超过 ${TEXT_REDACTION_MAX_RULES} 条`)
@@ -418,7 +418,7 @@ function normalizeTextRedactionRulesForWrite(value) {
   return out
 }
 
-function normalizeTextRedactionForRead(value) {
+function normalizeTextRedactionForRead(value: any): any {
   const obj = value && typeof value === 'object' ? value : {}
   return {
     rules: normalizeTextRedactionRulesForRead(obj.rules),
@@ -429,7 +429,7 @@ function normalizeTextRedactionForRead(value) {
   }
 }
 
-function normalizeLightModelApiForRead(value) {
+function normalizeLightModelApiForRead(value: any): any {
   const obj = value && typeof value === 'object' ? value : {}
   return {
     type: normalizeLightModelApiType(obj.type),
@@ -439,7 +439,7 @@ function normalizeLightModelApiForRead(value) {
   }
 }
 
-function maskLightModelApi(value) {
+function maskLightModelApi(value: any): any {
   const normalized = normalizeLightModelApiForRead(value)
   return {
     type: normalized.type,
@@ -449,7 +449,7 @@ function maskLightModelApi(value) {
   }
 }
 
-function writeSettings(next) {
+function writeSettings(next: any): void {
   const dir = path.dirname(SETTINGS_FILE)
   fs.mkdirSync(dir, { recursive: true })
   const tmp = `${SETTINGS_FILE}.imac-tmp-${process.pid}-${Date.now()}`
@@ -457,7 +457,7 @@ function writeSettings(next) {
   fs.renameSync(tmp, SETTINGS_FILE)
 }
 
-function loadSettings() {
+function loadSettings(): any {
   if (!fs.existsSync(SETTINGS_FILE)) return defaultsClone()
   try {
     const raw = fs.readFileSync(SETTINGS_FILE, 'utf8')
@@ -488,17 +488,17 @@ function loadSettings() {
   }
 }
 
-function getModelPromptLimits() {
+function getModelPromptLimits(): any {
   return loadSettings().modelPromptLimits
 }
 
-function getModelPromptLimit(modelKey) {
+function getModelPromptLimit(modelKey: any): number | null {
   const key = normalizeModelKey(modelKey)
   const limits = getModelPromptLimits()
   return Object.prototype.hasOwnProperty.call(limits.perModel, key) ? limits.perModel[key].perUser5h : null
 }
 
-function getModelPromptLimitConfig(modelKey) {
+function getModelPromptLimitConfig(modelKey: any): any {
   const key = normalizeModelKey(modelKey)
   const limits = getModelPromptLimits()
   return Object.prototype.hasOwnProperty.call(limits.perModel, key)
@@ -506,7 +506,7 @@ function getModelPromptLimitConfig(modelKey) {
     : normalizeModelLimitConfigForRead({})
 }
 
-function getModelNetworkProxy(modelKey, fallback = false) {
+function getModelNetworkProxy(modelKey: any, fallback: boolean = false): boolean {
   const key = normalizeModelKey(modelKey)
   const proxy = loadSettings().modelNetworkProxy || normalizeModelNetworkProxyForRead({})
   return Object.prototype.hasOwnProperty.call(proxy.perModel || {}, key)
@@ -514,7 +514,7 @@ function getModelNetworkProxy(modelKey, fallback = false) {
     : !!fallback
 }
 
-function setModelNetworkProxy(modelKey, value) {
+function setModelNetworkProxy(modelKey: any, value: any): any {
   const key = normalizeModelKey(modelKey)
   if (typeof value !== 'boolean') {
     throw new Error(`useProxy 必须是 boolean, 收到: ${typeof value}`)
@@ -529,14 +529,14 @@ function setModelNetworkProxy(modelKey, value) {
   return next.modelNetworkProxy
 }
 
-function setModelPromptLimit(modelKey, value) {
+function setModelPromptLimit(modelKey: any, value: any): any {
   const key = normalizeModelKey(modelKey)
   const limit = normalizeModelLimitForWrite(value)
   const current = getModelPromptLimitConfig(key)
   return setModelPromptLimitConfig(key, { ...current, perUser5h: limit })
 }
 
-function setModelPromptLimitConfig(modelKey, value) {
+function setModelPromptLimitConfig(modelKey: any, value: any): any {
   const key = normalizeModelKey(modelKey)
   const cfg = normalizeModelLimitConfigForWrite(value)
   const next = loadSettings()
@@ -552,22 +552,22 @@ function setModelPromptLimitConfig(modelKey, value) {
   return next.modelPromptLimits
 }
 
-function getAdminAssistantCallbacks() {
+function getAdminAssistantCallbacks(): any {
   return loadSettings().adminAssistantCallbacks
 }
 
-function listAdminAssistantCallbackUserIds() {
+function listAdminAssistantCallbackUserIds(): string[] {
   return getAdminAssistantCallbacks().enabledAdminUserIds.slice()
 }
 
-function getAdminAssistantCallbackForUser(userId) {
+function getAdminAssistantCallbackForUser(userId: any): any {
   const id = normalizeUserId(userId)
   return {
     enabled: listAdminAssistantCallbackUserIds().includes(id),
   }
 }
 
-function setAdminAssistantCallbackForUser(userId, enabled) {
+function setAdminAssistantCallbackForUser(userId: any, enabled: any): any {
   const id = normalizeUserId(userId)
   if (typeof enabled !== 'boolean') {
     throw new Error(`enabled 必须是 boolean, 收到: ${typeof enabled}`)
@@ -582,15 +582,15 @@ function setAdminAssistantCallbackForUser(userId, enabled) {
   return getAdminAssistantCallbackForUser(id)
 }
 
-function getDoubaoVoice() {
+function getDoubaoVoice(): any {
   return loadSettings().doubaoVoice
 }
 
-function getDoubaoVoiceMasked() {
+function getDoubaoVoiceMasked(): any {
   return maskDoubaoVoice(loadSettings().doubaoVoice)
 }
 
-function setDoubaoVoiceAsr(payload) {
+function setDoubaoVoiceAsr(payload: any): any {
   const next = loadSettings()
   const current = normalizeDoubaoVoiceForRead(next.doubaoVoice).asr
   const merged = { ...current, ...normalizeDoubaoVoiceSubForWrite(payload, DEFAULTS.doubaoVoice.asr, 'wss') }
@@ -600,7 +600,7 @@ function setDoubaoVoiceAsr(payload) {
   return maskDoubaoVoiceSub(next.doubaoVoice.asr)
 }
 
-function setDoubaoVoiceTts(payload) {
+function setDoubaoVoiceTts(payload: any): any {
   const next = loadSettings()
   const current = normalizeDoubaoVoiceForRead(next.doubaoVoice).tts
   const merged = { ...current, ...normalizeDoubaoVoiceSubForWrite(payload, DEFAULTS.doubaoVoice.tts, 'https') }
@@ -610,16 +610,16 @@ function setDoubaoVoiceTts(payload) {
   return maskDoubaoVoiceSub(next.doubaoVoice.tts)
 }
 
-function getLightModelApi() {
+function getLightModelApi(): any {
   return loadSettings().lightModelApi
 }
 
-function getLightModelApiMasked() {
+function getLightModelApiMasked(): any {
   return maskLightModelApi(loadSettings().lightModelApi)
 }
 
 // 【禁止任何开发者使用轻 API — 仅架构师 Arnold 可调用, 见文件顶部告示】
-function setLightModelApi(payload) {
+function setLightModelApi(payload: any): any {
   const obj = payload && typeof payload === 'object' ? payload : {}
   const next = loadSettings()
   const current = normalizeLightModelApiForRead(next.lightModelApi)
@@ -638,11 +638,11 @@ function setLightModelApi(payload) {
   return maskLightModelApi(next.lightModelApi)
 }
 
-function getTextRedactionGlobal() {
+function getTextRedactionGlobal(): any {
   return normalizeTextRedactionForRead(loadSettings().textRedaction)
 }
 
-function setTextRedactionGlobal({ rules, adminUserId }) {
+function setTextRedactionGlobal({ rules, adminUserId }: any): any {
   const next = loadSettings()
   next.textRedaction = {
     rules: normalizeTextRedactionRulesForWrite(rules || []),
@@ -653,7 +653,7 @@ function setTextRedactionGlobal({ rules, adminUserId }) {
   return normalizeTextRedactionForRead(next.textRedaction)
 }
 
-module.exports = {
+export {
   MODEL_PROMPT_LIMIT_WINDOW_HOURS,
   MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
   DEFAULT_MODEL_TMUX_WINDOW_LIMIT,

@@ -1,12 +1,12 @@
-const crypto = require('crypto');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const tls = require('tls');
-const zlib = require('zlib');
-const { spawn } = require('child_process');
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import * as tls from 'tls';
+import * as zlib from 'zlib';
+import { spawn } from 'child_process';
 
-const adminSettings = require('./admin-settings');
+import * as adminSettings from './admin-settings';
 
 const CLIENT_FULL_REQUEST = 0b0001;
 const CLIENT_AUDIO_ONLY_REQUEST = 0b0010;
@@ -27,7 +27,10 @@ const MAX_AUDIO_SECONDS = 180;
 const MIN_PCM_BYTES = SAMPLE_RATE * SAMPLE_BYTES * CHANNELS * 0.25;
 
 class AsrError extends Error {
-  constructor(message, opts = {}) {
+  code: string;
+  status: number;
+  logId: string;
+  constructor(message: string, opts: any = {}) {
     super(message);
     this.name = 'AsrError';
     this.code = opts.code || 'ASR_FAILED';
@@ -36,26 +39,26 @@ class AsrError extends Error {
   }
 }
 
-function envCredentialValue(value) {
+function envCredentialValue(value: any): string {
   const cleaned = String(value || '').trim();
   if (!cleaned) return '';
   if (/^replace-me(?:-|$)/i.test(cleaned) || /^change-me(?:-|$)/i.test(cleaned)) return '';
   return cleaned;
 }
 
-function pickCredential(storedKey, envKey) {
+function pickCredential(storedKey: string, envKey: string): string {
   const stored = adminSettings.getDoubaoVoice().asr[storedKey];
   if (stored && !/^replace-me(?:-|$)/i.test(stored)) return stored;
   return envCredentialValue(process.env[envKey]);
 }
 
-function pickNonSecret(storedKey, envKey, fallback) {
+function pickNonSecret(storedKey: string, envKey: string, fallback: string): string {
   const stored = adminSettings.getDoubaoVoice().asr[storedKey];
   if (stored) return stored;
   return process.env[envKey] || fallback;
 }
 
-function resolveCredentials() {
+function resolveCredentials(): any {
   return {
     appId: pickCredential('appId', 'DOUBAO_ASR_APP_ID'),
     accessToken: pickCredential('accessToken', 'DOUBAO_ASR_ACCESS_TOKEN'),
@@ -64,7 +67,7 @@ function resolveCredentials() {
   };
 }
 
-function resolveCredentialsFromPayload(payload = {}) {
+function resolveCredentialsFromPayload(payload: any = {}): any {
   const obj = payload && typeof payload === 'object' ? payload : {};
   return {
     appId: String(obj.appId ?? '').trim(),
@@ -74,7 +77,7 @@ function resolveCredentialsFromPayload(payload = {}) {
   };
 }
 
-function asAsrError(error, fallbackMessage = '语音转写失败，请稍后重试。', fallbackCode = 'ASR_FAILED') {
+function asAsrError(error: any, fallbackMessage: string = '语音转写失败，请稍后重试。', fallbackCode: string = 'ASR_FAILED'): AsrError {
   if (error instanceof AsrError) return error;
   const message = String(error?.message || '');
   if (/握手失败|401|403|auth|access|permission|resource|grant|credential|key|token/i.test(message)) {
@@ -106,12 +109,12 @@ function asAsrError(error, fallbackMessage = '语音转写失败，请稍后重�
   return new AsrError(fallbackMessage, { code: fallbackCode, status: 500 });
 }
 
-function isDoubaoAsrConfigured() {
+function isDoubaoAsrConfigured(): boolean {
   const { appId, accessToken } = resolveCredentials();
   return !!(appId && accessToken);
 }
 
-function makeHeader(messageType, flags) {
+function makeHeader(messageType: number, flags: number): Buffer {
   return Buffer.from([
     (0b0001 << 4) | 1,
     (messageType << 4) | flags,
@@ -120,19 +123,19 @@ function makeHeader(messageType, flags) {
   ]);
 }
 
-function packInt32(value) {
+function packInt32(value: number): Buffer {
   const buf = Buffer.alloc(4);
   buf.writeInt32BE(value, 0);
   return buf;
 }
 
-function packUInt32(value) {
+function packUInt32(value: number): Buffer {
   const buf = Buffer.alloc(4);
   buf.writeUInt32BE(value, 0);
   return buf;
 }
 
-function fullRequest(seq) {
+function fullRequest(seq: number): Buffer {
   const payload = {
     user: { uid: 'mobius_assistant_asr' },
     audio: {
@@ -159,7 +162,7 @@ function fullRequest(seq) {
   ]);
 }
 
-function audioPacket(seq, chunk, isLast) {
+function audioPacket(seq: number, chunk: Buffer, isLast: boolean): Buffer {
   const flags = isLast ? NEG_WITH_SEQUENCE : POS_SEQUENCE;
   const wireSeq = isLast ? -seq : seq;
   const body = zlib.gzipSync(chunk);
@@ -171,7 +174,7 @@ function audioPacket(seq, chunk, isLast) {
   ]);
 }
 
-function parseResponse(data) {
+function parseResponse(data: any): any {
   if (!Buffer.isBuffer(data) || data.length < 4) {
     throw new Error('豆包 ASR 返回了无效响应');
   }
@@ -181,7 +184,7 @@ function parseResponse(data) {
   const serialization = data[2] >> 4;
   const compression = data[2] & 0x0f;
   let payload = data.slice(headerBytes);
-  const result = {
+  const result: any = {
     message_type: messageType,
     flags,
     is_last: !!(flags & 0b0010),
@@ -221,7 +224,7 @@ function parseResponse(data) {
   return result;
 }
 
-function collectTexts(value, out = []) {
+function collectTexts(value: any, out: string[] = []): string[] {
   if (Array.isArray(value)) {
     value.forEach((item) => collectTexts(item, out));
     return out;
@@ -237,9 +240,9 @@ function collectTexts(value, out = []) {
   return out;
 }
 
-function uniqueTexts(texts) {
+function uniqueTexts(texts: any[]): string[] {
   const seen = new Set();
-  const out = [];
+  const out: string[] = [];
   texts.forEach((text) => {
     const normalized = String(text || '').trim();
     if (!normalized || seen.has(normalized)) return;
@@ -249,13 +252,13 @@ function uniqueTexts(texts) {
   return out;
 }
 
-function bestText(texts) {
+function bestText(texts: any[]): string {
   const unique = uniqueTexts(texts);
   if (unique.length === 0) return '';
   return unique.slice().sort((a, b) => b.length - a.length)[0];
 }
 
-function encodeClientFrame(opcode, payload = Buffer.alloc(0)) {
+function encodeClientFrame(opcode: number, payload: Buffer = Buffer.alloc(0)): Buffer {
   const mask = crypto.randomBytes(4);
   const body = Buffer.from(payload);
   let header;
@@ -282,7 +285,14 @@ function encodeClientFrame(opcode, payload = Buffer.alloc(0)) {
 }
 
 class MinimalWssClient {
-  constructor(socket, initialBuffer = Buffer.alloc(0)) {
+  socket: any;
+  buffer: Buffer;
+  queue: any[];
+  waiters: any[];
+  closed: boolean;
+  fragment: any;
+
+  constructor(socket: any, initialBuffer: Buffer = Buffer.alloc(0)) {
     this.socket = socket;
     this.buffer = initialBuffer;
     this.queue = [];
@@ -290,16 +300,16 @@ class MinimalWssClient {
     this.closed = false;
     this.fragment = null;
 
-    socket.on('data', (chunk) => {
+    socket.on('data', (chunk: any) => {
       this.buffer = Buffer.concat([this.buffer, chunk]);
       this.parseAvailableFrames();
     });
-    socket.on('error', (err) => this.finishWithError(err));
+    socket.on('error', (err: any) => this.finishWithError(err));
     socket.on('close', () => this.finishWithClose());
     if (this.buffer.length > 0) this.parseAvailableFrames();
   }
 
-  static connect(rawUrl, headers = {}, timeoutMs = 15000) {
+  static connect(rawUrl: string, headers: any = {}, timeoutMs: number = 15000): Promise<MinimalWssClient> {
     const url = new URL(rawUrl);
     if (url.protocol !== 'wss:') throw new Error('豆包 ASR endpoint 必须是 wss://');
     const port = Number(url.port || 443);
@@ -307,7 +317,7 @@ class MinimalWssClient {
     const key = crypto.randomBytes(16).toString('base64');
 
     return new Promise((resolve, reject) => {
-      const socket = tls.connect({
+      const socket: any = tls.connect({
         host: url.hostname,
         port,
         servername: url.hostname,
@@ -321,7 +331,7 @@ class MinimalWssClient {
         reject(new Error('连接豆包 ASR 超时'));
       }, timeoutMs);
 
-      const fail = (err) => {
+      const fail = (err: any) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
@@ -345,7 +355,7 @@ class MinimalWssClient {
         socket.write(headerLines.join('\r\n'));
       });
 
-      const onData = (chunk) => {
+      const onData = (chunk: any) => {
         raw = Buffer.concat([raw, chunk]);
         const end = raw.indexOf('\r\n\r\n');
         if (end < 0) return;
@@ -369,35 +379,35 @@ class MinimalWssClient {
     });
   }
 
-  sendBinary(payload) {
+  sendBinary(payload: Buffer): void {
     if (this.closed) throw new Error('豆包 ASR 连接已关闭');
     this.socket.write(encodeClientFrame(0x2, payload));
   }
 
-  sendPong(payload) {
+  sendPong(payload: Buffer): void {
     if (!this.closed) this.socket.write(encodeClientFrame(0xA, payload));
   }
 
-  close() {
+  close(): void {
     if (this.closed) return;
     this.closed = true;
     try { this.socket.write(encodeClientFrame(0x8)); } catch {}
     try { this.socket.end(); } catch {}
   }
 
-  finishWithError(err) {
+  finishWithError(err: any): void {
     this.closed = true;
     const waiters = this.waiters.splice(0);
     waiters.forEach(({ reject }) => reject(err));
   }
 
-  finishWithClose() {
+  finishWithClose(): void {
     this.closed = true;
     const waiters = this.waiters.splice(0);
     waiters.forEach(({ resolve }) => resolve({ type: 'close' }));
   }
 
-  enqueue(message) {
+  enqueue(message: any): void {
     const waiter = this.waiters.shift();
     if (waiter) {
       waiter.resolve(message);
@@ -406,7 +416,7 @@ class MinimalWssClient {
     this.queue.push(message);
   }
 
-  receive(timeoutMs = 30000) {
+  receive(timeoutMs: number = 30000): Promise<any> {
     if (this.queue.length > 0) return Promise.resolve(this.queue.shift());
     if (this.closed) return Promise.resolve({ type: 'close' });
     return new Promise((resolve, reject) => {
@@ -416,11 +426,11 @@ class MinimalWssClient {
         reject(new Error('等待豆包 ASR 响应超时'));
       }, timeoutMs);
       this.waiters.push({
-        resolve: (value) => {
+        resolve: (value: any) => {
           clearTimeout(timer);
           resolve(value);
         },
-        reject: (err) => {
+        reject: (err: any) => {
           clearTimeout(timer);
           reject(err);
         },
@@ -428,7 +438,7 @@ class MinimalWssClient {
     });
   }
 
-  parseAvailableFrames() {
+  parseAvailableFrames(): void {
     while (this.buffer.length >= 2) {
       const first = this.buffer[0];
       const second = this.buffer[1];
@@ -491,7 +501,7 @@ class MinimalWssClient {
   }
 }
 
-function runFfmpeg(inputPath, outputPath) {
+function runFfmpeg(inputPath: string, outputPath: string): Promise<void> {
   const ffmpeg = process.env.FFMPEG_BIN || 'ffmpeg';
   const args = [
     '-hide_banner',
@@ -508,21 +518,21 @@ function runFfmpeg(inputPath, outputPath) {
   ];
 
   return new Promise((resolve, reject) => {
-    const child = spawn(ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const child: any = spawn(ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
       reject(new Error('录音转码超时'));
     }, 90000);
-    child.stderr.on('data', (chunk) => {
+    child.stderr.on('data', (chunk: any) => {
       stderr += chunk.toString('utf8');
       if (stderr.length > 4000) stderr = stderr.slice(-4000);
     });
-    child.on('error', (err) => {
+    child.on('error', (err: any) => {
       clearTimeout(timer);
       reject(new Error(`启动 ffmpeg 失败: ${err.message}`));
     });
-    child.on('close', (code) => {
+    child.on('close', (code: any) => {
       clearTimeout(timer);
       if (code === 0) {
         resolve();
@@ -533,7 +543,7 @@ function runFfmpeg(inputPath, outputPath) {
   });
 }
 
-async function normalizeAudioToPcm(inputPath) {
+async function normalizeAudioToPcm(inputPath: string): Promise<Buffer> {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mobius-asr-pcm-'));
   const outputPath = path.join(tempDir, 'audio.pcm');
   try {
@@ -551,7 +561,7 @@ async function normalizeAudioToPcm(inputPath) {
   }
 }
 
-async function transcribePcm(pcm, opts = {}) {
+async function transcribePcm(pcm: Buffer, opts: any = {}): Promise<any> {
   const credentials = opts.credentials || resolveCredentials();
   if (!credentials.appId || !credentials.accessToken) {
     throw new AsrError('豆包 ASR 未配置，请在管理中心 → 管理员小莫配置 中设置 ASR 凭证。', {
@@ -569,7 +579,7 @@ async function transcribePcm(pcm, opts = {}) {
     'X-Api-Connect-Id': crypto.randomUUID(),
   };
   const ws = await MinimalWssClient.connect(credentials.endpoint, headers);
-  const texts = [];
+  const texts: string[] = [];
   try {
     let seq = 1;
     ws.sendBinary(fullRequest(seq));
@@ -623,7 +633,7 @@ async function transcribePcm(pcm, opts = {}) {
   };
 }
 
-async function transcribeAudioFile(filePath, opts = {}) {
+async function transcribeAudioFile(filePath: string, opts: any = {}): Promise<any> {
   try {
     const pcm = await normalizeAudioToPcm(filePath);
     return await transcribePcm(pcm, opts);
@@ -632,17 +642,17 @@ async function transcribeAudioFile(filePath, opts = {}) {
   }
 }
 
-async function transcribePcmWithCredentials(pcm, credentials) {
+async function transcribePcmWithCredentials(pcm: Buffer, credentials: any): Promise<any> {
   return transcribePcm(pcm, { credentials });
 }
 
-function safeUploadExtension(file) {
+function safeUploadExtension(file: any): string {
   const raw = String(file?.originalname || '');
   const ext = path.extname(raw).replace(/[^A-Za-z0-9.]/g, '').slice(0, 16);
   return ext || '.webm';
 }
 
-async function transcribeBrowserAudio({ user, file }) {
+async function transcribeBrowserAudio({ user, file }: any): Promise<any> {
   if (!file || !Buffer.isBuffer(file.buffer) || file.buffer.length === 0) {
     throw new AsrError('录音内容为空，请重新录制一段清晰语音。', {
       code: 'ASR_AUDIO_EMPTY',
@@ -666,7 +676,7 @@ async function transcribeBrowserAudio({ user, file }) {
   }
 }
 
-module.exports = {
+export {
   AsrError,
   isDoubaoAsrConfigured,
   normalizeAudioToPcm,

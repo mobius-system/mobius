@@ -18,12 +18,12 @@
  * 跨用户 / 跨项目复制: listAll() 枚举全平台 user/project 级 skill 作为可复制目录,
  * copyToScope() 把任意一条整目录快照复制到调用者的用户级或某项目级.
  */
-const fs = require('fs');
-const path = require('path');
-const { spawn } = require('child_process');
-const { parseFrontmatter } = require('./skill-loader');
-const { CORE_DATA_PATH } = require('../config');
-const {
+import * as fs from 'fs';
+import * as path from 'path';
+import { spawn } from 'child_process';
+import { parseFrontmatter } from './skill-loader';
+import { CORE_DATA_PATH } from '../config';
+import {
   MAX_SKILL_UPLOAD_BYTES,
   checkFileSize,
   detectArchiveKind,
@@ -33,7 +33,7 @@ const {
   removeIfExists,
   safeResolveUnder,
   stripArchiveOrMarkdownExtension,
-} = require('./context-import-utils');
+} from './context-import-utils';
 
 // CORE_DATA_PATH/skills/ stores user-installed skills outside application code.
 const ROOT = path.join(CORE_DATA_PATH, 'skills');
@@ -44,21 +44,21 @@ const BUILTIN_ROOT = path.resolve(__dirname, '..', '..', '..', 'skills');
 const SKILL_SUBDIR = path.join('.claude', 'skills');
 
 // `cwd` = 跑 npx 的目录; `skillsHome` = 该 cwd 下实际容纳 SKILL.md 的目录.
-function userDefaultCwd(userId) { return path.join(ROOT, `user=${userId}`, 'default_project'); }
-function userProjectCwd(userId, projectId) { return path.join(ROOT, `user=${userId}`, `project=${projectId}`); }
-function userDefaultDir(userId) { return path.join(userDefaultCwd(userId), SKILL_SUBDIR); }
-function userProjectDir(userId, projectId) { return path.join(userProjectCwd(userId, projectId), SKILL_SUBDIR); }
+function userDefaultCwd(userId: any): string { return path.join(ROOT, `user=${userId}`, 'default_project'); }
+function userProjectCwd(userId: any, projectId: any): string { return path.join(ROOT, `user=${userId}`, `project=${projectId}`); }
+function userDefaultDir(userId: any): string { return path.join(userDefaultCwd(userId), SKILL_SUBDIR); }
+function userProjectDir(userId: any, projectId: any): string { return path.join(userProjectCwd(userId, projectId), SKILL_SUBDIR); }
 
-function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); }
+function ensureDir(p: string): void { fs.mkdirSync(p, { recursive: true }); }
 
-function listSkillDirs(dir) {
+function listSkillDirs(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir, { withFileTypes: true })
     .filter(e => e.isDirectory())
     .map(e => path.join(dir, e.name));
 }
 
-function readSkillFromDir(dir) {
+function readSkillFromDir(dir: string): any {
   const skillMd = path.join(dir, 'SKILL.md');
   if (!fs.existsSync(skillMd)) return null;
   let body = '';
@@ -79,11 +79,11 @@ function readSkillFromDir(dir) {
   };
 }
 
-function encodeUserId(userId, dirName) { return `user:${userId}:${dirName}`; }
-function encodeProjectId(userId, projectId, dirName) { return `project:${userId}:${projectId}:${dirName}`; }
-function encodeBuiltinId(dirName) { return `builtin:${dirName}`; }
+function encodeUserId(userId: any, dirName: string): string { return `user:${userId}:${dirName}`; }
+function encodeProjectId(userId: any, projectId: any, dirName: string): string { return `project:${userId}:${projectId}:${dirName}`; }
+function encodeBuiltinId(dirName: string): string { return `builtin:${dirName}`; }
 
-function parseSkillId(id) {
+function parseSkillId(id: any): any {
   if (typeof id !== 'string') return null;
   const parts = id.split(':');
   if (parts[0] === 'builtin' && parts.length >= 2) {
@@ -98,7 +98,7 @@ function parseSkillId(id) {
   return null;
 }
 
-function shapeUser(sk, userId) {
+function shapeUser(sk: any, userId: any): any {
   return {
     id: encodeUserId(userId, sk.dirName),
     scope: 'user',
@@ -112,7 +112,7 @@ function shapeUser(sk, userId) {
     updated_at: sk.updated_at,
   };
 }
-function shapeProject(sk, userId, projectId) {
+function shapeProject(sk: any, userId: any, projectId: any): any {
   return {
     id: encodeProjectId(userId, projectId, sk.dirName),
     scope: 'project',
@@ -126,7 +126,7 @@ function shapeProject(sk, userId, projectId) {
     updated_at: sk.updated_at,
   };
 }
-function shapeBuiltin(sk) {
+function shapeBuiltin(sk: any): any {
   return {
     id: encodeBuiltinId(sk.dirName),
     scope: 'builtin',
@@ -142,7 +142,7 @@ function shapeBuiltin(sk) {
   };
 }
 
-function listForUser(userId) {
+function listForUser(userId: any): any[] {
   return listSkillDirs(userDefaultDir(userId))
     .map(d => readSkillFromDir(d))
     .filter(Boolean)
@@ -150,7 +150,7 @@ function listForUser(userId) {
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
-function listForProject(projectId) {
+function listForProject(projectId: any): any[] {
   if (!fs.existsSync(ROOT)) return [];
   const userDirs = fs.readdirSync(ROOT, { withFileTypes: true })
     .filter(e => e.isDirectory() && e.name.startsWith('user='));
@@ -168,11 +168,11 @@ function listForProject(projectId) {
 
 // resolver 期望按 scope DESC 排序 (user 在前, 同名时保留 user 版本).
 // 两层注入: user (个人优先) → project (项目专属).
-function listForIssue(userId, projectId) {
+function listForIssue(userId: any, projectId: any): any[] {
   return [...listForUser(userId), ...listForProject(projectId)];
 }
 
-function listBuiltin() {
+function listBuiltin(): any[] {
   return listSkillDirs(BUILTIN_ROOT)
     .map(d => readSkillFromDir(d))
     .filter(Boolean)
@@ -182,7 +182,7 @@ function listBuiltin() {
 
 // 全平台所有用户级 + 项目级 skill, 用于「从其他用户/项目复制」目录浏览.
 // 不做去重 / 不做权限过滤 — 调用方(路由)决定展示与排除规则.
-function listAll() {
+function listAll(): any[] {
   if (!fs.existsSync(ROOT)) return [];
   const out = [];
   for (const ud of fs.readdirSync(ROOT, { withFileTypes: true })) {
@@ -205,7 +205,7 @@ function listAll() {
   return out.sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
-function findById(id) {
+function findById(id: any): any {
   const parsed = parseSkillId(id);
   if (!parsed) return null;
   if (parsed.scope === 'builtin') {
@@ -225,7 +225,7 @@ function findById(id) {
 
 // 反推一个 skill id 对应的源目录 (含 SKILL.md 与资源文件).
 // 不校验目录是否存在, 调用方按需 fs.existsSync 检查.
-function getSourceDir(id) {
+function getSourceDir(id: any): string | null {
   const parsed = parseSkillId(id);
   if (!parsed) return null;
   if (parsed.scope === 'builtin') {
@@ -245,7 +245,7 @@ function getSourceDir(id) {
 //   - 目标位置已有同 dirName 直接拒绝, 不静默覆盖.
 //   - 路径必须在 ROOT 下, 防 ../ 越权.
 // 返回 { ok, skill?: 新 shape (含新 id), error? }.
-function moveSkill({ id, requesterUserId, isAdmin, targetScope, targetProjectId }) {
+function moveSkill({ id, requesterUserId, isAdmin, targetScope, targetProjectId }: any): any {
   const parsed = parseSkillId(id);
   if (!parsed) return { ok: false, error: 'id 非法' };
   if (!isAdmin && parsed.userId !== requesterUserId) {
@@ -297,7 +297,7 @@ function moveSkill({ id, requesterUserId, isAdmin, targetScope, targetProjectId 
 // 把任意一条 user/project 级 skill 整目录快照复制到调用者的用户级或某项目级.
 // 快照模式: 复制后两边独立, 源后续修改不影响副本.
 // 约束: 目标已有同 dirName 直接拒绝; 路径必须在 ROOT 下.
-function copyToScope({ sourceId, targetUserId, targetProjectId }) {
+function copyToScope({ sourceId, targetUserId, targetProjectId }: any): any {
   const parsed = parseSkillId(sourceId);
   if (!parsed) return { ok: false, error: 'source id 非法' };
   const srcDir = getSourceDir(sourceId);
@@ -333,7 +333,7 @@ function copyToScope({ sourceId, targetUserId, targetProjectId }) {
 }
 
 // 目录名安全化: 去掉路径分隔符与 .. , 仅保留常见文件名字符.
-function sanitizeDirName(name) {
+function sanitizeDirName(name: any): string {
   return String(name || '')
     .trim()
     .replace(/[/\\]/g, '')
@@ -342,22 +342,22 @@ function sanitizeDirName(name) {
     .replace(/^-+|-+$/g, '');
 }
 
-function listChildDirs(dir) {
+function listChildDirs(dir: string): string[] {
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return [];
   return fs.readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => path.join(dir, entry.name));
 }
 
-function hasSkillMd(dir) {
+function hasSkillMd(dir: string): boolean {
   return fs.existsSync(path.join(dir, 'SKILL.md'));
 }
 
-function directSkillChildDirs(dir) {
+function directSkillChildDirs(dir: string): string[] {
   return listChildDirs(dir).filter((child) => hasSkillMd(child));
 }
 
-function preferredSkillImportSource(root) {
+function preferredSkillImportSource(root: string): string {
   if (hasSkillMd(root) || directSkillChildDirs(root).length > 0) return root;
 
   const skillsDir = path.join(root, 'skills');
@@ -377,7 +377,7 @@ function preferredSkillImportSource(root) {
   return root;
 }
 
-function materializeMarkdownSkillSource(filePath, stagingRoot) {
+function materializeMarkdownSkillSource(filePath: string, stagingRoot: string): any {
   const content = fs.readFileSync(filePath, 'utf8');
   const parsed = parseFrontmatter(content);
   const dirName = sanitizeDirName(parsed.meta?.name || stripArchiveOrMarkdownExtension(filePath) || 'local-skill');
@@ -389,7 +389,7 @@ function materializeMarkdownSkillSource(filePath, stagingRoot) {
   return { ok: true, sourceDir };
 }
 
-function importFromResolvedSource({ userId, projectId, sourcePath }) {
+function importFromResolvedSource({ userId, projectId, sourcePath }: any): any {
   let src = path.resolve(sourcePath);
   let stat;
   try { stat = fs.statSync(src); } catch (e) { return { ok: false, error: `无法访问该路径: ${e.message}` }; }
@@ -465,7 +465,7 @@ function importFromResolvedSource({ userId, projectId, sourcePath }) {
 //   - 含多个 <子目录>/SKILL.md 的父目录     → 批量导入其下全部 skill
 // 复制为快照 (与源解耦, 源后续改动不影响副本), 落到调用者用户级或某项目级.
 // 目标已存在同名 dirName 的逐个跳过 (不静默覆盖), 返回 { ok, skills, skipped }.
-function importFromLocalPath({ userId, projectId, sourcePath }) {
+function importFromLocalPath({ userId, projectId, sourcePath }: any): any {
   if (typeof sourcePath !== 'string' || !sourcePath.trim()) {
     return { ok: false, error: '请输入 skill 的服务器绝对路径' };
   }
@@ -519,7 +519,7 @@ function importFromLocalPath({ userId, projectId, sourcePath }) {
   }
 }
 
-function deleteById(id) {
+function deleteById(id: any): boolean {
   const parsed = parseSkillId(id);
   if (!parsed) return false;
   let dir;
@@ -534,7 +534,7 @@ function deleteById(id) {
   return true;
 }
 
-function deleteForProject(projectId) {
+function deleteForProject(projectId: any): number {
   if (!projectId || !fs.existsSync(ROOT)) return 0;
   let count = 0;
   const rootResolved = path.resolve(ROOT) + path.sep;
@@ -551,18 +551,18 @@ function deleteForProject(projectId) {
 }
 
 // npx 包名/标识符放宽到常见 npm 字符集. 不允许 .. 或前导斜杠.
-function isSafeSkillName(name) {
+function isSafeSkillName(name: any): boolean {
   if (typeof name !== 'string') return false;
   if (!name || name.includes('..')) return false;
   return /^[A-Za-z0-9._@/-]+$/.test(name);
 }
 
-function runNpxSkillsAdd(targetDir, skillName) {
+function runNpxSkillsAdd(targetDir: string, skillName: string): Promise<any> {
   // --agent claude-code 指定只装到 .claude/skills/, --yes 跳过交互确认.
   // 不带 --agent 时 CLI 默认走 Universal (.agents/skills/), 不符合我们的扫描位置.
   // IMAC_SKILLS_PROXY 存在时为 npx 子进程注入 http(s)_proxy.
   // 通过 NO_PROXY 让 npm registry (npmmirror / npmjs.org) 直连, 只让 git clone github.com 走代理.
-  const childEnv = { ...process.env };
+  const childEnv: any = { ...process.env };
   const proxyRaw = process.env.IMAC_SKILLS_PROXY;
   const proxy = proxyRaw && !/^(disabled|off|none|false)$/i.test(proxyRaw) ? proxyRaw : '';
   if (proxy) {
@@ -576,24 +576,24 @@ function runNpxSkillsAdd(targetDir, skillName) {
     childEnv.NO_PROXY = noProxy;
   }
   return new Promise((resolve) => {
-    const proc = spawn('npx', ['--yes', 'skills', 'add', skillName, '--agent', 'claude-code', '--yes'], {
+    const proc: any = spawn('npx', ['--yes', 'skills', 'add', skillName, '--agent', 'claude-code', '--yes'], {
       cwd: targetDir, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '', stderr = '';
-    proc.stdout.on('data', d => { stdout += d.toString(); });
-    proc.stderr.on('data', d => { stderr += d.toString(); });
-    proc.on('error', err => resolve({ ok: false, code: -1, stdout, stderr: stderr + '\n' + err.message }));
-    proc.on('close', code => resolve({ ok: code === 0, code, stdout, stderr }));
+    proc.stdout.on('data', (d: any) => { stdout += d.toString(); });
+    proc.stderr.on('data', (d: any) => { stderr += d.toString(); });
+    proc.on('error', (err: any) => resolve({ ok: false, code: -1, stdout, stderr: stderr + '\n' + err.message }));
+    proc.on('close', (code: any) => resolve({ ok: code === 0, code, stdout, stderr }));
   });
 }
 
 // 把 URL 中的 user:pass@ 抹掉, 防止代理凭据被回写到 UI 错误信息.
-function redactCreds(s) {
+function redactCreds(s: any): any {
   if (typeof s !== 'string') return s;
   return s.replace(/(https?:\/\/)[^:\s/@]+:[^@\s/]+@/g, '$1***:***@');
 }
 
-async function install({ userId, projectId, skillName }) {
+async function install({ userId, projectId, skillName }: any): Promise<any> {
   if (!isSafeSkillName(skillName)) {
     return { ok: false, error: 'skill 包名包含非法字符 (允许字符: A-Z a-z 0-9 . _ - @ /)' };
   }
@@ -641,7 +641,7 @@ async function install({ userId, projectId, skillName }) {
   return { ok: true, skill: shaped, stdout: result.stdout };
 }
 
-module.exports = {
+export {
   ROOT,
   BUILTIN_ROOT,
   listForUser,
