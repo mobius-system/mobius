@@ -1371,6 +1371,7 @@ function ModelPromptLimitsCard() {
                 })}
               </div>
               <label
+                onMouseDown={e => e.preventDefault()}
                 className="mb-2 flex cursor-pointer items-center justify-between gap-3 rounded-md border px-2 py-1.5"
                 style={{
                   background: useProxy ? 'rgba(16,185,129,0.10)' : 'var(--bg-card)',
@@ -1483,6 +1484,7 @@ function AdminAssistantCallbacksPanel() {
         </div>
       )}
       <label
+        onMouseDown={e => e.preventDefault()}
         className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-3"
         style={{
           background: enabled ? 'rgba(16,185,129,0.10)' : 'var(--input-bg)',
@@ -5724,6 +5726,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                   </span>
                 </div>
                 <label
+                  onMouseDown={e => e.preventDefault()}
                   className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
                   style={{ color: 'var(--text-secondary)' }}
                   title="显示或隐藏已关闭的 Codex / Claude Code 窗口"

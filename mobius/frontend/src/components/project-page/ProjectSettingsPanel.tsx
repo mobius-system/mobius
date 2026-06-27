@@ -1058,7 +1058,7 @@ export function ProjectSettingsPanel({
         {project.kind === 'extension' ? null : (
           <SettingsCard title="拓展功能">
             <div>
-              <label className={`flex items-center gap-3 text-[13px] select-none ${editResearchEnabled || !canManageProject ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`} style={{ color: 'var(--text-primary)' }}>
+              <label onMouseDown={e => e.preventDefault()} className={`flex items-center gap-3 text-[13px] select-none ${editResearchEnabled || !canManageProject ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`} style={{ color: 'var(--text-primary)' }}>
                 <input type="checkbox" checked={!editResearchEnabled && editDefaultUseWorktree}
                   disabled={editResearchEnabled || !canManageProject}
                   onChange={e => setEditDefaultUseWorktree(e.target.checked)}
@@ -1073,7 +1073,7 @@ export function ProjectSettingsPanel({
               </p>
             </div>
             <div className="pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <label className={`flex items-center gap-3 text-[13px] select-none ${canManageProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`} style={{ color: 'var(--text-primary)' }}>
+              <label onMouseDown={e => e.preventDefault()} className={`flex items-center gap-3 text-[13px] select-none ${canManageProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`} style={{ color: 'var(--text-primary)' }}>
                 <input type="checkbox" checked={editResearchEnabled}
                   disabled={!canManageProject}
                   onChange={e => {
@@ -1240,13 +1240,13 @@ export function ProjectSettingsPanel({
                 {PROJECT_VISIBILITY_OPTIONS.find(option => option.value === editVisibility)?.description}
               </p>
               <div className="mt-2 space-y-1.5">
-                <label className={`flex items-center gap-3 text-[12px] select-none ${canManageProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`} style={{ color: 'var(--text-secondary)' }}>
+                <label onMouseDown={e => e.preventDefault()} className={`flex items-center gap-3 text-[12px] select-none ${canManageProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`} style={{ color: 'var(--text-secondary)' }}>
                   <input type="checkbox" checked={editCanPostIssue} disabled={!canManageProject} onChange={e => setEditCanPostIssue(e.target.checked)}
                     className="sr-only" />
                   <SettingsSwitch checked={editCanPostIssue} disabled={!canManageProject} />
                   读者可创建任务单 (private 永远只允许 owner, 不受此开关影响)
                 </label>
-                <label className={`flex items-center gap-3 text-[12px] select-none ${canManageProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`} style={{ color: 'var(--text-secondary)' }}>
+                <label onMouseDown={e => e.preventDefault()} className={`flex items-center gap-3 text-[12px] select-none ${canManageProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`} style={{ color: 'var(--text-secondary)' }}>
                   <input type="checkbox" checked={editCanRunSession} disabled={!canManageProject} onChange={e => setEditCanRunSession(e.target.checked)}
                     className="sr-only" />
                   <SettingsSwitch checked={editCanRunSession} disabled={!canManageProject} />

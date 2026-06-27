@@ -871,7 +871,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             </button>
           </div>
           {projectKind === 'default' && (
-            <label className="flex items-start gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+            <label onMouseDown={e => e.preventDefault()} className="flex items-start gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
               <input type="checkbox" checked={researchEnabled} onChange={e => { setResearchEnabled(e.target.checked); if (e.target.checked) setDefaultUseWorktree(false) }} className="sr-only" />
               <ModalSwitch checked={researchEnabled} />
               <span><span className="font-medium">启用 Research 系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建 Research Agent 团队</span></span>
@@ -883,7 +883,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             </div>
           )}
           {!researchEnabled && (
-            <label className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+            <label onMouseDown={e => e.preventDefault()} className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
               <input type="checkbox" checked={defaultUseWorktree} onChange={e => setDefaultUseWorktree(e.target.checked)} className="sr-only" />
               <ModalSwitch checked={defaultUseWorktree} />
               默认使用 git worktree（新建 Issue 时在绑定路径下开独立工作区）
@@ -1044,7 +1044,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
         </span>
         <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
       </button>
-      <label className="flex items-start gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+      <label onMouseDown={e => e.preventDefault()} className="flex items-start gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
         <input type="checkbox" checked={isPlanning} onChange={e => { setIsPlanning(e.target.checked); setErr('') }} className="sr-only" />
         <ModalSwitch checked={isPlanning} />
         <span>
@@ -1053,7 +1053,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
       </label>
       {!isPlanning && (
         <>
-          <label className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+          <label onMouseDown={e => e.preventDefault()} className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
             <input type="checkbox" checked={useWorktree} onChange={e => { setUseWorktree(e.target.checked); setErr('') }} className="sr-only" />
             <ModalSwitch checked={useWorktree} />
             使用 git worktree（在绑定路径下为本 Issue 开独立工作区）
