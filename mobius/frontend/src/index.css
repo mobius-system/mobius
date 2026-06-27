@@ -804,21 +804,15 @@ body::after {
 .btn-primary:active:not(:disabled) { transform: scale(0.97); }
 .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
 
-/* ===== 顶栏「+」新建按钮: 配色与头像完全一致 + 内容居中 =====
-   头像: bg-gradient-to-br from-blue-500/30 to-cyan-500/20, text-blue-300, border-blue-500/20.
-   此触发按钮复用同一套色值 (背景渐变 / 描边 / 文字色 全部对齐头像), 与头像一样不随主题变,
-   视觉完全一致. flex 居中内容. 仅作用于该触发按钮, 不影响全局 .btn-primary. */
+/* ===== 顶栏「+」新建按钮: 仅保留基础布局, 配色交给标准 chrome =====
+   .mobius-create-trigger 只负责 flex 居中 + 点击缩放微交互;
+   实际配色 (描边 / hover 背景 / 文字色) 由 global-create.tsx 里的 Tailwind class
+   + inline style 提供, 与右侧帮助 / 主题切换按钮保持一致. */
 .mobius-create-trigger {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.30) 0%, rgba(6, 182, 212, 0.20) 100%);
-  color: #93c5fd;                                 /* blue-300, 同头像文字色 */
-  border: 1px solid rgba(59, 130, 246, 0.20);     /* border-blue-500/20, 同头像描边 */
-  transition: background 120ms ease, transform 80ms ease, opacity 120ms ease;
-}
-.mobius-create-trigger:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.45) 0%, rgba(6, 182, 212, 0.32) 100%);
+  transition: background 120ms ease, transform 80ms ease, opacity 120ms ease, border-color 120ms ease;
 }
 .mobius-create-trigger:active:not(:disabled) { transform: scale(0.97); }
 .mobius-create-trigger:disabled { opacity: 0.5; cursor: not-allowed; }
