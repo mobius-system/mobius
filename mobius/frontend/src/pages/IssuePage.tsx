@@ -275,29 +275,28 @@ export default function IssuePage() {
             )}
           </div>
 
-          {/* Sessions 标题 + 新建按钮 */}
-          <div className="px-3 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
-            <div className="mb-2 flex items-center justify-between px-1">
+          {/* Sessions 标题 + 新建按钮（同一行） */}
+          <div className="px-3 py-2.5 border-b flex items-center justify-between gap-2"
+               style={{ borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center gap-2 min-w-0">
               <button onClick={goToOverview}
-                className="text-[12px] font-semibold hover:text-blue-400 transition-colors"
+                className="text-[12px] font-semibold hover:text-blue-400 transition-colors flex-shrink-0"
                 style={{ color: 'var(--text-muted)' }}
                 title="返回Session列表">
                 Sessions
               </button>
-              <span className="rounded-full border px-2 py-0.5 text-[10px] font-medium"
+              <span className="rounded-full border px-2 py-0.5 text-[10px] font-medium flex-shrink-0"
                 style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
                 {sessions.length} 个
               </span>
             </div>
             <button onClick={() => setShowNewSession(true)} title="新建Session"
               data-tour="issue-sidebar-new-session"
-              className="btn-primary group flex h-11 w-full items-center justify-between rounded-xl px-3 text-[13px] font-semibold shadow-lg shadow-black/10 transition-all">
-              <span className="flex min-w-0 items-center gap-2">
-                <MessageSquarePlus className="h-4 w-4 flex-shrink-0" strokeWidth={2} />
-                <span className="truncate">新建 Session</span>
-              </span>
-              <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-current/10">
-                <Sparkles className="h-3 w-3" strokeWidth={2} />
+              className="btn-primary group flex h-8 flex-shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-semibold shadow-md shadow-black/10 transition-all">
+              <MessageSquarePlus className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} />
+              <span className="whitespace-nowrap">新建 Session</span>
+              <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-current/10">
+                <Sparkles className="h-2.5 w-2.5" strokeWidth={2} />
               </span>
             </button>
           </div>
