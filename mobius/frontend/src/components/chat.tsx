@@ -1458,6 +1458,9 @@ export function ChatArea() {
   const [backendFailedAt, setBackendFailedAt] = useState('')
   const [backendPid, setBackendPid] = useState<number | null>(null)
   const [pendingSendAt, setPendingSendAt] = useState<number | null>(null)
+  // 终止乐观更新抑制窗: 点"终止"后 ~3s 内忽略轮询回写, 让 isAlive/isWorking/agent_status
+  // 立即落定为"空闲". 否则软停 (C-c × 3) 期间下一个 2s 轮询仍读到 alive=true, 会把状态弹回"执行中".
+  const stopSuppressedUntilRef = useRef<number>(0)
   // 发送阶段提示: 自发送瞬间起计时, 按耗时显示黄字阶段 (正在发送 / 正在唤醒中 / 唤醒超时).
   // pendingSendAt 与 messageSubmitting 全部解除 (发送按钮恢复) 时置回 null, 还原原提示.
   const [sendingHint, setSendingHint] = useState<string | null>(null)
@@ -1509,6 +1512,7 @@ export function ChatArea() {
   }, [sessionId, backendJobFailed])
 
   useEffect(() => {
+    stopSuppressedUntilRef.current = 0
     if (!sessionId) { setBackendAlive(null); setBackendWorking(null); setBackendJobDone(null); setBackendJobFailed(null); setBackendFailedReason(''); setBackendFailedAt(''); setBackendPid(null); setBackendWorktreeIgnored(false); return }
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -1529,15 +1533,18 @@ export function ChatArea() {
       try {
         const r = await api(`/api/sessions/${sessionId}/status`)
         if (cancelled) return
-        setBackendAlive(!!r?.alive)
-        setBackendWorking(!!r?.working)
+        // 终止乐观更新: 抑制窗内忽略后端回写, 强制 空闲 (alive/working=false),
+        // 避免软停 (C-c × 3) 期间后端仍报 alive=true 把状态弹回"执行中".
+        const suppressed = Date.now() < stopSuppressedUntilRef.current
+        setBackendAlive(suppressed ? false : !!r?.alive)
+        setBackendWorking(suppressed ? false : !!r?.working)
         setBackendJobDone(typeof r?.job_accomplished === 'boolean' ? r.job_accomplished : null)
         setBackendJobFailed(typeof r?.failed === 'boolean' ? r.failed : null)
         setBackendFailedReason(typeof r?.failed_reason === 'string' ? r.failed_reason : '')
         setBackendFailedAt(typeof r?.failed_at === 'string' ? r.failed_at : '')
         setBackendWorktreeIgnored(!!r?.worktree_ignored)
         setBackendPid(r?.pid ?? null)
-        const liveAgentStatus = runtimeStatusForSessionList(r)
+        const liveAgentStatus = suppressed ? 'idle' : runtimeStatusForSessionList(r)
         const store = useStore.getState()
         const selectedSession = store.currentSession
         if (selectedSession?.session_id === sessionId && selectedSession.agent_status !== liveAgentStatus) {
@@ -2725,6 +2732,29 @@ export function ChatArea() {
       stopFeedbackTimerRef.current = null
     }, 1800)
     setPendingSendAt(null)
+    // 乐观更新: 立即落定为"空闲" (isWorking=false, isAlive=false), 不等 2s 轮询.
+    // 同步把列表/标题用的 agent_status 也置 idle, 抑制窗 (3s) 内忽略轮询回写, 避免软停期间被弹回.
+    stopSuppressedUntilRef.current = Date.now() + 3000
+    setBackendAlive(false)
+    setBackendWorking(false)
+    const store = useStore.getState()
+    const sel = store.currentSession
+    if (sel?.session_id === sessionId && sel.agent_status !== 'idle') {
+      store.setCurrentSession({ ...sel, agent_status: 'idle' })
+    }
+    const task = store.currentTask as any
+    if (task?.task_id === sessionId && task.agent_status !== 'idle') {
+      store.setCurrentTask({ ...task, agent_status: 'idle' })
+    }
+    const listKey = (sel as any)?.issue_id || (sel as any)?.research_id || currentIssueId
+    if (listKey) {
+      const list = store.sessionsMap[listKey] || []
+      if (list.some((s: any) => s.session_id === sessionId && s.agent_status !== 'idle')) {
+        store.setSessionsMap(listKey, list.map((s: any) => (
+          s.session_id === sessionId ? { ...s, agent_status: 'idle' } : s
+        )))
+      }
+    }
     api(`/api/sessions/${sessionId}/stop`, { method: 'POST' })
       .then(() => {
         setTyping(false)
@@ -2735,7 +2765,7 @@ export function ChatArea() {
         setLastSendError(e?.message || '终止失败')
         setStopFeedbackActive(false)
       })
-  }, [sessionId, setTyping, setStreamContent])
+  }, [sessionId, setTyping, setStreamContent, currentIssueId])
 
   if (!currentSession && !currentTask) return (
     <div className="flex-1 flex items-center justify-center" style={{ background: 'var(--bg-secondary)' }}>
