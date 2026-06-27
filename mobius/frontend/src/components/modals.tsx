@@ -1442,9 +1442,10 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
             </div>
           )}
 
-          <label className="flex items-start gap-2 text-[13px] leading-5 cursor-pointer select-none" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
+          <label className="flex items-start gap-3 text-[13px] leading-5 cursor-pointer select-none" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
             <input type="checkbox" checked={isPlanning} onChange={e => { setIsPlanning(e.target.checked); setErr('') }}
-              className="w-4 h-4 mt-0.5 accent-blue-500 cursor-pointer flex-shrink-0" />
+              className="sr-only" />
+            <ModalSwitch checked={isPlanning} />
             <span>
               <span className="font-medium">系统宏观规划模式</span>
               <span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -1454,9 +1455,10 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
           </label>
 
           {!isPlanning && (
-            <label className="flex items-start gap-2 text-[13px] leading-5 cursor-pointer select-none" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
+            <label className="flex items-start gap-3 text-[13px] leading-5 cursor-pointer select-none" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
               <input type="checkbox" checked={createFirstSession} onChange={e => { setCreateFirstSession(e.target.checked); setErr('') }}
-                className="w-4 h-4 mt-0.5 accent-blue-500 cursor-pointer flex-shrink-0" />
+                className="sr-only" />
+              <ModalSwitch checked={createFirstSession} />
               <span>立即创建第一个 Session（创建后自动打开新 Session 菜单）</span>
             </label>
           )}

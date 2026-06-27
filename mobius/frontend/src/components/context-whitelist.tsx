@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../store'
+import { ModalSwitch } from './modals'
 
 type ContextItem = {
   id: string
@@ -73,13 +74,14 @@ function WhitelistGroup({
   return (
     <div className="rounded-lg border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-primary)' }}>
       <div className="flex items-center gap-2 mb-2">
-        <label className="flex items-center gap-2 text-[13px] cursor-pointer select-none" style={{ color: 'var(--text-primary)' }}>
+        <label className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: 'var(--text-primary)' }}>
           <input type="checkbox" checked={enabled} onChange={e => {
             const nextEnabled = e.target.checked
             onEnabledChange(nextEnabled)
             if (nextEnabled && selected.size === 0) setAll()
           }}
-            className="w-4 h-4 accent-blue-500 cursor-pointer" />
+            className="sr-only" />
+          <ModalSwitch checked={enabled} />
           {title}
         </label>
         <span className="ml-auto text-[11px]" style={{ color: 'var(--text-muted)' }}>
