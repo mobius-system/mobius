@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
+import { Plus } from 'lucide-react'
 import { AdditiveBlending, DoubleSide, RepeatWrapping, SRGBColorSpace } from 'three/src/constants.js'
 import { AmbientLight } from 'three/src/lights/AmbientLight.js'
 import { DirectionalLight } from 'three/src/lights/DirectionalLight.js'
@@ -95,6 +96,7 @@ type SceneProps = {
   avatarKind?: AvatarKind
   canAdd?: boolean
   onAdd?: () => void
+  addDisabled?: boolean
 }
 
 type SceneTarget = {
@@ -1382,7 +1384,7 @@ function makeAddNode(theme: SceneProps['theme']) {
   return { group, clickable }
 }
 
-export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sceneKind, avatarKind = 'robot', canAdd = false, onAdd }: SceneProps) {
+export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sceneKind, avatarKind = 'robot', canAdd = false, onAdd, addDisabled = false }: SceneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<WebGLRenderer | null>(null)
   const sceneRef = useRef<Scene | null>(null)
@@ -1630,6 +1632,15 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
         <div className="absolute inset-0 flex items-center justify-center text-[13px]" style={{ color: 'var(--text-muted)' }}>
           暂无 Agent
         </div>
+      )}
+      {onAdd && (
+        <button type="button" onClick={onAdd} disabled={addDisabled}
+          title={addDisabled ? '已达团队上限' : '添加 Agent'}
+          className="absolute bottom-3 left-1/2 inline-flex h-9 -translate-x-1/2 items-center gap-1.5 rounded-full border px-4 text-[13px] font-medium shadow-lg backdrop-blur-sm transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+          style={{ borderColor: 'rgba(16,185,129,0.55)', background: theme === 'dark' ? 'rgba(16,185,129,0.18)' : 'rgba(16,185,129,0.95)', color: theme === 'dark' ? '#34d399' : '#ffffff' }}>
+          <Plus className="h-4 w-4" strokeWidth={2.2} />
+          添加 Agent
+        </button>
       )}
     </div>
   )

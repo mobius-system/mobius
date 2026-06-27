@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, Loader2, Lock, Rocket, Trash2, Users, X, Sparkles, Layers, Plus } from 'lucide-react'
+import { CheckCircle2, Loader2, Lock, Rocket, Trash2, Users, X, Sparkles, Layers } from 'lucide-react'
 import { api, useStore } from '../store'
 import { ErrBanner } from './modals'
 import { SCENE_KIND_OPTIONS, AVATAR_KIND_OPTIONS } from './research-agent-team-scene'
@@ -734,14 +734,6 @@ export function ResearchAgentTeamModal({
                     </button>
                   )
                 })}
-                {/* HUD 添加入口: 不在 3D 场景里, 放在 Tab 栏末尾的按钮 */}
-                <button type="button" onClick={addAssistant} disabled={submitting || agents.length >= MAX_TEAM_SIZE}
-                  title={agents.length >= MAX_TEAM_SIZE ? `团队上限 ${MAX_TEAM_SIZE} 个 Agent` : '添加 Agent'}
-                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-dashed px-2.5 text-[12px] transition-colors hover:border-emerald-400/60 hover:text-emerald-500 disabled:opacity-40"
-                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>
-                  <Plus className="h-3.5 w-3.5" strokeWidth={2} />
-                  <span>添加 Agent</span>
-                </button>
               </div>
 
               {/* 选中 Tab 的完整配置面板: 名称/目的/模型/语言/主Skill/Skill/Memory 集中编辑 */}
@@ -845,6 +837,8 @@ export function ResearchAgentTeamModal({
                   theme={theme}
                   sceneKind={sceneKind}
                   avatarKind={avatarKind}
+                  onAdd={addAssistant}
+                  addDisabled={submitting || agents.length >= MAX_TEAM_SIZE}
                 />
               </Suspense>
               <div className="min-h-[96px] rounded-lg border p-3" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
