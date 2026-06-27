@@ -325,7 +325,11 @@ export default function ResearchPage() {
           goToSession(s.session_id)
         }} />}
       {showTeamSession && (
-        <Suspense fallback={<Loading text="正在加载 Agent 团队菜单..." />}>
+        <Suspense fallback={
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm">
+            <div className="rounded-xl border px-5 py-3 text-[13px] shadow-xl" style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>正在加载 Agent 团队菜单...</div>
+          </div>
+        }>
           <ResearchAgentTeamModal
             researchId={researchId}
             existingSessions={sortedSessions}
