@@ -1,33 +1,33 @@
 /**
- * session-context.js — 把 Web 端 ContextPanel 上展示的元数据
+ * session-context.ts — 把 Web 端 ContextPanel 上展示的元数据
  * (用户 / 项目 / Issue / Session / Skill / Memory) 拼成一段可注入到 prompt 的字符串.
  *
  * 仅在 session 首次发消息时注入一次, 后续轮次依赖对话历史.
  * 同一字符串通过 GET /api/sessions/:id/context-preview 暴露给前端预览按钮.
  */
-const { Sessions } = require('../repositories/sessions');
-const { Issues } = require('../repositories/issues');
-const { Researches } = require('../repositories/researches');
-const { Projects } = require('../repositories/projects');
-const { Skills } = require('../repositories/skills');
-const { Memories } = require('../repositories/memories');
-const { PORT } = require('../config');
-const { resolveEffectiveSkills } = require('./skill-resolver');
-const { parseSkillId } = require('./skills-fs');
-const { TARGET_SUBDIR: SKILLS_SUBDIR } = require('./session-skills-sync');
-const { isGitRepoRoot } = require('./workspace');
-const { filterReadableContextItems } = require('./access-control');
-const { isAssistantSession } = require('./assistant-session');
+import { Sessions } from '../repositories/sessions';
+import { Issues } from '../repositories/issues';
+import { Researches } from '../repositories/researches';
+import { Projects } from '../repositories/projects';
+import { Skills } from '../repositories/skills';
+import { Memories } from '../repositories/memories';
+import { PORT } from '../config';
+import { resolveEffectiveSkills } from './skill-resolver';
+import { parseSkillId } from './skills-fs';
+import { TARGET_SUBDIR as SKILLS_SUBDIR } from './session-skills-sync';
+import { isGitRepoRoot } from './workspace';
+import { filterReadableContextItems } from './access-control';
+import { isAssistantSession } from './assistant-session';
 
-const ISSUE_STATUS_LABELS = { active: '开放', in_progress: '进行中', completed: '已解决', open: '开放' };
-const RESEARCH_STATUS_LABELS = { active: '开放', completed: '已完成' };
-const SESSION_STATUS_LABELS = { active: '进行中', archived: '已归档', completed: '已完成' };
-const ISSUE_STATUS_LABELS_EN = { active: 'Open', in_progress: 'In Progress', completed: 'Resolved', open: 'Open' };
-const RESEARCH_STATUS_LABELS_EN = { active: 'Open', completed: 'Completed' };
-const SESSION_STATUS_LABELS_EN = { active: 'In Progress', archived: 'Archived', completed: 'Completed' };
+const ISSUE_STATUS_LABELS: Record<string, string> = { active: '开放', in_progress: '进行中', completed: '已解决', open: '开放' };
+const RESEARCH_STATUS_LABELS: Record<string, string> = { active: '开放', completed: '已完成' };
+const SESSION_STATUS_LABELS: Record<string, string> = { active: '进行中', archived: '已归档', completed: '已完成' };
+const ISSUE_STATUS_LABELS_EN: Record<string, string> = { active: 'Open', in_progress: 'In Progress', completed: 'Resolved', open: 'Open' };
+const RESEARCH_STATUS_LABELS_EN: Record<string, string> = { active: 'Open', completed: 'Completed' };
+const SESSION_STATUS_LABELS_EN: Record<string, string> = { active: 'In Progress', archived: 'Archived', completed: 'Completed' };
 
 // 注入上下文语言归一: 仅 'zh' / 'en', 其余回退中文.
-function normalizeLanguage(value) {
+function normalizeLanguage(value: any): 'zh' | 'en' {
   return value === 'en' ? 'en' : 'zh';
 }
 const RANDOM_EMOJIS = [
@@ -85,7 +85,7 @@ const RANDOM_EMOJIS = [
 ];
 
 // memory scope -> 展示标签; 未列出的 (如 'user') 回退到 '用户级', 与历史行为一致.
-const MEMORY_SCOPE_LABELS = { project: '项目级', builtin: '内置级' };
+const MEMORY_SCOPE_LABELS: Record<string, string> = { project: '项目级', builtin: '内置级' };
 
 // 内置级 memory: 平台自带、与具体用户/项目无关的长期事实, 始终注入 (排在 DB memory 之前).
 const BUILTIN_MEMORIES = [
@@ -105,11 +105,11 @@ const BUILTIN_MEMORIES = [
   },
 ];
 
-function indent(text, prefix = '  ') {
-  return String(text || '').split('\n').map(l => prefix + l).join('\n');
+function indent(text: any, prefix: string = '  '): string {
+  return String(text || '').split('\n').map((l: string) => prefix + l).join('\n');
 }
 
-function shuffled(items) {
+function shuffled<T>(items: T[]): T[] {
   const out = Array.isArray(items) ? [...items] : [];
   for (let i = out.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -123,18 +123,18 @@ function shuffled(items) {
 // 由 formatBody 按 session 的 language 选用. 新增字段时务必同步两版.
 // =====================================================================
 
-function researchBlackboardUrl(researchId) {
+function researchBlackboardUrl(researchId: string): string {
   return `http://localhost:${PORT}/api/research-blackboard/${researchId}`;
 }
 
 // ---------- 中文版 ----------
 
-function zh_add_header(lines) {
+function zh_add_header(lines: string[]): void {
   lines.push('以下信息描述了你正在协助的用户、当前Project、Issue/Research 与 Session.');
   lines.push('');
 }
 
-function zh_add_user_level_info(lines, user) {
+function zh_add_user_level_info(lines: string[], user: any): void {
   if (!user) return;
   lines.push('## 用户');
   lines.push(`- 姓名: ${user.display_name || user.id}`);
@@ -143,7 +143,7 @@ function zh_add_user_level_info(lines, user) {
   lines.push('');
 }
 
-function zh_add_project_level_info(lines, project) {
+function zh_add_project_level_info(lines: string[], project: any): void {
   if (!project) return;
   lines.push('## 项目');
   lines.push(`- 名称: ${project.name}`);
@@ -154,7 +154,7 @@ function zh_add_project_level_info(lines, project) {
   lines.push('');
 }
 
-function zh_add_issue_level_info(lines, issue) {
+function zh_add_issue_level_info(lines: string[], issue: any): void {
   if (!issue) return;
   lines.push('## Issue');
   lines.push(`- 标题: ${issue.title}`);
@@ -166,7 +166,7 @@ function zh_add_issue_level_info(lines, issue) {
   lines.push('');
 }
 
-function zh_add_research_level_info(lines, research) {
+function zh_add_research_level_info(lines: string[], research: any): void {
   if (!research) return;
   lines.push('## Research');
   lines.push(`- ID: ${research.id}`);
@@ -179,7 +179,7 @@ function zh_add_research_level_info(lines, research) {
   lines.push('');
 }
 
-function zh_add_session_level_info(lines, session) {
+function zh_add_session_level_info(lines: string[], session: any): void {
   if (!session) return;
   lines.push('## Session');
   lines.push(`- 名称: ${session.name}`);
@@ -194,7 +194,7 @@ function zh_add_session_level_info(lines, session) {
   lines.push('');
 }
 
-function zh_add_research_blackboard_info(lines, research, session) {
+function zh_add_research_blackboard_info(lines: string[], research: any, session: any): void {
   if (!(research && research.id)) return;
   const url = researchBlackboardUrl(research.id);
   const author = session?.research_role || 'research_assistant';
@@ -219,7 +219,7 @@ function zh_add_research_blackboard_info(lines, research, session) {
   lines.push('');
 }
 
-function zh_add_research_peer_info(lines, peers) {
+function zh_add_research_peer_info(lines: string[], peers: any[]): void {
   if (!Array.isArray(peers) || peers.length === 0) return;
   lines.push('## 已有 Research Sessions');
   for (const p of peers) {
@@ -228,13 +228,13 @@ function zh_add_research_peer_info(lines, peers) {
   lines.push('');
 }
 
-function zh_add_memory_info(lines, memories, project) {
+function zh_add_memory_info(lines: string[], memories: any[], project: any): void {
   const all = shuffled([...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])]);
   if (all.length === 0) return;
   lines.push('## 持久 Memory');
   lines.push('本用户与项目积累的长期事实 / 偏好如下. 视作已知信息.');
   lines.push('');
-  all.forEach((m, idx) => {
+  all.forEach((m: any, idx: number) => {
     lines.push(`### ${m.name}`);
     if (m.description) lines.push(`> ${m.description}`);
     lines.push('');
@@ -251,7 +251,7 @@ function zh_add_memory_info(lines, memories, project) {
   }
 }
 
-function zh_add_skill_info(lines, skills) {
+function zh_add_skill_info(lines: string[], skills: any[]): void {
   if (!skills || skills.length === 0) return;
   lines.push('## 必要 Skill');
   lines.push('以下Skill与当前问题可能有关，在解决问题之前，你必须根据实际需要，有选择性地理解并学习以下skill');
@@ -265,7 +265,7 @@ function zh_add_skill_info(lines, skills) {
   lines.push('');
 }
 
-function zh_add_worktree_info(lines, issue, project, session) {
+function zh_add_worktree_info(lines: string[], issue: any, project: any, session: any): void {
   const wt = (issue && issue.use_worktree && project && project.bind_path)
     ? { root: project.bind_path, branch: issue.worktree_branch }
     : null;
@@ -317,7 +317,7 @@ function zh_add_worktree_info(lines, issue, project, session) {
   lines.push('');
 }
 
-function zh_add_completion_flag_info(lines, session, project) {
+function zh_add_completion_flag_info(lines: string[], session: any, project: any): void {
   if (!(session && session.session_id && session.session_id !== '(待创建)')) return;
   if (isAssistantSession(session)) return;
   const flagRoot = (project && project.bind_path) ? project.bind_path : '.';
@@ -328,13 +328,13 @@ function zh_add_completion_flag_info(lines, session, project) {
 
 // ---------- 英文版 ----------
 
-function en_add_header(lines) {
+function en_add_header(lines: string[]): void {
   lines.push('The following describes the user you are assisting, and the Project, Issue/Research, and Session this work belongs to.');
   lines.push('Use it to calibrate how you address the user and the scope of your work; do not ask for fields already listed here.');
   lines.push('');
 }
 
-function en_add_user_level_info(lines, user) {
+function en_add_user_level_info(lines: string[], user: any): void {
   if (!user) return;
   lines.push('## User');
   lines.push(`- Name: ${user.display_name || user.id}`);
@@ -343,7 +343,7 @@ function en_add_user_level_info(lines, user) {
   lines.push('');
 }
 
-function en_add_project_level_info(lines, project) {
+function en_add_project_level_info(lines: string[], project: any): void {
   if (!project) return;
   lines.push('## Project');
   lines.push(`- Name: ${project.name}`);
@@ -354,7 +354,7 @@ function en_add_project_level_info(lines, project) {
   lines.push('');
 }
 
-function en_add_issue_level_info(lines, issue) {
+function en_add_issue_level_info(lines: string[], issue: any): void {
   if (!issue) return;
   lines.push('## Issue');
   lines.push(`- Title: ${issue.title}`);
@@ -366,7 +366,7 @@ function en_add_issue_level_info(lines, issue) {
   lines.push('');
 }
 
-function en_add_research_level_info(lines, research) {
+function en_add_research_level_info(lines: string[], research: any): void {
   if (!research) return;
   lines.push('## Research');
   lines.push(`- ID: ${research.id}`);
@@ -379,7 +379,7 @@ function en_add_research_level_info(lines, research) {
   lines.push('');
 }
 
-function en_add_session_level_info(lines, session) {
+function en_add_session_level_info(lines: string[], session: any): void {
   if (!session) return;
   lines.push('## Session');
   lines.push(`- Name: ${session.name}`);
@@ -394,7 +394,7 @@ function en_add_session_level_info(lines, session) {
   lines.push('');
 }
 
-function en_add_research_blackboard_info(lines, research, session) {
+function en_add_research_blackboard_info(lines: string[], research: any, session: any): void {
   if (!(research && research.id)) return;
   const url = researchBlackboardUrl(research.id);
   const author = session?.research_role || 'research_assistant';
@@ -419,7 +419,7 @@ function en_add_research_blackboard_info(lines, research, session) {
   lines.push('');
 }
 
-function en_add_research_peer_info(lines, peers) {
+function en_add_research_peer_info(lines: string[], peers: any[]): void {
   if (!Array.isArray(peers) || peers.length === 0) return;
   lines.push('## Existing Research Sessions');
   for (const p of peers) {
@@ -428,13 +428,13 @@ function en_add_research_peer_info(lines, peers) {
   lines.push('');
 }
 
-function en_add_memory_info(lines, memories, project) {
+function en_add_memory_info(lines: string[], memories: any[], project: any): void {
   const all = shuffled([...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])]);
   if (all.length === 0) return;
   lines.push('## Persistent Memory');
   lines.push('Long-term facts / preferences accumulated for this user and project are listed below. Treat them as known information.');
   lines.push('');
-  all.forEach((m, idx) => {
+  all.forEach((m: any, idx: number) => {
     lines.push(`### ${m.name}`);
     if (m.description) lines.push(`> ${m.description}`);
     lines.push('');
@@ -451,7 +451,7 @@ function en_add_memory_info(lines, memories, project) {
   }
 }
 
-function en_add_skill_info(lines, skills) {
+function en_add_skill_info(lines: string[], skills: any[]): void {
   if (!skills || skills.length === 0) return;
   lines.push('## Required Skills');
   lines.push('Before solving the problem, you can read and learn the following skills according to your need.');
@@ -465,7 +465,7 @@ function en_add_skill_info(lines, skills) {
   lines.push('');
 }
 
-function en_add_worktree_info(lines, issue, project, session) {
+function en_add_worktree_info(lines: string[], issue: any, project: any, session: any): void {
   const wt = (issue && issue.use_worktree && project && project.bind_path)
     ? { root: project.bind_path, branch: issue.worktree_branch }
     : null;
@@ -517,7 +517,7 @@ function en_add_worktree_info(lines, issue, project, session) {
   lines.push('');
 }
 
-function en_add_completion_flag_info(lines, session, project) {
+function en_add_completion_flag_info(lines: string[], session: any, project: any): void {
   if (!(session && session.session_id && session.session_id !== '(待创建)')) return;
   if (isAssistantSession(session)) return;
   const flagRoot = (project && project.bind_path) ? project.bind_path : '.';
@@ -526,10 +526,10 @@ function en_add_completion_flag_info(lines, session, project) {
   lines.push(`When the task ultimately succeeds or ultimately fails, you must delete the marker file ${flagPath}. But do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue.`);
 }
 
-function buildRandomEmojiPrefix() {
+function buildRandomEmojiPrefix(): string {
   const emojiCount = Math.random() < 0.5 ? 1 : 2;
   const pool = [...RANDOM_EMOJIS];
-  const picked = [];
+  const picked: string[] = [];
 
   for (let i = 0; i < emojiCount && pool.length > 0; i += 1) {
     const index = Math.floor(Math.random() * pool.length);
@@ -539,7 +539,7 @@ function buildRandomEmojiPrefix() {
   return `${picked.join('')}\n`;
 }
 
-const ADD_FNS = {
+const ADD_FNS: Record<string, any> = {
   zh: {
     header: zh_add_header,
     user: zh_add_user_level_info,
@@ -570,9 +570,9 @@ const ADD_FNS = {
   },
 };
 
-function formatBody({ user, project, issue, research, session, skills, memories, research_peers, language }) {
+function formatBody({ user, project, issue, research, session, skills, memories, research_peers, language }: any): string {
   const fns = ADD_FNS[normalizeLanguage(language)];
-  const lines = [];
+  const lines: string[] = [];
   fns.header(lines);
   fns.user(lines, user);
   fns.project(lines, project);
@@ -588,7 +588,7 @@ function formatBody({ user, project, issue, research, session, skills, memories,
   return `${buildRandomEmojiPrefix()}${lines.join('\n').trimEnd()}`;
 }
 
-function compactSkillForSnapshot(sk) {
+function compactSkillForSnapshot(sk: any): any {
   if (!sk || !sk.id) return null;
   const parsed = parseSkillId(sk.id);
   return {
@@ -602,7 +602,7 @@ function compactSkillForSnapshot(sk) {
   };
 }
 
-function compactMemoryForSnapshot(m) {
+function compactMemoryForSnapshot(m: any): any {
   if (!m || !m.id) return null;
   return {
     id: m.id,
@@ -613,7 +613,7 @@ function compactMemoryForSnapshot(m) {
   };
 }
 
-function normalizeSelectionSnapshot(raw) {
+function normalizeSelectionSnapshot(raw: any): any {
   if (!raw) return null;
   let parsed = raw;
   if (typeof raw === 'string') {
@@ -623,17 +623,17 @@ function normalizeSelectionSnapshot(raw) {
   const skills = Array.isArray(parsed.skills) ? parsed.skills.map(compactSkillForSnapshot).filter(Boolean) : [];
   const memories = Array.isArray(parsed.memories) ? parsed.memories.map(compactMemoryForSnapshot).filter(Boolean) : [];
   const allSkills = Array.isArray(parsed.all_skills)
-    ? parsed.all_skills.map(item => {
+    ? parsed.all_skills.map((item: any) => {
       const sk = compactSkillForSnapshot(item);
       return sk ? { ...sk, enabled: item.enabled !== false } : null;
     }).filter(Boolean)
-    : skills.map(sk => ({ ...sk, enabled: true }));
+    : skills.map((sk: any) => ({ ...sk, enabled: true }));
   const allMemories = Array.isArray(parsed.all_memories)
-    ? parsed.all_memories.map(item => {
+    ? parsed.all_memories.map((item: any) => {
       const memory = compactMemoryForSnapshot(item);
       return memory ? { ...memory, enabled: item.enabled !== false } : null;
     }).filter(Boolean)
-    : memories.map(memory => ({ ...memory, enabled: true }));
+    : memories.map((memory: any) => ({ ...memory, enabled: true }));
   const totals = parsed.totals && typeof parsed.totals === 'object' ? {
     skills: Number.isFinite(Number(parsed.totals.skills)) ? Number(parsed.totals.skills) : skills.length,
     memories: Number.isFinite(Number(parsed.totals.memories)) ? Number(parsed.totals.memories) : memories.length,
@@ -645,12 +645,12 @@ function normalizeSelectionSnapshot(raw) {
     all_skills: allSkills,
     all_memories: allMemories,
     totals,
-    excluded_skill_ids: Array.isArray(parsed.excluded_skill_ids) ? parsed.excluded_skill_ids.filter(x => typeof x === 'string') : [],
-    excluded_memory_ids: Array.isArray(parsed.excluded_memory_ids) ? parsed.excluded_memory_ids.filter(x => typeof x === 'string') : [],
+    excluded_skill_ids: Array.isArray(parsed.excluded_skill_ids) ? parsed.excluded_skill_ids.filter((x: any) => typeof x === 'string') : [],
+    excluded_memory_ids: Array.isArray(parsed.excluded_memory_ids) ? parsed.excluded_memory_ids.filter((x: any) => typeof x === 'string') : [],
   };
 }
 
-function parseJsonObject(raw) {
+function parseJsonObject(raw: any): any {
   if (!raw) return null;
   if (typeof raw === 'object') return raw;
   if (typeof raw !== 'string') return null;
@@ -662,19 +662,19 @@ function parseJsonObject(raw) {
   }
 }
 
-function parseStoredIdArray(raw) {
-  if (Array.isArray(raw)) return raw.filter(x => typeof x === 'string' && x.length > 0);
+function parseStoredIdArray(raw: any): string[] {
+  if (Array.isArray(raw)) return raw.filter((x: any) => typeof x === 'string' && x.length > 0);
   if (typeof raw !== 'string' || raw.length === 0) return [];
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(x => typeof x === 'string' && x.length > 0) : [];
+    return Array.isArray(parsed) ? parsed.filter((x: any) => typeof x === 'string' && x.length > 0) : [];
   } catch {
     return [];
   }
 }
 
-function uniqueAllowedIds(ids, allowedIds) {
-  const out = [];
+function uniqueAllowedIds(ids: any, allowedIds: Set<string> | null): string[] {
+  const out: string[] = [];
   const seen = new Set();
   for (const id of Array.isArray(ids) ? ids : []) {
     if (typeof id !== 'string' || id.length === 0) continue;
@@ -686,21 +686,21 @@ function uniqueAllowedIds(ids, allowedIds) {
   return out;
 }
 
-function buildSelectionSnapshotFromSources(selectedSources, totalSources, excludedSkillIds, excludedMemoryIds) {
+function buildSelectionSnapshotFromSources(selectedSources: any, totalSources: any, excludedSkillIds: any, excludedMemoryIds: any): any {
   const selected = selectedSources || {};
   const total = totalSources || selected;
   const skills = Array.isArray(selected.skills) ? selected.skills.map(compactSkillForSnapshot).filter(Boolean) : [];
   const memories = Array.isArray(selected.memories) ? selected.memories.map(compactMemoryForSnapshot).filter(Boolean) : [];
-  const enabledSkillIds = new Set(skills.map(sk => sk.id));
-  const enabledMemoryIds = new Set(memories.map(memory => memory.id));
+  const enabledSkillIds = new Set(skills.map((sk: any) => sk.id));
+  const enabledMemoryIds = new Set(memories.map((memory: any) => memory.id));
   const allSkills = (Array.isArray(total.skills) ? total.skills : skills)
     .map(compactSkillForSnapshot)
     .filter(Boolean)
-    .map(sk => ({ ...sk, enabled: enabledSkillIds.has(sk.id) }));
+    .map((sk: any) => ({ ...sk, enabled: enabledSkillIds.has(sk.id) }));
   const allMemories = (Array.isArray(total.memories) ? total.memories : memories)
     .map(compactMemoryForSnapshot)
     .filter(Boolean)
-    .map(memory => ({ ...memory, enabled: enabledMemoryIds.has(memory.id) }));
+    .map((memory: any) => ({ ...memory, enabled: enabledMemoryIds.has(memory.id) }));
   return {
     version: 1,
     skills,
@@ -713,7 +713,7 @@ function buildSelectionSnapshotFromSources(selectedSources, totalSources, exclud
   };
 }
 
-function getProjectUserContextWhitelist(projectId, user) {
+function getProjectUserContextWhitelist(projectId: any, user: any): { skill_ids: any; memory_ids: any } {
   if (!projectId || !user?.id) return { skill_ids: null, memory_ids: null };
   try {
     return Projects.getUserContextWhitelist(projectId, user.id);
@@ -723,16 +723,16 @@ function getProjectUserContextWhitelist(projectId, user) {
   }
 }
 
-function filterUserLevelByWhitelist(items, whitelistIds) {
+function filterUserLevelByWhitelist(items: any, whitelistIds: any): any {
   if (!Array.isArray(whitelistIds)) return items;
   const allowed = new Set(whitelistIds);
-  return (Array.isArray(items) ? items : []).filter(item => item.scope !== 'user' || allowed.has(item.id));
+  return (Array.isArray(items) ? items : []).filter((item: any) => item.scope !== 'user' || allowed.has(item.id));
 }
 
-function filterBuiltinByWhitelist(items, whitelistIds) {
+function filterBuiltinByWhitelist(items: any, whitelistIds: any): any {
   if (!Array.isArray(whitelistIds)) return items;
   const allowed = new Set(whitelistIds);
-  return (Array.isArray(items) ? items : []).filter(item => item.scope !== 'builtin' || allowed.has(item.id));
+  return (Array.isArray(items) ? items : []).filter((item: any) => item.scope !== 'builtin' || allowed.has(item.id));
 }
 
 // 把 forcedSkillSet 应用到已通过白名单过滤的 builtinSkills / userProjectSkills.
@@ -740,8 +740,8 @@ function filterBuiltinByWhitelist(items, whitelistIds) {
 // {id, name} 收集到返回数组, 交由前端在 skill 选择界面提示 "必选skill与当前的skill白名单冲突".
 // 否则 (无白名单 或 白名单允许) 保持原有行为: 把必选 skill 补齐到 builtinSkills.
 // 注意: 调用方传入的 builtinSkills 是按引用传递, 本函数会在其上 push 新元素.
-function applyForcedSkills(builtinSkills, userProjectSkills, forcedSkillSet, userWhitelist) {
-  const conflicts = [];
+function applyForcedSkills(builtinSkills: any[], userProjectSkills: any[], forcedSkillSet: Set<string>, userWhitelist: any): any[] {
+  const conflicts: any[] = [];
   const wlBuiltin = userWhitelist ? userWhitelist.builtin_skill_ids : null;
   const wlUser = userWhitelist ? userWhitelist.skill_ids : null;
   for (const id of forcedSkillSet) {
@@ -759,7 +759,7 @@ function applyForcedSkills(builtinSkills, userProjectSkills, forcedSkillSet, use
   return conflicts;
 }
 
-function shapeSkillForContext(s) {
+function shapeSkillForContext(s: any): any {
   const parsed = parseSkillId(s.id);
   return {
     id: s.id,
@@ -772,7 +772,7 @@ function shapeSkillForContext(s) {
   };
 }
 
-function listUserProjectContextSkills(user, projectId) {
+function listUserProjectContextSkills(user: any, projectId: any): any {
   const userWhitelist = getProjectUserContextWhitelist(projectId, user);
   const readable = filterReadableContextItems(
     user,
@@ -782,7 +782,7 @@ function listUserProjectContextSkills(user, projectId) {
   return filterUserLevelByWhitelist(readable, userWhitelist.skill_ids);
 }
 
-function listBuiltinContextSkills(user, projectId) {
+function listBuiltinContextSkills(user: any, projectId: any): any {
   const userWhitelist = getProjectUserContextWhitelist(projectId, user);
   return filterBuiltinByWhitelist(
     Skills.listBuiltin(),
@@ -804,8 +804,8 @@ const PLANNING_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-planner';
 // 强制必选 mobius-self-iter skill, 保证 agent 知道"先 commit 再 python3 start.py"的自迭代协议.
 const SELF_ITER_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-self-iter';
 
-function forcedIssueSkillIds(issue, project) {
-  const ids = new Set();
+function forcedIssueSkillIds(issue: any, project: any): Set<string> {
+  const ids = new Set<string>();
   if (issue?.title === ARCHITECTURE_ISSUE_TITLE) ids.add(ARCHITECTURE_REQUIRED_BUILTIN_SKILL_ID);
   if (issue?.title === ASSISTANT_ISSUE_TITLE) ids.add(ASSISTANT_REQUIRED_BUILTIN_SKILL_ID);
   if (project?.kind === 'extension') ids.add(EXTENSION_REQUIRED_BUILTIN_SKILL_ID);
@@ -814,8 +814,8 @@ function forcedIssueSkillIds(issue, project) {
   return ids;
 }
 
-function forcedResearchSkillIds(project) {
-  const ids = new Set();
+function forcedResearchSkillIds(project: any): Set<string> {
+  const ids = new Set<string>();
   if (project?.kind === 'extension') ids.add(EXTENSION_REQUIRED_BUILTIN_SKILL_ID);
   if (project?.is_self_develop) ids.add(SELF_ITER_REQUIRED_BUILTIN_SKILL_ID);
   return ids;
@@ -823,7 +823,7 @@ function forcedResearchSkillIds(project) {
 
 // 共用部分: 从 issue + project 计算 skill / memory 列表, 不依赖 session.
 // sessionExclusions = { skills: [id...], memories: [id...] } 可选, 在 issue 默认集合上再做减法.
-function gatherIssueSources(user, issue, sessionExclusions) {
+function gatherIssueSources(user: any, issue: any, sessionExclusions: any): any {
   const projectId = issue ? issue.project_id : null;
   const project = projectId ? Projects.findById(projectId) : null;
   const userWhitelist = getProjectUserContextWhitelist(projectId, user);
@@ -840,8 +840,8 @@ function gatherIssueSources(user, issue, sessionExclusions) {
   const exSkillSet = new Set(sessionExclusions && Array.isArray(sessionExclusions.skills) ? sessionExclusions.skills : []);
   const exMemSet = new Set(sessionExclusions && Array.isArray(sessionExclusions.memories) ? sessionExclusions.memories : []);
 
-  let effectiveSkills = [];
-  let forcedSkillConflicts = [];
+  let effectiveSkills: any[] = [];
+  let forcedSkillConflicts: any[] = [];
   if (issue && projectId && user) {
     const userProjectSkills = resolveEffectiveSkills(
       listUserProjectContextSkills(user, projectId),
@@ -856,7 +856,7 @@ function gatherIssueSources(user, issue, sessionExclusions) {
       .map(shapeSkillForContext);
   }
 
-  let effectiveMemories = [];
+  let effectiveMemories: any[] = [];
   try {
     const userMemories = filterUserLevelByWhitelist(
       user ? Memories.listForUser(user.id) : [],
@@ -892,7 +892,7 @@ function gatherIssueSources(user, issue, sessionExclusions) {
 }
 
 // Research 复用项目级 + 用户级 Skill/Memory, 不引入 research 级 overrides.
-function gatherResearchSources(user, research, sessionExclusions) {
+function gatherResearchSources(user: any, research: any, sessionExclusions: any): any {
   const projectId = research ? research.project_id : null;
   const project = projectId ? Projects.findById(projectId) : null;
   const userWhitelist = getProjectUserContextWhitelist(projectId, user);
@@ -900,8 +900,8 @@ function gatherResearchSources(user, research, sessionExclusions) {
   const exSkillSet = new Set(sessionExclusions && Array.isArray(sessionExclusions.skills) ? sessionExclusions.skills : []);
   const exMemSet = new Set(sessionExclusions && Array.isArray(sessionExclusions.memories) ? sessionExclusions.memories : []);
 
-  let effectiveSkills = [];
-  let forcedSkillConflicts = [];
+  let effectiveSkills: any[] = [];
+  let forcedSkillConflicts: any[] = [];
   if (research && projectId && user) {
     const userProjectSkills = resolveEffectiveSkills(
       listUserProjectContextSkills(user, projectId),
@@ -914,7 +914,7 @@ function gatherResearchSources(user, research, sessionExclusions) {
       .map(shapeSkillForContext);
   }
 
-  let effectiveMemories = [];
+  let effectiveMemories: any[] = [];
   try {
     const userMemories = filterUserLevelByWhitelist(
       user ? Memories.listForUser(user.id) : [],
@@ -950,7 +950,7 @@ function gatherResearchSources(user, research, sessionExclusions) {
   };
 }
 
-function gatherSources(user, sessionId) {
+function gatherSources(user: any, sessionId: string): any {
   const session = Sessions.findById(sessionId);
   if (!session) return null;
   const storedSelection = normalizeSelectionSnapshot(session.session_selection_snapshot);
@@ -1030,7 +1030,7 @@ function gatherSources(user, sessionId) {
   };
 }
 
-function buildSessionContext(user, sessionId) {
+function buildSessionContext(user: any, sessionId: string): any {
   const sources = gatherSources(user, sessionId);
   if (!sources) return { body: '', sources: null, language: 'zh' };
   return { body: formatBody(sources), sources, language: normalizeLanguage(sources.language) };
@@ -1038,7 +1038,7 @@ function buildSessionContext(user, sessionId) {
 
 // 新建 Session Wizard 用: 在 session 还没创建时, 用 issue + 输入框中的 name/desc + 勾选状态预览注入内容.
 // excludedSkillIds / excludedMemoryIds: 用户在 Wizard Step 2 中取消勾选的 id 列表.
-function buildIssueContextPreview(user, issueId, draftSession, excludedSkillIds, excludedMemoryIds, language) {
+function buildIssueContextPreview(user: any, issueId: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language: any): any {
   const issue = Issues.findById(issueId);
   if (!issue) return { body: '', sources: null };
   const issueSources = gatherIssueSources(user, issue, {
@@ -1060,7 +1060,7 @@ function buildIssueContextPreview(user, issueId, draftSession, excludedSkillIds,
 
 // 项目级 Session 预设用: 特殊 Issue 尚未创建时, 用一个草稿 issue 计算与普通
 // Issue Session 一致的 skill/memory/context 预览, 但不落库。
-function buildProjectIssueContextPreview(user, projectId, draftIssue, draftSession, excludedSkillIds, excludedMemoryIds, language) {
+function buildProjectIssueContextPreview(user: any, projectId: any, draftIssue: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language: any): any {
   const project = Projects.findById(projectId);
   if (!project) return { body: '', sources: null };
   const issue = {
@@ -1091,7 +1091,7 @@ function buildProjectIssueContextPreview(user, projectId, draftIssue, draftSessi
   return { body: formatBody(sources), sources };
 }
 
-function buildResearchContextPreview(user, researchId, draftSession, excludedSkillIds, excludedMemoryIds, language) {
+function buildResearchContextPreview(user: any, researchId: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language: any): any {
   const research = Researches.findById(researchId);
   if (!research) return { body: '', sources: null };
   const researchSources = gatherResearchSources(user, research, {
@@ -1120,48 +1120,48 @@ function buildResearchContextPreview(user, researchId, draftSession, excludedSki
   return { body: formatBody(sources), sources };
 }
 
-function buildSessionSelectionSnapshot(user, issueId, excludedSkillIds, excludedMemoryIds) {
+function buildSessionSelectionSnapshot(user: any, issueId: any, excludedSkillIds: any, excludedMemoryIds: any): any {
   const selected = buildIssueContextPreview(user, issueId, null, excludedSkillIds, excludedMemoryIds).sources;
   const total = buildIssueContextPreview(user, issueId, null, [], []).sources;
   return buildSelectionSnapshotFromSources(selected, total, excludedSkillIds, excludedMemoryIds);
 }
 
-function buildResearchSessionSelectionSnapshot(user, researchId, excludedSkillIds, excludedMemoryIds) {
+function buildResearchSessionSelectionSnapshot(user: any, researchId: any, excludedSkillIds: any, excludedMemoryIds: any): any {
   const selected = buildResearchContextPreview(user, researchId, null, excludedSkillIds, excludedMemoryIds).sources;
   const total = buildResearchContextPreview(user, researchId, null, [], []).sources;
   return buildSelectionSnapshotFromSources(selected, total, excludedSkillIds, excludedMemoryIds);
 }
 
-function disabledIdsFromStoredSelection(storedSelection, rawSelection, allKey, excludedKey) {
+function disabledIdsFromStoredSelection(storedSelection: any, rawSelection: any, allKey: string, excludedKey: string): string[] | null {
   if (!storedSelection) return null;
   const rawAll = rawSelection && Array.isArray(rawSelection[allKey]) ? rawSelection[allKey] : null;
   if (rawAll && rawAll.length > 0) {
     return (Array.isArray(storedSelection[allKey]) ? storedSelection[allKey] : [])
-      .filter(item => item && item.enabled === false)
-      .map(item => item.id);
+      .filter((item: any) => item && item.enabled === false)
+      .map((item: any) => item.id);
   }
   return Array.isArray(storedSelection[excludedKey]) ? storedSelection[excludedKey] : [];
 }
 
-function builtinSkillDefaultExclusions(currentSources, storedSelection) {
+function builtinSkillDefaultExclusions(currentSources: any, storedSelection: any): string[] {
   const currentBuiltinIds = (currentSources?.skills || [])
-    .filter(sk => sk && sk.scope === 'builtin')
-    .map(sk => sk.id);
+    .filter((sk: any) => sk && sk.scope === 'builtin')
+    .map((sk: any) => sk.id);
   if (!storedSelection) return currentBuiltinIds;
-  const represented = new Set((storedSelection.all_skills || []).map(sk => sk.id));
-  return currentBuiltinIds.filter(id => !represented.has(id));
+  const represented = new Set((storedSelection.all_skills || []).map((sk: any) => sk.id));
+  return currentBuiltinIds.filter((id: string) => !represented.has(id));
 }
 
 // 新建 Session Wizard 默认勾选状态:
 // 同一 Issue 下若已有非删除 Session, 继承最新创建 Session 的 skill/memory 勾选状态.
 // 当前已不可用的 id 会被过滤; 新增的 skill/memory 默认保持勾选.
-function buildIssueSelectionDefaults(user, issueId) {
+function buildIssueSelectionDefaults(user: any, issueId: any): any {
   const issue = Issues.findById(issueId);
   if (!issue) return { inherited: false, source_session: null, excluded_skill_ids: [], excluded_memory_ids: [] };
 
   const currentSources = gatherIssueSources(user, issue, { skills: [], memories: [] });
-  const currentSkillIds = new Set((currentSources.skills || []).map(sk => sk.id));
-  const currentMemoryIds = new Set((currentSources.memories || []).map(memory => memory.id));
+  const currentSkillIds = new Set((currentSources.skills || []).map((sk: any) => sk.id));
+  const currentMemoryIds = new Set((currentSources.memories || []).map((memory: any) => memory.id));
 
   const latest = Sessions.findLatestReusableSelectionForIssue(issueId);
   if (!latest) {
@@ -1204,13 +1204,13 @@ function buildIssueSelectionDefaults(user, issueId) {
   };
 }
 
-function buildResearchSelectionDefaults(user, researchId) {
+function buildResearchSelectionDefaults(user: any, researchId: any): any {
   const research = Researches.findById(researchId);
   if (!research) return { inherited: false, source_session: null, excluded_skill_ids: [], excluded_memory_ids: [] };
 
   const currentSources = gatherResearchSources(user, research, { skills: [], memories: [] });
-  const currentSkillIds = new Set((currentSources.skills || []).map(sk => sk.id));
-  const currentMemoryIds = new Set((currentSources.memories || []).map(memory => memory.id));
+  const currentSkillIds = new Set((currentSources.skills || []).map((sk: any) => sk.id));
+  const currentMemoryIds = new Set((currentSources.memories || []).map((memory: any) => memory.id));
 
   const latest = Sessions.findLatestReusableSelectionForResearch(researchId);
   if (!latest) {
@@ -1253,7 +1253,7 @@ function buildResearchSelectionDefaults(user, researchId) {
   };
 }
 
-function buildProjectIssueSelectionDefaults(user, projectId, draftIssue) {
+function buildProjectIssueSelectionDefaults(user: any, projectId: any, draftIssue: any): any {
   const project = Projects.findById(projectId);
   if (!project) return { inherited: false, source_session: null, excluded_skill_ids: [], excluded_memory_ids: [] };
   const issue = {
@@ -1268,7 +1268,7 @@ function buildProjectIssueSelectionDefaults(user, projectId, draftIssue) {
     worktree_branch: '',
   };
   const currentSources = gatherIssueSources(user, issue, { skills: [], memories: [] });
-  const currentSkillIds = new Set((currentSources.skills || []).map(sk => sk.id));
+  const currentSkillIds = new Set((currentSources.skills || []).map((sk: any) => sk.id));
   return {
     inherited: false,
     source_session: null,
@@ -1277,13 +1277,13 @@ function buildProjectIssueSelectionDefaults(user, projectId, draftIssue) {
   };
 }
 
-function wrapUserMessage(body, userMessage, language) {
+function wrapUserMessage(body: string, userMessage: any, language: any): string {
   if (!body) return userMessage;
   const heading = normalizeLanguage(language) === 'en' ? "## User's Question" : '## 用户的问题';
   return `${body}\n\n---\n\n${heading}\n${userMessage}`;
 }
 
-module.exports = {
+export {
   buildSessionContext,
   buildIssueContextPreview,
   buildProjectIssueContextPreview,
