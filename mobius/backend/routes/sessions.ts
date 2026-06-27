@@ -600,14 +600,14 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
 
     if (!writeSseComment(res, 'connected')) { endStream(); return; }
 
-    const subscribed = await writeSse(res,'subscribed', {
+    const subscribed = await writeSse(res, 'subscribed', {
       event: 'subscribed',
       session: shapeSessionForStream(session),
     });
     if (!subscribed || closed) { endStream(); return; }
 
     const history = Messages.listForTask(sessionId, 200);
-    const historySent = await writeSse(res,'history', {
+    const historySent = await writeSse(res, 'history', {
       event: 'history',
       messages: history,
       total: history.length,
@@ -615,7 +615,7 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
     if (!historySent || closed) { endStream(); return; }
 
     if (workspace.error) {
-      await writeSse(res,'server_error', {
+      await writeSse(res, 'server_error', {
         event: 'error',
         message: workspace.error,
         category: 'workspace',
@@ -639,7 +639,7 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
           const counted = countMergedJsonl(histPath);
           metaTotal = counted.total;
           metaApproximate = counted.totalApproximate;
-          const metaSent = await writeSse(res,'jsonl_meta', {
+          const metaSent = await writeSse(res, 'jsonl_meta', {
             event: 'jsonl_meta',
             session_id: sessionId,
             total: metaTotal,
@@ -668,9 +668,9 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
     unsub = backend.getAgentRawThoughtStream(
       sessionId,
       (entry: any) => {
-        writeSse(res,'jsonl_entry', { event: 'jsonl_entry', session_id: sessionId, entry }).catch(() => cleanup());
+        writeSse(res, 'jsonl_entry', { event: 'jsonl_entry', session_id: sessionId, entry }).catch(() => cleanup());
         if (isTurnCompleteEntry(entry)) {
-          writeSse(res,'typing', { event: 'typing', active: false }).catch(() => cleanup());
+          writeSse(res, 'typing', { event: 'typing', active: false }).catch(() => cleanup());
           try {
             // agent_status 现由 agent-status-syncer 统一管; turn 完成只刷新 last_agent_event 留痕.
             db.prepare('UPDATE sessions_v2 SET last_agent_event=strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE session_id=?')
@@ -682,7 +682,7 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
     );
   } catch (e) {
     console.warn(`[sessions/events] stream failed (${sessionId}): ${(e as Error).message}`);
-    try { await writeSse(res,'server_error', { event: 'error', message: (e as Error).message || String(e) }); } catch {}
+    try { await writeSse(res, 'server_error', { event: 'error', message: (e as Error).message || String(e) }); } catch {}
     endStream();
   }
 });
