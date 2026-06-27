@@ -9,10 +9,23 @@
 // 语义: INSERT OR IGNORE — 只为空缺 seed, 已存在用户原样保留, 不覆盖密码 / preferences.
 //      想"强制重置"请走 zip 链路 (UPSERT) 或 API 改密.
 //
-// 复用 db.js 的 schema bootstrap (空库自动建表), 所以可在 backend 起来之前调.
+// 复用 db.ts 的 schema bootstrap (空库自动建表), 所以可在 backend 起来之前调.
 // 容器内由 docker-entrypoint.sh 调用; 宿主机也能跑 (cd mobius && node scripts/bootstrap-users.js).
-const bcrypt = require('bcryptjs');
+//
+// db 层是 TypeScript (mobius/db.ts), 后端运行时靠 tsx/cjs 即时转译; 本脚本走纯 node 启动,
+// 必须先挂 tsx/cjs require hook, 否则 require('./db') 找不到 db.js (项目里只有 db.ts).
 const path = require('path');
+// tsx 的 subpath export "./cjs" 物理文件是 dist/cjs/index.cjs, 直接走绝对路径绕开
+// exports map, 容器内外行为一致. require('tsx/cjs') 也行, 但需要 mobius 本身在
+// node 的模块解析路径上, 容器里 cwd=/app/mobius 时成立, 宿主直接拉脚本时不一定成立.
+try {
+  require(path.resolve(__dirname, '..', 'node_modules', 'tsx', 'dist', 'cjs', 'index.cjs'));
+} catch (e) {
+  console.error('[bootstrap-users] 加载 tsx/cjs 失败, 无法 require db.ts:', e.message);
+  process.exit(1);
+}
+
+const bcrypt = require('bcryptjs');
 
 function parseUsers(raw) {
   if (!raw) return [];
@@ -36,8 +49,9 @@ function main() {
   const users = parseUsers(raw);
   if (users.length === 0) { console.log('[bootstrap-users] IMAC_BOOTSTRAP_USERS 未设置, 跳过'); return; }
 
-  // 复用 db.js (会跑 schema.sql bootstrap)
-  const { db } = require(path.resolve(__dirname, '..', 'db.js'));
+  // 复用 db.ts (会跑 schema.sql bootstrap); 上面已挂 tsx/cjs hook, 这里不带扩展名,
+  // 让 require 解析到 mobius/db.ts.
+  const { db } = require(path.resolve(__dirname, '..', 'db'));
   const workspaceRoot = process.env.WORKSPACE_ROOT || '/data/workspace';
 
   const insertUser = db.prepare(`
