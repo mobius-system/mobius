@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://mobius.nutshellai.cn/"><strong>Official Website</strong></a>
   ·
-  <sub><a href="./README.zh.md">简体中文</a> · <b>English</b></sub>
+  <a href="./README.zh.md">简体中文</a> · <strong>English</strong>
 </p>
 
 
