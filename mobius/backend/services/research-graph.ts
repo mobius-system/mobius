@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 
 import { Researches } from '../repositories/researches';
+import { HIDDEN_FOLDER_NAME } from '../config';
 
 const GRAPH_FILENAME = 'research-graph.yml';
 const ALLOWED_VISUAL_EFFECTS = ['in_progress', 'completed', 'failed', 'successful'];
@@ -14,7 +15,7 @@ function resolveGraphFile(researchId: any): any {
   const bindPath = (research.bind_path || '').trim();
   if (!bindPath) return { error: `Research 所属项目「${research.project_name || research.project_id}」尚未配置绑定路径` };
   const root = path.resolve(bindPath);
-  const dir = path.join(root, '.imac', 'blackboard', researchId);
+  const dir = path.join(root, HIDDEN_FOLDER_NAME, 'blackboard', researchId);
   return {
     research,
     root,

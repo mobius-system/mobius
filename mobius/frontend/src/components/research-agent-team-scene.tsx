@@ -357,20 +357,20 @@ function makePadTexture(colorHex: number, selected: boolean) {
   ctx.clearRect(0, 0, size, size)
   // 底盘: 径向渐变, 中心略亮、边缘渐隐 (整体半透明, 能透出地面).
   const grad = ctx.createRadialGradient(c, c, 2, c, c, c - 4)
-  grad.addColorStop(0, rgba(selected ? 0.5 : 0.32))
-  grad.addColorStop(0.7, rgba(selected ? 0.3 : 0.18))
+  grad.addColorStop(0, rgba(selected ? 0.6 : 0.45))
+  grad.addColorStop(0.7, rgba(selected ? 0.4 : 0.28))
   grad.addColorStop(1, rgba(0))
   ctx.fillStyle = grad
   ctx.beginPath(); ctx.arc(c, c, c - 4, 0, Math.PI * 2); ctx.fill()
   // 同心环
-  ctx.strokeStyle = rgba(selected ? 0.85 : 0.6)
-  ctx.lineWidth = 1.5
+  ctx.strokeStyle = rgba(selected ? 1 : 0.82)
+  ctx.lineWidth = 2.5
   for (let i = 1; i <= 3; i += 1) {
     ctx.beginPath(); ctx.arc(c, c, (c - 6) * (i / 4), 0, Math.PI * 2); ctx.stroke()
   }
   // 径向辐条
-  ctx.strokeStyle = rgba(selected ? 0.6 : 0.42)
-  ctx.lineWidth = 1
+  ctx.strokeStyle = rgba(selected ? 0.85 : 0.65)
+  ctx.lineWidth = 2
   const spokes = 12
   for (let i = 0; i < spokes; i += 1) {
     const ang = (i / spokes) * Math.PI * 2
@@ -380,8 +380,8 @@ function makePadTexture(colorHex: number, selected: boolean) {
     ctx.stroke()
   }
   // 外缘亮环
-  ctx.strokeStyle = rgba(selected ? 0.95 : 0.7)
-  ctx.lineWidth = 2
+  ctx.strokeStyle = rgba(selected ? 1 : 0.92)
+  ctx.lineWidth = 3
   ctx.beginPath(); ctx.arc(c, c, c - 4, 0, Math.PI * 2); ctx.stroke()
   const tex = new CanvasTexture(canvas)
   tex.colorSpace = SRGBColorSpace
@@ -1260,7 +1260,7 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
 
   const padMat = new MeshBasicMaterial({
     map: makePadTexture(bodyColor, selected),
-    transparent: true, opacity: selected ? 0.92 : 0.72, side: DoubleSide, depthWrite: false,
+    transparent: true, opacity: selected ? 1 : 0.95, side: DoubleSide, depthWrite: false,
   })
   const pad = new Mesh(new CircleGeometry(selected ? 0.82 : 0.74, 56), padMat)
   pad.rotation.x = -Math.PI / 2

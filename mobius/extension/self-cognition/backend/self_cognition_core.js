@@ -1115,7 +1115,7 @@ function resolveRepoPath(p) {
   if (!cleaned || cleaned.includes("..")) return null;
   const candidates = [
     path.join(REPO_ROOT, cleaned),
-    path.join(REPO_ROOT, ".imac", cleaned),
+    path.join(REPO_ROOT, process.env.MOBIUS_HIDDEN_FOLDER_NAME || ".mobius", cleaned),
     path.join(REPO_ROOT, ".deploy_data", cleaned)
   ];
   for (const c of candidates) {
@@ -1228,7 +1228,7 @@ function handleDeleteInspiration(input, e) {
 
 function buildMobiusMemoryContext() {
   const parts = [];
-  const pkFile = path.join(REPO_ROOT, ".imac/project_knowledge.md");
+  const pkFile = path.join(REPO_ROOT, (process.env.MOBIUS_HIDDEN_FOLDER_NAME || ".mobius") + "/project_knowledge.md");
   try { parts.push("# 莫比乌斯项目知识 (.imac/project_knowledge.md)\n" + fs.readFileSync(pkFile, "utf8")); } catch {}
   const memIdx = path.join(os.homedir(), ".claude/projects/-home-user-imac-test/memory/MEMORY.md");
   try { parts.push("# Agent 长期 memory 索引 (~/.claude/.../memory/MEMORY.md)\n" + fs.readFileSync(memIdx, "utf8")); } catch {}

@@ -10,6 +10,7 @@ import {
   MAX_MEMORY_MARKDOWN_BYTES,
   formatBytes,
 } from './context-import-utils';
+import { HIDDEN_FOLDER_NAME } from '../config';
 
 const PROJECT_KNOWLEDGE_SLUG = 'project-knowledge';
 const HISTORY_DIR_NAME = 'history';
@@ -25,13 +26,13 @@ function projectKnowledgeMemoryName(project: any): string {
 function projectKnowledgePath(project: any): string {
   const bindPath = (project?.bind_path || '').trim();
   if (!bindPath) return '';
-  return path.resolve(bindPath, '.imac', 'project_knowledge.md');
+  return path.resolve(bindPath, HIDDEN_FOLDER_NAME, 'project_knowledge.md');
 }
 
 function projectKnowledgeHistoryDir(project: any): string {
   const bindPath = (project?.bind_path || '').trim();
   if (!bindPath) return '';
-  return path.resolve(bindPath, '.imac', HISTORY_DIR_NAME);
+  return path.resolve(bindPath, HIDDEN_FOLDER_NAME, HISTORY_DIR_NAME);
 }
 
 function formatHistoryTimestamp(date: Date = new Date()): string {

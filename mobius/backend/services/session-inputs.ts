@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { HIDDEN_FOLDER_NAME } from '../config';
 
 const INPUT_LIST_FILE = 'session_input_list.json';
 
@@ -15,7 +16,7 @@ function resolveSessionInputListPath(projectRoot: any, sessionId: any): { sessio
 
   const root = path.resolve(rawRoot);
   const sid = safeSessionId(sessionId);
-  const baseDir = path.resolve(root, '.imac', 'session_inputs');
+  const baseDir = path.resolve(root, HIDDEN_FOLDER_NAME, 'session_inputs');
   const sessionDir = path.resolve(baseDir, sid);
   if (sessionDir !== baseDir && !sessionDir.startsWith(baseDir + path.sep)) {
     throw new Error('session input 路径越界');

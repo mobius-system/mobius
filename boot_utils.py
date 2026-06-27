@@ -58,6 +58,7 @@ def ordered_unique(items: Iterable[str]) -> list[str]:
 RUNTIME_SETTINGS = ordered_unique(
     [
         "APP_DIR",
+        "MOBIUS_HIDDEN_FOLDER_NAME",
         "MOBIUS_PORT",
         "VITE_PORT",
         "VITE_HOST",

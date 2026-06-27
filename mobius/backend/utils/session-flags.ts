@@ -1,8 +1,9 @@
 import fs from 'fs';
 import path from 'path';
+import { HIDDEN_FOLDER_NAME } from '../config';
 
 function flagDirOf(root: string, sessionId: string): string {
-  return path.join(path.resolve(root), '.imac', 'flags', sessionId);
+  return path.join(path.resolve(root), HIDDEN_FOLDER_NAME, 'flags', sessionId);
 }
 
 function runningFlagPathOf(root: string, sessionId: string): string {

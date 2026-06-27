@@ -741,9 +741,9 @@ export function ResearchAgentTeamModal({
                 {selectedAgent ? (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
-                      <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: selectedAgent.role === 'chief_researcher' ? 'rgba(16,185,129,0.12)' : 'rgba(59,130,246,0.12)', color: selectedAgent.role === 'chief_researcher' ? '#10b981' : '#3b82f6' }}>{roleLabel(selectedAgent.role)}</span>
-                      {selectedAgent.locked && <span className="inline-flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-muted)' }}><Lock className="h-3 w-3" /> 已创建·锁定</span>}
-                      <span className="ml-auto truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{selectedAgent.status || (selectedAgent.locked ? '已创建' : '待创建')}</span>
+                      <span className="rounded px-2 py-1 text-[12px] font-medium" style={{ background: selectedAgent.role === 'chief_researcher' ? 'rgba(16,185,129,0.12)' : 'rgba(59,130,246,0.12)', color: selectedAgent.role === 'chief_researcher' ? '#10b981' : '#3b82f6' }}>{roleLabel(selectedAgent.role)}</span>
+                      {selectedAgent.locked && <span className="inline-flex items-center gap-1 text-[12px]" style={{ color: 'var(--text-muted)' }}><Lock className="h-3.5 w-3.5" /> 已创建·锁定</span>}
+                      <span className="ml-auto truncate text-[12px]" style={{ color: 'var(--text-muted)' }}>{selectedAgent.status || (selectedAgent.locked ? '已创建' : '待创建')}</span>
                     </div>
                     <div>
                       <label className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>名称</label>

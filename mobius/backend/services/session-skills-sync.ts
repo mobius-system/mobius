@@ -12,9 +12,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getSourceDir, parseSkillId } from './skills-fs';
+import { HIDDEN_FOLDER_NAME } from '../config';
 
 // 用 POSIX 形式给 agent 看到相对路径, 跨平台时也保持一致.
-const TARGET_SUBDIR = '.imac/skills';
+const TARGET_SUBDIR = `${HIDDEN_FOLDER_NAME}/skills`;
 
 function syncSkillsToWorkspace(workDir: string, skills: any[]): any[] {
   const results: any[] = [];

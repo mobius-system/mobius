@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { HIDDEN_FOLDER_NAME } from '../config';
 
 const MAX_TEXT_CHARS = 20000;
 const MAX_TOTAL_CHARS = 800000;
@@ -275,7 +276,7 @@ function writeSessionTransferDocument({ bindPath, sourceSession, targetSessionId
     throw new Error('创建 Session 转接文档缺少 bindPath 或 sourceSession');
   }
   const result = buildSessionTransferMarkdown({ sourceSession, targetSessionId, jsonlPath });
-  const dir = path.join(path.resolve(bindPath), '.imac', 'session_transfer');
+  const dir = path.join(path.resolve(bindPath), HIDDEN_FOLDER_NAME, 'session_transfer');
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, `${sourceSession.session_id}.md`);
   fs.writeFileSync(filePath, result.markdown, 'utf8');

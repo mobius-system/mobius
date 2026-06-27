@@ -34,6 +34,11 @@ function legacyFallbackWorkDirFor(userId) {
 
 const MOBIUS_DATA_PATH = process.env.MOBIUS_DATA_PATH || '/data';
 
+// 莫比乌斯在项目仓库根 / 工作目录下使用的"隐藏工作缓存目录"名 (.imac / .mobius ...).
+// 单一真相源: 后端所有 path.join(root, '.imac', ...) 都应使用本常量, 不要再硬编码 '.imac'.
+// 由 .env 注入: 新装默认 .mobius (.env.default), 旧部署可保留 .imac (.env) 以免数据迁移.
+const HIDDEN_FOLDER_NAME = process.env.MOBIUS_HIDDEN_FOLDER_NAME || '.mobius';
+
 // Branding: 顶部 Logo / 系统名称 / Tab 标题显示控制, 由 .env 注入, 不进管理面板.
 //   hideLogo:        直接控制 Logo 图片是否渲染
 //   systemNameZh:    若 REPLACE_SYSTEM_NAME=true 用 env 值, 否则用硬编码默认; 同时用作 Tab 标题
@@ -167,6 +172,8 @@ module.exports = {
   // 锁死指向这里, 不启用 worktree / research. 拓展代码扫描 mobius/extension/*/,
   // 拓展数据落到 CORE_DATA_PATH/extension/<name>/ (handler 唯一可写区).
   APP_DIR: TEST_ROOT,
+  // 隐藏工作缓存目录名 (.imac / .mobius). 后端组装 <root>/<HIDDEN_FOLDER_NAME>/... 路径时统一用它.
+  HIDDEN_FOLDER_NAME,
   EXTENSION_ROOT: path.join(TEST_ROOT, 'mobius', 'extension'),
   EXTENSION_DATA_ROOT: path.join(CORE_DATA_PATH, 'extension'),
   // upsert 拓展项目时挂的"系统"用户; 由 extension-registry 在启动时 INSERT OR IGNORE.
