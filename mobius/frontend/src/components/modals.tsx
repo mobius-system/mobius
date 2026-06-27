@@ -7,7 +7,7 @@ import { SkillsManager } from './skills'
 import { MemoriesManager } from './memories'
 import { ProjectUserContextWhitelist } from './context-whitelist'
 import { ExpandableTextarea } from './expandable-textarea'
-import { type Attachment, AttachmentZone, appendAttachmentsToDesc } from './attachments'
+import { type Attachment, AttachmentComposer, appendAttachmentsToDesc } from './attachments'
 import {
   completeGuidedDemoStateForProject,
   isGuidedDemoIssue,
@@ -2428,6 +2428,36 @@ export function NewSessionModal({
   const memoryCheckedCount = availableMemories.filter(m => !excludedMemories.has(m.id)).length
   const projectSkillCount = availableSkills.filter(s => s.scope === 'project').length
 
+  // 目的/描述输入框: preset 模板模式保留自带边框(裸); 正常创建模式下边框透明,
+  // 交给 AttachmentComposer 的整合容器统一包边, 使附件芯片/上传按钮与输入框融为一体.
+  const descTextarea = (
+    <ExpandableTextarea value={desc} onValueChange={value => { setDesc(value); setErr('') }}
+      data-tour="session-description-input"
+      placeholder={`${isResearch ? `${displayEntityLabel} 目的` : 'Session目的'}/要解决的问题（必填）`}
+      overlayTitle={`编辑 ${displayEntityLabel} 目的/问题描述`}
+      innerControl={canDeferPurpose ? (
+        <button
+          type="button"
+          onClick={() => { setDeferPurpose(!deferPurpose); setErr('') }}
+          className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-lg border px-1.5 text-[10px] transition-colors hover:bg-blue-500/10"
+          style={{
+            color: 'var(--text-muted)',
+            borderColor: 'var(--input-border)',
+            background: 'var(--input-bg)',
+          }}
+        >
+          {deferPurpose
+            ? <CheckSquare className="h-3 w-3" strokeWidth={1.9} />
+            : <Square className="h-3 w-3" strokeWidth={1.9} />}
+          <span>稍后再写</span>
+        </button>
+      ) : undefined}
+      className={`w-full h-28 px-3 py-2 text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none resize-none ${isPresetMode ? 'rounded-xl focus:border-blue-500/30' : 'border-0 bg-transparent'}`}
+      style={isPresetMode
+        ? { background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: isDark ? '#f1f5f9' : '#1e293b' }
+        : { color: isDark ? '#f1f5f9' : '#1e293b' }} />
+  )
+
   return (
     <div className={`fixed inset-0 ${modalZIndexClass} flex items-center justify-center`}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
@@ -2488,33 +2518,12 @@ export function NewSessionModal({
                 >
                   恢复Session目输入框（Fire & Forget 模式）
                 </button>
+              ) : isPresetMode ? (
+                descTextarea
               ) : (
-                <ExpandableTextarea value={desc} onValueChange={value => { setDesc(value); setErr('') }}
-                  data-tour="session-description-input"
-                  placeholder={`${isResearch ? `${displayEntityLabel} 目的` : 'Session目的'}/要解决的问题（必填）`}
-                  overlayTitle={`编辑 ${displayEntityLabel} 目的/问题描述`}
-                  innerControl={canDeferPurpose ? (
-                    <button
-                      type="button"
-                      onClick={() => { setDeferPurpose(!deferPurpose); setErr('') }}
-                      className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-lg border px-1.5 text-[10px] transition-colors hover:bg-blue-500/10"
-                      style={{
-                        color: 'var(--text-muted)',
-                        borderColor: 'var(--input-border)',
-                        background: 'var(--input-bg)',
-                      }}
-                    >
-                      {deferPurpose
-                        ? <CheckSquare className="h-3 w-3" strokeWidth={1.9} />
-                        : <Square className="h-3 w-3" strokeWidth={1.9} />}
-                      <span>稍后再写</span>
-                    </button>
-                  ) : undefined}
-                  className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
-                  style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: isDark ? '#f1f5f9' : '#1e293b' }} />
-              )}
-              {!isPresetMode && (
-                <AttachmentZone attachments={attachments} setAttachments={setAttachments} projectId={projectId} dark={isDark} />
+                <AttachmentComposer attachments={attachments} setAttachments={setAttachments} projectId={projectId} dark={isDark}>
+                  {descTextarea}
+                </AttachmentComposer>
               )}
               {isResearch && (
                 <div>
