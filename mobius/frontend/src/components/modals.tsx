@@ -7,6 +7,7 @@ import { SkillsManager } from './skills'
 import { MemoriesManager } from './memories'
 import { ProjectUserContextWhitelist } from './context-whitelist'
 import { ExpandableTextarea } from './expandable-textarea'
+import { type Attachment, AttachmentZone, appendAttachmentsToDesc } from './attachments'
 import {
   completeGuidedDemoStateForProject,
   isGuidedDemoIssue,
@@ -2066,6 +2067,7 @@ export function NewSessionModal({
   const [previewingSkill, setPreviewingSkill] = useState<WizardItem | null>(null)
   const { theme } = useStore()
   const isDark = theme !== 'light'
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   const canDeferPurpose = !isPresetMode
   const submittedDescription = canDeferPurpose && deferPurpose ? '' : desc
 
@@ -2405,7 +2407,7 @@ export function NewSessionModal({
       const s = await api(endpoint, {
         method: 'POST',
         body: JSON.stringify({
-          name, description: submittedDescription, model, role, language,
+          name, description: appendAttachmentsToDesc(submittedDescription, attachments), model, role, language,
           excluded_skill_ids: Array.from(excludedSkills),
           excluded_memory_ids: Array.from(excludedMemories),
           continue_from_session_id: continueFromSessionId || undefined,
@@ -2507,6 +2509,9 @@ export function NewSessionModal({
                   ) : undefined}
                   className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: isDark ? '#f1f5f9' : '#1e293b' }} />
+              )}
+              {!isPresetMode && (
+                <AttachmentZone attachments={attachments} setAttachments={setAttachments} projectId={projectId} dark={isDark} />
               )}
               {isResearch && (
                 <div>
