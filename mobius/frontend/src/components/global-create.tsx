@@ -21,7 +21,7 @@ import { ExpandableTextarea } from './expandable-textarea'
 import {
   Plus, ChevronDown, FolderPlus, CircleDot, MessagesSquare, FlaskConical,
   X, Eye, RefreshCw, Paperclip, Image as ImageIcon, Upload, Trash2,
-  CheckCircle2, ExternalLink, Lock, Ban, Search, Puzzle, Dices, FolderOpen,
+  CheckCircle2, ExternalLink, Lock, Ban, Search, Dices, FolderOpen,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------
@@ -47,39 +47,31 @@ const ISSUE_VISIBILITY_OPTIONS: { value: IssueVisibility; label: string; desc: s
   { value: 'allowlist', label: '指定用户', desc: '仅允许名单中的用户可见' },
 ]
 
-// 项目类型预设: 顶栏单页新建项目时, 用横向 3 卡片一页内完成类型 + 字段选择
+// 项目类型预设: 顶栏单页新建项目, 用下拉选择类型, 选定后下方字段联动
 type ProjectKind = 'default' | 'research' | 'extension'
 const PROJECT_KIND_PRESETS: Array<{
   kind: ProjectKind
   label: string
   desc: string
   note: string
-  accent: string
-  icon: React.ReactNode
 }> = [
   {
     kind: 'default',
     label: '经典项目',
     desc: '导入或新建项目，后续可转 Research',
     note: '默认不开 Research',
-    accent: '#60a5fa',
-    icon: <FolderPlus className="w-4 h-4" strokeWidth={1.8} />,
   },
   {
     kind: 'research',
     label: 'Research 项目',
     desc: '多智能体长周期开放研究',
     note: '自动启用 Research',
-    accent: '#34d399',
-    icon: <FlaskConical className="w-4 h-4" strokeWidth={1.8} />,
   },
   {
     kind: 'extension',
     label: '拓展项目',
     desc: '有前端 + 后端的莫比乌斯拓展',
     note: '仅管理员可创建',
-    accent: '#a78bfa',
-    icon: <Puzzle className="w-4 h-4" strokeWidth={1.8} />,
   },
 ]
 
@@ -484,90 +476,141 @@ function DescriptionWithAttachments({ value, onValueChange, placeholder, attachm
   )
 }
 
-// Skill / Memory 二级浮层选择器 (通用). 默认全集启用, 取消勾选 = excluded.
-// locked(id)  → 必选/主Skill, 强制勾选不可取消 (关联锁定)
-// mutex(id)   → 冲突类, 置灰不可选 (互斥禁用)
-function PickerPopover({ title, items, excluded, onToggle, lockedOf, mutexOf, accentLabelOf, emptyText, dark }: {
-  title: string
-  items: PickItem[]
-  excluded: Set<string>
-  onToggle: (id: string) => void
-  lockedOf?: (id: string) => boolean
-  mutexOf?: (id: string) => boolean
-  accentLabelOf?: (id: string) => string | undefined   // 返回 '主Skill' | '必选' 等角标
-  emptyText: string
+// Skill / Memory 选择器 (学习 research-agent-team-modal 的 selectionPanel 模式):
+// 主表单内只放 2 个紧凑按钮 (Skill N/M / Memory N/M), 点击打开二级 modal;
+// modal 内是滚动 checkbox 列表 + 搜索 + 主Skill/互斥角标. 默认全集启用, 取消勾选 = excluded.
+//
+// lockedOf(id) → 主Skill 关联锁定, 强制勾选不可取消
+// mutexOf(id)  → 冲突类, 置灰不可选 (互斥禁用)
+// accentOf(id) → 返回 '主Skill' | '互斥' 等角标文字 (仅 Research 用, Session 不传)
+function SkillMemoryPicker({
+  skills, memories,
+  excludedSkills, excludedMemories,
+  onToggleSkill, onToggleMemory,
+  skillLockedOf, skillMutexOf, skillAccentOf,
+  disabled, dark,
+  emptySkillText = '该 Issue 未启用 Skill',
+  emptyMemoryText = '无可用 Memory',
+}: {
+  skills: PickItem[]
+  memories: PickItem[]
+  excludedSkills: Set<string>
+  excludedMemories: Set<string>
+  onToggleSkill: (id: string) => void
+  onToggleMemory: (id: string) => void
+  skillLockedOf?: (id: string) => boolean
+  skillMutexOf?: (id: string) => boolean
+  skillAccentOf?: (id: string) => string | undefined
+  disabled?: boolean
   dark: boolean
+  emptySkillText?: string
+  emptyMemoryText?: string
 }) {
-  const [open, setOpen] = useState(false)
+  const [panel, setPanel] = useState<null | 'skill' | 'memory'>(null)
   const [q, setQ] = useState('')
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [open])
 
+  const enabledSkillCount = skills.filter(it => (skillLockedOf?.(it.id) || (!skillMutexOf?.(it.id) && !excludedSkills.has(it.id)))).length
+  const enabledMemoryCount = memories.filter(it => !excludedMemories.has(it.id)).length
+
+  const items = panel === 'skill' ? skills : memories
   const filtered = useMemo(() => {
     const kw = q.trim().toLowerCase()
     if (!kw) return items
     return items.filter(it => `${it.name} ${it.description || ''}`.toLowerCase().includes(kw))
   }, [items, q])
-  const enabledCount = items.filter(it => (lockedOf?.(it.id) || (!mutexOf?.(it.id) && !excluded.has(it.id))) ).length
+
+  const close = () => { setPanel(null); setQ('') }
+
+  const btnCls = "h-9 rounded-lg border px-2 text-[12px] flex items-center justify-between gap-2 transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
 
   return (
-    <div className="relative" ref={ref}>
-      <button type="button" onClick={() => setOpen(v => !v)}
-        className="w-full h-10 rounded-xl border flex items-center justify-between px-3 text-[12px] transition-colors hover:bg-[var(--bg-card-hover)]"
-        style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: dark ? '#e2e8f0' : '#334155' }}>
-        <span className="truncate">{title}（已启用 {enabledCount}/{items.length}）</span>
-        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
-      </button>
-      {open && (
-        <div className="absolute z-[80] mt-1 left-0 right-0 rounded-xl shadow-2xl flex flex-col overflow-hidden"
-          style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxHeight: '320px' }}
-          onClick={e => e.stopPropagation()}>
-          <div className="p-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
-            <div className="flex items-center gap-1.5 rounded-lg px-2 h-7" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
-              <Search className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
-              <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜索…" autoFocus
-                className="flex-1 bg-transparent text-[12px] focus:outline-none" style={{ color: dark ? '#f1f5f9' : '#1e293b' }} />
-            </div>
-          </div>
-          <div className="flex-1 overflow-y-auto p-1.5">
-            {filtered.length === 0 && <p className="text-[11px] italic px-2 py-3 text-center" style={{ color: 'var(--text-muted)' }}>{emptyText}</p>}
-            {filtered.map(it => {
-              const locked = !!lockedOf?.(it.id)
-              const mutex = !!mutexOf?.(it.id)
-              const checked = locked || (!mutex && !excluded.has(it.id))
-              const accent = accentLabelOf?.(it.id)
-              return (
-                <div key={it.id} className="flex items-start gap-2 rounded-md px-1.5 py-1 hover:bg-[var(--bg-card-hover)]">
-                  <label className={`flex min-w-0 flex-1 items-start gap-2 ${locked ? 'cursor-default' : mutex ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                    <input type="checkbox" checked={checked} disabled={locked || mutex}
-                      onChange={() => !locked && !mutex && onToggle(it.id)} className="mt-0.5 accent-blue-500" />
-                    <div className="min-w-0 flex-1" style={{ opacity: mutex ? 0.4 : checked ? 1 : 0.5 }}>
-                      <div className="flex items-center gap-1.5">
-                        <span className="truncate text-[12px]" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{it.name}</span>
-                        {it.research_role && <span className="px-1 py-0.5 rounded text-[9px] shrink-0" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>{it.research_role}</span>}
-                        <span className="px-1 py-0.5 rounded text-[9px] shrink-0" style={{ background: 'rgba(168,85,247,0.15)', color: '#a855f7' }}>{SCOPE_LABEL[it.scope] || it.scope}</span>
-                      </div>
-                      {it.description && <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{it.description}</div>}
-                    </div>
-                  </label>
-                  {accent && (
-                    <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px]"
-                      style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}>
-                      {accent === '互斥' ? <Ban className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}{accent}
-                    </span>
-                  )}
+    <>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => setPanel('skill')} disabled={disabled} className={btnCls}
+          style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
+          <span className="flex items-center gap-1.5 truncate">
+            <span style={{ color: '#60a5fa' }}><Lock className="w-3 h-3" /></span>
+            Skill
+          </span>
+          <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>{enabledSkillCount}/{skills.length}</span>
+        </button>
+        <button type="button" onClick={() => setPanel('memory')} disabled={disabled} className={btnCls}
+          style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
+          <span className="flex items-center gap-1.5 truncate">
+            <span style={{ color: '#a855f7' }}><Eye className="w-3 h-3" /></span>
+            Memory
+          </span>
+          <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>{enabledMemoryCount}/{memories.length}</span>
+        </button>
+      </div>
+
+      {panel && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={close}>
+          <div className="flex max-h-[min(600px,calc(100vh-64px))] w-[min(520px,calc(100vw-32px))] flex-col rounded-2xl shadow-2xl"
+            onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="min-w-0">
+                <div className="text-[14px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>
+                  {panel === 'skill' ? 'Skill 选择' : 'Memory 选择'}
                 </div>
-              )
-            })}
+                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  {panel === 'skill' ? `${enabledSkillCount}/${skills.length} 已启用 · 取消勾选的将不注入 Agent 上下文` : `${enabledMemoryCount}/${memories.length} 已启用 · 取消勾选的将不注入 Agent 上下文`}
+                </div>
+              </div>
+              <button type="button" onClick={close} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-3 pt-3">
+              <div className="flex items-center gap-1.5 rounded-lg px-2 h-8" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
+                <Search className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜索名称或描述…" autoFocus
+                  className="flex-1 bg-transparent text-[12px] focus:outline-none" style={{ color: dark ? '#f1f5f9' : '#1e293b' }} />
+              </div>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-2.5">
+              {filtered.length === 0 ? (
+                <p className="text-[11px] italic px-2 py-6 text-center" style={{ color: 'var(--text-muted)' }}>
+                  {panel === 'skill' ? emptySkillText : emptyMemoryText}
+                </p>
+              ) : filtered.map(it => {
+                const isSkill = panel === 'skill'
+                const locked = isSkill && !!skillLockedOf?.(it.id)
+                const mutex = isSkill && !!skillMutexOf?.(it.id)
+                const checked = isSkill ? (locked || (!mutex && !excludedSkills.has(it.id))) : !excludedMemories.has(it.id)
+                const accent = isSkill ? skillAccentOf?.(it.id) : undefined
+                const onToggle = isSkill ? onToggleSkill : onToggleMemory
+                return (
+                  <div key={it.id} className="flex items-start gap-2 rounded-md px-1.5 py-1 hover:bg-[var(--bg-card-hover)]">
+                    <label className={`flex min-w-0 flex-1 items-start gap-2 ${locked ? 'cursor-default' : mutex ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                      <input type="checkbox" checked={checked} disabled={locked || mutex}
+                        onChange={() => !locked && !mutex && onToggle(it.id)} className="mt-0.5 accent-blue-500" />
+                      <div className="min-w-0 flex-1" style={{ opacity: mutex ? 0.4 : checked ? 1 : 0.5 }}>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="truncate text-[12px]" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{it.name}</span>
+                          {it.research_role && <span className="px-1 py-0.5 rounded text-[9px] shrink-0" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>{it.research_role}</span>}
+                          <span className="px-1 py-0.5 rounded text-[9px] shrink-0" style={{ background: 'rgba(168,85,247,0.15)', color: '#a855f7' }}>{SCOPE_LABEL[it.scope] || it.scope}</span>
+                        </div>
+                        {it.description && <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{it.description}</div>}
+                      </div>
+                    </label>
+                    {accent && (
+                      <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px]"
+                        style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}>
+                        {accent === '互斥' ? <Ban className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}{accent}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <div className="px-4 py-2.5 border-t flex justify-end" style={{ borderColor: 'var(--border-color)' }}>
+              <button type="button" onClick={close} className="h-8 px-4 rounded-lg text-[12px] btn-primary">完成</button>
+            </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
 
@@ -657,6 +700,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   const [visibility, setVisibility] = useState<Visibility>(d.visibility || 'private')
   const [extensionName, setExtensionName] = useState(d.extensionName || '')
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [permissionOpen, setPermissionOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
@@ -719,32 +763,50 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
   }
 
+  const visibilityOption = VISIBILITY_OPTIONS.find(o => o.value === visibility) || VISIBILITY_OPTIONS[0]
+
+  const permissionSettingsModal = permissionOpen ? (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setPermissionOpen(false)} />
+      <div className="relative w-[440px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
+        onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h4 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>修改项目权限</h4>
+        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个项目。</p>
+        <div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {VISIBILITY_OPTIONS.map(opt => {
+              const active = visibility === opt.value
+              return (
+                <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value); setErr('') }} title={opt.desc}
+                  className="h-9 rounded-lg border text-[12px] transition-colors"
+                  style={active ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' } : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{visibilityOption.desc}</p>
+        </div>
+        <div className="mt-5 flex justify-end">
+          <button type="button" onClick={() => setPermissionOpen(false)} className="h-9 px-5 rounded-xl text-[13px] btn-primary transition-colors">完成</button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
   return (
     <CreateModalShell title={projectKind === 'extension' ? '新建拓展项目' : projectKind === 'research' ? '新建 Research 项目' : '新建项目'} onClose={onClose} dark={dark} width={600}
       footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} />}>
-      {/* 项目类型: 横向 3 卡片, 单页内一选即定, 不分步 */}
+      {/* 项目类型: 下拉菜单, 选定后下方字段自动联动 */}
       <div>
         <SectionLabel hint="选定后下方字段自动联动">项目类型</SectionLabel>
-        <div className="grid grid-cols-3 gap-1.5">
+        <NativeSelect value={projectKind} onChange={v => chooseKind(v as ProjectKind)} dark={dark}>
           {PROJECT_KIND_PRESETS.map(opt => {
-            const active = projectKind === opt.kind
             const disabled = opt.kind === 'extension' && !canCreateExtension
-            return (
-              <button key={opt.kind} type="button" disabled={disabled} onClick={() => chooseKind(opt.kind)}
-                title={disabled ? '仅管理员可创建' : opt.note}
-                className="rounded-lg border p-2 text-left transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
-                style={active
-                  ? { background: 'rgba(59,130,246,0.10)', borderColor: `${opt.accent}88`, color: dark ? '#f1f5f9' : '#1e293b' }
-                  : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span style={{ color: opt.accent }}>{opt.icon}</span>
-                  <span className="text-[12px] font-medium truncate">{opt.label}</span>
-                </div>
-                <p className="text-[10px] leading-tight truncate" style={{ color: 'var(--text-muted)' }}>{opt.desc}</p>
-              </button>
-            )
+            return <option key={opt.kind} value={opt.kind} disabled={disabled}>{opt.label}{disabled ? '（仅管理员）' : ` · ${opt.note}`}</option>
           })}
-        </div>
+        </NativeSelect>
+        <p className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>{PROJECT_KIND_PRESETS.find(p => p.kind === projectKind)?.desc}</p>
       </div>
       <div>
         <SectionLabel>项目名称</SectionLabel>
@@ -780,20 +842,19 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               </button>
             </div>
           </div>
+          {/* 可见性: 学习 modals.tsx NewProjectModal 模式 → 单行按钮触发二级 modal */}
           <div>
             <SectionLabel hint="谁能看到这个项目">可见性</SectionLabel>
-            <div className="grid grid-cols-4 gap-1.5">
-              {VISIBILITY_OPTIONS.map(opt => {
-                const active = visibility === opt.value
-                return (
-                  <button key={opt.value} type="button" title={opt.desc} onClick={() => setVisibility(opt.value)}
-                    className="h-8 rounded-lg border text-[12px] transition-colors"
-                    style={active ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' } : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-                    {opt.label}
-                  </button>
-                )
-              })}
-            </div>
+            <button type="button" onClick={() => setPermissionOpen(true)}
+              className="flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
+              style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
+              <Eye className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[12px] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>修改项目权限</span>
+                <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{visibilityOption.label} · {visibilityOption.desc}</span>
+              </span>
+              <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
+            </button>
           </div>
           {projectKind === 'default' && (
             <label className="flex items-start gap-2 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
@@ -819,6 +880,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
         <PathPickerModal initialPath={user?.work_dir} onClose={() => setPickerOpen(false)}
           onPick={(_abs, rel, manual) => { setBindPath(rel || _abs); setBindPathManual(!!manual); setPickerOpen(false) }} />
       )}
+      {permissionSettingsModal}
     </CreateModalShell>
   )
 }
@@ -1080,10 +1142,18 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
           <LanguageSelect value={language} onChange={setLanguage} />
         </div>
       </div>
-      <div className="space-y-2 rounded-xl p-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--input-border)' }}>
-        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{issueId ? 'Skill / Memory（点击展开选择）' : '选择 Issue 后可配置 Skill / Memory'}</p>
-        <PickerPopover title="Skill" items={availSkills} excluded={excludedSkills} onToggle={id => toggle(excludedSkills, id, setExcludedSkills)} emptyText="该 Issue 未启用 Skill" dark={dark} />
-        <PickerPopover title="Memory" items={availMemories} excluded={excludedMemories} onToggle={id => toggle(excludedMemories, id, setExcludedMemories)} emptyText="无可用 Memory" dark={dark} />
+      <div>
+        <SectionLabel hint={issueId ? '点击展开二级弹窗选择' : '选择 Issue 后可配置'}>Skill / Memory</SectionLabel>
+        <SkillMemoryPicker
+          skills={availSkills}
+          memories={availMemories}
+          excludedSkills={excludedSkills}
+          excludedMemories={excludedMemories}
+          onToggleSkill={id => toggle(excludedSkills, id, setExcludedSkills)}
+          onToggleMemory={id => toggle(excludedMemories, id, setExcludedMemories)}
+          disabled={!issueId}
+          dark={dark}
+        />
       </div>
       <AttachmentZone attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
       {err && <ErrBanner>{err}</ErrBanner>}
@@ -1118,7 +1188,6 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const [availMemories, setAvailMemories] = useState<PickItem[]>([])
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set())
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set())
-  const [mainSkillOpen, setMainSkillOpen] = useState(false)
 
   const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [])
   const selectedProject = projects.list.find((p: any) => p.id === projectId)
@@ -1170,7 +1239,6 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
       }
       return next
     })
-    setMainSkillOpen(false)
   }
   const toggleSkill = (id: string) => {
     if (isMainSkill(id) || isMutexSkill(id)) return
@@ -1203,14 +1271,6 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
       onDone(s, s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/r/${researchId}` : undefined)
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
   }
-
-  const mainSkillRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!mainSkillOpen) return
-    const close = (e: MouseEvent) => { if (mainSkillRef.current && !mainSkillRef.current.contains(e.target as Node)) setMainSkillOpen(false) }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [mainSkillOpen])
 
   return (
     <CreateModalShell title="新建 Research Agent" onClose={onClose} dark={dark} width={600}
@@ -1248,50 +1308,41 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
         </div>
       </div>
       <div>
-        <SectionLabel>角色</SectionLabel>
-        <div className="grid grid-cols-2 gap-1.5">
-          {([['research_assistant', '研究助理'], ['chief_researcher', '首席研究员']] as const).map(([k, label]) => {
-            const active = role === k
-            return (
-              <button key={k} type="button" onClick={() => setRole(k)} disabled={!researchId}
-                className="h-9 rounded-lg border text-[12px] transition-colors disabled:opacity-40"
-                style={active ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' } : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-                {label}
-              </button>
-            )
-          })}
-        </div>
+        <SectionLabel hint="创建后不可更改">角色</SectionLabel>
+        <NativeSelect value={role} onChange={v => setRole(v as 'research_assistant' | 'chief_researcher')} disabled={!researchId} dark={dark}>
+          <option value="research_assistant">研究助理</option>
+          <option value="chief_researcher">首席研究员</option>
+        </NativeSelect>
       </div>
-      {/* 主 Skill 强制联动: 选定主 → 关联自动勾选锁定, 冲突类置灰互斥 */}
-      <div className="space-y-2 rounded-xl p-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--input-border)' }}>
-        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{researchId ? '主 Skill（选定后关联 Skill 自动锁定、冲突 Skill 自动互斥）' : '选择 Research 后可配置主 Skill'}</p>
-        <div className="relative" ref={mainSkillRef}>
-          <button type="button" onClick={() => researchId && setMainSkillOpen(v => !v)} disabled={!researchId}
-            className="w-full h-10 rounded-xl border flex items-center justify-between px-3 text-[12px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
-            style={{ background: 'var(--input-bg)', borderColor: chosenMainSkill ? 'rgba(59,130,246,0.48)' : 'var(--input-border)', color: dark ? '#e2e8f0' : '#334155' }}>
-            <span className="truncate flex items-center gap-1.5">
-              {chosenMainSkill ? <><Lock className="w-3 h-3" style={{ color: '#60a5fa' }} />{chosenMainSkill.name}</> : '选择主 Skill（可选）'}
-            </span>
-            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${mainSkillOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
-          </button>
-          {mainSkillOpen && (
-            <div className="absolute z-[80] mt-1 left-0 right-0 rounded-xl shadow-2xl overflow-hidden"
-              style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxHeight: '260px', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-              <button type="button" onClick={() => chooseMainSkill(null)} className="w-full text-left px-3 py-2 text-[12px] hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>不选择主 Skill（完全自定义）</button>
-              {agentSkills.length === 0 && <p className="px-3 py-2 text-[11px] italic" style={{ color: 'var(--text-muted)' }}>该 Research 无可用 Agent Skill</p>}
-              {agentSkills.map(sk => (
-                <button key={sk.id} type="button" onClick={() => chooseMainSkill(sk)} className="w-full text-left px-3 py-2 hover:bg-[var(--bg-card-hover)]"
-                  style={{ background: chosenMainSkill?.id === sk.id ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
-                  <div className="text-[12px] truncate" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{sk.name}</div>
-                  {sk.research_role && <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{sk.research_role}</div>}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <PickerPopover title="Skill（关联已锁定 / 冲突已禁用）" items={availSkills} excluded={excludedSkills} onToggle={toggleSkill}
-          lockedOf={isMainSkill} mutexOf={isMutexSkill} accentLabelOf={accentSkill} emptyText="无可用 Skill" dark={dark} />
-        <PickerPopover title="Memory" items={availMemories} excluded={excludedMemories} onToggle={toggleMemory} emptyText="无可用 Memory" dark={dark} />
+      <div>
+        <SectionLabel hint={researchId ? '选定后关联 Skill 自动锁定、冲突 Skill 自动互斥' : '选择 Research 后可配置'}>主 Skill</SectionLabel>
+        <NativeSelect
+          value={chosenMainSkill?.id || ''}
+          onChange={v => {
+            const sk = agentSkills.find(s => s.id === v) || null
+            chooseMainSkill(sk)
+          }}
+          disabled={!researchId || agentSkills.length === 0}
+          dark={dark}>
+          <option value="">{agentSkills.length === 0 ? '该 Research 无可用 Agent Skill' : '不选择主 Skill（完全自定义）'}</option>
+          {agentSkills.map(sk => <option key={sk.id} value={sk.id}>{sk.name}{sk.research_role ? ` · ${sk.research_role}` : ''}</option>)}
+        </NativeSelect>
+      </div>
+      <div>
+        <SectionLabel hint={researchId ? '主 Skill 关联锁定 / 冲突互斥, 点击展开选择' : '选择 Research 后可配置'}>Skill / Memory</SectionLabel>
+        <SkillMemoryPicker
+          skills={availSkills}
+          memories={availMemories}
+          excludedSkills={excludedSkills}
+          excludedMemories={excludedMemories}
+          onToggleSkill={toggleSkill}
+          onToggleMemory={toggleMemory}
+          skillLockedOf={isMainSkill}
+          skillMutexOf={isMutexSkill}
+          skillAccentOf={accentSkill}
+          disabled={!researchId}
+          dark={dark}
+        />
       </div>
       {err && <ErrBanner>{err}</ErrBanner>}
     </CreateModalShell>
