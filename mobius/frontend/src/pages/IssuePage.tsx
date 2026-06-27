@@ -8,6 +8,7 @@ import {
   NewSessionModal, RenameSessionModal, RenameIssueModal, ConfirmModal,
 } from '../components/modals'
 import { ChatArea, SessionRow } from '../components/chat'
+import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
 import { TruncatedText } from '../components/truncated-text'
@@ -455,14 +456,14 @@ function SessionOverview({ sessions, issueId, onOpenSession, onNewSession, onEdi
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {pagedSessions.map((s: any) => {
-                // 完成 / 失败 / 执行中 状态完全由 .imac/flags/<sid>/{running.flag,failed.flag} 决定:
-                //   - failed.flag 在    → isFailed (最高优先级)
-                //   - flag 目录存在 && running.flag 不在 && 非 failed → isCompleted (success)
-                //   - 其它情况 → 未完成
-                // 不再读 sessions_v2.status, 也不再依赖手动 [完成] 按钮 — 那个按钮已删除.
-                const isFailed = s.job_failed === true
-                const isCompleted = s.job_accomplished === true && !isFailed
-                const isRunning = s.agent_status === 'running'
+                // session 状态完全由 agent_status 决定 (单一真相源: 后端 agent-status-syncer
+                // 周期重算写入, 与 GET /api/sessions/:id/status 共用判定). 前端只读 agent_status,
+                // 不再二次判定 job_failed / job_accomplished / sessions_v2.status.
+                const _st = s.agent_status || 'idle'
+                const isFailed = _st === 'failed'
+                const isRunning = _st === 'running'
+                const isCompleted = _st === 'completed'
+                const isWaiting = _st === 'waiting'
                 const isLogoReviewSessionCard = projectId === LOGO_REVIEW_PROJECT_ID
                   && String(s.name || '').includes(LOGO_REVIEW_SESSION_NAME)
                 const isGuidedOrReviewSession = isGuidedDemoSession(s.session_id) || isLogoReviewSessionCard
@@ -474,10 +475,7 @@ function SessionOverview({ sessions, issueId, onOpenSession, onNewSession, onEdi
                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
                     <div className="px-4 py-3 border-b flex items-start gap-2" style={{ borderColor: 'var(--border-color)' }}>
                       <div className="mt-1 flex-shrink-0">
-                        {isFailed ? <div className="w-2 h-2 rounded-full bg-red-500/70" />
-                          : isRunning ? <div className="pulse-green" />
-                          : isCompleted ? <div className="w-2 h-2 rounded-full bg-green-500/60" />
-                          : <div className="w-2 h-2 rounded-full bg-blue-400/60" />}
+                        <AgentStatusDot agentStatus={s.agent_status} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className={`text-[14px] font-semibold truncate ${isCompleted ? 'line-through' : ''}`}
@@ -486,7 +484,8 @@ function SessionOverview({ sessions, issueId, onOpenSession, onNewSession, onEdi
                           {isFailed && <span className="text-red-400">● 任务失败</span>}
                           {!isFailed && isRunning && <span className="text-green-400">● 执行中</span>}
                           {!isFailed && !isRunning && isCompleted && <span>已完成</span>}
-                          {!isFailed && !isRunning && !isCompleted && <span>{s.status === 'active' ? '活跃' : s.status}</span>}
+                          {isWaiting && <span className="text-amber-400">● 等待输入</span>}
+                          {!isFailed && !isRunning && !isCompleted && !isWaiting && <span>{s.status === 'active' ? '活跃' : s.status}</span>}
                         </div>
                       </div>
                       <div className={`flex items-center gap-0.5 transition-opacity flex-shrink-0 ${isGuidedOrReviewSession ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>

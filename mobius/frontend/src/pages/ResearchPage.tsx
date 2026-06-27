@@ -5,6 +5,7 @@ import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
 import { ErrBanner, NewSessionModal, RenameSessionModal, RenameResearchModal } from '../components/modals'
 import { ChatArea, SessionRow } from '../components/chat'
+import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
 import { ResizablePanel } from '../components/resizable-panel'
@@ -425,8 +426,11 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {sessions.map((s: any) => {
-              const isRunning = s.agent_status === 'running'
-              const isFailed = s.job_failed === true
+              const _st = s.agent_status || 'idle'
+              const isRunning = _st === 'running'
+              const isFailed = _st === 'failed'
+              const isCompleted = _st === 'completed'
+              const isWaiting = _st === 'waiting'
               return (
                 <div key={s.session_id}
                   onClick={() => onOpenSession(s.session_id)}
@@ -434,16 +438,16 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
                   style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
                   <div className="px-4 py-3 border-b flex items-start gap-2" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="mt-1 flex-shrink-0">
-                      {isFailed ? <div className="w-2 h-2 rounded-full bg-red-500/70" />
-                        : isRunning ? <div className="pulse-green" />
-                        : <div className="w-2 h-2 rounded-full bg-emerald-400/60" />}
+                      <AgentStatusDot agentStatus={s.agent_status} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-[14px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</div>
                       <div className="text-[10px] mt-0.5 flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
                         {isFailed && <span className="text-red-400">● 任务失败</span>}
                         {!isFailed && isRunning && <span className="text-green-400">● 执行中</span>}
-                        {!isFailed && !isRunning && <span>{s.research_role === 'chief_researcher' ? 'chief_researcher' : 'research_assistant'}</span>}
+                        {!isFailed && !isRunning && isCompleted && <span>已完成</span>}
+                        {isWaiting && <span className="text-amber-400">● 等待输入</span>}
+                        {!isFailed && !isRunning && !isCompleted && !isWaiting && <span>{s.research_role === 'chief_researcher' ? 'chief_researcher' : 'research_assistant'}</span>}
                       </div>
                     </div>
                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">

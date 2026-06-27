@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { timeAgo } from '../shell'
+import { AgentStatusDot } from '../AgentStatusDot'
 import type { IssueConfirmAction } from './types'
 import {
   LOGO_REVIEW_ISSUE_TITLE,
@@ -97,10 +98,7 @@ export function IssueCard({
               <Link key={s.session_id} to={`/u/${userParam}/p/${projectId}/i/${issue.id}?session=${s.session_id}`}
                 data-tour={isLogoReviewSession ? 'logo-review-session-link' : undefined}
                 className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors">
-                {s.job_failed === true ? <div className="w-1.5 h-1.5 rounded-full bg-red-500/70 flex-shrink-0" />
-                  : s.agent_status === 'running' ? <div className="pulse-green" />
-                  : s.job_accomplished === true ? <div className="w-1.5 h-1.5 rounded-full bg-green-500/60 flex-shrink-0" />
-                  : <div className="w-1.5 h-1.5 rounded-full bg-blue-400/60 flex-shrink-0" />}
+                <AgentStatusDot agentStatus={s.agent_status} className="flex-shrink-0" />
                 <span className="text-[12px] truncate flex-1" style={{ color: 'var(--text-primary)' }}>{s.name}</span>
                 <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{s.message_count} · {timeAgo(s.last_active)}</span>
               </Link>
