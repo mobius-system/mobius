@@ -185,6 +185,12 @@ docker build -t imac-mobius-base:latest -f deploy/Dockerfile . && docker build -
 docker compose up
 ```
 
+<!-- update cheat sheet
+git pull && rm -rf host-data
+docker build -t imac-mobius-base:latest -f deploy/Dockerfile . && docker build -t imac-mobius-exe:latest . && docker compose up
+ -->
+
+
 #### Option 2: Direct Deployment (Linux or MacOS)
 
 ```bash

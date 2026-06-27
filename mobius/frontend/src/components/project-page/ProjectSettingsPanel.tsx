@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
 import { ProjectUserContextWhitelist } from '../context-whitelist'
+import { ToggleSwitch } from '../toggle-switch'
 import { MemoriesManager } from '../memories'
 import { OpenInVSCodeButton } from '../project-files'
 import { SkillsManager } from '../skills'
@@ -440,30 +441,6 @@ function SettingsCard({ title, children }: { title: string; children: ReactNode 
         {children}
       </div>
     </section>
-  )
-}
-
-function SettingsSwitch({
-  checked,
-  disabled,
-}: {
-  checked: boolean
-  disabled?: boolean
-}) {
-  return (
-    <span
-      className="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors"
-      style={{
-        background: checked ? '#3b82f6' : 'var(--input-border)',
-        opacity: disabled ? 0.75 : 1,
-      }}
-      aria-hidden="true"
-    >
-      <span
-        className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform"
-        style={{ transform: checked ? 'translateX(18px)' : 'translateX(2px)' }}
-      />
-    </span>
   )
 }
 
@@ -1058,14 +1035,14 @@ export function ProjectSettingsPanel({
         {project.kind === 'extension' ? null : (
           <SettingsCard title="拓展功能">
             <div>
-              <label onMouseDown={e => e.preventDefault()} className={`flex items-center gap-3 text-[13px] select-none ${editResearchEnabled || !canManageProject ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`} style={{ color: 'var(--text-primary)' }}>
-                <input type="checkbox" checked={!editResearchEnabled && editDefaultUseWorktree}
-                  disabled={editResearchEnabled || !canManageProject}
-                  onChange={e => setEditDefaultUseWorktree(e.target.checked)}
-                  className="sr-only" />
-                <SettingsSwitch checked={!editResearchEnabled && editDefaultUseWorktree} disabled={editResearchEnabled || !canManageProject} />
+              <ToggleSwitch
+                checked={!editResearchEnabled && editDefaultUseWorktree}
+                disabled={editResearchEnabled || !canManageProject}
+                onChange={setEditDefaultUseWorktree}
+                className="flex items-center gap-3 text-[13px]"
+                style={{ color: 'var(--text-primary)' }}>
                 默认使用 git worktree
-              </label>
+              </ToggleSwitch>
               <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
                 {editResearchEnabled
                   ? '已启用 Research 系统，本项目强制禁用 worktree'
@@ -1073,18 +1050,17 @@ export function ProjectSettingsPanel({
               </p>
             </div>
             <div className="pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <label onMouseDown={e => e.preventDefault()} className={`flex items-center gap-3 text-[13px] select-none ${canManageProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`} style={{ color: 'var(--text-primary)' }}>
-                <input type="checkbox" checked={editResearchEnabled}
-                  disabled={!canManageProject}
-                  onChange={e => {
-                    const enabled = e.target.checked
-                    setEditResearchEnabled(enabled)
-                    if (enabled) setEditDefaultUseWorktree(false)
-                  }}
-                  className="sr-only" />
-                <SettingsSwitch checked={editResearchEnabled} disabled={!canManageProject} />
+              <ToggleSwitch
+                checked={editResearchEnabled}
+                disabled={!canManageProject}
+                onChange={enabled => {
+                  setEditResearchEnabled(enabled)
+                  if (enabled) setEditDefaultUseWorktree(false)
+                }}
+                className="flex items-center gap-3 text-[13px]"
+                style={{ color: 'var(--text-primary)' }}>
                 启用 Research 系统
-              </label>
+              </ToggleSwitch>
               <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示 Research 入口；Research 与 Issues 并列管理。启用时会自动禁用 git worktree</p>
             </div>
             <div className="pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
@@ -1240,18 +1216,22 @@ export function ProjectSettingsPanel({
                 {PROJECT_VISIBILITY_OPTIONS.find(option => option.value === editVisibility)?.description}
               </p>
               <div className="mt-2 space-y-1.5">
-                <label onMouseDown={e => e.preventDefault()} className={`flex items-center gap-3 text-[12px] select-none ${canManageProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`} style={{ color: 'var(--text-secondary)' }}>
-                  <input type="checkbox" checked={editCanPostIssue} disabled={!canManageProject} onChange={e => setEditCanPostIssue(e.target.checked)}
-                    className="sr-only" />
-                  <SettingsSwitch checked={editCanPostIssue} disabled={!canManageProject} />
+                <ToggleSwitch
+                  checked={editCanPostIssue}
+                  disabled={!canManageProject}
+                  onChange={setEditCanPostIssue}
+                  className="flex items-center gap-3 text-[12px]"
+                  style={{ color: 'var(--text-secondary)' }}>
                   读者可创建任务单 (private 永远只允许 owner, 不受此开关影响)
-                </label>
-                <label onMouseDown={e => e.preventDefault()} className={`flex items-center gap-3 text-[12px] select-none ${canManageProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`} style={{ color: 'var(--text-secondary)' }}>
-                  <input type="checkbox" checked={editCanRunSession} disabled={!canManageProject} onChange={e => setEditCanRunSession(e.target.checked)}
-                    className="sr-only" />
-                  <SettingsSwitch checked={editCanRunSession} disabled={!canManageProject} />
+                </ToggleSwitch>
+                <ToggleSwitch
+                  checked={editCanRunSession}
+                  disabled={!canManageProject}
+                  onChange={setEditCanRunSession}
+                  className="flex items-center gap-3 text-[12px]"
+                  style={{ color: 'var(--text-secondary)' }}>
                   读者可启动执行会话 (同上, private 永远只允许 owner)
-                </label>
+                </ToggleSwitch>
               </div>
             </div>
             <div className="grid grid-cols-1 gap-3">

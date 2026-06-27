@@ -6,6 +6,7 @@ import { timeAgo } from './shell'
 import { SkillsManager } from './skills'
 import { MemoriesManager } from './memories'
 import { ProjectUserContextWhitelist } from './context-whitelist'
+import { ToggleSwitch } from './toggle-switch'
 import { ExpandableTextarea } from './expandable-textarea'
 import { type Attachment, AttachmentComposer, appendAttachmentsToDesc } from './attachments'
 import {
@@ -94,24 +95,6 @@ function middleEllipsisPath(value: string, maxLength = 64) {
   const headLength = Math.max(4, Math.floor(available * 0.45))
   const tailLength = Math.max(4, available - headLength)
   return `${text.slice(0, headLength)}...${text.slice(-tailLength)}`
-}
-
-export function ModalSwitch({ checked, disabled }: { checked: boolean; disabled?: boolean }) {
-  return (
-    <span
-      className="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors"
-      style={{
-        background: checked ? '#3b82f6' : 'var(--input-border)',
-        opacity: disabled ? 0.75 : 1,
-      }}
-      aria-hidden="true"
-    >
-      <span
-        className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform"
-        style={{ transform: checked ? 'translateX(18px)' : 'translateX(2px)' }}
-      />
-    </span>
-  )
 }
 
 // 统一的错误横幅: 与 ChatArea 同款 rounded-xl 红色 banner.
@@ -542,18 +525,20 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
         </p>
       ) : (
         <div className="mt-2 space-y-1.5">
-          <label onMouseDown={e => e.preventDefault()} className="flex items-center gap-3 text-[12px] cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
-            <input type="checkbox" checked={canPostIssue} onChange={e => { setCanPostIssue(e.target.checked); setErr('') }}
-              className="sr-only" />
-            <ModalSwitch checked={canPostIssue} />
+          <ToggleSwitch
+            checked={canPostIssue}
+            onChange={v => { setCanPostIssue(v); setErr('') }}
+            className="flex items-center gap-3 text-[12px]"
+            style={{ color: 'var(--text-secondary)' }}>
             读者可创建任务单 (private 永远只允许 owner, 不受此开关影响)
-          </label>
-          <label onMouseDown={e => e.preventDefault()} className="flex items-center gap-3 text-[12px] cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
-            <input type="checkbox" checked={canRunSession} onChange={e => { setCanRunSession(e.target.checked); setErr('') }}
-              className="sr-only" />
-            <ModalSwitch checked={canRunSession} />
+          </ToggleSwitch>
+          <ToggleSwitch
+            checked={canRunSession}
+            onChange={v => { setCanRunSession(v); setErr('') }}
+            className="flex items-center gap-3 text-[12px]"
+            style={{ color: 'var(--text-secondary)' }}>
             读者可启动执行会话 (同上, private 永远只允许 owner)
-          </label>
+          </ToggleSwitch>
         </div>
       )}
     </div>
@@ -718,26 +703,30 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
                     </button>
                   </div>
 
-                  <label data-tour="project-worktree-toggle" onMouseDown={e => e.preventDefault()} className={`flex items-center gap-3 text-[13px] select-none ${researchEnabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`} style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
-                    <input type="checkbox" checked={!researchEnabled && defaultUseWorktree} disabled={researchEnabled}
-                      onChange={e => setDefaultUseWorktree(e.target.checked)}
-                      className="sr-only" />
-                    <ModalSwitch checked={!researchEnabled && defaultUseWorktree} disabled={researchEnabled} />
+                  <ToggleSwitch
+                    data-tour="project-worktree-toggle"
+                    checked={!researchEnabled && defaultUseWorktree}
+                    disabled={researchEnabled}
+                    onChange={setDefaultUseWorktree}
+                    className="flex items-center gap-3 text-[13px]"
+                    style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
                     默认使用 git worktree（新建 Issue 时该选项默认打钩）
-                  </label>
+                  </ToggleSwitch>
                   {researchEnabled && (
                     <p className="text-[11px] -mt-1" style={{ color: 'var(--text-muted)' }}>已启用 Research 系统，本项目强制禁用 worktree</p>
                   )}
                   {projectKind === 'default' && (
-                    <label data-tour="project-research-toggle" onMouseDown={e => e.preventDefault()} className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
-                      <input type="checkbox" checked={researchEnabled} onChange={e => {
-                        setResearchEnabled(e.target.checked)
-                        if (e.target.checked) setDefaultUseWorktree(false)
+                    <ToggleSwitch
+                      data-tour="project-research-toggle"
+                      checked={researchEnabled}
+                      onChange={enabled => {
+                        setResearchEnabled(enabled)
+                        if (enabled) setDefaultUseWorktree(false)
                       }}
-                        className="sr-only" />
-                      <ModalSwitch checked={researchEnabled} />
+                      className="flex items-center gap-3 text-[13px]"
+                      style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
                       启用 Research 系统（默认关闭，开启后自动禁用 git worktree）
-                    </label>
+                    </ToggleSwitch>
                   )}
                 </>
               )}
@@ -925,28 +914,31 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
               {PROJECT_VISIBILITY_OPTIONS.find(option => option.value === visibility)?.description}
             </p>
             <div className="mt-2 space-y-1.5">
-              <label onMouseDown={e => e.preventDefault()} className="flex items-center gap-3 text-[12px] cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
-                <input type="checkbox" checked={canPostIssue} onChange={e => { setCanPostIssue(e.target.checked); setErr('') }}
-                  className="sr-only" />
-                <ModalSwitch checked={canPostIssue} />
+              <ToggleSwitch
+                checked={canPostIssue}
+                onChange={v => { setCanPostIssue(v); setErr('') }}
+                className="flex items-center gap-3 text-[12px]"
+                style={{ color: 'var(--text-secondary)' }}>
                 读者可创建任务单 (private 永远只允许 owner, 不受此开关影响)
-              </label>
-              <label onMouseDown={e => e.preventDefault()} className="flex items-center gap-3 text-[12px] cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
-                <input type="checkbox" checked={canRunSession} onChange={e => { setCanRunSession(e.target.checked); setErr('') }}
-                  className="sr-only" />
-                <ModalSwitch checked={canRunSession} />
+              </ToggleSwitch>
+              <ToggleSwitch
+                checked={canRunSession}
+                onChange={v => { setCanRunSession(v); setErr('') }}
+                className="flex items-center gap-3 text-[12px]"
+                style={{ color: 'var(--text-secondary)' }}>
                 读者可启动执行会话 (同上, private 永远只允许 owner)
-              </label>
+              </ToggleSwitch>
             </div>
           </div>
           <div>
-            <label onMouseDown={e => e.preventDefault()} className={`flex items-center gap-3 text-[13px] select-none ${researchEnabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`} style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
-              <input type="checkbox" checked={!researchEnabled && defaultUseWorktree} disabled={researchEnabled}
-                onChange={e => { setDefaultUseWorktree(e.target.checked); setErr('') }}
-                className="sr-only" />
-              <ModalSwitch checked={!researchEnabled && defaultUseWorktree} disabled={researchEnabled} />
+            <ToggleSwitch
+              checked={!researchEnabled && defaultUseWorktree}
+              disabled={researchEnabled}
+              onChange={v => { setDefaultUseWorktree(v); setErr('') }}
+              className="flex items-center gap-3 text-[13px]"
+              style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
               默认使用 git worktree
-            </label>
+            </ToggleSwitch>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
               {researchEnabled
                 ? '已启用 Research 系统，本项目强制禁用 worktree'
@@ -954,12 +946,13 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
             </p>
           </div>
           <div>
-            <label onMouseDown={e => e.preventDefault()} className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
-              <input type="checkbox" checked={researchEnabled} onChange={e => { setResearchEnabled(e.target.checked); setErr('') }}
-                className="sr-only" />
-              <ModalSwitch checked={researchEnabled} />
+            <ToggleSwitch
+              checked={researchEnabled}
+              onChange={v => { setResearchEnabled(v); setErr('') }}
+              className="flex items-center gap-3 text-[13px]"
+              style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
               启用 Research 系统
-            </label>
+            </ToggleSwitch>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示 Research 入口；Research 与 Issues 并列管理。启用时会自动禁用 git worktree</p>
           </div>
           <div>
@@ -1422,12 +1415,14 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
             <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
           </button>
 
-          <label data-tour="issue-worktree-toggle" onMouseDown={e => e.preventDefault()} className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
-            <input type="checkbox" checked={useWorktree} onChange={e => { setUseWorktree(e.target.checked); setErr('') }}
-              className="sr-only" />
-            <ModalSwitch checked={useWorktree} />
+          <ToggleSwitch
+            data-tour="issue-worktree-toggle"
+            checked={useWorktree}
+            onChange={v => { setUseWorktree(v); setErr('') }}
+            className="flex items-center gap-3 text-[13px]"
+            style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
             使用 git worktree（在绑定路径下为本 Issue 开独立工作区）
-          </label>
+          </ToggleSwitch>
           {useWorktree && (
             <div className="space-y-1.5">
               <input value={branch} onChange={e => { setBranch(e.target.value); setErr('') }}
@@ -1442,22 +1437,24 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
             </div>
           )}
 
-          <label onMouseDown={e => e.preventDefault()} className="flex items-start gap-3 text-[13px] leading-5 cursor-pointer select-none" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
-            <input type="checkbox" checked={isPlanning} onChange={e => { setIsPlanning(e.target.checked); setErr('') }}
-              className="sr-only" />
-            <ModalSwitch checked={isPlanning} />
+          <ToggleSwitch
+            checked={isPlanning}
+            onChange={v => { setIsPlanning(v); setErr('') }}
+            className="flex items-start gap-3 text-[13px] leading-5"
+            style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
             <span>
               <span className="font-medium">系统宏观规划模式</span>
             </span>
-          </label>
+          </ToggleSwitch>
 
           {!isPlanning && (
-            <label onMouseDown={e => e.preventDefault()} className="flex items-start gap-3 text-[13px] leading-5 cursor-pointer select-none" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
-              <input type="checkbox" checked={createFirstSession} onChange={e => { setCreateFirstSession(e.target.checked); setErr('') }}
-                className="sr-only" />
-              <ModalSwitch checked={createFirstSession} />
+            <ToggleSwitch
+              checked={createFirstSession}
+              onChange={v => { setCreateFirstSession(v); setErr('') }}
+              className="flex items-start gap-3 text-[13px] leading-5"
+              style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
               <span>立即创建第一个 Session（创建后自动打开新 Session 菜单）</span>
-            </label>
+            </ToggleSwitch>
           )}
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}

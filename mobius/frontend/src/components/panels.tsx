@@ -52,6 +52,7 @@ import {
   writeTextRedactionRules,
   type TextRedactionRule,
 } from '../services/text-redaction'
+import { ToggleSwitch } from './toggle-switch'
 
 type AdminTmuxContext = {
   session_id: string
@@ -1370,30 +1371,22 @@ function ModelPromptLimitsCard() {
                   )
                 })}
               </div>
-              <label
-                onMouseDown={e => e.preventDefault()}
-                className="mb-2 flex cursor-pointer items-center justify-between gap-3 rounded-md border px-2 py-1.5"
+              <ToggleSwitch
+                checked={useProxy}
+                disabled={savingProxy || loading}
+                loading={savingProxy}
+                onChange={next => toggleProxy(row, next)}
+                switchPosition="end"
+                activeColor="#10b981"
+                className="mb-2 flex items-center justify-between gap-3 rounded-md border px-2 py-1.5"
                 style={{
                   background: useProxy ? 'rgba(16,185,129,0.10)' : 'var(--bg-card)',
                   borderColor: useProxy ? 'rgba(16,185,129,0.36)' : 'var(--input-border)',
-                }}
-              >
-                <input type="checkbox" className="sr-only"
-                  checked={useProxy}
-                  disabled={savingProxy || loading}
-                  onChange={e => toggleProxy(row, e.target.checked)} />
+                }}>
                 <span className="text-[11px]" style={{ color: useProxy ? '#16a34a' : 'var(--text-muted)' }}>
                   {useProxy ? '使用 proxychains' : '直连'}
                 </span>
-                <span className="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors"
-                  style={{ background: useProxy ? '#10b981' : 'var(--input-border)' }}>
-                  <span className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform"
-                    style={{ transform: useProxy ? 'translateX(18px)' : 'translateX(2px)' }} />
-                  {savingProxy && (
-                    <Loader2 className="absolute -right-5 top-0.5 h-4 w-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
-                  )}
-                </span>
-              </label>
+              </ToggleSwitch>
               <div className="flex items-center gap-2">
                 <button type="button" title="保存限制" onClick={() => save(row)} disabled={saving || loading}
                   className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md bg-blue-600 px-3 text-[12px] text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
@@ -1483,39 +1476,27 @@ function AdminAssistantCallbacksPanel() {
           <span className="break-all">{error}</span>
         </div>
       )}
-      <label
-        onMouseDown={e => e.preventDefault()}
-        className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-3"
+      <ToggleSwitch
+        checked={enabled}
+        disabled={loading || saving || !payload}
+        loading={saving}
+        onChange={toggle}
+        switchPosition="end"
+        activeColor="#10b981"
+        className="flex items-center justify-between gap-3 rounded-lg px-3 py-3"
         style={{
           background: enabled ? 'rgba(16,185,129,0.10)' : 'var(--input-bg)',
           border: `1px solid ${enabled ? 'rgba(16,185,129,0.36)' : 'var(--input-border)'}`,
-          opacity: loading || !payload ? 0.55 : 1,
-        }}
-      >
-        <input
-          type="checkbox"
-          className="sr-only"
-          checked={enabled}
-          disabled={loading || saving || !payload}
-          onChange={e => toggle(e.target.checked)}
-        />
-        <div className="min-w-0">
-          <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+        }}>
+        <span className="block min-w-0">
+          <span className="block text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
             接收全站 Session 回调
-          </div>
-          <div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          </span>
+          <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
             小莫 48 小时内活跃时，接收其他用户的完成/失败通知
-          </div>
-        </div>
-        <span className="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors"
-          style={{ background: enabled ? '#10b981' : 'var(--input-border)' }}>
-          <span className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform"
-            style={{ transform: enabled ? 'translateX(18px)' : 'translateX(2px)' }} />
-          {saving && (
-            <Loader2 className="absolute -right-5 top-0.5 h-4 w-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
-          )}
+          </span>
         </span>
-      </label>
+      </ToggleSwitch>
     </section>
   )
 }
@@ -5725,29 +5706,16 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                     {totals.closed}
                   </span>
                 </div>
-                <label
-                  onMouseDown={e => e.preventDefault()}
-                  className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
+                <ToggleSwitch
+                  checked={showClosedWindows}
+                  onChange={setShowClosedWindows}
+                  switchPosition="end"
+                  activeColor="#0ea5e9"
+                  className="inline-flex h-8 items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
                   style={{ color: 'var(--text-secondary)' }}
-                  title="显示或隐藏已关闭的 Codex / Claude Code 窗口"
-                >
-                  <span>显示已关闭</span>
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={showClosedWindows}
-                    onChange={(e) => setShowClosedWindows(e.target.checked)}
-                  />
-                  <span
-                    className="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors"
-                    style={{ background: showClosedWindows ? '#0ea5e9' : 'var(--input-border)' }}
-                  >
-                    <span
-                      className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform"
-                      style={{ transform: showClosedWindows ? 'translateX(18px)' : 'translateX(2px)' }}
-                    />
-                  </span>
-                </label>
+                  title="显示或隐藏已关闭的 Codex / Claude Code 窗口">
+                  显示已关闭
+                </ToggleSwitch>
               </div>
 
               <BackendSection

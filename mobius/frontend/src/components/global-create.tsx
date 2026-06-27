@@ -17,7 +17,8 @@ import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
-import { ErrBanner, PathPickerModal, ModalSwitch } from './modals'
+import { ErrBanner, PathPickerModal } from './modals'
+import { ToggleSwitch } from './toggle-switch'
 import { ExpandableTextarea } from './expandable-textarea'
 import { type Attachment, newAttId, formatFileSize, uploadAttachmentFile, appendAttachmentsToDesc } from './attachments'
 import {
@@ -871,11 +872,13 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             </button>
           </div>
           {projectKind === 'default' && (
-            <label onMouseDown={e => e.preventDefault()} className="flex items-start gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-              <input type="checkbox" checked={researchEnabled} onChange={e => { setResearchEnabled(e.target.checked); if (e.target.checked) setDefaultUseWorktree(false) }} className="sr-only" />
-              <ModalSwitch checked={researchEnabled} />
+            <ToggleSwitch
+              checked={researchEnabled}
+              onChange={enabled => { setResearchEnabled(enabled); if (enabled) setDefaultUseWorktree(false) }}
+              className="flex items-start gap-3 text-[13px]"
+              style={{ color: dark ? '#cbd5e1' : '#334155' }}>
               <span><span className="font-medium">启用 Research 系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建 Research Agent 团队</span></span>
-            </label>
+            </ToggleSwitch>
           )}
           {projectKind === 'research' && (
             <div className="rounded-xl px-3 py-2 text-[11px] flex items-center gap-2" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
@@ -883,11 +886,13 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             </div>
           )}
           {!researchEnabled && (
-            <label onMouseDown={e => e.preventDefault()} className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-              <input type="checkbox" checked={defaultUseWorktree} onChange={e => setDefaultUseWorktree(e.target.checked)} className="sr-only" />
-              <ModalSwitch checked={defaultUseWorktree} />
+            <ToggleSwitch
+              checked={defaultUseWorktree}
+              onChange={setDefaultUseWorktree}
+              className="flex items-center gap-3 text-[13px]"
+              style={{ color: dark ? '#cbd5e1' : '#334155' }}>
               默认使用 git worktree（新建 Issue 时在绑定路径下开独立工作区）
-            </label>
+            </ToggleSwitch>
           )}
         </>
       )}
@@ -1044,20 +1049,24 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
         </span>
         <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
       </button>
-      <label onMouseDown={e => e.preventDefault()} className="flex items-start gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-        <input type="checkbox" checked={isPlanning} onChange={e => { setIsPlanning(e.target.checked); setErr('') }} className="sr-only" />
-        <ModalSwitch checked={isPlanning} />
+      <ToggleSwitch
+        checked={isPlanning}
+        onChange={v => { setIsPlanning(v); setErr('') }}
+        className="flex items-start gap-3 text-[13px]"
+        style={{ color: dark ? '#cbd5e1' : '#334155' }}>
         <span>
           <span className="font-medium">系统宏观规划模式</span>
         </span>
-      </label>
+      </ToggleSwitch>
       {!isPlanning && (
         <>
-          <label onMouseDown={e => e.preventDefault()} className="flex items-center gap-3 text-[13px] cursor-pointer select-none" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-            <input type="checkbox" checked={useWorktree} onChange={e => { setUseWorktree(e.target.checked); setErr('') }} className="sr-only" />
-            <ModalSwitch checked={useWorktree} />
+          <ToggleSwitch
+            checked={useWorktree}
+            onChange={v => { setUseWorktree(v); setErr('') }}
+            className="flex items-center gap-3 text-[13px]"
+            style={{ color: dark ? '#cbd5e1' : '#334155' }}>
             使用 git worktree（在绑定路径下为本 Issue 开独立工作区）
-          </label>
+          </ToggleSwitch>
           {useWorktree && (
             <div>
               <SectionLabel hint="留空则用 Issue 标识">分支名称</SectionLabel>
@@ -1085,7 +1094,12 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const [issueId, setIssueId] = useState(defaultIssueId || d.issueId || '')
   const [name, setName] = useState(d.name || '')
   const [desc, setDesc] = useState(d.desc || '')
+  // 模型默认值优先级 (对齐 NewSessionModal: modals.tsx): 用户残留草稿 > 项目级默认模型偏好 > 系统全局 'codex'.
+  // 后端创建 Session 时不回落项目 default_model (只回落全局 codex), 故模型默认完全靠前端预填.
+  // 顶栏快捷是"先选项目再建 Session", 项目在异步下拉里 → 用 effect 在项目确定后回落项目偏好;
+  // modelUserTouchedRef 记录用户是否手动改过模型 (或已有草稿), 改过则不再被项目偏好覆盖.
   const [model, setModel] = useState(d.model || 'codex')
+  const modelUserTouchedRef = useRef(!!d.model)
   const [language, setLanguage] = useState<SessionLanguage>(d.language || 'zh')
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set(d.excluded_skills || []))
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set(d.excluded_memories || []))
@@ -1104,6 +1118,14 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const issues = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/issues?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.issues || [])) : Promise.resolve([]), [projectId])
   const selectedProject = projects.list.find((p: any) => p.id === projectId)
   const selectedIssue = issues.list.find((i: any) => i.id === issueId)
+
+  // 项目确定/切换后, 若用户未手动改模型且无草稿 → 回落项目级默认模型偏好 (default_model).
+  // 对齐 NewSessionModal 的 defaultModel 优先级, 修复顶栏快捷"忽略项目模型设置".
+  const projectDefaultModel = selectedProject?.default_model
+  useEffect(() => {
+    if (modelUserTouchedRef.current) return
+    if (typeof projectDefaultModel === 'string' && projectDefaultModel.trim()) setModel(projectDefaultModel.trim())
+  }, [projectDefaultModel])
 
   // Skill/Memory 全集: 选完 issue 后拉 context-preview (POST, 拿 sources) + session-selection-defaults (GET, 拿默认排除集).
   // 默认排除集沿用后端"同 Issue 最新 Session 继承 + 内置 Skill 默认排除"机制, 与 NewSessionModal goPreview 一致,
@@ -1210,7 +1232,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
       <div className="grid grid-cols-2 gap-3">
         <div>
           <SectionLabel hint="创建后不可更改">模型</SectionLabel>
-          <ModelSelect value={model} onChange={setModel} dark={dark} />
+          <ModelSelect value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
         </div>
         <div>
           <SectionLabel hint="注入上下文语言">语言</SectionLabel>
@@ -1249,7 +1271,9 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const [name, setName] = useState(d.name || '')
   const [desc, setDesc] = useState(d.desc || '')
   const [role, setRole] = useState<'chief_researcher' | 'research_assistant'>(d.role || 'research_assistant')
+  // 模型默认值: 草稿 > 项目级默认模型偏好 > 全局 'codex' (同 CreateSessionForm, 对齐 NewSessionModal).
   const [model, setModel] = useState(d.model || 'codex')
+  const modelUserTouchedRef = useRef(!!d.model)
   const [language, setLanguage] = useState<SessionLanguage>(d.language || 'zh')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [loading, setLoading] = useState(false)
@@ -1266,6 +1290,12 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [])
   const selectedProject = projects.list.find((p: any) => p.id === projectId)
   const researchEnabled = !!selectedProject?.research_enabled
+  // 项目确定/切换后, 若用户未手动改模型且无草稿 → 回落项目级默认模型偏好 (default_model).
+  const projectDefaultModel = selectedProject?.default_model
+  useEffect(() => {
+    if (modelUserTouchedRef.current) return
+    if (typeof projectDefaultModel === 'string' && projectDefaultModel.trim()) setModel(projectDefaultModel.trim())
+  }, [projectDefaultModel])
   const researches = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/researches?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.researches || [])) : Promise.resolve([]), [projectId])
   const selectedResearch = researches.list.find((r: any) => r.id === researchId)
 
@@ -1408,7 +1438,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
       <div className="grid grid-cols-2 gap-3">
         <div>
           <SectionLabel hint="创建后不可更改">模型</SectionLabel>
-          <ModelSelect value={model} onChange={setModel} dark={dark} />
+          <ModelSelect value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
         </div>
         <div>
           <SectionLabel hint="注入上下文语言">语言</SectionLabel>
