@@ -1309,6 +1309,14 @@ export function isSessionNameMuted(agentStatus?: string | null) {
   return status === 'failed' || status === 'idle' || status === 'completed'
 }
 
+function runtimeStatusForSessionList(r: any) {
+  if (r?.failed === true) return 'failed'
+  if (r?.alive && r?.working) return 'running'
+  if (r?.alive) return 'waiting'
+  if (r?.job_accomplished === true) return 'completed'
+  return 'idle'
+}
+
 export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pinnedIds, onTogglePinned }: {
   session: any; isSelected: boolean; onSelect: (s: any) => void;
   onEdit?: (s: any) => void; onDelete?: (s: any) => void;
@@ -1622,6 +1630,25 @@ export function ChatArea() {
         setBackendFailedAt(typeof r?.failed_at === 'string' ? r.failed_at : '')
         setBackendWorktreeIgnored(!!r?.worktree_ignored)
         setBackendPid(r?.pid ?? null)
+        const liveAgentStatus = runtimeStatusForSessionList(r)
+        const store = useStore.getState()
+        const selectedSession = store.currentSession
+        if (selectedSession?.session_id === sessionId && selectedSession.agent_status !== liveAgentStatus) {
+          store.setCurrentSession({ ...selectedSession, agent_status: liveAgentStatus })
+        }
+        const selectedTask = store.currentTask as any
+        if (selectedTask?.task_id === sessionId && selectedTask.agent_status !== liveAgentStatus) {
+          store.setCurrentTask({ ...selectedTask, agent_status: liveAgentStatus })
+        }
+        const listKey = (selectedSession as any)?.issue_id || (selectedSession as any)?.research_id || currentIssueId
+        if (listKey) {
+          const list = store.sessionsMap[listKey] || []
+          if (list.some((s: any) => s.session_id === sessionId && s.agent_status !== liveAgentStatus)) {
+            store.setSessionsMap(listKey, list.map((s: any) => (
+              s.session_id === sessionId ? { ...s, agent_status: liveAgentStatus } : s
+            )))
+          }
+        }
         if (r?.job_accomplished === true && isGuidedDemoSession(sessionId) && !guidedCompletionNotifiedRef.current.has(sessionId)) {
           guidedCompletionNotifiedRef.current.add(sessionId)
           patchGuidedDemoSessionCompleted(sessionId)
