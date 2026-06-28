@@ -6,32 +6,37 @@
   "icon": "favicon.svg",
   "schedule": [
     {
-      "id": "self-cognition-arxiv-0900",
-      "time": "09:00",
+      "id": "self-cognition-arxiv-1700",
+      "time": "17:00",
       "timezone": "UTC",
       "interval_minutes": 1440,
       "payload": {
         "action": "scan_arxiv",
         "scheduled_daily_scan": true,
+        "auto_ai_read": true,
+        "deep_read_backlog": true,
         "max_results": 100
       }
     },
     {
-      "id": "self-cognition-products-1000",
-      "time": "10:00",
+      "id": "self-cognition-products-1700",
+      "time": "17:00",
       "timezone": "UTC",
       "interval_minutes": 1440,
       "payload": {
         "action": "scan_product_url",
+        "scheduled_daily_scan": true,
+        "auto_ai_read": true,
+        "deep_read_backlog": true,
         "all_tracked": true,
         "discover": true
       }
     },
     {
-      "id": "self-cognition-evolution-0030",
-      "time": "00:30",
+      "id": "self-cognition-evolution-1700",
+      "time": "17:00",
       "timezone": "UTC",
-      "interval_minutes": 30,
+      "interval_minutes": 1440,
       "payload": {
         "action": "seed_evolution_from_git",
         "since": "auto",

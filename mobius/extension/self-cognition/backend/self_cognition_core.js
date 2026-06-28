@@ -373,28 +373,40 @@ function dbOpen(e) {
   return t.pragma("journal_mode=WAL"), init(t), t;
 }
 
-function nextAt(e) {
+const DAILY_SCAN_HOUR_UTC = 17, DAILY_SCAN_MINUTE_UTC = 0, DAILY_SCAN_INTERVAL_MINUTES = 1440, SCHEDULE_IDS = [ "self-cognition-arxiv-1700", "self-cognition-products-1700", "self-cognition-evolution-1700" ], RETIRED_SCHEDULE_IDS = [ "self-cognition-arxiv-0900", "self-cognition-products-1000", "self-cognition-evolution-0030", "self-cognition-evolution-1100" ];
+
+function nextAt(e, minute = 0) {
   const t = new Date;
-  return t.setUTCHours(e, 0, 0, 0), t <= new Date && t.setUTCDate(t.getUTCDate() + 1),
+  return t.setUTCHours(e, minute, 0, 0), t <= new Date && t.setUTCDate(t.getUTCDate() + 1),
   t.toISOString();
 }
 
 function syncSchedules(e, t) {
-  const r = [ [ "self-cognition-arxiv-0900", 9, {
+  const r = [ [ "self-cognition-arxiv-1700", {
     action: "scan_arxiv",
     scheduled_daily_scan: !0,
+    auto_ai_read: !0,
+    deep_read_backlog: !0,
     max_results: 100
-  } ], [ "self-cognition-products-1000", 10, {
+  } ], [ "self-cognition-products-1700", {
     action: "scan_product_url",
+    scheduled_daily_scan: !0,
+    auto_ai_read: !0,
+    deep_read_backlog: !0,
     all_tracked: !0,
     discover: !0
-  } ], [ "self-cognition-evolution-1100", 11, {
-    action: "seed_evolution_from_git"
+  } ], [ "self-cognition-evolution-1700", {
+    action: "seed_evolution_from_git",
+    since: "auto",
+    limit: 80
   } ] ], a = path.join(e, "schedules");
   fs.mkdirSync(a, {
     recursive: !0
   });
-  for (const [e, s, o] of r) {
+  for (const e of RETIRED_SCHEDULE_IDS) if (!SCHEDULE_IDS.includes(e)) try {
+    fs.unlinkSync(path.join(a, `${e}.json`));
+  } catch {}
+  for (const [e, o] of r) {
     const r = path.join(a, `${e}.json`);
     let c = {};
     try {
@@ -406,8 +418,8 @@ function syncSchedules(e, t) {
       extension_name: "self-cognition",
       user_id: t || "admin",
       enabled: !0,
-      interval_minutes: 1440,
-      next_run_at: c.next_run_at || nextAt(s),
+      interval_minutes: DAILY_SCAN_INTERVAL_MINUTES,
+      next_run_at: c.next_run_at || nextAt(DAILY_SCAN_HOUR_UTC, DAILY_SCAN_MINUTE_UTC),
       payload: o,
       updated_at: now()
     }, null, 2));
@@ -501,7 +513,7 @@ async function scanArxiv(e, t, r) {
   const g = [];
   try {
     const p = recalcKeywordWeights(e), t = parseArxiv(await fetchText(`https://export.arxiv.org/api/query?search_query=${encodeURIComponent(a)}&start=0&max_results=${s}&sortBy=relevance&sortOrder=descending`, 22e3)), u = rows(e, "paper"), l = e.prepare("INSERT INTO arxiv_items (id,title,source_url,source_id,authors,published_at,updated_arxiv_at,abstract,tags,matched_keywords,relevance,cluster_label,priority_score,cluster_keywords,fetched_at,created_by,created_at,updated_at) VALUES (@id,@title,@source_url,@source_id,@authors,@published_at,@updated_arxiv_at,@abstract,@tags,@matched_keywords,@relevance,@cluster_label,@priority_score,@cluster_keywords,@fetched_at,@created_by,@created_at,@updated_at) ON CONFLICT(source_id) DO UPDATE SET title=excluded.title,source_url=excluded.source_url,authors=excluded.authors,published_at=excluded.published_at,updated_arxiv_at=excluded.updated_arxiv_at,abstract=excluded.abstract,tags=excluded.tags,matched_keywords=excluded.matched_keywords,relevance=excluded.relevance,cluster_label=excluded.cluster_label,priority_score=excluded.priority_score,cluster_keywords=excluded.cluster_keywords,fetched_at=excluded.fetched_at,updated_at=excluded.updated_at");
-    return e.transaction(() => t.forEach(t => {
+    e.transaction(() => t.forEach(t => {
       const a = scorePaper(t, u, p), s = e.prepare("SELECT id FROM arxiv_items WHERE source_id=?").get(t.source_id);
       const paperId = id("arxiv", t.source_id || t.source_url);
       l.run({
@@ -524,7 +536,9 @@ async function scanArxiv(e, t, r) {
         created_at: c,
         updated_at: c
       }), s ? d++ : (n++, g.push(paperId));
-    }))(), i = discoverFromCorpus(e), n > 5 && addL2Event(e, {
+    }))();
+    const discovery = discoverFromCorpus(e), i = discovery.count;
+    return n > 5 && addL2Event(e, {
       source: "auto_scan",
       summary: `发现 ${n} 篇新论文`,
       diff_summary: `arXiv 扫描新增 ${n} 篇论文，查询条件: ${txt(a, 120)}`,
@@ -541,7 +555,9 @@ async function scanArxiv(e, t, r) {
       max_results: s,
       query: a,
       new_items: g.slice(0, 20).map(pid => paperOut(e.prepare("SELECT * FROM arxiv_items WHERE id=?").get(pid))).filter(Boolean),
-      new_count: g.length
+      new_count: g.length,
+      new_ids: g,
+      discovered_product_ids: discovery.ids
     };
   } catch (t) {
     throw run(e, o, "arxiv", a, "", s, 0, 0, 0, 0, "error", t.message, r, c), new Error(`arXiv 扫描失败: ${txt(t.message, 180)}`);
@@ -624,62 +640,66 @@ function upsertProduct(e, t) {
   };
 }
 
+function addDiscoveryResult(e, t) {
+  t?.created && (e.count++, t.item?.id && e.ids.push(t.item.id));
+}
+
 function discoverLinks(e, t, r) {
   const a = `${t.title}\n${t.description}\n${t.visible}\n${t.links.map(e => `${e.text} ${e.href}`).join("\n")}`.toLowerCase();
-  let s = 0;
-  for (const t of CATALOG) t[3].some(e => a.includes(e.toLowerCase())) && (s += upsertProduct(e, {
-    name: t[0],
-    source_url: t[1],
-    status: "candidate",
-    category: t[2],
-    relevance: 6,
-    tags: [ "自动发现", "候选竞品" ],
-    aliases: [ t[0], ...t[3] ],
-    reason: `扫描 ${r} 时命中同类产品线索`,
-    discovery_logic: "catalog_alias_match",
-    discovered_from_url: r,
-    auto_discovered: !0,
-    created_by: "system"
-  }).created ? 1 : 0);
+  const s = { count: 0, ids: [] };
+  for (const t of CATALOG) t[3].some(e => a.includes(e.toLowerCase())) && addDiscoveryResult(s, upsertProduct(e, {
+      name: t[0],
+      source_url: t[1],
+      status: "candidate",
+      category: t[2],
+      relevance: 6,
+      tags: [ "自动发现", "候选竞品" ],
+      aliases: [ t[0], ...t[3] ],
+      reason: `扫描 ${r} 时命中同类产品线索`,
+      discovery_logic: "catalog_alias_match",
+      discovered_from_url: r,
+      auto_discovered: !0,
+      created_by: "system"
+    }));
   for (const a of t.links) try {
     const t = new URL(a.href);
     if (t.hostname === new URL(r).hostname) continue;
     const o = rel(`${a.text} ${a.href}`);
-    o.score >= 3 && (s += upsertProduct(e, {
-      name: a.text || t.hostname,
-      source_url: t.origin + "/",
-      status: "candidate",
-      category: cat(`${a.text} ${a.href}`),
-      relevance: Math.min(10, o.score + 2),
-      tags: [ "自动发现", "外链线索", ...o.matched ],
-      reason: `扫描 ${r} 时发现相关外链 ${t.hostname}`,
-      discovery_logic: "outbound_link_keyword_score>=3",
-      discovered_from_url: r,
-      auto_discovered: !0,
-      created_by: "system"
-    }).created ? 1 : 0);
+    o.score >= 3 && addDiscoveryResult(s, upsertProduct(e, {
+        name: a.text || t.hostname,
+        source_url: t.origin + "/",
+        status: "candidate",
+        category: cat(`${a.text} ${a.href}`),
+        relevance: Math.min(10, o.score + 2),
+        tags: [ "自动发现", "外链线索", ...o.matched ],
+        reason: `扫描 ${r} 时发现相关外链 ${t.hostname}`,
+        discovery_logic: "outbound_link_keyword_score>=3",
+        discovered_from_url: r,
+        auto_discovered: !0,
+        created_by: "system"
+      }));
   } catch {}
   return s;
 }
 
 function discoverFromCorpus(e) {
   const t = e.prepare("SELECT title,abstract,tags FROM arxiv_items ORDER BY updated_at DESC LIMIT 300").all(), r = e.prepare("SELECT name,tags,aliases,category FROM product_research").all(), a = [ ...t.map(e => `${e.title} ${e.abstract} ${e.tags}`), ...r.map(e => `${e.name} ${e.tags} ${e.aliases} ${e.category}`) ].join("\n").toLowerCase();
-  let s = 0;
+  const s = { count: 0, ids: [] };
   for (const t of CATALOG) {
     const r = t[3].filter(e => a.includes(e.toLowerCase())).length;
-    r && (s += upsertProduct(e, {
-      name: t[0],
-      source_url: t[1],
-      status: "candidate",
-      category: t[2],
-      relevance: Math.min(10, 5 + r),
-      tags: [ "自动发现", "论文/产品库线索" ],
-      aliases: [ t[0], ...t[3] ],
-      reason: "论文与已有产品库中出现同类产品名称/别名/标签线索",
-      discovery_logic: "paper_product_corpus_alias_or_tag_match",
-      auto_discovered: !0,
-      created_by: "system"
-    }).created ? 1 : 0);
+    r && addDiscoveryResult(s, upsertProduct(e, {
+        name: t[0],
+        source_url: t[1],
+        status: "candidate",
+        category: t[2],
+        relevance: Math.min(10, 5 + r),
+        tags: [ "自动发现", "论文/产品库线索" ],
+        aliases: [ t[0], ...t[3] ],
+        reason: "论文与已有产品库中出现同类产品名称/别名/标签线索",
+        discovery_logic: "paper_product_corpus_alias_or_tag_match",
+        auto_discovered: !0,
+        created_by: "system"
+      }));
   }
   return s;
 }
@@ -704,7 +724,8 @@ async function scanOneProduct(e, t, r) {
       last_scanned_at: now(),
       auto_discovered: !t.as_official && !d,
       created_by: r
-    }), u = discoverLinks(e, c, a) + discoverFromCorpus(e);
+    });
+    const l = discoverLinks(e, c, a), p = discoverFromCorpus(e), u = l.count + p.count, m = [ ...new Set([ ...l.ids, ...p.ids ]) ];
     (i.created && "tracked" !== i.item?.tracked_status || u > 0) && addL2Event(e, {
       source: "auto_scan",
       summary: `发现新候选竞品 ${i.item?.name || new URL(a).hostname}`,
@@ -717,7 +738,7 @@ async function scanOneProduct(e, t, r) {
       run_id: s,
       competitor: i.item,
       candidates_added: u,
-      touched_ids: i.item?.id ? [ i.item.id ] : []
+      touched_ids: [ ...new Set([ ...(i.item?.id ? [ i.item.id ] : []), ...m ]) ]
     };
   } catch (t) {
     throw run(e, s, "product", "", a, 0, 0, 0, 0, 0, "error", t.message, r, o), new Error(`竞品扫描失败: ${txt(t.message, 180)}`);
@@ -746,7 +767,7 @@ async function scanProducts(e, t) {
 
 async function scanProductAction(e, t, r) {
   if (t.all_tracked) {
-    const a = await scanProducts(e, r), s = discoverFromCorpus(e);
+    const a = await scanProducts(e, r), o = discoverFromCorpus(e), s = o.count;
     s > 0 && addL2Event(e, {
       source: "auto_scan",
       summary: `发现新候选竞品 ${s} 条`,
@@ -754,7 +775,7 @@ async function scanProductAction(e, t, r) {
       files_changed: [ "product_research", "scan_runs" ],
       proposed_by: r
     });
-    const touched = [ ...new Set(a.flatMap(p => p.touched_ids || []).filter(Boolean)) ];
+    const touched = [ ...new Set([ ...a.flatMap(p => p.touched_ids || []), ...o.ids ].filter(Boolean)) ];
     const touched_items = touched.slice(0, 20).map(pid => prodRow(e.prepare("SELECT * FROM product_research WHERE id=?").get(pid))).filter(Boolean);
     return {
       products: a,
@@ -1714,11 +1735,60 @@ function buildProductContext(product) {
   ].join("\n");
 }
 
+function payloadIds(e, keys = [ "ids" ]) {
+  const out = [];
+  for (const key of keys) {
+    const value = e?.[key];
+    if (Array.isArray(value)) out.push(...value);
+    else if ("string" == typeof value && value.trim()) {
+      try {
+        const parsed = JSON.parse(value);
+        Array.isArray(parsed) ? out.push(...parsed) : out.push(...value.split(/[,，\s]+/));
+      } catch {
+        out.push(...value.split(/[,，\s]+/));
+      }
+    }
+  }
+  return [ ...new Set(out.map(e => txt(e, 120)).filter(Boolean)) ];
+}
+
+function orderByRequestedIds(rows, ids) {
+  const rank = new Map(ids.map((e, t) => [ e, t ]));
+  return rows.sort((e, t) => (rank.get(e.id) ?? 1e6) - (rank.get(t.id) ?? 1e6));
+}
+
+function pendingPaperRowsByIds(e, ids) {
+  if (!ids.length) return [];
+  const ph = ids.map(() => "?").join(",");
+  return orderByRequestedIds(e.prepare(`SELECT * FROM arxiv_items WHERE (id IN (${ph}) OR source_id IN (${ph})) AND (ai_inspiration IS NULL OR ai_inspiration='' OR ai_inspiration='[]') AND mark!='excluded'`).all(...ids, ...ids), ids);
+}
+
+function pendingProductRowsByIds(e, ids) {
+  if (!ids.length) return [];
+  const ph = ids.map(() => "?").join(",");
+  return orderByRequestedIds(e.prepare(`SELECT * FROM product_research WHERE id IN (${ph}) AND status IN ('tracked','candidate') AND (ai_inspiration IS NULL OR ai_inspiration='' OR ai_inspiration='[]') AND mark!='excluded'`).all(...ids), ids);
+}
+
+function pendingPaperBacklog(e, excludeIds, limit) {
+  if (limit <= 0) return [];
+  return e.prepare("SELECT * FROM arxiv_items WHERE (ai_inspiration IS NULL OR ai_inspiration='' OR ai_inspiration='[]') AND mark!='excluded' ORDER BY priority_score DESC, relevance DESC LIMIT ?").all(limit + excludeIds.size).filter(row => !excludeIds.has(row.id)).slice(0, limit);
+}
+
+function pendingProductBacklog(e, excludeIds, limit) {
+  if (limit <= 0) return [];
+  return e.prepare("SELECT * FROM product_research WHERE status IN ('tracked','candidate') AND (ai_inspiration IS NULL OR ai_inspiration='' OR ai_inspiration='[]') AND mark!='excluded' ORDER BY CASE status WHEN 'tracked' THEN 1 ELSE 2 END, relevance DESC LIMIT ?").all(limit + excludeIds.size).filter(row => !excludeIds.has(row.id)).slice(0, limit);
+}
+
 async function aiScanArxiv(e, t, r) {
   const modelKey = txt(t.model_key, 200);
-  const limit = int(t.limit, 10, 1, 50);
+  const ids = payloadIds(t, [ "ids", "paper_ids", "scope_ids" ]);
+  const includeBacklog = !ids.length || !!(t.deep_read_backlog || t.include_backlog || t.backfill);
+  const limit = int(t.limit, ids.length || 10, 1, 1000);
   const provider = findProvider(modelKey);
-  const papers = e.prepare("SELECT * FROM arxiv_items WHERE (ai_inspiration IS NULL OR ai_inspiration='' OR ai_inspiration='[]') AND mark!='excluded' ORDER BY priority_score DESC, relevance DESC LIMIT ?").all(limit);
+  const selected = ids.length ? pendingPaperRowsByIds(e, ids).slice(0, limit) : [];
+  const excludeIds = new Set(selected.map(e => e.id));
+  const backlogLimit = ids.length ? (includeBacklog ? int(t.backlog_limit, 1000, 0, 1000) : Math.max(0, limit - selected.length)) : limit;
+  const papers = [ ...selected, ...pendingPaperBacklog(e, excludeIds, backlogLimit) ];
   if (!papers.length) return { ok: true, scanned: 0, results: [], provider: provider.label, model: provider.model };
   const memContext = buildMobiusMemoryContext();
   const systemPrompt = buildScanSystemPrompt({ kind: "paper" }) + "\n\n## 注入的莫比乌斯 Memory\n\n" + memContext;
@@ -1775,9 +1845,14 @@ async function aiScanArxiv(e, t, r) {
 
 async function aiScanProducts(e, t, r) {
   const modelKey = txt(t.model_key, 200);
-  const limit = int(t.limit, 5, 1, 30);
+  const ids = payloadIds(t, [ "ids", "product_ids", "scope_ids" ]);
+  const includeBacklog = !ids.length || !!(t.deep_read_backlog || t.include_backlog || t.backfill);
+  const limit = int(t.limit, ids.length || 5, 1, 1000);
   const provider = findProvider(modelKey);
-  const products = e.prepare("SELECT * FROM product_research WHERE status IN ('tracked','candidate') AND (ai_inspiration IS NULL OR ai_inspiration='' OR ai_inspiration='[]') AND mark!='excluded' ORDER BY CASE status WHEN 'tracked' THEN 1 ELSE 2 END, relevance DESC LIMIT ?").all(limit);
+  const selected = ids.length ? pendingProductRowsByIds(e, ids).slice(0, limit) : [];
+  const excludeIds = new Set(selected.map(e => e.id));
+  const backlogLimit = ids.length ? (includeBacklog ? int(t.backlog_limit, 1000, 0, 1000) : Math.max(0, limit - selected.length)) : limit;
+  const products = [ ...selected, ...pendingProductBacklog(e, excludeIds, backlogLimit) ];
   if (!products.length) return { ok: true, scanned: 0, results: [], provider: provider.label, model: provider.model };
   const memContext = buildMobiusMemoryContext();
   const systemPrompt = buildScanSystemPrompt({ kind: "product" }) + "\n\n## 注入的莫比乌斯 Memory\n\n" + memContext;
@@ -2132,6 +2207,42 @@ async function firstScan(e, t, r) {
   };
 }
 
+function shouldAutoDeepRead(e) {
+  return !!(e?.auto_ai_read || e?.scheduled_daily_scan || e?.deep_read_after_scan);
+}
+
+async function autoDeepReadAfterScan(e, kind, ids, t, r) {
+  if (!shouldAutoDeepRead(t)) return null;
+  const cleanIds = [ ...new Set((Array.isArray(ids) ? ids : []).map(e => txt(e, 120)).filter(Boolean)) ];
+  const includeBacklog = !1 !== t.deep_read_backlog;
+  const backlogLimit = includeBacklog ? int(t.ai_backlog_limit ?? t.backlog_limit, 1000, 0, 1000) : 0;
+  const payload = {
+    model_key: t.model_key,
+    ids: cleanIds,
+    limit: cleanIds.length || Math.max(1, backlogLimit),
+    deep_read_backlog: includeBacklog,
+    backlog_limit: backlogLimit
+  };
+  try {
+    const result = "product" === kind ? await aiScanProducts(e, payload, r) : await aiScanArxiv(e, payload, r);
+    return {
+      ok: !0,
+      kind,
+      requested_ids: cleanIds.length,
+      backlog_limit: backlogLimit,
+      ...result
+    };
+  } catch (err) {
+    return {
+      ok: !1,
+      kind,
+      requested_ids: cleanIds.length,
+      backlog_limit: backlogLimit,
+      error: txt(err.message, 500)
+    };
+  }
+}
+
 async function dispatch(e, t, r, a) {
   const s = txt(t.action || "bootstrap", 64);
   if (syncSchedules(a, r), "bootstrap" === s) {
@@ -2155,25 +2266,36 @@ async function dispatch(e, t, r, a) {
       scan_runs: scans(e),
       constants: {
         retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "mark_paper_read", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "mark_product_read", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats", "list_ai_channels", "ai_scan_arxiv", "ai_scan_products", "discover_competitors_via_agent", "chat_with_agent", "rewrite_inspiration_style", "export_agent_prompt", "list_agent_runs", "get_agent_messages" ],
-        schedule_ids: [ "self-cognition-arxiv-0900", "self-cognition-products-1000", "self-cognition-evolution-1100" ],
+        schedule_ids: SCHEDULE_IDS,
+        daily_scan_time: "17:00",
+        daily_scan_timezone: "UTC",
+        daily_interval_minutes: DAILY_SCAN_INTERVAL_MINUTES,
         product_table: "product_research",
         product_statuses: [ "tracked", "candidate", "archived" ]
       }
     };
   }
   if ("scan_arxiv" === s) {
+    const scan = await scanArxiv(e, t, r);
     return {
       ok: !0,
-      scan: await scanArxiv(e, t, r),
+      scan,
+      auto_ai: await autoDeepReadAfterScan(e, "paper", scan.new_ids || [], t, r),
+      auto_product_ai: (scan.discovered_product_ids || []).length ? await autoDeepReadAfterScan(e, "product", scan.discovered_product_ids || [], {
+        ...t,
+        deep_read_backlog: !1
+      }, r) : null,
       summary: summary(e),
       arxiv: listPapers(e, t),
       scan_runs: scans(e)
     };
   }
   if ("scan_product_url" === s) {
+    const productScan = await scanProductAction(e, t, r);
     return {
       ok: !0,
-      product_scan: await scanProductAction(e, t, r),
+      product_scan: productScan,
+      auto_ai: await autoDeepReadAfterScan(e, "product", productScan.touched_ids || [], t, r),
       competitors: groupedProducts(e),
       products: listProducts(e),
       scan_runs: scans(e),

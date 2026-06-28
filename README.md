@@ -186,9 +186,12 @@ docker compose up
 ```
 
 <!-- update cheat sheet
-git pull && rm -rf host-data
+
+docker compose down
+git pull && sudo rm -rf host-data
 docker build -t mobius-system-base:latest -f deploy/Dockerfile . && docker build -t mobius-system-exe:latest . && docker compose up
- -->
+
+-->
 
 
 #### Option 2: Direct Deployment (Linux or MacOS)

@@ -472,10 +472,20 @@ function latestRun(scanType) {
 }
 
 function nextScanTime() {
-  const interval = Number(state.constants.daily_interval_minutes || 1440);
-  const latest = latestRun('arxiv') || latestRun('product');
-  const base = latest?.created_at ? new Date(latest.created_at).getTime() : Date.now();
-  return new Date(base + interval * 60_000).toISOString();
+  const scanTime = String(state.constants.daily_scan_time || '17:00');
+  const [hourRaw, minuteRaw] = scanTime.split(':');
+  const hour = Number.isFinite(Number(hourRaw)) ? Number(hourRaw) : 17;
+  const minute = Number.isFinite(Number(minuteRaw)) ? Number(minuteRaw) : 0;
+  const next = new Date();
+  next.setUTCHours(hour, minute, 0, 0);
+  if (next.getTime() <= Date.now()) next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString();
+}
+
+function dailyScanLabel() {
+  const time = state.constants.daily_scan_time || '17:00';
+  const timezone = state.constants.daily_scan_timezone || 'UTC';
+  return `${timezone} ${time}`;
 }
 
 async function loadMyFeedbacks() {
@@ -793,10 +803,12 @@ function renderSchedule() {
   const lastProduct = latestRun('product') || state.summary.last_product;
   const scanning = state.scanning.paper || state.scanning.product;
   const next = nextScanTime();
+  const scanLabel = dailyScanLabel();
   const statusText = scanning ? '扫描中' : '等待下一次定时扫描';
   const statusHtml = `
     <div class="schedule-card">
       <strong>${statusText}</strong>
+      <span>定时扫描: 每天 ${escapeHtml(scanLabel)}</span>
       <span>上次论文扫描: ${escapeHtml(formatTime(lastArxiv?.created_at))}</span>
       <span>上次产品扫描: ${escapeHtml(formatTime(lastProduct?.created_at))}</span>
       <em>下次扫描时间: ${escapeHtml(formatTime(next))}</em>
@@ -804,6 +816,7 @@ function renderSchedule() {
   `;
   $('scheduleStatus').innerHTML = statusHtml;
   $('paperScheduleMini').innerHTML = `
+    <div>定时: 每天 ${escapeHtml(scanLabel)}</div>
     <div>上次: ${escapeHtml(formatTime(lastArxiv?.created_at))}</div>
     <div>下次: ${escapeHtml(formatTime(next))}</div>
   `;
