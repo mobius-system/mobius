@@ -212,11 +212,18 @@ function listSessionModelOptions(): any[] {
     .map((key) => builtinEntryFor(key))
     .filter(Boolean)
 
-  // picker 顺序: [内置 codex] [管理员 codex ...] [动态 claude code] [内置 claude code]
   // 内置 codex 的 profileKey (默认 'mobiusdefault') 已作为兜底 seed 进 model-access 表,
-  // 但它跟内置 codex 共享同一份 ~/.codex/<profileKey>.config.toml, 所以 picker 里要剔除,
-  // 避免与内置 codex 重复显示. 该项仍可在 admin 面板编辑.
+  // 供管理员在"系统配置 → 模型接入 → Codex"编辑其 启用 / 显示名称.
+  // 这里读回该 seed 记录, 让 picker 尊重管理员设置:
+  //   - enabled=false → 内置 codex 从选择菜单隐藏 (修复"默认 codex 无法隐藏");
+  //   - 自定义 label  → 覆盖内置 codex 的 label/title (修复"显示名称不起作用").
+  // 该记录跟内置 codex 共享同一份 ~/.codex/<profileKey>.config.toml, 仍须从 codexDynamics
+  // 剔除避免重复. 覆盖仅作用于 picker, 不改 builtinEntryFor / resolveSessionModel, 故管理员
+  // 隐藏 codex 后已有 codex 会话仍可正常运行.
   const builtinCodexProfileKey = (MODEL_OPTIONS.codex && MODEL_OPTIONS.codex.profileKey) || null
+  const builtinCodexSeed = builtinCodexProfileKey
+    ? modelAccess.findCodexModel(builtinCodexProfileKey)
+    : null
   const codexDynamics = modelAccess.listCodexModels({ enabledOnly: true })
     .map((m: any) => dynamicCodexEntryFor(m.session_model))
     .filter(Boolean)
@@ -226,7 +233,20 @@ function listSessionModelOptions(): any[] {
     .map((m: any) => dynamicEntryFor(m.session_model))
     .filter(Boolean)
 
-  const builtinCodex = builtins.filter((m) => m.key === 'codex')
+  let builtinCodex = builtins.filter((m) => m.key === 'codex')
+  if (builtinCodexSeed) {
+    if (builtinCodexSeed.enabled === false) {
+      // 管理员在内置 codex 上取消勾选"启用" → 从选择菜单隐藏.
+      builtinCodex = []
+    } else {
+      // 管理员自定义"显示名称"生效: 用 seed 记录的 label 覆盖内置 codex 的 label/title.
+      builtinCodex = builtinCodex.map((m) => ({
+        ...m,
+        label: builtinCodexSeed.label || m.label,
+        title: builtinCodexSeed.label || m.title,
+      }))
+    }
+  }
   const builtinClaude = builtins.filter((m) => m.key !== 'codex')
 
   const ordered = [...builtinCodex, ...codexDynamics, ...claudeDynamics, ...builtinClaude]
