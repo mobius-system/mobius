@@ -13,7 +13,7 @@
  *                   供主后端 /api/token_stream 反代 → matrix-rain 拓展消费.
  *
  * 仅监听 127.0.0.1:MOBIUS_TOKEN_PROXY_PORT, 无独立鉴权 (代理 token 已含全部信息,
- * 本机回环). 启动方式见 ecosystem.config.js 的 imac-mobius-tokenproxy.
+ * 本机回环). 启动方式见 ecosystem.config.js 的 mobius-system-tokenproxy.
  *
  * 运行: 通过 tsx 直跑 (与主后端一致), 无需编译. 隔离为独立进程的原因:
  *   1) 用户明确要求"建立一层中转代理 / server.ts";

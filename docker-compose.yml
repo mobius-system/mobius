@@ -13,8 +13,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: imac-mobius-exe:latest
-    container_name: imac-mobius
+    image: mobius-system-exe:latest
+    container_name: mobius-system
     restart: "unless-stopped"
     env_file: .env
     ports:

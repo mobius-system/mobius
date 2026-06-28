@@ -179,7 +179,7 @@ cd mobius
 python3 conf_prepare.py --docker && python3 conf_check.py --docker
 
 # 3. Build the base image (environment only, no code)
-docker build -t imac-mobius-base:latest -f deploy/Dockerfile . && docker build -t imac-mobius-exe:latest .
+docker build -t mobius-system-base:latest -f deploy/Dockerfile . && docker build -t mobius-system-exe:latest .
 
 # 4. Launch
 docker compose up
@@ -187,7 +187,7 @@ docker compose up
 
 <!-- update cheat sheet
 git pull && rm -rf host-data
-docker build -t imac-mobius-base:latest -f deploy/Dockerfile . && docker build -t imac-mobius-exe:latest . && docker compose up
+docker build -t mobius-system-base:latest -f deploy/Dockerfile . && docker build -t mobius-system-exe:latest . && docker compose up
  -->
 
 

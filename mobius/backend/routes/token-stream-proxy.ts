@@ -1,7 +1,7 @@
 /**
  * token-stream-proxy.ts — /api/token_stream → 本机 token-proxy (server.ts) 反向代理.
  *
- * token-proxy 是独立 pm2 进程 (imac-mobius-tokenproxy), 持有 token 环形缓冲.
+ * token-proxy 是独立 pm2 进程 (mobius-system-tokenproxy), 持有 token 环形缓冲.
  * 但拓展前端跑在用户浏览器里 (可能远程访问), 直连 127.0.0.1:TOKEN_PROXY_PORT 不通,
  * 所以拓展只请求主后端同源的 /api/token_stream, 由这里反代到本机 token-proxy.
  *

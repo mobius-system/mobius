@@ -59,8 +59,8 @@ from boot_utils import (  # noqa: E402
 # 本脚本所在目录 = mobius/
 HERE = Path(__file__).resolve().parent
 # 老版本用 tmux 跑后端时的 session 名; 现已迁 PM2, 这个名只在迁移清理 (reset_tmux_session) 时还会用到.
-SESSION = "imac-mobius"
-PM2_APP = "imac-mobius"
+SESSION = "mobius-system"
+PM2_APP = "mobius-system"
 KNOWN_SETTINGS = RUNTIME_SETTINGS
 BUILD_DIR = HERE / ".build"
 # 当前线上对外的前端静态目录 (PM2 后端 + ecosystem.config.js 静态托管这里).
@@ -72,7 +72,7 @@ BACKUP_PUBLIC_DIR = BUILD_DIR / "public.previous"
 # --other-versions 模式生成的临时入口; 内容是 chdir 到临时 worktree 后 require 那里的 server.js.
 SERVER_TMP_VERSION = HERE / "server_tmp_version.js"
 PM2_ECOSYSTEM = HERE / "ecosystem.config.js"
-OTHER_VERSION_ROOT = Path(os.environ.get("MOBIUS_OTHER_VERSION_ROOT", "/tmp/imac-mobius-other-versions"))
+OTHER_VERSION_ROOT = Path(os.environ.get("MOBIUS_OTHER_VERSION_ROOT", "/tmp/mobius-system-other-versions"))
 
 
 def parse_args() -> argparse.Namespace:
@@ -455,7 +455,7 @@ def print_status() -> None:
         print(line)
 
     print()
-    print(f"pm2 app:        {PM2_APP} + imac-mobius-bridge")
+    print(f"pm2 app:        {PM2_APP} + mobius-system-bridge")
     print(f"frontend:       http://0.0.0.0:{port}")
     print(f"backend health: http://0.0.0.0:{port}/api/v2/health")
     print(f"aimux bridge:   http://127.0.0.1:{bridge_port} (proxy: /aimux_bridge/*)")
@@ -463,8 +463,8 @@ def print_status() -> None:
     print(f"database:       {os.environ.get('DB_PATH', '(server default)')}")
     print(f"protected_data: {protected_data}")
     print()
-    print(f"attach logs:    cd {HERE} && npx --no-install pm2 logs {PM2_APP} imac-mobius-bridge")
-    print(f"stop:           cd {HERE} && npx --no-install pm2 stop {PM2_APP} imac-mobius-bridge")
+    print(f"attach logs:    cd {HERE} && npx --no-install pm2 logs {PM2_APP} mobius-system-bridge")
+    print(f"stop:           cd {HERE} && npx --no-install pm2 stop {PM2_APP} mobius-system-bridge")
 
 
 def print_frontend_update_status() -> None:

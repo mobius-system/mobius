@@ -187,7 +187,7 @@ cd mobius
 python3 conf_prepare.py --docker && python3 conf_check.py --docker
 
 # 3. 构建 base 镜像（仅环境，不含代码）
-docker build -t imac-mobius-base:latest -f deploy/Dockerfile . && docker build -t imac-mobius-exe:latest .
+docker build -t mobius-system-base:latest -f deploy/Dockerfile . && docker build -t mobius-system-exe:latest .
 
 # 4. 启动
 docker compose up

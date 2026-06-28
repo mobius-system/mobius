@@ -18,7 +18,7 @@ RUN apt-get update \
 #     --build-arg PROXY_PORT=12321 \
 #     --build-arg PROXY_USER=your_username \
 #     --build-arg PROXY_PASS=your_password \
-#     -f deploy/DockerfileV0 -t imac-mobius:v0 .
+#     -f deploy/DockerfileV0 -t mobius-system:v0 .
 # ---------------------------------------------------------------------------
 ARG PROXY_HOST=""
 ARG PROXY_PORT=""

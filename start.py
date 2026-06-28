@@ -353,19 +353,19 @@ def _diagnose_backend_down(mobius_dir: Path) -> None:
             pm2 + ["jlist"], cwd=mobius_dir, check=False, capture=True, quiet=True
         )
         apps = json.loads(completed.stdout) if completed.stdout.strip() else []
-        app = next((a for a in apps if a.get("name") == "imac-mobius"), None)
+        app = next((a for a in apps if a.get("name") == "mobius-system"), None)
         if app:
             env = app.get("pm2_env", {}) or {}
             status = env.get("status")
             restarts = env.get("restart_time")
             print(
-                f"   PM2 imac-mobius: status={status} 重启={restarts}次 "
+                f"   PM2 mobius-system: status={status} 重启={restarts}次 "
                 f"pid={app.get('pid')}"
             )
             if status != "online":
                 print("   ⚠️  后端未处于 online —— 多为启动期抛错。查看下方日志尾部。")
         else:
-            print("   PM2 里没有 imac-mobius app (尚未注册/启动?)")
+            print("   PM2 里没有 mobius-system app (尚未注册/启动?)")
     except Exception as exc:  # noqa: BLE001 - 诊断逻辑里任何失败都不应掩盖端口未起的事实
         print(f"   (读取 PM2 状态失败: {exc})")
 
@@ -389,7 +389,7 @@ def _diagnose_backend_down(mobius_dir: Path) -> None:
             print(f"     (读取失败: {exc})")
 
     print(f"   集中日志目录 (宿主机可见): {log_dir}")
-    print(f"   手动排查: cd {mobius_dir} && npx --no-install pm2 logs imac-mobius --lines 50")
+    print(f"   手动排查: cd {mobius_dir} && npx --no-install pm2 logs mobius-system --lines 50")
 
 
 def print_health_check() -> None:
@@ -418,10 +418,10 @@ def print_summary(root: Path) -> None:
     print(f"accepted settings: {root / 'accepted_setting.log'}")
     print(f"前端:           http://0.0.0.0:{frontend_port}")
     print(f"后端 health:    http://0.0.0.0:{os.environ['MOBIUS_PORT']}/api/v2/health")
-    print(f"mobius PM2:     cd {root / 'mobius'} && npx --no-install pm2 logs imac-mobius")
+    print(f"mobius PM2:     cd {root / 'mobius'} && npx --no-install pm2 logs mobius-system")
     print("code-server:    tmux attach -t code-server")
     print("claude code hub: tmux attach -t imac_claude_code_agent_hub  (用户首次发消息时按需起)")
-    print(f"全停:           cd {root / 'mobius'} && npx --no-install pm2 stop imac-mobius; tmux kill-session -t code-server -t imac_claude_code_agent_hub")
+    print(f"全停:           cd {root / 'mobius'} && npx --no-install pm2 stop mobius-system; tmux kill-session -t code-server -t imac_claude_code_agent_hub")
 
 
 def print_frontend_update_summary(root: Path) -> None:
@@ -441,7 +441,7 @@ def attach_to_mobius() -> None:
     # mobius 后端跑在 PM2 下而非前台 tmux，所以这里没有真正的 attach；
     # 只打印查看日志的方式给用户参考（与 print_summary 一致，避免用户以为没启动）。
     print()
-    print("后端由 PM2 管理。可手动查看日志: cd mobius && npx --no-install pm2 logs imac-mobius")
+    print("后端由 PM2 管理。可手动查看日志: cd mobius && npx --no-install pm2 logs mobius-system")
 
 
 def main(

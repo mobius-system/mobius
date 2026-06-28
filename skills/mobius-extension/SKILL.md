@@ -118,7 +118,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:$MOBIUS_PORT/api/admin/extensions/reload
 curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:$MOBIUS_PORT/api/admin/extensions/<name>/rebuild
 tail -f APP_DIR/protected_data/extension/<name>/_handler.log
-tmux attach -t imac-mobius   # 看后端实时日志
+tmux attach -t mobius-system   # 看后端实时日志
 ```
 
 **禁忌**:

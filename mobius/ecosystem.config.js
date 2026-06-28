@@ -80,7 +80,7 @@ for (const key of envKeys) {
 module.exports = {
   apps: [
     {
-      name: 'imac-mobius',
+      name: 'mobius-system',
       cwd: mobiusDir,
       script: entrypoint,
       interpreter_args: `--require ${tsxHook}`,
@@ -101,7 +101,7 @@ module.exports = {
     {
       // aimux bridge broker: 反向 SSE broker, 客户端 (windows/外部机器) 反向连进来,
       // mobius 后端 /aimux_bridge/* 反代到本进程. runtime.json 由它自己写入 AIMUX_BRIDGE_RUNTIME.
-      name: 'imac-mobius-bridge',
+      name: 'mobius-system-bridge',
       cwd: mobiusDir,
       script: path.join(mobiusDir, '.venv-aimux', 'bin', 'aimux'),
       args: `bridge deploy --host ${process.env.AIMUX_BRIDGE_HOST || '127.0.0.1'} --port ${process.env.AIMUX_BRIDGE_PORT || '33315'}`,
@@ -122,7 +122,7 @@ module.exports = {
       // 127.0.0.1:MOBIUS_TOKEN_PROXY_PORT, 本进程解码 mpx1. token 后转发到真实模型上游,
       // 流式回传给 cc 的同时旁路抓取 text_delta 到环形缓冲, /token_stream 供数字雨消费.
       // 隔离为独立进程: 流式转发不压主后端单 worker 事件循环.
-      name: 'imac-mobius-tokenproxy',
+      name: 'mobius-system-tokenproxy',
       cwd: mobiusDir,
       script: path.join(mobiusDir, 'backend', 'token-proxy', 'entry.js'),
       interpreter_args: `--require ${tsxHook}`,

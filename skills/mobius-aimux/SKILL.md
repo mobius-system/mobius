@@ -270,7 +270,7 @@ This SKILL is the recipe for the **bridge remote** case: the user has connected 
 
 When the user says something like "I bridged my Windows box in" or "can you see my files at home", do not start sending commands immediately. Walk through these steps:
 
-1. **Confirm the broker is up** — `pm2 list | grep imac-mobius-bridge` should show `online`. If not, the whole subsystem is down; report this to the user and stop.
+1. **Confirm the broker is up** — `pm2 list | grep mobius-system-bridge` should show `online`. If not, the whole subsystem is down; report this to the user and stop.
 2. **Find the user's identifier** — ask if not given ("what `--identifier` did you use?"). Also ask which profile they want if they care (default: `powershell` on Windows, `bash` on Linux/Mac).
 3. **Verify the client is registered and online** — `curl /api/remotes` against the broker with the runtime token (recipe below). The user's identifier must appear with `"status": "connected"`. If missing or `disconnected`, ask the user to re-run `aimux reverse connect` and keep that terminal open; do **not** retry in a loop.
 4. **Export `AIMUX_BRIDGE_RUNTIME`** in your shell before any `aimux` command (mandatory — see dedicated section).
@@ -289,7 +289,7 @@ If the host is SSH-reachable, just use `aimux new --remote <ssh-host>` — no br
 
 ## Architecture (one paragraph)
 
-The broker runs on this server at `127.0.0.1:${AIMUX_BRIDGE_PORT}` (default 45615), managed by PM2 as `imac-mobius-bridge`. External clients can't reach it directly (it binds localhost only); they connect to `https://mobius.example.com/aimux_bridge/*` instead, which mobius reverse-proxies to the broker. The proxy swaps the caller's **mobius JWT** for the **broker's internal Bearer token** (read from `runtime.json`) before forwarding. The broker then relays RPCs (`session.create`, `session.send_keys`, `session.capture`, `session.kill`, file ops) to the client over an SSE event stream that the client holds open. The client runs the command locally and POSTs the result back via `/client/result`.
+The broker runs on this server at `127.0.0.1:${AIMUX_BRIDGE_PORT}` (default 45615), managed by PM2 as `mobius-system-bridge`. External clients can't reach it directly (it binds localhost only); they connect to `https://mobius.example.com/aimux_bridge/*` instead, which mobius reverse-proxies to the broker. The proxy swaps the caller's **mobius JWT** for the **broker's internal Bearer token** (read from `runtime.json`) before forwarding. The broker then relays RPCs (`session.create`, `session.send_keys`, `session.capture`, `session.kill`, file ops) to the client over an SSE event stream that the client holds open. The client runs the command locally and POSTs the result back via `/client/result`.
 
 ```
 Windows / external box           this server
@@ -302,7 +302,7 @@ aimux reverse connect   ──HTTPS──> cloud-17 → mobius :45616 → broker
 
 ## Prerequisites (all three must be true)
 
-1. **Broker is running.** Check: `pm2 list | grep imac-mobius-bridge` → `online`. Logs at `/tmp/mobius-bridge.log`.
+1. **Broker is running.** Check: `pm2 list | grep mobius-system-bridge` → `online`. Logs at `/tmp/mobius-bridge.log`.
 2. **Client has reverse-connected.** The user got the command from the in-app "AimuxGuide" modal (top-right user menu → aimux). The command shape is:
    ```
    aimux reverse connect https://mobius.example.com/aimux_bridge \

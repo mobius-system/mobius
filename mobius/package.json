@@ -1,8 +1,8 @@
 {
-  "name": "imac-mobius",
+  "name": "mobius-system",
   "version": "1.9.0",
   "private": true,
-  "description": "MOBIUS Mobius — Node backend + React frontend. Launches agents via tmux-agent-hub. Listens :45614.",
+  "description": "The world's first self-evolving open-source agent operating system, an AI workbench that can continuously self-iterate according to personalized needs.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -25,6 +25,7 @@
     "jsonwebtoken": "^9.0.0",
     "multer": "^1.4.5-lts.1",
     "pm2": "^7.0.1",
+    "tsx": "^4.22.4",
     "uuid": "^9.0.0"
   },
   "devDependencies": {
@@ -35,7 +36,6 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^18.19.130",
     "@types/uuid": "^9.0.8",
-    "tsx": "^4.22.4",
     "typescript": "^5.9.3"
   }
 }

@@ -1,4 +1,4 @@
-FROM imac-mobius-base:latest
+FROM mobius-system-base:latest
 
 
 # ---------------------------------------------------------------------------
@@ -13,7 +13,7 @@ FROM imac-mobius-base:latest
 #     --build-arg PROXY_PORT=12321 \
 #     --build-arg PROXY_USER=your_username \
 #     --build-arg PROXY_PASS=your_password \
-#     -t imac-mobius:local .
+#     -t mobius-system:local .
 #
 # 不需要代理时：注释掉下面的 ARG/RUN 段，取消注释 `ENV fq=""`。
 # ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ RUN mkdir -p /app /data
 #   docker build \
 #     --build-arg GIT_USER_EMAIL=your@email.com \
 #     --build-arg GIT_USER_NAME="Your Name" \
-#     -t imac-mobius:local .
+#     -t mobius-system:local .
 # ---------------------------------------------------------------------------
 ARG GIT_USER_EMAIL="dev@example.com"
 ARG GIT_USER_NAME="Mobius Dev"

@@ -152,7 +152,7 @@ app.use('/api/admin/code-server', codeServerProxy.adminRouter);
 app.get('/api/v2/health', (req, res) => {
   const now = Date.now();
   res.json({
-    service: 'imac-mobius',
+    service: 'mobius-system',
     version: VERSION,
     code_version: CODE_VERSION,
     git_commit: GIT_COMMIT,

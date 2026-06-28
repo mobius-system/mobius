@@ -13,7 +13,7 @@ set -euo pipefail
 : "${MOBIUS_SSH_URL:=localhost:${MOBIUS_SSH_PORT}}"
 : "${MOBIUS_SSH_FORWARD_USER:=mobius-forward}"
 
-# aimux bridge 反向代理 broker: 内置于 mobius 容器, 通过 PM2 ecosystem imac-mobius-bridge 拉起.
+# aimux bridge 反向代理 broker: 内置于 mobius 容器, 通过 PM2 ecosystem mobius-system-bridge 拉起.
 # runtime.json 是 mobius 反代路由 /aimux_bridge/* 的服务发现凭据 (url + token).
 # Bridge 只 bind 127.0.0.1: 外部 aimux client 不直连 bridge, 而是走 mobius /aimux_bridge/* 反代,
 # 用 mobius JWT 鉴权 (proxy 内部把 JWT 换成 bridge Bearer 再转发).
