@@ -20,9 +20,11 @@
 > Here we present Mobius — as far as we know, the world's first **self-evolving** open-source Agent operating system, an AI workbench that can continuously self-iterate according to personalized needs.
 >
 > Open source shapes "Mobius AI" today; **and you — the true AI wielder, the breaker who is not satisfied with "pre-made" AI systems — can issue commands via natural language and screenshots, refine every edge of "Mobius AI" to your will, forge every line of code and every pixel, and build an unstoppable Agent operating system.**
+> 
+
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-9.png" width="700" alt="alt text" />
+  <img width="700" alt="image" src="https://github.com/user-attachments/assets/c7e10425-61f9-490b-a4ac-31840f94ae68" />
 </p>
 
 
