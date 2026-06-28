@@ -2010,6 +2010,8 @@ export function NewSessionModal({
     name?: string
     desc?: string
     model?: ModelKey
+    // model 是否为用户"手动选过"的 deliberate 选择. 旧草稿无此字段 → 视为非手动, 不作为权威模型.
+    model_touched?: boolean
     role?: 'chief_researcher' | 'research_assistant'
     language?: SessionLanguage
     excluded_skill_ids?: string[]
@@ -2039,16 +2041,18 @@ export function NewSessionModal({
     initialPreset?.role || initialDraft?.role || (isResearch && !chiefExists ? 'chief_researcher' : 'research_assistant')
   )
   // 模型在创建时定型, 之后不可改 (随会话生命周期).
-  // 初始值优先级: preset > 用户在该浏览器里残留的草稿 > 项目级默认模型偏好 > 系统全局默认.
-  // 草稿优先于项目默认, 是因为用户在该 issue 上手动改过模型后, 重开应延续他自己的选择.
+  // 初始值优先级: preset > 用户"手动选过"的草稿模型 > 项目级默认模型偏好 > 全局默认 > 内置 codex.
+  // 关键: 草稿里的 model 只有 model_touched=true (用户手动选过) 才视为权威; 否则它只是历次默认值
+  // 的快照, 会把模型钉在过期值上 (管理员改了项目/全局默认也不生效). 旧草稿无 model_touched → 忽略.
+  const draftModelDeliberate = initialDraft?.model_touched ? initialDraft?.model : undefined
   const initialModelKey: ModelKey = initialPreset?.model
-    || initialDraft?.model
+    || draftModelDeliberate
     || (typeof defaultModel === 'string' && defaultModel.trim() ? defaultModel.trim() : '')
     || DEFAULT_SESSION_MODEL
   const [model, setModel] = useState<ModelKey>(initialModelKey)
-  // 全局默认模型偏好 (管理中心-系统设置): 异步拉取. 到达后, 若用户未手动改过模型,
-  // 把它插入初始优先级链 (preset > 草稿 > 项目默认 > 全局默认 > 内置 codex).
-  // modelUserTouchedRef: 只记"用户本次是否手动改过模型", 避免异步到达的全局默认覆盖用户选择.
+  // 全局默认模型偏好 (管理中心-系统设置): 异步拉取. 项目默认 (defaultModel) 也可能因 project 异步
+  // 加载而晚到. 二者到达后, 若用户未手动改过模型, 按完整链路重算 (同 initialModelKey, 但插入全局默认).
+  // modelUserTouchedRef: 只记"用户本次是否手动改过模型", 避免异步值覆盖用户选择.
   const modelUserTouchedRef = useRef(false)
   const [globalDefaultModel, setGlobalDefaultModel] = useState('')
   useEffect(() => {
@@ -2059,12 +2063,12 @@ export function NewSessionModal({
   useEffect(() => {
     if (modelUserTouchedRef.current) return
     const next: ModelKey = initialPreset?.model
-      || initialDraft?.model
+      || draftModelDeliberate
       || (typeof defaultModel === 'string' && defaultModel.trim() ? defaultModel.trim() : '')
       || globalDefaultModel
       || DEFAULT_SESSION_MODEL
     setModel(next)
-  }, [globalDefaultModel])
+  }, [defaultModel, globalDefaultModel])
   // 注入上下文语言, 创建时定型 (默认中文).
   const [language, setLanguage] = useState<SessionLanguage>(initialPreset?.language || initialDraft?.language || DEFAULT_SESSION_LANGUAGE)
   const [personality, setPersonality] = useState<string>(initialPreset?.personality || personalityOptions[0]?.key || 'balanced')
@@ -2140,7 +2144,10 @@ export function NewSessionModal({
       draftSave(DRAFT_KEY, {
         name,
         desc,
-        model,
+        // 仅当用户手动选过模型才把 model 持久化进草稿 (并标 model_touched=true);
+        // 否则不写 model, 让下次重开时按项目/全局默认重新解析, 避免过期默认值钉死模型.
+        model: modelUserTouchedRef.current ? model : undefined,
+        model_touched: modelUserTouchedRef.current,
         role,
         language,
         excluded_skill_ids: Array.from(excludedSkills),
