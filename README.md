@@ -1,5 +1,3 @@
-
-https://github.com/user-attachments/assets/83733ddc-d220-4562-9671-4f7fe4ad0aff
 <a id="readme-top"></a>
 
 <h1 align="center">
@@ -76,7 +74,7 @@ Just writing articles is not enough — allying with multiple machines, running 
 - "Mobius AI" does research
 
 <p align="center">
-  <video controls src="https://mobius.nutshellai.cn/assets/v1/research-back.mp4" width="700" title="Title"></video>
+  <video controls src="https://github.com/user-attachments/assets/0580bbc1-3998-4a85-8fa1-189b46637289" width="700" title="Title"></video>
 </p>
 
 
