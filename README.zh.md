@@ -30,9 +30,14 @@
 >
 > 开源塑造「莫比乌斯 AI」的今天；**而你，真正的 AI 驾驭者，不满足于“预制” AI 系统的突破者**，可以用自然语言+截图发出指令，按照你的意愿打磨「莫比乌斯 AI」的每一个棱角，塑炼它的每行代码和每个像素，打造所向披靡的 Agent 操作系统。
 
+
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-9.png" width="700" alt="alt text" />
+  <img width="700" alt="image" src="https://github.com/user-attachments/assets/c7e10425-61f9-490b-a4ac-31840f94ae68" />
 </p>
+<p align="center">
+  <img width="700" alt="image" src="https://github.com/user-attachments/assets/14dbc573-0f20-4286-b6ee-e6a35e0f5d4c" />
+</p>
+
 
 
 ## 会生长、可进化的生产力系统
