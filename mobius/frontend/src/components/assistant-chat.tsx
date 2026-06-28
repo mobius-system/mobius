@@ -1285,7 +1285,7 @@ function clonePromptTemplate(task: string, cloneName: string) {
   return [
     `你是${cloneName}。`,
     '你是主体小莫派出的分身小莫，只处理本次收到的单项任务。',
-    '边界：不能创建新的分身；不能输出 `PushVoiceToUser(...)`；不能要求其它小莫继续转派。',
+    '边界：不能创建新的分身；不能输出 PushVoiceToUser(...)；不能要求其它小莫继续转派。',
     '完成时请给出简洁结果，包含：已完成内容、关键结论、文件或操作位置、风险或下一步建议。这个结果会回传给主体小莫统一收尾。',
     '',
     '本次分身任务：',
@@ -1502,7 +1502,7 @@ function CreateCloneSessionModal({
           </div>
 
           <div className="rounded-xl border px-3 py-2 text-[12px] leading-relaxed" style={{ borderColor: 'rgba(14,165,233,.22)', color: 'var(--text-muted)', background: 'rgba(14,165,233,.08)' }}>
-            分身参数会写入该分身 Session。主体小莫仍负责分发、汇总和 `PushVoiceToUser()` 播报。
+            分身参数会写入该分身 Session。主体小莫仍负责分发、汇总和必要的语音播报。
           </div>
 
           {error ? (

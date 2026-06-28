@@ -45,6 +45,7 @@ export function extractVoiceCommands(content: string): VoiceCommand[] {
 
 export function stripVoiceCommands(content: string) {
   return String(content || '')
+    .replace(/^[ \t]*`{1,3}[ \t]*PushVoiceToUser\s*\(\s*(["'])([\s\S]*?)(?<!\\)\1\s*\)[ \t]*;?[ \t]*`{1,3}[ \t]*$/gm, '')
     .replace(/^[ \t]*PushVoiceToUser\s*\(\s*(["'])([\s\S]*?)(?<!\\)\1\s*\)[ \t]*;?[ \t]*$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim()

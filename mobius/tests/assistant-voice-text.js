@@ -70,6 +70,42 @@ async function assertAllModeFallsBackToPushVoiceWhenThereIsNoVisibleText(mod) {
   assert.strictEqual(mod.voiceTextForMessage(content, 'all'), '没有正文时仍然可以播精选');
 }
 
+async function assertBacktickedEmptyCommandIsStrippedFromVisibleText(mod) {
+  const content = [
+    '收到，分身小莫已经完成。',
+    '',
+    '`PushVoiceToUser("")`',
+  ].join('\n');
+
+  assert.strictEqual(mod.stripVoiceCommands(content), '收到，分身小莫已经完成。');
+  assert.strictEqual(mod.voiceTextForMessage(content, 'all'), '收到，分身小莫已经完成。');
+}
+
+async function assertNotificationRepliesUseNoVoiceCommand(mod) {
+  const greeting = '你好，我在。';
+  const cloneNotice = '分身小莫已经完成代码检查，我会把结果整理后回到主对话。';
+
+  assert.strictEqual(mod.hasVoiceCommand(greeting), false);
+  assert.strictEqual(mod.hasVoiceCommand(cloneNotice), false);
+  assert.strictEqual(mod.voiceTextForMessage(greeting, 'selected'), '');
+  assert.strictEqual(mod.voiceTextForMessage(cloneNotice, 'selected'), '');
+}
+
+async function assertAnalysisReplyUsesOneBareVoiceCommand(mod) {
+  const content = [
+    '结论：这次问题来自旧提示词鼓励空播报标记，前端又只剥离裸标记。',
+    '',
+    '后续处理应以默认不输出标记为准。',
+    '',
+    'PushVoiceToUser("这次问题来自旧提示词鼓励空播报标记，已改为默认不输出。")',
+  ].join('\n');
+  const commands = mod.extractVoiceCommands(content);
+
+  assert.strictEqual(commands.length, 1);
+  assert.strictEqual(commands[0].text, '这次问题来自旧提示词鼓励空播报标记，已改为默认不输出。');
+  assert.doesNotMatch(mod.stripVoiceCommands(content), /PushVoiceToUser/);
+}
+
 async function assertLongTextSplitsWithoutLoss(mod) {
   const sentence = '这是一段用于检查小莫播报全部模式的长文本，分段之后不能丢失任何一句话。';
   const text = Array.from({ length: 12 }, (_, index) => `${index + 1}，${sentence}`).join('');
@@ -85,6 +121,9 @@ async function main() {
   await assertSelectedModeUsesOnlyPushVoiceText(mod);
   await assertAllModeUsesVisibleReplyEvenWhenPushVoiceExists(mod);
   await assertAllModeFallsBackToPushVoiceWhenThereIsNoVisibleText(mod);
+  await assertBacktickedEmptyCommandIsStrippedFromVisibleText(mod);
+  await assertNotificationRepliesUseNoVoiceCommand(mod);
+  await assertAnalysisReplyUsesOneBareVoiceCommand(mod);
   await assertLongTextSplitsWithoutLoss(mod);
   console.log('assistant-voice-text: ok');
 }
