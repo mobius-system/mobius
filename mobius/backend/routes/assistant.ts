@@ -133,7 +133,6 @@ function assistantSessionRole(session: any): string {
 
 function isAssistantCloneSession(session: any, user: any): boolean {
   if (!session || !user?.id || session.user_id !== user.id) return false;
-  if (!isAssistantCloneSessionName(session.name)) return false;
   const project = findAssistantProject(user);
   if (!project || session.project_id !== project.id) return false;
   const issue = Issues.findByProjectAndTitle(project.id, ASSISTANT_ISSUE_TITLE);
@@ -884,6 +883,145 @@ function findReusableAssistantSession(user: any): any {
   `).get(user.id, assistantSessionKeyLike(user.id), MAIN_ASSISTANT_SESSION_NAME) as any;
 }
 
+function findRepairableAssistantMainSession(user: any, project: any, issue: any): any {
+  const like = assistantSessionKeyLike(user.id);
+  return db.prepare(`
+    SELECT *
+    FROM sessions_v2
+    WHERE user_id = ?
+      AND (
+        session_key LIKE ?
+        OR (
+          project_id = ?
+          AND issue_id = ?
+          AND name = ?
+        )
+      )
+      AND (deleted_at IS NULL OR deleted_at = '')
+    ORDER BY
+      CASE
+        WHEN status = 'active' AND session_key LIKE ? THEN 0
+        WHEN status = 'active' AND name = ? THEN 1
+        WHEN session_key LIKE ? THEN 2
+        WHEN name = ? THEN 3
+        ELSE 4
+      END,
+      last_active DESC,
+      created_at DESC
+    LIMIT 1
+  `).get(
+    user.id,
+    like,
+    project.id,
+    issue.id,
+    MAIN_ASSISTANT_SESSION_NAME,
+    like,
+    MAIN_ASSISTANT_SESSION_NAME,
+    like,
+    MAIN_ASSISTANT_SESSION_NAME,
+  ) as any;
+}
+
+function repairAssistantMainSession(session: any, user: any, project: any, issue: any): any {
+  const sessionKey = isAssistantSession(session, user)
+    ? session.session_key
+    : assistantSessionKey(user.id, session.session_id);
+  db.prepare(`
+    UPDATE sessions_v2
+    SET name = ?,
+        session_key = ?,
+        project_id = ?,
+        issue_id = ?,
+        scope_type = 'issue',
+        status = 'active',
+        completed_at = NULL
+    WHERE session_id = ?
+      AND user_id = ?
+  `).run(
+    MAIN_ASSISTANT_SESSION_NAME,
+    sessionKey,
+    project.id,
+    issue.id,
+    session.session_id,
+    user.id,
+  );
+  return Sessions.findById(session.session_id);
+}
+
+function createAssistantMainSession(user: any, project: any, issue: any, preset: AssistantPresetNormalized, modelOrKey: any = null): any | null {
+  const resolvedModel = modelRegistry.resolveSessionModelForCreate(modelOrKey || preset.model);
+  if (!resolvedModel) {
+    console.warn(`[assistant/main] skip main session auto-create for ${user?.id || ''}: no available model`);
+    return null;
+  }
+  const sessionId = uuid().slice(0, 8);
+  const excludedSkillIds = safeIdList(preset.excluded_skill_ids);
+  const excludedMemoryIds = safeIdList(preset.excluded_memory_ids);
+  const selectionSnapshot = buildSessionSelectionSnapshot(user, issue.id, excludedSkillIds, excludedMemoryIds);
+  (selectionSnapshot as any).assistant = {
+    ...((selectionSnapshot as any).assistant && typeof (selectionSnapshot as any).assistant === 'object' ? (selectionSnapshot as any).assistant : {}),
+    personality: normalizeAssistantPersonality(preset.personality),
+  };
+  Sessions.insert({
+    session_id: sessionId,
+    issue_id: issue.id,
+    project_id: project.id,
+    user_id: user.id,
+    name: MAIN_ASSISTANT_SESSION_NAME,
+    description: preset.description || DEFAULT_ASSISTANT_PRESET_DESCRIPTION,
+    session_key: assistantSessionKey(user.id, sessionId),
+    excluded_skill_ids: excludedSkillIds,
+    excluded_memory_ids: excludedMemoryIds,
+    selection_snapshot: selectionSnapshot,
+    model: resolvedModel.sessionModelValue,
+    language: preset.language || 'zh',
+  } as any);
+  Issues.touchActiveAndIncrement(issue.id);
+  return Sessions.findById(sessionId);
+}
+
+function ensureAssistantMainSession(user: any, options: { preset?: AssistantPresetNormalized; model?: any; allowCreate?: boolean } = {}): any | null {
+  const project = ensureAssistantProject(user);
+  const issue = ensureAssistantIssue(project, user);
+  const existing = findReusableAssistantSession(user);
+  if (existing) {
+    if (
+      existing.project_id !== project.id
+      || existing.issue_id !== issue.id
+      || existing.name !== MAIN_ASSISTANT_SESSION_NAME
+      || existing.status !== 'active'
+    ) {
+      return repairAssistantMainSession(existing, user, project, issue);
+    }
+    return existing;
+  }
+
+  const repairable = findRepairableAssistantMainSession(user, project, issue);
+  if (repairable) return repairAssistantMainSession(repairable, user, project, issue);
+  if (options.allowCreate === false) return null;
+
+  const preset = options.preset || readAssistantPreset(user, issue.id);
+  return createAssistantMainSession(user, project, issue, preset, options.model);
+}
+
+function assistantSessionHasUserMessages(session: any): boolean {
+  if (!session?.session_id) return false;
+  return Messages.countUserMessagesFor(session.session_id) > 0;
+}
+
+function firstUseLimitCheck(user: any, session: any): any {
+  if (!session || assistantSessionHasUserMessages(session)) return { allowed: true };
+  const resolved = modelRegistry.resolveSessionModel(session.model);
+  if (!resolved) {
+    return {
+      allowed: false,
+      status: 503,
+      error: '没有可用的模型，请先在管理后台配置模型（或检查 ~/.claude/mobiusdefault.settings.json 是否存在）',
+    };
+  }
+  return modelPromptLimits.checkCreateAllowed(user.id, resolved.key);
+}
+
 function shapeAssistantSessionSummary(session: any): any {
   if (!session) return null;
   return {
@@ -903,7 +1041,7 @@ function currentAssistantPresetPayload(user: any): any {
   const project = ensureAssistantProject(user);
   const issue = ensureAssistantIssue(project, user);
   const preset = readAssistantPreset(user, issue.id);
-  const currentSession = findReusableAssistantSession(user);
+  const currentSession = ensureAssistantMainSession(user, { preset });
   return {
     project,
     issue,
@@ -1049,6 +1187,7 @@ router.get('/sessions', auth, (req: express.Request, res: express.Response) => {
   const user = (req as any).user;
   try {
     const limit = normalizeLimit(req.query.limit);
+    ensureAssistantMainSession(user);
     const sessions = listAssistantSessions(user, limit);
     res.json({
       sessions: sessions
@@ -1302,6 +1441,10 @@ router.post('/messages', auth, async (req: express.Request, res: express.Respons
     let session = findReusableAssistantSession(user);
     let created = false;
     if (!session) {
+      const repairable = findRepairableAssistantMainSession(user, project, issue);
+      if (repairable) session = repairAssistantMainSession(repairable, user, project, issue);
+    }
+    if (!session) {
       const resolvedModel = modelRegistry.resolveSessionModelForCreate(body.model || preset.model);
       if (!resolvedModel) {
         res.status(503).json({ error: '没有可用的模型，请先在管理后台配置模型（或检查 ~/.claude/mobiusdefault.settings.json 是否存在）' });
@@ -1349,6 +1492,17 @@ router.post('/messages', auth, async (req: express.Request, res: express.Respons
         WHERE session_id = ? AND user_id = ?
       `).run(project.id, issue.id, session.session_id, user.id);
       session = Sessions.findById(session.session_id);
+    }
+    if (!created) {
+      const limitCheck = firstUseLimitCheck(user, session);
+      if (!limitCheck.allowed) {
+        res.status(limitCheck.status as any || 429).json({
+          error: limitCheck.error,
+          code: limitCheck.code,
+          usage: limitCheck.usage,
+        });
+        return;
+      }
     }
 
     await startAssistantSession(req, session, question, requestId, project.bind_path, clientContext, attachments, content || question);
