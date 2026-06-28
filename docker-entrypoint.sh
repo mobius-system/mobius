@@ -80,10 +80,10 @@ fi
 cd "$APP_DIR/mobius"
 
 # -- seed users + self-evolve project ------------------
-if [[ -n "${IMAC_BOOTSTRAP_USERS:-}" ]]; then
+if [[ -n "${MOBIUS_BOOTSTRAP_USERS:-}" ]]; then
   echo "[entrypoint] bootstrap-users"
   node scripts/bootstrap-users.js || echo "[entrypoint] bootstrap-users failed (startup continues)"
-  IFS=';' read -ra _bs_users <<< "$IMAC_BOOTSTRAP_USERS"
+  IFS=';' read -ra _bs_users <<< "$MOBIUS_BOOTSTRAP_USERS"
   for _u in "${_bs_users[@]}"; do
     _id="${_u%%:*}"; _id="${_id## }"; _id="${_id%% }"
     [[ -n "$_id" ]] && mkdir -p "$WORKSPACE_ROOT/$_id"

@@ -560,17 +560,17 @@ function isSafeSkillName(name: any): boolean {
 function runNpxSkillsAdd(targetDir: string, skillName: string): Promise<any> {
   // --agent claude-code 指定只装到 .claude/skills/, --yes 跳过交互确认.
   // 不带 --agent 时 CLI 默认走 Universal (.agents/skills/), 不符合我们的扫描位置.
-  // IMAC_SKILLS_PROXY 存在时为 npx 子进程注入 http(s)_proxy.
+  // MOBIUS_SKILLS_PROXY 存在时为 npx 子进程注入 http(s)_proxy.
   // 通过 NO_PROXY 让 npm registry (npmmirror / npmjs.org) 直连, 只让 git clone github.com 走代理.
   const childEnv: any = { ...process.env };
-  const proxyRaw = process.env.IMAC_SKILLS_PROXY;
+  const proxyRaw = process.env.MOBIUS_SKILLS_PROXY;
   const proxy = proxyRaw && !/^(disabled|off|none|false)$/i.test(proxyRaw) ? proxyRaw : '';
   if (proxy) {
     childEnv.http_proxy = proxy;
     childEnv.https_proxy = proxy;
     childEnv.HTTP_PROXY = proxy;
     childEnv.HTTPS_PROXY = proxy;
-    const noProxy = process.env.IMAC_SKILLS_NO_PROXY
+    const noProxy = process.env.MOBIUS_SKILLS_NO_PROXY
       || 'registry.npmmirror.com,registry.npmjs.org,npmmirror.com,localhost,127.0.0.1';
     childEnv.no_proxy = noProxy;
     childEnv.NO_PROXY = noProxy;

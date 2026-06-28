@@ -1,4 +1,4 @@
--- schema.sql — IMAC 共享表完整 DDL (单一真相源, 供空库自建表)
+-- schema.sql — MOBIUS 共享表完整 DDL (单一真相源, 供空库自建表)
 --
 -- 背景: db.js 只 CREATE researches / sessions_v2 / messages_v2, 并对 issues/projects
 -- 做幂等 ALTER 迁移; 但 users/projects/issues/sessions/messages/skills 等"共享表"原本

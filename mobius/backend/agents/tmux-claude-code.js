@@ -1,7 +1,7 @@
 /**
  * tmux-claude-code.js — TmuxClaudeCodeBackend.
  *
- * 在固定 tmux session `imac_claude_code_agent_hub` 里, 每个 IMAC session_id → 一个
+ * 在固定 tmux session `imac_claude_code_agent_hub` 里, 每个 MOBIUS session_id → 一个
  * tmux window, window 名 = session_id. window 内跑 `proxychains -q -f
  * ~/proxy_claude.conf claude --dangerously-skip-permissions ...` (交互式 TUI 模式).
  *

@@ -104,7 +104,7 @@ def load_configuration(run_cwd: Path, script_name: str) -> tuple[EnvFileLoader, 
     # 派生默认值：仅在用户没显式设过时才写入（set_default 内部判断）。
     # debug-env.json 落到隐藏工作缓存目录下 (.imac / .mobius, 由 MOBIUS_HIDDEN_FOLDER_NAME 决定)。
     _hidden_folder = os.environ.get("MOBIUS_HIDDEN_FOLDER_NAME", ".mobius")
-    loader.set_default("IMAC_DEBUG_ENV_FILE", f"{app_dir}/{_hidden_folder}/debug-env.json")
+    loader.set_default("MOBIUS_DEBUG_ENV_FILE", f"{app_dir}/{_hidden_folder}/debug-env.json")
     loader.set_default("VITE_API_TARGET", f"http://0.0.0.0:{mobius_port}")
     # code-server 监听地址（host:port 格式），仅本机回环，避免裸暴露到外网。
     loader.set_default("CODE_SERVER_BIND", f"127.0.0.1:{code_server_port}")
@@ -233,29 +233,29 @@ def read_bootstrap_flag(root: Path) -> dict | None:
 
 
 def write_bootstrap_flag(root: Path, raw_users: str) -> None:
-    write_json_private(bootstrap_flag_path(root), {"IMAC_BOOTSTRAP_USERS": raw_users})
+    write_json_private(bootstrap_flag_path(root), {"MOBIUS_BOOTSTRAP_USERS": raw_users})
 
 
 def bootstrap_users(root: Path) -> None:
     # 直接部署路径没有 docker-entrypoint.sh, 首次启动需要补跑用户 seed。
     # 用 MOBIUS_DATA_PATH/bootstrap-users.json 做部署级标记, 避免每次启动都碰 users 表。
     # start.py 只看文件标记, 不直接读写数据库；真正建用户交给幂等的 bootstrap-users.js。
-    raw_users = os.environ.get("IMAC_BOOTSTRAP_USERS") or ""
+    raw_users = os.environ.get("MOBIUS_BOOTSTRAP_USERS") or ""
     if not raw_users:
-        print("=== [bootstrap] IMAC_BOOTSTRAP_USERS 未设置，跳过用户初始化 ===", flush=True)
+        print("=== [bootstrap] MOBIUS_BOOTSTRAP_USERS 未设置，跳过用户初始化 ===", flush=True)
         return
     flag = read_bootstrap_flag(root)
     if flag:
-        previous_users = flag.get("IMAC_BOOTSTRAP_USERS")
+        previous_users = flag.get("MOBIUS_BOOTSTRAP_USERS")
         if previous_users == raw_users:
             print(f"=== [bootstrap] 用户已初始化，跳过: {bootstrap_flag_path(root)} ===", flush=True)
             return
-        print("=== [bootstrap] IMAC_BOOTSTRAP_USERS 已变化，补建缺失用户 ===", flush=True)
+        print("=== [bootstrap] MOBIUS_BOOTSTRAP_USERS 已变化，补建缺失用户 ===", flush=True)
 
     script = root / "mobius" / "scripts" / "bootstrap-users.js"
     if not script.is_file():
         raise ConfigError(f"missing bootstrap script: {script}")
-    print("=== [bootstrap] 初始化缺失用户 (IMAC_BOOTSTRAP_USERS) ===", flush=True)
+    print("=== [bootstrap] 初始化缺失用户 (MOBIUS_BOOTSTRAP_USERS) ===", flush=True)
     run(["node", "scripts/bootstrap-users.js"], cwd=root / "mobius", env=dict(os.environ))
     write_bootstrap_flag(root, raw_users)
     print(f"=== [bootstrap] 已写初始化标记: {bootstrap_flag_path(root)} ===", flush=True)
@@ -467,7 +467,7 @@ def main(
         apply_product_port()
 
         root = Path(os.environ["APP_DIR"])
-        debug_env_file = Path(os.environ["IMAC_DEBUG_ENV_FILE"])
+        debug_env_file = Path(os.environ["MOBIUS_DEBUG_ENV_FILE"])
 
         # 先落盘两份快照（debug-env.json 全量、accepted_setting.log 脱敏），再起服务；
         # 这样即便后续启动失败也能事后看"当时打算用哪份配置"。

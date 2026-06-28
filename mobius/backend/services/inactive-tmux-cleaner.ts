@@ -29,13 +29,13 @@ import * as agents from '../agents';
 
 const DEFAULT_INACTIVE_MS = 3 * 60 * 60 * 1000;
 const DEFAULT_COMPLETED_INACTIVE_MS = 10 * 60 * 1000;
-const INACTIVE_MS = parseDurationMs(process.env.IMAC_TMUX_AGENT_INACTIVE_MS, DEFAULT_INACTIVE_MS);
+const INACTIVE_MS = parseDurationMs(process.env.MOBIUS_TMUX_AGENT_INACTIVE_MS, DEFAULT_INACTIVE_MS);
 const COMPLETED_INACTIVE_MS = parseDurationMs(
-  process.env.IMAC_TMUX_AGENT_COMPLETED_INACTIVE_MS,
+  process.env.MOBIUS_TMUX_AGENT_COMPLETED_INACTIVE_MS,
   DEFAULT_COMPLETED_INACTIVE_MS,
 );
-const SCAN_INTERVAL_MS = parseDurationMs(process.env.IMAC_TMUX_AGENT_CLEANUP_INTERVAL_MS, 30 * 60 * 1000);
-const FIRST_RUN_DELAY_MS = parseDurationMs(process.env.IMAC_TMUX_AGENT_CLEANUP_FIRST_DELAY_MS, 60 * 1000);
+const SCAN_INTERVAL_MS = parseDurationMs(process.env.MOBIUS_TMUX_AGENT_CLEANUP_INTERVAL_MS, 30 * 60 * 1000);
+const FIRST_RUN_DELAY_MS = parseDurationMs(process.env.MOBIUS_TMUX_AGENT_CLEANUP_FIRST_DELAY_MS, 60 * 1000);
 
 const LOG_DIR = BACKEND_WORKER_LOG_DIR;
 const LOG_FILE = path.join(LOG_DIR, 'cleanup_inactive_tmux_agents.log');

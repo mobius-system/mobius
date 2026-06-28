@@ -2,7 +2,7 @@
   "name": "imac-mobius",
   "version": "1.9.0",
   "private": true,
-  "description": "IMAC Mobius — Node backend + React frontend. Launches agents via tmux-agent-hub. Listens :45614.",
+  "description": "MOBIUS Mobius — Node backend + React frontend. Launches agents via tmux-agent-hub. Listens :45614.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

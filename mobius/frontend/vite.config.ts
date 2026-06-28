@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// IMAC mobius 前端 (:45616): 默认连后端 ($MOBIUS_PORT).
+// MOBIUS mobius 前端 (:45616): 默认连后端 ($MOBIUS_PORT).
 // 老 9830/9810 正式服已退役, mobius 现在既是开发也是生产.
 // 可用 VITE_API_TARGET / VITE_PORT 覆盖.
 const mobiusPort = process.env.MOBIUS_PORT

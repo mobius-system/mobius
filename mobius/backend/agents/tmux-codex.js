@@ -1,7 +1,7 @@
 /**
  * tmux-codex.js — TmuxCodexBackend.
  *
- * 每个 IMAC session_id 对应一个 tmux window, window 内运行 Codex 交互式 TUI.
+ * 每个 MOBIUS session_id 对应一个 tmux window, window 内运行 Codex 交互式 TUI.
  * 对外实现与 tmux-claude-code 相同的 AgentBackend 合同:
  *   - 输入: tmux load-buffer + paste-buffer -p + Enter
  *   - 读取: $CODEX_HOME/sessions/YYYY/MM/DD/rollout-...<thread-id>.jsonl tail

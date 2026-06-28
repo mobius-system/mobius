@@ -2,7 +2,7 @@
 """Copy .env.default to .env and randomize the secrets in it.
 
   - JWT_SECRET                  -> a fresh random hex string.
-  - IMAC_BOOTSTRAP_USERS        -> a fresh random password per bootstrap user.
+  - MOBIUS_BOOTSTRAP_USERS        -> a fresh random password per bootstrap user.
   - local path settings         -> host paths derived from the project root
                                    unless --docker is passed.
 
@@ -60,7 +60,7 @@ LOCAL_DIRECTORY_KEYS = (
 
 
 def _randomize_bootstrap_users(match):
-    """Replace the password field of each IMAC_BOOTSTRAP_USERS entry.
+    """Replace the password field of each MOBIUS_BOOTSTRAP_USERS entry.
 
     Each entry is "id:password:role:display_name" (entries separated by ";").
     Only the password field (index 1) is replaced; id / role / display_name are
@@ -76,7 +76,7 @@ def _randomize_bootstrap_users(match):
             parts[1] = secrets.token_urlsafe(18)
             entry = ":".join(parts)
         entries.append(entry)
-    return f"IMAC_BOOTSTRAP_USERS={';'.join(entries)}"
+    return f"MOBIUS_BOOTSTRAP_USERS={';'.join(entries)}"
 
 
 def _find_value(content, key):
@@ -178,7 +178,7 @@ def main():
 
     # Replace each bootstrap user's password; see _randomize_bootstrap_users.
     content = re.sub(
-        r"^IMAC_BOOTSTRAP_USERS=(.*)$",
+        r"^MOBIUS_BOOTSTRAP_USERS=(.*)$",
         _randomize_bootstrap_users,
         content,
         flags=re.MULTILINE,
@@ -194,7 +194,7 @@ def main():
     # visible immediately. Pull them back out of the final content (single source
     # of truth) rather than re-deriving them here.
     print("Changed values:")
-    changed_keys = ["JWT_SECRET", "IMAC_BOOTSTRAP_USERS"]
+    changed_keys = ["JWT_SECRET", "MOBIUS_BOOTSTRAP_USERS"]
     if not args.docker:
         changed_keys.extend(LOCAL_PATH_KEYS)
     for key in changed_keys:

@@ -108,7 +108,7 @@ def load_configuration() -> None:
     loader.load_dotenv(REPO_ROOT / ".env", "loaded from .env")
     loader.load_dotenv(REPO_ROOT / ".env.default", "loaded from .env.default")
 
-    debug_env_file = os.environ.get("IMAC_DEBUG_ENV_FILE")
+    debug_env_file = os.environ.get("MOBIUS_DEBUG_ENV_FILE")
     if debug_env_file:
         loader.load_runtime_json(Path(debug_env_file), "loaded from debug env")
 

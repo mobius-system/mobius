@@ -3,7 +3,7 @@ export const SELF_EVOLVE_DEMO_STATE_KEY = 'imac-demo:self-evolve'
 
 export const SELF_EVOLVE_REQUIRED_SKILL_NAME = 'mobius-extension'
 export const SELF_EVOLVE_REQUIRED_MEMORY_NAME = '莫比乌斯自主开发项目知识'
-export const SELF_EVOLVE_PROJECT_KNOWLEDGE_MEMORY_NAME = 'IMAC中台开发的项目知识'
+export const SELF_EVOLVE_PROJECT_KNOWLEDGE_MEMORY_NAME = 'MOBIUS中台开发的项目知识'
 export const SELF_EVOLVE_GUIDE_STYLE_MEMORY_NAMES = ['用户引导文案写法', '引导文案与路线设计规则', 'guide-copywriting-style']
 
 export const SELF_EVOLVE_MEMORY_BODY = [

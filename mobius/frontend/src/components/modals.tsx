@@ -1772,7 +1772,7 @@ function isSelfEvolveRequiredMemoryItem(item: { name?: string }) {
 function isSelfEvolveProjectMemoryItem(item: { name?: string; description?: string }) {
   const text = `${item.name || ''} ${item.description || ''}`
   return text.includes(SELF_EVOLVE_PROJECT_KNOWLEDGE_MEMORY_NAME)
-    || (text.includes('项目知识') && (text.includes('IMAC') || text.includes('中台') || text.includes('莫比乌斯')))
+    || (text.includes('项目知识') && (text.includes('MOBIUS') || text.includes('中台') || text.includes('莫比乌斯')))
 }
 
 function isSelfEvolveGuideMemoryItem(item: { id?: string; name?: string; description?: string }) {

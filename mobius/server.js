@@ -1,5 +1,5 @@
 /**
- * server.js — IMAC Mobius (主栈, 原 v2 实验栈接管生产)
+ * server.js — MOBIUS Mobius (主栈, 原 v2 实验栈接管生产)
  *
  * 架构 (v1.9 起):
  *   - 直接通过 tmux 启动 claude CLI 子进程, 输出靠 ~/.claude/projects/<cwd>/<sid>.jsonl 监听
@@ -228,7 +228,7 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[mobius] IMAC Mobius listening on http://0.0.0.0:${PORT}`);
+  console.log(`[mobius] MOBIUS Mobius listening on http://0.0.0.0:${PORT}`);
   console.log(`[mobius] health: http://0.0.0.0:${PORT}/api/v2/health`);
   console.log(`[mobius] backend: agents/tmux-claude-code (window-per-session) + jsonl-watcher`);
   // 拓展系统启动 diff: 扫描 mobius/extension/<name>/extension.json, 与 projects(kind=extension) 同步.

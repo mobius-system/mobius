@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // bootstrap-users.js — docker-compose env 初始化链路 (与 zip 迁移链路并存)
 //
-// 输入: 环境变量 IMAC_BOOTSTRAP_USERS
+// 输入: 环境变量 MOBIUS_BOOTSTRAP_USERS
 //   格式: "id1:password1:role:display_name;id2:password2;..."
 //   字段分隔 ':'  用户分隔 ';'  role/display_name 可省 (默认 user / 同 id)
 //   密码不允许含 ':' 或 ';' (有需要可改 base64; 本期不做)
@@ -45,9 +45,9 @@ function parseUsers(raw) {
 }
 
 function main() {
-  const raw = process.env.IMAC_BOOTSTRAP_USERS || '';
+  const raw = process.env.MOBIUS_BOOTSTRAP_USERS || '';
   const users = parseUsers(raw);
-  if (users.length === 0) { console.log('[bootstrap-users] IMAC_BOOTSTRAP_USERS 未设置, 跳过'); return; }
+  if (users.length === 0) { console.log('[bootstrap-users] MOBIUS_BOOTSTRAP_USERS 未设置, 跳过'); return; }
 
   // 复用 db.ts (会跑 schema.sql bootstrap); 上面已挂 tsx/cjs hook, 这里不带扩展名,
   // 让 require 解析到 mobius/db.ts.

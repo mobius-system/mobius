@@ -3,7 +3,7 @@
 
 Checks:
   1. JWT_SECRET must be set and not the default placeholder.
-  2. IMAC_BOOTSTRAP_USERS passwords must not be the default placeholder.
+  2. MOBIUS_BOOTSTRAP_USERS passwords must not be the default placeholder.
   3. APP_DIR, MOBIUS_DATA_PATH, and WORKSPACE_ROOT must exist on disk.
   4. MOBIUS_PORT, AIMUX_BRIDGE_PORT, and VITE_PORT must be free to bind.
   5. code-server must be installed via scripts/install-code-server.bash.
@@ -31,7 +31,7 @@ DUMMY_BASH_CMD_INSTALLER = BASE_DIR / "scripts" / "install-dummy-bash-cmd-list.b
 AIMUX_BRIDGE_INSTALLER = BASE_DIR / "mobius" / "scripts" / "setup-aimux-bridge.sh"
 # The placeholder shipped in .env.default; treat it (and empty) as "unset".
 DEFAULT_JWT_SECRET = "change-me-please-generate-a-random-secret"
-# Default placeholder password inside IMAC_BOOTSTRAP_USERS (id:password:role:name).
+# Default placeholder password inside MOBIUS_BOOTSTRAP_USERS (id:password:role:name).
 DEFAULT_BOOTSTRAP_PASSWORD = "change-me-strong-password"
 
 
@@ -230,11 +230,11 @@ def main():
         print("ERROR: JWT_SECRET is still the default value. Run prepare_conf.py.", file=sys.stderr)
         sys.exit(1)
 
-    # Check 2: every IMAC_BOOTSTRAP_USERS entry is "id:password:role:name" (multiple
+    # Check 2: every MOBIUS_BOOTSTRAP_USERS entry is "id:password:role:name" (multiple
     # entries separated by ";"). The password field must not be the default placeholder.
     # NOTE: this assumes passwords contain no ":" or ";" — consistent with the format
     # documented in .env.default.
-    bootstrap_users = env.get("IMAC_BOOTSTRAP_USERS", "")
+    bootstrap_users = env.get("MOBIUS_BOOTSTRAP_USERS", "")
     if bootstrap_users:
         for entry in bootstrap_users.split(";"):
             entry = entry.strip()
@@ -243,7 +243,7 @@ def main():
             parts = entry.split(":")
             if len(parts) >= 2 and parts[1] == DEFAULT_BOOTSTRAP_PASSWORD:
                 print(
-                    "ERROR: IMAC_BOOTSTRAP_USERS still has the default password "
+                    "ERROR: MOBIUS_BOOTSTRAP_USERS still has the default password "
                     f"for user '{parts[0]}'. Set a strong password.",
                     file=sys.stderr,
                 )
