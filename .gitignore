@@ -129,3 +129,6 @@ mobius/backend/types/*.js
 mobius/backend/repositories/*.js
 mobius/backend/services/*.js
 image*.png
+
+# Ignore extension
+mobius/extension

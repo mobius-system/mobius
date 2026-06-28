@@ -19,6 +19,7 @@ import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
 import { ErrBanner, PathPickerModal } from './modals'
 import { ToggleSwitch } from './toggle-switch'
+import { SessionModelPicker } from './session-model-picker'
 import { ExpandableTextarea } from './expandable-textarea'
 import { type Attachment, newAttId, formatFileSize, uploadAttachmentFile, appendAttachmentsToDesc } from './attachments'
 import {
@@ -97,18 +98,9 @@ const LANGUAGE_CHOICES: { key: SessionLanguage; title: string }[] = [
   { key: 'en', title: 'English' },
 ]
 
-// 模型兜底 (与需求列出的 5 个模型一致; 优先用后端 /api/sessions/model-options)
-type ModelOption = { key: string; label: string; title?: string; sub?: string; backend?: string }
-const FALLBACK_MODELS: ModelOption[] = [
-  { key: 'codex', label: 'GPT-5.5', title: 'GPT-5.5 (Codex)', backend: 'tmux-codex' },
-  { key: 'gpt55-backup', label: 'GPT55-BackUp', title: 'GPT55-BackUp', backend: 'tmux-codex' },
-  { key: 'glm-5.2', label: 'GLM-5.2', title: 'GLM-5.2', backend: 'claude_code' },
-  { key: 'minimax-m27-high', label: 'MiniMax-M2.7-high', title: 'MiniMax-M2.7-high', backend: 'claude_code' },
-  { key: 'minimax-m3', label: 'MiniMax-M3', title: 'MiniMax-M3', backend: 'claude_code' },
-]
-// 全局默认模型 (项目无 default_model 且用户未手动改/无草稿时回落). 与 modals.tsx 的 DEFAULT_SESSION_MODEL 同值 'codex';
-// 取 FALLBACK_MODELS 首项避免散落硬编码. 顶栏快捷的模型默认优先级: 草稿 > 项目 default_model > 此全局默认.
-const GLOBAL_DEFAULT_MODEL = FALLBACK_MODELS[0]?.key || 'codex'
+// 全局默认模型 (项目无 default_model 且用户未手动改时回落). 与 modals.tsx 的 DEFAULT_SESSION_MODEL 同值 'codex'.
+// 模型选择 UI + 配额/超额禁用统一走共享组件 SessionModelPicker (复刻 NewSessionModal 的 grid 卡片).
+const GLOBAL_DEFAULT_MODEL = 'codex'
 
 type PickItem = {
   id: string
@@ -149,34 +141,6 @@ function TextInput(props: { value: string; onChange: (v: string) => void; placeh
       placeholder={placeholder}
       className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40"
       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }}
-    />
-  )
-}
-
-// 模型选择 (动态拉 /api/sessions/model-options, 兜底 FALLBACK_MODELS)
-function ModelSelect({ value, onChange, dark }: { value: string; onChange: (v: string) => void; dark: boolean }) {
-  const [options, setOptions] = useState<ModelOption[]>(FALLBACK_MODELS)
-  useEffect(() => {
-    let alive = true
-    api('/api/sessions/model-options').then((arr: any[]) => {
-      if (!alive || !Array.isArray(arr) || arr.length === 0) return
-      const mapped: ModelOption[] = arr.map((m: any) => ({ key: m.key, label: m.label || m.title || m.key, title: m.title || m.label, sub: m.sub, backend: m.backend }))
-      setOptions(mapped)
-      if (!mapped.some(m => m.key === value)) onChange(mapped[0]?.key || value)
-    }).catch(() => {})
-    return () => { alive = false }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  return (
-    <DropdownSelect
-      value={value}
-      onChange={onChange}
-      dark={dark}
-      options={options.map(opt => ({
-        value: opt.key,
-        label: opt.label,
-        description: opt.sub ? `${opt.title || opt.label} · ${opt.sub}` : opt.title,
-      }))}
     />
   )
 }
@@ -1120,9 +1084,11 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   // 模型默认值优先级 (对齐 NewSessionModal: modals.tsx): 用户残留草稿 > 项目级默认模型偏好 > 系统全局 'codex'.
   // 后端创建 Session 时不回落项目 default_model (只回落全局 codex), 故模型默认完全靠前端预填.
   // 顶栏快捷是"先选项目再建 Session", 项目在异步下拉里 → 用 effect 在项目确定后回落项目偏好;
-  // modelUserTouchedRef 记录用户是否手动改过模型 (或已有草稿), 改过则不再被项目偏好覆盖.
+  // modelUserTouchedRef: 只记"用户本次是否手动改过模型". 注意不能因草稿 (d.model) 而初始 true —
+  //   顶栏草稿是全局的 (gc:new-session, 不绑 issue), 一旦 draftSave 写过 model 就会恒 true → effect 永不回落项目默认,
+  //   表现为"换了项目模型也不变" (即用户反馈的 bug). 故初始 false, 仅用户真正点选时才锁定.
   const [model, setModel] = useState(d.model || GLOBAL_DEFAULT_MODEL)
-  const modelUserTouchedRef = useRef(!!d.model)
+  const modelUserTouchedRef = useRef(false)
   const [language, setLanguage] = useState<SessionLanguage>(d.language || 'zh')
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set(d.excluded_skills || []))
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set(d.excluded_memories || []))
@@ -1255,15 +1221,10 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
         <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="给这个会话起个名字" autoFocus dark={dark} />
       </div>
       <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个会话完成什么" attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <SectionLabel hint="创建后不可更改">模型</SectionLabel>
-          <ModelSelect value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
-        </div>
-        <div>
-          <SectionLabel hint="注入上下文语言">语言</SectionLabel>
-          <LanguageSelect value={language} onChange={setLanguage} />
-        </div>
+      <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
+      <div>
+        <SectionLabel hint="注入上下文语言">语言</SectionLabel>
+        <LanguageSelect value={language} onChange={setLanguage} />
       </div>
       <div>
         <SectionLabel hint={issueId ? '点击展开二级弹窗选择' : '选择 Issue 后可配置'}>Skill / Memory</SectionLabel>
@@ -1299,9 +1260,10 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const [role, setRole] = useState<'chief_researcher' | 'research_assistant'>(d.role || 'research_assistant')
   // 角色默认值 (对齐 NewSessionModal): 若该 Research 尚无 chief_researcher 且用户未手动选过角色(也无草稿) → 默认首席.
   const roleUserTouchedRef = useRef(!!d.role)
-  // 模型默认值: 草稿 > 项目级默认模型偏好 > 全局 'codex' (同 CreateSessionForm, 对齐 NewSessionModal).
+  // 模型默认值: 项目级默认模型偏好 > 全局 'codex' (同 CreateSessionForm, 对齐 NewSessionModal).
+  // modelUserTouchedRef 初始 false (不因草稿锁死, 详见 CreateSessionForm 同名注释).
   const [model, setModel] = useState(d.model || GLOBAL_DEFAULT_MODEL)
-  const modelUserTouchedRef = useRef(!!d.model)
+  const modelUserTouchedRef = useRef(false)
   const [language, setLanguage] = useState<SessionLanguage>(d.language || 'zh')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [loading, setLoading] = useState(false)
@@ -1479,15 +1441,10 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
         <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="给这个 Agent 起个名字" autoFocus dark={dark} />
       </div>
       <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个 Agent 研究什么" attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <SectionLabel hint="创建后不可更改">模型</SectionLabel>
-          <ModelSelect value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
-        </div>
-        <div>
-          <SectionLabel hint="注入上下文语言">语言</SectionLabel>
-          <LanguageSelect value={language} onChange={setLanguage} />
-        </div>
+      <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
+      <div>
+        <SectionLabel hint="注入上下文语言">语言</SectionLabel>
+        <LanguageSelect value={language} onChange={setLanguage} />
       </div>
       <div>
         <SectionLabel hint="创建后不可更改">角色</SectionLabel>

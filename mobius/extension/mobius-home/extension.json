@@ -6,6 +6,6 @@
   "icon": "favicon.svg",
   "project": {
     "sync": true,
-    "default_hidden": false
+    "default_hidden": true
   }
 }
