@@ -1238,7 +1238,7 @@ function buildMobiusMemoryContext() {
   return parts.join("\n\n---\n\n").slice(0, 24000);
 }
 
-async function callAnthropicMessages({ provider, system, messages, tools, maxTokens = 4096, maxRounds = 8, toolContext }) {
+async function callAnthropicMessages({ provider, system, messages, tools, maxTokens = 4096, maxRounds = 8, toolContext, roundTimeoutMs = 2e4 }) {
   const url = provider.baseUrl.replace(/\/+$/, "") + "/v1/messages";
   const allMessages = [...messages];
   let totalInput = 0, totalOutput = 0;
@@ -1251,16 +1251,24 @@ async function callAnthropicMessages({ provider, system, messages, tools, maxTok
       messages: allMessages,
       tools: tools || undefined
     };
-    const resp = await fetchJson(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": provider.authToken,
-        "anthropic-version": "2023-06-01",
-        Authorization: `Bearer ${provider.authToken}`
-      },
-      body: JSON.stringify(body)
-    }, 9e4);
+    let resp;
+    try {
+      resp = await fetchJson(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": provider.authToken,
+          "anthropic-version": "2023-06-01",
+          Authorization: `Bearer ${provider.authToken}`
+        },
+        body: JSON.stringify(body)
+      }, roundTimeoutMs);
+    } catch (err) {
+      // 还没产生任何 tool_use 时切换渠道是安全的 (update/add/delete inspiration 有副作用, 不能重复执行)
+      const hasToolUse = allMessages.some(m => Array.isArray(m.content) && m.content.some(b => b && b.type === "tool_use"));
+      if (!hasToolUse && err && typeof err === "object") err.safeToFallback = true;
+      throw err;
+    }
     if (resp.usage) {
       totalInput += Number(resp.usage.input_tokens || 0);
       totalOutput += Number(resp.usage.output_tokens || 0);
@@ -1303,6 +1311,22 @@ async function callAnthropicMessages({ provider, system, messages, tools, maxTok
     allMessages.push({ role: "user", content: toolResults });
   }
   return { content: [], stop_reason: "max_rounds", usage: { input_tokens: totalInput, output_tokens: totalOutput }, messages: allMessages, toolResultsById };
+}
+
+// 多渠道兜底: 主渠道首轮 (未产生 tool_use) 失败/超时自动切下一个 provider 重试。
+// 已产生 tool_use 的轮失败不切 (inspiration 工具有副作用, 换渠道重来会重复执行)。
+async function callAgentWithFallback({ providers, system, messages, tools, maxTokens, maxRounds, toolContext, roundTimeoutMs }) {
+  if (!providers || !providers.length) throw new Error("没有可用的 AI 渠道 (检查 model-access.json)");
+  let lastErr;
+  for (const provider of providers) {
+    try {
+      return await callAnthropicMessages({ provider, system, messages, tools, maxTokens, maxRounds, toolContext, roundTimeoutMs });
+    } catch (err) {
+      lastErr = err;
+      if (!err || !err.safeToFallback) throw err;
+    }
+  }
+  throw lastErr || new Error("所有 AI 渠道都失败了");
 }
 
 function extractAgentText(content) {
@@ -1882,7 +1906,14 @@ async function chatWithAgent(e, t, r) {
   const message = txt(t.message, 4000);
   const scopeId = txt(t.scope_id, 120);
   if (!message) throw new Error("message 不能为空");
-  const provider = findProvider(txt(t.model_key, 200));
+  // 主渠道在前, 其余作为兜底顺序 (首轮失败自动切)。
+  const preferredKey = txt(t.model_key, 200);
+  const allProviders = chatProviders();
+  if (!allProviders.length) throw new Error("没有可用的 AI 渠道 (检查 model-access.json)");
+  const providers = preferredKey
+    ? [...allProviders.filter(p => p.key === preferredKey || p.name === preferredKey), ...allProviders.filter(p => p.key !== preferredKey && p.name !== preferredKey)]
+    : allProviders;
+  const provider = providers[0];
   const run = latestAgentRun(e, kind);
   if (!run) throw new Error(`暂无 ${kind} 的 AI Agent run, 请先跑一次 ai_scan_${kind === "product" ? "products" : "arxiv"}`);
   const priorMessages = getAgentMessages(e, { run_id: run.id }).filter(m => m.role === "user" || m.role === "assistant").map(m => ({
@@ -1899,18 +1930,19 @@ async function chatWithAgent(e, t, r) {
   }
   const userTurn = injection + (scopeId ? `用户在 ${kind === "paper" ? "论文" : "竞品"} ${scopeId} 上追问: ` : "用户追问: ") + message;
   appendAgentMessage(e, { runId: run.id, role: "user", content: userTurn, toolCalls: "" });
-  const memContext = buildMobiusMemoryContext();
-  const systemPrompt = buildScanSystemPrompt({ kind }) + "\n\n## 注入的莫比乌斯 Memory\n\n" + memContext + "\n\n你现在正在和用户对话, 之前已经扫描过若干" + (kind === "paper" ? "论文" : "竞品") + ", 直接基于已有上下文回答, 不要再输出 JSON 启发格式, 用自然中文回答。如果用户问到的内容你之前没扫过, 再调用 read_file 工具或基于已有 memory 回答。\n\n## 启发管理工具\n除了 read_file, 你还拥有 update_inspiration / add_inspiration / delete_inspiration 三个工具, 用来在用户要求修改当前 " + (kind === "paper" ? "论文" : "竞品") + " 的 ai_inspiration 启发时直接落到数据库, 而不只是口头描述。工具入参 schema 已经给出, scope_id 必须用 `" + (scopeId || "") + "` (即当前对话上下文), 跨 scope 会被拒绝。用户如果说\"把第 N 条优先级改成 medium\"/\"加一条新启发: xxx\"/\"删掉第 N 条\", 你应该直接调用对应工具而不是只回复文字。调用后请用一句话告诉用户你做了什么。";
+  // 追问只针对具体 scope, 不再注入 24k 全量 memory (降 input token + 首 token 延迟, 减少 30s 超时)。
+  const systemPrompt = buildScanSystemPrompt({ kind }) + "\n\n你现在正在和用户对话, 之前已经扫描过若干" + (kind === "paper" ? "论文" : "竞品") + ", 直接基于已有上下文回答, 不要再输出 JSON 启发格式, 用自然中文回答。如需确认莫比乌斯代码现状可调用 read_file 工具, 但简单问题不要为了读代码而读代码。\n\n## 启发管理工具\n除了 read_file, 你还拥有 update_inspiration / add_inspiration / delete_inspiration 三个工具, 用来在用户要求修改当前 " + (kind === "paper" ? "论文" : "竞品") + " 的 ai_inspiration 启发时直接落到数据库, 而不只是口头描述。工具入参 schema 已经给出, scope_id 必须用 `" + (scopeId || "") + "` (即当前对话上下文), 跨 scope 会被拒绝。用户如果说\"把第 N 条优先级改成 medium\"/\"加一条新启发: xxx\"/\"删掉第 N 条\", 你应该直接调用对应工具而不是只回复文字。调用后请用一句话告诉用户你做了什么。";
   const conversationMessages = priorMessages.concat([{ role: "user", content: userTurn }]);
   try {
-    const resp = await callAnthropicMessages({
-      provider,
+    const resp = await callAgentWithFallback({
+      providers,
       system: systemPrompt,
       messages: conversationMessages,
       tools: [READ_FILE_TOOL, UPDATE_INSPIRATION_TOOL, ADD_INSPIRATION_TOOL, DELETE_INSPIRATION_TOOL],
       maxTokens: 2000,
-      maxRounds: 5,
-      toolContext: { db: e, scopeId: scopeId || "" }
+      maxRounds: 3,
+      toolContext: { db: e, scopeId: scopeId || "" },
+      roundTimeoutMs: 2e4
     });
     const text = extractAgentText(resp.content);
     const toolUseBlocks = (resp.content || []).filter(b => b && b.type === "tool_use");
