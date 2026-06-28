@@ -8,6 +8,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import {
+  APP_DIR,
   DB_PATH,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
@@ -620,6 +621,22 @@ function migrateSessionsLanguage() {
 }
 migrateSessionsLanguage();
 
+// ===== sessions_v2 轻量迁移: risk_level =====
+// tasks 路由 (GET /api/tasks/:id/risk, PATCH risk_level) 依赖此列. v2 建表时未含
+// (db.ts 建表注释自承), 此前 SELECT/UPDATE risk_level 必抛 "no such column" → 500. 幂等补上.
+function migrateSessionsRiskLevel() {
+  try {
+    const cols = db.prepare('PRAGMA table_info(sessions_v2)').all().map((c: any) => c.name);
+    if (!cols.includes('risk_level')) {
+      db.exec("ALTER TABLE sessions_v2 ADD COLUMN risk_level TEXT NOT NULL DEFAULT 'medium'");
+      console.log("[mobius/db] migrate: sessions_v2.risk_level 已加 (默认 'medium')");
+    }
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️  sessions risk_level 迁移失败:', e.message);
+  }
+}
+migrateSessionsRiskLevel();
+
 // ===== 共享 issues 表轻量迁移: git worktree 支持 =====
 // v1 已退役, v2 是唯一栈, issues 表本就被 v2 读写 (insert/updateStatus/...),
 // 这里幂等补两列. 缺列才 ALTER, 不重复.
@@ -717,6 +734,25 @@ function normalizeProjectsResearchWorktreeRule() {
   }
 }
 normalizeProjectsResearchWorktreeRule();
+
+// ===== 共享 projects 表数据规范化: 自迭代项目强制禁用 worktree =====
+// 业务规则: 自迭代项目 (bind_path === APP_DIR, 即 is_self_develop) 不走 git worktree ——
+// agent 必须直接在主 checkout 上改, 再用 `python3 start.py` 部署; worktree 会切到独立工作副本,
+// 导致部署拿不到改动. 此处覆盖该规则落地之前的历史自迭代项目 (新建已在 routes/projects.ts 强制 false).
+function normalizeProjectsSelfDevelopWorktreeRule() {
+  try {
+    if (!APP_DIR) return;
+    const res = db.prepare(
+      'UPDATE projects SET default_use_worktree = 0 WHERE bind_path = ? AND default_use_worktree = 1'
+    ).run(APP_DIR);
+    if (res.changes > 0) {
+      console.log(`[mobius/db] normalize: ${res.changes} self-develop project(s) → default_use_worktree=0`);
+    }
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️  self-develop worktree 规范化失败:', e.message);
+  }
+}
+normalizeProjectsSelfDevelopWorktreeRule();
 
 // ===== 共享 projects 表轻量迁移: 每项目可配置的 "被遗忘 running.flag 提醒消息" =====
 // forgotten-flag-scanner 检测到 "agent 停工但 running.flag 未删" 时, 自动给该

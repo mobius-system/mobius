@@ -33,9 +33,12 @@ function main() {
     return;
   }
   const projectId = crypto.randomBytes(4).toString('hex');
+  // 自迭代项目不走 git worktree: agent 必须直接在主 checkout 上改, 再用 python3 start.py 部署;
+  // worktree 会切到独立工作副本, 导致部署拿不到改动. 显式写 0, 不依赖列默认值 (列默认是 1).
+  // 与 db.ts 的 normalizeProjectsSelfDevelopWorktreeRule / routes/projects.ts 的自迭代规则保持一致.
   db.prepare(`
-    INSERT INTO projects (id, name, description, created_by, bind_path, bind_path_manual)
-    VALUES (?, ?, ?, ?, ?, 1)
+    INSERT INTO projects (id, name, description, created_by, bind_path, bind_path_manual, default_use_worktree)
+    VALUES (?, ?, ?, ?, ?, 1, 0)
   `).run(projectId, projectName, 'Mobius 自身代码 (全新部署自动 seed)', admin.id, bindPath);
   console.log(`[bootstrap-self-evolve] seeded "${projectName}" id=${projectId} bind_path=${bindPath} owner=${admin.id}`);
 }

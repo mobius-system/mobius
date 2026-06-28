@@ -145,15 +145,20 @@ async function relay(req: express.Request, res: express.Response): Promise<void>
 
   const upstreamUrl = upstream.baseUrl + req.path
 
-  // 4) fetch 上游.
+  // 4) fetch 上游. 监听客户端断开 → abort 上游, 避免连接+推理 token 空烧。
+  const ac = new AbortController()
+  const onClientClose = () => { try { ac.abort() } catch { /* noop */ } }
+  req.on('close', onClientClose)
   let resp: Response
   try {
     resp = await fetch(upstreamUrl, {
       method: req.method,
       headers: upstreamHeaders,
       body: body.length > 0 ? body : undefined,
+      signal: ac.signal,
     })
   } catch (e: any) {
+    req.off('close', onClientClose)
     res.status(502).json({ error: 'upstream fetch failed', detail: e?.message || String(e) })
     return
   }
@@ -176,16 +181,23 @@ async function relay(req: express.Request, res: express.Response): Promise<void>
       return
     }
     const reader = resp.body.getReader()
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (value) {
-        res.write(Buffer.from(value))
-        if (extractor) extractor.feed(value)
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (value) {
+          res.write(Buffer.from(value))
+          if (extractor) extractor.feed(value)
+        }
       }
+    } finally {
+      // 客户端断开 / 出错时取消上游 reader 释放锁并中止剩余推理, 忽略 abort 引起的 reject。
+      try { await reader.cancel() } catch { /* noop */ }
     }
   } catch {
     // cc 提前断开 / 上游读取出错: 尽力结束响应, 不抛.
+  } finally {
+    req.off('close', onClientClose)
   }
   try { res.end() } catch { /* already ended */ }
 }

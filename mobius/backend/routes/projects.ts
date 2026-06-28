@@ -90,6 +90,8 @@ function spawnProductOtherVersion(gitHash: string): { pid: number | undefined; l
     env: process.env,
   });
   child.unref();
+  // 子进程已通过 stdio 继承自己的 fd 副本, 父进程关闭自身引用防止 fd 泄漏 (长期运行致 EMFILE).
+  fs.closeSync(out);
   return { pid: child.pid, log_path: logPath };
 }
 
@@ -174,6 +176,8 @@ function spawnProductHardReset(gitHash: string): { pid: number | undefined; log_
     env: process.env,
   });
   child.unref();
+  // 子进程已通过 stdio 继承自己的 fd 副本, 父进程关闭自身引用防止 fd 泄漏 (长期运行致 EMFILE).
+  fs.closeSync(out);
   return { pid: child.pid, log_path: logPath };
 }
 
@@ -1737,6 +1741,10 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
   const nextResearchEnabled = researchEnabled === undefined ? false : !!researchEnabled;
   // 项目级规则: Research 启用时强制禁用 worktree (research 流程不走 worktree)
   if (nextResearchEnabled) defWt = false;
+  // 项目级规则: 自迭代项目 (bind_path === APP_DIR, 即 is_self_develop) 强制禁用 worktree ——
+  // 莫比乌斯自身源码仓由 PM2 单进程托管, agent 必须直接在主 checkout 上改再用 `python3 start.py`
+  // 部署; worktree 会切到独立工作副本导致部署拿不到改动.
+  if (resolvedPath && APP_DIR && path.resolve(resolvedPath) === path.resolve(APP_DIR)) defWt = false;
   Projects.insert({
     id: projectId,
     name,
@@ -2055,12 +2063,13 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
       return res.status(400).json({ error: (e as Error).message });
     }
   }
+  let resolvedBindPath: string | undefined;
   if (bindPath !== undefined) {
     try {
-      const resolvedPath = bindPathManual
+      resolvedBindPath = bindPathManual
         ? resolveBindPathManual(bindPath)
         : resolveBindPath(bindPath, user.work_dir);
-      Projects.updateBindPath(id, resolvedPath, !!bindPathManual);
+      Projects.updateBindPath(id, resolvedBindPath, !!bindPathManual);
     } catch (e) {
       return res.status(400).json({ error: (e as Error).message });
     }
@@ -2077,8 +2086,12 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
   // 先算出本次 PATCH 后 research 的最终值, 再据此决定 worktree 是否要强制 false.
   const nextResearchEnabled = (researchEnabled !== undefined) ? !!researchEnabled : !!project.research_enabled;
   if (researchEnabled !== undefined) Projects.updateResearchEnabled(id, nextResearchEnabled);
-  if (nextResearchEnabled) {
-    // Research 开启时, 忽略请求中的 defaultUseWorktree, 强制写入 false
+  // 项目级规则: Research 启用 或 自迭代项目 (bind_path === APP_DIR) 时强制禁用 worktree.
+  // 用本次 PATCH 后的生效 bind_path 判断 (改 bind_path 到 APP_DIR 也立即生效), 与 research 同理.
+  const effectiveBindPath = resolvedBindPath ?? project.bind_path;
+  const forceNoWorktree = nextResearchEnabled
+    || !!(effectiveBindPath && APP_DIR && path.resolve(effectiveBindPath) === path.resolve(APP_DIR));
+  if (forceNoWorktree) {
     Projects.updateDefaultUseWorktree(id, false);
   } else if (defaultUseWorktree !== undefined) {
     Projects.updateDefaultUseWorktree(id, !!defaultUseWorktree);

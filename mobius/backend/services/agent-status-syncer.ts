@@ -140,13 +140,15 @@ function startAgentStatusSyncer(): NodeJS.Timeout | null {
       .then(() => scanOnce({ includeTerminal }))
       .catch((e) => appendLog(`[${nowIso()}] (error) scanOnce 异常: ${(e as Error).stack || e}\n`));
   };
+  // 两层定时器都 unref: 避免阻止 Node 优雅退出 (与 code-server-pool / extension-scheduler 一致)。
   setTimeout(() => {
     // 首次全扫 (含终态集) 建立基准, 之后按 60s 周期 + 终态集每 60 tick.
     scanOnce({ includeTerminal: true }).catch(
       (e) => appendLog(`[${nowIso()}] (error) 首次全扫异常: ${(e as Error).stack || e}\n`)
     );
     timer = setInterval(safeScan, SCAN_INTERVAL_MS);
-  }, FIRST_RUN_DELAY_MS);
+    timer.unref();
+  }, FIRST_RUN_DELAY_MS).unref();
   console.log(
     `[agent-status-syncer] 已启动, 活跃集每 ${SCAN_INTERVAL_MS / 1000}s / 终态集每 ${(TERMINAL_SCAN_TICKS * SCAN_INTERVAL_MS) / 1000}s -> ${LOG_FILE}`
   );

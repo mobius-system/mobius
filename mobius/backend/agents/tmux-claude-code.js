@@ -691,8 +691,10 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       // 标记当前进程运行在受控沙箱环境中。
       `export IS_SANDBOX=1`,
       // 根据代理开关选择 proxychains 包裹 claude，或直接 exec claude。
+      // settingsArg 两分支都要带: 代理分支此前漏拼 --settings, 导致开代理的 session
+      // settings 文件 (channel/key/权限/withproxy.json) 被静默丢弃回退全局默认。
       finalUseProxy
-        ? `exec proxychains -q -f "$HOME/proxy_claude.conf" claude ${claudeArgs.join(' ')}`
+        ? `exec proxychains -q -f "$HOME/proxy_claude.conf" claude ${settingsArg} ${claudeArgs.join(' ')}`
         : `exec claude ${settingsArg} ${claudeArgs.join(' ')}`,
       // 删除空片段，并用 && 保证前一步失败时不继续执行。
     ].filter(Boolean).join(' && ')
