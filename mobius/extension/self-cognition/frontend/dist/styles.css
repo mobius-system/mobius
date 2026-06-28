@@ -392,6 +392,19 @@ code {
   height: 100%;
 }
 
+.hero-canvas.is-webgl-unavailable,
+.finale-canvas.is-webgl-unavailable {
+  display: none;
+  pointer-events: none;
+}
+
+.hero-visual.is-webgl-unavailable {
+  cursor: default;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(125, 211, 252, 0.2), transparent 34%),
+    radial-gradient(circle at 42% 52%, rgba(167, 139, 250, 0.16), transparent 42%);
+}
+
 .hero-content {
   position: relative;
   z-index: 3;
