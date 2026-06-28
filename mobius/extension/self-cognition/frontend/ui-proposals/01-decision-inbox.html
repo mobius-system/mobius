@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Self-Cognition UI Proposal 01 - Decision Inbox</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f5f7;
+      --surface: rgba(255, 255, 255, 0.86);
+      --line: rgba(24, 24, 27, 0.1);
+      --text: #151517;
+      --muted: #6e6e73;
+      --soft: #f0f2f5;
+      --blue: #0071e3;
+      --green: #248a3d;
+      --amber: #b86e00;
+      --red: #c84031;
+      --shadow: 0 18px 52px rgba(0, 0, 0, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(0, 113, 227, 0.09), transparent 28rem),
+        linear-gradient(180deg, #ffffff 0%, var(--bg) 34%, #eceef2 100%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    button, input { font: inherit; }
+    .shell { max-width: 1440px; margin: 0 auto; padding: 24px; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 0 24px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .mark {
+      width: 36px; height: 36px; border-radius: 8px;
+      background: linear-gradient(135deg, #111 0%, #3c3c43 100%);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.3);
+    }
+    .brand h1 { margin: 0; font-size: 1.15rem; }
+    .brand p { margin: 2px 0 0; color: var(--muted); font-size: .88rem; }
+    .status-strip { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      min-height: 30px; padding: 6px 10px; border-radius: 999px;
+      background: rgba(255,255,255,.72); border: 1px solid var(--line);
+      color: #3a3a3c; font-size: .8rem; white-space: nowrap;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--blue); }
+    .dot.green { background: var(--green); }
+    .dot.amber { background: var(--amber); }
+
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
+      gap: 18px;
+      align-items: stretch;
+      margin-bottom: 18px;
+    }
+    .intro-main, .metrics {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(22px);
+      border-radius: 8px;
+    }
+    .intro-main { padding: 28px; }
+    .eyebrow { margin: 0 0 10px; color: var(--blue); font-size: .78rem; font-weight: 700; text-transform: uppercase; }
+    .intro h2 { margin: 0; max-width: 780px; font-size: clamp(2rem, 4vw, 4.6rem); line-height: .98; letter-spacing: 0; }
+    .intro-text { margin: 14px 0 0; color: var(--muted); max-width: 760px; line-height: 1.65; }
+    .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; }
+    .metric { padding: 22px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .metric:nth-child(2n) { border-right: 0; }
+    .metric:nth-last-child(-n+2) { border-bottom: 0; }
+    .metric strong { display: block; font-size: 1.8rem; line-height: 1; }
+    .metric span { display: block; margin-top: 8px; color: var(--muted); font-size: .82rem; }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 308px minmax(0, 1fr) 312px;
+      gap: 16px;
+      align-items: start;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(22px);
+      min-width: 0;
+    }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 16px 16px 12px; border-bottom: 1px solid var(--line);
+    }
+    .panel-head h3 { margin: 0; font-size: .95rem; }
+    .panel-head span { color: var(--muted); font-size: .78rem; }
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; }
+    .tab {
+      border: 1px solid var(--line); border-radius: 999px; background: #fff;
+      min-height: 34px; color: #424245; cursor: pointer;
+    }
+    .tab.active { background: #111; color: white; border-color: #111; }
+    .queue { padding: 0 12px 12px; display: grid; gap: 10px; }
+    .queue-item {
+      border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.78);
+      padding: 12px; cursor: pointer;
+    }
+    .queue-item.active { border-color: rgba(0,113,227,.45); box-shadow: 0 0 0 3px rgba(0,113,227,.08); }
+    .queue-top { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .type { font-size: .72rem; color: var(--muted); font-weight: 700; text-transform: uppercase; }
+    .score { color: var(--blue); font-weight: 800; font-size: .84rem; }
+    .queue-item h4 { margin: 10px 0 8px; line-height: 1.28; font-size: .95rem; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag { padding: 4px 7px; border-radius: 999px; background: var(--soft); color: #424245; font-size: .72rem; }
+    .tag.high { color: var(--red); background: rgba(200,64,49,.1); }
+    .tag.pending { color: var(--amber); background: rgba(184,110,0,.11); }
+    .tag.done { color: var(--green); background: rgba(36,138,61,.11); }
+
+    .detail { padding: 22px; }
+    .detail-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 156px;
+      gap: 18px;
+      align-items: start;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .detail h2 { margin: 0; font-size: clamp(1.7rem, 3vw, 3.2rem); line-height: 1.03; }
+    .summary { margin: 12px 0 0; color: var(--muted); line-height: 1.65; }
+    .verdict {
+      border-radius: 8px; border: 1px solid rgba(0,113,227,.2);
+      background: linear-gradient(180deg, rgba(0,113,227,.08), rgba(255,255,255,.8));
+      padding: 14px;
+    }
+    .verdict strong { display: block; font-size: 2rem; color: var(--blue); }
+    .verdict span { color: var(--muted); font-size: .78rem; }
+    .decision-block { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(260px, .9fr); gap: 14px; margin-top: 16px; }
+    .judgement, .evidence, .field-table, .next-step {
+      border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.7); padding: 16px;
+    }
+    .section-title { margin: 0 0 10px; font-size: .78rem; text-transform: uppercase; color: var(--muted); font-weight: 800; }
+    .judgement h3 { margin: 0; font-size: 1.22rem; }
+    .judgement p, .evidence p, .next-step p { margin: 8px 0 0; color: #3f3f46; line-height: 1.58; }
+    .evidence-list { display: grid; gap: 8px; margin-top: 10px; }
+    .evidence-list div { display: grid; grid-template-columns: 82px minmax(0,1fr); gap: 10px; font-size: .9rem; }
+    .evidence-list b { color: #1d1d1f; }
+    .evidence-list span { color: var(--muted); }
+    .field-table { margin-top: 14px; }
+    .field-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+    .field { background: var(--soft); border-radius: 8px; padding: 10px; min-height: 72px; }
+    .field b { display: block; font-size: .76rem; color: var(--muted); }
+    .field span { display: block; margin-top: 6px; font-size: .92rem; line-height: 1.3; }
+
+    .actions { padding: 14px; position: sticky; top: 18px; }
+    .action-grid { display: grid; gap: 10px; }
+    .btn {
+      min-height: 42px; border-radius: 999px; border: 1px solid var(--line);
+      background: #fff; color: #1d1d1f; cursor: pointer; font-weight: 650;
+    }
+    .btn.primary { background: var(--blue); color: white; border-color: var(--blue); }
+    .btn.green { color: var(--green); border-color: rgba(36,138,61,.25); background: rgba(36,138,61,.08); }
+    .btn.red { color: var(--red); border-color: rgba(200,64,49,.22); background: rgba(200,64,49,.08); }
+    .audit { margin-top: 14px; display: grid; gap: 10px; }
+    .audit-row { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .86rem; }
+    .mini-feed { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; display: grid; gap: 12px; }
+    .feed-item { display: grid; grid-template-columns: 10px minmax(0,1fr); gap: 9px; align-items: start; }
+    .feed-line { width: 8px; height: 8px; border-radius: 999px; background: var(--blue); margin-top: 6px; }
+    .feed-item p { margin: 0; color: #3f3f46; line-height: 1.45; font-size: .88rem; }
+
+    [data-pane] { display: none; }
+    [data-pane].active { display: block; }
+    [data-detail] { display: none; }
+    [data-detail].active { display: block; }
+
+    @media (max-width: 1120px) {
+      .workspace { grid-template-columns: 300px minmax(0,1fr); }
+      .actions { grid-column: 1 / -1; position: static; }
+      .intro { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 780px) {
+      .shell { padding: 14px; }
+      .topbar, .detail-hero, .decision-block { display: block; }
+      .status-strip { justify-content: flex-start; margin-top: 12px; }
+      .workspace { grid-template-columns: 1fr; }
+      .verdict, .decision-block > * { margin-top: 14px; }
+      .field-grid, .metrics { grid-template-columns: 1fr; }
+      .metric { border-right: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="mark" aria-hidden="true"></div>
+        <div>
+          <h1>Self-Cognition Decision Inbox</h1>
+          <p>适合每天 17:00 扫描后的集中处理：先排序，再判断，再交给小莫。</p>
+        </div>
+      </div>
+      <div class="status-strip" aria-label="系统状态">
+        <span class="pill"><span class="dot green"></span>产品 backlog 清空</span>
+        <span class="pill"><span class="dot amber"></span>论文待深读 97</span>
+        <span class="pill"><span class="dot"></span>下一次 UTC 17:00</span>
+      </div>
+    </header>
+
+    <section class="intro">
+      <div class="intro-main">
+        <p class="eyebrow">Proposal 01 / Human L2 Review</p>
+        <h2>把论文和产品变成一组可决策的收件箱。</h2>
+        <p class="intro-text">这个方案不把调研结果当资料流，而是当“候选改造输入”。人类先看优先级、证据和风险，再决定接受、搁置、排除，或直接交给小莫形成执行任务。</p>
+      </div>
+      <div class="metrics">
+        <div class="metric"><strong>101</strong><span>论文总量</span></div>
+        <div class="metric"><strong>11</strong><span>产品样本</span></div>
+        <div class="metric"><strong>4</strong><span>L2 待审启发</span></div>
+        <div class="metric"><strong>3</strong><span>今日应优先处理</span></div>
+      </div>
+    </section>
+
+    <section class="workspace" aria-label="决策收件箱工作区">
+      <aside class="panel">
+        <div class="panel-head">
+          <h3>待处理队列</h3>
+          <span>按影响力排序</span>
+        </div>
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="paper">论文</button>
+          <button class="tab" data-tab="product">产品</button>
+        </div>
+        <div class="queue active" data-pane="paper">
+          <article class="queue-item active">
+            <div class="queue-top"><span class="type">Paper / 深读完成</span><span class="score">28.0</span></div>
+            <h4>Agent Harness as a Safety Boundary for Self-Improving Systems</h4>
+            <div class="tags"><span class="tag high">高优先级</span><span class="tag done">有启发</span><span class="tag">agent-harness</span></div>
+          </article>
+          <article class="queue-item">
+            <div class="queue-top"><span class="type">Paper / 未深读</span><span class="score">20.4</span></div>
+            <h4>Recursive Self-Reference in Tool-Using Agents</h4>
+            <div class="tags"><span class="tag pending">等待 L2</span><span class="tag">recursive</span></div>
+          </article>
+          <article class="queue-item">
+            <div class="queue-top"><span class="type">Paper / 已排除</span><span class="score">8.2</span></div>
+            <h4>Generic Meta-Learning Survey for Offline Benchmarks</h4>
+            <div class="tags"><span class="tag">低相关</span><span class="tag">archived</span></div>
+          </article>
+        </div>
+        <div class="queue" data-pane="product">
+          <article class="queue-item active">
+            <div class="queue-top"><span class="type">Product / 已跟踪</span><span class="score">91%</span></div>
+            <h4>Research Agent Workspace</h4>
+            <div class="tags"><span class="tag high">高借鉴</span><span class="tag done">已深读</span><span class="tag">科研</span></div>
+          </article>
+          <article class="queue-item">
+            <div class="queue-top"><span class="type">Product / 候选</span><span class="score">74%</span></div>
+            <h4>Personal AI Operator</h4>
+            <div class="tags"><span class="tag pending">待晋升</span><span class="tag">办公</span></div>
+          </article>
+          <article class="queue-item">
+            <div class="queue-top"><span class="type">Product / AI 排除</span><span class="score">32%</span></div>
+            <h4>Simple Chat Wrapper</h4>
+            <div class="tags"><span class="tag">同质化</span><span class="tag">excluded</span></div>
+          </article>
+        </div>
+      </aside>
+
+      <section class="panel detail">
+        <div class="active" data-detail="paper">
+        <div class="detail-hero">
+          <div>
+            <p class="eyebrow">当前重点判断</p>
+            <h2>为自进化链路增加可审计的 Agent Harness。</h2>
+            <p class="summary">这条论文启发不是“摘要”，而是把外部研究转译成莫比乌斯下一步可执行改造：L2 Agent 在深读、追问、导出任务前，需要明确能力边界、证据来源和回滚路径。</p>
+          </div>
+          <aside class="verdict">
+            <strong>A</strong>
+            <span>建议接受，进入任务拆解</span>
+          </aside>
+        </div>
+
+        <div class="decision-block">
+          <article class="judgement">
+            <p class="section-title">AI 借鉴方向</p>
+            <h3>把“深度阅读”从文本理解升级为带证据的改造提案。</h3>
+            <p>论文给出的安全边界可以转译为 self-cognition 的 L2 提案机制：每条启发必须绑定来源、风险、操作范围和人工确认状态，才能进入小莫执行。</p>
+          </article>
+          <article class="evidence">
+            <p class="section-title">证据与风险</p>
+            <div class="evidence-list">
+              <div><b>来源</b><span>arXiv / agent-harness cluster / priority 28</span></div>
+              <div><b>证据</b><span>讨论工具调用边界、审计记录、失败恢复</span></div>
+              <div><b>风险</b><span>如果直接自动执行，会越过 L2 人工审查</span></div>
+              <div><b>下一步</b><span>生成“L2 提案状态机”实现任务</span></div>
+            </div>
+          </article>
+        </div>
+
+        <section class="field-table">
+          <p class="section-title">论文字段应该这样服务判断</p>
+          <div class="field-grid">
+            <div class="field"><b>作者与时间</b><span>用于判断新鲜度与可信度</span></div>
+            <div class="field"><b>Abstract</b><span>只保留与莫比乌斯相关的摘要段</span></div>
+            <div class="field"><b>Cluster</b><span>显示它为什么被推到前面</span></div>
+            <div class="field"><b>Matched Keywords</b><span>解释命中原因，不抢主视觉</span></div>
+            <div class="field"><b>AI Inspiration</b><span>主角，必须直接可判断</span></div>
+            <div class="field"><b>Export Prompt</b><span>接受后转成小莫任务</span></div>
+          </div>
+        </section>
+        </div>
+
+        <div data-detail="product">
+        <div class="detail-hero">
+          <div>
+            <p class="eyebrow">当前重点判断</p>
+            <h2>把产品调研改成人类能吸收的工作流样本。</h2>
+            <p class="summary">产品不是竞品库条目，而是莫比乌斯观察外部工作台形态的输入。用户应先看到“它值得借鉴什么”，再看来源、状态、发现逻辑和是否继续跟踪。</p>
+          </div>
+          <aside class="verdict">
+            <strong>B+</strong>
+            <span>建议跟踪，并抽取交互结构</span>
+          </aside>
+        </div>
+
+        <div class="decision-block">
+          <article class="judgement">
+            <p class="section-title">产品借鉴方向</p>
+            <h3>把产品详情页从档案页重做成人类处理台。</h3>
+            <p>最有价值的不是产品宣传语，而是它如何把材料、结论、证据链、下一步动作放在同一工作面里。self-cognition 应该借鉴这种信息架构。</p>
+          </article>
+          <article class="evidence">
+            <p class="section-title">证据与风险</p>
+            <div class="evidence-list">
+              <div><b>来源</b><span>tracked product / URL 重扫 / 已深读</span></div>
+              <div><b>证据</b><span>研究材料、状态、交付物在同页组织</span></div>
+              <div><b>风险</b><span>只借鉴工作流，不复制营销叙事</span></div>
+              <div><b>下一步</b><span>生成“详情处理台”UI 改造任务</span></div>
+            </div>
+          </article>
+        </div>
+
+        <section class="field-table">
+          <p class="section-title">产品字段应该这样服务判断</p>
+          <div class="field-grid">
+            <div class="field"><b>定位</b><span>它解决什么工作流</span></div>
+            <div class="field"><b>发现逻辑</b><span>为什么被系统扫到</span></div>
+            <div class="field"><b>可借鉴交互</b><span>产品形态比简介更重要</span></div>
+            <div class="field"><b>状态</b><span>candidate / tracked / excluded</span></div>
+            <div class="field"><b>差异点</b><span>哪些不是同质化功能</span></div>
+            <div class="field"><b>吸收方式</b><span>UI、调度、权限或工作流</span></div>
+          </div>
+        </section>
+        </div>
+
+      </section>
+
+      <aside class="panel actions">
+        <div class="panel-head" style="padding: 0 0 12px; border-bottom: 0;">
+          <h3>人类决策</h3>
+          <span>L2 Gate</span>
+        </div>
+        <div class="action-grid">
+          <button class="btn primary">交给小莫拆成任务</button>
+          <button class="btn green">接受为 L2 启发</button>
+          <button class="btn">搁置，等待更多证据</button>
+          <button class="btn red">排除，不进入自进化</button>
+        </div>
+        <div class="audit">
+          <div class="audit-row"><span>阅读状态</span><strong>已深读</strong></div>
+          <div class="audit-row"><span>人工状态</span><strong>待决策</strong></div>
+          <div class="audit-row"><span>可追问</span><strong>是</strong></div>
+          <div class="audit-row"><span>可导出</span><strong>是</strong></div>
+        </div>
+        <div class="mini-feed">
+          <div class="feed-item"><span class="feed-line"></span><p>L2 Agent 已生成 3 条启发，最高优先级为 high。</p></div>
+          <div class="feed-item"><span class="feed-line" style="background: var(--amber)"></span><p>当前风险：证据来自论文主张，尚未验证在 Mobius 架构中的改造成本。</p></div>
+          <div class="feed-item"><span class="feed-line" style="background: var(--green)"></span><p>建议：导出给小莫后先做 UI/状态字段设计，不直接改执行权限。</p></div>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const tabs = document.querySelectorAll('.tab');
+    const panes = document.querySelectorAll('[data-pane]');
+    const details = document.querySelectorAll('[data-detail]');
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((item) => item.classList.toggle('active', item === tab));
+        panes.forEach((pane) => pane.classList.toggle('active', pane.dataset.pane === tab.dataset.tab));
+        details.forEach((detail) => detail.classList.toggle('active', detail.dataset.detail === tab.dataset.tab));
+      });
+    });
+  </script>
+</body>
+</html>
