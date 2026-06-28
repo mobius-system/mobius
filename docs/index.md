@@ -13,4 +13,5 @@ Mobius 是（据我们所知）全球首个**自进化**的开源智能体操作
 - [导入项目并开启首个任务](tutorial/02a_import_project_and_begin_first_job.md)
 - [使用技能与记忆](tutorial/03a_using_skill_and_memory.md)
 - [添加远程算力](tutorial/04_add_remote_server.md)
+- [使用小莫助手 Web 端](tutorial/05_using_xiaomo_assistant.md)
 - [自进化示例](self-evo-demo.md)

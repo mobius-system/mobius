@@ -573,8 +573,7 @@ function ManagerSlide() {
   return (
     <div className="manager-layout">
       <div className="manager-transition">
-        <div className="crossed">成为一人之军</div>
-        <div className="arrow-mark">→</div>
+        <div className="manager-target">成为一人之军</div>
         <div className="manager-target">
           <span>作为管理者</span>
           <strong>成为 AI 时代的团队管理者</strong>

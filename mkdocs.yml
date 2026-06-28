@@ -53,6 +53,7 @@ plugins:
             "Add a User": 添加用户
             "Import a Project & First Task": 导入项目并开启首个任务
             "Skills & Memory": 技能与记忆
+            "Xiaomo Assistant (Web)": 小莫助手 Web 端
             "Self-Evolution Examples": 自进化示例
         - locale: en
           name: English
@@ -64,6 +65,7 @@ nav:
       - Add a User: tutorial/01_add_user.md
       - Import a Project & First Task: tutorial/02a_import_project_and_begin_first_job.md
       - Skills & Memory: tutorial/03a_using_skill_and_memory.md
+      - Xiaomo Assistant (Web): tutorial/05_using_xiaomo_assistant.md
   - Self-Evolution Examples: self-evo-demo.md
 
 markdown_extensions:
