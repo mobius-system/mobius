@@ -261,7 +261,15 @@ function prefersMinimaxM3(option: any): boolean {
   return compact.includes('minimaxm3') || compact.includes('minimax03');
 }
 
-function preferredAssistantModelKey(): string {
+function preferredAssistantModelKey(project?: any): string {
+  // 多级默认模型偏好 (小莫): 小莫项目级 default_model > 全局默认模型 > MiniMax 启发式 > 第一个可用 > 内置默认.
+  // 小莫预设 UI 不提供模型选择 (preset.model 始终由本函数派生), 故项目/全局默认即权威默认.
+  // 注意: 一旦 Session 已建, 其 model 写入 DB 不再随本函数变化 (避免中途切换惊扰用户);
+  // 管理员改全局默认后, 用户新建的下一个小莫 Session 才采用新默认.
+  const projectDefault = typeof project?.default_model === 'string' ? project.default_model.trim() : '';
+  if (projectDefault && modelRegistry.resolveSessionModel(projectDefault)) return projectDefault;
+  const globalDefault = modelRegistry.globalDefaultModelKey();
+  if (globalDefault) return globalDefault;
   let options: any[] = [];
   try { options = modelRegistry.listSessionModelOptions(); } catch { /* ignore */ }
   const minimaxM3 = options.find(prefersMinimaxM3);
@@ -312,10 +320,10 @@ interface AssistantPresetNormalized {
   saved_at?: string;
 }
 
-function normalizeAssistantPreset(input: any = {}, defaultExclusions: { excluded_skill_ids?: string[]; excluded_memory_ids?: string[] } = {}): AssistantPresetNormalized {
+function normalizeAssistantPreset(input: any = {}, defaultExclusions: { excluded_skill_ids?: string[]; excluded_memory_ids?: string[] } = {}, project?: any): AssistantPresetNormalized {
   const src = input && typeof input === 'object' ? input : {};
   const modelKeys = availableModelKeys();
-  const preferredModel = preferredAssistantModelKey();
+  const preferredModel = preferredAssistantModelKey(project);
   const model = typeof src.model === 'string' && modelKeys.has(src.model)
     ? src.model
     : preferredModel;
@@ -367,19 +375,20 @@ function readStoredAssistantPreset(user: any): any {
   }
 }
 
-function readAssistantPreset(user: any, issueId: string | null = null): AssistantPresetNormalized {
+function readAssistantPreset(user: any, issueId: string | null = null, project?: any): AssistantPresetNormalized {
   return normalizeAssistantPreset(
     readStoredAssistantPreset(user) || {},
     assistantDefaultSelectionExclusions(user, issueId),
+    project,
   );
 }
 
-function writeAssistantPreset(user: any, preset: any, defaultExclusions: { excluded_skill_ids?: string[]; excluded_memory_ids?: string[] } = {}): AssistantPresetNormalized {
+function writeAssistantPreset(user: any, preset: any, defaultExclusions: { excluded_skill_ids?: string[]; excluded_memory_ids?: string[] } = {}, project?: any): AssistantPresetNormalized {
   fs.mkdirSync(ASSISTANT_PRESET_DIR, { recursive: true });
   const normalized = normalizeAssistantPreset({
     ...preset,
     saved_at: new Date().toISOString(),
-  }, defaultExclusions);
+  }, defaultExclusions, project);
   const file = assistantPresetFile(user.id);
   fs.writeFileSync(file, `${JSON.stringify({
     user_id: user.id,
@@ -1002,7 +1011,7 @@ function ensureAssistantMainSession(user: any, options: { preset?: AssistantPres
   if (repairable) return repairAssistantMainSession(repairable, user, project, issue);
   if (options.allowCreate === false) return null;
 
-  const preset = options.preset || readAssistantPreset(user, issue.id);
+  const preset = options.preset || readAssistantPreset(user, issue.id, project);
   return createAssistantMainSession(user, project, issue, preset, options.model);
 }
 
@@ -1042,7 +1051,7 @@ function shapeAssistantSessionSummary(session: any): any {
 function currentAssistantPresetPayload(user: any): any {
   const project = ensureAssistantProject(user);
   const issue = ensureAssistantIssue(project, user);
-  const preset = readAssistantPreset(user, issue.id);
+  const preset = readAssistantPreset(user, issue.id, project);
   const currentSession = ensureAssistantMainSession(user, { preset });
   return {
     project,
@@ -1230,8 +1239,8 @@ router.post('/preset', auth, async (req: express.Request, res: express.Response)
     const project = ensureAssistantProject(user);
     const issue = ensureAssistantIssue(project, user);
     const defaultExclusions = assistantDefaultSelectionExclusions(user, issue.id);
-    const before = readAssistantPreset(user, issue.id);
-    const next = normalizeAssistantPreset((req.body as any)?.preset || req.body || {}, defaultExclusions);
+    const before = readAssistantPreset(user, issue.id, project);
+    const next = normalizeAssistantPreset((req.body as any)?.preset || req.body || {}, defaultExclusions, project);
     const changed = assistantPresetChanged(before, next);
     const currentSession = findReusableAssistantSession(user);
     const sessionOutdated = currentSession ? !assistantSessionMatchesPreset(currentSession, next) : false;
@@ -1249,7 +1258,7 @@ router.post('/preset', auth, async (req: express.Request, res: express.Response)
     const deletedSession = requiresSessionDelete
       ? await deleteReusableAssistantSession(user)
       : null;
-    const preset = writeAssistantPreset(user, next, defaultExclusions);
+    const preset = writeAssistantPreset(user, next, defaultExclusions, project);
     res.json({
       ok: true,
       changed,
@@ -1439,7 +1448,7 @@ router.post('/messages', auth, async (req: express.Request, res: express.Respons
       res.status(400).json({ error: 'content 不能为空' });
       return;
     }
-    const preset = readAssistantPreset(user, issue.id);
+    const preset = readAssistantPreset(user, issue.id, project);
     let session = findReusableAssistantSession(user);
     let created = false;
     if (!session) {

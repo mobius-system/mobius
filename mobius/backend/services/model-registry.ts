@@ -166,8 +166,18 @@ function resolveSessionModel(modelOrKey: any): any {
   return null
 }
 
+// 全局默认模型偏好 (管理员在"系统设置"中选择): 返回已校验"当前可用"的模型 key,
+// 未设置或指向已失效模型时返回 null. 与 /api/sessions/model-options 的 option.key 同格式.
+function globalDefaultModelKey(): string | null {
+  const raw = adminSettings.getGlobalDefaultModel()
+  if (!raw) return null
+  return resolveSessionModel(raw) ? raw : null
+}
+
 function resolveSessionModelForCreate(modelOrKey: any): any {
-  return resolveSessionModel(modelOrKey || DEFAULT_MODEL_KEY)
+  // 优先级: 调用方显式传入 > 全局默认模型偏好 > 内置 DEFAULT_MODEL_KEY (codex).
+  // 前端新建表单已按 (草稿>项目默认>全局默认) 预填 model, 此处兜底保证 API 直调也尊重全局默认.
+  return resolveSessionModel(modelOrKey || globalDefaultModelKey() || DEFAULT_MODEL_KEY)
 }
 
 function backendNameForSessionModel(modelOrKey: any): any {
@@ -293,6 +303,7 @@ const modelRegistry = {
   listSessionModelOptions,
   resolveSessionModel,
   resolveSessionModelForCreate,
+  globalDefaultModelKey,
   backendNameForSessionModel,
   labelForSessionModel,
   isImportedClaudeCodeModel,
@@ -306,6 +317,7 @@ export {
   listSessionModelOptions,
   resolveSessionModel,
   resolveSessionModelForCreate,
+  globalDefaultModelKey,
   backendNameForSessionModel,
   labelForSessionModel,
   isImportedClaudeCodeModel,

@@ -61,6 +61,10 @@ const DEFAULTS: any = Object.freeze({
   modelCaptureStream: {
     perModel: {},
   },
+  // 全局默认模型偏好: 管理员在"管理中心-系统设置"中选择一个模型作为系统级默认.
+  // 优先级 (新建 Session / 快捷新建 / 小莫): 用户/草稿选择 > 项目级 default_model > 全局默认 > 内置 'codex'.
+  // null/空串 = 未设置, 系统沿用原行为 (内置 codex / 小莫 MiniMax 启发式).
+  globalDefaultModel: null,
   adminAssistantCallbacks: {
     enabledAdminUserIds: [],
   },
@@ -235,6 +239,27 @@ function normalizeModelCaptureStreamForRead(value: any): any {
     }
   }
   return out
+}
+
+// 全局默认模型偏好: 存"模型 key"字符串 (与 /api/sessions/model-options 返回的 option.key 同格式,
+// 也与 projects.default_model 同格式), 或 null 表示未设置. 仅做轻量字符串清洗,
+// 真实"是否为已配置模型"的校验由调用方 (admin 路由 / model-registry.resolveSessionModel) 负责.
+function normalizeGlobalDefaultModelForRead(value: any): string | null {
+  if (value === null || value === undefined) return null
+  const trimmed = String(value).trim()
+  if (!trimmed) return null
+  if (trimmed.length > 200) return null
+  if (trimmed.includes('\0')) return null
+  return trimmed
+}
+
+function normalizeGlobalDefaultModelForWrite(value: any): string | null {
+  if (value === null || value === undefined || value === '') return null
+  const trimmed = String(value).trim()
+  if (!trimmed) return null
+  if (trimmed.length > 200) throw new Error('模型 key 最多 200 个字符')
+  if (trimmed.includes('\0')) throw new Error('模型 key 包含非法字符')
+  return trimmed
 }
 
 function normalizeUserId(value: any): string {
@@ -495,6 +520,9 @@ function loadSettings(): any {
     if (parsed && typeof parsed === 'object' && parsed.modelCaptureStream) {
       merged.modelCaptureStream = normalizeModelCaptureStreamForRead(parsed.modelCaptureStream)
     }
+    if (parsed && Object.prototype.hasOwnProperty.call(parsed, 'globalDefaultModel')) {
+      merged.globalDefaultModel = normalizeGlobalDefaultModelForRead((parsed as any).globalDefaultModel)
+    }
     if (parsed && typeof parsed === 'object' && parsed.adminAssistantCallbacks) {
       merged.adminAssistantCallbacks = normalizeAdminAssistantCallbacksForRead(parsed.adminAssistantCallbacks)
     }
@@ -576,6 +604,21 @@ function setModelCaptureStream(modelKey: any, value: any): any {
   next.modelCaptureStream.perModel[key] = value
   writeSettings(next)
   return next.modelCaptureStream
+}
+
+// 全局默认模型偏好: 返回已清洗的模型 key, 未设置返回 null.
+function getGlobalDefaultModel(): string | null {
+  return normalizeGlobalDefaultModelForRead(loadSettings().globalDefaultModel)
+}
+
+// 设置/清除全局默认模型偏好. value 为模型 key 字符串或 null/空串 (清除).
+// 是否为真实已配置模型的校验由调用方负责 (admin 路由用 modelRegistry.resolveSessionModel 校验).
+function setGlobalDefaultModel(value: any): string | null {
+  const normalized = normalizeGlobalDefaultModelForWrite(value)
+  const next = loadSettings()
+  next.globalDefaultModel = normalized
+  writeSettings(next)
+  return next.globalDefaultModel
 }
 
 function setModelPromptLimit(modelKey: any, value: any): any {
@@ -718,6 +761,8 @@ const adminSettings = {
   setModelNetworkProxy,
   getModelCaptureStream,
   setModelCaptureStream,
+  getGlobalDefaultModel,
+  setGlobalDefaultModel,
   getAdminAssistantCallbacks,
   listAdminAssistantCallbackUserIds,
   getAdminAssistantCallbackForUser,
@@ -749,6 +794,8 @@ export {
   setModelNetworkProxy,
   getModelCaptureStream,
   setModelCaptureStream,
+  getGlobalDefaultModel,
+  setGlobalDefaultModel,
   getAdminAssistantCallbacks,
   listAdminAssistantCallbackUserIds,
   getAdminAssistantCallbackForUser,

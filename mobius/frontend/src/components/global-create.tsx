@@ -17,6 +17,7 @@ import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
+import { fetchGlobalDefaultModel } from '../services/global-default-model'
 import { ErrBanner, PathPickerModal } from './modals'
 import { ToggleSwitch } from './toggle-switch'
 import { SessionModelPicker } from './session-model-picker'
@@ -1111,13 +1112,22 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   // 项目确定/切换后, 若用户未手动改模型且无草稿 → 回落项目级默认模型偏好 (default_model).
   // 对齐 NewSessionModal 的 defaultModel 优先级, 修复顶栏快捷"忽略项目模型设置".
   const projectDefaultModel = selectedProject?.default_model
+  // 全局默认模型偏好 (管理中心-系统设置): 项目无默认时回落到这里, 再回落内置 'codex'.
+  const [globalDefaultModel, setGlobalDefaultModel] = useState('')
+  useEffect(() => {
+    let alive = true
+    fetchGlobalDefaultModel().then(v => { if (alive) setGlobalDefaultModel(v) })
+    return () => { alive = false }
+  }, [])
   useEffect(() => {
     if (modelUserTouchedRef.current) return
-    // 草稿/手动改过则不覆盖; 否则按 项目 default_model > 全局默认 回落.
-    // 关键: 切到无 default_model 的项目时也要回落全局默认, 否则上一个项目的模型会残留 (stale).
-    const next = (typeof projectDefaultModel === 'string' && projectDefaultModel.trim()) ? projectDefaultModel.trim() : GLOBAL_DEFAULT_MODEL
+    // 草稿/手动改过则不覆盖; 否则按 项目 default_model > 全局默认 > 内置默认 回落.
+    // 关键: 切到无 default_model 的项目时也要回落 (全局或内置默认), 否则上一个项目的模型会残留 (stale).
+    const next = (typeof projectDefaultModel === 'string' && projectDefaultModel.trim())
+      ? projectDefaultModel.trim()
+      : (globalDefaultModel || GLOBAL_DEFAULT_MODEL)
     setModel(next)
-  }, [projectDefaultModel])
+  }, [projectDefaultModel, globalDefaultModel])
 
   // Skill/Memory 全集: 选完 issue 后拉 context-preview (POST, 拿 sources) + session-selection-defaults (GET, 拿默认排除集).
   // 默认排除集沿用后端"同 Issue 最新 Session 继承 + 内置 Skill 默认排除"机制, 与 NewSessionModal goPreview 一致,
@@ -1282,12 +1292,21 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const researchEnabled = !!selectedProject?.research_enabled
   // 项目确定/切换后, 若用户未手动改模型且无草稿 → 回落项目级默认模型偏好 (default_model).
   const projectDefaultModel = selectedProject?.default_model
+  // 全局默认模型偏好 (管理中心-系统设置): 项目无默认时回落到这里, 再回落内置 'codex'.
+  const [globalDefaultModel, setGlobalDefaultModel] = useState('')
+  useEffect(() => {
+    let alive = true
+    fetchGlobalDefaultModel().then(v => { if (alive) setGlobalDefaultModel(v) })
+    return () => { alive = false }
+  }, [])
   useEffect(() => {
     if (modelUserTouchedRef.current) return
-    // 草稿/手动改过则不覆盖; 否则按 项目 default_model > 全局默认 回落. 切到无 default_model 的项目也要回落全局默认, 避免上一个项目的模型残留.
-    const next = (typeof projectDefaultModel === 'string' && projectDefaultModel.trim()) ? projectDefaultModel.trim() : GLOBAL_DEFAULT_MODEL
+    // 草稿/手动改过则不覆盖; 否则按 项目 default_model > 全局默认 > 内置默认 回落. 切到无 default_model 的项目也要回落 (全局或内置默认), 避免上一个项目的模型残留.
+    const next = (typeof projectDefaultModel === 'string' && projectDefaultModel.trim())
+      ? projectDefaultModel.trim()
+      : (globalDefaultModel || GLOBAL_DEFAULT_MODEL)
     setModel(next)
-  }, [projectDefaultModel])
+  }, [projectDefaultModel, globalDefaultModel])
   const researches = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/researches?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.researches || [])) : Promise.resolve([]), [projectId])
   const selectedResearch = researches.list.find((r: any) => r.id === researchId)
 

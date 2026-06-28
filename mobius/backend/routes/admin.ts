@@ -877,6 +877,26 @@ router.put('/settings/model-prompt-limits', adminAuth, (req: express.Request, re
   }
 });
 
+// ── 全局默认模型偏好 (系统级默认): 新建 Session / 快捷新建 / 小莫 在无项目级默认时回落到此处 ──
+// body: { model: '<option.key>' | '' | null }. 空串/null = 清除 (恢复系统内置 codex / 小莫启发式).
+// 必须是当前已配置可用的模型, 否则 400.
+router.put('/settings/global-default-model', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    const { model } = (req.body || {}) as { model?: any };
+    if (model !== undefined && model !== null && model !== '') {
+      const resolved = modelRegistry.resolveSessionModel(model);
+      if (!resolved) {
+        res.status(400).json({ error: '该模型当前未配置或不可用, 无法设为全局默认' });
+        return;
+      }
+    }
+    const next = adminSettings.setGlobalDefaultModel(model);
+    res.json(modelPromptLimits.adminLimitsPayload());
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
+  }
+});
+
 // ── 管理员小莫: 是否接收全站 Session 完成/失败回调 ──
 router.get('/settings/admin-assistant-callbacks', adminAuth, (req: express.Request, res: express.Response) => {
   try {

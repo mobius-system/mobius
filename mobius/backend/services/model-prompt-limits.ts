@@ -233,6 +233,8 @@ function adminLimitsPayload(): any {
   return {
     window_hours: WINDOW_HOURS,
     window_minutes: WINDOW_MINUTES,
+    // 全局默认模型偏好 (系统级默认, 未设置时为 null). 供管理中心"系统设置"展示与回填.
+    global_default_model: adminSettings.getGlobalDefaultModel(),
     models: modelRegistry.listSessionModelOptions().map((opt: any) => ({
       key: opt.key,
       value: opt.value,

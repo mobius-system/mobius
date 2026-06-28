@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { ArrowLeft, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
 import { useStore, api } from '../store'
@@ -24,6 +24,7 @@ import {
 } from '../services/self-evolve-demo'
 import { LOGO_REVIEW_PROJECT_ID, readLogoReviewDemoState } from '../services/logo-review-demo'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
+import { fetchGlobalDefaultModel } from '../services/global-default-model'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
@@ -2045,6 +2046,25 @@ export function NewSessionModal({
     || (typeof defaultModel === 'string' && defaultModel.trim() ? defaultModel.trim() : '')
     || DEFAULT_SESSION_MODEL
   const [model, setModel] = useState<ModelKey>(initialModelKey)
+  // 全局默认模型偏好 (管理中心-系统设置): 异步拉取. 到达后, 若用户未手动改过模型,
+  // 把它插入初始优先级链 (preset > 草稿 > 项目默认 > 全局默认 > 内置 codex).
+  // modelUserTouchedRef: 只记"用户本次是否手动改过模型", 避免异步到达的全局默认覆盖用户选择.
+  const modelUserTouchedRef = useRef(false)
+  const [globalDefaultModel, setGlobalDefaultModel] = useState('')
+  useEffect(() => {
+    let alive = true
+    fetchGlobalDefaultModel().then(v => { if (alive) setGlobalDefaultModel(v) })
+    return () => { alive = false }
+  }, [])
+  useEffect(() => {
+    if (modelUserTouchedRef.current) return
+    const next: ModelKey = initialPreset?.model
+      || initialDraft?.model
+      || (typeof defaultModel === 'string' && defaultModel.trim() ? defaultModel.trim() : '')
+      || globalDefaultModel
+      || DEFAULT_SESSION_MODEL
+    setModel(next)
+  }, [globalDefaultModel])
   // 注入上下文语言, 创建时定型 (默认中文).
   const [language, setLanguage] = useState<SessionLanguage>(initialPreset?.language || initialDraft?.language || DEFAULT_SESSION_LANGUAGE)
   const [personality, setPersonality] = useState<string>(initialPreset?.personality || personalityOptions[0]?.key || 'balanced')
@@ -2206,6 +2226,7 @@ export function NewSessionModal({
 
   const chooseModel = (nextModel: ModelKey) => {
     setModel(nextModel)
+    modelUserTouchedRef.current = true
     setErr('')
   }
 

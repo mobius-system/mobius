@@ -121,6 +121,14 @@ function shortText(value, max = 260) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
+function sourceHost(value) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, '');
+  } catch {
+    return value || '未知来源';
+  }
+}
+
 function formatTime(value) {
   if (!value) return '尚未运行';
   const date = new Date(value);
@@ -131,6 +139,110 @@ function formatTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+function compactNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '0';
+  if (Math.abs(number) >= 1000) return new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(number);
+  return String(Math.round(number * 10) / 10);
+}
+
+function markValue(item) {
+  return String(item?.mark || '').trim();
+}
+
+function isExcludedItem(item) {
+  return ['excluded', 'exclude'].includes(markValue(item));
+}
+
+function markLabel(mark) {
+  const map = {
+    excluded: 'AI 排除',
+    exclude: '不重要',
+    boost: '重要',
+    fusion: '融合队列',
+    read: '已读标记',
+  };
+  return map[mark] || mark || '';
+}
+
+function aiReadState(item) {
+  if (isExcludedItem(item)) return { key: 'excluded', label: 'AI 已排除', detail: '深度阅读后暂无借鉴价值' };
+  const count = parseInspiration(item?.ai_inspiration).length;
+  if (count) return { key: 'ready', label: `AI 已读 ${count}`, detail: `${count} 条借鉴方向` };
+  return { key: 'pending', label: '待 AI 深读', detail: '尚未产出借鉴方向' };
+}
+
+function renderChip(label, tone = 'muted', title = '') {
+  if (!label) return '';
+  return `<span class="state-chip" data-tone="${escapeHtml(tone)}"${title ? ` title="${escapeHtml(title)}"` : ''}>${escapeHtml(label)}</span>`;
+}
+
+function renderStateChips(kind, item, local) {
+  const ai = aiReadState(item);
+  const mark = markValue(item);
+  const chips = [
+    renderChip(local.read ? '已读' : '未读', local.read ? 'read' : 'unread', local.read ? `阅读时间 ${formatTime(item.read_at)}` : '尚未打开或标记阅读'),
+    renderChip(ai.label, ai.key, ai.detail),
+  ];
+  if (kind === 'paper') {
+    if (local.favorite) chips.push(renderChip('收藏', 'favorite'));
+    if (local.archived) chips.push(renderChip('归档', 'muted'));
+    if (state.feedbacks[item.id]) chips.push(renderChip(`反馈 ${feedbackLabel(state.feedbacks[item.id])}`, state.feedbacks[item.id]));
+  } else {
+    chips.push(renderChip(labels.status[item.status] || item.status || '候选', item.status === 'official' ? 'tracked' : 'candidate'));
+    if (item.auto_discovered) chips.push(renderChip('自动发现', 'source'));
+  }
+  if (mark) chips.push(renderChip(markLabel(mark), isExcludedItem(item) ? 'excluded' : mark));
+  return `<div class="state-chip-row">${chips.filter(Boolean).join('')}</div>`;
+}
+
+function renderScoreRail({ label, score, sublabel = '', tone = 'paper' }) {
+  return `
+    <div class="score-rail" data-tone="${escapeHtml(tone)}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(compactNumber(score))}</strong>
+      ${sublabel ? `<em>${escapeHtml(sublabel)}</em>` : ''}
+    </div>
+  `;
+}
+
+function renderFactGrid(items, extraClass = '') {
+  const rows = (items || []).filter((item) => item && item.value !== undefined && item.value !== null && String(item.value).trim() !== '');
+  if (!rows.length) return '';
+  return `
+    <dl class="fact-grid ${escapeHtml(extraClass)}">
+      ${rows.map((item) => `
+        <div>
+          <dt>${escapeHtml(item.label)}</dt>
+          <dd>${escapeHtml(item.value)}</dd>
+        </div>
+      `).join('')}
+    </dl>
+  `;
+}
+
+function paperFacts(item) {
+  return [
+    { label: 'Cluster', value: item.cluster_label || '未聚类' },
+    { label: '关键词', value: (item.matched_keywords || []).slice(0, 3).join(' / ') },
+    { label: 'arXiv ID', value: item.source_id || item.paper_id || '' },
+    { label: '发布时间', value: item.published_at || '日期未知' },
+    { label: '抓取时间', value: formatTime(item.fetched_at || item.created_at) },
+    { label: '引用', value: item.citations ? compactNumber(item.citations) : '' },
+  ];
+}
+
+function productFacts(item) {
+  return [
+    { label: '类别', value: labels.category[item.category] || item.category || '其他' },
+    { label: '状态', value: labels.status[item.status] || item.status || '' },
+    { label: '来源', value: item.auto_discovered ? 'Agent 自动发现' : '手动/种子入库' },
+    { label: '扫描时间', value: formatTime(item.last_scanned_at || item.updated_at || item.created_at) },
+    { label: '发现逻辑', value: item.discovery_logic || 'manual' },
+    { label: '别名', value: (item.aliases || []).slice(0, 3).join(' / ') },
+  ];
 }
 
 function formatChatTime(value) {
@@ -839,7 +951,7 @@ function filteredPapers() {
   const papers = Object.values(state.clusterPapers).flat();
   return papers.filter((item) => {
     const local = paperLocal(item.id);
-    if (item.mark === 'excluded' && !state.showExcluded.paper) return false;
+    if (isExcludedItem(item) && !state.showExcluded.paper) return false;
     if (state.filters.paper.status === 'read' && !local.read) return false;
     if (state.filters.paper.status === 'unread' && local.read) return false;
     if (state.filters.paper.status === 'archived' && !local.archived) return false;
@@ -886,13 +998,30 @@ function feedbackButtons(item) {
   `;
 }
 
-function renderInspirationBlock(rawInspiration, markExcluded) {
+function renderInspirationBlock(rawInspiration, markExcluded, options = {}) {
+  const kindLabel = options.kind === 'product' ? '产品' : '论文';
   if (markExcluded) {
-    return `<div class="inspiration-block is-excluded"><p class="inspiration-head"><span class="priority-tag muted">AI 已排除</span> <span>该条目经 L2 Agent 阅读后判定对莫比乌斯暂无借鉴价值。</span></p></div>`;
+    return `
+      <div class="inspiration-block insight-panel is-excluded">
+        <div class="insight-head">
+          <span class="priority-tag muted">AI 已排除</span>
+          <strong>暂不进入借鉴队列</strong>
+        </div>
+        <p>该${kindLabel}经 L2 Agent 阅读后判定对莫比乌斯暂无明确借鉴价值，可在详情中重新标记。</p>
+      </div>
+    `;
   }
   const items = parseInspiration(rawInspiration);
   if (!items.length) {
-    return `<div class="inspiration-block is-pending"><p class="inspiration-head"><span class="priority-tag pending">未读</span> <span>尚未经过 L2 Agent 深度阅读。</span></p></div>`;
+    return `
+      <div class="inspiration-block insight-panel is-pending">
+        <div class="insight-head">
+          <span class="priority-tag pending">待阅读</span>
+          <strong>还没有 AI 借鉴方向</strong>
+        </div>
+        <p>可批量运行 AI 深度阅读，或打开详情直接向 Agent 追问。</p>
+      </div>
+    `;
   }
   const counts = inspirationBadgeCount(items);
   const head = [
@@ -900,7 +1029,9 @@ function renderInspirationBlock(rawInspiration, markExcluded) {
     counts.med ? `<span class="priority-tag medium">中 ${counts.med}</span>` : '',
     counts.low ? `<span class="priority-tag low">低 ${counts.low}</span>` : '',
   ].filter(Boolean).join('');
-  const list = items.map((it) => `
+  const shown = options.preview === false ? items : items.slice(0, options.limit || 2);
+  const rest = items.length - shown.length;
+  const list = shown.map((it) => `
     <li class="inspiration-item priority-${it.priority}">
       <div class="inspiration-item-head">
         <span class="priority-tag ${it.priority}">${it.priority === 'high' ? '高' : it.priority === 'medium' ? '中' : '低'}</span>
@@ -911,12 +1042,13 @@ function renderInspirationBlock(rawInspiration, markExcluded) {
     </li>
   `).join('');
   return `
-    <details class="inspiration-block is-loaded">
-      <summary class="inspiration-head">
-        <span>${head || '<span class="priority-tag pending">已读</span>'}</span>
-        <span class="inspiration-toggle">查看对莫比乌斯的借鉴方向 ›</span>
+    <details class="inspiration-block insight-panel is-loaded" open>
+      <summary class="inspiration-head insight-head">
+        <span class="insight-title">借鉴方向 <span class="insight-count">${items.length}</span></span>
+        <span class="insight-priorities">${head || '<span class="priority-tag pending">已读</span>'}</span>
       </summary>
       <ul class="inspiration-list">${list}</ul>
+      ${rest > 0 ? `<div class="insight-more">还有 ${rest} 条，打开详情查看完整内容</div>` : ''}
     </details>
   `;
 }
@@ -925,32 +1057,35 @@ function renderPaperCard(item, options = {}) {
   const local = paperLocal(item.id);
   const tags = [...(item.matched_keywords || []), ...(item.tags || []).slice(0, 3)];
   const score = item.priority_score ?? item.relevance ?? 0;
-  const clusterLine = item.cluster_label ? ` · ${item.cluster_label}` : '';
-  const isExcluded = item.mark === 'excluded';
+  const isExcluded = isExcludedItem(item);
   const insp = parseInspiration(item.ai_inspiration);
   const hasInsp = insp.length > 0;
   const isRead = !!local.read;
   return `
-    <article class="paper-card ${options.compact ? 'is-compact' : ''} ${isExcluded ? 'is-excluded' : ''} ${hasInsp ? 'has-inspiration' : ''} ${isRead ? 'is-read' : 'is-unread'}" data-archived="${local.archived ? 'true' : 'false'}">
-      <div class="card-head">
-        <div>
-          <div class="card-meta">${isRead ? '' : '<span class="unread-dot" aria-hidden="true"></span>'}Priority ${escapeHtml(score)} · ${escapeHtml(item.published_at || '日期未知')}${clusterLine} · ${isRead ? '已读' : '未读'}${local.favorite ? ' · 已收藏' : ''}${isExcluded ? ' · AI 排除' : ''}</div>
+    <article class="paper-card research-card ${options.compact ? 'is-compact' : ''} ${isExcluded ? 'is-excluded' : ''} ${hasInsp ? 'has-inspiration' : ''} ${isRead ? 'is-read' : 'is-unread'}" data-archived="${local.archived ? 'true' : 'false'}">
+      <div class="research-card-main">
+        ${renderScoreRail({ label: 'Priority', score, sublabel: `rel ${compactNumber(item.relevance ?? score)}`, tone: 'paper' })}
+        <div class="research-card-body">
+          <div class="research-card-top">
+            ${renderStateChips('paper', item, local)}
+            <span class="source-mini">${escapeHtml(item.source_id || 'arXiv')}</span>
+          </div>
           <h3 class="${options.gradient ? 'gradient-text' : ''}">${escapeHtml(item.title)}</h3>
+          ${renderFactGrid(paperFacts(item), 'compact-facts')}
+          ${hasInsp ? renderInspirationBlock(item.ai_inspiration, false, { kind: 'paper' }) : (isExcluded ? renderInspirationBlock(null, true, { kind: 'paper' }) : renderInspirationBlock(null, false, { kind: 'paper' }))}
+          <p class="research-summary">${escapeHtml(shortText(item.abstract, options.compact ? 150 : 280))}</p>
+          <div class="tag-row">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
+          <div class="paper-bottom-row">
+            <div class="card-actions">
+              <button type="button" data-paper-detail="${escapeHtml(item.id)}">详情</button>
+              <button type="button" data-paper-read="${escapeHtml(item.id)}">${isRead ? '设为未读' : '标记已读'}</button>
+              <button type="button" data-paper-favorite="${escapeHtml(item.id)}">${local.favorite ? '取消收藏' : '收藏'}</button>
+              <button type="button" data-paper-archive="${escapeHtml(item.id)}">${local.archived ? '取消归档' : '归档'}</button>
+              ${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">原文</a>` : ''}
+            </div>
+            ${feedbackButtons(item)}
+          </div>
         </div>
-        <span class="status-pill">${isExcluded ? 'AI 排除' : (local.archived ? '归档' : (isRead ? '已读' : '未读'))}</span>
-      </div>
-      ${hasInsp ? renderInspirationBlock(item.ai_inspiration, false) : (isExcluded ? renderInspirationBlock(null, true) : renderInspirationBlock(null, false))}
-      <p>${escapeHtml(shortText(item.abstract, options.compact ? 150 : 280))}</p>
-      <div class="tag-row">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
-      <div class="paper-bottom-row">
-        <div class="card-actions">
-          <button type="button" data-paper-detail="${escapeHtml(item.id)}">查看详情</button>
-          <button type="button" data-paper-read="${escapeHtml(item.id)}">${isRead ? '标记未读' : '标记已读'}</button>
-          <button type="button" data-paper-favorite="${escapeHtml(item.id)}">${local.favorite ? '取消收藏' : '收藏'}</button>
-          <button type="button" data-paper-archive="${escapeHtml(item.id)}">${local.archived ? '取消归档' : '归档'}</button>
-          ${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">原文</a>` : ''}
-        </div>
-        ${feedbackButtons(item)}
       </div>
     </article>
   `;
@@ -963,11 +1098,20 @@ function renderTopPicks() {
       <article class="top-pick-card">
         <div class="top-rank">${String(index + 1).padStart(2, '0')}</div>
         <div class="top-pick-main">
+          ${renderStateChips('paper', item, paperLocal(item.id))}
           <h3 class="gradient-text">${escapeHtml(item.title)}</h3>
           <p>${escapeHtml(shortText(item.abstract, 150))}</p>
+          ${renderFactGrid([
+            { label: 'Priority', value: compactNumber(item.priority_score ?? item.relevance ?? 0) },
+            { label: 'Cluster', value: item.cluster_label || '未聚类' },
+            { label: '发布时间', value: item.published_at || '日期未知' },
+          ], 'compact-facts')}
           <div class="tag-row">${[...(item.matched_keywords || []), ...(item.tags || []).slice(0, 2)].map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
         </div>
-        <button type="button" class="see-all-button" data-open-cluster="${escapeHtml(item.cluster_label || '')}">See all →</button>
+        <div class="top-pick-actions">
+          <button type="button" class="see-all-button" data-paper-detail="${escapeHtml(item.id)}">详情</button>
+          <button type="button" class="see-all-button" data-open-cluster="${escapeHtml(item.cluster_label || '')}">Cluster</button>
+        </div>
       </article>
     `).join('')
     : '<div class="quiet-empty">暂无 Top Picks，等待 cluster 数据</div>';
@@ -1022,7 +1166,7 @@ function renderPapers() {
             <h3>${escapeHtml(cluster.title)}</h3>
             <div class="tag-row">${keywords.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
           </div>
-          <span class="cluster-stats">${escapeHtml(cluster.paper_count)} papers · max ${escapeHtml(cluster.max_score)}</span>
+          <span class="cluster-stats">${escapeHtml(cluster.paper_count)} papers · max ${escapeHtml(compactNumber(cluster.max_score))} · ${expanded ? '收起' : '展开'}</span>
         </button>
         <div class="cluster-body">
           <div class="cluster-body-inner">
@@ -1047,7 +1191,7 @@ function filteredCompetitors() {
   const q = state.filters.competitor.q.toLowerCase();
   return allCompetitors().filter((item) => {
     const local = competitorLocal(item.id);
-    if (item.mark === 'excluded' && !state.showExcluded.competitor) return false;
+    if (isExcludedItem(item) && !state.showExcluded.competitor) return false;
     if (state.filters.competitor.status && item.status !== state.filters.competitor.status) return false;
     if (state.filters.competitor.read === 'read' && !local.read) return false;
     if (state.filters.competitor.read === 'unread' && local.read) return false;
@@ -1062,27 +1206,32 @@ function filteredCompetitors() {
 function productCard(item) {
   const local = competitorLocal(item.id);
   const snapshot = item.fetched_description || item.reason || '暂无产品页摘要，建议重扫产品页。';
-  const isExcluded = item.mark === 'excluded';
+  const isExcluded = isExcludedItem(item);
   const insp = parseInspiration(item.ai_inspiration);
   const hasInsp = insp.length > 0;
   const isRead = !!local.read;
   return `
-    <article class="product-card ${isExcluded ? 'is-excluded' : ''} ${hasInsp ? 'has-inspiration' : ''} ${isRead ? 'is-read' : 'is-unread'}">
-      <div class="card-head">
-        <div>
-          <div class="card-meta">${isRead ? '' : '<span class="unread-dot" aria-hidden="true"></span>'}${escapeHtml(labels.category[item.category] || item.category || '其他')} · ${escapeHtml(labels.status[item.status] || item.status)} · 相关度 ${escapeHtml(item.relevance)}/10 · ${isRead ? '已读' : '未读'}${isExcluded ? ' · AI 排除' : ''}</div>
+    <article class="product-card research-card ${isExcluded ? 'is-excluded' : ''} ${hasInsp ? 'has-inspiration' : ''} ${isRead ? 'is-read' : 'is-unread'}">
+      <div class="research-card-main">
+        ${renderScoreRail({ label: 'Fit', score: item.relevance ?? 0, sublabel: '/10', tone: 'product' })}
+        <div class="research-card-body">
+          <div class="research-card-top">
+            ${renderStateChips('product', item, local)}
+            <span class="source-mini">${escapeHtml(sourceHost(item.source_url))}</span>
+          </div>
           <h3>${escapeHtml(item.name)}</h3>
+          ${renderFactGrid(productFacts(item), 'compact-facts')}
+          ${hasInsp ? renderInspirationBlock(item.ai_inspiration, false, { kind: 'product' }) : (isExcluded ? renderInspirationBlock(null, true, { kind: 'product' }) : renderInspirationBlock(null, false, { kind: 'product' }))}
+          <p class="research-summary">${escapeHtml(shortText(snapshot, 240))}</p>
+          ${item.reason ? `<p class="reason-line"><strong>入库理由</strong>${escapeHtml(shortText(item.reason, 160))}</p>` : ''}
+          <div class="tag-row">${(item.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
+          <div class="card-actions">
+            ${item.status === 'candidate' ? `<button type="button" data-promote="${escapeHtml(item.id)}">晋升正式</button>` : ''}
+            <button type="button" data-product-detail="${escapeHtml(item.id)}">详情 / 追问</button>
+            <button type="button" data-product-read="${escapeHtml(item.id)}">${isRead ? '设为未读' : '标记已读'}</button>
+            ${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开页面</a>` : ''}
+          </div>
         </div>
-        <span class="status-pill">${isExcluded ? 'AI 排除' : escapeHtml(labels.status[item.status] || item.status)}</span>
-      </div>
-      ${hasInsp ? renderInspirationBlock(item.ai_inspiration, false) : (isExcluded ? renderInspirationBlock(null, true) : renderInspirationBlock(null, false))}
-      <p>${escapeHtml(shortText(snapshot, 240))}</p>
-      <div class="tag-row">${(item.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
-      <div class="card-actions">
-        ${item.status === 'candidate' ? `<button type="button" data-promote="${escapeHtml(item.id)}">一键晋升为正式</button>` : ''}
-        <button type="button" data-product-detail="${escapeHtml(item.id)}">查看详情 / 追问</button>
-        <button type="button" data-product-read="${escapeHtml(item.id)}">${isRead ? '标记未读' : '标记已读'}</button>
-        <a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开页面</a>
       </div>
     </article>
   `;
@@ -1635,7 +1784,9 @@ function setTab(tab, shouldScroll = false) {
     button.setAttribute('aria-selected', active ? 'true' : 'false');
   });
   document.querySelectorAll('.tab-panel').forEach((panel) => {
-    panel.classList.toggle('is-active', panel.id === `panel-${tab}`);
+    const active = panel.id === `panel-${tab}`;
+    panel.classList.toggle('is-active', active);
+    if (active) panel.classList.add('is-visible');
   });
   if (shouldScroll && tab === 'papers') $('paper-section').scrollIntoView({ block: 'start', behavior: 'smooth' });
   if (shouldScroll && tab === 'competitors') $('competitor-section').scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -1812,20 +1963,75 @@ function renderInspirationDetailBlock(rawInspiration, markExcluded, kind) {
   </section>`;
 }
 
+function renderDetailHero(kind, item, local) {
+  const title = kind === 'product' ? item.name : item.title;
+  const subtitle = kind === 'product'
+    ? `${labels.category[item.category] || item.category || '其他'} · ${labels.status[item.status] || item.status || '候选'}`
+    : `${item.authors || '作者未知'} · ${item.published_at || '日期未知'}`;
+  const score = kind === 'product'
+    ? renderScoreRail({ label: 'Fit', score: item.relevance ?? 0, sublabel: '/10', tone: 'product' })
+    : renderScoreRail({ label: 'Priority', score: item.priority_score ?? item.relevance ?? 0, sublabel: `rel ${compactNumber(item.relevance ?? 0)}`, tone: 'paper' });
+  return `
+    <header class="detail-hero">
+      ${score}
+      <div class="detail-hero-main">
+        <p class="eyebrow">${kind === 'product' ? 'Product research' : 'Paper research'} · ${aiReadState(item).detail}</p>
+        <h2>${escapeHtml(title)}</h2>
+        <p class="detail-meta">${escapeHtml(subtitle)}</p>
+        ${renderStateChips(kind, item, local)}
+      </div>
+    </header>
+  `;
+}
+
+function renderDetailSourceBlock(kind, item) {
+  if (kind === 'product') {
+    return `
+      <section class="detail-block source-block">
+        <div class="detail-section-head">
+          <h3>来源与扫描</h3>
+          <span>${escapeHtml(item.auto_discovered ? 'Agent discovery' : 'Manual / seed')}</span>
+        </div>
+        ${renderFactGrid(productFacts(item), 'detail-facts')}
+        <p><strong>页面标题</strong><br>${escapeHtml(item.fetched_title || '暂无标题快照')}</p>
+        <p><strong>页面描述</strong><br>${escapeHtml(item.fetched_description || '暂无描述快照')}</p>
+        <p><strong>入库理由</strong><br>${escapeHtml(item.reason || '暂无理由')}</p>
+        ${item.discovered_from_url ? `<p class="muted"><strong>发现来源</strong><br>${escapeHtml(item.discovered_from_url)}</p>` : ''}
+        ${item.note ? `<p class="muted"><strong>标记备注</strong><br>${escapeHtml(item.note)}</p>` : ''}
+      </section>
+    `;
+  }
+  return `
+    <section class="detail-block source-block">
+      <div class="detail-section-head">
+        <h3>来源与聚类</h3>
+        <span>${escapeHtml(item.source_id || 'arXiv')}</span>
+      </div>
+      ${renderFactGrid([
+        ...paperFacts(item),
+        { label: '更新', value: item.updated_arxiv_at || '' },
+        { label: '本地更新', value: formatTime(item.updated_at) },
+      ], 'detail-facts')}
+      ${(item.cluster_keywords || []).length ? `<div class="tag-row field-tags">${item.cluster_keywords.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
+      ${item.note ? `<p class="muted"><strong>标记备注</strong><br>${escapeHtml(item.note)}</p>` : ''}
+    </section>
+  `;
+}
+
 function renderPaperDetail(id) {
   const item = findPaperById(id);
   if (!item) return false;
   $('dialogBody').dataset.detailKind = 'paper';
   $('dialogBody').dataset.detailId = id;
   const tags = [...new Set([...(item.matched_keywords || []), ...(item.tags || [])])].slice(0, 10);
-  const isExcluded = item.mark === 'excluded';
+  const isExcluded = isExcludedItem(item);
+  const local = paperLocal(item.id);
   $('dialogBody').innerHTML = `
     <article class="detail-content">
-      <p class="eyebrow">Paper detail · L2 Agent 已${isExcluded ? '排除' : (item.ai_inspiration ? '阅读' : '未读')}</p>
-      <h2>${escapeHtml(item.title)}</h2>
-      <p class="detail-meta">${escapeHtml(item.authors || '作者未知')} · ${escapeHtml(item.published_at || '日期未知')} · Priority ${escapeHtml(item.priority_score ?? item.relevance ?? 0)} · 相关度 ${escapeHtml(item.relevance ?? '')}</p>
+      ${renderDetailHero('paper', item, local)}
       <div class="tag-row">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
       ${renderInspirationDetailBlock(item.ai_inspiration, isExcluded, 'paper')}
+      ${renderDetailSourceBlock('paper', item)}
       <section class="detail-block">
         <h3>摘要</h3>
         <p>${escapeHtml(item.abstract || '暂无摘要')}</p>
@@ -1844,21 +2050,14 @@ function renderProductDetail(id) {
   if (!item) return false;
   $('dialogBody').dataset.detailKind = 'product';
   $('dialogBody').dataset.detailId = id;
-  const isExcluded = item.mark === 'excluded';
+  const isExcluded = isExcludedItem(item);
+  const local = competitorLocal(item.id);
   $('dialogBody').innerHTML = `
     <article class="detail-content">
-      <p class="eyebrow">Product snapshot · L2 Agent 已${isExcluded ? '排除' : (item.ai_inspiration ? '阅读' : '未读')}</p>
-      <h2>${escapeHtml(item.name)}</h2>
-      <p class="detail-meta">${escapeHtml(labels.category[item.category] || item.category || '其他')} · ${escapeHtml(labels.status[item.status] || item.status)} · 相关度 ${escapeHtml(item.relevance ?? 0)}/10 · last scanned ${escapeHtml(formatTime(item.last_scanned_at))}</p>
+      ${renderDetailHero('product', item, local)}
       <div class="tag-row">${(item.tags || []).slice(0, 10).map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
       ${renderInspirationDetailBlock(item.ai_inspiration, isExcluded, 'product')}
-      <section class="detail-block">
-        <h3>页面快照</h3>
-        <p><strong>页面标题</strong><br>${escapeHtml(item.fetched_title || '暂无标题快照')}</p>
-        <p><strong>页面描述</strong><br>${escapeHtml(item.fetched_description || '暂无描述快照')}</p>
-        <p><strong>入库理由</strong><br>${escapeHtml(item.reason || '暂无理由')}</p>
-        <p class="muted">发现逻辑: ${escapeHtml(item.discovery_logic || 'manual')}${item.discovered_from_url ? ` · 来源 ${escapeHtml(item.discovered_from_url)}` : ''}</p>
-      </section>
+      ${renderDetailSourceBlock('product', item)}
       ${renderProductDetailActions(item)}
       ${renderDetailChatSection('product', id)}
       <div class="card-actions">${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开产品页</a>` : ''}</div>

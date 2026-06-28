@@ -1151,6 +1151,7 @@ type ModelPromptLimitConfig = {
 type ModelPromptLimitsPayload = {
   window_hours: number
   window_minutes: number
+  global_default_model: string | null
   models: ModelPromptLimitRow[]
 }
 type AdminAssistantCallbacksPayload = {
@@ -1320,6 +1321,32 @@ function ModelPromptLimitsCard() {
     }
   }
 
+  // 全局默认模型偏好: 新建 Session / 快捷新建 / 小莫 在无项目级默认时回落到此模型.
+  // 下拉值 '' = 未设置 (恢复系统内置 codex / 小莫 MiniMax 启发式).
+  const [globalDefaultSel, setGlobalDefaultSel] = useState('')
+  const [savingGlobal, setSavingGlobal] = useState(false)
+  useEffect(() => {
+    setGlobalDefaultSel(typeof payload?.global_default_model === 'string' ? payload.global_default_model : '')
+  }, [payload?.global_default_model])
+
+  const saveGlobalDefault = async (modelKey: string) => {
+    setGlobalDefaultSel(modelKey)
+    setSavingGlobal(true)
+    try {
+      const next = await api('/api/admin/settings/global-default-model', {
+        method: 'PUT',
+        body: JSON.stringify({ model: modelKey || null }),
+      }) as ModelPromptLimitsPayload
+      setPayload(next)
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+      setGlobalDefaultSel(typeof payload?.global_default_model === 'string' ? payload.global_default_model : '')
+    } finally {
+      setSavingGlobal(false)
+    }
+  }
+
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1341,6 +1368,31 @@ function ModelPromptLimitsCard() {
           <span className="break-all">{error}</span>
         </div>
       )}
+      {/* 全局默认模型偏好: 新建 Session / 快捷新建 / 小莫 在无项目级默认时回落到此模型 */}
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2.5"
+        style={{ borderColor: 'rgba(59,130,246,0.30)', background: 'rgba(59,130,246,0.06)' }}>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>全局默认模型</div>
+          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            新建 Session、快捷新建、小莫助理在「项目未设默认模型」时回落到此模型。留空则恢复系统内置默认（GPT-5.5 / 小莫 MiniMax 启发式）。
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={globalDefaultSel}
+            disabled={savingGlobal || loading}
+            onChange={e => saveGlobalDefault(e.target.value)}
+            className="h-8 max-w-[220px] rounded-md border px-2 text-[12px] disabled:opacity-60"
+            style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)', color: 'var(--text-primary)' }}
+          >
+            <option value="">未设置（系统默认）</option>
+            {(payload?.models || []).map(row => (
+              <option key={row.key} value={row.key}>{row.title || row.label}</option>
+            ))}
+          </select>
+          {savingGlobal && <RefreshCw className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--text-muted)' }} />}
+        </div>
+      </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {(payload?.models || []).map(row => {
           const saving = savingKey === row.key

@@ -157,6 +157,12 @@ router.get('/model-options', auth, (_req: express.Request, res: express.Response
   res.json(modelRegistry.listSessionModelOptions());
 });
 
+// 全局默认模型偏好 (系统级默认): 任意登录用户可读, 用于前端新建表单预填 (项目无默认时回落).
+// 未设置时 model 为 null, 前端再回落到内置 'codex'.
+router.get('/default-model', auth, (_req: express.Request, res: express.Response) => {
+  res.json({ model: modelRegistry.globalDefaultModelKey() });
+});
+
 function findSessionReadable(id: string, user: AnyUser): AnySession | null {
   const session = Sessions.findById(id) as AnySession | undefined;
   return session && canReadSession(user, session) ? session : null;
