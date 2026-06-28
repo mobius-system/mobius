@@ -53,6 +53,7 @@ plugins:
             "Add a User": 添加用户
             "Import a Project & First Task": 导入项目并开启首个任务
             "Skills & Memory": 技能与记忆
+            "Add Remote Compute": 添加远程算力
             "Xiaomo Assistant (Web)": 小莫助手 Web 端
             "Self-Evolution Examples": 自进化示例
         - locale: en
@@ -65,6 +66,7 @@ nav:
       - Add a User: tutorial/01_add_user.md
       - Import a Project & First Task: tutorial/02a_import_project_and_begin_first_job.md
       - Skills & Memory: tutorial/03a_using_skill_and_memory.md
+      - Add Remote Compute: tutorial/04_add_remote_server.md
       - Xiaomo Assistant (Web): tutorial/05_using_xiaomo_assistant.md
   - Self-Evolution Examples: self-evo-demo.md
 
