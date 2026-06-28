@@ -38,6 +38,31 @@ function recordBootFailure(err) {
   }
 }
 
+// 启动前清理: IDE (tsserver) 偶发自动 emit 的 .js 会遮蔽 .ts 源码 ——
+// 在 tsx 运行时下, CommonJS require('./x') 优先解析到 x.js, 而 .ts 文件里的
+// import 会解析到 x.ts, 于是同一逻辑模块被加载成两个独立实例 (各自内存状态不共享).
+// 典型后果: extension-registry 双实例 → server.js 的 reload() 填了 .js 实例,
+// 而 ext.ts 的 serveExtension 读的是空的 .ts 实例 → 所有拓展 "extension not found".
+// 这些 .ts 模块的 .js 产物在 .gitignore 中本就被忽略, 启动时幂等清理以防复发.
+function clearEmittedTsShadows() {
+  const dirs = ['backend/services', 'backend/repositories', 'backend/types'];
+  for (const rel of dirs) {
+    const dir = path.join(__dirname, rel);
+    let names;
+    try { names = fs.readdirSync(dir); } catch (_) { continue; }
+    for (const name of names) {
+      if (!name.endsWith('.js')) continue;
+      const jsPath = path.join(dir, name);
+      const tsPath = jsPath.slice(0, -3) + '.ts';
+      try { if (fs.existsSync(tsPath)) fs.unlinkSync(jsPath); } catch (_) { /* noop */ }
+    }
+  }
+  const dbJs = path.join(__dirname, 'db.js');
+  const dbTs = path.join(__dirname, 'db.ts');
+  try { if (fs.existsSync(dbJs) && fs.existsSync(dbTs)) fs.unlinkSync(dbJs); } catch (_) { /* noop */ }
+}
+clearEmittedTsShadows();
+
 try {
   require('./server.js');
 } catch (err) {
