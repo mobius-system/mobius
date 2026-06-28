@@ -12,4 +12,5 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 - [Add a User](tutorial/01_add_user.md)
 - [Import a Project & Begin Your First Task](tutorial/02a_import_project_and_begin_first_job.md)
 - [Use Skills & Memory](tutorial/03a_using_skill_and_memory.md)
+- [Add Remote Compute](tutorial/04_add_remote_server.md)
 - [Self-Evolution Examples](self-evo-demo.md)
