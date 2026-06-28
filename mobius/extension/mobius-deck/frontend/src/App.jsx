@@ -616,7 +616,6 @@ function ArchitectureSlide() {
     '拓展插件开发 03',
     '论文复现研究',
     '股市调查 02',
-    '乌龟棋进化 03',
     'GPU 长程训练任务',
   ];
   const subsystems = [

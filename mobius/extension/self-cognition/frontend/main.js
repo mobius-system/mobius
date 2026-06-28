@@ -245,6 +245,38 @@ function productFacts(item) {
   ];
 }
 
+function splitAuthors(value) {
+  return String(value || '')
+    .split(';')
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+function compactAuthors(value, limit = 4) {
+  const authors = splitAuthors(value);
+  if (!authors.length) return '作者未知';
+  const shown = authors.slice(0, limit).join(' / ');
+  return authors.length > limit ? `${shown} 等 ${authors.length} 位作者` : shown;
+}
+
+function priorityWeight(priority) {
+  return { high: 0, medium: 1, low: 2 }[priority] ?? 1;
+}
+
+function priorityText(priority) {
+  return priority === 'high' ? '高优先' : priority === 'low' ? '低优先' : '中优先';
+}
+
+function sortedInspirations(raw) {
+  return parseInspiration(raw).sort((a, b) => priorityWeight(a.priority) - priorityWeight(b.priority));
+}
+
+function topKeywords(item, limit = 5) {
+  return [...new Set([...(item.matched_keywords || []), ...(item.cluster_keywords || []), ...(item.tags || [])])]
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
 function formatChatTime(value) {
   const date = new Date(value || Date.now());
   if (Number.isNaN(date.getTime())) return '';
@@ -1927,36 +1959,132 @@ function renderProductDetailActions(item) {
   `;
 }
 
+function renderDetailFocus(kind, item) {
+  const items = sortedInspirations(item.ai_inspiration);
+  const top = items[0];
+  const score = kind === 'product' ? (item.relevance ?? 0) : (item.priority_score ?? item.relevance ?? 0);
+  const scoreLabel = kind === 'product' ? `Fit ${compactNumber(score)}/10` : `Priority ${compactNumber(score)}`;
+  const isExcluded = isExcludedItem(item);
+  let title = '先补 AI 深度阅读';
+  let body = kind === 'product'
+    ? '当前产品还没有形成 AI 借鉴方向，只能看到页面快照和入库信息。'
+    : '当前论文还没有形成 AI 借鉴方向，只能看到摘要、cluster 和关键词。';
+  let next = '下一步：运行 AI 深度阅读，或直接在右侧追问区让 Agent 先判断可借鉴点。';
+  let tone = 'pending';
+
+  if (isExcluded) {
+    title = '暂不建议投入';
+    body = `L2 Agent 已判断这${kind === 'product' ? '个产品' : '篇论文'}暂无明确借鉴价值。`;
+    next = '下一步：如果你认为判断偏保守，可以在右侧重新标记或向 Agent 追问复核。';
+    tone = 'excluded';
+  } else if (top) {
+    title = top.title || top.direction || '已有可借鉴方向';
+    body = top.direction ? shortText(top.direction, 180) : 'AI 已经完成深度阅读，并整理了可借鉴方向。';
+    next = top.mobius_use ? `优先落地：${shortText(top.mobius_use, 96)}` : '下一步：打开下方借鉴方向，选择是否导出给小莫执行。';
+    tone = top.priority;
+  } else if (Number(score) >= (kind === 'product' ? 7 : 20)) {
+    title = kind === 'product' ? '高匹配但待深读' : '高优先级但待深读';
+    body = kind === 'product'
+      ? '这个产品的匹配分较高，但还没有 AI 借鉴结论，需要先确认具体可学什么。'
+      : '这篇论文的优先级较高，但还缺 L2 深读结论，需要先判断方法、系统设计或实验是否可迁移。';
+  }
+
+  const facts = kind === 'product'
+    ? [
+      { label: scoreLabel, value: labels.status[item.status] || item.status || '候选' },
+      { label: '来源', value: item.auto_discovered ? 'Agent 自动发现' : '手动/种子入库' },
+      { label: '最近扫描', value: formatTime(item.last_scanned_at || item.updated_at || item.created_at) },
+    ]
+    : [
+      { label: scoreLabel, value: item.cluster_label || '未聚类' },
+      { label: '发布时间', value: item.published_at || '日期未知' },
+      { label: '关键词', value: topKeywords(item, 3).join(' / ') || '暂无关键词' },
+    ];
+
+  return `
+    <section class="detail-focus-panel" data-tone="${escapeHtml(tone)}">
+      <div class="detail-focus-copy">
+        <span class="detail-kicker">重点判断</span>
+        <h3>${escapeHtml(title)}</h3>
+        <p>${escapeHtml(shortText(body, 190))}</p>
+      </div>
+      <div class="detail-next-step">${escapeHtml(next)}</div>
+      <dl class="detail-mini-facts">
+        ${facts.map((fact) => `
+          <div>
+            <dt>${escapeHtml(fact.label)}</dt>
+            <dd>${escapeHtml(fact.value)}</dd>
+          </div>
+        `).join('')}
+      </dl>
+    </section>
+  `;
+}
+
 function renderInspirationDetailBlock(rawInspiration, markExcluded, kind) {
   if (markExcluded) {
     return `<section class="detail-block detail-inspiration is-excluded">
-      <h3>对莫比乌斯的借鉴方向</h3>
-      <p class="muted">L2 Agent 阅读后判定该${kind === 'product' ? '产品' : '论文'}暂无借鉴价值，已自动标记为排除。</p>
+      <div class="detail-section-head">
+        <h3>AI 借鉴方向</h3>
+        <span>已排除</span>
+      </div>
+      <div class="detail-empty-state">
+        <strong>不进入当前借鉴队列</strong>
+        <p>L2 Agent 阅读后判定该${kind === 'product' ? '产品' : '论文'}暂无借鉴价值，已自动标记为排除。</p>
+      </div>
     </section>`;
   }
-  const items = parseInspiration(rawInspiration);
+  const items = sortedInspirations(rawInspiration);
   if (!items.length) {
     return `<section class="detail-block detail-inspiration is-pending">
-      <h3>对莫比乌斯的借鉴方向</h3>
-      <p class="muted">尚未经过 L2 Agent 深度阅读。可以在追问区直接提问，或回到列表点 "AI 深度阅读"。</p>
+      <div class="detail-section-head">
+        <h3>AI 借鉴方向</h3>
+        <span>待深读</span>
+      </div>
+      <div class="detail-empty-state">
+        <strong>还没有可执行结论</strong>
+        <p>尚未经过 L2 Agent 深度阅读。可以在追问区直接提问，或回到列表点 "AI 深度阅读"。</p>
+      </div>
     </section>`;
   }
-  const list = items.map((it) => `
-    <li class="inspiration-item priority-${it.priority}">
-      <div class="inspiration-item-head">
-        <span class="priority-tag ${it.priority}">${it.priority === 'high' ? '高优先' : it.priority === 'medium' ? '中优先' : '低优先'}</span>
-        <strong>${escapeHtml(it.title || it.direction.slice(0, 40))}</strong>
+  const [lead, ...rest] = items;
+  const counts = inspirationBadgeCount(items);
+  const prioritySummary = [
+    counts.high ? `高 ${counts.high}` : '',
+    counts.med ? `中 ${counts.med}` : '',
+    counts.low ? `低 ${counts.low}` : '',
+  ].filter(Boolean).join(' / ');
+  const leadTitle = lead.title || lead.direction.slice(0, 44) || '优先借鉴方向';
+  const restList = rest.map((it, index) => `
+    <article class="inspiration-compact-card priority-${it.priority}">
+      <div class="inspiration-compact-index">${index + 2}</div>
+      <div>
+        <div class="inspiration-item-head">
+          <span class="priority-tag ${it.priority}">${priorityText(it.priority)}</span>
+          <strong>${escapeHtml(it.title || it.direction.slice(0, 44))}</strong>
+        </div>
+        ${it.direction ? `<p>${escapeHtml(shortText(it.direction, 180))}</p>` : ''}
+        ${it.mobius_use ? `<p class="muted">落地：${escapeHtml(shortText(it.mobius_use, 180))}</p>` : ''}
       </div>
-      ${it.direction ? `<p class="inspiration-direction"><span class="direction-label">启发方向</span> ${escapeHtml(it.direction)}</p>` : ''}
-      ${it.mobius_use ? `<p class="inspiration-mobius-use"><span class="mobius-use-label">具体落实</span> ${escapeHtml(it.mobius_use)}</p>` : ''}
-    </li>
+    </article>
   `).join('');
   return `<section class="detail-block detail-inspiration is-loaded">
     <div class="detail-section-head">
-      <h3>对莫比乌斯的借鉴方向</h3>
-      <span>L2 Agent · ${items.length} 条</span>
+      <div>
+        <h3>AI 借鉴方向</h3>
+        <p class="detail-section-subtitle">先看最高优先级，再看其余补充。</p>
+      </div>
+      <span>L2 Agent · ${items.length} 条${prioritySummary ? ` · ${prioritySummary}` : ''}</span>
     </div>
-    <ul class="inspiration-list">${list}</ul>
+    <article class="inspiration-lead-card priority-${lead.priority}">
+      <div class="inspiration-lead-top">
+        <span class="priority-tag ${lead.priority}">${priorityText(lead.priority)}</span>
+        <strong>${escapeHtml(leadTitle)}</strong>
+      </div>
+      ${lead.direction ? `<p><span class="direction-label">启发方向</span>${escapeHtml(lead.direction)}</p>` : ''}
+      ${lead.mobius_use ? `<p><span class="mobius-use-label">具体落实</span>${escapeHtml(lead.mobius_use)}</p>` : ''}
+    </article>
+    ${restList ? `<div class="inspiration-compact-list">${restList}</div>` : ''}
     <div class="detail-inspiration-actions">
       <button type="button" class="primary-button" data-export-prompt="${escapeHtml(kind)}">实际修改（导出给小莫）</button>
     </div>
@@ -1966,13 +2094,13 @@ function renderInspirationDetailBlock(rawInspiration, markExcluded, kind) {
 function renderDetailHero(kind, item, local) {
   const title = kind === 'product' ? item.name : item.title;
   const subtitle = kind === 'product'
-    ? `${labels.category[item.category] || item.category || '其他'} · ${labels.status[item.status] || item.status || '候选'}`
-    : `${item.authors || '作者未知'} · ${item.published_at || '日期未知'}`;
+    ? `${labels.category[item.category] || item.category || '其他'} · ${labels.status[item.status] || item.status || '候选'} · ${sourceHost(item.source_url)}`
+    : `${compactAuthors(item.authors)} · ${item.published_at || '日期未知'}`;
   const score = kind === 'product'
     ? renderScoreRail({ label: 'Fit', score: item.relevance ?? 0, sublabel: '/10', tone: 'product' })
     : renderScoreRail({ label: 'Priority', score: item.priority_score ?? item.relevance ?? 0, sublabel: `rel ${compactNumber(item.relevance ?? 0)}`, tone: 'paper' });
   return `
-    <header class="detail-hero">
+    <header class="detail-hero detail-hero-${escapeHtml(kind)}">
       ${score}
       <div class="detail-hero-main">
         <p class="eyebrow">${kind === 'product' ? 'Product research' : 'Paper research'} · ${aiReadState(item).detail}</p>
@@ -1984,36 +2112,98 @@ function renderDetailHero(kind, item, local) {
   `;
 }
 
-function renderDetailSourceBlock(kind, item) {
+function renderDetailOverview(kind, item) {
   if (kind === 'product') {
     return `
-      <section class="detail-block source-block">
+      <section class="detail-block detail-overview">
         <div class="detail-section-head">
-          <h3>来源与扫描</h3>
-          <span>${escapeHtml(item.auto_discovered ? 'Agent discovery' : 'Manual / seed')}</span>
+          <h3>产品快照</h3>
+          <span>${escapeHtml(sourceHost(item.source_url))}</span>
         </div>
-        ${renderFactGrid(productFacts(item), 'detail-facts')}
-        <p><strong>页面标题</strong><br>${escapeHtml(item.fetched_title || '暂无标题快照')}</p>
-        <p><strong>页面描述</strong><br>${escapeHtml(item.fetched_description || '暂无描述快照')}</p>
-        <p><strong>入库理由</strong><br>${escapeHtml(item.reason || '暂无理由')}</p>
-        ${item.discovered_from_url ? `<p class="muted"><strong>发现来源</strong><br>${escapeHtml(item.discovered_from_url)}</p>` : ''}
-        ${item.note ? `<p class="muted"><strong>标记备注</strong><br>${escapeHtml(item.note)}</p>` : ''}
+        <div class="detail-highlight-stack">
+          <div>
+            <span>页面标题</span>
+            <strong>${escapeHtml(item.fetched_title || item.name || '暂无标题快照')}</strong>
+          </div>
+          <div>
+            <span>页面描述</span>
+            <p>${escapeHtml(item.fetched_description || '暂无描述快照，建议重扫产品页。')}</p>
+          </div>
+          <div>
+            <span>入库理由</span>
+            <p>${escapeHtml(item.reason || '暂无理由')}</p>
+          </div>
+        </div>
       </section>
     `;
   }
+  const authors = splitAuthors(item.authors);
   return `
-    <section class="detail-block source-block">
+    <section class="detail-block detail-overview">
       <div class="detail-section-head">
-        <h3>来源与聚类</h3>
+        <h3>论文摘要</h3>
         <span>${escapeHtml(item.source_id || 'arXiv')}</span>
       </div>
+      <p class="detail-readable-text">${escapeHtml(item.abstract || '暂无摘要')}</p>
+      ${authors.length ? `<details class="detail-inline-details">
+        <summary>作者列表 · ${authors.length} 位</summary>
+        <p>${escapeHtml(authors.join(' / '))}</p>
+      </details>` : ''}
+    </section>
+  `;
+}
+
+function renderDetailSourceBlock(kind, item) {
+  if (kind === 'product') {
+    return `
+      <details class="detail-block source-block detail-archive">
+        <summary>
+          <span>来源与字段档案</span>
+          <em>${escapeHtml(item.auto_discovered ? 'Agent discovery' : 'Manual / seed')}</em>
+        </summary>
+        ${renderFactGrid(productFacts(item), 'detail-facts')}
+        <div class="detail-field-list">
+          <p><strong>URL</strong><br>${escapeHtml(item.source_url || '无')}</p>
+          ${item.discovered_from_url ? `<p><strong>发现来源</strong><br>${escapeHtml(item.discovered_from_url)}</p>` : ''}
+          ${item.discovery_logic ? `<p><strong>发现逻辑</strong><br>${escapeHtml(item.discovery_logic)}</p>` : ''}
+          ${item.note ? `<p><strong>标记备注</strong><br>${escapeHtml(item.note)}</p>` : ''}
+        </div>
+      </details>
+    `;
+  }
+  return `
+    <details class="detail-block source-block detail-archive">
+      <summary>
+        <span>来源与字段档案</span>
+        <em>${escapeHtml(item.source_id || 'arXiv')}</em>
+      </summary>
       ${renderFactGrid([
         ...paperFacts(item),
         { label: '更新', value: item.updated_arxiv_at || '' },
         { label: '本地更新', value: formatTime(item.updated_at) },
       ], 'detail-facts')}
       ${(item.cluster_keywords || []).length ? `<div class="tag-row field-tags">${item.cluster_keywords.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
-      ${item.note ? `<p class="muted"><strong>标记备注</strong><br>${escapeHtml(item.note)}</p>` : ''}
+      <div class="detail-field-list">
+        <p><strong>原文链接</strong><br>${escapeHtml(item.source_url || '无')}</p>
+        ${item.note ? `<p><strong>标记备注</strong><br>${escapeHtml(item.note)}</p>` : ''}
+      </div>
+    </details>
+  `;
+}
+
+function renderDetailQuickLinks(kind, item) {
+  const url = item.source_url || '';
+  const label = kind === 'product' ? '打开产品页' : '打开 arXiv';
+  return `
+    <section class="detail-block detail-quick-links">
+      <div class="detail-section-head">
+        <h3>快速入口</h3>
+        <span>${kind === 'product' ? 'Product' : 'Paper'}</span>
+      </div>
+      <div class="detail-link-list">
+        ${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>` : '<span class="muted">暂无外部链接</span>'}
+        ${kind === 'product' && item.discovered_from_url ? `<a href="${escapeHtml(item.discovered_from_url)}" target="_blank" rel="noopener noreferrer">发现来源</a>` : ''}
+      </div>
     </section>
   `;
 }
@@ -2027,18 +2217,22 @@ function renderPaperDetail(id) {
   const isExcluded = isExcludedItem(item);
   const local = paperLocal(item.id);
   $('dialogBody').innerHTML = `
-    <article class="detail-content">
+    <article class="detail-content detail-content-paper">
       ${renderDetailHero('paper', item, local)}
       <div class="tag-row">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
-      ${renderInspirationDetailBlock(item.ai_inspiration, isExcluded, 'paper')}
-      ${renderDetailSourceBlock('paper', item)}
-      <section class="detail-block">
-        <h3>摘要</h3>
-        <p>${escapeHtml(item.abstract || '暂无摘要')}</p>
-      </section>
-      ${renderPaperDetailActions(item)}
-      ${renderDetailChatSection('paper', id)}
-      <div class="card-actions">${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开 arXiv</a>` : ''}</div>
+      <div class="detail-layout">
+        <main class="detail-main-column">
+          ${renderDetailFocus('paper', item)}
+          ${renderInspirationDetailBlock(item.ai_inspiration, isExcluded, 'paper')}
+          ${renderDetailOverview('paper', item)}
+          ${renderDetailSourceBlock('paper', item)}
+        </main>
+        <aside class="detail-side-column">
+          ${renderPaperDetailActions(item)}
+          ${renderDetailQuickLinks('paper', item)}
+          ${renderDetailChatSection('paper', id)}
+        </aside>
+      </div>
     </article>
   `;
   requestAnimationFrame(() => refreshDetailChat('paper', id));
@@ -2053,14 +2247,22 @@ function renderProductDetail(id) {
   const isExcluded = isExcludedItem(item);
   const local = competitorLocal(item.id);
   $('dialogBody').innerHTML = `
-    <article class="detail-content">
+    <article class="detail-content detail-content-product">
       ${renderDetailHero('product', item, local)}
       <div class="tag-row">${(item.tags || []).slice(0, 10).map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
-      ${renderInspirationDetailBlock(item.ai_inspiration, isExcluded, 'product')}
-      ${renderDetailSourceBlock('product', item)}
-      ${renderProductDetailActions(item)}
-      ${renderDetailChatSection('product', id)}
-      <div class="card-actions">${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开产品页</a>` : ''}</div>
+      <div class="detail-layout">
+        <main class="detail-main-column">
+          ${renderDetailFocus('product', item)}
+          ${renderInspirationDetailBlock(item.ai_inspiration, isExcluded, 'product')}
+          ${renderDetailOverview('product', item)}
+          ${renderDetailSourceBlock('product', item)}
+        </main>
+        <aside class="detail-side-column">
+          ${renderProductDetailActions(item)}
+          ${renderDetailQuickLinks('product', item)}
+          ${renderDetailChatSection('product', id)}
+        </aside>
+      </div>
     </article>
   `;
   requestAnimationFrame(() => refreshDetailChat('product', id));
