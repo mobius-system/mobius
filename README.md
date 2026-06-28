@@ -26,6 +26,9 @@
 <p align="center">
   <img width="700" alt="image" src="https://github.com/user-attachments/assets/c7e10425-61f9-490b-a4ac-31840f94ae68" />
 </p>
+<p align="center">
+  <img width="700" alt="image" src="https://github.com/user-attachments/assets/14dbc573-0f20-4286-b6ee-e6a35e0f5d4c" />
+</p>
 
 
 ## A Growing, Evolvable Productivity System
