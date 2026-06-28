@@ -57,6 +57,7 @@ plugins:
             "Xiaomo Assistant (Web)": 小莫助手 Web 端
             "Prevent Agent Idle (Patrol & Nudge)": 防止 Agent 偷懒
             "Exclude Skills & Memory": 屏蔽无关技能与记忆
+            "Monitor Agents": 监控智能体
             "Self-Evolution Examples": 自进化示例
         - locale: en
           name: English
@@ -72,6 +73,7 @@ nav:
       - Xiaomo Assistant (Web): tutorial/05_using_xiaomo_assistant.md
       - Prevent Agent Idle (Patrol & Nudge): tutorial/06_prevent_agent_idle.md
       - Exclude Skills & Memory: tutorial/07_exclude_skills_memory.md
+      - Monitor Agents: tutorial/08_monitor_agents.md
   - Self-Evolution Examples: self-evo-demo.md
 
 markdown_extensions:

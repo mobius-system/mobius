@@ -16,4 +16,5 @@ Mobius 是（据我们所知）全球首个**自进化**的开源智能体操作
 - [使用小莫助手 Web 端](tutorial/05_using_xiaomo_assistant.md)
 - [防止 Agent 偷懒（巡检 / 鞭策）](tutorial/06_prevent_agent_idle.md)
 - [屏蔽无关 Skill 和 Memory](tutorial/07_exclude_skills_memory.md)
+- [在管理中心监控智能体](tutorial/08_monitor_agents.md)
 - [自进化示例](self-evo-demo.md)

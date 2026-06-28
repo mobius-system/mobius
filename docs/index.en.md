@@ -16,4 +16,5 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 - [Use the Xiaomo Assistant (Web)](tutorial/05_using_xiaomo_assistant.md)
 - [Prevent Agent Idle (Patrol & Nudge)](tutorial/06_prevent_agent_idle.md)
 - [Exclude Skills & Memory](tutorial/07_exclude_skills_memory.md)
+- [Monitor Agents](tutorial/08_monitor_agents.md)
 - [Self-Evolution Examples](self-evo-demo.md)
