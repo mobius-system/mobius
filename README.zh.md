@@ -68,18 +68,18 @@
 - 「莫比乌斯 AI」指挥多个Agent建立自主协同网络
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-10.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/33490ea7-c559-4d9c-a4fc-aff18a645066" width="700" alt="alt text" />
 </p>
 
 - 「莫比乌斯 AI」自动绘制研究进展
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-11.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/a767ba7c-43f7-49c7-9e83-83f8708c05d1" width="700" alt="alt text" />
 </p>
 
 - 「莫比乌斯 AI」做调研
 
-<video controls src="https://mobius.nutshellai.cn/assets/v1/research-back.mp4" title="Title"></video>
+<video controls src="https://github.com/user-attachments/assets/0580bbc1-3998-4a85-8fa1-189b46637289" width="700" title="Title"></video>
 
 ## 小莫助理：高中生都能使用的开发中枢和管理中枢
 
@@ -102,11 +102,11 @@
   - 移动端 IOS + Android (测试中)
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-1.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/acff28ef-c117-487a-a904-baf79392ad3a" width="700" alt="alt text" />
 </p>
 
 
-<video controls src="https://serve.gptacademic.cn/publish/shared/video/334599/self-evolution-demo-v1.mp4" title="Title"></video>
+<video controls src="https://github.com/user-attachments/assets/f7a45ceb-b208-4d22-a77b-ff11c05ef497" width="700" title="Title"></video>
 ↑ 上面这个演示视频也是小莫制作的，提示词参考这个[SKILL](skills/mobius-self-evo-demo/SKILL.md)，录制过程无人类参与，略有瑕疵，我们正在替换素材。
 
 ## 任意模型，任意CodingAgent
@@ -114,7 +114,7 @@
 轻松接入最强开源模型 GLM-5.2，也支持GPT-5.5、Claude-Opus等。
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-2.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/38f615b4-58bd-42b1-9b32-b6deadb6436e" width="700" alt="alt text" />
 </p>
 
 
@@ -162,7 +162,7 @@ flowchart TD
 - 一键连接嵌入式开发板（搭载NX等嵌入式设备的无人机、无人车等）
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-3.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/47de5fcd-426a-43e5-b9ec-df83e28cf7aa" width="700" alt="alt text" />
 </p>
 
 ## 团队管理
@@ -170,13 +170,13 @@ flowchart TD
 无论是一人之军，还是跟人类同事们协同作战，「莫比乌斯 AI」让团队协作更加轻松透明。
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-4.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/1a615cce-8c31-4f4f-8f04-da19c7f9b50e" width="700" alt="alt text" />
 </p>
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-6.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/d96260b3-fd79-4ac7-b005-ee39ec021fcd" width="700" alt="alt text" />
 </p>
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-7.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/6c90b3a0-6c73-4065-a87e-a12a546aa327" width="700" alt="alt text" />
 </p>
 
 ### 部署
