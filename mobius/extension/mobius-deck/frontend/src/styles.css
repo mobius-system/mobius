@@ -681,10 +681,37 @@ button {
   line-height: 1;
 }
 
-.hub span:last-child {
+.hub > span:last-child {
   color: rgba(255, 255, 255, 0.86);
   font-size: 13px;
   font-weight: 760;
+}
+
+.hub-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+  max-width: 100%;
+}
+
+.hub-capabilities .chip {
+  min-height: 22px;
+  padding: 3px 9px;
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 780;
+}
+
+.hub-capabilities .chip.chip-green,
+.hub-capabilities .chip.chip-yellow,
+.hub-capabilities .chip.chip-cyan {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: var(--ink);
 }
 
 .hub-glow {
@@ -740,13 +767,8 @@ button {
 }
 
 .capability-cloud {
-  position: absolute;
-  right: 28%;
-  top: 9%;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-width: 250px;
+  /* capability-cloud 已并入 .hub 卡片, 此样式保留为空占位防回归 */
+  display: none;
 }
 
 .security-layout,

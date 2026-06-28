@@ -389,6 +389,11 @@ function ReachSlide() {
           <span className="hub-glow" />
           <strong>Mobius</strong>
           <span>触手，无处不可达</span>
+          <div className="hub-capabilities">
+            <Chip tone="neutral">深度学习</Chip>
+            <Chip tone="neutral">强化学习</Chip>
+            <Chip tone="neutral">自动科研</Chip>
+          </div>
         </div>
 
         <IconNode icon={HardDrive} title="云存储 / NAS / OSS" meta="SSH · SFTP" tone="blue" className="reach-nas" />
@@ -399,12 +404,6 @@ function ReachSlide() {
         <IconNode icon={Server} title="内网 GPU 算力集群" meta="深度学习 · 强化学习" tone="red" className="reach-gpu" />
         <IconNode icon={Network} title="代理 & 代理池" meta="可选" tone="orange" className="reach-proxy" />
         <IconNode icon={Globe2} title="复杂因特网" meta="开放文献 · 开放代码 · 开放研报" tone="cyan" className="reach-web" />
-
-        <div className="capability-cloud">
-          <Chip tone="green">深度学习</Chip>
-          <Chip tone="yellow">强化学习</Chip>
-          <Chip tone="cyan">自动科研</Chip>
-        </div>
       </div>
 
       <FragmentPanel
