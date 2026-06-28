@@ -10,13 +10,13 @@
 
 打开任意项目，在右侧**项目设置**里找到「项目级 Memory」卡片，点击青色的【**添加远程算力**】按钮。
 
-![image](https://serve.gptacademic.cn/publish/auto/tutorial/04_add_remote_server_01_memory_panel.png)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/04_add_remote_server_01_memory_panel.png)
 
 ### 2. 弹窗总览
 
 点开后弹出「添加远程算力」窗口，分左右两栏。左栏是远程机器清单与操作，右栏是新增表单与记忆预览。
 
-![image](https://serve.gptacademic.cn/publish/auto/tutorial/04_add_remote_server_02_modal_overview.png)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/04_add_remote_server_02_modal_overview.png)
 
 - **① 远程机器清单**：自动读取本机 `aimux remote` 列表与 `~/.ssh/config`，`reachable` 表示已通过免密 SSH 探测，`auth-required` 表示还需要处理登录认证。
 - **② 全选 / 刷新**：批量勾选，或重新拉取最新清单。
@@ -34,19 +34,19 @@
 - 清单里没有的机器，在右侧表单填好（**③**），点【添加并探测】即可加入清单。
 - 下方预览（**④**）会随勾选实时更新。
 
-![image](https://serve.gptacademic.cn/publish/auto/tutorial/04_add_remote_server_03_interact.png)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/04_add_remote_server_03_interact.png)
 
 ### 4. 创建项目 Memory
 
 确认预览无误后，点右下角【**创建项目 Memory**】。
 
-![image](https://serve.gptacademic.cn/publish/auto/tutorial/04_add_remote_server_04_create.png)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/04_add_remote_server_04_create.png)
 
 ### 5. 记忆已写入，新会话自动带上
 
 记忆出现在「项目级 Memory」列表中。之后在该项目**新建执行会话**时，这条记忆会作为上下文自动带上 —— 智能体就能按记忆里的格式调度远端算力。
 
-![image](https://serve.gptacademic.cn/publish/auto/tutorial/04_add_remote_server_05_result.png)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/04_add_remote_server_05_result.png)
 
 ‍
 

@@ -10,13 +10,13 @@
 
 Open any project. In the **Project Settings** panel on the right, find the "Project Memory" card and click the cyan **[Add Remote Compute]** button.
 
-![image](https://serve.gptacademic.cn/publish/auto/tutorial/04_add_remote_server_01_memory_panel.png)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/04_add_remote_server_01_memory_panel.png)
 
 ### 2. Modal overview
 
 The "Add Remote Compute" modal opens with two columns: the remote machine list and actions on the left, the add-form and memory preview on the right.
 
-![image](https://serve.gptacademic.cn/publish/auto/tutorial/04_add_remote_server_02_modal_overview.png)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/04_add_remote_server_02_modal_overview.png)
 
 - **① Remote machine list**: auto-read from the local `aimux remote` list and `~/.ssh/config`. `reachable` means passwordless SSH is verified; `auth-required` means login still needs handling.
 - **② Select all / Refresh**: batch-select or reload the latest list.
@@ -34,19 +34,19 @@ The "Add Remote Compute" modal opens with two columns: the remote machine list a
 - For machines missing from the list, fill the form on the right (**③**) and click "Add & probe".
 - The preview below (**④**) updates live.
 
-![image](https://serve.gptacademic.cn/publish/auto/tutorial/04_add_remote_server_03_interact.png)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/04_add_remote_server_03_interact.png)
 
 ### 4. Create the project memory
 
 Once the preview looks right, click **[Create Project Memory]** at the bottom right.
 
-![image](https://serve.gptacademic.cn/publish/auto/tutorial/04_add_remote_server_04_create.png)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/04_add_remote_server_04_create.png)
 
 ### 5. Memory written — new sessions pick it up automatically
 
 The memory appears in the "Project Memory" list. When you **create a new execution session** in this project, it is attached as context automatically — the agent can then drive remote compute using the format recorded in the memory.
 
-![image](https://serve.gptacademic.cn/publish/auto/tutorial/04_add_remote_server_05_result.png)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/04_add_remote_server_05_result.png)
 
 ‍
 
