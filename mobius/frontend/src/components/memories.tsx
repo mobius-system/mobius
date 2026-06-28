@@ -128,7 +128,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
     }
   }
 
-  const title = scope === 'user' ? '我的 Memory (用户级)' : '项目级 Memory'
+  const title = scope === 'user' ? '用户级 Memory' : '项目级 Memory'
   const desc = scope === 'user'
     ? '保存个人笔记和上下文片段。可直接写入或粘贴文本，也可上传 50MB 内 .md 文件，默认在你创建的所有 Issue 中可见'
     : '项目共享的记忆片段。可直接写入或粘贴文本，也可上传 50MB 内 .md 文件，项目下所有 Issue 默认可见 (跨用户合并展示)'
