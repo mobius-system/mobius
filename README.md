@@ -1,3 +1,5 @@
+
+https://github.com/user-attachments/assets/83733ddc-d220-4562-9671-4f7fe4ad0aff
 <a id="readme-top"></a>
 
 <h1 align="center">
@@ -60,18 +62,24 @@ Just writing articles is not enough — allying with multiple machines, running 
 - "Mobius AI" commands multiple Agents to build an autonomous collaboration network
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-10.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/33490ea7-c559-4d9c-a4fc-aff18a645066" width="700" alt="alt text" />
 </p>
+
+
 
 - "Mobius AI" automatically plots research progress
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-11.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/a767ba7c-43f7-49c7-9e83-83f8708c05d1" width="700" alt="alt text" />
 </p>
 
 - "Mobius AI" does research
 
-<video controls src="https://mobius.nutshellai.cn/assets/v1/research-back.mp4" title="Title"></video>
+<p align="center">
+  <video controls src="https://mobius.nutshellai.cn/assets/v1/research-back.mp4" width="700" title="Title"></video>
+</p>
+
+
 
 ## XiaoMo Assistant: A Development and Management Hub Even High-Schoolers Can Use
 
@@ -94,11 +102,12 @@ Just writing articles is not enough — allying with multiple machines, running 
   - Mobile iOS + Android (in testing)
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-1.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/acff28ef-c117-487a-a904-baf79392ad3a" width="700" alt="alt text" />
 </p>
 
-
-<video controls src="https://serve.gptacademic.cn/publish/shared/video/334599/self-evolution-demo-v1.mp4" title="Title"></video>
+<p align="center">
+  <video controls src="https://github.com/user-attachments/assets/f7a45ceb-b208-4d22-a77b-ff11c05ef497" width="700" title="Title"></video>
+</p>
 ↑ The demo video above was also produced by XiaoMo. For the prompt, refer to this [SKILL](skills/mobius-self-evo-demo/SKILL.md). The recording process had zero human participation, with minor flaws — we are replacing the material.
 
 ## Any Model, Any Coding Agent
@@ -106,10 +115,8 @@ Just writing articles is not enough — allying with multiple machines, running 
 Easily connect to the strongest open-source model GLM-5.2; GPT-5.5, Claude-Opus, and others are also supported.
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-2.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/38f615b4-58bd-42b1-9b32-b6deadb6436e" width="700" alt="alt text" />
 </p>
-
-
 
 
 ## From GPU Clusters to NX Dev Boards — the Neural Center's Tentacles Reach Everywhere
@@ -154,7 +161,7 @@ Inside project memory, detect and manage compute resources:
 - One-click connect embedded dev boards (drones, unmanned vehicles equipped with NX and other embedded devices)
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-3.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/47de5fcd-426a-43e5-b9ec-df83e28cf7aa" width="700" alt="alt text" />
 </p>
 
 ## Team Management
@@ -162,14 +169,15 @@ Inside project memory, detect and manage compute resources:
 Whether you are a one-person army or working alongside human colleagues, "Mobius AI" makes team collaboration easier and more transparent.
 
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-4.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/1a615cce-8c31-4f4f-8f04-da19c7f9b50e" width="700" alt="alt text" />
 </p>
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-6.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/d96260b3-fd79-4ac7-b005-ee39ec021fcd" width="700" alt="alt text" />
 </p>
 <p align="center">
-  <img src="https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-7.png" width="700" alt="alt text" />
+  <img src="https://github.com/user-attachments/assets/6c90b3a0-6c73-4065-a87e-a12a546aa327" width="700" alt="alt text" />
 </p>
+
 
 ### Deployment
 
