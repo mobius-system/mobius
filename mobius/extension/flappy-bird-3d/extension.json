@@ -5,6 +5,6 @@
   "version": "0.1.0",
   "project": {
     "sync": true,
-    "default_hidden": false
+    "default_hidden": true
   }
 }
