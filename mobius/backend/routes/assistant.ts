@@ -322,11 +322,12 @@ interface AssistantPresetNormalized {
 
 function normalizeAssistantPreset(input: any = {}, defaultExclusions: { excluded_skill_ids?: string[]; excluded_memory_ids?: string[] } = {}, project?: any): AssistantPresetNormalized {
   const src = input && typeof input === 'object' ? input : {};
-  const modelKeys = availableModelKeys();
-  const preferredModel = preferredAssistantModelKey(project);
-  const model = typeof src.model === 'string' && modelKeys.has(src.model)
-    ? src.model
-    : preferredModel;
+  // 小莫预设 UI 不提供模型选择 (assistant-preset-modal.tsx 仅展示 model_label),
+  // 故存盘里的 model 只可能是历次自动默认的缓存, 绝非用户主动选择. 为让"项目级默认 >
+  // 全局默认模型"实时生效 (管理员改全局默认后, 用户新建的小莫 Session 即采用新默认),
+  // 这里始终按多级链路重算 model, 不沿用可能已过期的存盘 model.
+  // 已有 Session 的 model 写在 DB 里, 不随此处变化 (避免中途切换惊扰用户).
+  const model = preferredAssistantModelKey(project);
   const hasSkillExclusions = Array.isArray(src.excluded_skill_ids);
   const hasMemoryExclusions = Array.isArray(src.excluded_memory_ids);
   const rawDescription = typeof src.description === 'string' && src.description.trim()
