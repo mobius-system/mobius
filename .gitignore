@@ -107,6 +107,12 @@ host_data/
 docs/superpowers
 docs/*
 !docs/tutorial
+!docs/index.md
+!docs/index.en.md
+
+# mkdocs 本地构建产物 + 文档 venv
+site/
+.venv-docs/
 /assess_appearance/
 
 # 演示视频: 仅本地保留, 不入仓 (体积大, clone 后从 NAS / OSS / 本地缓存取回即可)
