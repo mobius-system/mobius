@@ -1300,6 +1300,54 @@ textarea:focus {
   line-height: 1.65;
 }
 
+.evo-brief {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.evo-card-head .evo-what {
+  display: block;
+  margin-top: 0;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.evo-card-head .evo-why {
+  margin-top: 0;
+  opacity: 0.72;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  font-style: normal;
+}
+
+.evo-module {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  background: color-mix(in srgb, var(--L1-accent) 16%, transparent);
+  color: color-mix(in srgb, var(--L1-accent) 78%, var(--evolution-ink));
+}
+
+.evo-detail-label {
+  margin-top: 14px;
+  margin-bottom: 2px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.5;
+}
+
+.evo-raw {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.82rem;
+  word-break: break-word;
+  opacity: 0.8;
+}
+
 .promote-button {
   color: var(--paper-bg);
   background: linear-gradient(135deg, var(--L1-accent), var(--L2-accent)) !important;

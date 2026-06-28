@@ -1172,19 +1172,27 @@ function renderEvolutionL1() {
 function renderL1Card(item) {
   const expanded = !!state.evolution.expanded[item.id];
   const sha = item.commit_sha ? item.commit_sha.slice(0, 7) : 'pending';
+  const brief = item.brief || {};
+  const who = brief.who || item.actor || 'Mobius';
+  const modules = Array.isArray(brief.modules) ? brief.modules : [];
+  const metaHtml = [escapeHtml(who), escapeHtml(formatTime(item.created_at)), escapeHtml(item.project_id)].join(' · ')
+    + (modules.length ? ' · ' + modules.map((m) => `<span class="evo-module">${escapeHtml(m)}</span>`).join(' ') : '');
   return `
     <article class="evo-card l1-card" data-expanded="${expanded ? 'true' : 'false'}">
       <button type="button" class="evo-card-head" data-toggle-evolution="${escapeHtml(item.id)}">
         <span class="evo-sha">${escapeHtml(sha)}</span>
-        <span>
-          <strong>${escapeHtml(item.summary)}</strong>
-          <em>${escapeHtml(shortText(item.diff_summary, 180))}</em>
+        <span class="evo-brief">
+          <strong class="evo-what">${escapeHtml(brief.what || item.summary)}</strong>
+          ${brief.why ? `<em class="evo-why">${escapeHtml(shortText(brief.why, 140))}</em>` : ''}
         </span>
       </button>
-      <div class="evo-meta">${escapeHtml(formatTime(item.created_at))} · ${escapeHtml(item.project_id)} · ${escapeHtml(item.actor)}</div>
+      <div class="evo-meta">${metaHtml}</div>
       <div class="evo-expand">
+        <div class="evo-detail-label">完整提交标题</div>
+        <p class="evo-raw">${escapeHtml(item.summary)}</p>
+        ${item.diff_summary ? `<div class="evo-detail-label">改动摘要</div><p>${escapeHtml(item.diff_summary)}</p>` : ''}
+        <div class="evo-detail-label">改动文件 (${(item.files_changed || []).length})</div>
         <div class="tag-row">${(item.files_changed || []).map((file) => `<span>${escapeHtml(file)}</span>`).join('')}</div>
-        <p>${escapeHtml(item.diff_summary || '暂无 diff 摘要')}</p>
       </div>
     </article>
   `;

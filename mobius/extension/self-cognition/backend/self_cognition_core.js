@@ -85,10 +85,61 @@ function init(e) {
 }
 
 function evolutionRow(e) {
-  return e ? {
-    ...e,
-    files_changed: arr(e.files_changed)
-  } : null;
+  if (!e) return null;
+  const row = { ...e, files_changed: arr(e.files_changed) };
+  row.actor = cleanAuthor(row.proposed_by) || txt(row.created_by, 60) || "Mobius";
+  row.brief = evolutionBrief(row);
+  return row;
+}
+
+// "Mobius OS <mobius_os@163.com>" → "Mobius OS"
+function cleanAuthor(s) {
+  return txt(String(s || "").replace(/\s*<[^>]*>\s*/g, " ").replace(/\s+/g, " ").trim(), 120) || "";
+}
+
+// mobius/extension/self-cognition/backend/x.js → self-cognition/backend ; README.md → README
+function moduleOf(file) {
+  const parts = String(file || "").split("/").filter(Boolean);
+  if (!parts.length) return txt(String(file || ""), 40);
+  let i = parts[0] === "mobius" ? 1 : 0;
+  return parts.slice(i, i + 2).join("/") || parts[0];
+}
+
+// 结构化概括 (方案 A: 规则提炼, 不调 LLM)。
+// commit 多为 "英文动作 (中文解释)" 格式 → what=英文动作, why=中文解释。
+function evolutionBrief(row) {
+  const raw = String(row.summary || row.title || "");
+  const clean = raw.replace(/^[a-z]+(?:\([^)]*\))?(?:!)?:\s*/i, "").trim() || raw;
+  let what = clean, why = "";
+  const span = firstCjkParen(clean);
+  if (span) {
+    what = clean.slice(0, span.start).trim() || clean;
+    why = clean.slice(span.start + 1, span.end - 1).trim();
+  }
+  const modules = [ ...new Set((row.files_changed || []).map(moduleOf)) ].slice(0, 5);
+  return {
+    what: txt(what, 100) || txt(raw, 100),
+    why: txt(why, 220),
+    who: cleanAuthor(row.proposed_by) || txt(row.created_by, 60) || "",
+    modules
+  };
+}
+
+// 找第一个含 CJK 的平衡括号段 (...) / （...） (允许嵌套), 返回 {start,end} 闭区间索引; 没有返回 null。
+// 容忍截断: 若开括号到串尾都没闭合 (历史 summary 被 300 字截断), 取到串尾作为 why。
+function firstCjkParen(s) {
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] !== "(" && s[i] !== "（") continue;
+    let depth = 0, closeAt = -1;
+    for (let j = i; j < s.length; j++) {
+      if (s[j] === "(" || s[j] === "（") depth++;
+      else if (s[j] === ")" || s[j] === "）") { depth--; if (depth === 0) { closeAt = j; break; } }
+    }
+    const innerEnd = closeAt >= 0 ? closeAt : s.length;
+    if (/[一-鿿]/.test(s.slice(i + 1, innerEnd))) return { start: i, end: innerEnd + (closeAt >= 0 ? 1 : 0) };
+    if (closeAt < 0) return null;
+  }
+  return null;
 }
 
 function validEvolutionStatus(e, t) {
@@ -109,7 +160,7 @@ function insertEvolutionEvent(e, t) {
     session_id: txt(t.session_id, 120) || null,
     commit_sha: txt(t.commit_sha, 80) || null,
     version: txt(t.version, 80) || null,
-    summary: txt(t.summary, 300) || "自进化事件",
+    summary: txt(t.summary, 1500) || "自进化事件",
     diff_summary: txt(t.diff_summary, 200) || null,
     files_changed: JSON.stringify(Array.isArray(t.files_changed) ? [ ...new Set(t.files_changed.map(e => txt(e, 240)).filter(Boolean)) ].slice(0, 80) : []),
     proposed_by: txt(t.proposed_by, 120) || null,
@@ -204,20 +255,31 @@ function seedEvolutionFromGit(e, t = {}) {
     const c = git(s.repo, o).split("\n").map(e => e.trim()).filter(Boolean);
     let n = 0;
     for (const t of c) {
-      const [r, o, c, d, ...i] = t.split("|"), u = i.join("|"), l = gitFiles(s.repo, s.pathspec, r), p = insertEvolutionEvent(e, {
-        id: id("evo_l1_git", `${s.id}:${r}`),
+      const [r, o, c, d, ...i] = t.split("|"), u = i.join("|"), l = gitFiles(s.repo, s.pathspec, r);
+      const evId = id("evo_l1_git", `${s.id}:${r}`), stamp = new Date(1e3 * Number(d)).toISOString();
+      const fields = {
+        summary: txt(u, 1500) || `Git commit ${r.slice(0, 8)}`,
+        diff: gitDiffSummary(s.repo, s.pathspec, r, l),
+        filesJson: JSON.stringify(l),
+        proposedBy: txt(`${o} <${c}>`, 180),
+        stamp
+      };
+      // 已存在的 L1 git 行也刷新 (旧行 summary 被旧版截断到 300, 重扫升级到 1500 让概括更完整)。
+      e.prepare("UPDATE evolution_events SET summary=?, diff_summary=?, files_changed=?, proposed_by=?, approved_at=?, created_at=? WHERE id=? AND level='L1' AND source='git_commit'").run(fields.summary, fields.diff, fields.filesJson, fields.proposedBy, fields.stamp, fields.stamp, evId);
+      const p = insertEvolutionEvent(e, {
+        id: evId,
         level: "L1",
         source: "git_commit",
         status: "merged",
         project_id: s.id,
         commit_sha: r,
-        summary: txt(u, 300) || `Git commit ${r.slice(0, 8)}`,
-        diff_summary: gitDiffSummary(s.repo, s.pathspec, r, l),
+        summary: fields.summary,
+        diff_summary: fields.diff,
         files_changed: l,
-        proposed_by: txt(`${o} <${c}>`, 180),
+        proposed_by: fields.proposedBy,
         approved_by: "git",
-        approved_at: new Date(1e3 * Number(d)).toISOString(),
-        created_at: new Date(1e3 * Number(d)).toISOString()
+        approved_at: fields.stamp,
+        created_at: fields.stamp
       });
       if (p && p.commit_sha === r) {
         n++;
