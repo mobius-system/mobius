@@ -58,6 +58,10 @@ plugins:
             "Prevent Agent Idle (Patrol & Nudge)": 防止 Agent 偷懒
             "Exclude Skills & Memory": 屏蔽无关技能与记忆
             "Monitor Agents": 监控智能体
+            "Configure Codex + a Model": 配置 Codex + 模型
+            "Configure Claude Code + a Model": 配置 Claude Code + 模型
+            "Limit Model Call Frequency": 限制模型调用频率
+            "Migrate Skills & Memory": 迁移 Skill 和 Memory
             "Self-Evolution Examples": 自进化示例
         - locale: en
           name: English
@@ -74,6 +78,10 @@ nav:
       - Prevent Agent Idle (Patrol & Nudge): tutorial/06_prevent_agent_idle.md
       - Exclude Skills & Memory: tutorial/07_exclude_skills_memory.md
       - Monitor Agents: tutorial/08_monitor_agents.md
+      - Configure Codex + a Model: tutorial/09_config_codex_model.md
+      - Configure Claude Code + a Model: tutorial/10_config_claude_code_model.md
+      - Limit Model Call Frequency: tutorial/11_limit_model_usage.md
+      - Migrate Skills & Memory: tutorial/12_migrate_skill_memory.md
   - Self-Evolution Examples: self-evo-demo.md
 
 markdown_extensions:

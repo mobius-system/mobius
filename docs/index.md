@@ -17,4 +17,8 @@ Mobius 是（据我们所知）全球首个**自进化**的开源智能体操作
 - [防止 Agent 偷懒（巡检 / 鞭策）](tutorial/06_prevent_agent_idle.md)
 - [屏蔽无关 Skill 和 Memory](tutorial/07_exclude_skills_memory.md)
 - [在管理中心监控智能体](tutorial/08_monitor_agents.md)
+- [配置 Codex + 模型](tutorial/09_config_codex_model.md)
+- [配置 Claude Code + 模型](tutorial/10_config_claude_code_model.md)
+- [限制模型调用频率](tutorial/11_limit_model_usage.md)
+- [迁移 Skill 和 Memory](tutorial/12_migrate_skill_memory.md)
 - [自进化示例](self-evo-demo.md)
