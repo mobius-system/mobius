@@ -69,6 +69,10 @@ plugins:
             "Simple Self-Evolution Example": 简单自进化示例
             "V. Tips": V-小技巧
             "Chat Input Tips": 聊天输入小技巧
+            "Switch the Model Mid-Session": 中途切换模型
+            "Change the Frontend Theme": 修改前端色彩主题
+            "Mark a Key Project (Favorite)": 标记重点项目
+            "Package & Download Project Files": 项目文件打包下载
         - locale: en
           name: English
           build: true
@@ -95,6 +99,10 @@ nav:
       - Simple Self-Evolution Example: self-evo-demo.md
   - 'V. Tips':
       - Chat Input Tips: tutorial/14_chat_input_tips.md
+      - Switch the Model Mid-Session: tutorial/15_switch_model_mid_session.md
+      - Change the Frontend Theme: tutorial/16_change_frontend_theme.md
+      - Mark a Key Project (Favorite): tutorial/17_favorite_project.md
+      - Package & Download Project Files: tutorial/18_package_download_project.md
 
 markdown_extensions:
   - admonition

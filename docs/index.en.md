@@ -38,3 +38,7 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 ### V. Tips
 
 - [Chat Input Tips](tutorial/14_chat_input_tips.md)
+- [Switch the Model Mid-Session](tutorial/15_switch_model_mid_session.md)
+- [Change the Frontend Theme](tutorial/16_change_frontend_theme.md)
+- [Mark a Key Project (Favorite)](tutorial/17_favorite_project.md)
+- [Package & Download Project Files](tutorial/18_package_download_project.md)
