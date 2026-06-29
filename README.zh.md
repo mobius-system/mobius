@@ -19,6 +19,8 @@
 <p align="center">
   <a href="https://mobius.nutshellai.cn/"><strong>官方网站</strong></a>
   ·
+  <a href="https://nutshellai-tech.github.io/mobius/"><strong>文档</strong></a>
+  ·
   <strong>简体中文</strong> · <a href="./README.md">English</a>
 </p>
 
