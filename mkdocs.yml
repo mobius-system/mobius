@@ -49,23 +49,23 @@ plugins:
           build: true
           nav_translations:
             Home: 首页
-            "Master Mobius in 5 Minutes": 只需五分钟就精通 Mobius AI
+            "I. Master Mobius in 5 Minutes": I-五分钟精通
             "Xiaomo: Universal Shortcut": 万能捷径：小莫助理
             "Concepts: Import a Project": 概念入门：导入项目并开启首个任务
             "Concepts: Skills & Memory": 概念入门：技能与记忆
-            "Advanced Capabilities": 高级能力
+            "II. Advanced Capabilities": II-高级能力
             "Add Remote Compute": 添加远程算力
             "Xiaomo Assistant (Web)": 小莫助手 Web 端
             "Prevent Agent Idle (Patrol & Nudge)": 防止 Agent 偷懒
             "Exclude Skills & Memory": 屏蔽无关技能与记忆
             "Migrate Skills & Memory": 迁移 Skill 和 Memory
-            "Admin Basics": "管理员 - 基础"
+            "III. Admin Basics": III-管理员基础
             "Add a User": 添加用户
             "Monitor Agents": 监控智能体
             "Configure Codex + a Model": 配置 Codex + 模型
             "Configure Claude Code + a Model": 配置 Claude Code + 模型
             "Limit Model Call Frequency": 限制模型调用频率
-            "Mobius Self-Forging": 莫比乌斯自我塑炼
+            "IV. Mobius Self-Evolution": IV-自我进化能力
             "Simple Self-Evolution Example": 简单自进化示例
         - locale: en
           name: English
@@ -73,23 +73,23 @@ plugins:
 
 nav:
   - Home: index.md
-  - Master Mobius in 5 Minutes:
+  - 'I. Master Mobius in 5 Minutes':
       - 'Xiaomo: Universal Shortcut': tutorial/13_xiaomo_control_hub.md
       - 'Concepts: Import a Project': tutorial/02a_import_project_and_begin_first_job.md
       - 'Concepts: Skills & Memory': tutorial/03a_using_skill_and_memory.md
-  - Advanced Capabilities:
+  - 'II. Advanced Capabilities':
       - Add Remote Compute: tutorial/04_add_remote_server.md
       - Xiaomo Assistant (Web): tutorial/05_using_xiaomo_assistant.md
       - Prevent Agent Idle (Patrol & Nudge): tutorial/06_prevent_agent_idle.md
       - Exclude Skills & Memory: tutorial/07_exclude_skills_memory.md
       - Migrate Skills & Memory: tutorial/12_migrate_skill_memory.md
-  - Admin Basics:
+  - 'III. Admin Basics':
       - Add a User: tutorial/01_add_user.md
       - Monitor Agents: tutorial/08_monitor_agents.md
       - Configure Codex + a Model: tutorial/09_config_codex_model.md
       - Configure Claude Code + a Model: tutorial/10_config_claude_code_model.md
       - Limit Model Call Frequency: tutorial/11_limit_model_usage.md
-  - Mobius Self-Forging:
+  - 'IV. Mobius Self-Evolution':
       - Simple Self-Evolution Example: self-evo-demo.md
 
 markdown_extensions:

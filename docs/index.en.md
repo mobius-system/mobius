@@ -9,13 +9,13 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 
 ## Quick Start
 
-### Master Mobius in 5 Minutes
+### I. Master Mobius in 5 Minutes
 
 - [Xiaomo: Universal Shortcut](tutorial/13_xiaomo_control_hub.md)
 - [Concepts: Import a Project](tutorial/02a_import_project_and_begin_first_job.md)
 - [Concepts: Skills & Memory](tutorial/03a_using_skill_and_memory.md)
 
-### Advanced Capabilities
+### II. Advanced Capabilities
 
 - [Add Remote Compute](tutorial/04_add_remote_server.md)
 - [Xiaomo Assistant (Web)](tutorial/05_using_xiaomo_assistant.md)
@@ -23,7 +23,7 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 - [Exclude Skills & Memory](tutorial/07_exclude_skills_memory.md)
 - [Migrate Skills & Memory](tutorial/12_migrate_skill_memory.md)
 
-### Admin Basics
+### III. Admin Basics
 
 - [Add a User](tutorial/01_add_user.md)
 - [Monitor Agents](tutorial/08_monitor_agents.md)
@@ -31,6 +31,6 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 - [Configure Claude Code + a Model](tutorial/10_config_claude_code_model.md)
 - [Limit Model Call Frequency](tutorial/11_limit_model_usage.md)
 
-### Mobius Self-Forging
+### IV. Mobius Self-Evolution
 
 - [Simple Self-Evolution Example](self-evo-demo.md)
