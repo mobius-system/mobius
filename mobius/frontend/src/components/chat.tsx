@@ -3113,11 +3113,6 @@ export function ChatArea() {
               )}
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault()
-                    send(true)
-                    return
-                  }
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
                     send()
@@ -3227,7 +3222,7 @@ export function ChatArea() {
                   <>
                     <button type="button" onClick={() => send(true)} disabled={sendDisabled}
                       data-tour="session-chat-send-urgent"
-                      title="发送（加急）— 打断当前输出并立即发送 (Ctrl/⌘+Enter)"
+                      title="发送（加急）— 打断当前输出并立即发送"
                       className="inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{
                         color: theme !== 'light' ? '#d1d5db' : '#374151',
