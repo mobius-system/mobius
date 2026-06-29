@@ -571,20 +571,28 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     markRunning(flagRoot || entry?.flagRoot || entry?.cwd || cwd, sessionId)
   }
 
-  async _pauseImpl({ sessionId, prompt, cwd, flagRoot }) {
+  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, urgent = false, mobiusJsonl = null }) {
     if (!sessionId) throw new Error('需要 sessionId')
     const persisted = this.runtime.get(sessionId)
 
     if (windowExists(sessionId)) {
-      // 3 个 C-c 中断当前 turn (不 kill window). 用户实测一次会被 TUI 吞.
-      // 用 await setTimeout 间隔 — 不能用 spawnSync('sleep') 那会阻塞 event loop,
-      // 锁住期间整个 node 进程冻 50ms 服务不了其他长连接.
-      for (let i = 0; i < 3; i++) {
+      if (urgent) {
+        // 加急: 单次 C-c 中断当前 turn (实测单次足够). 用 await setTimeout 间隔,
+        // 不能用 spawnSync('sleep') 那会阻塞 event loop, 冻住整个 node 进程.
         tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'C-c'])
-        if (i < 2) await new Promise(r => setTimeout(r, 50))
+        await new Promise(r => setTimeout(r, 250))
+        // 中断后旧输入可能回到输入区, 先 Alt+Enter 换行隔开, 否则和新 prompt 粘一起
+        tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'M-Enter'])
+        await new Promise(r => setTimeout(r, 80))
+      } else {
+        // /stop: 3 个 C-c 中断当前 turn (不 kill window). 用户实测一次会被 TUI 吞.
+        for (let i = 0; i < 3; i++) {
+          tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'C-c'])
+          if (i < 2) await new Promise(r => setTimeout(r, 50))
+        }
+        // 给 claude TUI 一点时间消化中断
+        await new Promise(r => setTimeout(r, 300))
       }
-      // 给 claude TUI 一点时间消化中断
-      await new Promise(r => setTimeout(r, 300))
     }
 
     if (!prompt) {
@@ -603,6 +611,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       displayName: persisted?.displayName,
       agentSessionId: persisted?.agentSessionId,
       isInitialContextPrompt: false,
+      mobiusJsonl,
     })
   }
 

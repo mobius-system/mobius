@@ -62,6 +62,7 @@ async function runSessionMessage({
   attachments = [],
   source = 'service.session.messages',
   logger = console,
+  urgent = false,
 }: {
   user?: any;
   sessionId?: any;
@@ -72,6 +73,7 @@ async function runSessionMessage({
   attachments?: any[];
   source?: string;
   logger?: any;
+  urgent?: boolean;
 } = {}): Promise<any> {
   const normalizedSessionId = String(sessionId || '').trim();
   const normalizedContent = typeof content === 'string' ? content : '';
@@ -166,7 +168,7 @@ async function runSessionMessage({
   }
 
   try {
-    await backend.noPauseCurrentAndQueueQueryAtSession({
+    const dispatchOpts = {
       sessionId: normalizedSessionId,
       prompt: finalContent,
       cwd: workDir,
@@ -183,7 +185,15 @@ async function runSessionMessage({
       displayName: sess.name,
       agentSessionId: sess.claude_session_id || undefined,
       mobiusJsonl,
-    });
+    };
+    if (urgent) {
+      // 加急: 中断当前推理/输出再投递. pauseCurrentAndResumeFromSession 带 prompt =
+      // _pauseImpl 的 urgent 分支 (单次 C-c + Alt+Enter 换行 + paste 提交).
+      // 空闲/未存活时 _pauseImpl 自带兜底 (不中断直接投递 / respawn-if-dead).
+      await backend.pauseCurrentAndResumeFromSession({ ...dispatchOpts, urgent: true });
+    } else {
+      await backend.noPauseCurrentAndQueueQueryAtSession(dispatchOpts);
+    }
     const runtimeInfo = backend.listSessions().find((s: any) => s.sessionId === normalizedSessionId);
     const newAgentSid = runtimeInfo?.agentSessionId || null;
     if (newAgentSid && newAgentSid !== sess.claude_session_id) {

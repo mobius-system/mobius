@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Square, Plus, Paperclip } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -1892,14 +1892,17 @@ export function ChatArea() {
     content,
     inputText,
     requestId,
+    urgent = false,
   }: {
     content: string
     inputText?: string
     requestId: string
+    urgent?: boolean
   }) => {
     if (!sessionId) throw new Error('当前没有可发送消息的 Session')
     const payload: Record<string, any> = { content, request_id: requestId }
     if (typeof inputText === 'string') payload.input_text = inputText
+    if (urgent) payload.urgent = true
     try {
       const resp = await api(`/api/sessions/${sessionId}/messages`, {
         method: 'POST',
@@ -2507,7 +2510,7 @@ export function ChatArea() {
       .catch(() => {})
   }, [sessionId, addMessage, setTyping, postSessionMessage])
 
-  const send = useCallback(() => {
+  const send = useCallback((urgent = false) => {
     const text = input.trim()
     const readyAtts = attachments.filter(a => a.status === 'done' && a.remotePath)
     // 必须有文本或至少一个已上传完成的附件
@@ -2542,7 +2545,7 @@ export function ChatArea() {
     // 发送瞬间立即清空输入框, 给用户即时反馈. 原来放在 .then() 里,
     // 要等后端 POST /messages 返回才清空, 体感是"字过了一会儿才消失".
     clearSessionInputDraft(sentSessionId, sentInput)
-    postSessionMessage({ content, inputText: text, requestId })
+    postSessionMessage({ content, inputText: text, requestId, urgent })
       .then(() => {
         setEditingMsg(null)
         clearAttachments()
@@ -3110,6 +3113,11 @@ export function ChatArea() {
               )}
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
                 onKeyDown={e => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault()
+                    send(true)
+                    return
+                  }
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
                     send()
@@ -3216,17 +3224,30 @@ export function ChatArea() {
                   ? (theme !== 'light' ? '#6b7280' : '#9ca3af')
                   : (theme !== 'light' ? '#111827' : '#ffffff')
                 return (
-                  <button onClick={send} disabled={sendDisabled}
-                    data-tour="session-chat-send"
-                    title={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
-                    className="w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-95"
-                    style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}>
-                    {anyUploading || voiceState === 'transcribing' ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <SendHorizontal className="w-[18px] h-[18px]" strokeWidth={2.4} />
-                    )}
-                  </button>
+                  <>
+                    <button onClick={() => send(true)} disabled={sendDisabled}
+                      data-tour="session-chat-send-urgent"
+                      title="发送（加急）— 打断当前输出并立即发送 (Ctrl/⌘+Enter)"
+                      className="w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-95"
+                      style={{
+                        background: sendDisabled ? 'rgba(245,158,11,0.10)' : 'rgba(245,158,11,0.18)',
+                        color: sendDisabled ? (theme !== 'light' ? '#6b7280' : '#9ca3af') : '#f59e0b',
+                        cursor: sendDisabled ? 'not-allowed' : 'pointer',
+                      }}>
+                      <Zap className="w-[18px] h-[18px]" strokeWidth={2.4} />
+                    </button>
+                    <button onClick={() => send()} disabled={sendDisabled}
+                      data-tour="session-chat-send"
+                      title={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
+                      className="w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-95"
+                      style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}>
+                      {anyUploading || voiceState === 'transcribing' ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <SendHorizontal className="w-[18px] h-[18px]" strokeWidth={2.4} />
+                      )}
+                    </button>
+                  </>
                 )
               })()}
             </div>

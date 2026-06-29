@@ -822,7 +822,7 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _pauseImpl({ sessionId, prompt, cwd, flagRoot }) {
+  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, mobiusJsonl = null }) {
     if (!sessionId) throw new Error('sessionId required')
     const persisted = this.runtime.get(sessionId)
 
@@ -851,6 +851,7 @@ class TmuxCodexBackend extends AgentBackend {
       codexSecretEnvKey: persisted?.codexSecretEnvKey,
       displayName: persisted?.displayName,
       agentSessionId: persisted?.agentSessionId,
+      mobiusJsonl,
     })
   }
 
