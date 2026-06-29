@@ -1458,6 +1458,10 @@ export function ChatArea() {
   const [backendFailedAt, setBackendFailedAt] = useState('')
   const [backendPid, setBackendPid] = useState<number | null>(null)
   const [pendingSendAt, setPendingSendAt] = useState<number | null>(null)
+  // 本次 pending 发送是否为加急: 加急时 session 本来就在 working, poll 的
+  // "working=true ⇒ 清除 pending" 信号无效, 会过早清掉导致发送阶段提示 (正在发送/唤醒中) 不显示.
+  // 故加急时跳过该条件 (只靠 !alive / 8s 兜底). ref 不参与渲染, 无需进 deps.
+  const pendingUrgentRef = useRef(false)
   // 终止乐观更新抑制窗: 点"终止"后 ~3s 内忽略轮询回写, 让 isAlive/isWorking/agent_status
   // 立即落定为"空闲". 否则软停 (C-c × 3) 期间下一个 2s 轮询仍读到 alive=true, 会把状态弹回"执行中".
   const stopSuppressedUntilRef = useRef<number>(0)
@@ -1569,10 +1573,11 @@ export function ChatArea() {
           window.dispatchEvent(new CustomEvent(GUIDED_DEMO_TOUR_EVENT, { detail: { force: false } }))
         }
         // pending 清除条件 (任意一个满足):
-        //   ① 后端确认 working=true   (agent 已开始干)
+        //   ① 后端确认 working=true   (agent 已开始干) — 但加急发送时 session 本来就在 working,
+        //      此信号无效会过早清掉 pending (发送阶段提示来不及显示), 故加急时跳过本条.
         //   ② 后端确认 alive=false    (进程死了, 早就不用等了)
         //   ③ pending 已超 8s         (agent 在 sub-2s 内跑完一整轮, 我们 poll 没赶上 — 兜底)
-        if (pendingSendAt && (r?.working || !r?.alive || (Date.now() - pendingSendAt > 8000))) {
+        if (pendingSendAt && ((!pendingUrgentRef.current && r?.working) || !r?.alive || (Date.now() - pendingSendAt > 8000))) {
           setPendingSendAt(null)
         }
         nextDelay = nextDelayFor(r)
@@ -2539,6 +2544,7 @@ export function ChatArea() {
     const requestId = makeSendRequestId()
     setLastSendError('')
     addMessage({ role: 'user', content })
+    pendingUrgentRef.current = urgent
     setPendingSendAt(Date.now())
     setMessageSubmitting(true)
     setTyping(true)
