@@ -3113,10 +3113,20 @@ export function ChatArea() {
               )}
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.key !== 'Enter') return
+                  if (e.shiftKey) return
+                  if (e.altKey) {
                     e.preventDefault()
-                    send()
+                    const el = inputRef.current
+                    if (el) {
+                      const s = el.selectionStart, en = el.selectionEnd
+                      setInput(input.slice(0, s) + '\n' + input.slice(en))
+                      requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = s + 1 })
+                    }
+                    return
                   }
+                  e.preventDefault()
+                  send()
                 }}
                 placeholder={inputPlaceholder}
                 className="w-full bg-transparent resize-none border-0 px-0 pt-0 pb-1 text-[16px] leading-[1.55] placeholder:!text-[var(--placeholder-color)] focus:outline-none overflow-y-auto"
@@ -3345,13 +3355,6 @@ export function ChatArea() {
               ref={expandedInputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  setInputExpanded(false)
-                  send()
-                }
-              }}
               onPaste={handlePaste}
               placeholder={inputPlaceholder}
               className="min-h-0 flex-1 w-full resize-none rounded-xl px-3 py-2 text-[13px] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
