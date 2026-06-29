@@ -517,6 +517,148 @@ function normalizeEvolutionEvent(item, level, index = 0) {
   };
 }
 
+function evolutionText(item) {
+  return [
+    item.summary,
+    item.diff_summary,
+    item.project_id,
+    ...(item.files_changed || []),
+  ].join(' ').toLowerCase();
+}
+
+function classifyL1Event(item) {
+  const text = evolutionText(item);
+  const files = (item.files_changed || []).join(' ').toLowerCase();
+  const rules = [
+    {
+      id: 'self-cognition-system',
+      title: 'Self-Cognition 调研系统',
+      description: '论文/产品调研、自进化雷达、L2 启发处理和本插件自身体验。',
+      order: 10,
+      signals: [['self-cognition', 5], ['self_cognition', 5], ['arxiv', 3], ['paper research', 3], ['product research', 3], ['decision workflow', 3], ['research radar', 3], ['论文调研', 3], ['产品调研', 3], ['自进化历史', 3], ['调研', 2]],
+    },
+    {
+      id: 'docs-learning',
+      title: '教程、文档与知识迁移',
+      description: '教程、README、MkDocs、模型配置说明、技能/记忆迁移和使用指南。',
+      order: 20,
+      signals: [['tutorial', 5], ['docs', 4], ['documentation', 4], ['mkdocs', 4], ['readme', 4], ['guide', 3], ['i18n', 2], ['skill/mem', 4], ['model config', 3], ['model limits', 3], ['教程', 5], ['文档', 4], ['指南', 3]],
+    },
+    {
+      id: 'frontend-experience',
+      title: '前端体验与可视化',
+      description: '页面布局、设计画布、移动端适配、WebGL fallback、卡片和弹窗交互。',
+      order: 30,
+      signals: [['frontend', 3], ['mobius-deck', 5], ['ui', 2], ['ux', 2], ['webgl', 4], ['canvas', 3], ['card', 2], ['detail', 2], ['dialog', 2], ['styles', 2], ['index.html', 2], ['overlap', 3], ['clipping', 3], ['viewport', 3], ['页面', 2], ['卡片', 2], ['详情', 2], ['弹窗', 2], ['移动端', 3], ['重叠', 3], ['展示', 2]],
+    },
+    {
+      id: 'agent-reading',
+      title: 'L2 Agent 深读与启发',
+      description: 'AI 深读、启发提炼、追问、导出给小莫和 Agent run 上下文。',
+      order: 40,
+      signals: [['l2 ai', 5], ['deep read', 5], ['deep reading', 5], ['inspiration', 4], ['ai_inspiration', 5], ['agent run', 3], ['chat_with_agent', 4], ['深度阅读', 5], ['启发', 4], ['追问', 3], ['导出给小莫', 4]],
+    },
+    {
+      id: 'assistant-ops',
+      title: '助手运行与协作管理',
+      description: '分身小莫、会话、巡逻提醒、Agent 监控、管理员中心和协作流程。',
+      order: 50,
+      signals: [['assistant', 4], ['session', 4], ['agent', 2], ['admin center', 4], ['patrol', 4], ['nudge', 4], ['exclude skills', 3], ['memory', 2], ['分身', 4], ['小莫', 3], ['会话', 4], ['巡逻', 4], ['提醒', 3], ['管理员', 3]],
+    },
+    {
+      id: 'compute-infra',
+      title: '算力、远程执行与基础设施',
+      description: '远程算力、GPU、容器、部署、运行时环境和工程基础设施。',
+      order: 60,
+      signals: [['remote compute', 5], ['compute', 4], ['gpu', 5], ['docker', 3], ['container', 3], ['deploy', 3], ['runtime', 3], ['算力', 5], ['远程', 3], ['容器', 3], ['部署', 3]],
+    },
+    {
+      id: 'billing-permission',
+      title: '计费、权限与账户',
+      description: '计费、授权、角色、账户、权限边界和安全策略。',
+      order: 70,
+      signals: [['billing', 5], ['payment', 4], ['auth', 4], ['permission', 4], ['role', 3], ['account', 3], ['security', 3], ['计费', 5], ['权限', 4], ['账户', 3], ['授权', 3], ['安全', 3]],
+    },
+    {
+      id: 'backend-data',
+      title: '后端数据与接口',
+      description: '数据库、接口、schema、状态写入和后端兼容逻辑。',
+      order: 80,
+      signals: [['backend', 4], ['api', 3], ['db', 3], ['database', 4], ['schema', 4], ['table', 3], ['sqlite', 4], ['route', 2], ['service', 2], ['后端', 4], ['数据库', 4], ['接口', 3]],
+    },
+    {
+      id: 'engineering-maintenance',
+      title: '工程同步与维护',
+      description: '合并同步、配置整理、阶段性提交、构建修复和难以归入业务域的维护改动。',
+      order: 90,
+      signals: [['merge remote', 5], ['merge', 4], ['sync', 4], ['stage', 4], ['config', 3], ['cleanup', 3], ['fix', 1], ['update', 1], ['replace', 1], ['change', 1], ['合并', 4], ['同步', 4], ['配置', 3], ['维护', 3]],
+    },
+  ];
+  const scored = rules.map((rule) => ({
+    ...rule,
+    score: rule.signals.reduce((sum, [signal, weight]) => sum + (text.includes(signal.toLowerCase()) ? weight : 0), 0),
+  })).sort((a, b) => b.score - a.score || a.order - b.order);
+  if (scored[0]?.score > 0) return scored[0];
+  if (files.includes('/frontend/') || files.startsWith('frontend/')) return rules.find((rule) => rule.id === 'frontend-experience');
+  if (files.includes('/backend/') || files.startsWith('backend/')) return rules.find((rule) => rule.id === 'backend-data');
+  return {
+    id: 'other',
+    title: '其他系统改动',
+    description: '暂时无法从标题、摘要和文件路径稳定判断的 L1 事件。',
+    order: 100,
+    signals: [],
+  };
+}
+
+function mergeUniqueL1Items(items) {
+  const map = new Map();
+  for (const item of items || []) {
+    const key = item.commit_sha ? `sha:${item.commit_sha}` : `event:${item.summary || item.id}:${item.created_at || ''}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        ...item,
+        project_ids: item.project_id ? [item.project_id] : [],
+        source_ids: [item.id].filter(Boolean),
+        files_changed: [...(item.files_changed || [])],
+      });
+      continue;
+    }
+    const existing = map.get(key);
+    if (item.project_id && !existing.project_ids.includes(item.project_id)) existing.project_ids.push(item.project_id);
+    if (item.id && !existing.source_ids.includes(item.id)) existing.source_ids.push(item.id);
+    existing.files_changed = [...new Set([...(existing.files_changed || []), ...(item.files_changed || [])])];
+    if (!existing.diff_summary && item.diff_summary) existing.diff_summary = item.diff_summary;
+    if (!existing.actor && item.actor) existing.actor = item.actor;
+  }
+  return [...map.values()];
+}
+
+function buildL1EvolutionTree(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const category = classifyL1Event(item);
+    if (!groups.has(category.id)) {
+      groups.set(category.id, {
+        ...category,
+        items: [],
+        projects: new Set(),
+      });
+    }
+    const group = groups.get(category.id);
+    group.items.push(item);
+    for (const project of item.project_ids || [item.project_id]) {
+      if (project) group.projects.add(project);
+    }
+  }
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      projects: [...group.projects],
+      latest: group.items.reduce((latest, item) => Math.max(latest, new Date(item.created_at || 0).getTime() || 0), 0),
+    }))
+    .sort((a, b) => a.order - b.order || b.items.length - a.items.length || b.latest - a.latest || a.title.localeCompare(b.title, 'zh-CN'));
+}
+
 function paperId(item) {
   return item?.paper_id || item?.id || item?.source_id || item?.source_url || '';
 }
@@ -1043,7 +1185,13 @@ function renderSchedule() {
     <div>上次: ${escapeHtml(formatTime(lastArxiv?.created_at))}</div>
     <div>下次: ${escapeHtml(formatTime(next))}</div>
   `;
-  $('paperScanPill').textContent = scanning ? '扫描中' : '空闲';
+  $('paperScanPill').textContent = state.scanning.paper ? '扫描中' : '空闲';
+  $('productScheduleMini').innerHTML = `
+    <div>定时: 每天 ${escapeHtml(scanLabel)}</div>
+    <div>上次: ${escapeHtml(formatTime(lastProduct?.created_at))}</div>
+    <div>下次: ${escapeHtml(formatTime(next))}</div>
+  `;
+  $('productScanPill').textContent = state.scanning.product ? '扫描中' : '空闲';
 }
 
 function renderKeywordControls() {
@@ -1590,10 +1738,48 @@ function evolutionItems(level) {
 }
 
 function renderEvolutionL1() {
-  const items = evolutionItems('L1');
+  const rawItems = evolutionItems('L1');
+  const items = mergeUniqueL1Items(rawItems);
+  const groups = buildL1EvolutionTree(items);
+  const mergeText = rawItems.length > items.length ? ` · 合并 ${rawItems.length - items.length} 条重复扫描` : '';
   $('evolutionContent').innerHTML = items.length
-    ? `<div class="evolution-list">${items.map((item) => renderL1Card(item)).join('')}</div>`
+    ? `
+      <div class="l1-tree">
+        <div class="l1-tree-summary">
+          <div>
+            <p class="micro">AI grouped tree</p>
+            <h3>L1 真实改动分类树</h3>
+          </div>
+          <span>${escapeHtml(groups.length)} 类 · ${escapeHtml(items.length)} 条 L1${mergeText}</span>
+        </div>
+        ${groups.map((group, index) => renderL1TreeGroup(group, index)).join('')}
+      </div>
+    `
     : '<div class="quiet-empty">暂无 L1 实际修改</div>';
+}
+
+function renderL1TreeGroup(group, index = 0) {
+  const key = `l1-group:${group.id}`;
+  const expanded = typeof state.evolution.expanded[key] === 'boolean'
+    ? state.evolution.expanded[key]
+    : index === 0;
+  const projects = group.projects.length ? group.projects.join(' / ') : '未绑定项目';
+  return `
+    <section class="l1-tree-group" data-expanded="${expanded ? 'true' : 'false'}">
+      <button type="button" class="l1-tree-head" data-toggle-evolution-group="${escapeHtml(key)}">
+        <span class="l1-tree-node" aria-hidden="true"></span>
+        <span class="l1-tree-title">
+          <strong>${escapeHtml(group.title)}</strong>
+          <em>${escapeHtml(group.description)}</em>
+        </span>
+        <span class="l1-tree-meta">${escapeHtml(group.items.length)} 条 · ${escapeHtml(projects)}</span>
+        <span class="evo-toggle-icon" aria-hidden="true">⌄</span>
+      </button>
+      <div class="l1-tree-children">
+        <div class="evolution-list">${group.items.map((item) => renderL1Card(item)).join('')}</div>
+      </div>
+    </section>
+  `;
 }
 
 function renderL1Card(item) {
@@ -1602,7 +1788,9 @@ function renderL1Card(item) {
   const brief = item.brief || {};
   const who = brief.who || item.actor || 'Mobius';
   const modules = Array.isArray(brief.modules) ? brief.modules : [];
-  const metaHtml = [escapeHtml(who), escapeHtml(formatTime(item.created_at)), escapeHtml(item.project_id)].join(' · ')
+  const category = classifyL1Event(item);
+  const projectLabel = (item.project_ids?.length ? item.project_ids.join(' / ') : item.project_id) || '未绑定项目';
+  const metaHtml = [escapeHtml(who), escapeHtml(formatTime(item.created_at)), escapeHtml(projectLabel)].join(' · ')
     + (modules.length ? ' · ' + modules.map((m) => `<span class="evo-module">${escapeHtml(m)}</span>`).join(' ') : '');
   return `
     <article class="evo-card l1-card" data-expanded="${expanded ? 'true' : 'false'}">
@@ -1610,8 +1798,9 @@ function renderL1Card(item) {
         <span class="evo-sha">${escapeHtml(sha)}</span>
         <span class="evo-brief">
           <strong class="evo-what">${escapeHtml(brief.what || item.summary)}</strong>
-          ${brief.why ? `<em class="evo-why">${escapeHtml(shortText(brief.why, 140))}</em>` : ''}
+          <em class="evo-why">${escapeHtml(shortText(brief.why || item.diff_summary || category.title, 140))}</em>
         </span>
+        <span class="evo-toggle-icon" aria-hidden="true">⌄</span>
       </button>
       <div class="evo-meta">${metaHtml}</div>
       <div class="evo-expand">
@@ -2211,6 +2400,33 @@ function setTab(tab, shouldScroll = false) {
   });
   if (shouldScroll && tab === 'papers') $('paper-section').scrollIntoView({ block: 'start', behavior: 'smooth' });
   if (shouldScroll && tab === 'competitors') $('competitor-section').scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+function openScanTools(kind = 'paper') {
+  const dialog = $('scanToolsDialog');
+  if (!dialog) return;
+  const isProduct = kind === 'product';
+  $('scanToolsKicker').textContent = isProduct ? 'Product research tools' : 'Paper research tools';
+  $('scanToolsTitle').textContent = isProduct ? '产品扫描与 AI 阅读' : '论文扫描与 AI 阅读';
+  $('scanToolsDescription').textContent = isProduct
+    ? '这里集中处理产品页扫描、已跟踪产品重扫、未读产品 AI 深度阅读和产品关键词。主页面继续保持为判断工作台。'
+    : '这里集中处理 arXiv 手动扫描、未读论文 AI 深度阅读和论文关键词。主页面继续保持为判断工作台。';
+  document.querySelectorAll('[data-scan-tools-kind]').forEach((pane) => {
+    pane.hidden = pane.dataset.scanToolsKind !== kind;
+  });
+  if (!dialog.open) dialog.showModal();
+}
+
+function bindScanToolsDialog() {
+  const dialog = $('scanToolsDialog');
+  if (!dialog) return;
+  document.querySelectorAll('[data-open-scan-tools]').forEach((button) => {
+    button.addEventListener('click', () => openScanTools(button.dataset.openScanTools || 'paper'));
+  });
+  $('scanToolsClose')?.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) dialog.close();
+  });
 }
 
 function detailChatKey(kind, id) {
@@ -3165,6 +3381,7 @@ function bindEvents() {
   $('paperShowExcluded')?.addEventListener('change', (e) => { state.showExcluded.paper = e.target.checked; renderPapers(); });
   $('competitorShowExcluded')?.addEventListener('change', (e) => { state.showExcluded.competitor = e.target.checked; renderCompetitors(); });
   bindPromptExportDialog();
+  bindScanToolsDialog();
   document.querySelectorAll('[data-close-latest]').forEach((btn) => {
     btn.addEventListener('click', () => closeLatestBatch(btn.dataset.closeLatest));
   });
@@ -3256,6 +3473,14 @@ function bindEvents() {
     if (evoToggle) {
       const id = evoToggle.dataset.toggleEvolution;
       state.evolution.expanded[id] = !state.evolution.expanded[id];
+      renderEvolution();
+    }
+
+    const evoGroupToggle = event.target.closest('[data-toggle-evolution-group]');
+    if (evoGroupToggle) {
+      const id = evoGroupToggle.dataset.toggleEvolutionGroup;
+      const current = state.evolution.expanded[id] !== false;
+      state.evolution.expanded[id] = !current;
       renderEvolution();
     }
 

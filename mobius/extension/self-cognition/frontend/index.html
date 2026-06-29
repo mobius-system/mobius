@@ -62,11 +62,11 @@
       <div class="hero-content reveal">
         <p class="eyebrow">Self-Cognition</p>
         <h1 aria-label="Mobius Research Radar">Mobius <span class="gradient-text">Research Radar</span></h1>
-        <p class="hero-subtitle">让自我认知系统，持续追踪论文与产品。</p>
-        <p class="hero-copy">只保留两个工作台：论文跟踪与产品跟踪。每日扫描、人工筛选、收藏归档和候选晋升，都在同一条克制的研究流里完成。</p>
+        <p class="hero-subtitle">让自我认知系统，持续理解论文与产品。</p>
+        <p class="hero-copy">论文调研和产品调研不是资料墙，而是面向 L2 进化的人类决策工作台。扫描和关键词只是辅助工具，真正重要的是看清证据、判断启发、决定下一步。</p>
         <div class="hero-actions">
-          <a class="primary-button" href="#paper-section">查看论文跟踪</a>
-          <a class="glass-button" href="#competitor-section">查看产品跟踪</a>
+          <a class="primary-button" href="#paper-section">进入论文调研</a>
+          <a class="glass-button" href="#competitor-section">进入产品调研</a>
         </div>
         <div class="hero-status reveal" id="scheduleStatus" aria-live="polite"></div>
       </div>
@@ -78,69 +78,22 @@
     <section class="section-dark workspace-section paper-tone" id="paper-section" data-nav-theme="dark" data-section="paper">
       <div class="section-inner">
         <div class="section-heading reveal">
-          <h2>论文跟踪</h2>
-          <p>按 cluster、AI 阅读状态、优先级和人工反馈管理 arXiv 线索；在详情中查看来源、借鉴方向与可落实动作。</p>
+          <h2>论文调研</h2>
+          <p>左侧处理待判断论文，中间阅读证据和借鉴方向，右侧做人工决策。扫描、AI 深读和关键词管理收进工具弹窗，不打断主工作台。</p>
         </div>
 
-        <div class="tab-strip reveal" role="tablist" aria-label="工作台">
-          <button class="tab is-active" id="tab-papers" type="button" role="tab" aria-selected="true" aria-controls="panel-papers" data-tab="papers">论文跟踪</button>
-          <button class="tab" id="tab-competitors" type="button" role="tab" aria-selected="false" aria-controls="panel-competitors" data-tab="competitors">产品跟踪</button>
-        </div>
-
-        <section class="tab-panel is-active reveal" id="panel-papers" role="tabpanel" aria-labelledby="tab-papers">
+        <section class="workspace-panel" id="panel-papers">
           <div class="work-grid">
-            <aside class="control-rail">
-              <div class="panel">
-                <div class="panel-head">
-                  <div>
-                    <p class="micro">Daily scan</p>
-                    <h3>扫描状态</h3>
-                  </div>
-                  <span class="status-pill" id="paperScanPill">待加载</span>
-                </div>
-                <div class="schedule-mini" id="paperScheduleMini"></div>
-                <form id="arxivScanForm" class="stack-form">
-                  <label>
-                    <span>查询语句</span>
-                    <textarea id="arxivQuery" rows="4" placeholder="留空使用已启用论文关键词"></textarea>
-                  </label>
-                  <label>
-                    <span>拉取条数</span>
-                    <input id="arxivMax" type="number" min="1" max="500" value="100">
-                  </label>
-                  <label class="check-row">
-                    <input id="scanCompetitorsAfterArxiv" type="checkbox">
-                    <span>扫描后同步刷新正式产品</span>
-                  </label>
-                  <label class="check-row">
-                    <input id="arxivScanWithAi" type="checkbox" checked>
-                    <span>扫描后追加 AI 深度阅读</span>
-                  </label>
-                  <label>
-                    <span>AI 渠道</span>
-                    <select id="paperAiChannel"></select>
-                  </label>
-                  <button class="primary-button full" type="submit">立即扫描论文</button>
-                  <div class="ai-scan-divider"><span>或仅对未读做 AI 阅读</span></div>
-                  <label class="check-row">
-                    <span>未读条数 N</span>
-                    <input id="paperAiN" type="number" min="1" max="50" value="10">
-                  </label>
-                  <button class="glass-button full" id="paperAiScanBtn" type="button">AI 深度阅读未读论文</button>
-                </form>
+            <div class="workflow-toolbar">
+              <div>
+                <p class="micro">Decision Workbench</p>
+                <h3>论文处理台</h3>
               </div>
-
-              <form class="panel" id="paperKeywordsForm">
-                <div class="panel-head">
-                  <div>
-                    <p class="micro">Keyword desk</p>
-                    <h3>关键词管理</h3>
-                  </div>
-                  <button class="text-button" type="submit">保存</button>
-                </div>
-                <textarea id="paperKeywords" rows="8" placeholder="关键词 | arXiv 查询表达式"></textarea>
-              </form>
-            </aside>
+              <div class="workflow-toolbar-actions">
+                <button class="glass-button light" type="button" data-open-scan-tools="paper">扫描与 AI 阅读</button>
+                <button class="text-button" type="button" data-open-scan-tools="paper">关键词管理</button>
+              </div>
+            </div>
 
             <section class="results-panel">
               <section class="latest-batch" id="latestBatchPaper" hidden>
@@ -210,73 +163,23 @@
     <section class="section-dark workspace-section product-tone" id="competitor-section" data-nav-theme="dark" data-section="product">
       <div class="section-inner">
         <div class="section-heading reveal">
-          <h2>产品跟踪</h2>
-          <p>候选与已跟踪产品并排呈现；对比产品状态、来源、扫描快照、AI 借鉴方向与后续标记。</p>
+          <h2>产品调研</h2>
+          <p>把候选产品和已跟踪产品放入同一套判断流程：先看来源和扫描证据，再判断它是否真的能转成莫比乌斯的产品或系统启发。</p>
         </div>
 
-        <section class="tab-panel competitor-panel reveal" id="panel-competitors" role="tabpanel" aria-labelledby="tab-competitors">
+        <section class="workspace-panel competitor-panel" id="panel-competitors">
           <div class="work-grid">
-            <aside class="control-rail">
-              <form class="panel" id="productScanForm">
-                <div class="panel-head">
-                  <div>
-                    <p class="micro">Product page</p>
-                    <h3>产品清单管理</h3>
-                  </div>
-                </div>
-                <label>
-                  <span>产品页 URL</span>
-                  <input id="productUrl" type="url" placeholder="留空走 Agent 智能发现">
-                </label>
-                <label>
-                  <span>名称</span>
-                  <input id="productName" type="text" maxlength="180" placeholder="留空读取页面标题">
-                </label>
-                <div class="form-grid">
-                  <label>
-                    <span>类别</span>
-                    <select id="productCategory">
-                      <option value="office-agent">办公智能体</option>
-                      <option value="coding-agent">编码智能体</option>
-                      <option value="general-agent">通用智能体</option>
-                      <option value="workflow-agent">工作流智能体</option>
-                      <option value="personal-agent">个人助理</option>
-                      <option value="research-agent">研究智能体</option>
-                      <option value="other">其他</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>状态</span>
-                    <select id="productStatus">
-                      <option value="candidate">候选</option>
-                      <option value="official">已跟踪</option>
-                    </select>
-                  </label>
-                </div>
-                <button class="primary-button full" type="submit">立即扫描产品</button>
-                <div class="ai-scan-divider"><span>或对已入库未读做 AI 阅读</span></div>
-                <label>
-                  <span>AI 渠道</span>
-                  <select id="productAiChannel"></select>
-                </label>
-                <label class="check-row">
-                  <span>未读条数 N</span>
-                  <input id="productAiN" type="number" min="1" max="30" value="5">
-                </label>
-                <button class="glass-button full" id="productAiScanBtn" type="button">AI 深度阅读未读产品</button>
-              </form>
-
-              <form class="panel" id="productKeywordsForm">
-                <div class="panel-head">
-                  <div>
-                    <p class="micro">Discovery</p>
-                    <h3>产品关键词</h3>
-                  </div>
-                  <button class="text-button" type="submit">保存</button>
-                </div>
-                <textarea id="productKeywords" rows="8" placeholder="关键词 | 判断查询"></textarea>
-              </form>
-            </aside>
+            <div class="workflow-toolbar">
+              <div>
+                <p class="micro">Decision Workbench</p>
+                <h3>产品处理台</h3>
+              </div>
+              <div class="workflow-toolbar-actions">
+                <button class="glass-button light" id="refreshCompetitorsBtn" type="button">刷新产品</button>
+                <button class="primary-button" type="button" data-open-scan-tools="product">扫描与 AI 阅读</button>
+                <button class="text-button" type="button" data-open-scan-tools="product">关键词管理</button>
+              </div>
+            </div>
 
             <section class="results-panel">
               <section class="latest-batch" id="latestBatchProduct" hidden>
@@ -310,12 +213,6 @@
                   <span>搜索</span>
                   <input id="competitorSearch" type="search" placeholder="名称、理由、快照">
                 </label>
-                <button class="glass-button light" id="refreshCompetitorsBtn" type="button">刷新产品</button>
-                <label class="check-row inline-check">
-                  <input id="productScanWithAi" type="checkbox" checked>
-                  <span>同步 AI 阅读</span>
-                </label>
-                <button class="primary-button" id="productBulkScanBtn" type="button">重扫所有已跟踪产品</button>
                 <label class="check-row inline-check">
                   <input id="competitorShowExcluded" type="checkbox">
                   <span>显示 AI 排除</span>
@@ -457,6 +354,161 @@
     <div class="prompt-export-actions">
       <button type="button" id="promptExportCancel" class="glass-button">关闭</button>
       <button type="button" id="promptExportCopy" class="primary-button" disabled>复制全部</button>
+    </div>
+  </dialog>
+
+  <dialog class="scan-tools-dialog" id="scanToolsDialog">
+    <div class="scan-tools-shell">
+      <div class="scan-tools-head">
+        <div>
+          <p class="micro" id="scanToolsKicker">Research tools</p>
+          <h3 id="scanToolsTitle">扫描与 AI 阅读</h3>
+          <p id="scanToolsDescription">这些是辅助维护工具，只在需要查看扫描状态、手动扫描或调整关键词时打开。</p>
+        </div>
+        <button class="dialog-close" id="scanToolsClose" type="button" aria-label="关闭">×</button>
+      </div>
+
+      <div class="scan-tools-body">
+        <section class="scan-tools-pane" data-scan-tools-kind="paper">
+          <div class="scan-status-card">
+            <div>
+              <p class="micro">Daily scan</p>
+              <h4>论文扫描状态</h4>
+            </div>
+            <span class="status-pill" id="paperScanPill">待加载</span>
+            <div class="schedule-mini" id="paperScheduleMini"></div>
+          </div>
+
+          <div class="scan-tools-grid">
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="micro">arXiv</p>
+                  <h4>论文扫描</h4>
+                </div>
+              </div>
+              <form id="arxivScanForm" class="stack-form">
+                <label>
+                  <span>查询语句</span>
+                  <textarea id="arxivQuery" rows="4" placeholder="留空使用已启用论文关键词"></textarea>
+                </label>
+                <label>
+                  <span>拉取条数</span>
+                  <input id="arxivMax" type="number" min="1" max="500" value="100">
+                </label>
+                <label class="check-row">
+                  <input id="scanCompetitorsAfterArxiv" type="checkbox">
+                  <span>扫描后同步刷新正式产品</span>
+                </label>
+                <label class="check-row">
+                  <input id="arxivScanWithAi" type="checkbox" checked>
+                  <span>扫描后追加 AI 深度阅读</span>
+                </label>
+                <label>
+                  <span>AI 渠道</span>
+                  <select id="paperAiChannel"></select>
+                </label>
+                <button class="primary-button full" type="submit">立即扫描论文</button>
+                <div class="ai-scan-divider"><span>或仅对未读做 AI 阅读</span></div>
+                <label class="check-row">
+                  <span>未读条数 N</span>
+                  <input id="paperAiN" type="number" min="1" max="50" value="10">
+                </label>
+                <button class="glass-button full" id="paperAiScanBtn" type="button">AI 深度阅读未读论文</button>
+              </form>
+            </div>
+
+            <form class="panel" id="paperKeywordsForm">
+              <div class="panel-head">
+                <div>
+                  <p class="micro">Keyword desk</p>
+                  <h4>论文关键词</h4>
+                </div>
+                <button class="text-button" type="submit">保存</button>
+              </div>
+              <textarea id="paperKeywords" rows="10" placeholder="关键词 | arXiv 查询表达式"></textarea>
+            </form>
+          </div>
+        </section>
+
+        <section class="scan-tools-pane" data-scan-tools-kind="product" hidden>
+          <div class="scan-status-card">
+            <div>
+              <p class="micro">Product scan</p>
+              <h4>产品扫描状态</h4>
+            </div>
+            <span class="status-pill" id="productScanPill">待加载</span>
+            <div class="schedule-mini" id="productScheduleMini"></div>
+          </div>
+
+          <div class="scan-tools-grid">
+            <form class="panel" id="productScanForm">
+              <div class="panel-head">
+                <div>
+                  <p class="micro">Product page</p>
+                  <h4>产品扫描</h4>
+                </div>
+              </div>
+              <label>
+                <span>产品页 URL</span>
+                <input id="productUrl" type="url" placeholder="留空走 Agent 智能发现">
+              </label>
+              <label>
+                <span>名称</span>
+                <input id="productName" type="text" maxlength="180" placeholder="留空读取页面标题">
+              </label>
+              <div class="form-grid">
+                <label>
+                  <span>类别</span>
+                  <select id="productCategory">
+                    <option value="office-agent">办公智能体</option>
+                    <option value="coding-agent">编码智能体</option>
+                    <option value="general-agent">通用智能体</option>
+                    <option value="workflow-agent">工作流智能体</option>
+                    <option value="personal-agent">个人助理</option>
+                    <option value="research-agent">研究智能体</option>
+                    <option value="other">其他</option>
+                  </select>
+                </label>
+                <label>
+                  <span>状态</span>
+                  <select id="productStatus">
+                    <option value="candidate">候选</option>
+                    <option value="official">已跟踪</option>
+                  </select>
+                </label>
+              </div>
+              <button class="primary-button full" type="submit">立即扫描产品</button>
+              <div class="ai-scan-divider"><span>或对已入库未读做 AI 阅读</span></div>
+              <label class="check-row">
+                <input id="productScanWithAi" type="checkbox" checked>
+                <span>重扫后同步 AI 阅读</span>
+              </label>
+              <button class="glass-button full" id="productBulkScanBtn" type="button">重扫所有已跟踪产品</button>
+              <label>
+                <span>AI 渠道</span>
+                <select id="productAiChannel"></select>
+              </label>
+              <label class="check-row">
+                <span>未读条数 N</span>
+                <input id="productAiN" type="number" min="1" max="30" value="5">
+              </label>
+              <button class="glass-button full" id="productAiScanBtn" type="button">AI 深度阅读未读产品</button>
+            </form>
+
+            <form class="panel" id="productKeywordsForm">
+              <div class="panel-head">
+                <div>
+                  <p class="micro">Discovery</p>
+                  <h4>产品关键词</h4>
+                </div>
+                <button class="text-button" type="submit">保存</button>
+              </div>
+              <textarea id="productKeywords" rows="10" placeholder="关键词 | 判断查询"></textarea>
+            </form>
+          </div>
+        </section>
+      </div>
     </div>
   </dialog>
 
