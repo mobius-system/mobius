@@ -255,6 +255,41 @@ function productFacts(item) {
   ];
 }
 
+function arxivIdFrom(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const match = text.match(/(?:arxiv:)?(\d{4}\.\d{4,5})(?:v\d+)?/i);
+  return match ? match[1] : '';
+}
+
+function paperAlphaXivUrl(item) {
+  const source = String(item?.source_url || '').trim();
+  if (source && /arxiv/i.test(source)) return source.replace(/arxiv/ig, 'alphaxiv');
+  const id = arxivIdFrom(item?.source_id || item?.paper_id || item?.id || source);
+  return id ? `https://www.alphaxiv.org/abs/${encodeURIComponent(id)}` : source;
+}
+
+function sourceUrlFor(kind, item) {
+  if (!item) return '';
+  if (kind === 'paper') return paperAlphaXivUrl(item);
+  return item.source_url || item.discovered_from_url || '';
+}
+
+function sourceLinkLabel(kind) {
+  return kind === 'paper' ? '打开 AlphaXiv' : '打开产品页';
+}
+
+function renderSourceLink(kind, item, extraClass = '') {
+  const url = sourceUrlFor(kind, item);
+  if (!url) return '';
+  return `
+    <a class="source-link ${escapeHtml(extraClass)}" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">
+      <span>${escapeHtml(sourceLinkLabel(kind))}</span>
+      <strong>${escapeHtml(sourceHost(url))}</strong>
+    </a>
+  `;
+}
+
 function splitAuthors(value) {
   return String(value || '')
     .split(';')
@@ -1340,7 +1375,7 @@ function renderPaperCard(item, options = {}) {
               <button type="button" data-paper-read="${escapeHtml(item.id)}">${isRead ? '设为未读' : '标记已读'}</button>
               <button type="button" data-paper-favorite="${escapeHtml(item.id)}">${local.favorite ? '取消收藏' : '收藏'}</button>
               <button type="button" data-paper-archive="${escapeHtml(item.id)}">${local.archived ? '取消归档' : '归档'}</button>
-              ${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">原文</a>` : ''}
+              ${sourceUrlFor('paper', item) ? `<a href="${escapeHtml(sourceUrlFor('paper', item))}" target="_blank" rel="noopener noreferrer">AlphaXiv</a>` : ''}
             </div>
             ${feedbackButtons(item)}
           </div>
@@ -1497,6 +1532,7 @@ function renderDecisionDetail(kind, item) {
           <span>${kind === 'product' ? '相关性' : '优先级'}</span>
         </aside>
       </header>
+      ${renderSourceLink(kind, item, 'decision-source-link')}
       ${renderFactGrid(facts, 'decision-facts')}
       <section class="decision-inspiration-section">
         <div class="detail-section-head">
@@ -1521,10 +1557,10 @@ function renderDecisionDetail(kind, item) {
                 <span class="decision-state">${escapeHtml(decisionStatusLabel(decision?.status))}</span>
               </article>
             `;
-          }).join('') : '<div class="quiet-empty">还没有启发点。可以运行 AI 深读，或在下方直接和 Agent 交流生成新启发。</div>'}
+          }).join('') : '<div class="quiet-empty">还没有启发点。请先点击下方 AI 深度分析，让 Agent 读取上下文后生成可处理结论。</div>'}
         </div>
       </section>
-      ${renderDetailChatSection(kind, item.id)}
+      ${renderDetailChatSection(kind, item.id, item)}
     </article>
   `;
 }
@@ -1567,7 +1603,7 @@ function renderDecisionActions(kind, item) {
         <div class="audit-row"><span>资料状态</span><strong>${escapeHtml(reviewStatusLabel(review))}</strong></div>
         <div class="audit-row"><span>启发数量</span><strong>${inspirations.length}</strong></div>
         <div class="audit-row"><span>AI 状态</span><strong>${escapeHtml(aiReadState(item).label)}</strong></div>
-        <div class="audit-row"><span>外部链接</span><strong>${item.source_url ? '可打开' : '无'}</strong></div>
+        <div class="audit-row"><span>外部链接</span><strong>${sourceUrlFor(kind, item) ? '可打开' : '无'}</strong></div>
       </div>
     </section>
   `;
@@ -2438,19 +2474,13 @@ function getDetailChat(kind, id) {
   if (!detailChats.has(key)) {
     detailChats.set(key, {
       loading: false,
-      messages: [{
-        role: 'assistant',
-        content: kind === 'product'
-          ? '我已读完这个产品的页面快照，可以问我关于定位、差异、可借鉴点等任何问题。'
-          : '我已读完这篇论文的摘要，可以问我关于方法、实验、结论等任何问题。',
-        time: new Date().toISOString(),
-      }],
+      messages: [],
     });
   }
   return detailChats.get(key);
 }
 
-function renderChatMessages(chat) {
+function renderChatMessages(chat, emptyText = '') {
   const rows = chat.messages.map((message) => {
     const toneClass = message.tone === 'error' ? 'is-error' : (message.tone === 'warn' ? 'is-warn' : '');
     const metaHtml = message.meta ? `<div class="detail-chat-meta">${escapeHtml(message.meta)}</div>` : '';
@@ -2469,23 +2499,51 @@ function renderChatMessages(chat) {
       </div>
     `);
   }
+  if (!rows.length && emptyText) {
+    rows.push(`<div class="detail-chat-placeholder">${escapeHtml(emptyText)}</div>`);
+  }
   return rows.join('');
 }
 
-function renderDetailChatSection(kind, id) {
+function renderDetailChatSection(kind, id, item = null) {
   const chat = getDetailChat(kind, id);
   const key = detailChatKey(kind, id);
+  const sourceLabel = kind === 'product' ? '这个产品' : '这篇论文';
+  const hasInspiration = sortedInspirations(item?.ai_inspiration).length > 0;
+  const isExcluded = isExcludedItem(item);
+  const shouldAnalyzeFirst = item && !hasInspiration && !isExcluded;
+  if (shouldAnalyzeFirst) {
+    const hasMessages = chat.messages.length > 0 || chat.loading;
+    return `
+      <section class="detail-chat detail-analysis-entry" aria-label="AI 深度分析">
+        <div class="detail-section-head">
+          <h3>让 AI 深度分析${sourceLabel}</h3>
+          <span>${chat.loading ? '分析中' : '待深读'}</span>
+        </div>
+        <div class="detail-analysis-cta">
+          <div>
+            <strong>尚未生成启发点</strong>
+            <p>先让 L2 Agent 阅读上下文、结合莫比乌斯代码现状判断可借鉴方向。分析完成后，这里会切换为追问入口。</p>
+          </div>
+          <button type="button" class="primary-button" data-detail-ai-analyze="${escapeHtml(kind)}" data-source-id="${escapeHtml(id)}" ${chat.loading ? 'disabled' : ''}>
+            ${chat.loading ? 'AI 分析中...' : 'AI 深度分析'}
+          </button>
+        </div>
+        ${hasMessages ? `<div class="detail-chat-messages" id="detailChatMessages" data-chat-messages="${escapeHtml(key)}" aria-live="polite">${renderChatMessages(chat)}</div>` : ''}
+      </section>
+    `;
+  }
   return `
     <section class="detail-chat" aria-label="AI 聊天区">
       <div class="detail-section-head">
-        <h3>向 AI 请教这${kind === 'product' ? '个产品' : '篇论文'}</h3>
+        <h3>向 AI 追问${sourceLabel}</h3>
         <span>${kind === 'product' ? 'Product context' : 'Paper context'}</span>
       </div>
       <div class="detail-chat-messages" id="detailChatMessages" data-chat-messages="${escapeHtml(key)}" aria-live="polite">
-        ${renderChatMessages(chat)}
+        ${renderChatMessages(chat, hasInspiration ? 'AI 深读已经生成启发点，可以继续追问定位、方法、实验、结论或可落地改造。' : '这条资料当前没有启发点。如果需要复核，可以先取消排除状态后重新分析。')}
       </div>
       <form class="detail-chat-form" data-chat-kind="${escapeHtml(kind)}" data-chat-id="${escapeHtml(id)}">
-        <textarea id="detailChatInput" rows="3" maxlength="1200" placeholder="输入你的问题，例如：这篇论文的核心方法是什么？"></textarea>
+        <textarea id="detailChatInput" rows="3" maxlength="1200" placeholder="${kind === 'product' ? '输入你的问题，例如：这个产品最值得借鉴的交互是什么？' : '输入你的问题，例如：这篇论文的核心方法是什么？'}"></textarea>
         <button id="detailChatSubmit" data-chat-submit="${escapeHtml(key)}" class="primary-button" type="submit" ${chat.loading ? 'disabled' : ''}>${chat.loading ? '发送中' : '发送'}</button>
       </form>
     </section>
@@ -2502,6 +2560,10 @@ function refreshDetailChat(kind, id) {
   document.querySelectorAll(`[data-chat-submit="${CSS.escape(key)}"]`).forEach((button) => {
     button.disabled = chat.loading;
     button.textContent = chat.loading ? '发送中' : '发送';
+  });
+  document.querySelectorAll(`[data-detail-ai-analyze="${CSS.escape(kind)}"][data-source-id="${CSS.escape(id)}"]`).forEach((button) => {
+    button.disabled = chat.loading;
+    button.textContent = chat.loading ? 'AI 分析中...' : 'AI 深度分析';
   });
 }
 
@@ -2577,7 +2639,7 @@ function renderDetailFocus(kind, item) {
   let body = kind === 'product'
     ? '当前产品还没有形成 AI 借鉴方向，只能看到页面快照和入库信息。'
     : '当前论文还没有形成 AI 借鉴方向，只能看到摘要、cluster 和关键词。';
-  let next = '下一步：运行 AI 深度阅读，或直接在右侧追问区让 Agent 先判断可借鉴点。';
+  let next = '下一步：点击 AI 深度分析，让 Agent 阅读上下文并生成可处理的启发点。';
   let tone = 'pending';
 
   if (isExcluded) {
@@ -2651,7 +2713,7 @@ function renderInspirationDetailBlock(rawInspiration, markExcluded, kind) {
       </div>
       <div class="detail-empty-state">
         <strong>还没有可执行结论</strong>
-        <p>尚未经过 L2 Agent 深度阅读。可以在追问区直接提问，或回到列表点 "AI 深度阅读"。</p>
+        <p>尚未经过 L2 Agent 深度阅读。可以点击 AI 深度分析，让 Agent 先生成可处理的启发点。</p>
       </div>
     </section>`;
   }
@@ -2763,6 +2825,7 @@ function renderDetailOverview(kind, item) {
 
 function renderDetailSourceBlock(kind, item) {
   if (kind === 'product') {
+    const sourceUrl = sourceUrlFor('product', item);
     return `
       <details class="detail-block source-block detail-archive">
         <summary>
@@ -2771,7 +2834,7 @@ function renderDetailSourceBlock(kind, item) {
         </summary>
         ${renderFactGrid(productFacts(item), 'detail-facts')}
         <div class="detail-field-list">
-          <p><strong>URL</strong><br>${escapeHtml(item.source_url || '无')}</p>
+          <p><strong>URL</strong><br>${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(sourceUrl)}</a>` : '无'}</p>
           ${item.discovered_from_url ? `<p><strong>发现来源</strong><br>${escapeHtml(item.discovered_from_url)}</p>` : ''}
           ${item.discovery_logic ? `<p><strong>发现逻辑</strong><br>${escapeHtml(item.discovery_logic)}</p>` : ''}
           ${item.note ? `<p><strong>标记备注</strong><br>${escapeHtml(item.note)}</p>` : ''}
@@ -2779,6 +2842,7 @@ function renderDetailSourceBlock(kind, item) {
       </details>
     `;
   }
+  const paperUrl = sourceUrlFor('paper', item);
   return `
     <details class="detail-block source-block detail-archive">
       <summary>
@@ -2792,7 +2856,7 @@ function renderDetailSourceBlock(kind, item) {
       ], 'detail-facts')}
       ${(item.cluster_keywords || []).length ? `<div class="tag-row field-tags">${item.cluster_keywords.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
       <div class="detail-field-list">
-        <p><strong>原文链接</strong><br>${escapeHtml(item.source_url || '无')}</p>
+        <p><strong>AlphaXiv 链接</strong><br>${paperUrl ? `<a href="${escapeHtml(paperUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(paperUrl)}</a>` : '无'}</p>
         ${item.note ? `<p><strong>标记备注</strong><br>${escapeHtml(item.note)}</p>` : ''}
       </div>
     </details>
@@ -2800,8 +2864,8 @@ function renderDetailSourceBlock(kind, item) {
 }
 
 function renderDetailQuickLinks(kind, item) {
-  const url = item.source_url || '';
-  const label = kind === 'product' ? '打开产品页' : '打开 arXiv';
+  const url = sourceUrlFor(kind, item);
+  const label = sourceLinkLabel(kind);
   return `
     <section class="detail-block detail-quick-links">
       <div class="detail-section-head">
@@ -2838,7 +2902,7 @@ function renderPaperDetail(id) {
         <aside class="detail-side-column">
           ${renderPaperDetailActions(item)}
           ${renderDetailQuickLinks('paper', item)}
-          ${renderDetailChatSection('paper', id)}
+          ${renderDetailChatSection('paper', id, item)}
         </aside>
       </div>
     </article>
@@ -2868,7 +2932,7 @@ function renderProductDetail(id) {
         <aside class="detail-side-column">
           ${renderProductDetailActions(item)}
           ${renderDetailQuickLinks('product', item)}
-          ${renderDetailChatSection('product', id)}
+          ${renderDetailChatSection('product', id, item)}
         </aside>
       </div>
     </article>
@@ -3052,6 +3116,134 @@ async function handleProductDetailAction(id, action) {
     renderCompetitors();
     updateRadarDiscoveries();
     rerenderOpenDetail('product', id);
+  }
+}
+
+function applyUpdatedPaper(updated) {
+  if (!updated) return null;
+  const normalized = normalizePaper(updated, updated.cluster_label || updated.cluster || '');
+  const items = Array.isArray(state.papers.items) ? state.papers.items : [];
+  const idx = items.findIndex((it) => it.id === normalized.id || it.source_id === normalized.id || it.source_id === normalized.source_id);
+  if (idx >= 0) state.papers.items[idx] = { ...items[idx], ...normalized };
+  else if (normalized.id) state.papers.items = [normalized, ...items];
+
+  const radar = Array.isArray(state.radarTopPicks) ? state.radarTopPicks : [];
+  const radarIdx = radar.findIndex((it) => it.id === normalized.id);
+  if (radarIdx >= 0) state.radarTopPicks[radarIdx] = { ...radar[radarIdx], ...normalized };
+
+  const top = Array.isArray(state.topPicks) ? state.topPicks : [];
+  const topIdx = top.findIndex((it) => it.id === normalized.id);
+  if (topIdx >= 0) state.topPicks[topIdx] = { ...top[topIdx], ...normalized };
+
+  for (const clusterKey of Object.keys(state.clusterPapers || {})) {
+    const arr = state.clusterPapers[clusterKey] || [];
+    const clusterIdx = arr.findIndex((it) => it.id === normalized.id || it.source_id === normalized.source_id);
+    if (clusterIdx >= 0) state.clusterPapers[clusterKey][clusterIdx] = { ...arr[clusterIdx], ...normalized };
+  }
+  return normalized;
+}
+
+function applyUpdatedProduct(updated) {
+  if (!updated) return null;
+  let replaced = false;
+  for (const bucket of ['official', 'candidate', 'archived']) {
+    const arr = state.competitors[bucket] || [];
+    const idx = arr.findIndex((it) => it.id === updated.id);
+    if (idx >= 0) {
+      state.competitors[bucket][idx] = { ...arr[idx], ...updated };
+      replaced = true;
+    }
+  }
+  if (!replaced && updated.id) {
+    const bucket = updated.status === 'official' ? 'official' : 'candidate';
+    state.competitors[bucket] = [updated, ...(state.competitors[bucket] || [])];
+  }
+  if (Array.isArray(state.products.items)) {
+    const idx = state.products.items.findIndex((it) => it.id === updated.id);
+    if (idx >= 0) state.products.items[idx] = { ...state.products.items[idx], ...updated };
+    else state.products.items = [updated, ...state.products.items];
+  }
+  return updated;
+}
+
+async function refreshSourceItem(kind, id) {
+  if (kind === 'paper') {
+    const fresh = await call({ action: 'get_paper', id });
+    return applyUpdatedPaper(fresh?.item);
+  }
+  const fresh = await call({ action: 'get_product', id });
+  return applyUpdatedProduct(fresh?.item);
+}
+
+function rerenderSourceViews(kind, id) {
+  if (kind === 'paper') renderPapers();
+  else renderCompetitors();
+  updateRadarDiscoveries?.();
+  rerenderOpenDetail(kind, id);
+  refreshDetailChat(kind, id);
+}
+
+async function runDetailAiAnalysis(kind, id) {
+  if (!['paper', 'product'].includes(kind) || !id) return;
+  const chat = getDetailChat(kind, id);
+  if (chat.loading) return;
+  const item = kind === 'paper' ? findPaperById(id) : findProductById(id);
+  if (isExcludedItem(item)) {
+    showToast('这条资料已排除，如需重新分析请先取消排除状态', 'bad');
+    return;
+  }
+
+  chat.loading = true;
+  rerenderSourceViews(kind, id);
+  try {
+    const result = await call({
+      action: kind === 'paper' ? 'ai_scan_arxiv' : 'ai_scan_products',
+      model_key: state.aiChannel[kind],
+      ids: [id],
+      scope_ids: [id],
+      limit: 1,
+      deep_read_backlog: false,
+      include_backlog: false,
+      backfill: false,
+    });
+    const updated = await refreshSourceItem(kind, id);
+    const row = (result.results || []).find((entry) => entry.id === id) || (result.results || [])[0] || null;
+    const inspirationCount = Number(row?.inspiration_count || sortedInspirations(updated?.ai_inspiration).length || 0);
+    const meta = [];
+    if (result.provider) meta.push(result.provider);
+    if (result.tokens?.input || result.tokens?.output) meta.push(`tokens in/out=${result.tokens.input}/${result.tokens.output}`);
+    let content = '';
+    let tone;
+    if (!Number(result.scanned || 0)) {
+      content = `这${kind === 'product' ? '个产品' : '篇论文'}没有进入本轮深度分析，可能已经分析过、已被排除，或不在待分析队列。`;
+      tone = 'warn';
+    } else if (inspirationCount > 0) {
+      content = `AI 深度分析完成，已生成 ${inspirationCount} 条启发点。现在可以继续追问细节，或在启发点列表里选择是否进入自进化。`;
+    } else {
+      content = `AI 已完成深度分析，但没有生成可落地启发点。可以换模型重试，或将这条资料手动排除。`;
+      tone = 'warn';
+    }
+    chat.messages.push({
+      role: 'assistant',
+      content,
+      meta: meta.join(' · '),
+      tone,
+      time: new Date().toISOString(),
+      model: result.model || '',
+    });
+    showToast(inspirationCount > 0 ? `AI 深度分析完成: ${inspirationCount} 条启发` : 'AI 深度分析完成，未生成启发');
+  } catch (error) {
+    const reason = error.message || 'AI 深度分析失败，请稍后再试';
+    chat.messages.push({
+      role: 'assistant',
+      content: `AI 深度分析失败：${reason}`,
+      tone: 'error',
+      time: new Date().toISOString(),
+    });
+    showToast(reason, 'bad');
+  } finally {
+    chat.loading = false;
+    rerenderSourceViews(kind, id);
   }
 }
 
@@ -3450,8 +3642,15 @@ function bindEvents() {
   $('detailDialog').addEventListener('click', (event) => {
     if (event.target === $('detailDialog')) $('detailDialog').close();
   });
-  $('detailDialog').addEventListener('submit', handleDetailChatSubmit);
+  document.addEventListener('submit', handleDetailChatSubmit);
   document.body.addEventListener('click', (event) => {
+    const detailAnalyze = event.target.closest('[data-detail-ai-analyze]');
+    if (detailAnalyze) {
+      event.preventDefault();
+      runDetailAiAnalysis(detailAnalyze.dataset.detailAiAnalyze, detailAnalyze.dataset.sourceId);
+      return;
+    }
+
     const openCluster = event.target.closest('[data-open-cluster]');
     if (openCluster) {
       const label = openCluster.dataset.openCluster;

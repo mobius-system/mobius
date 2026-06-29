@@ -193,7 +193,7 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- Hero ---------- */
 .hero {
-  min-height: 90vh;
+  min-height: 100vh;
   display: flex;
   align-items: center;
   padding: 7rem 1.5rem 5rem;
@@ -204,15 +204,30 @@ a { color: inherit; text-decoration: none; }
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(180deg, rgba(2,3,15,.55) 0%, rgba(2,3,15,.85) 100%),
-    url('https://upload.wikimedia.org/wikipedia/commons/thumb/9/97/MetLife_Stadium_%28cropped%29.jpg/1620px-MetLife_Stadium_%28cropped%29.jpg');
+    radial-gradient(circle at 18% 12%, rgba(34, 211, 238, .26), transparent 28rem),
+    radial-gradient(circle at 82% 18%, rgba(250, 204, 21, .18), transparent 24rem),
+    linear-gradient(180deg, rgba(2,3,15,.38) 0%, rgba(2,3,15,.9) 100%),
+    url('./assets/stadium-night.jpg');
   background-size: cover;
   background-position: center;
   z-index: 0;
+  transform: scale(1.02);
+}
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(180deg, rgba(0,0,0,.72), transparent 78%);
+  pointer-events: none;
 }
 .hero-inner {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   max-width: var(--max-w);
   margin: 0 auto;
   width: 100%;
@@ -252,6 +267,179 @@ a { color: inherit; text-decoration: none; }
   border-radius: var(--radius);
   padding: 1.5rem 2rem;
   max-width: 560px;
+}
+
+.hero-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .9rem;
+  width: min(760px, 100%);
+  margin-top: 1rem;
+}
+.hero-frame {
+  position: relative;
+  min-height: 168px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.1rem 1.15rem;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  background:
+    linear-gradient(180deg, rgba(2,3,15,.16), rgba(2,3,15,.82)),
+    var(--frame-image);
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 18px 46px rgba(0,0,0,.2);
+  transition: transform .4s var(--ease), box-shadow .4s var(--ease);
+}
+.hero-frame:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 26px 60px rgba(0,0,0,.32);
+}
+.hero-frame span,
+.hero-frame em {
+  display: block;
+  color: rgba(245,245,247,.72);
+  font-size: .72rem;
+  font-style: normal;
+}
+.hero-frame span {
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.hero-frame strong {
+  display: block;
+  margin-top: auto;
+  font-size: 1.08rem;
+  line-height: 1.15;
+}
+.hero-frame em {
+  margin-top: .3rem;
+}
+
+/* ---------- 热点看板 ---------- */
+.spotlight-section {
+  background:
+    radial-gradient(circle at 12% 12%, rgba(34, 211, 238, .12), transparent 24rem),
+    radial-gradient(circle at 88% 0%, rgba(250, 204, 21, .16), transparent 28rem),
+    linear-gradient(180deg, #fbfbfd 0%, #f1f4f9 100%);
+}
+.spotlight-grid {
+  display: grid;
+  grid-template-columns: 1.35fr .9fr;
+  grid-template-rows: repeat(2, minmax(220px, 1fr));
+  gap: 1rem;
+}
+.spotlight-card {
+  position: relative;
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: var(--radius);
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+  isolation: isolate;
+}
+.spotlight-card.is-featured {
+  grid-row: span 2;
+  min-height: 460px;
+}
+.spotlight-media {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background-image: var(--spotlight-image);
+  background-size: cover;
+  background-position: center;
+  transform: scale(1.03);
+}
+.spotlight-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(180deg, rgba(2,3,15,.06), rgba(2,3,15,.78)),
+    radial-gradient(circle at 16% 18%, rgba(34,211,238,.32), transparent 24rem);
+}
+.spotlight-copy {
+  position: absolute;
+  left: 1.35rem;
+  right: 1.35rem;
+  bottom: 1.3rem;
+  color: #fff;
+}
+.spotlight-copy span {
+  display: block;
+  margin-bottom: .55rem;
+  color: rgba(245,245,247,.72);
+  font-size: .72rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.spotlight-copy strong {
+  display: block;
+  font-size: clamp(1.5rem, 3.2vw, 3rem);
+  line-height: 1;
+  letter-spacing: -.03em;
+}
+.spotlight-copy p {
+  max-width: 46ch;
+  margin: .75rem 0 0;
+  color: rgba(245,245,247,.82);
+  line-height: 1.65;
+}
+.spotlight-card b {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px;
+  padding: .45rem .8rem;
+  color: #fff;
+  background: rgba(0,0,0,.22);
+  backdrop-filter: blur(16px);
+  font-size: .82rem;
+  font-variant-numeric: tabular-nums;
+}
+.city-filmstrip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(220px, 1fr);
+  gap: .8rem;
+  margin-top: 1rem;
+  overflow-x: auto;
+  padding-bottom: .25rem;
+}
+.city-frame {
+  min-height: 156px;
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  color: #fff;
+  background:
+    linear-gradient(180deg, rgba(2,3,15,.08), rgba(2,3,15,.78)),
+    var(--city-image);
+  background-size: cover;
+  background-position: center;
+  box-shadow: var(--shadow-soft);
+}
+.city-frame span,
+.city-frame em {
+  display: block;
+  color: rgba(245,245,247,.76);
+  font-size: .72rem;
+  font-style: normal;
+}
+.city-frame span {
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.city-frame strong {
+  display: block;
+  margin-top: 70px;
+  font-size: 1.05rem;
 }
 .focus-label {
   font-size: .72rem;
@@ -347,10 +535,12 @@ a { color: inherit; text-decoration: none; }
   gap: 1rem;
 }
 .fixture-card {
+  position: relative;
+  overflow: hidden;
   background: #fff;
   border: 1px solid rgba(0,0,0,.06);
   border-radius: var(--radius-sm);
-  padding: 1.2rem 1.4rem;
+  padding: 0;
   box-shadow: var(--shadow-soft);
   transition: transform .3s var(--ease), box-shadow .3s var(--ease);
 }
@@ -359,15 +549,50 @@ a { color: inherit; text-decoration: none; }
   box-shadow: 0 14px 50px rgba(0,0,0,.08);
 }
 .fixture-card.live {
-  border-left: 3px solid var(--live);
+  border-color: rgba(239, 68, 68, .28);
+  box-shadow: 0 20px 60px rgba(239,68,68,.12);
 }
 .fixture-card.done { opacity: .8; }
+.fixture-art {
+  position: relative;
+  min-height: 132px;
+  background:
+    linear-gradient(180deg, rgba(2,3,15,.05), rgba(2,3,15,.74)),
+    var(--match-image);
+  background-size: cover;
+  background-position: center;
+}
+.fixture-art::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--match-accent), rgba(250,204,21,.86));
+}
+.fixture-art span {
+  position: absolute;
+  left: 1rem;
+  bottom: .85rem;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 999px;
+  padding: .35rem .65rem;
+  color: #fff;
+  background: rgba(0,0,0,.32);
+  backdrop-filter: blur(14px);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .16em;
+}
+.fixture-card.live .fixture-art span {
+  color: #fff;
+  background: rgba(239,68,68,.82);
+}
 .fixture-stage {
   font-size: .72rem;
   letter-spacing: .15em;
   text-transform: uppercase;
   color: var(--muted-dark);
-  margin-bottom: .9rem;
+  margin: 1rem 1.2rem .9rem;
   font-weight: 500;
 }
 .fixture-match {
@@ -375,6 +600,7 @@ a { color: inherit; text-decoration: none; }
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 1rem;
+  padding: 0 1.2rem 1.2rem;
 }
 .fixture-team {
   display: flex;
@@ -514,10 +740,10 @@ a { color: inherit; text-decoration: none; }
 }
 .scorer-row {
   display: grid;
-  grid-template-columns: 38px 56px 1fr auto;
+  grid-template-columns: 44px 68px 1fr auto;
   align-items: center;
   gap: 1rem;
-  padding: 1rem 1.2rem;
+  padding: 1rem 1.2rem 1rem 1rem;
   background: #fff;
   border: 1px solid rgba(0,0,0,.06);
   border-radius: var(--radius-sm);
@@ -528,21 +754,38 @@ a { color: inherit; text-decoration: none; }
   box-shadow: var(--shadow-soft);
 }
 .scorer-rank {
-  font-size: 1.1rem;
+  font-size: 1.35rem;
   font-weight: 700;
-  color: var(--muted-dark);
+  color: var(--field);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
 .scorer-photo {
-  width: 56px; height: 56px;
-  border-radius: 50%;
+  position: relative;
+  width: 68px; height: 68px;
+  border-radius: 18px;
   background-size: cover;
   background-position: center top;
-  background-color: var(--bg-light-2);
+  background-color: #101827;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.24);
+}
+.scorer-initial {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: rgba(255,255,255,.96);
+  line-height: 1;
+  text-shadow: 0 3px 12px rgba(0,0,0,.45);
+}
+.scorer-flag {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  font-size: .9rem;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,.4));
 }
 .scorer-photo-empty {
   font-size: 1.2rem;
@@ -723,6 +966,7 @@ a.news-item:hover {
   gap: 1.2rem;
 }
 .player-card {
+  position: relative;
   background: #fff;
   border: 1px solid rgba(0,0,0,.06);
   border-radius: var(--radius-sm);
@@ -735,14 +979,58 @@ a.news-item:hover {
   box-shadow: 0 16px 50px rgba(0,0,0,.1);
 }
 .player-photo {
+  position: relative;
   width: 100%;
-  aspect-ratio: 4/3;
+  aspect-ratio: 4/3.4;
   background-size: cover;
   background-position: center top;
-  background-color: var(--bg-light-2);
+  background-color: #111827;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+}
+.player-photo::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 48%;
+  background: linear-gradient(180deg, transparent, rgba(0,0,0,.12));
+  pointer-events: none;
+}
+.player-initial {
+  position: relative;
+  z-index: 1;
+  font-size: clamp(3rem, 7vw, 4.4rem);
+  font-weight: 800;
+  letter-spacing: -.04em;
+  line-height: 1;
+  color: rgba(255,255,255,.96);
+  text-shadow: 0 6px 28px rgba(0,0,0,.45);
+}
+.player-flag {
+  position: absolute;
+  top: .65rem;
+  right: .8rem;
+  z-index: 1;
+  font-size: 1.7rem;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,.45));
+}
+.player-code {
+  position: absolute;
+  bottom: .7rem;
+  left: .85rem;
+  z-index: 1;
+  font-size: .76rem;
+  font-weight: 700;
+  letter-spacing: .18em;
+  color: rgba(255,255,255,.94);
+  padding: .25rem .55rem;
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 7px;
+  background: rgba(0,0,0,.28);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 .player-photo-empty {
   font-size: 2rem;
@@ -793,10 +1081,11 @@ a.news-item:hover {
 /* ---------- 球场 ---------- */
 .host-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1.2rem;
 }
 .host-card {
+  position: relative;
   background: rgba(255,255,255,.04);
   border: 1px solid rgba(255,255,255,.08);
   border-radius: var(--radius-sm);
@@ -805,16 +1094,22 @@ a.news-item:hover {
   flex-direction: column;
   transition: transform .3s var(--ease), border-color .3s var(--ease);
 }
+.host-card:first-child {
+  grid-column: span 2;
+}
 .host-card:hover {
   transform: translateY(-3px);
   border-color: rgba(255,255,255,.18);
 }
 .host-photo {
   width: 100%;
-  aspect-ratio: 16/10;
+  aspect-ratio: 16/11;
   background-size: cover;
   background-position: center;
   background-color: rgba(255,255,255,.05);
+}
+.host-card:first-child .host-photo {
+  aspect-ratio: 16/7.6;
 }
 .host-body {
   padding: 1.2rem 1.3rem 1.4rem;
@@ -892,6 +1187,47 @@ a.news-item:hover {
   margin: .5rem 0 0;
 }
 
+/* ---------- 动效与微交互 ---------- */
+@keyframes wc-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.55); }
+  50%      { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+}
+@keyframes wc-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .55; transform: scale(.85); }
+}
+@keyframes wc-drift {
+  0%   { transform: translate3d(0,0,0) scale(1.05); }
+  50%  { transform: translate3d(-1.5%,1%,0) scale(1.1); }
+  100% { transform: translate3d(0,0,0) scale(1.05); }
+}
+
+/* 焦点卡：悬停时图片缓慢推近 */
+.spotlight-card { transition: transform .4s var(--ease), box-shadow .4s var(--ease); }
+.spotlight-card:hover { transform: translateY(-4px); box-shadow: 0 30px 70px rgba(0,0,0,.16); }
+.spotlight-media { transition: transform .8s var(--ease); }
+.spotlight-card:hover .spotlight-media { transform: scale(1.08); }
+
+/* LIVE 进行中标记呼吸 */
+.fixture-card.live .fixture-art span { animation: wc-pulse 1.8s var(--ease) infinite; }
+.topnav-sync:not(.never):not(.degraded) .dot { animation: wc-dot 2.2s ease-in-out infinite; }
+
+/* Hero 背景缓慢漂移，增强氛围 */
+.hero-bg { animation: wc-drift 26s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-bg,
+  .fixture-card.live .fixture-art span,
+  .topnav-sync .dot { animation: none !important; }
+}
+
+/* 城市胶片悬停推近 */
+.city-frame { transition: transform .4s var(--ease); }
+.city-frame:hover { transform: translateY(-3px); }
+
+/* 球场卡图片悬停推近 */
+.host-card .host-photo { transition: transform .6s var(--ease); }
+.host-card:hover .host-photo { transform: scale(1.05); }
+
 /* ---------- 响应式 ---------- */
 @media (max-width: 880px) {
   .section-padded { padding: 4rem 0; }
@@ -899,6 +1235,20 @@ a.news-item:hover {
   .topnav-links { gap: .9rem; font-size: .78rem; }
   .topnav-sync { display: none; }
   .hero { min-height: auto; padding: 6rem 1.2rem 3.5rem; }
+  .hero-gallery,
+  .spotlight-grid {
+    grid-template-columns: 1fr;
+  }
+  .spotlight-card.is-featured {
+    grid-row: auto;
+    min-height: 360px;
+  }
+  .host-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .host-card:first-child {
+    grid-column: span 2;
+  }
   .focus-match { gap: .9rem; }
   .team-code { font-size: 1.5rem; }
   .section-head { margin-bottom: 2rem; }
@@ -922,5 +1272,27 @@ a.news-item:hover {
   .hero-title { font-size: 2.2rem; }
   .focus-match { grid-template-columns: 1fr; text-align: center; }
   .focus-team:last-child { text-align: center; }
+  .hero-gallery {
+    grid-template-columns: 1fr;
+  }
+  .hero-frame {
+    min-height: 128px;
+  }
+  .spotlight-card,
+  .spotlight-card.is-featured {
+    min-height: 320px;
+  }
+  .city-filmstrip {
+    grid-auto-columns: 82%;
+  }
   .players-grid { grid-template-columns: repeat(2, 1fr); }
+  .host-grid {
+    grid-template-columns: 1fr;
+  }
+  .host-card:first-child {
+    grid-column: auto;
+  }
+  .fixture-art {
+    min-height: 112px;
+  }
 }
