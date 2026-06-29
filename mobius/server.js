@@ -98,6 +98,9 @@ const { router: tokenStreamProxyRouter } = require('./backend/routes/token-strea
 const extensionRegistry = require('./backend/services/extension-registry');
 
 app.use('/api/auth', authRoutes);
+// 微信式群聊: 用户列表 + 群(conversations). tsx 即时转译 .ts, 无同名 .js 故 require 解析到 .ts.
+app.use('/api/users', require('./backend/routes/users'));
+app.use('/api/conversations', require('./backend/routes/conversations'));
 app.use('/api/assistant', assistantRoutes);
 app.use('/api/tasks', tasksRoutes);
 app.use('/api/messages', messagesRoutes);

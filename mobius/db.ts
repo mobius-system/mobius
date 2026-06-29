@@ -1012,4 +1012,56 @@ function migrateProjectTodos() {
 }
 migrateProjectTodos();
 
+// ===== 群聊 (conversations) =====
+// 微信式混合群聊: 成员含真人用户(users) + 小莫/分身(sessions_v2 的 agent).
+// 与 user_groups(员工组织部门) 完全无关, 用 conversations 命名避免歧义.
+// 群不依赖 issue/workspace, 故独立于 sessions_v2 体系 (sessions_v2.scope_type 只有 issue/research).
+function migrateConversations() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        last_active TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_conversations_owner ON conversations(owner_id);
+
+      CREATE TABLE IF NOT EXISTS conversation_members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        member_type TEXT NOT NULL CHECK(member_type IN ('user','agent')),
+        member_id TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('owner','member')),
+        agent_session_id TEXT,
+        agent_owner_id TEXT,
+        joined_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        UNIQUE(conversation_id, member_type, member_id),
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_conv_members_member ON conversation_members(member_type, member_id);
+      CREATE INDEX IF NOT EXISTS idx_conv_members_conv ON conversation_members(conversation_id);
+
+      CREATE TABLE IF NOT EXISTS conversation_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        sender_id TEXT NOT NULL,
+        sender_type TEXT NOT NULL CHECK(sender_type IN ('user','agent')),
+        sender_name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        mention_targets TEXT,
+        source_agent_session TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_conv_messages_conv ON conversation_messages(conversation_id, id);
+    `);
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️  conversations 迁移失败:', e.message);
+  }
+}
+migrateConversations();
+
 export { db, DB_PATH };
