@@ -34,3 +34,7 @@ Mobius 是（据我们所知）全球首个**自进化**的开源智能体操作
 ### IV-自我进化能力
 
 - [简单自进化示例](self-evo-demo.md)
+
+### V-小技巧
+
+- [聊天输入小技巧](tutorial/14_chat_input_tips.md)

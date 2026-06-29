@@ -67,6 +67,8 @@ plugins:
             "Limit Model Call Frequency": 限制模型调用频率
             "IV. Mobius Self-Evolution": IV-自我进化能力
             "Simple Self-Evolution Example": 简单自进化示例
+            "V. Tips": V-小技巧
+            "Chat Input Tips": 聊天输入小技巧
         - locale: en
           name: English
           build: true
@@ -91,6 +93,8 @@ nav:
       - Limit Model Call Frequency: tutorial/11_limit_model_usage.md
   - 'IV. Mobius Self-Evolution':
       - Simple Self-Evolution Example: self-evo-demo.md
+  - 'V. Tips':
+      - Chat Input Tips: tutorial/14_chat_input_tips.md
 
 markdown_extensions:
   - admonition

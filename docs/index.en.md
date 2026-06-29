@@ -34,3 +34,7 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 ### IV. Mobius Self-Evolution
 
 - [Simple Self-Evolution Example](self-evo-demo.md)
+
+### V. Tips
+
+- [Chat Input Tips](tutorial/14_chat_input_tips.md)
