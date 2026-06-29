@@ -17,7 +17,7 @@ import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
-import { fetchGlobalDefaultModel } from '../services/global-default-model'
+import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ErrBanner, PathPickerModal } from './modals'
 import { ToggleSwitch } from './toggle-switch'
 import { SessionModelPicker } from './session-model-picker'
@@ -1082,14 +1082,14 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const [issueId, setIssueId] = useState(defaultIssueId || d.issueId || '')
   const [name, setName] = useState(d.name || '')
   const [desc, setDesc] = useState(d.desc || '')
-  // 模型默认值优先级 (对齐 NewSessionModal: modals.tsx): 用户残留草稿 > 项目级默认模型偏好 > 系统全局 'codex'.
-  // 后端创建 Session 时不回落项目 default_model (只回落全局 codex), 故模型默认完全靠前端预填.
-  // 顶栏快捷是"先选项目再建 Session", 项目在异步下拉里 → 用 effect 在项目确定后回落项目偏好;
-  // modelUserTouchedRef: 只记"用户本次是否手动改过模型". 注意不能因草稿 (d.model) 而初始 true —
-  //   顶栏草稿是全局的 (gc:new-session, 不绑 issue), 一旦 draftSave 写过 model 就会恒 true → effect 永不回落项目默认,
-  //   表现为"换了项目模型也不变" (即用户反馈的 bug). 故初始 false, 仅用户真正点选时才锁定.
-  const [model, setModel] = useState(d.model || GLOBAL_DEFAULT_MODEL)
+  // 模型默认值: 仅由 (当前 issue 上次所选 > 项目默认 > 全局默认) 三级决定.
+  // 不再从全局草稿 (gc:new-session) 读/写 model —— 那会把"上次所选"泄漏到其他 issue/项目/新项目.
+  // "当前 issue 上次所选"取自该 issue 最近一次 Session 的 model (session-selection-defaults 回传),
+  // 服务端按 issue 隔离, 不进任何跨作用域草稿.
+  // 切换 issue 时重置 modelUserTouchedRef, 让模型回到该 issue 的三级默认; 用户手动点选则锁定到下次切 issue.
+  const [model, setModel] = useState<string>(GLOBAL_DEFAULT_MODEL)
   const modelUserTouchedRef = useRef(false)
+  const [scopeLastModel, setScopeLastModel] = useState('')
   const [language, setLanguage] = useState<SessionLanguage>(d.language || 'zh')
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set(d.excluded_skills || []))
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set(d.excluded_memories || []))
@@ -1109,25 +1109,21 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const selectedProject = projects.list.find((p: any) => p.id === projectId)
   const selectedIssue = issues.list.find((i: any) => i.id === issueId)
 
-  // 项目确定/切换后, 若用户未手动改模型且无草稿 → 回落项目级默认模型偏好 (default_model).
-  // 对齐 NewSessionModal 的 defaultModel 优先级, 修复顶栏快捷"忽略项目模型设置".
+  // 项目级默认模型偏好 (default_model): 项目无偏好时为 null/''.
   const projectDefaultModel = selectedProject?.default_model
-  // 全局默认模型偏好 (管理中心-系统设置): 项目无默认时回落到这里, 再回落内置 'codex'.
+  // 全局默认模型偏好 (管理中心-系统设置): 末级兜底之前的一级.
   const [globalDefaultModel, setGlobalDefaultModel] = useState('')
   useEffect(() => {
     let alive = true
     fetchGlobalDefaultModel().then(v => { if (alive) setGlobalDefaultModel(v) })
     return () => { alive = false }
   }, [])
+  // 模型三级默认: 当前 issue 上次所选 > 项目默认 > 全局默认 > 内置 codex.
+  // 用户本次未手动改过才回落; 手动点选后锁定到下次切换 issue.
   useEffect(() => {
     if (modelUserTouchedRef.current) return
-    // 草稿/手动改过则不覆盖; 否则按 项目 default_model > 全局默认 > 内置默认 回落.
-    // 关键: 切到无 default_model 的项目时也要回落 (全局或内置默认), 否则上一个项目的模型会残留 (stale).
-    const next = (typeof projectDefaultModel === 'string' && projectDefaultModel.trim())
-      ? projectDefaultModel.trim()
-      : (globalDefaultModel || GLOBAL_DEFAULT_MODEL)
-    setModel(next)
-  }, [projectDefaultModel, globalDefaultModel])
+    setModel(resolveDefaultModelKey({ scopeLastModel, projectDefaultModel, globalDefaultModel, fallback: GLOBAL_DEFAULT_MODEL }))
+  }, [scopeLastModel, projectDefaultModel, globalDefaultModel])
 
   // Skill/Memory 全集: 选完 issue 后拉 context-preview (POST, 拿 sources) + session-selection-defaults (GET, 拿默认排除集).
   // 默认排除集沿用后端"同 Issue 最新 Session 继承 + 内置 Skill 默认排除"机制, 与 NewSessionModal goPreview 一致,
@@ -1135,7 +1131,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const [availSkills, setAvailSkills] = useState<PickItem[]>([])
   const [availMemories, setAvailMemories] = useState<PickItem[]>([])
   useEffect(() => {
-    if (!issueId) { setAvailSkills([]); setAvailMemories([]); return }
+    if (!issueId) { setAvailSkills([]); setAvailMemories([]); setScopeLastModel(''); return }
     let alive = true
     Promise.all([
       api(`/api/issues/${issueId}/context-preview`, { method: 'POST', body: JSON.stringify({ name: name || ' ', description: desc || ' ', excluded_skill_ids: [], excluded_memory_ids: [] }) }),
@@ -1146,6 +1142,8 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
       const memories = (p?.sources?.memories || []).map((m: any) => ({ id: m.id, name: m.name, description: m.description, scope: m.scope || 'project' }))
       setAvailSkills(skills)
       setAvailMemories(memories)
+      // 当前 issue 上次所选模型 (该 issue 最近一次 Session 的 model); 无历史则为空 → 由三级默认回落.
+      setScopeLastModel(typeof defaults?.model === 'string' ? defaults.model : '')
       const skillIds = new Set(skills.map((s: any) => s.id))
       const memIds = new Set(memories.map((m: any) => m.id))
       // 重开且用户此前已定稿勾选 → 沿用草稿快照; 否则 → 沿用后端默认选择机制.
@@ -1156,15 +1154,20 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
         setExcludedSkills(new Set((defaults?.excluded_skill_ids || []).filter((id: string) => skillIds.has(id))))
         setExcludedMemories(new Set((defaults?.excluded_memory_ids || []).filter((id: string) => memIds.has(id))))
       }
-    }).catch(() => { if (alive) { setAvailSkills([]); setAvailMemories([]) } })
+    }).catch(() => { if (alive) { setAvailSkills([]); setAvailMemories([]); setScopeLastModel('') } })
     return () => { alive = false }
     // 仅在 issueId 变化时拉全集; 勾选/改名不重拉.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issueId])
 
+  // 切换 issue: 清除用户上一次的手动模型选择, 让模型按该 issue 的三级默认重算.
+  useEffect(() => { modelUserTouchedRef.current = false }, [issueId])
+
   useEffect(() => {
-    draftSave(DRAFT_KEY, { projectId, issueId, name, desc, model, language, excluded_skills: Array.from(excludedSkills), excluded_memories: Array.from(excludedMemories), selection_ready: selectionReady }, { minChars: 0 })
-  }, [projectId, issueId, name, desc, model, language, excludedSkills, excludedMemories, selectionReady])
+    // 注意: 刻意不持久化 model —— 顶栏草稿是全局的 (不绑 issue), 写入 model 会把"上次所选"泄漏到
+    // 其他 issue/项目/新项目. 模型默认完全由 (当前 issue 上次所选 > 项目默认 > 全局默认) 即时计算.
+    draftSave(DRAFT_KEY, { projectId, issueId, name, desc, language, excluded_skills: Array.from(excludedSkills), excluded_memories: Array.from(excludedMemories), selection_ready: selectionReady }, { minChars: 0 })
+  }, [projectId, issueId, name, desc, language, excludedSkills, excludedMemories, selectionReady])
 
   const toggle = (set: Set<string>, id: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
     const n = new Set(set); n.has(id) ? n.delete(id) : n.add(id); setter(n)
@@ -1270,10 +1273,11 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const [role, setRole] = useState<'chief_researcher' | 'research_assistant'>(d.role || 'research_assistant')
   // 角色默认值 (对齐 NewSessionModal): 若该 Research 尚无 chief_researcher 且用户未手动选过角色(也无草稿) → 默认首席.
   const roleUserTouchedRef = useRef(!!d.role)
-  // 模型默认值: 项目级默认模型偏好 > 全局 'codex' (同 CreateSessionForm, 对齐 NewSessionModal).
-  // modelUserTouchedRef 初始 false (不因草稿锁死, 详见 CreateSessionForm 同名注释).
-  const [model, setModel] = useState(d.model || GLOBAL_DEFAULT_MODEL)
+  // 模型默认值: 仅由 (当前 research 上次所选 > 项目默认 > 全局默认) 三级决定 (同 CreateSessionForm).
+  // 不从全局草稿 (gc:new-research-agent) 读/写 model, 避免泄漏到其他 research/项目/新项目.
+  const [model, setModel] = useState<string>(GLOBAL_DEFAULT_MODEL)
   const modelUserTouchedRef = useRef(false)
+  const [scopeLastModel, setScopeLastModel] = useState('')
   const [language, setLanguage] = useState<SessionLanguage>(d.language || 'zh')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [loading, setLoading] = useState(false)
@@ -1290,23 +1294,20 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [])
   const selectedProject = projects.list.find((p: any) => p.id === projectId)
   const researchEnabled = !!selectedProject?.research_enabled
-  // 项目确定/切换后, 若用户未手动改模型且无草稿 → 回落项目级默认模型偏好 (default_model).
+  // 项目级默认模型偏好 (default_model).
   const projectDefaultModel = selectedProject?.default_model
-  // 全局默认模型偏好 (管理中心-系统设置): 项目无默认时回落到这里, 再回落内置 'codex'.
+  // 全局默认模型偏好 (管理中心-系统设置): 末级兜底之前的一级.
   const [globalDefaultModel, setGlobalDefaultModel] = useState('')
   useEffect(() => {
     let alive = true
     fetchGlobalDefaultModel().then(v => { if (alive) setGlobalDefaultModel(v) })
     return () => { alive = false }
   }, [])
+  // 模型三级默认: 当前 research 上次所选 > 项目默认 > 全局默认 > 内置 codex.
   useEffect(() => {
     if (modelUserTouchedRef.current) return
-    // 草稿/手动改过则不覆盖; 否则按 项目 default_model > 全局默认 > 内置默认 回落. 切到无 default_model 的项目也要回落 (全局或内置默认), 避免上一个项目的模型残留.
-    const next = (typeof projectDefaultModel === 'string' && projectDefaultModel.trim())
-      ? projectDefaultModel.trim()
-      : (globalDefaultModel || GLOBAL_DEFAULT_MODEL)
-    setModel(next)
-  }, [projectDefaultModel, globalDefaultModel])
+    setModel(resolveDefaultModelKey({ scopeLastModel, projectDefaultModel, globalDefaultModel, fallback: GLOBAL_DEFAULT_MODEL }))
+  }, [scopeLastModel, projectDefaultModel, globalDefaultModel])
   const researches = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/researches?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.researches || [])) : Promise.resolve([]), [projectId])
   const selectedResearch = researches.list.find((r: any) => r.id === researchId)
 
@@ -1320,7 +1321,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   // 选 research 后拉 agent-skills + context-preview 全集 + session-selection-defaults (默认排除集).
   // 默认排除集沿用后端"同 Research 最新 Session 继承 + 内置 Skill 默认排除"机制, 与 NewSessionModal 一致.
   useEffect(() => {
-    if (!researchId) { setAgentSkills([]); setAvailSkills([]); setAvailMemories([]); setChosenMainSkill(null); setExcludedSkills(new Set()); setExcludedMemories(new Set()); return }
+    if (!researchId) { setAgentSkills([]); setAvailSkills([]); setAvailMemories([]); setChosenMainSkill(null); setExcludedSkills(new Set()); setExcludedMemories(new Set()); setScopeLastModel(''); return }
     let alive = true
     Promise.all([
       api(`/api/researches/${researchId}/research-agent-skills`).catch(() => []),
@@ -1334,6 +1335,8 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
       setAgentSkills(agentSkillList)
       setAvailSkills(previewSkills)
       setAvailMemories(previewMemories)
+      // 当前 research 上次所选模型 (该 research 最近一次 Session 的 model); 无历史则空 → 三级默认回落.
+      setScopeLastModel(typeof defaults?.model === 'string' ? defaults.model : '')
       const skillIds = new Set(previewSkills.map((s: any) => s.id))
       const memIds = new Set(previewMemories.map((m: any) => m.id))
       setExcludedSkills(new Set((defaults?.excluded_skill_ids || []).filter((id: string) => skillIds.has(id))))
@@ -1343,6 +1346,9 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [researchId, role])
+
+  // 切换 research: 清除用户上一次的手动模型选择, 让模型按该 research 的三级默认重算.
+  useEffect(() => { modelUserTouchedRef.current = false }, [researchId])
 
   // 选 research 后: 拉现有 sessions 判断是否已有 chief_researcher, 若无且用户未手动选过角色 → 默认首席 (对齐 NewSessionModal).
   // 后端创建时若已有 chief 会 409; 这里前端预判, 避免提交才报错. 不依赖 role, 避免与上面 effect 循环.
@@ -1359,8 +1365,9 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   }, [researchId])
 
   useEffect(() => {
-    draftSave(DRAFT_KEY, { projectId, researchId, name, desc, role, model, language }, { minChars: 0 })
-  }, [projectId, researchId, name, desc, role, model, language])
+    // 刻意不持久化 model (全局草稿会泄漏, 详见 CreateSessionForm). 模型默认即时按三级链路计算.
+    draftSave(DRAFT_KEY, { projectId, researchId, name, desc, role, language }, { minChars: 0 })
+  }, [projectId, researchId, name, desc, role, language])
 
   // 主 Skill 关联锁定 / 冲突互斥 (复用 NewSessionModal 的 normalizeSkillExclusions 思路)
   const isMainSkill = useCallback((id: string) => !!chosenMainSkill && chosenMainSkill.id === id, [chosenMainSkill])

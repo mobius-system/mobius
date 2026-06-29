@@ -51,6 +51,7 @@ interface SessionListRow {
 interface ReusableSelectionRow {
   session_id: string;
   name: string;
+  model: string | null;
   created_at: string;
   last_active: string;
   session_excluded_skills: string | null;
@@ -162,7 +163,7 @@ const Sessions = {
   findChiefForResearch: (researchId: string): SessionRow | undefined => db.prepare("SELECT * FROM sessions_v2 WHERE research_id = ? AND scope_type = 'research' AND research_role = 'chief_researcher' LIMIT 1").get(researchId) as SessionRow | undefined,
 
   findLatestReusableSelectionForIssue: (issueId: string): ReusableSelectionRow | undefined => db.prepare(`
-    SELECT session_id, name, created_at, last_active,
+    SELECT session_id, name, model, created_at, last_active,
       session_excluded_skills, session_excluded_memories,
       session_selection_snapshot, session_selection_snapshot_at
     FROM sessions_v2
@@ -172,7 +173,7 @@ const Sessions = {
   `).get(issueId) as ReusableSelectionRow | undefined,
 
   findLatestReusableSelectionForResearch: (researchId: string): ReusableSelectionRow | undefined => db.prepare(`
-    SELECT session_id, name, created_at, last_active,
+    SELECT session_id, name, model, created_at, last_active,
       session_excluded_skills, session_excluded_memories,
       session_selection_snapshot, session_selection_snapshot_at
     FROM sessions_v2

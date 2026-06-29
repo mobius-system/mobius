@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckCircle2, Loader2, Lock, Plus, Rocket, Trash2, Users, X, Sparkles, Layers } from 'lucide-react'
 import { api, useStore } from '../store'
+import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ErrBanner } from './modals'
 import { SCENE_KIND_OPTIONS, AVATAR_KIND_OPTIONS } from './research-agent-team-scene'
 import type { ResearchTeamSceneAgent, SceneKind, AvatarKind } from './research-agent-team-scene'
@@ -280,6 +281,8 @@ export function ResearchAgentTeamModal({
   const [err, setErr] = useState('')
   const [progress, setProgress] = useState<string[]>([])
   const [modelOptions, setModelOptions] = useState<SessionModelOption[]>(FALLBACK_MODEL_OPTIONS)
+  // 全局默认模型偏好 (管理中心-系统设置): 团队各 agent 默认模型的末级兜底之前一级.
+  const [globalDefaultModel, setGlobalDefaultModel] = useState('')
   const [agentSkills, setAgentSkills] = useState<AgentSkill[]>([])
   const [availableSkills, setAvailableSkills] = useState<SelectableItem[]>([])
   const [availableMemories, setAvailableMemories] = useState<SelectableItem[]>([])
@@ -292,6 +295,8 @@ export function ResearchAgentTeamModal({
   const [avatarKind, setAvatarKind] = useState<AvatarKind>('robot')
   const [selectionPanel, setSelectionPanel] = useState<SelectionPanel | null>(null)
   const initializedRef = useRef(false)
+  // load 期间按三级链路算出的默认模型, 供后续"添加 agent / 切换模式"复用, 保持一致.
+  const defaultModelRef = useRef('')
 
   const selectedAgent = useMemo(
     () => agents.find(agent => agent.id === editingTarget?.agentId) || agents[0] || null,
@@ -309,7 +314,7 @@ export function ResearchAgentTeamModal({
       setLoadingConfig(true)
       setErr('')
       try {
-        const [models, defaults, preview, skills] = await Promise.all([
+        const [models, defaults, preview, skills, globalDefault] = await Promise.all([
           api('/api/sessions/model-options').catch(() => FALLBACK_MODEL_OPTIONS),
           api(`/api/researches/${researchId}/session-selection-defaults`),
           api(`/api/researches/${researchId}/context-preview`, {
@@ -324,8 +329,10 @@ export function ResearchAgentTeamModal({
             }),
           }),
           api(`/api/researches/${researchId}/research-agent-skills`).catch(() => []),
+          fetchGlobalDefaultModel(),
         ])
         if (!alive) return
+        setGlobalDefaultModel(globalDefault || '')
         const nextModels = Array.isArray(models) && models.length > 0 ? models : FALLBACK_MODEL_OPTIONS
         const nextAgentSkills = Array.isArray(skills) ? skills : []
         const skillsAll = Array.isArray(preview?.sources?.skills) ? preview.sources.skills : []
@@ -344,7 +351,15 @@ export function ResearchAgentTeamModal({
         setAvailableMemories(memoriesAll)
         setDefaultExcludedSkillIds(defaultSkillEx)
         setDefaultExcludedMemoryIds(defaultMemoryEx)
-        const defaultModel = nextModels[0]?.key || DEFAULT_MODEL
+        // 团队默认模型同样走三级链路: 当前 research 上次所选 > 项目默认 > 全局默认 > 第一个可用 (兜底).
+        // defaults.model / defaults.project_default_model 由后端 session-selection-defaults 回传.
+        const defaultModel = resolveDefaultModelKey({
+          scopeLastModel: (defaults as any)?.model,
+          projectDefaultModel: (defaults as any)?.project_default_model,
+          globalDefaultModel,
+          fallback: nextModels[0]?.key || DEFAULT_MODEL,
+        })
+        defaultModelRef.current = defaultModel
         const initialAgents = buildInitialAgents({
           existingSessions,
           agentSkills: nextAgentSkills,
@@ -412,7 +427,7 @@ export function ResearchAgentTeamModal({
       role: 'research_assistant',
       name: `研究助理 ${index}`,
       purpose: '协助 chief 完成研究子任务，并把关键进展写回 Research Blackboard。',
-      model: modelOptions[0]?.key || DEFAULT_MODEL,
+      model: defaultModelRef.current || (modelOptions[0]?.key || DEFAULT_MODEL),
       language: 'zh',
       mainSkillId: '',
       excludedSkillIds: normalizeSkillExclusions(defaultExcludedSkillIds, '', agentSkills),
@@ -426,7 +441,7 @@ export function ResearchAgentTeamModal({
   const switchMode = (next: 'single' | 'team') => {
     if (next === mode || submitting) return
     setMode(next)
-    const defaultModelKey = modelOptions[0]?.key || DEFAULT_MODEL
+    const defaultModelKey = defaultModelRef.current || (modelOptions[0]?.key || DEFAULT_MODEL)
     if (next === 'single') {
       const unlocked = agents.filter(a => !a.locked)
       const keep = unlocked[0] || null
