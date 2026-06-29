@@ -840,6 +840,7 @@ function listAssistantSessions(user: any, limit: number): any[] {
         )
       )
       AND status = 'active'
+      AND session_key NOT LIKE 'group-mention:%'
     ORDER BY
       CASE
         WHEN name = ? THEN 0

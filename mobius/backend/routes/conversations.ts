@@ -9,6 +9,7 @@ import { db } from '../../db';
 import fs from 'fs';
 import agents from '../agents';
 import modelRegistry from '../services/model-registry';
+import { randomUUID } from 'crypto';
 
 const router = express.Router();
 
@@ -54,6 +55,21 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
   } catch (e) {
     const err = e as RepoError;
     res.status(err.status || 400).json({ error: err.message || '建群失败' });
+  }
+});
+
+// 发起/查找 1对1 私聊: POST /direct { member_id }. 1对1 = 恰好两个 user 成员的 conversation.
+router.post('/direct', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const otherId = String((req.body || {}).member_id || '').trim();
+  if (!otherId) { res.status(400).json({ error: 'member_id 不能为空' }); return; }
+  if (otherId === user.id) { res.status(400).json({ error: '不能和自己私聊' }); return; }
+  try {
+    const conv = Conversations.findOrCreateDirect(user.id, otherId, user.display_name || user.id);
+    res.json({ id: conv.id, name: conv.name });
+  } catch (e) {
+    const err = e as RepoError;
+    res.status(err.status || 400).json({ error: err.message || '创建私聊失败' });
   }
 });
 
@@ -145,12 +161,28 @@ async function triggerAgentMentions(params: {
     if (!ownerId) continue;
     const ownerUser = Users.findAuthById(ownerId);
     if (!ownerUser) continue;
+    // 用临时分身执行(不污染主小莫 1对1 历史). 分身复用主小莫的 issue/project/model 配置.
+    const agentSess = Sessions.findById(agentSessionId) as any;
+    if (!agentSess) continue;
+    const cloneId = `gm${randomUUID().slice(0, 8)}`;
     const taskPrompt = `（群聊「${params.conversationName}」中 ${params.senderName} @你，请处理并给出简洁结果）\n${params.rawContent}`;
-    const baselineLines = readJsonlLineCount(agentSessionId);
     try {
+      Sessions.insert({
+        session_id: cloneId,
+        issue_id: agentSess.issue_id,
+        project_id: agentSess.project_id,
+        scope_type: 'issue',
+        user_id: ownerId,
+        name: `${member.display_name}·群聊任务`,
+        description: `群聊「${params.conversationName}」@任务`,
+        session_key: `group-mention:${agentSessionId}:${cloneId}`,
+        model: agentSess.model,
+        language: agentSess.language || 'zh',
+      } as any);
+      const baselineLines = readJsonlLineCount(cloneId);
       await runSessionMessage({
         user: ownerUser,
-        sessionId: agentSessionId,
+        sessionId: cloneId,
         content: taskPrompt,
         inputText: taskPrompt,
         hasInputText: true,
@@ -158,7 +190,7 @@ async function triggerAgentMentions(params: {
       } as any);
       watchAgentReply({
         conversationId: params.conversationId,
-        agentSessionId,
+        agentSessionId: cloneId,
         agentDisplayName: member.display_name,
         baselineLines,
       });

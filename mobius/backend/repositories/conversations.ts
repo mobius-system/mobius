@@ -135,6 +135,27 @@ const Conversations = {
     `).all(userId) as Array<Record<string, unknown>>;
   },
 
+  // 查找或创建 1对1 私聊(恰好两个 user 成员, 无 agent).
+  findOrCreateDirect(userA: string, userB: string, userAName: string): { id: string; name: string } {
+    const row = db.prepare(`
+      SELECT conversation_id FROM conversation_members
+      WHERE member_type = 'user' AND member_id = ?
+        AND conversation_id IN (
+          SELECT conversation_id FROM conversation_members WHERE member_type = 'user' AND member_id = ?
+        )
+        AND conversation_id IN (
+          SELECT conversation_id FROM conversation_members GROUP BY conversation_id HAVING COUNT(*) = 2
+        )
+      LIMIT 1
+    `).get(userA, userB) as { conversation_id?: string } | undefined;
+    if (row?.conversation_id) {
+      const c = db.prepare('SELECT name FROM conversations WHERE id = ?').get(row.conversation_id) as { name?: string } | undefined;
+      return { id: row.conversation_id, name: c?.name || '聊天' };
+    }
+    const otherName = (db.prepare('SELECT display_name FROM users WHERE id = ?').get(userB) as { display_name?: string } | undefined)?.display_name || userB;
+    return Conversations.create({ name: otherName, ownerId: userA, ownerName: userAName, members: [{ type: 'user', id: userB }] });
+  },
+
   findById(id: string): Record<string, unknown> | undefined {
     return db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as Record<string, unknown> | undefined;
   },
