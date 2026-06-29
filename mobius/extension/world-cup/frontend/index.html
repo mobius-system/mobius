@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>2026 世界杯 · 赛程 / 积分 / 新闻</title>
-  <meta name="description" content="2026 FIFA 世界杯内容聚合：赛程、积分榜、射手榜、新闻、球员、球场，每 30 分钟自动同步公开 RSS。" />
+  <title>2026 世界杯 · 赛程 / 热点 / 新闻</title>
+  <meta name="description" content="2026 FIFA 世界杯视觉内容站：赛程、热点、积分榜、射手榜、新闻、球员、球场，每 30 分钟自动同步公开 RSS。" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -30,6 +30,7 @@
     </a>
     <ul class="topnav-links">
       <li><a href="#fixtures">赛程</a></li>
+      <li><a href="#spotlight">热点</a></li>
       <li><a href="#standings">积分</a></li>
       <li><a href="#scorers">射手榜</a></li>
       <li><a href="#news">新闻</a></li>
@@ -70,8 +71,26 @@
           </div>
         </div>
       </div>
+
+      <div class="hero-gallery reveal" id="hero-gallery" aria-label="世界杯视觉焦点"></div>
     </div>
   </header>
+
+  <!-- 热点 Spotlight -->
+  <section class="section section-light section-padded spotlight-section" id="spotlight">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <p class="kicker reveal">SPOTLIGHT · 热点</p>
+          <h2 class="display small reveal">今天该看什么</h2>
+          <p class="lead reveal">不是做一张信息表，而是把赛程、城市、球星和现场氛围揉成一个能扫、能点、能被图片吸住的世界杯首页。</p>
+        </div>
+      </div>
+
+      <div class="spotlight-grid reveal" id="spotlight-grid"></div>
+      <div class="city-filmstrip reveal" id="city-filmstrip" aria-label="主办城市胶片"></div>
+    </div>
+  </section>
 
   <!-- 赛程 Fixtures -->
   <section class="section section-light section-padded" id="fixtures">
@@ -199,7 +218,7 @@
       <p class="footer-tagline">赛程 · 积分 · 射手 · 新闻 · 球员 · 球场 · 每 30 分钟自动同步</p>
       <p class="footer-sources" id="footer-sources">
         数据来源：BBC Sport · The Guardian · Sky Sports · ESPN（公开 RSS，仅作标题/摘要导览，原文版权归原作者所有）<br />
-        图像素材：Wikimedia Commons（CC / 公有领域，已标注来源与许可）
+        图像素材：球场 / 赛事氛围图为本地缓存，球员与射手形象为按国家队配色生成的示意形象（非真实照片）
       </p>
       <p class="footer-copy">© 2026 World Cup Hub · Demo project · 原文与图像版权归原作者所有</p>
     </div>

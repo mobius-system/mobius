@@ -150,6 +150,12 @@ const CONTEXT_COMPACTED_THEME = { ...START_PY_THEME, label: 'ctx·compact' }
 // 让 stop_reason:"end_turn" 的卡片在长列表中和轮次耗时卡片一样容易扫到.
 const ASSISTANT_END_TURN_THEME = { ...TYPE_THEME.system, label: 'end_turn' }
 
+// 特例: user 消息里的 Claude Code compact 完成信号
+// (content 被 <local-command-stdout> ... </local-command-stdout> 包裹, 正文以 "Compacted" 开头).
+// 这是一次对话上下文压缩完成的产物, 套了 user 外壳但不是人类提问.
+// 复用 system/turn_duration 的 amber gold 主题, 与 stop_reason:"end_turn" 金色卡片风格统一.
+const COMPACT_DONE_THEME = { ...TYPE_THEME.system, label: 'compacted' }
+
 // 特例: assistant 响应文本命中这些关键词时整卡复用 gold 主题.
 // 只检查 assistant 文本响应, 不把 tool_use/input.command 当作本规则的命中范围.
 const ASSISTANT_RESPONSE_GOLD_KEYWORDS = ['根因', 'start.py']
@@ -627,6 +633,29 @@ function isContextCompactedEvent(entry: AnyEntry): boolean {
 
 function isAssistantEndTurnEntry(entry: AnyEntry): boolean {
   return entry?.type === 'assistant' && entry?.message?.stop_reason === 'end_turn'
+}
+
+// compact 完成信号: Claude Code 的 /compact 命令完成后写入的一条 user 消息,
+// content 被 <local-command-stdout> ... </local-command-stdout> 包裹, 正文以 "Compacted" 开头.
+// 原始 content 含 < > 尖括号与可能的控制字符, 渲染时必须走特例干净文案, 不能把标签原文显示成乱码.
+const COMPACT_DONE_PATTERN = /<local-command-stdout>\s*(Compacted[\s\S]*?)<\/local-command-stdout>/i
+
+// 从 user 消息抽取 compact 完成信号正文; 非命中返回 null. 兼容 content 为字符串或含 text 块的数组.
+function extractCompactDone(entry: AnyEntry): string | null {
+  if (entry?.type !== 'user') return null
+  const c = entry?.message?.content
+  const text = typeof c === 'string'
+    ? c
+    : Array.isArray(c)
+      ? c.map((b: any) => (typeof b === 'string' ? b : (b?.text ?? ''))).join('\n')
+      : ''
+  if (!text) return null
+  const match = text.match(COMPACT_DONE_PATTERN)
+  return match ? match[1].trim() : null
+}
+
+function isCompactDoneEntry(entry: AnyEntry): boolean {
+  return extractCompactDone(entry) !== null
 }
 
 function assistantResponseText(content: any): string {
@@ -1563,10 +1592,12 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
-  // 配色优先级: blackboard 相关 (最醒目) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
+  // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
   // start.py 必须排在 Bash 之前: 它本身也是 Bash, 但语义更具体, 不能被 cyan 普通主题盖掉.
   const theme = isBlackboard
     ? BLACKBOARD_THEME
+    : isCompactDoneEntry(entry)
+    ? COMPACT_DONE_THEME
     : isAssistantEndTurnEntry(entry)
     ? ASSISTANT_END_TURN_THEME
     : isAssistantResponseGoldKeyword(entry)
@@ -1938,6 +1969,8 @@ function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
   }
 
   if (t === 'user') {
+    // compact 完成信号: 展示干净的核心文案, 不暴露原始 <local-command-stdout> 标签 (避免乱码).
+    if (extractCompactDone(entry)) return clip('已压缩对话 · Compacted', HEADER_SHORT_LIMIT)
     const c = msg?.content
     if (typeof c === 'string') return clip(c, HEADER_SHORT_LIMIT)
     if (Array.isArray(c)) {

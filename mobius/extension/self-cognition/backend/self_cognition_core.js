@@ -28,6 +28,18 @@ const path = require("path"), fs = require("fs"), os = require("os"), crypto = r
   }
 }, j = e => JSON.stringify([ ...new Set((Array.isArray(e) ? e : String(e || "").split(/[,，;；\n]+/)).map(e => txt(e, 60)).filter(Boolean)) ].slice(0, 20));
 
+function extensionBridge() {
+  try {
+    return require("../../../backend/services/extension-agent-bridge");
+  } catch (firstErr) {
+    try {
+      return require("../../../backend/services/extension-agent-bridge.ts");
+    } catch {
+      throw firstErr;
+    }
+  }
+}
+
 function url(e) {
   const t = new URL(txt(e, 800));
   if (!/^https?:$/.test(t.protocol)) throw new Error("source_url 必须是 http(s) URL");
@@ -51,6 +63,7 @@ function init(e) {
   e.exec("\n    CREATE TABLE IF NOT EXISTS keywords (id TEXT PRIMARY KEY, scope TEXT NOT NULL, keyword TEXT NOT NULL, query TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(scope, keyword));\n    CREATE TABLE IF NOT EXISTS arxiv_items (id TEXT PRIMARY KEY, title TEXT NOT NULL, source_url TEXT NOT NULL, source_id TEXT NOT NULL DEFAULT '', authors TEXT NOT NULL DEFAULT '', published_at TEXT, updated_arxiv_at TEXT, abstract TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '[]', matched_keywords TEXT NOT NULL DEFAULT '[]', relevance INTEGER NOT NULL DEFAULT 0, cluster_label TEXT NOT NULL DEFAULT '', priority_score REAL NOT NULL DEFAULT 0, cluster_keywords TEXT NOT NULL DEFAULT '[]', citations INTEGER NOT NULL DEFAULT 0, mark TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', auto_fetched INTEGER NOT NULL DEFAULT 1, fetched_at TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n    CREATE UNIQUE INDEX IF NOT EXISTS idx_arxiv_source_id ON arxiv_items(source_id) WHERE source_id != '';\n    CREATE TABLE IF NOT EXISTS product_research (id TEXT PRIMARY KEY, name TEXT NOT NULL, source_url TEXT NOT NULL, normalized_url TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'candidate', category TEXT NOT NULL DEFAULT 'other', relevance INTEGER NOT NULL DEFAULT 3, tags TEXT NOT NULL DEFAULT '[]', aliases TEXT NOT NULL DEFAULT '[]', reason TEXT NOT NULL DEFAULT '', discovery_logic TEXT NOT NULL DEFAULT '', discovered_from_url TEXT NOT NULL DEFAULT '', fetched_title TEXT NOT NULL DEFAULT '', fetched_description TEXT NOT NULL DEFAULT '', mark TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', last_scanned_at TEXT, auto_discovered INTEGER NOT NULL DEFAULT 0, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n    CREATE TABLE IF NOT EXISTS scan_runs (id TEXT PRIMARY KEY, scan_type TEXT NOT NULL, query TEXT NOT NULL DEFAULT '', source_url TEXT NOT NULL DEFAULT '', max_results INTEGER NOT NULL DEFAULT 0, inserted INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL DEFAULT 0, skipped INTEGER NOT NULL DEFAULT 0, candidates_added INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL, created_at TEXT NOT NULL);\n    CREATE TABLE IF NOT EXISTS install_state (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL);\n    CREATE TABLE IF NOT EXISTS user_feedback (id TEXT PRIMARY KEY, paper_id TEXT NOT NULL, verdict TEXT NOT NULL CHECK(verdict IN ('boost','neutral','exclude')), note TEXT, created_at TEXT NOT NULL, source_session TEXT);\n    CREATE TABLE IF NOT EXISTS keyword_weights (keyword TEXT PRIMARY KEY, weight REAL NOT NULL, updated_at TEXT NOT NULL);\n  ");
   e.exec("\n    CREATE TABLE IF NOT EXISTS evolution_events (id TEXT PRIMARY KEY, level TEXT NOT NULL CHECK(level IN ('L1','L2','L3')), source TEXT NOT NULL, status TEXT NOT NULL, project_id TEXT, issue_id TEXT, session_id TEXT, commit_sha TEXT, version TEXT, summary TEXT NOT NULL, diff_summary TEXT, files_changed TEXT, proposed_by TEXT, approved_by TEXT, approved_at TEXT, created_at TEXT NOT NULL, promoted_from TEXT);\n    CREATE INDEX IF NOT EXISTS idx_evolution_level_status ON evolution_events(level,status,created_at);\n    CREATE INDEX IF NOT EXISTS idx_evolution_project ON evolution_events(project_id,created_at);\n  ");
   e.exec("\n    CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('paper','product')), scope_ids TEXT NOT NULL DEFAULT '[]', model_key TEXT NOT NULL, model_label TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'running', summary TEXT NOT NULL DEFAULT '', prompt_for_xiaomo TEXT NOT NULL DEFAULT '', token_usage TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n    CREATE INDEX IF NOT EXISTS idx_agent_runs_kind_created ON agent_runs(kind, created_at);\n    CREATE TABLE IF NOT EXISTS agent_messages (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', tool_calls TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);\n    CREATE INDEX IF NOT EXISTS idx_agent_messages_run ON agent_messages(run_id, created_at);\n  ");
+  e.exec("\n    CREATE TABLE IF NOT EXISTS source_reviews (source_kind TEXT NOT NULL CHECK(source_kind IN ('paper','product')), source_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'deferred' CHECK(status IN ('resolved','deferred','excluded')), note TEXT NOT NULL DEFAULT '', decided_by TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(source_kind, source_id));\n    CREATE INDEX IF NOT EXISTS idx_source_reviews_status ON source_reviews(source_kind,status,updated_at);\n    CREATE TABLE IF NOT EXISTS inspiration_decisions (id TEXT PRIMARY KEY, source_kind TEXT NOT NULL CHECK(source_kind IN ('paper','product')), source_id TEXT NOT NULL, inspiration_index INTEGER NOT NULL DEFAULT 0, inspiration_key TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', direction TEXT NOT NULL DEFAULT '', mobius_use TEXT NOT NULL DEFAULT '', priority TEXT NOT NULL DEFAULT 'medium', status TEXT NOT NULL DEFAULT 'accepted' CHECK(status IN ('candidate','accepted','rejected','deferred','queued_one_click','queued_plan','deleted')), source_snapshot TEXT NOT NULL DEFAULT '', chat_snapshot TEXT NOT NULL DEFAULT '', implementation_mode TEXT NOT NULL DEFAULT '', implementation_prompt TEXT NOT NULL DEFAULT '', implementation_session_id TEXT NOT NULL DEFAULT '', implementation_url TEXT NOT NULL DEFAULT '', decided_by TEXT NOT NULL DEFAULT '', decided_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(source_kind, source_id, inspiration_key));\n    CREATE INDEX IF NOT EXISTS idx_inspiration_decisions_queue ON inspiration_decisions(status,updated_at);\n    CREATE INDEX IF NOT EXISTS idx_inspiration_decisions_source ON inspiration_decisions(source_kind,source_id);\n  ");
   for (const [t, r, a] of [ [ "arxiv_items", "mark", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "note", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "cluster_label", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "priority_score", "REAL NOT NULL DEFAULT 0" ], [ "arxiv_items", "cluster_keywords", "TEXT NOT NULL DEFAULT '[]'" ], [ "arxiv_items", "citations", "INTEGER NOT NULL DEFAULT 0" ], [ "arxiv_items", "ai_inspiration", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "read_at", "TEXT" ], [ "product_research", "normalized_url", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "aliases", "TEXT NOT NULL DEFAULT '[]'" ], [ "product_research", "reason", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "discovery_logic", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "discovered_from_url", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "mark", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "note", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "last_scanned_at", "TEXT" ], [ "product_research", "auto_discovered", "INTEGER NOT NULL DEFAULT 0" ], [ "product_research", "ai_inspiration", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "read_at", "TEXT" ], [ "scan_runs", "scan_type", "TEXT NOT NULL DEFAULT 'arxiv'" ], [ "scan_runs", "source_url", "TEXT NOT NULL DEFAULT ''" ], [ "scan_runs", "updated", "INTEGER NOT NULL DEFAULT 0" ], [ "scan_runs", "candidates_added", "INTEGER NOT NULL DEFAULT 0" ] ]) e.prepare(`PRAGMA table_info(${t})`).all().some(e => e.name === r) || e.exec(`ALTER TABLE ${t} ADD COLUMN ${r} ${a}`);
   e.exec("UPDATE product_research SET normalized_url=source_url WHERE normalized_url=''; UPDATE product_research SET status='tracked' WHERE status='official'; UPDATE product_research SET status='candidate' WHERE status NOT IN ('tracked','candidate','archived'); CREATE UNIQUE INDEX IF NOT EXISTS idx_product_research_normalized_url ON product_research(normalized_url); CREATE UNIQUE INDEX IF NOT EXISTS idx_arxiv_source_id_full ON arxiv_items(source_id);");
   const t = now(), r = e.prepare("INSERT OR IGNORE INTO keywords VALUES (@id,@scope,@keyword,@query,1,@sort_order,@created_at,@updated_at)");
@@ -833,6 +846,277 @@ function markPaperRead(e, id, read) {
 function markProductRead(e, id, read) {
   const stamp = read ? now() : null;
   e.prepare("UPDATE product_research SET read_at=?,updated_at=? WHERE id=?").run(stamp, stamp || now(), id);
+}
+
+function sourceReviewRow(e, kind, sourceId) {
+  return e.prepare("SELECT * FROM source_reviews WHERE source_kind=? AND source_id=?").get(kind, sourceId) || null;
+}
+
+function listSourceReviews(e) {
+  return e.prepare("SELECT * FROM source_reviews ORDER BY updated_at DESC").all();
+}
+
+function sourceReviewStatus(e, kind, sourceId, row) {
+  const review = sourceReviewRow(e, kind, sourceId);
+  if (review?.status) return review.status;
+  return row && isMarkExcluded(row.mark) ? "excluded" : "deferred";
+}
+
+function isMarkExcluded(mark) {
+  return ["excluded", "exclude"].includes(txt(mark, 40));
+}
+
+function resolveSource(e, kind, sourceId) {
+  if (kind === "paper") return e.prepare("SELECT * FROM arxiv_items WHERE id=? OR source_id=?").get(sourceId, sourceId) || null;
+  return e.prepare("SELECT * FROM product_research WHERE id=?").get(sourceId) || null;
+}
+
+function sourceTitle(kind, row) {
+  return txt(kind === "product" ? row?.name : row?.title, 240) || "未命名来源";
+}
+
+function sourceSnapshot(e, kind, sourceId) {
+  const row = resolveSource(e, kind, sourceId);
+  if (!row) return null;
+  return kind === "product" ? prodRow(row) : paperOut(row);
+}
+
+function setSourceReview(e, t, r) {
+  const kind = txt(t.kind || t.source_kind, 10) === "product" ? "product" : "paper";
+  const sourceId = txt(t.source_id || t.id, 120);
+  const status = txt(t.status, 20);
+  if (!sourceId) throw new Error("source_id 必填");
+  if (![ "resolved", "deferred", "excluded" ].includes(status)) throw new Error("status 必须是 resolved/deferred/excluded");
+  const row = resolveSource(e, kind, sourceId);
+  if (!row) throw new Error("来源不存在");
+  const stamp = now();
+  e.prepare("INSERT INTO source_reviews (source_kind,source_id,status,note,decided_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(source_kind,source_id) DO UPDATE SET status=excluded.status,note=excluded.note,decided_by=excluded.decided_by,updated_at=excluded.updated_at").run(kind, row.id, status, long(t.note, 3e3), txt(r, 80), stamp, stamp);
+  if (status === "excluded") {
+    if (kind === "paper") e.prepare("UPDATE arxiv_items SET mark='excluded',note=?,updated_at=? WHERE id=?").run(long(t.note || "用户裁决排除，不进入自进化", 3e3), stamp, row.id);
+    else e.prepare("UPDATE product_research SET mark='excluded',note=?,updated_at=? WHERE id=?").run(long(t.note || "用户裁决排除，不进入自进化", 3e3), stamp, row.id);
+  } else if (isMarkExcluded(row.mark)) {
+    if (kind === "paper") e.prepare("UPDATE arxiv_items SET mark='',note='',updated_at=? WHERE id=?").run(stamp, row.id);
+    else e.prepare("UPDATE product_research SET mark='',note='',updated_at=? WHERE id=?").run(stamp, row.id);
+  }
+  if (status === "resolved") {
+    addL2Event(e, {
+      source: "human_source_review",
+      summary: `资料已解决: ${sourceTitle(kind, row)}`,
+      diff_summary: `用户将该${kind === "product" ? "产品" : "论文"}移入收藏/已解决状态，不再占用待处理队列`,
+      files_changed: [ "source_reviews" ],
+      proposed_by: r
+    });
+  }
+  return sourceReviewRow(e, kind, row.id);
+}
+
+function inspirationKey(kind, sourceId, index, item) {
+  return txt(item?.id || item?.inspiration_id || item?.key, 160) || `${kind}:${sourceId}:${index}`;
+}
+
+function chatSnapshotForSource(e, kind, sourceId) {
+  const runs = e.prepare("SELECT * FROM agent_runs WHERE kind=? ORDER BY updated_at DESC,created_at DESC LIMIT 8").all(kind);
+  let run = null;
+  for (const candidate of runs) {
+    const ids = arr(candidate.scope_ids);
+    if (!ids.length || ids.includes(sourceId)) { run = candidate; break; }
+  }
+  run = run || runs[0] || null;
+  if (!run) return JSON.stringify({ run: null, messages: [] });
+  const messages = getAgentMessages(e, { run_id: run.id }).slice(-40);
+  return JSON.stringify({
+    run: {
+      id: run.id,
+      kind: run.kind,
+      model_key: run.model_key,
+      model_label: run.model_label,
+      summary: run.summary,
+      created_at: run.created_at,
+      updated_at: run.updated_at
+    },
+    messages
+  });
+}
+
+function sourceRowsForKind(e, kind) {
+  return kind === "product"
+    ? e.prepare("SELECT * FROM product_research").all().map(prodRow).filter(Boolean)
+    : e.prepare("SELECT * FROM arxiv_items").all().map(paperOut).filter(Boolean);
+}
+
+function sourceMap(e, kind) {
+  return new Map(sourceRowsForKind(e, kind).map(row => [ row.id, row ]));
+}
+
+function findInspirationForDecision(e, kind, sourceId, index, key) {
+  const row = resolveSource(e, kind, sourceId);
+  if (!row) throw new Error("来源不存在");
+  const list = parseStoredInspiration(row.ai_inspiration);
+  let idx = Number.isFinite(Number(index)) ? Number(index) : -1;
+  if (idx < 0 && key) idx = list.findIndex((item, i) => inspirationKey(kind, row.id, i, item) === key);
+  if (idx < 0 || idx >= list.length) throw new Error("启发点不存在或已变更");
+  const item = list[idx];
+  return { row, list, item, index: idx, key: inspirationKey(kind, row.id, idx, item) };
+}
+
+function upsertInspirationDecision(e, t, r) {
+  const kind = txt(t.kind || t.source_kind, 10) === "product" ? "product" : "paper";
+  const sourceId = txt(t.source_id || t.id, 120);
+  const status = txt(t.status, 20);
+  if (![ "accepted", "rejected" ].includes(status)) throw new Error("status 必须是 accepted/rejected");
+  const found = findInspirationForDecision(e, kind, sourceId, t.index, txt(t.inspiration_key, 180));
+  const stamp = now();
+  const decisionId = id("insp", `${kind}:${found.row.id}:${found.key}`);
+  const sourceJson = JSON.stringify(sourceSnapshot(e, kind, found.row.id) || {});
+  const chatJson = chatSnapshotForSource(e, kind, found.row.id);
+  const item = found.item;
+  e.prepare("INSERT INTO inspiration_decisions (id,source_kind,source_id,inspiration_index,inspiration_key,title,direction,mobius_use,priority,status,source_snapshot,chat_snapshot,implementation_mode,implementation_prompt,implementation_session_id,implementation_url,decided_by,decided_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source_kind,source_id,inspiration_key) DO UPDATE SET inspiration_index=excluded.inspiration_index,title=excluded.title,direction=excluded.direction,mobius_use=excluded.mobius_use,priority=excluded.priority,status=excluded.status,source_snapshot=excluded.source_snapshot,chat_snapshot=excluded.chat_snapshot,decided_by=excluded.decided_by,decided_at=excluded.decided_at,updated_at=excluded.updated_at").run(decisionId, kind, found.row.id, found.index, found.key, txt(item.title, 300), txt(item.direction, 1200), txt(item.mobius_use, 4000), txt(item.priority || "medium", 20), status, sourceJson, chatJson, "", "", "", "", txt(r, 80), stamp, stamp, stamp);
+  if (status === "accepted") {
+    addL2Event(e, {
+      source: "accepted_inspiration",
+      summary: `接受 L2 启发: ${txt(item.title || item.direction, 180)}`,
+      diff_summary: `${sourceTitle(kind, found.row)} → ${txt(item.mobius_use || item.direction, 200)}`,
+      files_changed: [ "inspiration_decisions" ],
+      proposed_by: r
+    });
+  }
+  return inspirationDecisionOut(e.prepare("SELECT * FROM inspiration_decisions WHERE id=?").get(decisionId), e);
+}
+
+function inspirationDecisionOut(row, e) {
+  if (!row) return null;
+  let source = null;
+  try { source = row.source_snapshot ? JSON.parse(row.source_snapshot) : null; } catch {}
+  let chat = null;
+  try { chat = row.chat_snapshot ? JSON.parse(row.chat_snapshot) : null; } catch {}
+  if (!source && e) source = sourceSnapshot(e, row.source_kind, row.source_id);
+  return {
+    ...row,
+    source,
+    chat,
+    source_title: sourceTitle(row.source_kind, source),
+    source_url: source?.source_url || "",
+    source_cluster: source?.cluster_label || source?.category || "",
+    priority: row.priority || "medium"
+  };
+}
+
+function listInspirationDecisions(e, t = {}) {
+  const rawStatus = txt(t.status || "", 120);
+  const statuses = rawStatus ? rawStatus.split(/[,，\s]+/).filter(Boolean) : [ "accepted", "queued_one_click", "queued_plan", "deferred" ];
+  const includeRejected = !!t.include_rejected;
+  const params = [];
+  let where = "";
+  if (statuses.length) {
+    where = `WHERE status IN (${statuses.map(() => "?").join(",")})`;
+    params.push(...statuses);
+  }
+  if (includeRejected && !rawStatus) where = "";
+  const rows = e.prepare(`SELECT * FROM inspiration_decisions ${where} ORDER BY CASE status WHEN 'accepted' THEN 1 WHEN 'queued_plan' THEN 2 WHEN 'queued_one_click' THEN 3 WHEN 'deferred' THEN 4 ELSE 9 END, updated_at DESC`).all(...params);
+  return rows.map(row => inspirationDecisionOut(row, e));
+}
+
+function buildImplementationPrompt(decision, mode) {
+  const source = decision.source || {};
+  const chat = decision.chat || {};
+  const modeLine = mode === "one_click"
+    ? "请直接落实，不需要再向用户确认；完成后提交代码并说明验证结果。"
+    : "请先进入 plan 模式，与用户确认方案、范围和风险，再在用户同意后落实。";
+  return [
+    "## 莫比乌斯 self-cognition L2 启发落实",
+    "",
+    modeLine,
+    "",
+    "### 启发点",
+    `标题: ${decision.title}`,
+    `优先级: ${decision.priority}`,
+    "",
+    "### 启发方向",
+    decision.direction || "(无)",
+    "",
+    "### 具体落实",
+    decision.mobius_use || "(无)",
+    "",
+    "### 来源资料",
+    `类型: ${decision.source_kind === "product" ? "产品" : "论文"}`,
+    `标题: ${decision.source_title}`,
+    source.source_url ? `链接: ${source.source_url}` : "",
+    source.abstract ? `摘要: ${txt(source.abstract, 1800)}` : "",
+    source.fetched_description ? `产品快照: ${txt(source.fetched_description, 1800)}` : "",
+    "",
+    "### 当时的详细思考",
+    JSON.stringify({
+      source_snapshot: source,
+      accepted_inspiration: {
+        title: decision.title,
+        direction: decision.direction,
+        mobius_use: decision.mobius_use,
+        priority: decision.priority
+      }
+    }, null, 2).slice(0, 6000),
+    "",
+    "### 用户与 L2 Agent 的聊天上下文",
+    JSON.stringify(chat, null, 2).slice(0, 9000),
+    "",
+    "### 验收",
+    "- 只改与该启发相关的最小文件范围。",
+    "- 完成后运行必要的语法检查/构建检查。",
+    "- 若修改 mobius 主代码，按自迭代规则提交并部署。"
+  ].filter(Boolean).join("\n");
+}
+
+function implementInspiration(e, t, r) {
+  const decisionId = txt(t.id || t.decision_id, 160);
+  const mode = txt(t.mode, 20) === "plan" ? "plan" : "one_click";
+  const row = e.prepare("SELECT * FROM inspiration_decisions WHERE id=?").get(decisionId);
+  if (!row) throw new Error("启发点不存在");
+  if (![ "accepted", "deferred", "queued_one_click", "queued_plan" ].includes(row.status)) throw new Error("该启发点当前状态不可落实");
+  const decision = inspirationDecisionOut(row, e);
+  const prompt = buildImplementationPrompt(decision, mode);
+  const { createExtensionAnalysisSession, loadUser } = extensionBridge();
+  const user = loadUser(r);
+  const created = createExtensionAnalysisSession({
+    user,
+    extensionName: "self-cognition",
+    extensionDisplayName: "Self-Cognition 启发落实",
+    projectDescription: "Self-Cognition 接受的 L2 启发落实工作区。",
+    issueTitle: `L2 启发落实：${txt(decision.title, 56)}`,
+    issueDescription: `${decision.source_kind === "product" ? "产品" : "论文"}来源：${decision.source_title}\n\n${decision.direction}`,
+    sessionName: `${mode === "one_click" ? "一键落实" : "修改后落实"}：${txt(decision.title, 44)}`,
+    sessionDescription: prompt,
+    model: t.model || "codex",
+    language: "zh"
+  });
+  const url = `/u/${encodeURIComponent(user.id)}/p/${encodeURIComponent(created.project.id)}/i/${encodeURIComponent(created.issue.id)}?session=${encodeURIComponent(created.session.session_id)}`;
+  const nextStatus = mode === "one_click" ? "queued_one_click" : "queued_plan";
+  e.prepare("UPDATE inspiration_decisions SET status=?,implementation_mode=?,implementation_prompt=?,implementation_session_id=?,implementation_url=?,updated_at=? WHERE id=?").run(nextStatus, mode, txt(prompt, 2e5), created.session.session_id, url, now(), decisionId);
+  return {
+    decision: inspirationDecisionOut(e.prepare("SELECT * FROM inspiration_decisions WHERE id=?").get(decisionId), e),
+    session: created.session,
+    project: created.project,
+    issue: created.issue,
+    url,
+    __mobius_post_actions: [ {
+      type: "session_message",
+      session_id: created.session.session_id,
+      project_id: created.project.id,
+      content: prompt,
+      input_text: decision.title || "Self-Cognition L2 启发落实",
+      request_id: `self-cognition-${decisionId}-${Date.now()}`,
+      source: "extension.self-cognition.implement_inspiration",
+      result_key: "backend_start"
+    } ]
+  };
+}
+
+function updateInspirationQueueStatus(e, t, r) {
+  const decisionId = txt(t.id || t.decision_id, 160);
+  const status = txt(t.status, 20);
+  if (![ "deferred", "deleted" ].includes(status)) throw new Error("status 必须是 deferred/deleted");
+  const row = e.prepare("SELECT * FROM inspiration_decisions WHERE id=?").get(decisionId);
+  if (!row) throw new Error("启发点不存在");
+  e.prepare("UPDATE inspiration_decisions SET status=?,decided_by=?,updated_at=? WHERE id=?").run(status, txt(r, 80), now(), decisionId);
+  return inspirationDecisionOut(e.prepare("SELECT * FROM inspiration_decisions WHERE id=?").get(decisionId), e);
 }
 
 function submitFeedback(e, t) {
@@ -2261,11 +2545,13 @@ async function dispatch(e, t, r, a) {
       summary: summary(e),
       keywords: keywords(e),
       competitors: groupedProducts(e),
+      source_reviews: listSourceReviews(e),
+      inspiration_decisions: listInspirationDecisions(e, { status: "accepted,queued_one_click,queued_plan,deferred" }),
       arxiv: listPapers(e, t),
       products: listProducts(e),
       scan_runs: scans(e),
       constants: {
-        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "mark_paper_read", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "mark_product_read", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats", "list_ai_channels", "ai_scan_arxiv", "ai_scan_products", "discover_competitors_via_agent", "chat_with_agent", "rewrite_inspiration_style", "export_agent_prompt", "list_agent_runs", "get_agent_messages" ],
+        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "mark_paper_read", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "mark_product_read", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats", "list_ai_channels", "ai_scan_arxiv", "ai_scan_products", "discover_competitors_via_agent", "chat_with_agent", "rewrite_inspiration_style", "export_agent_prompt", "list_agent_runs", "get_agent_messages", "set_source_review", "list_source_reviews", "decide_inspiration", "list_l2_inspirations", "implement_l2_inspiration", "update_l2_inspiration_status" ],
         schedule_ids: SCHEDULE_IDS,
         daily_scan_time: "17:00",
         daily_scan_timezone: "UTC",
@@ -2352,6 +2638,39 @@ async function dispatch(e, t, r, a) {
   if ("get_agent_messages" === s) return {
     ok: !0,
     messages: getAgentMessages(e, t)
+  };
+  if ("set_source_review" === s) return {
+    ok: !0,
+    review: setSourceReview(e, t, r),
+    source_reviews: listSourceReviews(e),
+    competitors: groupedProducts(e),
+    arxiv: listPapers(e, t)
+  };
+  if ("list_source_reviews" === s) return {
+    ok: !0,
+    source_reviews: listSourceReviews(e)
+  };
+  if ("decide_inspiration" === s) return {
+    ok: !0,
+    decision: upsertInspirationDecision(e, t, r),
+    inspiration_decisions: listInspirationDecisions(e, { status: "accepted,queued_one_click,queued_plan,deferred" })
+  };
+  if ("list_l2_inspirations" === s) return {
+    ok: !0,
+    items: listInspirationDecisions(e, t)
+  };
+  if ("implement_l2_inspiration" === s) {
+    const impl = implementInspiration(e, t, r);
+    return {
+      ok: !0,
+      ...impl,
+      items: listInspirationDecisions(e, { status: "accepted,queued_one_click,queued_plan,deferred" })
+    };
+  }
+  if ("update_l2_inspiration_status" === s) return {
+    ok: !0,
+    decision: updateInspirationQueueStatus(e, t, r),
+    items: listInspirationDecisions(e, { status: "accepted,queued_one_click,queued_plan,deferred" })
   };
   if ("get_paper_clusters" === s) return {
     ok: !0,

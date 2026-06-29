@@ -112,3 +112,74 @@ window.setShowcaseVideo = function (slot, url) {
   wrap.classList.remove('placeholder');
   return true;
 };
+
+/* ---------- 8. 右侧 Apple 风滚动目录（scroll-spy TOC） ---------- */
+(function buildPageToc() {
+  const toc = document.getElementById('pageToc');
+  if (!toc) return;
+
+  // 显式 section → TOC 显示文字映射表（按指定顺序）
+  const TOC_LABELS = {
+    'hero': '概览',
+    'prologue': '时代之问',
+    'synergy': '人机物智算协同',
+    'features': '七大亮点',
+    'feat-1': '自生长',
+    'feat-2': 'Agent集群协作',
+    'feat-3': '人类团队协作',
+    'feat-4': '深度科研系统',
+    'feat-5': '自孵化拓展系统',
+    'feat-6': '智能小莫',
+    'feat-7': '兼容性',
+    'feat-showcase': '真实案例',
+    'finale': '莫比乌斯环'
+  };
+
+  // 仅收集出现在映射表中的元素，按 TOC_LABELS 定义的顺序输出
+  const targets = [];
+  for (const id of Object.keys(TOC_LABELS)) {
+    const el = document.getElementById(id);
+    if (el) targets.push({ el, label: TOC_LABELS[id] });
+  }
+
+  // 生成 DOM
+  for (const t of targets) {
+    const a = document.createElement('a');
+    a.className = 'page-toc-item';
+    a.href = '#' + t.el.id;
+    a.dataset.target = t.el.id;
+    a.textContent = t.label;
+    a.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      t.el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    toc.appendChild(a);
+  }
+
+  const items = Array.from(toc.querySelectorAll('.page-toc-item'));
+
+  // 高亮当前 section + 同步明暗主题
+  let activeId = null;
+  const spy = new IntersectionObserver((entries) => {
+    // 找出当前视口中占比最大、且 intersectionRatio >= 0.4 的那个
+    let best = null;
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      if (e.intersectionRatio < 0.4) continue;
+      if (!best || e.intersectionRatio > best.intersectionRatio) best = e;
+    }
+    if (!best) return;
+    const id = best.target.id;
+    if (id === activeId) return;
+    activeId = id;
+    items.forEach((it) => it.classList.toggle('is-active', it.dataset.target === id));
+    // 同步 TOC 的明暗主题
+    const onLight = best.target.classList.contains('section-light')
+                 || best.target.classList.contains('section-light-2');
+    toc.classList.toggle('on-light', onLight);
+  }, { threshold: [0.4, 0.6, 0.8] });
+  targets.forEach((t) => spy.observe(t.el));
+
+  // 初始默认高亮 hero
+  if (items.length) items[0].classList.add('is-active');
+})();

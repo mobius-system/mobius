@@ -1,1 +1,1 @@
-![alt text](https://serve.gptacademic.cn/publish/auto/mobiuscompress/image-8.png)
+![alt text](https://serve.nutshellai.cn/publish/auto/mobiuscompress/image-8.png)

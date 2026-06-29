@@ -1,0 +1,107 @@
+# Mobius 文档站点配置 (mkdocs-material + i18n)
+# 本地预览: mkdocs serve   |   构建: mkdocs build
+
+site_name: Mobius
+site_url: https://nutshellai-tech.github.io/mobius/
+site_description: Mobius — A Self-Evolving Agent Operating System
+docs_dir: docs
+
+repo_url: https://github.com/nutshellai-tech/mobius
+repo_name: nutshellai-tech/mobius
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: zh
+  font:
+    text: Noto Sans SC
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: 切换深色模式
+    - scheme: slate
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: 切换浅色模式
+  icon:
+    logo: material/all-inclusive
+
+plugins:
+  - search
+  - i18n:
+      docs_structure: suffix
+      languages:
+        - locale: zh
+          default: true
+          name: 简体中文
+          build: true
+          nav_translations:
+            Home: 首页
+            Tutorial: 使用教程
+            "Add a User": 添加用户
+            "Xiaomo Control Hub": 小莫控制中枢
+            "Import a Project & First Task": 导入项目并开启首个任务
+            "Skills & Memory": 技能与记忆
+            "Add Remote Compute": 添加远程算力
+            "Xiaomo Assistant (Web)": 小莫助手 Web 端
+            "Prevent Agent Idle (Patrol & Nudge)": 防止 Agent 偷懒
+            "Exclude Skills & Memory": 屏蔽无关技能与记忆
+            "Monitor Agents": 监控智能体
+            "Configure Codex + a Model": 配置 Codex + 模型
+            "Configure Claude Code + a Model": 配置 Claude Code + 模型
+            "Limit Model Call Frequency": 限制模型调用频率
+            "Migrate Skills & Memory": 迁移 Skill 和 Memory
+            "Self-Evolution Examples": 自进化示例
+        - locale: en
+          name: English
+          build: true
+
+nav:
+  - Home: index.md
+  - Tutorial:
+      - Add a User: tutorial/01_add_user.md
+      - Xiaomo Control Hub: tutorial/13_xiaomo_control_hub.md
+      - Import a Project & First Task: tutorial/02a_import_project_and_begin_first_job.md
+      - Skills & Memory: tutorial/03a_using_skill_and_memory.md
+      - Add Remote Compute: tutorial/04_add_remote_server.md
+      - Xiaomo Assistant (Web): tutorial/05_using_xiaomo_assistant.md
+      - Prevent Agent Idle (Patrol & Nudge): tutorial/06_prevent_agent_idle.md
+      - Exclude Skills & Memory: tutorial/07_exclude_skills_memory.md
+      - Monitor Agents: tutorial/08_monitor_agents.md
+      - Configure Codex + a Model: tutorial/09_config_codex_model.md
+      - Configure Claude Code + a Model: tutorial/10_config_claude_code_model.md
+      - Limit Model Call Frequency: tutorial/11_limit_model_usage.md
+      - Migrate Skills & Memory: tutorial/12_migrate_skill_memory.md
+  - Self-Evolution Examples: self-evo-demo.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.details
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/nutshellai-tech/mobius
+    - icon: fontawesome/solid/globe
+      link: https://mobius.nutshellai.cn/

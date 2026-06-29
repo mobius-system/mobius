@@ -79,10 +79,21 @@ export function isRunningFlagReminder(entry: any): boolean {
   return entryIncludesMarker(entry, RUNNING_FLAG_REMINDER_MARKER)
 }
 
+// compact 完成信号: Claude Code /compact 命令完成写入的 user 消息,
+// content 被 <local-command-stdout>...</local-command-stdout> 包裹, 正文以 "Compacted" 开头.
+// 与 Blackboard / running-flag 同理: 套了 user_message / type:user 的壳, 但不是人类提问, 不应开新轮.
+// (用正则而非固定子串: 信号是 <tag> 包裹结构, 不像 Blackboard 那样有稳定前缀串.)
+const COMPACT_DONE_PATTERN = /<local-command-stdout>\s*Compacted[\s\S]*?<\/local-command-stdout>/i
+export function isCompactDoneReminder(entry: any): boolean {
+  const texts: string[] = []
+  collectEntryUserTexts(entry, texts)
+  return texts.some((t) => typeof t === 'string' && COMPACT_DONE_PATTERN.test(t))
+}
+
 // 统一: 任何"系统注入提醒"都不开新轮. 后续新增系统提醒文案时, 在这里 OR 一条 isXxxReminder
 // 即可, 无需改动 isNewRound 的主体分支逻辑.
 function isSystemReminder(entry: any): boolean {
-  return isBlackboardReminder(entry) || isRunningFlagReminder(entry)
+  return isBlackboardReminder(entry) || isRunningFlagReminder(entry) || isCompactDoneReminder(entry)
 }
 
 // 判断是否为真正的用户问题 (而非 tool_result 回调或系统提醒).

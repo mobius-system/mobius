@@ -32,7 +32,7 @@ const code = bundled.outputFiles[0].text
 const dataUrl = 'data:text/javascript;base64,' + Buffer.from(code).toString('base64')
 const helpers = await import(dataUrl)
 
-const { BLACKBOARD_MARKER, RUNNING_FLAG_REMINDER_MARKER, isBlackboardReminder, isRunningFlagReminder, isNewRound } = helpers
+const { BLACKBOARD_MARKER, RUNNING_FLAG_REMINDER_MARKER, isBlackboardReminder, isRunningFlagReminder, isCompactDoneReminder, isNewRound } = helpers
 
 let passed = 0
 let failed = 0
@@ -184,6 +184,33 @@ test('running flag 提醒: type:user 数组 (text 块) 形态 → 不开新轮',
   assert.equal(isNewRound(entry), false)
 })
 
+// ── compact 完成信号 (Claude Code /compact): 套 user 外壳的工具产物, 不开新轮 ──
+// 与 Blackboard / running-flag 同理: content 被 <local-command-stdout>...</local-command-stdout>
+// 包裹且正文以 "Compacted" 开头, 是 /compact 命令完成写回的产物, 不是人类提问.
+test('compact 完成信号: type:user 字符串 content → 不开新轮', () => {
+  const entry = {
+    type: 'user',
+    message: {
+      role: 'user',
+      content: '<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>',
+    },
+  }
+  assert.equal(isNewRound(entry), false, 'compact 完成信号不应触发新 Round')
+})
+
+test('compact 完成信号: type:user 数组 (text 块) content → 不开新轮', () => {
+  const entry = {
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [
+        { type: 'text', text: '<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>' },
+      ],
+    },
+  }
+  assert.equal(isNewRound(entry), false)
+})
+
 // ── 普通用户消息仍要开新轮 (不能误杀) ─────────────────────────────────────
 test('普通 event_msg.user_message 文本 → 开新轮', () => {
   const entry = {
@@ -294,6 +321,44 @@ test('isRunningFlagReminder: null/undefined 安全返回 false', () => {
   assert.equal(isRunningFlagReminder(null), false)
   assert.equal(isRunningFlagReminder(undefined), false)
   assert.equal(isRunningFlagReminder({}), false)
+})
+
+// ── isCompactDoneReminder 直接测试 ──────────────────────────────────────────
+test('isCompactDoneReminder: compact 完成信号命中 (字符串/数组)', () => {
+  assert.equal(isCompactDoneReminder({
+    type: 'user',
+    message: { role: 'user', content: '<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>' },
+  }), true)
+  assert.equal(isCompactDoneReminder({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [{ type: 'text', text: '<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>' }],
+    },
+  }), true)
+})
+
+test('isCompactDoneReminder: 普通用户消息不命中 (即便含 "Compacted" 字样但无标签包裹)', () => {
+  // 普通 type:user 字符串 content → 开新轮 (回归保护, 不能被 compact 特例误杀)
+  assert.equal(isNewRound({
+    type: 'user',
+    message: { role: 'user', content: '继续上一步' },
+  }), true)
+  // 没有 <local-command-stdout> 包裹的普通文本, 即便含 "Compacted" 字样也不命中 compact 判定
+  assert.equal(isCompactDoneReminder({
+    type: 'user',
+    message: { role: 'user', content: '请帮我 compact 一下对话' },
+  }), false)
+  assert.equal(isNewRound({
+    type: 'user',
+    message: { role: 'user', content: '请帮我 compact 一下对话' },
+  }), true)
+})
+
+test('isCompactDoneReminder: null/undefined 安全返回 false', () => {
+  assert.equal(isCompactDoneReminder(null), false)
+  assert.equal(isCompactDoneReminder(undefined), false)
+  assert.equal(isCompactDoneReminder({}), false)
 })
 
 console.log(`\n${passed} passed, ${failed} failed`)

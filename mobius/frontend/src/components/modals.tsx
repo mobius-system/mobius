@@ -2013,6 +2013,8 @@ export function NewSessionModal({
     name?: string
     desc?: string
     model?: ModelKey
+    // model 是否为用户"手动选过"的 deliberate 选择. 旧草稿无此字段 → 视为非手动, 不作为权威模型.
+    model_touched?: boolean
     role?: 'chief_researcher' | 'research_assistant'
     language?: SessionLanguage
     excluded_skill_ids?: string[]
@@ -2045,20 +2047,25 @@ export function NewSessionModal({
   // 默认值统一三级优先级 (与顶栏快捷一致, 见 services/global-default-model.ts):
   //   当前 issue/research 上次所选 > 项目默认模型偏好 > 全局默认模型 > 内置 codex.
   // "上次所选"取自该作用域最近一次 Session 的 model (session-selection-defaults 回传, 服务端按作用域隔离),
-  // 不进任何跨作用域草稿 → 绝不影响其他 issue/项目/新项目 (修复"新建项目不尊重全局默认模型").
-  // preset 模式 (架构/小莫预设) 下, 预设自带 model 视为权威, 优先于三级默认.
+  // 不进任何跨作用域草稿 → 绝不影响其他 issue/项目/新项目.
+  // 草稿中的 model 只有 model_touched=true (用户手动选过) 才视为权威; 否则只是历次默认值
+  // 的快照, 会把模型钉在过期值上 (管理员改了项目/全局默认也不生效). 旧草稿无 model_touched → 忽略.
+  // preset 模式 (架构/小莫预设) 下, 预设自带 model 视为权威, 优先于其他优先级.
   const modelUserTouchedRef = useRef(false)
   const [scopeLastModel, setScopeLastModel] = useState('')
   const [globalDefaultModel, setGlobalDefaultModel] = useState('')
+  // 仅当用户手动选过模型才视为权威, 避免过期草稿的快照钉死模型.
+  const draftModelDeliberate = initialDraft?.model_touched ? initialDraft?.model : undefined
   const resolvedDefaultModel = useMemo<ModelKey>(() => {
     if (isPresetMode && initialPreset?.model) return initialPreset.model
+    if (draftModelDeliberate) return draftModelDeliberate
     return resolveDefaultModelKey({
       scopeLastModel,
       projectDefaultModel: typeof defaultModel === 'string' && defaultModel.trim() ? defaultModel.trim() : '',
       globalDefaultModel,
       fallback: DEFAULT_SESSION_MODEL,
     })
-  }, [isPresetMode, initialPreset?.model, scopeLastModel, defaultModel, globalDefaultModel])
+  }, [isPresetMode, initialPreset?.model, draftModelDeliberate, scopeLastModel, defaultModel, globalDefaultModel])
   const [model, setModel] = useState<ModelKey>(resolvedDefaultModel)
   useEffect(() => {
     let alive = true
@@ -2144,6 +2151,10 @@ export function NewSessionModal({
       draftSave(DRAFT_KEY, {
         name,
         desc,
+        // 仅当用户手动选过模型才把 model 持久化进草稿 (并标 model_touched=true);
+        // 否则不写 model, 让下次重开时按项目/全局默认重新解析, 避免过期默认值钉死模型.
+        model: modelUserTouchedRef.current ? model : undefined,
+        model_touched: modelUserTouchedRef.current,
         role,
         language,
         excluded_skill_ids: Array.from(excludedSkills),
