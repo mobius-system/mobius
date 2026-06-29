@@ -3225,16 +3225,16 @@ export function ChatArea() {
                   : (theme !== 'light' ? '#111827' : '#ffffff')
                 return (
                   <>
-                    <button onClick={() => send(true)} disabled={sendDisabled}
+                    <button type="button" onClick={() => send(true)} disabled={sendDisabled}
                       data-tour="session-chat-send-urgent"
                       title="发送（加急）— 打断当前输出并立即发送 (Ctrl/⌘+Enter)"
-                      className="w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-95"
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{
-                        background: sendDisabled ? 'rgba(245,158,11,0.10)' : 'rgba(245,158,11,0.18)',
-                        color: sendDisabled ? (theme !== 'light' ? '#6b7280' : '#9ca3af') : '#f59e0b',
-                        cursor: sendDisabled ? 'not-allowed' : 'pointer',
+                        color: theme !== 'light' ? '#d1d5db' : '#374151',
+                        border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
+                        background: 'transparent',
                       }}>
-                      <Zap className="w-[18px] h-[18px]" strokeWidth={2.4} />
+                      <Zap className="w-[17px] h-[17px]" />
                     </button>
                     <button onClick={() => send()} disabled={sendDisabled}
                       data-tour="session-chat-send"
