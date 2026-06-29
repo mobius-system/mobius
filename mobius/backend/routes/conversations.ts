@@ -6,6 +6,9 @@ import { runSessionMessage } from '../services/session-message-runner';
 import { Sessions } from '../repositories/sessions';
 import { Users } from '../repositories/users';
 import { db } from '../../db';
+import fs from 'fs';
+import agents from '../agents';
+import modelRegistry from '../services/model-registry';
 
 const router = express.Router();
 
@@ -143,8 +146,9 @@ async function triggerAgentMentions(params: {
     const ownerUser = Users.findAuthById(ownerId);
     if (!ownerUser) continue;
     const taskPrompt = `（群聊「${params.conversationName}」中 ${params.senderName} @你，请处理并给出简洁结果）\n${params.rawContent}`;
+    const baselineLines = readJsonlLineCount(agentSessionId);
     try {
-      const result = await runSessionMessage({
+      await runSessionMessage({
         user: ownerUser,
         sessionId: agentSessionId,
         content: taskPrompt,
@@ -152,15 +156,12 @@ async function triggerAgentMentions(params: {
         hasInputText: true,
         source: 'group.mention',
       } as any);
-      const triggerTurn = Number(result?.turn_number) > 0 ? Number(result.turn_number) : 0;
-      if (triggerTurn > 0) {
-        watchAgentReply({
-          conversationId: params.conversationId,
-          agentSessionId,
-          agentDisplayName: member.display_name,
-          triggerTurn,
-        });
-      }
+      watchAgentReply({
+        conversationId: params.conversationId,
+        agentSessionId,
+        agentDisplayName: member.display_name,
+        baselineLines,
+      });
     } catch (e) {
       try {
         Conversations.insertMessage({
@@ -177,41 +178,81 @@ async function triggerAgentMentions(params: {
   }
 }
 
-// 轮询 agent session 的 agent_status; turn 完成时把该 turn 最后一条 assistant 文本作为群消息回写.
+// agent 的 assistant 回复走 jsonl 文件(不进 messages_v2), 故用 backend 解析其路径.
+function resolveAgentJsonlPath(sessionId: string): string | null {
+  try {
+    const sess = Sessions.findById(sessionId) as any;
+    if (!sess) return null;
+    const launch = modelRegistry.launchOptionsForSession(sess);
+    const backend = agents.get(launch.backend);
+    return typeof backend?._resolveJsonlPath === 'function' ? (backend._resolveJsonlPath(sessionId) as string) : null;
+  } catch {
+    return null;
+  }
+}
+
+function readJsonlLineCount(sessionId: string): number {
+  const p = resolveAgentJsonlPath(sessionId);
+  if (!p || !fs.existsSync(p)) return 0;
+  try {
+    return fs.readFileSync(p, 'utf8').split('\n').filter((l) => l.trim()).length;
+  } catch {
+    return 0;
+  }
+}
+
+// 从 jsonl 的 baselineLines(触发前)之后, 读最近一条 assistant 文本.
+function readLatestAssistantText(sessionId: string, baselineLines: number): string | null {
+  const p = resolveAgentJsonlPath(sessionId);
+  if (!p || !fs.existsSync(p)) return null;
+  let lines: string[];
+  try {
+    lines = fs.readFileSync(p, 'utf8').split('\n');
+  } catch {
+    return null;
+  }
+  for (let i = lines.length - 1; i >= baselineLines; i--) {
+    const line = lines[i];
+    if (!line || !line.trim()) continue;
+    let entry: any;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (entry?.type !== 'assistant') continue;
+    const content = entry?.message?.content;
+    if (!Array.isArray(content)) continue;
+    const text = content.filter((c: any) => c?.type === 'text').map((c: any) => c?.text || '').join('').trim();
+    if (text) return text;
+  }
+  return null;
+}
+
+// 轮询 agent 的 jsonl; 触发后(baselineLines 之后)出现 assistant 回复即回写群消息.
+// 不查 messages_v2(assistant 不进它), 不依赖 agent_status 状态机(会错过快速 running).
 function watchAgentReply(p: {
   conversationId: string;
   agentSessionId: string;
   agentDisplayName: string;
-  triggerTurn: number;
+  baselineLines: number;
 }): void {
   let ticks = 0;
-  let wasRunning = false;
-  const doneFlags = ['idle', 'completed', 'failed', 'stale', 'waiting'];
   const timer = setInterval(() => {
     ticks++;
-    const sess = Sessions.findById(p.agentSessionId) as { agent_status?: string } | undefined;
-    const status = sess?.agent_status;
-    if (status === 'running') wasRunning = true;
-    const done = wasRunning && !!status && doneFlags.includes(status as string);
-    if (!done && ticks < 150) return; // 最多 ~5 分钟
-    clearInterval(timer);
-    try {
-      const row = db.prepare(
-        `SELECT content FROM messages_v2 WHERE task_id = ? AND role = 'assistant' AND turn_number = ? AND content != '' ORDER BY id DESC LIMIT 1`,
-      ).get(p.agentSessionId, p.triggerTurn) as { content?: string } | undefined;
-      const content = row?.content?.trim();
-      if (content) {
+    const text = readLatestAssistantText(p.agentSessionId, p.baselineLines);
+    if (text) {
+      clearInterval(timer);
+      try {
         Conversations.insertMessage({
           conversationId: p.conversationId,
           senderId: p.agentSessionId,
           senderType: 'agent',
           senderName: p.agentDisplayName,
-          content,
+          content: text,
           sourceAgentSession: p.agentSessionId,
         });
         Conversations.touch(p.conversationId);
-      }
-    } catch {}
+      } catch {}
+      return;
+    }
+    if (ticks >= 150) clearInterval(timer); // 最多 ~5 分钟
   }, 2000);
 }
 
