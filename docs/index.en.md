@@ -9,7 +9,36 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 
 ## Quick Start
 
+### I. Master Mobius in 5 Minutes
+
+- [Xiaomo: Universal Shortcut](tutorial/13_xiaomo_control_hub.md)
+- [Concepts: Import a Project](tutorial/02a_import_project_and_begin_first_job.md)
+- [Concepts: Skills & Memory](tutorial/03a_using_skill_and_memory.md)
+
+### II. Advanced Capabilities
+
+- [Add Remote Compute](tutorial/04_add_remote_server.md)
+- [Xiaomo Assistant (Web)](tutorial/05_using_xiaomo_assistant.md)
+- [Prevent Agent Idle (Patrol & Nudge)](tutorial/06_prevent_agent_idle.md)
+- [Exclude Skills & Memory](tutorial/07_exclude_skills_memory.md)
+- [Migrate Skills & Memory](tutorial/12_migrate_skill_memory.md)
+
+### III. Admin Basics
+
 - [Add a User](tutorial/01_add_user.md)
-- [Import a Project & Begin Your First Task](tutorial/02a_import_project_and_begin_first_job.md)
-- [Use Skills & Memory](tutorial/03a_using_skill_and_memory.md)
-- [Self-Evolution Examples](self-evo-demo.md)
+- [Monitor Agents](tutorial/08_monitor_agents.md)
+- [Configure Codex + a Model](tutorial/09_config_codex_model.md)
+- [Configure Claude Code + a Model](tutorial/10_config_claude_code_model.md)
+- [Limit Model Call Frequency](tutorial/11_limit_model_usage.md)
+
+### IV. Mobius Self-Evolution
+
+- [Simple Self-Evolution Example](self-evo-demo.md)
+
+### V. Tips
+
+- [Chat Input Tips](tutorial/14_chat_input_tips.md)
+- [Switch the Model Mid-Session](tutorial/15_switch_model_mid_session.md)
+- [Change the Frontend Theme](tutorial/16_change_frontend_theme.md)
+- [Mark a Key Project (Favorite)](tutorial/17_favorite_project.md)
+- [Package & Download Project Files](tutorial/18_package_download_project.md)

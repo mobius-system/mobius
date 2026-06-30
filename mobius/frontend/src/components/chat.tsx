@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Square, Plus, Paperclip } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -1458,6 +1458,10 @@ export function ChatArea() {
   const [backendFailedAt, setBackendFailedAt] = useState('')
   const [backendPid, setBackendPid] = useState<number | null>(null)
   const [pendingSendAt, setPendingSendAt] = useState<number | null>(null)
+  // 本次 pending 发送是否为加急: 加急时 session 本来就在 working, poll 的
+  // "working=true ⇒ 清除 pending" 信号无效, 会过早清掉导致发送阶段提示 (正在发送/唤醒中) 不显示.
+  // 故加急时跳过该条件 (只靠 !alive / 8s 兜底). ref 不参与渲染, 无需进 deps.
+  const pendingUrgentRef = useRef(false)
   // 终止乐观更新抑制窗: 点"终止"后 ~3s 内忽略轮询回写, 让 isAlive/isWorking/agent_status
   // 立即落定为"空闲". 否则软停 (C-c × 3) 期间下一个 2s 轮询仍读到 alive=true, 会把状态弹回"执行中".
   const stopSuppressedUntilRef = useRef<number>(0)
@@ -1569,10 +1573,11 @@ export function ChatArea() {
           window.dispatchEvent(new CustomEvent(GUIDED_DEMO_TOUR_EVENT, { detail: { force: false } }))
         }
         // pending 清除条件 (任意一个满足):
-        //   ① 后端确认 working=true   (agent 已开始干)
+        //   ① 后端确认 working=true   (agent 已开始干) — 但加急发送时 session 本来就在 working,
+        //      此信号无效会过早清掉 pending (发送阶段提示来不及显示), 故加急时跳过本条.
         //   ② 后端确认 alive=false    (进程死了, 早就不用等了)
         //   ③ pending 已超 8s         (agent 在 sub-2s 内跑完一整轮, 我们 poll 没赶上 — 兜底)
-        if (pendingSendAt && (r?.working || !r?.alive || (Date.now() - pendingSendAt > 8000))) {
+        if (pendingSendAt && ((!pendingUrgentRef.current && r?.working) || !r?.alive || (Date.now() - pendingSendAt > 8000))) {
           setPendingSendAt(null)
         }
         nextDelay = nextDelayFor(r)
@@ -1892,14 +1897,17 @@ export function ChatArea() {
     content,
     inputText,
     requestId,
+    urgent = false,
   }: {
     content: string
     inputText?: string
     requestId: string
+    urgent?: boolean
   }) => {
     if (!sessionId) throw new Error('当前没有可发送消息的 Session')
     const payload: Record<string, any> = { content, request_id: requestId }
     if (typeof inputText === 'string') payload.input_text = inputText
+    if (urgent) payload.urgent = true
     try {
       const resp = await api(`/api/sessions/${sessionId}/messages`, {
         method: 'POST',
@@ -2507,7 +2515,7 @@ export function ChatArea() {
       .catch(() => {})
   }, [sessionId, addMessage, setTyping, postSessionMessage])
 
-  const send = useCallback(() => {
+  const send = useCallback((urgent = false) => {
     const text = input.trim()
     const readyAtts = attachments.filter(a => a.status === 'done' && a.remotePath)
     // 必须有文本或至少一个已上传完成的附件
@@ -2536,13 +2544,14 @@ export function ChatArea() {
     const requestId = makeSendRequestId()
     setLastSendError('')
     addMessage({ role: 'user', content })
+    pendingUrgentRef.current = urgent
     setPendingSendAt(Date.now())
     setMessageSubmitting(true)
     setTyping(true)
     // 发送瞬间立即清空输入框, 给用户即时反馈. 原来放在 .then() 里,
     // 要等后端 POST /messages 返回才清空, 体感是"字过了一会儿才消失".
     clearSessionInputDraft(sentSessionId, sentInput)
-    postSessionMessage({ content, inputText: text, requestId })
+    postSessionMessage({ content, inputText: text, requestId, urgent })
       .then(() => {
         setEditingMsg(null)
         clearAttachments()
@@ -3110,10 +3119,20 @@ export function ChatArea() {
               )}
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.key !== 'Enter') return
+                  if (e.shiftKey) return
+                  if (e.altKey) {
                     e.preventDefault()
-                    send()
+                    const el = inputRef.current
+                    if (el) {
+                      const s = el.selectionStart, en = el.selectionEnd
+                      setInput(input.slice(0, s) + '\n' + input.slice(en))
+                      requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = s + 1 })
+                    }
+                    return
                   }
+                  e.preventDefault()
+                  send()
                 }}
                 placeholder={inputPlaceholder}
                 className="w-full bg-transparent resize-none border-0 px-0 pt-0 pb-1 text-[16px] leading-[1.55] placeholder:!text-[var(--placeholder-color)] focus:outline-none overflow-y-auto"
@@ -3216,17 +3235,30 @@ export function ChatArea() {
                   ? (theme !== 'light' ? '#6b7280' : '#9ca3af')
                   : (theme !== 'light' ? '#111827' : '#ffffff')
                 return (
-                  <button onClick={send} disabled={sendDisabled}
-                    data-tour="session-chat-send"
-                    title={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
-                    className="w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-95"
-                    style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}>
-                    {anyUploading || voiceState === 'transcribing' ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <SendHorizontal className="w-[18px] h-[18px]" strokeWidth={2.4} />
-                    )}
-                  </button>
+                  <>
+                    <button type="button" onClick={() => send(true)} disabled={sendDisabled}
+                      data-tour="session-chat-send-urgent"
+                      title="发送（加急）— 打断当前输出并立即发送"
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      style={{
+                        color: theme !== 'light' ? '#d1d5db' : '#374151',
+                        border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
+                        background: 'transparent',
+                      }}>
+                      <Zap className="w-[17px] h-[17px]" />
+                    </button>
+                    <button onClick={() => send()} disabled={sendDisabled}
+                      data-tour="session-chat-send"
+                      title={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
+                      className="w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-95"
+                      style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}>
+                      {anyUploading || voiceState === 'transcribing' ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <SendHorizontal className="w-[18px] h-[18px]" strokeWidth={2.4} />
+                      )}
+                    </button>
+                  </>
                 )
               })()}
             </div>
@@ -3329,13 +3361,6 @@ export function ChatArea() {
               ref={expandedInputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  setInputExpanded(false)
-                  send()
-                }
-              }}
               onPaste={handlePaste}
               placeholder={inputPlaceholder}
               className="min-h-0 flex-1 w-full resize-none rounded-xl px-3 py-2 text-[13px] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"

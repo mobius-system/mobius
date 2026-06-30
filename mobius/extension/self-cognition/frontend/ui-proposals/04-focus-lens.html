@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Self-Cognition UI Proposal 04 - Focus Lens</title>
+  <style>
+    :root {
+      --bg: #f8f8fa;
+      --ink: #151517;
+      --muted: #6e6e73;
+      --line: rgba(24,24,27,.1);
+      --panel: rgba(255,255,255,.86);
+      --blue: #0071e3;
+      --green: #25833d;
+      --amber: #a96700;
+      --red: #c84031;
+      --shadow: 0 18px 54px rgba(0,0,0,.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; color: var(--ink);
+      background:
+        linear-gradient(180deg, #fff 0%, var(--bg) 46%, #eef0f3 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    button { font: inherit; }
+    .shell { max-width: 1320px; margin: 0 auto; padding: 24px; }
+    .nav {
+      height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      border-bottom: 1px solid var(--line); margin-bottom: 20px;
+    }
+    .nav strong { font-size: .96rem; }
+    .nav span { color: var(--muted); font-size: .86rem; }
+    .focus {
+      min-height: calc(100vh - 96px);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 18px;
+      align-items: stretch;
+    }
+    .main {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 16px;
+      min-width: 0;
+    }
+    .hero {
+      background: #111; color: white; border-radius: 8px; box-shadow: var(--shadow);
+      padding: clamp(22px, 4vw, 44px);
+      display: grid; grid-template-columns: minmax(0,1fr) 160px; gap: 18px; align-items: end;
+    }
+    .kicker { margin: 0 0 12px; color: rgba(255,255,255,.6); text-transform: uppercase; font-weight: 850; font-size: .78rem; }
+    .hero h1 { margin: 0; font-size: clamp(2.1rem, 5vw, 5.8rem); line-height: .94; max-width: 880px; }
+    .hero p { margin: 14px 0 0; color: rgba(255,255,255,.72); line-height: 1.55; max-width: 780px; }
+    .hero-score { border: 1px solid rgba(255,255,255,.18); border-radius: 8px; padding: 14px; background: rgba(255,255,255,.08); }
+    .hero-score strong { display: block; font-size: 2.8rem; line-height: 1; }
+    .hero-score span { color: rgba(255,255,255,.62); font-size: .82rem; }
+    .lens {
+      display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 16px;
+    }
+    .panel {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow);
+      backdrop-filter: blur(20px); padding: 18px; min-width: 0;
+    }
+    .panel h2 { margin: 0; font-size: 1rem; }
+    .panel .sub { margin: 6px 0 0; color: var(--muted); line-height: 1.5; }
+    .lead-card {
+      margin-top: 14px; padding: 16px; border-radius: 8px; border: 1px solid rgba(0,113,227,.2);
+      background: linear-gradient(180deg, rgba(0,113,227,.08), rgba(255,255,255,.78));
+    }
+    .lead-card b { display: block; color: var(--blue); margin-bottom: 8px; }
+    .lead-card p { margin: 0; color: #333338; line-height: 1.6; }
+    .compare { margin-top: 14px; display: grid; gap: 10px; }
+    .compare-row { display: grid; grid-template-columns: 120px minmax(0,1fr); gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+    .compare-row b { color: #303034; }
+    .compare-row span { color: var(--muted); line-height: 1.45; }
+    .timeline { display: grid; gap: 12px; margin-top: 14px; }
+    .step { display: grid; grid-template-columns: 28px minmax(0,1fr); gap: 10px; align-items: start; }
+    .num {
+      width: 28px; height: 28px; border-radius: 999px; background: #111; color: #fff;
+      display: grid; place-items: center; font-size: .8rem; font-weight: 850;
+    }
+    .step h3 { margin: 0; font-size: .96rem; }
+    .step p { margin: 4px 0 0; color: var(--muted); line-height: 1.45; }
+    .command {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); padding: 12px;
+    }
+    .cmd { min-height: 42px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-weight: 780; cursor: pointer; }
+    .cmd.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .cmd.good { color: var(--green); background: rgba(37,131,61,.08); }
+    .cmd.warn { color: var(--amber); background: rgba(169,103,0,.09); }
+    .cmd.bad { color: var(--red); background: rgba(200,64,49,.08); }
+    .side { display: grid; gap: 14px; align-content: start; }
+    .switch {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px; background: var(--panel);
+      border: 1px solid var(--line); border-radius: 999px; box-shadow: var(--shadow);
+    }
+    .switch button { border: 0; border-radius: 999px; min-height: 34px; background: transparent; color: var(--muted); font-weight: 800; cursor: pointer; }
+    .switch button.active { background: #111; color: #fff; }
+    .side-card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); padding: 16px;
+    }
+    .side-card h2 { margin: 0 0 12px; font-size: .98rem; }
+    .queue { display: grid; gap: 10px; }
+    .queue article { border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 12px; }
+    .queue b { display: block; font-size: .9rem; line-height: 1.25; }
+    .queue span { display: block; margin-top: 6px; color: var(--muted); font-size: .8rem; }
+    .meta-list { display: grid; gap: 9px; }
+    .meta { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 9px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .88rem; }
+    .meta:last-child { border-bottom: 0; padding-bottom: 0; }
+    .meta strong { color: #1d1d1f; }
+    [data-copy] { display: none; }
+    [data-copy].active { display: block; }
+    @media (max-width: 1080px) {
+      .focus, .lens, .hero { grid-template-columns: 1fr; }
+      .side { order: -1; }
+    }
+    @media (max-width: 640px) {
+      .shell { padding: 14px; }
+      .command { grid-template-columns: 1fr; }
+      .compare-row { grid-template-columns: 1fr; gap: 4px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="nav">
+      <strong>Self-Cognition Focus Lens</strong>
+      <span>适合单条高价值论文/产品的沉浸式处理，不适合批量队列。</span>
+    </nav>
+
+    <section class="focus">
+      <div class="main">
+        <section class="hero">
+          <div data-copy="paper" class="active">
+            <p class="kicker">Proposal 04 / Paper Focus</p>
+            <h1>这篇论文到底能让莫比乌斯变好吗？</h1>
+            <p>Focus Lens 把详情页变成一条“先判断、再证据、后动作”的阅读路径。用户不用先读字段，而是先看到 L2 Agent 给出的可采纳结论。</p>
+          </div>
+          <div data-copy="product">
+            <p class="kicker">Proposal 04 / Product Focus</p>
+            <h1>这个产品到底值得莫比乌斯借鉴什么？</h1>
+            <p>产品详情不应复制官网简介，而应突出工作流、交互结构、可吸收能力，以及是否值得继续跟踪。</p>
+          </div>
+          <aside class="hero-score">
+            <strong>High</strong>
+            <span>人类应优先处理</span>
+          </aside>
+        </section>
+
+        <section class="lens">
+          <article class="panel active" data-copy="paper">
+            <h2>重点判断</h2>
+            <p class="sub">来自 L2 深度阅读，不等同于论文摘要。</p>
+            <div class="lead-card">
+              <b>建议接受</b>
+              <p>论文提出的工具边界和审计链路，可以转译成 self-cognition 的 L2 启发状态机：每条启发必须能说明证据、风险和下一步。</p>
+            </div>
+            <div class="compare">
+              <div class="compare-row"><b>论文价值</b><span>为自改进系统提供可审计边界，而不是泛泛讲 agent 能力。</span></div>
+              <div class="compare-row"><b>莫比乌斯用途</b><span>改造深读详情、导出任务和后续 L1/L2 追踪关系。</span></div>
+              <div class="compare-row"><b>风险</b><span>过早自动执行会弱化人类审查，应先设计状态字段。</span></div>
+            </div>
+          </article>
+
+          <article class="panel" data-copy="product">
+            <h2>重点判断</h2>
+            <p class="sub">来自产品深读，不等同于产品宣传摘要。</p>
+            <div class="lead-card">
+              <b>建议跟踪</b>
+              <p>这个产品最值得借鉴的是“研究工作台”的信息架构：材料、结论、证据、动作始终在同一页里，而不是散落在详情弹窗和按钮之间。</p>
+            </div>
+            <div class="compare">
+              <div class="compare-row"><b>产品价值</b><span>把 AI 输出变成可管理的研究对象，而不是一次性聊天。</span></div>
+              <div class="compare-row"><b>莫比乌斯用途</b><span>重做论文/产品详情页，让人类处理 L2 启发更顺手。</span></div>
+              <div class="compare-row"><b>风险</b><span>只借鉴交互结构，不套用营销风格或品牌表达。</span></div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <h2>处理路径</h2>
+            <p class="sub">把人类参与设计成清晰的四步，而不是按钮堆叠。</p>
+            <div class="timeline">
+              <div class="step"><span class="num">1</span><div><h3>看结论</h3><p>先判断是否值得继续处理。</p></div></div>
+              <div class="step"><span class="num">2</span><div><h3>核证据</h3><p>检查来源、命中原因、风险和适用边界。</p></div></div>
+              <div class="step"><span class="num">3</span><div><h3>做裁决</h3><p>接受、搁置、排除都要成为正常路径。</p></div></div>
+              <div class="step"><span class="num">4</span><div><h3>转任务</h3><p>接受后把启发交给小莫拆成具体改造任务。</p></div></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="command" aria-label="人类决策命令条">
+          <button class="cmd primary">交给小莫执行</button>
+          <button class="cmd good">接受为 L2</button>
+          <button class="cmd warn">搁置</button>
+          <button class="cmd bad">排除</button>
+        </section>
+      </div>
+
+      <aside class="side">
+        <div class="switch">
+          <button class="active" data-kind="paper">论文</button>
+          <button data-kind="product">产品</button>
+        </div>
+        <section class="side-card">
+          <h2>同类待处理</h2>
+          <div class="queue">
+            <article><b>Recursive Tool Policies for Agents</b><span>未深读 / priority 20.4 / 等待 L2</span></article>
+            <article><b>Research Agent Workspace</b><span>产品 / tracked / 有 2 条 UI 启发</span></article>
+            <article><b>Generic Benchmark Survey</b><span>已排除 / 低相关 / 不进入自进化</span></article>
+          </div>
+        </section>
+        <section class="side-card">
+          <h2>字段档案</h2>
+          <div class="meta-list active" data-copy="paper">
+            <div class="meta"><span>类型</span><strong>论文</strong></div>
+            <div class="meta"><span>Cluster</span><strong>agent-harness</strong></div>
+            <div class="meta"><span>阅读</span><strong>已深读</strong></div>
+            <div class="meta"><span>启发</span><strong>3 条</strong></div>
+            <div class="meta"><span>来源</span><strong>arXiv</strong></div>
+          </div>
+          <div class="meta-list" data-copy="product">
+            <div class="meta"><span>类型</span><strong>产品</strong></div>
+            <div class="meta"><span>状态</span><strong>tracked</strong></div>
+            <div class="meta"><span>阅读</span><strong>已深读</strong></div>
+            <div class="meta"><span>启发</span><strong>2 条</strong></div>
+            <div class="meta"><span>来源</span><strong>URL 扫描</strong></div>
+          </div>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const kindButtons = document.querySelectorAll('[data-kind]');
+    const copies = document.querySelectorAll('[data-copy]');
+    kindButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        kindButtons.forEach((item) => item.classList.toggle('active', item === button));
+        copies.forEach((copy) => copy.classList.toggle('active', copy.dataset.copy === button.dataset.kind));
+      });
+    });
+  </script>
+</body>
+</html>

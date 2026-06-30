@@ -24,7 +24,7 @@ import {
 } from '../services/self-evolve-demo'
 import { LOGO_REVIEW_PROJECT_ID, readLogoReviewDemoState } from '../services/logo-review-demo'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
-import { fetchGlobalDefaultModel } from '../services/global-default-model'
+import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
@@ -1700,6 +1700,9 @@ interface WizardPreview {
 interface SelectionDefaults {
   inherited?: boolean
   source_session?: { session_id: string; name: string } | null
+  // 当前 issue/research 内"上次所选模型" = 该作用域最近一次 Session 的 model (无历史为 null).
+  // 仅作用于当前作用域, 用作模型默认值的最高优先级.
+  model?: string | null
   excluded_skill_ids?: string[]
   excluded_memory_ids?: string[]
 }
@@ -2041,20 +2044,29 @@ export function NewSessionModal({
     initialPreset?.role || initialDraft?.role || (isResearch && !chiefExists ? 'chief_researcher' : 'research_assistant')
   )
   // 模型在创建时定型, 之后不可改 (随会话生命周期).
-  // 初始值优先级: preset > 用户"手动选过"的草稿模型 > 项目级默认模型偏好 > 全局默认 > 内置 codex.
-  // 关键: 草稿里的 model 只有 model_touched=true (用户手动选过) 才视为权威; 否则它只是历次默认值
+  // 默认值统一三级优先级 (与顶栏快捷一致, 见 services/global-default-model.ts):
+  //   当前 issue/research 上次所选 > 项目默认模型偏好 > 全局默认模型 > 内置 codex.
+  // "上次所选"取自该作用域最近一次 Session 的 model (session-selection-defaults 回传, 服务端按作用域隔离),
+  // 不进任何跨作用域草稿 → 绝不影响其他 issue/项目/新项目.
+  // 草稿中的 model 只有 model_touched=true (用户手动选过) 才视为权威; 否则只是历次默认值
   // 的快照, 会把模型钉在过期值上 (管理员改了项目/全局默认也不生效). 旧草稿无 model_touched → 忽略.
-  const draftModelDeliberate = initialDraft?.model_touched ? initialDraft?.model : undefined
-  const initialModelKey: ModelKey = initialPreset?.model
-    || draftModelDeliberate
-    || (typeof defaultModel === 'string' && defaultModel.trim() ? defaultModel.trim() : '')
-    || DEFAULT_SESSION_MODEL
-  const [model, setModel] = useState<ModelKey>(initialModelKey)
-  // 全局默认模型偏好 (管理中心-系统设置): 异步拉取. 项目默认 (defaultModel) 也可能因 project 异步
-  // 加载而晚到. 二者到达后, 若用户未手动改过模型, 按完整链路重算 (同 initialModelKey, 但插入全局默认).
-  // modelUserTouchedRef: 只记"用户本次是否手动改过模型", 避免异步值覆盖用户选择.
+  // preset 模式 (架构/小莫预设) 下, 预设自带 model 视为权威, 优先于其他优先级.
   const modelUserTouchedRef = useRef(false)
+  const [scopeLastModel, setScopeLastModel] = useState('')
   const [globalDefaultModel, setGlobalDefaultModel] = useState('')
+  // 仅当用户手动选过模型才视为权威, 避免过期草稿的快照钉死模型.
+  const draftModelDeliberate = initialDraft?.model_touched ? initialDraft?.model : undefined
+  const resolvedDefaultModel = useMemo<ModelKey>(() => {
+    if (isPresetMode && initialPreset?.model) return initialPreset.model
+    if (draftModelDeliberate) return draftModelDeliberate
+    return resolveDefaultModelKey({
+      scopeLastModel,
+      projectDefaultModel: typeof defaultModel === 'string' && defaultModel.trim() ? defaultModel.trim() : '',
+      globalDefaultModel,
+      fallback: DEFAULT_SESSION_MODEL,
+    })
+  }, [isPresetMode, initialPreset?.model, draftModelDeliberate, scopeLastModel, defaultModel, globalDefaultModel])
+  const [model, setModel] = useState<ModelKey>(resolvedDefaultModel)
   useEffect(() => {
     let alive = true
     fetchGlobalDefaultModel().then(v => { if (alive) setGlobalDefaultModel(v) })
@@ -2062,13 +2074,8 @@ export function NewSessionModal({
   }, [])
   useEffect(() => {
     if (modelUserTouchedRef.current) return
-    const next: ModelKey = initialPreset?.model
-      || draftModelDeliberate
-      || (typeof defaultModel === 'string' && defaultModel.trim() ? defaultModel.trim() : '')
-      || globalDefaultModel
-      || DEFAULT_SESSION_MODEL
-    setModel(next)
-  }, [defaultModel, globalDefaultModel])
+    setModel(resolvedDefaultModel)
+  }, [resolvedDefaultModel])
   // 注入上下文语言, 创建时定型 (默认中文).
   const [language, setLanguage] = useState<SessionLanguage>(initialPreset?.language || initialDraft?.language || DEFAULT_SESSION_LANGUAGE)
   const [personality, setPersonality] = useState<string>(initialPreset?.personality || personalityOptions[0]?.key || 'balanced')
@@ -2156,7 +2163,7 @@ export function NewSessionModal({
         selection_ready: !!initialDraft?.selection_ready || step === 2 || !!preview,
       }, { minChars: 1 })
     }
-  }, [DRAFT_KEY, isGuidedDemo, isPresetMode, name, desc, model, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
+  }, [DRAFT_KEY, isGuidedDemo, isPresetMode, name, desc, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
 
   const modelUsageFor = useCallback((modelKey: ModelKey) => {
     return promptStats?.model_usage_limits?.models?.[modelKey] || null
@@ -2308,6 +2315,18 @@ export function NewSessionModal({
         : `/api/issues/${issueId}/session-selection-defaults`
     return await api(endpoint) as SelectionDefaults
   }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetSelectionDefaultsEndpoint])
+
+  // 拉取当前 issue/research 的"上次所选模型" (该作用域最近一次 Session 的 model).
+  // preset / 引导演示模式不走三级默认, 直接跳过. 仅依赖作用域标识, 避免无谓重拉.
+  useEffect(() => {
+    if (isPresetMode || isGuidedDemo) { setScopeLastModel(''); return }
+    let alive = true
+    fetchSelectionDefaults()
+      .then(d => { if (alive) setScopeLastModel(typeof d?.model === 'string' ? d.model : '') })
+      .catch(() => { if (alive) setScopeLastModel('') })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issueId, researchId, isPresetMode, isGuidedDemo])
 
   const goPreview = async () => {
     if (!name.trim()) { setErr(`请填写${isResearch ? ' ' : ''}${entityNameLabel}`); return }

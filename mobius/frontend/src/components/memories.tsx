@@ -162,7 +162,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
             className="text-[10.5px] px-1.5 py-1 rounded bg-sky-500/15 text-sky-400 hover:bg-sky-500/25 border border-sky-500/20 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
             title="上传本地 .md 文件并创建 Memory, 上限 50MB">
             <Upload className="w-3 h-3" strokeWidth={1.8} />
-            {memoryFileUploading ? '上传中...' : '上传 MD'}
+            {memoryFileUploading ? '上传中...' : '上传'}
           </button>
           {scope === 'project' && (
             <button onClick={() => setRemoteOpen(true)}

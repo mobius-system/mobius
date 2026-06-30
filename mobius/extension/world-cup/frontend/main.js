@@ -18,6 +18,12 @@ function safeUrl(u) {
   if (/^https?:\/\//i.test(s)) return s;
   return '';
 }
+function safeMediaUrl(u) {
+  const s = String(u ?? '').trim();
+  if (/^https?:\/\//i.test(s)) return s;
+  if (/^\.\/assets\/[\w.-]+\.(?:jpe?g|png|webp|svg)$/i.test(s)) return s;
+  return '';
+}
 function truncate(s, n) {
   s = String(s ?? '').replace(/\s+/g, ' ').trim();
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
@@ -42,6 +48,45 @@ function fmtDate(iso) {
   if (!Number.isFinite(t)) return iso;
   const d = new Date(t);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+function cssImage(url) {
+  const safe = safeMediaUrl(url);
+  return safe ? `url('${safe.replace(/'/g, '%27')}')` : 'none';
+}
+
+/* ---------- 本地生成头像（替代不稳定的远程图） ---------- */
+// 取国家代码：'阿根廷 · ARG' -> 'ARG'
+function codeFromCountry(s) {
+  const parts = String(s ?? '').split('·');
+  return (parts[parts.length - 1] || '').trim().toUpperCase();
+}
+// 国旗 emoji（用于卡片点缀）
+const CODE_FLAGS = {
+  ARG:'🇦🇷',AUS:'🇦🇺',AUT:'🇦🇹',BEL:'🇧🇪',BRA:'🇧🇷',CAN:'🇨🇦',CHI:'🇨🇱',CMR:'🇨🇲',
+  COL:'🇨🇴',CRO:'🇭🇷',DEN:'🇩🇰',ECU:'🇪🇨',EGY:'🇪🇬',ENG:'🏴󠁧󠁢󠁥󠁮󠁧󠁿',ESP:'🇪🇸',FRA:'🇫🇷',
+  GER:'🇩🇪',GHA:'🇬🇭',ITA:'🇮🇹',JPN:'🇯🇵',KOR:'🇰🇷',MAR:'🇲🇦',MEX:'🇲🇽',NED:'🇳🇱',
+  NGA:'🇳🇬',NOR:'🇳🇴',PAN:'🇵🇦',POR:'🇵🇹',SEN:'🇸🇳',SRB:'🇷🇸',SWE:'🇸🇪',SUI:'🇨🇭',
+  TUN:'🇹🇳',URU:'🇺🇾',USA:'🇺🇸',
+};
+// 生成国家队配色渐变背景（data-URI SVG，永不依赖网络）
+function avatarBg(accent) {
+  const c = (typeof accent === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(accent)) ? accent : '#16a34a';
+  const svg =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 480 400' preserveAspectRatio='xMidYMid slice'>" +
+    "<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>" +
+    "<stop offset='0' stop-color='" + c + "'/>" +
+    "<stop offset='0.5' stop-color='" + c + "' stop-opacity='0.55'/>" +
+    "<stop offset='1' stop-color='#080814'/>" +
+    "</linearGradient>" +
+    "<pattern id='p' width='34' height='34' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'>" +
+    "<rect width='34' height='6' fill='rgba(255,255,255,0.06)'/>" +
+    "</pattern></defs>" +
+    "<rect width='480' height='400' fill='url(#g)'/>" +
+    "<rect width='480' height='400' fill='url(#p)'/>" +
+    "<circle cx='372' cy='74' r='118' fill='rgba(255,255,255,0.08)'/>" +
+    "<circle cx='96' cy='356' r='92' fill='rgba(0,0,0,0.20)'/>" +
+    "</svg>";
+  return "url(\"data:image/svg+xml," + encodeURIComponent(svg) + "\")";
 }
 
 /* ---------- 1. 滚动揭示 ---------- */
@@ -122,6 +167,78 @@ const FIXTURES = {
   ],
 };
 
+const VISUALS = {
+  metlife: './assets/stadium-night.jpg',
+  azteca: './assets/pitch-ball.jpg',
+  bmo: './assets/fans-stand.jpg',
+  sofi: './assets/player-walkout.jpg',
+  matchAction: './assets/match-action.jpg',
+  floodlight: './assets/soccer-field.jpg',
+  goalMotion: './assets/fan-crowd.jpg',
+  fanNight: './assets/fans-stand.jpg',
+  pitch: './assets/stadium-night.jpg',
+  ball: './assets/pitch-ball.jpg',
+  street: './assets/match-action.jpg',
+};
+
+const TEAM_ACCENTS = {
+  ARG: '#74acdf', AUS: '#ffcd00', AUT: '#ed2939', BEL: '#fae042', BRA: '#009739',
+  CAN: '#d80621', CHI: '#d52b1e', CMR: '#007a5e', COL: '#fcd116', CRO: '#171796',
+  DEN: '#c60c30', ECU: '#ffdd00', EGY: '#ce1126', ENG: '#cf142b', ESP: '#aa151b',
+  FRA: '#0055a4', GER: '#dd0000', GHA: '#fcd116', ITA: '#008c45', JPN: '#bc002d',
+  KOR: '#0047a0', MAR: '#c1272d', MEX: '#006847', NED: '#ff4f00', NGA: '#008751',
+  NOR: '#ba0c2f', PAN: '#005293', POR: '#006600', SEN: '#00853f', SRB: '#c6363c',
+  SWE: '#006aa7', SUI: '#d52b1e', TUN: '#e70013', URU: '#0038a8', USA: '#3c3b6e',
+};
+
+const MATCH_BACKDROPS = {
+  'MEX-CAN': VISUALS.azteca,
+  'FRA-MAR': VISUALS.goalMotion,
+  'USA-PAN': VISUALS.metlife,
+  'ARG-POR': VISUALS.sofi,
+  'ENG-NED': VISUALS.street,
+  'BRA-KOR': VISUALS.floodlight,
+  'ESP-GER': VISUALS.fanNight,
+};
+
+const HERO_FRAMES = [
+  { label: 'Final venue', title: 'MetLife 决赛夜', meta: '纽约/新泽西 · 82,500', img: VISUALS.metlife },
+  { label: 'Opening venue', title: 'Azteca 揭幕', meta: '墨西哥城 · 第三次世界杯', img: VISUALS.azteca },
+  { label: 'Canada host', title: 'Toronto 北境主场', meta: 'BMO Field · 45,000', img: VISUALS.bmo },
+];
+
+const HOTSPOTS = [
+  {
+    tag: 'Matchday Radar',
+    title: '淘汰赛入口',
+    summary: '把今天、明天和本周的焦点比赛合成一张可扫的赛程雷达，优先看开球时间、城市和热度。',
+    metric: '104 场',
+    img: VISUALS.floodlight,
+  },
+  {
+    tag: 'City Heat',
+    title: '三国十六城',
+    summary: '北美城市、巨型球场和球迷街区是这届世界杯的主角之一，页面应该像巡礼一样不断给画面。',
+    metric: '16 城',
+    img: VISUALS.sofi,
+  },
+  {
+    tag: 'Storyline',
+    title: '球星叙事线',
+    summary: '梅西、姆巴佩、新生代和东道主球队要被做成持续更新的故事线，而不是只放在表格里。',
+    metric: '热点',
+    img: VISUALS.goalMotion,
+  },
+];
+
+const CITY_PULSE = [
+  { city: 'Mexico City', stadium: 'Estadio Azteca', tag: 'Opening', img: VISUALS.azteca },
+  { city: 'New York / New Jersey', stadium: 'MetLife Stadium', tag: 'Final', img: VISUALS.metlife },
+  { city: 'Los Angeles', stadium: 'SoFi Stadium', tag: 'Showcase', img: VISUALS.sofi },
+  { city: 'Toronto', stadium: 'BMO Field', tag: 'Canada', img: VISUALS.fanNight },
+  { city: 'Miami', stadium: 'Hard Rock Stadium', tag: 'Nightlife', img: VISUALS.goalMotion },
+];
+
 // 12 组 mock 数据（每组 4 队，前 2 出线）
 const STANDINGS = {
   A: [
@@ -198,34 +315,83 @@ const STANDINGS = {
   ],
 };
 
+// 形象由国家队配色生成（avatarBg），不再依赖远程图
 const SCORERS = [
-  { rank: 1, name: 'Kylian Mbappé',  country: '法国 · FRA',     goals: 8, assists: 2, img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/Kylian_Mbapp%C3%A9_2022.jpg/320px-Kylian_Mbapp%C3%A9_2022.jpg', license: '© Wikimedia / CC-BY' },
-  { rank: 2, name: 'Lionel Messi',   country: '阿根廷 · ARG',   goals: 7, assists: 5, img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Lionel-Messi-Argentina-2022-FIFA-World-Cup_%28cropped%29.jpg/320px-Lionel-Messi-Argentina-2022-FIFA-World-Cup_%28cropped%29.jpg', license: '© Wikimedia / CC-BY-SA' },
-  { rank: 3, name: 'Julián Álvarez', country: '阿根廷 · ARG',   goals: 5, assists: 1, img: '', license: '示意 · 待接入' },
-  { rank: 4, name: 'Jude Bellingham', country: '英格兰 · ENG',  goals: 4, assists: 3, img: '', license: '示意 · 待接入' },
-  { rank: 5, name: 'Vinícius Jr.',   country: '巴西 · BRA',     goals: 4, assists: 2, img: '', license: '示意 · 待接入' },
-  { rank: 6, name: 'Bukayo Saka',    country: '英格兰 · ENG',   goals: 3, assists: 2, img: '', license: '示意 · 待接入' },
-  { rank: 7, name: 'Lautaro Martínez', country: '阿根廷 · ARG', goals: 3, assists: 1, img: '', license: '示意 · 待接入' },
-  { rank: 8, name: 'Bruno Fernandes', country: '葡萄牙 · POR',  goals: 3, assists: 2, img: '', license: '示意 · 待接入' },
+  { rank: 1, name: 'Kylian Mbappé',   country: '法国 · FRA',   goals: 8, assists: 2 },
+  { rank: 2, name: 'Lionel Messi',    country: '阿根廷 · ARG',   goals: 7, assists: 5 },
+  { rank: 3, name: 'Julián Álvarez',  country: '阿根廷 · ARG',   goals: 5, assists: 1 },
+  { rank: 4, name: 'Jude Bellingham', country: '英格兰 · ENG',   goals: 4, assists: 3 },
+  { rank: 5, name: 'Vinícius Jr.',    country: '巴西 · BRA',     goals: 4, assists: 2 },
+  { rank: 6, name: 'Bukayo Saka',     country: '英格兰 · ENG',   goals: 3, assists: 2 },
+  { rank: 7, name: 'Lautaro Martínez',country: '阿根廷 · ARG',   goals: 3, assists: 1 },
+  { rank: 8, name: 'Bruno Fernandes', country: '葡萄牙 · POR',   goals: 3, assists: 2 },
 ];
 
 const PLAYERS = [
-  { name: 'Lionel Messi',   country: '阿根廷 · ARG',  goals: 13, assists: 8, wcapps: 26, img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Lionel-Messi-Argentina-2022-FIFA-World-Cup_%28cropped%29.jpg/640px-Lionel-Messi-Argentina-2022-FIFA-World-Cup_%28cropped%29.jpg', license: '© Wikimedia / CC-BY-SA' },
-  { name: 'Kylian Mbappé',  country: '法国 · FRA',    goals: 12, assists: 4, wcapps: 14, img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/Kylian_Mbapp%C3%A9_2022.jpg/640px-Kylian_Mbapp%C3%A9_2022.jpg', license: '© Wikimedia / CC-BY' },
-  { name: 'Jude Bellingham', country: '英格兰 · ENG', goals: 1, assists: 2, wcapps: 5,  img: '', license: '示意 · 待接入' },
-  { name: 'Vinícius Jr.',    country: '巴西 · BRA',   goals: 1, assists: 2, wcapps: 5,  img: '', license: '示意 · 待接入' },
-  { name: 'Erling Haaland',  country: '挪威 · NOR',   goals: 0, assists: 0, wcapps: 0,  img: '', license: '示意 · 待接入' },
-  { name: 'Lamine Yamal',    country: '西班牙 · ESP', goals: 0, assists: 0, wcapps: 0,  img: '', license: '示意 · 待接入' },
-  { name: 'Julián Álvarez',  country: '阿根廷 · ARG', goals: 4, assists: 1, wcapps: 11, img: '', license: '示意 · 待接入' },
-  { name: 'Bukayo Saka',     country: '英格兰 · ENG', goals: 3, assists: 2, wcapps: 8,  img: '', license: '示意 · 待接入' },
+  { name: 'Lionel Messi',    country: '阿根廷 · ARG',  goals: 13, assists: 8, wcapps: 26 },
+  { name: 'Kylian Mbappé',   country: '法国 · FRA',    goals: 12, assists: 4, wcapps: 14 },
+  { name: 'Jude Bellingham', country: '英格兰 · ENG',  goals: 1,  assists: 2, wcapps: 5 },
+  { name: 'Vinícius Jr.',    country: '巴西 · BRA',    goals: 1,  assists: 2, wcapps: 5 },
+  { name: 'Erling Haaland',  country: '挪威 · NOR',    goals: 0,  assists: 0, wcapps: 0 },
+  { name: 'Lamine Yamal',    country: '西班牙 · ESP',  goals: 0,  assists: 0, wcapps: 0 },
+  { name: 'Julián Álvarez',  country: '阿根廷 · ARG',  goals: 4,  assists: 1, wcapps: 11 },
+  { name: 'Bukayo Saka',     country: '英格兰 · ENG',  goals: 3,  assists: 2, wcapps: 8 },
 ];
 
 const STADIUMS = [
-  { country: '美国 · USA',   stadium: 'MetLife Stadium',  city: '纽约/新泽西', capacity: '82,500', note: '2026 决赛场地。曾举办 2024 决赛、超级碗，是北美最重量级球场之一。', img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/97/MetLife_Stadium_%28cropped%29.jpg/1024px-MetLife_Stadium_%28cropped%29.jpg', license: '© Wikimedia / CC-BY-SA' },
-  { country: '墨西哥 · MEX', stadium: 'Estadio Azteca',   city: '墨西哥城',   capacity: '87,000', note: '1970 与 1986 两届世界杯决赛场地，2026 将第三次承办揭幕战。',           img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Estadio_Azteca_from_the_air.jpg/1024px-Estadio_Azteca_from_the_air.jpg', license: '© Wikimedia / CC-BY' },
-  { country: '加拿大 · CAN', stadium: 'BMO Field',        city: '多伦多',     capacity: '45,000', note: '加拿大首次承办男足世界杯的主场地之一，扩容后达到 4.5 万座。',         img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/BMO_Field_2016.jpg/1024px-BMO_Field_2016.jpg', license: '© Wikimedia / CC-BY-SA' },
-  { country: '美国 · USA',   stadium: 'SoFi Stadium',     city: '洛杉矶',     capacity: '70,000', note: '2022 启用，封闭式球场，将承办小组赛与淘汰赛多场焦点战。',             img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/SoFi_2022_%28cropped%29.jpg/1024px-SoFi_2022_%28cropped%29.jpg', license: '© Wikimedia / CC-BY-SA' },
+  { country: '美国 · USA',   stadium: 'MetLife Stadium',  city: '纽约/新泽西', capacity: '82,500', note: '2026 决赛场地。曾举办 2024 决赛、超级碗，是北美最重量级球场之一。', img: VISUALS.metlife, license: '视觉素材 · Unsplash' },
+  { country: '墨西哥 · MEX', stadium: 'Estadio Azteca',   city: '墨西哥城',   capacity: '87,000', note: '1970 与 1986 两届世界杯决赛场地，2026 将第三次承办揭幕战。',           img: VISUALS.azteca, license: '视觉素材 · Unsplash' },
+  { country: '加拿大 · CAN', stadium: 'BMO Field',        city: '多伦多',     capacity: '45,000', note: '加拿大首次承办男足世界杯的主场地之一，扩容后达到 4.5 万座。',         img: VISUALS.bmo, license: '视觉素材 · Unsplash' },
+  { country: '美国 · USA',   stadium: 'SoFi Stadium',     city: '洛杉矶',     capacity: '70,000', note: '2022 启用，封闭式球场，将承办小组赛与淘汰赛多场焦点战。',             img: VISUALS.sofi, license: '视觉素材 · Unsplash' },
+  { country: '美国 · USA',   stadium: 'AT&T Stadium',     city: '达拉斯',     capacity: '80,000', note: '巨屏、穹顶和超大容量让达拉斯成为整届赛事最具电视感的场地之一。',       img: VISUALS.fanNight, license: '视觉素材 · Unsplash' },
+  { country: '美国 · USA',   stadium: 'Lumen Field',      city: '西雅图',     capacity: '69,000', note: '以声浪闻名的城市球场，适合承载小组赛和淘汰赛的高压气氛。',           img: VISUALS.floodlight, license: '视觉素材 · Unsplash' },
+  { country: '加拿大 · CAN', stadium: 'BC Place',         city: '温哥华',     capacity: '54,500', note: '加拿大西海岸主场，穹顶结构和城市天际线能提供强烈视觉识别。',         img: VISUALS.goalMotion, license: '视觉素材 · Unsplash' },
+  { country: '墨西哥 · MEX', stadium: 'Estadio BBVA',     city: '蒙特雷',     capacity: '53,500', note: '山景背景和现代球场结构很适合做城市巡礼与赛前预热视频。',             img: VISUALS.ball, license: '视觉素材 · Unsplash' },
 ];
+
+/* ---------- 5. 渲染：视觉热点 ---------- */
+function renderHeroGallery() {
+  const wrap = document.getElementById('hero-gallery');
+  if (!wrap) return;
+  wrap.innerHTML = HERO_FRAMES.map((item) => `
+    <article class="hero-frame" style="--frame-image:${escapeHtml(cssImage(item.img))}">
+      <span>${escapeHtml(item.label)}</span>
+      <strong>${escapeHtml(item.title)}</strong>
+      <em>${escapeHtml(item.meta)}</em>
+    </article>
+  `).join('');
+}
+
+function renderSpotlights() {
+  const grid = document.getElementById('spotlight-grid');
+  if (grid) {
+    grid.innerHTML = HOTSPOTS.map((item, index) => `
+      <article class="spotlight-card ${index === 0 ? 'is-featured' : ''}" style="--spotlight-image:${escapeHtml(cssImage(item.img))}">
+        <div class="spotlight-media" aria-hidden="true"></div>
+        <div class="spotlight-copy">
+          <span>${escapeHtml(item.tag)}</span>
+          <strong>${escapeHtml(item.title)}</strong>
+          <p>${escapeHtml(item.summary)}</p>
+        </div>
+        <b>${escapeHtml(item.metric)}</b>
+      </article>
+    `).join('');
+  }
+
+  const strip = document.getElementById('city-filmstrip');
+  if (strip) {
+    strip.innerHTML = CITY_PULSE.map((item) => `
+      <article class="city-frame" style="--city-image:${escapeHtml(cssImage(item.img))}">
+        <span>${escapeHtml(item.tag)}</span>
+        <strong>${escapeHtml(item.city)}</strong>
+        <em>${escapeHtml(item.stadium)}</em>
+      </article>
+    `).join('');
+  }
+}
+
+renderHeroGallery();
+renderSpotlights();
 
 /* ---------- 5. 渲染：赛程 ---------- */
 function renderFixtures(key) {
@@ -239,7 +405,13 @@ function renderFixtures(key) {
   grid.innerHTML = list.map((f) => {
     const kindClass = f.kind === 'live' ? 'live' : (f.kind === 'done' ? 'done' : 'upcoming');
     const statusClass = f.kind === 'live' ? 'live' : (f.kind === 'done' ? 'done' : '');
+    const accent = TEAM_ACCENTS[f.home] || TEAM_ACCENTS[f.away] || '#16a34a';
+    const backdrop = MATCH_BACKDROPS[`${f.home}-${f.away}`] || MATCH_BACKDROPS[`${f.away}-${f.home}`] || VISUALS.pitch;
+    const heat = f.kind === 'live' ? 'LIVE HEAT' : (f.kind === 'done' ? 'FULL TIME' : 'WATCHLIST');
     return `<article class="fixture-card ${kindClass}">
+      <div class="fixture-art" style="--match-accent:${escapeHtml(accent)};--match-image:${escapeHtml(cssImage(backdrop))}">
+        <span>${escapeHtml(heat)}</span>
+      </div>
       <div class="fixture-stage">${escapeHtml(f.stage)}</div>
       <div class="fixture-match">
         <div class="fixture-team">
@@ -307,12 +479,17 @@ function renderScorers(list) {
   if (!wrap) return;
   const max = Math.max(1, ...list.map((s) => s.goals));
   wrap.innerHTML = list.map((s) => {
-    const bg = safeUrl(s.img);
-    const photoStyle = bg ? `style="background-image:url('${bg}')"` : '';
+    const code = codeFromCountry(s.country);
+    const accent = TEAM_ACCENTS[code] || '#16a34a';
+    const initial = escapeHtml(String(s.name).trim().charAt(0) || '?');
+    const flag = CODE_FLAGS[code] || '';
     const barPct = Math.round((s.goals / max) * 100);
     return `<article class="scorer-row">
       <div class="scorer-rank">${escapeHtml(String(s.rank))}</div>
-      <div class="scorer-photo" ${photoStyle}>${bg ? '' : '<span class="scorer-photo-empty">' + escapeHtml(s.name.slice(0, 1)) + '</span>'}</div>
+      <div class="scorer-photo" style="background-image:${avatarBg(accent)}">
+        <span class="scorer-initial">${initial}</span>
+        ${flag ? `<span class="scorer-flag">${flag}</span>` : ''}
+      </div>
       <div class="scorer-main">
         <div class="scorer-name">${escapeHtml(s.name)}</div>
         <div class="scorer-country">${escapeHtml(s.country)}</div>
@@ -332,10 +509,16 @@ function renderPlayers(list) {
   const grid = document.getElementById('stars-grid');
   if (!grid) return;
   grid.innerHTML = list.map((s) => {
-    const bg = safeUrl(s.img);
-    const styleAttr = bg ? `style="background-image:url('${bg}')"` : '';
+    const code = codeFromCountry(s.country);
+    const accent = TEAM_ACCENTS[code] || '#16a34a';
+    const initial = escapeHtml(String(s.name).trim().charAt(0) || '?');
+    const flag = CODE_FLAGS[code] || '';
     return `<article class="player-card">
-      <div class="player-photo" ${styleAttr}>${bg ? '' : '<span class="player-photo-empty">' + escapeHtml(s.name.slice(0, 1)) + '</span>'}</div>
+      <div class="player-photo" style="background-image:${avatarBg(accent)}">
+        <span class="player-flag">${flag}</span>
+        <span class="player-initial">${initial}</span>
+        <span class="player-code">${escapeHtml(code)}</span>
+      </div>
       <div class="player-body">
         <h4 class="player-name">${escapeHtml(s.name)}</h4>
         <div class="player-team">${escapeHtml(s.country)}</div>
@@ -344,7 +527,7 @@ function renderPlayers(list) {
           <div><span class="player-stat-label">助攻</span><span class="player-stat-value">${escapeHtml(String(s.assists))}</span></div>
           <div><span class="player-stat-label">出场</span><span class="player-stat-value">${escapeHtml(String(s.wcapps))}</span></div>
         </div>
-        <p class="player-license">${escapeHtml(s.license)}</p>
+        <p class="player-license">国家队配色 · 示意形象</p>
       </div>
     </article>`;
   }).join('');
@@ -356,8 +539,8 @@ function renderStadiums(list) {
   const grid = document.getElementById('host-grid');
   if (!grid) return;
   grid.innerHTML = list.map((h) => {
-    const bg = safeUrl(h.img);
-    const styleAttr = bg ? `style="background-image:url('${bg}')"` : '';
+    const bg = safeMediaUrl(h.img);
+    const styleAttr = bg ? `style="background-image:${escapeHtml(cssImage(bg))}"` : '';
     return `<article class="host-card">
       <div class="host-photo" ${styleAttr}></div>
       <div class="host-body">
@@ -373,32 +556,44 @@ function renderStadiums(list) {
 renderStadiums(STADIUMS);
 
 /* ---------- 10. 渲染：新闻主区 ---------- */
+// 无后端 / 拉取失败时的示例新闻（本地图片，明确标记「示例」），让新闻区始终图文并茂
+const SAMPLE_NEWS = [
+  {
+    source: 'BBC Sport', sample: true, title: '揭幕在即：北美三国 16 城整装待发，史上首届 48 队世界杯',
+    summary: '从墨西哥城阿兹特克到纽约大都会，104 场比赛将横跨三个时区。本届扩军至 48 队，赛制与出线规则全面刷新。',
+    image: VISUALS.matchAction,
+  },
+  { source: 'The Guardian', sample: true, title: '焦点球员观察：梅西最后一舞与姆巴佩的卫冕征途' },
+  { source: 'Sky Sports', sample: true, title: '小组赛死亡之组盘点：传统豪强提前相遇的可能' },
+  { source: 'ESPN', sample: true, title: '球场巡礼：SoFi 与 MetLife 如何重塑北美观赛体验' },
+  { source: 'BBC Sport', sample: true, title: '战术前瞻：高位逼抢与三中卫体系仍是主流' },
+  { source: 'The Athletic', sample: true, title: '数据视角：哪些黑马有望复制 2022 摩洛哥奇迹' },
+];
+
 function renderNews(items) {
   const hero = document.getElementById('news-hero');
   const list = document.getElementById('news-list');
   if (!hero || !list) return;
 
   if (!items || items.length === 0) {
-    hero.innerHTML = `<div class="news-hero-empty">
-      <p class="news-source">兜底</p>
-      <p class="news-title">数据同步中…</p>
-      <p class="news-summary">后端正在从公开 RSS 拉取世界杯相关新闻，稍后会自动出现。</p>
-    </div>`;
-    list.innerHTML = '';
-    return;
+    // 用示例新闻填充，避免整块空白
+    items = SAMPLE_NEWS;
   }
 
   const [first, ...rest] = items;
   const firstUrl = safeUrl(first.url);
-  const firstImg = safeUrl(first.image);
+  const firstImg = safeUrl(first.image) || safeMediaUrl(first.image); // 兼容远程与本地示例图
   const firstSample = first.sample ? '<span class="news-sample">示例</span>' : '';
+  const firstMeta = first.sample
+    ? '示例预览 · 后端 RSS 接入后自动替换'
+    : [timeAgo(first.ts), fmtDate(first.fetched_at)].filter((x) => x && x !== '—').join(' · ');
   const heroInner = `
     ${firstImg ? `<div class="news-hero-img" style="background-image:url('${escapeHtml(firstImg)}')"></div>` : ''}
     <div class="news-hero-body">
       <div class="news-source">${escapeHtml(first.source)}${firstSample}</div>
       <h3 class="news-hero-title">${escapeHtml(truncate(first.title, 120))}</h3>
       ${first.summary ? `<p class="news-hero-summary">${escapeHtml(truncate(first.summary, 200))}</p>` : ''}
-      <span class="news-meta">${escapeHtml(timeAgo(first.ts))} · ${escapeHtml(fmtDate(first.fetched_at))}</span>
+      <span class="news-meta">${escapeHtml(firstMeta)}</span>
     </div>
   `;
   hero.innerHTML = firstUrl
@@ -412,10 +607,11 @@ function renderNews(items) {
       ? `<a class="news-item" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer nofollow">`
       : `<div class="news-item">`;
     const close = url ? '</a>' : '</div>';
+    const meta = n.sample ? '示例预览' : timeAgo(n.ts);
     return `${a}
       <span class="news-source">${escapeHtml(n.source)}${sampleBadge}</span>
       <p class="news-title">${escapeHtml(truncate(n.title, 110))}</p>
-      <span class="news-meta">${escapeHtml(timeAgo(n.ts))}</span>
+      <span class="news-meta">${escapeHtml(meta)}</span>
     ${close}`;
   }).join('');
 }

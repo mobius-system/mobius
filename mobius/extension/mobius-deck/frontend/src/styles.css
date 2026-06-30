@@ -70,7 +70,6 @@ button {
   gap: 16px;
   width: min(1540px, 100%);
   height: calc(100vh - 48px);
-  min-height: 760px;
   margin: 0 auto;
   overflow: hidden;
   border: 1px solid rgba(203, 215, 228, 0.9);
@@ -205,6 +204,9 @@ button {
 
 .stage-wrap {
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-height: 0;
   padding: 0 24px;
   overflow: hidden;
@@ -214,8 +216,11 @@ button {
   display: grid;
   grid-template-columns: 310px minmax(0, 1fr);
   gap: 20px;
-  height: 100%;
-  min-height: 0;
+  width: 1440px;
+  height: 760px;
+  flex: 0 0 auto;
+  transform: scale(var(--deck-scale, 1));
+  transform-origin: center center;
 }
 
 .slide-copy {
@@ -676,10 +681,37 @@ button {
   line-height: 1;
 }
 
-.hub span:last-child {
+.hub > span:last-child {
   color: rgba(255, 255, 255, 0.86);
   font-size: 13px;
   font-weight: 760;
+}
+
+.hub-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+  max-width: 100%;
+}
+
+.hub-capabilities .chip {
+  min-height: 22px;
+  padding: 3px 9px;
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 780;
+}
+
+.hub-capabilities .chip.chip-green,
+.hub-capabilities .chip.chip-yellow,
+.hub-capabilities .chip.chip-cyan {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: var(--ink);
 }
 
 .hub-glow {
@@ -735,13 +767,8 @@ button {
 }
 
 .capability-cloud {
-  position: absolute;
-  right: 28%;
-  top: 9%;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-width: 250px;
+  /* capability-cloud 已并入 .hub 卡片, 此样式保留为空占位防回归 */
+  display: none;
 }
 
 .security-layout,
@@ -1511,60 +1538,12 @@ button {
   align-content: center;
 }
 
-@media (max-width: 1180px) {
-  .slide {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .slide-copy {
-    gap: 10px;
-  }
-
-  .slide-copy h2 {
-    max-width: none;
-    font-size: 34px;
-  }
-
-  .slide-copy p:not(.eyebrow) {
-    max-width: none;
-  }
-
-  .reach-layout,
-  .security-layout,
-  .assistant-layout,
-  .loop-layout,
-  .chart-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .architecture-layout,
-  .reach-layout,
-  .security-layout,
-  .assistant-layout,
-  .manager-layout,
-  .loop-layout {
-    min-height: 820px;
-  }
-
-  .layer,
-  .layer-research,
-  .layer-user {
-    grid-template-columns: 1fr;
-  }
-
-  .layer-label {
-    min-height: 42px;
-  }
-}
-
 @media (max-width: 720px) {
   .app-shell {
     padding: 0;
   }
 
   .deck {
-    min-height: 100vh;
     border: 0;
     border-radius: 0;
   }
@@ -1585,43 +1564,8 @@ button {
     justify-content: space-between;
   }
 
-  .icon-button {
-    width: 48px;
-  }
-
   .progress-track {
     margin: 0 14px;
-  }
-
-  .stage-wrap {
-    padding: 0 12px;
-    overflow: auto;
-  }
-
-  .slide-canvas {
-    overflow: auto;
-  }
-
-  .slide-copy {
-    padding: 18px;
-  }
-
-  .slide-copy h2 {
-    font-size: 28px;
-  }
-
-  .nav-button {
-    width: 40px;
-    height: 52px;
-    background: rgba(255, 255, 255, 0.94);
-  }
-
-  .nav-button-left {
-    left: 10px;
-  }
-
-  .nav-button-right {
-    right: 10px;
   }
 
   .filmstrip {
@@ -1632,83 +1576,5 @@ button {
   .overview {
     inset: 120px 0 0;
     padding: 16px;
-  }
-
-  .overview-grid,
-  .local-boundary,
-  .project-stack,
-  .environment-grid,
-  .manager-transition,
-  .detail-list {
-    grid-template-columns: 1fr;
-  }
-
-  .overview-card {
-    min-height: 130px;
-  }
-
-  .reach-map .icon-node {
-    position: relative;
-    left: auto;
-    right: auto;
-    top: auto;
-    bottom: auto;
-    width: 100%;
-  }
-
-  .reach-map {
-    display: grid;
-    gap: 10px;
-    min-height: auto;
-    padding: 18px;
-  }
-
-  .reach-map .connector-svg,
-  .hub-glow {
-    display: none;
-  }
-
-  .hub,
-  .capability-cloud {
-    position: relative;
-    left: auto;
-    right: auto;
-    top: auto;
-    width: 100%;
-    transform: none;
-  }
-
-  .hub {
-    min-height: 100px;
-  }
-
-  .capability-cloud {
-    max-width: none;
-  }
-
-  .spoke {
-    position: relative;
-    left: auto;
-    right: auto;
-    top: auto;
-    bottom: auto;
-    width: 100%;
-  }
-
-  .assistant-hub {
-    display: grid;
-    gap: 10px;
-    min-height: auto;
-    padding: 18px;
-  }
-
-  .assistant-center {
-    position: relative;
-    left: auto;
-    top: auto;
-    width: 100%;
-    height: 120px;
-    border-radius: 8px;
-    transform: none;
   }
 }

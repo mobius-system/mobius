@@ -49,22 +49,60 @@ plugins:
           build: true
           nav_translations:
             Home: 首页
-            Tutorial: 使用教程
+            "I. Master Mobius in 5 Minutes": I-五分钟精通
+            "Xiaomo: Universal Shortcut": 万能捷径：小莫助理
+            "Concepts: Import a Project": 概念入门：导入项目并开启首个任务
+            "Concepts: Skills & Memory": 概念入门：技能与记忆
+            "II. Advanced Capabilities": II-高级能力
+            "Add Remote Compute": 添加远程算力
+            "Xiaomo Assistant (Web)": 小莫助手 Web 端
+            "Prevent Agent Idle (Patrol & Nudge)": 防止 Agent 偷懒
+            "Exclude Skills & Memory": 屏蔽无关技能与记忆
+            "Migrate Skills & Memory": 迁移 Skill 和 Memory
+            "III. Admin Basics": III-管理员基础
             "Add a User": 添加用户
-            "Import a Project & First Task": 导入项目并开启首个任务
-            "Skills & Memory": 技能与记忆
-            "Self-Evolution Examples": 自进化示例
+            "Monitor Agents": 监控智能体
+            "Configure Codex + a Model": 配置 Codex + 模型
+            "Configure Claude Code + a Model": 配置 Claude Code + 模型
+            "Limit Model Call Frequency": 限制模型调用频率
+            "IV. Mobius Self-Evolution": IV-自我进化能力
+            "Simple Self-Evolution Example": 简单自进化示例
+            "V. Tips": V-小技巧
+            "Chat Input Tips": 聊天输入小技巧
+            "Switch the Model Mid-Session": 中途切换模型
+            "Change the Frontend Theme": 修改前端色彩主题
+            "Mark a Key Project (Favorite)": 标记重点项目
+            "Package & Download Project Files": 项目文件打包下载
         - locale: en
           name: English
           build: true
 
 nav:
   - Home: index.md
-  - Tutorial:
+  - 'I. Master Mobius in 5 Minutes':
+      - 'Xiaomo: Universal Shortcut': tutorial/13_xiaomo_control_hub.md
+      - 'Concepts: Import a Project': tutorial/02a_import_project_and_begin_first_job.md
+      - 'Concepts: Skills & Memory': tutorial/03a_using_skill_and_memory.md
+  - 'II. Advanced Capabilities':
+      - Add Remote Compute: tutorial/04_add_remote_server.md
+      - Xiaomo Assistant (Web): tutorial/05_using_xiaomo_assistant.md
+      - Prevent Agent Idle (Patrol & Nudge): tutorial/06_prevent_agent_idle.md
+      - Exclude Skills & Memory: tutorial/07_exclude_skills_memory.md
+      - Migrate Skills & Memory: tutorial/12_migrate_skill_memory.md
+  - 'III. Admin Basics':
       - Add a User: tutorial/01_add_user.md
-      - Import a Project & First Task: tutorial/02a_import_project_and_begin_first_job.md
-      - Skills & Memory: tutorial/03a_using_skill_and_memory.md
-  - Self-Evolution Examples: self-evo-demo.md
+      - Monitor Agents: tutorial/08_monitor_agents.md
+      - Configure Codex + a Model: tutorial/09_config_codex_model.md
+      - Configure Claude Code + a Model: tutorial/10_config_claude_code_model.md
+      - Limit Model Call Frequency: tutorial/11_limit_model_usage.md
+  - 'IV. Mobius Self-Evolution':
+      - Simple Self-Evolution Example: self-evo-demo.md
+  - 'V. Tips':
+      - Chat Input Tips: tutorial/14_chat_input_tips.md
+      - Switch the Model Mid-Session: tutorial/15_switch_model_mid_session.md
+      - Change the Frontend Theme: tutorial/16_change_frontend_theme.md
+      - Mark a Key Project (Favorite): tutorial/17_favorite_project.md
+      - Package & Download Project Files: tutorial/18_package_download_project.md
 
 markdown_extensions:
   - admonition

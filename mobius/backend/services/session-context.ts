@@ -1157,7 +1157,7 @@ function builtinSkillDefaultExclusions(currentSources: any, storedSelection: any
 // 当前已不可用的 id 会被过滤; 新增的 skill/memory 默认保持勾选.
 function buildIssueSelectionDefaults(user: any, issueId: any): any {
   const issue = Issues.findById(issueId);
-  if (!issue) return { inherited: false, source_session: null, excluded_skill_ids: [], excluded_memory_ids: [] };
+  if (!issue) return { inherited: false, source_session: null, model: null, excluded_skill_ids: [], excluded_memory_ids: [] };
 
   const currentSources = gatherIssueSources(user, issue, { skills: [], memories: [] });
   const currentSkillIds = new Set<string>((currentSources.skills || []).map((sk: any) => sk.id));
@@ -1168,6 +1168,9 @@ function buildIssueSelectionDefaults(user: any, issueId: any): any {
     return {
       inherited: false,
       source_session: null,
+      // 当前 issue 内"上次所选模型" = 该 issue 最近一次 Session 的 model; 严格限定在当前 issue,
+      // 不跨 issue/项目, 新建项目(无历史 Session)此值为 null → 由前端按 项目默认>全局默认 回落.
+      model: null,
       excluded_skill_ids: uniqueAllowedIds(builtinSkillDefaultExclusions(currentSources, null), currentSkillIds),
       excluded_memory_ids: [],
     };
@@ -1199,6 +1202,8 @@ function buildIssueSelectionDefaults(user: any, issueId: any): any {
       last_active: latest.last_active,
       selection_snapshot_at: latest.session_selection_snapshot_at || null,
     },
+    // 当前 issue 内"上次所选模型": 该 issue 最近一次 Session 的 model.
+    model: typeof latest.model === 'string' && latest.model.trim() ? latest.model.trim() : null,
     excluded_skill_ids: excludedSkillIds,
     excluded_memory_ids: excludedMemoryIds,
   };
@@ -1206,17 +1211,26 @@ function buildIssueSelectionDefaults(user: any, issueId: any): any {
 
 function buildResearchSelectionDefaults(user: any, researchId: any): any {
   const research = Researches.findById(researchId);
-  if (!research) return { inherited: false, source_session: null, excluded_skill_ids: [], excluded_memory_ids: [] };
+  if (!research) return { inherited: false, source_session: null, model: null, project_default_model: null, excluded_skill_ids: [], excluded_memory_ids: [] };
 
   const currentSources = gatherResearchSources(user, research, { skills: [], memories: [] });
   const currentSkillIds = new Set<string>((currentSources.skills || []).map((sk: any) => sk.id));
   const currentMemoryIds = new Set<string>((currentSources.memories || []).map((memory: any) => memory.id));
+
+  // research-agent-team-modal 没有 project 上下文, 这里顺带回传项目级默认模型偏好, 供前端按
+  // (当前 research 上次所选 > 项目默认 > 全局默认) 三级链路预填模型.
+  const researchProject = research?.project_id ? Projects.findById(research.project_id) : null;
+  const projectDefaultModel = (typeof researchProject?.default_model === 'string' && researchProject.default_model.trim())
+    ? researchProject.default_model.trim()
+    : null;
 
   const latest = Sessions.findLatestReusableSelectionForResearch(researchId);
   if (!latest) {
     return {
       inherited: false,
       source_session: null,
+      model: null,
+      project_default_model: projectDefaultModel,
       excluded_skill_ids: uniqueAllowedIds(builtinSkillDefaultExclusions(currentSources, null), currentSkillIds),
       excluded_memory_ids: [],
     };
@@ -1248,6 +1262,9 @@ function buildResearchSelectionDefaults(user: any, researchId: any): any {
       last_active: latest.last_active,
       selection_snapshot_at: latest.session_selection_snapshot_at || null,
     },
+    // 当前 research 内"上次所选模型": 该 research 最近一次 Session 的 model.
+    model: typeof latest.model === 'string' && latest.model.trim() ? latest.model.trim() : null,
+    project_default_model: projectDefaultModel,
     excluded_skill_ids: excludedSkillIds,
     excluded_memory_ids: excludedMemoryIds,
   };

@@ -105,6 +105,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showOverview, setShowOverview] = useState(false);
   const deckRef = useRef(null);
+  const stageRef = useRef(null);
   const activeSlide = slides[activeIndex];
   const ActiveSlide = activeSlide.component;
 
@@ -160,6 +161,30 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeIndex]);
+
+  // 固定设计画布(1440x760) + 等比缩放适配视口, 保证任何分辨率下内容完整不裁切
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return undefined;
+    const DESIGN_W = 1440;
+    const DESIGN_H = 760;
+    const update = () => {
+      const rect = stage.getBoundingClientRect();
+      const scale = Math.min(rect.width / DESIGN_W, rect.height / DESIGN_H);
+      stage.style.setProperty(
+        '--deck-scale',
+        Number.isFinite(scale) && scale > 0 ? String(scale) : '1'
+      );
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(stage);
+    window.addEventListener('resize', update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, []);
 
   return (
     <main className="app-shell">
@@ -217,7 +242,7 @@ function App() {
           <span style={{ width: progress }} />
         </div>
 
-        <section className="stage-wrap">
+        <section className="stage-wrap" ref={stageRef}>
           <button
             type="button"
             className="nav-button nav-button-left"
@@ -364,6 +389,11 @@ function ReachSlide() {
           <span className="hub-glow" />
           <strong>Mobius</strong>
           <span>触手，无处不可达</span>
+          <div className="hub-capabilities">
+            <Chip tone="neutral">深度学习</Chip>
+            <Chip tone="neutral">强化学习</Chip>
+            <Chip tone="neutral">自动科研</Chip>
+          </div>
         </div>
 
         <IconNode icon={HardDrive} title="云存储 / NAS / OSS" meta="SSH · SFTP" tone="blue" className="reach-nas" />
@@ -374,12 +404,6 @@ function ReachSlide() {
         <IconNode icon={Server} title="内网 GPU 算力集群" meta="深度学习 · 强化学习" tone="red" className="reach-gpu" />
         <IconNode icon={Network} title="代理 & 代理池" meta="可选" tone="orange" className="reach-proxy" />
         <IconNode icon={Globe2} title="复杂因特网" meta="开放文献 · 开放代码 · 开放研报" tone="cyan" className="reach-web" />
-
-        <div className="capability-cloud">
-          <Chip tone="green">深度学习</Chip>
-          <Chip tone="yellow">强化学习</Chip>
-          <Chip tone="cyan">自动科研</Chip>
-        </div>
       </div>
 
       <FragmentPanel
@@ -548,8 +572,7 @@ function ManagerSlide() {
   return (
     <div className="manager-layout">
       <div className="manager-transition">
-        <div className="crossed">成为一人之军</div>
-        <div className="arrow-mark">→</div>
+        <div className="manager-target">成为一人之军</div>
         <div className="manager-target">
           <span>作为管理者</span>
           <strong>成为 AI 时代的团队管理者</strong>
@@ -616,7 +639,6 @@ function ArchitectureSlide() {
     '拓展插件开发 03',
     '论文复现研究',
     '股市调查 02',
-    '乌龟棋进化 03',
     'GPU 长程训练任务',
   ];
   const subsystems = [
@@ -681,7 +703,7 @@ function ArchitectureSlide() {
           <span>嵌入式研发 · 基础库研发 · 论文复现 · 远程仓库本地部署 · 项目 Skill · Memory</span>
         </div>
         <div className="admin-stack">
-          <IconNode icon={Users} title="超级管理员" meta="小英 · 超级秘书" tone="green" />
+          <IconNode icon={Users} title="超级管理员" meta="小莫 · 超级秘书" tone="green" />
           <IconNode icon={Brain} title="员工资产" meta="Skill · Memory · 模型 · 超级秘书" tone="purple" />
         </div>
       </section>

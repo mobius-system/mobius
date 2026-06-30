@@ -1234,6 +1234,7 @@ router.post('/:id/messages', auth, async (req: express.Request, res: express.Res
       attachments: req.body?.attachments,
       source: 'http.session.messages',
       logger: console,
+      urgent: req.body?.urgent === true,
     } as any);
     auditSessionAccess(user, 'send_session_message', Sessions.findById(sessionId) as any);
     res.json(result);
