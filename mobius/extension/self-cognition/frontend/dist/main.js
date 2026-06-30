@@ -1975,8 +1975,13 @@ async function doAiScan(kind, { button } = {}) {
       applyDecisionPayload(fresh);
     }
     render();
-    renderLatestBatch(kind === 'paper' ? 'paper' : 'product', items, `本轮 AI 阅读 ${result.scanned} 条 · ${items.length} 条有启发`);
-    showToast(`AI 阅读完成: ${result.summary || ''}`);
+    if (result.async) {
+      renderLatestBatch(kind === 'paper' ? 'paper' : 'product', items, `后台 AI 阅读已启动 ${result.scanned || 0} 条`);
+      showToast(result.session_url ? `AI 阅读已启动，后台 Agent 处理中` : (result.summary || 'AI 阅读已启动'));
+    } else {
+      renderLatestBatch(kind === 'paper' ? 'paper' : 'product', items, `本轮 AI 阅读 ${result.scanned} 条 · ${items.length} 条有启发`);
+      showToast(`AI 阅读完成: ${result.summary || ''}`);
+    }
     return { ok: true, scanned: result.scanned };
   } catch (error) {
     showToast(error.message || 'AI 阅读失败', 'bad');
@@ -2097,8 +2102,13 @@ async function runProductScan(event) {
       state.summary = result.summary || state.summary;
       render();
       const items = Array.isArray(result.discovery?.items) ? result.discovery.items : [];
-      renderLatestBatch('product', items, `本轮 Agent 发现 ${items.length} 条 · 新候选 +${result.discovery?.candidates_added || 0}`);
-      showToast(`Agent 智能发现 ${items.length} 条新候选 (model: ${result.discovery?.model || '?'})`);
+      if (result.async) {
+        renderLatestBatch('product', items, `后台产品发现已启动`);
+        showToast('产品发现 Agent 已启动，后台处理中');
+      } else {
+        renderLatestBatch('product', items, `本轮 Agent 发现 ${items.length} 条 · 新候选 +${result.discovery?.candidates_added || 0}`);
+        showToast(`Agent 智能发现 ${items.length} 条新候选 (model: ${result.discovery?.model || '?'})`);
+      }
     }
   } catch (error) {
     showToast(error.message || '扫描失败', 'bad');
@@ -2483,10 +2493,14 @@ function getDetailChat(kind, id) {
 function renderChatMessages(chat, emptyText = '') {
   const rows = chat.messages.map((message) => {
     const toneClass = message.tone === 'error' ? 'is-error' : (message.tone === 'warn' ? 'is-warn' : '');
+    const pendingClass = message.pending ? ' is-loading' : '';
     const metaHtml = message.meta ? `<div class="detail-chat-meta">${escapeHtml(message.meta)}</div>` : '';
+    const linkHtml = (message.sessionUrl && !message.pending)
+      ? `<div class="detail-chat-link"><a href="${escapeHtml(message.sessionUrl)}" target="_blank" rel="noopener">查看完整 Session 回复 →</a></div>`
+      : '';
     return `
-    <div class="detail-chat-message ${message.role === 'user' ? 'is-user' : 'is-ai'} ${toneClass}">
-      <div class="detail-chat-bubble">${escapeHtml(message.content)}${metaHtml}</div>
+    <div class="detail-chat-message ${message.role === 'user' ? 'is-user' : 'is-ai'} ${toneClass}${pendingClass}">
+      <div class="detail-chat-bubble">${escapeHtml(message.content)}${metaHtml}${linkHtml}</div>
       <time>${escapeHtml(formatChatTime(message.time))}</time>
     </div>
   `;
@@ -2565,6 +2579,108 @@ function refreshDetailChat(kind, id) {
     button.disabled = chat.loading;
     button.textContent = chat.loading ? 'AI 分析中...' : 'AI 深度分析';
   });
+}
+
+// ===== Agent 异步回复轮询: 网页内"正在生成/完成摘要"反馈 =====
+const AGENT_POLL_INTERVAL = 4000;
+const AGENT_POLL_MAX = 45; // ~3 分钟上限, 避免无限轮询
+
+function stopAgentPoll(chat) {
+  if (!chat) return;
+  if (chat.poll) chat.poll.cancelled = true;
+  chat.poll = null;
+}
+
+// 把 chat_status 结果写回最近一条 pending assistant 消息; 返回 true 表示终态(应停止轮询).
+async function applyAgentPollResult(kind, id, res, { isScan } = {}) {
+  const chat = getDetailChat(kind, id);
+  const msg = [...chat.messages].reverse().find((m) => m && m.role === 'assistant' && m.pending);
+  if (!msg) return true;
+  const sessionUrl = res && res.session_url ? res.session_url : msg.sessionUrl || '';
+  const metaParts = [];
+  if (msg.model) metaParts.push(msg.model);
+  if (sessionUrl) metaParts.push(`Session: ${sessionUrl}`);
+  const status = res && res.status ? res.status : 'generating';
+  if (status === 'completed') {
+    msg.pending = false;
+    msg.content = (res.reply || '已完成。').trim();
+    msg.sessionUrl = sessionUrl;
+    msg.meta = metaParts.join(' · ');
+    msg.tone = undefined;
+    try { await refreshSourceItem(kind, id); } catch {}
+    rerenderSourceViews(kind, id);
+    showToast(isScan ? 'AI 深度分析完成' : 'Agent 回复已生成');
+    return true;
+  }
+  if (status === 'done_no_summary') {
+    msg.pending = false;
+    msg.content = (res && res.reply ? res.reply : 'Agent 已完成，但未生成网页摘要。完整回复见对应 Session。').trim();
+    msg.sessionUrl = sessionUrl;
+    msg.meta = metaParts.join(' · ');
+    msg.tone = 'warn';
+    try { await refreshSourceItem(kind, id); } catch {}
+    rerenderSourceViews(kind, id);
+    return true;
+  }
+  if (status === 'error') {
+    msg.pending = false;
+    msg.content = (res && res.reply ? res.reply : 'Agent 处理失败，请稍后重试或在 Session 中查看。').trim();
+    msg.sessionUrl = sessionUrl;
+    msg.meta = metaParts.join(' · ');
+    msg.tone = 'error';
+    return true;
+  }
+  // generating: 保持 pending, 偶尔更新提示文案让用户感知仍在进行
+  msg.content = attemptsToHint(chat.poll && chat.poll.attempts) || msg.content || '正在生成回复…';
+  return false;
+}
+
+function attemptsToHint(n) {
+  if (!n || n < 4) return '正在生成回复…';
+  if (n < 10) return '仍在后台阅读资料并生成回复，请稍候…';
+  return 'Agent 仍在工作（深度阅读较慢），完整回复也会出现在 Session 里…';
+}
+
+function markAgentPollTimeout(kind, id) {
+  const chat = getDetailChat(kind, id);
+  const msg = [...chat.messages].reverse().find((m) => m && m.role === 'assistant' && m.pending);
+  if (msg) {
+    msg.pending = false;
+    msg.content = '等待回复超时。Agent 可能仍在后台运行，请稍后刷新或在对应 Session 中查看完整回复。';
+    msg.tone = 'warn';
+  }
+}
+
+// 启动轮询; 每次 chat 只保留一个活跃 poll, 新轮询会取消旧的.
+function startAgentPoll(kind, id, { runId, scopeId, isScan = false }) {
+  const chat = getDetailChat(kind, id);
+  stopAgentPoll(chat);
+  const token = { cancelled: false, attempts: 0 };
+  chat.poll = token;
+  const tick = async () => {
+    if (token.cancelled || chat.poll !== token) return;
+    token.attempts += 1;
+    let res = null;
+    try {
+      res = await call({ action: 'chat_status', kind, scope_id: scopeId, run_id: runId });
+    } catch (err) {
+      res = { status: 'error', reply: `查询 Agent 状态失败: ${err.message || err}` };
+    }
+    if (token.cancelled || chat.poll !== token) return;
+    let finished;
+    try { finished = await applyAgentPollResult(kind, id, res, { isScan }); } catch { finished = true; }
+    refreshDetailChat(kind, id);
+    if (finished) { if (chat.poll === token) chat.poll = null; return; }
+    if (token.attempts >= AGENT_POLL_MAX) {
+      markAgentPollTimeout(kind, id);
+      refreshDetailChat(kind, id);
+      if (chat.poll === token) chat.poll = null;
+      return;
+    }
+    setTimeout(tick, AGENT_POLL_INTERVAL);
+  };
+  setTimeout(tick, AGENT_POLL_INTERVAL);
+  return token;
 }
 
 function renderDetailActionButton(kind, id, action, label, tone, active, disabled = false) {
@@ -3206,6 +3322,29 @@ async function runDetailAiAnalysis(kind, id) {
       include_backlog: false,
       backfill: false,
     });
+    if (result.async) {
+      if (chat.poll) {
+        const stale = [...chat.messages].reverse().find((m) => m && m.role === 'assistant' && m.pending);
+        if (stale) { stale.pending = false; stale.content = `${stale.content}\n（已被新的分析打断，完整回复见 Session）`; stale.tone = 'warn'; }
+        stopAgentPoll(chat);
+      }
+      const meta = [];
+      if (result.provider) meta.push(result.provider);
+      if (result.session_url) meta.push(`Session: ${result.session_url}`);
+      chat.messages.push({
+        role: 'assistant',
+        pending: true,
+        content: `AI 深度分析已启动，后台 ${kind === 'product' ? '产品' : '论文'} Agent 正在读取莫比乌斯上下文和资料详情，完成后会在这里显示摘要并写回启发点。`,
+        meta: meta.join(' · '),
+        time: new Date().toISOString(),
+        model: result.model || '',
+        runId: result.run_id || '',
+        sessionUrl: result.session_url || '',
+      });
+      showToast('AI 深度分析已启动，后台处理中');
+      startAgentPoll(kind, id, { runId: result.run_id, scopeId: id, isScan: true });
+      return;
+    }
     const updated = await refreshSourceItem(kind, id);
     const row = (result.results || []).find((entry) => entry.id === id) || (result.results || [])[0] || null;
     const inspirationCount = Number(row?.inspiration_count || sortedInspirations(updated?.ai_inspiration).length || 0);
@@ -3259,6 +3398,12 @@ async function handleDetailChatSubmit(event) {
 
   const chat = getDetailChat(kind, id);
   if (chat.loading) return;
+  // 若上一轮异步回复仍在轮询, 先终止并把占位消息标记为被打断
+  if (chat.poll) {
+    const stale = [...chat.messages].reverse().find((m) => m && m.role === 'assistant' && m.pending);
+    if (stale) { stale.pending = false; stale.content = `${stale.content}\n（已被新的追问打断，完整回复见 Session）`; stale.tone = 'warn'; }
+    stopAgentPoll(chat);
+  }
   chat.messages.push({ role: 'user', content: message, time: new Date().toISOString() });
   chat.loading = true;
   input.value = '';
@@ -3281,6 +3426,22 @@ async function handleDetailChatSubmit(event) {
     }
     const meta = [];
     if (result.provider) meta.push(result.provider);
+    if (result.session_url) meta.push(`Session: ${result.session_url}`);
+    if (result.async) {
+      chat.messages.push({
+        role: 'assistant',
+        pending: true,
+        content: '正在生成回复…',
+        meta: meta.length ? meta.join(' · ') : '',
+        time: new Date().toISOString(),
+        model: result.model || '',
+        runId: result.run_id || '',
+        sessionUrl: result.session_url || '',
+      });
+      showToast('追问已发送到后台 Agent，正在生成回复');
+      startAgentPoll(kind, id, { runId: result.run_id, scopeId: id, isScan: false });
+      return;
+    }
     if (result.context_messages) meta.push(`已带上下文 ${result.context_messages} 条`);
     if (result.tokens?.input || result.tokens?.output) meta.push(`tokens in/out=${result.tokens.input}/${result.tokens.output}`);
     const inspirationDiff = Array.isArray(result.inspiration_diff) ? result.inspiration_diff : [];

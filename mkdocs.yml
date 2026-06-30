@@ -73,6 +73,13 @@ plugins:
             "Change the Frontend Theme": 修改前端色彩主题
             "Mark a Key Project (Favorite)": 标记重点项目
             "Package & Download Project Files": 项目文件打包下载
+            "VI. Deep Research": VI-深度研究
+            "Enable Research & Create a Task": 创建研究任务（启用 Research 系统）
+            "Build an Agent Team": 组建智能体研究团队
+            "Add the Graph Agent": 启用 Graph 绘图 Agent
+            "Add the Image Agent": 启用图像绘制 Agent
+            "Add a Custom Member": 创建自定义团队成员
+            "Change a Member's Avatar": 更换成员形象
         - locale: en
           name: English
           build: true
@@ -103,6 +110,13 @@ nav:
       - Change the Frontend Theme: tutorial/16_change_frontend_theme.md
       - Mark a Key Project (Favorite): tutorial/17_favorite_project.md
       - Package & Download Project Files: tutorial/18_package_download_project.md
+  - 'VI. Deep Research':
+      - Enable Research & Create a Task: tutorial/19_enable_research_and_create.md
+      - Build an Agent Team: tutorial/20_research_agent_team.md
+      - Add the Graph Agent: tutorial/21_research_graph_agent.md
+      - Add the Image Agent: tutorial/22_research_image_agent.md
+      - Add a Custom Member: tutorial/23_custom_team_member.md
+      - Change a Member's Avatar: tutorial/24_change_member_avatar.md
 
 markdown_extensions:
   - admonition

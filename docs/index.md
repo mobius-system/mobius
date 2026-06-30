@@ -42,3 +42,12 @@ Mobius 是（据我们所知）全球首个**自进化**的开源智能体操作
 - [修改前端色彩主题](tutorial/16_change_frontend_theme.md)
 - [标记重点项目（收藏）](tutorial/17_favorite_project.md)
 - [项目文件打包下载](tutorial/18_package_download_project.md)
+
+### VI-深度研究
+
+- [创建研究任务（启用 Research 系统）](tutorial/19_enable_research_and_create.md)
+- [组建智能体研究团队](tutorial/20_research_agent_team.md)
+- [启用 Graph 绘图 Agent](tutorial/21_research_graph_agent.md)
+- [启用图像绘制 Agent](tutorial/22_research_image_agent.md)
+- [创建自定义团队成员](tutorial/23_custom_team_member.md)
+- [更换成员形象](tutorial/24_change_member_avatar.md)

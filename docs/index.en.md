@@ -42,3 +42,12 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 - [Change the Frontend Theme](tutorial/16_change_frontend_theme.md)
 - [Mark a Key Project (Favorite)](tutorial/17_favorite_project.md)
 - [Package & Download Project Files](tutorial/18_package_download_project.md)
+
+### VI. Deep Research
+
+- [Enable Research & Create a Task](tutorial/19_enable_research_and_create.md)
+- [Build an Agent Team](tutorial/20_research_agent_team.md)
+- [Add the Graph Agent](tutorial/21_research_graph_agent.md)
+- [Add the Image Agent](tutorial/22_research_image_agent.md)
+- [Add a Custom Member](tutorial/23_custom_team_member.md)
+- [Change a Member's Avatar](tutorial/24_change_member_avatar.md)

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>2026 世界杯 · 赛程 / 热点 / 新闻</title>
-  <meta name="description" content="2026 FIFA 世界杯视觉内容站：赛程、热点、积分榜、射手榜、新闻、球员、球场，每 30 分钟自动同步公开 RSS。" />
+  <title>2026 世界杯 · 赛程 / 新闻 / 淘汰赛</title>
+  <meta name="description" content="2026 FIFA 世界杯视觉内容站：赛程、淘汰赛签表、中文新闻、射手榜、球员、球场，赛程自动同步公开数据，新闻自动同步公开订阅源。" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -30,12 +30,12 @@
     </a>
     <ul class="topnav-links">
       <li><a href="#fixtures">赛程</a></li>
-      <li><a href="#spotlight">热点</a></li>
-      <li><a href="#standings">积分</a></li>
-      <li><a href="#scorers">射手榜</a></li>
       <li><a href="#news">新闻</a></li>
+      <li><a href="#standings">淘汰赛</a></li>
+      <li><a href="#scorers">射手榜</a></li>
       <li><a href="#players">球员</a></li>
       <li><a href="#stadiums">球场</a></li>
+      <li><a href="#assistant">问AI</a></li>
     </ul>
     <span class="topnav-sync" id="topnav-sync" title="最近一次内容同步">
       <span class="dot" aria-hidden="true"></span>
@@ -57,17 +57,17 @@
         <div class="focus-label">焦点比赛</div>
         <div class="focus-match">
           <div class="focus-team">
-            <span class="team-code" id="focus-home-code">MEX</span>
-            <span class="team-name" id="focus-home-name">墨西哥</span>
+            <span class="team-code" id="focus-home-code">WC26</span>
+            <span class="team-name" id="focus-home-name">赛程同步</span>
           </div>
           <div class="focus-score">
             <span id="focus-score-text">vs</span>
             <span class="focus-stage" id="focus-stage">揭幕战 · A 组</span>
-            <span class="focus-time" id="focus-time">2026-06-11 20:00 · 墨西哥城</span>
+            <span class="focus-time" id="focus-time">赛程自动同步中</span>
           </div>
           <div class="focus-team">
-            <span class="team-code" id="focus-away-code">CAN</span>
-            <span class="team-name" id="focus-away-name">加拿大</span>
+            <span class="team-code" id="focus-away-code">LIVE</span>
+            <span class="team-name" id="focus-away-name">赛事追踪</span>
           </div>
         </div>
       </div>
@@ -76,19 +76,26 @@
     </div>
   </header>
 
-  <!-- 热点 Spotlight -->
-  <section class="section section-light section-padded spotlight-section" id="spotlight">
+  <!-- 头条新闻 News -->
+  <section class="section section-light section-padded news-section" id="news">
     <div class="container">
       <div class="section-head">
         <div>
-          <p class="kicker reveal">SPOTLIGHT · 热点</p>
-          <h2 class="display small reveal">今天该看什么</h2>
-          <p class="lead reveal">不是做一张信息表，而是把赛程、城市、球星和现场氛围揉成一个能扫、能点、能被图片吸住的世界杯首页。</p>
+          <p class="kicker reveal">新闻 · 中文新闻墙</p>
+          <h2 class="display small reveal">最新消息先看这里</h2>
+          <p class="lead reveal">聚合公开新闻源，以中文导览展示赛程、淘汰赛、球队与球员动态；外媒标题不会直接堆到页面上。</p>
         </div>
+        <span class="sync-chip dark reveal" id="news-sync-chip">数据同步中…</span>
       </div>
 
-      <div class="spotlight-grid reveal" id="spotlight-grid"></div>
-      <div class="city-filmstrip reveal" id="city-filmstrip" aria-label="主办城市胶片"></div>
+      <div class="news-layout news-layout-light reveal">
+        <article class="news-hero" id="news-hero">
+          <!-- 由 main.js 注入最新一条 -->
+        </article>
+        <ul class="news-list" id="news-list">
+          <!-- 由 main.js 注入后续 4-6 条 -->
+        </ul>
+      </div>
     </div>
   </section>
 
@@ -108,33 +115,23 @@
       </div>
 
       <div class="fixtures-grid reveal" id="fixtures-grid"></div>
-      <p class="media-source reveal" id="fixtures-source">示意赛程 · 真实数据待接入</p>
+      <p class="media-source reveal" id="fixtures-source">赛程自动同步中…</p>
     </div>
   </section>
 
-  <!-- 积分榜 Standings -->
+  <!-- 淘汰赛签表 Knockout Bracket -->
   <section class="section section-dark section-padded" id="standings">
     <div class="container">
       <div class="section-head">
         <div>
-          <p class="kicker light reveal">STANDINGS · 积分榜</p>
-          <h2 class="display small light reveal">12 组 · 前 2 名出线</h2>
+          <p class="kicker light reveal">KNOCKOUT · 淘汰赛</p>
+          <h2 class="display small light reveal">32 强签表与晋级路径</h2>
+          <p class="lead light reveal">从 32 强开始按轮次追踪对阵、开球城市和晋级状态；后端赛程刷新后，焦点比赛会自动同步到上方赛程区。</p>
         </div>
       </div>
 
-      <div class="standings-tabs reveal" id="standings-tabs" role="tablist" aria-label="小组">
-        <!-- 12 个 tab 由 main.js 注入 -->
-      </div>
-
-      <div class="standings-wrap reveal">
-        <table class="standings-table">
-          <thead>
-            <tr><th>#</th><th>球队</th><th>赛</th><th>胜</th><th>平</th><th>负</th><th>进</th><th>失</th><th>积分</th></tr>
-          </thead>
-          <tbody id="standings-body"></tbody>
-        </table>
-      </div>
-      <p class="media-source light reveal">示意积分 · 真实数据待接入</p>
+      <div class="knockout-wrap reveal" id="knockout-bracket" aria-label="世界杯淘汰赛签表"></div>
+      <p class="media-source light reveal" id="knockout-source">淘汰赛签表 · 根据当前赛程缓存展示</p>
     </div>
   </section>
 
@@ -149,29 +146,7 @@
       </div>
 
       <div class="scorers-list reveal" id="scorers-list"></div>
-      <p class="media-source reveal">示意数据 · 真实数据待接入</p>
-    </div>
-  </section>
-
-  <!-- 头条新闻 News -->
-  <section class="section section-dark section-padded" id="news">
-    <div class="container">
-      <div class="section-head">
-        <div>
-          <p class="kicker light reveal">NEWS · 头条新闻</p>
-          <h2 class="display small light reveal">全球媒体公开 RSS 聚合</h2>
-        </div>
-        <span class="sync-chip reveal" id="news-sync-chip">数据同步中…</span>
-      </div>
-
-      <div class="news-layout reveal">
-        <article class="news-hero" id="news-hero">
-          <!-- 由 main.js 注入最新一条 -->
-        </article>
-        <ul class="news-list" id="news-list">
-          <!-- 由 main.js 注入后续 4-6 条 -->
-        </ul>
-      </div>
+      <p class="media-source reveal" id="scorers-source">射手榜数据同步中…</p>
     </div>
   </section>
 
@@ -186,6 +161,7 @@
       </div>
 
       <div class="players-grid reveal" id="stars-grid"></div>
+      <p class="media-source reveal" id="players-source">本届焦点球员同步中…</p>
     </div>
   </section>
 
@@ -203,6 +179,34 @@
     </div>
   </section>
 
+  <!-- AI 问答 / 页面维护 Agent -->
+  <section class="section section-light section-padded assistant-section" id="assistant">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <p class="kicker reveal">ASK AI · 问答与页面维护</p>
+          <h2 class="display small reveal">问AI</h2>
+          <p class="lead reveal">可以问赛程、球队、球员、中文新闻，也可以直接提出“把这个页面哪里改一下”。后台会投递给真实 Mobius Session 处理，简短结论会同步显示在这里。</p>
+        </div>
+      </div>
+
+      <div class="assistant-shell reveal">
+        <div class="assistant-chat" id="assistant-chat" aria-live="polite"></div>
+        <form class="assistant-form" id="assistant-form">
+          <textarea id="assistant-input" rows="3" placeholder="例如：帮我总结今天与美加墨世界杯相关的中文新闻，或者把球场巡礼再做得更酷一点。"></textarea>
+          <div class="assistant-actions">
+            <label class="assistant-toggle">
+              <input type="checkbox" id="assistant-new-session" />
+              <span>新开 Session</span>
+            </label>
+            <button type="submit" class="assistant-submit">发送给问AI</button>
+          </div>
+        </form>
+        <p class="media-source" id="assistant-source">问AI 尚未启动</p>
+      </div>
+    </div>
+  </section>
+
   <footer class="footer">
     <div class="container footer-inner">
       <div class="footer-brand">
@@ -215,10 +219,10 @@
         </svg>
         <span>2026 世界杯 · 内容聚合站</span>
       </div>
-      <p class="footer-tagline">赛程 · 积分 · 射手 · 新闻 · 球员 · 球场 · 每 30 分钟自动同步</p>
+      <p class="footer-tagline">赛程 · 淘汰赛 · 射手 · 中文新闻 · 球员 · 球场 · 赛程每 10 分钟自动同步</p>
       <p class="footer-sources" id="footer-sources">
-        数据来源：BBC Sport · The Guardian · Sky Sports · ESPN（公开 RSS，仅作标题/摘要导览，原文版权归原作者所有）<br />
-        图像素材：球场 / 赛事氛围图为本地缓存，球员与射手形象为按国家队配色生成的示意形象（非真实照片）
+        数据来源：美国体育电视网赛程接口 · 谷歌新闻中文 · 英国广播公司体育 · 卫报足球 · 天空体育足球 · 美国体育电视网足球公开订阅（页面以中文导览展示，原文版权归原作者所有）<br />
+        图像素材：主办城市 / 球场使用公开媒体与本地兜底；球员与国家队标识使用国旗、国家队配色和代码，避免展示未经核验或错误照片
       </p>
       <p class="footer-copy">© 2026 World Cup Hub · Demo project · 原文与图像版权归原作者所有</p>
     </div>

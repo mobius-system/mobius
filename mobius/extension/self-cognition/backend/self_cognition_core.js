@@ -46,6 +46,77 @@ function url(e) {
   return t.hash = "", t.toString();
 }
 
+function hostnameOf(e) {
+  try {
+    return new URL(e).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function productHostBrand(e) {
+  const host = hostnameOf(e);
+  if (!host) return "";
+  const parts = host.split(".").filter(Boolean);
+  let core = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+  if ([ "app", "ai", "io", "dev", "co" ].includes(core) && parts.length >= 3) core = parts[parts.length - 3];
+  return core.split(/[-_]+/).filter(Boolean).map(p => p ? p.charAt(0).toUpperCase() + p.slice(1) : "").join(" ");
+}
+
+function badProductName(e) {
+  const s = txt(e, 260);
+  if (!s) return true;
+  if (/https?:\/\//i.test(s)) return true;
+  if (/(^|\s)(const|let|var)\s+[\w$]+\s*=|domain\s*=|faviconurl|document\.|\$\{|\`|;\s*\/\/|=>|function\s*\(/i.test(s)) return true;
+  if (/available in research preview|get on the list|benchmark evaluation set/i.test(s) && s.length > 28) return true;
+  if (s.length > 96 && /[=;{}[\]`]|\/\/|\.html/i.test(s)) return true;
+  return false;
+}
+
+function normalizeProductName(e, sourceUrl) {
+  const raw = txt(e, 180).replace(/\s+/g, " ").trim();
+  if (!badProductName(raw) && raw.length <= 96) return raw;
+  return productHostBrand(sourceUrl) || raw.slice(0, 80);
+}
+
+function productSourceRejectReason(e) {
+  let u;
+  try {
+    u = new URL(url(e));
+  } catch {
+    return "URL 非法";
+  }
+  const host = u.hostname.toLowerCase().replace(/^www\./, "");
+  if ([ "investing.com", "finance.yahoo.com", "yahoo.com", "latimes.com", "deeplearning.ai", "medium.com", "substack.com", "techcrunch.com", "forbes.com", "bloomberg.com", "reuters.com", "theverge.com", "wired.com" ].some(h => host === h || host.endsWith("." + h))) return `非产品站点: ${host}`;
+  if (/\/(news|article|articles|blog|blogs|short-courses|courses|course|learn|academy|press|press-release|podcast|video|events?)\b/i.test(u.pathname)) return `非产品页面: ${u.pathname}`;
+  return "";
+}
+
+function strictProductCandidateRow(e) {
+  if (!e || status(e.status) !== "candidate") return false;
+  const logic = txt(e.discovery_logic, 120);
+  return !!e.auto_discovered || /outbound_link|agent_session_discovery|llm_agent_discovery|manual_scan/.test(logic);
+}
+
+function productCandidateRejectReason(e, opts = {}) {
+  if (!e) return "候选为空";
+  if (opts.strict) {
+    const sourceReason = productSourceRejectReason(e.source_url || e.normalized_url || "");
+    if (sourceReason) return sourceReason;
+  }
+  const fixed = normalizeProductName(e.raw_name || e.name || e.fetched_title, e.source_url || e.normalized_url);
+  if (!fixed || badProductName(fixed)) return "名称不是产品名";
+  return "";
+}
+
+function candidateProductUrl(e) {
+  const u = new URL(url(e));
+  const keepPath = /^\/(agents?|agent|claude-code|codex|work|products?|platform|browser-agent)\b/i.test(u.pathname);
+  if (!keepPath) return u.origin + "/";
+  u.search = "";
+  return u.toString();
+}
+
 function cleanXml(e) {
   return txt(String(e || "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/&#x([0-9a-f]+);/gi, (e, t) => String.fromCodePoint(parseInt(t, 16))).replace(/&#(\d+);/g, (e, t) => String.fromCodePoint(parseInt(t, 10))).replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/<[^>]+>/g, " "), 2e4);
 }
@@ -65,6 +136,7 @@ function init(e) {
   e.exec("\n    CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('paper','product')), scope_ids TEXT NOT NULL DEFAULT '[]', model_key TEXT NOT NULL, model_label TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'running', summary TEXT NOT NULL DEFAULT '', prompt_for_xiaomo TEXT NOT NULL DEFAULT '', token_usage TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);\n    CREATE INDEX IF NOT EXISTS idx_agent_runs_kind_created ON agent_runs(kind, created_at);\n    CREATE TABLE IF NOT EXISTS agent_messages (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', tool_calls TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);\n    CREATE INDEX IF NOT EXISTS idx_agent_messages_run ON agent_messages(run_id, created_at);\n  ");
   e.exec("\n    CREATE TABLE IF NOT EXISTS source_reviews (source_kind TEXT NOT NULL CHECK(source_kind IN ('paper','product')), source_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'deferred' CHECK(status IN ('resolved','deferred','excluded')), note TEXT NOT NULL DEFAULT '', decided_by TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(source_kind, source_id));\n    CREATE INDEX IF NOT EXISTS idx_source_reviews_status ON source_reviews(source_kind,status,updated_at);\n    CREATE TABLE IF NOT EXISTS inspiration_decisions (id TEXT PRIMARY KEY, source_kind TEXT NOT NULL CHECK(source_kind IN ('paper','product')), source_id TEXT NOT NULL, inspiration_index INTEGER NOT NULL DEFAULT 0, inspiration_key TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', direction TEXT NOT NULL DEFAULT '', mobius_use TEXT NOT NULL DEFAULT '', priority TEXT NOT NULL DEFAULT 'medium', status TEXT NOT NULL DEFAULT 'accepted' CHECK(status IN ('candidate','accepted','rejected','deferred','queued_one_click','queued_plan','deleted')), source_snapshot TEXT NOT NULL DEFAULT '', chat_snapshot TEXT NOT NULL DEFAULT '', implementation_mode TEXT NOT NULL DEFAULT '', implementation_prompt TEXT NOT NULL DEFAULT '', implementation_session_id TEXT NOT NULL DEFAULT '', implementation_url TEXT NOT NULL DEFAULT '', decided_by TEXT NOT NULL DEFAULT '', decided_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(source_kind, source_id, inspiration_key));\n    CREATE INDEX IF NOT EXISTS idx_inspiration_decisions_queue ON inspiration_decisions(status,updated_at);\n    CREATE INDEX IF NOT EXISTS idx_inspiration_decisions_source ON inspiration_decisions(source_kind,source_id);\n  ");
   for (const [t, r, a] of [ [ "arxiv_items", "mark", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "note", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "cluster_label", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "priority_score", "REAL NOT NULL DEFAULT 0" ], [ "arxiv_items", "cluster_keywords", "TEXT NOT NULL DEFAULT '[]'" ], [ "arxiv_items", "citations", "INTEGER NOT NULL DEFAULT 0" ], [ "arxiv_items", "ai_inspiration", "TEXT NOT NULL DEFAULT ''" ], [ "arxiv_items", "read_at", "TEXT" ], [ "product_research", "normalized_url", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "aliases", "TEXT NOT NULL DEFAULT '[]'" ], [ "product_research", "reason", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "discovery_logic", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "discovered_from_url", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "mark", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "note", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "last_scanned_at", "TEXT" ], [ "product_research", "auto_discovered", "INTEGER NOT NULL DEFAULT 0" ], [ "product_research", "ai_inspiration", "TEXT NOT NULL DEFAULT ''" ], [ "product_research", "read_at", "TEXT" ], [ "scan_runs", "scan_type", "TEXT NOT NULL DEFAULT 'arxiv'" ], [ "scan_runs", "source_url", "TEXT NOT NULL DEFAULT ''" ], [ "scan_runs", "updated", "INTEGER NOT NULL DEFAULT 0" ], [ "scan_runs", "candidates_added", "INTEGER NOT NULL DEFAULT 0" ] ]) e.prepare(`PRAGMA table_info(${t})`).all().some(e => e.name === r) || e.exec(`ALTER TABLE ${t} ADD COLUMN ${r} ${a}`);
+  for (const [t, r, a] of [ [ "agent_runs", "session_id", "TEXT NOT NULL DEFAULT ''" ], [ "agent_runs", "project_id", "TEXT NOT NULL DEFAULT ''" ], [ "agent_runs", "issue_id", "TEXT NOT NULL DEFAULT ''" ], [ "agent_runs", "session_url", "TEXT NOT NULL DEFAULT ''" ], [ "agent_runs", "web_reply", "TEXT NOT NULL DEFAULT ''" ] ]) e.prepare(`PRAGMA table_info(${t})`).all().some(e => e.name === r) || e.exec(`ALTER TABLE ${t} ADD COLUMN ${r} ${a}`);
   e.exec("UPDATE product_research SET normalized_url=source_url WHERE normalized_url=''; UPDATE product_research SET status='tracked' WHERE status='official'; UPDATE product_research SET status='candidate' WHERE status NOT IN ('tracked','candidate','archived'); CREATE UNIQUE INDEX IF NOT EXISTS idx_product_research_normalized_url ON product_research(normalized_url); CREATE UNIQUE INDEX IF NOT EXISTS idx_arxiv_source_id_full ON arxiv_items(source_id);");
   const t = now(), r = e.prepare("INSERT OR IGNORE INTO keywords VALUES (@id,@scope,@keyword,@query,1,@sort_order,@created_at,@updated_at)");
   PAPER_KWS.forEach((e, a) => r.run({
@@ -612,6 +684,8 @@ function status(e) {
 function prodRow(e) {
   return e ? {
     ...e,
+    raw_name: e.name,
+    name: normalizeProductName(e.name || e.fetched_title, e.source_url || e.normalized_url),
     status: "tracked" === e.status ? "official" : e.status,
     tracked_status: e.status,
     relevance: Number(e.relevance) || 0,
@@ -623,12 +697,17 @@ function prodRow(e) {
 }
 
 function upsertProduct(e, t) {
-  const r = url(t.source_url), a = now(), s = e.prepare("SELECT id,status FROM product_research WHERE normalized_url=?").get(r), o = {
+  const r = url(t.source_url), a = now(), s = e.prepare("SELECT id,status FROM product_research WHERE normalized_url=?").get(r), nextStatus = "tracked" === s?.status ? "tracked" : status(t.status);
+  if (nextStatus !== "tracked") {
+    const rejectReason = productSourceRejectReason(r);
+    if (rejectReason) throw new Error(`非产品候选，已跳过：${rejectReason}`);
+  }
+  const o = {
     id: s?.id || t.id || id("product", r),
-    name: txt(t.name, 180) || new URL(r).hostname.replace(/^www\./, ""),
+    name: normalizeProductName(t.name || t.fetched_title, r) || new URL(r).hostname.replace(/^www\./, ""),
     source_url: r,
     normalized_url: r,
-    status: "tracked" === s?.status ? "tracked" : status(t.status),
+    status: nextStatus,
     category: txt(t.category || "other", 40),
     relevance: int(t.relevance, 3, 1, 10),
     tags: j(t.tags || []),
@@ -675,12 +754,16 @@ function discoverLinks(e, t, r) {
       created_by: "system"
     }));
   for (const a of t.links) try {
-    const t = new URL(a.href);
+    const rawUrl = url(a.href);
+    const t = new URL(rawUrl);
     if (t.hostname === new URL(r).hostname) continue;
-    const o = rel(`${a.text} ${a.href}`);
+    const rejectReason = productSourceRejectReason(rawUrl);
+    if (rejectReason) continue;
+    const candidateUrl = candidateProductUrl(rawUrl);
+    const o = rel(`${a.text} ${candidateUrl}`);
     o.score >= 3 && addDiscoveryResult(s, upsertProduct(e, {
-        name: a.text || t.hostname,
-        source_url: t.origin + "/",
+        name: normalizeProductName(a.text, candidateUrl) || t.hostname,
+        source_url: candidateUrl,
         status: "candidate",
         category: cat(`${a.text} ${a.href}`),
         relevance: Math.min(10, o.score + 2),
@@ -1414,6 +1497,15 @@ function findProvider(modelKey) {
   return providers.find(p => p.key === modelKey || p.name === modelKey) || providers[0];
 }
 
+function sessionProviderInfo(modelKey) {
+  try {
+    return findProvider(modelKey);
+  } catch {
+    const key = txt(modelKey, 120) || "codex";
+    return { key, label: key === "codex" ? "Codex Agent" : key, model: key, type: "session" };
+  }
+}
+
 // 隐藏工作缓存目录名, 与 backend/config.js 的 HIDDEN_FOLDER_NAME 一致 (本机 .imac / 新装 .mobius).
 const HIDDEN = process.env.MOBIUS_HIDDEN_FOLDER_NAME || ".mobius";
 
@@ -1749,10 +1841,11 @@ async function callChatCompletionModel(e, t) {
 
 const AGENT_RUN_KINDS = ["paper", "product"];
 
-function createAgentRun(e, { kind, scopeIds, modelKey, modelLabel, createdBy }) {
+function createAgentRun(e, { kind, scopeIds, modelKey, modelLabel, createdBy, sessionId = "", projectId = "", issueId = "", sessionUrl = "" }) {
   const runId = id("agent_run", `${kind}:${scopeIds.join(",")}:${Date.now()}:${Math.random()}`);
   const stamp = now();
   e.prepare("INSERT INTO agent_runs (id,kind,scope_ids,model_key,model_label,status,summary,prompt_for_xiaomo,token_usage,error,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").run(runId, kind, JSON.stringify(scopeIds || []), modelKey, modelLabel || "", "running", "", "", "", "", createdBy || "system", stamp, stamp);
+  e.prepare("UPDATE agent_runs SET session_id=?,project_id=?,issue_id=?,session_url=? WHERE id=?").run(txt(sessionId, 120), txt(projectId, 120), txt(issueId, 120), txt(sessionUrl, 500), runId);
   return runId;
 }
 
@@ -1767,6 +1860,15 @@ function finalizeAgentRun(e, { runId, status, summary, promptForXiaomo, tokenUsa
 
 function latestAgentRun(e, kind) {
   return e.prepare("SELECT * FROM agent_runs WHERE kind=? ORDER BY created_at DESC,id DESC LIMIT 1").get(kind);
+}
+
+function latestAgentRunForScope(e, kind, scopeId) {
+  const rows = e.prepare("SELECT * FROM agent_runs WHERE kind=? ORDER BY updated_at DESC,created_at DESC LIMIT 20").all(kind);
+  if (scopeId) {
+    const scoped = rows.find(row => arr(row.scope_ids).includes(scopeId) && row.session_id);
+    if (scoped) return scoped;
+  }
+  return rows.find(row => row.session_id) || rows[0] || null;
 }
 
 function listAgentRuns(e, t = {}) {
@@ -1951,23 +2053,29 @@ async function rewriteInspirationStyle(e, t) {
 function buildScanSystemPrompt({ kind }) {
   return [
     "你是莫比乌斯 (Mobius) 自进化插件的 L2 研究 Agent。",
-    "目标: 评估给定" + (kind === "paper" ? "arXiv 论文" : "竞品产品") + "对莫比乌斯的真实借鉴价值, 并产出可直接落实到莫比乌斯代码的启发。",
+    "目标: 评估给定" + (kind === "paper" ? "arXiv 论文" : "竞品产品") + "对莫比乌斯整体产品与系统的真实借鉴价值, 并产出可落地的启发。",
     "",
     "## 莫比乌斯当前状况",
     "莫比乌斯是自进化 Agent 工作台, 把项目/任务单/执行会话串起来; 核心代码在 mobius/, 自我认知插件在 mobius/extension/self-cognition/。",
     "",
+    "## 启发范围 (最重要)",
+    "你要提炼的是「这份资料对莫比乌斯整体产品与系统的可借鉴点」, 启发必须来自资料本身做了什么、怎么做的, 落到莫比乌斯面向用户的产品与主系统上。可借鉴维度: 产品能力 / 交互与体验 / 定位与目标用户 / 用户旅程 / 工程架构(上下文·调度·多 Agent 编排·执行环境·记忆·工具) / 分发与增长 / 定价与商业模式 / 协作机制 / 内容运营 / 品牌叙事。按资料相关度挑几条, 不必全列。",
+    "",
+    "### 反偏差红线",
+    "本次任务是「从这份资料提炼对莫比乌斯的启发」, 不是「改进 self-cognition 扫描器本身」。严禁默认把启发对准情报/扫描系统 (竞品扫描流程优化、候选空值/名称清洗、聚类分析、rescan、对比维度模板化、候选去重等)。只有当资料本身确实在讲情报/聚类/扫描方法论且对莫比乌斯情报系统有直接启发时才可提一条, 且不作为主要方向。资料描述为空时, 基于名称/URL/分类+公开知识推断它是什么产品, 再提炼产品/系统启发, 不要转去讨论扫描器。",
+    "",
     "## 工作流",
     "1. 仔细阅读提供的论文/竞品内容 + 注入的项目 memory",
-    "2. 必要时调用 read_file 工具读取莫比乌斯真实代码确认现状",
-    "3. 给出 3-5 条对莫比乌斯的借鉴方向, 每条包含: title(简短标签) / direction(概括方向) / mobius_use(具体落实) / priority(high|medium|low)",
+    "2. 必要时调用 read_file 工具读取莫比乌斯真实代码确认现状 (用于判断是否已有同类能力, 避免重复提议)",
+    "3. 给出 3-5 条对莫比乌斯整体产品与系统的借鉴方向, 每条包含: title(简短标签) / direction(概括方向) / mobius_use(具体落实) / priority(high|medium|low)",
     "4. 如果该论文/竞品对莫比乌斯毫无借鉴价值, 直接返回空数组 []",
     "",
     "## direction 与 mobius_use 的写作风格 (重要)",
     "这两个字段要分层, 不要写得一样长、一样具体:",
-    "- direction: 概括性的方向描述, 一两句话娓娓道来。讲清楚这条启发关注的是哪个方向、对莫比乌斯的哪些方面有借鉴意义, 像叙事一样自然。不要点名具体文件名 / 模块路径 / 接口名 / 库或版本号 / API 名称。让人扫一眼 direction 就能感到这条启发在讲什么。",
-    "  示例: \"这条启发关注的是 [Agent 自我反思的环节], 对莫比乌斯在任务结束后沉淀经验、指导下一次迭代的方向上有借鉴意义。\"",
-    "- mobius_use: 把具体怎么落到莫比乌斯写清楚, 包含目标文件 / 模块路径 / 关键接口 / 可参考的实现细节 / 数据流。技术名词、文件路径、库名、版本号都放这里, 不要放 direction。",
-    "  示例: \"具体可在 mobius/extension/self-cognition/backend/self_cognition_core.js 的 aiScanArxiv 流程之后追加一次 reflect 步骤, 读取最近 N 次 agent_runs 的失败 tool_use, 调 LLM 总结成一条 install_state 记录...\"",
+    "- direction: 概括性的方向描述, 一两句话娓娓道来。讲清楚这条启发关注的是莫比乌斯的哪个产品/系统侧面、为什么有借鉴意义, 像叙事一样自然。不要点名具体文件名 / 模块路径 / 接口名 / 库或版本号 / API 名称。让人扫一眼 direction 就能感到这条启发在讲什么。",
+    "  示例: \"这条启发关注的是 [把 Agent 操作系统包装成普通用户打开浏览器就能用的'任务电脑'], 对莫比乌斯降低非技术用户门槛、把复杂后台能力藏在一句话需求背后有借鉴意义。\"",
+    "- mobius_use: 把具体怎么落到莫比乌斯写清楚, 优先落面向用户的产品与主系统 (前端/会话/项目/小莫/调度/执行环境), 而不是 self-cognition 扫描器; 包含目标模块 / 关键接口 / 可参考实现细节 / 数据流。技术名词、文件路径、库名都放这里, 不要放 direction。",
+    "  示例: \"具体可在 mobius/frontend/src/App.tsx 与项目首页增加'工作台模式', 复用 mobius/backend/routes/assistant.ts 把一句话需求自动转为项目内任务+会话+产物目录, 让用户不必先理解 Issue/Session/模型。验收: 新用户只输入'帮我整理这批 CSV 并生成报告', 系统自动建项目、启会话、存产物, 全程不暴露 tmux/模型概念。\"",
     "简言之: direction 讲\"在讲什么、为什么重要\", mobius_use 讲\"具体怎么改、改哪里\"。",
     "",
     "## 输出格式 (必须严格遵守)",
@@ -2019,6 +2127,396 @@ function buildProductContext(product) {
   ].join("\n");
 }
 
+function agentSessionUrl(user, created) {
+  return `/u/${encodeURIComponent(user.id)}/p/${encodeURIComponent(created.project.id)}/i/${encodeURIComponent(created.issue.id)}?session=${encodeURIComponent(created.session.session_id)}`;
+}
+
+function researchSessionModel() {
+  return txt(process.env.SELF_COGNITION_AGENT_MODEL, 120) || "codex";
+}
+
+function collectLatestMobiusMdContext() {
+  const roots = [ REPO_ROOT, path.join(REPO_ROOT, EXT_PATH), path.join(REPO_ROOT, HIDDEN) ];
+  const skip = new Set([ ".git", "node_modules", "dist", "build", ".next", ".cache", "coverage" ]);
+  const files = [];
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue;
+    const stack = [ root ];
+    while (stack.length && files.length < 240) {
+      const dir = stack.pop();
+      let entries = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        if (skip.has(entry.name)) continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(full);
+        } else if (/\.md$/i.test(entry.name)) {
+          try {
+            const st = fs.statSync(full);
+            files.push({ path: full, mtimeMs: st.mtimeMs, size: st.size });
+          } catch {}
+        }
+      }
+    }
+  }
+  const seen = new Set();
+  let total = 0;
+  return files
+    .filter(file => {
+      const rel = file.path.replace(REPO_ROOT + path.sep, "");
+      if (seen.has(rel)) return false;
+      seen.add(rel);
+      return true;
+    })
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, 8)
+    .map(file => {
+      if (total > 26000) return "";
+      let content = "";
+      try { content = fs.readFileSync(file.path, "utf8"); } catch { return ""; }
+      const rel = file.path.replace(REPO_ROOT + path.sep, "");
+      const part = `## ${rel}\n\n${content.slice(0, 5000)}`;
+      total += part.length;
+      return part;
+    })
+    .filter(Boolean)
+    .join("\n\n---\n\n")
+    .slice(0, 28000);
+}
+
+function createResearchAgentSession({ kind, userId, scopeRows, modelKey, runId, prompt }) {
+  const { createExtensionAnalysisSession, loadUser } = extensionBridge();
+  const user = loadUser(userId);
+  const label = kind === "product" ? "产品" : "论文";
+  const created = createExtensionAnalysisSession({
+    user,
+    extensionName: "self-cognition",
+    extensionDisplayName: `Self-Cognition ${label}研究 Agent`,
+    projectDescription: "Self-Cognition 论文/产品研究 Agent 工作区。每次扫描创建一个 Agent session, 后续追问复用最近相关 session。",
+    issueTitle: `Self-Cognition ${label}研究`,
+    issueDescription: `读取莫比乌斯项目上下文与${label}资料, 产出可写回 self-cognition 的启发点。`,
+    sessionName: `${label}研究 Agent：${txt(scopeRows.map(row => sourceTitle(kind, row)).join(" / "), 54) || "批量扫描"}`,
+    sessionDescription: prompt,
+    model: researchSessionModel(),
+    language: "zh"
+  });
+  const url = agentSessionUrl(user, created);
+  return { user, created, url, postAction: {
+    type: "session_message",
+    session_id: created.session.session_id,
+    project_id: created.project.id,
+    content: prompt,
+    input_text: `${label}研究 Agent 启动: ${scopeRows.length} 条资料`,
+    request_id: `self-cognition-${kind}-${runId}-${Date.now()}`,
+    source: "extension.self-cognition.research_agent",
+    result_key: "backend_start"
+  } };
+}
+
+function buildAsyncScanPrompt({ kind, rows, runId, dbPath }) {
+  const label = kind === "product" ? "产品" : "论文";
+  const table = kind === "product" ? "product_research" : "arxiv_items";
+  const context = rows.map((row, i) => kind === "product" ? buildProductContext(row) : buildPaperContext(row)).join("\n\n---\n\n");
+  const mdContext = collectLatestMobiusMdContext();
+  return [
+    `# Self-Cognition ${label}研究 Agent`,
+    "",
+    "你是莫比乌斯 self-cognition 的长期研究 Agent。本次任务是后台深度阅读资料, 不要再向用户确认。",
+    "",
+    "## 必须遵守",
+    "- 只处理本 prompt 列出的资料 ID。",
+    "- 结合莫比乌斯项目现状、最新 md 文档和资料详情判断是否值得借鉴。",
+    "- 论文和产品各只保留一个 Agent 类型: 本 session 就是本轮 " + label + " Agent；后续用户追问会继续发到这个 session。",
+    "- 产出后必须写回数据库, 不要只在会话里回答。",
+    "",
+    "## 启发范围 (最重要, 直接决定产出质量)",
+    "你要提炼的是「这份资料对莫比乌斯整体产品与系统的可借鉴点」, 启发必须来自资料本身做了什么、怎么做的, 落到莫比乌斯的产品与系统上。可借鉴的维度包括 (按资料相关度挑几条, 不必全列):",
+    "- 产品能力: 它能完成什么任务、核心功能边界、差异化能力。",
+    "- 交互与体验: 界面形态、交互范式、信息架构、新手引导、可观察性。",
+    "- 定位与目标用户: 它卖给谁、解决谁的什么问题、和莫比乌斯人群的差异。",
+    "- 用户旅程: 从首次接触到完成目标的路径、关键转化与留存设计。",
+    "- 工程架构与技术: 上下文管理、调度、多 Agent 编排、执行环境、记忆/状态、工具体系。",
+    "- 分发与增长: 获客渠道、病毒式传播、内容/模板/市场策略。",
+    "- 定价与商业模式: 免费增值、按量、订阅、企业版、Creator 经济。",
+    "- 协作机制: 多人/多角色、权限、交接、项目与上下文共享。",
+    "- 内容与运营: 模板库、案例、社区、Skill/Plugin 生态。",
+    "- 品牌叙事: 它怎么讲自己、价值主张怎么表达。",
+    "",
+    "### 反偏差红线 (必须遵守)",
+    "你本次的任务是「从这份资料提炼对莫比乌斯的启发」, 不是「改进 self-cognition 扫描器本身」。严禁把启发默认对准情报/扫描系统, 例如: 竞品扫描流程优化、候选空值/名称清洗、聚类分析、rescan、对比维度模板化、候选去重、扫描调度等「如何更好地做竞品扫描」的内部工程——这类方向默认一律不写。",
+    "只有当这份资料本身确实就是在讲情报收集 / 聚类 / 扫描 / 数据清洗方法论、并且对莫比乌斯的情报系统有直接启发时, 才可以提一条, 且不能成为主要方向、数量不超过总启发的 1 条。",
+    "如果你发现自己写出的方向都在描述「self-cognition 应该怎么扫描/清洗/聚类」, 立刻停下来重新从资料本身提炼。",
+    "",
+    "### 资料描述稀疏时的处理",
+    "如果某条资料的页面描述/标题为空 (常见于预设竞品), 不要因此转去讨论扫描器。请基于资料名称、URL、分类, 结合你的公开知识, 先推断它大概是什么产品、为谁解决什么问题、怎么交互、怎么定价, 再从这个推断里提炼对莫比乌斯的产品/系统启发; 推断要在 direction 里说明是依据名称/分类的合理猜测。",
+    "",
+    "## 可读取的项目上下文",
+    `- 仓库根: ${REPO_ROOT}`,
+    `- 插件目录: ${path.join(REPO_ROOT, EXT_PATH)}`,
+    `- 数据库: ${dbPath}`,
+    "- 这些 md 和代码用于你「理解莫比乌斯现在是什么、已经有什么能力」, 避免重复提议已有功能; 不是让你去优化 self-cognition 扫描器本身。",
+    "- 优先阅读: README / SELF_COGNITION_OVERVIEW.md / " + HIDDEN + "/project_knowledge.md, 以及与本次资料最相关的产品/前端/后端模块代码。",
+    "",
+    "## 已注入的最新 md 上下文 (仅用于理解莫比乌斯现状, 勿据此优化扫描器)",
+    mdContext || "(未找到可注入 md)",
+    "",
+    "## 写回规则",
+    `- agent_runs.id = ${runId}`,
+    `- source table = ${table}`,
+    "- 对每条资料, 将启发写入 ai_inspiration 字段。格式必须是 JSON 数组字符串:",
+    "  [{\"title\":\"...\",\"direction\":\"...\",\"mobius_use\":\"...\",\"priority\":\"high|medium|low\"}]",
+    "- 如果暂无借鉴价值, ai_inspiration 写为空字符串或 []，但不要把 mark 改成 excluded。",
+    "- 全部处理完成后, 更新 agent_runs.status='completed', summary=简短总结(面向莫比乌斯产品/系统的结论), updated_at=当前 ISO 时间。",
+    "- 如果任务失败, 更新 agent_runs.status='error', error=失败原因, updated_at=当前 ISO 时间。",
+    "",
+    "## 网页摘要回写 (完成后必须执行)",
+    "全部资料处理完成后, 你必须再执行一条 SQL, 把给网页聊天框的简短中文摘要写回 agent_runs.web_reply, 让用户不打开 Session 也能看到本轮结论:",
+    "  UPDATE agent_runs SET web_reply = '<further-answering>2-5 句中文摘要: 本轮读了什么、对莫比乌斯产品/系统最值得借鉴的 1-3 点结论、是否更新了启发点</further-answering>', updated_at = '<当前 ISO 时间>' WHERE id = '" + runId + "';",
+    "- <further-answering> 里只放简短摘要 (建议 ≤200 字), 不要塞完整长分析; 完整分析留在会话里。",
+    "- 标签必须成对 <further-answering> ... </further-answering>, 这是网页提取展示的唯一信号。",
+    "",
+    "## 启发写作",
+    "- direction: 概括方向与「这条启发关注莫比乌斯的哪个产品/系统侧面」, 像叙事一样自然, 不放具体文件路径/API。",
+    "- mobius_use: 写清楚具体落点, 可以包含目标模块/接口/实现建议和验收方式。优先落在莫比乌斯面向用户的产品与主系统上 (前端/会话/项目/小莫/调度/执行环境等), 而不是 self-cognition 扫描器。",
+    "",
+    "## 待处理资料",
+    context || "(无)"
+  ].join("\n");
+}
+
+function makeAsyncAgentResult({ kind, runId, scopeRows, session, url }) {
+  const label = kind === "product" ? "产品" : "论文";
+  return {
+    ok: true,
+    async: true,
+    status: "started",
+    run_id: runId,
+    session_id: session.session_id,
+    session_url: url,
+    scanned: scopeRows.length,
+    results: [],
+    summary: `已启动 ${label}研究 Agent, 正在后台深度阅读 ${scopeRows.length} 条资料`,
+    message: `已启动后台 Agent, 完成后会写回启发点`
+  };
+}
+
+function pullPostActions(...values) {
+  const actions = [];
+  for (const value of values) {
+    if (!value || typeof value !== "object") continue;
+    if (Array.isArray(value.__mobius_post_actions)) actions.push(...value.__mobius_post_actions);
+    delete value.__mobius_post_actions;
+  }
+  return actions;
+}
+
+function startAsyncAiScan(e, { kind, rows, provider, modelKey, createdBy }) {
+  const scopeRows = rows || [];
+  if (!scopeRows.length) return {
+    ok: true,
+    async: true,
+    status: "empty",
+    scanned: 0,
+    results: [],
+    provider: provider?.label || "",
+    model: provider?.model || "",
+    summary: "没有待深度阅读的资料"
+  };
+  const runId = createAgentRun(e, {
+    kind,
+    scopeIds: scopeRows.map(row => row.id),
+    modelKey: modelKey || provider?.key || "",
+    modelLabel: provider?.label || "",
+    createdBy
+  });
+  const dbPath = e.name || path.join("ext_data_dir", DB_FILE);
+  const prompt = buildAsyncScanPrompt({ kind, rows: scopeRows, runId, dbPath });
+  const launched = createResearchAgentSession({ kind, userId: createdBy, scopeRows, modelKey: modelKey || provider?.key || "codex", runId, prompt });
+  e.prepare("UPDATE agent_runs SET session_id=?,project_id=?,issue_id=?,session_url=?,summary=?,updated_at=? WHERE id=?").run(launched.created.session.session_id, launched.created.project.id, launched.created.issue.id, launched.url, `后台 Agent 已启动, 正在深度阅读 ${scopeRows.length} 条资料`, now(), runId);
+  appendAgentMessage(e, { runId, role: "user", content: `后台 ${kind} Agent 已启动: ${launched.url}` });
+  return {
+    ...makeAsyncAgentResult({ kind, runId, scopeRows, session: launched.created.session, url: launched.url }),
+    provider: provider?.label || "",
+    model: provider?.model || "",
+    __mobius_post_actions: [ launched.postAction ]
+  };
+}
+
+function sourceRowForScope(e, kind, scopeId) {
+  if (!scopeId) return null;
+  return kind === "product"
+    ? e.prepare("SELECT * FROM product_research WHERE id=?").get(scopeId) || null
+    : e.prepare("SELECT * FROM arxiv_items WHERE id=? OR source_id=?").get(scopeId, scopeId) || null;
+}
+
+function buildAsyncChatPrompt({ kind, scopeId, message, run, dbPath, row }) {
+  const label = kind === "product" ? "产品" : "论文";
+  const table = kind === "product" ? "product_research" : "arxiv_items";
+  const sourceContext = row ? (kind === "product" ? buildProductContext(row) : buildPaperContext(row)) : "";
+  return [
+    `# Self-Cognition ${label}Agent 追问`,
+    "",
+    "用户在 self-cognition 详情页继续追问。请基于你所在的同一个研究 session、已读资料、莫比乌斯项目上下文和下面补充的资料上下文回答。",
+    "",
+    "## 必须遵守",
+    "- 直接回答用户问题，不要要求用户重新开启扫描。",
+    "- 如果用户要求调整启发点, 请直接更新数据库 ai_inspiration 字段, 并在回复里说明改了什么。启发要面向莫比乌斯整体产品与系统 (产品能力/交互/定位/用户旅程/工程架构/分发/定价/协作等), 来自资料本身; 默认不要把启发对准 self-cognition 扫描器 (扫描流程/空值清洗/聚类/rescan 等), 除非资料本身确实在讲情报/扫描方法论。",
+    "- 不要长时间等待外部确认；必要时读取本地项目文件或数据库后给出结论。",
+    "",
+    "## 写回位置",
+    `- 数据库: ${dbPath}`,
+    `- agent_runs.id: ${run.id}`,
+    `- source table: ${table}`,
+    scopeId ? `- 当前资料 ID: ${scopeId}` : "",
+    "- ai_inspiration 格式: [{\"title\":\"...\",\"direction\":\"...\",\"mobius_use\":\"...\",\"priority\":\"high|medium|low\"}]",
+    "",
+    "## 网页摘要回写 (回答完成后必须执行, 否则网页聊天框看不到你的回复)",
+    "回答完用户问题后, 你必须再执行一条 SQL, 把给网页聊天框的简短中文摘要写回 agent_runs.web_reply。用户是在网页详情页追问的, 你的完整长回复只会出现在 Session 里, 网页只会展示 <further-answering> 里的摘要, 所以这段要简短但信息充分 (建议 ≤200 字), 让用户不打开 Session 也能知道你的结论:",
+    "  UPDATE agent_runs SET web_reply = '<further-answering>2-5 句中文摘要: 直接回答用户的问题、给出关键结论、如果改了启发点要说清改了什么</further-answering>', status = 'completed', updated_at = '<当前 ISO 时间>' WHERE id = '" + run.id + "';",
+    "- 标签必须成对 <further-answering> ... </further-answering>。这是网页提取展示的唯一信号, 缺了它网页会一直显示\"正在生成\"。",
+    "- 不要把完整长回复塞进 <further-answering>; 长回复留在会话里, 摘要里可以提示\"完整分析见 Session\"。",
+    "- 如果本轮失败无法回答, 改写: UPDATE agent_runs SET status = 'error', error = '<原因>', updated_at = '<ISO>' WHERE id = '" + run.id + "';",
+    "",
+    sourceContext ? "## 当前资料上下文\n" + sourceContext : "",
+    "",
+    "## 用户追问",
+    long(message, 4000)
+  ].filter(Boolean).join("\n");
+}
+
+function startAsyncAgentChat(e, t, r) {
+  const kind = txt(t.kind, 10) === "product" ? "product" : "paper";
+  const message = txt(t.message, 4000);
+  const scopeId = txt(t.scope_id, 120);
+  if (!message) throw new Error("message 不能为空");
+  let run = latestAgentRunForScope(e, kind, scopeId);
+  const row = sourceRowForScope(e, kind, scopeId);
+  const provider = sessionProviderInfo(txt(t.model_key, 200));
+  const dbPath = e.name || path.join("ext_data_dir", DB_FILE);
+  let postAction;
+  let sessionUrl = run?.session_url || "";
+  if (!run || !run.session_id) {
+    const runId = createAgentRun(e, {
+      kind,
+      scopeIds: row?.id ? [ row.id ] : scopeId ? [ scopeId ] : [],
+      modelKey: provider.key,
+      modelLabel: provider.label,
+      createdBy: r
+    });
+    const prompt = buildAsyncChatPrompt({ kind, scopeId, message, run: { id: runId }, dbPath, row });
+    const launched = createResearchAgentSession({ kind, userId: r, scopeRows: row ? [ row ] : [], modelKey: provider.key || "codex", runId, prompt });
+    e.prepare("UPDATE agent_runs SET session_id=?,project_id=?,issue_id=?,session_url=?,summary=?,updated_at=? WHERE id=?").run(launched.created.session.session_id, launched.created.project.id, launched.created.issue.id, launched.url, "后台 Agent 已启动并接收追问", now(), runId);
+    run = e.prepare("SELECT * FROM agent_runs WHERE id=?").get(runId);
+    sessionUrl = launched.url;
+    postAction = launched.postAction;
+  } else {
+    const prompt = buildAsyncChatPrompt({ kind, scopeId, message, run, dbPath, row });
+    postAction = {
+      type: "session_message",
+      session_id: run.session_id,
+      project_id: run.project_id,
+      content: prompt,
+      input_text: message,
+      request_id: `self-cognition-chat-${run.id}-${Date.now()}`,
+      source: "extension.self-cognition.agent_chat",
+      result_key: "backend_start"
+    };
+  }
+  const userTurn = (scopeId ? `用户在 ${kind === "paper" ? "论文" : "产品"} ${scopeId} 上追问: ` : "用户追问: ") + message;
+  appendAgentMessage(e, { runId: run.id, role: "user", content: userTurn, toolCalls: "" });
+  appendAgentMessage(e, { runId: run.id, role: "assistant", content: `已投递到后台 Agent session: ${sessionUrl || run.session_id}`, toolCalls: "" });
+  e.prepare("UPDATE agent_runs SET updated_at=? WHERE id=?").run(now(), run.id);
+  return {
+    ok: true,
+    async: true,
+    status: "queued",
+    run_id: run.id,
+    session_id: run.session_id,
+    session_url: sessionUrl || run.session_url || "",
+    kind,
+    scope_id: scopeId,
+    reply: `已发送到最近的${kind === "product" ? "产品" : "论文"} Agent, 正在后台生成回复, 完成后会在这里显示摘要。`,
+    provider: provider.label,
+    model: provider.model,
+    tool_calls: 0,
+    context_messages: 0,
+    inspiration_changed: false,
+    inspiration_diff: [],
+    __mobius_post_actions: [ postAction ]
+  };
+}
+
+function buildAsyncProductDiscoveryPrompt({ runId, dbPath, maxResults, productKeywords, trackedNames }) {
+  const mdContext = collectLatestMobiusMdContext();
+  return [
+    "# Self-Cognition 产品发现 Agent",
+    "",
+    "你是莫比乌斯 self-cognition 的产品研究 Agent。本次任务是在后台发现新的 AI Agent 类产品/竞品, 不要向用户确认。",
+    "",
+    "## 输入",
+    `- 最多候选数: ${maxResults}`,
+    `- 数据库: ${dbPath}`,
+    `- agent_runs.id: ${runId}`,
+    `- 已启用关键词: ${JSON.stringify(productKeywords.slice(0, 40))}`,
+    `- 已跟踪竞品: ${JSON.stringify(trackedNames.slice(0, 40))}`,
+    "",
+    "## 已注入的最新 md 上下文",
+    mdContext || "(未找到可注入 md)",
+    "",
+    "## 必须执行",
+    "- 基于公开知识、必要的网页检索和莫比乌斯项目上下文, 找到可能相关的新 AI Agent 产品。",
+    "- 避免和已跟踪竞品重复。",
+    "- 写入 product_research 表, 字段至少包括 id/name/source_url/normalized_url/status/category/relevance/tags/aliases/reason/discovery_logic/auto_discovered/created_by/created_at/updated_at。",
+    "- normalized_url 必须是 http(s) URL；status 用 candidate；discovery_logic 用 agent_session_discovery。",
+    "- 可同步写一条 scan_runs 记录描述本次发现。",
+    "- 完成后更新 agent_runs.status='completed', summary=简短总结, updated_at=当前 ISO 时间；失败则 status='error' 并写 error。",
+    "",
+    "## 输出",
+    "会话里简短列出新增/跳过的产品和理由。"
+  ].join("\n");
+}
+
+function startAsyncProductDiscovery(e, t, r) {
+  const maxResults = int(t.max_results, 10, 3, 30);
+  const provider = sessionProviderInfo(txt(t.model_key, 200));
+  const productKeywords = rows(e, "product").filter(k => k.enabled).map(k => k.keyword || k.query).filter(Boolean);
+  const trackedNames = e.prepare("SELECT name FROM product_research WHERE status='tracked' ORDER BY relevance DESC").all().map(row => row.name).filter(Boolean);
+  const runId = createAgentRun(e, {
+    kind: "product",
+    scopeIds: [],
+    modelKey: provider.key,
+    modelLabel: provider.label,
+    createdBy: r
+  });
+  const dbPath = e.name || path.join("ext_data_dir", DB_FILE);
+  const prompt = buildAsyncProductDiscoveryPrompt({ runId, dbPath, maxResults, productKeywords, trackedNames });
+  const launched = createResearchAgentSession({ kind: "product", userId: r, scopeRows: [], modelKey: provider.key || "codex", runId, prompt });
+  e.prepare("UPDATE agent_runs SET session_id=?,project_id=?,issue_id=?,session_url=?,summary=?,updated_at=? WHERE id=?").run(launched.created.session.session_id, launched.created.project.id, launched.created.issue.id, launched.url, `后台产品发现 Agent 已启动, 目标 ${maxResults} 条候选`, now(), runId);
+  appendAgentMessage(e, { runId, role: "user", content: `后台产品发现 Agent 已启动: ${launched.url}` });
+  return {
+    ok: true,
+    async: true,
+    status: "started",
+    run_id: runId,
+    session_id: launched.created.session.session_id,
+    session_url: launched.url,
+    discovery: {
+      candidates_added: 0,
+      items: [],
+      proposed_count: 0,
+      model: provider.model,
+      provider: provider.label
+    },
+    competitors: groupedProducts(e),
+    products: listProducts(e),
+    scan_runs: scans(e),
+    summary: summary(e),
+    message: "已启动后台产品发现 Agent",
+    __mobius_post_actions: [ launched.postAction ]
+  };
+}
+
 function payloadIds(e, keys = [ "ids" ]) {
   const out = [];
   for (const key of keys) {
@@ -2068,12 +2566,13 @@ async function aiScanArxiv(e, t, r) {
   const ids = payloadIds(t, [ "ids", "paper_ids", "scope_ids" ]);
   const includeBacklog = !ids.length || !!(t.deep_read_backlog || t.include_backlog || t.backfill);
   const limit = int(t.limit, ids.length || 10, 1, 1000);
-  const provider = findProvider(modelKey);
+  const provider = t.sync === true || t.wait === true ? findProvider(modelKey) : sessionProviderInfo(modelKey);
   const selected = ids.length ? pendingPaperRowsByIds(e, ids).slice(0, limit) : [];
   const excludeIds = new Set(selected.map(e => e.id));
   const backlogLimit = ids.length ? (includeBacklog ? int(t.backlog_limit, 1000, 0, 1000) : Math.max(0, limit - selected.length)) : limit;
   const papers = [ ...selected, ...pendingPaperBacklog(e, excludeIds, backlogLimit) ];
   if (!papers.length) return { ok: true, scanned: 0, results: [], provider: provider.label, model: provider.model };
+  if (t.sync !== true && t.wait !== true) return startAsyncAiScan(e, { kind: "paper", rows: papers, provider, modelKey: modelKey || provider.key, createdBy: r });
   const memContext = buildMobiusMemoryContext();
   const systemPrompt = buildScanSystemPrompt({ kind: "paper" }) + "\n\n## 注入的莫比乌斯 Memory\n\n" + memContext;
   const runId = createAgentRun(e, { kind: "paper", scopeIds: papers.map(p => p.id), modelKey: provider.key, modelLabel: provider.label, createdBy: r });
@@ -2132,12 +2631,13 @@ async function aiScanProducts(e, t, r) {
   const ids = payloadIds(t, [ "ids", "product_ids", "scope_ids" ]);
   const includeBacklog = !ids.length || !!(t.deep_read_backlog || t.include_backlog || t.backfill);
   const limit = int(t.limit, ids.length || 5, 1, 1000);
-  const provider = findProvider(modelKey);
+  const provider = t.sync === true || t.wait === true ? findProvider(modelKey) : sessionProviderInfo(modelKey);
   const selected = ids.length ? pendingProductRowsByIds(e, ids).slice(0, limit) : [];
   const excludeIds = new Set(selected.map(e => e.id));
   const backlogLimit = ids.length ? (includeBacklog ? int(t.backlog_limit, 1000, 0, 1000) : Math.max(0, limit - selected.length)) : limit;
   const products = [ ...selected, ...pendingProductBacklog(e, excludeIds, backlogLimit) ];
   if (!products.length) return { ok: true, scanned: 0, results: [], provider: provider.label, model: provider.model };
+  if (t.sync !== true && t.wait !== true) return startAsyncAiScan(e, { kind: "product", rows: products, provider, modelKey: modelKey || provider.key, createdBy: r });
   const memContext = buildMobiusMemoryContext();
   const systemPrompt = buildScanSystemPrompt({ kind: "product" }) + "\n\n## 注入的莫比乌斯 Memory\n\n" + memContext;
   const runId = createAgentRun(e, { kind: "product", scopeIds: products.map(p => p.id), modelKey: provider.key, modelLabel: provider.label, createdBy: r });
@@ -2192,6 +2692,7 @@ async function aiScanProducts(e, t, r) {
 }
 
 async function discoverCompetitorsViaAgent(e, t, r) {
+  if (t.sync !== true && t.wait !== true) return startAsyncProductDiscovery(e, t, r);
   const maxResults = int(t.max_results, 10, 3, 30);
   const provider = findProvider(txt(t.model_key, 200));
   const productKeywords = rows(e, "product").filter(k => k.enabled).map(k => k.keyword || k.query).filter(Boolean);
@@ -2322,7 +2823,104 @@ function parseDiscoveryJson(text) {
   } catch { return null; }
 }
 
+// 从 agent 回复文本里提取 <further-answering>...</further-answering> 网页摘要.
+// 容错: 同时接受漏写斜杠的 <further-answering>...<further-answering> (任务描述里的写法).
+function extractFurtherAnswering(text) {
+  if (!text || typeof text !== "string") return "";
+  const match = text.match(/<further-answering>([\s\S]*?)<\/?further-answering>/i);
+  if (match) return match[1].trim();
+  return "";
+}
+
+// 网页摘要里若含 <further-answering> 标签, 去掉标签只留纯文本 (展示用).
+function stripFurtherAnswering(text) {
+  if (!text || typeof text !== "string") return text || "";
+  return text.replace(/<\/?further-answering>/gi, "").trim();
+}
+
+// best-effort 读取 gateway DB 里某 session 的 agent_status (running/idle/completed/...).
+// worker 继承父进程 env, process.env.DB_PATH 即 test-gateway.db. 失败返回 "" 不影响主流程.
+function readGatewayAgentStatus(sessionId) {
+  const sid = txt(sessionId, 120);
+  if (!sid) return "";
+  let dbPath = process.env.DB_PATH || "";
+  if (!dbPath) {
+    try { dbPath = require("../../../backend/config").DB_PATH || ""; } catch { dbPath = ""; }
+  }
+  if (!dbPath) return "";
+  try {
+    const gw = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+      const row = gw.prepare("SELECT agent_status FROM sessions_v2 WHERE session_id=? AND deleted_at IS NULL").get(sid);
+      return row && row.agent_status ? String(row.agent_status) : "";
+    } finally {
+      try { gw.close(); } catch {}
+    }
+  } catch {
+    return "";
+  }
+}
+
+// 计算一次追问/扫描 run 的网页可见状态与摘要, 供前端轮询.
+// status: generating | completed | done_no_summary | error
+function chatStatus(e, t) {
+  const kind = txt(t.kind, 10) === "product" ? "product" : "paper";
+  const scopeId = txt(t.scope_id, 120);
+  const runId = txt(t.run_id, 120);
+  const run = runId
+    ? e.prepare("SELECT * FROM agent_runs WHERE id=?").get(runId) || null
+    : latestAgentRunForScope(e, kind, scopeId);
+  if (!run) return {
+    ok: true,
+    status: "done_no_summary",
+    reply: "",
+    not_started: true,
+    kind,
+    scope_id: scopeId,
+    message: "尚未找到对应的 Agent 运行记录。"
+  };
+  const label = kind === "product" ? "产品" : "论文";
+  const summaryText = stripFurtherAnswering(run.summary || "");
+  const further = extractFurtherAnswering(run.web_reply || "") || extractFurtherAnswering(run.summary || "");
+  const gatewayStatus = run.session_id ? readGatewayAgentStatus(run.session_id) : "";
+  let status;
+  let reply;
+  if (further) {
+    status = "completed";
+    reply = further;
+  } else if (run.status === "error") {
+    status = "error";
+    reply = `本轮${label}Agent 报错: ${txt(run.error, 400) || "未知错误"}`;
+  } else if (gatewayStatus === "running" || gatewayStatus === "waiting") {
+    status = "generating";
+    reply = "";
+  } else if (run.status === "completed") {
+    status = "done_no_summary";
+    reply = summaryText ? `${summaryText}\n\n(完整回复见 Session)` : `本轮${label}Agent 已完成, 但没有生成网页摘要。完整回复见对应 Session。`;
+  } else if (gatewayStatus === "completed" || gatewayStatus === "failed" || gatewayStatus === "stale" || gatewayStatus === "idle") {
+    // agent 已停工但没写 <further-answering> (常见于被巡检清理或提前结束)
+    status = "done_no_summary";
+    reply = summaryText ? `${summaryText}\n\n(完整回复见 Session)` : `本轮${label}Agent 可能已完成, 但没有生成网页摘要。完整回复见对应 Session。`;
+  } else {
+    status = "generating";
+    reply = "";
+  }
+  return {
+    ok: true,
+    status,
+    reply,
+    run_id: run.id,
+    session_id: run.session_id || "",
+    session_url: run.session_url || "",
+    agent_status: gatewayStatus || run.status || "",
+    kind,
+    scope_id: scopeId,
+    updated_at: run.updated_at || ""
+  };
+}
+
 async function chatWithAgent(e, t, r) {
+  if (t.sync !== true && t.wait !== true) return startAsyncAgentChat(e, t, r);
   const kind = txt(t.kind, 10) === "product" ? "product" : "paper";
   const message = txt(t.message, 4000);
   const scopeId = txt(t.scope_id, 120);
@@ -2551,7 +3149,7 @@ async function dispatch(e, t, r, a) {
       products: listProducts(e),
       scan_runs: scans(e),
       constants: {
-        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "mark_paper_read", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "mark_product_read", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats", "list_ai_channels", "ai_scan_arxiv", "ai_scan_products", "discover_competitors_via_agent", "chat_with_agent", "rewrite_inspiration_style", "export_agent_prompt", "list_agent_runs", "get_agent_messages", "set_source_review", "list_source_reviews", "decide_inspiration", "list_l2_inspirations", "implement_l2_inspiration", "update_l2_inspiration_status" ],
+        retained_actions: [ "bootstrap", "list_arxiv_items", "get_paper", "mark_paper", "mark_paper_read", "export_papers", "scan_arxiv", "submit_feedback", "chat_with_paper", "get_paper_clusters", "get_top_picks", "get_papers_by_cluster", "list_product_items", "get_product", "mark_product", "mark_product_read", "export_products", "scan_product_url", "get_keywords", "update_keywords", "get_competitors", "update_competitors", "list_scan_runs", "get_evolution_feed", "promote_L2_to_L1", "seed_evolution_from_git", "get_L3_placeholder", "get_evolution_stats", "list_ai_channels", "ai_scan_arxiv", "ai_scan_products", "discover_competitors_via_agent", "chat_with_agent", "chat_status", "rewrite_inspiration_style", "export_agent_prompt", "list_agent_runs", "get_agent_messages", "set_source_review", "list_source_reviews", "decide_inspiration", "list_l2_inspirations", "implement_l2_inspiration", "update_l2_inspiration_status" ],
         schedule_ids: SCHEDULE_IDS,
         daily_scan_time: "17:00",
         daily_scan_timezone: "UTC",
@@ -2563,29 +3161,36 @@ async function dispatch(e, t, r, a) {
   }
   if ("scan_arxiv" === s) {
     const scan = await scanArxiv(e, t, r);
+    const autoAi = await autoDeepReadAfterScan(e, "paper", scan.new_ids || [], t, r);
+    const autoProductAi = (scan.discovered_product_ids || []).length ? await autoDeepReadAfterScan(e, "product", scan.discovered_product_ids || [], {
+      ...t,
+      deep_read_backlog: !1
+    }, r) : null;
+    const postActions = pullPostActions(autoAi, autoProductAi);
     return {
       ok: !0,
       scan,
-      auto_ai: await autoDeepReadAfterScan(e, "paper", scan.new_ids || [], t, r),
-      auto_product_ai: (scan.discovered_product_ids || []).length ? await autoDeepReadAfterScan(e, "product", scan.discovered_product_ids || [], {
-        ...t,
-        deep_read_backlog: !1
-      }, r) : null,
+      auto_ai: autoAi,
+      auto_product_ai: autoProductAi,
       summary: summary(e),
       arxiv: listPapers(e, t),
-      scan_runs: scans(e)
+      scan_runs: scans(e),
+      ...(postActions.length ? { __mobius_post_actions: postActions } : {})
     };
   }
   if ("scan_product_url" === s) {
     const productScan = await scanProductAction(e, t, r);
+    const autoAi = await autoDeepReadAfterScan(e, "product", productScan.touched_ids || [], t, r);
+    const postActions = pullPostActions(autoAi);
     return {
       ok: !0,
       product_scan: productScan,
-      auto_ai: await autoDeepReadAfterScan(e, "product", productScan.touched_ids || [], t, r),
+      auto_ai: autoAi,
       competitors: groupedProducts(e),
       products: listProducts(e),
       scan_runs: scans(e),
-      summary: summary(e)
+      summary: summary(e),
+      ...(postActions.length ? { __mobius_post_actions: postActions } : {})
     };
   }
   if ("submit_feedback" === s) return {
@@ -2622,6 +3227,10 @@ async function dispatch(e, t, r, a) {
   if ("chat_with_agent" === s) return {
     ok: !0,
     ...(await chatWithAgent(e, t, r))
+  };
+  if ("chat_status" === s) return {
+    ok: !0,
+    ...chatStatus(e, t)
   };
   if ("rewrite_inspiration_style" === s) return {
     ok: !0,
