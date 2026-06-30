@@ -193,6 +193,7 @@ async function triggerAgentMentions(params: {
         agentSessionId: cloneId,
         agentDisplayName: member.display_name,
         baselineLines,
+        isClone: true,
       });
     } catch (e) {
       try {
@@ -264,8 +265,15 @@ function watchAgentReply(p: {
   agentSessionId: string;
   agentDisplayName: string;
   baselineLines: number;
+  isClone?: boolean;
 }): void {
   let ticks = 0;
+  // 临时分身用完即弃(软删除), 避免残留在分身列表里.
+  const cleanupClone = () => {
+    if (p.isClone) {
+      try { Sessions.updateStatus(p.agentSessionId, 'deleted' as any); } catch {}
+    }
+  };
   const timer = setInterval(() => {
     ticks++;
     const text = readLatestAssistantText(p.agentSessionId, p.baselineLines);
@@ -282,9 +290,10 @@ function watchAgentReply(p: {
         });
         Conversations.touch(p.conversationId);
       } catch {}
+      cleanupClone();
       return;
     }
-    if (ticks >= 150) clearInterval(timer); // 最多 ~5 分钟
+    if (ticks >= 150) { clearInterval(timer); cleanupClone(); } // 最多 ~5 分钟
   }, 2000);
 }
 
