@@ -17,6 +17,19 @@ function userOf(req: express.Request): any {
   return (req as any).user;
 }
 
+function isMemberOnline(lastSeen?: string | null): boolean {
+  if (!lastSeen) return false;
+  const t = Date.parse(lastSeen);
+  return !isNaN(t) && Date.now() - t < 6000;
+}
+
+function listMembersWithOnline(conversationId: string) {
+  return Conversations.listMembers(conversationId).map((m: any) => ({
+    ...m,
+    online: m.member_type === 'agent' ? true : isMemberOnline(m.last_seen_at),
+  }));
+}
+
 function normalizeMember(raw: any): MemberInput | null {
   if (!raw) return null;
   const type: MemberType = raw.type === 'agent' ? 'agent' : 'user';
@@ -86,7 +99,7 @@ router.get('/:id', auth, (req: express.Request, res: express.Response) => {
     res.status(403).json({ error: '你不是该群成员' });
     return;
   }
-  res.json({ conversation: conv, members: Conversations.listMembers(id) });
+  res.json({ conversation: conv, members: listMembersWithOnline(id) });
 });
 
 // 邀请成员 (仅群主)
@@ -388,6 +401,7 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
 
   poll = setInterval(() => {
     if (closed) return;
+    Conversations.touchMemberPresence(id, user.id);
     const newer = Conversations.listMessagesSince(id, lastId, 200);
     if (!newer.length) return;
     for (const m of newer) {

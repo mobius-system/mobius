@@ -190,6 +190,13 @@ const Conversations = {
     ).run(conversationId);
   },
 
+  // 群成员在线心跳: 该 user 成员当前连着群 SSE 时刷新 last_seen_at.
+  touchMemberPresence(conversationId: string, userId: string): void {
+    db.prepare(
+      "UPDATE conversation_members SET last_seen_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE conversation_id = ? AND member_type = 'user' AND member_id = ?",
+    ).run(conversationId, userId);
+  },
+
   insertMessage(args: {
     conversationId: string;
     senderId: string;

@@ -1064,4 +1064,14 @@ function migrateConversations() {
 }
 migrateConversations();
 
+// 群成员在线心跳: conversation_members.last_seen_at 由群 SSE 连接/轮询时更新, 用于判断在线.
+function migrateConversationPresence() {
+  try {
+    db.exec(`ALTER TABLE conversation_members ADD COLUMN last_seen_at TEXT`);
+  } catch (e) {
+    // 列已存在则忽略
+  }
+}
+migrateConversationPresence();
+
 export { db, DB_PATH };
