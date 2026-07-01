@@ -8,13 +8,13 @@ Claude Code models are configured under **Admin Center → Model Integration →
 
 - Top-right avatar menu → **Admin Center** → the **Model Integration** tab → pick **Claude Code** at the top right. Left: imported models; right: add / edit form.
 
-![image](https://serve.nutshellai.cn/publish/auto/tutorial/adm-cc-overview.jpg)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/adm-cc-overview-v2.jpg)
 
 ## 2. Add a Claude Code Model
 
 - Click **New**, then fill in:
 
-![image](https://serve.nutshellai.cn/publish/auto/tutorial/adm-cc-form.jpg)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/adm-cc-form-v2.jpg)
 
 | Field | Meaning |
 | --- | --- |
