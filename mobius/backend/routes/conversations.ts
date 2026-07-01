@@ -105,6 +105,7 @@ router.get('/:id', auth, (req: express.Request, res: express.Response) => {
     res.status(403).json({ error: '你不是该群成员' });
     return;
   }
+  Conversations.markRead(id, user.id);
   res.json({ conversation: conv, members: listMembersWithOnline(id) });
 });
 
@@ -408,6 +409,7 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
   poll = setInterval(() => {
     if (closed) return;
     Conversations.touchMemberPresence(id, user.id);
+    Conversations.markRead(id, user.id);
     const newer = Conversations.listMessagesSince(id, lastId, 200);
     if (!newer.length) return;
     for (const m of newer) {

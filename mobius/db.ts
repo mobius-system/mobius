@@ -1074,4 +1074,14 @@ function migrateConversationPresence() {
 }
 migrateConversationPresence();
 
+// 未读计数: conversation_members.last_read_message_id 记录每个 user 成员的已读位置.
+function migrateConversationRead() {
+  try {
+    db.exec(`ALTER TABLE conversation_members ADD COLUMN last_read_message_id INTEGER NOT NULL DEFAULT 0`);
+  } catch (e) {
+    // 列已存在则忽略
+  }
+}
+migrateConversationRead();
+
 export { db, DB_PATH };

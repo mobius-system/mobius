@@ -128,11 +128,25 @@ const Conversations = {
       SELECT c.id, c.name, c.owner_id, c.created_at, c.last_active,
              (SELECT content FROM conversation_messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message,
              (SELECT created_at FROM conversation_messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message_at,
-             (SELECT COUNT(*) FROM conversation_members WHERE conversation_id = c.id) AS member_count
+             (SELECT COUNT(*) FROM conversation_members WHERE conversation_id = c.id) AS member_count,
+             (SELECT COUNT(*) FROM conversation_messages m
+              WHERE m.conversation_id = c.id
+                AND m.id > COALESCE((SELECT cm.last_read_message_id FROM conversation_members cm
+                                     WHERE cm.conversation_id = c.id AND cm.member_type = 'user' AND cm.member_id = ?), 0)
+                AND m.sender_type = 'user'
+             ) AS unread
       FROM conversations c
       WHERE c.id IN (SELECT conversation_id FROM conversation_members WHERE member_type = 'user' AND member_id = ?)
       ORDER BY c.last_active DESC
-    `).all(userId) as Array<Record<string, unknown>>;
+    `).all(userId, userId) as Array<Record<string, unknown>>;
+  },
+
+  // 标记该 user 成员已读到 conversation 当前最新消息(打开群聊/SSE 连接时调用).
+  markRead(conversationId: string, userId: string): void {
+    const maxId = (db.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM conversation_messages WHERE conversation_id = ?').get(conversationId) as { m: number }).m;
+    db.prepare(
+      'UPDATE conversation_members SET last_read_message_id = ? WHERE conversation_id = ? AND member_type = ? AND member_id = ?',
+    ).run(maxId, conversationId, 'user', userId);
   },
 
   // 查找或创建 1对1 私聊(恰好两个 user 成员, 无 agent).
