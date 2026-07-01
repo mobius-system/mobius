@@ -298,18 +298,9 @@ function watchAgentReply(p: {
     ticks++;
     const text = readLatestAssistantText(p.agentSessionId, p.baselineLines);
     if (text) {
+      // @ 触发的 agent 执行结果不再回写群聊(用户要求: 不要"任务已完成"这类回复刷屏),
+      // 仅停止轮询 + 清理临时分身. agent 实际执行结果留在分身 session 里.
       clearInterval(timer);
-      try {
-        Conversations.insertMessage({
-          conversationId: p.conversationId,
-          senderId: p.agentSessionId,
-          senderType: 'agent',
-          senderName: p.agentDisplayName,
-          content: text,
-          sourceAgentSession: p.agentSessionId,
-        });
-        Conversations.touch(p.conversationId);
-      } catch {}
       cleanupClone();
       return;
     }
