@@ -24,10 +24,16 @@ function isMemberOnline(lastSeen?: string | null): boolean {
 }
 
 function listMembersWithOnline(conversationId: string) {
-  return Conversations.listMembers(conversationId).map((m: any) => ({
-    ...m,
-    online: m.member_type === 'agent' ? true : isMemberOnline(m.last_seen_at),
-  }));
+  return Conversations.listMembers(conversationId).map((m: any) => {
+    const agentOwnerName = m.member_type === 'agent' && m.agent_owner_id
+      ? ((db.prepare('SELECT display_name FROM users WHERE id = ?').get(m.agent_owner_id) as { display_name?: string } | undefined)?.display_name || null)
+      : null;
+    return {
+      ...m,
+      online: m.member_type === 'agent' ? true : isMemberOnline(m.last_seen_at),
+      agent_owner_name: agentOwnerName,
+    };
+  });
 }
 
 function normalizeMember(raw: any): MemberInput | null {
@@ -204,7 +210,7 @@ async function triggerAgentMentions(params: {
       watchAgentReply({
         conversationId: params.conversationId,
         agentSessionId: cloneId,
-        agentDisplayName: member.display_name,
+        agentDisplayName: `${ownerUser.display_name || ownerId}·${String(member.display_name || '小莫').replace(/^我的/, '')}`,
         baselineLines,
         isClone: true,
       });
