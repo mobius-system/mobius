@@ -77,7 +77,7 @@ await page.screenshot({ path: `${RAW}/01.png` });
 
 ## 2. PIL 标注（红色编号 + 描边 + 标签）
 
-注意避免字体超出边框！
+注意避免字体超出边框！这是标注阶段的常见错误
 
 复用现成标注器 `.imac/tmp/tutorial05/annotate.py`（红圆角描边 + 编号红圆 badge + 白底红边 pill 标签 + leader line，CJK 自动换行 + 碰撞避让，字体 `/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc`）。
 
