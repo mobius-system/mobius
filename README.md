@@ -35,8 +35,6 @@ Mobius is, to the best of our knowledge, the world's first <strong>self-evolving
   <a href="https://mobius.nutshellai.cn/"><strong>Website</strong></a>
   ·
   <a href="https://nutshellai-tech.github.io/mobius/"><strong>Docs</strong></a>
-  ·
-  <a href="./WHAT_WE_WANT_TO_SAY.md"><strong>What We Want to Say</strong></a>
 </p>
 
 </div>
@@ -173,12 +171,16 @@ Mobius ships with built-in extension apps and can also incubate new apps from us
 
 ### 1. Build your own Agent OS
 
-Connect models, agents, skills, memory, projects, devices, and compute resources into Mobius, forming your own AI workbench. It is not a one-off chat window, but a production system that keeps running, iterating, and accumulating experience.
+Connect models, agents, skills, memory, projects, devices, and compute resources into Mobius, forming a personal or team AI operating surface that keeps running, learning, and improving.
 
-- <strong>Personal workspace</strong>: organize commonly used models, private knowledge, schedules, files, development environments, and remote machines into one entrance.
-- <strong>Team workspace</strong>: bring members, projects, issues, sub-agents, and delivery records into the same collaboration interface.
-- <strong>Industry workspace</strong>: build reusable plugins and workflows for finance, research, education, hardware, operations, and other domains.
-- <strong>Long-term memory and project knowledge</strong>: preserve preferences, project background, delivery records, and team norms as reusable context for future tasks.
+- <strong>Unified entrance</strong>: organize common models, private knowledge, files, development environments, and remote machines in one place.
+- <strong>Projects and teams</strong>: bring members, projects, issues, sub-agents, and delivery records into the same collaboration interface.
+- <strong>Dedicated workflows</strong>: turn finance, research, education, hardware, operations, and other scenarios into reusable plugins and workflows.
+- <strong>Self-evolution</strong>: use screenshots, feedback, frontier references, and real usage records to keep repairing, extending, and optimizing your OS.
+
+<p align="center">
+  <img src="./assets/can-do-agent-os.gif" alt="Mobius self-evolving Agent OS demo" width="720" />
+</p>
 
 ### 2. Team development and project management
 
@@ -189,6 +191,10 @@ Use natural language to create projects, split tasks, assign agents, track statu
 - <strong>Code review and regression</strong>: let one agent implement, another review, and a testing agent add verification.
 - <strong>Team experience reuse</strong>: preserve retrospectives, rules, best practices, and historical decisions so new members and agents can get up to speed quickly.
 
+<p align="center">
+  <img src="./assets/can-do-team-collab.gif" alt="Mobius team collaboration demo" width="720" />
+</p>
+
 ### 3. Generate demos, plugins, and business apps
 
 Ask XiaoMo to create a plugin, webpage, themed portal, internal tool, or data dashboard directly. Mobius turns requirements into code, assets, backend interfaces, and running entries, then keeps the result as an extension that can be reused and improved.
@@ -196,6 +202,10 @@ Ask XiaoMo to create a plugin, webpage, themed portal, internal tool, or data da
 - <strong>Demo products</strong>: generate event pages, launch pages, product pages, sports portals, or investor demo sites from one sentence.
 - <strong>Internal tools</strong>: build lightweight apps for data entry, content review, customer follow-up, daily reports, weekly reports, and knowledge search.
 - <strong>Continuously iterated plugins</strong>: start with a usable version, then let XiaoMo improve it from screenshots, feedback, and real usage.
+
+<p align="center">
+  <img src="./assets/can-do-extensions.gif" alt="Mobius extension and business app demo" width="720" />
+</p>
 
 ### 4. Deep research, competitor tracking, and Auto Research
 
@@ -205,6 +215,10 @@ Mobius can organize paper reading, data research, experiment reproduction, code 
 - <strong>Competitor scanning</strong>: continuously track products, papers, open-source projects, and industry news, then write useful inspirations back into the knowledge base.
 - <strong>Research pipeline</strong>: move from topic selection, materials, code, experiments, and summaries with context, records, and follow-up questions at every step.
 
+<p align="center">
+  <img src="./assets/can-do-research.gif" alt="Mobius Auto Research demo" width="720" />
+</p>
+
 ### 5. Connect real devices, remote compute, and the physical world
 
 Mobius can bring local machines, remote servers, GPU clusters, mobile devices, sensors, and robots into the same task system. Users state goals; the system organizes the environments and resources that can actually execute them.
@@ -213,19 +227,11 @@ Mobius can bring local machines, remote servers, GPU clusters, mobile devices, s
 - <strong>Mobile follow-up</strong>: check agent progress, add instructions, approve risky actions, or receive key reminders from a phone.
 - <strong>Robotics and hardware access</strong>: wrap sensors, actuators, lab equipment, or robots as callable resources so AI tasks can enter the physical world.
 
-### 6. Build a product system that improves itself
-
-The point of Mobius is not to let AI do one thing once; it is to let the system keep improving through real usage. It can observe its own weaknesses, learn from frontier papers and strong products, propose improvements, and implement them in code and experience.
-
-- <strong>Self-repair</strong>: when a page breaks, interaction fails, data becomes stale, or an agent run fails, ask XiaoMo to locate and fix it.
-- <strong>Self-extension</strong>: incubate new plugins, APIs, workflows, or agent roles from a new need.
-- <strong>Self-optimization</strong>: adjust product form over time from usage records, user feedback, and external research.
-
 ---
 
 ## Quick Start
 
-For complete deployment instructions, see the <a href="https://nutshellai-tech.github.io/mobius/">Docs</a> and <a href="./WHAT_WE_WANT_TO_SAY.md">What We Want to Say</a>. The two most common startup paths are kept below.
+For complete deployment instructions, see the <a href="https://nutshellai-tech.github.io/mobius/">Docs</a>. The two most common startup paths are kept below.
 
 ### Option 1: Install and run in containers (recommended)
 
