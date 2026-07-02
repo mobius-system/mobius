@@ -34,11 +34,12 @@ function normalizeAgentSessionTitle(value) {
   return title || null
 }
 
-function extractAgentSessionTitleFromEntry(entry, sessionId) {
+function extractAgentSessionTitleFromEntry(entry) {
   if (!entry || typeof entry !== 'object') return null
   if (entry.type !== 'ai-title') return null
-  const entrySessionId = entry.sessionId || entry.session_id
-  if (entrySessionId && String(entrySessionId) !== String(sessionId)) return null
+  // Claude Code writes its own agent UUID in entry.sessionId, not Mobius'
+  // short sessions_v2.session_id. The JSONL path / watcher already scopes the
+  // event to one Mobius session, so this field must not be used as a reject guard.
   return normalizeAgentSessionTitle(entry.aiTitle || entry.ai_title || entry.title)
 }
 
@@ -121,7 +122,7 @@ class AgentBackend {
     const hist = this.getHistory(sessionId, opts) || {}
     const entries = Array.isArray(hist.entries) ? hist.entries : []
     for (let i = entries.length - 1; i >= 0; i--) {
-      const title = extractAgentSessionTitleFromEntry(entries[i], sessionId)
+      const title = extractAgentSessionTitleFromEntry(entries[i])
       if (title) return title
     }
     return null

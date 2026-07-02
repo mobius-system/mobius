@@ -39,11 +39,12 @@ function normalizeSessionTitle(value: unknown): string | null {
     : title
 }
 
-function extractSessionTitleFromEntry(entry: unknown, sessionId: string): string | null {
+function extractSessionTitleFromEntry(entry: unknown): string | null {
   const obj = parseEntry(entry)
   if (!obj || obj.type !== 'ai-title') return null
-  const entrySessionId = obj.sessionId ?? obj.session_id
-  if (entrySessionId && String(entrySessionId) !== sessionId) return null
+  // For Claude Code, obj.sessionId is the agent's UUID (claude_session_id), not
+  // Mobius sessions_v2.session_id. The agent watcher event is already scoped to
+  // the Mobius session, so do not reject on this raw protocol field.
   return normalizeSessionTitle(obj.aiTitle ?? obj.ai_title ?? obj.title)
 }
 
@@ -51,7 +52,7 @@ function handleAgentRawEntryForSessionTitle(event: AgentRawEntryEvent): { update
   const sessionId = String(event?.sessionId || '').trim()
   if (!sessionId) return { updated: false, title: null }
 
-  const title = extractSessionTitleFromEntry(event.entry, sessionId)
+  const title = extractSessionTitleFromEntry(event.entry)
   if (!title) return { updated: false, title: null }
   if (!adminSettings.isAutoGenerateSessionTitleEnabled()) return { updated: false, title }
 
