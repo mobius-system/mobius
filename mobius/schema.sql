@@ -78,9 +78,6 @@ CREATE TABLE IF NOT EXISTS projects (
   kind TEXT NOT NULL DEFAULT 'normal' CHECK(kind IN ('normal','extension')),
   extension_name TEXT,
   disabled INTEGER NOT NULL DEFAULT 0,
-  -- DEPRECATED: extension_default_hidden 已不再被读取 (拓展一律默认可见, 由用户自己隐藏/恢复).
-  -- 列保留以免迁移风险, 恒为 0. 不要再写入.
-  extension_default_hidden INTEGER NOT NULL DEFAULT 0,
   -- 项目级默认模型偏好: 新建 Session 时模型下拉的初始值. NULL = 未指定 (跟随系统全局默认).
   -- 存的是 model-registry 暴露的短键 (opus / codex / 管理员导入模型的 key), 与 sessions_v2.model 的 id 不同.
   default_model TEXT,

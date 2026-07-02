@@ -433,9 +433,10 @@ function shapeProjectForUser(project: any, user: any, opts: { mutedIds?: Set<str
   const muted = opts.mutedIds
     ? opts.mutedIds.has(project.id)
     : (user?.id ? UserProjectView.isMuted(user.id, project.id) : false);
-  const hidden = user?.id
-    ? !!(project.hidden || muted || isHidden(user.id, 'project', project.id))
-    : !!project.hidden;
+  // 可见性单一来源 = 用户屏蔽 (muted, Store B). project_user_hidden (A) 已一次性迁移并入 mute,
+  // user_resource_hides (C) 对 project 恒与 mute 同步写入 → 二者都冗余, 不再参与判定.
+  // project.hidden (A) 仅保留给未登录回退 (实际不会出现).
+  const hidden = user?.id ? !!muted : !!project.hidden;
   return {
     ...project,
     visibility: normalizeProjectVisibility(project.visibility, 'private'),
@@ -1898,6 +1899,8 @@ router.post('/:id/purge', auth, (req: express.Request, res: express.Response) =>
   }
   try {
     Projects.purgeUserExtensionData(id, user.id);
+    // 可见性走 mute (Store B): purge 也写 mute, 与 /hide 一致, 这样用户可在"已屏蔽"区自助恢复 (空卡片, 数据已删).
+    UserProjectView.mute(user.id, id);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });

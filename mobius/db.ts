@@ -855,9 +855,10 @@ function migrateProjectsExtensionColumns() {
       db.exec('ALTER TABLE projects ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0');
       console.log('[mobius/db] migrate: projects.disabled 已加 (默认 0)');
     }
-    if (!cols.includes('extension_default_hidden')) {
-      db.exec('ALTER TABLE projects ADD COLUMN extension_default_hidden INTEGER NOT NULL DEFAULT 0');
-      console.log('[mobius/db] migrate: projects.extension_default_hidden 已加 (默认 0)');
+    if (cols.includes('extension_default_hidden')) {
+      // 特性已移除: 拓展一律默认可见, 由用户自己隐藏/恢复. 列不再被读写, 删掉以免 API 经 ...row 泄漏.
+      db.exec('ALTER TABLE projects DROP COLUMN extension_default_hidden');
+      console.log('[mobius/db] migrate: projects.extension_default_hidden 已删 (拓展默认可见, 特性移除)');
     }
     db.exec(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_extension_name ' +
@@ -974,6 +975,11 @@ function migrateProjectUserHidden() {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_project_user_hidden_user ON project_user_hidden(user_id);
+      -- 可见性单一来源是 user_muted_projects (mute). 把历史的 project_user_hidden (拓展隐藏/purge)
+      -- 一次性并入 mute, 保证 A⊆B, 这样网关只需看 muted 即可, 不丢任何历史隐藏. 幂等.
+      INSERT OR IGNORE INTO user_muted_projects (user_id, project_id, muted_at)
+      SELECT user_id, project_id, COALESCE(hidden_at, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      FROM project_user_hidden;
     `);
   } catch (e) {
     console.warn('[mobius/db] ⚠️  project_user_hidden 迁移失败:', e.message);

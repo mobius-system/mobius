@@ -1177,12 +1177,8 @@ export function DeleteProjectModal({ project, onClose, onDeleted }: { project: a
 export function ExtensionDeleteModal({ project, onClose, onDone }: { project: any; onClose: () => void; onDone: () => void }) {
   const { theme } = useStore()
   const isDark = theme !== 'light'
-  const [mode, setMode] = useState<'choose' | 'confirm-purge'>('choose')
-  const [confirmText, setConfirmText] = useState('')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
-
-  const accept = new Set([project.name, project.extension_name, project.id].filter(Boolean).map(String))
 
   const submitHide = async () => {
     setLoading(true); setErr('')
@@ -1191,71 +1187,25 @@ export function ExtensionDeleteModal({ project, onClose, onDone }: { project: an
       onDone()
     } catch (e: any) { setErr(e?.message || '隐藏失败') } finally { setLoading(false) }
   }
-  const submitPurge = async () => {
-    if (!accept.has(confirmText.trim())) { setErr('请输入拓展名以确认'); return }
-    setLoading(true); setErr('')
-    try {
-      await api(`/api/projects/${project.id}/purge`, { method: 'POST', body: JSON.stringify({ confirm: confirmText.trim() }) })
-      onDone()
-    } catch (e: any) { setErr(e?.message || '彻底删除失败') } finally { setLoading(false) }
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-[420px] rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <h3 className="text-[15px] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
-          管理拓展显示「{project.name}」
+          隐藏拓展「{project.name}」
         </h3>
-        {mode === 'choose' && (
-          <>
-            <p className="text-[12px] mb-4" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
-              拓展应用是共享入口。这里的操作只影响你自己的项目列表和个人数据。
-            </p>
-            <div className="space-y-2 mb-4">
-              <button onClick={submitHide} disabled={loading}
-                className="w-full text-left rounded-xl p-3 transition-colors disabled:opacity-40 border"
-                style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
-                <div className="text-[13px] font-medium" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>隐藏卡片</div>
-                <div className="text-[11px] mt-0.5" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
-                  只从你的项目页隐藏入口，不删除任务单、执行会话或星标。可在已屏蔽项目中恢复。
-                </div>
-              </button>
-              <button onClick={() => setMode('confirm-purge')} disabled={loading}
-                className="w-full text-left rounded-xl p-3 transition-colors disabled:opacity-40 border"
-                style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.35)' }}>
-                <div className="text-[13px] font-medium text-red-400">彻底删除我的拓展数据</div>
-                <div className="text-[11px] mt-0.5" style={{ color: isDark ? '#fca5a5' : '#b91c1c' }}>
-                  删除你在此拓展中的执行会话、自建任务单、星标和名单设置，并隐藏卡片。不可恢复。
-                </div>
-              </button>
-            </div>
-            {err && <ErrBanner>{err}</ErrBanner>}
-            <div className="flex gap-2">
-              <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
-            </div>
-          </>
-        )}
-        {mode === 'confirm-purge' && (
-          <>
-            <p className="text-[12px] mb-3" style={{ color: isDark ? '#fca5a5' : '#b91c1c' }}>
-              这会删除你的个人拓展数据，不能恢复。请输入拓展名 <strong>{project.extension_name || project.name}</strong> 确认。
-            </p>
-            <input autoFocus value={confirmText} onChange={e => { setConfirmText(e.target.value); setErr('') }}
-              placeholder={project.extension_name || project.name}
-              onKeyDown={e => e.key === 'Enter' && submitPurge()}
-              className="w-full h-10 px-3 mb-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-red-500/40"
-              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: isDark ? '#f1f5f9' : '#1e293b' }} />
-            {err && <ErrBanner>{err}</ErrBanner>}
-            <div className="flex gap-2">
-              <button onClick={() => { setMode('choose'); setErr('') }} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>返回</button>
-              <button onClick={submitPurge} disabled={loading || !accept.has(confirmText.trim())}
-                className="flex-1 h-9 rounded-xl text-[13px] text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-40">
-                {loading ? '处理中...' : '删除我的数据'}
-              </button>
-            </div>
-          </>
-        )}
+        <p className="text-[12px] mb-4" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+          只从你的项目页隐藏入口，不删除任务单、执行会话或星标。可在「已屏蔽项目」中随时恢复显示。
+        </p>
+        {err && <ErrBanner>{err}</ErrBanner>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={submitHide} disabled={loading}
+            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            {loading ? '处理中...' : '隐藏卡片'}
+          </button>
+        </div>
       </div>
     </div>
   )
