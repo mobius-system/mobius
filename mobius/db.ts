@@ -1074,4 +1074,39 @@ function migrateConversationPresence() {
 }
 migrateConversationPresence();
 
+// 未读计数: conversation_members.last_read_message_id 记录每个 user 成员的已读位置.
+function migrateConversationRead() {
+  try {
+    db.exec(`ALTER TABLE conversation_members ADD COLUMN last_read_message_id INTEGER NOT NULL DEFAULT 0`);
+  } catch (e) {
+    // 列已存在则忽略
+  }
+}
+migrateConversationRead();
+
+// 区分群聊(group)/1v1私聊(direct).
+function migrateConversationType() {
+  try {
+    db.exec(`ALTER TABLE conversations ADD COLUMN type TEXT NOT NULL DEFAULT 'group'`);
+  } catch (e) {
+    // 列已存在则忽略
+  }
+}
+migrateConversationType();
+
+// 修正已有 1v1 私聊(恰好 2 个 user 成员, 无 agent)的 type: 迁移时默认 'group' 是错的.
+function fixDirectConversationType() {
+  try {
+    db.prepare(`UPDATE conversations SET type = 'direct' WHERE type = 'group' AND id IN (
+      SELECT conversation_id FROM conversation_members
+      GROUP BY conversation_id
+      HAVING COUNT(*) = 2
+        AND SUM(CASE WHEN member_type != 'user' THEN 1 ELSE 0 END) = 0
+    )`).run();
+  } catch (e) {
+    // type 列尚未建或已修正则忽略
+  }
+}
+fixDirectConversationType();
+
 export { db, DB_PATH };

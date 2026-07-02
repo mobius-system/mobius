@@ -64,18 +64,19 @@ const insertMemberStmt = db.prepare(`
 `) as BetterSqlite3.Statement;
 
 const Conversations = {
-  create({ name, ownerId, ownerName, members = [] }: {
+  create({ name, ownerId, ownerName, members = [], type = 'group' }: {
     name: string;
     ownerId: string;
     ownerName: string;
     members?: MemberInput[];
+    type?: string;
   }): { id: string; name: string } {
     const trimmed = String(name || '').trim();
     if (!trimmed) throw repoError('群名称不能为空', 400);
     if (trimmed.length > 60) throw repoError('群名称最多 60 个字符', 400);
     const id = makeConversationId();
     const tx = db.transaction(() => {
-      db.prepare('INSERT INTO conversations (id, name, owner_id) VALUES (?, ?, ?)').run(id, trimmed, ownerId);
+      db.prepare('INSERT INTO conversations (id, name, owner_id, type) VALUES (?, ?, ?, ?)').run(id, trimmed, ownerId, type === 'direct' ? 'direct' : 'group');
       insertMemberStmt.run({
         conversation_id: id,
         member_type: 'user',
@@ -125,14 +126,28 @@ const Conversations = {
 
   listForUser(userId: string): Array<Record<string, unknown>> {
     return db.prepare(`
-      SELECT c.id, c.name, c.owner_id, c.created_at, c.last_active,
+      SELECT c.id, c.name, c.owner_id, c.created_at, c.last_active, c.type,
              (SELECT content FROM conversation_messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message,
              (SELECT created_at FROM conversation_messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message_at,
-             (SELECT COUNT(*) FROM conversation_members WHERE conversation_id = c.id) AS member_count
+             (SELECT COUNT(*) FROM conversation_members WHERE conversation_id = c.id) AS member_count,
+             (SELECT COUNT(*) FROM conversation_messages m
+              WHERE m.conversation_id = c.id
+                AND m.id > COALESCE((SELECT cm.last_read_message_id FROM conversation_members cm
+                                     WHERE cm.conversation_id = c.id AND cm.member_type = 'user' AND cm.member_id = ?), 0)
+                AND m.sender_type = 'user'
+             ) AS unread
       FROM conversations c
       WHERE c.id IN (SELECT conversation_id FROM conversation_members WHERE member_type = 'user' AND member_id = ?)
       ORDER BY c.last_active DESC
-    `).all(userId) as Array<Record<string, unknown>>;
+    `).all(userId, userId) as Array<Record<string, unknown>>;
+  },
+
+  // 标记该 user 成员已读到 conversation 当前最新消息(打开群聊/SSE 连接时调用).
+  markRead(conversationId: string, userId: string): void {
+    const maxId = (db.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM conversation_messages WHERE conversation_id = ?').get(conversationId) as { m: number }).m;
+    db.prepare(
+      'UPDATE conversation_members SET last_read_message_id = ? WHERE conversation_id = ? AND member_type = ? AND member_id = ?',
+    ).run(maxId, conversationId, 'user', userId);
   },
 
   // 查找或创建 1对1 私聊(恰好两个 user 成员, 无 agent).
@@ -153,7 +168,7 @@ const Conversations = {
       return { id: row.conversation_id, name: c?.name || '聊天' };
     }
     const otherName = (db.prepare('SELECT display_name FROM users WHERE id = ?').get(userB) as { display_name?: string } | undefined)?.display_name || userB;
-    return Conversations.create({ name: otherName, ownerId: userA, ownerName: userAName, members: [{ type: 'user', id: userB }] });
+    return Conversations.create({ name: otherName, ownerId: userA, ownerName: userAName, members: [{ type: 'user', id: userB }], type: 'direct' });
   },
 
   findById(id: string): Record<string, unknown> | undefined {

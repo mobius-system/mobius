@@ -24,10 +24,16 @@ function isMemberOnline(lastSeen?: string | null): boolean {
 }
 
 function listMembersWithOnline(conversationId: string) {
-  return Conversations.listMembers(conversationId).map((m: any) => ({
-    ...m,
-    online: m.member_type === 'agent' ? true : isMemberOnline(m.last_seen_at),
-  }));
+  return Conversations.listMembers(conversationId).map((m: any) => {
+    const agentOwnerName = m.member_type === 'agent' && m.agent_owner_id
+      ? ((db.prepare('SELECT display_name FROM users WHERE id = ?').get(m.agent_owner_id) as { display_name?: string } | undefined)?.display_name || null)
+      : null;
+    return {
+      ...m,
+      online: m.member_type === 'agent' ? true : isMemberOnline(m.last_seen_at),
+      agent_owner_name: agentOwnerName,
+    };
+  });
 }
 
 function normalizeMember(raw: any): MemberInput | null {
@@ -99,6 +105,7 @@ router.get('/:id', auth, (req: express.Request, res: express.Response) => {
     res.status(403).json({ error: '你不是该群成员' });
     return;
   }
+  Conversations.markRead(id, user.id);
   res.json({ conversation: conv, members: listMembersWithOnline(id) });
 });
 
@@ -204,7 +211,7 @@ async function triggerAgentMentions(params: {
       watchAgentReply({
         conversationId: params.conversationId,
         agentSessionId: cloneId,
-        agentDisplayName: member.display_name,
+        agentDisplayName: `${ownerUser.display_name || ownerId}·${String(member.display_name || '小莫').replace(/^我的/, '')}`,
         baselineLines,
         isClone: true,
       });
@@ -291,18 +298,9 @@ function watchAgentReply(p: {
     ticks++;
     const text = readLatestAssistantText(p.agentSessionId, p.baselineLines);
     if (text) {
+      // @ 触发的 agent 执行结果不再回写群聊(用户要求: 不要"任务已完成"这类回复刷屏),
+      // 仅停止轮询 + 清理临时分身. agent 实际执行结果留在分身 session 里.
       clearInterval(timer);
-      try {
-        Conversations.insertMessage({
-          conversationId: p.conversationId,
-          senderId: p.agentSessionId,
-          senderType: 'agent',
-          senderName: p.agentDisplayName,
-          content: text,
-          sourceAgentSession: p.agentSessionId,
-        });
-        Conversations.touch(p.conversationId);
-      } catch {}
       cleanupClone();
       return;
     }
@@ -402,6 +400,7 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
   poll = setInterval(() => {
     if (closed) return;
     Conversations.touchMemberPresence(id, user.id);
+    Conversations.markRead(id, user.id);
     const newer = Conversations.listMessagesSince(id, lastId, 200);
     if (!newer.length) return;
     for (const m of newer) {
