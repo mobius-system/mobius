@@ -1084,4 +1084,14 @@ function migrateConversationRead() {
 }
 migrateConversationRead();
 
+// 区分群聊(group)/1v1私聊(direct).
+function migrateConversationType() {
+  try {
+    db.exec(`ALTER TABLE conversations ADD COLUMN type TEXT NOT NULL DEFAULT 'group'`);
+  } catch (e) {
+    // 列已存在则忽略
+  }
+}
+migrateConversationType();
+
 export { db, DB_PATH };

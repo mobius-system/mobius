@@ -64,18 +64,19 @@ const insertMemberStmt = db.prepare(`
 `) as BetterSqlite3.Statement;
 
 const Conversations = {
-  create({ name, ownerId, ownerName, members = [] }: {
+  create({ name, ownerId, ownerName, members = [], type = 'group' }: {
     name: string;
     ownerId: string;
     ownerName: string;
     members?: MemberInput[];
+    type?: string;
   }): { id: string; name: string } {
     const trimmed = String(name || '').trim();
     if (!trimmed) throw repoError('群名称不能为空', 400);
     if (trimmed.length > 60) throw repoError('群名称最多 60 个字符', 400);
     const id = makeConversationId();
     const tx = db.transaction(() => {
-      db.prepare('INSERT INTO conversations (id, name, owner_id) VALUES (?, ?, ?)').run(id, trimmed, ownerId);
+      db.prepare('INSERT INTO conversations (id, name, owner_id, type) VALUES (?, ?, ?, ?)').run(id, trimmed, ownerId, type === 'direct' ? 'direct' : 'group');
       insertMemberStmt.run({
         conversation_id: id,
         member_type: 'user',
@@ -125,7 +126,7 @@ const Conversations = {
 
   listForUser(userId: string): Array<Record<string, unknown>> {
     return db.prepare(`
-      SELECT c.id, c.name, c.owner_id, c.created_at, c.last_active,
+      SELECT c.id, c.name, c.owner_id, c.created_at, c.last_active, c.type,
              (SELECT content FROM conversation_messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message,
              (SELECT created_at FROM conversation_messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message_at,
              (SELECT COUNT(*) FROM conversation_members WHERE conversation_id = c.id) AS member_count,
@@ -167,7 +168,7 @@ const Conversations = {
       return { id: row.conversation_id, name: c?.name || '聊天' };
     }
     const otherName = (db.prepare('SELECT display_name FROM users WHERE id = ?').get(userB) as { display_name?: string } | undefined)?.display_name || userB;
-    return Conversations.create({ name: otherName, ownerId: userA, ownerName: userAName, members: [{ type: 'user', id: userB }] });
+    return Conversations.create({ name: otherName, ownerId: userA, ownerName: userAName, members: [{ type: 'user', id: userB }], type: 'direct' });
   },
 
   findById(id: string): Record<string, unknown> | undefined {
