@@ -3180,6 +3180,7 @@ function HiddenExtensionsCard() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [restoringKey, setRestoringKey] = useState<string | null>(null)
+  const [purgingKey, setPurgingKey] = useState<string | null>(null)
 
   const refresh = async () => {
     setLoading(true)
@@ -3211,6 +3212,25 @@ function HiddenExtensionsCard() {
     }
   }
 
+  const purge = async (row: HiddenExtRow) => {
+    const who = row.user_display_name || row.user_id
+    const what = row.extension_name || row.project_name
+    if (!window.confirm(`确认彻底删除用户「${who}」在拓展「${what}」的全部数据 (执行会话/任务单/星标/名单)？\n此操作不可恢复；卡片仍保持隐藏。`)) return
+    const key = `${row.project_id}/${row.user_id}`
+    setPurgingKey(key)
+    try {
+      await api(`/api/extensions/_admin/hidden/${encodeURIComponent(row.project_id)}/${encodeURIComponent(row.user_id)}/purge`, {
+        method: 'POST', body: JSON.stringify({}),
+      })
+      setError('')
+      await refresh()
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setPurgingKey(null)
+    }
+  }
+
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
       <div className="mb-2 flex items-center justify-between">
@@ -3219,7 +3239,7 @@ function HiddenExtensionsCard() {
             <EyeOff className="h-3.5 w-3.5" /> 已隐藏的拓展
           </h3>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            用户在项目页"隐藏"或"彻底删除"了拓展卡片. 撤销隐藏不恢复彻底删除已清掉的数据.
+            用户在项目页"隐藏"了拓展卡片. 管理员可「撤销隐藏」(恢复卡片、保留数据) 或「彻底删除」该用户在此拓展的数据 (不可恢复、卡片仍隐藏).
           </div>
         </div>
         <button onClick={refresh} disabled={loading}
@@ -3243,6 +3263,8 @@ function HiddenExtensionsCard() {
           {rows.map(row => {
             const key = `${row.project_id}/${row.user_id}`
             const isRestoring = restoringKey === key
+            const isPurging = purgingKey === key
+            const rowBusy = isRestoring || isPurging
             return (
               <div key={key} className="flex items-center gap-3 px-3 py-2 rounded-lg border" style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
                 <div className="min-w-0 flex-1">
@@ -3258,11 +3280,18 @@ function HiddenExtensionsCard() {
                     用户 {row.user_display_name || row.user_id} · 隐藏于 {formatAbsolute(row.hidden_at)}
                   </div>
                 </div>
-                <button onClick={() => restore(row)} disabled={isRestoring}
+                <button onClick={() => restore(row)} disabled={rowBusy}
                   className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-[11px] font-medium transition-colors disabled:opacity-50 border"
                   style={{ background: 'var(--bg-primary)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
                   {isRestoring ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
                   撤销隐藏
+                </button>
+                <button onClick={() => purge(row)} disabled={rowBusy}
+                  title="彻底删除该用户在此拓展的数据 (不可恢复)"
+                  className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-[11px] font-medium transition-colors disabled:opacity-50 border"
+                  style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.35)', color: '#f87171' }}>
+                  {isPurging ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                  彻底删除
                 </button>
               </div>
             )

@@ -972,6 +972,12 @@ router.get('/:id/status', auth, (req: express.Request, res: express.Response) =>
   const issue = session.issue_id ? (Issues.findById(session.issue_id) as any) : null;
   const worktreeIgnored = !!(issue?.use_worktree && root && !isGitRepoRoot(root));
 
+  // 实时状态行 (LIVE 卡片用): 仅 alive && working 时取, 否则直接 "". backend 内部还有
+  // 5s TTL 缓存, 把 tmux capture 频次压到 ≤1/5s. 非 claude-code backend 无此方法 → "".
+  const realTimeInfo = (alive && working && typeof (backend as any).realTimeInfo === 'function')
+    ? String((backend as any).realTimeInfo(id) || '')
+    : '';
+
   // 错误扫描: agent 进程在但当前不在 turn 中 (isWorking=false), 且 .mobius.jsonl
   // 末条不是 error (去重) 时, 调 backend.getRecentError 扫 TUI 屏幕.
   // 命中则追加一条 type:'error' 到 .mobius.jsonl, 前端经 SSE 自然收到并以红色卡片渲染.
@@ -1012,6 +1018,7 @@ router.get('/:id/status', auth, (req: express.Request, res: express.Response) =>
     use_proxy: useProxyForSession(session, backend as any),
     claude_session_id: session.claude_session_id || null,
     worktree_ignored: worktreeIgnored,
+    real_time_info: realTimeInfo,
   });
 });
 

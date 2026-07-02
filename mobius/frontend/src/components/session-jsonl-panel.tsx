@@ -15,6 +15,7 @@ type SessionJsonlPanelProps = {
   backendAlive: boolean | null
   backendWorking: boolean | null
   backendPid: number | null
+  realTimeInfo?: string
   lastTimestamp?: string | null
   hasNewMessages: boolean
   onLoadAllJsonl: () => void
@@ -35,6 +36,7 @@ function SessionJsonlPanelInner({
   backendAlive,
   backendWorking,
   backendPid,
+  realTimeInfo,
   lastTimestamp,
   hasNewMessages,
   onLoadAllJsonl,
@@ -71,6 +73,7 @@ function SessionJsonlPanelInner({
               <JsonlLiveTailCard
                 lastTimestamp={lastTimestamp}
                 pid={backendPid}
+                realTimeInfo={realTimeInfo}
               />
             )}
             <div ref={endRef} />

@@ -170,6 +170,14 @@ let _listWindowsCache = null // { ts: number, rows: string[][] }
 // 条目看到最近的 user/assistant 标记, 读取代价可忽略 (纯文件读, 无 tmux 子进程).
 const CLAUDE_WORKING_TAIL_BYTES = 256 * 1024
 
+// realTimeInfo: 识别 claude TUI 当前的状态行. 特征 = 括号内含 ↑/↓ + 数字 + "tokens",
+// 形如 "(7m 44s · ↓ 24.1k tokens · still thinking)" / "✽ 模态只留隐藏卡片… (12m 34s · ↓ 34.1k tokens)".
+// 命中即返回整行; 括号是核心锚 (避免误匹配 "▼ 1. Yes, I trust this folder" 等对话框).
+const CLAUDE_STATUS_LINE_RE = /\([^()]*[↑↓]\s*[\d.,]+\s*k?\s*tokens[^()]*\)/u
+// TTL 5s 缓存: /status 每 2s 轮询, 缓存把 tmux capture-pane 频次压到 ≤1/5s. 空 "" 也缓存.
+const REALTIME_INFO_TTL_MS = 5 * 1000
+const _realTimeInfoCache = new Map() // sessionId → { ts: number, value: string }
+
 function listWindowsRowsCached() {
   const now = Date.now()
   if (_listWindowsCache && now - _listWindowsCache.ts < LIST_WINDOWS_TTL_MS) {
@@ -426,6 +434,35 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         paneCurrentCommand: paneCurrentCommand || null,
       }
     })
+  }
+
+  // 实时状态行 (给 session 页 LIVE 卡片): 抓 tmux pane 倒数 15 行, 找 claude TUI 状态行.
+  // 非 alive / 非 working → "". TTL 5s 缓存 (含空结果), 把 capture-pane 频次压到 ≤1/5s.
+  // 锦上添花功能: 失败静默返回 "", 绝不抛错压垮 /status 轮询.
+  realTimeInfo(sessionId) {
+    const now = Date.now()
+    const cached = _realTimeInfoCache.get(sessionId)
+    if (cached && now - cached.ts < REALTIME_INFO_TTL_MS) return cached.value
+    let value = ''
+    try {
+      if (this.isAlive(sessionId) && this.isWorking(sessionId)) {
+        // -S -15: 倒数 15 行 (含当前行). -p: 去掉 ANSI 转义的纯文本.
+        const pane = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-S', '-15'])
+        if (pane.status === 0 && pane.stdout) {
+          const lines = pane.stdout.split('\n')
+          // 从末尾往上找最近一条状态行 (TUI 同时只显示一条).
+          for (let i = lines.length - 1; i >= 0; i--) {
+            const line = lines[i]
+            if (line && CLAUDE_STATUS_LINE_RE.test(line)) {
+              value = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
+              break
+            }
+          }
+        }
+      }
+    } catch { /* best-effort: 失败即 "" */ }
+    _realTimeInfoCache.set(sessionId, { ts: now, value })
+    return value
   }
 
   // sessionId → jsonl 文件路径的三级查表:

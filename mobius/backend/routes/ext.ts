@@ -144,17 +144,44 @@ metaRouter.get('/_admin/hidden', adminAuth, (_req: express.Request, res: express
   res.json({ hidden: Projects.listHidden() });
 });
 
-// 管理员: 撤销某用户对某拓展项目的隐藏 (DELETE 该行). 不恢复彻底删除的数据.
+// 管理员: 撤销某用户对某拓展项目的隐藏. 可见性走 mute, 故除清 project_user_hidden 行外也要 unmute.
+// 不恢复彻底删除已清掉的数据.
 metaRouter.post('/_admin/hidden/:projectId/:userId/restore', adminAuth, (req: express.Request, res: express.Response) => {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { Projects } = require('../repositories/projects');
-  const project = Projects.findById(req.params.projectId);
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { UserProjectView } = require('../repositories/user-project-view');
+  const { projectId, userId } = req.params;
+  const project = Projects.findById(projectId);
   if (!project || project.kind !== 'extension') {
     res.status(404).json({ error: '未找到拓展项目' });
     return;
   }
-  Projects.setHidden(req.params.projectId, req.params.userId, false);
+  Projects.setHidden(projectId, userId, false);
+  UserProjectView.unmute(userId, projectId);
   res.json({ ok: true });
+});
+
+// 管理员: 彻底删除某用户在某拓展项目上的全部数据 (sessions/issues/stars/whitelist), 并保持隐藏.
+// 不可逆. 与"撤销隐藏"并列: 撤销隐藏=恢复卡片(留数据); 彻底删除=清数据(卡片仍隐藏).
+metaRouter.post('/_admin/hidden/:projectId/:userId/purge', adminAuth, (req: express.Request, res: express.Response) => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { Projects } = require('../repositories/projects');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { UserProjectView } = require('../repositories/user-project-view');
+  const { projectId, userId } = req.params;
+  const project = Projects.findById(projectId);
+  if (!project || project.kind !== 'extension') {
+    res.status(404).json({ error: '未找到拓展项目' });
+    return;
+  }
+  try {
+    Projects.purgeUserExtensionData(projectId, userId);
+    UserProjectView.mute(userId, projectId); // 可见性走 mute: purge 后仍保持隐藏
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 // 管理员: 强制重新扫描 mobius/extension/ 并 diff DB

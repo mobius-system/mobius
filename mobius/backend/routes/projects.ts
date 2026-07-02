@@ -1879,34 +1879,6 @@ router.post('/:id/unmute', auth, (req: express.Request, res: express.Response) =
   res.json({ ok: true, muted: false });
 });
 
-// 拓展项目: 彻底删除 = 事务删该用户在此拓展上的全部私有/共享数据 + 标记隐藏.
-// 不可逆 (管理员撤销隐藏只能恢复卡片可见, 不能恢复数据).
-router.post('/:id/purge', auth, (req: express.Request, res: express.Response) => {
-  const user = userOf(req);
-  const id = String(req.params.id);
-  const project = Projects.findById(id);
-  if (!project) return res.status(404).json({ error: '未找到' });
-  if (project.kind !== 'extension') {
-    return res.status(400).json({ error: '只能对拓展项目执行彻底删除' });
-  }
-  // 防止误触: 要求请求体里携带 confirm = 拓展名 / 项目名 / id 之一
-  const confirm = String(req.body?.confirm || '').trim();
-  const accept = new Set([
-    project.name, project.extension_name, project.id,
-  ].filter(Boolean).map(String));
-  if (!accept.has(confirm)) {
-    return res.status(400).json({ error: '请输入拓展名以确认' });
-  }
-  try {
-    Projects.purgeUserExtensionData(id, user.id);
-    // 可见性走 mute (Store B): purge 也写 mute, 与 /hide 一致, 这样用户可在"已屏蔽"区自助恢复 (空卡片, 数据已删).
-    UserProjectView.mute(user.id, id);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: (e as Error).message });
-  }
-});
-
 router.patch('/:id/star', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const id = String(req.params.id);

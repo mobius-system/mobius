@@ -2083,7 +2083,7 @@ function formatDuration(sec: number): string {
 //   0~30s   绿  正常生成中
 //   30~120s 琥珀 沉默较久, API 可能长尾
 //   120s+   红  长时间没输出, 建议终止重试
-export function JsonlLiveTailCard({ lastTimestamp, pid }: { lastTimestamp: string | null | undefined; pid: number | null | undefined }) {
+export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo }: { lastTimestamp: string | null | undefined; pid: number | null | undefined; realTimeInfo?: string | null }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -2102,6 +2102,20 @@ export function JsonlLiveTailCard({ lastTimestamp, pid }: { lastTimestamp: strin
     : sev === 'warn'   ? { border: 'border-amber-500/30',   bg: 'bg-amber-500/[0.05]',   dot: 'bg-amber-400',   text: 'text-amber-300' }
     :                    { border: 'border-red-500/40',     bg: 'bg-red-500/[0.06]',     dot: 'bg-red-400',     text: 'text-red-300' }
 
+  // realTimeInfo (来自 /status): agent TUI 当前状态行, 如 "✻ Propagating… (7m 44s · ↓ 24.1k tokens)".
+  // 前端 TTL 5s: 每次轮询带回非空值就刷新计时并展示它; 后端连续 5s 不再给非空值 → fallback 回
+  // 下面的 "生成中 · 距上条 entry Xs" / 沉默文案. ref 在 render 中更新是刻意的 —— 每次非空轮询
+  // 都要刷新 TTL, 即便值相同 (claude 状态行的分秒/token 一直在变, 几乎不会连续 5s 完全相同).
+  const REALTIME_TTL_MS = 5000
+  const liveTextRef = useRef('')
+  const liveUntilRef = useRef(0)
+  const rt = (realTimeInfo || '').trim()
+  if (rt) {
+    liveTextRef.current = rt
+    liveUntilRef.current = Date.now() + REALTIME_TTL_MS
+  }
+  const liveActive = !!liveTextRef.current && now <= liveUntilRef.current
+
   return (
     <div className={`mb-2 rounded-2xl border card-enter ${theme.border} ${theme.bg} px-3 py-2 flex items-center gap-2 text-[12px]`}>
       <span className="relative inline-flex w-2 h-2 flex-shrink-0">
@@ -2112,8 +2126,10 @@ export function JsonlLiveTailCard({ lastTimestamp, pid }: { lastTimestamp: strin
       {pid != null && (
         <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">pid {pid}</span>
       )}
-      <span className="flex-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        {sev === 'normal' ? `生成中 · 距上条 entry ${formatDuration(silenceSec)}`
+      <span className="flex-1 text-[11px] truncate" style={{ color: 'var(--text-muted)' }} title={liveActive ? liveTextRef.current : undefined}>
+        {liveActive
+          ? liveTextRef.current
+          : sev === 'normal' ? `生成中 · 距上条 entry ${formatDuration(silenceSec)}`
           : sev === 'warn'   ? `沉默 ${formatDuration(silenceSec)} — API 可能长尾, 继续等等`
           :                    `⚠ 沉默 ${formatDuration(silenceSec)} — API 可能长尾, 请耐心等待`
         }

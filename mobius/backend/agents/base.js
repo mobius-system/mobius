@@ -190,6 +190,17 @@ class AgentBackend {
   //   - tmux-codex: tmux capture-pane 扫 Codex ErrorEvent 的 ■ (U+25A0) 前缀,
   //                 辅以 ANSI \x1b[31m 红色判定 (见 tmux-codex.js).
   getRecentError(_sessionId) { return null }
+
+  // 实时状态行: 解析 agent TUI 屏幕里当前的状态行, 如 claude code 的
+  // "✻ Propagating… (7m 44s · ↓ 24.1k tokens · still thinking)". 给 session 页 LIVE 卡片
+  // 当作 "agent 正在干嘛" 的实时提示 (锦上添花). 返回字符串, 无状态行可识别 → "".
+  //
+  // 效率红线 (这是高频调用路径, /status 每 2s 轮询):
+  //   - 子类实现必须加 TTL 缓存 (建议 5s), 防止每次调用都 spawn tmux / 读屏幕.
+  //   - 非 alive 或非 working 时必须返回 "" (用户没在跑 → 没必要 capture).
+  //   - 空 "" 同样要进缓存 (空结果 5s 内也复用, 不重复 capture).
+  // 基类默认 "" (codex 等暂不实现的 backend 直接继承空实现).
+  realTimeInfo(_sessionId) { return '' }
 }
 
 module.exports = { AgentBackend }

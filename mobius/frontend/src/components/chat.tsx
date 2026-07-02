@@ -1457,6 +1457,9 @@ export function ChatArea() {
   const [backendFailedReason, setBackendFailedReason] = useState('')
   const [backendFailedAt, setBackendFailedAt] = useState('')
   const [backendPid, setBackendPid] = useState<number | null>(null)
+  // agent TUI 实时状态行 (如 "✻ Propagating… (7m 44s · ↓ 24.1k tokens)"), 给 LIVE 卡片.
+  // 非 claude-code / 非 working 时为 "". 由 /status 轮询返回.
+  const [backendRealTimeInfo, setBackendRealTimeInfo] = useState('')
   const [pendingSendAt, setPendingSendAt] = useState<number | null>(null)
   // 本次 pending 发送是否为加急: 加急时 session 本来就在 working, poll 的
   // "working=true ⇒ 清除 pending" 信号无效, 会过早清掉导致发送阶段提示 (正在发送/唤醒中) 不显示.
@@ -1517,7 +1520,7 @@ export function ChatArea() {
 
   useEffect(() => {
     stopSuppressedUntilRef.current = 0
-    if (!sessionId) { setBackendAlive(null); setBackendWorking(null); setBackendJobDone(null); setBackendJobFailed(null); setBackendFailedReason(''); setBackendFailedAt(''); setBackendPid(null); setBackendWorktreeIgnored(false); return }
+    if (!sessionId) { setBackendAlive(null); setBackendWorking(null); setBackendJobDone(null); setBackendJobFailed(null); setBackendFailedReason(''); setBackendFailedAt(''); setBackendPid(null); setBackendWorktreeIgnored(false); setBackendRealTimeInfo(''); return }
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | null = null
     const scheduleNext = (delayMs: number) => {
@@ -1548,6 +1551,7 @@ export function ChatArea() {
         setBackendFailedAt(typeof r?.failed_at === 'string' ? r.failed_at : '')
         setBackendWorktreeIgnored(!!r?.worktree_ignored)
         setBackendPid(r?.pid ?? null)
+        setBackendRealTimeInfo(typeof r?.real_time_info === 'string' ? r.real_time_info : '')
         const liveAgentStatus = suppressed ? 'idle' : runtimeStatusForSessionList(r)
         const store = useStore.getState()
         const selectedSession = store.currentSession
@@ -3038,6 +3042,7 @@ export function ChatArea() {
           backendAlive={backendAlive}
           backendWorking={backendWorking}
           backendPid={backendPid}
+          realTimeInfo={backendRealTimeInfo}
           lastTimestamp={jsonlEntries[jsonlEntries.length - 1]?.timestamp}
           hasNewMessages={hasNewMessages}
           onLoadAllJsonl={handleLoadAllJsonl}
