@@ -60,6 +60,20 @@ const CODEX_ERROR_SCAN_TAIL_LINES = 50
 // 典型 turn 间隙, 避免 turn 结束后误判仍 working (task_complete 作为末行会先命中返回 false).
 const CODEX_WORKING_FRESH_MS = 20000
 
+// realTimeInfo: 识别 Codex TUI 当前的状态行 (status_indicator_widget.rs 渲染).
+// 行形态: "[•◦] <header> (<elapsed> • esc to interrupt)[ · <inline_message>]"
+//   - spinner: • (U+2022) / ◦ (U+25E6) 动画帧; reduced-motion hidden 时无 spinner
+//   - header: Working / Thinking / Idle / Reviewing ... 等 (可变, 故不强匹配)
+//   - elapsed (fmt_elapsed_compact): Ns | Mm SSs | Hh MMm SSs
+//   - "esc to interrupt": show_interrupt_hint=true 时有 (生产正常工作时几乎恒开)
+// 分层正则 (降低假阳性):
+//   ① 主锚 "(<elapsed> • esc to interrupt)" — codex 独有串, 零假阳性, 覆盖生产常见态
+//   ② 兜底 "^[•◦] <header> (<elapsed>)" — 中断提示关时; spinner 是 TUI 独有, 排除散文 "(5s)"
+const CODEX_STATUS_LINE_RE = /\(\d+(?:s|m\s+\d{2}s|h\s+\d{2}m\s+\d{2}s)\s*•\s*esc to interrupt\s*\)|^[•◦]\s+\S[^\n()]*?\(\d+(?:s|m\s+\d{2}s|h\s+\d{2}m\s+\d{2}s)\s*\)/u
+// TTL 5s 缓存: /status 每 2s 轮询, 缓存把 capture-pane 频次压到 ≤1/5s. 空 "" 也缓存.
+const REALTIME_INFO_TTL_MS = 5 * 1000
+const _realTimeInfoCache = new Map() // sessionId → { ts: number, value: string }
+
 const READY_POLL_MS = 250
 const READY_TIMEOUT_MS = 25000
 const READY_SENTINELS = [
@@ -590,6 +604,35 @@ class TmuxCodexBackend extends AgentBackend {
     const root = entry?.flagRoot || entry?.cwd
     if (!root) return false
     return fs.existsSync(failedFlagPathOf(root, sessionId))
+  }
+
+  // 实时状态行 (给 session 页 LIVE 卡片): 抓 tmux pane 倒数 15 行, 找 Codex TUI 状态行
+  // ("• Working (4s • esc to interrupt)" 等). 非 alive / 非 working → "". TTL 5s 缓存 (含空结果),
+  // 把 capture-pane 频次压到 ≤1/5s. 锦上添花: 失败静默 "", 绝不抛错压垮 /status 轮询.
+  realTimeInfo(sessionId) {
+    const now = Date.now()
+    const cached = _realTimeInfoCache.get(sessionId)
+    if (cached && now - cached.ts < REALTIME_INFO_TTL_MS) return cached.value
+    let value = ''
+    try {
+      if (this.isAlive(sessionId) && this.isWorking(sessionId)) {
+        // -S -15: 倒数 15 行; -p: 纯文本 (去 ANSI); -J: 拼接折行 (窄终端状态行被折行时还原).
+        const pane = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-J', '-S', '-15'])
+        if (pane.status === 0 && pane.stdout) {
+          const lines = pane.stdout.split('\n')
+          // 状态行在底部 (bottom pane), 从末尾往上找最近一条.
+          for (let i = lines.length - 1; i >= 0; i--) {
+            const line = lines[i]
+            if (line && CODEX_STATUS_LINE_RE.test(line)) {
+              value = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
+              break
+            }
+          }
+        }
+      }
+    } catch { /* best-effort: 失败即 "" */ }
+    _realTimeInfoCache.set(sessionId, { ts: now, value })
+    return value
   }
 
   // 扫 Codex TUI 屏幕找最近一条 ErrorEvent.
