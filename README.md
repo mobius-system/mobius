@@ -18,8 +18,8 @@ Mobius is, to the best of our knowledge, the world's first <strong>self-evolving
 </p>
 
 <p align="center">
-  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Code Composition" src="https://img.shields.io/github/languages/top/nutshellai-tech/mobius.svg" /></a>
-  <a href="https://github.com/nutshellai-tech/mobius/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/nutshellai-tech/mobius.svg" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Code Composition" src="https://img.shields.io/github/languages/top/nutshellai-tech/mobius?label=Code%20Composition&amp;logo=github&amp;cacheSeconds=300" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/nutshellai-tech/mobius?label=License&amp;cacheSeconds=300" /></a>
   <a href="https://github.com/nutshellai-tech/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/nutshellai-tech/mobius.svg" /></a>
   <a href="https://github.com/nutshellai-tech/mobius/forks"><img alt="Forks" src="https://img.shields.io/github/forks/nutshellai-tech/mobius.svg" /></a>
   <a href="https://github.com/nutshellai-tech/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange.svg" /></a>
