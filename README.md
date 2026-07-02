@@ -1,449 +1,297 @@
-<a id="readme-top"></a>
-
-<h1 align="center">
-  <a href="https://mobius.nutshellai.cn/">
-    <img src="mobius/public/logo.png" width="40" alt="Mobius Logo" />
-  </a>
-  Mobius: A Self-Evolving AI Productivity System
-</h1>
-
-<p align="center">
-  <a href="https://mobius.nutshellai.cn/"><strong>Official Website</strong></a>
+<p align="right">
+  <a href="./README.md"><strong>English</strong></a>
   ·
-  <a href="https://nutshellai-tech.github.io/mobius/en/"><strong>Docs</strong></a>
+  <a href="./README.zh.md"><strong>简体中文</strong></a>
+</p>
+
+<div align="center">
+
+# <img src="./assets/mobius-logo.svg" alt="" height="42" valign="middle" /> Mobius
+
+<h3>
+Open-source self-evolving productivity system<br />
+A human-machine-object-intelligence-compute collaborative super-agent system
+</h3>
+
+<p align="left">
+Mobius is, to the best of our knowledge, the world's first <strong>self-evolving open-source Agent OS</strong>: an AI workbench that can continuously iterate itself around personalized needs. It is not a fixed toolbox, but a <strong>growing and evolving productivity system</strong>; you can use Mobius to build your own Agent OS and organize projects, teams, models, knowledge, devices, compute resources, and business apps into one traceable workspace. With Mobius, <strong>one sentence</strong> can connect everything you have and make it AI-native: you and your team, your dedicated agents, mobile devices, remote compute platforms, and even hardware robots. If you have it, Mobius can bring it into the system.
+</p>
+
+<p align="center">
+  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Code Composition" src="https://img.shields.io/github/languages/top/nutshellai-tech/mobius.svg" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/nutshellai-tech/mobius.svg" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/nutshellai-tech/mobius.svg" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius/forks"><img alt="Forks" src="https://img.shields.io/github/forks/nutshellai-tech/mobius.svg" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange.svg" /></a>
+</p>
+
+<p align="center">
+  <a href="https://mobius.nutshellai.cn/"><strong>Website</strong></a>
   ·
-  <a href="./README.zh.md">简体中文</a> · <strong>English</strong>
+  <a href="https://nutshellai-tech.github.io/mobius/"><strong>Docs</strong></a>
+  ·
+  <a href="./WHAT_WE_WANT_TO_SAY.md"><strong>What We Want to Say</strong></a>
 </p>
 
-Preface: <strong>Trying to build a once-and-for-all perfect AI Harness system is like trying to find the end of a Möbius strip: ultimately “futile.”</strong>
-
-Here we present “Mobius AI”, as far as we know, the world’s first <strong>self-evolving</strong> <strong>open-source AI productivity system</strong>, an AI workbench that can continuously self-iterate around personalized needs. Through interaction-driven evolution, automatic research-driven evolution, and user preference evolution, Mobius has plenty of ways to evolve, while keeping interaction simple. The more you use it, the stronger it becomes, and the better it understands you.
-
-Mobius AI is also, as far as we know, the world’s first <strong>human-machine-object-intelligence-compute collaborative</strong> <strong>super-agent system</strong>. It sounds abstract, but in practice it means that with one sentence, you can connect everything you have through Mobius and make it “AI-powered.” This “everything” includes you and your team, your dedicated agents, your mobile terminals, your remote compute platforms, even your hardware robots… Whatever you have can be added into Mobius.
-
-Open source shapes “Mobius AI” today. Thank you again for reading this far. Mobius believes that <strong>you will be the true AI wielder, a breaker who is not satisfied with “pre-made” AI systems, and a witness to the next era of integrated AI systems.</strong> Please use Mobius deeply, polish every edge of “Mobius AI” according to your own will, forge every line of code and every pixel, and build a powerful super AI system that truly belongs to you.
+</div>
 
 <p align="center">
-  <img width="700" alt="Mobius workbench" src="https://github.com/user-attachments/assets/c7e10425-61f9-490b-a4ac-31840f94ae68" />
-</p>
-<p align="center">
-  <img width="700" alt="Mobius task system" src="https://github.com/user-attachments/assets/14dbc573-0f20-4286-b6ee-e6a35e0f5d4c" />
+  <img src="./assets/github-cover-v1.png" alt="Mobius GitHub cover" width="100%" />
 </p>
 
-<a id="contents"></a>
+---
 
-## Contents
+## Why Mobius?
 
-| Main Story | Capabilities | Start Here |
-| --- | --- | --- |
-| [1. A Growing, Evolvable Productivity System](#section-growth)<br>[2. Human-Machine-Object-Intelligence-Compute Collaboration](#section-collaboration)<br>[3. A Professional System Everyone Can Use](#section-accessible) | [Human and Multi-Agent Collaboration](#section-multi-agent)<br>[Human Team Collaboration](#section-team)<br>[Any AI Model Compatibility](#section-models)<br>[Self-Incubated Extensions](#section-extensions) | [GPU / NX Details](docs/compute-and-devices/README.md)<br>[Self-Evolution Example](docs/self-evo-demo.md)<br>[Deployment](#section-deployment) |
+> <strong>Trying to build a once-and-for-all perfect AI Harness system is like trying to find the end of a Mobius strip: ultimately "futile."</strong>
 
-<a id="section-growth"></a>
+Many existing Agent frameworks still stay at the level of <strong>"calling models" and "orchestrating flows"</strong>: they can finish one task, but often fail to turn real usage into durable system capability; they can connect tools, but often lack a unified task surface across projects, teams, devices, compute, and knowledge assets; they can make agents work, but do not always let humans truly supervise an agent team.
 
-## 1. A Growing, Evolvable Productivity System
+Mobius was born to address these gaps. It brings <strong>Agent OS, project systems, task systems, model engines, extension apps, and self-evolution mechanisms</strong> into one system, so AI does not merely answer questions, but participates in real production, absorbs feedback, and evolves into a system that fits you and your team.
 
-### 1.1 Mobius Rejects “Pre-Made Dishes”
+### 1. <strong>Self-growing and evolvable</strong>
 
-In today’s rapidly accelerating AI era, new models and new agent architectures emerge constantly. Even people outside the field see a dizzying number of AI products. Learning them, switching among them, replacing them again and again: annoying, very annoying.
+Mobius can continuously modify itself around user needs, and it can also track frontier technologies and evolve according to user preferences. Give it a change request, a screenshot, or a reference link, and it can turn that input into real code, interfaces, plugins, or workflow updates.
 
-But why not think differently? Start directly with a super system whose <strong>basic core is designed for self-growth and self-evolution</strong>.
-
-<strong>Mobius does not claim to be “the next-generation AI system.”</strong> Instead,
-
-- It can keep growing and become the system that best fits you in this era;
-
-- It can automatically follow the latest hotspots, lock onto frontier technologies, and become the next-era system before the next system appears;
-
-- It can even use itself, make suggestions to itself, combine your habits with the latest research, form multiple versions, preview evolutionary paths in advance, and become a system for the era after the next.
-
-And you, as the true AI wielder, do not need to wait for agent developers and architects to prepare mass-market “<strong>pre-made dishes</strong>”. In “Mobius AI”, the underlying permissions of the Agent operating system are in your hands. How agents are scheduled is <strong>up to you</strong>.
-
-### 1.2 Mobius’s Evolution Philosophy
-
-“<strong>Open source visible, what you imagine is what you get</strong>” is Mobius’s philosophy:
-
-It is not a one-time-delivered AI tool, but a system that can continuously absorb, continuously replace, and continuously grow stronger in real use. State a need and provide a <strong>screenshot</strong> telling Mobius where it is not good enough; or throw a <strong>blog URL</strong> to “Mobius AI” and tell it today’s trendiest agent usage. Mobius will do everything it can to <strong>self-forge</strong>, quietly completing self-evolution without affecting other work in progress. Sometimes, Mobius may suddenly tell you that it has some new ideas and wants you to choose which ones to follow up on. It may have quietly absorbed the latest technologies. Every interaction with “Mobius AI” can replace a plank on this “<strong>Ship of Theseus</strong>”, until it becomes a sharp tool for you and the team you lead.
-
-Mobius is evolving all the time. [Examples](https://github.com/nutshellai-tech/mobius/blob/main/docs/self-evo-demo.md) are also being supplemented, and they will be sufficiently surprising.
-
-<video controls src="https://mobius.nutshellai.cn/assets/v1/self-evolution.mp4" title="Mobius self-evolution demo"></video>
-
-<a id="section-collaboration"></a>
-
-## 2. A Human-Machine-Object-Intelligence-Compute Collaborative Super-Agent System
-
-### 2.1 Mobius Is More Than an Operating System
-
-Project development, data processing, frontend optimization, paper experiment reproduction, embedded R&D, cross-device team collaboration, cloud server management, Auto Research … All of these can be done in one stop inside “Mobius AI”. Here, you move from AI user to agent commander. Any number of <strong>development projects</strong>, any number of <strong>servers / PCs / embedded devices</strong>, any number of ordinary tasks (Issues) and research tasks (Research): <strong>with one sentence, an idea immediately takes root in the right place</strong>.
-
-<strong>Mobius uses Agent OS as its kernel, organizing human, machine, object, intelligence, and compute into one task system</strong>: humans propose goals and make judgments; machines carry the real environments for development, debugging, and deployment; objects handle observation and action in the physical world; intelligence organizes and executes tasks; compute provides computational resources. The five form a collaborative relationship inside Mobius that is traceable, reviewable, and continuously growing.
-
-### 2.2 Further Explaining Human-Machine-Object-Intelligence-Compute
-
-<strong>What Mobius organizes is not a single AI tool, but a set of collaborative relationships that continuously operate around tasks</strong>.
-
-- Human: individuals, teams, organizations, managers, researchers, and developers. They propose goals, add judgment, confirm results, accept feedback, and review decisions.
-
-- Machine: computers, servers, workstations, terminal devices, NAS, and other real devices and runtime environments. They carry the real interaction environments for debugging, development, and deployment.
-
-- Object: sensors, actuators, and other real sensing and operating devices. “Object” is an extension of “machine” at the level of real-world action, observing the physical world and acting upon it.
-
-- Intelligence: XiaoMo assistant, agent teams, AI models, Skills, Memory, knowledge assets, and workflows. They understand needs, decompose tasks, reason and plan, call tools, execute actions, and accumulate experience.
-
-- Compute: GPU clusters, cloud compute, local compute, inference services, training environments, simulation environments, and data processing resources. They support training, inference, simulation, testing, batch processing, and high-load execution.
-
-For details: [From GPU Clusters to NX Dev Boards, the Neural Center’s Tentacles Reach Everywhere](docs/compute-and-devices/README.md).
-
-### 2.3 A New Form of Productivity
-
-“Human-machine-object-intelligence-compute” is by no means a simple concept showcase. This design allows Mobius-based workflows to burst into a new form of productivity.
-
-In the past, doing a complex task placed a very heavy burden on the human. The human had to propose the goal, and also find tools, find materials, find machines, find compute, save results, and decide the next step. AI might help you write a piece of code, summarize a paper, or generate a plan, <strong>but the work of “organizing all production factors” was still done by the human.</strong>
-
-Now everything is different. Take reproducing a paper as an example.
-
-In the traditional workflow, the researcher first reads the paper, finds the code, configures the environment, finds a GPU, logs into a server, queues experiments, handles errors, and organizes results. AI can help explain the paper and modify the code, but where the GPU is, how the machine is connected, how the environment is configured, how the task is run, and how results are collected are still manually connected by the human.
-
-But <strong>in the human-machine-object-intelligence-compute collaborative form, things should become different.</strong>
-
-<strong>Input</strong>: The human proposes a goal: I want to reproduce this paper and judge its reference value for a certain project.
-
-<strong>Middle layer, without extra human perception burden</strong>: Intelligence understands the paper, decomposes the task, generates an experiment plan, checks the code, and summarizes conclusions.
-
-Machine carries the execution environment, such as a local computer, remote server, or experimental host.
-
-Compute provides the resources that can actually run the experiment, such as GPUs, cloud compute, and model APIs.
-
-Object can further connect to real devices, sensors, robots, or mobile terminals, so the task does not stop inside the screen.
-
-<strong>Output:</strong> The goal is achieved.
-
-The human no longer needs to manually move every link back and forth, and instead focuses on more critical things: proposing goals, judging value, confirming direction, and accepting results.
-
-This is the new form of productivity. It truly frees the human, giving people higher efficiency and a wider radius of influence. Everything is different.
-
-Auto Research demo:
-
-- “Mobius AI” commands multiple agents to build an autonomous collaboration network
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/33490ea7-c559-4d9c-a4fc-aff18a645066" width="700" alt="Mobius Auto Research collaboration network" />
+<p>
+  <sub><strong>Related manuals:</strong>
+    <a href="https://nutshellai-tech.github.io/mobius/self-evo-demo/">Simple self-evolution example</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/13_xiaomo_control_hub/">XiaoMo control hub</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/16_change_frontend_theme/">Change frontend theme</a>
+  </sub>
 </p>
 
-- “Mobius AI” automatically draws research progress
+### 2. <strong>Human-machine-object-intelligence-compute collaboration</strong>
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/a767ba7c-43f7-49c7-9e83-83f8708c05d1" width="700" alt="Mobius Auto Research progress" />
+Mobius uses Agent OS as its core and organizes five elements into one system: humans define goals and judgment; machines carry development, debugging, and deployment; objects observe and act in the physical world; intelligence organizes and executes tasks; compute provides the resources. Together they form a traceable, reviewable, and continuously improving collaboration loop.
+
+<p>
+  <sub><strong>Related manuals:</strong>
+    <a href="https://nutshellai-tech.github.io/mobius/tutorial/04_add_remote_server/">Add remote compute</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/02a_import_project_and_begin_first_job/">Import a project and start the first job</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/03a_using_skill_and_memory/">Use Skill and Memory</a>
+  </sub>
 </p>
 
-- “Mobius AI” conducts research
+### 3. <strong>XiaoMo: simple and natural to use</strong>
 
-<video controls src="https://github.com/user-attachments/assets/0580bbc1-3998-4a85-8fa1-189b46637289" width="700" title="Mobius Auto Research demo"></video>
+XiaoMo turns a complex super-agent system into a natural-language entrance that even a beginner can use. Users only need to talk to XiaoMo to call resources, create projects, split tasks, launch agents, track progress, summarize results, and receive key reminders.
 
-<a id="section-accessible"></a>
-
-## 3. A Professional System That Everyone Can Use
-
-### 3.1 Mobius’s Interaction Logic
-
-Mobius has a highly professional backend. But if such powerful capabilities come with too high a learning cost, people will not really use them, and nobody can accept that. A truly good system should not push complexity onto the user.
-
-XiaoMo assistant is the natural-language entrance to Mobius, and also the “second frontend” of this professional system. Users do not need to first understand system concepts such as Project, Issue, Session, Skill, and Memory, nor do they need to know which button to click, which model to choose, or which execution session to open for a task. Users only need to express their goal through text, voice, screenshots, or files, and XiaoMo translates natural-language needs into system actions.
-
-What the interface can do with clicks, XiaoMo can do. Complex things that the frontend does not yet expose can also continue to be handled by XiaoMo through system capabilities.
-
-Mobius needs a sufficiently natural entrance.
-
-That entrance is XiaoMo.
-
-XiaoMo is not an ordinary chat box. It is Mobius’s “second frontend”, and also the natural-language entrance to the whole system. You can understand it as a project assistant, development assistant, management assistant, and executive secretary standing in front of a complex system.
-
-You do not need to learn the backend structure of Mobius first. You only need to say what you want to do.
-
-### 3.2 Hello, XiaoMo
-
-Whether on desktop, mobile, or web,
-
-you only need to open Mobius,
-
-and say to XiaoMo: “Help me create a new project.”
-
-XiaoMo can create the project for you.
-
-“Let an Agent look at how to fix this bug.”
-
-XiaoMo can create a task, start a Session, and hand it to the right Agent for execution.
-
-“How far along are these tasks now?”
-
-XiaoMo can summarize the progress for you.
-
-“This page does not look good. I will send you a screenshot; help me improve it.”
-
-XiaoMo can understand screenshots, organize modification tasks, and when necessary send sub-agents to handle different parts.
-
-“Remind me when the task is done.”
-
-XiaoMo can remind you on the web, notify you on mobile, and use voice to broadcast key results.
-
-High-school students can use it to make websites, organize materials, and reproduce a simple experiment.
-
-Entrepreneurs can use it to build product prototypes, manage tasks, revise official websites, and watch deployments.
-
-Researchers can use it to run paper reproductions, organize literature, and launch deep research.
-
-Team leads can use it to assign tasks, track progress, inspect risks, and wait for completion reminders.
-
-XiaoMo condenses a complex Agent operating system into a natural-language entrance that ordinary people can use.
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/acff28ef-c117-487a-a904-baf79392ad3a" width="700" alt="XiaoMo assistant" />
+<p>
+  <sub><strong>Related manuals:</strong>
+    <a href="https://nutshellai-tech.github.io/mobius/tutorial/13_xiaomo_control_hub/">XiaoMo control hub</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/05_using_xiaomo_assistant/">XiaoMo Assistant on the web</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/14_chat_input_tips/">Chat input tips</a>
+  </sub>
 </p>
 
-<video controls src="https://github.com/user-attachments/assets/f7a45ceb-b208-4d22-a77b-ff11c05ef497" width="700" title="XiaoMo assistant demo"></video>
+---
 
-The demo video above was also produced by XiaoMo. For the prompt, refer to this [SKILL](skills/mobius-self-evo-demo/SKILL.md). The recording process had no human participation, with minor flaws, and we are replacing the material.
+## More Highlights
 
-### 3.3 What XiaoMo Can Do
+### 4. <strong>Human and multi-agent collaboration</strong>
 
-- Understand needs
+Mobius can automatically break complex work into subtasks and dynamically assign them to multiple agents. Different agents can take on research, development, testing, design, documentation, and review roles, then make steady progress toward completion. Every agent activity can be tracked and intervened in.
 
-    - Users can directly describe goals with text or voice, such as “help me create a project”, “check today’s task progress”, or “let an Agent fix this problem”
-
-    - Users can also upload screenshots, files, or links, allowing XiaoMo to understand the problem with context
-
-- Handle actions automatically
-
-    - XiaoMo turns user goals into system actions and automatically creates projects, task tickets, and execution sessions
-
-    - Things clickable on the interface can be handled by XiaoMo; complex operations not yet exposed in the frontend can also be completed through system capabilities
-
-    - Simple requests are handled quickly, while complex requests enter planning, decomposition, execution, and review flows
-
-- Watch progress
-
-    - XiaoMo can query and summarize project progress, task status, completion status, risks, and items awaiting confirmation
-
-    - When multiple agents work in parallel, XiaoMo can summarize their results instead of making the user open each conversation one by one
-
-    - When a task is complete, execution fails, or human confirmation is needed, XiaoMo can proactively remind the user
-
-- Proactive reminders
-
-    - Supports web voice reminders
-
-    - Supports mobile notification messages with voice reminders
-
-    - Supports broadcasting only selected conclusions, and also full broadcasting of visible replies
-
-    - For very busy users, XiaoMo is not only a chat entrance, but also a secretary who watches progress, reminds, and summarizes
-
-- Always available
-
-    - The Web side can enter the full workbench
-
-    - PC side Windows and macOS (in development)
-
-    - Mobile side iOS and Android (in testing)
-
-    - After logging in across devices, users can view the same projects, tasks, sessions, and reminder states
-
-## 4. Other Highlights
-
-### Although Mobius can self-evolve, Mobius first provides the basic capabilities it should have.
-
-<a id="section-multi-agent"></a>
-
-### A. Human and Multi-Agent Collaboration
-
-For complex goals, Mobius does not hand everything to a single model or Agent for an answer. Instead, humans and multiple Agents participate together. Humans propose goals, judge directions, and confirm results. Different Agents handle research, development, testing, writing, review, and other concrete work. They stay aligned through shared blackboards, task records, and intermediate artifacts, ultimately converging into deliverables.
-
-The basic logic is as follows:
-
-- Humans set direction
-
-    - Users propose goals, add background, choose directions, and confirm results at key points
-
-    - Humans are not bystanders, but judges, acceptors, and ultimate responsible parties in task progress
-
-    - Suitable for complex work where requirements are unclear, paths are not unique, and multiple rounds of judgment are needed
-
-- Agents collaborate
-
-    - One goal can be decomposed into multiple execution paths such as research, development, testing, verification, writing, and review
-
-    - Progress is continuously synchronized through shared blackboards, task records, session histories, and intermediate artifacts
-
-    - Each Agent’s execution session, context, and intermediate artifacts can be tracked
-
-    - The collaboration process can be taken over, corrected, and continued by human users at any time
-
-- Converge together
-
-    - Multiple paths eventually return to the same delivery goal, and the result can be code, a webpage, a report, a PPT, a business tool, and more
-
-    - The collaboration process and conclusions are deposited into project knowledge, becoming the basis for later tasks
-
-<a id="section-team"></a>
-
-### B. Human Team Collaboration
-
-Mobius brings human employees, AI Agents, project tasks, and delivery results into a unified team collaboration view. Whether one person is leading multiple Agents, or a multi-person team is advancing projects together with Agent teams, everyone can use Agents to greatly improve efficiency in communication, design, implementation, and feedback. Managers can also see who is doing what, how tasks are progressing, which results need confirmation, and where risks exist.
-
-Through Mobius, team collaboration no longer depends on repeated questioning, manual synchronization, and fragmented communication. Mobius can automatically summarize project progress, show the collaboration contributions of humans and Agents, record execution processes, and help managers identify task bottlenecks, resource utilization, and delivery risks.
-
-The basic logic is as follows:
-
-- Unified collaboration
-
-    - Bring human employees, AI Agents, project tasks, and delivery results into one collaboration view
-
-    - View the progress status of Projects, Issues, and Sessions within permission scope
-
-    - Automatically summarize task completion, current risks, abnormal states, and items awaiting confirmation
-
-- Management evaluation
-
-    - Managers do not need to repeatedly switch among chat groups, code repositories, task systems, and Agent sessions
-
-    - Track token consumption, Agent call frequency, task completion rate, delivery quality, and rework
-
-    - Analyze team members’ AI usage habits, identify who is better at scheduling Agents, and identify what each person needs to adjust
-
-- Review and improvement
-
-    - Record the collaboration process between humans and Agents, providing evidence for later reviews
-
-    - Help teams discover task bottlenecks, resource waste, communication breaks, and delivery risks
-
-    - Deposit collaboration experience into project knowledge, team methods, and reusable workflows
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/1a615cce-8c31-4f4f-8f04-da19c7f9b50e" width="700" alt="Mobius team collaboration view" />
-</p>
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/d96260b3-fd79-4ac7-b005-ee39ec021fcd" width="700" alt="Mobius team task view" />
-</p>
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/6c90b3a0-6c73-4065-a87e-a12a546aa327" width="700" alt="Mobius team management view" />
+<p>
+  <sub><strong>Related manuals:</strong>
+    <a href="https://nutshellai-tech.github.io/mobius/tutorial/13_xiaomo_control_hub/">XiaoMo control hub</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/02a_import_project_and_begin_first_job/">Parallel sessions and project jobs</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/08_monitor_agents/">Monitor agents</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/06_prevent_agent_idle/">Prevent agent idling</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/20_research_agent_team/">Research agent team</a>
+  </sub>
 </p>
 
-<a id="section-models"></a>
+### 5. <strong>Human team collaboration</strong>
 
-### C. Compatible With Any AI Model
+Mobius places human members, AI agents, project tasks, and deliverables in one collaboration view. Team leads can see who is doing what, where each agent is, which results need confirmation, and where risks exist, reducing manual follow-ups and fragmented communication.
 
-Although the effect is already impressive with new domestic models, in this era Mobius never bets on a single model, nor is it merely a simple API integration. Mobius brings different models into projects, tasks, contexts, and delivery flows, allowing each model to become an Agent execution engine as required by the task. Users can choose appropriate models based on task type, cost, performance, security, and deployment environment without changing the whole work system.
-
-Today GLM, GPT, and Claude are connected. Tomorrow more models can be connected. The system itself still maintains the same production chain.
-
-The basic logic is as follows:
-
-- Multi-model compatibility
-
-    - Supports mainstream models such as GLM, GPT, and Claude, and can continue to connect Gemini, DeepSeek, Qwen, Llama, local models, and more
-
-    - Models can enter the execution process as backends for different Agents
-
-- Unified workflow
-
-    - Different models share the same projects, tasks, contexts, sessions, and delivery flows
-
-    - Users do not need to change toolchains because they switch models
-
-    - Model outputs enter Mobius’s record, review, and accumulation system
-
-- Flexible switching
-
-    - Choose models based on task type, cost budget, context length, reasoning ability, and security requirements
-
-    - Complex tasks can use stronger models, while daily tasks can use lighter or local models
-
-    - Administrators can configure model access, usage, and availability scope
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/38f615b4-58bd-42b1-9b32-b6deadb6436e" width="700" alt="Mobius model configuration" />
+<p>
+  <sub><strong>Related manuals:</strong>
+    <a href="https://nutshellai-tech.github.io/mobius/tutorial/01_add_user/">Add users</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/08_monitor_agents/">Monitor agents</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/17_favorite_project/">Favorite projects</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/03a_using_skill_and_memory/">Project Skill and Memory</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/12_migrate_skill_memory/">Migrate Skill and Memory</a>
+  </sub>
 </p>
 
-<a id="section-extensions"></a>
+### 6. <strong>Compatible with any AI model</strong>
 
-### D. Self-Incubated Extensions
+Mobius does not bet on a single model, nor does it simply call APIs. GPT, Claude, GLM, Codex, and future models can all become execution engines for different agents inside the same project, task, context, and delivery flow.
 
-Making every use valuable is Mobius’s design philosophy. Mobius can not only evolve during use and deposit any user operation as its own capability, but can also further deposit it as a productivity tool that radiates inward and outward. We understand you: in this era, nobody wants their hard work to be wasted.
+<p>
+  <sub><strong>Related manuals:</strong>
+    <a href="https://nutshellai-tech.github.io/mobius/tutorial/09_config_codex_model/">Configure Codex and models</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/10_config_claude_code_model/">Configure Claude Code and models</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/15_switch_model_mid_session/">Switch models mid-session</a>
+    · <a href="https://nutshellai-tech.github.io/mobius/tutorial/11_limit_model_usage/">Limit model usage</a>
+  </sub>
+</p>
 
-Mobius comes with built-in extension apps, and can also incubate new Apps according to user needs. These extensions can be a financial news wall for stock trading, a powerful PPT generator, a full-process scientific research workbench, or a dedicated tool temporarily needed inside a team. Users do not merely use Mobius’s existing capabilities and evolve Mobius itself; they can also use it to generate new tools and business applications. Applications continue to be used, iterated, and combined, eventually becoming a personal or team AI product platform.
+### 7. <strong>Self-incubating extensions</strong>
 
-This is an important step in closing the productivity and business loop.
+Mobius ships with built-in extension apps and can also incubate new apps from user needs. Financial news walls, PPT generators, research workbenches, World Cup portals, and internal tools can all be generated as extensions with frontend, backend handlers, data directories, and invocation entries, then continue to evolve.
 
-The basic logic is as follows:
+<table>
+  <tr>
+    <td width="50%">
+      <strong>Immersive Web Experiences</strong><br />
+      <sub>Turn visual ideas into runnable extension apps.</sub><br />
+      <img src="./assets/extension-matrix-rounded.png" alt="Matrix-style extension screenshot" />
+    </td>
+    <td width="50%">
+      <strong>Financial News Wall</strong><br />
+      <sub>Track live market narratives and source-driven updates.</sub><br />
+      <img src="./assets/extension-finance-news-wall-rounded.png" alt="Financial news wall extension screenshot" />
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <strong>World Cup Portal</strong><br />
+      <sub>Build data-rich sports portals with schedules, news, players, and venues.</sub><br />
+      <img src="./assets/extension-world-cup-rounded.png" alt="World Cup extension screenshot" />
+    </td>
+    <td width="50%">
+      <strong>PPT Maker</strong><br />
+      <sub>Generate structured presentation assets from topics and materials.</sub><br />
+      <img src="./assets/extension-ppt-maker-rounded.png" alt="PPT maker extension screenshot" />
+    </td>
+  </tr>
+</table>
 
-- Generate applications
+---
 
-    - Mobius can create applications with frontend, backend handlers, data directories, and invocation entrances through the extension system
+## What Can You Do with Mobius?
 
-    - Extensions can connect to projects, sessions, model calls, Agent execution flows, and more
+### 1. Build your own Agent OS
 
-    - Applications can be demo-style pages for quickly seeing results and planning, long-term internal business tools for teams, or real external business platforms
+Connect models, agents, skills, memory, projects, devices, and compute resources into Mobius, forming your own AI workbench. It is not a one-off chat window, but a production system that keeps running, iterating, and accumulating experience.
 
-- Continuous iteration
+- <strong>Personal workspace</strong>: organize commonly used models, private knowledge, schedules, files, development environments, and remote machines into one entrance.
+- <strong>Team workspace</strong>: bring members, projects, issues, sub-agents, and delivery records into the same collaboration interface.
+- <strong>Industry workspace</strong>: build reusable plugins and workflows for finance, research, education, hardware, operations, and other domains.
+- <strong>Long-term memory and project knowledge</strong>: preserve preferences, project background, delivery records, and team norms as reusable context for future tasks.
 
-    - Generated applications can continue to be modified, refactored, enhanced, and combined
+### 2. Team development and project management
 
-    - User feedback, usage data, and new needs can continue into the next iteration
+Use natural language to create projects, split tasks, assign agents, track status, inspect risks, and summarize results. Developers can ask agents to fix bugs, build frontend, write backend, and run tests; project owners can inspect progress, quality, and collaboration history.
 
-- Deposit into a platform
+- <strong>Requirement to code</strong>: split a single requirement into frontend, backend, data, testing, and deployment subtasks, then let different agents move in parallel.
+- <strong>Meeting replacement</strong>: let XiaoMo summarize weekly progress, blockers, risks, and next steps, reducing manual synchronization.
+- <strong>Code review and regression</strong>: let one agent implement, another review, and a testing agent add verification.
+- <strong>Team experience reuse</strong>: preserve retrospectives, rules, best practices, and historical decisions so new members and agents can get up to speed quickly.
 
-    - Common capabilities can be solidified as plugins, skills, or workflows
+### 3. Generate demos, plugins, and business apps
 
-    - Multiple extension applications gradually form a personal or team AI product ecosystem
+Ask XiaoMo to create a plugin, webpage, themed portal, internal tool, or data dashboard directly. Mobius turns requirements into code, assets, backend interfaces, and running entries, then keeps the result as an extension that can be reused and improved.
 
-<a id="section-deployment"></a>
+- <strong>Demo products</strong>: generate event pages, launch pages, product pages, sports portals, or investor demo sites from one sentence.
+- <strong>Internal tools</strong>: build lightweight apps for data entry, content review, customer follow-up, daily reports, weekly reports, and knowledge search.
+- <strong>Continuously iterated plugins</strong>: start with a usable version, then let XiaoMo improve it from screenshots, feedback, and real usage.
 
-## Deployment
+### 4. Deep research, competitor tracking, and Auto Research
 
-### Option 1: Install and Run Inside a Container (All Operating Systems, Recommended)
+Mobius can organize paper reading, data research, experiment reproduction, code inspection, result summarization, and value judgment into a traceable research workflow. A research goal no longer has to be a single Q&A; it can become an agent research group and a reviewable research pipeline.
+
+- <strong>Paper reading</strong>: ask research agents to read papers deeply, extract methods, reason about reproduction, and judge relevance to your project.
+- <strong>Competitor scanning</strong>: continuously track products, papers, open-source projects, and industry news, then write useful inspirations back into the knowledge base.
+- <strong>Research pipeline</strong>: move from topic selection, materials, code, experiments, and summaries with context, records, and follow-up questions at every step.
+
+### 5. Connect real devices, remote compute, and the physical world
+
+Mobius can bring local machines, remote servers, GPU clusters, mobile devices, sensors, and robots into the same task system. Users state goals; the system organizes the environments and resources that can actually execute them.
+
+- <strong>Remote development and deployment</strong>: connect laptops, cloud servers, GPU machines, and test environments into one project context.
+- <strong>Mobile follow-up</strong>: check agent progress, add instructions, approve risky actions, or receive key reminders from a phone.
+- <strong>Robotics and hardware access</strong>: wrap sensors, actuators, lab equipment, or robots as callable resources so AI tasks can enter the physical world.
+
+### 6. Build a product system that improves itself
+
+The point of Mobius is not to let AI do one thing once; it is to let the system keep improving through real usage. It can observe its own weaknesses, learn from frontier papers and strong products, propose improvements, and implement them in code and experience.
+
+- <strong>Self-repair</strong>: when a page breaks, interaction fails, data becomes stale, or an agent run fails, ask XiaoMo to locate and fix it.
+- <strong>Self-extension</strong>: incubate new plugins, APIs, workflows, or agent roles from a new need.
+- <strong>Self-optimization</strong>: adjust product form over time from usage records, user feedback, and external research.
+
+---
+
+## Quick Start
+
+For complete deployment instructions, see the <a href="https://nutshellai-tech.github.io/mobius/">Docs</a> and <a href="./WHAT_WE_WANT_TO_SAY.md">What We Want to Say</a>. The two most common startup paths are kept below.
+
+### Option 1: Install and run in containers (recommended)
 
 ```bash
-# 1. Clone the repo (optional tip: fork first then clone, so that after self-evolution you can commit directly to your own repo)
+# 1. Clone the repository
 git clone https://github.com/nutshellai-tech/mobius.git
 cd mobius
 
-# 2. Generate config (random key passwords; you can manually configure to skip this step)
+# 2. Generate configuration
 python3 conf_prepare.py --docker && python3 conf_check.py --docker
 
-# 3. Build the base image (environment only, no code)
-docker build -t mobius-system-base:latest -f deploy/Dockerfile . && docker build -t mobius-system-exe:latest .
+# 3. Build images
+docker build -t mobius-system-base:latest -f deploy/Dockerfile .
+docker build -t mobius-system-exe:latest .
 
-# 4. Launch
+# 4. Start
 docker compose up
 ```
 
-<!-- update cheat sheet
-
-docker compose down
-git pull && sudo rm -rf host-data
-docker build -t mobius-system-base:latest -f deploy/Dockerfile . && docker build -t mobius-system-exe:latest . && docker compose up
-
--->
-
-### Option 2: Direct Deployment (Linux or MacOS)
+### Option 2: Direct deployment (Linux / macOS)
 
 ```bash
-# 1. Install necessary dependencies such as tmux git
+# 1. Install prerequisites
 sudo apt install tmux python3 git curl proxychains openssh-server build-essential
 
-# 2. Install claude code and codex (either one is fine, but installing both is recommended)
+# 2. Install agent execution engines
 npm install -g @anthropic-ai/claude-code @openai/codex
 
-# 3. Clone the repo (optional tip: fork first then clone, so that after self-evolution you can commit directly to your own repo)
+# 3. Clone the repository
 git clone https://github.com/nutshellai-tech/mobius.git
 cd mobius
 
-# 4. Generate and configure keys (will copy .env.default to .env and create random passwords)
+# 4. Generate and check configuration
 python3 conf_prepare.py && python3 conf_check.py
 
-# 5. Install project dependencies (frontend + backend)
-cd ./mobius && npm install && cd ./frontend && npm install && cd ../..
+# 5. Install frontend and backend dependencies
+cd ./mobius && npm install
+cd ./frontend && npm install
+cd ../..
 
 # 6. Run
 python3 start.py
 ```
+
+---
+
+## RoadMap and Contribution
+
+### RoadMap
+
+- <strong>v0.1 - Agent OS foundation workbench</strong>: projects, issues, sessions, model integrations, agent execution, and basic task management.
+- <strong>v0.2 - Team collaboration and management views</strong>: multi-user projects, permissions, task status, agent contribution tracking, and team AI usage analysis.
+- <strong>v0.3 - Self-evolution and extension system</strong>: plugin incubation, frontend/backend extensions, project knowledge accumulation, and feedback-driven system iteration.
+- <strong>v0.4 - XiaoMo and multi-agent collaboration</strong>: natural-language entrance, task decomposition, sub-agent collaboration, progress summaries, and key-result reminders.
+- <strong>v0.5 - Human-machine-object-intelligence-compute collaboration</strong>: remote compute, device access, robot/terminal integration, and research/engineering task pipelines.
+
+### Contribution
+
+Mobius is still growing quickly. We welcome developers, researchers, designers, product owners, and real users to participate: submit issues, propose needs, contribute plugins, improve docs, report bugs, share use cases, or help Mobius evolve itself.
+
+Current major contributors and maintainer identities include:
+
+- Nutshell.AI team
+- NutyHenry
+- Mobius OS contributors
+
+If you believe AI systems should not be preset tools, but continuously evolving productivity systems, you are welcome to join the construction of Mobius.
+
+<p align="center">
+  <a href="https://github.com/nutshellai-tech/mobius">GitHub</a>
+  ·
+  <a href="https://mobius.nutshellai.cn/">Website</a>
+  ·
+  <a href="https://nutshellai-tech.github.io/mobius/">Docs</a>
+</p>
