@@ -23,7 +23,7 @@ description: 制作 Mobius 图文使用教程（理解用户意图 → Playwrigh
 ## 0. 理解用户、规划
 
 - **确认主题与边界**：要讲哪个功能？从入口到结果完整覆盖，一般 3–6 张图。
-- **确认归类与位置**：参考现有 `mkdocs.yml` 的 nav 分区（I-五分钟精通 / II-高级能力 / III-管理员基础 / IV-自我进化能力 / V-小技巧）。问清放在哪个分区、是否新建分区；用户常会指定"靠前"。
+- **确认归类与位置**：参考现有 `mkdocs.yml` 的 nav 分区（I-五分钟精通 / II-高级能力 / III-管理员基础 / IV-自我进化能力 / V-小技巧 / VI-深度研究）。问清放在哪个分区、是否新建分区；用户常会指定"靠前"。**新建分区时要同步：nav 加顶层段 + nav_translations 加 section 中文名 + index.md/index.en.md 加 `###` 段**，三处缺一不可。
 - **确认命名**：章节中文名（用户经常随手改名，如「万能捷径：小莫助理」），同步想好英文 nav key（如 `Xiaomo: Universal Shortcut`）。
 - **先读代码再截**：grep 前端 `data-tour="..."` 选择器、读相关组件，确保步骤文案和真实 UI 一致，也方便定位截图元素。
 - **编号**：用下一个可用编号（看 `docs/tutorial/` 最大号 +1），文件名 `<NN>_<snake_name>.md`。
@@ -33,10 +33,13 @@ description: 制作 Mobius 图文使用教程（理解用户意图 → Playwrigh
 ## 1. Playwright 截图（原始 PNG + 元素矩形）
 
 ### 环境（已装好，无需再 install）
+playwright 不在仓库内、在 npx 缓存里，且**缓存目录哈希会变，别写死**——用一行 find 自动发现：
 ```bash
-NODE_PATH=/home/tianyi/imac-test/.imac/skills/playwright-skill/node_modules node /tmp/your_script.js
+NP=$(find /home/tianyi/.npm/_npx -maxdepth 3 -type d -name node_modules 2>/dev/null | head -1)
+NODE_PATH="$NP" node /tmp/your_script.js
+# 验证: NODE_PATH="$NP" node -e "require('playwright');console.log('ok')"
 ```
-Chromium 浏览器缓存已在 `~/.cache/ms-playwright`。
+若 find 为空（缓存被清），随便 `npx playwright ...` 跑一次会重建。Chromium 浏览器缓存在 `~/.cache/ms-playwright`。
 
 ### 登录 + 关首登引导（写死，密码免登）
 ```js
@@ -72,6 +75,28 @@ await page.screenshot({ path: `${RAW}/01.png` });
 - **截图前等数据加载**：聊天历史/列表是 SSE 拉取的，`waitForTimeout(1500~2500)` 或 `waitForFunction(() => document.body.innerText.length > N)`。
 
 把每张图的矩形写进 `shots.json`（见下一步）。
+
+### 先探后截（probe → capture → fixup，省大量返工）
+真实 UI 的选择器别靠猜——**先写个 probe 脚本**导航到目标页、dump 出所有可见交互元素（文本/title/aria/rect），看清楚再写正式 capture 脚本。矩形拿不准时，capture 脚本里把每步的 rect `console.log` 出来 + 先拍一张裸图，对照后再用 fixup 脚本补/改 `shots.json` 里的 highlight（比反复重跑 capture 快）。
+```js
+// dump 所有可见 button/a/input/label/select 的文本+矩形（写进 json 供查阅）
+function dump(page,root){return page.evaluate((root)=>{const rc=el=>{const r=el.getBoundingClientRect();return{x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)};};const vis=e=>{const r=e.getBoundingClientRect();const s=getComputedStyle(e);return r.width>16&&r.height>10&&s.display!=='none'&&s.visibility!=='hidden';};const el=root?document.querySelector(root):document;return Array.from((el||document).querySelectorAll('button,a,[role="button"],[role="tab"],input,label,select')).filter(vis).map(e=>({tag:e.tagName.toLowerCase(),txt:(e.textContent||'').trim().slice(0,30),title:e.getAttribute('title')||'',al:e.getAttribute('aria-label')||'',ph:e.getAttribute('placeholder')||'',checked:!!e.checked,rect:rc(e)}));},root);}
+```
+
+**坑① React 受控输入填不进去**：直接 `inp.value='x'` 不会更新 React state（提交时仍是空），必须用原生 setter 触发，或干脆用 Playwright 的 `page.fill(selector, value)`（最稳）：
+```js
+// page.fill 最稳：
+await page.fill('input[placeholder="Research 标题"]','大模型推理加速');
+// 或在 evaluate 内手动触发（React 认）：
+const set=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
+set.call(inp,'大模型推理加速'); inp.dispatchEvent(new Event('input',{bubbles:true}));
+```
+
+**坑② 按文本匹配会撞到同名元素**：Mobius 常有「侧栏导航按钮」和「弹窗内标签」同名（如 "Research Graph" 既是研究页侧栏按钮、又是团队弹窗里的 Agent 标签）。`.find(x=>x.textContent.includes(...))` 会命中**DOM 顺序靠前**的那个（侧栏），点下去没选中目标。**修法**：用更长、唯一的文本匹配（如 `/Research Graph 绘制/` 而非 `/Research Graph/`），或把查询 scope 到弹窗根（先给最高 z 的 `div.fixed.inset-0` 打 `data-topmodal` 标签再在其内 query）。
+
+**坑③ 定位 select 时分清"包在里面"还是"平级"**：有的 label 把 `<select>` 包在里面（`<label>形象<select>…</select></label>`），有的是平级兄弟。取 select 时 `lab.querySelector('select')`（包在里面）vs `lab.parentElement.querySelector('select')`（平级）不一样，搞错会拿到隔壁那个 select（如把"场景"当成"形象"）。**先用 dump 确认结构，或直接按 options 内容反查**：`selects.find(s=>[...s.options].some(o=>/企鹅/.test(o.textContent)))`。
+
+**别截出真实 Agent / 别烧 token**：截「创建 Agent / 启动会话」类弹窗时，**只展示配置、不要点「创建/启动/提交」**（一旦提交就 spawn 真实会话、烧模型 quota、污染数据）。截图停在表单填好未提交的状态即可；真要建演示数据，用最轻的 API（如建 research 只插一行 DB，不起 agent）。
 
 ---
 
@@ -183,14 +208,15 @@ plugins:
 
 ## 6. 本地构建验证（务必做，CI 跑的是 `mkdocs build`）
 
+仓库已备好专用 venv `.venv-docs`（mkdocs-material + mkdocs-static-i18n 都装好了），直接用：
 ```bash
-python3 -m venv .imac/tmp/mkdocs-venv
-.imac/tmp/mkdocs-venv/bin/pip install -q -r requirements-docs.txt   # mkdocs-material + mkdocs-static-i18n
-rm -rf site && .imac/tmp/mkdocs-venv/bin/mkdocs build
+.venv-docs/bin/mkdocs build --strict 2>&1 | tail -25
 ```
-- 看日志有 `Translated N navigation elements to 'zh'`（N = nav key 总数，无 missing）。
+> 只有 `.venv-docs` 损坏 / 被删时才重建：`python3 -m venv .venv-docs && .venv-docs/bin/pip install -q -r requirements-docs.txt`。
+- 看日志有 `Translated N navigation elements to 'zh'`（N = nav key 总数，新增条目后 N 应 +对应数，无 missing）。
 - 无 `error / Exception / Conflicting files`。
-- **i18n 冲突**：`X.md`（默认 zh）和 `X.zh.md` 同时存在会报 `Conflicting files for the default language 'zh'`。修法：把英文内容从 `X.md` 改名到 `X.en.md`，留 `X.zh.md`（zh）+ `X.en.md`（en）。
+- **`--strict` 下任何 WARNING 都会 abort**：仓库里有长期存在的「非本次」告警（如未入库的 `compute-and-devices/README.*.md` 链接、`zhipu-key-setup.md` 未进 nav），它们与你的教程无关。**判断你自己的改动是否干净**：grep 构建输出里有没有 `tutorial/NN`、你的图床 URL、或你改的 nav key；再确认 `site/tutorial/` + `site/en/tutorial/` 下都生成了你的 `NN_*` 页面。只要这两条过了，strict 的 abort 就不是你造成的，可放行。
+- **i18n 冲突**：`X.md`（默认 zh）和 `X.zh.md` 同时存在会报 `Conflicting files for the default language 'zh'`。修法：把英文内容从 `X.md` 改名到 `X.en.md`，留 `X.zh.md`（zh）+ `X.en.md`（en）。（注：默认 zh 用裸 `NN_xxx.md` 和显式 `NN_xxx.zh.md` 都合法，仓库里两种都有，保持和同分区已有教程一致即可。）
 
 **一键校验 nav→翻译→文件 三者一致**：
 ```python
@@ -214,7 +240,7 @@ print('missing zh:', [k for k in keys if k not in zt])
 ## 7. commit + push
 
 ```bash
-git add docs/tutorial/NN_topic.md docs/tutorial/NN_topic.en.md docs/index.md docs/index.en.md mkdocs.yml
+git add -A   # 本仓库是自迭代项目: 按规则连非自己改的文件一并提交
 git commit -m "Add tutorial: <英文说明> (中文说明, 含带标记截图; 同步 docs/index 与 mkdocs nav 中英)"
 # GitLab（origin，内网，直连）
 git push origin main
@@ -249,7 +275,7 @@ proxychains -q git push github main
 | 登录（密码免登） | `POST /api/auth/login {"username":"fuqingxu"}` → `.token` |
 | 登录态 localStorage | `cc-token` |
 | 关首登引导 localStorage | `imac:first-login-tour-seen:v1:fuqingxu` |
-| Playwright | `NODE_PATH=/home/tianyi/imac-test/.imac/skills/playwright-skill/node_modules` |
+| Playwright | `NODE_PATH=$(find /home/tianyi/.npm/_npx -maxdepth 3 -name node_modules \| head -1)`（npx 缓存，别写死） |
 | 标注器（复用源） | `.imac/tmp/tutorial05/annotate.py`（复制后参数化 RAW/OUT） |
 | CJK 字体 | `/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc` |
 | 图床上传 | `POST https://public.agent-matrix.com/up/v100`，`Authorization: Bearer iooir13gnwduio_beli882__AUNGLOIUYUG` |
@@ -274,3 +300,9 @@ proxychains -q git push github main
 - **GitHub push TLS 报错/超时** → 外网，走 `proxychains -q git push github main`；**禁止**用 `http_proxy` 环境变量。
 - **截到密钥** → 见安全红线，必须遮蔽 + 通知轮换。
 - **污染真实数据** → 用临时项目/示例记忆演示，做完删掉（`DELETE /api/projects/<id>` 带 `{"confirm":"<id>"}`）。
+- **React 受控输入填不进** → `inp.value=` 不触发 React state；用 `page.fill()` 或原生 setter + `input` 事件（见 §1 坑①）。
+- **按文本匹配撞同名** → 侧栏按钮与弹窗标签常同名（如 "Research Graph"）；用更长唯一文本或 scope 到弹窗根（见 §1 坑②）。
+- **select 取错隔壁** → label 包 select vs 平级，搞错会拿到相邻 select；按 options 内容反查最稳（见 §1 坑③）。
+- **截 Agent/会话创建弹窗误提交** → 只展示配置别点「创建/启动」，否则 spawn 真实会话烧 quota。
+- **`--strict` 被「非本次」老告警 abort** → grep 自己的 `tutorial/NN` + 确认 `site/.../tutorial/NN_*` 生成即可放行（见 §6）。
+- **新建分区只改了 nav** → 必须同步 nav_translations（section 名）+ index.md + index.en.md，三处缺一不可。
