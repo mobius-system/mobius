@@ -18,8 +18,14 @@ Mobius is, to the best of our knowledge, the world's first <strong>self-evolving
 </p>
 
 <p align="center">
-  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Code Composition" src="https://img.shields.io/github/languages/top/nutshellai-tech/mobius?label=Code%20Composition&amp;logo=github&amp;cacheSeconds=300" /></a>
-  <a href="https://github.com/nutshellai-tech/mobius/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/nutshellai-tech/mobius?label=License&amp;cacheSeconds=300" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius"><img alt="TypeScript 54.8%" src="https://img.shields.io/badge/TypeScript-54.8%25-3178c6?logo=typescript&amp;logoColor=white" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius"><img alt="JavaScript 24.5%" src="https://img.shields.io/badge/JavaScript-24.5%25-f7df1e?logo=javascript&amp;logoColor=111111" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius"><img alt="CSS 10.9%" src="https://img.shields.io/badge/CSS-10.9%25-663399?logo=css&amp;logoColor=white" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius"><img alt="HTML 7.9%" src="https://img.shields.io/badge/HTML-7.9%25-e34f26?logo=html5&amp;logoColor=white" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Python 1.6%" src="https://img.shields.io/badge/Python-1.6%25-3776ab?logo=python&amp;logoColor=white" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Shell 0.4%" src="https://img.shields.io/badge/Shell-0.4%25-4eaa25?logo=gnubash&amp;logoColor=white" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Dockerfile 0.05%" src="https://img.shields.io/badge/Dockerfile-0.05%25-2496ed?logo=docker&amp;logoColor=white" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius/blob/main/LICENSE"><img alt="Custom source-available non-commercial license" src="https://img.shields.io/badge/license-source--available%20%2F%20non--commercial-orange" /></a>
   <a href="https://github.com/nutshellai-tech/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/nutshellai-tech/mobius.svg" /></a>
   <a href="https://github.com/nutshellai-tech/mobius/forks"><img alt="Forks" src="https://img.shields.io/github/forks/nutshellai-tech/mobius.svg" /></a>
   <a href="https://github.com/nutshellai-tech/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange.svg" /></a>
