@@ -2089,23 +2089,11 @@ export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo }: { lastTi
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [])
-  const lastMs = lastTimestamp ? new Date(lastTimestamp).getTime() : null
-  const silenceSec = lastMs ? Math.max(0, Math.floor((now - lastMs) / 1000)) : null
-  // 还没有任何 jsonl entry → 不出 LIVE 卡片 (不再显示 "等首条 entry..." 占位).
-  if (silenceSec == null) return null
-  const sev: 'normal' | 'warn' | 'stale' =
-    silenceSec < 30 ? 'normal'
-    : silenceSec < 120 ? 'warn'
-    : 'stale'
-  const theme =
-    sev === 'normal' ? { border: 'border-emerald-500/30', bg: 'bg-emerald-500/[0.05]', dot: 'bg-emerald-400', text: 'text-emerald-300' }
-    : sev === 'warn'   ? { border: 'border-amber-500/30',   bg: 'bg-amber-500/[0.05]',   dot: 'bg-amber-400',   text: 'text-amber-300' }
-    :                    { border: 'border-red-500/40',     bg: 'bg-red-500/[0.06]',     dot: 'bg-red-400',     text: 'text-red-300' }
-
   // realTimeInfo (来自 /status): agent TUI 当前状态行, 如 "✻ Propagating… (7m 44s · ↓ 24.1k tokens)".
   // 前端 TTL 5s: 每次轮询带回非空值就刷新计时并展示它; 后端连续 5s 不再给非空值 → fallback 回
   // 下面的 "生成中 · 距上条 entry Xs" / 沉默文案. ref 在 render 中更新是刻意的 —— 每次非空轮询
   // 都要刷新 TTL, 即便值相同 (claude 状态行的分秒/token 一直在变, 几乎不会连续 5s 完全相同).
+  // ⚠ useRef 必须在下面的早返回之前无条件调用, 否则 hook 数量随 render 变化 → React #300 崩溃.
   const REALTIME_TTL_MS = 5000
   const liveTextRef = useRef('')
   const liveUntilRef = useRef(0)
@@ -2114,7 +2102,19 @@ export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo }: { lastTi
     liveTextRef.current = rt
     liveUntilRef.current = Date.now() + REALTIME_TTL_MS
   }
+  const lastMs = lastTimestamp ? new Date(lastTimestamp).getTime() : null
+  const silenceSec = lastMs ? Math.max(0, Math.floor((now - lastMs) / 1000)) : null
+  // 还没有任何 jsonl entry → 不出 LIVE 卡片 (不再显示 "等首条 entry..." 占位).
+  if (silenceSec == null) return null
   const liveActive = !!liveTextRef.current && now <= liveUntilRef.current
+  const sev: 'normal' | 'warn' | 'stale' =
+    silenceSec < 30 ? 'normal'
+    : silenceSec < 120 ? 'warn'
+    : 'stale'
+  const theme =
+    sev === 'normal' ? { border: 'border-emerald-500/30', bg: 'bg-emerald-500/[0.05]', dot: 'bg-emerald-400', text: 'text-emerald-300' }
+    : sev === 'warn'   ? { border: 'border-amber-500/30',   bg: 'bg-amber-500/[0.05]',   dot: 'bg-amber-400',   text: 'text-amber-300' }
+    :                    { border: 'border-red-500/40',     bg: 'bg-red-500/[0.06]',     dot: 'bg-red-400',     text: 'text-red-300' }
 
   return (
     <div className={`mb-2 rounded-2xl border card-enter ${theme.border} ${theme.bg} px-3 py-2 flex items-center gap-2 text-[12px]`}>
