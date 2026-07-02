@@ -34,7 +34,7 @@ const FRONTEND_RELATIVE = 'frontend';
 // RegistryEntry: {
 //   name, display_name, description, version, icon, icon_url?,
 //   dir, handler_path, frontend_dir, data_dir,
-//   project: { sync, default_hidden },
+//   project: { sync },
 //   manifest_mtime, errors: []
 // }
 const registry = new Map<string, any>();
@@ -129,8 +129,8 @@ function scanFilesystem(): { found: Map<string, any>; errors: any[] } {
       version: typeof manifest.version === 'string' ? manifest.version : '0.0.0',
       icon_url: iconUrl,
       project: {
+        // sync=false → 不进 DB (完全不存在于项目列表). default_hidden 已移除: 拓展一律默认可见.
         sync: !manifest.project || manifest.project.sync !== false,
-        default_hidden: !!(manifest.project && manifest.project.default_hidden === true),
       },
       dir,
       handler_path: path.join(dir, HANDLER_RELATIVE),
@@ -154,7 +154,6 @@ function syncWithDb(found: Map<string, any>): void {
       createdBy: EXTENSION_SYSTEM_USER_ID,
       bindPath: APP_DIR,
       extensionName: name,
-      defaultHidden: !!(entry.project && entry.project.default_hidden),
     });
   }
   // 2. 目录已消失的拓展 → 标 disabled, 保留行 (用户数据不丢)

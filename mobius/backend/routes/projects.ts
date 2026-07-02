@@ -1872,6 +1872,8 @@ router.post('/:id/unmute', auth, (req: express.Request, res: express.Response) =
   if (!canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
   UserProjectView.unmute(user.id, id);
   setHidden(user.id, 'project', id, false);
+  // /hide 对拓展同时写了 project_user_hidden; 这里一并清掉, 使"恢复显示"对拓展也完整生效.
+  if (project.kind === 'extension') Projects.setHidden(id, user.id, false);
   recordAdminAuditIfCrossUser(user, 'unmute_project', 'project', project.id, project.created_by);
   res.json({ ok: true, muted: false });
 });

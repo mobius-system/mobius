@@ -139,4 +139,3 @@ image*.png
 
 # Ignore extension
 mobius/extension
-mobius/extension/finance-news-wall/extension.json

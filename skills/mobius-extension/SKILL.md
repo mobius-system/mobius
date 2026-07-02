@@ -97,9 +97,13 @@ const r = await extCall({ action: 'submit_score', score: 1234 });
 
 **manifest** (`extension.json`):
 ```json
-{ "name": "<name>", "display_name": "中文名", "description": "...", "version": "0.1.0", "icon": "favicon.svg" }
+{ "name": "<name>", "display_name": "中文名", "description": "...", "version": "0.1.0", "icon": "favicon.svg", "project": { "sync": true } }
 ```
-不要写 entry / handler 路径, 是约定固定的.
+不要写 entry / handler 路径, 是约定固定的. `project` 可选, 只有一个字段:
+- `project.sync` (默认 `true`): `false` 时该拓展不进 DB, 完全不出现在任何项目列表里 (等同于"不启用"). 其它情况都会作为一个 kind=`extension` 的项目入库.
+- ~~`project.default_hidden`~~: **已移除**. 拓展一律默认可见, 不再支持"默认隐藏"; 想让某拓展不出现, 用 `sync: false` 或直接不放进 `mobius/extension/`.
+
+**可见性规则 (简单版)**: 每个拓展**默认对所有人可见**. 任何用户可在自己的项目页**隐藏** (屏蔽) 任意拓展, 也可随时**恢复显示**——隐藏只对该用户生效, 不影响别人, 也不删数据. 彻底删除数据用拓展卡片的"彻底删除" (不可逆, 仅清当前用户数据).
 
 **特殊拓展项目** (kind=`extension` 的 project) 由 registry 自动 upsert, 锁死: `bind_path=APP_DIR`, `worktree=false`, `research=false`, `created_by=system` (但每个用户的项目页都能看到). 不能从 UI 删, 不能改 name/desc/path/repos/worktree/research, 可改 forgotten_flag.* 与星标.
 

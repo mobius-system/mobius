@@ -5,7 +5,6 @@
   "version": "0.1.0",
   "icon": "favicon.svg",
   "project": {
-    "sync": true,
-    "default_hidden": false
+    "sync": true
   }
 }

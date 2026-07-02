@@ -1,7 +1,0 @@
-{
-  "name": "tiny-game",
-  "display_name": "霓虹方阵 · 闯关小游戏",
-  "description": "霓虹方阵 NEON LEAP — 闪避坠落方块, 收集能量核心, 撑过 8 关递进难度. 支持暂停/继续/结算/重开, 最高分与解锁进度本地+后端双存档.",
-  "version": "0.2.0",
-  "icon": "favicon.svg"
-}

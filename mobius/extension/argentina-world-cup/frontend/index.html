@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>阿根廷队 · 2026 世界杯追踪</title>
+  <meta name="description" content="以阿根廷队为核心视角的 2026 FIFA 世界杯追踪页：赛程、中文新闻、卫冕路径、核心球员、北美路线和问AI。" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <!-- 顶部导航 -->
+  <nav class="topnav" id="topnav">
+    <a href="#hero" class="topnav-brand" aria-label="阿根廷队 · 2026 世界杯追踪">
+      <svg viewBox="0 0 32 32" class="topnav-logo" aria-hidden="true">
+        <defs>
+          <linearGradient id="navgrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#75aadb" />
+            <stop offset="0.48" stop-color="#ffffff" />
+            <stop offset="1" stop-color="#f6b40e" />
+          </linearGradient>
+        </defs>
+        <g transform="translate(16 16)">
+          <path d="M -10 0 C -10 -7, -3 -7, 0 0 C 3 7, 10 7, 10 0 C 10 -7, 3 -7, 0 0 C -3 7, -10 7, -10 0 Z"
+                fill="none" stroke="url(#navgrad)" stroke-width="1.6" />
+        </g>
+        <circle cx="16" cy="8.5" r="2.4" fill="#f6b40e" />
+      </svg>
+      <span>阿根廷队 2026</span>
+    </a>
+    <ul class="topnav-links">
+      <li><a href="#fixtures">阿根廷赛程</a></li>
+      <li><a href="#news">中文新闻</a></li>
+      <li><a href="#standings">卫冕路径</a></li>
+      <li><a href="#scorers">阿根廷射手</a></li>
+      <li><a href="#players">核心球员</a></li>
+      <li><a href="#stadiums">北美路线</a></li>
+      <li><a href="#assistant">问AI</a></li>
+    </ul>
+    <span class="topnav-sync" id="topnav-sync" title="最近一次内容同步">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="sync-label">数据同步中…</span>
+    </span>
+  </nav>
+
+  <!-- Hero：球场实拍照 + 倒计时 + 焦点比赛 -->
+  <header class="hero section-dark" id="hero">
+    <div class="hero-bg" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <p class="hero-eyebrow reveal">ARGENTINA · LA ALBICELESTE · 2026 FIFA WORLD CUP · CANADA · MEXICO · USA</p>
+      <h1 class="hero-title reveal">
+        <span id="hero-title-prefix">阿根廷卫冕路</span><br />
+        <span class="countdown" id="hero-countdown" aria-live="polite">— 天 — 时 — 分</span>
+      </h1>
+
+      <div class="hero-focus reveal" id="hero-focus">
+        <div class="focus-label">阿根廷焦点</div>
+        <div class="focus-match">
+          <div class="focus-team">
+            <span class="team-code" id="focus-home-code">ARG</span>
+            <span class="team-name" id="focus-home-name">阿根廷</span>
+          </div>
+          <div class="focus-score">
+            <span id="focus-score-text">vs</span>
+            <span class="focus-stage" id="focus-stage">卫冕路径 · 赛程雷达</span>
+            <span class="focus-time" id="focus-time">阿根廷赛程自动同步中</span>
+          </div>
+          <div class="focus-team">
+            <span class="team-code" id="focus-away-code">WC26</span>
+            <span class="team-name" id="focus-away-name">潜在对手</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-gallery reveal" id="hero-gallery" aria-label="阿根廷队世界杯视觉焦点"></div>
+    </div>
+  </header>
+
+  <!-- 头条新闻 News -->
+  <section class="section section-light section-padded news-section" id="news">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <p class="kicker reveal">ARG NEWS · 中文新闻墙</p>
+          <h2 class="display small reveal">阿根廷消息先看这里</h2>
+          <p class="lead reveal">优先聚合阿根廷队、梅西、斯卡洛尼、锋线选择与卫冕路线相关公开新闻；外媒标题会转成中文导览展示。</p>
+        </div>
+        <span class="sync-chip dark reveal" id="news-sync-chip">数据同步中…</span>
+      </div>
+
+      <div class="news-layout news-layout-light reveal">
+        <article class="news-hero" id="news-hero">
+          <!-- 由 main.js 注入最新一条 -->
+        </article>
+        <ul class="news-list" id="news-list">
+          <!-- 由 main.js 注入后续 4-6 条 -->
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 赛程 Fixtures -->
+  <section class="section section-light section-padded" id="fixtures">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <p class="kicker reveal">ARG FIXTURES · 阿根廷赛程</p>
+          <h2 class="display small reveal">从阿根廷视角看每一天</h2>
+        </div>
+        <div class="tab-bar reveal" role="tablist" aria-label="赛程日期">
+          <button class="tab active" role="tab" data-fixture-tab="today">今日</button>
+          <button class="tab" role="tab" data-fixture-tab="tomorrow">明日</button>
+          <button class="tab" role="tab" data-fixture-tab="week">本周</button>
+        </div>
+      </div>
+
+      <div class="fixtures-grid reveal" id="fixtures-grid"></div>
+      <p class="media-source reveal" id="fixtures-source">阿根廷赛程自动同步中…</p>
+    </div>
+  </section>
+
+  <!-- 淘汰赛签表 Knockout Bracket -->
+  <section class="section section-dark section-padded" id="standings">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <p class="kicker light reveal">ARG ROUTE · 卫冕路径</p>
+          <h2 class="display small light reveal">阿根廷的淘汰赛路线</h2>
+          <p class="lead light reveal">从 32 强开始追踪阿根廷和潜在对手的路线、开球城市与晋级状态；公开赛程刷新后，焦点比赛会自动同步到上方赛程区。</p>
+        </div>
+      </div>
+
+      <div class="knockout-wrap reveal" id="knockout-bracket" aria-label="阿根廷队世界杯淘汰赛路径"></div>
+      <p class="media-source light reveal" id="knockout-source">阿根廷卫冕路径 · 根据当前赛程缓存展示</p>
+    </div>
+  </section>
+
+  <!-- 射手榜 Top Scorers -->
+  <section class="section section-light section-padded" id="scorers">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <p class="kicker reveal">ARG SCORERS · 阿根廷射手</p>
+          <h2 class="display small reveal">阿根廷进攻观察</h2>
+        </div>
+      </div>
+
+      <div class="scorers-list reveal" id="scorers-list"></div>
+      <p class="media-source reveal" id="scorers-source">阿根廷射手数据同步中…</p>
+    </div>
+  </section>
+
+  <!-- 关注球员 Players -->
+  <section class="section section-light section-padded" id="players">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <p class="kicker reveal">ARG PLAYERS · 核心球员</p>
+          <h2 class="display small reveal">蓝白军团关键人</h2>
+        </div>
+      </div>
+
+      <div class="players-grid reveal" id="stars-grid"></div>
+      <p class="media-source reveal" id="players-source">阿根廷关注名单同步中…</p>
+    </div>
+  </section>
+
+  <!-- 球场巡礼 Stadiums -->
+  <section class="section section-dark section-padded" id="stadiums">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <p class="kicker light reveal">ARG MAP · 北美路线</p>
+          <h2 class="display small light reveal">阿根廷可能走过的球场</h2>
+        </div>
+      </div>
+
+      <div class="host-grid reveal" id="host-grid"></div>
+    </div>
+  </section>
+
+  <!-- AI 问答 / 页面维护 Agent -->
+  <section class="section section-light section-padded assistant-section" id="assistant">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <p class="kicker reveal">ASK ARG AI · 问答与页面维护</p>
+          <h2 class="display small reveal">问阿根廷队 AI</h2>
+          <p class="lead reveal">可以问阿根廷赛程、阵容、梅西、斯卡洛尼、潜在对手、中文新闻，也可以直接提出“把这个页面哪里改一下”。后台会投递给真实 Mobius Session 处理，简短结论会同步显示在这里。</p>
+        </div>
+      </div>
+
+      <div class="assistant-shell reveal">
+        <div class="assistant-chat" id="assistant-chat" aria-live="polite"></div>
+        <form class="assistant-form" id="assistant-form">
+          <textarea id="assistant-input" rows="3" placeholder="例如：总结今天阿根廷队相关新闻，分析梅西和锋线选择，或者把阿根廷卫冕路径做得更醒目。"></textarea>
+          <div class="assistant-actions">
+            <label class="assistant-toggle">
+              <input type="checkbox" id="assistant-new-session" />
+              <span>新开 Session</span>
+            </label>
+            <button type="submit" class="assistant-submit">发送给阿根廷问AI</button>
+          </div>
+        </form>
+        <p class="media-source" id="assistant-source">阿根廷问AI 尚未启动</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <svg viewBox="0 0 32 32" class="footer-logo" aria-hidden="true">
+          <g transform="translate(16 16)">
+            <path d="M -10 0 C -10 -7, -3 -7, 0 0 C 3 7, 10 7, 10 0 C 10 -7, 3 -7, 0 0 C -3 7, -10 7, -10 0 Z"
+                  fill="none" stroke="url(#navgrad)" stroke-width="1.6" />
+          </g>
+          <circle cx="16" cy="8.5" r="2.4" fill="#f6b40e" />
+        </svg>
+        <span>阿根廷队 · 2026 世界杯追踪</span>
+      </div>
+      <p class="footer-tagline">阿根廷赛程 · 卫冕路径 · 射手 · 中文新闻 · 核心球员 · 北美路线 · 赛程每 10 分钟自动同步</p>
+      <p class="footer-sources" id="footer-sources">
+        数据来源：美国体育电视网赛程接口 · 谷歌新闻中文 · 英国广播公司体育 · 卫报足球 · 天空体育足球 · 美国体育电视网足球公开订阅（页面以中文导览展示，原文版权归原作者所有）<br />
+        图像素材：主办城市 / 球场使用公开媒体与本地兜底；球员与国家队标识使用阿根廷配色、国旗和代码，避免展示未经核验或错误照片
+      </p>
+      <p class="footer-copy">© 2026 Argentina World Cup Tracker · Demo project · 原文与图像版权归原作者所有</p>
+    </div>
+  </footer>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

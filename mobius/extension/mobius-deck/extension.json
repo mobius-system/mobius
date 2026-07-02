@@ -1,7 +1,0 @@
-{
-  "name": "mobius-deck",
-  "display_name": "Mobius 方案演示",
-  "description": "把 Mobius 触手、安全、汇报、管理、架构、生产力闭环六张手绘草图重新代码化为可交互的 PPT 风格演示。",
-  "version": "0.1.0",
-  "icon": "favicon.svg"
-}

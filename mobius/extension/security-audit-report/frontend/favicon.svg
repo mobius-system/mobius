@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Security audit report">
-  <rect width="64" height="64" rx="14" fill="#0f172a"/>
-  <path d="M32 8 51 16v13c0 13-8 23-19 27C21 52 13 42 13 29V16l19-8Z" fill="#14b8a6"/>
-  <path d="M23 32.5 29 38l12-15" fill="none" stroke="#f8fafc" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

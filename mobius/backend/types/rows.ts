@@ -67,7 +67,6 @@ export interface ProjectRawRow {
   kind: 'normal' | 'extension';
   extension_name: string | null;
   disabled: number;
-  extension_default_hidden: number;
   default_model: string | null;
 }
 
@@ -78,7 +77,6 @@ export interface ProjectRow extends Omit<ProjectRawRow,
   | 'research_enabled'
   | 'bind_path_manual'
   | 'disabled'
-  | 'extension_default_hidden'
   | 'can_post_issue'
   | 'can_run_session'> {
   git_repos: string[];
@@ -86,12 +84,11 @@ export interface ProjectRow extends Omit<ProjectRawRow,
   research_enabled: boolean;
   bind_path_manual: boolean;
   disabled: boolean;
-  extension_default_hidden: boolean;
   can_post_issue: boolean;
   can_run_session: boolean;
   /** LEFT JOIN 注入：用户在该项目上是否星标 */
   starred?: boolean;
-  /** LEFT JOIN 注入：用户在该项目上是否隐藏（或拓展默认隐藏） */
+  /** LEFT JOIN 注入：用户是否隐藏了该项目（仅拓展真正用到；拓展一律默认可见） */
   hidden?: boolean;
   /** 计算字段：实际生效的 forgotten flag 提醒消息（取自 config 或库配置） */
   forgotten_flag_message_effective?: string;

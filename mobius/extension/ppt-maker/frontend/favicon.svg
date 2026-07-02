@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PPT Maker">
-  <rect width="64" height="64" rx="14" fill="#2563eb"/>
-  <path d="M16 14h25.5L50 22.5V50H16z" fill="#fff" opacity=".96"/>
-  <path d="M41 14v10h9" fill="#dbeafe"/>
-  <rect x="21" y="29" width="22" height="4" rx="2" fill="#2563eb"/>
-  <rect x="21" y="38" width="16" height="4" rx="2" fill="#0f766e"/>
-  <circle cx="45" cy="43" r="5" fill="#f59e0b"/>
-</svg>

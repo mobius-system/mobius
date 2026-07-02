@@ -1,0 +1,10 @@
+{
+  "name": "argentina-world-cup",
+  "display_name": "阿根廷队 · 世界杯追踪",
+  "description": "以阿根廷队为核心视角的 2026 世界杯追踪页：赛程、中文新闻、卫冕路径、核心球员与问AI。",
+  "version": "0.1.0",
+  "icon": "favicon.svg",
+  "project": {
+    "sync": true
+  }
+}
