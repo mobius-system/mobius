@@ -624,7 +624,8 @@ class TmuxCodexBackend extends AgentBackend {
           for (let i = lines.length - 1; i >= 0; i--) {
             const line = lines[i]
             if (line && CODEX_STATUS_LINE_RE.test(line)) {
-              value = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
+              // "esc to interrupt" 易误导用户按 Esc 中断正常工作 → 替换成 "working".
+              value = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/esc to interrupt/gi, 'working').trim()
               break
             }
           }

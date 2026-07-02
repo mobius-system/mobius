@@ -1152,6 +1152,7 @@ type ModelPromptLimitsPayload = {
   window_hours: number
   window_minutes: number
   global_default_model: string | null
+  auto_generate_session_title?: { enabled?: boolean } | boolean | null
   models: ModelPromptLimitRow[]
 }
 type AdminAssistantCallbacksPayload = {
@@ -1165,6 +1166,7 @@ function ModelPromptLimitsCard() {
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [savingProxyKey, setSavingProxyKey] = useState<string | null>(null)
   const [savingCaptureKey, setSavingCaptureKey] = useState<string | null>(null)
+  const [savingAutoTitle, setSavingAutoTitle] = useState(false)
   const [error, setError] = useState('')
 
   const fieldKey = (modelKey: string, field: keyof ModelPromptLimitConfig) => `${modelKey}::${field}`
@@ -1347,6 +1349,26 @@ function ModelPromptLimitsCard() {
     }
   }
 
+  const autoTitleEnabled = Boolean(payload?.auto_generate_session_title === true
+    || (payload?.auto_generate_session_title && typeof payload.auto_generate_session_title === 'object'
+      && payload.auto_generate_session_title.enabled === true))
+
+  const toggleAutoGenerateSessionTitle = async (enabled: boolean) => {
+    setSavingAutoTitle(true)
+    try {
+      const next = await api('/api/admin/settings/auto-generate-session-title', {
+        method: 'PUT',
+        body: JSON.stringify({ enabled }),
+      }) as { enabled: boolean }
+      setPayload(prev => prev ? { ...prev, auto_generate_session_title: next } : prev)
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSavingAutoTitle(false)
+    }
+  }
+
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1392,6 +1414,34 @@ function ModelPromptLimitsCard() {
           </select>
           {savingGlobal && <RefreshCw className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--text-muted)' }} />}
         </div>
+      </div>
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2.5"
+        style={{ borderColor: autoTitleEnabled ? 'rgba(16,185,129,0.36)' : 'var(--input-border)', background: autoTitleEnabled ? 'rgba(16,185,129,0.08)' : 'var(--input-bg)' }}>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            <Sparkles className="h-3.5 w-3.5" style={{ color: autoTitleEnabled ? '#10b981' : 'var(--text-muted)' }} />
+            <span>自动生成 Session 标题</span>
+          </div>
+          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            后端收到 agent 明确产出的标题事件时自动改名；不扫描历史、不依赖前端打开页面、不走状态轮询。默认关闭。
+          </div>
+        </div>
+        <ToggleSwitch
+          checked={autoTitleEnabled}
+          disabled={savingAutoTitle || loading || !payload}
+          loading={savingAutoTitle}
+          onChange={toggleAutoGenerateSessionTitle}
+          switchPosition="end"
+          activeColor="#10b981"
+          className="flex min-w-[104px] items-center justify-between gap-3 rounded-md border px-2.5 py-1.5"
+          style={{
+            background: autoTitleEnabled ? 'rgba(16,185,129,0.10)' : 'var(--bg-card)',
+            borderColor: autoTitleEnabled ? 'rgba(16,185,129,0.40)' : 'var(--input-border)',
+          }}>
+          <span className="text-[12px]" style={{ color: autoTitleEnabled ? '#16a34a' : 'var(--text-muted)' }}>
+            {autoTitleEnabled ? '已开启' : '已关闭'}
+          </span>
+        </ToggleSwitch>
       </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {(payload?.models || []).map(row => {
