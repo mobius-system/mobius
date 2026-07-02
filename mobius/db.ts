@@ -1094,4 +1094,19 @@ function migrateConversationType() {
 }
 migrateConversationType();
 
+// 修正已有 1v1 私聊(恰好 2 个 user 成员, 无 agent)的 type: 迁移时默认 'group' 是错的.
+function fixDirectConversationType() {
+  try {
+    db.prepare(`UPDATE conversations SET type = 'direct' WHERE type = 'group' AND id IN (
+      SELECT conversation_id FROM conversation_members
+      GROUP BY conversation_id
+      HAVING COUNT(*) = 2
+        AND SUM(CASE WHEN member_type != 'user' THEN 1 ELSE 0 END) = 0
+    )`).run();
+  } catch (e) {
+    // type 列尚未建或已修正则忽略
+  }
+}
+fixDirectConversationType();
+
 export { db, DB_PATH };
