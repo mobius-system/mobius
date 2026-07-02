@@ -235,6 +235,8 @@ function adminLimitsPayload(): any {
     window_minutes: WINDOW_MINUTES,
     // 全局默认模型偏好 (系统级默认, 未设置时为 null). 供管理中心"系统设置"展示与回填.
     global_default_model: adminSettings.getGlobalDefaultModel(),
+    // 自动生成 Session 标题开关. 暂无前端入口也可通过专用 admin API 读写.
+    auto_generate_session_title: adminSettings.getAutoGenerateSessionTitle(),
     models: modelRegistry.listSessionModelOptions().map((opt: any) => ({
       key: opt.key,
       value: opt.value,

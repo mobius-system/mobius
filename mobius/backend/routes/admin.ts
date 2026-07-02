@@ -897,6 +897,32 @@ router.put('/settings/global-default-model', adminAuth, (req: express.Request, r
   }
 });
 
+// ── 自动生成 Session 标题: 默认关闭; 开启后由后端订阅 agent raw_entry 事件更新 sessions_v2.name ──
+router.get('/settings/auto-generate-session-title', adminAuth, (_req: express.Request, res: express.Response) => {
+  try {
+    res.json(adminSettings.getAutoGenerateSessionTitle());
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
+  }
+});
+
+router.put('/settings/auto-generate-session-title', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    const body = (req.body || {}) as any;
+    const payload = Object.prototype.hasOwnProperty.call(body, 'enabled')
+      ? { enabled: body.enabled }
+      : (Object.prototype.hasOwnProperty.call(body, 'autoGenerateSessionTitle')
+        ? body.autoGenerateSessionTitle
+        : (Object.prototype.hasOwnProperty.call(body, 'auto_generate_session_title')
+          ? body.auto_generate_session_title
+          : body));
+    const next = adminSettings.setAutoGenerateSessionTitle(payload);
+    res.json(next);
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
+  }
+});
+
 // ── 管理员小莫: 是否接收全站 Session 完成/失败回调 ──
 router.get('/settings/admin-assistant-callbacks', adminAuth, (req: express.Request, res: express.Response) => {
   try {

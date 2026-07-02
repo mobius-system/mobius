@@ -295,7 +295,7 @@ export default function IssuePage() {
               data-tour="issue-sidebar-new-session"
               className="btn-primary group flex h-8 flex-shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-semibold shadow-md shadow-black/10 transition-all">
               <MessageSquarePlus className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} />
-              <span className="whitespace-nowrap">新建 Session</span>
+              <span className="whitespace-nowrap">新会话</span>
               <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-current/10">
                 <Sparkles className="h-2.5 w-2.5" strokeWidth={2} />
               </span>

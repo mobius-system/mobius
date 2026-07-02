@@ -216,6 +216,7 @@ const { startInactiveTmuxCleaner } = require('./backend/services/inactive-tmux-c
 const { startResearchBlackboardDeliveryScanner } = require('./backend/services/research-blackboard');
 const { startExtensionScheduler } = require('./backend/services/extension-scheduler');
 const { startAgentStatusSyncer } = require('./backend/services/agent-status-syncer');
+const { startSessionTitleSyncer } = require('./backend/services/session-title-syncer');
 
 // ===== 启动 =====
 const server = http.createServer(app);
@@ -256,6 +257,9 @@ server.listen(PORT, () => {
   // agent_status 单一真相源: 每 60s 用与 /api/sessions/:id/status 相同的判定重算
   // 活跃态 session 的 agent_status 并写回; 终态(failed/stale)每小时扫一次.
   startAgentStatusSyncer();
+  // 自动生成 Session 标题: 订阅 agent shared watcher 的 raw_entry 事件; 功能默认关闭,
+  // 开启后仅在 agent 明确产出 type=ai-title 时更新, 不走前端/SSE 回灌/状态轮询.
+  startSessionTitleSyncer();
 });
 
 // 优雅退出

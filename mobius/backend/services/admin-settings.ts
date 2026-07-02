@@ -65,6 +65,11 @@ const DEFAULTS: any = Object.freeze({
   // 优先级 (新建 Session / 快捷新建 / 小莫): 用户/草稿选择 > 项目级 default_model > 全局默认 > 内置 'codex'.
   // null/空串 = 未设置, 系统沿用原行为 (内置 codex / 小莫 MiniMax 启发式).
   globalDefaultModel: null,
+  // 自动生成 Session 标题: 默认关闭. 开启后后端订阅 agent raw JSONL 事件,
+  // 仅在收到 type='ai-title' 这类明确标题事件时更新 sessions_v2.name.
+  autoGenerateSessionTitle: {
+    enabled: false,
+  },
   adminAssistantCallbacks: {
     enabledAdminUserIds: [],
   },
@@ -260,6 +265,32 @@ function normalizeGlobalDefaultModelForWrite(value: any): string | null {
   if (trimmed.length > 200) throw new Error('模型 key 最多 200 个字符')
   if (trimmed.includes('\0')) throw new Error('模型 key 包含非法字符')
   return trimmed
+}
+
+function parseBooleanSetting(value: any, fallback: boolean = false): boolean {
+  if (value === null || value === undefined || value === '') return fallback
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  const normalized = String(value).trim().toLowerCase()
+  if (['true', '1', 'yes', 'on', 'enabled', '启用', '开启', '是'].includes(normalized)) return true
+  if (['false', '0', 'no', 'off', 'disabled', '停用', '禁用', '关闭', '否'].includes(normalized)) return false
+  return fallback
+}
+
+function normalizeAutoGenerateSessionTitleForRead(value: any): any {
+  const obj = value && typeof value === 'object' ? value : { enabled: value }
+  return {
+    enabled: parseBooleanSetting(obj.enabled ?? obj.autoGenerateSessionTitle ?? obj.auto_generate_session_title, false),
+  }
+}
+
+function normalizeAutoGenerateSessionTitleForWrite(value: any): any {
+  const obj = value && typeof value === 'object' ? value : { enabled: value }
+  const raw = obj.enabled ?? obj.autoGenerateSessionTitle ?? obj.auto_generate_session_title
+  if (typeof raw !== 'boolean') {
+    throw new Error(`enabled 必须是 boolean, 收到: ${typeof raw}`)
+  }
+  return { enabled: raw }
 }
 
 function normalizeUserId(value: any): string {
@@ -523,6 +554,9 @@ function loadSettings(): any {
     if (parsed && Object.prototype.hasOwnProperty.call(parsed, 'globalDefaultModel')) {
       merged.globalDefaultModel = normalizeGlobalDefaultModelForRead((parsed as any).globalDefaultModel)
     }
+    if (parsed && Object.prototype.hasOwnProperty.call(parsed, 'autoGenerateSessionTitle')) {
+      merged.autoGenerateSessionTitle = normalizeAutoGenerateSessionTitleForRead((parsed as any).autoGenerateSessionTitle)
+    }
     if (parsed && typeof parsed === 'object' && parsed.adminAssistantCallbacks) {
       merged.adminAssistantCallbacks = normalizeAdminAssistantCallbacksForRead(parsed.adminAssistantCallbacks)
     }
@@ -619,6 +653,22 @@ function setGlobalDefaultModel(value: any): string | null {
   next.globalDefaultModel = normalized
   writeSettings(next)
   return next.globalDefaultModel
+}
+
+function getAutoGenerateSessionTitle(): any {
+  return normalizeAutoGenerateSessionTitleForRead(loadSettings().autoGenerateSessionTitle)
+}
+
+function isAutoGenerateSessionTitleEnabled(): boolean {
+  return getAutoGenerateSessionTitle().enabled === true
+}
+
+function setAutoGenerateSessionTitle(value: any): any {
+  const normalized = normalizeAutoGenerateSessionTitleForWrite(value)
+  const next = loadSettings()
+  next.autoGenerateSessionTitle = normalized
+  writeSettings(next)
+  return next.autoGenerateSessionTitle
 }
 
 function setModelPromptLimit(modelKey: any, value: any): any {
@@ -763,6 +813,9 @@ const adminSettings = {
   setModelCaptureStream,
   getGlobalDefaultModel,
   setGlobalDefaultModel,
+  getAutoGenerateSessionTitle,
+  isAutoGenerateSessionTitleEnabled,
+  setAutoGenerateSessionTitle,
   getAdminAssistantCallbacks,
   listAdminAssistantCallbackUserIds,
   getAdminAssistantCallbackForUser,
@@ -796,6 +849,9 @@ export {
   setModelCaptureStream,
   getGlobalDefaultModel,
   setGlobalDefaultModel,
+  getAutoGenerateSessionTitle,
+  isAutoGenerateSessionTitleEnabled,
+  setAutoGenerateSessionTitle,
   getAdminAssistantCallbacks,
   listAdminAssistantCallbackUserIds,
   getAdminAssistantCallbackForUser,

@@ -17,6 +17,7 @@
  *
  * 可选 (默认空实现, 子类按需 override):
  *   getHistory(sessionId) → { entries, sentinel }
+ *   getSessionTitle(sessionId, opts) → string|null
  *   getAgentRawThoughtStream(sessionId, listener, opts) → Unsubscribe
  *   isJobGoalAccomplished(sessionId) → boolean
  *   isFailed(sessionId) → boolean
@@ -25,6 +26,21 @@
 const fs = require('fs')
 const path = require('path')
 const EventEmitter = require('events')
+const { emitAgentRawEntry } = require('./events')
+
+function normalizeAgentSessionTitle(value) {
+  if (value == null) return null
+  const title = String(value).replace(/\0/g, '').replace(/\s+/g, ' ').trim()
+  return title || null
+}
+
+function extractAgentSessionTitleFromEntry(entry, sessionId) {
+  if (!entry || typeof entry !== 'object') return null
+  if (entry.type !== 'ai-title') return null
+  const entrySessionId = entry.sessionId || entry.session_id
+  if (entrySessionId && String(entrySessionId) !== String(sessionId)) return null
+  return normalizeAgentSessionTitle(entry.aiTitle || entry.ai_title || entry.title)
+}
 
 class AgentBackend {
   /**
@@ -78,6 +94,11 @@ class AgentBackend {
 
   _emitRaw(sessionId, raw) {
     this.emitter.emit(`raw:${sessionId}`, raw)
+    emitAgentRawEntry({
+      backend: this.name,
+      sessionId,
+      entry: raw,
+    })
   }
 
   /**
@@ -91,6 +112,19 @@ class AgentBackend {
    */
   getHistory(_sessionId, _opts = {}) {
     return { entries: [], sentinel: null }
+  }
+
+  // Best-effort utility: scan known history entries for an explicit agent title event.
+  // Automatic Mobius title updates do not call this on hot paths; they subscribe to
+  // raw_entry events from the shared watcher instead.
+  getSessionTitle(sessionId, opts = {}) {
+    const hist = this.getHistory(sessionId, opts) || {}
+    const entries = Array.isArray(hist.entries) ? hist.entries : []
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const title = extractAgentSessionTitleFromEntry(entries[i], sessionId)
+      if (title) return title
+    }
+    return null
   }
 
   // ── 持久化 ─────────────────────────────────────────────
