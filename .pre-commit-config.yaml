@@ -8,8 +8,8 @@ repos:
     hooks:
       # 大文件检查 — GitHub 100MB 硬限制, 提前到 50MB 告警
       - id: check-added-large-files
-        name: 大文件检查 (>50MB)
-        args: [--maxkb=51200]
+        name: 大文件检查 (>1MB)
+        args: [--maxkb=1000]
       # 私钥/凭据检查 — 阻止 commit AWS/SSH/PEM 等敏感 key
       - id: detect-private-key
         name: 私钥/凭据检查
