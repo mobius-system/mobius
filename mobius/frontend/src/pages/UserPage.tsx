@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Link, useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, MoreHorizontal, Settings, Star } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
@@ -93,6 +93,37 @@ export default function UserPage() {
   const [mutedProjectsLoading, setMutedProjectsLoading] = useState(false)
   const [mutedBusyId, setMutedBusyId] = useState<string | null>(null)
   const mutedIdSet = useMemo(() => new Set(mutedProjectIds || []), [mutedProjectIds])
+
+  const openNavTarget = (to: string, event: any) => {
+    if (!to) return
+    if (event?.metaKey || event?.ctrlKey || event?.shiftKey || event?.button === 1) {
+      window.open(to, '_blank', 'noopener,noreferrer')
+      return
+    }
+    navigate(to)
+  }
+
+  const LinklessNav = ({ to, className = '', children, onClick, onAuxClick, ...props }: any) => (
+    <button
+      type="button"
+      {...props}
+      className={`appearance-none border-0 bg-transparent text-left cursor-pointer ${className}`}
+      onClick={(event) => {
+        onClick?.(event)
+        if (event.defaultPrevented) return
+        openNavTarget(to, event)
+      }}
+      onAuxClick={(event) => {
+        onAuxClick?.(event)
+        if (event.defaultPrevented) return
+        if (event.button !== 1) return
+        event.preventDefault()
+        openNavTarget(to, event)
+      }}
+    >
+      {children}
+    </button>
+  )
 
   // 进入页面清空更深层选择，避免残留
   useEffect(() => {
@@ -408,10 +439,10 @@ export default function UserPage() {
                 <div className="mt-3 space-y-2">
                   {mutedProjects.map((p: any) => (
                     <div key={p.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-primary)' }}>
-                      <Link to={`/u/${p.created_by}/p/${p.id}`} className="min-w-0 flex-1">
+                      <LinklessNav to={`/u/${p.created_by}/p/${p.id}`} className="min-w-0 flex-1">
                         <div className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
                         <div className="truncate text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{p.kind === 'extension' ? '拓展项目' : '普通项目'}</div>
-                      </Link>
+                      </LinklessNav>
                       <button
                         type="button"
                         onClick={(e) => unmuteProject(e, p)}
@@ -440,14 +471,14 @@ export default function UserPage() {
                     <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>{plist.length}</span>
                   </div>
                 ) : (
-                  <Link to={`/u/${uname}`} data-tour="user-sidebar-group"
+                  <LinklessNav to={`/u/${uname}`} data-tour="user-sidebar-group"
                     className="px-3 py-1.5 flex items-center gap-2 rounded-md hover:bg-[var(--bg-hover)] transition-colors">
                     <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500/30 to-cyan-500/20 flex items-center justify-center text-blue-300 text-[12px] font-semibold border border-blue-500/20">
                       {uname[0]?.toUpperCase()}
                     </div>
                     <span className="text-[13px] font-semibold tracking-wide" style={{ color: 'var(--text-secondary)' }}>{uname}</span>
                     <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>{plist.length}</span>
-                  </Link>
+                  </LinklessNav>
                 )}
                 {plist.map((p: any) => {
                   const isMuted = mutedIdSet.has(p.id)
@@ -462,7 +493,7 @@ export default function UserPage() {
                       style={{ color: p.starred ? '#fbbf24' : 'var(--text-muted)' }}>
                       <Star className="w-3.5 h-3.5" fill={p.starred ? 'currentColor' : 'none'} strokeWidth={1.8} />
                     </button>
-                    <Link to={`/u/${p.created_by}/p/${p.id}`}
+                    <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
                       className="flex items-center gap-1.5 min-w-0 flex-1">
                       <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
                       <span className="text-[12px] font-medium truncate flex-1" style={{ color: 'var(--text-primary)' }}>{p.name}</span>
@@ -470,7 +501,7 @@ export default function UserPage() {
                         <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
                       )}
                       <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>{p.issue_count ?? 0}</span>
-                    </Link>
+                    </LinklessNav>
                   </div>
                   )
                 })}
@@ -536,12 +567,12 @@ export default function UserPage() {
                       <div className="px-4 py-3 border-b" style={{ borderColor: p.is_self_develop ? 'rgba(251,191,36,0.25)' : 'var(--border-color)' }}>
                         <div className="flex items-center gap-2 min-w-0">
                           <svg className={`w-4 h-4 flex-shrink-0 ${p.is_self_develop ? 'text-yellow-400' : 'text-blue-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                          <Link to={`/u/${p.created_by}/p/${p.id}`}
+                          <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
                             className={`text-[14px] font-semibold truncate flex-1 min-w-0 transition-colors ${p.is_self_develop ? 'hover:text-yellow-400' : 'hover:text-blue-400'}`}
                             style={{ color: 'var(--text-primary)' }}
                             title={p.name}>
                             {p.name}
-                          </Link>
+                          </LinklessNav>
                           {isMuted && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
                           )}
@@ -693,15 +724,15 @@ export default function UserPage() {
                       <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>{showResearch ? 'Research' : 'Issues'}</span>
-                          <Link to={`/u/${p.created_by}/p/${p.id}`}
-                            className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">查看全部 →</Link>
+                          <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
+                            className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">查看全部 →</LinklessNav>
                         </div>
                         {overviewItems.length === 0 ? (
                           <div className="text-[11px] py-2" style={{ color: 'var(--text-muted)' }}>{showResearch ? '暂无 Research' : '暂无 Issue'}</div>
                         ) : (
                           <div className="space-y-1">
                             {overviewItems.slice(0, 5).map((item: any) => (
-                              <Link key={item.id} to={`/u/${p.created_by}/p/${p.id}/${overviewKind === 'research' ? 'r' : 'i'}/${item.id}`}
+                              <LinklessNav key={item.id} to={`/u/${p.created_by}/p/${p.id}/${overviewKind === 'research' ? 'r' : 'i'}/${item.id}`}
                                 className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors group/iss">
                                 <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.status === 'completed' ? 'bg-green-400' : (overviewKind === 'research' ? 'bg-emerald-400/80' : 'bg-blue-400/70')}`} />
                                 <span className={`text-[12px] truncate flex-1 ${item.status === 'completed' ? 'line-through' : ''}`}
@@ -711,7 +742,7 @@ export default function UserPage() {
                                 {item.session_count > 0 && (
                                   <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>{item.session_count}</span>
                                 )}
-                              </Link>
+                              </LinklessNav>
                             ))}
                             {overviewItems.length > 5 && (
                               <div className="text-[11px] py-1 px-2" style={{ color: 'var(--text-muted)' }}>
@@ -739,11 +770,11 @@ export default function UserPage() {
                       style={{ background: 'var(--bg-primary)', borderColor: 'rgba(248,113,113,0.45)' }}>
                       <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(248,113,113,0.30)' }}>
                         <div className="flex items-center gap-2 min-w-0">
-                          <Link to={`/u/${p.created_by}/p/${p.id}`}
+                          <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
                             className="text-[14px] font-semibold truncate flex-1 min-w-0 transition-colors hover:text-blue-400"
                             style={{ color: 'var(--text-primary)' }} title={p.name}>
                             {p.name}
-                          </Link>
+                          </LinklessNav>
                           <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
                           <button onClick={(e) => unmuteProject(e, p)} disabled={mutedBusyId === p.id}
                             title="恢复显示"

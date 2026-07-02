@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useStore, api } from '../store'
 import { ChangePasswordModal, AimuxGuideModal } from './modals'
 import { GlobalCreateMenu, GlobalCreateRoot, type CreateKind } from './global-create'
@@ -60,6 +60,40 @@ export function timeAgoPrecise(date: string) {
   const mmdd = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   if (d.getFullYear() === now.getFullYear()) return `${mmdd} ${hhmm}`
   return `${d.getFullYear()}-${mmdd} ${hhmm}`
+}
+
+function LinklessRouteButton({ to, className = '', children, onClick, onAuxClick, ...props }: any) {
+  const navigate = useNavigate()
+  const openTarget = (event: any) => {
+    if (!to) return
+    if (event?.metaKey || event?.ctrlKey || event?.shiftKey || event?.button === 1) {
+      window.open(to, '_blank', 'noopener,noreferrer')
+      return
+    }
+    navigate(to)
+  }
+
+  return (
+    <button
+      type="button"
+      {...props}
+      className={`appearance-none border-0 bg-transparent text-left cursor-pointer ${className}`}
+      onClick={(event) => {
+        onClick?.(event)
+        if (event.defaultPrevented) return
+        openTarget(event)
+      }}
+      onAuxClick={(event) => {
+        onAuxClick?.(event)
+        if (event.defaultPrevented) return
+        if (event.button !== 1) return
+        event.preventDefault()
+        openTarget(event)
+      }}
+    >
+      {children}
+    </button>
+  )
 }
 
 export function groupTasksByDate(tasks: any[]) {
@@ -263,7 +297,7 @@ function VersionIndicator() {
 // =====================================================================
 // 面包屑下拉切换器 — 顶部导航栏的项目 / Issue / Research 快速切换
 // 复用主题/用户菜单同款面板样式 (var(--menu-bg) + 点击外部关闭).
-// 列表项用 <Link>, 支持中键新窗打开; 点击后由调用方关闭菜单.
+// 列表项不输出 href, 避免浏览器在悬浮时显示目标 URL; 中键/修饰键仍可新窗打开.
 // =====================================================================
 type SwitcherItem = {
   id: string
@@ -317,7 +351,7 @@ function NavSwitcherPanel({
           <div className="px-2 py-3 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>{emptyText}</div>
         ) : (
           filtered.map(item => (
-            <Link
+            <LinklessRouteButton
               key={item.id}
               to={item.to}
               onClick={onPick}
@@ -345,7 +379,7 @@ function NavSwitcherPanel({
                 )}
               </span>
               {item.active && <Check className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />}
-            </Link>
+            </LinklessRouteButton>
           ))
         )}
       </div>
@@ -568,29 +602,29 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         )}
         {/* Logo + 面包屑 */}
         <div className="mobius-topnav-crumb flex items-center gap-3 min-w-0 flex-1">
-          <Link to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0">
+          <LinklessRouteButton to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0">
             {!branding.hideLogo && <MobiusLogo size={28} />}
             {branding.systemNameEn && (
               <span className="mobius-topnav-brandtext font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
                 {branding.systemNameEn}
               </span>
             )}
-          </Link>
+          </LinklessRouteButton>
           <span className="mobius-topnav-sep-pre text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
-          <Link to={`/u/${userParam}`} className="mobius-topnav-userlink text-[13px] hover:text-blue-400 truncate flex-shrink-0"
+          <LinklessRouteButton to={`/u/${userParam}`} className="mobius-topnav-userlink text-[13px] hover:text-blue-400 truncate flex-shrink-0"
             style={{ color: 'var(--text-secondary)', maxWidth: 140 }}>
             {userParam}
-          </Link>
+          </LinklessRouteButton>
           {projectParam && (
             <>
               <span className="mobius-topnav-sep-post text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
               <div className="mobius-topnav-projectcrumb relative flex min-w-0 flex-shrink-0 items-center">
-                <Link to={`/u/${userParam}/p/${projectParam}`}
+                <LinklessRouteButton to={`/u/${userParam}/p/${projectParam}`}
                   className="text-[13px] hover:text-blue-400 truncate"
                   style={{ color: 'var(--text-secondary)', maxWidth: 180 }}
                   title={projectName}>
                   {projectName}
-                </Link>
+                </LinklessRouteButton>
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); toggleSwitcher('project') }}

@@ -701,8 +701,47 @@ function loadMessagesRepo() {
     try {
       return require('../../../backend/repositories/messages.ts').Messages;
     } catch {
+      const direct = loadMessagesRepoFromSqlite();
+      if (direct) return direct;
       throw firstErr;
     }
+  }
+}
+
+function loadMessagesRepoFromSqlite() {
+  try {
+    const Database = require('better-sqlite3');
+    const { DB_PATH } = require('../../../backend/config');
+    const candidates = [
+      DB_PATH,
+      path.join(REPO_ROOT, '.deploy_data', 'data', 'mobuis.db'),
+      path.join(REPO_ROOT, '.deploy_data', 'protected_data', 'mobuis.db'),
+      path.join(REPO_ROOT, '.deploy_data', 'data', 'mobius.db'),
+      path.join(REPO_ROOT, '.deploy_data', 'protected_data', 'mobius.db'),
+    ].filter(Boolean);
+    const dbPath = candidates.find((candidate) => fsSync.existsSync(candidate));
+    if (!dbPath) return null;
+    return {
+      recentForTask(taskId, limit = 100) {
+        const parsedLimit = clampInt(limit, 100, 1, 500);
+        const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+        try {
+          const total = db.prepare('SELECT COUNT(*) as c FROM messages_v2 WHERE task_id = ?').get(taskId);
+          const rows = db.prepare(`
+            SELECT id, role, content, tool_summary, raw_event, turn_summary, created_at
+            FROM messages_v2
+            WHERE task_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+          `).all(taskId, parsedLimit);
+          return { messages: rows.reverse(), total: total?.c || 0 };
+        } finally {
+          db.close();
+        }
+      },
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -711,7 +750,7 @@ function agentSessionUrl(user, created) {
 }
 
 function extractTaggedAnswer(text) {
-  const s = String(text || '');
+  const s = decodeHtml(String(text || ''));
   const m = s.match(/<further-answering>([\s\S]*?)<\/further-answering>/i)
     || s.match(/<further-answering>([\s\S]*?)<further-answering>/i)
     || s.match(/<world-cup-answer>([\s\S]*?)<\/world-cup-answer>/i);
@@ -851,6 +890,8 @@ function publicAgentState(state) {
     model: state.model,
     updated_at: state.updated_at,
     created_at: state.created_at,
+    latest_answer: state.latest_answer || '',
+    latest_answer_at: state.latest_answer_at || '',
   };
 }
 
@@ -946,12 +987,28 @@ async function readWorldCupAgentStatus({ ext_data_dir }) {
   let latest_at = '';
   try {
     const Messages = loadMessagesRepo();
-    const recent = Messages.recentForTask(state.session_id, 30);
+    const recent = Messages.recentForTask(state.session_id, 100);
     const messages = Array.isArray(recent?.messages) ? recent.messages : [];
     latest_at = messages[messages.length - 1]?.created_at || '';
     for (const msg of messages.slice().reverse()) {
-      answer = extractTaggedAnswer(msg.content || msg.tool_summary || '');
+      answer = extractTaggedAnswer([
+        msg.content,
+        msg.tool_summary,
+        msg.raw_event,
+        msg.turn_summary,
+        msg.text,
+        msg.output_text,
+        msg.summary,
+      ].filter(Boolean).join('\n'));
       if (answer) break;
+    }
+    if (answer) {
+      await saveAgentState(ext_data_dir, {
+        ...state,
+        latest_answer: answer,
+        latest_answer_at: latest_at || nowIso(),
+        updated_at: latest_at || nowIso(),
+      });
     }
   } catch (e) {
     return {
@@ -966,10 +1023,15 @@ async function readWorldCupAgentStatus({ ext_data_dir }) {
   return {
     ok: true,
     has_session: true,
-    status: answer ? 'answered' : 'running',
-    answer,
+    status: answer || state.latest_answer ? 'answered' : 'running',
+    answer: answer || state.latest_answer || '',
     latest_at,
-    agent_state: publicAgentState(state),
+    agent_state: publicAgentState({
+      ...state,
+      latest_answer: answer || state.latest_answer || '',
+      latest_answer_at: answer ? (latest_at || nowIso()) : (state.latest_answer_at || ''),
+      updated_at: latest_at || state.updated_at,
+    }),
   };
 }
 
@@ -1168,8 +1230,13 @@ module.exports = async function worldCupHandler({
         }),
         readScorers({ ext_data_dir, logger, force: true }),
       ]);
+      const newsFile = path.join(ext_data_dir, 'news.json');
+      const news = await readJson(newsFile, []);
+      const limit = clampInt(ext_main_payload.limit, 60, 1, 200);
       return {
         ok: true,
+        news: Array.isArray(news) ? news.slice(0, limit) : [],
+        total_cached: Array.isArray(news) ? news.length : 0,
         state,
         fixtures: fixtureResult.fixtures,
         fixtures_state: fixtureResult.state,
@@ -1271,6 +1338,15 @@ module.exports = async function worldCupHandler({
       }
       const limit = clampInt(ext_main_payload.limit, 60, 1, 200);
       const agentState = await loadAgentState(ext_data_dir);
+      let publicAgent = publicAgentState(agentState);
+      if (agentState?.session_id) {
+        try {
+          const status = await readWorldCupAgentStatus({ ext_data_dir });
+          publicAgent = status.agent_state || publicAgent;
+        } catch (e) {
+          logger?.warn(`agent status scan during read failed: ${e.message || e}`);
+        }
+      }
       return {
         ok: true,
         news: news.slice(0, limit),
@@ -1280,7 +1356,7 @@ module.exports = async function worldCupHandler({
         fixtures_state: fixtureResult.state,
         scorers: scorerResult.scorers,
         scorers_state: scorerResult.state,
-        agent_state: publicAgentState(agentState),
+        agent_state: publicAgent,
         server_time: nowIso(),
       };
     }

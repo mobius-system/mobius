@@ -46,6 +46,6 @@
   ],
   "project": {
     "sync": true,
-    "default_hidden": true
+    "default_hidden": false
   }
 }

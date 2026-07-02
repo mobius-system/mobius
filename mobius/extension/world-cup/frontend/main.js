@@ -21,7 +21,7 @@ function safeUrl(u) {
 function safeMediaUrl(u) {
   const s = String(u ?? '').trim();
   if (/^https?:\/\//i.test(s)) return s;
-  if (/^\.\/assets\/[\w.-]+\.(?:jpe?g|png|webp|svg)$/i.test(s)) return s;
+  if (/^\.\/assets\/(?:[\w.-]+\/)*[\w.-]+\.(?:jpe?g|png|webp|svg)$/i.test(s)) return s;
   return '';
 }
 function truncate(s, n) {
@@ -87,6 +87,39 @@ function formatFixtureDate(isoOrYmd) {
   if (!Number.isFinite(t)) return '';
   return new Date(t).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short' });
 }
+
+function openSafeUrl(url) {
+  const safe = safeUrl(url);
+  if (!safe) return;
+  window.open(safe, '_blank', 'noopener,noreferrer');
+}
+
+function scrollToTarget(targetId) {
+  const target = document.getElementById(String(targetId || ''));
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function bindLinklessActions(root = document) {
+  root.querySelectorAll('[data-open-url]').forEach((el) => {
+    if (el.dataset.openBound === '1') return;
+    el.dataset.openBound = '1';
+    el.addEventListener('click', () => openSafeUrl(el.dataset.openUrl));
+    el.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      openSafeUrl(el.dataset.openUrl);
+    });
+  });
+
+  root.querySelectorAll('[data-scroll-target]').forEach((el) => {
+    if (el.dataset.scrollBound === '1') return;
+    el.dataset.scrollBound = '1';
+    el.addEventListener('click', () => scrollToTarget(el.dataset.scrollTarget));
+  });
+}
+
+bindLinklessActions();
 
 /* ---------- 本地生成头像（替代不稳定的远程图） ---------- */
 // 取国家代码：'阿根廷 · ARG' -> 'ARG'
@@ -303,7 +336,50 @@ function normalizeNameKey(name) {
     .trim();
 }
 
-const VERIFIED_PLAYER_PHOTOS = Object.freeze({});
+const VERIFIED_PLAYER_PHOTOS = Object.freeze({
+  'alexander isak': media('./assets/player-photos/selected/alexander-isak-sweden.jpg', LOCAL_VISUALS.playerWalkout),
+  'alphonso davies': media('./assets/player-photos/selected/alphonso-davies-canada.jpg', LOCAL_VISUALS.playerWalkout),
+  'brahim diaz': media('./assets/player-photos/selected/brahim-diaz-morocco.jpg', LOCAL_VISUALS.playerWalkout),
+  'breel embolo': media('./assets/player-photos/selected/breel-embolo-switzerland.jpg', LOCAL_VISUALS.playerWalkout),
+  'brian brobbey': media('./assets/player-photos/selected/brian-brobbey-netherlands.jpg', LOCAL_VISUALS.playerWalkout),
+  'bruno guimaraes': media('./assets/player-photos/selected/bruno-guimaraes-brazil.jpg', LOCAL_VISUALS.playerWalkout),
+  'chris wood': media('./assets/player-photos/selected/chris-wood-new-zealand.jpg', LOCAL_VISUALS.playerWalkout),
+  'christian pulisic': media('./assets/player-photos/selected/christian-pulisic-united-states.jpg', LOCAL_VISUALS.playerWalkout),
+  'cody gakpo': media('./assets/player-photos/selected/cody-gakpo-netherlands.jpg', LOCAL_VISUALS.playerWalkout),
+  'crysencio summerville': media('./assets/player-photos/selected/crysencio-summerville-netherlands.webp', LOCAL_VISUALS.playerWalkout),
+  'daichi kamada': media('./assets/player-photos/selected/daichi-kamada-japan.jpg', LOCAL_VISUALS.playerWalkout),
+  'deniz undav': media('./assets/player-photos/selected/deniz-undav-germany.jpg', LOCAL_VISUALS.playerWalkout),
+  'denzel dumfries': media('./assets/player-photos/selected/denzel-dumfries-netherlands.png', LOCAL_VISUALS.playerWalkout),
+  'elijah just': media('./assets/player-photos/selected/elijah-just-new-zealand.jpg', LOCAL_VISUALS.playerWalkout),
+  'erling haaland': media('./assets/player-photos/selected/erling-haaland-norway.jpg', LOCAL_VISUALS.playerWalkout),
+  'florian wirtz': media('./assets/player-photos/selected/florian-wirtz-germany.jpg', LOCAL_VISUALS.playerWalkout),
+  'hannibal mejbri': media('./assets/player-photos/selected/hannibal-mejbri-tunisia.jpg', LOCAL_VISUALS.playerWalkout),
+  'harry kane': media('./assets/player-photos/selected/harry-kane-england.jpg', LOCAL_VISUALS.playerWalkout),
+  'ismael saibari': media('./assets/player-photos/selected/ismael-saibari-morocco.webp', LOCAL_VISUALS.playerWalkout),
+  'ismaila sarr': media('./assets/player-photos/selected/ismaila-sarr-senegal.jpg', LOCAL_VISUALS.playerWalkout),
+  'johan manzambi': media('./assets/player-photos/selected/johan-manzambi-switzerland.jpg', LOCAL_VISUALS.playerWalkout),
+  'jonathan david': media('./assets/player-photos/selected/jonathan-david-canada.jpg', LOCAL_VISUALS.playerWalkout),
+  'joshua kimmich': media('./assets/player-photos/selected/joshua-kimmich-germany.jpg', LOCAL_VISUALS.playerWalkout),
+  'jude bellingham': media('./assets/player-photos/selected/jude-bellingham-england.jpg', LOCAL_VISUALS.playerWalkout),
+  'julian quinones': media('./assets/player-photos/selected/julian-quinones-mexico.jpg', LOCAL_VISUALS.playerWalkout),
+  'julio enciso': media('./assets/player-photos/selected/julio-enciso-paraguay.jpg', LOCAL_VISUALS.playerWalkout),
+  'kai havertz': media('./assets/player-photos/selected/kai-havertz-germany.jpg', LOCAL_VISUALS.playerWalkout),
+  'kylian mbappe': media('./assets/player-photos/selected/kylian-mbappe-france.jpg', LOCAL_VISUALS.playerWalkout),
+  'lamine yamal': media('./assets/player-photos/selected/lamine-yamal-spain.jpg', LOCAL_VISUALS.playerWalkout),
+  'lionel messi': media('./assets/player-photos/selected/lionel-messi-argentina.jpg', LOCAL_VISUALS.playerWalkout),
+  'martin odegaard': media('./assets/player-photos/selected/martin-odegaard-norway.jpg', LOCAL_VISUALS.playerWalkout),
+  'matheus cunha': media('./assets/player-photos/selected/matheus-cunha-brazil.jpg', LOCAL_VISUALS.playerWalkout),
+  'michael olise': media('./assets/player-photos/selected/michael-olise-france.jpg', LOCAL_VISUALS.playerWalkout),
+  'ousmane dembele': media('./assets/player-photos/selected/ousmane-dembele-france.jpg', LOCAL_VISUALS.playerWalkout),
+  'patrick berg': media('./assets/player-photos/selected/patrick-berg-norway.jpg', LOCAL_VISUALS.playerWalkout),
+  'roberto alvarado': media('./assets/player-photos/selected/roberto-alvarado-mexico.jpg', LOCAL_VISUALS.playerWalkout),
+  'ryan gravenberch': media('./assets/player-photos/selected/ryan-gravenberch-netherlands.jpg', LOCAL_VISUALS.playerWalkout),
+  'santiago gimenez': media('./assets/player-photos/selected/santiago-gimenez-mexico.png', LOCAL_VISUALS.playerWalkout),
+  'viktor gyokeres': media('./assets/player-photos/selected/viktor-gyokeres-sweden.jpg', LOCAL_VISUALS.playerWalkout),
+  'vinicius junior': media('./assets/player-photos/selected/vinicius-junior-brazil.jpg', LOCAL_VISUALS.playerWalkout),
+  'yasin ayari': media('./assets/player-photos/selected/yasin-ayari-sweden.jpg', LOCAL_VISUALS.playerWalkout),
+  'yoane wissa': media('./assets/player-photos/selected/yoane-wissa-congo-dr.jpg', LOCAL_VISUALS.playerWalkout),
+});
 
 const FOCUS_PLAYERS = [
   { rank: '观察', name: 'Kylian Mbappé', country: '法国 · FRA', goals: '待赛', assists: '—', appearances: '—', role: '法国核心 · 速度与终结' },
@@ -333,6 +409,7 @@ function bindImageFallbacks(root = document) {
       }
       const box = img.closest('.scorer-photo, .player-photo, .team-badge');
       if (box) box.classList.add('photo-failed');
+      img.hidden = true;
     });
   });
 }
@@ -951,7 +1028,7 @@ function renderPlayers(list) {
           <div><span class="player-stat-label">助攻</span><span class="player-stat-value">${escapeHtml(assistsLabel)}</span></div>
           <div><span class="player-stat-label">出场</span><span class="player-stat-value">${escapeHtml(appsLabel)}</span></div>
         </div>
-        <p class="player-license">${photo === LOCAL_VISUALS.playerWalkout ? '本地球员图片兜底 · 不破图' : '球员图片 · 失败自动回退本地图'}</p>
+        <p class="player-license">${photo === LOCAL_VISUALS.playerWalkout ? '本地球员图片兜底 · 不破图' : '本地核验球员图 · 失败自动回退'}</p>
       </div>
     </article>`;
   }).join('');
@@ -1004,6 +1081,10 @@ const NEWS_SOURCE_LABELS = [
 ];
 
 const NEWS_KEYWORD_TITLES = [
+  { re: /france|sweden|mbapp|barcola/i, title: '法国淘汰瑞典晋级，姆巴佩继续领跑焦点' },
+  { re: /mexico|ecuador/i, title: '墨西哥击败厄瓜多尔，淘汰赛潜在强强对话升温' },
+  { re: /upset|shock|ireland|italy|cape verde/i, title: '世界杯冷门故事再被热议，淘汰赛悬念继续放大' },
+  { re: /fifa|var|disallow|germany goal/i, title: '国际足联解释关键判罚，VAR 争议成为淘汰赛焦点' },
   { re: /brazil|japan|martinelli/i, title: '巴西惊险过关，日本队把悬念拖到最后阶段' },
   { re: /morocco|netherlands|penalt/i, title: '摩洛哥点球大战淘汰荷兰，淘汰赛再出冷门' },
   { re: /england|kane|bellingham|tuchel/i, title: '英格兰进入淘汰赛观察期，凯恩与贝林厄姆仍是关键线索' },
@@ -1035,6 +1116,10 @@ function synthesizeChineseSummary(item) {
   const summary = String(item?.summary || '').trim();
   if (summary && hasChinese(summary)) return summary;
   const title = String(item?.title || '').trim();
+  if (/france|sweden|mbapp|barcola/i.test(title)) return '法国队相关战报已转为中文导览，重点关注晋级结果、姆巴佩表现和下一轮对阵。';
+  if (/mexico|ecuador/i.test(title)) return '墨西哥相关报道集中在淘汰赛晋级结果、潜在对手和主场热度。';
+  if (/fifa|var|disallow/i.test(title)) return '这条报道关注淘汰赛关键判罚和规则解释，页面保留原文链接便于核对细节。';
+  if (/upset|shock|cape verde/i.test(title)) return '淘汰赛冷门和爆冷案例成为本轮新闻主线，适合快速了解晋级形势变化。';
   if (/penalt|shoot/i.test(title)) return '这条来自海外公开订阅源，页面已转为中文导览；请点开原文查看完整细节。';
   if (/brazil|japan|martinelli/i.test(title)) return '巴西与日本相关淘汰赛新闻热度较高，重点关注补时进球、晋级结果和下一轮对阵。';
   if (/england|kane|bellingham|tuchel/i.test(title)) return '英格兰相关报道集中在淘汰赛阵容、核心球员状态与临场选择。';
@@ -1078,17 +1163,18 @@ function renderNews(items) {
     </div>
   `;
   hero.innerHTML = firstUrl
-    ? `<a class="news-hero-link" href="${escapeHtml(firstUrl)}" target="_blank" rel="noopener noreferrer nofollow">${heroInner}</a>`
+    ? `<div class="news-hero-link linkless-action" role="button" tabindex="0" data-open-url="${escapeHtml(firstUrl)}" aria-label="打开新闻原文">${heroInner}</div>`
     : heroInner;
+  bindLinklessActions(hero);
 
   list.innerHTML = rest.slice(0, 6).map((n, index) => {
     const url = safeUrl(n.url);
     const sampleBadge = n.sample ? '<span class="news-sample">示例</span>' : '';
     const thumb = safeMediaUrl(n.image) || NEWS_VISUALS[(index + 1) % NEWS_VISUALS.length];
     const a = url
-      ? `<a class="news-item" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer nofollow">`
+      ? `<div class="news-item linkless-action" role="button" tabindex="0" data-open-url="${escapeHtml(url)}" aria-label="打开新闻原文">`
       : `<div class="news-item">`;
-    const close = url ? '</a>' : '</div>';
+    const close = '</div>';
     const meta = n.sample ? '示例预览' : timeAgo(n.ts);
     return `${a}
       <span class="news-thumb" style="background-image:${escapeHtml(cssImage(thumb))}" aria-hidden="true"></span>
@@ -1099,6 +1185,7 @@ function renderNews(items) {
       </span>
     ${close}`;
   }).join('');
+  bindLinklessActions(list);
 }
 // 初始空占位
 renderNews([]);
@@ -1124,7 +1211,7 @@ function renderAssistantChat() {
   const wrap = document.getElementById('assistant-chat');
   if (!wrap) return;
   wrap.innerHTML = assistantMessages.map((msg) => {
-    const link = msg.session_url ? `<a href="${escapeHtml(msg.session_url)}" target="_blank" rel="noopener noreferrer">打开 Agent Session</a>` : '';
+    const link = msg.session_url ? `<button type="button" class="inline-link" data-open-url="${escapeHtml(msg.session_url)}">打开 Agent Session</button>` : '';
     const statusClass = msg.status ? ` ${escapeHtml(msg.status)}` : '';
     return `<article class="assistant-msg ${escapeHtml(msg.role)}${statusClass}">
       <div class="assistant-msg-role">${msg.role === 'user' ? '你' : '问AI'}</div>
@@ -1132,6 +1219,7 @@ function renderAssistantChat() {
       ${link ? `<div class="assistant-msg-link">${link}</div>` : ''}
     </article>`;
   }).join('');
+  bindLinklessActions(wrap);
   wrap.scrollTop = wrap.scrollHeight;
 }
 
@@ -1143,7 +1231,33 @@ function updateAssistantSource(state) {
     return;
   }
   const stamp = state.updated_at ? timeAgo(state.updated_at) : '最近';
-  el.innerHTML = `问AI Session：<a href="${escapeHtml(state.session_url || '#')}" target="_blank" rel="noopener noreferrer">${escapeHtml(state.session_id)}</a> · ${escapeHtml(stamp)}更新`;
+  const sessionUrl = safeUrl(state.session_url || '');
+  const sessionLabel = sessionUrl
+    ? `<button type="button" class="inline-link" data-open-url="${escapeHtml(sessionUrl)}">${escapeHtml(state.session_id)}</button>`
+    : escapeHtml(state.session_id);
+  el.innerHTML = `问AI Session：${sessionLabel} · ${escapeHtml(stamp)}更新`;
+  bindLinklessActions(el);
+}
+
+function showAgentAnswerFromState(state) {
+  const answer = cleanTaggedAnswer(state?.latest_answer || '');
+  if (!answer) return false;
+  const existing = assistantMessages.find((msg) => msg.role === 'assistant' && cleanTaggedAnswer(msg.text) === answer);
+  if (existing) return false;
+  const pending = assistantMessages.slice().reverse().find((msg) => msg.role === 'assistant' && msg.status === 'pending');
+  if (pending) {
+    pending.text = answer;
+    pending.status = '';
+    pending.session_url = state.session_url || pending.session_url || '';
+  } else {
+    assistantMessages.push({
+      role: 'assistant',
+      text: answer,
+      session_url: state.session_url || '',
+    });
+  }
+  renderAssistantChat();
+  return true;
 }
 
 async function askWorldCupAgent(message, newSession) {
@@ -1171,6 +1285,7 @@ function pollAgentAnswer(targetMessage, attempt = 0) {
         renderAssistantChat();
         return;
       }
+      if (showAgentAnswerFromState(status?.agent_state)) return;
       if (attempt < 45) {
         targetMessage.text = attempt < 2
           ? '问AI 已启动，正在读取世界杯数据和插件代码。'
@@ -1277,6 +1392,7 @@ async function loadFromBackend() {
     if (r.agent_state) {
       agentState = r.agent_state;
       updateAssistantSource(agentState);
+      showAgentAnswerFromState(agentState);
     }
     if (r.state) applySyncState(r.state);
   } catch (e) {
@@ -1296,5 +1412,24 @@ async function loadFromBackend() {
     });
   }
 }
-loadFromBackend();
+
+let didInitialForceSync = false;
+
+async function syncLatestFromBackend() {
+  if (didInitialForceSync) return;
+  didInitialForceSync = true;
+  try {
+    const { extCall } = await import('/extension/_sdk/ext.js');
+    const r = await extCall({ action: 'sync_now', limit: 40, client_date: localDateYmd() });
+    if (!r || !r.ok) return;
+    if (r.fixtures) applyFixtures(r.fixtures, r.fixtures_state);
+    if (r.scorers) applyScorers(r.scorers, r.scorers_state);
+    if (r.news && r.news.length) renderNews(r.news);
+    if (r.state) applySyncState(r.state);
+  } catch (e) {
+    console.warn('[world-cup] initial sync_now failed, keeping cached data:', e.message || e);
+  }
+}
+
+loadFromBackend().then(syncLatestFromBackend);
 setInterval(loadFromBackend, 10 * 60 * 1000);

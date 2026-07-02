@@ -1,4 +1,4 @@
-const path = require("path"), fs = require("fs"), os = require("os"), crypto = require("crypto"), { execFileSync } = require("child_process"), Database = require("better-sqlite3"), DB_FILE = "self-cognition.db", FIRST_SCAN_KEY = "first_scan_v4", REPO_ROOT = path.resolve(__dirname, "../../../.."), EXT_PATH = "mobius/extension/self-cognition", PROJECTS = {
+const path = require("path"), fs = require("fs"), os = require("os"), crypto = require("crypto"), { execFileSync } = require("child_process"), Database = require("better-sqlite3"), DB_FILE = "self-cognition.db", FIRST_SCAN_KEY = "first_scan_v4", PAPER_PRIORITY_FORMULA_KEY = "paper_priority_formula_v2_smooth", REPO_ROOT = path.resolve(__dirname, "../../../.."), EXT_PATH = "mobius/extension/self-cognition", PROJECTS = {
   "imac-self-develop": {
     id: "imac-self-develop",
     repo: REPO_ROOT,
@@ -166,7 +166,7 @@ function init(e) {
     reason: "预设正式竞品",
     discovery_logic: "seed",
     created_by: "system"
-  })), seedL3Placeholders(e);
+  })), seedL3Placeholders(e), ensurePaperPriorityFormula(e);
 }
 
 function evolutionRow(e) {
@@ -582,14 +582,44 @@ function scorePaper(e, t, r = {}) {
     c[t] = o;
   }
   const n = Object.entries(c).sort((e, t) => t[1] - e[1])[0] || [ "other", 0 ], d = clusterDefs().filter(e => c[e[1]] > 0).map(e => e[0]), i = d.length ? d : o;
-  const u = Math.min(100, 20 * Math.max(1, i.length)), l = i.length ? i.reduce((e, t) => e + (r[t] || 1), 0) / i.length : 1, p = e.published_at ? Math.max(.05, Math.pow(.5, Math.max(0, (Date.now() - Date.parse(e.published_at)) / 864e5) / 7)) : 1, m = Number(e.citations || 0), h = m > 0 ? Math.log(1 + m) / Math.log(101) : 1;
+  const signals = [ ...new Set(i.map(e => txt(e, 80)).filter(Boolean)) ], signalCount = signals.length;
+  const avgWeight = signalCount ? signals.reduce((e, t) => e + Math.max(0.05, Number(r[t] || 1)), 0) / signalCount : 1;
+  const ageDays = e.published_at ? Math.max(0, (Date.now() - Date.parse(e.published_at)) / 864e5) : null;
+  const coverageScore = signalCount ? Math.min(30, 10 + 3.5 * signalCount) : 6;
+  const weightScore = Math.min(20, 8 + 12 * Math.log1p(avgWeight) / Math.log(9));
+  const recencyScore = ageDays == null ? 12 : Math.max(10, 20 * Math.exp(-ageDays / 210));
+  const breadthScore = Math.min(12, 1.2 * o.length);
+  const clusterScore = n[1] > 0 && n[0] !== "other" ? 5 : 0;
+  const citationScore = Math.min(6, Math.log10(1 + Math.max(0, Number(e.citations || 0))) * 3);
+  const priorityScore = coverageScore + weightScore + recencyScore + breadthScore + clusterScore + citationScore;
   return {
     matched: o,
     relevance: 10 * o.length + (e.published_at ? Math.max(0, 5 - Math.floor((Date.now() - Date.parse(e.published_at)) / 31536e6)) : 0),
     cluster_label: n[1] > 0 ? n[0] : "other",
     cluster_keywords: i,
-    priority_score: Math.max(0, Math.min(100, u * l * p * h))
+    priority_score: Math.max(0, Math.min(100, Math.round(priorityScore * 10) / 10))
   };
+}
+
+function ensurePaperPriorityFormula(e) {
+  const version = "v2_smooth_2026_07_02";
+  const current = e.prepare("SELECT value FROM install_state WHERE key=?").get(PAPER_PRIORITY_FORMULA_KEY)?.value || "";
+  if (current === version) return;
+  const papers = e.prepare("SELECT id,title,abstract,tags,published_at,citations FROM arxiv_items").all();
+  const keywords = rows(e, "paper"), weights = recalcKeywordWeights(e), stamp = now();
+  const update = e.prepare("UPDATE arxiv_items SET matched_keywords=?,relevance=?,cluster_label=?,priority_score=?,cluster_keywords=?,updated_at=? WHERE id=?");
+  const state = e.prepare("INSERT INTO install_state (key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at");
+  e.transaction(() => {
+    for (const paper of papers) {
+      const scored = scorePaper({
+        ...paper,
+        tags: arr(paper.tags),
+        citations: Number(paper.citations) || 0
+      }, keywords, weights);
+      update.run(j(scored.matched), scored.relevance, scored.cluster_label, scored.priority_score, j(scored.cluster_keywords), stamp, paper.id);
+    }
+    state.run(PAPER_PRIORITY_FORMULA_KEY, version, stamp);
+  })();
 }
 
 async function scanArxiv(e, t, r) {
@@ -2390,16 +2420,18 @@ function startAsyncAgentChat(e, t, r) {
   const message = txt(t.message, 4000);
   const scopeId = txt(t.scope_id, 120);
   if (!message) throw new Error("message 不能为空");
-  let run = latestAgentRunForScope(e, kind, scopeId);
+  const parentRun = latestAgentRunForScope(e, kind, scopeId);
   const row = sourceRowForScope(e, kind, scopeId);
   const provider = sessionProviderInfo(txt(t.model_key, 200));
   const dbPath = e.name || path.join("ext_data_dir", DB_FILE);
   let postAction;
-  let sessionUrl = run?.session_url || "";
-  if (!run || !run.session_id) {
+  let sessionUrl = parentRun?.session_url || "";
+  let run;
+  const scopeIds = row?.id ? [ row.id ] : scopeId ? [ scopeId ] : [];
+  if (!parentRun || !parentRun.session_id) {
     const runId = createAgentRun(e, {
       kind,
-      scopeIds: row?.id ? [ row.id ] : scopeId ? [ scopeId ] : [],
+      scopeIds,
       modelKey: provider.key,
       modelLabel: provider.label,
       createdBy: r
@@ -2411,11 +2443,23 @@ function startAsyncAgentChat(e, t, r) {
     sessionUrl = launched.url;
     postAction = launched.postAction;
   } else {
+    const runId = createAgentRun(e, {
+      kind,
+      scopeIds,
+      modelKey: provider.key,
+      modelLabel: provider.label,
+      createdBy: r,
+      sessionId: parentRun.session_id,
+      projectId: parentRun.project_id,
+      issueId: parentRun.issue_id,
+      sessionUrl: parentRun.session_url
+    });
+    run = e.prepare("SELECT * FROM agent_runs WHERE id=?").get(runId);
     const prompt = buildAsyncChatPrompt({ kind, scopeId, message, run, dbPath, row });
     postAction = {
       type: "session_message",
-      session_id: run.session_id,
-      project_id: run.project_id,
+      session_id: parentRun.session_id,
+      project_id: parentRun.project_id,
       content: prompt,
       input_text: message,
       request_id: `self-cognition-chat-${run.id}-${Date.now()}`,
@@ -2892,6 +2936,9 @@ function chatStatus(e, t) {
     status = "error";
     reply = `本轮${label}Agent 报错: ${txt(run.error, 400) || "未知错误"}`;
   } else if (gatewayStatus === "running" || gatewayStatus === "waiting") {
+    status = "generating";
+    reply = "";
+  } else if (run.status === "running") {
     status = "generating";
     reply = "";
   } else if (run.status === "completed") {

@@ -81,6 +81,12 @@ a { color: inherit; text-decoration: none; }
   display: inline-flex;
   align-items: center;
   gap: .55rem;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
   font-weight: 600;
   font-size: 1rem;
   letter-spacing: .08em;
@@ -95,12 +101,17 @@ a { color: inherit; text-decoration: none; }
   font-size: .85rem;
   opacity: .9;
 }
-.topnav-links a {
+.topnav-links button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
   opacity: .8;
   transition: opacity .25s var(--ease);
   padding: 4px 0;
 }
-.topnav-links a:hover { opacity: 1; }
+.topnav-links button:hover { opacity: 1; }
 
 .topnav-sync {
   display: inline-flex;
@@ -1125,7 +1136,10 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   flex-direction: column;
 }
-.news-hero-link { display: contents; }
+.news-hero-link {
+  display: contents;
+  cursor: pointer;
+}
 .news-hero-img {
   width: 100%;
   aspect-ratio: 16/9;
@@ -1179,7 +1193,7 @@ a { color: inherit; text-decoration: none; }
   border-color: rgba(0,0,0,.06);
   box-shadow: 0 8px 26px rgba(0,0,0,.045);
 }
-.news-layout-light a.news-item:hover {
+.news-layout-light .news-item.linkless-action:hover {
   background: #fff;
 }
 .news-layout-light .news-thumb {
@@ -1205,7 +1219,10 @@ a { color: inherit; text-decoration: none; }
   border-radius: var(--radius-xs);
   transition: background .25s var(--ease), transform .25s var(--ease);
 }
-a.news-item:hover {
+.news-item.linkless-action {
+  cursor: pointer;
+}
+.news-item.linkless-action:hover {
   background: rgba(255,255,255,.08);
   transform: translateX(2px);
 }
@@ -1602,7 +1619,20 @@ a.news-item:hover {
   transform: translateY(-1px);
   box-shadow: 0 16px 42px rgba(22,163,74,.28);
 }
-#assistant-source a {
+.inline-link {
+  display: inline;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+}
+.inline-link:hover {
+  text-decoration: underline;
+}
+#assistant-source .inline-link {
   color: var(--field);
   font-weight: 700;
 }
