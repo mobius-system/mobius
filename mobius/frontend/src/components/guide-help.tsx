@@ -609,6 +609,25 @@ export function GuideHelpModal({ firstLogin = false, onClose }: GuideHelpModalPr
             </div>
 
             <div className="p-5 overflow-y-auto max-h-[calc(86vh-76px)]">
+              <div
+                className="mb-3 rounded-lg border flex items-center gap-2 px-3 py-2"
+                style={{
+                  borderColor: 'rgba(56, 189, 248, 0.32)',
+                  background: 'rgba(56, 189, 248, 0.075)',
+                }}
+              >
+                <BookOpen className="w-3.5 h-3.5 flex-shrink-0" style={{ color: GUIDE_TONE }} />
+                <a
+                  href="https://nutshellai-tech.github.io/mobius/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[12px] font-medium hover:underline"
+                  style={{ color: GUIDE_TONE }}
+                >
+                  📖 想看更详细的使用文档？访问 mobius 文档站 →
+                </a>
+              </div>
+
               <section className="rounded-lg border overflow-hidden" style={{ borderColor: 'rgba(56, 189, 248, 0.46)', background: 'var(--bg-secondary)' }}>
                 <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(56, 189, 248, 0.26)', background: 'rgba(56, 189, 248, 0.08)' }}>
                   <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>推荐：创建一个演示项目</h3>
@@ -775,17 +794,6 @@ export function GuideHelpModal({ firstLogin = false, onClose }: GuideHelpModalPr
                           先对照任务目标，再看最终回复、文件变化和工具记录。拓展应用还要打开真实网页确认能使用。
                         </p>
                       </div>
-                    </div>
-                    <div className="px-4 pb-4 pt-1">
-                      <a
-                        href="https://nutshellai-tech.github.io/mobius/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-[12px] font-medium hover:underline"
-                        style={{ color: GUIDE_TONE }}
-                      >
-                        📖 想看更详细的使用文档？访问 mobius 文档站 →
-                      </a>
                     </div>
                   </div>
                 )}
