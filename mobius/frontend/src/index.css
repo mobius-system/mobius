@@ -4915,6 +4915,10 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .jsonl-compact-md pre code { display: block; white-space: pre; color: var(--code-text); }
 .jsonl-compact-md :not(pre) > code { background: var(--prose-code-bg); color: var(--prose-code-color); padding: .1em .32em; border-radius: .25rem; }
 .jsonl-compact-md ul, .jsonl-compact-md ol { padding-left: 1.25rem; margin: .35rem 0; }
+.jsonl-compact-md ul { list-style: disc outside; }
+.jsonl-compact-md ol { list-style: decimal outside; }
+.jsonl-compact-md ul ul { list-style-type: circle; }
+.jsonl-compact-md ul ul ul { list-style-type: square; }
 .jsonl-compact-md li { margin: .12rem 0; }
 .jsonl-compact-md blockquote { margin: .45rem 0; padding-left: .7rem; border-left: 2px solid #3b82f6; color: var(--text-secondary); }
 .jsonl-compact-md-table-wrap { margin: .45rem 0; max-width: 100%; overflow-x: auto; border: 1px solid var(--prose-border); border-radius: .375rem; }
