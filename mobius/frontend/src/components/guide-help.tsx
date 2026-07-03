@@ -776,6 +776,17 @@ export function GuideHelpModal({ firstLogin = false, onClose }: GuideHelpModalPr
                         </p>
                       </div>
                     </div>
+                    <div className="px-4 pb-4 pt-1">
+                      <a
+                        href="https://nutshellai-tech.github.io/mobius/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[12px] font-medium hover:underline"
+                        style={{ color: GUIDE_TONE }}
+                      >
+                        📖 想看更详细的使用文档？访问 mobius 文档站 →
+                      </a>
+                    </div>
                   </div>
                 )}
               </section>

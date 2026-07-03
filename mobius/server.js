@@ -90,6 +90,8 @@ const searchRoutes = require('./backend/routes/search');
 const filesRoutes = require('./backend/routes/files');
 const healthRoutes = require('./backend/routes/health');
 const assistantRoutes = require('./backend/routes/assistant');
+// 用户个人维度偏好 (首登引导已看标记等), 普通 auth, 非 admin.
+const profileRoutes = require('./backend/routes/profile');
 const adminRoutes = require('./backend/routes/admin');
 const extRoutes = require('./backend/routes/ext');
 const aimuxRoutes = require('./backend/routes/aimux');
@@ -103,6 +105,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', require('./backend/routes/users'));
 app.use('/api/conversations', require('./backend/routes/conversations'));
 app.use('/api/assistant', assistantRoutes);
+// 用户个人维度偏好: GET/POST /api/profile/tour-first-login-seen (普通 auth, 跨设备生效).
+app.use('/api/profile', profileRoutes);
 app.use('/api/tasks', tasksRoutes);
 app.use('/api/messages', messagesRoutes);
 app.use('/api/projects', projectsRoutes);

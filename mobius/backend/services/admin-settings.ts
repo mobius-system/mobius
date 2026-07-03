@@ -101,6 +101,10 @@ const DEFAULTS: any = Object.freeze({
     updatedAt: null,
     updatedBy: null,
   },
+  // 首登引导已看标记 (per-user 字典). 替代旧 localStorage 设备隔离门禁,
+  // 按用户维度持久化: 换设备/换浏览器不再重复触发首登引导. value=true 表示该用户已看过;
+  // 管理员在本文件清掉某用户条目后, 该用户下次登录会重新看到首登引导.
+  userFirstLoginSeen: {},
 })
 
 function defaultsClone(): any {
@@ -508,6 +512,19 @@ function normalizeTextRedactionForRead(value: any): any {
   }
 }
 
+// 首登引导已看标记 (per-user). 只保留 value=true 的条目, key 经 normalizeUserId 清洗.
+function normalizeUserFirstLoginSeenForRead(value: any): Record<string, true> {
+  const out: Record<string, true> = {}
+  const obj = value && typeof value === 'object' ? value : {}
+  for (const [rawKey, rawValue] of Object.entries(obj)) {
+    try {
+      const id = normalizeUserId(rawKey)
+      if (rawValue === true || rawValue === 1 || rawValue === 'true') out[id] = true
+    } catch {}
+  }
+  return out
+}
+
 function normalizeLightModelApiForRead(value: any): any {
   const obj = value && typeof value === 'object' ? value : {}
   return {
@@ -568,6 +585,9 @@ function loadSettings(): any {
     }
     if (parsed && typeof parsed === 'object' && parsed.textRedaction) {
       merged.textRedaction = normalizeTextRedactionForRead(parsed.textRedaction)
+    }
+    if (parsed && typeof parsed === 'object' && parsed.userFirstLoginSeen) {
+      merged.userFirstLoginSeen = normalizeUserFirstLoginSeenForRead(parsed.userFirstLoginSeen)
     }
     return merged
   } catch (e) {
@@ -795,6 +815,25 @@ function setTextRedactionGlobal({ rules, adminUserId }: any): any {
   return normalizeTextRedactionForRead(next.textRedaction)
 }
 
+// 首登引导是否已看过 (按用户维度持久化, 跨设备生效). 仅普通 auth 的 profile 路由使用,
+// 不复用 admin 接口逻辑, 避免污染 admin 权限模型.
+function getUserFirstLoginSeen(userId: any): boolean {
+  const id = normalizeUserId(userId)
+  const map = loadSettings().userFirstLoginSeen || {}
+  return map[id] === true
+}
+
+// 标记某用户已看过首登引导. 只置 true, 不提供清除 (清除由管理员直接编辑本文件实现).
+function setUserFirstLoginSeen(userId: any): void {
+  const id = normalizeUserId(userId)
+  const next = loadSettings()
+  if (!next.userFirstLoginSeen || typeof next.userFirstLoginSeen !== 'object') {
+    next.userFirstLoginSeen = {}
+  }
+  next.userFirstLoginSeen[id] = true
+  writeSettings(next)
+}
+
 const adminSettings = {
   MODEL_PROMPT_LIMIT_WINDOW_HOURS,
   MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
@@ -829,6 +868,8 @@ const adminSettings = {
   setLightModelApi,
   getTextRedactionGlobal,
   setTextRedactionGlobal,
+  getUserFirstLoginSeen,
+  setUserFirstLoginSeen,
 }
 
 export {
@@ -865,6 +906,8 @@ export {
   setLightModelApi,
   getTextRedactionGlobal,
   setTextRedactionGlobal,
+  getUserFirstLoginSeen,
+  setUserFirstLoginSeen,
 }
 
 export default adminSettings
