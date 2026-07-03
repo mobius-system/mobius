@@ -86,6 +86,7 @@ const { router: sessionsRoutes, issueScoped: sessionsUnderIssue } = require('./b
 const { router: researchesRoutes, projectScoped: researchesUnderProject, researchScoped: sessionsUnderResearch, blackboardRouter, graphRouter } = require('./backend/routes/researches');
 const { router: skillsRoutes, projectScoped: skillsUnderProject } = require('./backend/routes/skills');
 const { router: memoriesRoutes, projectScoped: memoriesUnderProject } = require('./backend/routes/memories');
+const searchRoutes = require('./backend/routes/search');
 const filesRoutes = require('./backend/routes/files');
 const healthRoutes = require('./backend/routes/health');
 const assistantRoutes = require('./backend/routes/assistant');
@@ -116,6 +117,7 @@ app.use('/api/researches/:researchId/sessions', sessionsUnderResearch);
 app.use('/api/research-blackboard', blackboardRouter);
 app.use('/api/research-graph', graphRouter);
 app.use('/api/sessions', sessionsRoutes);
+app.use('/api/search', searchRoutes);
 app.use('/api/skills', skillsRoutes);
 app.use('/api/memories', memoryJsonParser, memoriesRoutes);
 app.use('/api/admin', adminRoutes);

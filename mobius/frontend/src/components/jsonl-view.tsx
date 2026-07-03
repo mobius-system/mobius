@@ -156,6 +156,10 @@ const ASSISTANT_END_TURN_THEME = { ...TYPE_THEME.system, label: 'end_turn' }
 // 复用 system/turn_duration 的 amber gold 主题, 与 stop_reason:"end_turn" 金色卡片风格统一.
 const COMPACT_DONE_THEME = { ...TYPE_THEME.system, label: 'compacted' }
 
+// 特例: user 消息里的 Claude Code 本地命令产物 (compact 完成信号之外的其余 <local-command-*> / <command-*> 标签,
+// 如 /compact 的 <command-name> / <local-command-caveat> 等). 与 compact / end_turn 同款 amber gold, 风格统一.
+const LOCAL_COMMAND_THEME = { ...TYPE_THEME.system, label: 'local-cmd' }
+
 // 特例: assistant 响应文本命中这些关键词时整卡复用 gold 主题.
 // 只检查 assistant 文本响应, 不把 tool_use/input.command 当作本规则的命中范围.
 const ASSISTANT_RESPONSE_GOLD_KEYWORDS = ['根因', 'start.py']
@@ -635,41 +639,84 @@ function isAssistantEndTurnEntry(entry: AnyEntry): boolean {
   return entry?.type === 'assistant' && entry?.message?.stop_reason === 'end_turn'
 }
 
-// compact 完成信号: Claude Code 的 /compact 命令完成后写入的一条 user 消息,
-// content 被 <local-command-stdout> ... </local-command-stdout> 包裹, 正文以 "Compacted" 开头.
-// 原始 content 含 < > 尖括号与可能的控制字符, 渲染时必须走特例干净文案, 不能把标签原文显示成乱码.
-const COMPACT_DONE_PATTERN = /<local-command-stdout>\s*(Compacted[\s\S]*?)<\/local-command-stdout>/i
+// Claude Code 的 slash command / 本地命令产物会以 user 消息出现, content 被以下标签之一或多个包裹:
+//   <local-command-stdout>…</local-command-stdout>   命令输出 (如 /compact 后的 "Compacted …")
+//   <local-command-caveat>…</local-command-caveat>   "下面消息由本地命令产生, 无需响应" 提示
+//   <command-name>…</command-name> / <command-message> / <command-args>   命令本体描述
+// 这些都套了 user 外壳但不是人类提问; content 含 < > 尖括号与可能的控制字符,
+// 渲染时必须走特例干净文案, 不能把标签原文或控制字符显示成乱码.
+const LOCAL_COMMAND_TAG_PATTERN = /<(local-command-stdout|local-command-caveat|command-name|command-message|command-args)>\s*([\s\S]*?)<\/\1>/gi
 
-// 从 user 消息抽取 compact 完成信号正文; 非命中返回 null. 兼容 content 为字符串或含 text 块的数组.
-function extractCompactDone(entry: AnyEntry): string | null {
-  if (entry?.type !== 'user') return null
+type LocalCommandPart = { tag: string; body: string }
+
+// 从 user 消息 content 提取所有 local-command / command 标签 (按出现顺序). 空数组 = 不是此类产物.
+// 兼容 content 为字符串或含 text 块的数组. body 已清掉除 \n \t 外的控制字符并 trim.
+function extractLocalCommandParts(entry: AnyEntry): LocalCommandPart[] {
+  if (entry?.type !== 'user') return []
   const c = entry?.message?.content
   const text = typeof c === 'string'
     ? c
     : Array.isArray(c)
       ? c.map((b: any) => (typeof b === 'string' ? b : (b?.text ?? ''))).join('\n')
       : ''
-  if (!text) return null
-  const match = text.match(COMPACT_DONE_PATTERN)
-  if (!match) return null
-  // 清掉除 \n \t 外的控制字符 (compact 摘要偶发 \r / 其他 C0 控制符), 再去首尾空白; 避免渲染异常.
-  const cleaned = match[1].replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim()
-  return cleaned || null
+  if (!text) return []
+  const parts: LocalCommandPart[] = []
+  LOCAL_COMMAND_TAG_PATTERN.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = LOCAL_COMMAND_TAG_PATTERN.exec(text))) {
+    const body = m[2].replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim()
+    parts.push({ tag: m[1].toLowerCase(), body })
+  }
+  return parts
+}
+
+// compact 完成信号: local-command-stdout 正文以 "Compacted" 开头 (一次对话上下文压缩完成). 返回其正文或 null.
+function extractCompactDone(entry: AnyEntry): string | null {
+  const stdout = extractLocalCommandParts(entry).find((p) => p.tag === 'local-command-stdout')
+  return stdout && /^compacted/i.test(stdout.body) ? stdout.body : null
 }
 
 function isCompactDoneEntry(entry: AnyEntry): boolean {
   return extractCompactDone(entry) !== null
 }
 
-// compact 完成信号的展开内容: 一块干净的金色提示, 复用 system amber-gold 配色,
-// 不再把原始 <local-command-stdout> 标签或控制字符铺成字段 JSON. 正文是已清理的纯文本 (React 自动转义, 安全).
-function JsonEntryCompactDone({ text }: { text: string }) {
+function isLocalCommandEntry(entry: AnyEntry): boolean {
+  return extractLocalCommandParts(entry).length > 0
+}
+
+// 根据提取的标签生成一行干净的标题摘要 (不含原始 <…> 标签). 优先级: compact > command-name > stdout > caveat > 兜底.
+function summarizeLocalCommandForHeader(parts: LocalCommandPart[]): string {
+  const stdout = parts.find((p) => p.tag === 'local-command-stdout')
+  if (stdout && /^compacted/i.test(stdout.body)) return `已压缩对话 · ${stdout.body}`
+  const name = parts.find((p) => p.tag === 'command-name')
+  if (name) {
+    const argsBody = parts.filter((p) => p.tag === 'command-args' && p.body).map((p) => p.body).join(' ')
+    return argsBody ? `本地命令 · ${name.body || '(空)'} ${argsBody}` : `本地命令 · ${name.body || '(空)'}`
+  }
+  if (stdout) return `命令输出 · ${stdout.body.replace(/\n+/g, ' ')}`
+  if (parts.some((p) => p.tag === 'local-command-caveat')) return '本地命令提示 · 系统注入, 无需响应'
+  return parts.map((p) => p.body).filter(Boolean).join(' · ') || '本地命令'
+}
+
+// local-command 产物的展开内容: 一块干净的金色提示, 复用 system amber-gold 配色,
+// 不再把原始 <local-command-*> / <command-*> 标签或控制字符铺成字段 JSON. 标签名 + 已清理正文展示 (React 自动转义, 安全).
+function JsonEntryLocalCommandBlock({ parts }: { parts: LocalCommandPart[] }) {
+  const compact = parts.some((p) => p.tag === 'local-command-stdout' && /^compacted/i.test(p.body))
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-[12px]">
-      <span className="mt-0.5 text-amber-300" aria-hidden="true">🗜️</span>
-      <div className="min-w-0 flex-1">
-        <div className="font-semibold text-amber-200">已压缩对话 · Compacted</div>
-        <div className="mt-0.5 text-[11px] text-amber-300/80 break-words select-text">{text}</div>
+    <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-[12px]">
+      <div className="flex items-center gap-2">
+        <span className="text-amber-300" aria-hidden="true">🗜️</span>
+        <span className="font-semibold text-amber-200">
+          {compact ? '已压缩对话 · Compacted' : '本地命令 · Local Command'}
+        </span>
+      </div>
+      <div className="mt-2 flex flex-col gap-1">
+        {parts.map((p, i) => (
+          <div key={`${p.tag}-${i}`} className="flex min-w-0 gap-2 text-[11px]">
+            <span className="flex-shrink-0 font-mono text-amber-300/60">{p.tag}</span>
+            <span className="min-w-0 break-words select-text text-amber-100/80">{p.body || '(空)'}</span>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -1604,19 +1651,22 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const writeCall = useMemo(() => extractWriteToolCall(entry), [entry])
   const bashCalls = useMemo(() => extractBashCalls(entry), [entry])
   const readCalls = useMemo(() => extractReadCalls(entry), [entry])
-  // compact 完成信号正文 (非空 = 命中): 展开时走专属金色提示块, 不铺原始 JSON 字段 (避免标签乱码).
-  const compactDone = useMemo(() => extractCompactDone(entry), [entry])
+  // 本地命令产物标签 (非空 = 命中 /compact 等 slash command 产物): 展开时走专属金色提示块, 不铺原始 JSON 字段.
+  const localCommandParts = useMemo(() => extractLocalCommandParts(entry), [entry])
   // canCode 覆盖代码视图: Edit diff / Write 文件预览 / Bash 命令卡片 / Read 文件读取卡片.
   // 字段模式仍是入口的兜底, 让用户随时切回看原始 JSON.
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
-  // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
+  // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > user 其他本地命令产物 (gold) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
   // start.py 必须排在 Bash 之前: 它本身也是 Bash, 但语义更具体, 不能被 cyan 普通主题盖掉.
+  // compact 必须排在 local-cmd 之前: 它是 local-command-stdout 的特例, 文案/标签更具体.
   const theme = isBlackboard
     ? BLACKBOARD_THEME
     : isCompactDoneEntry(entry)
     ? COMPACT_DONE_THEME
+    : isLocalCommandEntry(entry)
+    ? LOCAL_COMMAND_THEME
     : isAssistantEndTurnEntry(entry)
     ? ASSISTANT_END_TURN_THEME
     : isAssistantResponseGoldKeyword(entry)
@@ -1713,8 +1763,8 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
       )}
       {open && (
         <div className="px-3 pb-2 pt-1">
-          {compactDone ? (
-            <JsonEntryCompactDone text={compactDone} />
+          {localCommandParts.length > 0 ? (
+            <JsonEntryLocalCommandBlock parts={localCommandParts} />
           ) : mode === 'code' && codeEdit ? (
             <JsonEntryCodeDiff edit={codeEdit} />
           ) : mode === 'code' && writeCall ? (
@@ -1990,8 +2040,9 @@ function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
   }
 
   if (t === 'user') {
-    // compact 完成信号: 展示干净的核心文案, 不暴露原始 <local-command-stdout> 标签 (避免乱码).
-    if (extractCompactDone(entry)) return clip('已压缩对话 · Compacted', HEADER_SHORT_LIMIT)
+    // Claude Code 本地命令产物 (<local-command-*> / <command-*> 标签): 展示干净文案, 不暴露原始标签 (避免乱码).
+    const lcParts = extractLocalCommandParts(entry)
+    if (lcParts.length > 0) return clip(summarizeLocalCommandForHeader(lcParts), HEADER_SHORT_LIMIT)
     const c = msg?.content
     if (typeof c === 'string') return clip(c, HEADER_SHORT_LIMIT)
     if (Array.isArray(c)) {

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useStore, api } from '../store'
 import { ChangePasswordModal, AimuxGuideModal } from './modals'
 import { GlobalCreateMenu, GlobalCreateRoot, type CreateKind } from './global-create'
+import { SearchModal } from './search-modal'
 import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
@@ -438,6 +439,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   // 顶部「新建」下拉: 项目 / Issue / Research 三入口. Issue/Research 需在项目上下文内.
   const [showNewMenu, setShowNewMenu] = useState(false)
   const [createKind, setCreateKind] = useState<CreateKind | null>(null)
+  // 顶栏「搜索」弹窗: 跨项目/Issue/Research 搜索所有会话 JSONL 内容.
+  const [showSearch, setShowSearch] = useState(false)
 
   const refreshCustomThemes = () => {
     const map = loadCustomThemes()
@@ -712,6 +715,18 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         {/* 右侧操作 */}
         <div className="mobius-topnav-actions flex items-center gap-2 flex-shrink-0">
           {rightExtra}
+          {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
+          <button
+            type="button"
+            onClick={() => setShowSearch(true)}
+            title="搜索会话内容"
+            aria-label="搜索会话内容"
+            data-tour="top-search"
+            className="mobius-search-trigger h-8 flex items-center gap-1.5 rounded-lg px-2 border hover:bg-[var(--bg-card-hover)] transition-colors"
+            style={{ color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}>
+            <Search className="w-3.5 h-3.5" strokeWidth={2.5} />
+            {!isMobile && <span className="text-[12px]">搜索</span>}
+          </button>
           {/* 新建下拉 — 全局 4 类创建 (项目 / Issue / Session / Research Agent) */}
           <GlobalCreateMenu
             open={showNewMenu}
@@ -939,6 +954,9 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
       {showAimuxGuide && <AimuxGuideModal onClose={() => setShowAimuxGuide(false)} />}
       {showGuideHelp && <GuideHelpModal onClose={() => setShowGuideHelp(false)} />}
       {showPalette && <CustomThemePalette onClose={() => setShowPalette(false)} />}
+      {showSearch && (
+        <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} />
+      )}
       {createKind && (
         <GlobalCreateRoot
           kind={createKind}

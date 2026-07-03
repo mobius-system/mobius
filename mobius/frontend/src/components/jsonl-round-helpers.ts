@@ -79,21 +79,21 @@ export function isRunningFlagReminder(entry: any): boolean {
   return entryIncludesMarker(entry, RUNNING_FLAG_REMINDER_MARKER)
 }
 
-// compact 完成信号: Claude Code /compact 命令完成写入的 user 消息,
-// content 被 <local-command-stdout>...</local-command-stdout> 包裹, 正文以 "Compacted" 开头.
-// 与 Blackboard / running-flag 同理: 套了 user_message / type:user 的壳, 但不是人类提问, 不应开新轮.
-// (用正则而非固定子串: 信号是 <tag> 包裹结构, 不像 Blackboard 那样有稳定前缀串.)
-const COMPACT_DONE_PATTERN = /<local-command-stdout>\s*Compacted[\s\S]*?<\/local-command-stdout>/i
-export function isCompactDoneReminder(entry: any): boolean {
+// Claude Code slash command / 本地命令产物 (content 被 <local-command-stdout|caveat|command-name|message|args> 等标签包裹).
+// 一次 /compact 等命令会产生 caveat / command-name / stdout 等多条 user 消息, 都套了 user 外壳但不是人类提问.
+// 与 Blackboard / running-flag 同理: 不应开新轮, 否则一次命令会被拆成多个空轮次 (如 14.0/15.0/16.0).
+// (用正则而非固定子串: 信号是 <tag> 包裹结构, 不像 Blackboard 那样有稳定前缀串; \1 反向引用保证开闭标签匹配.)
+const LOCAL_COMMAND_TAG_PATTERN = /<(local-command-stdout|local-command-caveat|command-name|command-message|command-args)>[\s\S]*?<\/\1>/i
+export function isLocalCommandReminder(entry: any): boolean {
   const texts: string[] = []
   collectEntryUserTexts(entry, texts)
-  return texts.some((t) => typeof t === 'string' && COMPACT_DONE_PATTERN.test(t))
+  return texts.some((t) => typeof t === 'string' && LOCAL_COMMAND_TAG_PATTERN.test(t))
 }
 
 // 统一: 任何"系统注入提醒"都不开新轮. 后续新增系统提醒文案时, 在这里 OR 一条 isXxxReminder
 // 即可, 无需改动 isNewRound 的主体分支逻辑.
 function isSystemReminder(entry: any): boolean {
-  return isBlackboardReminder(entry) || isRunningFlagReminder(entry) || isCompactDoneReminder(entry)
+  return isBlackboardReminder(entry) || isRunningFlagReminder(entry) || isLocalCommandReminder(entry)
 }
 
 // 判断是否为真正的用户问题 (而非 tool_result 回调或系统提醒).
