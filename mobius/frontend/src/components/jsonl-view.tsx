@@ -651,11 +651,28 @@ function extractCompactDone(entry: AnyEntry): string | null {
       : ''
   if (!text) return null
   const match = text.match(COMPACT_DONE_PATTERN)
-  return match ? match[1].trim() : null
+  if (!match) return null
+  // 清掉除 \n \t 外的控制字符 (compact 摘要偶发 \r / 其他 C0 控制符), 再去首尾空白; 避免渲染异常.
+  const cleaned = match[1].replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim()
+  return cleaned || null
 }
 
 function isCompactDoneEntry(entry: AnyEntry): boolean {
   return extractCompactDone(entry) !== null
+}
+
+// compact 完成信号的展开内容: 一块干净的金色提示, 复用 system amber-gold 配色,
+// 不再把原始 <local-command-stdout> 标签或控制字符铺成字段 JSON. 正文是已清理的纯文本 (React 自动转义, 安全).
+function JsonEntryCompactDone({ text }: { text: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-[12px]">
+      <span className="mt-0.5 text-amber-300" aria-hidden="true">🗜️</span>
+      <div className="min-w-0 flex-1">
+        <div className="font-semibold text-amber-200">已压缩对话 · Compacted</div>
+        <div className="mt-0.5 text-[11px] text-amber-300/80 break-words select-text">{text}</div>
+      </div>
+    </div>
+  )
 }
 
 function assistantResponseText(content: any): string {
@@ -1587,6 +1604,8 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const writeCall = useMemo(() => extractWriteToolCall(entry), [entry])
   const bashCalls = useMemo(() => extractBashCalls(entry), [entry])
   const readCalls = useMemo(() => extractReadCalls(entry), [entry])
+  // compact 完成信号正文 (非空 = 命中): 展开时走专属金色提示块, 不铺原始 JSON 字段 (避免标签乱码).
+  const compactDone = useMemo(() => extractCompactDone(entry), [entry])
   // canCode 覆盖代码视图: Edit diff / Write 文件预览 / Bash 命令卡片 / Read 文件读取卡片.
   // 字段模式仍是入口的兜底, 让用户随时切回看原始 JSON.
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
@@ -1694,7 +1713,9 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
       )}
       {open && (
         <div className="px-3 pb-2 pt-1">
-          {mode === 'code' && codeEdit ? (
+          {compactDone ? (
+            <JsonEntryCompactDone text={compactDone} />
+          ) : mode === 'code' && codeEdit ? (
             <JsonEntryCodeDiff edit={codeEdit} />
           ) : mode === 'code' && writeCall ? (
             <JsonEntryWritePreview writeCall={writeCall} />
