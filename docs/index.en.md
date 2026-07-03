@@ -22,6 +22,7 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 - [Prevent Agent Idle (Patrol & Nudge)](tutorial/06_prevent_agent_idle.md)
 - [Exclude Skills & Memory](tutorial/07_exclude_skills_memory.md)
 - [Migrate Skills & Memory](tutorial/12_migrate_skill_memory.md)
+- [Search Session Content](tutorial/25_search_session_content.md)
 
 ### III. Admin Basics
 

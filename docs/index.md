@@ -22,6 +22,7 @@ Mobius 是（据我们所知）全球首个**自进化**的开源智能体操作
 - [防止 Agent 偷懒（巡检 / 鞭策）](tutorial/06_prevent_agent_idle.md)
 - [屏蔽无关 Skill 和 Memory](tutorial/07_exclude_skills_memory.md)
 - [迁移 Skill 和 Memory](tutorial/12_migrate_skill_memory.md)
+- [跨会话搜索内容](tutorial/25_search_session_content.md)
 
 ### III-管理员基础
 
