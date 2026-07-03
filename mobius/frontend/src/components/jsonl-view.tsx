@@ -156,6 +156,10 @@ const ASSISTANT_END_TURN_THEME = { ...TYPE_THEME.system, label: 'end_turn' }
 // 复用 system/turn_duration 的 amber gold 主题, 与 stop_reason:"end_turn" 金色卡片风格统一.
 const COMPACT_DONE_THEME = { ...TYPE_THEME.system, label: 'compacted' }
 
+// 特例: user 消息里的 /goal 命令输出信号 (local-command-stdout 正文以 "Goal set" 开头).
+// 与 compact 同款 amber gold, label 区分, 让"目标已设置"在长列表里一眼可扫.
+const GOAL_SET_THEME = { ...TYPE_THEME.system, label: 'goal-set' }
+
 // 特例: user 消息里的 Claude Code 本地命令产物 (compact 完成信号之外的其余 <local-command-*> / <command-*> 标签,
 // 如 /compact 的 <command-name> / <local-command-caveat> 等). 与 compact / end_turn 同款 amber gold, 风格统一.
 const LOCAL_COMMAND_THEME = { ...TYPE_THEME.system, label: 'local-cmd' }
@@ -680,14 +684,30 @@ function isCompactDoneEntry(entry: AnyEntry): boolean {
   return extractCompactDone(entry) !== null
 }
 
+// /goal 命令的输出信号: local-command-stdout 正文以 "Goal set" 开头 (用户设了新目标). 返回去掉前缀的目标内容 (或原文) 或 null.
+function extractGoalSet(entry: AnyEntry): string | null {
+  const stdout = extractLocalCommandParts(entry).find((p) => p.tag === 'local-command-stdout')
+  if (!stdout || !/^goal\s*set/i.test(stdout.body)) return null
+  const goal = stdout.body.replace(/^goal\s*set:?\s*/i, '').trim()
+  return goal || stdout.body
+}
+
+function isGoalSetEntry(entry: AnyEntry): boolean {
+  return extractGoalSet(entry) !== null
+}
+
 function isLocalCommandEntry(entry: AnyEntry): boolean {
   return extractLocalCommandParts(entry).length > 0
 }
 
-// 根据提取的标签生成一行干净的标题摘要 (不含原始 <…> 标签). 优先级: compact > command-name > stdout > caveat > 兜底.
+// 根据提取的标签生成一行干净的标题摘要 (不含原始 <…> 标签). 优先级: compact > goal-set > command-name > stdout > caveat > 兜底.
 function summarizeLocalCommandForHeader(parts: LocalCommandPart[]): string {
   const stdout = parts.find((p) => p.tag === 'local-command-stdout')
   if (stdout && /^compacted/i.test(stdout.body)) return `已压缩对话 · ${stdout.body}`
+  if (stdout && /^goal\s*set/i.test(stdout.body)) {
+    const goal = stdout.body.replace(/^goal\s*set:?\s*/i, '').trim()
+    return goal ? `目标已设置 · ${goal}` : '目标已设置 · Goal Set'
+  }
   const name = parts.find((p) => p.tag === 'command-name')
   if (name) {
     const argsBody = parts.filter((p) => p.tag === 'command-args' && p.body).map((p) => p.body).join(' ')
@@ -701,14 +721,18 @@ function summarizeLocalCommandForHeader(parts: LocalCommandPart[]): string {
 // local-command 产物的展开内容: 一块干净的金色提示, 复用 system amber-gold 配色,
 // 不再把原始 <local-command-*> / <command-*> 标签或控制字符铺成字段 JSON. 标签名 + 已清理正文展示 (React 自动转义, 安全).
 function JsonEntryLocalCommandBlock({ parts }: { parts: LocalCommandPart[] }) {
-  const compact = parts.some((p) => p.tag === 'local-command-stdout' && /^compacted/i.test(p.body))
+  const stdout = parts.find((p) => p.tag === 'local-command-stdout')
+  const compact = !!stdout && /^compacted/i.test(stdout.body)
+  const goalSet = !!stdout && /^goal\s*set/i.test(stdout.body)
+  const icon = compact ? '🗜️' : goalSet ? '🎯' : '⚙️'
+  const title = compact ? '已压缩对话 · Compacted'
+    : goalSet ? '目标已设置 · Goal Set'
+    : '本地命令 · Local Command'
   return (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-[12px]">
       <div className="flex items-center gap-2">
-        <span className="text-amber-300" aria-hidden="true">🗜️</span>
-        <span className="font-semibold text-amber-200">
-          {compact ? '已压缩对话 · Compacted' : '本地命令 · Local Command'}
-        </span>
+        <span className="text-amber-300" aria-hidden="true">{icon}</span>
+        <span className="font-semibold text-amber-200">{title}</span>
       </div>
       <div className="mt-2 flex flex-col gap-1">
         {parts.map((p, i) => (
@@ -1658,13 +1682,15 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
-  // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > user 其他本地命令产物 (gold) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
+  // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > user /goal 设置信号 (gold) > user 其他本地命令产物 (gold) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
   // start.py 必须排在 Bash 之前: 它本身也是 Bash, 但语义更具体, 不能被 cyan 普通主题盖掉.
-  // compact 必须排在 local-cmd 之前: 它是 local-command-stdout 的特例, 文案/标签更具体.
+  // compact / goal-set 必须排在 local-cmd 之前: 它们都是 local-command-stdout 的特例, 文案/标签更具体.
   const theme = isBlackboard
     ? BLACKBOARD_THEME
     : isCompactDoneEntry(entry)
     ? COMPACT_DONE_THEME
+    : isGoalSetEntry(entry)
+    ? GOAL_SET_THEME
     : isLocalCommandEntry(entry)
     ? LOCAL_COMMAND_THEME
     : isAssistantEndTurnEntry(entry)
