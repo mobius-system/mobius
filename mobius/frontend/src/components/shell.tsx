@@ -114,8 +114,12 @@ export function groupTasksByDate(tasks: any[]) {
 // =====================================================================
 // 系统资源指示器 — 位于主题切换按钮左侧
 // 约束: 读取频率不得超过每分钟 1 次 (前端 60s 轮询 + 后端 60s 缓存双重保证)
-// 磁盘占用 > 85%、内存占用 > 70% 时整体显示红色
+// 低占用时不显示，避免顶栏长期展示无行动价值的状态噪音。
+// 磁盘占用 > 85%、内存占用 > 70% 时整体显示红色。
 // =====================================================================
+const RESOURCE_USAGE_VISIBLE_THRESHOLD_PERCENT = 70
+const VERSION_UPTIME_VISIBLE_MAX_MS = 2 * 60 * 60 * 1000
+
 type MemInfo = { usedPercent: number; usedMb: number; totalMb: number }
 type DiskInfo = {
   usedPercent: number
@@ -184,6 +188,8 @@ function DiskIndicator() {
   }, [])
 
   const pct = disk?.usedPercent
+  if (pct == null || pct < RESOURCE_USAGE_VISIBLE_THRESHOLD_PERCENT) return null
+
   const danger = pct != null && pct > 85
   const color = danger ? '#ef4444' : 'var(--text-muted)'
   const location = disk?.mountPath || disk?.targetPath || '/'
@@ -226,7 +232,9 @@ function MemoryIndicator() {
   }, [])
 
   const pct = mem?.usedPercent
-  const danger = pct != null && pct > 70
+  if (pct == null || pct < RESOURCE_USAGE_VISIBLE_THRESHOLD_PERCENT) return null
+
+  const danger = pct != null && pct > RESOURCE_USAGE_VISIBLE_THRESHOLD_PERCENT
   const color = danger ? '#ef4444' : 'var(--text-muted)'
 
   return (
@@ -268,7 +276,10 @@ function VersionIndicator() {
   }, [])
 
   const version = healthVersionLabel(health)
-  const uptime = compactUptime(healthUptimeMs(health))
+  const uptimeMs = healthUptimeMs(health)
+  if (uptimeMs == null || uptimeMs > VERSION_UPTIME_VISIBLE_MAX_MS) return null
+
+  const uptime = compactUptime(uptimeMs)
   const title = health
     ? [
         `版本: ${health.version || '--'}`,
