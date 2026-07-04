@@ -612,7 +612,13 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 
   const toggleSwitcher = (which: 'project' | 'issue' | 'research') => {
     setSwitcherSearch('')
-    setOpenSwitcher(cur => (cur === which ? null : which))
+    const willOpen = openSwitcher === which ? null : which
+    // 打开瞬间若无缓存, 立即置 loading=true (与 setOpenSwitcher 同批 render), 避免面板
+    // 首帧因 loading 仍是 false + 无数据而闪现 emptyText ("该项目暂无 Issue" 一晃而过).
+    if (willOpen === 'project' && !projects.length) setProjectSwitcherLoading(true)
+    if (willOpen === 'issue' && projectParam && !issuesMap[projectParam]) setIssueSwitcherLoading(true)
+    if (willOpen === 'research' && projectParam && !researchesMap[projectParam]) setResearchSwitcherLoading(true)
+    setOpenSwitcher(willOpen)
   }
 
   return (
