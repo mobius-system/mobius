@@ -294,11 +294,11 @@ function VersionIndicator() {
       className="h-8 max-w-[210px] px-2 flex items-center gap-1.5 border rounded-lg select-none"
       title={title}
       style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
-      <span className="text-[10px] font-semibold tracking-wide" style={{ color: 'var(--text-dimmed)' }}>ver</span>
+      <span className="text-[11px] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>ver</span>
       <span className="text-[12px] tabular-nums truncate" style={{ color: 'var(--text-secondary)' }}>
         {version}
       </span>
-      <span className="text-[10px]" style={{ color: 'var(--text-dimmed)' }}>up</span>
+      <span className="text-[11px] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>up</span>
       <span className="text-[12px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>
         {uptime}
       </span>
@@ -734,9 +734,9 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             aria-label="搜索会话内容"
             data-tour="top-search"
             className="mobius-search-trigger h-8 flex items-center gap-1.5 rounded-lg px-2 border hover:bg-[var(--bg-card-hover)] transition-colors"
-            style={{ color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}>
-            <Search className="w-3.5 h-3.5" strokeWidth={2.5} />
-            {!isMobile && <span className="text-[12px]">搜索</span>}
+            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}>
+            <Search className="w-3.5 h-3.5" strokeWidth={2} />
+            {!isMobile && <span className="text-[12px] font-medium">搜索</span>}
           </button>
           {/* 新建下拉 — 全局 4 类创建 (项目 / Issue / Session / Research Agent) */}
           <GlobalCreateMenu
@@ -752,9 +752,9 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             title="帮助与引导"
             data-tour="top-guide-help"
             className={`h-8 w-8 ${isMobile ? 'hidden' : 'flex'} items-center justify-center border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors`}
-            style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}
+            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
           >
-            <CircleQuestionMark className="w-3.5 h-3.5" />
+            <CircleQuestionMark className="w-3.5 h-3.5" strokeWidth={2} />
           </button>
           <div data-tour="top-system-status" className={`${isMobile ? 'hidden' : 'flex'} items-center gap-2`}>
             <DiskIndicator />
@@ -777,11 +777,11 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               aria-expanded={showThemeMenu}
               className={`h-8 px-2 ${isMobile ? 'hidden' : 'flex md:min-w-[76px]'} items-center justify-center gap-1.5 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors`}
               style={{
-                color: 'var(--text-muted)',
+                color: 'var(--text-secondary)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              {headerIconKey === 'light' ? <Sun className="w-3.5 h-3.5" /> : headerIconKey === 'dark' ? <Moon className="w-3.5 h-3.5" /> : <Sliders className="w-3.5 h-3.5" />}
+              {headerIconKey === 'light' ? <Sun className="w-3.5 h-3.5" strokeWidth={2} /> : headerIconKey === 'dark' ? <Moon className="w-3.5 h-3.5" strokeWidth={2} /> : <Sliders className="w-3.5 h-3.5" strokeWidth={2} />}
               <span className="text-[12px] font-medium truncate max-w-[120px] hidden md:inline" style={{ color: 'var(--text-secondary)' }}>{headerLabel}</span>
             </button>
             {showThemeMenu && (
@@ -915,7 +915,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500/30 to-cyan-500/20 flex items-center justify-center text-blue-300 text-[11px] font-semibold border border-blue-500/20">
                 {user?.display_name?.[0]}
               </div>
-              {!isMobile && <span className="text-[12px]" style={{ color: 'var(--text-secondary)' }}>{user?.display_name}</span>}
+              {!isMobile && <span className="text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>{user?.display_name}</span>}
               {!isMobile && <svg className="w-3 h-3" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>}
             </button>
             {showUserMenu && (

@@ -1565,9 +1565,9 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
         onClick={(e) => { e.stopPropagation(); onOpenChange(!open) }}
         title="新建" aria-label="新建" aria-haspopup="menu" aria-expanded={open}
         className="mobius-create-trigger h-8 flex items-center gap-1 rounded-lg pl-2 pr-2 border hover:bg-[var(--bg-card-hover)] transition-colors"
-        style={{ color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}>
-        <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-        {!isMobile && <span className="text-[12px] font-semibold">新建</span>}
+        style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}>
+        <Plus className="w-3.5 h-3.5" strokeWidth={2} />
+        {!isMobile && <span className="text-[12px] font-medium">新建</span>}
         {!isMobile && <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />}
       </button>
       {open && (
