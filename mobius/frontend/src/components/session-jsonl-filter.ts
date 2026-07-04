@@ -1,8 +1,10 @@
 import { useMemo, useRef } from 'react'
 import { jsonlEntrySummaryKey } from './jsonl-view'
 
+// queue-operation (会话队列调度元数据, 如 enqueue/remove) 默认归入次要条目:
+// 它对浏览对话内容无价值, 默认隐藏; 用户仍可从顶部 "…" 菜单 "显示次要条目" 展开.
 const MAJOR_JSONL_TYPES = new Set([
-  'user', 'assistant', 'attachment', 'system', 'queue-operation',
+  'user', 'assistant', 'attachment', 'system',
   'session_meta', 'turn_context', 'event_msg', 'response_item', 'error',
 ])
 
