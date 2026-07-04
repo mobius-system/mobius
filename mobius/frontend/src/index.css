@@ -5024,7 +5024,7 @@ body.mobius-resizing .mobius-resizable-handle {
   /* 顶栏: 允许换行以同时容纳面包屑与操作按钮, 并避让刘海/屏幕圆角. */
   .mobius-topnav {
     height: auto;
-    min-height: 3.5rem;
+    min-height: 3rem;
     flex-wrap: wrap;
     row-gap: .4rem;
     padding-top: max(.5rem, env(safe-area-inset-top));

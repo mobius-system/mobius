@@ -600,7 +600,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 
   return (
     <>
-      <div className="mobius-topnav h-14 border-b flex items-center justify-between px-5 flex-shrink-0 select-none"
+      <div className="mobius-topnav h-12 border-b flex items-center justify-between px-5 flex-shrink-0 select-none"
         style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
         {/* 移动端: 汉堡按钮唤出左侧栏抽屉 */}
         {isMobile && (
