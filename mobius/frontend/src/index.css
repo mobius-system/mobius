@@ -5218,10 +5218,19 @@ body.mobius-resizing .mobius-resizable-handle {
   }
   .mobius-chat-input {
     width: 100% !important;
-    flex: 1 1 0%;
+    /* 窄屏只保留输入框贴底: 不再 flex-grow, 仅占输入区自然高度,
+       让 .mobius-chat-history (jsonl) 独占上方剩余空间. */
+    flex: 0 0 auto;
     min-height: 0;
     border-left: 0 !important;
     border-top: 1px solid var(--border-color) !important;
+  }
+  /* 窄屏纵向堆叠: 隐藏输入列里的 2x2 快捷操作网格 (.mobius-chat-input-actions)
+     和 skill/memory 编辑区 (.mobius-chat-input-side), 只留输入框
+     (textarea + 发送按钮) 贴在最下面, jsonl 展示框留在上面. 桌面端不受影响. */
+  .mobius-chat-input-actions,
+  .mobius-chat-input-side {
+    display: none !important;
   }
 }
 

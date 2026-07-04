@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
 import { ProjectUserContextWhitelist } from '../context-whitelist'
 import { ToggleSwitch } from '../toggle-switch'
@@ -18,7 +18,7 @@ import { ProjectArchitecturePanel } from './ProjectArchitecturePanel'
 import { ProjectAssistantPresetPanel } from './ProjectAssistantPresetPanel'
 import { ProjectPackagePanel } from './ProjectPackagePanel'
 import { ProjectTodosPanel } from './ProjectTodosPanel'
-import { ProjectTabButton, ProjectTabList } from './ProjectTabs'
+import { ProjectOverflowTabs, type OverflowTab } from './ProjectOverflowTabs'
 import { ExpandableTextarea } from '../expandable-textarea'
 import type { GitRepoDraft } from './types'
 import {
@@ -785,37 +785,32 @@ export function ProjectSettingsPanel({
       : (gitTracking?.reason || gitTrackingErr || '绑定路径下未检测到 Git 仓库')
   const embeddedSettingsCardStyle = { '--bg-card': 'var(--bg-secondary)' } as CSSProperties
 
+  // 顶部 tab 列表 (数据驱动): 空间不足时 ProjectOverflowTabs 会把溢出的 tab 收进「⋯」菜单, 而非换行.
+  const settingsTabs: OverflowTab[] = useMemo(() => {
+    const arr: OverflowTab[] = [
+      { key: 'settings', label: '项目设置', active: activePane === 'settings' },
+      { key: 'versions', label: '版本追踪', active: activePane === 'versions', disabled: !gitTrackingAvailable, title: gitTrackingTitle },
+      { key: 'architecture', label: '系统结构剖析', active: activePane === 'architecture' },
+      { key: 'todos', label: '项目待办', active: activePane === 'todos' },
+      { key: 'package', label: '打包下载', active: activePane === 'package' },
+    ]
+    if (assistantProject) arr.push({ key: 'assistant', label: '小莫预设', active: activePane === 'assistant' })
+    return arr
+  }, [activePane, gitTrackingAvailable, gitTrackingTitle, assistantProject])
+
+  const handleSelectPane = (key: string) => {
+    setActivePane(key as SettingsPane)
+    if (key === 'versions' && !gitTracking) loadGitTracking()
+  }
+
   return (
     <section data-tour="project-settings-panel" className="w-full lg:w-1/2 rounded-xl border overflow-hidden" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
       <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
-        <ProjectTabList className="flex-wrap min-w-0">
-          <ProjectTabButton active={activePane === 'settings'} onClick={() => setActivePane('settings')}>
-            项目设置
-          </ProjectTabButton>
-          <ProjectTabButton
-            active={activePane === 'versions'}
-            disabled={!gitTrackingAvailable}
-            title={gitTrackingTitle}
-            onClick={() => { setActivePane('versions'); if (!gitTracking) loadGitTracking() }}
-          >
-            版本追踪
-          </ProjectTabButton>
-          <ProjectTabButton active={activePane === 'architecture'} onClick={() => setActivePane('architecture')}>
-            系统结构剖析
-          </ProjectTabButton>
-          <ProjectTabButton active={activePane === 'todos'} onClick={() => setActivePane('todos')}>
-            项目待办
-          </ProjectTabButton>
-          <ProjectTabButton active={activePane === 'package'} onClick={() => setActivePane('package')}>
-            打包下载
-          </ProjectTabButton>
-          {assistantProject && (
-            <ProjectTabButton active={activePane === 'assistant'} onClick={() => setActivePane('assistant')}>
-              小莫预设
-            </ProjectTabButton>
-          )}
-        </ProjectTabList>
-        <div className="flex-1" />
+        <ProjectOverflowTabs
+          tabs={settingsTabs}
+          onSelect={handleSelectPane}
+          className="flex-1 min-w-0"
+        />
         {canDeleteProject && project.kind !== 'extension' && (
           <button onClick={onDeleteProject} title="删除项目（需要多重确认）"
             data-tour="project-delete"

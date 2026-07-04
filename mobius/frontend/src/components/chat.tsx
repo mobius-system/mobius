@@ -3271,7 +3271,7 @@ export function ChatArea() {
               {sendingHint ?? '草稿自动保存 · Enter 发送 · Shift+Enter 换行 · Ctrl/⌘+V 粘贴文件'}
             </div>
           </div>
-          <div className="mt-2 grid grid-cols-2 items-stretch gap-1.5 px-1">
+          <div className="mobius-chat-input-actions mt-2 grid grid-cols-2 items-stretch gap-1.5 px-1">
             {isPlanningSession ? null : (
               <>
                 <button
@@ -3324,7 +3324,7 @@ export function ChatArea() {
       </div>
           {/* Skill / Memory 编辑区: 滚动. 同 SessionStartModal 判定: message_count>0 或 已有 ui 消息 → 锁定.
               规划模式下用 PlanningEditor 替代 SkillMemoryEditor, 直接编辑 project_knowledge.md. */}
-          <div className="flex-1 overflow-y-auto p-3">
+          <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3">
             {isPlanningSession && currentProjectId ? (
               <PlanningEditor projectId={currentProjectId} sessionId={sessionId} />
             ) : (

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useStore, api } from '../store'
 import { ChangePasswordModal, AimuxGuideModal } from './modals'
@@ -447,6 +447,18 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const [issueSwitcherLoading, setIssueSwitcherLoading] = useState(false)
   const [researchSwitcherLoading, setResearchSwitcherLoading] = useState(false)
   const closeSwitcher = () => { setOpenSwitcher(null); setSwitcherSearch('') }
+  // 防重发 + 防竞态 (修复: 切换 issue/research/project 偶发永久卡在"加载中...").
+  // 旧实现: useEffect deps 含 issuesMap, 而成功路径 .then(setIssuesMap) 会更新 issuesMap
+  // → 触发 effect 自身 cleanup(alive=false). 若请求的 .finally 落在 cleanup 之后, 其
+  // `if(alive) setLoading(false)` 被吞, loading 永久卡 true (数据已入 store 但面板一直转圈,
+  // 且因缓存命中后续点击不再发请求). 修法: ① fetchedRef 记录"已成功加载(含空结果)的 key",
+  // 跨 effect 生命周期持久防重发; ② 请求结果不再 gate alive, 直接写入(用 projectParam 定位, 幂等);
+  // ③ 单调递增 seq, 只有"最后一次请求"的 finally 才归零 loading, 杜绝快速切换 project 时的交叉;
+  // ④ effect deps 移除 issuesMap/researchesMap, 从根上消除"成功写入触发自身 cleanup".
+  const switcherSeqRef = useRef(0)
+  const projectFetchedRef = useRef(false)
+  const issueFetchedRef = useRef<Record<string, true>>({})
+  const researchFetchedRef = useRef<Record<string, true>>({})
   // 顶部「新建」下拉: 项目 / Issue / Research 三入口. Issue/Research 需在项目上下文内.
   const [showNewMenu, setShowNewMenu] = useState(false)
   const [createKind, setCreateKind] = useState<CreateKind | null>(null)
@@ -525,40 +537,45 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   // 打开项目切换器时, 若 store 还没有项目列表则按需拉取.
   useEffect(() => {
     if (openSwitcher !== 'project' || projects.length) return
-    let alive = true
+    if (projectFetchedRef.current) return
+    projectFetchedRef.current = true
+    const seq = ++switcherSeqRef.current
     setProjectSwitcherLoading(true)
     api('/api/projects')
-      .then((arr: any) => { if (alive) setProjects(arr) })
-      .catch(() => {})
-      .finally(() => { if (alive) setProjectSwitcherLoading(false) })
-    return () => { alive = false }
+      .then((arr: any) => { setProjects(arr || []) })
+      .catch(() => { projectFetchedRef.current = false })
+      .finally(() => { if (switcherSeqRef.current === seq) setProjectSwitcherLoading(false) })
   }, [openSwitcher, projects.length, setProjects])
 
   // 打开 Issue 切换器时, 若当前项目 issue 列表未缓存则拉取. (空数组也是有效缓存, 不会重复拉.)
+  // 故意不把 issuesMap 放进 deps: 成功路径会写入 issuesMap, 若它在 deps 里会触发本 effect
+  // 自身 cleanup, 旧 alive-flag 设计下会误杀 .finally 致 loading 永久卡 true (见上方注释).
   useEffect(() => {
     if (openSwitcher !== 'issue' || !projectParam) return
-    if (issuesMap[projectParam]) return
-    let alive = true
+    if (issuesMap[projectParam] || issueFetchedRef.current[projectParam]) return
+    issueFetchedRef.current[projectParam] = true
+    const seq = ++switcherSeqRef.current
     setIssueSwitcherLoading(true)
     api(`/api/projects/${projectParam}/issues`)
-      .then((arr: any) => { if (alive) setIssuesMap(projectParam, arr) })
-      .catch(() => {})
-      .finally(() => { if (alive) setIssueSwitcherLoading(false) })
-    return () => { alive = false }
-  }, [openSwitcher, projectParam, issuesMap, setIssuesMap])
+      .then((arr: any) => { setIssuesMap(projectParam, arr || []) })
+      .catch(() => { delete issueFetchedRef.current[projectParam] })
+      .finally(() => { if (switcherSeqRef.current === seq) setIssueSwitcherLoading(false) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSwitcher, projectParam])
 
-  // 打开 Research 切换器时, 若当前项目 research 列表未缓存则拉取.
+  // 打开 Research 切换器时, 若当前项目 research 列表未缓存则拉取. (同 issue, 不依赖 researchesMap.)
   useEffect(() => {
     if (openSwitcher !== 'research' || !projectParam) return
-    if (researchesMap[projectParam]) return
-    let alive = true
+    if (researchesMap[projectParam] || researchFetchedRef.current[projectParam]) return
+    researchFetchedRef.current[projectParam] = true
+    const seq = ++switcherSeqRef.current
     setResearchSwitcherLoading(true)
     api(`/api/projects/${projectParam}/researches`)
-      .then((arr: any) => { if (alive) setResearchesMap(projectParam, arr) })
-      .catch(() => {})
-      .finally(() => { if (alive) setResearchSwitcherLoading(false) })
-    return () => { alive = false }
-  }, [openSwitcher, projectParam, researchesMap, setResearchesMap])
+      .then((arr: any) => { setResearchesMap(projectParam, arr || []) })
+      .catch(() => { delete researchFetchedRef.current[projectParam] })
+      .finally(() => { if (switcherSeqRef.current === seq) setResearchSwitcherLoading(false) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSwitcher, projectParam])
 
   const projectItems: SwitcherItem[] = (projects as any[])
     .filter(p => p && p.id)
