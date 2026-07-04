@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>录制导演</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">●</span>
+      <div>
+        <h1>录制导演</h1>
+        <p>描述要展示的内容, 自动驱动真实莫比乌斯页面产出视频素材</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="depBadge" class="dep-badge">检查依赖中…</span>
+      <button id="refreshList" class="btn ghost" type="button">刷新</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- 左: 新建录制 -->
+    <section class="panel form-panel">
+      <h2 class="panel-title">新建录制任务</h2>
+
+      <div class="field">
+        <label>录制内容</label>
+        <div class="recipe-cards" id="recipeCards">
+          <button type="button" class="recipe-card is-active" data-recipe="self-cognition">
+            <span class="recipe-name">Self-Cognition 自我认知</span>
+            <span class="recipe-desc">已调好的电影感巡览: 论文雷达 → 产品调研 → L2 启发 → 自进化历史</span>
+          </button>
+          <button type="button" class="recipe-card" data-recipe="generic">
+            <span class="recipe-name">自定义页面</span>
+            <span class="recipe-desc">任意站内页面 (如 /extension/mobius-home/), 自动发现章节做电影感滚动</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- self-cognition 选项 -->
+      <div class="recipe-fields" id="fields-self-cognition">
+        <div class="field">
+          <label>左上角标题</label>
+          <input id="sc_hudTitle" type="text" value="Self-Cognition 插件演示" maxlength="80">
+        </div>
+        <div class="field">
+          <label>左上角副标题</label>
+          <input id="sc_hudBody" type="text" value="自动录制样片：雷达、调研、启发落实、自进化历史。" maxlength="200">
+        </div>
+      </div>
+
+      <!-- generic 选项 -->
+      <div class="recipe-fields" id="fields-generic" hidden>
+        <div class="field">
+          <label>目标页面 (站内路径)</label>
+          <input id="g_url" type="text" placeholder="/extension/mobius-home/" value="/extension/mobius-home/">
+          <p class="hint">必须是站内绝对路径, 以 / 开头. 例: / 或 /extension/matrix-rain/</p>
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label>标题 (片头大字)</label>
+            <input id="g_title" type="text" value="莫比乌斯 · 会生长的生产力系统" maxlength="120">
+          </div>
+          <div class="field">
+            <label>眉头小字</label>
+            <input id="g_eyebrow" type="text" value="MOBIUS" maxlength="40">
+          </div>
+        </div>
+        <div class="field">
+          <label>描述 / 旁白 (片头副标题)</label>
+          <textarea id="g_description" rows="2" maxlength="400">一个会自我迭代、会协同科研、会自己写插件的生产力系统。</textarea>
+        </div>
+        <div class="field">
+          <label>镜头脚本 (可选, 留空则自动发现章节)</label>
+          <textarea id="g_steps" rows="4" placeholder="每行一个镜头: 字幕 | CSS 选择器 (选择器可省略)&#10;例如:&#10;莫比乌斯环动画 | .hero-canvas&#10;七大能力 | .abilities"></textarea>
+          <p class="hint">给选择器则镜头会 zoom 到该元素; 不填则自动按章节标题滚动录制.</p>
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="field">
+          <label>节奏</label>
+          <select id="opt_pace">
+            <option value="normal">正常</option>
+            <option value="slow">慢 (更从容)</option>
+            <option value="fast">快 (更紧凑)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>分辨率</label>
+          <select id="opt_viewport">
+            <option value="1440x900">1440 × 900 (推荐)</option>
+            <option value="1600x1000">1600 × 1000</option>
+            <option value="1280x800">1280 × 800</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>字幕 / 镜头提示</label>
+          <select id="opt_captions">
+            <option value="true">显示</option>
+            <option value="false">隐藏 (纯净画面)</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="startBtn" class="btn primary" type="button">开始录制</button>
+      <p id="formError" class="form-error" hidden></p>
+      <p class="hint">录制在后台子进程进行, 约 1~3 分钟. 可关闭页面, 完成后在任务列表里查看.</p>
+    </section>
+
+    <!-- 右: 任务列表 + 详情 -->
+    <section class="panel jobs-panel">
+      <h2 class="panel-title">录制任务 <span id="jobCount" class="count-pill">0</span></h2>
+      <div id="jobList" class="job-list">
+        <div class="empty">暂无任务</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 详情抽屉 -->
+  <aside id="detailDrawer" class="drawer" hidden>
+    <div class="drawer-head">
+      <h3 id="detailTitle">任务详情</h3>
+      <button id="detailClose" class="btn ghost small" type="button">关闭</button>
+    </div>
+    <div id="detailState" class="detail-state"></div>
+    <div class="drawer-body" id="detailBody"></div>
+  </aside>
+  <div id="drawerBackdrop" class="drawer-backdrop" hidden></div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

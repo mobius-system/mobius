@@ -1,0 +1,10 @@
+{
+  "name": "recording-studio",
+  "display_name": "录制导演",
+  "description": "描述你想展示的内容, 自动驱动真实莫比乌斯页面录制演示/宣传视频素材. 输出视频、关键帧、镜头事件日志、口播稿.",
+  "version": "0.1.0",
+  "icon": "favicon.svg",
+  "project": {
+    "sync": true
+  }
+}
