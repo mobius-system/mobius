@@ -804,6 +804,23 @@ body::after {
 .btn-primary:active:not(:disabled) { transform: scale(0.97); }
 .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
 
+/* ===== 按钮文本: 单行不换行 + 超长省略 (统一防"文本溢出 / 文本分成两行") =====
+   用法:
+     <button class="... inline-flex items-center min-w-0 ...">
+       <Icon class="shrink-0" />
+       <span class="btn-label">按钮文字</span>
+     </button>
+   - white-space: nowrap        → 永不分成两行
+   - overflow: hidden + ellipsis → 放不下时优雅省略, 不溢出按钮边界
+   - min-width: 0               → 允许在 flex/grid 容器里收缩
+   注意: 按钮自身若是 grid/flex item, 也需加 min-w-0, 否则轨道不会收缩、省略不触发. */
+.btn-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ===== 顶栏「+」新建按钮: 仅保留基础布局, 配色交给标准 chrome =====
    .mobius-create-trigger 只负责 flex 居中 + 点击缩放微交互;
    实际配色 (描边 / hover 背景 / 文字色) 由 global-create.tsx 里的 Tailwind class

@@ -491,7 +491,7 @@ function SkillMemoryPicker({
 
   const close = () => { setPanel(null); setQ('') }
 
-  const btnCls = "h-9 rounded-lg border px-2 text-[12px] flex items-center justify-between gap-2 transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
+  const btnCls = "h-9 min-w-0 rounded-lg border px-2 text-[12px] flex items-center justify-between gap-2 transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
 
   return (
     <>

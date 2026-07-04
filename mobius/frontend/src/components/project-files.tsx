@@ -727,8 +727,8 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, o
         title="进入项目端口"
         className={buttonClassName}
       >
-        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MonitorUp className="w-3.5 h-3.5" />}
-        {buttonLabel}
+        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> : <MonitorUp className="w-3.5 h-3.5 shrink-0" />}
+        <span className="btn-label">{buttonLabel}</span>
       </button>
 
       {showDialog && (
