@@ -225,7 +225,7 @@ export default function IssuePage() {
               <div className="flex-1 min-w-0">
                 <button onClick={goToOverview}
                   data-tour="issue-overview-link"
-                  className={`block text-left text-[13px] font-semibold leading-tight hover:text-blue-400 transition-colors ${issue?.status === 'completed' ? 'line-through' : ''}`}
+                  className={`block w-full text-left text-[13px] font-semibold leading-tight hover:text-blue-400 transition-colors break-words ${issue?.status === 'completed' ? 'line-through' : ''}`}
                   style={{ color: issue?.status === 'completed' ? 'var(--text-muted)' : 'var(--text-primary)' }}
                   title="返回Session列表">
                   {issue?.title || '加载中...'}
