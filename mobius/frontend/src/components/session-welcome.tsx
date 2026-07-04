@@ -488,16 +488,6 @@ export function SessionSkillMemoryEditor({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="text-[10px] px-2 py-1 rounded border" style={{
-        color: 'var(--text-muted)',
-        borderColor: 'var(--border-color)',
-        background: 'rgba(255,255,255,0.02)',
-      }}>
-        对话已开始, 此区域不可修改
-        {snapshotAt && <span> · 创建快照 {formatSnapshotTime(snapshotAt)}</span>}
-        {legacy && <span> · 兼容读取</span>}
-        {source === 'live' && <span> · 实时回退</span>}
-      </div>
       <section>
         <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>
           Skill ({enabledSkills}/{totals.skills || skills.length} 启用)
