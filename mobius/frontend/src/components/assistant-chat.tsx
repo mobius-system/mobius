@@ -3369,10 +3369,10 @@ export function AssistantChat() {
     : voicePlaybackEnabled
       ? `已开启${voicePlaybackModeLabel} · ${selectedVoiceLabel}`
       : ''
-  const toolbarMetaText = voicePlaybackStatusText
-    || (currentClearCutoff
-      ? `已隐藏 ${formatTime(currentClearCutoff)} 前端消息`
-      : (currentSessionId ? `当前 Session: ${currentSessionId}` : '首次提问会创建我的主小莫'))
+  const toolbarAuxText = voicePlaybackStatusText
+    || (currentClearCutoff ? `已隐藏 ${formatTime(currentClearCutoff)} 前端消息` : '')
+  const currentSessionDisplayName = currentSessionName || '我的主小莫（待创建）'
+  const currentSessionDetailText = currentSessionId ? `ID: ${currentSessionId}` : '首次提问会创建我的主小莫'
   const fabSpeaking = voicePlaybackState === 'playing'
   const fabVoiceHolding = !open && collapsedVoiceHoldState === 'holding'
   const fabVoiceRecording = !open && collapsedVoiceHoldState === 'recording'
@@ -3683,9 +3683,15 @@ export function AssistantChat() {
             <div className="assistant-session-body">
               <div className="assistant-session-toolbar">
                 <div className="assistant-session-toolbar__copy">
-                  <div className="assistant-session-toolbar__title">小莫助理项目</div>
-                  <div className="assistant-session-toolbar__meta">
-                    {toolbarMetaText}
+                  <div className="assistant-session-toolbar__title">当前 Session</div>
+                  <div className="assistant-session-toolbar__name" title={currentSessionDisplayName}>
+                    {currentSessionDisplayName}
+                  </div>
+                  <div className="assistant-session-toolbar__meta" title={toolbarAuxText ? `${currentSessionDetailText} · ${toolbarAuxText}` : currentSessionDetailText}>
+                    <span className={currentSessionId ? 'assistant-session-toolbar__id' : 'assistant-session-toolbar__hint'}>
+                      {currentSessionDetailText}
+                    </span>
+                    {toolbarAuxText ? <span className="assistant-session-toolbar__aux">{toolbarAuxText}</span> : null}
                   </div>
                 </div>
                 <AssistantTooltip label={clearConversationTip} side="top">

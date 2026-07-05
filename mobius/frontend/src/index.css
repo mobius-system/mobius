@@ -2551,14 +2551,49 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   line-height: 1.25;
   font-weight: 650;
 }
+.assistant-session-toolbar__name {
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.25;
+  font-weight: 720;
+}
 .assistant-session-toolbar__meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: .35rem;
   overflow: hidden;
   margin-top: 2px;
   color: var(--text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 10px;
   line-height: 1.2;
+}
+.assistant-session-toolbar__id,
+.assistant-session-toolbar__hint,
+.assistant-session-toolbar__aux {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assistant-session-toolbar__id {
+  flex: 0 0 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  letter-spacing: 0;
+}
+.assistant-session-toolbar__hint,
+.assistant-session-toolbar__aux {
+  min-width: 0;
+}
+.assistant-session-toolbar__aux::before {
+  content: '·';
+  margin-right: .35rem;
+  color: var(--text-muted);
+  opacity: .72;
 }
 .assistant-session-status {
   display: inline-flex;
