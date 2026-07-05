@@ -36,6 +36,8 @@ export interface MemberRow {
   agent_session_id: string | null;
   agent_owner_id: string | null;
   joined_at: string;
+  // 该 user 成员连着群 SSE 时刷新的心跳时间; 推送钩子据此判断在线(无需远程推).
+  last_seen_at: string | null;
 }
 
 function makeConversationId(): string {

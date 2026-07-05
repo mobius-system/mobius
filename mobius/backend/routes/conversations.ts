@@ -3,6 +3,8 @@ import { auth, authOrQuery } from '../middleware/auth';
 import { Conversations } from '../repositories/conversations';
 import type { MemberInput, MemberType } from '../repositories/conversations';
 import { runSessionMessage } from '../services/session-message-runner';
+// 群消息推送: 给离线(无 SSE)成员远程推送
+import { pushToUser as pushToUserExt } from '../services/extension-push';
 import { Sessions } from '../repositories/sessions';
 import { Users } from '../repositories/users';
 import { db } from '../../db';
@@ -346,6 +348,24 @@ router.post('/:id/messages', auth, (req: express.Request, res: express.Response)
   });
   Conversations.touch(id);
   res.status(201).json({ ok: true, message: msg });
+
+  // 群消息推送: 给离线(无 SSE)的真人成员远程推送; 在线成员由群 SSE(1.5s 轮询)实时送达.
+  // agent 成员(小莫/分身)无设备令牌, 跳过. 发送者自己不推. fire-and-forget, 失败不影响发消息.
+  try {
+    const convName = (Conversations.findById(id) as { name?: string } | undefined)?.name || '群聊';
+    const senderName = user.display_name || user.id;
+    for (const m of Conversations.listMembers(id)) {
+      if (m.member_type !== 'user') continue;
+      if (String(m.member_id) === String(user.id)) continue;
+      if (isMemberOnline(m.last_seen_at)) continue;
+      void pushToUserExt({
+        username: String(m.member_id),
+        title: convName,
+        body: `${senderName}: ${content}`,
+        deepLink: `momo://group/${id}`,
+      });
+    }
+  } catch {}
 
   // P3: @agent 触发 —— 用该 agent 的 owner 身份调 runSessionMessage(owner 触发自己的 agent, 天然过 canOperateSession);
   // 跨用户授权依据 = "该 agent 是当前群成员"(建群时被邀请). fire-and-forget, 不阻塞 201 响应.
