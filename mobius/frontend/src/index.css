@@ -5367,23 +5367,17 @@ body.mobius-resizing .mobius-resizable-handle {
 }
 
 /* ======================================================================
-   顶栏次要按钮 (帮助·系统状态·主题): ≤1200px 提前隐藏 (先于「最小移动端」900px).
-   这三项位于右侧操作区、紧邻且在用户菜单之前: 帮助 data-tour="top-guide-help"
-   / 系统状态组 data-tour="top-system-status"(磁盘/内存/版本) / 主题 data-tour="top-theme-toggle".
-   中等桌面宽度 (1200~900px) 下它们常显会与面包屑争横向空间造成拥挤, 故在 ≤1200px 先行隐藏,
-   保留新建与用户菜单两项核心. 用 !important 覆盖各元素由 useIsMobile 给出的默认 flex 态;
-   窗口继续缩到 ≤900px 时进入完整最小移动端(见下块). 桌面端 (>1200px) 不生效, 三项常显.
+   顶栏系统状态: 中等宽度提前隐藏, 给搜索/新建/帮助/主题四个核心入口让位。
+   帮助和主题不再在这里隐藏; 它们在窄屏下保留图标按钮。
    ====================================================================== */
 @media (max-width: 1200px) {
-  [data-tour="top-guide-help"],
-  [data-tour="top-system-status"],
-  [data-tour="top-theme-toggle"] { display: none !important; }
+  [data-tour="top-system-status"] { display: none !important; }
 }
 
 /* ======================================================================
    最小移动端顶栏 (≤900px): 触控热区.
    断点已统一提到 900 (resizable-panel DEFAULT_MOBILE_BREAKPOINT): 汉堡菜单 / 抽屉 /
-   顶栏次要按钮(帮助·系统状态·主题) / 新建与用户菜单的文字 均在 JS 侧 (useIsMobile)
+   新建与用户菜单的文字在 JS 侧 (useIsMobile)
    按此断点联动显隐; 面包屑精简与 chat body 堆叠也在 ≤900px 触发 (见各自 @media 块).
    这里补触控最小尺寸, 平板宽度下手点不误触. (手感层 ≤768 的同条规则保留, 互不冲突.)
    ====================================================================== */
