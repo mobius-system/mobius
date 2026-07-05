@@ -747,7 +747,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         </div>
 
         {/* 右侧操作 */}
-        <div className="mobius-topnav-actions flex items-center gap-2 flex-shrink-0">
+        <div className="mobius-topnav-actions flex min-w-0 flex-shrink items-center gap-1.5 xl:gap-2">
           {rightExtra}
           {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
           <button
@@ -756,10 +756,10 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             title="搜索会话内容"
             aria-label="搜索会话内容"
             data-tour="top-search"
-            className="mobius-search-trigger h-8 flex items-center gap-1.5 rounded-lg px-2 border hover:bg-[var(--bg-card-hover)] transition-colors"
+            className="mobius-search-trigger h-8 flex shrink-0 items-center gap-1.5 rounded-lg px-2 border hover:bg-[var(--bg-card-hover)] transition-colors"
             style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}>
-            <Search className="w-3.5 h-3.5" strokeWidth={2} />
-            {!isMobile && <span className="text-[12px] font-medium">搜索</span>}
+            <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+            {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>}
           </button>
           {/* 新建下拉 — 全局 4 类创建 (项目 / Issue / Session / Research Agent) */}
           <GlobalCreateMenu
@@ -774,17 +774,17 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             onClick={() => setShowGuideHelp(true)}
             title="帮助与引导"
             data-tour="top-guide-help"
-            className={`h-8 w-8 ${isMobile ? 'hidden' : 'flex'} items-center justify-center border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors`}
+            className="h-8 w-8 flex shrink-0 items-center justify-center border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
             style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
           >
             <CircleQuestionMark className="w-3.5 h-3.5" strokeWidth={2} />
           </button>
-          <div data-tour="top-system-status" className={`${isMobile ? 'hidden' : 'flex'} items-center gap-2`}>
+          <div data-tour="top-system-status" className="mobius-topnav-status flex shrink-0 items-center gap-2">
             <DiskIndicator />
             <MemoryIndicator />
             <VersionIndicator />
           </div>
-          <div className="relative" data-tour="top-theme-toggle">
+          <div className="relative shrink-0" data-tour="top-theme-toggle">
             <button
               type="button"
               onClick={(event) => {
@@ -798,14 +798,14 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               title={`当前主题: ${headerLabel}。Alt+点击切换下一个主题`}
               aria-label="选择主题"
               aria-expanded={showThemeMenu}
-              className={`h-8 px-2 ${isMobile ? 'hidden' : 'flex md:min-w-[76px]'} items-center justify-center gap-1.5 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors`}
+              className="h-8 max-w-[128px] min-w-0 px-2 flex items-center justify-center gap-1.5 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
               style={{
                 color: 'var(--text-secondary)',
                 borderColor: 'var(--border-color)',
               }}
             >
-              {headerIconKey === 'light' ? <Sun className="w-3.5 h-3.5" strokeWidth={2} /> : headerIconKey === 'dark' ? <Moon className="w-3.5 h-3.5" strokeWidth={2} /> : <Sliders className="w-3.5 h-3.5" strokeWidth={2} />}
-              <span className="text-[12px] font-medium truncate max-w-[120px] hidden md:inline" style={{ color: 'var(--text-secondary)' }}>{headerLabel}</span>
+              {headerIconKey === 'light' ? <Sun className="w-3.5 h-3.5 shrink-0" strokeWidth={2} /> : headerIconKey === 'dark' ? <Moon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} /> : <Sliders className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />}
+              <span className="mobius-topnav-theme-label min-w-0 max-w-[80px] truncate text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>{headerLabel}</span>
             </button>
             {showThemeMenu && (
               <div

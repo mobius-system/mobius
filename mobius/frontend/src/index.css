@@ -4,6 +4,7 @@
 
 @layer base {
   * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
   body { overflow: hidden; }
 }
 
@@ -4999,6 +5000,40 @@ body.mobius-resizing * {
 }
 body.mobius-resizing .mobius-resizable-handle {
   pointer-events: none !important;
+}
+
+/* =====================================================================
+   顶栏缩放安全区
+   桌面浏览器放大时, 视口仍可能大于移动端断点, 但顶栏可用宽度已经不足。
+   保留搜索/新建/帮助/主题四个核心入口, 优先隐藏次要状态和文字标签。
+   ===================================================================== */
+.mobius-topnav {
+  min-width: 0;
+}
+.mobius-topnav-actions {
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.mobius-topnav-search-label,
+.mobius-topnav-theme-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1279px) {
+  .mobius-topnav-search-label,
+  .mobius-topnav-status {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1199px) {
+  .mobius-topnav-theme-label {
+    display: none !important;
+  }
 }
 
 /* =====================================================================
