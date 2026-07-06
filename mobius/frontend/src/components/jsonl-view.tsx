@@ -20,6 +20,7 @@
 import { Fragment, Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { diffLines } from 'diff'
+import { Code2 } from 'lucide-react'
 import { VirtualizedBlockList } from './jsonl-virtual-list'
 
 type AnyEntry = Record<string, any>
@@ -1851,11 +1852,11 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const [mode, setMode] = useState<CardMode>(canCode ? 'code' : canCompact ? 'compact' : 'field')
 
   // 卡片展开态受控于本地 state, 跨父组件重渲染 (实时轮询追加 entry) 保持不变.
-  // 能精简/能代码化的卡片总是默认展开, error 卡片 (TUI 扫描发现的 agent 错误) 也强制展开,
+  // 能精简的卡片总是默认展开, 代码化卡片默认折叠, error 卡片 (TUI 扫描发现的 agent 错误) 也强制展开,
   // 父组件 defaultExpanded 仍能强制展开其它卡片.
   // 用户手动折叠 → onToggle 写回 state, 此后重渲染不再强制掀开.
   const [open, setOpen] = useState<boolean>(
-    (canCompact || canCode || type === 'error') || !!defaultExpanded
+    (canCompact || type === 'error') || !!defaultExpanded
   )
   // 精简模式复制按钮反馈: 点击后短暂显示「已复制 ✓」约 1 秒后还原
   const [copied, setCopied] = useState<boolean>(false)
@@ -1880,6 +1881,15 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
         {showMeta && ts && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
         <span className={`w-1.5 h-1.5 rounded-full ${theme.dot} flex-shrink-0`}></span>
         <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>
+        {canCode && (
+          <span
+            className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border border-current/30 ${theme.text}`}
+            title="代码模式 — 点击展开查看 diff / 文件 / 命令 / 读取结果"
+            aria-label="代码模式"
+          >
+            <Code2 className="h-3 w-3" strokeWidth={2.2} aria-hidden="true" />
+          </span>
+        )}
         {oversized && (
           <span
             className="flex-shrink-0 text-[10px] font-mono text-amber-300 border border-amber-500/40 rounded px-1 py-0.5"
