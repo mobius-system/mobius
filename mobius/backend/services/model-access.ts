@@ -12,6 +12,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { MODEL_ACCESS_PATH, MODEL_OPTIONS, TOKEN_PROXY_BASE_URL } from '../config'
 import { encodeProxyToken } from '../token-proxy/encoding'
+import adminSettings from './admin-settings'
 
 const DATA_FILE = MODEL_ACCESS_PATH
 const HOME = os.homedir()
@@ -356,6 +357,76 @@ function removeWithProxyForSettingsPath(settingsPath: string): boolean {
   return false
 }
 
+// ── 手动上下文限制 · 注入 settings.json / codex toml ─────────────────────────
+// 管理员在"系统设置 → 模型创建限制"为每个模型配置触发自动压缩的 token 阈值.
+//   claude code → settings-<key>.json 的 env.CLAUDE_CODE_AUTO_COMPACT_WINDOW (字符串值)
+//   codex       → ~/.codex/<channel>.config.toml 顶层 model_auto_compact_token_limit (字符串值)
+// 仅当 enabled && tokenLimit>0 时注入; 否则移除该字段. 文件不存在 / 解析失败 → 静默跳过返回 false.
+function applyAutoCompactToClaudeSettings(settingsPath: any, enabled: any, tokenLimit: any): boolean {
+  const src = String(settingsPath || '').trim()
+  if (!src) return false
+  if (!fs.existsSync(src)) return false
+  let parsed: any = {}
+  try {
+    parsed = JSON.parse(fs.readFileSync(src, 'utf8')) || {}
+  } catch {
+    parsed = {}
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) parsed = {}
+  const inject = enabled === true && Number(tokenLimit) > 0
+  if (inject) {
+    if (!parsed.env || typeof parsed.env !== 'object') parsed.env = {}
+    parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(Number(tokenLimit))
+  } else if (parsed.env && typeof parsed.env === 'object') {
+    delete parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  }
+  writeJsonPrivate(src, parsed)
+  // 若该模型同时开启"捕获实时输出", cc 实际加载 .withproxy.json (本文件的克隆);
+  // 需重新克隆让 auto-compact 字段同步进 withproxy, 否则压缩阈值不生效.
+  const withProxy = withProxyPathFor(src)
+  if (fs.existsSync(withProxy)) {
+    try {
+      ensureWithProxyForSettingsPath(src)
+    } catch (e) {
+      console.warn(`[model-access] 同步 auto-compact 到 withproxy 失败 (${withProxy}): ${(e as Error).message}`)
+    }
+  }
+  return true
+}
+
+// codex toml 顶层 model_auto_compact_token_limit 行级增删.
+// 不解析整个 toml (保留用户注释/格式), 只动顶层这一行; [section] 内的同名字段不动.
+function applyAutoCompactToCodexConfig(codexKey: any, enabled: any, tokenLimit: any): boolean {
+  let key: string
+  try { key = normalizeCodexChannel(codexKey) } catch { return false }
+  const file = codexConfigPathForKey(key)
+  if (!fs.existsSync(file)) return false
+  const raw = fs.readFileSync(file, 'utf8')
+  const lines = raw.split(/\r?\n/)
+  // 第一个 [section] 行之前为顶层区; model_auto_compact_token_limit 必须放顶层.
+  let sectionStart = lines.length
+  for (let i = 0; i < lines.length; i += 1) {
+    if (/^\s*\[/.test(lines[i])) { sectionStart = i; break }
+  }
+  let existingIdx = -1
+  for (let i = 0; i < sectionStart; i += 1) {
+    if (/^\s*model_auto_compact_token_limit\s*=/.test(lines[i])) { existingIdx = i; break }
+  }
+  const inject = enabled === true && Number(tokenLimit) > 0
+  if (inject) {
+    const newLine = `model_auto_compact_token_limit = "${String(Number(tokenLimit))}"`
+    if (existingIdx >= 0) lines[existingIdx] = newLine
+    else lines.splice(sectionStart, 0, newLine)
+  } else {
+    if (existingIdx < 0) return false  // 无字段可删, 视为无变更.
+    lines.splice(existingIdx, 1)
+  }
+  let next = lines.join('\n')
+  if (!next.endsWith('\n')) next += '\n'
+  writeCodexConfigToml(key, next)
+  return true
+}
+
 function readCodexConfigToml(key: string): string {
   const file = codexConfigPathForKey(key)
   if (!fs.existsSync(file)) return ''
@@ -435,6 +506,13 @@ function upsertClaudeCodeModel(input: any, { existingKey = null }: any = {}): an
     updated_at: nowIso(),
   }
   writeSettingsJson(key, parsedSettings)
+  // 用户编辑模型 settings 会覆盖整个文件, 重新应用管理员配置的 auto-compact (若开启), 防字段丢失.
+  try {
+    const ac = adminSettings.getModelAutoCompact(sessionModelForKey(key))
+    if (ac.enabled) applyAutoCompactToClaudeSettings(settingsPathForKey(key), ac.enabled, ac.tokenLimit)
+  } catch (e) {
+    console.warn(`[model-access] upsert 后重应用 auto-compact 失败 (${key}): ${(e as Error).message}`)
+  }
   if (idx >= 0) data.claudeCodeModels[idx] = next
   else data.claudeCodeModels.push(next)
   data.claudeCodeModels.sort((a, b) => a.key.localeCompare(b.key))
@@ -546,6 +624,13 @@ function upsertCodexModel(input: any, { existingKey = null }: any = {}): any {
     updated_at: nowIso(),
   }
   writeCodexConfigToml(key, toml)
+  // 用户编辑 codex config 会覆盖整个 toml, 重新应用管理员配置的 auto-compact (若开启), 防字段丢失.
+  try {
+    const ac = adminSettings.getModelAutoCompact(sessionModelForCodexKey(key))
+    if (ac.enabled) applyAutoCompactToCodexConfig(key, ac.enabled, ac.tokenLimit)
+  } catch (e) {
+    console.warn(`[model-access] upsert codex 后重应用 auto-compact 失败 (${key}): ${(e as Error).message}`)
+  }
   if (idx >= 0) data.codexModels[idx] = next
   else data.codexModels.push(next)
   data.codexModels.sort((a, b) => a.key.localeCompare(b.key))
@@ -585,6 +670,8 @@ export {
   withProxyPathFor,
   ensureWithProxyForSettingsPath,
   removeWithProxyForSettingsPath,
+  applyAutoCompactToClaudeSettings,
+  applyAutoCompactToCodexConfig,
   listCodexModels,
   findCodexModel,
   upsertCodexModel,

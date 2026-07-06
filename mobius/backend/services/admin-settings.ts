@@ -20,6 +20,8 @@ const MODEL_PROMPT_LIMIT_WINDOW_HOURS = 5
 const MODEL_PROMPT_LIMIT_WINDOW_MINUTES = 5
 const MODEL_PROMPT_LIMIT_MAX = 100000
 const DEFAULT_MODEL_TMUX_WINDOW_LIMIT = 12
+// 触发自动压缩的 token 阈值上限 (防无意义巨数).
+const MODEL_AUTO_COMPACT_MAX_TOKENS = 10_000_000
 
 const DOUBAO_ASR_DEFAULT_RESOURCE_ID = 'volc.seedasr.sauc.duration'
 const DOUBAO_ASR_DEFAULT_ENDPOINT = 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream'
@@ -59,6 +61,13 @@ const DEFAULTS: any = Object.freeze({
   // 黑客帝国数字雨 · 每模型是否开启"捕获实时输出" (仅 claude code).
   // 开启后该模型启动 cc 时改用 .withproxy.json, 请求经 token-proxy 中转并被抓取流式 token.
   modelCaptureStream: {
+    perModel: {},
+  },
+  // 每模型"手动上下文限制": 管理员为每个模型配置触发自动压缩的 token 阈值.
+  //   claude code → 注入 settings.json 的 env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  //   codex       → 注入 ~/.codex/<channel>.config.toml 顶层 model_auto_compact_token_limit
+  // 仅当 enabled=true 且 tokenLimit>0 时才注入; 关闭/留空 → 移除该字段 (恢复模型默认 auto-compact 行为).
+  modelAutoCompact: {
     perModel: {},
   },
   // 全局默认模型偏好: 管理员在"管理中心-系统设置"中选择一个模型作为系统级默认.
@@ -244,6 +253,57 @@ function normalizeModelCaptureStreamForRead(value: any): any {
           ? ((rawValue as any).captureStream ?? (rawValue as any).capture_stream)
           : rawValue
         if (typeof value === 'boolean') out.perModel[key] = value
+      } catch {}
+    }
+  }
+  return out
+}
+
+// ── 手动上下文限制 (auto-compact token 阈值) ──────────────────────────────────
+function normalizeAutoCompactTokenLimitForRead(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return Math.min(Math.floor(n), MODEL_AUTO_COMPACT_MAX_TOKENS)
+}
+
+function normalizeAutoCompactTokenLimitForWrite(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error('触发压缩的 Token 数量必须是正整数, 留空表示不注入')
+  }
+  return Math.min(Math.floor(n), MODEL_AUTO_COMPACT_MAX_TOKENS)
+}
+
+// 单条 auto-compact 配置归一化 (读取用). 兼容三种历史/简写形态:
+//   boolean → { enabled: b, tokenLimit: null }
+//   number  → { enabled: true, tokenLimit: n }
+//   { enabled, tokenLimit } → 原样清洗
+function normalizeModelAutoCompactEntryForRead(rawValue: any): { enabled: boolean; tokenLimit: number | null } {
+  if (typeof rawValue === 'boolean') return { enabled: rawValue, tokenLimit: null }
+  if (typeof rawValue === 'number' || typeof rawValue === 'string') {
+    const t = normalizeAutoCompactTokenLimitForRead(rawValue)
+    return { enabled: t !== null, tokenLimit: t }
+  }
+  const obj = rawValue && typeof rawValue === 'object' ? rawValue : {}
+  const enabled = parseBooleanSetting(obj.enabled, false)
+  const tokenLimit = normalizeAutoCompactTokenLimitForRead(
+    obj.tokenLimit ?? obj.token_limit ?? obj.tokens ?? obj.limit,
+  )
+  return { enabled, tokenLimit }
+}
+
+// perModel 字典归一化 (读取用). 只保留 enabled=true 的条目, 关闭的视为未配置.
+function normalizeModelAutoCompactForRead(value: any): any {
+  const out: { perModel: Record<string, any> } = { perModel: {} }
+  const rawMap: any = value?.perModel || value?.models || {}
+  if (rawMap && typeof rawMap === 'object') {
+    for (const [rawKey, rawValue] of Object.entries(rawMap)) {
+      try {
+        const key = normalizeModelKey(rawKey)
+        const entry = normalizeModelAutoCompactEntryForRead(rawValue)
+        if (entry.enabled) out.perModel[key] = entry
       } catch {}
     }
   }
@@ -568,6 +628,9 @@ function loadSettings(): any {
     if (parsed && typeof parsed === 'object' && parsed.modelCaptureStream) {
       merged.modelCaptureStream = normalizeModelCaptureStreamForRead(parsed.modelCaptureStream)
     }
+    if (parsed && typeof parsed === 'object' && parsed.modelAutoCompact) {
+      merged.modelAutoCompact = normalizeModelAutoCompactForRead(parsed.modelAutoCompact)
+    }
     if (parsed && Object.prototype.hasOwnProperty.call(parsed, 'globalDefaultModel')) {
       merged.globalDefaultModel = normalizeGlobalDefaultModelForRead((parsed as any).globalDefaultModel)
     }
@@ -658,6 +721,38 @@ function setModelCaptureStream(modelKey: any, value: any): any {
   next.modelCaptureStream.perModel[key] = value
   writeSettings(next)
   return next.modelCaptureStream
+}
+
+// 手动上下文限制: 读取某模型的 { enabled, tokenLimit }. 未配置返回 { enabled:false, tokenLimit:null }.
+function getModelAutoCompact(modelKey: any): { enabled: boolean; tokenLimit: number | null } {
+  const key = normalizeModelKey(modelKey)
+  const cap = loadSettings().modelAutoCompact || normalizeModelAutoCompactForRead({})
+  if (Object.prototype.hasOwnProperty.call(cap.perModel || {}, key)) {
+    return normalizeModelAutoCompactEntryForRead(cap.perModel[key])
+  }
+  return { enabled: false, tokenLimit: null }
+}
+
+// 设置/清除某模型的手动上下文限制. value 形态: { enabled: boolean, tokenLimit?: number|null }.
+// enabled=false → 删除条目 (并由调用方负责移除 settings/toml 里的字段).
+// enabled=true 且 tokenLimit 为空 → 仅记 enabled=true, 不注入 tokenLimit (调用方据此跳过注入).
+function setModelAutoCompact(modelKey: any, value: any): { enabled: boolean; tokenLimit: number | null } {
+  const key = normalizeModelKey(modelKey)
+  const obj = value && typeof value === 'object' ? value : { enabled: value }
+  const enabled = parseBooleanSetting(obj.enabled ?? obj.autoCompact ?? obj.auto_compact, false)
+  // 仅在开启时校验/清洗 tokenLimit; 关闭时直接丢弃, 避免旧值残留.
+  const tokenLimit = enabled
+    ? normalizeAutoCompactTokenLimitForWrite(obj.tokenLimit ?? obj.token_limit ?? obj.tokens ?? obj.limit)
+    : null
+  const next = loadSettings()
+  if (!next.modelAutoCompact) next.modelAutoCompact = normalizeModelAutoCompactForRead({})
+  if (!next.modelAutoCompact.perModel || typeof next.modelAutoCompact.perModel !== 'object') {
+    next.modelAutoCompact.perModel = {}
+  }
+  if (enabled) next.modelAutoCompact.perModel[key] = { enabled: true, tokenLimit }
+  else delete next.modelAutoCompact.perModel[key]
+  writeSettings(next)
+  return normalizeModelAutoCompactEntryForRead(next.modelAutoCompact.perModel[key] || { enabled: false, tokenLimit: null })
 }
 
 // 全局默认模型偏好: 返回已清洗的模型 key, 未设置返回 null.
@@ -850,6 +945,8 @@ const adminSettings = {
   setModelNetworkProxy,
   getModelCaptureStream,
   setModelCaptureStream,
+  getModelAutoCompact,
+  setModelAutoCompact,
   getGlobalDefaultModel,
   setGlobalDefaultModel,
   getAutoGenerateSessionTitle,
@@ -888,6 +985,8 @@ export {
   setModelNetworkProxy,
   getModelCaptureStream,
   setModelCaptureStream,
+  getModelAutoCompact,
+  setModelAutoCompact,
   getGlobalDefaultModel,
   setGlobalDefaultModel,
   getAutoGenerateSessionTitle,

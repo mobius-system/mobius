@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, MessageSquarePlus, Sparkles } from 'lucide-r
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
 import { ResizablePanel } from '../components/resizable-panel'
+import { usePagination, PaginationControls } from '../components/pagination'
 import {
   NewSessionModal, RenameSessionModal, RenameIssueModal, ConfirmModal,
 } from '../components/modals'
@@ -17,6 +18,7 @@ import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/lo
 
 const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
 const SESSION_OVERVIEW_PAGE_SIZE = 15
+const SESSION_SIDEBAR_PAGE_SIZE = 15  // sidebar 会话列表每页 15, 超过即分页
 
 // =====================================================================
 // Issue 处理页 /u/:user/p/:project/i/:issue?session=<id>
@@ -202,6 +204,12 @@ export default function IssuePage() {
     })
   }, [sessions])
 
+  // sidebar 会话分页: 超过 15 个时每页 15; 选中会话 (activeId) 变化自动翻到它所在页, 保证高亮项始终可见.
+  const sidebarPagination = usePagination(sortedSessions, SESSION_SIDEBAR_PAGE_SIZE, {
+    activeId: currentSession?.session_id,
+    getId: (s: any) => s.session_id,
+  })
+
   return (
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
       <TopNav />
@@ -314,7 +322,7 @@ export default function IssuePage() {
                   为当前 Issue 开启一次智能体执行
                 </div>
               </button>
-            ) : sortedSessions.map((s: any) => (
+            ) : sidebarPagination.pagedItems.map((s: any) => (
               <SessionRow key={s.session_id}
                 session={s}
                 isSelected={currentSession?.session_id === s.session_id}
@@ -325,6 +333,15 @@ export default function IssuePage() {
             ))}
 
           </div>
+          <PaginationControls
+            compact
+            page={sidebarPagination.page}
+            totalPages={sidebarPagination.totalPages}
+            pageStart={sidebarPagination.pageStart}
+            pageEnd={sidebarPagination.pageEnd}
+            totalItems={sortedSessions.length}
+            onPageChange={sidebarPagination.goToPage}
+          />
         </ResizablePanel>
 
         {/* 右侧:

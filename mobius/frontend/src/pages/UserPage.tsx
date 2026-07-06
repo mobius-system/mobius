@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, MoreHorizontal, Settings, Star } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
+import { usePagination, PaginationControls } from '../components/pagination'
 import { ConfirmModal, NewProjectModal, ProjectSettingsModal, ExtensionDeleteModal } from '../components/modals'
 import { SkillsManager } from '../components/skills'
 import { MemoriesManager } from '../components/memories'
@@ -14,6 +15,9 @@ const PROJECT_FILTERS: Array<{ key: ProjectFilterKey; label: string; title: stri
   { key: 'starred', label: '关注', title: '我关注的项目' },
   { key: 'extension', label: '拓展', title: '莫比乌斯拓展项目' },
 ]
+
+// /u/:user 主区项目卡片每页显示数量; 超过即分页, 避免一次性渲染过多卡片.
+const PROJECT_PAGE_SIZE = 15
 
 // =====================================================================
 // 项目汇总页 /u/:user
@@ -267,6 +271,14 @@ export default function UserPage() {
     [sortedProjects, userParam, mutedIdSet, projectFilters, search, user?.id, isViewingOwnAsAll]
   )
   const visibleProjectCount = myProjects.length + (search.trim() ? searchMutedProjects.length : 0)
+
+  // 主区项目卡片分页: 只渲染当前页的 15 个, 翻页时切片切换 (myProjects 本身不变, issues 概览拉取不受影响).
+  const projectPagination = usePagination(myProjects, PROJECT_PAGE_SIZE)
+  // 搜索词 / 筛选 chip 变化 → 列表范围改变, 重置到第 1 页, 避免停在超出范围的页.
+  useEffect(() => {
+    projectPagination.reset()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, projectFilters])
 
   const toggleProjectStar = async (e: any, p: any) => {
     e.preventDefault()
@@ -547,8 +559,21 @@ export default function UserPage() {
                 )}
               </div>
             ) : (
+              <>
+              {projectPagination.totalPages > 1 && (
+                <div className="mb-4">
+                  <PaginationControls
+                    page={projectPagination.page}
+                    totalPages={projectPagination.totalPages}
+                    pageStart={projectPagination.pageStart}
+                    pageEnd={projectPagination.pageEnd}
+                    totalItems={myProjects.length}
+                    onPageChange={projectPagination.goToPage}
+                  />
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {myProjects.map((p: any) => {
+                {projectPagination.pagedItems.map((p: any) => {
                   const issues = issuesByProject[p.id] || []
                   const researches = researchesByProject[p.id] || []
                   const showResearch = !!p.research_enabled && !((p.research_count || 0) === 0 && issues.length > 0)
@@ -756,6 +781,7 @@ export default function UserPage() {
                   )
                 })}
               </div>
+              </>
             )}
             {/* 10.7: 搜索命中且当前用户已屏蔽的项目. 仍可见, 但带"已屏蔽"角标; 点击 Eye 图标可恢复显示. */}
             {search.trim() && searchMutedProjects.length > 0 && (

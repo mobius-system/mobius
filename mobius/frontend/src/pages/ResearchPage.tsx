@@ -9,11 +9,15 @@ import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
 import { ResizablePanel } from '../components/resizable-panel'
+import { usePagination, PaginationControls } from '../components/pagination'
 import ResearchGraph from '../components/research-graph'
 import ResearchBlackboard from '../components/research-blackboard'
 
 const ResearchAgentTeamModal = lazy(() => import('../components/research-agent-team-modal')
   .then(mod => ({ default: mod.ResearchAgentTeamModal })))
+
+// sidebar Research Agent 列表每页 15, 超过即分页.
+const SESSION_SIDEBAR_PAGE_SIZE = 15
 
 export default function ResearchPage() {
   const params = useParams()
@@ -158,6 +162,12 @@ export default function ResearchPage() {
     })
   }, [sessions])
 
+  // sidebar Research Agent 分页: 超过 15 个时每页 15; 选中 Agent (activeId) 变化自动翻到它所在页, 保证高亮项始终可见.
+  const sidebarPagination = usePagination(sortedSessions, SESSION_SIDEBAR_PAGE_SIZE, {
+    activeId: currentSession?.session_id,
+    getId: (s: any) => s.session_id,
+  })
+
   return (
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
       <TopNav />
@@ -245,7 +255,7 @@ export default function ResearchPage() {
           <div className="flex-1 overflow-y-auto px-2 py-1">
             {sortedSessions.length === 0 ? (
               <div className="text-center py-8 text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无 Research Agent</div>
-            ) : sortedSessions.map((s: any) => (
+            ) : sidebarPagination.pagedItems.map((s: any) => (
               <SessionRow key={s.session_id}
                 session={s}
                 isSelected={currentSession?.session_id === s.session_id}
@@ -255,6 +265,15 @@ export default function ResearchPage() {
               />
             ))}
           </div>
+          <PaginationControls
+            compact
+            page={sidebarPagination.page}
+            totalPages={sidebarPagination.totalPages}
+            pageStart={sidebarPagination.pageStart}
+            pageEnd={sidebarPagination.pageEnd}
+            totalItems={sortedSessions.length}
+            onPageChange={sidebarPagination.goToPage}
+          />
         </ResizablePanel>
 
         {showGraph ? (

@@ -1138,6 +1138,7 @@ type ModelPromptLimitRow = {
   imported?: boolean
   use_proxy?: number | boolean
   capture_stream?: number | boolean
+  auto_compact?: { enabled: boolean; tokenLimit: number | null }
   config_path?: string
   limits: ModelPromptLimitConfig
 }
@@ -1166,6 +1167,8 @@ function ModelPromptLimitsCard() {
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [savingProxyKey, setSavingProxyKey] = useState<string | null>(null)
   const [savingCaptureKey, setSavingCaptureKey] = useState<string | null>(null)
+  const [savingCompactKey, setSavingCompactKey] = useState<string | null>(null)
+  const [savingCompactTokenKey, setSavingCompactTokenKey] = useState<string | null>(null)
   const [savingAutoTitle, setSavingAutoTitle] = useState(false)
   const [error, setError] = useState('')
 
@@ -1188,6 +1191,9 @@ function ModelPromptLimitsCard() {
       entries.push([fieldKey(row.key, 'perUser5h'), limits.perUser5h == null ? '' : String(limits.perUser5h)])
       entries.push([fieldKey(row.key, 'perUser5m'), limits.perUser5m == null ? '' : String(limits.perUser5m)])
       entries.push([fieldKey(row.key, 'tmuxWindows'), limits.tmuxWindows == null ? '12' : String(limits.tmuxWindows)])
+      // 手动上下文限制 · 触发压缩的 token 阈值回填.
+      const compactToken = row.auto_compact?.tokenLimit
+      entries.push([`${row.key}::compact_token`, compactToken == null ? '' : String(compactToken)])
     }
     setInputs(Object.fromEntries(entries))
   }
@@ -1323,6 +1329,65 @@ function ModelPromptLimitsCard() {
     }
   }
 
+  // 手动上下文限制 (auto-compact): 管理员为每个模型配置触发自动压缩的 token 阈值.
+  //   claude code → settings.json 的 env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  //   codex       → ~/.codex/<channel>.config.toml 的 model_auto_compact_token_limit
+  // 仅当开关开启且填了正整数时才注入; 关闭/留空 → 移除该字段 (恢复模型默认行为).
+  const compactInputKey = (row: ModelPromptLimitRow) => `${row.key}::compact_token`
+  const readCompactInput = (row: ModelPromptLimitRow) => inputs[compactInputKey(row)] ?? ''
+  const updateCompactInput = (row: ModelPromptLimitRow, value: string) => {
+    setInputs(prev => ({ ...prev, [compactInputKey(row)]: value.replace(/[^\d]/g, '') }))
+  }
+  const parseCompactToken = (raw: string): number | null => {
+    const value = raw.trim()
+    if (value === '') return null
+    const n = Number(value)
+    if (!Number.isFinite(n) || n <= 0) {
+      throw new Error('触发压缩的 Token 数量必须是正整数')
+    }
+    return Math.floor(n)
+  }
+  const toggleCompact = async (row: ModelPromptLimitRow, nextEnabled: boolean) => {
+    setSavingCompactKey(row.key)
+    try {
+      const tokenLimit = parseCompactToken(readCompactInput(row))
+      const next = await api('/api/admin/settings/model-prompt-limits', {
+        method: 'PUT',
+        body: JSON.stringify({ model: row.key, autoCompact: { enabled: nextEnabled, tokenLimit } }),
+      }) as ModelPromptLimitsPayload
+      setPayload(next)
+      syncInputs(next)
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSavingCompactKey(null)
+    }
+  }
+  const saveCompactToken = async (row: ModelPromptLimitRow) => {
+    let tokenLimit: number | null
+    try {
+      tokenLimit = parseCompactToken(readCompactInput(row))
+    } catch (e: any) {
+      setError(e?.message || String(e))
+      return
+    }
+    setSavingCompactTokenKey(row.key)
+    try {
+      const next = await api('/api/admin/settings/model-prompt-limits', {
+        method: 'PUT',
+        body: JSON.stringify({ model: row.key, autoCompact: { enabled: true, tokenLimit } }),
+      }) as ModelPromptLimitsPayload
+      setPayload(next)
+      syncInputs(next)
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSavingCompactTokenKey(null)
+    }
+  }
+
   // 全局默认模型偏好: 新建 Session / 快捷新建 / 小莫 在无项目级默认时回落到此模型.
   // 下拉值 '' = 未设置 (恢复系统内置 codex / 小莫 MiniMax 启发式).
   const [globalDefaultSel, setGlobalDefaultSel] = useState('')
@@ -1451,6 +1516,9 @@ function ModelPromptLimitsCard() {
           const configured = hasCustomLimits(row)
           const useProxy = row.use_proxy === true || row.use_proxy === 1
           const capture = row.capture_stream === true || row.capture_stream === 1
+          const compactEnabled = row.auto_compact?.enabled === true
+          const savingCompact = savingCompactKey === row.key
+          const savingCompactToken = savingCompactTokenKey === row.key
           const isClaudeCode = row.backend === 'tmux-claude-code'
           return (
             <div key={row.key}
@@ -1530,6 +1598,52 @@ function ModelPromptLimitsCard() {
                     {capture ? '捕获实时输出 · 数字雨' : '捕获实时输出'}
                   </span>
                 </ToggleSwitch>
+              )}
+              {/* 手动上下文限制 (auto-compact): 开关 + 触发压缩的 token 阈值.
+                  claude code → settings.json 的 env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+                  codex → ~/.codex/<channel>.config.toml 的 model_auto_compact_token_limit. */}
+              <ToggleSwitch
+                checked={compactEnabled}
+                disabled={savingCompact || savingCompactToken || loading}
+                loading={savingCompact}
+                onChange={next => toggleCompact(row, next)}
+                switchPosition="end"
+                activeColor="#f59e0b"
+                className="mb-2 flex items-center justify-between gap-3 rounded-md border px-2 py-1.5"
+                style={{
+                  background: compactEnabled ? 'rgba(245,158,11,0.10)' : 'var(--bg-card)',
+                  borderColor: compactEnabled ? 'rgba(245,158,11,0.40)' : 'var(--input-border)',
+                }}>
+                <span className="text-[11px]" style={{ color: compactEnabled ? '#d97706' : 'var(--text-muted)' }}>
+                  {compactEnabled ? '手动上下文限制 · 已开启' : '手动上下文限制'}
+                </span>
+              </ToggleSwitch>
+              {compactEnabled && (
+                <div className="mb-2">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    <span>触发压缩的 Token 数</span>
+                    <span className="truncate font-mono" title={isClaudeCode ? 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' : 'model_auto_compact_token_limit'}>
+                      {isClaudeCode ? 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' : 'model_auto_compact_token_limit'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={readCompactInput(row)}
+                      onChange={e => updateCompactInput(row, e.target.value)}
+                      inputMode="numeric"
+                      min={0}
+                      placeholder="如 120000"
+                      disabled={savingCompactToken}
+                      className="h-8 min-w-0 flex-1 rounded-md border border-[var(--input-border)] bg-[var(--bg-card)] px-2 text-[12px] text-[var(--text-primary)] outline-none disabled:opacity-60"
+                    />
+                    <button type="button" title="保存压缩阈值"
+                      onClick={() => saveCompactToken(row)}
+                      disabled={savingCompactToken || loading}
+                      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-amber-600 px-2.5 text-[12px] text-white transition-colors hover:bg-amber-500 disabled:opacity-60">
+                      {savingCompactToken ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
               )}
               <div className="flex items-center gap-2">
                 <button type="button" title="保存限制" onClick={() => save(row)} disabled={saving || loading}

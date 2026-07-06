@@ -809,6 +809,8 @@ router.put('/settings/model-prompt-limits', adminAuth, (req: express.Request, re
     use_proxy,
     captureStream,
     capture_stream,
+    autoCompact,
+    auto_compact,
   } = (req.body || {}) as any;
   try {
     const modelKey = model || key;
@@ -861,6 +863,31 @@ router.put('/settings/model-prompt-limits', adminAuth, (req: express.Request, re
       } catch (e) {
         // 仅 claude-code 模型可生成 withproxy; 解析不到配置就跳过, 不阻断开关保存.
         console.warn(`[admin] captureStream withproxy 生成跳过 (${modelKey}): ${(e as Error).message}`);
+      }
+    }
+    // 手动上下文限制 · 每模型触发自动压缩的 token 阈值.
+    //   claude code → 注入 settings.json 的 env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+    //   codex       → 注入 ~/.codex/<channel>.config.toml 顶层 model_auto_compact_token_limit
+    // 仅当 enabled && tokenLimit>0 时注入; 关闭/留空 → 移除该字段. 持久化到 admin-settings.modelAutoCompact.
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'autoCompact')
+      || Object.prototype.hasOwnProperty.call(req.body || {}, 'auto_compact')) {
+      const acValue = autoCompact ?? auto_compact ?? {};
+      const enabled = acValue && typeof acValue === 'object'
+        ? acValue.enabled
+        : acValue;
+      const tokenLimit = acValue && typeof acValue === 'object' ? acValue.tokenLimit : undefined;
+      adminSettings.setModelAutoCompact(modelKey, { enabled, tokenLimit });
+      try {
+        const resolved = modelRegistry.resolveSessionModel(modelKey);
+        if (resolved?.backend === 'tmux-claude-code' && resolved.settingsPath) {
+          modelAccess.applyAutoCompactToClaudeSettings(resolved.settingsPath, enabled, tokenLimit);
+        } else if (resolved?.backend === 'tmux-codex' && resolved.model) {
+          // resolved.model = codex 渠道 (= --profile 名), 即 .config.toml 的 key.
+          modelAccess.applyAutoCompactToCodexConfig(resolved.model, enabled, tokenLimit);
+        }
+      } catch (e) {
+        // 配置文件缺失/解析失败 → 跳过注入, 不阻断开关保存 (开关状态已持久化, 文件就绪后重开即注入).
+        console.warn(`[admin] autoCompact 注入跳过 (${modelKey}): ${(e as Error).message}`);
       }
     }
     res.json(modelPromptLimits.adminLimitsPayload());
