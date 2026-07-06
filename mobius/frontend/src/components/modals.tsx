@@ -3349,7 +3349,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
   // 输入为空时回退到默认值, 避免生成 --identifier 空参数导致命令非法
   const effectiveIdentifier = identifier.trim() || defaultIdentifier
 
-  const installCmd = 'pip install --force-reinstall aimux==0.1.7'
+  const installCmd = 'pip install --force-reinstall aimux==0.1.8'
   const connectCmd = `aimux reverse connect ${baseUrl} --identifier ${effectiveIdentifier} --token ${userJwt}`
 
   const refreshRemotes = useCallback(() => {
