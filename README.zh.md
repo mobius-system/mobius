@@ -14,9 +14,10 @@
 </h3>
 
 <p align="center">
-  <a href="https://github.com/nutshellai-tech/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/nutshellai-tech/mobius" /></a>
-  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange" /></a>
-  <a href="https://mobius.nutshellai.cn/"><strong>官网</strong></a> · <a href="https://nutshellai-tech.github.io/mobius/"><strong>文档</strong></a>
+  <a href="https://github.com/nutshellai-tech/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/nutshellai-tech/mobius?style=for-the-badge" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange?style=for-the-badge" /></a>
+  <a href="https://mobius.nutshellai.cn/"><img alt="Website" src="https://img.shields.io/badge/website-000000?style=for-the-badge&logo=About.me&logoColor=white" /></a>
+  <a href="https://nutshellai-tech.github.io/mobius/"><img alt="Docs" src="https://img.shields.io/badge/docs-000000?style=for-the-badge&logo=readthedocs&logoColor=white" /></a>
 </p>
 
 </div>
@@ -178,11 +179,11 @@ python3 start.py
 
 ## 路线图
 
-- **v0.1** — Agent OS 基础：项目、任务单、会话、模型集成、智能体执行、任务管理
-- **v0.2** — 团队协作：多用户项目、权限、任务追踪、智能体贡献分析
-- **v0.3** — 自进化与拓展：插件孵化、知识沉淀、反馈驱动迭代
-- **v0.4** — 小莫与多智能体：自然语言入口、任务拆解、子智能体协作、进度汇总
-- **v0.5** — 统一用户、AI、设备、算力：远程算力、设备接入、机器人/终端集成、科研流水线
+我们正在构建的下一步：
+
+- **移动端 App** — 在 iOS 和 Android 上带来小莫与完整的 Agent 控制
+- **桌面端 App** — 一个原生连接器，把 PC 设备（Windows、macOS、Linux）接入 Mobius
+- **拓展市场** — 发现、分享和安装社区拓展
 
 ### 参与贡献
 

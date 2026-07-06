@@ -115,7 +115,7 @@ Human members, AI agents, tasks, and deliverables in one view. Leads see who is 
 
 ## Self-Incubating Extensions
 
-Build extensions and grows new ones from your needs — financial dashboards, PPT generators, research workbenches, live portals. Each extension comes with a frontend, backend handler, data directory, and invocation entry, ready to keep evolving.
+Mobius ships with built-in extensions and grows new ones from your needs — financial dashboards, PPT generators, research workbenches, live portals. Each extension comes with a frontend, backend handler, data directory, and invocation entry, ready to keep evolving.
 
 <p align="center">
   <img src="https://serve.nutshellai.cn/publish/auto/readme/can-do-extensions.gif" alt="Extensions demo" width="480" />
@@ -179,11 +179,11 @@ python3 start.py
 
 ## Roadmap
 
-- **v0.1** — Agent OS foundation: projects, issues, sessions, model integration, agent execution, task management
-- **v0.2** — Team collaboration: multi-user projects, permissions, task tracking, agent contribution analytics
-- **v0.3** — Self-evolution and extensions: plugin incubation, knowledge accumulation, feedback-driven iteration
-- **v0.4** — XiaoMo and multi-agent: natural-language interface, task decomposition, sub-agent collaboration, progress summaries
-- **v0.5** — Unify users, AI, devices, compute: remote compute, device access, robot/terminal integration, research pipelines
+What we are building next:
+
+- **Mobile App** — XiaoMo and full Agent control on iOS and Android
+- **Desktop App** — a native connector that brings PC devices (Windows, macOS, Linux) into Mobius
+- **Extension Market** — discover, share, and install community-built extensions
 
 ### Contribution
 
