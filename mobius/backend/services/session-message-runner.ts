@@ -105,6 +105,16 @@ async function runSessionMessage({
     ? normalizedContent
     : sessionContentWithAttachments('', normalizedAttachments);
 
+  // 模型被管理员删除/禁用: 会话进入只读状态, 拒绝发消息, 提示"更换模型并继续".
+  // launchOptionsForSession 本身也会抛错, 但这里给出结构化 category='model_removed'
+  // 和需求指定的提示文案, 便于前端精准识别并渲染更换模型入口.
+  if (!modelRegistry.resolveSessionModel(sess?.model)) {
+    throw httpError(
+      '因之前使用的模型被管理员移除，本次会话不能继续，如需继续，请点击"更换模型并继续"。',
+      409,
+      'model_removed',
+    );
+  }
   const launch = modelRegistry.launchOptionsForSession(sess);
   const backend = agents.get(launch.backend);
 

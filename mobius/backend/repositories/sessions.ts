@@ -222,6 +222,8 @@ const Sessions = {
   updateStatus: (id: string, status: SessionStatus) => db.prepare('UPDATE sessions_v2 SET status = ? WHERE session_id = ?').run(status, id),
   updateDescription: (id: string, description: string) => db.prepare('UPDATE sessions_v2 SET description = ? WHERE session_id = ?').run(description, id),
   updateRiskLevel: (id: string, risk: string) => db.prepare('UPDATE sessions_v2 SET risk_level = ? WHERE session_id = ?').run(risk, id),
+  // 原地更换会话模型 (需求: 模型被管理员删除后会话进入只读, 点"更换模型并继续"用此).
+  updateModel: (id: string, model: string) => db.prepare('UPDATE sessions_v2 SET model = ? WHERE session_id = ?').run(model, id),
   // session 级 skill / memory 排除集. 空数组写 null 跟初始一致.
   updateExcludedSkills: (id: string, ids: string[] | null): void => {
     const v = Array.isArray(ids) && ids.length > 0 ? JSON.stringify(ids) : null;

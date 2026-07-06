@@ -83,17 +83,9 @@ function activeSessionUsageForModel(sessionModel: string) {
   return { count, examples };
 }
 
-function sendModelInUse(res: express.Response, sessionModel: string, usage: { count: number; examples: any[] }): boolean {
-  if (usage.count <= 0) return false;
-  res.status(409).json({
-    error: `模型仍被 ${usage.count} 个 active Session 使用。请先迁移这些 Session 的 model，或禁用新建而不要删除配置。`,
-    code: 'MODEL_IN_USE',
-    session_model: sessionModel,
-    active_session_count: usage.count,
-    examples: usage.examples,
-  });
-  return true;
-}
+// 注: 删除模型不再因"有 active session 使用"而阻断 (需求: 允许删除即使有 session 使用).
+// activeSessionUsageForModel 仍用于在删除响应里附 affected_session_count, 供前端做提示.
+
 
 function normalizeEmployeeId(value: unknown): string {
   const id = String(value || '').trim();
@@ -1311,11 +1303,13 @@ router.delete('/model-access/claude-code/:key', adminAuth, (req: express.Request
     }
     const key = String(req.params.key || '');
     const sessionModel = modelAccess.sessionModelForKey(key);
+    // 仍查询 usage, 但不再阻断删除 (满足"允许删除即使有 session 使用"需求).
+    // 删除后, 引用此模型的 active session 在下次发消息时会被后端拒绝 (model_removed)
+    // 并在前端进入只读状态, 提示"更换模型并继续".
     const usage = activeSessionUsageForModel(sessionModel);
-    if (sendModelInUse(res, sessionModel, usage)) return;
     const ok = modelAccess.deleteClaudeCodeModel(key);
     if (!ok) { res.status(404).json({ error: '模型配置不存在' }); return; }
-    res.json({ ok: true });
+    res.json({ ok: true, affected_session_count: usage.count, session_model: sessionModel });
   } catch (e) {
     res.status(400).json({ error: (e as Error).message || String(e) });
   }
@@ -1356,11 +1350,11 @@ router.delete('/model-access/codex/:key', adminAuth, (req: express.Request, res:
     }
     const key = String(req.params.key || '');
     const sessionModel = modelAccess.sessionModelForCodexKey(key);
+    // 同 Claude Code: 不再阻断删除, 仅在响应里附带受影响 active session 数.
     const usage = activeSessionUsageForModel(sessionModel);
-    if (sendModelInUse(res, sessionModel, usage)) return;
     const ok = modelAccess.deleteCodexModel(key);
     if (!ok) { res.status(404).json({ error: '模型配置不存在' }); return; }
-    res.json({ ok: true });
+    res.json({ ok: true, affected_session_count: usage.count, session_model: sessionModel });
   } catch (e) {
     res.status(400).json({ error: (e as Error).message || String(e) });
   }

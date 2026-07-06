@@ -393,6 +393,32 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
   res.json(Sessions.findById(id));
 });
 
+// 原地更换会话模型 (需求: 模型被管理员删除后会话进入只读, 点"更换模型并继续"用此).
+// 权限同 PATCH /:id (findSessionOperable = owner/admin/project-owner). 校验新模型可用.
+// 若旧 backend agent 仍活跃, 先 close 再让下次发消息用新模型启动 (旧 settings/profile 已失效).
+router.patch('/:id/model', auth, async (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionOperable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到或无权修改' }); return; }
+  const newModel = String(req.body?.model || '').trim();
+  if (!newModel) { res.status(400).json({ error: 'model 不能为空' }); return; }
+  const resolved = modelRegistry.resolveSessionModelForCreate(newModel);
+  if (!resolved) { res.status(400).json({ error: '目标模型不可用，请重新选择' }); return; }
+  // 若旧 agent 仍活跃, 关停它 (模型变了, 旧进程的 settings/profile 已失效).
+  try {
+    const backend = backendForSession(session);
+    if (backend.isAlive(id)) {
+      await bridge.closeSessionAsync(session.session_key || id, session.model);
+    }
+  } catch (e) {
+    console.warn(`[sessions/change-model] 关停旧 agent 失败 sid=${id}: ${(e as Error).message}`);
+  }
+  Sessions.updateModel(id, resolved.sessionModelValue);
+  auditSessionAccess(user, 'change_session_model', Sessions.findById(id) as any);
+  res.json({ ok: true, model: resolved.sessionModelValue, label: resolved.label || resolved.sessionModelValue });
+});
+
 interface BackgroundCloseResult {
   wasAlive: boolean;
   wasWorking: boolean;
@@ -1093,6 +1119,9 @@ router.get('/:id/status', auth, (req: express.Request, res: express.Response) =>
     claude_session_id: session.claude_session_id || null,
     worktree_ignored: worktreeIgnored,
     real_time_info: realTimeInfo,
+    // 会话当前 model 是否仍可用 (管理员可能已删除该模型配置).
+    // false 时前端进入只读状态, 显示"更换模型并继续"入口, 禁止发送.
+    model_available: !!modelRegistry.resolveSessionModel(session.model),
   });
 });
 

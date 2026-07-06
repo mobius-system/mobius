@@ -2793,14 +2793,17 @@ function ClaudeCodeModelsSubPanel() {
   }
 
   const remove = async (key: string) => {
-    const ok = window.confirm(`删除 Claude Code 模型配置 ${key}？会同时删除对应 settings 文件。`)
+    const ok = window.confirm(`删除 Claude Code 模型配置 ${key}？会同时删除对应 settings 文件。\n若仍有会话正在使用此模型，这些会话将进入只读状态，需要在会话内"更换模型并继续"才能恢复。`)
     if (!ok) return
     setLoading(true)
     try {
-      await api(`/api/admin/model-access/claude-code/${encodeURIComponent(key)}`, { method: 'DELETE' })
+      const r: any = await api(`/api/admin/model-access/claude-code/${encodeURIComponent(key)}`, { method: 'DELETE' })
       if (editingKey === key) startNew()
       await load()
       setError('')
+      if (r && typeof r.affected_session_count === 'number' && r.affected_session_count > 0) {
+        window.alert(`已删除模型配置 ${key}。\n有 ${r.affected_session_count} 个会话正在使用此模型，这些会话已进入只读状态，需在会话内点击"更换模型并继续"才能恢复。`)
+      }
     } catch (e: any) {
       setError(e?.message || String(e))
     } finally {
@@ -3036,14 +3039,17 @@ function CodexModelsSubPanel() {
   }
 
   const remove = async (key: string) => {
-    const ok = window.confirm(`删除 Codex 渠道 ${key}？会同时删除对应 ~/.codex/${key}.config.toml。`)
+    const ok = window.confirm(`删除 Codex 渠道 ${key}？会同时删除对应 ~/.codex/${key}.config.toml。\n若仍有会话正在使用此渠道，这些会话将进入只读状态，需要在会话内"更换模型并继续"才能恢复。`)
     if (!ok) return
     setLoading(true)
     try {
-      await api(`/api/admin/model-access/codex/${encodeURIComponent(key)}`, { method: 'DELETE' })
+      const r: any = await api(`/api/admin/model-access/codex/${encodeURIComponent(key)}`, { method: 'DELETE' })
       if (editingKey === key) startNew()
       await load()
       setError('')
+      if (r && typeof r.affected_session_count === 'number' && r.affected_session_count > 0) {
+        window.alert(`已删除 Codex 渠道 ${key}。\n有 ${r.affected_session_count} 个会话正在使用此渠道，这些会话已进入只读状态，需在会话内点击"更换模型并继续"才能恢复。`)
+      }
     } catch (e: any) {
       setError(e?.message || String(e))
     } finally {
