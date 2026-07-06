@@ -387,6 +387,20 @@ async function scanOnce(): Promise<void> {
         `  activity_sources  : ${sources || '(none)'}`,
       ].join('\n') + '\n');
 
+      // 安全闸: isWorking=true (候选阶段已查, 见上; 现在含"等待 background agents"等
+      // JSONL 表达不了的 TUI 等待态) → 跳过清理, 即便时间源显示超时也不误杀主 agent.
+      // 同时刷新 last_agent_event=now, 让下一轮 activityForWindow 重算 ageMs, 避免同一窗口
+      // 每轮都重复命中候选又重复 skip (markDbIdle 的 SQL 即 bump last_agent_event).
+      // f.isWorking 可能为 'ERR:...' / false / true; 仅明确的 true 才保护, 其余按原逻辑清.
+      if (f.isWorking === true) {
+        appendLog(
+          `  backend.isWorking=true → cleanup=SKIP (agent 仍在工作, 疑似等待 background agents; 已刷新活动时间避免下轮重复命中)\n` +
+          `────────────────────────────────────────\n\n`,
+        );
+        markDbIdle(sid);
+        continue;
+      }
+
       // 真正执行 kill tmux window. terminateSession 内部会 kill-window + 清 backend runtime.
       // 失败时写一行 FAIL 后 continue, 不让单个失败拖垮其它候选的清理.
       let result: any = null;

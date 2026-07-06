@@ -174,9 +174,32 @@ const CLAUDE_WORKING_TAIL_BYTES = 256 * 1024
 // 形如 "(7m 44s · ↓ 24.1k tokens · still thinking)" / "✽ 模态只留隐藏卡片… (12m 34s · ↓ 34.1k tokens)".
 // 命中即返回整行; 括号是核心锚 (避免误匹配 "▼ 1. Yes, I trust this folder" 等对话框).
 const CLAUDE_STATUS_LINE_RE = /\([^()]*[↑↓]\s*[\d.,]+\s*k?\s*tokens[^()]*\)/u
-// TTL 5s 缓存: /status 每 2s 轮询, 缓存把 tmux capture-pane 频次压到 ≤1/5s. 空 "" 也缓存.
-const REALTIME_INFO_TTL_MS = 5 * 1000
-const _realTimeInfoCache = new Map() // sessionId → { ts: number, value: string }
+// claude TUI "等待 background agents" 状态行. 主 agent 派出后台子 agent (Task 工具) 后,
+// 本轮 JSONL 常以 end_turn 收尾 (Task 当 fire-and-forget), 但 TUI 实际显示
+// "✻ Waiting for 3 background agents to finish". JSONL 反向扫描此时判 false → 误判"待命",
+// 甚至被 inactive-tmux-cleaner 当闲置误杀. 这个 TUI 等待态 JSONL 表达不了, 故 isWorking 在
+// JSONL 看似收工时再 capture-pane 兜底 (见 isWorking 末尾), 命中此行 (N≥1) → 仍在工作.
+// 不锚 spinner 字符 (✻ 随帧变), 大小写不敏感, [1-9]\d* 排除 N=0 (结束态不再显示此行).
+const CLAUDE_BG_AGENTS_WAITING_RE = /Waiting\s+for\s+[1-9]\d*\s+background\s+agents?\s+to\s+finish/i
+
+// capture-pane 尾部纯文本缓存 (5s TTL). isWorking 兜底 + realTimeInfo 共用同一份 spawn,
+// 把 capture-pane 频次压到 ≤1/5s/session. 去掉 ANSI 转义; 失败/非命中返回 "".
+const PANE_TAIL_TTL_MS = 5 * 1000
+const _paneTailCache = new Map() // sessionId → { ts: number, text: string }
+function capturePaneTail(sessionId) {
+  const now = Date.now()
+  const cached = _paneTailCache.get(sessionId)
+  if (cached && now - cached.ts < PANE_TAIL_TTL_MS) return cached.text
+  let text = ''
+  try {
+    const pane = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-S', '-25'])
+    if (pane.status === 0 && pane.stdout) {
+      text = pane.stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    }
+  } catch { /* best-effort: 失败即 "" */ }
+  _paneTailCache.set(sessionId, { ts: now, text })
+  return text
+}
 
 function listWindowsRowsCached() {
   const now = Date.now()
@@ -392,7 +415,10 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       }
       // 其他 type 全跳过
     }
-    return false
+    // JSONL 看似收工 (尾部最近的白名单记录是 end_turn 收尾的 assistant), 但 TUI 可能在
+    // 等待 background agents —— 该等待态 JSONL 表达不了, 兜底看 pane 是否有
+    // "Waiting for N background agents to finish". 命中则仍视为工作中, 避免误判待命 / 误回收.
+    return CLAUDE_BG_AGENTS_WAITING_RE.test(capturePaneTail(sessionId))
   }
 
   // 任务是否结束: session 启动时落 running.flag, agent 收工 (成功/失败) 自删.
@@ -440,29 +466,19 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   // 非 alive / 非 working → "". TTL 5s 缓存 (含空结果), 把 capture-pane 频次压到 ≤1/5s.
   // 锦上添花功能: 失败静默返回 "", 绝不抛错压垮 /status 轮询.
   realTimeInfo(sessionId) {
-    const now = Date.now()
-    const cached = _realTimeInfoCache.get(sessionId)
-    if (cached && now - cached.ts < REALTIME_INFO_TTL_MS) return cached.value
-    let value = ''
+    // 复用 capturePaneTail 的 5s 缓存: 与 isWorking 兜底共用同一份 capture-pane spawn,
+    // 不重复 spawn. isWorking 在"等待 background agents"等灰色地带已 capture 过, 这里直接命中缓存.
     try {
       if (this.isAlive(sessionId) && this.isWorking(sessionId)) {
-        // -S -15: 倒数 15 行 (含当前行). -p: 去掉 ANSI 转义的纯文本.
-        const pane = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-S', '-15'])
-        if (pane.status === 0 && pane.stdout) {
-          const lines = pane.stdout.split('\n')
-          // 从末尾往上找最近一条状态行 (TUI 同时只显示一条).
-          for (let i = lines.length - 1; i >= 0; i--) {
-            const line = lines[i]
-            if (line && CLAUDE_STATUS_LINE_RE.test(line)) {
-              value = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
-              break
-            }
-          }
+        const lines = capturePaneTail(sessionId).split('\n')
+        // 从末尾往上找最近一条状态行 (TUI 同时只显示一条).
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const line = lines[i]
+          if (line && CLAUDE_STATUS_LINE_RE.test(line)) return line.trim()
         }
       }
     } catch { /* best-effort: 失败即 "" */ }
-    _realTimeInfoCache.set(sessionId, { ts: now, value })
-    return value
+    return ''
   }
 
   // sessionId → jsonl 文件路径的三级查表:

@@ -1658,6 +1658,123 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
   )
 }
 
+// ── 超大卡片保护 ────────────────────────────────────────────────────────────
+// 单张 jsonl 卡片渲染时的字符预算: 超过此阈值的 entry / 工具结果内容会被截断后再渲染,
+// 避免 DOM 节点爆炸导致前端卡顿崩溃 (用户反馈: 某条 jsonl 卡片字符数过大时页面卡死).
+// 阈值 100,000 字符 (约 100KB) — 经验上单卡渲染到这个量级以上就明显卡顿.
+const MAX_CARD_RENDER_CHARS = 100_000
+// 单个字符串字段的上限: 防止"一行超长"(未换行的巨型 stdout / base64 / 压缩 JSON)绕过按行截断.
+// 小于卡片总预算, 保证一张卡片里至少能完整显示几个正常大字段.
+const MAX_FIELD_RENDER_CHARS = 30_000
+
+// 估算把一个值铺到 DOM 上 roughly 要多少字符. 优先 JSON.stringify (V8 优化好),
+// 失败 (循环引用 / BigInt / Symbol) 退回递归累加. 仅用于判断是否超预算, 不要求精确.
+function estimateRenderChars(node: any): number {
+  try {
+    const s = JSON.stringify(node)
+    return s ? s.length : 0
+  } catch {
+    return estimateRenderCharsSlow(node, new WeakSet())
+  }
+}
+function estimateRenderCharsSlow(node: any, seen: WeakSet<object>): number {
+  if (node === null || node === undefined) return 4
+  if (typeof node === 'string') return node.length
+  if (typeof node === 'number' || typeof node === 'boolean') return String(node).length
+  if (typeof node === 'object') {
+    if (seen.has(node)) return 0
+    seen.add(node)
+    if (Array.isArray(node)) return node.reduce((s: number, x: any) => s + estimateRenderCharsSlow(x, seen), 4)
+    return Object.keys(node).reduce((s: number, k: string) => s + k.length + estimateRenderCharsSlow((node as any)[k], seen), 4)
+  }
+  return 0
+}
+
+// 工具结果 (Bash/Read) 里文本字段的字符量, 直接用 .length (O(1), 比 stringify 快且准).
+function estimateToolResultsChars(results: BashToolResult[]): number {
+  let s = 0
+  for (const r of results) {
+    s += (r.stdout?.length || 0) + (r.stderr?.length || 0) + (r.content?.length || 0) + (r.readFile?.content?.length || 0)
+  }
+  return s
+}
+
+// 占位文案: 预算耗尽后, 剩余节点用它替换 (不再渲染真实内容).
+function placeholderForNode(node: any): string {
+  if (Array.isArray(node)) return `… [数组已省略, 共 ${node.length} 项]`
+  if (node && typeof node === 'object') return `… [对象已省略, 共 ${Object.keys(node).length} 字段]`
+  return '… [已省略]'
+}
+
+// 流式预算截断: 深拷贝 node, 每个字符串字段最多消耗 min(remaining, MAX_FIELD_RENDER_CHARS) 字符;
+// 总预算耗尽后剩余节点用占位替换. 保证渲染总量 <= MAX_CARD_RENDER_CHARS, 且单字段 <= MAX_FIELD_RENDER_CHARS.
+// 未触达上限的字符串保持原引用 (浅路径不复制), 只有真正超限的分支才产生新对象.
+function clampNodeForRender(node: any, budget: { remaining: number }): any {
+  if (budget.remaining <= 0) return placeholderForNode(node)
+  if (typeof node === 'string') {
+    if (node.length <= MAX_FIELD_RENDER_CHARS && node.length <= budget.remaining) {
+      budget.remaining -= node.length
+      return node
+    }
+    const keep = Math.min(MAX_FIELD_RENDER_CHARS, budget.remaining)
+    budget.remaining = 0
+    return node.slice(0, keep) + `\n… [内容过大, 已截断显示, 原始共 ${node.length} 字符]`
+  }
+  if (Array.isArray(node)) {
+    const out: any[] = []
+    for (const item of node) {
+      if (budget.remaining <= 0) { out.push(placeholderForNode(item)); continue }
+      out.push(clampNodeForRender(item, budget))
+    }
+    return out
+  }
+  if (node && typeof node === 'object') {
+    const out: Record<string, any> = {}
+    for (const [k, v] of Object.entries(node)) {
+      if (budget.remaining <= 0) { out[k] = placeholderForNode(v); continue }
+      out[k] = clampNodeForRender(v, budget)
+    }
+    return out
+  }
+  // number / boolean / null / undefined / bigint 等: 体量小, 不计入预算
+  return node
+}
+
+// 截断单个字符串字段 (用于工具结果里独立的 stdout/stderr/content).
+// 始终返回 string (空输入 → ''), 与 BashToolResult 里这些字段的非空类型对齐.
+function clampStringForRender(s: string | undefined | null, budget: { remaining: number }): string {
+  if (!s) return ''
+  const text = typeof s === 'string' ? s : String(s)
+  if (text.length <= MAX_FIELD_RENDER_CHARS && text.length <= budget.remaining) {
+    budget.remaining -= text.length
+    return text
+  }
+  const keep = Math.min(MAX_FIELD_RENDER_CHARS, budget.remaining)
+  budget.remaining = 0
+  return text.slice(0, keep) + `\n… [内容过大, 已截断显示, 原始共 ${text.length} 字符]`
+}
+
+// 截断 Bash/Read 工具结果里的文本字段. 这些字段由 mergeBashToolResultItems 注入,
+// 独立于 entry, 是单卡片卡顿的另一大来源 (如巨型 stdout / 大文件 Read 结果).
+function clampToolResults(results: BashToolResult[], budget: { remaining: number }): BashToolResult[] {
+  if (!Array.isArray(results) || results.length === 0) return results
+  return results.map((r) => {
+    if (budget.remaining <= 0) {
+      return { ...r, stdout: '… [已省略]', stderr: '', content: '… [已省略]', readFile: undefined }
+    }
+    const readFile = r.readFile
+      ? { ...r.readFile, content: clampStringForRender(r.readFile.content, budget) }
+      : r.readFile
+    return {
+      ...r,
+      stdout: clampStringForRender(r.stdout, budget),
+      stderr: clampStringForRender(r.stderr, budget),
+      content: clampStringForRender(r.content, budget),
+      readFile,
+    }
+  })
+}
+
 /**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
@@ -1670,13 +1787,32 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   readResults?: BashToolResult[]
 }) {
   const type = entry?.type || 'unknown'
-  const headerSummary = useMemo(() => buildHeaderSummary(entry), [entry])
-  const codeEdit = useMemo(() => extractCodeEdit(entry), [entry])
-  const writeCall = useMemo(() => extractWriteToolCall(entry), [entry])
-  const bashCalls = useMemo(() => extractBashCalls(entry), [entry])
-  const readCalls = useMemo(() => extractReadCalls(entry), [entry])
+  // 超大卡片保护: entry + 工具结果的渲染字符总量超过 10 万时, 用截断版渲染, 避免前端卡顿崩溃.
+  // 截断版只影响"展开态内容渲染", 卡片头部摘要 / 配色 / 折叠态不受影响.
+  const { renderEntry, renderBashResults, renderReadResults, oversized, totalChars } = useMemo(() => {
+    const total =
+      estimateRenderChars(entry) +
+      estimateToolResultsChars(bashResults) +
+      estimateToolResultsChars(readResults)
+    if (total <= MAX_CARD_RENDER_CHARS) {
+      return { renderEntry: entry, renderBashResults: bashResults, renderReadResults: readResults, oversized: false, totalChars: total }
+    }
+    const budget = { remaining: MAX_CARD_RENDER_CHARS }
+    return {
+      renderEntry: clampNodeForRender(entry, budget),
+      renderBashResults: clampToolResults(bashResults, budget),
+      renderReadResults: clampToolResults(readResults, budget),
+      oversized: true,
+      totalChars: total,
+    }
+  }, [entry, bashResults, readResults])
+  const headerSummary = useMemo(() => buildHeaderSummary(renderEntry), [renderEntry])
+  const codeEdit = useMemo(() => extractCodeEdit(renderEntry), [renderEntry])
+  const writeCall = useMemo(() => extractWriteToolCall(renderEntry), [renderEntry])
+  const bashCalls = useMemo(() => extractBashCalls(renderEntry), [renderEntry])
+  const readCalls = useMemo(() => extractReadCalls(renderEntry), [renderEntry])
   // 本地命令产物标签 (非空 = 命中 /compact 等 slash command 产物): 展开时走专属金色提示块, 不铺原始 JSON 字段.
-  const localCommandParts = useMemo(() => extractLocalCommandParts(entry), [entry])
+  const localCommandParts = useMemo(() => extractLocalCommandParts(renderEntry), [renderEntry])
   // canCode 覆盖代码视图: Edit diff / Write 文件预览 / Bash 命令卡片 / Read 文件读取卡片.
   // 字段模式仍是入口的兜底, 让用户随时切回看原始 JSON.
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
@@ -1744,6 +1880,14 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
         {showMeta && ts && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
         <span className={`w-1.5 h-1.5 rounded-full ${theme.dot} flex-shrink-0`}></span>
         <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>
+        {oversized && (
+          <span
+            className="flex-shrink-0 text-[10px] font-mono text-amber-300 border border-amber-500/40 rounded px-1 py-0.5"
+            title={`该条目原始约 ${totalChars.toLocaleString()} 字符, 超过 10 万字符渲染上限, 已截断显示以避免卡顿`}
+          >
+            ⚠ 已截断
+          </span>
+        )}
         {headerSummary.short && <span className="text-[11px] text-[var(--text-muted)] truncate flex-1">{headerSummary.short}</span>}
       </summary>
       {hasHeaderAction && (
@@ -1789,6 +1933,11 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
       )}
       {open && (
         <div className="px-3 pb-2 pt-1">
+          {oversized && (
+            <div className="mb-2 rounded border border-amber-500/30 bg-amber-500/[0.06] px-2 py-1 text-[11px] text-amber-200">
+              ⚠ 该条目原始约 {totalChars.toLocaleString()} 字符, 超过 10 万字符渲染上限, 超出部分已截断以避免前端卡顿.
+            </div>
+          )}
           {localCommandParts.length > 0 ? (
             <JsonEntryLocalCommandBlock parts={localCommandParts} />
           ) : mode === 'code' && codeEdit ? (
@@ -1798,10 +1947,10 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
           ) : mode === 'code' && (bashCalls.length > 0 || readCalls.length > 0) ? (
             <div className="flex flex-col gap-2">
               {bashCalls.length > 0 && (
-                <JsonEntryBashCommands calls={bashCalls} results={bashResults} />
+                <JsonEntryBashCommands calls={bashCalls} results={renderBashResults} />
               )}
               {readCalls.length > 0 && (
-                <JsonEntryReadCalls calls={readCalls} results={readResults} />
+                <JsonEntryReadCalls calls={readCalls} results={renderReadResults} />
               )}
             </div>
           ) : mode === 'compact' && canCompact && !canCode ? (
@@ -1811,7 +1960,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
               </Suspense>
             </div>
           ) : (
-            Object.entries(entry).map(([k, v]) => <KeyNode key={k} k={k} v={v} depth={0} />)
+            Object.entries(renderEntry).map(([k, v]) => <KeyNode key={k} k={k} v={v} depth={0} />)
           )}
         </div>
       )}
