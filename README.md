@@ -9,8 +9,8 @@
 # <img src="./assets/mobius-logo.svg" alt="" height="42" valign="middle" /> Mobius
 
 <h3>
-Open-source self-evolving productivity system<br />
-One system to connect your team, AI agents, devices, and compute power
+The first self-evolving open-source Agent OS<br />
+One system to connect your team, AI agents, devices, and compute
 </h3>
 
 <p align="center">
@@ -41,86 +41,62 @@ One system to connect your team, AI agents, devices, and compute power
 
 ---
 
-> **Trying to build a once-and-for-all perfect AI system is like trying to find the end of a Möbius strip — ultimately futile.**
+> **Building a perfect AI system once and for all is like finding the end of a Möbius strip — impossible by design.**
 >
-> Mobius is the world's first **self-evolving** open-source Agent OS. Not a fixed toolbox — a growing productivity system you build your own Agent OS on, connecting projects, teams, models, devices, compute, and apps into one traceable workspace.
+> Mobius is the world's first **self-evolving** open-source Agent OS. Not a fixed toolbox — a growing productivity system that connects projects, teams, models, devices, compute, and apps into one traceable workspace.
 
 ---
 
-## Self-Evolving — The Ship of Theseus
+## Self-Evolving
 
-Give Mobius a **change request**, a **screenshot**, or a **reference link** — it turns them into real code, UI, plugins, or workflow updates without disrupting your work. Every interaction replaces a plank on this Ship of Theseus, quietly in the background.
+Mobius rewrites itself from your input. Send a **change request**, a **screenshot**, or a **reference link** — Mobius turns them into real code, UI, plugins, or workflow updates, without interrupting your work. Each iteration replaces a plank on the Ship of Theseus, quietly in the background.
 
-<video controls src="https://mobius.nutshellai.cn/assets/v1/self-evolution.mp4" title="Self-evolution demo"></video>
-
-[More self-evolution examples](https://nutshellai-tech.github.io/mobius/self-evo-demo/)
+[View self-evolution examples](https://nutshellai-tech.github.io/mobius/self-evo-demo/)
 
 ---
 
-## Auto Research with Multi-Agent Pipeline
+## Auto Research
 
-Mobius orchestrates multiple agents into an autonomous research network — reading papers, extracting methods, reproducing experiments, and summarizing results. A research goal becomes a multi-agent pipeline, not just a Q&A.
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/33490ea7-c559-4d9c-a4fc-aff18a645066" width="700" alt="Multi-agent research network" />
-</p>
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/a767ba7c-43f7-49c7-9e83-83f8708c05d1" width="700" alt="Research progress tracking" />
-</p>
-
-<p align="center">
-  <video controls src="https://github.com/user-attachments/assets/0580bbc1-3998-4a85-8fa1-189b46637289" width="700" title="Auto Research demo"></video>
-</p>
+Mobius orchestrates multiple agents into an autonomous research pipeline — reading papers, extracting methods, running experiments, and surfacing results. A research goal becomes a multi-agent system, not a single Q&A.
 
 ---
 
-## XiaoMo — AI Hub You Can Just Talk To
+## XiaoMo
 
-XiaoMo turns a complex agent system into a natural-language **interface**. Just talk to it: create projects, split tasks, launch agents, track progress. Anything clickable XiaoMo can do; things the frontend can't do, XiaoMo handles too. Voice input, multi-device (Web/PC/Mobile), configurable reminders.
+XiaoMo is the natural-language interface to the entire system. Talk to it: create projects, split tasks, launch agents, track progress. Anything clickable, XiaoMo can do. Things the UI cannot do, XiaoMo handles too. Voice input, multi-device (Web, PC, Mobile), configurable reminders.
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/acff28ef-c117-487a-a904-baf79392ad3a" width="700" alt="XiaoMo interface" />
-</p>
-
-<p align="center">
-  <video controls src="https://github.com/user-attachments/assets/f7a45ceb-b208-4d22-a77b-ff11c05ef497" width="700" title="XiaoMo demo"></video>
-</p>
-
-↑ This demo video was itself produced by XiaoMo — zero human participation in the recording.
+> The demo videos on this page were produced by XiaoMo itself, with zero human participation in recording.
 
 ---
 
 ## Any Model, Any Agent
 
-Mobius is not locked into any single model. GPT, Claude, **GLM-5.2**, Codex — all can serve as execution engines inside the same project. Choose by task type, cost, and performance.
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/38f615b4-58bd-42b1-9b32-b6deadb6436e" width="700" alt="Model selection" />
-</p>
+Mobius is model-agnostic. GPT, Claude, **GLM-5.2**, Codex — all serve as execution engines inside the same project. Choose by task type, cost, or performance.
 
 ---
 
-## Connect Everything: GPU Clusters to Embedded Devices
+## Connect Everything
 
-Mobius schedules browsers and terminals — and beyond. GPU clusters, embedded boards, cloud servers, workstations all join the same task network through SSH, AIMUX, and controllable proxies.
+Mobius schedules browsers, terminals, GPU clusters, embedded boards, cloud servers, and workstations — all inside the same task network.
+
+Reach your resources through SSH, AIMUX, and controllable proxies:
 
 ```mermaid
 flowchart TD
   M["Mobius (XiaoMo)"]
 
-  subgraph P["Reach Protocols"]
+  subgraph P["Protocols"]
     SSH["SSH / SFTP"]
     AIMUX["AIMUX"]
     PROXY["Controllable Proxy"]
   end
 
-  subgraph R["Remote & Local Resources"]
+  subgraph R["Resources"]
     GPU["GPU Compute Cluster"]
-    NX["Embedded Boards (NX, etc.)"]
+    NX["Embedded Boards"]
     NAS["NAS / OSS / Cloud Storage"]
     CLOUD["Cloud Servers"]
-    PC["Workstations (Mac/Win/Linux)"]
+    PC["Workstations"]
     NET["Web / Open Literature"]
   end
 
@@ -130,57 +106,41 @@ flowchart TD
   PROXY --> NET
 ```
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/47de5fcd-426a-43e5-b9ec-df83e28cf7aa" width="700" alt="Compute resource management" />
-</p>
-
 ---
 
 ## Team Collaboration
 
-Human members, AI agents, tasks, and deliverables in one view. Leads see who does what, where agents stand, what needs confirmation, where risks exist — no more fragmented communication.
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/1a615cce-8c31-4f4f-8f04-da19c7f9b50e" width="700" alt="Team collaboration" />
-</p>
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/d96260b3-fd79-4ac7-b005-ee39ec021fcd" width="700" alt="Project management" />
-</p>
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/6c90b3a0-6c73-4065-a87e-a12a546aa327" width="700" alt="Task tracking" />
-</p>
+Human members, AI agents, tasks, and deliverables in one view. Leads see who is doing what, where each agent is, what needs confirmation, and where risks exist — no more fragmented communication.
 
 ---
 
 ## Self-Incubating Extensions
 
-Mobius ships with built-in extensions and can incubate new ones from your needs — financial news walls, PPT generators, research workbenches, World Cup portals. All generated with frontend, backend, data directory, and invocation entry, ready to keep evolving.
+Mobius ships with built-in extensions and grows new ones from your needs — financial dashboards, PPT generators, research workbenches, live portals. Each extension comes with a frontend, backend handler, data directory, and invocation entry, ready to keep evolving.
 
 <table>
   <tr>
     <td width="50%">
       <strong>Immersive Web Experiences</strong><br />
       <sub>Turn visual ideas into runnable extension apps.</sub><br />
-      <img src="./assets/extension-matrix-rounded.png" alt="Matrix-style extension screenshot" />
+      <img src="./assets/extension-matrix-rounded.png" alt="Matrix-style extension" />
     </td>
     <td width="50%">
       <strong>Financial News Wall</strong><br />
-      <sub>Track live market narratives and source-driven updates.</sub><br />
-      <img src="./assets/extension-finance-news-wall-rounded.png" alt="Financial news wall extension screenshot" />
+      <sub>Track live market narratives.</sub><br />
+      <img src="./assets/extension-finance-news-wall-rounded.png" alt="Financial news wall" />
     </td>
   </tr>
   <tr>
     <td width="50%">
       <strong>World Cup Portal</strong><br />
-      <sub>Build data-rich sports portals with schedules, news, players, and venues.</sub><br />
-      <img src="./assets/extension-world-cup-rounded.png" alt="World Cup extension screenshot" />
+      <sub>Data-rich sports portal.</sub><br />
+      <img src="./assets/extension-world-cup-rounded.png" alt="World Cup extension" />
     </td>
     <td width="50%">
       <strong>PPT Maker</strong><br />
-      <sub>Generate structured presentation assets from topics and materials.</sub><br />
-      <img src="./assets/extension-ppt-maker-rounded.png" alt="PPT maker extension screenshot" />
+      <sub>Presentations from topics and materials.</sub><br />
+      <img src="./assets/extension-ppt-maker-rounded.png" alt="PPT maker extension" />
     </td>
   </tr>
 </table>
@@ -189,9 +149,9 @@ Mobius ships with built-in extensions and can incubate new ones from your needs 
 
 ## Quick Start
 
-Full deployment instructions at <a href="https://nutshellai-tech.github.io/mobius/">Docs</a>.
+Full deployment guide at [Docs](https://nutshellai-tech.github.io/mobius/).
 
-### Option 1: Containers (recommended)
+### Containers (recommended)
 
 ```bash
 git clone https://github.com/nutshellai-tech/mobius.git && cd mobius
@@ -201,7 +161,7 @@ docker build -t mobius-system-exe:latest .
 docker compose up
 ```
 
-### Option 2: Direct (Linux / macOS)
+### Direct (Linux / macOS)
 
 ```bash
 sudo apt install tmux python3 git curl proxychains openssh-server build-essential
@@ -216,15 +176,15 @@ python3 start.py
 
 ## Roadmap
 
-- **v0.1** — Agent OS foundation: projects, issues, sessions, model integrations, agent execution, task management
-- **v0.2** — Team collaboration: multi-user projects, permissions, task status, agent tracking, usage analytics
-- **v0.3** — Self-evolution & extensions: plugin incubation, knowledge accumulation, feedback-driven iteration
-- **v0.4** — XiaoMo & multi-agent: natural-language interface, task decomposition, sub-agent collaboration, progress summaries
+- **v0.1** — Agent OS foundation: projects, issues, sessions, model integration, agent execution, task management
+- **v0.2** — Team collaboration: multi-user projects, permissions, task tracking, agent contribution analytics
+- **v0.3** — Self-evolution and extensions: plugin incubation, knowledge accumulation, feedback-driven iteration
+- **v0.4** — XiaoMo and multi-agent: natural-language interface, task decomposition, sub-agent collaboration, progress summaries
 - **v0.5** — Unify users, AI, devices, compute: remote compute, device access, robot/terminal integration, research pipelines
 
 ### Contribution
 
-Issues, plugins, docs, bugs, use cases — all welcome. If you believe AI systems should evolve instead of being preset tools, join us.
+Issues, plugins, docs, bug reports, use cases — all welcome. If you believe AI systems should evolve instead of being static tools, join us.
 
 <p align="center">
   <a href="https://github.com/nutshellai-tech/mobius">GitHub</a>
