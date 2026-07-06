@@ -43,6 +43,10 @@ One system to connect your team, AI agents, devices, and compute
 
 Mobius rewrites itself from your input. Send a **change request**, a **screenshot**, or a **reference link** — Mobius turns them into real code, UI, plugins, or workflow updates, without interrupting your work. Each iteration replaces a plank on the Ship of Theseus, quietly in the background.
 
+<p align="center">
+  <img src="./assets/can-do-agent-os.gif" alt="Self-evolving Agent OS demo" width="720" />
+</p>
+
 [View self-evolution examples](https://nutshellai-tech.github.io/mobius/self-evo-demo/)
 
 
@@ -50,6 +54,10 @@ Mobius rewrites itself from your input. Send a **change request**, a **screensho
 ## Auto Research
 
 Mobius orchestrates multiple agents into an autonomous research pipeline — reading papers, extracting methods, running experiments, and surfacing results. A research goal becomes a multi-agent system, not a single Q&A.
+
+<p align="center">
+  <img src="./assets/can-do-research.gif" alt="Auto Research demo" width="720" />
+</p>
 
 
 
@@ -104,11 +112,19 @@ flowchart TD
 
 Human members, AI agents, tasks, and deliverables in one view. Leads see who is doing what, where each agent is, what needs confirmation, and where risks exist — no more fragmented communication.
 
+<p align="center">
+  <img src="./assets/can-do-team-collab.gif" alt="Team collaboration demo" width="720" />
+</p>
+
 
 
 ## Self-Incubating Extensions
 
 Mobius ships with built-in extensions and grows new ones from your needs — financial dashboards, PPT generators, research workbenches, live portals. Each extension comes with a frontend, backend handler, data directory, and invocation entry, ready to keep evolving.
+
+<p align="center">
+  <img src="./assets/can-do-extensions.gif" alt="Extensions demo" width="720" />
+</p>
 
 <table>
   <tr>
