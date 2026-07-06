@@ -190,6 +190,11 @@ module.exports = {
   EXTENSION_HANDLER_MAX_RESULT_BYTES: 5 * 1024 * 1024,
   EXTENSION_HANDLER_MAX_PAYLOAD_BYTES: 1 * 1024 * 1024,
   EXTENSION_INVOKE_RATE_PER_SEC: 5,
+  // 消息推送钩子: 消息管线产生新消息时, 给"未在线(无 SSE)"的目标用户调扩展 notify_user
+  // (经 JPush 远程推送). 默认开; 设 MOBIUS_EXT_PUSH_ENABLED=0 可整体关闭.
+  EXT_PUSH_ENABLED: process.env.MOBIUS_EXT_PUSH_ENABLED !== '0',
+  // 负责推送的扩展 name (其 handler 实现 notify_user). 默认 momo-mobile.
+  EXT_PUSH_EXTENSION_NAME: process.env.MOBIUS_EXT_PUSH_EXTENSION_NAME || 'momo-mobile',
 
   // forgotten-flag-scanner 检测到 "agent 停工但 running.flag 未删" 时, 自动发给
   // 该 session 的默认提醒文案 (单一真相源). 项目可在设置里用 forgotten_flag_message

@@ -45,6 +45,9 @@ import { readSessionInputs } from '../services/session-inputs';
 import * as sessionFeatures from '../services/session-features';
 // @ts-ignore — service 仍是 .js
 import { runSessionMessage } from '../services/session-message-runner';
+// 消息推送钩子: 1v1 assistant 回复 settle 后, 若用户离线(无 SSE)则远程推送
+import * as presence from '../services/user-presence';
+import { pushToUser as pushToUserExt, isEnabled as isExtPushEnabled } from '../services/extension-push';
 // @ts-ignore — service 仍是 .js
 import { writeSessionTransferDocument } from '../services/session-transfer';
 // @ts-ignore — service 仍是 .js
@@ -187,6 +190,74 @@ function isTurnCompleteEntry(entry: any): boolean {
   if (entry?.type === 'assistant' && sr && sr !== 'tool_use') return true;
   if (entry?.type === 'event_msg' && entry?.payload?.type === 'task_complete') return true;
   return false;
+}
+
+// 从 turn-complete entry 里抽 assistant 文本作为推送摘要.
+function extractAssistantTextFromEntry(entry: any): string {
+  const content = entry?.message?.content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((c: any) => c && c.type === 'text' && typeof c.text === 'string')
+    .map((c: any) => c.text)
+    .join('')
+    .trim();
+}
+
+// 1v1 推送钩子: 用户发消息触发 agent 后, 订阅其 thought stream; 回复 settle 时若用户已离线
+// (无 SSE 在听, 消息送不到前端), 则走扩展 notify_user 远程推送. 在线则跳过(SSE 已实时送达).
+// fire-and-forget, 全程 try/catch, 5 分钟兜底退订防泄漏, 绝不影响消息主流程.
+function watch1v1ReplyForPush(opts: { backend: any; sessionId: string; user: any; sessionName?: string }): void {
+  if (!isExtPushEnabled()) return;
+  const { backend, sessionId, user, sessionName } = opts;
+  if (!user?.id) return;
+  if (typeof backend?.getAgentRawThoughtStream !== 'function') return;
+
+  // 取当前 sentinel: 只订阅本次投递"之后"的新 entry, 避免回放历史 turn-complete 误推.
+  let sentinel: any = null;
+  try {
+    const hist = backend.getHistory?.(sessionId, {});
+    sentinel = hist?.sentinel ?? null;
+  } catch {}
+
+  let done = false;
+  let unsub: (() => void) = () => {};
+  let timer: NodeJS.Timeout | null = null;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    if (timer) { clearTimeout(timer); timer = null; }
+    try { unsub(); } catch {}
+  };
+
+  try {
+    unsub = backend.getAgentRawThoughtStream(
+      sessionId,
+      (entry: any) => {
+        if (done) return;
+        if (!isTurnCompleteEntry(entry)) return;
+        finish();
+        // turn 完成 → 稍等文本落地, 再判定在线 & 推送.
+        setTimeout(() => {
+          try {
+            if (presence.isOnline(user.id)) return; // 在线, SSE 已送达, 不重复推
+            const text = extractAssistantTextFromEntry(entry);
+            if (!text) return;
+            void pushToUserExt({
+              username: user.id,
+              title: sessionName || 'Mobius',
+              body: text,
+              deepLink: `momo://chat/${sessionId}`,
+            });
+          } catch {}
+        }, 1200);
+      },
+      { fromSentinel: sentinel },
+    );
+  } catch {
+    return;
+  }
+  // 兜底: 最长挂 5 分钟自动退订, 防 worker 泄漏.
+  timer = setTimeout(finish, 5 * 60 * 1000);
 }
 
 function shapeSessionForStream(s: AnySession): Record<string, any> {
@@ -583,6 +654,8 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
 
   let closed = false;
   let unsub: (() => void) | null = null;
+  // 在线追踪: 该 SSE 连着期间用户算"在线", assistant 回复不走远程推送.
+  const releasePresence = presence.track(user.id);
   const keepalive = setInterval(() => writeSseComment(res, 'keepalive'), 25000);
   const cleanup = () => {
     if (closed) return;
@@ -590,6 +663,7 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
     clearInterval(keepalive);
     if (unsub) { try { unsub(); } catch {} }
     unsub = null;
+    try { releasePresence(); } catch {}
   };
   const endStream = () => {
     cleanup();
@@ -1244,6 +1318,11 @@ router.post('/:id/messages', auth, async (req: express.Request, res: express.Res
       urgent: req.body?.urgent === true,
     } as any);
     auditSessionAccess(user, 'send_session_message', Sessions.findById(sessionId) as any);
+    // 1v1 推送钩子: agent 回复 settle 后, 若用户此时离线(无 SSE) → 远程推送.
+    try {
+      const sess = Sessions.findById(sessionId) as any;
+      watch1v1ReplyForPush({ backend: backendForSession(sess), sessionId, user, sessionName: sess?.name });
+    } catch {}
     res.json(result);
     return;
   } catch (e) {
