@@ -31,13 +31,13 @@ One system to connect your team, AI agents, devices, and compute
   <img src="./assets/github-cover-v1.png" alt="Mobius GitHub cover" width="100%" />
 </p>
 
----
+
 
 > **Building a perfect AI system once and for all is like finding the end of a Mobius strip — impossible by design.**
 >
 > Mobius is the world's first **self-evolving** open-source Agent OS. Not a fixed toolbox — a growing productivity system that connects projects, teams, models, devices, compute, and apps into one traceable workspace.
 
----
+
 
 ## Self-Evolving
 
@@ -45,13 +45,13 @@ Mobius rewrites itself from your input. Send a **change request**, a **screensho
 
 [View self-evolution examples](https://nutshellai-tech.github.io/mobius/self-evo-demo/)
 
----
+
 
 ## Auto Research
 
 Mobius orchestrates multiple agents into an autonomous research pipeline — reading papers, extracting methods, running experiments, and surfacing results. A research goal becomes a multi-agent system, not a single Q&A.
 
----
+
 
 ## XiaoMo
 
@@ -59,13 +59,13 @@ XiaoMo is the natural-language interface to the entire system. Talk to it: creat
 
 > The demo videos on this page were produced by XiaoMo itself, with zero human participation in recording.
 
----
+
 
 ## Any Model, Any Agent
 
 Mobius is model-agnostic. GPT, Claude, **GLM-5.2**, Codex — all serve as execution engines inside the same project. Choose by task type, cost, or performance.
 
----
+
 
 ## Connect Everything
 
@@ -98,13 +98,13 @@ flowchart TD
   PROXY --> NET
 ```
 
----
+
 
 ## Team Collaboration
 
 Human members, AI agents, tasks, and deliverables in one view. Leads see who is doing what, where each agent is, what needs confirmation, and where risks exist — no more fragmented communication.
 
----
+
 
 ## Self-Incubating Extensions
 
@@ -137,7 +137,7 @@ Mobius ships with built-in extensions and grows new ones from your needs — fin
   </tr>
 </table>
 
----
+
 
 ## Quick Start
 
@@ -164,7 +164,7 @@ cd ./mobius && npm install && cd ./frontend && npm install && cd ../..
 python3 start.py
 ```
 
----
+
 
 ## Roadmap
 
