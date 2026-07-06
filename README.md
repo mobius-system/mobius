@@ -6,7 +6,7 @@
 
 <div align="center">
 
-# <img src="./assets/mobius-logo.svg" alt="" height="42" valign="middle" /> Mobius
+# <img src="https://serve.nutshellai.cn/publish/auto/readme/mobius-logo.svg" alt="" height="42" valign="middle" /> Mobius
 
 <h3>
 The first self-evolving open-source Agent OS<br />
@@ -14,15 +14,16 @@ One system to connect your team, AI agents, devices, and compute
 </h3>
 
 <p align="center">
-  <a href="https://github.com/nutshellai-tech/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/nutshellai-tech/mobius" /></a>
-  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange" /></a>
-  <a href="https://mobius.nutshellai.cn/"><strong>Website</strong></a> · <a href="https://nutshellai-tech.github.io/mobius/"><strong>Docs</strong></a>
+  <a href="https://github.com/nutshellai-tech/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/nutshellai-tech/mobius?style=for-the-badge" /></a>
+  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange?style=for-the-badge" /></a>
+  <a href="https://mobius.nutshellai.cn/"><img alt="Website" src="https://img.shields.io/badge/website-000000?style=for-the-badge&logo=About.me&logoColor=white" /></a>
+  <a href="https://nutshellai-tech.github.io/mobius/"><img alt="Docs" src="https://img.shields.io/badge/docs-000000?style=for-the-badge&logo=readthedocs&logoColor=white" /></a>
 </p>
 
 </div>
 
 <p align="center">
-  <img src="./assets/github-cover-v1.png" alt="Mobius GitHub cover" width="100%" />
+  <img src="https://serve.nutshellai.cn/publish/auto/readme/github-cover-v1.png" alt="Mobius GitHub cover" width="100%" />
 </p>
 
 
@@ -38,7 +39,7 @@ One system to connect your team, AI agents, devices, and compute
 Mobius rewrites itself from your input. Send a **change request**, a **screenshot**, or a **reference link** — Mobius turns them into real code, UI, plugins, or workflow updates, without interrupting your work. Each iteration replaces a plank on the Ship of Theseus, quietly in the background.
 
 <p align="center">
-  <img src="./assets/can-do-agent-os.gif" alt="Self-evolving Agent OS demo" width="720" />
+  <img src="https://serve.nutshellai.cn/publish/auto/readme/can-do-agent-os.gif" alt="Self-evolving Agent OS demo" width="480" />
 </p>
 
 [View self-evolution examples](https://nutshellai-tech.github.io/mobius/self-evo-demo/)
@@ -50,7 +51,7 @@ Mobius rewrites itself from your input. Send a **change request**, a **screensho
 Mobius orchestrates multiple agents into an autonomous research pipeline — reading papers, extracting methods, running experiments, and surfacing results. A research goal becomes a multi-agent system, not a single Q&A.
 
 <p align="center">
-  <img src="./assets/can-do-research.gif" alt="Auto Research demo" width="720" />
+  <img src="https://serve.nutshellai.cn/publish/auto/readme/can-do-research.gif" alt="Auto Research demo" width="480" />
 </p>
 
 
@@ -107,7 +108,7 @@ flowchart TD
 Human members, AI agents, tasks, and deliverables in one view. Leads see who is doing what, where each agent is, what needs confirmation, and where risks exist — no more fragmented communication.
 
 <p align="center">
-  <img src="./assets/can-do-team-collab.gif" alt="Team collaboration demo" width="720" />
+  <img src="https://serve.nutshellai.cn/publish/auto/readme/can-do-team-collab.gif" alt="Team collaboration demo" width="480" />
 </p>
 
 
@@ -117,7 +118,7 @@ Human members, AI agents, tasks, and deliverables in one view. Leads see who is 
 Build extensions and grows new ones from your needs — financial dashboards, PPT generators, research workbenches, live portals. Each extension comes with a frontend, backend handler, data directory, and invocation entry, ready to keep evolving.
 
 <p align="center">
-  <img src="./assets/can-do-extensions.gif" alt="Extensions demo" width="720" />
+  <img src="https://serve.nutshellai.cn/publish/auto/readme/can-do-extensions.gif" alt="Extensions demo" width="480" />
 </p>
 
 <table>
@@ -125,24 +126,24 @@ Build extensions and grows new ones from your needs — financial dashboards, PP
     <td width="50%">
       <strong>Immersive Web Experiences</strong><br />
       <sub>Turn visual ideas into runnable extension apps.</sub><br />
-      <img src="./assets/extension-matrix-rounded.png" alt="Matrix-style extension" />
+      <img src="https://serve.nutshellai.cn/publish/auto/readme/extension-matrix-rounded.png" alt="Matrix-style extension" />
     </td>
     <td width="50%">
       <strong>Financial News Wall</strong><br />
       <sub>Track live market narratives.</sub><br />
-      <img src="./assets/extension-finance-news-wall-rounded.png" alt="Financial news wall" />
+      <img src="https://serve.nutshellai.cn/publish/auto/readme/extension-finance-news-wall-rounded.png" alt="Financial news wall" />
     </td>
   </tr>
   <tr>
     <td width="50%">
       <strong>World Cup Portal</strong><br />
       <sub>Data-rich sports portal.</sub><br />
-      <img src="./assets/extension-world-cup-rounded.png" alt="World Cup extension" />
+      <img src="https://serve.nutshellai.cn/publish/auto/readme/extension-world-cup-rounded.png" alt="World Cup extension" />
     </td>
     <td width="50%">
       <strong>PPT Maker</strong><br />
       <sub>Presentations from topics and materials.</sub><br />
-      <img src="./assets/extension-ppt-maker-rounded.png" alt="PPT maker extension" />
+      <img src="https://serve.nutshellai.cn/publish/auto/readme/extension-ppt-maker-rounded.png" alt="PPT maker extension" />
     </td>
   </tr>
 </table>
