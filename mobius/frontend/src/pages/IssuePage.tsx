@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, MessageSquarePlus, Sparkles } from 'lucide-react'
 import { useStore, api } from '../store'
@@ -18,7 +18,7 @@ import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/lo
 
 const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
 const SESSION_OVERVIEW_PAGE_SIZE = 15
-const SESSION_SIDEBAR_PAGE_SIZE = 15  // sidebar 会话列表每页 15, 超过即分页
+const SESSION_SIDEBAR_PAGE_SIZE = 16  // sidebar 会话列表每页 16, 超过即分页
 
 // =====================================================================
 // Issue 处理页 /u/:user/p/:project/i/:issue?session=<id>
@@ -204,11 +204,17 @@ export default function IssuePage() {
     })
   }, [sessions])
 
-  // sidebar 会话分页: 超过 15 个时每页 15; 选中会话 (activeId) 变化自动翻到它所在页, 保证高亮项始终可见.
+  // sidebar 会话分页: 超过 16 个时每页 16; 选中会话 (activeId) 变化自动翻到它所在页, 保证高亮项始终可见.
   const sidebarPagination = usePagination(sortedSessions, SESSION_SIDEBAR_PAGE_SIZE, {
     activeId: currentSession?.session_id,
     getId: (s: any) => s.session_id,
   })
+  // 换页后把列表区滚回顶部; 否则用户滚到底点"下一页", 新页会停在中段 (列表区 scrollTop 不重置),
+  // 视觉上像翻页没生效 (带 session 时 sidebar 列表被 issue 详情挤压, 滚动更深, 错位最明显).
+  const sessionListRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (sessionListRef.current) sessionListRef.current.scrollTop = 0
+  }, [sidebarPagination.page])
 
   return (
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
@@ -311,7 +317,7 @@ export default function IssuePage() {
           </div>
 
           {/* Sessions 列表 */}
-          <div className="flex-1 overflow-y-auto px-2 py-1">
+          <div ref={sessionListRef} className="flex-1 overflow-y-auto px-2 py-1">
             {sortedSessions.length === 0 ? (
               <button onClick={() => setShowNewSession(true)}
                 className="mt-2 w-full rounded-xl border border-dashed px-3 py-5 text-center transition-colors hover:border-blue-500/35 hover:bg-blue-500/5"

@@ -74,6 +74,22 @@ const CODEX_STATUS_LINE_RE = /\(\d+(?:s|m\s+\d{2}s|h\s+\d{2}m\s+\d{2}s)\s*•\s*
 const REALTIME_INFO_TTL_MS = 5 * 1000
 const _realTimeInfoCache = new Map() // sessionId → { ts: number, value: string }
 
+// /stop 强杀托底用: 抓 pane 最新文本 (绕过 5s 缓存, 反映 C-c 后真实状态), 判断 codex TUI
+// 是否仍在跑 turn. busy 锚点 = CODEX_STATUS_LINE_RE ("(<elapsed> • esc to interrupt)" 等).
+// 命中 → C-c×3 未生效, 仍在工作; 不命中/失败 → 已回 idle 态, C-c 生效.
+// 失败/空 → false (不 escalate, 避免误杀正常软停的 window).
+function codexPaneStillBusy(sessionId) {
+  let text = ''
+  try {
+    const pane = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-J', '-S', '-15'])
+    if (pane.status === 0 && pane.stdout) {
+      text = pane.stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    }
+  } catch { /* best-effort: 失败即不忙, 不 escalate */ }
+  if (!text) return false
+  return text.split('\n').some((l) => CODEX_STATUS_LINE_RE.test(l))
+}
+
 const READY_POLL_MS = 250
 const READY_TIMEOUT_MS = 25000
 const READY_SENTINELS = [
@@ -877,6 +893,21 @@ class TmuxCodexBackend extends AgentBackend {
       }
       if (persisted) persisted.working = false
       await new Promise((r) => setTimeout(r, 300))
+      // 兜底: C-c×3 偶发被 TUI 吞没停下. 空 prompt 软停 (/stop) 场景 escalate 到
+      // tmux kill-window 强杀托底, 保证 /stop 一定能让后台 agent 停下来 (window 死了
+      // 下次发消息会 respawn, 不影响会话续接). 双重确认 (capture busy → 再等 700ms 让
+      // TUI 消化 → 仍 busy) 避免状态行短暂残留导致误杀正常软停的 window.
+      if (!prompt) {
+        _realTimeInfoCache.delete(sessionId)
+        if (codexPaneStillBusy(sessionId)) {
+          await new Promise((r) => setTimeout(r, 700))
+          _realTimeInfoCache.delete(sessionId)
+          if (windowExists(sessionId) && codexPaneStillBusy(sessionId)) {
+            tmux(['kill-window', '-t', `${HUB}:${sessionId}`])
+            log(`[tmux-codex] /stop fallback: C-c×3 未停止, kill-window=${sessionId}`)
+          }
+        }
+      }
     }
 
     if (!prompt) {

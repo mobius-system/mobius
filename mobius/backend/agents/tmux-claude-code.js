@@ -201,6 +201,22 @@ function capturePaneTail(sessionId) {
   return text
 }
 
+// /stop 强杀托底用: 抓 pane 最新文本 (绕过 5s 缓存, 反映 C-c 后真实状态), 判断 claude TUI
+// 是否仍在跑 turn. 两个 busy 锚点: 状态行 "(... ↓ tokens ...)" + "Waiting for N background
+// agents to finish". 任一命中 → C-c×3 未生效, 仍在工作; 都不命中 → 已回 idle 输入态, C-c 生效.
+// 失败/空 → false (不 escalate, 避免误杀正常软停的 window).
+function claudePaneStillBusy(sessionId) {
+  let text = ''
+  try {
+    const pane = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-S', '-25'])
+    if (pane.status === 0 && pane.stdout) {
+      text = pane.stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    }
+  } catch { /* best-effort: 失败即不忙, 不 escalate */ }
+  if (!text) return false
+  return CLAUDE_STATUS_LINE_RE.test(text) || CLAUDE_BG_AGENTS_WAITING_RE.test(text)
+}
+
 function listWindowsRowsCached() {
   const now = Date.now()
   if (_listWindowsCache && now - _listWindowsCache.ts < LIST_WINDOWS_TTL_MS) {
@@ -645,6 +661,22 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         }
         // 给 claude TUI 一点时间消化中断
         await new Promise(r => setTimeout(r, 300))
+        // 兜底: C-c×3 偶发被 TUI 吞/卡在对话框, 实际没停下. 仅空 prompt 软停 (/stop) 场景
+        // escalate 到 tmux kill-window 强杀托底, 保证 /stop 一定能让后台 agent 停下来
+        // (window 死了下次发消息 _queueImpl 会 respawn, 不影响会话续接); urgent+新 prompt
+        // 路径要保留 window 接新输入, 不走强杀. 双重确认 (capture busy → 再等 700ms 让 TUI
+        // 消化 → 仍 busy) 避免状态行短暂残留导致误杀正常软停的 window.
+        if (!prompt) {
+          _paneTailCache.delete(sessionId)
+          if (claudePaneStillBusy(sessionId)) {
+            await new Promise(r => setTimeout(r, 700))
+            _paneTailCache.delete(sessionId)
+            if (windowExists(sessionId) && claudePaneStillBusy(sessionId)) {
+              tmux(['kill-window', '-t', `${HUB}:${sessionId}`])
+              log(`[tmux-claude-code] /stop fallback: C-c×3 未停止, kill-window=${sessionId}`)
+            }
+          }
+        }
       }
     }
 

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState, useEffect, useMemo } from 'react'
+import { Suspense, lazy, useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Bot, Users, Trash2 } from 'lucide-react'
 import { useStore, api } from '../store'
@@ -16,8 +16,8 @@ import ResearchBlackboard from '../components/research-blackboard'
 const ResearchAgentTeamModal = lazy(() => import('../components/research-agent-team-modal')
   .then(mod => ({ default: mod.ResearchAgentTeamModal })))
 
-// sidebar Research Agent 列表每页 15, 超过即分页.
-const SESSION_SIDEBAR_PAGE_SIZE = 15
+// sidebar Research Agent 列表每页 16, 超过即分页.
+const SESSION_SIDEBAR_PAGE_SIZE = 16
 
 export default function ResearchPage() {
   const params = useParams()
@@ -162,11 +162,17 @@ export default function ResearchPage() {
     })
   }, [sessions])
 
-  // sidebar Research Agent 分页: 超过 15 个时每页 15; 选中 Agent (activeId) 变化自动翻到它所在页, 保证高亮项始终可见.
+  // sidebar Research Agent 分页: 超过 16 个时每页 16; 选中 Agent (activeId) 变化自动翻到它所在页, 保证高亮项始终可见.
   const sidebarPagination = usePagination(sortedSessions, SESSION_SIDEBAR_PAGE_SIZE, {
     activeId: currentSession?.session_id,
     getId: (s: any) => s.session_id,
   })
+  // 换页后把列表区滚回顶部; 否则用户滚到底点"下一页", 新页会停在中段 (列表区 scrollTop 不重置),
+  // 视觉上像翻页没生效 (带 session 时 sidebar 列表被挤压, 滚动更深, 错位最明显).
+  const sessionListRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (sessionListRef.current) sessionListRef.current.scrollTop = 0
+  }, [sidebarPagination.page])
 
   return (
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
@@ -252,7 +258,7 @@ export default function ResearchPage() {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-2 py-1">
+          <div ref={sessionListRef} className="flex-1 overflow-y-auto px-2 py-1">
             {sortedSessions.length === 0 ? (
               <div className="text-center py-8 text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无 Research Agent</div>
             ) : sidebarPagination.pagedItems.map((s: any) => (

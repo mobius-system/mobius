@@ -17,7 +17,7 @@ const PROJECT_FILTERS: Array<{ key: ProjectFilterKey; label: string; title: stri
 ]
 
 // /u/:user 主区项目卡片每页显示数量; 超过即分页, 避免一次性渲染过多卡片.
-const PROJECT_PAGE_SIZE = 15
+const PROJECT_PAGE_SIZE = 16
 
 // =====================================================================
 // 项目汇总页 /u/:user
@@ -279,6 +279,16 @@ export default function UserPage() {
     projectPagination.reset()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, projectFilters])
+
+  // 分页控件 props (顶部 + 底部复用同一份).
+  const projectPaginationProps = {
+    page: projectPagination.page,
+    totalPages: projectPagination.totalPages,
+    pageStart: projectPagination.pageStart,
+    pageEnd: projectPagination.pageEnd,
+    totalItems: myProjects.length,
+    onPageChange: projectPagination.goToPage,
+  }
 
   const toggleProjectStar = async (e: any, p: any) => {
     e.preventDefault()
@@ -562,14 +572,7 @@ export default function UserPage() {
               <>
               {projectPagination.totalPages > 1 && (
                 <div className="mb-4">
-                  <PaginationControls
-                    page={projectPagination.page}
-                    totalPages={projectPagination.totalPages}
-                    pageStart={projectPagination.pageStart}
-                    pageEnd={projectPagination.pageEnd}
-                    totalItems={myProjects.length}
-                    onPageChange={projectPagination.goToPage}
-                  />
+                  <PaginationControls {...projectPaginationProps} />
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -781,6 +784,11 @@ export default function UserPage() {
                   )
                 })}
               </div>
+              {projectPagination.totalPages > 1 && (
+                <div className="mt-4">
+                  <PaginationControls {...projectPaginationProps} />
+                </div>
+              )}
               </>
             )}
             {/* 10.7: 搜索命中且当前用户已屏蔽的项目. 仍可见, 但带"已屏蔽"角标; 点击 Eye 图标可恢复显示. */}
