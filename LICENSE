@@ -3,7 +3,6 @@
 Copyright (c) 2026 果壳智算（北京）科技有限公司 (Guoke Zhisuan (Beijing) Technology Co., Ltd.)
 All rights reserved.
 
----
 
 ## Summary
 
@@ -13,9 +12,8 @@ modify the source code for **non-commercial purposes** under the terms below.
 **Any commercial use requires a separate commercial license** obtained from
 果壳智算（北京）科技有限公司. For licensing inquiries, please contact:
 
-  business@nutshellai.cn
+business@nutshellai.cn
 
----
 
 ## 1. Definitions
 
@@ -33,7 +31,6 @@ modify the source code for **non-commercial purposes** under the terms below.
     - Operating the Software on behalf of a for-profit organization as part
       of its core business operations.
 
----
 
 ## 2. Non-Commercial License Grant
 
@@ -47,7 +44,6 @@ worldwide, royalty-free, non-exclusive, non-sublicensable license to:
        - You clearly mark any modifications You have made;
        - You do not use the distribution for Commercial Use.
 
----
 
 ## 3. Commercial Use Prohibited Without License
 
@@ -62,7 +58,6 @@ Commercial licenses are available for:
 
 To obtain a commercial license, contact: business@nutshellai.cn
 
----
 
 ## 4. Restrictions
 
@@ -77,7 +72,6 @@ Regardless of whether Your use is commercial or non-commercial, You may not:
      endorse or promote products derived from the Software without prior
      written consent.
 
----
 
 ## 5. Contributions
 
@@ -90,7 +84,6 @@ this repository, You agree that:
   b. 果壳智算（北京）科技有限公司 may adjust the terms of this License as deemed
      necessary.
 
----
 
 ## 6. Intellectual Property
 
@@ -98,7 +91,6 @@ The interactive design, user interface layout, and visual elements of this
 product are protected by appearance patent and other intellectual property
 rights owned by 果壳智算（北京）科技有限公司.
 
----
 
 ## 7. Disclaimer of Warranty
 
@@ -110,14 +102,9 @@ OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
----
 
 ## 8. Termination
 
 This License and the rights granted hereunder will terminate automatically
 if You fail to comply with any of its terms. Upon termination, You must
 destroy all copies of the Software in Your possession.
-
----
-
-(c) 2026 果壳智算（北京）科技有限公司 (Guoke Zhisuan (Beijing) Technology Co., Ltd.)
