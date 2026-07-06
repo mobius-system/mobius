@@ -587,7 +587,7 @@ export default function UserPage() {
                   const isMuted = mutedIdSet.has(p.id)
                   return (
                     <div key={p.id} data-tour="user-project-card"
-                      className={`rounded-xl border overflow-hidden flex flex-col group transition-all ${p.is_self_develop ? 'hover:border-yellow-400/60' : 'hover:border-blue-500/30'}`}
+                      className={`rounded-xl border overflow-hidden flex flex-col group transition-all min-w-0 ${p.is_self_develop ? 'hover:border-yellow-400/60' : 'hover:border-blue-500/30'}`}
                       style={p.is_self_develop
                         ? { background: 'linear-gradient(135deg, rgba(251,191,36,0.06) 0%, var(--bg-primary) 60%)', borderColor: 'rgba(251,191,36,0.45)' }
                         : { background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
