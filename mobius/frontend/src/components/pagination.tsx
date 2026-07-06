@@ -22,7 +22,8 @@ export function usePagination<T>(items: T[], pageSize: number, opts?: {
   }, [page, totalPages])
 
   // 选中项 (activeId) 变化时自动翻到它所在的页, 保证 sidebar 高亮项始终可见.
-  // 依赖只放 activeId: 用户手动翻页 (setPage) 不会触发本 effect, 不打断浏览.
+  // 依赖放 [activeId, items.length]: 用户手动翻页 (setPage) 不改这两者, 不会被打断;
+  // 同时覆盖 "activeId 先到位 / items 后到齐" 的时序竞态 (length 0→N 时重跑一次定位).
   useEffect(() => {
     const id = opts?.activeId
     const getId = opts?.getId
@@ -32,7 +33,7 @@ export function usePagination<T>(items: T[], pageSize: number, opts?: {
     const targetPage = Math.floor(idx / pageSize) + 1
     setPage((cur) => (cur === targetPage ? cur : targetPage))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts?.activeId])
+  }, [opts?.activeId, items.length])
 
   const pagedItems = useMemo(() => {
     const start = (currentPage - 1) * pageSize
