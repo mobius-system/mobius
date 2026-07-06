@@ -14,15 +14,10 @@ One system to connect your team, AI agents, devices, and compute
 </h3>
 
 <p align="center">
-  <a href="https://github.com/nutshellai-tech/mobius/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-source--available%20%2F%20non--commercial-orange" /></a>
   <a href="https://github.com/nutshellai-tech/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/nutshellai-tech/mobius" /></a>
   <a href="https://github.com/nutshellai-tech/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange" /></a>
-</p>
-
-<p align="center">
-  <a href="https://mobius.nutshellai.cn/"><strong>Website</strong></a>
-  ·
-  <a href="https://nutshellai-tech.github.io/mobius/"><strong>Docs</strong></a>
+  <a href="https://mobius.nutshellai.cn/"><img alt="Website" src="https://img.shields.io/badge/Website-mobius.nutshellai.cn-blue" /></a>
+  <a href="https://nutshellai-tech.github.io/mobius/"><img alt="Docs" src="https://img.shields.io/badge/Docs-nutshellai--tech.github.io/mobius-blue" /></a>
 </p>
 
 </div>
@@ -120,7 +115,7 @@ Human members, AI agents, tasks, and deliverables in one view. Leads see who is 
 
 ## Self-Incubating Extensions
 
-Mobius ships with built-in extensions and grows new ones from your needs — financial dashboards, PPT generators, research workbenches, live portals. Each extension comes with a frontend, backend handler, data directory, and invocation entry, ready to keep evolving.
+Build extensions and grows new ones from your needs — financial dashboards, PPT generators, research workbenches, live portals. Each extension comes with a frontend, backend handler, data directory, and invocation entry, ready to keep evolving.
 
 <p align="center">
   <img src="./assets/can-do-extensions.gif" alt="Extensions demo" width="720" />
