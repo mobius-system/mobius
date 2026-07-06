@@ -182,6 +182,20 @@ const CLAUDE_STATUS_LINE_RE = /\([^()]*[↑↓]\s*[\d.,]+\s*k?\s*tokens[^()]*\)/
 // 不锚 spinner 字符 (✻ 随帧变), 大小写不敏感, [1-9]\d* 排除 N=0 (结束态不再显示此行).
 const CLAUDE_BG_AGENTS_WAITING_RE = /Waiting\s+for\s+[1-9]\d*\s+background\s+agents?\s+to\s+finish/i
 
+// claude TUI "危险操作权限框". 即便 --dangerously-skip-permissions / 底栏 "bypass permissions on",
+// claude 仍会对"作用在工作目录或其祖先上的危险操作"(典型: rm -rf <cwd 子树>) 弹一次性确认框:
+//   Dangerous rm operation on working directory or its ancestor: /home/.../verify-overflow
+//   Do you want to proceed?   1. Yes   ❯ 2. No   Esc to cancel · Tab to amend · ctrl+e to explain
+// 此时 agent 卡在权限框等输入, TUI 不再推进 → session 表面"待命/卡死". realTimeInfo 检测到此框
+// → 抽 danger_warning 整行 → fire-and-forget 自愈 (Esc 取消 → 等 5s → resume 提示 agent 跳过/
+// 换温和命令), 不阻塞 /status 轮询. "Dangerous <kind> operation on working directory or its
+// ancestor: <path>" 整行 (非贪婪到行尾, kind 可能是 rm/git/curl 等单字).
+const CLAUDE_DANGER_OPERATION_RE = /Dangerous\s+\S[^\n]*?operation\s+on\s+working\s+directory\s+or\s+its\s+ancestor:[^\n]*/i
+// 自愈节流: 单 session 同时只跑一个自愈; 同一 warning 文本冷却期内不重复触发 (防 Esc 没干净 +
+// pane 5s 缓存残留导致 realTimeInfo 反复命中, 把 agent 轰成复读机).
+const DANGER_HEAL_COOLDOWN_MS = 30 * 1000
+const _dangerHealState = new Map() // sessionId → { healing: boolean, lastWarning: string, lastTs: number }
+
 // capture-pane 尾部纯文本缓存 (5s TTL). isWorking 兜底 + realTimeInfo 共用同一份 spawn,
 // 把 capture-pane 频次压到 ≤1/5s/session. 去掉 ANSI 转义; 失败/非命中返回 "".
 const PANE_TAIL_TTL_MS = 5 * 1000
@@ -215,6 +229,20 @@ function claudePaneStillBusy(sessionId) {
   } catch { /* best-effort: 失败即不忙, 不 escalate */ }
   if (!text) return false
   return CLAUDE_STATUS_LINE_RE.test(text) || CLAUDE_BG_AGENTS_WAITING_RE.test(text)
+}
+
+// 检测 claude TUI 是否正卡在"危险操作权限框". 返回 { pending, warning }.
+// warning = "Dangerous <kind> operation on working directory or its ancestor: <path>" 整行.
+// 必须同时命中 danger 行 + "Do you want to proceed?" + "Esc to cancel" 三个特征才算"正卡在框上"
+// (三者同屏出现是权限框的强信号, 避免历史日志/输出里残留的 danger 文本误判).
+function detectDangerPermission(text) {
+  if (!text) return { pending: false, warning: null }
+  const m = text.match(CLAUDE_DANGER_OPERATION_RE)
+  if (!m) return { pending: false, warning: null }
+  if (!/Do you want to proceed\?/.test(text) || !/Esc to cancel/.test(text)) {
+    return { pending: false, warning: null }
+  }
+  return { pending: true, warning: m[0].trim() }
 }
 
 function listWindowsRowsCached() {
@@ -486,7 +514,13 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 不重复 spawn. isWorking 在"等待 background agents"等灰色地带已 capture 过, 这里直接命中缓存.
     try {
       if (this.isAlive(sessionId) && this.isWorking(sessionId)) {
-        const lines = capturePaneTail(sessionId).split('\n')
+        const paneText = capturePaneTail(sessionId)
+        // 危险操作权限框: 即便开了 "bypass permissions on" claude 仍会对此类操作弹框, agent
+        // 卡在框上等输入 → TUI 不推进 → session 卡死. tool_use pending 时 isWorking 判 true,
+        // 正好覆盖此态. fire-and-forget 自愈 (Esc + 等 5s + resume), 不阻塞 /status 轮询.
+        const danger = detectDangerPermission(paneText)
+        if (danger.pending) this._maybeHealDangerPermission(sessionId, danger.warning)
+        const lines = paneText.split('\n')
         // 从末尾往上找最近一条状态行 (TUI 同时只显示一条).
         for (let i = lines.length - 1; i >= 0; i--) {
           const line = lines[i]
@@ -495,6 +529,42 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       }
     } catch { /* best-effort: 失败即 "" */ }
     return ''
+  }
+
+  // 危险权限框自愈节流: 单 session 同时只跑一个自愈 + 同一 warning 冷却期内不重复触发.
+  // realTimeInfo 命中 detectDangerPermission 时调; fire-and-forget, 立即返回不阻塞 /status.
+  _maybeHealDangerPermission(sessionId, warning) {
+    const st = _dangerHealState.get(sessionId) || { healing: false, lastWarning: '', lastTs: 0 }
+    const now = Date.now()
+    if (st.healing) return  // 已在自愈中, 不重复
+    if (warning === st.lastWarning && now - st.lastTs < DANGER_HEAL_COOLDOWN_MS) return  // 同框近期已处理
+    _dangerHealState.set(sessionId, { healing: true, lastWarning: warning, lastTs: now })
+    this._healDangerPermission(sessionId, warning)
+      .catch((e) => log(`[tmux-claude-code] danger heal 失败 session=${sessionId}: ${e?.message || e}`))
+      .finally(() => {
+        const cur = _dangerHealState.get(sessionId)
+        if (cur) _dangerHealState.set(sessionId, { ...cur, healing: false })
+      })
+  }
+
+  // 危险权限框自愈主流程 (detached async, 不阻塞 realTimeInfo / /status):
+  //   1) Esc 取消权限框 (claude 回 pending/输入态, 不执行那条危险命令; 对话框提示即 "Esc to cancel")
+  //   2) 等 5s 让 TUI 消化, 对话框彻底消失
+  //   3) pauseCurrentAndResumeFromSession 发 "$warning, please skip or try commands that are less aggressive."
+  //      (内部 C-c×3 中断当前 turn 再 queue 新 prompt; 即便 Esc 后 agent 还在原 turn 也会被重置).
+  async _healDangerPermission(sessionId, warning) {
+    if (!windowExists(sessionId)) return
+    tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'Escape'])
+    _paneTailCache.delete(sessionId)  // 失效缓存, 让后续判定看到取消后的真实屏幕
+    log(`[tmux-claude-code] danger permission 检测到, 已 Esc 取消 (session=${sessionId}): ${warning}`)
+    await new Promise((r) => setTimeout(r, 5000))
+    if (!windowExists(sessionId)) return
+    await this.pauseCurrentAndResumeFromSession({
+      sessionId,
+      prompt: `${warning}, please skip or try commands that are less aggressive.`,
+      urgent: false,
+    })
+    log(`[tmux-claude-code] danger permission 已 resume 提示 agent 跳过/换温和命令 (session=${sessionId})`)
   }
 
   // sessionId → jsonl 文件路径的三级查表:

@@ -805,6 +805,16 @@ body::after {
 .btn-primary:active:not(:disabled) { transform: scale(0.97); }
 .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
 
+/* ===== 全局: 所有按钮文本默认单行不换行 (系统级防"按钮文字分成两行") =====
+   按钮文字几乎不应换两行 (换行几乎都是 bug, 视觉很丑). 这条全局规则一次覆盖全站 button,
+   不必逐个加 whitespace-nowrap. 真正需要换行的极少数按钮可加 Tailwind `whitespace-normal`
+   (class 选择器特异性高于元素选择器, 能覆盖本规则).
+   注意: 本规则只防"换两行"; 若按钮在 flex/grid 里被挤压导致"溢出", 仍需给容器加 min-w-0
+   并给文字用 .btn-label (单行+省略). 二者互补. */
+button {
+  white-space: nowrap;
+}
+
 /* ===== 按钮文本: 单行不换行 + 超长省略 (统一防"文本溢出 / 文本分成两行") =====
    用法:
      <button class="... inline-flex items-center min-w-0 ...">
