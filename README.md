@@ -64,7 +64,7 @@ XiaoMo is the natural-language interface to the entire system. Talk to it: creat
   <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo.jpg" alt="XiaoMo assistant interface" width="720" />
 </p>
 
-> The demo videos on this page were produced by XiaoMo itself, with zero human participation in recording.
+> The demos on this page were produced by XiaoMo itself, with zero human participation in recording.
 
 
 
