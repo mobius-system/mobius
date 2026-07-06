@@ -17,7 +17,7 @@ One system to connect your team, AI agents, devices, and compute
   <a href="https://github.com/nutshellai-tech/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/nutshellai-tech/mobius?style=for-the-badge" /></a>
   <a href="https://github.com/nutshellai-tech/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange?style=for-the-badge" /></a>
   <a href="https://mobius.nutshellai.cn/"><img alt="Website" src="https://img.shields.io/badge/website-000000?style=for-the-badge&logo=About.me&logoColor=white" /></a>
-  <a href="https://nutshellai-tech.github.io/mobius/"><img alt="Docs" src="https://img.shields.io/badge/docs-000000?style=for-the-badge&logo=readthedocs&logoColor=white" /></a>
+  <a href="https://nutshellai-tech.github.io/mobius/en/"><img alt="Docs" src="https://img.shields.io/badge/docs-000000?style=for-the-badge&logo=readthedocs&logoColor=white" /></a>
 </p>
 
 </div>
@@ -59,6 +59,10 @@ Mobius orchestrates multiple agents into an autonomous research pipeline — rea
 ## XiaoMo
 
 XiaoMo is the natural-language interface to the entire system. Talk to it: create projects, split tasks, launch agents, track progress. Anything clickable, XiaoMo can do. Things the UI cannot do, XiaoMo handles too. Voice input, multi-device (Web, PC, Mobile), configurable reminders.
+
+<p align="center">
+  <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo.jpg" alt="XiaoMo assistant interface" width="720" />
+</p>
 
 > The demo videos on this page were produced by XiaoMo itself, with zero human participation in recording.
 
@@ -152,26 +156,44 @@ Mobius ships with built-in extensions and grows new ones from your needs — fin
 
 ## Quick Start
 
-Full deployment guide at [Docs](https://nutshellai-tech.github.io/mobius/).
+Full deployment guide at [Docs](https://nutshellai-tech.github.io/mobius/en/).
 
 ### Containers (recommended)
 
 ```bash
+# 1. Clone the repo (tip: fork first, then clone — after self-evolution you can commit directly to your own repo)
 git clone https://github.com/nutshellai-tech/mobius.git && cd mobius
+
+# 2. Generate config (random keys/passwords; you may configure manually to skip this)
 python3 conf_prepare.py --docker && python3 conf_check.py --docker
+
+# 3. Build the images (the base image is environment only, no code)
 docker build -t mobius-system-base:latest -f deploy/Dockerfile .
 docker build -t mobius-system-exe:latest .
+
+# 4. Launch
 docker compose up
 ```
 
 ### Direct (Linux / macOS)
 
 ```bash
+# 1. Install prerequisites (tmux, git, etc.)
 sudo apt install tmux python3 git curl proxychains openssh-server build-essential
+
+# 2. Install coding agents (either works; installing both is recommended)
 npm install -g @anthropic-ai/claude-code @openai/codex
+
+# 3. Clone the repo (tip: fork first, then clone — after self-evolution you can commit directly to your own repo)
 git clone https://github.com/nutshellai-tech/mobius.git && cd mobius
+
+# 4. Generate and check config (copies .env.default to .env with random passwords)
 python3 conf_prepare.py && python3 conf_check.py
+
+# 5. Install dependencies (frontend + backend)
 cd ./mobius && npm install && cd ./frontend && npm install && cd ../..
+
+# 6. Run
 python3 start.py
 ```
 
@@ -184,6 +206,7 @@ What we are building next:
 - **Mobile App** — XiaoMo and full Agent control on iOS and Android
 - **Desktop App** — a native connector that brings PC devices (Windows, macOS, Linux) into Mobius
 - **Extension Market** — discover, share, and install community-built extensions
+- **i18n & Multi-language** — localize the interface and documentation into more languages
 
 ### Contribution
 
@@ -194,5 +217,5 @@ Issues, plugins, docs, bug reports, use cases — all welcome. If you believe AI
   ·
   <a href="https://mobius.nutshellai.cn/">Website</a>
   ·
-  <a href="https://nutshellai-tech.github.io/mobius/">Docs</a>
+  <a href="https://nutshellai-tech.github.io/mobius/en/">Docs</a>
 </p>
