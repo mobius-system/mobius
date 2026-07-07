@@ -37,7 +37,7 @@ import { APP_DIR, CORE_DATA_PATH } from '../config';
 // @ts-ignore — service 仍是 .js
 import { AsrError, transcribeBrowserAudio } from '../services/doubao-asr';
 // @ts-ignore — service 仍是 .js
-import { DEFAULT_VOICE, TtsError, getTtsVoices, synthesizeSpeech } from '../services/doubao-tts';
+import { DEFAULT_VOICE, TtsError, getTtsVoices, isDoubaoTtsConfigured, synthesizeSpeech } from '../services/doubao-tts';
 // @ts-ignore — service 仍是 .js
 import {
   normalizeSessionAttachments,
@@ -1394,10 +1394,13 @@ router.post('/transcribe', auth, (req: express.Request, res: express.Response) =
 });
 
 router.get('/tts/voices', auth, (_req: express.Request, res: express.Response) => {
+  // 豆包 TTS 凭据未配置时不暴露豆包音色, 避免用户选了用不了的音色(每次播报都失败再 fallback)。
+  const configured = isDoubaoTtsConfigured();
   res.json({
     ok: true,
     default_voice: DEFAULT_VOICE,
-    voices: getTtsVoices(),
+    voices: configured ? getTtsVoices() : [],
+    configured,
   });
 });
 
