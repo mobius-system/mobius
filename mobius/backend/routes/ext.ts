@@ -393,6 +393,8 @@ const SDK_JS = [
 
 staticRouter.get('/_sdk/ext.js', (_req: express.Request, res: express.Response) => {
   res.set('content-type', 'application/javascript; charset=utf-8');
+  // SDK 随 mobius 部署变更, 非哈希文件名 → 1h 缓存, 到期重验.
+  res.set('cache-control', 'public, max-age=3600');
   res.send(SDK_JS);
 });
 
@@ -576,12 +578,24 @@ async function serveExtension(req: express.Request, res: express.Response, name:
   res.set('content-type', mime);
   // SVG 走严格 CSP, 防 svg xss
   if (ext === '.svg') res.set('content-security-policy', "default-src 'none'");
-  streamAssetWithRange(req, res, abs);
+  streamAssetWithRange(req, res, abs, rel);
+}
+
+// 拓展静态资源 Cache-Control 分级:
+//   - vite/Next 内容哈希产物 (dist/assets/*, dist/_next/static/*) → 1 年 immutable, 文件名变即内容变;
+//   - 其他 (媒体 mp4/webm, SDK 等) → 1 小时缓存, 到期后靠 ETag 重验 (304).
+function extensionAssetCacheControl(rel: string): string {
+  const r = String(rel || '').replace(/^\/+/, '');
+  if (r.startsWith('assets/') || r.startsWith('_next/static/') || r.startsWith('static/')) {
+    return 'public, max-age=31536000, immutable';
+  }
+  return 'public, max-age=3600';
 }
 
 // 静态资源带 HTTP Range 支持 — 浏览器 <video>/<audio> 必须靠 Range 分块流式播放,
 // 否则会卡在缓冲(对大视频尤甚). 同时补 Content-Length / Accept-Ranges 头.
-function streamAssetWithRange(req: express.Request, res: express.Response, abs: string): void {
+// rel (URL 相对路径) 用于判定内容哈希分级缓存.
+function streamAssetWithRange(req: express.Request, res: express.Response, abs: string, rel: string = ''): void {
   let stat: fs.Stats;
   try { stat = fs.statSync(abs); } catch {
     res.status(404).send('not found');
@@ -592,6 +606,20 @@ function streamAssetWithRange(req: express.Request, res: express.Response, abs: 
     return;
   }
   const total = stat.size;
+
+  // ── 缓存: ETag (size+mtime 弱校验) + Last-Modified + 分级 Cache-Control ──
+  const etag = `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
+  res.set('etag', etag);
+  res.set('last-modified', stat.mtime.toUTCString());
+  res.set('cache-control', extensionAssetCacheControl(rel));
+  // 条件 GET: If-None-Match 命中 → 304, 省整个响应体. 必须在 Range 处理之前.
+  // 浏览器对 video Range 请求走 If-Range (而非 If-None-Match), 故此处 304 不影响 206 分片播放.
+  const inm = req.headers['if-none-match'];
+  if (inm && String(inm).split(',').some((v) => { const t = v.trim(); return t === etag || t === '*'; })) {
+    res.status(304).end();
+    return;
+  }
+
   res.set('accept-ranges', 'bytes');
 
   const rangeHdr = (req.headers.range || (req.headers as any)['range']) as string | undefined;
@@ -678,6 +706,8 @@ unprefixedNextRouter.get('/*', (req: express.Request, res: express.Response) => 
         return;
       }
       res.set('content-type', mime);
+      // Next.js _next/static/* 为内容哈希产物 → immutable; 其余 _next/* → 1h 重验.
+      res.set('cache-control', extensionAssetCacheControl('_next/' + rel));
       fs.createReadStream(abs).pipe(res);
       return;
     }

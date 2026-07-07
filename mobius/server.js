@@ -206,14 +206,43 @@ app.get('/api/v2/db-check', (req, res) => {
 // start_product.py runs `npm run build` first, which writes the SPA into
 // mobius/public. Debug mode still uses the Vite dev server on VITE_PORT.
 const PUBLIC_INDEX = path.join(PUBLIC_DIR, 'index.html');
-app.use(express.static(PUBLIC_DIR));
+
+// 静态资源缓存策略 (修复 logo.png / 哈希 chunk 等每次重新下载的问题).
+// express.static 默认 Cache-Control: public, max-age=0 → 浏览器每次导航都要
+// 重新验证 (即便 ETag 命中也得多一次往返; 清缓存/首进站后每次全量重下).
+// 这里按文件类型分级 (setHeaders 在 express 默认头之后调用, res.setHeader 覆盖):
+//   - assets/*   构建产物带内容哈希 (文件名变即内容变) → 1 年 immutable, 浏览器永不重验;
+//   - index.html SPA 入口 (无哈希)                  → no-cache, 每次校验拿新部署 (ETag 不变则 304);
+//   - 其他        logo.png / favicon 等公开文件      → 1 小时缓存, 到期后重验.
+// ETag / Last-Modified 由 express.static 默认开启, 命中时仍走 304 省带宽.
+function setStaticCacheHeaders(res, filePath) {
+  const rel = path.relative(PUBLIC_DIR, filePath).split(path.sep).join('/');
+  if (rel.startsWith('assets/')) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  } else if (rel === 'index.html') {
+    res.setHeader('Cache-Control', 'no-cache');
+  } else {
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+  }
+}
+
+app.use(express.static(PUBLIC_DIR, {
+  etag: true,
+  lastModified: true,
+  setHeaders: setStaticCacheHeaders,
+}));
+
 app.get('*', (req, res, next) => {
   const p = req.path || '';
   if (p.startsWith('/api') || p.startsWith('/code-server') || p.startsWith('/extension')) {
     return next();
   }
   if (!fs.existsSync(PUBLIC_INDEX)) return next();
-  return res.sendFile(PUBLIC_INDEX);
+  // SPA 路由回退到 index.html, 同样 no-cache 以便拿到新部署 (ETag 不变则 304).
+  return res.sendFile(PUBLIC_INDEX, {
+    lastModified: true,
+    headers: { 'Cache-Control': 'no-cache' },
+  });
 });
 
 // ===== 后台巡检: 被遗忘的 running.flag =====

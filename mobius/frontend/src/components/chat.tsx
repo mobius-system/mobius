@@ -2984,13 +2984,13 @@ export function ChatArea() {
             <h2 className="min-w-0 font-semibold text-[14px] truncate" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>
               {currentSession?.name || currentTask?.name}
             </h2>
-            {currentModelLabel && (
+            {/* {currentModelLabel && (
               <span className="text-[10px] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"
                 title={`模型: ${currentModelLabel}`}
                 style={{ color: 'var(--text-muted)', background: 'var(--bg-card-hover)' }}>
                 {currentModelLabel}
               </span>
-            )}
+            )} */}
             <SessionStatusChip
               connected={connectionStatus === 'connected'}
               failed={backendJobFailed === true}

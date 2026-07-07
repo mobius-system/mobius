@@ -324,6 +324,7 @@ function zh_add_completion_flag_info(lines: string[], session: any, project: any
   const flagPath = `${flagRoot}/${HIDDEN_FOLDER_NAME}/flags/${session.session_id}/running.flag`;
   lines.push('## 当任务完成时的最后一步');
   lines.push(`当任务最终成功或者最终失败时，你需要删除标记文件 ${flagPath}。但是，不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。`);
+  lines.push(`每当用户提出新问题新指令时，都会创建新的running.flag。`);
 }
 
 // ---------- 英文版 ----------
@@ -524,6 +525,7 @@ function en_add_completion_flag_info(lines: string[], session: any, project: any
   const flagPath = `${flagRoot}/${HIDDEN_FOLDER_NAME}/flags/${session.session_id}/running.flag`;
   lines.push('## Final step when the task is complete');
   lines.push(`When the task ultimately succeeds or ultimately fails, you must delete the marker file ${flagPath}. But do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue.`);
+  lines.push('When user gives new instruction again, running.flag will be recreated.');
 }
 
 function buildRandomEmojiPrefix(): string {
