@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Activity,
   AlertTriangle,
@@ -1033,6 +1034,10 @@ function BackendSection({
               {windows.map((win) => {
                 const ctx = win.context
                 const subject = ctx?.subject
+                const sessionHref =
+                  ctx?.user?.id && ctx.project?.id && subject?.id && ctx.session_id
+                    ? `/u/${ctx.user.id}/p/${ctx.project.id}/${subject.type === 'research' ? 'r' : 'i'}/${subject.id}?session=${ctx.session_id}`
+                    : null
                 const closeKey = `${win.backend_key}:${win.session_id}`
                 const closing = closingKey === closeKey
                 return (
@@ -1049,11 +1054,35 @@ function BackendSection({
                     <td className="px-4 py-3 align-top">
                       {ctx ? (
                         <>
-                          <div className="max-w-[220px] truncate text-[13px] font-medium" title={ctx.session_name} style={{ color: 'var(--text-primary)' }}>
-                            {ctx.session_name}
-                          </div>
+                          {sessionHref ? (
+                            <Link
+                              to={sessionHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block max-w-[220px] truncate text-[13px] font-medium text-[var(--text-primary)] hover:text-emerald-400 hover:underline"
+                              title={ctx.session_name}
+                            >
+                              {ctx.session_name}
+                            </Link>
+                          ) : (
+                            <div className="max-w-[220px] truncate text-[13px] font-medium" title={ctx.session_name} style={{ color: 'var(--text-primary)' }}>
+                              {ctx.session_name}
+                            </div>
+                          )}
                           <div className="mt-1 flex max-w-[220px] items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                            <span className="truncate" title={ctx.session_id}>{compactId(ctx.session_id)}</span>
+                            {sessionHref ? (
+                              <Link
+                                to={sessionHref}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="min-w-0 truncate hover:text-emerald-400 hover:underline"
+                                title={ctx.session_id}
+                              >
+                                {compactId(ctx.session_id)}
+                              </Link>
+                            ) : (
+                              <span className="truncate" title={ctx.session_id}>{compactId(ctx.session_id)}</span>
+                            )}
                             <span>·</span>
                             <span>{ctx.user?.display_name || '-'}</span>
                           </div>
@@ -1068,11 +1097,38 @@ function BackendSection({
                       )}
                     </td>
                     <td className="px-4 py-3 align-top">
-                      <div className="max-w-[230px] truncate text-[13px]" title={ctx?.project?.name || ''} style={{ color: 'var(--text-primary)' }}>
-                        {ctx?.project?.name || '-'}
+                      <div className="max-w-[230px] truncate text-[13px]" title={ctx?.project?.name || ''}>
+                        {sessionHref && ctx?.project?.name ? (
+                          <Link
+                            to={sessionHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[var(--text-primary)] hover:text-emerald-400 hover:underline"
+                          >
+                            {ctx.project.name}
+                          </Link>
+                        ) : (
+                          <span style={{ color: 'var(--text-primary)' }}>{ctx?.project?.name || '-'}</span>
+                        )}
                       </div>
                       <div className="mt-1 max-w-[230px] truncate text-[11px]" title={subject?.title || ''} style={{ color: 'var(--text-muted)' }}>
-                        {subject ? `${subject.type === 'research' ? 'Research' : 'Issue'}: ${subject.title || subject.id || '-'}` : '-'}
+                        {subject ? (
+                          <>
+                            {subject.type === 'research' ? 'Research' : 'Issue'}:{' '}
+                            {sessionHref ? (
+                              <Link
+                                to={sessionHref}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="hover:text-emerald-400 hover:underline"
+                              >
+                                {subject.title || subject.id || '-'}
+                              </Link>
+                            ) : (
+                              <span>{subject.title || subject.id || '-'}</span>
+                            )}
+                          </>
+                        ) : '-'}
                       </div>
                       {subject?.role && (
                         <div className="mt-1 text-[11px] text-emerald-400">{subject.role}</div>
