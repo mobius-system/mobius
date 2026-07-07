@@ -6,7 +6,7 @@ on:
     paths:
       - docs/**
       - mkdocs.yml
-      - requirements-docs.txt
+      - docs/requirements-docs.txt
       - README.md
       - README.zh.md
       - .github/workflows/docs.yml
@@ -31,8 +31,8 @@ jobs:
         with:
           python-version: '3.x'
           cache: pip
-          cache-dependency-path: requirements-docs.txt
-      - run: pip install -r requirements-docs.txt
+          cache-dependency-path: docs/requirements-docs.txt
+      - run: pip install -r docs/requirements-docs.txt
       - run: mkdocs build
       - uses: actions/upload-pages-artifact@v3
         with:
