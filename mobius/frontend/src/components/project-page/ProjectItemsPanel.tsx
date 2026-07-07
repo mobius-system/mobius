@@ -167,7 +167,6 @@ export function ProjectItemsPanel({
         <PrimaryActionButton onClick={() => section === 'issues' ? onCreateIssue() : onCreateResearch()}
           data-tour={section === 'issues' ? 'project-new-issue' : 'project-new-research'}
           disabled={section === 'issues' ? !canCreateIssue : (!project.research_enabled || !canCreateResearch)}
-          size="sm"
           icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
           {section === 'issues' ? '新建 Issue' : '新建 Research'}
         </PrimaryActionButton>

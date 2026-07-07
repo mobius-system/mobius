@@ -397,7 +397,7 @@ export default function UserPage() {
                 className="w-full h-8 pl-8 pr-3 rounded-lg text-[12px] focus:outline-none focus:border-blue-500/30"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
             </div>
-            <div className="mt-2 rounded-lg border px-2 py-2" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+            <div className="mt-2 rounded-lg border px-2 py-2" style={{ }}>
               <div className="flex flex-nowrap gap-1.5 overflow-x-auto">
                 <button
                   type="button"
@@ -548,8 +548,7 @@ export default function UserPage() {
                 <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>共 {visibleProjectCount} 个项目</p>
               </div>
               <PrimaryActionButton onClick={() => setShowNew(true)} data-tour="user-new-project"
-                size="md"
-                icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
+                icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
                 新建项目
               </PrimaryActionButton>
             </div>
