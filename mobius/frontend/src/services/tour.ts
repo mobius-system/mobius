@@ -2359,6 +2359,9 @@ async function runProjectCleanupSegment() {
   const isContext = isContextSetupTour(demo)
   const isExtension = isExtensionTour(demo)
   await waitForElement('[data-tour="project-settings-panel"]')
+  // 删除项目按钮已移入「项目设置」tab 底部的危险操作区, 先切到该 tab 确保按钮在 DOM 中.
+  clickIfPresent('[data-tour="project-settings-tab"]')
+  await waitForElement('[data-tour="project-delete"]')
 
   const steps: DriveStep[] = []
   addStepIfPresent(steps, '[data-tour="project-settings-panel"]', {
@@ -2837,6 +2840,9 @@ async function runLogoReviewCleanupSegment() {
   const demo = activeDemoOrBirthday()
   const state = logoReviewState(demo.state)
   await waitForElement('[data-tour="project-settings-panel"]')
+  // 删除项目按钮已移入「项目设置」tab 底部的危险操作区, 先切到该 tab 确保按钮在 DOM 中.
+  clickIfPresent('[data-tour="project-settings-tab"]')
+  await waitForElement('[data-tour="project-delete"]')
 
   const steps: DriveStep[] = []
   addStepIfPresent(steps, '[data-tour="project-settings-panel"]', {

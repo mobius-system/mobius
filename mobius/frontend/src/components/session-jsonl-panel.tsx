@@ -58,7 +58,7 @@ function SessionJsonlPanelInner({
           onScrollPositionChange(distFromBottom > 200)
         }}
       >
-        <div className="px-6 py-6">
+        <div className="px-5 py-5">
           <VSCodeOpenProvider projectId={currentProjectId}>
             <JsonlView
               entries={visibleJsonl}

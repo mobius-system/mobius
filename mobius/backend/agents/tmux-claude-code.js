@@ -170,10 +170,12 @@ let _listWindowsCache = null // { ts: number, rows: string[][] }
 // 条目看到最近的 user/assistant 标记, 读取代价可忽略 (纯文件读, 无 tmux 子进程).
 const CLAUDE_WORKING_TAIL_BYTES = 256 * 1024
 
-// realTimeInfo: 识别 claude TUI 当前的状态行. 特征 = 括号内含 ↑/↓ + 数字 + "tokens",
-// 形如 "(7m 44s · ↓ 24.1k tokens · still thinking)" / "✽ 模态只留隐藏卡片… (12m 34s · ↓ 34.1k tokens)".
-// 命中即返回整行; 括号是核心锚 (避免误匹配 "▼ 1. Yes, I trust this folder" 等对话框).
-const CLAUDE_STATUS_LINE_RE = /\([^()]*[↑↓]\s*[\d.,]+\s*k?\s*tokens[^()]*\)/u
+// realTimeInfo: 识别 claude TUI 当前的状态行. 核心锚 = 以 elapsed 开头的括号组 "(<elapsed> · ...)".
+// elapsed 格式: Ns | Mm Ss | Hh Mm Ss. 覆盖两种形态:
+//   ① "(6m 36s · ↓ 20.0k tokens · thinking more)"  — 带 token 流量
+//   ② "(29s · thinking more)"                       — 仅 elapsed + 状态词 (思考早期未出 token)
+// 命中即返回整行 (含 spinner + 任务描述 + 括号组). \( 后紧跟数字+时间单位, 排除 "(3 files changed)" 等输出.
+const CLAUDE_STATUS_LINE_RE = /\(\d+(?:s|m\s+\d+s|h\s+\d+m\s+\d+s)[^()]*\)/u
 // claude TUI "等待 background agents" 状态行. 主 agent 派出后台子 agent (Task 工具) 后,
 // 本轮 JSONL 常以 end_turn 收尾 (Task 当 fire-and-forget), 但 TUI 实际显示
 // "✻ Waiting for 3 background agents to finish". JSONL 反向扫描此时判 false → 误判"待命",

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { ArrowLeft, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
+import { ArrowLeft, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
 import { useStore, api } from '../store'
 import { timeAgo } from './shell'
 import { SkillsManager } from './skills'
@@ -2286,6 +2286,9 @@ export function NewSessionModal({
       return
     }
     setErr('')
+    // 先进入第 2 步, 在该页内加载预览, 避免在第 1 步原地卡住等加载.
+    // 同步校验 (名称/目的/配额) 通过即可推进; 异步拉取失败或必选 skill 缺失时退回第 1 步并提示.
+    setStep(2)
     setPreviewLoading(true)
     try {
       const [defaults, pAll] = await Promise.all([
@@ -2346,9 +2349,9 @@ export function NewSessionModal({
       setExcludedSkills(defaultSkillEx)
       setExcludedMemories(defaultMemoryEx)
       setPreview(p0)
-      setStep(2)
     } catch (e: any) {
       setErr(e?.message || '加载预览失败')
+      setStep(1)
     } finally { setPreviewLoading(false) }
   }
 
@@ -2727,6 +2730,13 @@ export function NewSessionModal({
               </button>
             </div>
           </>
+        )}
+
+        {step === 2 && !preview && (
+          <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+            <Loader2 className="h-7 w-7 animate-spin" style={{ color: '#3b82f6' }} strokeWidth={1.8} />
+            <div className="text-[13px]">正在加载预览配置…</div>
+          </div>
         )}
 
         {step === 2 && preview && (

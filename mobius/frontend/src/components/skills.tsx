@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Upload } from 'lucide-react'
+import { Eye, FolderInput, Lock, Trash2, Upload } from 'lucide-react'
 import { api } from '../store'
 import { ContextAccessModal } from './context-access'
 import { MoveScopeModal } from './modals'
@@ -380,18 +380,26 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
                 </div>
                 <div className="ml-auto flex flex-[0_1_auto] flex-wrap items-center justify-end gap-1">
                   <button onClick={() => setViewing(sk)} title="查看 SKILL.md"
-                    className="h-7 px-2 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)]"
-                    style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>查看</button>
+                    className="h-7 w-7 inline-flex items-center justify-center rounded border transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                    <Eye className="w-3.5 h-3.5" />
+                  </button>
                   {sk.can_manage && (
                     <button onClick={() => setAccessing(sk)} title="设置可见性和指定用户"
-                      className="h-7 px-2 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)]"
-                      style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>权限</button>
+                      className="h-7 w-7 inline-flex items-center justify-center rounded border transition-colors hover:bg-[var(--bg-hover)]"
+                      style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                      <Lock className="w-3.5 h-3.5" />
+                    </button>
                   )}
                   <button onClick={() => setMoving(sk)} title={scope === 'user' ? '移到项目级' : '移到我的 / 其他项目'}
-                    className="h-7 px-2 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)]"
-                    style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>移动</button>
+                    className="h-7 w-7 inline-flex items-center justify-center rounded border transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                    <FolderInput className="w-3.5 h-3.5" />
+                  </button>
                   <button onClick={() => handleDelete(sk.id)} title="移除"
-                    className="h-7 px-2 text-[11px] rounded border hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>移除</button>
+                    className="h-7 w-7 inline-flex items-center justify-center rounded border hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             </div>

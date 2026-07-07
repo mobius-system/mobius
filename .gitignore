@@ -79,6 +79,8 @@ temp/
 .imac
 .mobius
 
+assets
+
 # Local external checkouts / machine-specific helpers
 /jsoncrack
 /jsoncrack-start.sh

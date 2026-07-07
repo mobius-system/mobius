@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 export type VirtualListBlock = { key: string }
 
@@ -143,7 +143,9 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
   }, [blocks.length, layout, minBlocks, overscanPx, scrollState.height, scrollState.top])
 
   if (blocks.length <= minBlocks) {
-    return <>{blocks.map(renderBlock)}</>
+    // 兜底 (非虚拟化) 路径: block 自带 key 字段, 这里补上 React key, 避免列表子元素缺 key 告警.
+    // (虚拟化路径用 <MeasuredVirtualBlock key={block.key}> 包裹, 已有 key, 无此问题.)
+    return <>{blocks.map(b => <Fragment key={b.key}>{renderBlock(b)}</Fragment>)}</>
   }
 
   const visibleBlocks = blocks.slice(visibleRange.start, visibleRange.end)

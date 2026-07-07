@@ -22,6 +22,7 @@ import { createPortal } from 'react-dom'
 import { diffLines } from 'diff'
 import { Code2 } from 'lucide-react'
 import { VirtualizedBlockList } from './jsonl-virtual-list'
+import { resolveMediaSrc } from './jsonl-vscode-link'
 
 type AnyEntry = Record<string, any>
 type CardMode = 'compact' | 'field' | 'code'
@@ -109,39 +110,39 @@ const CompactMarkdown = lazy(() => import('./jsonl-compact-markdown'))
 
 // 顶层 type → 卡片色调 (Tailwind class fragments)
 const TYPE_THEME: Record<string, { dot: string; border: string; bg: string; text: string; label: string }> = {
-  user:                   { dot: 'bg-slate-400',  border: 'border-slate-500/30', bg: 'bg-slate-500/[0.04]',  text: 'text-slate-300',  label: 'user' },
-  assistant:              { dot: 'bg-blue-400',   border: 'border-blue-500/30',  bg: 'bg-blue-500/[0.04]',   text: 'text-blue-300',   label: 'assistant' },
-  attachment:             { dot: 'bg-purple-400', border: 'border-purple-500/30',bg: 'bg-purple-500/[0.04]', text: 'text-purple-300', label: 'attachment' },
-  system:                 { dot: 'bg-amber-400',  border: 'border-amber-500/30', bg: 'bg-amber-500/[0.04]',  text: 'text-amber-300',  label: 'system' },
-  'queue-operation':      { dot: 'bg-zinc-500',   border: 'border-zinc-600/30',  bg: 'bg-zinc-700/[0.04]',   text: 'text-zinc-400',   label: 'queue' },
-  'last-prompt':          { dot: 'bg-cyan-400',   border: 'border-cyan-500/30',  bg: 'bg-cyan-500/[0.04]',   text: 'text-cyan-300',   label: 'last-prompt' },
-  'permission-mode':      { dot: 'bg-pink-400',   border: 'border-pink-500/30',  bg: 'bg-pink-500/[0.04]',   text: 'text-pink-300',   label: 'permission' },
-  'file-history-snapshot':{ dot: 'bg-emerald-400',border: 'border-emerald-500/30',bg:'bg-emerald-500/[0.04]',text: 'text-emerald-300',label: 'fs-snap' },
-  'custom-title':         { dot: 'bg-zinc-400',   border: 'border-zinc-500/30',  bg: 'bg-zinc-700/[0.04]',   text: 'text-zinc-300',   label: 'title' },
-  'agent-name':           { dot: 'bg-zinc-400',   border: 'border-zinc-500/30',  bg: 'bg-zinc-700/[0.04]',   text: 'text-zinc-300',   label: 'agent-name' },
-  session_meta:           { dot: 'bg-zinc-400',   border: 'border-zinc-500/30',  bg: 'bg-zinc-700/[0.04]',   text: 'text-zinc-300',   label: 'session' },
-  turn_context:           { dot: 'bg-amber-400',  border: 'border-amber-500/30', bg: 'bg-amber-500/[0.04]',  text: 'text-amber-300',  label: 'turn' },
-  event_msg:              { dot: 'bg-cyan-400',   border: 'border-cyan-500/30',  bg: 'bg-cyan-500/[0.04]',   text: 'text-cyan-300',   label: 'event' },
-  response_item:          { dot: 'bg-blue-400',   border: 'border-blue-500/55',  bg: 'bg-blue-500/[0.12]',   text: 'text-blue-200',   label: 'response' },
-  error:                  { dot: 'bg-red-500',    border: 'border-red-500/50',   bg: 'bg-red-500/[0.10]',    text: 'text-red-200',    label: 'error' },
+  user:                   { dot: 'bg-slate-400',  border: 'border-slate-500/15', bg: 'bg-slate-500/[0.04]',  text: 'text-slate-300',  label: 'user' },
+  assistant:              { dot: 'bg-blue-400',   border: 'border-blue-500/15',  bg: 'bg-blue-500/[0.04]',   text: 'text-blue-300',   label: 'assistant' },
+  attachment:             { dot: 'bg-purple-400', border: 'border-purple-500/15',bg: 'bg-purple-500/[0.04]', text: 'text-purple-300', label: 'attachment' },
+  system:                 { dot: 'bg-amber-400',  border: 'border-amber-500/15', bg: 'bg-amber-500/[0.04]',  text: 'text-amber-300',  label: 'system' },
+  'queue-operation':      { dot: 'bg-zinc-500',   border: 'border-zinc-600/15',  bg: 'bg-zinc-700/[0.04]',   text: 'text-zinc-400',   label: 'queue' },
+  'last-prompt':          { dot: 'bg-cyan-400',   border: 'border-cyan-500/15',  bg: 'bg-cyan-500/[0.04]',   text: 'text-cyan-300',   label: 'last-prompt' },
+  'permission-mode':      { dot: 'bg-pink-400',   border: 'border-pink-500/15',  bg: 'bg-pink-500/[0.04]',   text: 'text-pink-300',   label: 'permission' },
+  'file-history-snapshot':{ dot: 'bg-emerald-400',border: 'border-emerald-500/15',bg:'bg-emerald-500/[0.04]',text: 'text-emerald-300',label: 'fs-snap' },
+  'custom-title':         { dot: 'bg-zinc-400',   border: 'border-zinc-500/15',  bg: 'bg-zinc-700/[0.04]',   text: 'text-zinc-300',   label: 'title' },
+  'agent-name':           { dot: 'bg-zinc-400',   border: 'border-zinc-500/15',  bg: 'bg-zinc-700/[0.04]',   text: 'text-zinc-300',   label: 'agent-name' },
+  session_meta:           { dot: 'bg-zinc-400',   border: 'border-zinc-500/15',  bg: 'bg-zinc-700/[0.04]',   text: 'text-zinc-300',   label: 'session' },
+  turn_context:           { dot: 'bg-amber-400',  border: 'border-amber-500/15', bg: 'bg-amber-500/[0.04]',  text: 'text-amber-300',  label: 'turn' },
+  event_msg:              { dot: 'bg-cyan-400',   border: 'border-cyan-500/15',  bg: 'bg-cyan-500/[0.04]',   text: 'text-cyan-300',   label: 'event' },
+  response_item:          { dot: 'bg-blue-400',   border: 'border-blue-500/28',  bg: 'bg-blue-500/[0.12]',   text: 'text-blue-200',   label: 'response' },
+  error:                  { dot: 'bg-red-500',    border: 'border-red-500/25',   bg: 'bg-red-500/[0.10]',    text: 'text-red-200',    label: 'error' },
 }
-const DEFAULT_THEME = { dot: 'bg-gray-500', border: 'border-gray-500/30', bg: 'bg-gray-500/[0.04]', text: 'text-gray-400', label: 'entry' }
+const DEFAULT_THEME = { dot: 'bg-gray-500', border: 'border-gray-500/15', bg: 'bg-gray-500/[0.04]', text: 'text-gray-400', label: 'entry' }
 // 特例: assistant 里带 name:"Edit" 的 tool_use 卡片 — 用 indigo (与 assistant 蓝相邻但可区分),
 // 边框/底色比常规 type 稍重一点, 方便在长列表里一眼扫到文件改动.
-const EDIT_TOOL_THEME = { dot: 'bg-indigo-400', border: 'border-indigo-500/40', bg: 'bg-indigo-500/[0.07]', text: 'text-indigo-300', label: 'file·edit' }
+const EDIT_TOOL_THEME = { dot: 'bg-indigo-400', border: 'border-indigo-500/20', bg: 'bg-indigo-500/[0.07]', text: 'text-indigo-300', label: 'file·edit' }
 
 // 特例: assistant 里带 name:"Bash" 且 input.command 包含 "start.py" 的 tool_use 卡片 —
 // 用 gold (yellow), 提示这是触发了产品构建的 shell 调用, 在长列表里一眼可扫.
 // 用 yellow 与 system/turn 的 amber 拉开, 避免和已有暖色调混淆.
-const START_PY_THEME = { dot: 'bg-yellow-400', border: 'border-yellow-500/40', bg: 'bg-yellow-500/[0.07]', text: 'text-yellow-300', label: 'start.py' }
+const START_PY_THEME = { dot: 'bg-yellow-400', border: 'border-yellow-500/20', bg: 'bg-yellow-500/[0.07]', text: 'text-yellow-300', label: 'start.py' }
 
 // 特例: assistant 里带 name:"Bash" 的 tool_use 卡片 (Claude Code shell 调用).
 // 用 cyan, 呼应终端/控制台意象, 与 Edit indigo、start.py yellow 都拉开, 长列表里可识别.
-const BASH_TOOL_THEME = { dot: 'bg-cyan-400', border: 'border-cyan-500/40', bg: 'bg-cyan-500/[0.06]', text: 'text-cyan-300', label: 'bash' }
+const BASH_TOOL_THEME = { dot: 'bg-cyan-400', border: 'border-cyan-500/20', bg: 'bg-cyan-500/[0.06]', text: 'text-cyan-300', label: 'bash' }
 
 // 特例: assistant 里带 name:"Read" 的 tool_use 卡片.
 // 用 sky, 与 Bash cyan / Edit indigo 近邻但可区分, 方便扫文件读取操作.
-const READ_TOOL_THEME = { dot: 'bg-sky-400', border: 'border-sky-500/40', bg: 'bg-sky-500/[0.06]', text: 'text-sky-300', label: 'read' }
+const READ_TOOL_THEME = { dot: 'bg-sky-400', border: 'border-sky-500/20', bg: 'bg-sky-500/[0.06]', text: 'text-sky-300', label: 'read' }
 
 // 特例: event_msg.payload.type === 'context_compacted' 的卡片 — 一次上下文压缩事件,
 // 在长列表里需要一眼可扫, 复用 yellow (gold) 与 start.py 同色但 label 区分.
@@ -176,7 +177,7 @@ const ASSISTANT_RESPONSE_KEYWORD_THEME = { ...START_PY_THEME, label: 'assistant�
 import { BLACKBOARD_MARKER, isNewRound } from './jsonl-round-helpers'
 
 // 醒目主题: blackboard 相关消息用 fuchsia, 边框/底色比常规 type 重很多, 在长列表里一眼可见.
-const BLACKBOARD_THEME = { dot: 'bg-fuchsia-400', border: 'border-fuchsia-500/30', bg: 'bg-fuchsia-500/[0.05]', text: 'text-fuchsia-200', label: 'blackboard' }
+const BLACKBOARD_THEME = { dot: 'bg-fuchsia-400', border: 'border-fuchsia-500/15', bg: 'bg-fuchsia-500/[0.05]', text: 'text-fuchsia-200', label: 'blackboard' }
 
 // 该 entry 是否为 "assistant 发起的 Edit tool_use" (即 message.content 里有 type==='tool_use' 且 name==='Edit').
 function isEditToolUse(entry: AnyEntry): boolean {
@@ -1100,7 +1101,7 @@ function KeyNode({ k, v, depth, parentKey }: { k: string; v: any; depth: number;
         <span className="text-gray-500"> : </span>
         <span className="text-violet-300/70">{summarize(v, k)}</span>
       </summary>
-      <div className="ml-1 border-l border-[var(--border-color)]/60">
+      <div className="ml-1 jsonl-thread">
         {Array.isArray(v)
           ? v.map((item, i) => <KeyNode key={i} k={String(i)} v={item} depth={depth + 1} parentKey={k} />)
           : Object.entries(v).map(([ck, cv]) => <KeyNode key={ck} k={ck} v={cv} depth={depth + 1} parentKey={k} />)
@@ -1233,7 +1234,7 @@ function JsonEntryCodeDiff({ edit }: { edit: CodeEdit }) {
   )
 
   return (
-    <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-1 ring-[var(--border-color)]/70">
+    <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-0 ring-[var(--border-color)]/70">
       {fileRows.map(({ file, rows }, index) => (
         <div key={`${file.filePath || index}-${index}`} className={index > 0 ? 'border-t border-[var(--border-color)]' : ''}>
           <div className="flex min-w-0 items-center gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[10px]">
@@ -1275,7 +1276,7 @@ function JsonEntryWritePreview({ writeCall }: { writeCall: WriteToolCall }) {
   const restLines = lines.slice(WRITE_PREVIEW_LINE_LIMIT)
 
   return (
-    <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-1 ring-[var(--border-color)]/70">
+    <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-0 ring-[var(--border-color)]/70">
       <div className="flex min-w-0 items-start gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[10px]">
         <div className="min-w-0 flex-1">
           <div className="truncate font-mono text-[12px] font-semibold text-[var(--text-secondary)]" title={writeCall.filePath}>
@@ -1345,7 +1346,7 @@ function BashCallCard({ call, index, results = [] }: { call: BashCall; index: nu
   const hasCwd = !!call.cwd
 
   return (
-    <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-1 ring-[var(--border-color)]/70">
+    <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-0 ring-[var(--border-color)]/70">
       <div className="flex min-w-0 items-start gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[10px]">
         <div className="min-w-0 flex-1">
           {index != null && (
@@ -1465,7 +1466,7 @@ function ReadCallCard({ call, index, results = [] }: { call: ReadToolCall; index
   ].filter(Boolean).join(' · ')
 
   return (
-    <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-1 ring-[var(--border-color)]/70">
+    <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-0 ring-[var(--border-color)]/70">
       <div className="flex min-w-0 items-start gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[10px]">
         <div className="min-w-0 flex-1">
           {index != null && (
@@ -1621,7 +1622,7 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
             className="flex-shrink-0 rounded border border-[var(--border-color)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-secondary)]"
             title="复制完整返回结果到剪贴板"
           >
-            {copied ? '已复制 ✓' : '复制结果'}
+            {copied ? '已复制 ✓' : '复制'}
           </button>
         )}
       </div>
@@ -1869,13 +1870,15 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   // 旧版把「复制」和「切换模式」两个按钮塞进 summary, 每张展开的卡片都会触发 1 条 a11y issue,
   // 用户在 F12 Issues 里看到"卡片数 ≈ 错误数". 现在把按钮 absolute 到 details 右上角,
   // 视觉位置不变, 但 DOM 上 button 是 details 的直接子元素而非 summary 后代, 规范合规.
-  const hasHeaderAction = open && ((mode === 'compact') || canCompact || canCode)
+  // 字段模式也带复制按钮 (复制原始 JSON), 与精简模式的复制按钮对齐, 故 hasHeaderAction
+  // 额外纳入 mode === 'field' —— 让只支持字段模式的小卡片也能露出复制入口.
+  const hasHeaderAction = open && ((mode === 'compact') || (mode === 'field') || canCompact || canCode)
   return (
     <details
       data-tour={tourTarget}
       open={open}
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
-      className={`relative mb-2 rounded-2xl border card-enter ${theme.border} ${theme.bg}`}>
+      className={`relative mb-2 rounded-lg border shadow-sm card-enter ${theme.border} ${theme.bg}`}>
       <summary className={`cursor-pointer px-3 py-1.5 flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
         {showMeta && typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
         {showMeta && ts && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
@@ -1883,7 +1886,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
         <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>
         {canCode && (
           <span
-            className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border border-current/30 ${theme.text}`}
+            className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border-current/30 ${theme.text}`}
             title="代码模式 — 点击展开查看 diff / 文件 / 命令 / 读取结果"
             aria-label="代码模式"
           >
@@ -1915,6 +1918,28 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
               }}
               className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
               title="复制渲染前的原始 markdown 源"
+            >
+              {copied ? '已复制 ✓' : '复制'}
+            </button>
+          )}
+          {open && mode === 'field' && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                // 字段模式展示的是 entry 的 JSON 树, 复制即给原始 JSON (用未截断的 entry,
+                // 而非可能被超大卡片保护截断的 renderEntry, 让用户拿到完整数据).
+                let jsonText = ''
+                try { jsonText = JSON.stringify(entry, null, 2) } catch { jsonText = '' }
+                if (!jsonText) return
+                navigator.clipboard.writeText(jsonText).then(() => {
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1000)
+                })
+              }}
+              className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
+              title="复制原始 JSON 到剪贴板"
             >
               {copied ? '已复制 ✓' : '复制'}
             </button>
@@ -2374,12 +2399,12 @@ export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo }: { lastTi
     : silenceSec < 120 ? 'warn'
     : 'stale'
   const theme =
-    sev === 'normal' ? { border: 'border-emerald-500/30', bg: 'bg-emerald-500/[0.05]', dot: 'bg-emerald-400', text: 'text-emerald-300' }
-    : sev === 'warn'   ? { border: 'border-amber-500/30',   bg: 'bg-amber-500/[0.05]',   dot: 'bg-amber-400',   text: 'text-amber-300' }
-    :                    { border: 'border-red-500/40',     bg: 'bg-red-500/[0.06]',     dot: 'bg-red-400',     text: 'text-red-300' }
+    sev === 'normal' ? { border: 'border-emerald-500/15', bg: 'bg-emerald-500/[0.05]', dot: 'bg-emerald-400', text: 'text-emerald-300' }
+    : sev === 'warn'   ? { border: 'border-amber-500/15',   bg: 'bg-amber-500/[0.05]',   dot: 'bg-amber-400',   text: 'text-amber-300' }
+    :                    { border: 'border-red-500/20',     bg: 'bg-red-500/[0.06]',     dot: 'bg-red-400',     text: 'text-red-300' }
 
   return (
-    <div className={`mb-2 rounded-2xl border card-enter ${theme.border} ${theme.bg} px-3 py-2 flex items-center gap-2 text-[12px]`}>
+    <div className={`mb-2 rounded-lg border card-enter ${theme.border} ${theme.bg} px-3 py-2 flex items-center gap-2 text-[12px]`}>
       <span className="relative inline-flex w-2 h-2 flex-shrink-0">
         <span className={`absolute inset-0 rounded-full ${theme.dot} animate-ping opacity-75`} />
         <span className={`relative inline-flex rounded-full w-2 h-2 ${theme.dot}`} />
@@ -2402,11 +2427,9 @@ export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo }: { lastTi
 
 function displayImageSrc(src: string): { isUrl: boolean; finalSrc: string } {
   const isUrl = /^https?:\/\//i.test(src)
-  const token = typeof window !== 'undefined' ? localStorage.getItem('cc-token') || '' : ''
-  return {
-    isUrl,
-    finalSrc: isUrl ? src : `/api/download?path=${encodeURIComponent(src)}&token=${encodeURIComponent(token)}`,
-  }
+  // finalSrc 与 markdown 内嵌图片走同一条改写规则 (resolveMediaSrc), 保证
+  // display_images 卡片和 ![](/home/...) 图片行为一致.
+  return { isUrl, finalSrc: resolveMediaSrc(src) }
 }
 
 // 单张图片: URL 直出; 绝对路径走后端 /api/download (与 FileManager 同款, token 走 query).
@@ -2508,7 +2531,7 @@ function DisplayImagePreviewModal({ src, onClose }: { src: string; onClose: () =
 
 // 紧跟在 Bash(display_images) 卡片之后的图像卡片. 默认展开.
 // 行号渲染成 "↳#N" 表示"由第 N 条 entry 派生", 而非真实 jsonl 行.
-const IMAGES_THEME = { dot: 'bg-teal-400', border: 'border-teal-500/40', bg: 'bg-teal-500/[0.06]', text: 'text-teal-300', label: 'images' }
+const IMAGES_THEME = { dot: 'bg-teal-400', border: 'border-teal-500/20', bg: 'bg-teal-500/[0.06]', text: 'text-teal-300', label: 'images' }
 export function DisplayImagesCard({ images, lineNo, sourceLabel = 'display_images' }: { images: string[]; lineNo?: number; sourceLabel?: string }) {
   const [open, setOpen] = useState<boolean>(true)
   const [previewSrc, setPreviewSrc] = useState<string | null>(null)
@@ -2518,7 +2541,7 @@ export function DisplayImagesCard({ images, lineNo, sourceLabel = 'display_image
       <details
         open={open}
         onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
-        className={`mb-2 rounded-2xl border card-enter ${theme.border} ${theme.bg}`}>
+        className={`mb-2 rounded-lg border card-enter ${theme.border} ${theme.bg}`}>
         <summary className="cursor-pointer px-3 py-1.5 flex items-center gap-2 text-[12px] select-text">
           {typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">↳#{lineNo}</span>}
           <span className={`w-1.5 h-1.5 rounded-full ${theme.dot} flex-shrink-0`}></span>
@@ -2664,7 +2687,7 @@ function ContinuationGroup({ items, onlyGroup, showMeta = true }: { items: Jsonl
         type="button"
         onClick={onlyGroup ? undefined : () => setOpen(o => !o)}
         disabled={onlyGroup}
-        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-xl transition-colors text-left group ${onlyGroup ? 'cursor-default' : 'hover:bg-[var(--bg-card-hover)]'}`}
+        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-xl border border-amber-500/15 transition-colors text-left group ${onlyGroup ? 'cursor-default' : 'hover:bg-[var(--bg-card-hover)] hover:border-amber-500/30'}`}
       >
         <span className="font-mono text-[10px] font-bold text-amber-400/75 flex-shrink-0 w-8">
           ...
@@ -2684,7 +2707,7 @@ function ContinuationGroup({ items, onlyGroup, showMeta = true }: { items: Jsonl
       </button>
 
       {open && (
-        <div className="mt-0.5 pl-2 border-l border-[var(--border-color)]/40 ml-2">
+        <div className="mt-2">
           {items.map(({ entry, lineNo, bashResults, readResults }) => (
             <div key={(entry?.uuid || entry?.id || entry?.timestamp || '') + '#' + lineNo} className="flex items-start gap-1.5">
               <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-7 text-right leading-none select-none">
@@ -2730,11 +2753,11 @@ function RoundGroup({ round, isLast, onlyGroup, showMeta = true }: { round: Roun
         type="button"
         onClick={onlyGroup ? undefined : toggle}
         disabled={onlyGroup}
-        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-xl transition-colors text-left group ${onlyGroup ? 'cursor-default' : 'hover:bg-[var(--bg-card-hover)]'}`}
+        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg border border-slate-500/15 transition-colors text-left group ${onlyGroup ? 'cursor-default' : 'hover:bg-[var(--bg-card-hover)] hover:border-slate-500/30'}`}
       >
-        <span className="font-mono text-[10px] font-bold text-blue-400/70 flex-shrink-0 w-8">
-          {round.roundNum}.0
-        </span>
+        {/* <span className="font-mono text-[10px] font-bold text-blue-400/70 flex-shrink-0 w-4">
+          {round.roundNum}
+        </span> */}
         <span className="w-1.5 h-1.5 rounded-full bg-slate-400 flex-shrink-0" />
         <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1 min-w-0">
           {userSummary || '(空)'}
@@ -2752,16 +2775,16 @@ function RoundGroup({ round, isLast, onlyGroup, showMeta = true }: { round: Roun
       </button>
 
       {open && (
-        <div className="mt-0.5 pl-2 border-l border-[var(--border-color)]/40 ml-2">
+        <div className="mt-2 jsonl-thread">
           {round.items.map((item, idx) => {
             const isUserItem = item.relIdx === 0
             const isLastEntry = isLast && idx === round.items.length - 1
             return (
               <Fragment key={(item.entry?.uuid || '') + '#' + item.lineNo}>
                 <div className="flex items-start gap-1.5">
-                  <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-7 text-right leading-none select-none">
+                  <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">
                     {/* 用户问题已在 header 显示 1.0，展开内容里不重复打标签 */}
-                    {isUserItem ? '' : `${round.roundNum}.${item.relIdx}`}
+                    {isUserItem ? 'u' : `${item.relIdx}`}
                   </span>
                   <div className="flex-1 min-w-0">
                     <EntryCardWithImages
@@ -2910,8 +2933,7 @@ export function JsonlView({
     <div className="text-[12px]">
       <div className="flex items-center gap-2 px-1 py-2 sticky top-0 z-10 backdrop-blur-sm bg-[var(--bg-page)]/80">
         {headerTitle && <span className="min-w-0 truncate text-[var(--text-secondary)] font-semibold" title={headerTitle}>{headerTitle}</span>}
-        <span className="flex-shrink-0 text-[var(--text-muted)] text-[11px]">{displayTotal} entries</span>
-        {rounds.length > 0 && <span className="text-[var(--text-muted)] text-[11px]">· {rounds.length} 轮</span>}
+        {rounds.length > 0 && <span className="text-[var(--text-muted)] text-[11px]">{rounds.length} 轮</span>}
         {hasOmittedHead && <span className="text-[var(--text-muted)] text-[11px]">· 已显示尾部</span>}
         {hasRemoteMore && !!onLoadMore && (
           <button

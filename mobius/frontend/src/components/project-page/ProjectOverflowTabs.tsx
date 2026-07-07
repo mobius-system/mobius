@@ -15,6 +15,7 @@ export type OverflowTab = {
   active?: boolean
   disabled?: boolean
   title?: string
+  dataTour?: string
 }
 
 type Props = {
@@ -136,6 +137,7 @@ export function ProjectOverflowTabs({ tabs, onSelect, className = '', style }: P
             active={t.active}
             disabled={t.disabled}
             title={t.title}
+            data-tour={t.dataTour}
             onClick={() => onSelect(t.key)}
             className="shrink-0 whitespace-nowrap"
           >

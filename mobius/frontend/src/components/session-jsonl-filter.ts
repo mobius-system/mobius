@@ -73,6 +73,12 @@ function isPlainUserEntry(entry: any): boolean {
   return entry?.type === 'user' && !entryHasMobiusField(entry) && userMessageContentForEventMirror(entry) !== null
 }
 
+// task_started 是 codex 的任务启动生命周期标记, 对浏览对话内容无价值, 默认归入次要条目隐藏.
+// (与 queue-operation 同理: 用户仍可从顶部 "…" 菜单 "显示次要条目" 展开.)
+function isTaskStartedEvent(entry: any): boolean {
+  return entry?.type === 'event_msg' && entry?.payload?.type === 'task_started'
+}
+
 function computeVisibleJsonl(entries: any[], hideMinor: boolean): VisibleJsonlState {
   const hiddenIndexes = new Set<number>()
   const visibleJsonl: any[] = []
@@ -123,7 +129,7 @@ function computeVisibleJsonl(entries: any[], hideMinor: boolean): VisibleJsonlSt
       entryHasMobiusField(entry) &&
       plainUserContents.has(userMessageContentForEventMirror(entry) ?? '')
     const isMinor =
-      !MAJOR_JSONL_TYPES.has(entry?.type) || hiddenIndexes.has(i) || mirroredUserMessage || duplicateMobiusCard
+      !MAJOR_JSONL_TYPES.has(entry?.type) || hiddenIndexes.has(i) || mirroredUserMessage || duplicateMobiusCard || isTaskStartedEvent(entry)
 
     isMinorByIndex[i] = isMinor
     if (isMinor) minorCount += 1
@@ -200,7 +206,7 @@ function appendVisibleJsonl(prev: VisibleJsonlState, entries: any[]): VisibleJso
       entryHasMobiusField(entry) &&
       next.plainUserContents.has(userMessageContentForEventMirror(entry) ?? '')
     const isMinor =
-      !MAJOR_JSONL_TYPES.has(entry?.type) || mirroredUserMessage || duplicateMobiusCard
+      !MAJOR_JSONL_TYPES.has(entry?.type) || mirroredUserMessage || duplicateMobiusCard || isTaskStartedEvent(entry)
 
     next.isMinorByIndex[index] = isMinor
     if (isMinor) next.minorCount += 1

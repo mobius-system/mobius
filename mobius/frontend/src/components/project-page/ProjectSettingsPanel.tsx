@@ -788,7 +788,7 @@ export function ProjectSettingsPanel({
   // 顶部 tab 列表 (数据驱动): 空间不足时 ProjectOverflowTabs 会把溢出的 tab 收进「⋯」菜单, 而非换行.
   const settingsTabs: OverflowTab[] = useMemo(() => {
     const arr: OverflowTab[] = [
-      { key: 'settings', label: '项目设置', active: activePane === 'settings' },
+      { key: 'settings', label: '项目设置', active: activePane === 'settings', dataTour: 'project-settings-tab' },
       { key: 'versions', label: '版本追踪', active: activePane === 'versions', disabled: !gitTrackingAvailable, title: gitTrackingTitle },
       { key: 'architecture', label: '系统结构剖析', active: activePane === 'architecture' },
       { key: 'todos', label: '项目待办', active: activePane === 'todos' },
@@ -811,14 +811,6 @@ export function ProjectSettingsPanel({
           onSelect={handleSelectPane}
           className="flex-1 min-w-0"
         />
-        {canDeleteProject && project.kind !== 'extension' && (
-          <button onClick={onDeleteProject} title="删除项目（需要多重确认）"
-            data-tour="project-delete"
-            className="inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-red-500/35 bg-red-500/10 px-2.5 text-[11px] font-medium text-red-500 transition-colors hover:bg-red-500 hover:text-white">
-            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
-            删除项目
-          </button>
-        )}
       </div>
 
       {project.kind === 'extension' && (
@@ -1028,6 +1020,52 @@ export function ProjectSettingsPanel({
         )}
 
         {project.kind === 'extension' ? null : (
+          <SettingsCard title="默认模型偏好">
+            <div>
+              <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>本项目新建执行会话时，默认套用的模型</label>
+              <select
+                value={editDefaultModel}
+                disabled={!canManageProject}
+                onChange={e => setEditDefaultModel(e.target.value)}
+                className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+              >
+                <option value="">未指定（跟随系统默认）</option>
+                {projectModelOptions.map(opt => (
+                  <option key={opt.key} value={opt.key}>
+                    {opt.title || opt.label || opt.key}
+                  </option>
+                ))}
+                {editDefaultModel && !projectModelOptions.some(opt => opt.key === editDefaultModel) && (
+                  <option value={editDefaultModel} disabled>
+                    {editDefaultModel}（当前已不可用，建议改回未指定）
+                  </option>
+                )}
+              </select>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                选择「未指定」时，新建执行会话沿用系统全局默认模型；选择具体模型后，该项目下新建执行会话的模型下拉会初始套用它，用户仍可在创建时手动改。已存在的执行会话和 Research Agent 团队的模型不受影响。
+              </p>
+            </div>
+          </SettingsCard>
+        )}
+
+
+        {metaErr && <div className="text-[12px] text-red-400">{metaErr}</div>}
+        <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <span className="text-[11px]" style={{ color: metaSaveStatusColor }}>{metaSaveStatus}</span>
+        </div>
+
+        <div className="pt-2" style={embeddedSettingsCardStyle}>
+          <SkillsManager scope="project" projectId={project.id} />
+        </div>
+        <div className="pt-2" style={embeddedSettingsCardStyle}>
+          <MemoriesManager scope="project" projectId={project.id} />
+        </div>
+        <div className="pt-2" style={embeddedSettingsCardStyle}>
+          <ProjectUserContextWhitelist projectId={project.id} />
+        </div>
+
+        {project.kind === 'extension' ? null : (
           <SettingsCard title="拓展功能">
             <div>
               <ToggleSwitch
@@ -1188,52 +1226,6 @@ export function ProjectSettingsPanel({
         </SettingsCard>
 
         {project.kind === 'extension' ? null : (
-          <SettingsCard title="默认模型偏好">
-            <div>
-              <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>本项目新建执行会话时，默认套用的模型</label>
-              <select
-                value={editDefaultModel}
-                disabled={!canManageProject}
-                onChange={e => setEditDefaultModel(e.target.value)}
-                className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
-                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
-              >
-                <option value="">未指定（跟随系统默认）</option>
-                {projectModelOptions.map(opt => (
-                  <option key={opt.key} value={opt.key}>
-                    {opt.title || opt.label || opt.key}
-                  </option>
-                ))}
-                {editDefaultModel && !projectModelOptions.some(opt => opt.key === editDefaultModel) && (
-                  <option value={editDefaultModel} disabled>
-                    {editDefaultModel}（当前已不可用，建议改回未指定）
-                  </option>
-                )}
-              </select>
-              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                选择「未指定」时，新建执行会话沿用系统全局默认模型；选择具体模型后，该项目下新建执行会话的模型下拉会初始套用它，用户仍可在创建时手动改。已存在的执行会话和 Research Agent 团队的模型不受影响。
-              </p>
-            </div>
-          </SettingsCard>
-        )}
-
-
-        {metaErr && <div className="text-[12px] text-red-400">{metaErr}</div>}
-        <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-          <span className="text-[11px]" style={{ color: metaSaveStatusColor }}>{metaSaveStatus}</span>
-        </div>
-
-        <div className="pt-2" style={embeddedSettingsCardStyle}>
-          <SkillsManager scope="project" projectId={project.id} />
-        </div>
-        <div className="pt-2" style={embeddedSettingsCardStyle}>
-          <MemoriesManager scope="project" projectId={project.id} />
-        </div>
-        <div className="pt-2" style={embeddedSettingsCardStyle}>
-          <ProjectUserContextWhitelist projectId={project.id} />
-        </div>
-
-        {project.kind === 'extension' ? null : (
           <SettingsCard title="权限设置">
             <div>
               <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>项目可见性</label>
@@ -1299,6 +1291,31 @@ export function ProjectSettingsPanel({
               </div>
             </div>
           </SettingsCard>
+        )}
+
+        {canDeleteProject && project.kind !== 'extension' && (
+          <section className="rounded-lg border overflow-hidden"
+            style={{ borderColor: 'rgba(239,68,68,0.38)', background: 'var(--bg-secondary)' }}>
+            <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(239,68,68,0.25)' }}>
+              <h3 className="text-[13px] font-semibold text-red-400">危险操作</h3>
+            </div>
+            <div className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px]" style={{ color: 'var(--text-primary)' }}>删除项目</div>
+                  <p className="mt-1 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
+                    删除后，该项目及其全部 Issue、执行会话、项目知识与绑定目录资料将无法恢复。点击后需要完成多重确认。
+                  </p>
+                </div>
+                <button onClick={onDeleteProject} title="删除项目（需要多重确认）"
+                  data-tour="project-delete"
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-red-500/45 bg-red-500/10 px-3 text-[12px] font-medium text-red-400 transition-colors hover:bg-red-500 hover:text-white">
+                  <Trash2 className="h-4 w-4" strokeWidth={1.8} />
+                  删除项目
+                </button>
+              </div>
+            </div>
+          </section>
         )}
       </div>
       )}

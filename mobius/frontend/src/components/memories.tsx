@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Activity, CheckCircle2, Cpu, FolderOpen, Plus, RefreshCw, Server, Upload } from 'lucide-react'
+import { Activity, CheckCircle2, Cpu, FolderInput, FolderOpen, Lock, Pencil, Plus, RefreshCw, Server, Trash2, Upload } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { ContextAccessModal } from './context-access'
 import { MoveScopeModal } from './modals'
@@ -236,17 +236,25 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
                 <div className="ml-auto flex flex-[0_1_auto] flex-wrap items-center justify-end gap-1">
                   {m.can_manage && (
                     <button onClick={() => setAccessing(m)} title="设置可见性和指定用户"
-                      className="h-7 px-2 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)]"
-                      style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>权限</button>
+                      className="h-7 w-7 inline-flex items-center justify-center rounded border transition-colors hover:bg-[var(--bg-hover)]"
+                      style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                      <Lock className="w-3.5 h-3.5" />
+                    </button>
                   )}
                   <button onClick={() => setMoving(m)} disabled={managed} title={managed ? '项目知识随项目绑定路径自动同步, 不支持移动' : (scope === 'user' ? '移到项目级' : '移到我的 / 其他项目')}
-                    className="h-7 px-2 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>移动</button>
+                    className="h-7 w-7 inline-flex items-center justify-center rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                    <FolderInput className="w-3.5 h-3.5" />
+                  </button>
                   <button onClick={() => setEditing({ mode: 'edit', memory: m, managedKind: m.managed_kind })} title={managed ? '编辑项目知识 (写回 project_knowledge.md)' : '编辑'}
-                    className="h-7 px-2 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)]"
-                    style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>编辑</button>
+                    className="h-7 w-7 inline-flex items-center justify-center rounded border transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
                   <button onClick={() => handleDelete(m)} title="删除"
-                    className="h-7 px-2 text-[11px] rounded border hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>删除</button>
+                    className="h-7 w-7 inline-flex items-center justify-center rounded border hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             </div>

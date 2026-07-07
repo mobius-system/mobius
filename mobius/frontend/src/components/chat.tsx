@@ -1424,7 +1424,7 @@ export function ChatArea() {
   const voiceRecordFailedRef = useRef(false)
   const voiceStopTimerRef = useRef<number | null>(null)
   const voiceTickTimerRef = useRef<number | null>(null)
-  // 默认隐藏次要条目 (last-prompt / title / agent-name / permission / 连续重复 entry / 连续等摘要 entry)
+  // 默认隐藏次要条目 (last-prompt / title / agent-name / permission / 连续重复 entry / 连续等摘要 entry / task_started 生命周期事件)
   const [hideMinorJsonl, setHideMinorJsonl] = useState(true)
   // 默认隐藏 jsonl 卡片标题里的"序号 + 时间"前缀; 开启后才显示 #序号 和 MM-DD HH:MM:SS.
   const [showJsonlMeta, setShowJsonlMeta] = useState(false)
@@ -1765,6 +1765,87 @@ export function ChatArea() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
+  // ↑ 召回历史输入: 仅当输入框为空时按 ↑ 召回最近一条; 2 秒内连按 ↑ 逐条回退到更早输入,
+  // 每次按下刷新 2 秒冷却; 冷却过后 ↑ 回归普通作用, 待输入框再次为空才可从头召回.
+  // 历史输入与"回放输入"弹窗同源 (/api/sessions/:id/inputs, newest-first → entries[0] 即"上一次").
+  const inputRecallRef = useRef<{
+    active: boolean
+    index: number
+    entries: SessionInputEntry[]
+    timer: ReturnType<typeof setTimeout> | null
+    fetching: boolean
+  }>({ active: false, index: -1, entries: [], timer: null, fetching: false })
+
+  // 切换 session 时重置召回状态 (历史输入按 session 隔离).
+  useEffect(() => {
+    const st = inputRecallRef.current
+    if (st.timer) { clearTimeout(st.timer); st.timer = null }
+    st.active = false
+    st.index = -1
+    st.entries = []
+    st.fetching = false
+  }, [sessionId])
+
+  const handleInputArrowUp = useCallback(async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const st = inputRecallRef.current
+    if (st.active) {
+      // 已在召回序列中: 2 秒内连按, 逐条回退到更早输入; 到最早一条后停在原地并续命冷却.
+      const nextIndex = st.index + 1
+      if (nextIndex < st.entries.length) {
+        st.index = nextIndex
+        const text = replayTextOf(st.entries[nextIndex])
+        setInput(text)
+        requestAnimationFrame(() => {
+          const el = inputRef.current
+          if (el) { try { el.setSelectionRange(text.length, text.length) } catch {} }
+        })
+      }
+      if (st.timer) clearTimeout(st.timer)
+      st.timer = setTimeout(() => {
+        const cur = inputRecallRef.current
+        cur.active = false
+        cur.index = -1
+        cur.timer = null
+      }, 2000)
+      e.preventDefault()
+      return
+    }
+    // 召回序列未激活: 仅当输入框为空时从头触发.
+    const currentInput = inputRef.current?.value ?? ''
+    if (currentInput.trim()) return
+    if (!sessionId) return
+    if (st.fetching) return
+    st.fetching = true
+    e.preventDefault()
+    try {
+      const data = await api(`/api/sessions/${sessionId}/inputs`)
+      const entries = (Array.isArray(data?.entries) ? data.entries : [])
+        .filter((en: SessionInputEntry) => replayTextOf(en).trim().length > 0)
+      if (entries.length === 0) return
+      st.entries = entries
+      st.index = 0
+      st.active = true
+      const text = replayTextOf(entries[0])
+      setInput(text)
+      requestAnimationFrame(() => {
+        const el = inputRef.current
+        if (el) { el.focus(); try { el.setSelectionRange(text.length, text.length) } catch {} }
+      })
+      if (st.timer) clearTimeout(st.timer)
+      st.timer = setTimeout(() => {
+        const cur = inputRecallRef.current
+        cur.active = false
+        cur.index = -1
+        cur.timer = null
+      }, 2000)
+    } catch {
+      // 拉取失败则不进入召回序列, ↑ 维持普通作用.
+    } finally {
+      st.fetching = false
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
   const attachments = attachmentsBySession[sessionId] || []
   const closeAttachmentImagePreview = useCallback(() => setAttachmentImagePreview(null), [])
   const openAttachmentImagePreview = useCallback((preview: AttachmentImagePreview) => {
@@ -1909,7 +1990,7 @@ export function ChatArea() {
     ? '编辑消息后按 Enter 重新发送...'
     : isNewConversation
       ? '今天有什么计划？'
-      : '发送指令...'
+      : '发送指令（Shift+Enter 换行 · Ctrl/⌘+V 粘贴文件）...'
   const loadHistoryRef = useRef<() => void>(() => {})
   const postSessionMessage = useCallback(async ({
     content,
@@ -3150,7 +3231,7 @@ export function ChatArea() {
           )}
           <div
             data-tour="session-chat-input"
-            className="relative rounded-2xl transition-all focus-within:ring-2 focus-within:ring-blue-500/15"
+            className="relative rounded-lg transition-all focus-within:ring-2 focus-within:ring-blue-500/15"
             style={{
               background: 'var(--input-bg)',
               border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)'}`,
@@ -3206,6 +3287,10 @@ export function ChatArea() {
               )}
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
                 onKeyDown={e => {
+                  if (e.key === 'ArrowUp' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                    handleInputArrowUp(e)
+                    return
+                  }
                   if (e.key !== 'Enter') return
                   if (e.shiftKey) return
                   if (e.altKey) {
@@ -3222,7 +3307,7 @@ export function ChatArea() {
                   send()
                 }}
                 placeholder={inputPlaceholder}
-                className="w-full bg-transparent resize-none border-0 px-0 pt-0 pb-1 text-[16px] leading-[1.55] placeholder:!text-[var(--placeholder-color)] focus:outline-none overflow-y-auto"
+                className="w-full bg-transparent resize-none border-0 px-0 pt-0 pb-1 text-[14px] leading-[1.55] placeholder:!text-[var(--placeholder-color)] focus:outline-none overflow-y-auto"
                 style={{ height: inputHeight, minHeight: 60, maxHeight: '70vh', color: 'var(--text-primary)' }}
               />
             </div>
@@ -3235,7 +3320,7 @@ export function ChatArea() {
                   aria-haspopup="menu"
                   aria-expanded={inputMenuOpen}
                   aria-label="更多输入功能"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors"
                   style={{
                     color: theme !== 'light' ? '#d1d5db' : '#374151',
                     border: `1px solid ${inputMenuOpen ? 'rgba(96,165,250,0.38)' : (theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)')}`,
@@ -3281,7 +3366,7 @@ export function ChatArea() {
                 disabled={!sessionId}
                 title="回放输入"
                 aria-label="回放输入"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{
                   color: theme !== 'light' ? '#d1d5db' : '#374151',
                   border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
@@ -3296,7 +3381,7 @@ export function ChatArea() {
                 title={voiceTip}
                 aria-label={voiceTip}
                 aria-pressed={voiceState === 'recording'}
-                className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors assistant-session-input__voice assistant-session-input__voice--${voiceState} disabled:opacity-40 disabled:cursor-not-allowed`}
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors assistant-session-input__voice assistant-session-input__voice--${voiceState} disabled:opacity-40 disabled:cursor-not-allowed`}
                 style={{
                   color: voiceState === 'recording' ? '#f87171' : (voiceState === 'transcribing' ? '#38bdf8' : (theme !== 'light' ? '#d1d5db' : '#374151')),
                   border: `1px solid ${voiceState === 'recording' ? 'rgba(248,113,113,0.34)' : (voiceState === 'transcribing' ? 'rgba(56,189,248,0.34)' : (theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'))}`,
@@ -3326,7 +3411,7 @@ export function ChatArea() {
                     <button type="button" onClick={() => send(true)} disabled={sendDisabled}
                       data-tour="session-chat-send-urgent"
                       title="发送（加急）— 打断当前输出并立即发送"
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{
                         color: theme !== 'light' ? '#d1d5db' : '#374151',
                         border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
@@ -3337,7 +3422,7 @@ export function ChatArea() {
                     <button onClick={() => send()} disabled={sendDisabled}
                       data-tour="session-chat-send"
                       title={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
-                      className="w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-95"
+                      className="w-7 h-7 flex items-center justify-center rounded-full transition-all active:scale-95"
                       style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}>
                       {anyUploading || voiceState === 'transcribing' ? (
                         <RefreshCw className="w-4 h-4 animate-spin" />
@@ -3349,9 +3434,9 @@ export function ChatArea() {
                 )
               })()}
             </div>
-            <div className="px-3 pb-3 pt-0.5 text-[10px]" style={{ color: sendingHint ? '#facc15' : 'var(--text-muted)' }}>
-              {sendingHint ?? '草稿自动保存 · Enter 发送 · Shift+Enter 换行 · Ctrl/⌘+V 粘贴文件'}
-            </div>
+            {/* <div className="px-3 pb-1 pt-0.5 text-[10px] truncate" style={{ color: sendingHint ? '#facc15' : 'var(--text-muted)' }}>
+              {sendingHint ?? 'Shift+Enter 换行 · Ctrl/⌘+V 粘贴文件'}
+            </div> */}
           </div>
           <div className="mobius-chat-input-actions mt-2 grid grid-cols-2 items-stretch gap-1.5 px-1">
             {isPlanningSession ? null : (

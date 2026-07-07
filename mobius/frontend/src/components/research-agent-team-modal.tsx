@@ -3,8 +3,8 @@ import { CheckCircle2, Loader2, Lock, Plus, Rocket, Trash2, Users, X, Sparkles, 
 import { api, useStore } from '../store'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ErrBanner } from './modals'
-import { SCENE_KIND_OPTIONS, AVATAR_KIND_OPTIONS } from './research-agent-team-scene'
-import type { ResearchTeamSceneAgent, SceneKind, AvatarKind } from './research-agent-team-scene'
+import { SCENE_KIND_OPTIONS, AVATAR_KIND_OPTIONS } from './research-agent-team-scene-options'
+import type { ResearchTeamSceneAgent, SceneKind, AvatarKind } from './research-agent-team-scene-options'
 
 type ResearchRole = 'chief_researcher' | 'research_assistant'
 type SessionLanguage = 'zh' | 'en'

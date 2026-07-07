@@ -118,3 +118,21 @@ export function isLikelyFilesystemPath(href: string): boolean {
   if (!href.startsWith('/')) return false
   return FS_PATH_PREFIXES.some(p => href.startsWith(p))
 }
+
+// Rewrite a media src (markdown <img>, display_images card, ...) that points at
+// an absolute server-side filesystem path into a backend-served URL. Mirrors how
+// FileManager surfaces local files: route them through GET /api/download, which
+// is gated by downloadAuth and only serves paths the user may read (work_dir,
+// mobius upload dir, system temp, extension user-data). This is what makes an
+// agent message like ![shot](/home/.../x.png) actually render — a raw filesystem
+// path in <img src> 404s against the dev/prod host. http(s) / data: / blob: and
+// already-API URLs pass through untouched; relative or in-app paths are left as
+// they are (isLikelyFilesystemPath keeps us from hijacking those).
+export function resolveMediaSrc(src: string): string {
+  if (!src) return src
+  if (/^https?:\/\//i.test(src)) return src
+  if (src.startsWith('//') || src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('/api/')) return src
+  if (!isLikelyFilesystemPath(src)) return src
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('cc-token') || '') : ''
+  return `/api/download?path=${encodeURIComponent(src)}${token ? `&token=${encodeURIComponent(token)}` : ''}`
+}

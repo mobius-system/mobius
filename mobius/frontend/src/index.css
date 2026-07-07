@@ -5016,6 +5016,23 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .jsonl-compact-md .hljs-attr,
 .jsonl-compact-md .hljs-attribute { color: var(--syntax-attr); }
 
+/* JSONL 嵌套层级 / 对话轮次的竖向引导线: 用纵向渐变背景取代实线 border-l,
+   仅在极短的两端淡出以消除硬边的突兀感, 中段保持 --border-color-strong 75% 的
+   可见度 (介于原实线 0.036 与 strong 满值 0.08 之间, 既能看清又不刺眼).
+   走 background-image 而非 ::before, 无需 position:relative, 不改变后代定位上下文. */
+.jsonl-thread {
+  background-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--border-color-strong) 75%, transparent) 8%,
+    color-mix(in srgb, var(--border-color-strong) 75%, transparent) 92%,
+    transparent 100%
+  );
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: 1px 100%;
+}
+
 /* Code and diff surfaces use semantic variables so non-light themes do not
    accidentally inherit light-only Tailwind dark-mode colors. */
 .code-diff-line { color: var(--code-text); }
