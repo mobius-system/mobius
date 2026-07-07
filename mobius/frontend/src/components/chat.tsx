@@ -137,8 +137,10 @@ type SessionDiffMode = 'unstaged' | 'staged' | 'last_commit' | 'last_two_commits
 type SessionGitDiff = {
   path: string
   display_path: string
-  mode: SessionDiffMode
-  diff: string
+  mode: SessionDiffMode | null
+  diff: string | null
+  fallback_content?: string | null
+  fallback_error?: string | null
   ok: boolean
   error?: string | null
 }
@@ -588,12 +590,12 @@ function CompactContextConfirmModal({ onConfirm, onClose }: {
   )
 }
 
-const DIFF_MODE_OPTIONS: { mode: SessionDiffMode; label: string }[] = [
-  { mode: 'unstaged', label: '未Stage修改' },
-  { mode: 'staged', label: '已Stage未提交' },
-  { mode: 'last_commit', label: '最近一次 commit' },
-  { mode: 'last_two_commits', label: '最近两次 commit' },
-]
+const DIFF_MODE_LABELS: Record<SessionDiffMode, string> = {
+  unstaged: '未Stage修改',
+  staged: '已Stage未提交',
+  last_commit: '最近一次 commit',
+  last_two_commits: '最近两次 commit',
+}
 
 function diffLineClass(line: string) {
   if (line.startsWith('+') && !line.startsWith('+++')) return 'code-diff-line--added'
@@ -627,7 +629,6 @@ function SessionFileChangesModal({ sessionId, onClose }: {
 }) {
   const [files, setFiles] = useState<SessionFileFeature[]>([])
   const [selectedPath, setSelectedPath] = useState('')
-  const [mode, setMode] = useState<SessionDiffMode>('unstaged')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [workspaceError, setWorkspaceError] = useState('')
@@ -675,13 +676,13 @@ function SessionFileChangesModal({ sessionId, onClose }: {
     let cancelled = false
     setDiffLoading(true)
     setDiffError('')
-    const url = `/api/sessions/${sessionId}/features/git-diff?mode=${encodeURIComponent(mode)}&file=${encodeURIComponent(selectedPath)}`
+    const url = `/api/sessions/${sessionId}/features/git-diff?file=${encodeURIComponent(selectedPath)}`
     api(url)
       .then((data: any) => {
         if (cancelled) return
         const first = Array.isArray(data?.diffs) ? data.diffs[0] : null
         setDiff(first || null)
-        if (first && first.ok === false) setDiffError(first.error || '读取 diff 失败')
+        if (first && first.ok === false && !first.fallback_content) setDiffError(first.error || '读取 diff 失败')
       })
       .catch((e: any) => {
         if (cancelled) return
@@ -692,7 +693,7 @@ function SessionFileChangesModal({ sessionId, onClose }: {
         if (!cancelled) setDiffLoading(false)
       })
     return () => { cancelled = true }
-  }, [sessionId, selectedPath, mode])
+  }, [sessionId, selectedPath])
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
@@ -772,21 +773,6 @@ function SessionFileChangesModal({ sessionId, onClose }: {
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex flex-shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2" style={{ borderColor: 'var(--border-color)' }}>
-              {DIFF_MODE_OPTIONS.map(option => {
-                const active = mode === option.mode
-                return (
-                  <button
-                    key={option.mode}
-                    type="button"
-                    onClick={() => setMode(option.mode)}
-                    className={`h-8 rounded-lg border px-3 text-[12px] transition-colors ${active ? 'border-blue-500/35 bg-blue-500/10 text-blue-300' : 'border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)]'}`}
-                    style={{ color: active ? undefined : 'var(--text-secondary)' }}>
-                    {option.label}
-                  </button>
-                )
-              })}
-            </div>
             <div className="min-h-0 flex-1 overflow-auto">
               {!selectedFile && !loading && (
                 <div className="py-16 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>请选择一个文件</div>
@@ -798,13 +784,30 @@ function SessionFileChangesModal({ sessionId, onClose }: {
                     <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={selectedFile.display_path} style={{ color: 'var(--text-primary)' }}>
                       {selectedFile.display_path}
                     </span>
+                    {!diffLoading && diff?.mode && (
+                      <span className="flex-shrink-0 rounded-md border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[11px] text-blue-300">
+                        {DIFF_MODE_LABELS[diff.mode]}
+                      </span>
+                    )}
+                    {!diffLoading && diff && !diff.diff && diff.fallback_content !== undefined && (
+                      <span className="flex-shrink-0 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-300">
+                        文件内容
+                      </span>
+                    )}
                     {diffLoading && <Loader2 className="h-4 w-4 animate-spin text-blue-400" />}
                   </div>
                   {diffError && (
                     <pre className="m-4 whitespace-pre-wrap break-words rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-[12px] text-red-300">{diffError}</pre>
                   )}
-                  {!diffLoading && !diffError && (!diff?.diff || diff.diff.trim() === '') && (
-                    <div className="py-16 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>当前模式没有 diff</div>
+                  {!diffLoading && !diffError && diff && !diff.diff && diff.fallback_content !== undefined && (
+                    <div className="overflow-auto">
+                      <pre className="min-w-max whitespace-pre p-4 font-mono text-[11px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
+                        {diff.fallback_content || ' '}
+                      </pre>
+                    </div>
+                  )}
+                  {!diffLoading && !diffError && (!diff || (!diff.diff && diff.fallback_content === undefined)) && (
+                    <div className="py-16 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>没有可显示的 diff 或文件内容</div>
                   )}
                   {!diffError && diff?.diff && diff.diff.trim() !== '' && (
                     <div className="overflow-auto">

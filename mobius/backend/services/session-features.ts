@@ -413,6 +413,8 @@ function normalizeDiffMode(mode: any): string {
   return 'unstaged';
 }
 
+const AUTO_DIFF_MODES = ['unstaged', 'staged', 'last_commit', 'last_two_commits'];
+
 function gitDiffArgsForMode(mode: any): string[] {
   const normalized = normalizeDiffMode(mode);
   if (normalized === 'staged') return ['diff', '--no-ext-diff', '--staged', '--'];
@@ -443,32 +445,69 @@ function gitTopLevel(abs: string): string | null {
   return top ? path.resolve(top) : null;
 }
 
-function gitDiffForFiles(workDir: any, files: any, mode: any): any {
+function gitDiffForFiles(workDir: any, files: any, _mode: any): any {
   if (!workDir) throw new Error('缺少工作目录, 无法读取 git diff');
   const gitRoot = gitTopLevel(workDir);
-  if (!gitRoot) throw new Error(`工作目录不是 Git 仓库: ${workDir}`);
-  const normalizedMode = normalizeDiffMode(mode);
-  const safeFiles = [];
+  const safeFiles: any[] = [];
   for (const file of files || []) {
     const normalized = normalizeFeaturePath(file, { workDir, gitRoot });
-    if (!normalized || normalized.outside_workspace) continue;
-    if (normalized.relative_path === '.') continue;
-    safeFiles.push(normalized.relative_path);
+    if (!normalized || normalized.relative_path === '.') continue;
+    safeFiles.push(normalized);
   }
-  const uniqueFiles = [...new Set(safeFiles)];
-  const argsBase = gitDiffArgsForMode(normalizedMode);
-  const diffs = uniqueFiles.map((filePath) => {
-    const result = runGit(gitRoot, [...argsBase, filePath]);
+  const uniqueFiles = [...new Map(safeFiles.map((file) => [file.absolute_path, file])).values()];
+  const diffs = uniqueFiles.map((file) => {
+    let lastGitError: string | null = gitRoot ? null : `工作目录不是 Git 仓库: ${workDir}`;
+    if (gitRoot && !file.outside_workspace) {
+      for (const diffMode of AUTO_DIFF_MODES) {
+        const argsBase = gitDiffArgsForMode(diffMode);
+        const result = runGit(gitRoot, [...argsBase, file.relative_path]);
+        if (!result.ok) {
+          lastGitError = result.error || null;
+          continue;
+        }
+        if ((result.stdout || '').trim()) {
+          return {
+            path: file.relative_path,
+            display_path: file.display_path,
+            mode: diffMode,
+            diff: result.stdout,
+            fallback_content: null,
+            fallback_error: null,
+            ok: true,
+            error: null,
+          };
+        }
+      }
+    }
+
+    let fallbackContent: string | null = null;
+    let fallbackError: string | null = null;
+    try {
+      const stat = fs.statSync(file.absolute_path);
+      if (!stat.isFile()) throw new Error('目标路径不是文件');
+      fallbackContent = fs.readFileSync(file.absolute_path, 'utf8');
+    } catch (e) {
+      fallbackError = (e as Error).message || String(e);
+    }
     return {
-      path: filePath,
-      display_path: filePath,
-      mode: normalizedMode,
-      diff: result.ok ? result.stdout : '',
-      ok: result.ok,
-      error: result.ok ? null : result.error,
+      path: gitRoot && !file.outside_workspace ? file.relative_path : file.original,
+      display_path: file.display_path,
+      mode: null,
+      diff: null,
+      fallback_content: fallbackContent,
+      fallback_error: fallbackError,
+      ok: fallbackError === null,
+      error: fallbackError || lastGitError,
     };
   });
-  return { git_root: gitRoot, mode: normalizedMode, diffs };
+  const first = diffs[0] || null;
+  return {
+    git_root: gitRoot,
+    mode: first?.mode || null,
+    diff: first?.diff ?? null,
+    fallback_content: first?.fallback_content ?? null,
+    diffs,
+  };
 }
 
 export {

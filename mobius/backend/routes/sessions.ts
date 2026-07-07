@@ -980,8 +980,7 @@ router.get('/:id/features/bash', auth, (req: express.Request, res: express.Respo
   }
 });
 
-// 按文件修改特征清单限定路径, 实时读取 git diff.
-// mode: unstaged | staged | last_commit | last_two_commits
+// 按文件修改特征清单限定路径, 自动依次读取 git diff; 无 diff 时回退为文件内容.
 router.get('/:id/features/git-diff', auth, (req: express.Request, res: express.Response) => {
   const sessionId = String(req.params.id);
   const user = userOf(req);
@@ -991,7 +990,7 @@ router.get('/:id/features/git-diff', auth, (req: express.Request, res: express.R
 
   const jsonlPath = sessionJsonlPath(session, sessionId);
   if (!jsonlPath) {
-    res.json({ session_id: sessionId, mode: sessionFeatures.normalizeDiffMode(req.query.mode), diffs: [], files: [] });
+    res.json({ session_id: sessionId, mode: null, diff: null, fallback_content: null, diffs: [], files: [] });
     return;
   }
 
@@ -1023,7 +1022,7 @@ router.get('/:id/features/git-diff', auth, (req: express.Request, res: express.R
     const result = sessionFeatures.gitDiffForFiles(
       workspace.workDir,
       [...new Set(targetFiles)],
-      req.query.mode,
+      null,
     );
     res.json({
       session_id: sessionId,
