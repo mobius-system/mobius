@@ -300,8 +300,19 @@ function watchAgentReply(p: {
     ticks++;
     const text = readLatestAssistantText(p.agentSessionId, p.baselineLines);
     if (text) {
-      // @ 触发的 agent 执行结果不再回写群聊(用户要求: 不要"任务已完成"这类回复刷屏),
-      // 仅停止轮询 + 清理临时分身. agent 实际执行结果留在分身 session 里.
+      // @ 触发的 agent 回复回写群聊(经群 SSE 广播给所有成员), 否则群里看不到任何回复.
+      // 用临时分身(cloneId)作为 senderId 标识这条 agent 消息; 显示名用 agent 的展示名.
+      try {
+        Conversations.insertMessage({
+          conversationId: p.conversationId,
+          senderId: p.agentSessionId,
+          senderType: 'agent',
+          senderName: p.agentDisplayName,
+          content: text,
+          sourceAgentSession: p.agentSessionId,
+        });
+        Conversations.touch(p.conversationId);
+      } catch {}
       clearInterval(timer);
       cleanupClone();
       return;
