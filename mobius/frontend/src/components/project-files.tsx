@@ -406,6 +406,7 @@ type OpenInVSCodeButtonProps = {
   className?: string
   mode?: 'picker' | 'direct'
   showWorktreeOption?: boolean
+  iconOnly?: boolean
 }
 
 export function OpenInVSCodeButton({
@@ -414,6 +415,7 @@ export function OpenInVSCodeButton({
   className,
   mode = 'picker',
   showWorktreeOption = true,
+  iconOnly = false,
 }: OpenInVSCodeButtonProps) {
   const [bindPath, setBindPath] = useState('')
   const [vscodeWorkspacePath, setVscodeWorkspacePath] = useState('')
@@ -461,6 +463,9 @@ export function OpenInVSCodeButton({
   const defaultFolder = vscodeWorkspacePath || bindPath
   const parentFolder = dirnamePosix(bindPath)
   const buttonClassName = className || 'h-7 px-2.5 text-[11px] border border-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/10 transition-colors flex items-center gap-1.5'
+  const effectiveClassName = iconOnly
+    ? (buttonClassName.replace(/\s+px-2\.5\s+/g, " ").replace(/\s+px-3\s+/g, " ").replace(/\s+text-\[11px\]\s+/g, " ").replace(/\s+text-\[12px\]\s+/g, " ").trim() + " px-2 w-9 justify-center")
+    : buttonClassName
 
   const openFolder = (folder: string) => {
     const url = buildVscodeUrl(vscodeWebUrl, folder)
@@ -477,12 +482,12 @@ export function OpenInVSCodeButton({
         onClick={() => mode === 'direct' ? openFolder(defaultFolder) : setShowPathPicker(true)}
         data-tour="vscode-open-button"
         title={mode === 'direct' ? '在 VSCode Web 打开项目目录' : '选择 VSCode Web 打开路径'}
-        className={buttonClassName}
+        className={effectiveClassName}
       >
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
         </svg>
-        在 VSCode 中打开
+        {!iconOnly && <span>在 VSCode 中打开</span>}
       </button>
 
       {showPathPicker && mode !== 'direct' && (
