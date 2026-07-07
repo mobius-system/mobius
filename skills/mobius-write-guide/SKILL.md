@@ -212,7 +212,7 @@ plugins:
 ```bash
 .venv-docs/bin/mkdocs build --strict 2>&1 | tail -25
 ```
-> 只有 `.venv-docs` 损坏 / 被删时才重建：`python3 -m venv .venv-docs && .venv-docs/bin/pip install -q -r requirements-docs.txt`。
+> 只有 `.venv-docs` 损坏 / 被删时才重建：`python3 -m venv .venv-docs && .venv-docs/bin/pip install -q -r docs/requirements-docs.txt`。
 - 看日志有 `Translated N navigation elements to 'zh'`（N = nav key 总数，新增条目后 N 应 +对应数，无 missing）。
 - 无 `error / Exception / Conflicting files`。
 - **`--strict` 下任何 WARNING 都会 abort**：仓库里有长期存在的「非本次」告警（如未入库的 `compute-and-devices/README.*.md` 链接、`zhipu-key-setup.md` 未进 nav），它们与你的教程无关。**判断你自己的改动是否干净**：grep 构建输出里有没有 `tutorial/NN`、你的图床 URL、或你改的 nav key；再确认 `site/tutorial/` + `site/en/tutorial/` 下都生成了你的 `NN_*` 页面。只要这两条过了，strict 的 abort 就不是你造成的，可放行。
@@ -281,7 +281,7 @@ proxychains -q git push github main
 | 图床上传 | `POST https://public.agent-matrix.com/up/v100`，`Authorization: Bearer iooir13gnwduio_beli882__AUNGLOIUYUG` |
 | 图床 folder | `tutorial`（纯 ASCII 字母） |
 | 图床域名（docs 用） | `serve.nutshellai.cn`（返回的是 `serve.gptacademic.cn`，换掉） |
-| docs 仓库 | `/home/tianyi/imac-test`（`docs/` + `mkdocs.yml` + `requirements-docs.txt`） |
+| docs 仓库 | `/home/tianyi/imac-test`（`docs/` + `mkdocs.yml` + `docs/requirements-docs.txt`） |
 | 远端 origin | `ssh://git@gitlab.agent-matrix.com:12340/nutshellai/mobius.git`（内网直连） |
 | 远端 github | `https://github.com/nutshellai-tech/mobius.git`（外网，push 走 `proxychains -q`） |
 | commit 邮箱/署名 | `mobius_os@163.com` / `Mobius OS`（已配） |
