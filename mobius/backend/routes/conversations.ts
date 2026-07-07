@@ -256,17 +256,20 @@ function readJsonlLineCount(sessionId: string): number {
   }
 }
 
-// 从 jsonl 的 baselineLines(触发前)之后, 读最近一条 assistant 文本.
-function readLatestAssistantText(sessionId: string, baselineLines: number): string | null {
+// 从 jsonl 的 baselineLines(触发前)之后, 读取**所有** assistant 文本并合并, 同时返回当前行数.
+// 合并规则: claude-code 流式可能 emit 多条 assistant(内容累积增长), 若后一条包含前一条则取后者(完整),
+// 否则用空行拼接(多条独立回复). 返回行数供 watchAgentReply 判断 agent 是否停止写入.
+function readAllAssistantText(sessionId: string, baselineLines: number): { text: string | null; lineCount: number } {
   const p = resolveAgentJsonlPath(sessionId);
-  if (!p || !fs.existsSync(p)) return null;
+  if (!p || !fs.existsSync(p)) return { text: null, lineCount: 0 };
   let lines: string[];
   try {
     lines = fs.readFileSync(p, 'utf8').split('\n');
   } catch {
-    return null;
+    return { text: null, lineCount: 0 };
   }
-  for (let i = lines.length - 1; i >= baselineLines; i--) {
+  const texts: string[] = [];
+  for (let i = baselineLines; i < lines.length; i++) {
     const line = lines[i];
     if (!line || !line.trim()) continue;
     let entry: any;
@@ -274,14 +277,24 @@ function readLatestAssistantText(sessionId: string, baselineLines: number): stri
     if (entry?.type !== 'assistant') continue;
     const content = entry?.message?.content;
     if (!Array.isArray(content)) continue;
-    const text = content.filter((c: any) => c?.type === 'text').map((c: any) => c?.text || '').join('').trim();
-    if (text) return text;
+    const t = content.filter((c: any) => c?.type === 'text').map((c: any) => c?.text || '').join('').trim();
+    if (t) texts.push(t);
   }
-  return null;
+  let text: string | null = null;
+  if (texts.length === 1) {
+    text = texts[0];
+  } else if (texts.length > 1) {
+    const last = texts[texts.length - 1];
+    const prev = texts[texts.length - 2];
+    text = last.includes(prev) ? last : texts.join('\n\n');
+  }
+  return { text, lineCount: lines.length };
 }
 
-// 轮询 agent 的 jsonl; 触发后(baselineLines 之后)出现 assistant 回复即回写群消息.
-// 不查 messages_v2(assistant 不进它), 不依赖 agent_status 状态机(会错过快速 running).
+// 轮询 agent 的 jsonl, 等 agent 停止写入(jsonl 行数连续稳定)后再把**完整**回复回写群消息.
+// 关键: runSessionMessage 是 fire-and-forget(投递到 tmux 队列后立即返回, 不等 turn 完成),
+// 若读到第一条 assistant 就回写, 只会拿到流式开头(如"好的,我来整理..."), 后续正文/表格全丢.
+// 故须等行数稳定(连续 3 次~6s 无新增 = agent 写完)再回写 readAllAssistantText 合并的完整文本.
 function watchAgentReply(p: {
   conversationId: string;
   agentSessionId: string;
@@ -290,6 +303,8 @@ function watchAgentReply(p: {
   isClone?: boolean;
 }): void {
   let ticks = 0;
+  let lastLineCount = -1;
+  let stableTicks = 0;
   // 临时分身用完即弃(软删除), 避免残留在分身列表里.
   const cleanupClone = () => {
     if (p.isClone) {
@@ -298,10 +313,16 @@ function watchAgentReply(p: {
   };
   const timer = setInterval(() => {
     ticks++;
-    const text = readLatestAssistantText(p.agentSessionId, p.baselineLines);
-    if (text) {
-      // @ 触发的 agent 回复回写群聊(经群 SSE 广播给所有成员), 否则群里看不到任何回复.
-      // 用临时分身(cloneId)作为 senderId 标识这条 agent 消息; 显示名用 agent 的展示名.
+    const { text, lineCount } = readAllAssistantText(p.agentSessionId, p.baselineLines);
+    if (lineCount !== lastLineCount) {
+      lastLineCount = lineCount;
+      stableTicks = 0;
+    } else {
+      stableTicks++;
+    }
+    const settled = stableTicks >= 3; // 行数连续 3 次(6s)不变 → agent 已停止写入
+    if (text && (settled || ticks >= 150)) {
+      // @ 触发的 agent 完整回复回写群聊(经群 SSE 广播给所有成员).
       try {
         Conversations.insertMessage({
           conversationId: p.conversationId,
