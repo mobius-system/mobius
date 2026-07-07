@@ -30,7 +30,7 @@ export function ResearchCard({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a8 8 0 10-13.856 0M12 6v6l4 2" />
         </svg>
         <Link to={`/u/${userParam}/p/${projectId}/r/${research.id}`}
-          className={`text-[14px] font-semibold flex-1 hover:text-emerald-400 transition-colors ${isCompleted ? 'line-through' : ''}`}
+          className={`text-[14px] font-semibold flex-1 min-w-0 truncate hover:text-emerald-400 transition-colors ${isCompleted ? 'line-through' : ''}`}
           style={{ color: isCompleted ? 'var(--text-muted)' : 'var(--text-primary)' }}>{research.title}</Link>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
           <button onClick={() => onToggleStatus(research, isCompleted ? 'active' : 'completed')}
