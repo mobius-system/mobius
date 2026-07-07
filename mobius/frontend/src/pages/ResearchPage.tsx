@@ -193,7 +193,7 @@ export default function ResearchPage() {
               </svg>
               <div className="flex-1 min-w-0">
                 <button onClick={goToOverview}
-                  className={`block text-left text-[13px] font-semibold leading-tight hover:text-emerald-400 transition-colors ${research?.status === 'completed' ? 'line-through' : ''}`}
+                  className={`block text-left text-[13px] font-semibold leading-tight hover:text-emerald-400 transition-colors truncate ${research?.status === 'completed' ? 'line-through' : ''}`}
                   style={{ color: research?.status === 'completed' ? 'var(--text-muted)' : 'var(--text-primary)' }}
                   title="返回 Research Agent 列表">
                   {research?.title || '加载中...'}
