@@ -759,10 +759,10 @@ export default function UserPage() {
                         {overviewItems.length === 0 ? (
                           <div className="text-[11px] py-2" style={{ color: 'var(--text-muted)' }}>{showResearch ? '暂无 Research' : '暂无 Issue'}</div>
                         ) : (
-                          <div className="space-y-1">
+                          <div className="space-y-1 min-w-0">
                             {overviewItems.slice(0, 5).map((item: any) => (
                               <LinklessNav key={item.id} to={`/u/${p.created_by}/p/${p.id}/${overviewKind === 'research' ? 'r' : 'i'}/${item.id}`}
-                                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors group/iss min-w-0">
+                                className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors group/iss min-w-0">
                                 <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.status === 'completed' ? 'bg-green-400' : (overviewKind === 'research' ? 'bg-emerald-400/80' : 'bg-blue-400/70')}`} />
                                 <span className={`text-[12px] truncate flex-1 min-w-0 ${item.status === 'completed' ? 'line-through' : ''}`}
                                   style={{ color: item.status === 'completed' ? 'var(--text-muted)' : 'var(--text-primary)' }}>

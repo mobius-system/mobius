@@ -18,7 +18,7 @@ import {
 export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project'; projectId?: string }) {
   const [memories, setMemories] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState<{ mode: 'create' | 'edit'; memory?: any } | null>(null)
+  const [editing, setEditing] = useState<{ mode: 'create' | 'edit'; memory?: any; managedKind?: string | null } | null>(null)
   const [moving, setMoving] = useState<any | null>(null)
   const [accessing, setAccessing] = useState<any | null>(null)
   const [copyOpen, setCopyOpen] = useState(false)
@@ -40,10 +40,20 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
 
   useEffect(() => { refresh() }, [refresh])
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('确定删除该 memory? (会移除对应 .md 文件)')) return
-    try { await api(`${baseUrl}/${id}`, { method: 'DELETE' }); refresh() }
-    catch (e: any) { alert(e?.message || '删除失败') }
+  const handleDelete = async (m: any) => {
+    const id = m.id
+    const managed = m.managed_kind === 'project_knowledge'
+    const msg = managed
+      ? '这是项目知识沉淀 (由 project_knowledge.md 自动同步).\n确定删除? 会同时删除源文件 project_knowledge.md (自动备份到历史, 可经"恢复历史"回滚), 删除后不再被自动重建.'
+      : '确定删除该 memory? (会移除对应 .md 文件)'
+    if (!confirm(msg)) return
+    try {
+      const r: any = await api(`${baseUrl}/${id}`, { method: 'DELETE' })
+      if (managed && r?.cleared_source) {
+        alert('已删除项目知识沉淀及源文件 project_knowledge.md (已自动备份到历史, 可经"恢复历史"回滚).')
+      }
+      refresh()
+    } catch (e: any) { alert(e?.message || '删除失败') }
   }
 
   const markContextSetupMemorySynced = (result: any) => {
@@ -199,7 +209,9 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
         <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>暂无 memory, 点击右上角写入或上传</div>
       ) : (
         <div className="space-y-2">
-          {memories.map((m: any) => (
+          {memories.map((m: any) => {
+            const managed = m.managed_kind === 'project_knowledge'
+            return (
             <div key={m.id} className="p-3 bg-[var(--bg-card)] rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-[180px] flex-[1_1_180px]">
@@ -213,6 +225,9 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
                     <span className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: '#60a5fa', background: 'rgba(96,165,250,0.08)' }}>
                       {visibilityLabel(m.visibility, m.scope)}
                     </span>
+                    {managed && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.10)' }} title="由 project_knowledge.md 自动同步; 编辑会写回源文件, 删除会清掉源文件">自动同步</span>
+                    )}
                   </div>
                   {m.description && (
                     <p className="text-[11px] line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{m.description}</p>
@@ -224,18 +239,19 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
                       className="h-7 px-2 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)]"
                       style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>权限</button>
                   )}
-                  <button onClick={() => setMoving(m)} title={scope === 'user' ? '移到项目级' : '移到我的 / 其他项目'}
-                    className="h-7 px-2 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)]"
+                  <button onClick={() => setMoving(m)} disabled={managed} title={managed ? '项目知识随项目绑定路径自动同步, 不支持移动' : (scope === 'user' ? '移到项目级' : '移到我的 / 其他项目')}
+                    className="h-7 px-2 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>移动</button>
-                  <button onClick={() => setEditing({ mode: 'edit', memory: m })} title="编辑"
+                  <button onClick={() => setEditing({ mode: 'edit', memory: m, managedKind: m.managed_kind })} title={managed ? '编辑项目知识 (写回 project_knowledge.md)' : '编辑'}
                     className="h-7 px-2 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)]"
                     style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>编辑</button>
-                  <button onClick={() => handleDelete(m.id)} title="删除"
+                  <button onClick={() => handleDelete(m)} title="删除"
                     className="h-7 px-2 text-[11px] rounded border hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>删除</button>
                 </div>
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -276,6 +292,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
           baseUrl={baseUrl}
           mode={editing.mode}
           initial={editing.memory}
+          managedKind={editing.managedKind}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); refresh() }}
           onRefresh={refresh}
@@ -1031,14 +1048,16 @@ function RemotePathPickerModal({ remote, initialPath, onClose, onSelect }: {
 //   - 直接编辑/粘贴: 填标题 + 正文, 等价于原新建表单
 //   - 本地路径导入 : 输入服务器绝对路径 (.md 文件 / 含多个 .md 的目录, 递归批量)
 //                   复制为快照与源解耦, 同名逐个跳过
-function MemoryEditor({ baseUrl, mode, initial, onClose, onSaved, onRefresh }: {
+function MemoryEditor({ baseUrl, mode, initial, managedKind, onClose, onSaved, onRefresh }: {
   baseUrl: string
   mode: 'create' | 'edit'
   initial?: any
+  managedKind?: string | null
   onClose: () => void
   onSaved: () => void
   onRefresh: () => void
 }) {
+  const isManagedKnowledge = managedKind === 'project_knowledge'
   const [name, setName] = useState(initial?.name || '')
   const [body, setBody] = useState('')
   const [loading, setLoading] = useState(mode === 'edit')
@@ -1059,14 +1078,23 @@ function MemoryEditor({ baseUrl, mode, initial, onClose, onSaved, onRefresh }: {
 
   const submit = async () => {
     const trimmedName = name.trim()
-    if (!trimmedName) { setErr('name 不能为空'); return }
+    if (!isManagedKnowledge && !trimmedName) { setErr('name 不能为空'); return }
     setErr(''); setSaving(true)
     try {
-      const payload = { name: trimmedName, body }
-      if (mode === 'create') {
-        await api(baseUrl, { method: 'POST', body: JSON.stringify(payload) })
+      if (isManagedKnowledge && mode === 'edit') {
+        // 项目知识 Memory 是 project_knowledge.md 的自动同步投影:
+        // PATCH 单改 memory .md 会被下次列表同步覆盖. 这里把正文写回源文件
+        // (POST project-knowledge/upload, 会自动备份+同步), 编辑才真正持久.
+        const content = body
+        if (!content.trim()) { setErr('项目知识正文不能为空 (如需清空请直接删除该沉淀)'); setSaving(false); return }
+        await api(`${baseUrl}/project-knowledge/upload`, { method: 'POST', body: JSON.stringify({ content }) })
       } else {
-        await api(`${baseUrl}/${initial.id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+        const payload = { name: trimmedName, body }
+        if (mode === 'create') {
+          await api(baseUrl, { method: 'POST', body: JSON.stringify(payload) })
+        } else {
+          await api(`${baseUrl}/${initial.id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+        }
       }
       onSaved()
     } catch (e: any) {
@@ -1113,7 +1141,7 @@ function MemoryEditor({ baseUrl, mode, initial, onClose, onSaved, onRefresh }: {
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {mode === 'create' ? '新建 Memory' : '编辑 Memory'}
+            {isManagedKnowledge ? '编辑项目知识沉淀' : (mode === 'create' ? '新建 Memory' : '编辑 Memory')}
           </span>
           <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-hover)] transition-colors" style={{ color: 'var(--text-muted)' }}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -1154,13 +1182,20 @@ function MemoryEditor({ baseUrl, mode, initial, onClose, onSaved, onRefresh }: {
           ) : (
             <>
               <div>
-                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>标题 (必填, 用于列表展示, 单行)</label>
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>
+                  {isManagedKnowledge ? '标题 (随项目名自动派生, 不可改)' : '标题 (必填, 用于列表展示, 单行)'}
+                </label>
                 <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
                   data-tour="memory-editor-name-input"
                   placeholder="例: 使用简体中文回复"
-                  disabled={saving || loading}
+                  disabled={saving || loading || isManagedKnowledge}
                   className="w-full px-2.5 py-1.5 rounded text-[12px] focus:outline-none focus:border-blue-500/30 disabled:opacity-40"
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                {isManagedKnowledge && (
+                  <p className="text-[10.5px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                    正文保存后会写回 <code>{`{项目绑定路径}/${HIDDEN_FOLDER_NAME}/project_knowledge.md`}</code> (自动备份历史), 同步刷新本条沉淀.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>正文 (Markdown，可直接粘贴文字，保存后写入 .md 文件 body 部分)</label>

@@ -20,6 +20,7 @@ import { Projects } from '../repositories/projects';
 import { UPLOAD_DIR, HIDDEN_FOLDER_NAME } from '../config';
 // @ts-ignore — service 仍是 .js
 import {
+  PROJECT_KNOWLEDGE_SLUG,
   projectKnowledgePath,
   snapshotProjectKnowledge,
   listProjectKnowledgeHistory,
@@ -54,8 +55,19 @@ const memoryUpload = multer({
   limits: { fileSize: MAX_MEMORY_MARKDOWN_BYTES as number },
 });
 
+// 项目知识 Memory 是 <bind_path>/.imac/project_knowledge.md 的自动同步投影
+// (slug 固定为 PROJECT_KNOWLEDGE_SLUG, 由 listForProject 的同步逻辑重建).
+// 对它直接 编辑/删除 会被下次列表同步覆盖/重建 → 表现为"编辑无效/删除无效".
+// 前端据此把这类 Memory 标成受管理, 走专用的写入源文件/清源文件路径.
+function isProjectKnowledgeMemory(row: any): boolean {
+  if (!row || row.scope !== 'project') return false;
+  const id = String(row.id || '');
+  return id.endsWith(':' + PROJECT_KNOWLEDGE_SLUG);
+}
+
 function shape(row: any): any {
   if (!row) return row;
+  const managedKind = isProjectKnowledgeMemory(row) ? 'project_knowledge' : null;
   return {
     id: row.id,
     scope: row.scope,
@@ -70,6 +82,8 @@ function shape(row: any): any {
     access: row.access,
     can_manage: !!row.can_manage,
     hidden: !!row.hidden,
+    managed: managedKind !== null,
+    managed_kind: managedKind,
   };
 }
 
@@ -631,8 +645,23 @@ projectScoped.delete('/:id', auth, (req: express.Request, res: express.Response)
   const m = Memories.findById(String(req.params.id));
   if (!m || m.scope !== 'project' || m.owner_id !== String(req.params.projectId)) return res.status(404).json({ error: '未找到' });
   if (!canManageContextItem(user, 'memory', m)) return res.status(403).json({ error: '无权删除此项目级 Memory' });
+  // 项目知识 Memory 是 project_knowledge.md 的自动同步投影: 只删 memory .md 会被
+  // 下次列表同步重建 (listForProjectWithKnowledgeSync). 删除时一并清掉源文件
+  // (先快照到 history 目录, 可经 project-knowledge/restore 回滚), 让同步不再重建.
+  let clearedSource = false;
+  if (isProjectKnowledgeMemory(m)) {
+    const sourcePath = projectKnowledgePath(acc.project);
+    if (sourcePath && fs.existsSync(sourcePath)) {
+      try { snapshotProjectKnowledge(acc.project); } catch (e) {
+        console.warn(`[memories] snapshot before project-knowledge delete failed: ${(e as Error).message}`);
+      }
+      try { fs.unlinkSync(sourcePath); clearedSource = true; } catch (e) {
+        console.warn(`[memories] unlink project-knowledge source failed: ${(e as Error).message}`);
+      }
+    }
+  }
   Memories.delete(m.id);
-  res.json({ ok: true });
+  res.json({ ok: true, cleared_source: clearedSource });
 });
 
 // 项目级 memory → 用户级 / 另一个项目.

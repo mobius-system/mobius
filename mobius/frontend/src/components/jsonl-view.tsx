@@ -2070,11 +2070,14 @@ function buildTaskReminderSummary(entry: AnyEntry): HeaderSummary | null {
     return `${subject}${status}${id}`
   })
   const shortSource = `task_reminder · ${shortParts.join(' / ')}`
-  const short = shortSource.replace(/\s+/g, ' ').trim().slice(0, HEADER_SHORT_LIMIT)
+  const collapsed = shortSource.replace(/\s+/g, ' ').trim()
+  const short = collapsed.slice(0, HEADER_SHORT_LIMIT)
+  const truncated = shortSource.length > HEADER_SHORT_LIMIT
   return {
     short,
+    shortTail: truncated ? collapsed.slice(collapsed.length - HEADER_SHORT_LIMIT) : collapsed,
     full: sections.join('\n'),
-    truncated: shortSource.length > HEADER_SHORT_LIMIT,
+    truncated,
     canCompact: true,
   }
 }
