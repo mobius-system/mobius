@@ -910,12 +910,12 @@ export function ProjectSettingsPanel({
                 <div className="flex min-w-0 flex-nowrap items-center gap-2">
                   <input value={editBindPath} readOnly disabled={!canManageProject} placeholder="未绑定（限家目录下）"
                     onClick={() => { if (canManageProject) onOpenPathPicker() }}
-                    className="flex-1 min-w-0 h-9 px-3 rounded-lg text-[13px] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60"
+                    className="flex-1 min-w-0 max-w-[16rem] h-9 px-3 rounded-lg text-[13px] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60 truncate"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                   <button type="button" onClick={onOpenPathPicker} disabled={!canManageProject}
-                    className="h-9 flex-shrink-0 px-2 w-9 justify-center rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+                    className="h-9 flex-shrink-0 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
                     <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
-                    <span className="sr-only">选择路径</span>
+                    <span>选择路径</span>
                   </button>
                   {!!project.bind_path && editBindPath === (project.bind_path || '') && (
                     <OpenInVSCodeButton
@@ -923,8 +923,7 @@ export function ProjectSettingsPanel({
                       projectId={project.id}
                       mode="direct"
                       showWorktreeOption={false}
-                      iconOnly={true}
-                      className="h-9 flex-shrink-0 px-2 w-9 justify-center rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap"
+                      className="h-9 flex-shrink-0 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap"
                     />
                   )}
                   {editBindPath && (
