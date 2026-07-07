@@ -907,10 +907,10 @@ export function ProjectSettingsPanel({
               </div>
               <div className="xl:col-span-2">
                 <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>绑定路径</label>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-nowrap items-center gap-2">
                   <input value={editBindPath} readOnly disabled={!canManageProject} placeholder="未绑定（限家目录下）"
                     onClick={() => { if (canManageProject) onOpenPathPicker() }}
-                    className="min-w-[13rem] flex-1 h-9 px-3 rounded-lg text-[13px] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60"
+                    className="w-64 flex-shrink-0 h-9 px-3 rounded-lg text-[13px] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                   <button type="button" onClick={onOpenPathPicker} disabled={!canManageProject}
                     className="h-9 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">

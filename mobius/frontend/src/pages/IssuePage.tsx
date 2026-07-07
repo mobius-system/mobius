@@ -300,10 +300,10 @@ export default function IssuePage() {
                 title="返回Session列表">
                 Sessions
               </button>
-              <span className="rounded-full border px-2 py-0.5 text-[10px] font-medium flex-shrink-0"
+              {/* <span className="rounded-full border px-2 py-0.5 text-[10px] font-medium flex-shrink-0"
                 style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
                 {sessions.length} 个
-              </span>
+              </span> */}
             </div>
             <button onClick={() => setShowNewSession(true)} title="新建Session"
               data-tour="issue-sidebar-new-session"

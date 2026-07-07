@@ -193,38 +193,6 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
         <pre className="text-[11px] text-amber-400 mb-3 whitespace-pre-wrap break-all max-h-24 overflow-auto">{memoryFileInfo}</pre>
       )}
 
-      {scope === 'project' && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <input
-            ref={projectKnowledgeFileRef}
-            type="file"
-            accept=".md,text/markdown,text/plain"
-            className="hidden"
-            onChange={uploadProjectKnowledgeFile}
-          />
-          <button
-            onClick={() => projectKnowledgeFileRef.current?.click()}
-            disabled={projectKnowledgeUploading || !projectId}
-            data-tour="project-memory-upload-knowledge"
-            className="text-[11px] px-2.5 py-1 rounded bg-sky-500/15 text-sky-400 hover:bg-sky-500/25 border border-sky-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
-            title="上传本地 project_knowledge.md, 并同步为项目级 Memory, 上限 50MB">
-            <Upload className="w-3 h-3" strokeWidth={1.8} />
-            {projectKnowledgeUploading ? '上传中...' : '上传项目知识'}
-          </button>
-          <button onClick={refreshProjectKnowledge}
-            disabled={projectKnowledgeRefreshing || !projectId}
-            className="text-[11px] px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title={`读取项目绑定路径下的 ${HIDDEN_FOLDER_NAME}/project_knowledge.md, 并同步为项目级 Memory`}>
-            {projectKnowledgeRefreshing ? '刷新中...' : '刷新项目知识沉淀'}
-          </button>
-          {projectKnowledgeInfo && (
-            <span className="text-[11px] truncate max-w-full" style={{ color: 'var(--text-muted)' }}>
-              {projectKnowledgeInfo}
-            </span>
-          )}
-        </div>
-      )}
-
       {loading ? (
         <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
       ) : memories.length === 0 ? (
@@ -268,6 +236,38 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {scope === 'project' && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <input
+            ref={projectKnowledgeFileRef}
+            type="file"
+            accept=".md,text/markdown,text/plain"
+            className="hidden"
+            onChange={uploadProjectKnowledgeFile}
+          />
+          <button
+            onClick={() => projectKnowledgeFileRef.current?.click()}
+            disabled={projectKnowledgeUploading || !projectId}
+            data-tour="project-memory-upload-knowledge"
+            className="text-[11px] px-2.5 py-1 rounded bg-sky-500/15 text-sky-400 hover:bg-sky-500/25 border border-sky-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+            title="上传本地 project_knowledge.md, 并同步为项目级 Memory, 上限 50MB">
+            <Upload className="w-3 h-3" strokeWidth={1.8} />
+            {projectKnowledgeUploading ? '上传中...' : '上传项目知识'}
+          </button>
+          <button onClick={refreshProjectKnowledge}
+            disabled={projectKnowledgeRefreshing || !projectId}
+            className="text-[11px] px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title={`读取项目绑定路径下的 ${HIDDEN_FOLDER_NAME}/project_knowledge.md, 并同步为项目级 Memory`}>
+            {projectKnowledgeRefreshing ? '刷新中...' : '刷新项目知识沉淀'}
+          </button>
+          {projectKnowledgeInfo && (
+            <span className="text-[11px] truncate max-w-full" style={{ color: 'var(--text-muted)' }}>
+              {projectKnowledgeInfo}
+            </span>
+          )}
         </div>
       )}
 
