@@ -123,7 +123,7 @@ const TYPE_THEME: Record<string, { dot: string; border: string; bg: string; text
   session_meta:           { dot: 'bg-zinc-400',   border: 'border-zinc-500/15',  bg: 'bg-zinc-700/[0.04]',   text: 'text-zinc-300',   label: 'session' },
   turn_context:           { dot: 'bg-amber-400',  border: 'border-amber-500/15', bg: 'bg-amber-500/[0.04]',  text: 'text-amber-300',  label: 'turn' },
   event_msg:              { dot: 'bg-cyan-400',   border: 'border-cyan-500/15',  bg: 'bg-cyan-500/[0.04]',   text: 'text-cyan-300',   label: 'event' },
-  response_item:          { dot: 'bg-blue-400',   border: 'border-blue-500/28',  bg: 'bg-blue-500/[0.12]',   text: 'text-blue-200',   label: 'response' },
+  response_item:          { dot: 'bg-blue-400',   border: 'border-blue-500/15',  bg: 'bg-blue-500/[0.04]',   text: 'text-blue-300',   label: 'response' },
   error:                  { dot: 'bg-red-500',    border: 'border-red-500/25',   bg: 'bg-red-500/[0.10]',    text: 'text-red-200',    label: 'error' },
 }
 const DEFAULT_THEME = { dot: 'bg-gray-500', border: 'border-gray-500/15', bg: 'bg-gray-500/[0.04]', text: 'text-gray-400', label: 'entry' }
