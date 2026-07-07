@@ -397,7 +397,7 @@ export default function UserPage() {
                 className="w-full h-8 pl-8 pr-3 rounded-lg text-[12px] focus:outline-none focus:border-blue-500/30"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
             </div>
-            <div className="mt-2 rounded-lg border px-2 py-2" style={{ }}>
+            <div className="mt-2 rounded-lg px-2 py-2" style={{ }}>
               <div className="flex flex-nowrap gap-1.5 overflow-x-auto">
                 <button
                   type="button"

@@ -140,8 +140,8 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
 
   const title = scope === 'user' ? '用户级 Memory' : '项目级 Memory'
   const desc = scope === 'user'
-    ? '保存个人笔记和上下文片段。可直接写入或粘贴文本，也可上传 50MB 内 .md 文件，默认在你创建的所有 Issue 中可见'
-    : '项目共享的记忆片段。可直接写入或粘贴文本，也可上传 50MB 内 .md 文件，项目下所有 Issue 默认可见 (跨用户合并展示)'
+    ? '创建用户级记忆'
+    : '本项目中共享的记忆'
   const managerTour = scope === 'user' ? 'user-memory-manager' : 'project-memory-manager'
   const newTour = scope === 'user' ? 'user-memory-new' : 'project-memory-new'
   const copyTour = scope === 'user' ? 'user-memory-copy' : 'project-memory-copy'
@@ -257,7 +257,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
 
       {scope === 'project' && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <input
+          {/* <input
             ref={projectKnowledgeFileRef}
             type="file"
             accept=".md,text/markdown,text/plain"
@@ -272,7 +272,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
             title="上传本地 project_knowledge.md, 并同步为项目级 Memory, 上限 50MB">
             <Upload className="w-3 h-3" strokeWidth={1.8} />
             {projectKnowledgeUploading ? '上传中...' : '上传项目知识'}
-          </button>
+          </button> */}
           <button onClick={refreshProjectKnowledge}
             disabled={projectKnowledgeRefreshing || !projectId}
             className="text-[11px] px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
