@@ -66,6 +66,14 @@ def parse_args(description: str) -> argparse.Namespace:
         action="store_true",
         help="compile and replace static frontend without restarting backend",
     )
+    parser.add_argument(
+        "--live-frontend-debug",
+        action="store_true",
+        help=(
+            "run the Vite dev server (HMR) on a dedicated port so edits to "
+            "mobius/frontend/src/** take effect in the browser instantly; backend stays on PM2"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -437,6 +445,104 @@ def print_frontend_update_summary(root: Path) -> None:
         print(f"后端状态:         :{frontend_port} 未监听，本次未启动后端")
 
 
+LIVE_FRONTEND_PM2_APP = "mobius-system-vite-dev"
+LIVE_FRONTEND_ECOSYSTEM = "ecosystem.live-frontend.config.js"
+
+
+def _live_frontend_vite_port(backend_port: str) -> str:
+    # 优先用显式配置 MOBIUS_LIVE_FRONTEND_PORT; 否则取后端口 +2 (45616 -> 45618),
+    # 避开 +1 位置 (通常被 code-server 占用)。确保不和后端/同号冲突。
+    explicit = (os.environ.get("MOBIUS_LIVE_FRONTEND_PORT") or "").strip()
+    if explicit:
+        if not explicit.isdigit():
+            raise ConfigError(f"MOBIUS_LIVE_FRONTEND_PORT 必须是数字端口号, 当前值: {explicit}")
+        if explicit == backend_port:
+            raise ConfigError(
+                f"MOBIUS_LIVE_FRONTEND_PORT ({explicit}) 不能等于后端端口, 请指定其它端口"
+            )
+        return explicit
+    derived = str(int(backend_port) + 2)
+    if derived == backend_port:
+        derived = str(int(backend_port) + 3)
+    return derived
+
+
+def _pm2(argv: list[str], *, capture: bool = False, check: bool = True) -> subprocess.CompletedProcess[str]:
+    # 复用 start_product.py 的 pm2 调用约定 (npx --no-install, cwd=mobius), 与后端同一套管理面。
+    return run(["npx", "--no-install", "pm2", *argv], cwd=Path(os.environ["APP_DIR"]) / "mobius", capture=capture, check=check)
+
+
+def _ensure_backend_for_live_debug(root: Path, start_script_name: str) -> None:
+    # 复用已在跑的生产后端: 后端在监听就直接用, 不重建不重启。
+    # 后端没在跑才触发一次完整部署 (build + pm2), 保证 /api 可用 —— 这种情况罕见且一次性。
+    backend_port = os.environ["MOBIUS_PORT"]
+    if port_is_listening(backend_port):
+        print(f"   后端已在 :{backend_port} 监听, 复用现有 PM2 后端 (不重启)")
+        return
+    print(f"   后端未在 :{backend_port} 监听, 先完整启动后端 (build + pm2) ...")
+    sys.stdout.flush()
+    start_mobius(root, start_script_name)
+
+
+def _start_vite_dev_pm2(backend_port: str, vite_port: str) -> None:
+    # 把 vite dev 需要的环境写进 os.environ, ecosystem 文件 (envKeys 白名单) 会在 pm2 start 时继承。
+    # VITE_ALLOWED_HOSTS=all: dev 服务器放开 host 校验, 任凭 localhost / 局域网 IP / 域名访问都能打开
+    # (前端 dev 本身无鉴权, 真实鉴权仍在后端 /api)。
+    os.environ["VITE_PORT"] = vite_port
+    os.environ["VITE_HOST"] = os.environ.get("VITE_HOST") or "0.0.0.0"
+    os.environ["VITE_API_TARGET"] = f"http://127.0.0.1:{backend_port}"
+    os.environ["VITE_ALLOWED_HOSTS"] = "all"
+
+    ecosystem = Path(os.environ["APP_DIR"]) / "mobius" / LIVE_FRONTEND_ECOSYSTEM
+    if not ecosystem.is_file():
+        raise ConfigError(f"missing vite dev ecosystem file: {ecosystem}")
+
+    # startOrReload 幂等: 已经在跑就 reload (更新 env), 没有就 start。
+    _pm2(["startOrReload", str(ecosystem), "--update-env"])
+
+
+def print_live_frontend_summary(backend_port: str, vite_port: str) -> None:
+    vite_host = os.environ.get("VITE_HOST") or "0.0.0.0"
+    access_host = "127.0.0.1" if vite_host == "0.0.0.0" else vite_host
+    log_dir = Path(os.environ.get("MOBIUS_LOG_DIR") or "/data/logs")
+    print()
+    print("=== [live-frontend-debug] 前端实时调试模式已启动 ===")
+    print(f"   前端 dev (HMR): http://{access_host}:{vite_port}   (绑定 {vite_host}; 局域网用本机 IP 也能访问)")
+    print(f"   后端 API:       http://127.0.0.1:{backend_port}    (vite 已反代 /api /extension /_next /code-server)")
+    print()
+    print("   用法: 编辑 mobius/frontend/src/** 后, 浏览器自动热更新 (无需重新 build)。")
+    print(f"   vite 日志: pm2 logs {LIVE_FRONTEND_PM2_APP}    (或 tail -f {log_dir / 'mobius-vite-dev.log'})")
+    print(f"   退出调试: pm2 delete {LIVE_FRONTEND_PM2_APP}    (后端不受影响, 生产前端仍在 :{backend_port})")
+
+
+def run_live_frontend_debug(root: Path, start_script_name: str) -> int:
+    print()
+    print("=== [live-frontend-debug] 前端实时调试模式 (Vite dev + HMR, 全程 PM2 管理) ===")
+    backend_port = os.environ["MOBIUS_PORT"]
+    vite_port = _live_frontend_vite_port(backend_port)
+
+    print(f"=== [1/3] 确保后端运行 (:{backend_port}) ===")
+    _ensure_backend_for_live_debug(root, start_script_name)
+
+    print()
+    print(f"=== [2/3] 启动 Vite dev server (:{vite_port}, 反代后端 :{backend_port}) via PM2 ===")
+    sys.stdout.flush()
+    _start_vite_dev_pm2(backend_port, vite_port)
+    # vite 首次冷启动要扫描源码, 给几秒再探端口; 未就绪不报错, 提示看 pm2 logs。
+    time.sleep(5)
+    if port_is_listening(vite_port):
+        print(f"   ✓ :{vite_port} listen (Vite dev server)")
+    else:
+        print(
+            f"   ✗ :{vite_port} 暂未监听 — vite 可能仍在冷启动, 稍候查看 `pm2 logs {LIVE_FRONTEND_PM2_APP}`"
+        )
+
+    print()
+    print("=== [3/3] 完成 ===")
+    print_live_frontend_summary(backend_port, vite_port)
+    return 0
+
+
 def attach_to_mobius() -> None:
     # mobius 后端跑在 PM2 下而非前台 tmux，所以这里没有真正的 attach；
     # 只打印查看日志的方式给用户参考（与 print_summary 一致，避免用户以为没启动）。
@@ -448,8 +554,8 @@ def main(
     *,
     script_name: str = "start.py",
     description: str = (
-        "Restart Mobius (compile + serve frontend), or compile/promote frontend only with "
-        "--only-update-frontend."
+        "Restart Mobius (compile + serve frontend), compile/promote frontend only with "
+        "--only-update-frontend, or run the Vite dev server with --live-frontend-debug."
     ),
     start_script_name: str = "start_product.py",
 ) -> int:
@@ -464,6 +570,13 @@ def main(
             raise ConfigError("--other-versions 和 --hard-reset 不能同时使用")
         if args.only_update_frontend and (args.other_versions or args.hard_reset):
             raise ConfigError("--only-update-frontend 不能和 --other-versions / --hard-reset 同时使用")
+        if args.live_frontend_debug and (
+            args.other_versions or args.hard_reset or args.only_update_frontend or args.detach
+        ):
+            raise ConfigError(
+                "--live-frontend-debug 不能和 --other-versions / --hard-reset / "
+                "--only-update-frontend / --detach 同时使用"
+            )
         apply_product_port()
 
         root = Path(os.environ["APP_DIR"])
@@ -483,6 +596,9 @@ def main(
         )
 
         # --only-update-frontend 走的是独立的 [1/1] 单步流程，到下面会 return 提前结束。
+        # --live-frontend-debug 同样是独立流程: 复用现有后端 + 起 vite dev, 起完即 return。
+        if args.live_frontend_debug:
+            return run_live_frontend_debug(root, start_script_name)
         if args.only_update_frontend:
             print(f"=== [1/1] 更新 mobius 前端 (compile + replace :{os.environ['MOBIUS_PORT']}) ===")
         else:

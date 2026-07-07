@@ -66,6 +66,10 @@ RUNTIME_SETTINGS = ordered_unique(
         "VITE_API_TARGET",
         "VITE_HMR_PROTOCOL",
         "VITE_HMR_CLIENT_PORT",
+        # --live-frontend-debug 专用: Vite dev server 监听端口 (默认 MOBIUS_PORT+2).
+        # 仅 start.py 读取; 后端/PM2 ecosystem.config.js 不消费它, 故只走"第一道闸"
+        # (RUNTIME_SETTINGS, 让 .env 能配置). ecosystem.config.js envKeys / config.js 无需加.
+        "MOBIUS_LIVE_FRONTEND_PORT",
         "CODE_SERVER_PORT",
         "MOBIUS_SSH_PORT",
         "MOBIUS_SSH_URL",
