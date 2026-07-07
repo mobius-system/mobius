@@ -351,17 +351,20 @@ async function synthesizeSpeech({ user, text, voice = DEFAULT_VOICE, format = DE
 
   for (const line of lines) {
     const frame = parseTtsLine(line, logId);
+    // 先收集音频: 只要 data 非空就收, 与 code 无关。避免"音频帧带成功码 20000000"被误当
+    // 状态帧跳过, 最终 audio 为空报 TTS_EMPTY_AUDIO。
+    if (typeof frame?.data === 'string' && frame.data) {
+      audioChunks.push(Buffer.from(frame.data, 'base64'));
+      continue;
+    }
     const code = Number(frame?.code ?? 0);
-    if (code === 20000000) continue;
-    if (code !== 0) {
+    // 无 data 的帧: code=0 或 20000000 是正常状态/结束帧, 跳过; 其他非 0 code 才是错误。
+    if (code !== 0 && code !== 20000000) {
       throw new TtsError(frame?.message || 'TTS 服务返回错误。', {
         code: 'TTS_PROVIDER_FAILED',
         status: 502,
         logId,
       });
-    }
-    if (typeof frame?.data === 'string' && frame.data) {
-      audioChunks.push(Buffer.from(frame.data, 'base64'));
     }
   }
 

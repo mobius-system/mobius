@@ -256,17 +256,20 @@ function readJsonlLineCount(sessionId: string): number {
   }
 }
 
-// 从 jsonl 的 baselineLines(触发前)之后, 读最近一条 assistant 文本.
-function readLatestAssistantText(sessionId: string, baselineLines: number): string | null {
+// 从 jsonl 的 baselineLines(触发前)之后, 读取**所有** assistant 文本并合并, 同时返回当前行数.
+// 合并规则: claude-code 流式可能 emit 多条 assistant(内容累积增长), 若后一条包含前一条则取后者(完整),
+// 否则用空行拼接(多条独立回复). 返回行数供 watchAgentReply 判断 agent 是否停止写入.
+function readAllAssistantText(sessionId: string, baselineLines: number): { text: string | null; lineCount: number } {
   const p = resolveAgentJsonlPath(sessionId);
-  if (!p || !fs.existsSync(p)) return null;
+  if (!p || !fs.existsSync(p)) return { text: null, lineCount: 0 };
   let lines: string[];
   try {
     lines = fs.readFileSync(p, 'utf8').split('\n');
   } catch {
-    return null;
+    return { text: null, lineCount: 0 };
   }
-  for (let i = lines.length - 1; i >= baselineLines; i--) {
+  const texts: string[] = [];
+  for (let i = baselineLines; i < lines.length; i++) {
     const line = lines[i];
     if (!line || !line.trim()) continue;
     let entry: any;
@@ -274,14 +277,27 @@ function readLatestAssistantText(sessionId: string, baselineLines: number): stri
     if (entry?.type !== 'assistant') continue;
     const content = entry?.message?.content;
     if (!Array.isArray(content)) continue;
-    const text = content.filter((c: any) => c?.type === 'text').map((c: any) => c?.text || '').join('').trim();
-    if (text) return text;
+    const t = content.filter((c: any) => c?.type === 'text').map((c: any) => c?.text || '').join('').trim();
+    if (t) texts.push(t);
   }
-  return null;
+  let text: string | null = null;
+  if (texts.length === 1) {
+    text = texts[0];
+  } else if (texts.length > 1) {
+    const last = texts[texts.length - 1];
+    const prev = texts[texts.length - 2];
+    text = last.includes(prev) ? last : texts.join('\n\n');
+  }
+  return { text, lineCount: lines.length };
 }
 
-// 轮询 agent 的 jsonl; 触发后(baselineLines 之后)出现 assistant 回复即回写群消息.
-// 不查 messages_v2(assistant 不进它), 不依赖 agent_status 状态机(会错过快速 running).
+// 等 agent 的 turn 完成后, 把**完整**回复回写群聊(经群 SSE 广播给所有成员).
+// 用 jsonl 轮询 + text 内容稳定判断: readAllAssistantText 读 agent 的 transcript jsonl
+// (claude-code turn 结束才写入带 stop_reason 的完整 assistant), 连续 3 次(6s) text 不变即写完, 回写.
+// 轮询能自愈"订阅时序"——runSessionMessage 是 fire-and-forget, watchAgentReply 调用时 runtime/jsonl
+// 可能还没就绪, 前几次 readAll 返回 null, 就绪后即读到完整回复. 不用 thought stream 订阅(其在 runtime
+// 未就绪时订阅会空等到超时), 也不用"行数稳定"(claude-code 流式可能覆盖式更新最后一条 assistant,
+// 行数不变内容变). 实测 turn-complete entry(assistant+stop_reason=end_turn)的 text 是完整回复.
 function watchAgentReply(p: {
   conversationId: string;
   agentSessionId: string;
@@ -289,19 +305,42 @@ function watchAgentReply(p: {
   baselineLines: number;
   isClone?: boolean;
 }): void {
-  let ticks = 0;
-  // 临时分身用完即弃(软删除), 避免残留在分身列表里.
   const cleanupClone = () => {
     if (p.isClone) {
       try { Sessions.updateStatus(p.agentSessionId, 'deleted' as any); } catch {}
     }
   };
+  const writeBack = (text: string | null) => {
+    if (!text) return;
+    try {
+      Conversations.insertMessage({
+        conversationId: p.conversationId,
+        senderId: p.agentSessionId,
+        senderType: 'agent',
+        senderName: p.agentDisplayName,
+        content: text,
+        sourceAgentSession: p.agentSessionId,
+      });
+      Conversations.touch(p.conversationId);
+    } catch {}
+  };
+
+  // jsonl 轮询, 等 text 内容连续稳定(agent 写完)再回写.
+  let ticks = 0;
+  let lastText: string | null = null;
+  let stableTicks = 0;
   const timer = setInterval(() => {
     ticks++;
-    const text = readLatestAssistantText(p.agentSessionId, p.baselineLines);
-    if (text) {
-      // @ 触发的 agent 执行结果不再回写群聊(用户要求: 不要"任务已完成"这类回复刷屏),
-      // 仅停止轮询 + 清理临时分身. agent 实际执行结果留在分身 session 里.
+    const { text } = readAllAssistantText(p.agentSessionId, p.baselineLines);
+    if (text && text === lastText) {
+      stableTicks++;
+    } else {
+      stableTicks = 0;
+    }
+    lastText = text;
+    const settled = stableTicks >= 3; // text 内容连续 3 次(6s)不变 → agent 已写完
+    if (text && (settled || ticks >= 150)) {
+      writeBack(text);
       clearInterval(timer);
       cleanupClone();
       return;
