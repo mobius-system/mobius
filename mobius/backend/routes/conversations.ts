@@ -291,10 +291,32 @@ function readAllAssistantText(sessionId: string, baselineLines: number): { text:
   return { text, lineCount: lines.length };
 }
 
-// 轮询 agent 的 jsonl, 等 agent 停止写入(jsonl 行数连续稳定)后再把**完整**回复回写群消息.
-// 关键: runSessionMessage 是 fire-and-forget(投递到 tmux 队列后立即返回, 不等 turn 完成),
-// 若读到第一条 assistant 就回写, 只会拿到流式开头(如"好的,我来整理..."), 后续正文/表格全丢.
-// 故须等行数稳定(连续 3 次~6s 无新增 = agent 写完)再回写 readAllAssistantText 合并的完整文本.
+// 判断 thought stream 的 entry 是否表示 agent 一个 turn 已完成(此时可拿到完整 assistant 文本).
+// 复用 sessions.ts 1v1 推送钩子同款判定: assistant 带 stop_reason(且非 tool_use) 或 task_complete.
+function isTurnCompleteEntry(entry: any): boolean {
+  const sr = entry?.message?.stop_reason;
+  if (entry?.type === 'assistant' && sr && sr !== 'tool_use') return true;
+  if (entry?.type === 'event_msg' && entry?.payload?.type === 'task_complete') return true;
+  return false;
+}
+
+// 从 entry 抽 assistant 文本(content 里 type=text 的 text 拼接).
+function extractAssistantTextFromEntry(entry: any): string {
+  const content = entry?.message?.content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((c: any) => c && c.type === 'text' && typeof c.text === 'string')
+    .map((c: any) => c.text)
+    .join('')
+    .trim();
+}
+
+// 等 agent 的 turn 完成后, 把**完整**回复回写群聊(经群 SSE 广播给所有成员).
+// 机制(对齐 sessions.ts 的 1v1 推送钩子): 订阅 agent 的 thought stream, 收到 turn-complete
+// entry(claude-code turn 结束才写入完整 assistant, 带 stop_reason) 再回写 extractAssistantTextFromEntry
+// 抽的完整文本. 比轮询 jsonl + 猜"行数稳定"可靠得多——后者会在 claude-code 流式**覆盖式**写入
+// (更新最后一条 assistant 内容, 行数不变)时误判稳定, 提前回写开头(如"好的,我来整理...")丢失后续
+// 正文/表格. backend 无 thought stream 时退回 jsonl 轮询, 用"text 内容稳定"判断兜底.
 function watchAgentReply(p: {
   conversationId: string;
   agentSessionId: string;
@@ -302,38 +324,87 @@ function watchAgentReply(p: {
   baselineLines: number;
   isClone?: boolean;
 }): void {
-  let ticks = 0;
-  let lastLineCount = -1;
-  let stableTicks = 0;
-  // 临时分身用完即弃(软删除), 避免残留在分身列表里.
   const cleanupClone = () => {
     if (p.isClone) {
       try { Sessions.updateStatus(p.agentSessionId, 'deleted' as any); } catch {}
     }
   };
+  const writeBack = (text: string | null) => {
+    if (!text) return;
+    try {
+      Conversations.insertMessage({
+        conversationId: p.conversationId,
+        senderId: p.agentSessionId,
+        senderType: 'agent',
+        senderName: p.agentDisplayName,
+        content: text,
+        sourceAgentSession: p.agentSessionId,
+      });
+      Conversations.touch(p.conversationId);
+    } catch {}
+  };
+
+  // 拿 agent 的 backend(临时分身 cloneId 复用主 agent 的 model→backend).
+  let backend: any = null;
+  try {
+    const sess = Sessions.findById(p.agentSessionId) as any;
+    if (sess) backend = agents.get(modelRegistry.launchOptionsForSession(sess).backend);
+  } catch {}
+
+  // 优先: thought stream 订阅 turn-complete(最可靠, 1v1 推送钩子同款机制).
+  if (backend && typeof backend.getAgentRawThoughtStream === 'function') {
+    let done = false;
+    let unsub: (() => void) = () => {};
+    let hardTimer: NodeJS.Timeout | null = null;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      if (hardTimer) { clearTimeout(hardTimer); hardTimer = null; }
+      try { unsub(); } catch {}
+    };
+    try {
+      // sentinel: 只订阅本次投递"之后"的新 entry, 避免回放历史 turn-complete.
+      let sentinel: any = null;
+      try { sentinel = backend.getHistory?.(p.agentSessionId, {})?.sentinel ?? null; } catch {}
+      unsub = backend.getAgentRawThoughtStream(
+        p.agentSessionId,
+        (entry: any) => {
+          if (done) return;
+          if (!isTurnCompleteEntry(entry)) return;
+          finish();
+          // 稍等文本落地(对齐 1v1 钩子 1.2s), 再回写完整文本 + 清理分身.
+          setTimeout(() => {
+            writeBack(extractAssistantTextFromEntry(entry));
+            cleanupClone();
+          }, 1200);
+        },
+        { fromSentinel: sentinel },
+      );
+      // 兜底: 最长挂 5 分钟自动退订, 防泄漏.
+      hardTimer = setTimeout(() => { finish(); cleanupClone(); }, 5 * 60 * 1000);
+      return;
+    } catch {
+      // 订阅失败 → 退回 jsonl 轮询兜底(下文).
+    }
+  }
+
+  // 兜底: jsonl 轮询, 等 text 内容连续稳定(agent 写完)再回写. 用 text 稳定(而非行数稳定),
+  // 因为 claude-code 流式可能覆盖式更新最后一条 assistant(行数不变内容变).
+  let ticks = 0;
+  let lastText: string | null = null;
+  let stableTicks = 0;
   const timer = setInterval(() => {
     ticks++;
-    const { text, lineCount } = readAllAssistantText(p.agentSessionId, p.baselineLines);
-    if (lineCount !== lastLineCount) {
-      lastLineCount = lineCount;
-      stableTicks = 0;
-    } else {
+    const { text } = readAllAssistantText(p.agentSessionId, p.baselineLines);
+    if (text && text === lastText) {
       stableTicks++;
+    } else {
+      stableTicks = 0;
     }
-    const settled = stableTicks >= 3; // 行数连续 3 次(6s)不变 → agent 已停止写入
+    lastText = text;
+    const settled = stableTicks >= 3; // text 内容连续 3 次(6s)不变 → agent 已写完
     if (text && (settled || ticks >= 150)) {
-      // @ 触发的 agent 完整回复回写群聊(经群 SSE 广播给所有成员).
-      try {
-        Conversations.insertMessage({
-          conversationId: p.conversationId,
-          senderId: p.agentSessionId,
-          senderType: 'agent',
-          senderName: p.agentDisplayName,
-          content: text,
-          sourceAgentSession: p.agentSessionId,
-        });
-        Conversations.touch(p.conversationId);
-      } catch {}
+      writeBack(text);
       clearInterval(timer);
       cleanupClone();
       return;
