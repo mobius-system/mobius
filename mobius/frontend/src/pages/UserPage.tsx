@@ -5,6 +5,7 @@ import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
 import { usePagination, PaginationControls } from '../components/pagination'
 import { ConfirmModal, NewProjectModal, ProjectSettingsModal, ExtensionDeleteModal } from '../components/modals'
+import { PrimaryActionButton } from '../components/primary-action-button'
 import { SkillsManager } from '../components/skills'
 import { MemoriesManager } from '../components/memories'
 import { ResizablePanel } from '../components/resizable-panel'
@@ -546,11 +547,11 @@ export default function UserPage() {
                 <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>{pageTitle}</h1>
                 <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>共 {visibleProjectCount} 个项目</p>
               </div>
-              <button onClick={() => setShowNew(true)} data-tour="user-new-project"
-                className="h-9 px-4 rounded-lg text-[13px] btn-primary transition-colors flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+              <PrimaryActionButton onClick={() => setShowNew(true)} data-tour="user-new-project"
+                size="md"
+                icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
                 新建项目
-              </button>
+              </PrimaryActionButton>
             </div>
 
             {myProjects.length === 0 ? (

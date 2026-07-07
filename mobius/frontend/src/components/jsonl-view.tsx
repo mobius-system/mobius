@@ -1985,7 +1985,7 @@ export const JsonEntryCard = memo(
 
 // 卡片标题栏摘要: full 是不截断版, short 是给标题栏一行用的截断版.
 // truncated = full 比 short 长 → 表示"还有更多"内容值得看, 启用精简模式入口.
-type HeaderSummary = { short: string; full: string; truncated: boolean; canCompact: boolean }
+type HeaderSummary = { short: string; shortTail: string; full: string; truncated: boolean; canCompact: boolean }
 
 // 阈值=80: 一行 summary 在常规桌面宽度下大概 80~100 字就会被 CSS truncate 截断,
 // 比 JS slice 阈值低更稳, 否则会出现"视觉上 ... 但 JS 判定没截断 → 没精简模式入口"的脱节.
@@ -1999,8 +1999,10 @@ function clip(text: string, limit: number = HEADER_SHORT_LIMIT): HeaderSummary {
   // 多行内容一行肯定装不下 → 直接判 truncated, short 把 \n 替换为空格保持单行
   const truncated = s.length > limit || s.includes('\n')
   const canCompact = s.length > HEADER_COMPACT_LIMIT || s.includes('\n')
-  const short = truncated ? s.replace(/\s+/g, ' ').trim().slice(0, limit) : s
-  return { short, full: s, truncated, canCompact }
+  const replace_line_break = s.replace(/\s+/g, ' ').trim()
+  const short = truncated ? replace_line_break.slice(0, limit) : s
+  const shortTail = truncated ? replace_line_break.slice(replace_line_break.length - limit, replace_line_break.length) : s
+  return { short, shortTail:shortTail, full: s, truncated, canCompact }
 }
 
 function isNonEmptyString(value: any): value is string {
@@ -2089,7 +2091,7 @@ function compactCodeSummary(text: string, language = ''): HeaderSummary {
   const body = String(text || '').replace(/\s+$/, '')
   if (!body) return clip('')
   const clipped = clip(body, HEADER_SHORT_LIMIT)
-  return { short: clipped.short, full: codeFence(body, language), truncated: true, canCompact: true }
+  return { short: clipped.short, shortTail: clipped.shortTail, full: codeFence(body, language), truncated: true, canCompact: true }
 }
 
 function functionCallCommand(payload: any): string | null {
@@ -2823,7 +2825,7 @@ export function JsonlView({
   const lastRoundUserSummary = useMemo(() => {
     if (rounds.length === 0) return ''
     const userItem = rounds[rounds.length - 1].items[0]
-    return userItem ? buildHeaderSummary(userItem.entry).short : ''
+    return userItem ? buildHeaderSummary(userItem.entry).shortTail : ''
   }, [rounds])
 
   const renderBlocks = useMemo<JsonlRenderBlock[]>(() => {

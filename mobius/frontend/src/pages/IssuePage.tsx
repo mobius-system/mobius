@@ -5,6 +5,7 @@ import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
 import { ResizablePanel } from '../components/resizable-panel'
 import { usePagination, PaginationControls } from '../components/pagination'
+import { PrimaryActionButton } from '../components/primary-action-button'
 import {
   NewSessionModal, RenameSessionModal, RenameIssueModal, ConfirmModal,
 } from '../components/modals'
@@ -305,15 +306,16 @@ export default function IssuePage() {
                 {sessions.length} 个
               </span> */}
             </div>
-            <button onClick={() => setShowNewSession(true)} title="新建Session"
+            <PrimaryActionButton onClick={() => setShowNewSession(true)} title="新建Session"
               data-tour="issue-sidebar-new-session"
-              className="btn-primary group flex h-8 flex-shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-semibold shadow-md shadow-black/10 transition-all">
-              <MessageSquarePlus className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} />
+              size="sm"
+              className="flex-shrink-0 font-semibold shadow-md shadow-black/10"
+              icon={<MessageSquarePlus className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} />}>
               <span className="whitespace-nowrap">新会话</span>
               <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-current/10">
                 <Sparkles className="h-2.5 w-2.5" strokeWidth={2} />
               </span>
-            </button>
+            </PrimaryActionButton>
           </div>
 
           {/* Sessions 列表 */}
