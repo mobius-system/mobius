@@ -43,6 +43,7 @@ Mobius 是（据我们所知）全球首个**自进化**的开源智能体操作
 - [修改前端色彩主题](tutorial/16_change_frontend_theme.md)
 - [标记重点项目（收藏）](tutorial/17_favorite_project.md)
 - [项目文件打包下载](tutorial/18_package_download_project.md)
+- [网页终端：在会话里随时开终端跑命令](tutorial/26_web_terminal.md)
 
 ### VI-深度研究
 
