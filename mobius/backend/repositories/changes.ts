@@ -71,7 +71,7 @@ const Changes = {
   payloadById: (changeId: string): ChangePayloadRow | undefined => db.prepare(`
     SELECT sc.*, s.name as session_name, i.title as issue_title, p.name as project_name
     FROM session_changes sc
-    JOIN sessions s ON sc.session_id = s.session_id
+    JOIN sessions_v2 s ON sc.session_id = s.session_id
     JOIN issues i ON sc.issue_id = i.id
     JOIN projects p ON sc.project_id = p.id
     WHERE sc.id = ?
@@ -89,8 +89,8 @@ const Changes = {
     FROM session_conflicts c
     JOIN session_changes ls ON c.left_change_id = ls.id
     JOIN session_changes rs ON c.right_change_id = rs.id
-    JOIN sessions lse ON ls.session_id = lse.session_id
-    JOIN sessions rse ON rs.session_id = rse.session_id
+    JOIN sessions_v2 lse ON ls.session_id = lse.session_id
+    JOIN sessions_v2 rse ON rs.session_id = rse.session_id
     JOIN issues li ON ls.issue_id = li.id
     JOIN issues ri ON rs.issue_id = ri.id
     WHERE (c.left_change_id = ? OR c.right_change_id = ?) AND c.status = 'open'
@@ -144,7 +144,7 @@ const Changes = {
   activeForProject: (projectId: string): Array<ChangeRow & { session_name: string; issue_title: string }> => db.prepare(`
     SELECT sc.*, s.name as session_name, i.title as issue_title
     FROM session_changes sc
-    JOIN sessions s ON sc.session_id = s.session_id
+    JOIN sessions_v2 s ON sc.session_id = s.session_id
     JOIN issues i ON sc.issue_id = i.id
     WHERE sc.project_id = ? AND sc.status NOT IN ('integrated','abandoned')
   `).all(projectId) as Array<ChangeRow & { session_name: string; issue_title: string }>,
@@ -152,7 +152,7 @@ const Changes = {
   forIssueWithUser: (issueId: string): Array<ChangeRow & { session_name: string; user_id: string; user_display_name?: string }> => db.prepare(`
     SELECT sc.*, s.name as session_name, s.user_id, u.display_name as user_display_name
     FROM session_changes sc
-    JOIN sessions s ON sc.session_id = s.session_id
+    JOIN sessions_v2 s ON sc.session_id = s.session_id
     LEFT JOIN users u ON s.user_id = u.id
     WHERE sc.issue_id = ?
     ORDER BY sc.updated_at DESC
@@ -202,8 +202,8 @@ const Conflicts = {
     FROM session_conflicts c
     JOIN session_changes lc ON c.left_change_id = lc.id
     JOIN session_changes rc ON c.right_change_id = rc.id
-    JOIN sessions ls ON lc.session_id = ls.session_id
-    JOIN sessions rs ON rc.session_id = rs.session_id
+    JOIN sessions_v2 ls ON lc.session_id = ls.session_id
+    JOIN sessions_v2 rs ON rc.session_id = rs.session_id
     JOIN issues li ON lc.issue_id = li.id
     JOIN issues ri ON rc.issue_id = ri.id
     WHERE lc.project_id = ?
@@ -277,7 +277,7 @@ const Queue = {
   // Project metrics + 全 issue 列表(供 integration-queue 视图)
   projectMetrics: (projectId: string): { active_sessions: number; pending_issues: number; ready_issues: number; conflict_files: number } => db.prepare(`
     SELECT
-      (SELECT COUNT(*) FROM sessions WHERE project_id = ? AND status = 'active') as active_sessions,
+      (SELECT COUNT(*) FROM sessions_v2 WHERE project_id = ? AND status = 'active') as active_sessions,
       (SELECT COUNT(*) FROM issue_integrations WHERE project_id = ? AND acceptance_status = 'pending') as pending_issues,
       (SELECT COUNT(*) FROM issue_integrations WHERE project_id = ? AND status = 'ready') as ready_issues,
       (SELECT COUNT(DISTINCT file_path) FROM session_conflicts c
