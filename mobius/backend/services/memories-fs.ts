@@ -167,11 +167,18 @@ function findById(id: any): any {
   if (!parsed) return null;
   if (!isSafeSlug(parsed.slug)) return null;
   if (parsed.scope === 'user') {
-    const m = readMemoryFromFile(path.join(userDefaultDir(parsed.userId), `${parsed.slug}.md`));
+    // userId 来自 id 解析(可由 req.params.id 传入), parseMemoryId 未对其做白名单校验.
+    // 解析后必须校验最终路径仍在 ROOT 内, 否则 `user:../../..:x` 这类 id 会经
+    // userDefaultDir 拼出 ROOT 外的路径 → 任意 .md 文件读取(写/删路径已有 withinRoot 保护, 读路径原本缺失).
+    const file = path.join(userDefaultDir(parsed.userId), `${parsed.slug}.md`);
+    if (!withinRoot(file)) return null;
+    const m = readMemoryFromFile(file);
     return m ? shapeUser(m, parsed.userId) : null;
   }
   if (parsed.scope === 'project') {
-    const m = readMemoryFromFile(path.join(userProjectDir(parsed.userId, parsed.projectId), `${parsed.slug}.md`));
+    const file = path.join(userProjectDir(parsed.userId, parsed.projectId), `${parsed.slug}.md`);
+    if (!withinRoot(file)) return null;
+    const m = readMemoryFromFile(file);
     return m ? shapeProject(m, parsed.userId, parsed.projectId) : null;
   }
   return null;
