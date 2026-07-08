@@ -108,6 +108,7 @@ export function JsonlView({
       <RoundGroup
         round={block.round}
         isLast={block.index === rounds.length - 1}
+        isSecondLast={block.index === rounds.length - 2}
         onlyGroup={onlyGroup}
         showMeta={showMeta}
       />

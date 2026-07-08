@@ -4,8 +4,8 @@
  * 从 jsonl-view.tsx 拆出.
  *  - EntryCardWithImages: 在普通 entry 卡片后追加 display_images / 附件图片派生的图像卡片.
  *  - ContinuationGroup: "上文续接"折叠组 (尾部窗口截掉的头部条目); 只有一组时强制展开.
- *  - RoundGroup: 一个对话轮次 (1 条 user 问题 + N 条 agent 回复); 最新轮默认展开,
- *    上一轮在下一轮出现时自动折叠, 用户手动操作过的轮尊重用户.
+ *  - RoundGroup: 一个对话轮次 (1 条 user 问题 + N 条 agent 回复); 最新两轮默认展开,
+ *    更早的轮在跌出最新两轮时自动折叠, 用户手动操作过的轮尊重用户.
  */
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type { AnyEntry, BashToolResult, JsonlViewItem, Round } from './types'
@@ -87,19 +87,21 @@ export function ContinuationGroup({ items, onlyGroup, showMeta = true }: { items
   )
 }
 
-export function RoundGroup({ round, isLast, onlyGroup, showMeta = true }: { round: Round; isLast: boolean; onlyGroup: boolean; showMeta?: boolean }) {
-  // 追踪用户是否手动点击过折叠/展开. 一旦手动操作, 后续不再被 isLast 自动接管.
-  // 实现"最后一个 group 自动展开, 除非人为折叠": 最新轮默认展开, 其余默认折叠;
-  // 某轮从非最新升为最新时自动展开; 用户手动操作过的轮尊重用户, 不再自动改.
+export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, showMeta = true }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; showMeta?: boolean }) {
+  // 追踪用户是否手动点击过折叠/展开. 一旦手动操作, 后续不再被 autoOpen 自动接管.
+  // 实现"最新两轮自动展开, 除非人为折叠": 最新轮和上一轮默认展开, 更早的轮默认折叠;
+  // 某轮升入最新两轮时自动展开, 跌出最新两轮时自动折叠; 用户手动操作过的轮尊重用户, 不再自动改.
+  // (倒数第二轮保持展开, 让刚问完的上一轮不随新轮出现而被折叠掉.)
+  const autoOpen = isLast || isSecondLast
   const userToggledRef = useRef(false)
-  const [open, setOpen] = useState(isLast || onlyGroup)
+  const [open, setOpen] = useState(autoOpen || onlyGroup)
 
-  // onlyGroup 时永远保持展开; 否则跟随 isLast 自动展开/折叠, 但用户手动操作过则尊重用户.
+  // onlyGroup 时永远保持展开; 否则跟随 autoOpen 自动展开/折叠, 但用户手动操作过则尊重用户.
   useEffect(() => {
     if (onlyGroup) { setOpen(true); return }
     if (userToggledRef.current) return
-    setOpen(isLast)
-  }, [isLast, onlyGroup])
+    setOpen(autoOpen)
+  }, [autoOpen, onlyGroup])
 
   const toggle = () => {
     userToggledRef.current = true
