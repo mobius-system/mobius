@@ -136,7 +136,8 @@ const Conversations = {
               WHERE m.conversation_id = c.id
                 AND m.id > COALESCE((SELECT cm.last_read_message_id FROM conversation_members cm
                                      WHERE cm.conversation_id = c.id AND cm.member_type = 'user' AND cm.member_id = ?), 0)
-                AND m.sender_type = 'user'
+                -- 计入所有未读消息(含 agent 回复): markRead 把水位推进到 MAX(id)(不分 sender),
+                -- 若此处再按 sender_type='user' 过滤, 会漏掉 agent 回复 → 用户只错过 agent 消息时未读徽章恒为 0.
              ) AS unread
       FROM conversations c
       WHERE c.id IN (SELECT conversation_id FROM conversation_members WHERE member_type = 'user' AND member_id = ?)
