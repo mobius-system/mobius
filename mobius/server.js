@@ -157,6 +157,11 @@ const codeServerProxy = require('./backend/routes/code-server-proxy');
 app.use('/code-server', codeServerProxy.router);
 app.use('/api/admin/code-server', codeServerProxy.adminRouter);
 
+// ===== Web 终端 (会话内弹窗) =====
+// /api/terminal/ws?sid=<sessionId>&token=<jwt> → node-pty 鉴权 WS 终端.
+// cwd 取 session 所属项目 bind_path. 详见 backend/routes/web-terminal.ts.
+const webTerminal = require('./backend/routes/web-terminal');
+
 // ===== Health =====
 app.get('/api/v2/health', (req, res) => {
   const now = Date.now();
@@ -256,11 +261,13 @@ const { startSessionTitleSyncer } = require('./backend/services/session-title-sy
 // ===== 启动 =====
 const server = http.createServer(app);
 
-// code-server 需要 HTTP upgrade 反代; Mobius session chat 改为 SSE + HTTP POST.
+// code-server 需要 HTTP upgrade 反代; Web 终端需要 WS upgrade; Mobius session chat 改为 SSE + HTTP POST.
 server.on('upgrade', (req, socket, head) => {
   const p = (req.url || '').split('?')[0];
   if (p.startsWith('/code-server/')) {
     codeServerProxy.handleUpgrade(req, socket, head);
+  } else if (p.startsWith('/api/terminal/')) {
+    webTerminal.handleUpgrade(req, socket, head);
   } else {
     socket.destroy();
   }
