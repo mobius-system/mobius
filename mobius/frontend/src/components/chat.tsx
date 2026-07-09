@@ -7,6 +7,7 @@ import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor } from './session-welcome'
 import { NewSessionModal } from './modals'
 import { OpenInVSCodeButton, ProjectPortEntryButton } from './project-files'
+import { WebTerminalModal } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
 import { useVisibleJsonl } from './session-jsonl-filter'
 import { SessionStatusChip } from './session-status-chip'
@@ -983,6 +984,7 @@ function ChatHeaderOverflowMenu({
   showJsonlMeta, onToggleShowJsonlMeta,
   onSendProjectKnowledge, projectKnowledgeSending, canSendProjectKnowledge,
   onContinueWithOtherModel, canContinueWithOtherModel,
+  onOpenTerminal,
   onStop, canStop,
 }: {
   jsonlCount: number
@@ -997,6 +999,7 @@ function ChatHeaderOverflowMenu({
   canSendProjectKnowledge: boolean
   onContinueWithOtherModel: () => void
   canContinueWithOtherModel: boolean
+  onOpenTerminal: () => void
   onStop: () => void
   canStop: boolean
 }) {
@@ -1047,6 +1050,13 @@ function ChatHeaderOverflowMenu({
           <button className={itemClass} disabled={jsonlCount === 0}
             onClick={() => { setOpen(false); onToggleShowJsonlMeta() }}>
             <span>{showJsonlMeta ? '隐藏时间与序号' : '显示时间与序号'}</span>
+          </button>
+          <button className={itemClass}
+            onClick={() => { setOpen(false); onOpenTerminal() }}>
+            <span className="flex items-center gap-2">
+              <Terminal className="w-3.5 h-3.5" strokeWidth={1.75} />
+              Web 终端
+            </span>
           </button>
           {canSendProjectKnowledge && (
             <button className={itemClass} disabled={projectKnowledgeSending}
@@ -1405,6 +1415,8 @@ export function ChatArea() {
   const [bashCommandsOpen, setBashCommandsOpen] = useState(false)
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false)
   const [continueModalOpen, setContinueModalOpen] = useState(false)
+  // 会话内 Web 终端弹窗 (issue session / research agent 共用 ChatArea, 一处入口覆盖两类会话).
+  const [terminalOpen, setTerminalOpen] = useState(false)
   const [projectKnowledgeSending, setProjectKnowledgeSending] = useState(false)
   const [messageSubmitting, setMessageSubmitting] = useState(false)
   // 当前会话模型是否仍可用 (管理员删除该模型配置后 → false, 会话只读, 需"更换模型并继续").
@@ -3123,6 +3135,7 @@ export function ChatArea() {
             canSendProjectKnowledge={jsonlEntries.length > 0 && !!currentProjectId && connectionStatus === 'connected'}
             onContinueWithOtherModel={() => setContinueModalOpen(true)}
             canContinueWithOtherModel={!!currentSession?.session_id && (!!currentIssueId || !!(currentSession as any)?.research_id)}
+            onOpenTerminal={() => setTerminalOpen(true)}
             onStop={handleStopSession}
             canStop={!!sessionId}
           />
@@ -3658,6 +3671,13 @@ export function ChatArea() {
           modalTitle="修改模型并继续"
           continueFromSessionId={currentSession.session_id}
           modalZIndexClass="z-[70]"
+        />
+      )}
+
+      {terminalOpen && (
+        <WebTerminalModal
+          sessionId={currentSession?.session_id}
+          onClose={() => setTerminalOpen(false)}
         />
       )}
 

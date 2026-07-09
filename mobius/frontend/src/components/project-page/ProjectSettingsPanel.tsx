@@ -1051,9 +1051,9 @@ export function ProjectSettingsPanel({
 
 
         {metaErr && <div className="text-[12px] text-red-400">{metaErr}</div>}
-        <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        {/* <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
           <span className="text-[11px]" style={{ color: metaSaveStatusColor }}>{metaSaveStatus}</span>
-        </div>
+        </div> */}
 
         <div className="pt-2" style={embeddedSettingsCardStyle}>
           <SkillsManager scope="project" projectId={project.id} />
