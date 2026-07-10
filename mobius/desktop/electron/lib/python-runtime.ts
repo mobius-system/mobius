@@ -10,12 +10,20 @@ export const AIMUX_PIN = "aimux==0.1.8";
 
 const WIN = process.platform === "win32";
 
-/** 打包后内置 python 目录：process.resourcesPath/python（开发期不存在，回退系统 python）。 */
+/** 打包后内置 python 解释器：兼容两种 extraResources 布局。
+ *  - 单层：resources/python/python.exe
+ *  - 双层：resources/python/python/python.exe（当前 electron-builder extraResources 的实际产物）*/
 function bundledPythonExe(): string | null {
-  const exe = WIN
-    ? path.join(process.resourcesPath, "python", "python.exe")
-    : path.join(process.resourcesPath, "python", "bin", "python3");
-  return fs.existsSync(exe) ? exe : null;
+  const candidates = WIN
+    ? [
+        path.join(process.resourcesPath, "python", "python.exe"),
+        path.join(process.resourcesPath, "python", "python", "python.exe"),
+      ]
+    : [
+        path.join(process.resourcesPath, "python", "bin", "python3"),
+        path.join(process.resourcesPath, "python", "python", "bin", "python3"),
+      ];
+  return candidates.find((p) => fs.existsSync(p)) || null;
 }
 
 export function hasBundledPython(): boolean {

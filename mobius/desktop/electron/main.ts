@@ -156,7 +156,10 @@ function createWindow(): void {
       preload: join(currentDir, "../preload/index.mjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      // sandbox:false 是必须的：preload 是 ESM(.mjs)，Electron 沙箱下 ESM preload 不会执行
+      // → contextBridge 不注入 → window.desktop 为 undefined（登录报 "reading 'login'"）。
+      // contextIsolation:true + nodeIntegration:false 已保证页面拿不到 Node，安全边界不变。
+      sandbox: false,
       webSecurity: true,
     },
   });
