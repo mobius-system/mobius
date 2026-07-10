@@ -8,9 +8,38 @@
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mobius Desktop</title>
+    <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <main class="login">
+      <form id="login-form" class="login-panel">
+        <div class="brand">
+          <div class="mark">M</div>
+          <div>
+            <h1>Mobius Desktop</h1>
+            <p>连接 Mobius 工作台，并自动把本机注册为可调度节点 (aimux)。</p>
+          </div>
+        </div>
+
+        <label class="field">
+          <span>服务 URL</span>
+          <input id="server" type="text" placeholder="https://cloud-17.agent-matrix.com" />
+        </label>
+        <label class="field">
+          <span>用户名</span>
+          <input id="username" type="text" placeholder="admin" autocomplete="username" />
+        </label>
+        <label class="field">
+          <span>密码</span>
+          <input id="password" type="password" placeholder="不填也可尝试" autocomplete="current-password" />
+        </label>
+
+        <div id="error" class="error" hidden></div>
+        <div id="progress" class="progress" hidden></div>
+
+        <button id="submit" type="submit">进入</button>
+      </form>
+    </main>
+    <script type="module" src="/src/login.ts"></script>
   </body>
 </html>

@@ -1,5 +1,5 @@
 appId: com.agentmatrix.mobius.desktop
-productName: Mobius Desktop Mock
+productName: Mobius Desktop
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 directories:
   output: release
@@ -8,15 +8,18 @@ files:
   - package.json
 extraMetadata:
   main: out/main/index.js
-mac:
-  category: public.app-category.developer-tools
-  target:
-    - dmg
-    - zip
+# 内置 python-build-standalone (构建期由 scripts/fetch-python.ts 下载到 resources/python-win-x64)
+# 打包后位于 process.resourcesPath/python，运行期 python-runtime.ts 从这里取解释器。
+extraResources:
+  - from: resources/python-win-x64
+    to: python
+    filter:
+      - "**/*"
+asar: true
 win:
   target:
-    - nsis
     - zip
+    - nsis
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

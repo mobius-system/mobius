@@ -14,7 +14,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["node"]
+    "jsx": "react-jsx"
   },
-  "include": ["electron", "src", "scripts", "electron.vite.config.ts"]
+  "include": ["electron", "src", "electron.vite.config.ts"]
 }

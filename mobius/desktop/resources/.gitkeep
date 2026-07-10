@@ -1,0 +1,1 @@
+# 构建期 scripts/fetch-python.ts 会把 python-build-standalone 下载到 python-win-x64/ (gitignored)。

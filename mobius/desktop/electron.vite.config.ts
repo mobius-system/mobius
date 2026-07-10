@@ -1,35 +1,22 @@
 import { resolve } from "node:path";
 import { defineConfig } from "electron-vite";
-import react from "@vitejs/plugin-react";
 
+// 渲染层只承载"登录前"页面 (vanilla TS, 无 React)；登录后 loadURL 远程 web UI。
 export default defineConfig({
   main: {
     build: {
-      rollupOptions: {
-        input: {
-          index: resolve(__dirname, "electron/main.ts"),
-        },
-      },
+      rollupOptions: { input: { index: resolve(__dirname, "electron/main.ts") } },
     },
   },
   preload: {
     build: {
-      rollupOptions: {
-        input: {
-          index: resolve(__dirname, "electron/preload.ts"),
-        },
-      },
+      rollupOptions: { input: { index: resolve(__dirname, "electron/preload.ts") } },
     },
   },
   renderer: {
     root: ".",
-    plugins: [react()],
     build: {
-      rollupOptions: {
-        input: {
-          index: resolve(__dirname, "index.html"),
-        },
-      },
+      rollupOptions: { input: { index: resolve(__dirname, "index.html") } },
     },
   },
 });
