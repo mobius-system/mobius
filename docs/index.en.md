@@ -18,6 +18,7 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 ### II. Advanced Capabilities
 
 - [Add Remote Compute](tutorial/04_add_remote_server.md)
+- [Connect from Your PC (aimux)](tutorial/27_aimux_from_pc.md)
 - [Xiaomo Assistant (Web)](tutorial/05_using_xiaomo_assistant.md)
 - [Prevent Agent Idle (Patrol & Nudge)](tutorial/06_prevent_agent_idle.md)
 - [Exclude Skills & Memory](tutorial/07_exclude_skills_memory.md)

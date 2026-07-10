@@ -8,10 +8,14 @@ import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, CircleQuestionMark, Menu, Moon, Palette, Plus, Search, Sliders, Sun, WavesHorizontal } from 'lucide-react'
+import { Check, ChevronDown, CircleQuestionMark, Menu, Moon, Palette, Plus, Search, Sliders, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { useIsMobile } from './resizable-panel'
+
+const GithubIcon = createLucideIcon('github', [
+  ['path', { d: 'M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22', key: 'github' }],
+])
 
 // =====================================================================
 // 主题辅助
@@ -779,6 +783,18 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           >
             <CircleQuestionMark className="w-3.5 h-3.5" strokeWidth={2} />
           </button>
+          <a
+            href="https://github.com/nutshellai-tech/mobius.git"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="GitHub"
+            aria-label="GitHub"
+            className="h-8 flex shrink-0 items-center gap-1.5 rounded-lg px-2 border hover:bg-[var(--bg-card-hover)] transition-colors"
+            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
+          >
+            <GithubIcon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+            {!isMobile && <span className="text-[12px] font-medium">GitHub</span>}
+          </a>
           <div data-tour="top-system-status" className="mobius-topnav-status flex shrink-0 items-center gap-2">
             <DiskIndicator />
             <MemoryIndicator />
