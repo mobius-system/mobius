@@ -19,7 +19,9 @@ asar: true
 win:
   target:
     - zip
-    - nsis
+  # Linux 上交叉打 Windows 包：signApp 需要 wine 跑 signtool（即使无证书也要编辑 exe 版本信息）。
+  # 测试阶段免签名，关掉这步即可产出可用 zip；正式分发再在 Windows 机签名。
+  signAndEditExecutable: false
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
