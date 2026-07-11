@@ -47,7 +47,9 @@ export class AimuxSupervisor {
 
     // aimux session.create 在 Windows 上会弹真实控制台窗口（这是它"被调度执行"的本意），
     // 故这里不强制 windowsHide；reverse connect 客户端进程本身不弹窗。
-    const child = spawn(aimuxExe, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token]);
+    // --replace: 重连时若 broker 还有同名旧注册 (update/respawn/token 续期后旧进程刚被杀, broker 尚未感知 TCP 断开),
+    // 直接替换旧注册, 避免 HTTP 409 Conflict 重试循环。identifier 含 hostname 单机唯一 + 单实例锁, 替换安全。
+    const child = spawn(aimuxExe, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token, "--replace"]);
     this.child = child;
 
     // 粗粒度解析日志推断状态（aimux 内部已带 5/10/20s×3 重连，重连耗尽会 exit → 我们 respawn）
