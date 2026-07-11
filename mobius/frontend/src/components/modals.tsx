@@ -1905,6 +1905,66 @@ function appendAgentSkillInstruction(desc: string, autoText: string, nextText: s
   return base.trim() ? `${base}\n\n${nextText}` : nextText
 }
 
+// PcTaskModeSection — 仅 electron 桌面端: 新建 Session 第1步模型栏上方的 PC 任务模式区块。
+// 通过 window.mobiusDesktop bridge 读写本机 project 绑定路径 + 工作模式偏好 (存桌面端 userData)。
+// 浏览器里 window.mobiusDesktop 不存在 → 不渲染 (NewSessionModal 调用处已用 isDesktop 守卫)。
+function PcTaskModeSection({ projectId, isDark }: { projectId?: string; isDark: boolean }) {
+  type Mode = 'hub' | 'pc' | 'dual'
+  const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
+  const [path, setPath] = useState('')
+  const [mode, setMode] = useState<Mode>('dual')
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    if (!md || !projectId) { setReady(true); return }
+    let cancelled = false
+    Promise.all([
+      md.getProjectLocalPath?.(projectId).then((p: string | null | undefined) => { if (!cancelled) setPath(p || '') }),
+      md.getProjectWorkMode?.(projectId).then((m: string | null | undefined) => {
+        if (!cancelled) setMode(m === 'hub' || m === 'pc' || m === 'dual' ? m : 'dual')
+      }),
+    ]).finally(() => { if (!cancelled) setReady(true) })
+    return () => { cancelled = true }
+  }, [md, projectId])
+  const choosePath = async () => {
+    if (!md || !projectId) return
+    const picked = await md.pickDirectory?.()
+    if (!picked) return
+    const r = await md.confirmProjectPath?.(projectId, picked)
+    if (r?.ok) setPath(picked)
+  }
+  const chooseMode = (m: Mode) => { setMode(m); md?.setProjectWorkMode?.(projectId, m) }
+  if (!ready) return null
+  const MODES: Array<{ k: Mode; t: string; s: string }> = [
+    { k: 'hub', t: '只在 Mobius 中枢工作', s: 'session 在服务器跑' },
+    { k: 'pc', t: '只在此电脑上工作', s: '调度本机 (aimux)' },
+    { k: 'dual', t: '双侧工作', s: '中枢 + 本机 · 默认' },
+  ]
+  return (
+    <div>
+      <div className="text-[12px] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>PC 任务模式</div>
+      <div className="flex items-center gap-2 rounded-xl px-3 py-2 mb-2" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
+        <Folder className="w-4 h-4 shrink-0" style={{ color: isDark ? '#9ca3af' : '#64748b' }} />
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>本机工作路径</div>
+          <div className="text-[12px] truncate font-mono" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{path || '未绑定'}</div>
+        </div>
+        <button type="button" onClick={choosePath} className="shrink-0 text-[11px] px-2 py-1 rounded border" style={{ borderColor: 'var(--input-border)', color: isDark ? '#93c5fd' : '#2563eb' }}>{path ? '更改' : '选择'}</button>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {MODES.map(opt => {
+          const active = mode === opt.k
+          return (
+            <button key={opt.k} type="button" onClick={() => chooseMode(opt.k)} className="min-h-14 rounded-xl text-left px-2.5 py-2 transition-colors" style={{ background: active ? 'rgba(59,130,246,0.12)' : 'var(--input-bg)', border: `1px solid ${active ? '#3b82f6' : 'var(--input-border)'}`, color: isDark ? '#f1f5f9' : '#1e293b' }}>
+              <div className="text-[12px] font-medium leading-snug">{opt.t}</div>
+              <div className="text-[10px] mt-0.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.s}</div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function NewSessionModal({
   issueId,
   researchId,
@@ -2565,6 +2625,9 @@ export function NewSessionModal({
                     </div>
                   )}
                 </div>
+              )}
+              {typeof window !== 'undefined' && (window as any).mobiusDesktop?.isDesktop && (
+                <PcTaskModeSection projectId={projectId} isDark={isDark} />
               )}
               <div>
                 <div className="text-[12px] mb-1.5 flex items-center justify-between" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>

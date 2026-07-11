@@ -57,6 +57,9 @@ export interface MobiusDesktopBridge {
   openDevTools: () => Promise<void>;
   pickDirectory: () => Promise<string | null>;
   confirmProjectPath: (projectId: string, path: string) => Promise<{ ok: boolean; error?: string }>;
+  getProjectLocalPath: (projectId: string) => Promise<string | null>;
+  getProjectWorkMode: (projectId: string) => Promise<string | null>;
+  setProjectWorkMode: (projectId: string, mode: string) => Promise<{ ok: boolean }>;
   getMachineInfo: () => Promise<string>;
   logout: () => Promise<void>;
 }

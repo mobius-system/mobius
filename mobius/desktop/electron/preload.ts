@@ -36,6 +36,9 @@ const mobiusDesktop = {
   confirmProjectPath: (projectId: string, path: string) =>
     ipcRenderer.invoke("project:confirm-path", projectId, path),
   getMachineInfo: () => ipcRenderer.invoke("desktop:machine-info"),
+  getProjectLocalPath: (projectId: string) => ipcRenderer.invoke("project:get-path", projectId),
+  getProjectWorkMode: (projectId: string) => ipcRenderer.invoke("project:get-work-mode", projectId),
+  setProjectWorkMode: (projectId: string, mode: string) => ipcRenderer.invoke("project:set-work-mode", projectId, mode),
   logout: () => ipcRenderer.invoke("auth:logout"),
 };
 contextBridge.exposeInMainWorld("mobiusDesktop", mobiusDesktop);

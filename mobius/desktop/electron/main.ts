@@ -12,7 +12,7 @@ import { ensureAimux, upgradeAimux, getAimuxVersion, aimuxExe, venvDir, hasBundl
 import { AimuxSupervisor, type AimuxStatus } from "./lib/aimux-supervisor";
 import { injectBadge, setBadge } from "./lib/status-overlay";
 import { injectProjectPathOverlay, dismissOverlay, injectToast } from "./lib/project-overlay";
-import { getProjectLocalPath, setProjectLocalPath, sanitizeName } from "./lib/project-paths";
+import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
 import { createStatusWindow } from "./status-window";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -402,6 +402,13 @@ ipcMain.handle("project:confirm-path", async (_e, projectId: string, pathRaw: st
   return { ok: true };
 });
 ipcMain.handle("desktop:machine-info", () => `${os.hostname()} · ${process.platform}`);
+// 读/写 project 的本机路径与工作模式偏好 (新建 Session 第1步 PC 任务模式区块用)
+ipcMain.handle("project:get-path", (_e, projectId: string) => getProjectLocalPath(serverOrigin(), projectId));
+ipcMain.handle("project:get-work-mode", (_e, projectId: string) => getProjectWorkMode(serverOrigin(), projectId));
+ipcMain.handle("project:set-work-mode", (_e, projectId: string, mode: string) => {
+  setProjectWorkMode(serverOrigin(), projectId, String(mode || "dual"));
+  return { ok: true };
+});
 
 // ——— 生命周期 ———
 // 单实例锁：避免重复启动多个进程（每个都会反连注册同一节点，造成 4 个进程 / 节点冲突）
