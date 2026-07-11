@@ -78,7 +78,7 @@ aimux new --remote <device_name> --profile posix-pty --name embedded-test --reus
 反向设备的会话标识为 `<设备名>/<会话名>`。
 用 `send-keys` + `capture`，**不要用 `attach`**（那是给人交互用的）。
 
-### 发送命令
+## 发送命令
 
 ```bash
 # 末尾 Enter 表示回车提交
@@ -88,7 +88,7 @@ aimux send-keys "<device_name>/<session-name>" -- 'uname -a' Enter
 aimux send-keys "<device_name>/<session-name>" -- 'cd /tmp' Enter 'ls -la' Enter
 ```
 
-### 4.2 捕获输出
+## 捕获输出
 
 ```bash
 aimux capture "<device_name>/<session-name>" --lines 30
@@ -101,13 +101,13 @@ aimux capture "<device_name>/<session-name>" --lines 40 \
   | sed 's/\x1b\[[0-9;]*[mGKHJ]//g; s/\x1b\][0-9];[^\x07]*\x07//g'
 ```
 
-### 4.3 等待执行
+## 等待执行
 
 反向设备经 bridge 中转，命令执行有延迟。发送后 `sleep N` 再 capture。
 > ⚠️ `aimux wait-last-command-complete` **仅本地会话支持，反向 bridge 会话不可用**。
 
 
-## 5. 文件传输
+## 文件传输
 
 反向设备同样走 sftp 通道，只是把「远程地址」换成设备名即可：
 
@@ -120,39 +120,13 @@ aimux send_files <device_name> /home/jetson/upload ./run.py ./data.csv
 aimux get_files <device_name> ./downloads /home/jetson/logs/
 ```
 
-
-## 6. 销毁会话
+## 销毁会话
 
 ```bash
 aimux kill "<device_name>/<session-name>"
 ```
 
 > ⚠️ `kill` 不支持通配符/批量，需逐个销毁。
-
-
-## 7. 端到端实战（连接 Jetson 设备）
-
-```bash
-# 0. PATH（首次）
-export PATH="/root/.local/bin:$PATH"
-
-# 1. 确认是反向设备 + 拿到 profile 名
-aimux remote ls --json        # → type=bridge, default_profile=posix-pty
-
-# 2. 创建会话（带 --profile）
-aimux new --remote <device_name> --profile posix-pty --name <session-name>
-
-# 3. 发命令取设备信息
-aimux send-keys "<device_name>/<session-name>" -- 'uname -a; hostname; df -h /' Enter
-sleep 2
-aimux capture "<device_name>/<session-name>" --lines 40
-
-# 4. 上传脚本
-aimux send_files <device_name> /home/jetson/scripts ./run.py
-
-# 5. 用完销毁
-aimux kill "<device_name>/<session-name>"
-```
 
 
 ## 常见问题
@@ -178,4 +152,40 @@ aimux capture "<dev>/<sess>" --lines N                   # 取输出
 aimux send_files <dev> <remote_dir> <local>...           # 上传
 aimux get_files  <dev> <local_dir>  <remote>...          # 下载
 aimux kill "<dev>/<sess>"                                # 销毁
+```
+
+## 销毁会话
+
+任务完成后，记得通过 `aimux kill "<dev>/<sess>"` 销毁会话。
+
+## Windows中操作终端的常见错误
+
+记得powershell，cmd，mingw64的命令是有区别的！
+
+
+
+
+
+## 端到端实战（连接 Jetson 设备）
+
+```bash
+# 0. PATH（首次）
+export PATH="/root/.local/bin:$PATH"
+
+# 1. 确认是反向设备 + 拿到 profile 名
+aimux remote ls --json        # → type=bridge, default_profile=posix-pty
+
+# 2. 创建会话（带 --profile）
+aimux new --remote <device_name> --profile posix-pty --name <session-name>
+
+# 3. 发命令取设备信息
+aimux send-keys "<device_name>/<session-name>" -- 'uname -a; hostname; df -h /' Enter
+sleep 2
+aimux capture "<device_name>/<session-name>" --lines 40
+
+# 4. 上传脚本
+aimux send_files <device_name> /home/jetson/scripts ./run.py
+
+# 5. 用完销毁
+aimux kill "<device_name>/<session-name>"
 ```
