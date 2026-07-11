@@ -54,6 +54,9 @@ export class AimuxSupervisor {
     const classify = (line: string) => {
       this.opts.onLog?.(line);
       const lower = line.toLowerCase();
+      // 命令执行失败 (如 send_keys 到不存在的 session) 不是连接失败 — bridge 仍连着, 只是某条命令报错.
+      // aimux 日志特征: 含 "command failed" 或 "request_id=". 跳过, 不改连接状态, 避免误标 failed.
+      if (/command failed|request_id=/.test(lower)) return;
       if (/error|fail|refused|expired|invalid|traceback|exception/.test(lower)) {
         onStatus({ state: "failed", detail: line, identifier });
       } else if (/connected|registered|event stream|sse/i.test(lower)) {
