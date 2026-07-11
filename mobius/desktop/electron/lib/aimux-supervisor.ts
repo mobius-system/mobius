@@ -1,5 +1,8 @@
 // aimux reverse-connect 子进程的看护：启动 / 状态解析 / 断线重启 / JWT 到期续命 / 退出时杀干净。
+import { app } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 export type AimuxState = "stopped" | "starting" | "connected" | "failed";
 
@@ -24,6 +27,20 @@ export interface SupervisorOptions {
   onTokenExpired: () => Promise<string | null>;
 }
 
+export function aimuxLogPath(): string {
+  return path.join(app.getPath("userData"), "logs", "aimux.log");
+}
+
+function appendAimuxLog(data: string | Buffer): void {
+  const logPath = aimuxLogPath();
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, data);
+  } catch (e) {
+    console.error(`[aimux-supervisor] 写 aimux 日志失败 (${logPath}):`, e);
+  }
+}
+
 export class AimuxSupervisor {
   private child: ChildProcess | null = null;
   private stopping = false;
@@ -43,12 +60,16 @@ export class AimuxSupervisor {
 
   private spawnChild(): void {
     const { aimuxExe, bridgeUrl, token, identifier, onStatus } = this.opts;
-    onStatus({ state: "starting", detail: "正在反向连接 mobius…", identifier });
+    onStatus({ state: "starting", detail: "正在连接 mobius…", identifier });
 
     // aimux session.create 在 Windows 上会弹真实控制台窗口（这是它"被调度执行"的本意），
     // 故这里不强制 windowsHide；reverse connect 客户端进程本身不弹窗。
     // --replace: 重连时若 broker 还有同名旧注册 (update/respawn/token 续期后旧进程刚被杀, broker 尚未感知 TCP 断开),
     // 直接替换旧注册, 避免 HTTP 409 Conflict 重试循环。identifier 含 hostname 单机唯一 + 单实例锁, 替换安全。
+    // aimux (loguru) 的 stdout/stderr 自带时间戳, 原样落盘到 userData/logs/aimux.log:
+    // reverse connect exit code=1 等启动期失败, 内存 logBuffer 关 app 即丢, 这里留持久副本供事后排查。
+    // 不写 exe 目录: Program Files / .app / 只读解压目录在桌面端经常不可写。
+    appendAimuxLog(`\n==== [${new Date().toISOString()}] spawn reverse connect identifier=${identifier} ====\n`);
     const child = spawn(aimuxExe, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token, "--replace"]);
     this.child = child;
 
@@ -66,6 +87,7 @@ export class AimuxSupervisor {
       }
     };
     const handle = (b: Buffer) => {
+      appendAimuxLog(b);
       for (const l of b.toString("utf8").split(/[\r\n]+/)) { const t = l.trim(); if (t) classify(t); }
     };
     child.stdout?.on("data", handle);
@@ -73,6 +95,7 @@ export class AimuxSupervisor {
 
     child.on("exit", (code) => {
       this.child = null;
+      appendAimuxLog(`\n---- [${new Date().toISOString()}] child exited code=${code} ----\n`);
       if (this.stopping) {
         this.opts.onStatus({ state: "stopped", identifier });
         return;
@@ -83,6 +106,7 @@ export class AimuxSupervisor {
       }, 5000);
     });
     child.on("error", (err) => {
+      appendAimuxLog(`\n---- [${new Date().toISOString()}] spawn error: ${err.message} ----\n`);
       this.opts.onStatus({ state: "failed", detail: `spawn 失败: ${err.message}`, identifier });
     });
   }

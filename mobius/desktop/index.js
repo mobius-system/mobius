@@ -131,20 +131,22 @@ async function getAimuxVersion() {
   const m = r.stdout.match(/Version:\s*(\S+)/);
   return m ? m[1] : "未知";
 }
-async function upgradeAimux() {
+async function upgradeAimux(onProgress) {
   if (!fs.existsSync(venvPython())) return { ok: false, error: "venv 尚未创建" };
-  const r = await run(venvPython(), [
-    "-m",
-    "pip",
-    "install",
-    "--no-input",
-    "--disable-pip-version-check",
-    "--upgrade",
-    "aimux"
-  ]);
+  onProgress?.({ phase: "install", detail: "pip install --upgrade aimux…" });
+  const r = await run(
+    venvPython(),
+    ["-m", "pip", "install", "--no-input", "--disable-pip-version-check", "--upgrade", "aimux"],
+    (line) => {
+      if (/downloading|collecting|installing|using cached|uninstalling|successfully|%\s*\d|━|─/i.test(line)) {
+        onProgress?.({ phase: "install", detail: line.slice(0, 100) });
+      }
+    }
+  );
   if (r.code !== 0) return { ok: false, error: r.stderr || r.stdout };
   const show = await run(venvPython(), ["-m", "pip", "show", "aimux"]);
   const m = show.stdout.match(/Version:\s*(\S+)/);
+  onProgress?.({ phase: "ready" });
   return { ok: true, version: m ? m[1] : "unknown" };
 }
 class AimuxSupervisor {
@@ -163,12 +165,21 @@ class AimuxSupervisor {
   }
   spawnChild() {
     const { aimuxExe: aimuxExe2, bridgeUrl, token, identifier, onStatus } = this.opts;
-    onStatus({ state: "starting", detail: "正在反向连接 mobius…", identifier });
-    const child = spawn(aimuxExe2, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token]);
+    onStatus({ state: "starting", detail: "正在连接 mobius…", identifier });
+    const logPath = path.join(path.dirname(app.getPath("exe")), "aimux-bridge.log");
+    try {
+      fs.appendFileSync(logPath, `
+==== [${(/* @__PURE__ */ new Date()).toISOString()}] spawn reverse connect identifier=${identifier} ====
+`);
+    } catch (e) {
+      console.error("[aimux-supervisor] 写 aimux-bridge.log 失败:", e);
+    }
+    const child = spawn(aimuxExe2, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token, "--replace"]);
     this.child = child;
     const classify = (line) => {
       this.opts.onLog?.(line);
       const lower = line.toLowerCase();
+      if (/command failed|request_id=/.test(lower)) return;
       if (/error|fail|refused|expired|invalid|traceback|exception/.test(lower)) {
         onStatus({ state: "failed", detail: line, identifier });
       } else if (/connected|registered|event stream|sse/i.test(lower)) {
@@ -176,6 +187,11 @@ class AimuxSupervisor {
       }
     };
     const handle = (b) => {
+      try {
+        fs.appendFileSync(logPath, b);
+      } catch (e) {
+        console.error("[aimux-supervisor] append aimux-bridge.log 失败:", e);
+      }
       for (const l of b.toString("utf8").split(/[\r\n]+/)) {
         const t = l.trim();
         if (t) classify(t);
@@ -185,6 +201,12 @@ class AimuxSupervisor {
     child.stderr?.on("data", handle);
     child.on("exit", (code) => {
       this.child = null;
+      try {
+        fs.appendFileSync(logPath, `
+---- [${(/* @__PURE__ */ new Date()).toISOString()}] child exited code=${code} ----
+`);
+      } catch {
+      }
       if (this.stopping) {
         this.opts.onStatus({ state: "stopped", identifier });
         return;
@@ -195,6 +217,12 @@ class AimuxSupervisor {
       }, 5e3);
     });
     child.on("error", (err) => {
+      try {
+        fs.appendFileSync(logPath, `
+---- [${(/* @__PURE__ */ new Date()).toISOString()}] spawn error: ${err.message} ----
+`);
+      } catch {
+      }
       this.opts.onStatus({ state: "failed", detail: `spawn 失败: ${err.message}`, identifier });
     });
   }
@@ -417,7 +445,17 @@ function getProjectLocalPath(server, projectId) {
 }
 function setProjectLocalPath(server, projectId, p) {
   const store = read();
-  store[key(server, projectId)] = { path: p, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  const k = key(server, projectId);
+  store[k] = { ...store[k], path: p, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  write(store);
+}
+function getProjectWorkMode(server, projectId) {
+  return read()[key(server, projectId)]?.workMode || null;
+}
+function setProjectWorkMode(server, projectId, mode) {
+  const store = read();
+  const k = key(server, projectId);
+  store[k] = { ...store[k], workMode: mode, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
   write(store);
 }
 function sanitizeName(name) {
@@ -639,13 +677,21 @@ function runSyncReload() {
 }
 async function runUpdateAimux() {
   if (installing) return { ok: false, error: "正在安装中，请稍候" };
+  emitStatus({ state: "starting", detail: "断开现有连接, 准备更新 aimux…" });
+  await supervisor?.stop();
+  supervisor = null;
   emitStatus({ state: "starting", detail: "正在更新 aimux…" });
-  const r = await upgradeAimux();
+  const r = await upgradeAimux((p) => {
+    if (p.detail) {
+      appendLog(p.detail);
+      emitStatus({ state: "starting", detail: p.detail });
+    }
+  });
   if (!r.ok) {
     emitStatus({ state: "failed", detail: r.error });
     return { ok: false, error: r.error };
   }
-  await supervisor?.stop();
+  emitStatus({ state: "starting", detail: `aimux ${r.version} 已就绪, 正在反向连接…` });
   supervisor = buildSupervisor();
   supervisor?.start();
   return { ok: true, version: r.version };
@@ -798,6 +844,12 @@ ipcMain.handle("project:confirm-path", async (_e, projectId, pathRaw) => {
   return { ok: true };
 });
 ipcMain.handle("desktop:machine-info", () => `${os.hostname()} · ${process.platform}`);
+ipcMain.handle("project:get-path", (_e, projectId) => getProjectLocalPath(serverOrigin(), projectId));
+ipcMain.handle("project:get-work-mode", (_e, projectId) => getProjectWorkMode(serverOrigin(), projectId));
+ipcMain.handle("project:set-work-mode", (_e, projectId, mode) => {
+  setProjectWorkMode(serverOrigin(), projectId, String(mode || "dual"));
+  return { ok: true };
+});
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
