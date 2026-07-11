@@ -1063,6 +1063,7 @@ function gatherSources(user: any, sessionId: string): any {
         description: session.description || '',
         status: session.status,
         research_role: session.research_role || '',
+        pc_client_metadata: session.pc_client_metadata ?? null,
       },
     };
   }
@@ -1090,6 +1091,7 @@ function gatherSources(user: any, sessionId: string): any {
       name: session.name,
       description: session.description || '',
       status: session.status,
+      pc_client_metadata: session.pc_client_metadata ?? null,
     },
   };
 }
