@@ -18,6 +18,8 @@ export interface SupervisorOptions {
   identifier: string;
   /** 状态变化回调（主进程用来更新徽标 + 推给 web UI） */
   onStatus: (s: AimuxStatus) => void;
+  /** 每行 stdout/stderr 日志回调（主进程进环形缓冲供状态面板查看） */
+  onLog?: (line: string) => void;
   /** JWT 即将到期时主进程据此重登，返回新 token 或 null */
   onTokenExpired: () => Promise<string | null>;
 }
@@ -50,6 +52,7 @@ export class AimuxSupervisor {
 
     // 粗粒度解析日志推断状态（aimux 内部已带 5/10/20s×3 重连，重连耗尽会 exit → 我们 respawn）
     const classify = (line: string) => {
+      this.opts.onLog?.(line);
       const lower = line.toLowerCase();
       if (/error|fail|refused|expired|invalid|traceback|exception/.test(lower)) {
         onStatus({ state: "failed", detail: line, identifier });
@@ -57,12 +60,11 @@ export class AimuxSupervisor {
         onStatus({ state: "connected", detail: line, identifier });
       }
     };
-    child.stdout?.on("data", (b: Buffer) => {
-      for (const l of b.toString("utf8").split(/\r?\n/)) if (l.trim()) classify(l.trim());
-    });
-    child.stderr?.on("data", (b: Buffer) => {
-      for (const l of b.toString("utf8").split(/\r?\n/)) if (l.trim()) classify(l.trim());
-    });
+    const handle = (b: Buffer) => {
+      for (const l of b.toString("utf8").split(/[\r\n]+/)) { const t = l.trim(); if (t) classify(t); }
+    };
+    child.stdout?.on("data", handle);
+    child.stderr?.on("data", handle);
 
     child.on("exit", (code) => {
       this.child = null;

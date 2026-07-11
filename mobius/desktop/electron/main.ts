@@ -8,9 +8,10 @@ import * as os from "node:os";
 import * as fs from "node:fs";
 import { loadCreds, saveCreds, clearCreds, type StoredCreds } from "./lib/secrets";
 import { gatherHostInfo, type BootData } from "./lib/host-info";
-import { ensureAimux, upgradeAimux, aimuxExe, type InstallProgress } from "./lib/python-runtime";
+import { ensureAimux, upgradeAimux, getAimuxVersion, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
 import { AimuxSupervisor, type AimuxStatus } from "./lib/aimux-supervisor";
 import { injectBadge, setBadge } from "./lib/status-overlay";
+import { createStatusWindow } from "./status-window";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const isMac = process.platform === "darwin";
@@ -20,6 +21,22 @@ let supervisor: AimuxSupervisor | null = null;
 let creds: StoredCreds | null = null;
 let lastStatus: AimuxStatus = { state: "stopped" };
 let installing = false;
+
+// aimux 日志环形缓冲（供状态面板查看历史 + 失败原因）
+const LOG_MAX = 300;
+const logBuffer: string[] = [];
+function broadcast(channel: string, payload: unknown): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) {
+      try { w.webContents.send(channel, payload); } catch { /* 窗口可能正在加载 */ }
+    }
+  }
+}
+function appendLog(line: string): void {
+  logBuffer.push(line);
+  if (logBuffer.length > LOG_MAX) logBuffer.splice(0, logBuffer.length - LOG_MAX);
+  broadcast("aimux:log", line);
+}
 
 function serverOrigin(): string {
   return (creds?.server || "").replace(/\/$/, "");
@@ -34,7 +51,8 @@ function defaultIdentifier(): string {
 function emitStatus(s: AimuxStatus): void {
   lastStatus = s;
   applyStatusToBadge();
-  mainWindow?.webContents.send("aimux:status-changed", s);
+  broadcast("aimux:status-changed", s);
+  if (s.detail) appendLog(`[${s.state}] ${s.detail}`);
 }
 
 function applyStatusToBadge(): void {
@@ -79,6 +97,7 @@ function buildSupervisor(): AimuxSupervisor | null {
     token: creds.jwt,
     identifier: creds.identifier,
     onStatus: emitStatus,
+    onLog: (line) => appendLog(line),
     onTokenExpired: async () => {
       if (!creds) return null;
       const r = await doLogin(creds.server, creds.username, creds.password);
@@ -225,6 +244,7 @@ function buildMenu(): void {
       submenu: [
         { label: "同步最新代码", accelerator: "CmdOrCtrl+Shift+R", click: () => runSyncReload() },
         { label: "更新 aimux", click: () => void runUpdateAimux() },
+        { label: "aimux 状态面板", accelerator: "CmdOrCtrl+Shift+A", click: () => createStatusWindow() },
         { type: "separator" },
         { label: "切换账号 / 服务器", click: () => void runLogout() },
         { role: "quit", label: "退出" },
@@ -267,6 +287,33 @@ ipcMain.handle("aimux:status", () => lastStatus);
 ipcMain.handle("aimux:update", () => runUpdateAimux());
 ipcMain.handle("app:sync-reload", () => {
   runSyncReload();
+  return { ok: true };
+});
+ipcMain.handle("aimux:details", () => ({
+  status: lastStatus,
+  identifier: creds?.identifier || "",
+  serverOrigin: serverOrigin(),
+  venvDir: venvDir(),
+  aimuxExe: aimuxExe(),
+  hasBundledPython: hasBundledPython(),
+  hostInfo: gatherHostInfo({ aimuxIdentifier: creds?.identifier || "", serverOrigin: serverOrigin(), appVersion: app.getVersion() }),
+  logs: [...logBuffer],
+}));
+ipcMain.handle("aimux:version", () => getAimuxVersion());
+ipcMain.handle("aimux:reconnect", async () => {
+  if (!creds) return { ok: false, error: "未登录" };
+  await supervisor?.stop();
+  supervisor = buildSupervisor();
+  if (!supervisor) return { ok: false, error: "aimux 未就绪（venv 可能未建好），请稍后重试" };
+  supervisor.start();
+  return { ok: true };
+});
+ipcMain.handle("app:open-status", () => {
+  createStatusWindow();
+  return { ok: true };
+});
+ipcMain.handle("app:open-devtools", () => {
+  mainWindow?.webContents.openDevTools({ mode: "detach" });
   return { ok: true };
 });
 

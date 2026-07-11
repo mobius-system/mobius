@@ -11,8 +11,9 @@ const CSS = `
   font: 12px/1.4 -apple-system, "Segoe UI", Roboto, "PingFang SC", sans-serif;
   padding: 5px 10px; border-radius: 14px; color: #fff;
   background: rgba(40,40,40,0.92); box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  display: flex; align-items: center; gap: 6px; pointer-events: none;
+  display: flex; align-items: center; gap: 6px; pointer-events: auto; cursor: pointer; user-select: none;
 }
+#${BADGE_ID}:hover { background: rgba(20,20,20,0.95); }
 #${BADGE_ID} .dot { width: 8px; height: 8px; border-radius: 50%; background: #999; }
 #${BADGE_ID}.s-starting .dot { background: #f5a623; animation: __md_pulse 1s infinite; }
 #${BADGE_ID}.s-connected .dot { background: #34c759; }
@@ -37,7 +38,9 @@ export async function injectBadge(wc: WebContents): Promise<void> {
         const el = document.createElement('div');
         el.id = '${BADGE_ID}';
         el.className = 's-starting';
+        el.title = '点击查看 aimux 详情';
         el.innerHTML = '<span class="dot"></span><span class="txt">${TEXT.starting}</span>';
+        el.onclick = () => { try { window.mobiusDesktop && window.mobiusDesktop.openStatusPanel && window.mobiusDesktop.openStatusPanel(); } catch (e) {} };
         document.documentElement.appendChild(el);
       }
       true;

@@ -35,7 +35,7 @@ export function pythonExe(): string {
   return bundledPythonExe() || (WIN ? "python.exe" : "python3");
 }
 
-const venvDir = (): string => path.join(app.getPath("userData"), "aimux-venv");
+export const venvDir = (): string => path.join(app.getPath("userData"), "aimux-venv");
 const venvPython = (): string =>
   WIN ? path.join(venvDir(), "Scripts", "python.exe") : path.join(venvDir(), "bin", "python");
 /** venv 内 aimux 可执行路径。 */
@@ -105,6 +105,14 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Pr
 
   onProgress?.({ phase: "ready" });
   return { ok: true };
+}
+
+/** 查询当前 venv 里 aimux 的版本（状态面板展示用）。 */
+export async function getAimuxVersion(): Promise<string> {
+  if (!fs.existsSync(venvPython())) return "未安装";
+  const r = await run(venvPython(), ["-m", "pip", "show", "aimux"]);
+  const m = r.stdout.match(/Version:\s*(\S+)/);
+  return m ? m[1] : "未知";
 }
 
 /** "更新 aimux"按钮：升到最新版并回写 marker（解除首装 pin）。 */

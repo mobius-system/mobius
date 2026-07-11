@@ -60,3 +60,30 @@ body { margin: 0; background: #f5f5f7; }
   animation: md-spin 0.8s linear infinite;
 }
 @keyframes md-spin { to { transform: rotate(360deg); } }
+
+/* ===== aimux 状态面板 ===== */
+.status-body { margin: 0; background: #f5f5f7; }
+.status-wrap { max-width: 640px; margin: 0 auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.status-head { display: flex; flex-direction: column; gap: 6px; }
+.status-head h1 { margin: 0; font-size: 18px; }
+.state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 12px; background: #ececef; width: fit-content; }
+.state .dot { width: 8px; height: 8px; border-radius: 50%; background: #999; }
+.state.s-starting .dot { background: #f5a623; animation: md-spin 1s infinite linear; }
+.state.s-connected .dot { background: #34c759; }
+.state.s-failed .dot { background: #ff3b30; }
+.state.s-stopped .dot { background: #999; }
+.detail { font-size: 12px; color: #6e6e73; word-break: break-word; }
+.detail.err { color: #ff3b30; }
+.card { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.card h2 { margin: 0 0 10px; font-size: 13px; color: #6e6e73; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+.kv { margin: 0; display: grid; grid-template-columns: 90px 1fr; gap: 6px 12px; font-size: 13px; }
+.kv dt { color: #8e8e93; }
+.kv dd { margin: 0; word-break: break-all; }
+.kv .mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; }
+.log-card .log { margin: 0; max-height: 220px; overflow: auto; background: #1d1d1f; color: #e5e5ea; border-radius: 8px; padding: 10px; font: 11px/1.5 ui-monospace, "SF Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+.link { background: none; border: none; color: #0a84ff; font-size: 12px; cursor: pointer; padding: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions button { padding: 8px 14px; border: none; border-radius: 8px; background: #0a84ff; color: #fff; font-size: 13px; cursor: pointer; }
+.actions button.ghost { background: #e5e5ea; color: #1d1d1f; }
+.actions button:hover { opacity: 0.9; }
+.toast { font-size: 12px; color: #0a84ff; }

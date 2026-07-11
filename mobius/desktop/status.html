@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>aimux 状态</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body class="status-body">
+    <div class="status-wrap">
+      <header class="status-head">
+        <div>
+          <h1>aimux 状态</h1>
+          <div id="state" class="state s-starting"><span class="dot"></span><span class="txt">读取中…</span></div>
+        </div>
+        <div id="detail" class="detail">—</div>
+      </header>
+
+      <section class="card">
+        <h2>节点</h2>
+        <dl class="kv">
+          <dt>identifier</dt><dd id="identifier">—</dd>
+          <dt>服务器</dt><dd id="server">—</dd>
+          <dt>aimux 版本</dt><dd id="version">…</dd>
+          <dt>venv 路径</dt><dd id="venv" class="mono">—</dd>
+          <dt>内置 Python</dt><dd id="bundled">—</dd>
+        </dl>
+      </section>
+
+      <section class="card">
+        <h2>本机环境</h2>
+        <dl class="kv">
+          <dt>系统</dt><dd id="host-os">—</dd>
+          <dt>主机名</dt><dd id="host-name">—</dd>
+          <dt>架构</dt><dd id="host-arch">—</dd>
+          <dt>IP</dt><dd id="host-ip">—</dd>
+          <dt>CPU</dt><dd id="host-cpu">—</dd>
+          <dt>内存</dt><dd id="host-mem">—</dd>
+        </dl>
+      </section>
+
+      <section class="card log-card">
+        <h2>最近日志 <button id="btn-clear-log" class="link">清空</button></h2>
+        <pre id="log" class="log"></pre>
+      </section>
+
+      <div class="actions">
+        <button id="btn-update">更新 aimux</button>
+        <button id="btn-reconnect">重新连接</button>
+        <button id="btn-sync">同步最新代码</button>
+        <button id="btn-devtools" class="ghost">开发者工具</button>
+      </div>
+      <div id="toast" class="toast" hidden></div>
+    </div>
+    <script type="module" src="/src/status.ts"></script>
+  </body>
+</html>

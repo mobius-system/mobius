@@ -9,6 +9,27 @@ export interface AimuxStatus {
   detail?: string;
 }
 
+export interface AimuxDetails {
+  status: AimuxStatus;
+  identifier: string;
+  serverOrigin: string;
+  aimuxVersion: string;
+  venvDir: string;
+  aimuxExe: string;
+  hasBundledPython: boolean;
+  hostInfo: {
+    platform: string;
+    osVersion: string;
+    arch: string;
+    hostname: string;
+    ips: string[];
+    cpuModel: string;
+    cpuCount: number;
+    totalMemGB: number;
+  };
+  logs: string[];
+}
+
 export interface MobiusDesktopBridge {
   isDesktop: true;
   getBootData: () => Promise<{
@@ -25,9 +46,15 @@ export interface MobiusDesktopBridge {
     appVersion: string;
   }>;
   getAimuxStatus: () => Promise<AimuxStatus>;
+  getAimuxDetails: () => Promise<AimuxDetails>;
+  getAimuxVersion: () => Promise<string>;
+  reconnectAimux: () => Promise<{ ok: boolean; error?: string }>;
   onAimuxStatus: (cb: (s: AimuxStatus) => void) => () => void;
+  onAimuxLog: (cb: (line: string) => void) => () => void;
   updateAimux: () => Promise<{ ok: boolean; version?: string; error?: string }>;
   syncReload: () => Promise<void>;
+  openStatusPanel: () => Promise<void>;
+  openDevTools: () => Promise<void>;
   logout: () => Promise<void>;
 }
 

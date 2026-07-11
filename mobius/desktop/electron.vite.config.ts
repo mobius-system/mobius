@@ -16,7 +16,12 @@ export default defineConfig({
   renderer: {
     root: ".",
     build: {
-      rollupOptions: { input: { index: resolve(__dirname, "index.html") } },
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, "index.html"),
+          status: resolve(__dirname, "status.html"),
+        },
+      },
     },
   },
 });
