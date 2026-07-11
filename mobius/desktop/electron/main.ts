@@ -1,6 +1,6 @@
 // Mobius Desktop 主进程：登录 → 保证 aimux → reverse connect → loadURL 远程 web UI。
 // 详见 README。关键：退出前务必 supervisor.stop() 杀 aimux；aimux 状态经徽标+IPC 常驻可见。
-import { app, BrowserWindow, Menu, ipcMain, shell } from "electron";
+import { app, BrowserWindow, Menu, ipcMain, shell, dialog } from "electron";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,8 @@ import { gatherHostInfo, type BootData } from "./lib/host-info";
 import { ensureAimux, upgradeAimux, getAimuxVersion, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
 import { AimuxSupervisor, type AimuxStatus } from "./lib/aimux-supervisor";
 import { injectBadge, setBadge } from "./lib/status-overlay";
+import { injectProjectPathOverlay, dismissOverlay, injectToast } from "./lib/project-overlay";
+import { getProjectLocalPath, setProjectLocalPath, sanitizeName } from "./lib/project-paths";
 import { createStatusWindow } from "./status-window";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -45,6 +47,63 @@ function serverOrigin(): string {
 function defaultIdentifier(): string {
   const host = os.hostname().toLowerCase().replace(/[^a-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
   return `desktop-${host || "pc"}`;
+}
+
+// ——— 项目本地路径自动绑定 ———
+// 进入 /u/:user/p/:project 时检查 userData 是否已绑本机路径：已绑则确保存在(否则创建+toast)；
+// 未绑则注入 overlay 让用户选路径，默认 桌面/MobiusOS/<项目名>。
+let lastProjectId: string | null = null;
+
+function handleProjectUrl(url: string): void {
+  const m = url.match(/\/u\/[^/]+\/p\/([^/?#]+)/);
+  if (!m) {
+    if (lastProjectId !== null) {
+      lastProjectId = null;
+      if (mainWindow) void dismissOverlay(mainWindow.webContents);
+    }
+    return;
+  }
+  const projectId = m[1];
+  if (projectId === lastProjectId) return; // 同项目内子导航不重复触发
+  lastProjectId = projectId;
+  void ensureProjectPath(projectId);
+}
+
+async function fetchProjectName(server: string, projectId: string): Promise<string> {
+  if (!creds) return projectId;
+  try {
+    const res = await fetch(`${server}/api/projects`, { headers: { Authorization: `Bearer ${creds.jwt}` } });
+    if (!res.ok) return projectId;
+    const data = await res.json();
+    const list: unknown[] = Array.isArray(data) ? data : (data as { projects?: unknown[] }).projects || [];
+    const p = list.find((x) => (x as { id?: string }).id === projectId) as { name?: string } | undefined;
+    return p?.name || projectId;
+  } catch {
+    return projectId;
+  }
+}
+
+async function ensureProjectPath(projectId: string): Promise<void> {
+  if (!mainWindow || !creds) return;
+  const server = serverOrigin();
+  const saved = getProjectLocalPath(server, projectId);
+  if (saved) {
+    // 已绑定：路径不存在则创建
+    if (!fs.existsSync(saved)) {
+      try {
+        fs.mkdirSync(saved, { recursive: true });
+        void injectToast(mainWindow.webContents, `已创建本地路径：${saved}`, "ok");
+      } catch (e) {
+        void injectToast(mainWindow.webContents, `创建本地路径失败：${(e as Error).message}`, "err");
+      }
+    }
+    return;
+  }
+  // 未绑定：取项目名，弹 overlay
+  const projectName = await fetchProjectName(server, projectId);
+  const defaultPath = join(app.getPath("desktop"), "MobiusOS", sanitizeName(projectName));
+  const machineInfo = `${os.hostname()} · ${process.platform}`;
+  void injectProjectPathOverlay(mainWindow.webContents, { projectId, projectName, defaultPath, machineInfo });
 }
 
 // ——— 状态分发：徽标 + 推给 web UI ———
@@ -233,8 +292,12 @@ function createWindow(): void {
     const u = mainWindow?.webContents.getURL() || "";
     if (u.startsWith("http")) {
       void injectBadge(mainWindow!.webContents).then(() => applyStatusToBadge());
+      handleProjectUrl(u);
     }
   });
+  // SPA 路由切换（进入/切换项目页）→ 检查本地路径绑定
+  mainWindow.webContents.on("did-navigate-in-page", (_e, url) => handleProjectUrl(url));
+  mainWindow.webContents.on("did-navigate", (_e, url) => handleProjectUrl(url));
 }
 
 function buildMenu(): void {
@@ -316,6 +379,29 @@ ipcMain.handle("app:open-devtools", () => {
   mainWindow?.webContents.openDevTools({ mode: "detach" });
   return { ok: true };
 });
+// ——— 项目本地路径绑定 ———
+ipcMain.handle("project:pick-directory", async () => {
+  if (!mainWindow) return null;
+  const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
+});
+ipcMain.handle("project:confirm-path", async (_e, projectId: string, pathRaw: string) => {
+  if (!mainWindow || !creds) return { ok: false, error: "未登录" };
+  const p = String(pathRaw || "").trim();
+  if (!p) return { ok: false, error: "路径不能为空" };
+  try {
+    if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+  } catch (e) {
+    void injectToast(mainWindow.webContents, `创建本地路径失败：${(e as Error).message}`, "err");
+    return { ok: false, error: (e as Error).message };
+  }
+  setProjectLocalPath(serverOrigin(), projectId, p);
+  void dismissOverlay(mainWindow.webContents);
+  void injectToast(mainWindow.webContents, `已绑定本地路径：${p}`, "ok");
+  return { ok: true };
+});
+ipcMain.handle("desktop:machine-info", () => `${os.hostname()} · ${process.platform}`);
 
 // ——— 生命周期 ———
 // 单实例锁：避免重复启动多个进程（每个都会反连注册同一节点，造成 4 个进程 / 节点冲突）

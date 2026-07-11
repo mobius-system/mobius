@@ -32,6 +32,10 @@ const mobiusDesktop = {
   syncReload: () => ipcRenderer.invoke("app:sync-reload"),
   openStatusPanel: () => ipcRenderer.invoke("app:open-status"),
   openDevTools: () => ipcRenderer.invoke("app:open-devtools"),
+  pickDirectory: () => ipcRenderer.invoke("project:pick-directory"),
+  confirmProjectPath: (projectId: string, path: string) =>
+    ipcRenderer.invoke("project:confirm-path", projectId, path),
+  getMachineInfo: () => ipcRenderer.invoke("desktop:machine-info"),
   logout: () => ipcRenderer.invoke("auth:logout"),
 };
 contextBridge.exposeInMainWorld("mobiusDesktop", mobiusDesktop);

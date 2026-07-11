@@ -4,4 +4,5 @@ release/
 # 内置 python (构建期下载, ~40MB, 不入 git)
 resources/python-win-x64/
 resources/python-*/
+resources/python/
 *.log

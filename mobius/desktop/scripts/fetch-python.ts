@@ -15,6 +15,11 @@ const TARGETS: Record<string, { file: string; dir: string; marker: string }> = {
     dir: "python-win-x64",
     marker: "python/python.exe",
   },
+  "win-arm64": {
+    file: `cpython-${PY_VER}+${PBS_TAG}-aarch64-pc-windows-msvc-install_only.tar.gz`,
+    dir: "python-win-arm64",
+    marker: "python/python.exe",
+  },
   "mac-arm64": {
     file: `cpython-${PY_VER}+${PBS_TAG}-aarch64-apple-darwin-install_only.tar.gz`,
     dir: "python-mac-arm64",

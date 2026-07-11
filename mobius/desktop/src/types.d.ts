@@ -55,6 +55,9 @@ export interface MobiusDesktopBridge {
   syncReload: () => Promise<void>;
   openStatusPanel: () => Promise<void>;
   openDevTools: () => Promise<void>;
+  pickDirectory: () => Promise<string | null>;
+  confirmProjectPath: (projectId: string, path: string) => Promise<{ ok: boolean; error?: string }>;
+  getMachineInfo: () => Promise<string>;
   logout: () => Promise<void>;
 }
 

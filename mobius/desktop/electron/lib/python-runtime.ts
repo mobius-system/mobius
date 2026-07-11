@@ -6,7 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 // 首装 pin 的 aimux 版本（与 mobius 引导页一致）。升级后由 upgradeAimux 改写 marker。
-export const AIMUX_PIN = "aimux==0.1.8";
+export const AIMUX_PIN = "aimux==0.1.9";
 
 const WIN = process.platform === "win32";
 
@@ -90,7 +90,7 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Pr
   if (r.code !== 0) return { ok: false, error: `venv 创建失败: ${r.stderr || r.stdout}` };
 
   // 2) 装 aimux（--no-input 防交互卡死，--disable-pip-version-check 减噪音）；实时回传 pip 下载进度
-  onProgress?.({ phase: "install", detail: "下载并安装 aimux==0.1.8…" });
+  onProgress?.({ phase: "install", detail: `下载并安装 ${AIMUX_PIN}…` });
   r = await run(
     venvPython(),
     ["-m", "pip", "install", "--no-input", "--disable-pip-version-check", AIMUX_PIN],

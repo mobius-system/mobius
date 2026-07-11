@@ -9,26 +9,22 @@ files:
 extraMetadata:
   main: out/main/index.js
 asar: true
+# 内置 python：构建前由 prep-python:<target> 把对应 arch 的 python-build-standalone
+# 拷到 resources/python/（canonical，按构建目标切换）。多 arch 共用这一条。
+extraResources:
+  - from: resources/python
+    to: python
+    filter: ["**/*"]
 win:
   target:
     - zip
   # Linux 交叉打 Windows 包：signApp 需要 wine 跑 signtool（即使无证书也要编辑 exe 版本信息）。
   # 测试阶段免签名，关掉这步即可产出可用 zip；正式分发再在 Windows 机签名。
   signAndEditExecutable: false
-  extraResources:
-    - from: resources/python-win-x64
-      to: python
-      filter: ["**/*"]
 mac:
   target:
-    - target: zip
-      arch:
-        - arm64
+    - zip
   identity: null  # 非 macOS 主机无法签名，显式关闭；产物免签名，用户首次打开需右键“打开”
-  extraResources:
-    - from: resources/python-mac-arm64
-      to: python
-      filter: ["**/*"]
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
