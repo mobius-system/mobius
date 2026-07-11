@@ -9,8 +9,10 @@
     "dev": "electron-vite dev",
     "build": "tsc --noEmit && electron-vite build",
     "preview": "electron-vite preview",
-    "fetch-python": "tsx scripts/fetch-python.ts",
-    "dist:win": "npm run fetch-python && npm run build && electron-builder --win zip nsis"
+    "fetch-python:win": "tsx scripts/fetch-python.ts win-x64",
+    "fetch-python:mac": "tsx scripts/fetch-python.ts mac-arm64",
+    "dist:win": "npm run fetch-python:win && npm run build && electron-builder --win zip nsis",
+    "dist:mac": "npm run fetch-python:mac && npm run build && electron-builder --mac"
   },
   "dependencies": {},
   "devDependencies": {

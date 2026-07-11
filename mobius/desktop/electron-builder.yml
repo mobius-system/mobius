@@ -8,20 +8,27 @@ files:
   - package.json
 extraMetadata:
   main: out/main/index.js
-# 内置 python-build-standalone (构建期由 scripts/fetch-python.ts 下载到 resources/python-win-x64)
-# 打包后位于 process.resourcesPath/python，运行期 python-runtime.ts 从这里取解释器。
-extraResources:
-  - from: resources/python-win-x64
-    to: python
-    filter:
-      - "**/*"
 asar: true
 win:
   target:
     - zip
-  # Linux 上交叉打 Windows 包：signApp 需要 wine 跑 signtool（即使无证书也要编辑 exe 版本信息）。
+  # Linux 交叉打 Windows 包：signApp 需要 wine 跑 signtool（即使无证书也要编辑 exe 版本信息）。
   # 测试阶段免签名，关掉这步即可产出可用 zip；正式分发再在 Windows 机签名。
   signAndEditExecutable: false
+  extraResources:
+    - from: resources/python-win-x64
+      to: python
+      filter: ["**/*"]
+mac:
+  target:
+    - target: zip
+      arch:
+        - arm64
+  identity: null  # 非 macOS 主机无法签名，显式关闭；产物免签名，用户首次打开需右键“打开”
+  extraResources:
+    - from: resources/python-mac-arm64
+      to: python
+      filter: ["**/*"]
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
