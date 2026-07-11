@@ -422,6 +422,7 @@ function handleContextPreview(req: express.Request, res: express.Response): void
       name: typeof src.name === 'string' ? src.name : '',
       description: typeof src.description === 'string' ? src.description : '',
       role: typeof src.role === 'string' ? src.role : 'research_assistant',
+      pc_client_metadata: src.pc_client_metadata ?? null,
     },
     toIdList(src.excluded_skill_ids),
     toIdList(src.excluded_memory_ids),

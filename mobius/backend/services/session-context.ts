@@ -229,7 +229,7 @@ function zh_add_research_peer_info(lines: string[], peers: any[]): void {
 }
 
 function zh_add_memory_info(lines: string[], memories: any[], project: any): void {
-  const all = shuffled([...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])]);
+  const all = [...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])];
   if (all.length === 0) return;
   lines.push('## 持久 Memory');
   lines.push('本用户与项目积累的长期事实 / 偏好如下. 视作已知信息.');
@@ -256,7 +256,7 @@ function zh_add_skill_info(lines: string[], skills: any[]): void {
   lines.push('## 必要 Skill');
   lines.push('以下Skill与当前问题可能有关，在解决问题之前，你必须根据实际需要，有选择性地理解并学习以下skill');
   lines.push('');
-  for (const sk of shuffled(skills)) {
+  for (const sk of skills) {
     const rel = sk.dirName ? `${SKILLS_SUBDIR}/${sk.dirName}/SKILL.md` : '(未知路径)';
     lines.push(`- **${sk.name}**`);
     lines.push(`  - 路径: \`${rel}\``);
@@ -430,7 +430,7 @@ function en_add_research_peer_info(lines: string[], peers: any[]): void {
 }
 
 function en_add_memory_info(lines: string[], memories: any[], project: any): void {
-  const all = shuffled([...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])]);
+  const all = [...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])];
   if (all.length === 0) return;
   lines.push('## Persistent Memory');
   lines.push('Long-term facts / preferences accumulated for this user and project are listed below. Treat them as known information.');
@@ -457,7 +457,7 @@ function en_add_skill_info(lines: string[], skills: any[]): void {
   lines.push('## Required Skills');
   lines.push('Before solving the problem, you can read and learn the following skills according to your need.');
   lines.push('');
-  for (const sk of shuffled(skills)) {
+  for (const sk of skills) {
     const rel = sk.dirName ? `${SKILLS_SUBDIR}/${sk.dirName}/SKILL.md` : '(unknown path)';
     lines.push(`- **${sk.name}**`);
     lines.push(`  - Path: \`${rel}\``);
@@ -529,7 +529,7 @@ function en_add_completion_flag_info(lines: string[], session: any, project: any
 }
 
 function buildRandomEmojiPrefix(): string {
-  const emojiCount = Math.random() < 0.5 ? 1 : 2;
+  const emojiCount = 1;
   const pool = [...RANDOM_EMOJIS];
   const picked: string[] = [];
 
@@ -1084,6 +1084,7 @@ function buildIssueContextPreview(user: any, issueId: any, draftSession: any, ex
       name: draftSession.name || '(未命名)',
       description: draftSession.description || '',
       status: 'active',
+      pc_client_metadata: draftSession.pc_client_metadata ?? null,
     } : null,
   };
   return { body: formatBody(sources), sources };
@@ -1117,6 +1118,7 @@ function buildProjectIssueContextPreview(user: any, projectId: any, draftIssue: 
       name: draftSession.name || '(未命名)',
       description: draftSession.description || '',
       status: 'active',
+      pc_client_metadata: draftSession.pc_client_metadata ?? null,
     } : null,
   };
   return { body: formatBody(sources), sources };

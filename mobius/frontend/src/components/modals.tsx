@@ -2337,9 +2337,11 @@ export function NewSessionModal({
         personality,
         excluded_skill_ids: Array.from(skillEx),
         excluded_memory_ids: Array.from(memEx),
+        // PC 任务模式 (仅桌面端): 与 session 创建 body 同源, 让 preview 也注入 PC 提示词; web 端 workMode null 不传.
+        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId } } : {}),
       }),
     }) as WizardPreview
-  }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality])
+  }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality, workMode, aimuxId])
 
   const fetchSelectionDefaults = useCallback(async () => {
     const endpoint = isResearch
