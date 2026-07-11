@@ -793,7 +793,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
           >
             <GithubIcon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-            {!isMobile && <span className="text-[12px] font-medium">GitHub</span>}
           </a>
           <div data-tour="top-system-status" className="mobius-topnav-status flex shrink-0 items-center gap-2">
             <DiskIndicator />
