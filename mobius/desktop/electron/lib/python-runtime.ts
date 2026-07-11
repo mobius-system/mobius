@@ -49,7 +49,7 @@ interface RunResult {
   stderr: string;
 }
 
-function run(cmd: string, args: string[], onLine?: (line: string) => void): Promise<RunResult> {
+function run(cmd: string, args: string[], onLine?: (line: string) => void, onRaw?: (data: string) => void): Promise<RunResult> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { windowsHide: true });
     let stdout = "";
@@ -57,6 +57,7 @@ function run(cmd: string, args: string[], onLine?: (line: string) => void): Prom
     const feed = (b: Buffer, sink: (s: string) => void) => {
       const s = b.toString("utf8");
       sink(s);
+      onRaw?.(s);
       if (onLine) {
         // 按 \r 和 \n 都切：pip 下载进度用 \r 原地刷新，这样才能拿到百分比行
         for (const seg of s.split(/[\r\n]+/)) {
@@ -78,7 +79,7 @@ export interface InstallProgress {
 }
 
 /** 确保 venv + aimux 就绪。已有 aimux 可执行则直接返回（幂等，不强制 pin 版本以免覆盖手动升级）。 */
-export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string }> {
+export async function ensureAimux(onProgress?: (p: InstallProgress) => void, onRaw?: (data: string) => void): Promise<{ ok: boolean; error?: string }> {
   if (fs.existsSync(aimuxExe())) {
     onProgress?.({ phase: "ready" });
     return { ok: true };
@@ -86,7 +87,7 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Pr
   const py = pythonExe();
   // 1) 建 venv。不带 --upgrade-deps：内置 python-build-standalone 的 pip 已够新，省一次联网升级
   onProgress?.({ phase: "venv", detail: py });
-  let r = await run(py, ["-m", "venv", venvDir()]);
+  let r = await run(py, ["-m", "venv", venvDir()], undefined, onRaw);
   if (r.code !== 0) return { ok: false, error: `venv 创建失败: ${r.stderr || r.stdout}` };
 
   // 2) 装 aimux（--no-input 防交互卡死，--disable-pip-version-check 减噪音）；实时回传 pip 下载进度
@@ -98,7 +99,8 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Pr
       if (/downloading|collecting|installing|using cached|%\s*\d|━|─/i.test(line)) {
         onProgress?.({ phase: "install", detail: line.slice(0, 100) });
       }
-    }
+    },
+    onRaw,
   );
   if (r.code !== 0) return { ok: false, error: `pip install 失败: ${r.stderr || r.stdout}` };
   if (!fs.existsSync(aimuxExe())) return { ok: false, error: `aimux 可执行未生成: ${aimuxExe()}` };
@@ -116,7 +118,7 @@ export async function getAimuxVersion(): Promise<string> {
 }
 
 /** "更新 aimux"按钮：升到最新版并回写 marker（解除首装 pin）。onProgress 回传 pip 实时输出供状态面板显示。 */
-export async function upgradeAimux(onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; version?: string; error?: string }> {
+export async function upgradeAimux(onProgress?: (p: InstallProgress) => void, onRaw?: (data: string) => void): Promise<{ ok: boolean; version?: string; error?: string }> {
   if (!fs.existsSync(venvPython())) return { ok: false, error: "venv 尚未创建" };
   onProgress?.({ phase: "install", detail: "pip install --upgrade aimux…" });
   const r = await run(
@@ -126,7 +128,8 @@ export async function upgradeAimux(onProgress?: (p: InstallProgress) => void): P
       if (/downloading|collecting|installing|using cached|uninstalling|successfully|%\s*\d|━|─/i.test(line)) {
         onProgress?.({ phase: "install", detail: line.slice(0, 100) });
       }
-    }
+    },
+    onRaw,
   );
   if (r.code !== 0) return { ok: false, error: r.stderr || r.stdout };
   const show = await run(venvPython(), ["-m", "pip", "show", "aimux"]);

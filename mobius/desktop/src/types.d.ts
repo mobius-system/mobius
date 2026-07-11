@@ -16,6 +16,7 @@ export interface AimuxDetails {
   aimuxVersion: string;
   venvDir: string;
   aimuxExe: string;
+  aimuxLogPath: string;
   hasBundledPython: boolean;
   hostInfo: {
     platform: string;

@@ -31,7 +31,7 @@ export function aimuxLogPath(): string {
   return path.join(app.getPath("userData"), "logs", "aimux.log");
 }
 
-function appendAimuxLog(data: string | Buffer): void {
+export function appendAimuxLog(data: string | Buffer): void {
   const logPath = aimuxLogPath();
   try {
     fs.mkdirSync(path.dirname(logPath), { recursive: true });

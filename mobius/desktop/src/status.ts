@@ -34,6 +34,7 @@ async function refresh(): Promise<void> {
   (document.getElementById("identifier") as HTMLElement).textContent = d.identifier || "—";
   (document.getElementById("server") as HTMLElement).textContent = d.serverOrigin || "—";
   (document.getElementById("venv") as HTMLElement).textContent = d.venvDir || "—";
+  (document.getElementById("aimux-log-path") as HTMLElement).textContent = d.aimuxLogPath || "—";
   (document.getElementById("bundled") as HTMLElement).textContent = d.hasBundledPython ? "已内置" : "未内置（回退系统 python）";
   const h = d.hostInfo;
   (document.getElementById("host-os") as HTMLElement).textContent = `${h.platform} ${h.osVersion}`;

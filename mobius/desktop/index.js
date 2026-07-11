@@ -80,7 +80,19 @@ const venvPython = () => WIN ? path.join(venvDir(), "Scripts", "python.exe") : p
 function aimuxExe() {
   return WIN ? path.join(venvDir(), "Scripts", "aimux.exe") : path.join(venvDir(), "bin", "aimux");
 }
-function run(cmd, args, onLine) {
+function aimuxLogPath() {
+  return path.join(app.getPath("userData"), "logs", "aimux.log");
+}
+function appendAimuxLog(data) {
+  const logPath = aimuxLogPath();
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, data);
+  } catch (e) {
+    console.error(`[aimux-supervisor] 写 aimux 日志失败 (${logPath}):`, e);
+  }
+}
+function run(cmd, args, onLine, onRaw) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { windowsHide: true });
     let stdout = "";
@@ -88,6 +100,7 @@ function run(cmd, args, onLine) {
     const feed = (b, sink) => {
       const s = b.toString("utf8");
       sink(s);
+      onRaw?.(s);
       if (onLine) {
         for (const seg of s.split(/[\r\n]+/)) {
           const t = seg.trim();
@@ -101,14 +114,14 @@ function run(cmd, args, onLine) {
     child.on("close", (code) => resolve({ code: code ?? 0, stdout, stderr }));
   });
 }
-async function ensureAimux(onProgress) {
+async function ensureAimux(onProgress, onRaw) {
   if (fs.existsSync(aimuxExe())) {
     onProgress?.({ phase: "ready" });
     return { ok: true };
   }
   const py = pythonExe();
   onProgress?.({ phase: "venv", detail: py });
-  let r = await run(py, ["-m", "venv", venvDir()]);
+  let r = await run(py, ["-m", "venv", venvDir()], void 0, onRaw);
   if (r.code !== 0) return { ok: false, error: `venv 创建失败: ${r.stderr || r.stdout}` };
   onProgress?.({ phase: "install", detail: `下载并安装 ${AIMUX_PIN}…` });
   r = await run(
@@ -118,7 +131,8 @@ async function ensureAimux(onProgress) {
       if (/downloading|collecting|installing|using cached|%\s*\d|━|─/i.test(line)) {
         onProgress?.({ phase: "install", detail: line.slice(0, 100) });
       }
-    }
+    },
+    onRaw
   );
   if (r.code !== 0) return { ok: false, error: `pip install 失败: ${r.stderr || r.stdout}` };
   if (!fs.existsSync(aimuxExe())) return { ok: false, error: `aimux 可执行未生成: ${aimuxExe()}` };
@@ -131,7 +145,7 @@ async function getAimuxVersion() {
   const m = r.stdout.match(/Version:\s*(\S+)/);
   return m ? m[1] : "未知";
 }
-async function upgradeAimux(onProgress) {
+async function upgradeAimux(onProgress, onRaw) {
   if (!fs.existsSync(venvPython())) return { ok: false, error: "venv 尚未创建" };
   onProgress?.({ phase: "install", detail: "pip install --upgrade aimux…" });
   const r = await run(
@@ -141,7 +155,8 @@ async function upgradeAimux(onProgress) {
       if (/downloading|collecting|installing|using cached|uninstalling|successfully|%\s*\d|━|─/i.test(line)) {
         onProgress?.({ phase: "install", detail: line.slice(0, 100) });
       }
-    }
+    },
+    onRaw
   );
   if (r.code !== 0) return { ok: false, error: r.stderr || r.stdout };
   const show = await run(venvPython(), ["-m", "pip", "show", "aimux"]);
@@ -166,14 +181,9 @@ class AimuxSupervisor {
   spawnChild() {
     const { aimuxExe: aimuxExe2, bridgeUrl, token, identifier, onStatus } = this.opts;
     onStatus({ state: "starting", detail: "正在连接 mobius…", identifier });
-    const logPath = path.join(path.dirname(app.getPath("exe")), "aimux-bridge.log");
-    try {
-      fs.appendFileSync(logPath, `
+    appendAimuxLog(`
 ==== [${(/* @__PURE__ */ new Date()).toISOString()}] spawn reverse connect identifier=${identifier} ====
 `);
-    } catch (e) {
-      console.error("[aimux-supervisor] 写 aimux-bridge.log 失败:", e);
-    }
     const child = spawn(aimuxExe2, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token, "--replace"]);
     this.child = child;
     const classify = (line) => {
@@ -187,11 +197,7 @@ class AimuxSupervisor {
       }
     };
     const handle = (b) => {
-      try {
-        fs.appendFileSync(logPath, b);
-      } catch (e) {
-        console.error("[aimux-supervisor] append aimux-bridge.log 失败:", e);
-      }
+      appendAimuxLog(b);
       for (const l of b.toString("utf8").split(/[\r\n]+/)) {
         const t = l.trim();
         if (t) classify(t);
@@ -201,12 +207,9 @@ class AimuxSupervisor {
     child.stderr?.on("data", handle);
     child.on("exit", (code) => {
       this.child = null;
-      try {
-        fs.appendFileSync(logPath, `
+      appendAimuxLog(`
 ---- [${(/* @__PURE__ */ new Date()).toISOString()}] child exited code=${code} ----
 `);
-      } catch {
-      }
       if (this.stopping) {
         this.opts.onStatus({ state: "stopped", identifier });
         return;
@@ -217,12 +220,9 @@ class AimuxSupervisor {
       }, 5e3);
     });
     child.on("error", (err) => {
-      try {
-        fs.appendFileSync(logPath, `
+      appendAimuxLog(`
 ---- [${(/* @__PURE__ */ new Date()).toISOString()}] spawn error: ${err.message} ----
 `);
-      } catch {
-      }
       this.opts.onStatus({ state: "failed", detail: `spawn 失败: ${err.message}`, identifier });
     });
   }
@@ -656,10 +656,16 @@ async function bootDesktop() {
   const server = serverOrigin();
   installing = true;
   emitStatus({ state: "starting", detail: "首次启动需在本机下载 aimux（联网，约 30-90 秒）…" });
-  const inst = await ensureAimux((p) => {
-    if (p.phase === "venv") emitStatus({ state: "starting", detail: "创建 Python 虚拟环境…" });
-    else if (p.phase === "install") emitStatus({ state: "starting", detail: `下载并安装 aimux… ${p.detail ?? ""}` });
-  });
+  appendAimuxLog(`
+==== [${(/* @__PURE__ */ new Date()).toISOString()}] ensure aimux (install) ====
+`);
+  const inst = await ensureAimux(
+    (p) => {
+      if (p.phase === "venv") emitStatus({ state: "starting", detail: "创建 Python 虚拟环境…" });
+      else if (p.phase === "install") emitStatus({ state: "starting", detail: `下载并安装 aimux… ${p.detail ?? ""}` });
+    },
+    (data) => appendAimuxLog(data)
+  );
   installing = false;
   if (!inst.ok) {
     emitStatus({ state: "failed", detail: inst.error });
@@ -681,12 +687,18 @@ async function runUpdateAimux() {
   await supervisor?.stop();
   supervisor = null;
   emitStatus({ state: "starting", detail: "正在更新 aimux…" });
-  const r = await upgradeAimux((p) => {
-    if (p.detail) {
-      appendLog(p.detail);
-      emitStatus({ state: "starting", detail: p.detail });
-    }
-  });
+  appendAimuxLog(`
+==== [${(/* @__PURE__ */ new Date()).toISOString()}] upgrade aimux ====
+`);
+  const r = await upgradeAimux(
+    (p) => {
+      if (p.detail) {
+        appendLog(p.detail);
+        emitStatus({ state: "starting", detail: p.detail });
+      }
+    },
+    (data) => appendAimuxLog(data)
+  );
   if (!r.ok) {
     emitStatus({ state: "failed", detail: r.error });
     return { ok: false, error: r.error };
@@ -801,6 +813,7 @@ ipcMain.handle("aimux:details", () => ({
   serverOrigin: serverOrigin(),
   venvDir: venvDir(),
   aimuxExe: aimuxExe(),
+  aimuxLogPath: aimuxLogPath(),
   hasBundledPython: hasBundledPython(),
   hostInfo: gatherHostInfo({ aimuxIdentifier: creds?.identifier || "", serverOrigin: serverOrigin(), appVersion: app.getVersion() }),
   logs: [...logBuffer]

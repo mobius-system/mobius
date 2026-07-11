@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import { loadCreds, saveCreds, clearCreds, type StoredCreds } from "./lib/secrets";
 import { gatherHostInfo, type BootData } from "./lib/host-info";
 import { ensureAimux, upgradeAimux, getAimuxVersion, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
-import { AimuxSupervisor, type AimuxStatus } from "./lib/aimux-supervisor";
+import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
 import { injectBadge, setBadge } from "./lib/status-overlay";
 import { injectProjectPathOverlay, dismissOverlay, injectToast } from "./lib/project-overlay";
 import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
@@ -203,10 +203,14 @@ async function bootDesktop(): Promise<void> {
 
   installing = true;
   emitStatus({ state: "starting", detail: "首次启动需在本机下载 aimux（联网，约 30-90 秒）…" });
-  const inst = await ensureAimux((p: InstallProgress) => {
-    if (p.phase === "venv") emitStatus({ state: "starting", detail: "创建 Python 虚拟环境…" });
-    else if (p.phase === "install") emitStatus({ state: "starting", detail: `下载并安装 aimux… ${p.detail ?? ""}` });
-  });
+  appendAimuxLog(`\n==== [${new Date().toISOString()}] ensure aimux (install) ====\n`);
+  const inst = await ensureAimux(
+    (p: InstallProgress) => {
+      if (p.phase === "venv") emitStatus({ state: "starting", detail: "创建 Python 虚拟环境…" });
+      else if (p.phase === "install") emitStatus({ state: "starting", detail: `下载并安装 aimux… ${p.detail ?? ""}` });
+    },
+    (data: string) => appendAimuxLog(data),
+  );
   installing = false;
 
   if (!inst.ok) {
@@ -233,14 +237,18 @@ async function runUpdateAimux(): Promise<{ ok: boolean; version?: string; error?
   emitStatus({ state: "starting", detail: "断开现有连接, 准备更新 aimux…" });
   await supervisor?.stop();
   supervisor = null;
-  // 2) 升级: pip 实时输出 -> appendLog (状态面板可见) + emitStatus (徽标显示当前阶段).
+  // 2) 升级: pip 实时输出 -> appendAimuxLog (aimux.log 持久化) + appendLog (状态面板环形缓冲) + emitStatus (徽标显示当前阶段).
   emitStatus({ state: "starting", detail: "正在更新 aimux…" });
-  const r = await upgradeAimux((p) => {
-    if (p.detail) {
-      appendLog(p.detail);
-      emitStatus({ state: "starting", detail: p.detail });
-    }
-  });
+  appendAimuxLog(`\n==== [${new Date().toISOString()}] upgrade aimux ====\n`);
+  const r = await upgradeAimux(
+    (p) => {
+      if (p.detail) {
+        appendLog(p.detail);
+        emitStatus({ state: "starting", detail: p.detail });
+      }
+    },
+    (data: string) => appendAimuxLog(data),
+  );
   if (!r.ok) {
     emitStatus({ state: "failed", detail: r.error });
     return { ok: false, error: r.error };
@@ -369,6 +377,7 @@ ipcMain.handle("aimux:details", () => ({
   serverOrigin: serverOrigin(),
   venvDir: venvDir(),
   aimuxExe: aimuxExe(),
+  aimuxLogPath: aimuxLogPath(),
   hasBundledPython: hasBundledPython(),
   hostInfo: gatherHostInfo({ aimuxIdentifier: creds?.identifier || "", serverOrigin: serverOrigin(), appVersion: app.getVersion() }),
   logs: [...logBuffer],
