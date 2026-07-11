@@ -3225,6 +3225,64 @@ export function TurnTree({ sessionId, onClose, onRefresh }: { sessionId: string;
 }
 
 // =====================================================================
+// 下载桌面客户端 — 提供 Mobius Desktop (Fork B 薄壳) 三平台下载链接
+//   - 内置 python + 自动装 aimux 反连, 把本机注册为可调度节点
+//   - 产物在服务器 /desktop-builds/ 下, 经同源静态托管提供
+// =====================================================================
+const DESKTOP_VERSION = '0.2.0'
+const DESKTOP_BUILDS: Array<{ label: string; sub: string; file: string }> = [
+  { label: 'Windows', sub: 'x64 · Intel / AMD 64位', file: `mobius-desktop-${DESKTOP_VERSION}-win-x64.zip` },
+  { label: 'macOS', sub: 'Apple Silicon · M1/M2/M3/M4', file: `mobius-desktop-${DESKTOP_VERSION}-mac-arm64.zip` },
+  { label: 'macOS', sub: 'Intel · x64', file: `mobius-desktop-${DESKTOP_VERSION}-mac-x64.zip` },
+]
+
+export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
+  const { theme } = useStore()
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-[520px] max-w-[92vw] max-h-[85vh] overflow-y-auto rounded-2xl p-6 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>下载桌面客户端</h3>
+            <div className="text-[11px] mt-0.5" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
+              Mobius Desktop v{DESKTOP_VERSION} · 登录后自动把本机注册为可调度节点 (aimux 反连)
+            </div>
+          </div>
+          <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
+        </div>
+
+        <div className="space-y-2 mt-4">
+          {DESKTOP_BUILDS.map(b => (
+            <a key={b.file} href={`/desktop-builds/${b.file}`} download
+              className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
+              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                </svg>
+                <div>
+                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
+                  <div className="text-[11px]" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>{b.sub}</div>
+                </div>
+              </div>
+              <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: '#0a84ff', color: '#fff' }}>下载</span>
+            </a>
+          ))}
+        </div>
+
+        <div className="text-[11px] mt-4 space-y-1" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
+          <div>· 首次启动会自动在本机创建 Python 虚拟环境并安装 aimux (需联网, 约 30-90 秒)</div>
+          <div>· macOS 包未签名, 首次打开需右键 → 打开</div>
+          <div>· 登录后桌面端会以 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>desktop-&lt;主机名&gt;</code> 注册到 AIMUX 节点列表</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // 修改密码
 // =====================================================================
 export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
