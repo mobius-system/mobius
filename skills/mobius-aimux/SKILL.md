@@ -130,7 +130,7 @@ aimux kill "<device_name>/<session-name>"
 > ⚠️ `kill` 不支持通配符/批量，需逐个销毁。
 
 
-## 7. 端到端实战（连接 yahboom Jetson 反向设备）
+## 7. 端到端实战（连接 Jetson 设备）
 
 ```bash
 # 0. PATH（首次）
@@ -155,7 +155,7 @@ aimux kill "<device_name>/<session-name>"
 ```
 
 
-## 8. 反向设备常见问题
+## 常见问题
 
 | 现象 | 原因 / 解决 |
 |------|-------------|
@@ -167,7 +167,7 @@ aimux kill "<device_name>/<session-name>"
 | capture 输出乱码 | ANSI 码，用第 4.2 节 `sed` 过滤 |
 
 
-## 9. 速查表
+## 速查表
 
 ```bash
 aimux remote ls [--json]                                 # 识别反向设备 + 拿 profile
