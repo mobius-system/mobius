@@ -199,7 +199,14 @@ def promote_frontend_build(staging_dir: Path, step_label: str = "[2/4]") -> None
             BACKUP_PUBLIC_DIR.rename(PUBLIC_DIR)
         raise
 
-    # 替换成功, backup 没用了, 删掉.
+    # 替换成功. backup 里的 desktop-builds 是手放的桌面端构建产物 (不在 vite 产物里),
+    # promote 整目录交换会丢; 这里 move 回新 public, 保证 /desktop-builds/* 下载链接不因部署失效.
+    _db_src = BACKUP_PUBLIC_DIR / "desktop-builds"
+    _db_dst = PUBLIC_DIR / "desktop-builds"
+    if _db_src.is_dir() and not _db_dst.exists():
+        _db_src.rename(_db_dst)
+
+    # backup 没用了, 删掉.
     if BACKUP_PUBLIC_DIR.exists():
         shutil.rmtree(BACKUP_PUBLIC_DIR)
 
