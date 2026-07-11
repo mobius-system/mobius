@@ -320,6 +320,7 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
       selection_snapshot: selectionSnapshot,
       model: resolvedModel.sessionModelValue,
       language: sessionLanguage,
+      pc_client_metadata: req.body?.pc_client_metadata,
     });
   } catch (e) {
     if (String((e as Error).message || '').includes('idx_sessions_v2_one_chief_per_research')) {

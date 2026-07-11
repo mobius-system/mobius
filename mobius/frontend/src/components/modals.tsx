@@ -1908,7 +1908,7 @@ function appendAgentSkillInstruction(desc: string, autoText: string, nextText: s
 // PcTaskModeSection — 仅 electron 桌面端: 新建 Session 第1步模型栏上方的 PC 任务模式区块。
 // 通过 window.mobiusDesktop bridge 读写本机 project 绑定路径 + 工作模式偏好 (存桌面端 userData)。
 // 浏览器里 window.mobiusDesktop 不存在 → 不渲染 (NewSessionModal 调用处已用 isDesktop 守卫)。
-function PcTaskModeSection({ projectId, isDark }: { projectId?: string; isDark: boolean }) {
+function PcTaskModeSection({ projectId, isDark, onModeChange }: { projectId?: string; isDark: boolean; onModeChange?: (m: 'hub' | 'pc' | 'dual') => void }) {
   type Mode = 'hub' | 'pc' | 'dual'
   const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
   // projectId 兜底从 URL 取: NewSessionModal 某些调用入口未传 projectId, 但用户在项目页时 URL 含 /u/:user/p/:projectId;
@@ -1918,12 +1918,15 @@ function PcTaskModeSection({ projectId, isDark }: { projectId?: string; isDark: 
   const [mode, setMode] = useState<Mode>('dual')
   const [ready, setReady] = useState(false)
   useEffect(() => {
-    if (!md || !pid) { setReady(true); return }
+    if (!md) { setReady(true); return }
+    if (!pid) { setReady(true); onModeChange?.('dual'); return }
     let cancelled = false
     Promise.all([
       md.getProjectLocalPath?.(pid).then((p: string | null | undefined) => { if (!cancelled) setPath(p || '') }),
       md.getProjectWorkMode?.(pid).then((m: string | null | undefined) => {
-        if (!cancelled) setMode(m === 'hub' || m === 'pc' || m === 'dual' ? m : 'dual')
+        if (cancelled) return
+        const valid: Mode = m === 'hub' || m === 'pc' || m === 'dual' ? m : 'dual'
+        setMode(valid); onModeChange?.(valid)
       }),
     ]).finally(() => { if (!cancelled) setReady(true) })
     return () => { cancelled = true }
@@ -1935,7 +1938,7 @@ function PcTaskModeSection({ projectId, isDark }: { projectId?: string; isDark: 
     const r = await md.confirmProjectPath?.(pid, picked)
     if (r?.ok) setPath(picked)
   }
-  const chooseMode = (m: Mode) => { setMode(m); md?.setProjectWorkMode?.(pid, m) }
+  const chooseMode = (m: Mode) => { setMode(m); onModeChange?.(m); if (pid) md?.setProjectWorkMode?.(pid, m) }
   if (!ready) return null
   const MODES: Array<{ k: Mode; t: string; s: string }> = [
     { k: 'hub', t: '只在 Mobius 中枢工作', s: 'session 在服务器跑' },
@@ -2049,13 +2052,17 @@ export function NewSessionModal({
   const [name, setName] = useState(() => isGuidedDemo
     ? (guidedDemoState?.sessionName || '')
     : (initialPreset?.name || initialDraft?.name || defaultName || formatDefaultSessionName(defaultNamePrefix)))
-  // electron 桌面端: session 默认名追加本机标识后缀 [OS · hostname], 方便区分不同机器创建的 session.
+  // PC 任务模式: work_mode (hub/pc/dual) + aimux_id. 仅 electron 桌面端; web 端保持 null 不注入任何提示、不影响 skill.
+  const [workMode, setWorkMode] = useState<'hub' | 'pc' | 'dual' | null>(null)
+  const [aimuxId, setAimuxId] = useState<string | null>(null)
+  // electron 桌面端: session 默认名追加本机标识后缀 [OS · hostname] + 顺带取 aimux_id.
   // 仅 mount 一次; bootData 异步取, 函数式 setName 不覆盖用户后续编辑; 草稿已带该 tag 则不重复追加.
   useEffect(() => {
     const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
     if (!md?.isDesktop) return
     md.getBootData?.().then?.((b: any) => {
       if (!b?.hostname) return
+      setAimuxId(b.aimuxIdentifier || null)
       const osName = b.platform === 'win32' ? 'Windows' : b.platform === 'darwin' ? 'macOS' : b.platform === 'linux' ? 'Linux' : (b.platform || 'PC')
       const tag = `[${osName} · ${b.hostname}]`
       setName(prev => prev && !prev.includes(tag) ? `${prev} ${tag}` : prev)
@@ -2274,6 +2281,8 @@ export function NewSessionModal({
     return !!chosenAgentSkill && agentSkills.some(sk => sk.id === id && sk.id !== chosenAgentSkill.id)
   }, [agentSkills, chosenAgentSkill])
   const matchesRequiredSkill = useCallback((sk: { id?: string; name?: string; dirName?: string | null }) => {
+    // PC 任务模式 (仅桌面端 pc/dual): mobius-aimux skill 强制必选. web 端 workMode 恒 null → 不触发, 不改变 web 端 skill 行为.
+    if ((workMode === 'pc' || workMode === 'dual') && (sk.dirName || '').replace(/_/g, '-') === 'mobius-aimux') return true
     if (!requiredSessionSkill) return false
     const dirName = requiredSessionSkill.dirName
     const normalizedName = (requiredSessionSkill.name || dirName).replace(/_/g, '-')
@@ -2284,7 +2293,7 @@ export function NewSessionModal({
       || itemName === normalizedName
       || itemId === `builtin:${dirName}`
       || itemId.endsWith(`:${dirName}`)
-  }, [requiredSessionSkill])
+  }, [requiredSessionSkill, workMode])
 
   const normalizeSkillExclusions = useCallback((skillEx: Set<string>, availableSkillIds?: Set<string>) => {
     const next = new Set(skillEx)
@@ -2485,6 +2494,8 @@ export function NewSessionModal({
           excluded_skill_ids: Array.from(excludedSkills),
           excluded_memory_ids: Array.from(excludedMemories),
           continue_from_session_id: continueFromSessionId || undefined,
+          // PC 任务模式 (仅桌面端): workMode 非空才附带 pc_client_metadata; web 端 workMode 恒 null → body 完全不变.
+          ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId } } : {}),
         }),
       })
       draftClear(DRAFT_KEY)
@@ -2642,7 +2653,7 @@ export function NewSessionModal({
                 </div>
               )}
               {typeof window !== 'undefined' && (window as any).mobiusDesktop?.isDesktop && (
-                <PcTaskModeSection projectId={projectId} isDark={isDark} />
+                <PcTaskModeSection projectId={projectId} isDark={isDark} onModeChange={setWorkMode} />
               )}
               <div>
                 <div className="text-[12px] mb-1.5 flex items-center justify-between" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>

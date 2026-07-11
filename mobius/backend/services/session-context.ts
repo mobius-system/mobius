@@ -541,6 +541,32 @@ function buildRandomEmojiPrefix(): string {
   return `${picked.join('')}\n`;
 }
 
+// PC 任务模式提示词注入 (仅桌面端 session.pc_client_metadata 非空时; web 端 null → 直接 return, 不改 web 行为).
+// pc_client_metadata 在 DB 是 JSON 字符串 {work_mode, aimux_id}; zh/en 共用同一函数 (提示词用用户指定的中文原文).
+function add_pc_task_mode_info(lines: string[], session: any): void {
+  if (!session) return;
+  let meta: any = null;
+  try {
+    meta = typeof session.pc_client_metadata === 'string'
+      ? JSON.parse(session.pc_client_metadata)
+      : session.pc_client_metadata;
+  } catch { return; }
+  const mode = meta?.work_mode;
+  const aimuxId = meta?.aimux_id;
+  if (!mode || !aimuxId) return;
+  let prompt = '';
+  if (mode === 'hub') {
+    prompt = `【不要使用aimux连接到以下远程对象： ${aimuxId}】`;
+  } else if (mode === 'pc') {
+    prompt = `【使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${aimuxId}】`;
+  } else if (mode === 'dual') {
+    prompt = `【你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则。】`;
+  }
+  if (!prompt) return;
+  lines.push('\n## PC 任务模式\n');
+  lines.push(prompt + '\n');
+}
+
 const ADD_FNS: Record<string, any> = {
   zh: {
     header: zh_add_header,
@@ -555,6 +581,7 @@ const ADD_FNS: Record<string, any> = {
     completionFlag: zh_add_completion_flag_info,
     issue: zh_add_issue_level_info,
     session: zh_add_session_level_info,
+    pcTaskMode: add_pc_task_mode_info,
   },
   en: {
     header: en_add_header,
@@ -569,6 +596,7 @@ const ADD_FNS: Record<string, any> = {
     completionFlag: en_add_completion_flag_info,
     issue: en_add_issue_level_info,
     session: en_add_session_level_info,
+    pcTaskMode: add_pc_task_mode_info,
   },
 };
 
@@ -587,6 +615,7 @@ function formatBody({ user, project, issue, research, session, skills, memories,
   fns.completionFlag(lines, session, project);
   fns.issue(lines, issue);
   fns.session(lines, session);
+  fns.pcTaskMode(lines, session);
   return `${buildRandomEmojiPrefix()}${lines.join('\n').trimEnd()}`;
 }
 
