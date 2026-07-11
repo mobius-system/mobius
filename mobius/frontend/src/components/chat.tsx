@@ -11,6 +11,7 @@ import { WebTerminalModal } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
 import { useVisibleJsonl } from './session-jsonl-filter'
 import { SessionStatusChip } from './session-status-chip'
+import { AimuxLinkIndicator } from './aimux-link-indicator'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { readJsonlCacheSync, readJsonlCacheFromIdb, writeJsonlCache } from '../services/session-jsonl-cache'
 import { MobiusLogo } from './mobius-logo'
@@ -1054,8 +1055,7 @@ function ChatHeaderOverflowMenu({
           <button className={itemClass}
             onClick={() => { setOpen(false); onOpenTerminal() }}>
             <span className="flex items-center gap-2">
-              <Terminal className="w-3.5 h-3.5" strokeWidth={1.75} />
-              Web 终端
+              打开终端（Terminal）
             </span>
           </button>
           {canSendProjectKnowledge && (
@@ -3092,6 +3092,7 @@ export function ChatArea() {
               waiting={!!(backendAlive && !backendWorking)}
               done={backendJobDone === true && !backendAlive}
             />
+            <AimuxLinkIndicator session={currentSession ?? currentTask} />
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">

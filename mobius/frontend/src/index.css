@@ -5446,3 +5446,42 @@ body.mobius-resizing .mobius-resizable-handle {
 @media (max-width: 900px) {
   .mobius-topnav-actions button { min-height: 36px; min-width: 36px; }
 }
+
+/* ======================================================================
+   桌面端 aimux 连接状态指示器 (AimuxLinkIndicator)
+   仅 Electron + 当前 session 由 PC client 创建 (有效 pc_client_metadata) 时渲染。
+   connected: 服务器↔笔记本 双向数据包流动; 其他状态: 中间断开 + 火花。
+   --aimux-wire-len 由组件 inline 设定, 控制数据包行程。
+   ====================================================================== */
+.aimux-link-indicator { line-height: 0; }
+.aimux-link-indicator .aimux-packet-right {
+  animation: aimux-packet-right 1.6s linear infinite both;
+}
+.aimux-link-indicator .aimux-packet-left {
+  animation: aimux-packet-left 1.6s linear infinite both;
+  animation-delay: 0.8s;
+}
+.aimux-link-indicator .aimux-spark {
+  animation: aimux-spark 1.1s ease-in-out infinite both;
+}
+@keyframes aimux-packet-right {
+  0%   { transform: translateX(0); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateX(calc(var(--aimux-wire-len, 32px) - 3px)); opacity: 0; }
+}
+@keyframes aimux-packet-left {
+  0%   { transform: translateX(calc(var(--aimux-wire-len, 32px) - 3px)); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateX(0); opacity: 0; }
+}
+@keyframes aimux-spark {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  50%      { opacity: 1; transform: scale(1.3); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aimux-link-indicator .aimux-packet-right,
+  .aimux-link-indicator .aimux-packet-left,
+  .aimux-link-indicator .aimux-spark { animation: none; opacity: 0.8; }
+}

@@ -116,7 +116,8 @@ const SESSION_LIST_COLUMNS = `
       s.original_issue_id,
       s.original_project_id,
       s.deleted_at,
-      s.completed_at`;
+      s.completed_at,
+      s.pc_client_metadata`;
 
 const Sessions = {
   findById: (id: string): SessionRow | undefined => db.prepare('SELECT * FROM sessions_v2 WHERE session_id = ?').get(id) as SessionRow | undefined,
