@@ -252,12 +252,12 @@ def ensure_aimux_bridge_runtime_env() -> None:
     os.environ.setdefault("AIMUX_BRIDGE_HOST", "127.0.0.1")
     os.environ.setdefault("AIMUX_BRIDGE_PORT", "33315")
     # AIMUX_BRIDGE_RUNTIME 不显式设: 让 aimux CLI/broker 走自身默认 fallback (~/.aimux/bridge/runtime.json).
-    # 这样 agent 调 aimux CLI 时无需 export env, 跟 aimux 0.1.8 上游行为一致.
+    # 这样 agent 调 aimux CLI 时无需 export env, 跟 aimux 0.1.9 上游行为一致.
     # 若调用方显式设了 AIMUX_BRIDGE_RUNTIME (如老部署 / 容器化场景), ecosystem.config.js envKeys 仍会透传.
 
 
 def ensure_aimux_bridge_venv() -> None:
-    """Install mobius/.venv-aimux with aimux==0.1.8 if missing (idempotent)."""
+    """Install mobius/.venv-aimux with aimux==0.1.9 if missing (idempotent)."""
     # 用 venv 内的 aimux 二进制存在性作为"是否已装"的哨兵, 避免重复跑 setup 脚本.
     venv_aimux = HERE / ".venv-aimux" / "bin" / "aimux"
     if venv_aimux.exists():
