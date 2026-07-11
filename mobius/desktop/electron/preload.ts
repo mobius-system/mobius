@@ -18,6 +18,8 @@ const mobiusDesktop = {
   getAimuxDetails: () => ipcRenderer.invoke("aimux:details"),
   getAimuxVersion: () => ipcRenderer.invoke("aimux:version"),
   reconnectAimux: () => ipcRenderer.invoke("aimux:reconnect"),
+  getAimuxEnabled: () => ipcRenderer.invoke("aimux:get-enabled"),
+  setAimuxEnabled: (enabled: boolean) => ipcRenderer.invoke("aimux:set-enabled", enabled),
   onAimuxStatus: (cb: (s: { state: string; detail?: string }) => void) => {
     const listener = (_e: unknown, s: { state: string; detail?: string }) => cb(s);
     ipcRenderer.on("aimux:status-changed", listener);

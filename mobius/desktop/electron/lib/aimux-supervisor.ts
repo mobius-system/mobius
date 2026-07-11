@@ -4,7 +4,9 @@ import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-export type AimuxState = "stopped" | "starting" | "connected" | "failed";
+// disabled：用户手动关闭了 aimux 反连（区别于 stopped=未启动/已停止、failed=连接失败）。
+// supervisor 自身不会产生 disabled，只有 main 进程在用户切换开关时设置。
+export type AimuxState = "stopped" | "starting" | "connected" | "failed" | "disabled";
 
 export interface AimuxStatus {
   state: AimuxState;

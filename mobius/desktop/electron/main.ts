@@ -13,6 +13,7 @@ import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from 
 import { injectBadge, setBadge } from "./lib/status-overlay";
 import { injectProjectPathOverlay, dismissOverlay, injectToast } from "./lib/project-overlay";
 import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
+import { getAimuxEnabled, setAimuxEnabled } from "./lib/desktop-settings";
 import { createStatusWindow } from "./status-window";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -23,6 +24,9 @@ let supervisor: AimuxSupervisor | null = null;
 let creds: StoredCreds | null = null;
 let lastStatus: AimuxStatus = { state: "stopped" };
 let installing = false;
+// aimux 反向连接开关（持久化于 userData/desktop-settings.json，默认开）。
+// 关闭后本机不再作为可调度节点连入 mobius，桌面端其他功能不受影响。
+let aimuxEnabled = true;
 
 // aimux 日志环形缓冲（供状态面板查看历史 + 失败原因）
 const LOG_MAX = 300;
@@ -197,10 +201,10 @@ async function seedWebAuth(origin: string, jwt: string): Promise<void> {
   });
 }
 
-async function bootDesktop(): Promise<void> {
-  if (!mainWindow || !creds) return;
-  const server = serverOrigin();
-
+/** 装 aimux（幂等）→ 反向连接。供 bootDesktop(启动) 与 applyAimuxEnabled(开启) 共用。
+ *  安装期间若用户关闭开关，装完也不连（末尾按 aimuxEnabled 复核）。 */
+async function startAimuxConnection(): Promise<void> {
+  if (!creds || installing) return;
   installing = true;
   emitStatus({ state: "starting", detail: "首次启动需在本机下载 aimux（联网，约 30-90 秒）…" });
   appendAimuxLog(`\n==== [${new Date().toISOString()}] ensure aimux (install) ====\n`);
@@ -215,13 +219,27 @@ async function bootDesktop(): Promise<void> {
 
   if (!inst.ok) {
     emitStatus({ state: "failed", detail: inst.error });
+    return;
+  }
+  if (!aimuxEnabled) return; // 安装期间用户关闭了开关：装完也不连
+  emitStatus({ state: "starting", detail: "aimux 就绪，正在反向连接 mobius…" });
+  supervisor = buildSupervisor();
+  supervisor?.start();
+}
+
+async function bootDesktop(): Promise<void> {
+  if (!mainWindow || !creds) return;
+  const server = serverOrigin();
+
+  if (aimuxEnabled) {
+    await startAimuxConnection();
+    emitStatus({ state: lastStatus.state, detail: "正在登录工作台…" });
   } else {
-    emitStatus({ state: "starting", detail: "aimux 就绪，正在反向连接 mobius…" });
-    supervisor = buildSupervisor();
-    supervisor?.start();
+    // 用户已关闭 aimux 反连：不装不连，直接进工作台。徽标显示"已关闭"。
+    emitStatus({ state: "disabled", detail: "aimux 连接已关闭（可在 aimux 状态面板开启）" });
+    appendAimuxLog(`\n==== [${new Date().toISOString()}] aimux disabled by user, skip reverse connect ====\n`);
   }
 
-  emitStatus({ state: lastStatus.state, detail: "正在登录工作台…" });
   await seedWebAuth(server, creds.jwt);
   void mainWindow.loadURL(`${server}/u/${encodeURIComponent(creds.username)}`);
 }
@@ -253,10 +271,14 @@ async function runUpdateAimux(): Promise<{ ok: boolean; version?: string; error?
     emitStatus({ state: "failed", detail: r.error });
     return { ok: false, error: r.error };
   }
-  // 3) 升级成功, 重新反向连接.
-  emitStatus({ state: "starting", detail: `aimux ${r.version} 已就绪, 正在反向连接…` });
-  supervisor = buildSupervisor();
-  supervisor?.start();
+  // 3) 升级成功. 开关开着才重连；关着则只升级不连。
+  if (aimuxEnabled) {
+    emitStatus({ state: "starting", detail: `aimux ${r.version} 已就绪, 正在反向连接…` });
+    supervisor = buildSupervisor();
+    supervisor?.start();
+  } else {
+    emitStatus({ state: "disabled", detail: `aimux ${r.version} 已更新（连接已关闭）` });
+  }
   return { ok: true, version: r.version };
 }
 
@@ -266,6 +288,39 @@ async function runLogout(): Promise<void> {
   clearCreds();
   creds = null;
   mainWindow?.loadFile(join(currentDir, "../renderer/index.html"));
+}
+
+/** 切换 aimux 反连开关并即时生效：关=停 supervisor+反连子进程；开=装+连（未登录则等下次 boot）。 */
+async function applyAimuxEnabled(enabled: boolean): Promise<void> {
+  aimuxEnabled = enabled;
+  setAimuxEnabled(enabled);
+  if (!enabled) {
+    await supervisor?.stop();
+    supervisor = null;
+    emitStatus({ state: "disabled", detail: "aimux 连接已关闭" });
+    appendAimuxLog(`\n==== [${new Date().toISOString()}] aimux disabled by user ====\n`);
+  } else if (creds && mainWindow) {
+    if (installing) {
+      // 正在安装：装完会按 aimuxEnabled 自动连接，这里只提示
+      emitStatus({ state: "starting", detail: "aimux 安装中，完成后将自动连接…" });
+    } else {
+      await startAimuxConnection();
+    }
+  }
+  updateMenuChecked();
+}
+
+/** 把菜单里 "允许 aimux 反向连接" checkbox 同步到当前 aimuxEnabled（状态面板切换后调用）。 */
+function updateMenuChecked(): void {
+  const menu = Menu.getApplicationMenu();
+  if (!menu) return;
+  for (const top of menu.items) {
+    const sub = top.submenu;
+    if (!sub) continue;
+    for (const it of sub.items) {
+      if (it.label === "允许 aimux 反向连接") { it.checked = aimuxEnabled; return; }
+    }
+  }
 }
 
 // ——— 窗口 ———
@@ -327,6 +382,15 @@ function buildMenu(): void {
         { label: "同步最新代码", accelerator: "CmdOrCtrl+Shift+R", click: () => runSyncReload() },
         { label: "更新 aimux", click: () => void runUpdateAimux() },
         { label: "aimux 状态面板", accelerator: "CmdOrCtrl+Shift+A", click: () => createStatusWindow() },
+        {
+          label: "允许 aimux 反向连接",
+          type: "checkbox",
+          checked: aimuxEnabled,
+          click: (mi) => {
+            if (installing) { mi.checked = aimuxEnabled; return; } // 安装中不允许切换，还原勾选
+            void applyAimuxEnabled(mi.checked);
+          },
+        },
         { type: "separator" },
         { label: "切换账号 / 服务器", click: () => void runLogout() },
         { role: "quit", label: "退出" },
@@ -373,6 +437,7 @@ ipcMain.handle("app:sync-reload", () => {
 });
 ipcMain.handle("aimux:details", () => ({
   status: lastStatus,
+  aimuxEnabled,
   identifier: creds?.identifier || "",
   serverOrigin: serverOrigin(),
   venvDir: venvDir(),
@@ -385,11 +450,18 @@ ipcMain.handle("aimux:details", () => ({
 ipcMain.handle("aimux:version", () => getAimuxVersion());
 ipcMain.handle("aimux:reconnect", async () => {
   if (!creds) return { ok: false, error: "未登录" };
+  if (!aimuxEnabled) return { ok: false, error: "aimux 连接已关闭，请先开启开关" };
   await supervisor?.stop();
   supervisor = buildSupervisor();
   if (!supervisor) return { ok: false, error: "aimux 未就绪（venv 可能未建好），请稍后重试" };
   supervisor.start();
   return { ok: true };
+});
+ipcMain.handle("aimux:get-enabled", () => aimuxEnabled);
+ipcMain.handle("aimux:set-enabled", async (_e, enabled: boolean) => {
+  if (installing) return { ok: false as const, error: "正在安装 aimux，请稍候" };
+  await applyAimuxEnabled(Boolean(enabled));
+  return { ok: true as const, enabled: aimuxEnabled };
 });
 ipcMain.handle("app:open-status", () => {
   createStatusWindow();
@@ -444,6 +516,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    aimuxEnabled = getAimuxEnabled();
     buildMenu();
     createWindow();
 

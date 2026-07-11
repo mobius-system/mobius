@@ -21,6 +21,16 @@
       </header>
 
       <section class="card">
+        <label class="toggle-row">
+          <div class="toggle-text">
+            <strong>允许 aimux 反向连接</strong>
+            <small>关闭后本机不再作为可调度节点连入 mobius；桌面端登录与工作台等其他功能不受影响</small>
+          </div>
+          <button id="toggle-enabled" class="switch" role="switch" aria-checked="true" aria-label="允许 aimux 反向连接"><span class="knob"></span></button>
+        </label>
+      </section>
+
+      <section class="card">
         <h2>节点</h2>
         <dl class="kv">
           <dt>identifier</dt><dd id="identifier">—</dd>

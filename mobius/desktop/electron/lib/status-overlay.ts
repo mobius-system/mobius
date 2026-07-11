@@ -24,6 +24,7 @@ const CSS = `
 #${BADGE_ID}.s-connected .dot { background: #34c759; }
 #${BADGE_ID}.s-failed   .dot { background: #ff3b30; }
 #${BADGE_ID}.s-stopped  .dot { background: #999; }
+#${BADGE_ID}.s-disabled .dot { background: #999; }
 @keyframes __md_pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 `;
 
@@ -32,6 +33,7 @@ const TEXT: Record<AimuxState, string> = {
   connected: "aimux 已连接",
   failed: "aimux 断开",
   stopped: "aimux 已断开",
+  disabled: "aimux 已关闭",
 };
 
 /** 首次进入远程页时插入徽标容器（已存在则跳过），并绑定拖拽。 */
