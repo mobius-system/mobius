@@ -1916,11 +1916,17 @@ function PcTaskModeSection({ projectId, isDark, onModeChange, onPathChange }: { 
   const pid = projectId || (typeof window !== 'undefined' ? (window.location.pathname.match(/\/u\/[^/]+\/p\/([^/?#]+)/) || [])[1] : undefined)
   const [path, setPath] = useState('')
   const [mode, setMode] = useState<Mode>('dual')
+  // aimux 连接状态: 仅 state==='connected' 时 pc/dual 可用; 未连接 (starting/failed/stopped) 时 pc/dual 灰色禁用并回落 hub.
+  const [aimuxConnected, setAimuxConnected] = useState(false)
   const [ready, setReady] = useState(false)
   useEffect(() => {
     if (!md) { setReady(true); return }
     if (!pid) { setReady(true); onModeChange?.('dual'); return }
     let cancelled = false
+    // aimux 状态: 初始快照 + 实时订阅 (连接状态会动态变化)
+    const unsubStatus = md.onAimuxStatus?.((s: { state?: string } | null | undefined) => {
+      if (!cancelled) setAimuxConnected(!!s && s.state === 'connected')
+    })
     Promise.all([
       md.getProjectLocalPath?.(pid).then((p: string | null | undefined) => { if (!cancelled) { setPath(p || ''); onPathChange?.(p || '') } }),
       md.getProjectWorkMode?.(pid).then((m: string | null | undefined) => {
@@ -1928,9 +1934,17 @@ function PcTaskModeSection({ projectId, isDark, onModeChange, onPathChange }: { 
         const valid: Mode = m === 'hub' || m === 'pc' || m === 'dual' ? m : 'dual'
         setMode(valid); onModeChange?.(valid)
       }),
+      md.getAimuxStatus?.().then((s: { state?: string } | null | undefined) => { if (!cancelled) setAimuxConnected(!!s && s.state === 'connected') }),
     ]).finally(() => { if (!cancelled) setReady(true) })
-    return () => { cancelled = true }
+    return () => { cancelled = true; unsubStatus?.() }
   }, [md, pid])
+  // 不变式: aimux 未连接时 mode 强制回落 hub (pc/dual 不可用). 覆盖初值/用户偏好为 pc/dual 但 aimux 断开的情形.
+  useEffect(() => {
+    if (!ready) return
+    if (!aimuxConnected && mode !== 'hub') {
+      setMode('hub'); onModeChange?.('hub')
+    }
+  }, [aimuxConnected, mode, ready])
   const choosePath = async () => {
     if (!md || !pid) return
     const picked = await md.pickDirectory?.()
@@ -1938,7 +1952,11 @@ function PcTaskModeSection({ projectId, isDark, onModeChange, onPathChange }: { 
     const r = await md.confirmProjectPath?.(pid, picked)
     if (r?.ok) { setPath(picked); onPathChange?.(picked) }
   }
-  const chooseMode = (m: Mode) => { setMode(m); onModeChange?.(m); if (pid) md?.setProjectWorkMode?.(pid, m) }
+  const chooseMode = (m: Mode) => {
+    // aimux 未连接时 pc/dual 不可选 (按钮已 disabled, 此为双保险)
+    if (m !== 'hub' && !aimuxConnected) return
+    setMode(m); onModeChange?.(m); if (pid) md?.setProjectWorkMode?.(pid, m)
+  }
   if (!ready) return null
   const MODES: Array<{ k: Mode; t: string; s: string }> = [
     { k: 'hub', t: '只在 Mobius 中枢工作', s: 'session 在服务器跑' },
@@ -1959,8 +1977,9 @@ function PcTaskModeSection({ projectId, isDark, onModeChange, onPathChange }: { 
       <div className="grid grid-cols-3 gap-2">
         {MODES.map(opt => {
           const active = mode === opt.k
+          const disabled = opt.k !== 'hub' && !aimuxConnected
           return (
-            <button key={opt.k} type="button" onClick={() => chooseMode(opt.k)} className="min-h-14 rounded-xl text-left px-2.5 py-2 transition-colors" style={{ background: active ? 'rgba(59,130,246,0.12)' : 'var(--input-bg)', border: `1px solid ${active ? '#3b82f6' : 'var(--input-border)'}`, color: isDark ? '#f1f5f9' : '#1e293b' }}>
+            <button key={opt.k} type="button" disabled={disabled} onClick={() => chooseMode(opt.k)} title={disabled ? 'aimux 未连接，此模式不可用' : undefined} className="min-h-14 rounded-xl text-left px-2.5 py-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: active ? 'rgba(59,130,246,0.12)' : 'var(--input-bg)', border: `1px solid ${active ? '#3b82f6' : 'var(--input-border)'}`, color: isDark ? '#f1f5f9' : '#1e293b' }}>
               <div className="text-[12px] font-medium leading-snug">{opt.t}</div>
               <div className="text-[10px] mt-0.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.s}</div>
             </button>
