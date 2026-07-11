@@ -6,7 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 // 首装 pin 的 aimux 版本（与 mobius 引导页一致）。升级后由 upgradeAimux 改写 marker。
-export const AIMUX_PIN = "aimux==0.1.9";
+export const AIMUX_PIN = "aimux";
 
 const WIN = process.platform === "win32";
 

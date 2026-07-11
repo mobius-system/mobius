@@ -57,7 +57,7 @@ function gatherHostInfo(opts) {
     appVersion: opts.appVersion
   };
 }
-const AIMUX_PIN = "aimux==0.1.9";
+const AIMUX_PIN = "aimux";
 const WIN = process.platform === "win32";
 function bundledPythonExe() {
   const candidates = WIN ? [
