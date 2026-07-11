@@ -7,7 +7,7 @@ const BADGE_ID = "__mobius_desktop_status_badge__";
 
 const CSS = `
 #${BADGE_ID} {
-  position: fixed; top: 10px; right: 10px; z-index: 2147483647;
+  position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 2147483647;
   font: 12px/1.4 -apple-system, "Segoe UI", Roboto, "PingFang SC", sans-serif;
   padding: 5px 10px; border-radius: 14px; color: #fff;
   background: rgba(40,40,40,0.92); box-shadow: 0 2px 8px rgba(0,0,0,0.3);
