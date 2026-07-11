@@ -115,20 +115,22 @@ export async function getAimuxVersion(): Promise<string> {
   return m ? m[1] : "未知";
 }
 
-/** "更新 aimux"按钮：升到最新版并回写 marker（解除首装 pin）。 */
-export async function upgradeAimux(): Promise<{ ok: boolean; version?: string; error?: string }> {
+/** "更新 aimux"按钮：升到最新版并回写 marker（解除首装 pin）。onProgress 回传 pip 实时输出供状态面板显示。 */
+export async function upgradeAimux(onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; version?: string; error?: string }> {
   if (!fs.existsSync(venvPython())) return { ok: false, error: "venv 尚未创建" };
-  const r = await run(venvPython(), [
-    "-m",
-    "pip",
-    "install",
-    "--no-input",
-    "--disable-pip-version-check",
-    "--upgrade",
-    "aimux",
-  ]);
+  onProgress?.({ phase: "install", detail: "pip install --upgrade aimux…" });
+  const r = await run(
+    venvPython(),
+    ["-m", "pip", "install", "--no-input", "--disable-pip-version-check", "--upgrade", "aimux"],
+    (line) => {
+      if (/downloading|collecting|installing|using cached|uninstalling|successfully|%\s*\d|━|─/i.test(line)) {
+        onProgress?.({ phase: "install", detail: line.slice(0, 100) });
+      }
+    }
+  );
   if (r.code !== 0) return { ok: false, error: r.stderr || r.stdout };
   const show = await run(venvPython(), ["-m", "pip", "show", "aimux"]);
   const m = show.stdout.match(/Version:\s*(\S+)/);
+  onProgress?.({ phase: "ready" });
   return { ok: true, version: m ? m[1] : "unknown" };
 }

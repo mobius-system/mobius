@@ -229,13 +229,24 @@ function runSyncReload(): void {
 
 async function runUpdateAimux(): Promise<{ ok: boolean; version?: string; error?: string }> {
   if (installing) return { ok: false, error: "正在安装中，请稍候" };
+  // 1) 先断开现有连接 (停 supervisor + 反连子进程), 释放 venv 文件锁, 避免 pip 升级时 aimux 还在跑.
+  emitStatus({ state: "starting", detail: "断开现有连接, 准备更新 aimux…" });
+  await supervisor?.stop();
+  supervisor = null;
+  // 2) 升级: pip 实时输出 -> appendLog (状态面板可见) + emitStatus (徽标显示当前阶段).
   emitStatus({ state: "starting", detail: "正在更新 aimux…" });
-  const r = await upgradeAimux();
+  const r = await upgradeAimux((p) => {
+    if (p.detail) {
+      appendLog(p.detail);
+      emitStatus({ state: "starting", detail: p.detail });
+    }
+  });
   if (!r.ok) {
     emitStatus({ state: "failed", detail: r.error });
     return { ok: false, error: r.error };
   }
-  await supervisor?.stop();
+  // 3) 升级成功, 重新反向连接.
+  emitStatus({ state: "starting", detail: `aimux ${r.version} 已就绪, 正在反向连接…` });
   supervisor = buildSupervisor();
   supervisor?.start();
   return { ok: true, version: r.version };
