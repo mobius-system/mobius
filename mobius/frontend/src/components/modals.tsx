@@ -2052,8 +2052,10 @@ export function NewSessionModal({
   const [name, setName] = useState(() => isGuidedDemo
     ? (guidedDemoState?.sessionName || '')
     : (initialPreset?.name || initialDraft?.name || defaultName || formatDefaultSessionName(defaultNamePrefix)))
-  // PC 任务模式: work_mode (hub/pc/dual) + aimux_id. 仅 electron 桌面端; web 端保持 null 不注入任何提示、不影响 skill.
-  const [workMode, setWorkMode] = useState<'hub' | 'pc' | 'dual' | null>(null)
+  // PC 任务模式: work_mode (hub/pc/dual) + aimux_id. 桌面端初值 'dual' (默认双侧, 避免 mount 秒提交时 null 导致 UI 与必选逻辑不一致); web 端恒 null → 不注入、不影响 skill.
+  const [workMode, setWorkMode] = useState<'hub' | 'pc' | 'dual' | null>(
+    typeof window !== 'undefined' && !!(window as any).mobiusDesktop?.isDesktop ? 'dual' : null
+  )
   const [aimuxId, setAimuxId] = useState<string | null>(null)
   // electron 桌面端: session 默认名追加本机标识后缀 [OS · hostname] + 顺带取 aimux_id.
   // 仅 mount 一次; bootData 异步取, 函数式 setName 不覆盖用户后续编辑; 草稿已带该 tag 则不重复追加.
@@ -2305,15 +2307,15 @@ export function NewSessionModal({
         }
       })
     }
-    if (requiredSessionSkill) {
-      availableSkills.forEach(sk => {
-        if (matchesRequiredSkill(sk) && (!availableSkillIds || availableSkillIds.has(sk.id))) {
-          next.delete(sk.id)
-        }
-      })
-    }
+    // 必选 skill 从排除集清理 (含 PC 任务模式 pc/dual 的 mobius-aimux; matchesRequiredSkill 自身判 workMode/requiredSessionSkill,
+    // web 端 workMode 恒 null → mobius-aimux 不匹配 → 不清理, 行为不变).
+    availableSkills.forEach(sk => {
+      if (matchesRequiredSkill(sk) && (!availableSkillIds || availableSkillIds.has(sk.id))) {
+        next.delete(sk.id)
+      }
+    })
     return next
-  }, [agentSkills, availableSkills, chosenAgentSkill, matchesRequiredSkill, requiredSessionSkill])
+  }, [agentSkills, availableSkills, chosenAgentSkill, matchesRequiredSkill])
 
   // Step 2 期间, 用户切换勾选 → 重拉 preview, 让"完整注入文本"和字数都跟着变.
   // 用 POST + body 提交: description 可能很长, 放 URL query 会撑爆请求头导致 fail to fetch.
