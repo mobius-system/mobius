@@ -1908,7 +1908,7 @@ function appendAgentSkillInstruction(desc: string, autoText: string, nextText: s
 // PcTaskModeSection — 仅 electron 桌面端: 新建 Session 第1步模型栏上方的 PC 任务模式区块。
 // 通过 window.mobiusDesktop bridge 读写本机 project 绑定路径 + 工作模式偏好 (存桌面端 userData)。
 // 浏览器里 window.mobiusDesktop 不存在 → 不渲染 (NewSessionModal 调用处已用 isDesktop 守卫)。
-function PcTaskModeSection({ projectId, isDark, onModeChange }: { projectId?: string; isDark: boolean; onModeChange?: (m: 'hub' | 'pc' | 'dual') => void }) {
+function PcTaskModeSection({ projectId, isDark, onModeChange, onPathChange }: { projectId?: string; isDark: boolean; onModeChange?: (m: 'hub' | 'pc' | 'dual') => void; onPathChange?: (p: string) => void }) {
   type Mode = 'hub' | 'pc' | 'dual'
   const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
   // projectId 兜底从 URL 取: NewSessionModal 某些调用入口未传 projectId, 但用户在项目页时 URL 含 /u/:user/p/:projectId;
@@ -1922,7 +1922,7 @@ function PcTaskModeSection({ projectId, isDark, onModeChange }: { projectId?: st
     if (!pid) { setReady(true); onModeChange?.('dual'); return }
     let cancelled = false
     Promise.all([
-      md.getProjectLocalPath?.(pid).then((p: string | null | undefined) => { if (!cancelled) setPath(p || '') }),
+      md.getProjectLocalPath?.(pid).then((p: string | null | undefined) => { if (!cancelled) { setPath(p || ''); onPathChange?.(p || '') } }),
       md.getProjectWorkMode?.(pid).then((m: string | null | undefined) => {
         if (cancelled) return
         const valid: Mode = m === 'hub' || m === 'pc' || m === 'dual' ? m : 'dual'
@@ -1936,7 +1936,7 @@ function PcTaskModeSection({ projectId, isDark, onModeChange }: { projectId?: st
     const picked = await md.pickDirectory?.()
     if (!picked) return
     const r = await md.confirmProjectPath?.(pid, picked)
-    if (r?.ok) setPath(picked)
+    if (r?.ok) { setPath(picked); onPathChange?.(picked) }
   }
   const chooseMode = (m: Mode) => { setMode(m); onModeChange?.(m); if (pid) md?.setProjectWorkMode?.(pid, m) }
   if (!ready) return null
@@ -2057,6 +2057,8 @@ export function NewSessionModal({
     typeof window !== 'undefined' && !!(window as any).mobiusDesktop?.isDesktop ? 'dual' : null
   )
   const [aimuxId, setAimuxId] = useState<string | null>(null)
+  // PC 端工作路径 (桌面端 PcTaskModeSection 经 onPathChange 回传): 塞进 pc_client_metadata.local_path, 注入 session 提示词; web 端恒 '' → 不追加, 行为不变.
+  const [pcPath, setPcPath] = useState<string>('')
   // electron 桌面端: session 默认名追加本机标识后缀 [OS · hostname] + 顺带取 aimux_id.
   // 仅 mount 一次; bootData 异步取, 函数式 setName 不覆盖用户后续编辑; 草稿已带该 tag 则不重复追加.
   useEffect(() => {
@@ -2338,10 +2340,10 @@ export function NewSessionModal({
         excluded_skill_ids: Array.from(skillEx),
         excluded_memory_ids: Array.from(memEx),
         // PC 任务模式 (仅桌面端): 与 session 创建 body 同源, 让 preview 也注入 PC 提示词; web 端 workMode null 不传.
-        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId } } : {}),
+        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined } } : {}),
       }),
     }) as WizardPreview
-  }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality, workMode, aimuxId])
+  }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality, workMode, aimuxId, pcPath])
 
   const fetchSelectionDefaults = useCallback(async () => {
     const endpoint = isResearch
@@ -2499,7 +2501,7 @@ export function NewSessionModal({
           excluded_memory_ids: Array.from(excludedMemories),
           continue_from_session_id: continueFromSessionId || undefined,
           // PC 任务模式 (仅桌面端): workMode 非空才附带 pc_client_metadata; web 端 workMode 恒 null → body 完全不变.
-          ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId } } : {}),
+          ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined } } : {}),
         }),
       })
       draftClear(DRAFT_KEY)
@@ -2657,7 +2659,7 @@ export function NewSessionModal({
                 </div>
               )}
               {typeof window !== 'undefined' && (window as any).mobiusDesktop?.isDesktop && (
-                <PcTaskModeSection projectId={projectId} isDark={isDark} onModeChange={setWorkMode} />
+                <PcTaskModeSection projectId={projectId} isDark={isDark} onModeChange={setWorkMode} onPathChange={setPcPath} />
               )}
               <div>
                 <div className="text-[12px] mb-1.5 flex items-center justify-between" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>

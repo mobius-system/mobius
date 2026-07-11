@@ -542,7 +542,7 @@ function buildRandomEmojiPrefix(): string {
 }
 
 // PC 任务模式提示词注入 (仅桌面端 session.pc_client_metadata 非空时; web 端 null → 直接 return, 不改 web 行为).
-// pc_client_metadata 在 DB 是 JSON 字符串 {work_mode, aimux_id}; zh/en 共用同一函数 (提示词用用户指定的中文原文).
+// pc_client_metadata 在 DB 是 JSON 字符串 {work_mode, aimux_id, local_path?}; zh/en 共用同一函数 (提示词用用户指定的中文原文).
 function add_pc_task_mode_info(lines: string[], session: any): void {
   if (!session) return;
   let meta: any = null;
@@ -554,13 +554,17 @@ function add_pc_task_mode_info(lines: string[], session: any): void {
   const mode = meta?.work_mode;
   const aimuxId = meta?.aimux_id;
   if (!mode || !aimuxId) return;
+  // PC 端工作目录: 桌面端 PcTaskModeSection 绑定的本机 project 路径. 未绑定/空则不追加;
+  // hub 模式不连 PC, 路径无意义也不追加. web 端 local_path 恒空 → 不追加, 行为不变.
+  const localPath = typeof meta?.local_path === 'string' ? meta.local_path.trim() : '';
+  const pathClause = localPath && mode !== 'hub' ? `。该远程对象上的工作目录为：${localPath}` : '';
   let prompt = '';
   if (mode === 'hub') {
     prompt = `【不要使用aimux连接到以下远程对象： ${aimuxId}】`;
   } else if (mode === 'pc') {
-    prompt = `【使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${aimuxId}】`;
+    prompt = `【使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${aimuxId}${pathClause}】`;
   } else if (mode === 'dual') {
-    prompt = `【你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则。】`;
+    prompt = `【你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则${pathClause}。】`;
   }
   if (!prompt) return;
   lines.push('\n## PC 任务模式\n');
