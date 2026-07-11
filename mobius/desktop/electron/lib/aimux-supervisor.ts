@@ -62,13 +62,6 @@ export class AimuxSupervisor {
     const { aimuxExe, bridgeUrl, token, identifier, onStatus } = this.opts;
     onStatus({ state: "starting", detail: "正在连接 mobius…", identifier });
 
-    // aimux session.create 在 Windows 上会弹真实控制台窗口（这是它"被调度执行"的本意），
-    // 故这里不强制 windowsHide；reverse connect 客户端进程本身不弹窗。
-    // --replace: 重连时若 broker 还有同名旧注册 (update/respawn/token 续期后旧进程刚被杀, broker 尚未感知 TCP 断开),
-    // 直接替换旧注册, 避免 HTTP 409 Conflict 重试循环。identifier 含 hostname 单机唯一 + 单实例锁, 替换安全。
-    // aimux (loguru) 的 stdout/stderr 自带时间戳, 原样落盘到 userData/logs/aimux.log:
-    // reverse connect exit code=1 等启动期失败, 内存 logBuffer 关 app 即丢, 这里留持久副本供事后排查。
-    // 不写 exe 目录: Program Files / .app / 只读解压目录在桌面端经常不可写。
     appendAimuxLog(`\n==== [${new Date().toISOString()}] spawn reverse connect identifier=${identifier} ====\n`);
     const child = spawn(aimuxExe, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token, "--replace"]);
     this.child = child;
