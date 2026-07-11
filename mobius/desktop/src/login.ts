@@ -34,8 +34,13 @@ form.addEventListener("submit", async (e) => {
       password: passEl.value,
     });
     if (!res.ok) throw new Error(res.error || "登录失败");
-    progEl.textContent = "登录成功，正在准备本机 aimux 环境并进入工作台…";
-    // 之后由主进程 loadURL 切到远程页，本页自然卸载
+    // 登录后主进程会装 aimux + 反连 + 注入登录态；这里订阅实时进度展示给用户
+    progEl.innerHTML = '<span class="spin"></span><span id="prog-text">登录成功，正在准备本机 aimux 环境…</span>';
+    const md = (window as unknown as { mobiusDesktop?: { onAimuxStatus?: (cb: (s: { detail?: string }) => void) => unknown } }).mobiusDesktop;
+    md?.onAimuxStatus?.((s) => {
+      const t = document.getElementById("prog-text");
+      if (t && s?.detail) t.textContent = s.detail;
+    });
   } catch (err) {
     errEl.hidden = false;
     errEl.textContent = (err as Error).message || "登录失败";

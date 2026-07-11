@@ -58,8 +58,9 @@ function run(cmd: string, args: string[], onLine?: (line: string) => void): Prom
       const s = b.toString("utf8");
       sink(s);
       if (onLine) {
-        for (const line of s.split(/\r?\n/)) {
-          const t = line.trim();
+        // 按 \r 和 \n 都切：pip 下载进度用 \r 原地刷新，这样才能拿到百分比行
+        for (const seg of s.split(/[\r\n]+/)) {
+          const t = seg.trim();
           if (t) onLine(t);
         }
       }
@@ -83,14 +84,22 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Pr
     return { ok: true };
   }
   const py = pythonExe();
-  // 1) 建 venv（--upgrade-deps 顺带把 pip 升到最新，避免老 pip 装包失败）
+  // 1) 建 venv。不带 --upgrade-deps：内置 python-build-standalone 的 pip 已够新，省一次联网升级
   onProgress?.({ phase: "venv", detail: py });
-  let r = await run(py, ["-m", "venv", "--upgrade-deps", venvDir()]);
+  let r = await run(py, ["-m", "venv", venvDir()]);
   if (r.code !== 0) return { ok: false, error: `venv 创建失败: ${r.stderr || r.stdout}` };
 
-  // 2) 装 aimux（--no-input 防交互卡死，--disable-pip-version-check 减噪音）
-  onProgress?.({ phase: "install", detail: AIMUX_PIN });
-  r = await run(venvPython(), ["-m", "pip", "install", "--no-input", "--disable-pip-version-check", AIMUX_PIN]);
+  // 2) 装 aimux（--no-input 防交互卡死，--disable-pip-version-check 减噪音）；实时回传 pip 下载进度
+  onProgress?.({ phase: "install", detail: "下载并安装 aimux==0.1.8…" });
+  r = await run(
+    venvPython(),
+    ["-m", "pip", "install", "--no-input", "--disable-pip-version-check", AIMUX_PIN],
+    (line) => {
+      if (/downloading|collecting|installing|using cached|%\s*\d|━|─/i.test(line)) {
+        onProgress?.({ phase: "install", detail: line.slice(0, 100) });
+      }
+    }
+  );
   if (r.code !== 0) return { ok: false, error: `pip install 失败: ${r.stderr || r.stdout}` };
   if (!fs.existsSync(aimuxExe())) return { ok: false, error: `aimux 可执行未生成: ${aimuxExe()}` };
 

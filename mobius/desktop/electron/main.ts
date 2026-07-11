@@ -91,26 +91,56 @@ function buildSupervisor(): AimuxSupervisor | null {
 }
 
 // ——— 登录成功后：装 aimux → 反连 → 加载用户主页 ———
+/** 用隐藏窗口把 JWT 注入服务器 origin 的 localStorage['cc-token']，让 web UI 免二次登录。
+ *  web UI 的 api() 从 cc-token 取 token 发 Bearer，App.tsx 启动若有 token 就调 /api/auth/me 自动登录。*/
+async function seedWebAuth(origin: string, jwt: string): Promise<void> {
+  return new Promise((resolve) => {
+    const seed = new BrowserWindow({
+      show: false,
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      try { seed.destroy(); } catch { /* ignore */ }
+      resolve();
+    };
+    seed.webContents.once("dom-ready", async () => {
+      try {
+        await seed.webContents.executeJavaScript(
+          `try { localStorage.setItem('cc-token', ${JSON.stringify(jwt)}); } catch (e) {} true`
+        );
+      } catch { /* ignore */ }
+      finish();
+    });
+    seed.loadURL(`${origin}/`).catch(finish);
+    setTimeout(finish, 5000); // 兜底，避免隐藏窗口卡住阻塞进工作台
+  });
+}
+
 async function bootDesktop(): Promise<void> {
   if (!mainWindow || !creds) return;
   const server = serverOrigin();
 
   installing = true;
-  emitStatus({ state: "starting", detail: "正在准备本机 aimux 环境…" });
+  emitStatus({ state: "starting", detail: "首次启动需在本机下载 aimux（联网，约 30-90 秒）…" });
   const inst = await ensureAimux((p: InstallProgress) => {
     if (p.phase === "venv") emitStatus({ state: "starting", detail: "创建 Python 虚拟环境…" });
-    else if (p.phase === "install") emitStatus({ state: "starting", detail: `pip 安装 ${p.detail}…（首装需联网）` });
+    else if (p.phase === "install") emitStatus({ state: "starting", detail: `下载并安装 aimux… ${p.detail ?? ""}` });
   });
   installing = false;
 
   if (!inst.ok) {
     emitStatus({ state: "failed", detail: inst.error });
   } else {
+    emitStatus({ state: "starting", detail: "aimux 就绪，正在反向连接 mobius…" });
     supervisor = buildSupervisor();
     supervisor?.start();
   }
 
-  // 不做免二次登录：web UI 走它自己的登录；这里只深链到用户主页。
+  emitStatus({ state: lastStatus.state, detail: "正在登录工作台…" });
+  await seedWebAuth(server, creds.jwt);
   void mainWindow.loadURL(`${server}/u/${encodeURIComponent(creds.username)}`);
 }
 
@@ -241,27 +271,40 @@ ipcMain.handle("app:sync-reload", () => {
 });
 
 // ——— 生命周期 ———
-app.whenReady().then(async () => {
-  buildMenu();
-  createWindow();
-
-  // 启动恢复：有保存的凭据就静默重登直进；否则进登录页
-  const saved = loadCreds();
-  if (saved) {
-    const r = await doLogin(saved.server, saved.username, saved.password);
-    if (!("error" in r)) {
-      creds = { ...saved, jwt: r.jwt, user: r.user };
-      saveCreds(creds);
-      void bootDesktop();
-      return;
+// 单实例锁：避免重复启动多个进程（每个都会反连注册同一节点，造成 4 个进程 / 节点冲突）
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
     }
-  }
-  mainWindow?.loadFile(join(currentDir, "../renderer/index.html"));
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
-});
+
+  app.whenReady().then(async () => {
+    buildMenu();
+    createWindow();
+
+    // 启动恢复：有保存的凭据就静默重登直进；否则进登录页
+    const saved = loadCreds();
+    if (saved) {
+      const r = await doLogin(saved.server, saved.username, saved.password);
+      if (!("error" in r)) {
+        creds = { ...saved, jwt: r.jwt, user: r.user };
+        saveCreds(creds);
+        void bootDesktop();
+        return;
+      }
+    }
+    mainWindow?.loadFile(join(currentDir, "../renderer/index.html"));
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+}
 
 app.on("window-all-closed", () => {
   if (!isMac) app.quit();

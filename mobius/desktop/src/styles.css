@@ -52,4 +52,11 @@ body { margin: 0; background: #f5f5f7; }
   font-size: 12px; color: #ff3b30; background: #fff2f0;
   padding: 8px 10px; border-radius: 8px; word-break: break-word;
 }
-.progress { font-size: 12px; color: #6e6e73; }
+.progress { font-size: 12px; color: #6e6e73; display: flex; align-items: center; gap: 10px; }
+.progress:empty { display: none; }
+.progress .spin {
+  width: 14px; height: 14px; flex-shrink: 0;
+  border: 2px solid #d2d2d7; border-top-color: #0a84ff; border-radius: 50%;
+  animation: md-spin 0.8s linear infinite;
+}
+@keyframes md-spin { to { transform: rotate(360deg); } }
