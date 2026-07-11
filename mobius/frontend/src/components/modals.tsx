@@ -2046,6 +2046,18 @@ export function NewSessionModal({
   const [name, setName] = useState(() => isGuidedDemo
     ? (guidedDemoState?.sessionName || '')
     : (initialPreset?.name || initialDraft?.name || defaultName || formatDefaultSessionName(defaultNamePrefix)))
+  // electron 桌面端: session 默认名追加本机标识后缀 [OS · hostname], 方便区分不同机器创建的 session.
+  // 仅 mount 一次; bootData 异步取, 函数式 setName 不覆盖用户后续编辑; 草稿已带该 tag 则不重复追加.
+  useEffect(() => {
+    const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
+    if (!md?.isDesktop) return
+    md.getBootData?.().then?.((b: any) => {
+      if (!b?.hostname) return
+      const osName = b.platform === 'win32' ? 'Windows' : b.platform === 'darwin' ? 'macOS' : b.platform === 'linux' ? 'Linux' : (b.platform || 'PC')
+      const tag = `[${osName} · ${b.hostname}]`
+      setName(prev => prev && !prev.includes(tag) ? `${prev} ${tag}` : prev)
+    })
+  }, [])
   const [desc, setDesc] = useState(isGuidedDemo
     ? (guidedDemoState?.sessionDescription || '')
     : (initialPreset?.description || initialDraft?.desc || defaultDescription || ''))
