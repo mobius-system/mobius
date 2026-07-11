@@ -1911,28 +1911,31 @@ function appendAgentSkillInstruction(desc: string, autoText: string, nextText: s
 function PcTaskModeSection({ projectId, isDark }: { projectId?: string; isDark: boolean }) {
   type Mode = 'hub' | 'pc' | 'dual'
   const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
+  // projectId 兜底从 URL 取: NewSessionModal 某些调用入口未传 projectId, 但用户在项目页时 URL 含 /u/:user/p/:projectId;
+  // 与 main.ts handleProjectUrl 存路径用的 projectId 同源, 保证读写 key 一致 (否则读到 ::undefined 这种脏 key).
+  const pid = projectId || (typeof window !== 'undefined' ? (window.location.pathname.match(/\/u\/[^/]+\/p\/([^/?#]+)/) || [])[1] : undefined)
   const [path, setPath] = useState('')
   const [mode, setMode] = useState<Mode>('dual')
   const [ready, setReady] = useState(false)
   useEffect(() => {
-    if (!md || !projectId) { setReady(true); return }
+    if (!md || !pid) { setReady(true); return }
     let cancelled = false
     Promise.all([
-      md.getProjectLocalPath?.(projectId).then((p: string | null | undefined) => { if (!cancelled) setPath(p || '') }),
-      md.getProjectWorkMode?.(projectId).then((m: string | null | undefined) => {
+      md.getProjectLocalPath?.(pid).then((p: string | null | undefined) => { if (!cancelled) setPath(p || '') }),
+      md.getProjectWorkMode?.(pid).then((m: string | null | undefined) => {
         if (!cancelled) setMode(m === 'hub' || m === 'pc' || m === 'dual' ? m : 'dual')
       }),
     ]).finally(() => { if (!cancelled) setReady(true) })
     return () => { cancelled = true }
-  }, [md, projectId])
+  }, [md, pid])
   const choosePath = async () => {
-    if (!md || !projectId) return
+    if (!md || !pid) return
     const picked = await md.pickDirectory?.()
     if (!picked) return
-    const r = await md.confirmProjectPath?.(projectId, picked)
+    const r = await md.confirmProjectPath?.(pid, picked)
     if (r?.ok) setPath(picked)
   }
-  const chooseMode = (m: Mode) => { setMode(m); md?.setProjectWorkMode?.(projectId, m) }
+  const chooseMode = (m: Mode) => { setMode(m); md?.setProjectWorkMode?.(pid, m) }
   if (!ready) return null
   const MODES: Array<{ k: Mode; t: string; s: string }> = [
     { k: 'hub', t: '只在 Mobius 中枢工作', s: 'session 在服务器跑' },
