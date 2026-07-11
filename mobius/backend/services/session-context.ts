@@ -327,6 +327,34 @@ function zh_add_completion_flag_info(lines: string[], session: any, project: any
   lines.push(`每当用户提出新问题新指令时，都会创建新的running.flag。`);
 }
 
+function zh_add_pc_task_mode_info(lines: string[], session: any): void {
+  if (!session) return;
+  let meta: any = null;
+  try {
+    meta = typeof session.pc_client_metadata === 'string'
+      ? JSON.parse(session.pc_client_metadata)
+      : session.pc_client_metadata;
+  } catch { return; }
+  const mode = meta?.work_mode;
+  const aimuxId = meta?.aimux_id;
+  if (!mode || !aimuxId) return;
+  // PC 端工作目录: 桌面端 PcTaskModeSection 绑定的本机 project 路径. 未绑定/空则不追加;
+  // hub 模式不连 PC, 路径无意义也不追加. web 端 local_path 恒空 → 不追加, 行为不变.
+  const localPath = typeof meta?.local_path === 'string' ? meta.local_path.trim() : '';
+  const pathClause = localPath && mode !== 'hub' ? `。该远程对象上的工作目录为：\`${localPath}\`` : '';
+  let prompt = '';
+  if (mode === 'hub') {
+    prompt = `【不要使用aimux连接到以下远程对象： ${aimuxId}】`;
+  } else if (mode === 'pc') {
+    prompt = `【使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${aimuxId}${pathClause}】`;
+  } else if (mode === 'dual') {
+    prompt = `【你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则${pathClause}。】`;
+  }
+  if (!prompt) return;
+  lines.push('\n## PC 任务模式\n');
+  lines.push(prompt + '\n');
+}
+
 // ---------- 英文版 ----------
 
 function en_add_header(lines: string[]): void {
@@ -541,9 +569,10 @@ function buildRandomEmojiPrefix(): string {
   return `${picked.join('')}\n`;
 }
 
-// PC 任务模式提示词注入 (仅桌面端 session.pc_client_metadata 非空时; web 端 null → 直接 return, 不改 web 行为).
-// pc_client_metadata 在 DB 是 JSON 字符串 {work_mode, aimux_id, local_path?}; zh/en 共用同一函数 (提示词用用户指定的中文原文).
-function add_pc_task_mode_info(lines: string[], session: any): void {
+// PC task mode prompt injection (desktop sessions only, when session.pc_client_metadata is non-null;
+// web sessions are null → early return, web behavior unchanged).
+// pc_client_metadata is stored in the DB as a JSON string {work_mode, aimux_id, local_path?}.
+function en_add_pc_task_mode_info(lines: string[], session: any): void {
   if (!session) return;
   let meta: any = null;
   try {
@@ -554,20 +583,20 @@ function add_pc_task_mode_info(lines: string[], session: any): void {
   const mode = meta?.work_mode;
   const aimuxId = meta?.aimux_id;
   if (!mode || !aimuxId) return;
-  // PC 端工作目录: 桌面端 PcTaskModeSection 绑定的本机 project 路径. 未绑定/空则不追加;
-  // hub 模式不连 PC, 路径无意义也不追加. web 端 local_path 恒空 → 不追加, 行为不变.
+  // PC working directory: the local project path bound in the desktop PcTaskModeSection. Skip if unbound/empty;
+  // hub mode never connects to the PC, so the path is irrelevant and also skipped. Web sessions have empty local_path → skipped, behavior unchanged.
   const localPath = typeof meta?.local_path === 'string' ? meta.local_path.trim() : '';
-  const pathClause = localPath && mode !== 'hub' ? `。该远程对象上的工作目录为：${localPath}` : '';
+  const pathClause = localPath && mode !== 'hub' ? `. The working directory on that remote object is: \`${localPath}\`` : '';
   let prompt = '';
   if (mode === 'hub') {
-    prompt = `【不要使用aimux连接到以下远程对象： ${aimuxId}】`;
+    prompt = `【Do not use aimux to connect to the following remote object: ${aimuxId}】`;
   } else if (mode === 'pc') {
-    prompt = `【使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${aimuxId}${pathClause}】`;
+    prompt = `【Use aimux to connect to the following remote object to carry out all work, and try to avoid modifying local code: ${aimuxId}${pathClause}】`;
   } else if (mode === 'dual') {
-    prompt = `【你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则${pathClause}。】`;
+    prompt = `【You are authorized to use aimux to connect to the following remote object: ${aimuxId}. When you need to modify code, first modify the local code, then sync all the code to ${aimuxId}, unless the user objects. When the user asks you to run code, follow the same rule${pathClause}.】`;
   }
   if (!prompt) return;
-  lines.push('\n## PC 任务模式\n');
+  lines.push('\n## PC Task Mode\n');
   lines.push(prompt + '\n');
 }
 
@@ -585,7 +614,7 @@ const ADD_FNS: Record<string, any> = {
     completionFlag: zh_add_completion_flag_info,
     issue: zh_add_issue_level_info,
     session: zh_add_session_level_info,
-    pcTaskMode: add_pc_task_mode_info,
+    pcTaskMode: zh_add_pc_task_mode_info,
   },
   en: {
     header: en_add_header,
@@ -600,7 +629,7 @@ const ADD_FNS: Record<string, any> = {
     completionFlag: en_add_completion_flag_info,
     issue: en_add_issue_level_info,
     session: en_add_session_level_info,
-    pcTaskMode: add_pc_task_mode_info,
+    pcTaskMode: en_add_pc_task_mode_info,
   },
 };
 
