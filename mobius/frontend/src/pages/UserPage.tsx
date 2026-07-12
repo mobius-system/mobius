@@ -542,15 +542,21 @@ export default function UserPage() {
         <main data-tour="user-projects-main" className="flex-1 overflow-y-auto p-6" style={{ background: 'var(--bg-secondary)' }}>
           <div className="max-w-6xl mx-auto flex gap-6">
             <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between mb-5">
-              <div>
+            <div className="mb-5">
+              <div className="flex items-center justify-between">
                 <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>{pageTitle}</h1>
-                <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>共 {visibleProjectCount} 个项目</p>
+                <PrimaryActionButton onClick={() => setShowNew(true)} data-tour="user-new-project"
+                  icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
+                  新建项目
+                </PrimaryActionButton>
               </div>
-              <PrimaryActionButton onClick={() => setShowNew(true)} data-tour="user-new-project"
-                icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
-                新建项目
-              </PrimaryActionButton>
+              {projectPagination.totalPages > 1 ? (
+                <div className="mt-3">
+                  <PaginationControls {...projectPaginationProps} />
+                </div>
+              ) : (
+                <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>共 {visibleProjectCount} 个项目</p>
+              )}
             </div>
 
             {myProjects.length === 0 ? (
@@ -570,11 +576,6 @@ export default function UserPage() {
               </div>
             ) : (
               <>
-              {projectPagination.totalPages > 1 && (
-                <div className="mb-4">
-                  <PaginationControls {...projectPaginationProps} />
-                </div>
-              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {projectPagination.pagedItems.map((p: any) => {
                   const issues = issuesByProject[p.id] || []
