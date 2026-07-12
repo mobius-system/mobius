@@ -2757,9 +2757,9 @@ export function ChatArea() {
     }
   }, [sessionId, projectKnowledgeSending, resolveProjectBindPath, addMessage, setTyping, postSessionMessage])
 
-  // 桌面端「告知本电脑的存在」按钮回调: 把按钮拼好的授权连接消息作为一条 user 消息发出,
-  // 让当前 session 的 agent 知道本机可作为 aimux 远程对象连接. 复用 postSessionMessage,
-  // 与"发送项目知识沉淀"同链路 (addMessage 立即显示 + setTyping + 轮询回写).
+  // 桌面端「向当前 session 发送一条预制指令」的通用回调: 调用方 (告知本电脑的存在按钮 /
+  // aimux 工作模式切换菜单) 把拼好的消息内容传进来, 作为一条 user 消息发出. 复用
+  // postSessionMessage, 与"发送项目知识沉淀"同链路 (addMessage 立即显示 + setTyping + 轮询回写).
   const handleAnnouncePc = useCallback((content: string) => {
     if (!sessionId || !content) return
     const requestId = makeSendRequestId()
@@ -3011,7 +3011,12 @@ export function ChatArea() {
               waiting={!!(backendAlive && !backendWorking)}
               done={backendJobDone === true && !backendAlive}
             />
-            <AimuxLinkIndicator session={currentSession ?? currentTask} />
+            <AimuxLinkIndicator
+              session={currentSession ?? currentTask}
+              sessionId={sessionId}
+              projectId={currentProjectId}
+              onSend={handleAnnouncePc}
+            />
             {/* 桌面端 + 非 PC client session 时, AimuxLinkIndicator 不显示; 此按钮补位,
                 让用户一键告知当前 agent 本电脑可作为 aimux 远程对象连接. 两者互斥, 各自内部判可见. */}
             <AnnouncePcButton
