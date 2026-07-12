@@ -12,6 +12,7 @@ import { SessionJsonlPanel } from './session-jsonl-panel'
 import { useVisibleJsonl } from './session-jsonl-filter'
 import { SessionStatusChip } from './session-status-chip'
 import { AimuxLinkIndicator } from './aimux-link-indicator'
+import { AnnouncePcButton } from './announce-pc-button'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { readJsonlCacheSync, readJsonlCacheFromIdb, writeJsonlCache } from '../services/session-jsonl-cache'
 import { MobiusLogo } from './mobius-logo'
@@ -2756,6 +2757,21 @@ export function ChatArea() {
     }
   }, [sessionId, projectKnowledgeSending, resolveProjectBindPath, addMessage, setTyping, postSessionMessage])
 
+  // 桌面端「告知本电脑的存在」按钮回调: 把按钮拼好的授权连接消息作为一条 user 消息发出,
+  // 让当前 session 的 agent 知道本机可作为 aimux 远程对象连接. 复用 postSessionMessage,
+  // 与"发送项目知识沉淀"同链路 (addMessage 立即显示 + setTyping + 轮询回写).
+  const handleAnnouncePc = useCallback((content: string) => {
+    if (!sessionId || !content) return
+    const requestId = makeSendRequestId()
+    setLastSendError('')
+    addMessage({ role: 'user', content })
+    setPendingSendAt(Date.now())
+    setTyping(true)
+    postSessionMessage({ content, inputText: content, requestId })
+      .then(() => setTimeout(() => loadHistoryRef.current(), 500))
+      .catch(() => {})
+  }, [sessionId, addMessage, setTyping, postSessionMessage])
+
   const sendRunProjectPortPrompt = useCallback((mainProjectPortPath: string) => {
     if (!sessionId) {
       setLastSendError('当前没有可发送指令的 Session')
@@ -2996,6 +3012,14 @@ export function ChatArea() {
               done={backendJobDone === true && !backendAlive}
             />
             <AimuxLinkIndicator session={currentSession ?? currentTask} />
+            {/* 桌面端 + 非 PC client session 时, AimuxLinkIndicator 不显示; 此按钮补位,
+                让用户一键告知当前 agent 本电脑可作为 aimux 远程对象连接. 两者互斥, 各自内部判可见. */}
+            <AnnouncePcButton
+              session={currentSession ?? currentTask}
+              sessionId={sessionId}
+              projectId={currentProjectId}
+              onSend={handleAnnouncePc}
+            />
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">

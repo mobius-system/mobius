@@ -359,7 +359,7 @@ function zh_add_pc_task_mode_info(lines: string[], session: any): void {
   } else if (mode === 'pc') {
     prompt = `【使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${aimuxId}${pathClause}】`;
   } else if (mode === 'dual') {
-    prompt = `【你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则${pathClause}。】`;
+    prompt = `【你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，可操作远程路径${pathClause}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则${pathClause}。】`;
   }
   if (!prompt) return;
   lines.push('\n## PC 任务模式\n');

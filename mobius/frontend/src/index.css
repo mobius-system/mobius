@@ -4776,7 +4776,11 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   .session-stop-button__shock,
   .session-stop-button__ring,
   .session-stop-toast,
-  .session-stop-toast__icon {
+  .session-stop-toast__icon,
+  .announce-pc-button--active,
+  .announce-pc-button--active .announce-pc-button__icon,
+  .announce-pc-button__shock,
+  .announce-pc-button__ring {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
   }
@@ -4895,6 +4899,93 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 @keyframes session-stop-toast-icon {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.18); }
+}
+
+/* ===== 桌面端「告知本电脑的存在」按钮 (绿色主题, 特效参考终止按钮) ===== */
+.announce-pc-button {
+  position: relative;
+  isolation: isolate;
+  overflow: visible;
+  background: rgba(34, 197, 94, .08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .03);
+}
+/* 亮色主题: 未告知态用深绿文字 (覆盖 chat.tsx 的 text-green-300, 浅底下对比度足). */
+.light .announce-pc-button:not(.announce-pc-button--active):not(.announce-pc-button--clicked) {
+  color: #15803d;
+}
+.light .announce-pc-button:not(.announce-pc-button--active):not(.announce-pc-button--clicked):hover {
+  color: #166534;
+}
+/* 已告知态: 灰色, 表示已点过, 但仍可二次点击. */
+.announce-pc-button--clicked {
+  background: rgba(148, 163, 184, .08);
+}
+.light .announce-pc-button--clicked {
+  color: #64748b;
+}
+.announce-pc-button--active {
+  color: #fff;
+  background:
+    linear-gradient(135deg, rgba(74, 222, 128, .98), rgba(22, 163, 74, .98)),
+    rgba(34, 197, 94, .92);
+  border-color: rgba(187, 247, 208, .85);
+  animation: announce-pc-impact .58s cubic-bezier(.2, 1.35, .2, 1), announce-pc-flash 1.8s ease-out;
+  box-shadow:
+    0 0 0 1px rgba(187, 247, 208, .82),
+    0 0 0 6px rgba(34, 197, 94, .22),
+    0 14px 34px rgba(20, 83, 45, .42),
+    inset 0 1px 0 rgba(255, 255, 255, .36);
+}
+.announce-pc-button__icon { position: relative; z-index: 10; }
+.announce-pc-button--active .announce-pc-button__icon {
+  animation: announce-pc-icon 1.05s ease-in-out infinite;
+}
+.announce-pc-button__shock,
+.announce-pc-button__ring {
+  position: absolute;
+  inset: -7px;
+  border-radius: 16px;
+  pointer-events: none;
+}
+.announce-pc-button__shock {
+  z-index: -1;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, .52), rgba(74, 222, 128, .2) 42%, transparent 70%);
+  animation: announce-pc-shock .62s ease-out forwards;
+}
+.announce-pc-button__ring {
+  z-index: -2;
+  border: 2px solid rgba(187, 247, 208, .9);
+  animation: announce-pc-ring 1.15s ease-out forwards;
+}
+.announce-pc-button__ring--two {
+  animation-delay: .16s;
+  border-color: rgba(74, 222, 128, .72);
+}
+@keyframes announce-pc-impact {
+  0% { transform: scale(1); }
+  18% { transform: scale(.84) rotate(-2deg); }
+  46% { transform: scale(1.24) rotate(1deg); }
+  72% { transform: scale(.96) rotate(0deg); }
+  100% { transform: scale(1); }
+}
+@keyframes announce-pc-flash {
+  0%, 100% { filter: brightness(1) saturate(1); }
+  18% { filter: brightness(1.75) saturate(1.5); }
+  42% { filter: brightness(1.15) saturate(1.18); }
+}
+@keyframes announce-pc-shock {
+  0% { opacity: 1; transform: scale(.55); }
+  100% { opacity: 0; transform: scale(2.5); }
+}
+@keyframes announce-pc-ring {
+  0% { opacity: .95; transform: scale(.72); }
+  72% { opacity: .35; }
+  100% { opacity: 0; transform: scale(2.25); }
+}
+@keyframes announce-pc-icon {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.45); opacity: .78; }
 }
 
 /* ===== 毛玻璃 ===== */
