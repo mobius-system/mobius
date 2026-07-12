@@ -1908,7 +1908,7 @@ function appendAgentSkillInstruction(desc: string, autoText: string, nextText: s
 // PcTaskModeSection — 仅 electron 桌面端: 新建 Session 第1步模型栏上方的 PC 任务模式区块。
 // 通过 window.mobiusDesktop bridge 读写本机 project 绑定路径 + 工作模式偏好 (存桌面端 userData)。
 // 浏览器里 window.mobiusDesktop 不存在 → 不渲染 (NewSessionModal 调用处已用 isDesktop 守卫)。
-function PcTaskModeSection({ projectId, isDark, onModeChange, onPathChange }: { projectId?: string; isDark: boolean; onModeChange?: (m: 'hub' | 'pc' | 'dual') => void; onPathChange?: (p: string) => void }) {
+export function PcTaskModeSection({ projectId, isDark, onModeChange, onPathChange }: { projectId?: string; isDark: boolean; onModeChange?: (m: 'hub' | 'pc' | 'dual') => void; onPathChange?: (p: string) => void }) {
   type Mode = 'hub' | 'pc' | 'dual'
   const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
   // projectId 兜底从 URL 取: NewSessionModal 某些调用入口未传 projectId, 但用户在项目页时 URL 含 /u/:user/p/:projectId;

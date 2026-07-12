@@ -18,7 +18,7 @@ import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
-import { ErrBanner, PathPickerModal } from './modals'
+import { ErrBanner, PathPickerModal, PcTaskModeSection } from './modals'
 import { ToggleSwitch } from './toggle-switch'
 import { SessionModelPicker } from './session-model-picker'
 import { ExpandableTextarea } from './expandable-textarea'
@@ -109,6 +109,7 @@ type PickItem = {
   description?: string
   scope: string
   research_role?: string
+  dirName?: string | null
 }
 const SCOPE_LABEL: Record<string, string> = { user: '用户级', project: '项目级', builtin: '内置', issue: '任务级' }
 
@@ -1102,6 +1103,26 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
+  // PC 任务模式 (仅 electron 桌面端, 与 NewSessionModal 同源): work_mode/aimux_id/local_path
+  // 经 pc_client_metadata 注入 session 提示词; pc/dual 时 mobius-aimux skill 强制必选.
+  // web 端无 window.mobiusDesktop → workMode 恒 null → 不渲染区块、不附 body、不锁 skill, 行为完全不变.
+  const isDesktop = typeof window !== 'undefined' && !!(window as any).mobiusDesktop?.isDesktop
+  const [workMode, setWorkMode] = useState<'hub' | 'pc' | 'dual' | null>(isDesktop ? 'dual' : null)
+  const [aimuxId, setAimuxId] = useState<string | null>(null)
+  const [pcPath, setPcPath] = useState<string>('')
+  // electron 桌面端: session 默认名追加本机标识后缀 [OS · hostname] + 顺带取 aimux_id.
+  // 仅 mount 一次; bootData 异步取, 函数式 setName 不覆盖用户后续编辑; 草稿已带 tag 则不重复追加.
+  useEffect(() => {
+    const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
+    if (!md?.isDesktop) return
+    md.getBootData?.().then?.((b: any) => {
+      if (!b?.hostname) return
+      setAimuxId(b.aimuxIdentifier || null)
+      const osName = b.platform === 'win32' ? 'Windows' : b.platform === 'darwin' ? 'macOS' : b.platform === 'linux' ? 'Linux' : (b.platform || 'PC')
+      const tag = `[${osName} · ${b.hostname}]`
+      setName((prev: string) => prev && !prev.includes(tag) ? `${prev} ${tag}` : prev)
+    })
+  }, [])
 
   const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [])
   // 二级联动: 选 project 后拉 issues
@@ -1138,7 +1159,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
       api(`/api/issues/${issueId}/session-selection-defaults`).catch(() => null),
     ]).then(([p, defaults]: any) => {
       if (!alive) return
-      const skills = (p?.sources?.skills || []).map((s: any) => ({ id: s.id, name: s.name, description: s.description, scope: s.scope || 'project' }))
+      const skills = (p?.sources?.skills || []).map((s: any) => ({ id: s.id, name: s.name, description: s.description, scope: s.scope || 'project', dirName: s.dirName }))
       const memories = (p?.sources?.memories || []).map((m: any) => ({ id: m.id, name: m.name, description: m.description, scope: m.scope || 'project' }))
       setAvailSkills(skills)
       setAvailMemories(memories)
@@ -1173,6 +1194,15 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
     const n = new Set(set); n.has(id) ? n.delete(id) : n.add(id); setter(n)
   }
 
+  // PC 任务模式 (仅桌面端 pc/dual): mobius-aimux skill 强制必选, SkillMemoryPicker 经 skillLockedOf 锁定不可取消.
+  // web 端 workMode 恒 null → 永远 false, 不影响 skill 行为. 与 NewSessionModal matchesRequiredSkill 同源.
+  const isPcTaskMode = workMode === 'pc' || workMode === 'dual'
+  const skillLockedOf = useCallback((id: string) => {
+    if (!isPcTaskMode) return false
+    const sk = availSkills.find(s => s.id === id)
+    return (sk?.dirName || '').replace(/_/g, '-') === 'mobius-aimux'
+  }, [isPcTaskMode, availSkills])
+
   const submit = async () => {
     if (!projectId) { setErr('请选择目标项目'); return }
     if (!issueId) { setErr('请选择目标 Issue'); return }
@@ -1180,9 +1210,18 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
     setLoading(true); setErr('')
     try {
       const finalDesc = appendAttachmentsToDesc(desc.trim() || name, attachments)
+      // pc/dual 时 mobius-aimux 必选: 即便用户此前排除过, 提交时也从排除集清理 (与 NewSessionModal normalizeSkillExclusions 同源).
+      const excludedSkillIds = isPcTaskMode
+        ? Array.from(excludedSkills).filter(id => {
+          const sk = availSkills.find(s => s.id === id)
+          return (sk?.dirName || '').replace(/_/g, '-') !== 'mobius-aimux'
+        })
+        : Array.from(excludedSkills)
       const s = await api(`/api/issues/${issueId}/sessions`, { method: 'POST', body: JSON.stringify({
         name, description: finalDesc, model, language,
-        excluded_skill_ids: Array.from(excludedSkills), excluded_memory_ids: Array.from(excludedMemories),
+        excluded_skill_ids: excludedSkillIds, excluded_memory_ids: Array.from(excludedMemories),
+        // PC 任务模式 (仅桌面端): workMode 非空才附 pc_client_metadata; web 端恒 null → body 完全不变.
+        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined } } : {}),
       }) })
       if (s?.error) { setErr(s.error); return }
       draftClear(DRAFT_KEY)
@@ -1234,6 +1273,9 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
         <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="给这个会话起个名字" autoFocus dark={dark} />
       </div>
       <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个会话完成什么" attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
+      {isDesktop && (
+        <PcTaskModeSection projectId={projectId || undefined} isDark={dark} onModeChange={setWorkMode} onPathChange={setPcPath} />
+      )}
       <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
       <div>
         <SectionLabel hint="注入上下文语言">语言</SectionLabel>
@@ -1248,6 +1290,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
           excludedMemories={excludedMemories}
           onToggleSkill={id => { toggle(excludedSkills, id, setExcludedSkills); setSelectionReady(true) }}
           onToggleMemory={id => { toggle(excludedMemories, id, setExcludedMemories); setSelectionReady(true) }}
+          skillLockedOf={skillLockedOf}
           disabled={!issueId}
           dark={dark}
         />
