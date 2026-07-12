@@ -8,6 +8,20 @@
   body { overflow: hidden; }
 }
 
+/* ===== 桌面端标题栏拖拽区 =====
+   仅 Electron 桌面端 (window.mobiusDesktop.isDesktop) 时, shell 给顶栏加 mobius-desktop-drag class。
+   顶栏整体可拖拽移动窗口, 其内交互元素 (按钮/链接/输入/右侧操作区) 设为 no-drag 保持可点。
+   Web 端不加该 class → 规则不生效, 零影响。 */
+.mobius-desktop-drag { -webkit-app-region: drag; }
+.mobius-desktop-drag button,
+.mobius-desktop-drag a,
+.mobius-desktop-drag input,
+.mobius-desktop-drag textarea,
+.mobius-desktop-drag select,
+.mobius-desktop-drag [role="button"],
+.mobius-desktop-drag .mobius-topnav-actions,
+.mobius-desktop-drag .no-drag { -webkit-app-region: no-drag; }
+
 /* ===== 主题变量 ===== */
 :root {
   --bg-primary: #0a0e16;

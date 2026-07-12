@@ -10,6 +10,7 @@ const submitEl = document.getElementById("submit") as HTMLButtonElement;
 interface DesktopApi {
   login: (c: { server: string; username: string; password: string }) => Promise<{ ok: boolean; error?: string }>;
   getLastServer: () => Promise<string>;
+  setTitleBarOverlay?: (o: { color?: string; symbolColor?: string }) => Promise<unknown>;
 }
 const desktop = (window as unknown as { desktop: DesktopApi }).desktop;
 
@@ -20,6 +21,10 @@ desktop
     if (s) serverEl.value = s;
   })
   .catch(() => {});
+
+// 登录页是浅色底 (#f5f5f7): 把窗口按钮图标色设为深色, 避免初始浅灰图标在浅底上看不清。
+// 进入工作台后由远程前端 App.tsx 按当前主题再覆盖。
+desktop?.setTitleBarOverlay?.({ color: "rgba(0,0,0,0)", symbolColor: "#3d3d3d" }).catch(() => {});
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();

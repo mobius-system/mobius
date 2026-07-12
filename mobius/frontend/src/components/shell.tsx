@@ -15,6 +15,13 @@ import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { useIsMobile } from './resizable-panel'
 
+// 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
+// isDesktop 来自 window.mobiusDesktop (preload 注入); 平台用 navigator.platform 判:
+// mac 交通灯在左 → 顶栏左让位; win/linux 窗口按钮在右 → 操作区右让位。Web 端 IS_DESKTOP=false, 零影响。
+const DESKTOP_BRIDGE = typeof window !== 'undefined' ? (window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop : undefined
+const IS_DESKTOP = !!DESKTOP_BRIDGE?.isDesktop
+const IS_MAC_PLATFORM = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+
 const GithubIcon = createLucideIcon('github', [
   ['path', { d: 'M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22', key: 'github' }],
 ])
@@ -631,8 +638,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 
   return (
     <>
-      <div className="mobius-topnav h-12 border-b flex items-center justify-between px-5 flex-shrink-0 select-none"
-        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+      <div className={`mobius-topnav h-12 border-b flex items-center justify-between px-5 flex-shrink-0 select-none${IS_DESKTOP ? ' mobius-desktop-drag' : ''}`}
+        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', paddingLeft: IS_DESKTOP && IS_MAC_PLATFORM ? '78px' : undefined }}>
         {/* 移动端: 汉堡按钮唤出左侧栏抽屉 */}
         {isMobile && (
           <button
@@ -755,7 +762,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         </div>
 
         {/* 右侧操作 */}
-        <div className="mobius-topnav-actions flex min-w-0 flex-shrink items-center gap-1.5 xl:gap-2">
+        <div className="mobius-topnav-actions flex min-w-0 flex-shrink items-center gap-1.5 xl:gap-2"
+          style={IS_DESKTOP && !IS_MAC_PLATFORM ? { paddingRight: '142px' } : undefined}>
           {rightExtra}
           {/* 桌面端 aimux 反向连接状态徽标 — 仅 Electron 检测到时渲染（搜索按钮左侧） */}
           <AimuxStatusBadge />

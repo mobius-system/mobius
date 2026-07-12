@@ -284,7 +284,16 @@ function createWindow(): void {
     show: false,
     backgroundColor: "#ffffff",
     title: "Mobius Desktop",
-    titleBarStyle: isMac ? "hiddenInset" : "default",
+    // Windows/Linux: 隐藏原生标题栏 + titleBarOverlay 叠原生窗口按钮 (VSCode 风),
+    // 让远程 mobius 顶栏充当标题栏; macOS: hiddenInset 已是 VSCode 风 (交通灯内嵌), 保持。
+    titleBarStyle: isMac ? "hiddenInset" : "hidden",
+    // overlay 背景透明 → 透出顶栏 var(--bg-primary), 切主题自动变色;
+    // 图标色 symbolColor 初始给深色主题用浅灰, 前端运行时按当前主题 --text-primary 上报修正。
+    titleBarOverlay: isMac
+      ? undefined
+      : { color: "rgba(0,0,0,0)", symbolColor: "#e5e7eb", height: 48 },
+    // 隐藏菜单条 (Windows/Linux 按 Alt 唤出, macOS 系统菜单栏不受影响); 快捷键与功能全保留。
+    autoHideMenuBar: true,
     webPreferences: {
       preload: join(currentDir, "../preload/index.mjs"),
       contextIsolation: true,
@@ -409,6 +418,13 @@ ipcMain.handle("app:open-status", () => {
 });
 ipcMain.handle("app:open-devtools", () => {
   mainWindow?.webContents.openDevTools({ mode: "detach" });
+  return { ok: true };
+});
+// 前端切主题后上报标题栏覆盖层: 透明背景透出顶栏主题色 + 当前 --text-primary 作窗口按钮图标色。
+// macOS 用原生交通灯, 无 overlay, 直接忽略。
+ipcMain.handle("desktop:set-title-bar-overlay", (_e, opts: { color?: string; symbolColor?: string; height?: number }) => {
+  if (isMac) return { ok: true };
+  try { mainWindow?.setTitleBarOverlay(opts); } catch { /* 窗口未就绪 */ }
   return { ok: true };
 });
 // ——— 项目本地路径绑定 ———

@@ -8,6 +8,8 @@ const desktopApi = {
   login: (creds: { server: string; username: string; password: string }) =>
     ipcRenderer.invoke("auth:login", creds),
   getLastServer: () => ipcRenderer.invoke("auth:get-last-server"),
+  setTitleBarOverlay: (opts: { color?: string; symbolColor?: string; height?: number }) =>
+    ipcRenderer.invoke("desktop:set-title-bar-overlay", opts),
 };
 contextBridge.exposeInMainWorld("desktop", desktopApi);
 
@@ -43,6 +45,9 @@ const mobiusDesktop = {
   getProjectLocalPath: (projectId: string) => ipcRenderer.invoke("project:get-path", projectId),
   getProjectWorkMode: (projectId: string) => ipcRenderer.invoke("project:get-work-mode", projectId),
   setProjectWorkMode: (projectId: string, mode: string) => ipcRenderer.invoke("project:set-work-mode", projectId, mode),
+  // 前端切主题后上报: 透明背景 + 当前主题文字色作窗口按钮图标色 (Win/Linux overlay 用)
+  setTitleBarOverlay: (opts: { color?: string; symbolColor?: string; height?: number }) =>
+    ipcRenderer.invoke("desktop:set-title-bar-overlay", opts),
   logout: () => ipcRenderer.invoke("auth:logout"),
 };
 contextBridge.exposeInMainWorld("mobiusDesktop", mobiusDesktop);
