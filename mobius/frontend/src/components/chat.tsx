@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip } from 'lucide-react'
+import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -16,6 +16,7 @@ import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../service
 import { readJsonlCacheSync, readJsonlCacheFromIdb, writeJsonlCache } from '../services/session-jsonl-cache'
 import { MobiusLogo } from './mobius-logo'
 import { PlanningEditor } from './planning-editor'
+import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { isFireAndForgetSession } from '../services/session-start-policy'
 import {
@@ -1994,9 +1995,7 @@ export function ChatArea() {
   const [replyTo, setReplyTo] = useState<any>(null)
   const [editingMsg, setEditingMsg] = useState<any>(null)
   const [runProjectPrompt, setRunProjectPrompt] = useState('')
-  const [nextQuestionLoading, setNextQuestionLoading] = useState(false)
-  const [nextQuestionCandidates, setNextQuestionCandidates] = useState<string[]>([])
-  const [nextQuestionModalOpen, setNextQuestionModalOpen] = useState(false)
+  const [knowledgeEditorOpen, setKnowledgeEditorOpen] = useState(false)
   const isNewConversation = messages.length === 0 && (((currentSession as any)?.message_count || 0) === 0)
   const inputPlaceholder = editingMsg
     ? '编辑消息后按 Enter 重新发送...'
@@ -2784,58 +2783,6 @@ export function ChatArea() {
       .catch(() => {})
   }, [runProjectPrompt, addMessage, setTyping, postSessionMessage])
 
-  const requestPredictedNextQuestions = useCallback(async () => {
-    if (!sessionId || nextQuestionLoading) return
-    setNextQuestionLoading(true)
-    setLastSendError('')
-    try {
-      const result = await api(`/api/sessions/${sessionId}/predicted-next-questions`, {
-        method: 'POST',
-      }) as { questions?: string[] }
-      const questions = Array.isArray(result?.questions)
-        ? result.questions.map(q => String(q || '').trim()).filter(Boolean)
-        : []
-      if (questions.length === 0) {
-        setLastSendError('智能下一个用户提问没有返回可用候选')
-        return
-      }
-      setNextQuestionCandidates(questions)
-      setNextQuestionModalOpen(true)
-    } catch (e: any) {
-      setLastSendError(e?.message || '生成智能下一个用户提问失败')
-    } finally {
-      setNextQuestionLoading(false)
-    }
-  }, [sessionId, nextQuestionLoading])
-
-  const sendPredictedNextQuestion = useCallback((value: string) => {
-    const content = String(value || '').trim()
-    if (!content) return
-    if (!sessionId) {
-      setLastSendError('当前没有可发送指令的 Session')
-      return
-    }
-    if (pendingSendAt || messageSubmitting) {
-      setLastSendError('上一条消息仍在提交，请稍后再发送')
-      return
-    }
-    const requestId = makeSendRequestId()
-    setNextQuestionModalOpen(false)
-    setNextQuestionCandidates([])
-    setLastSendError('')
-    addMessage({ role: 'user', content })
-    setPendingSendAt(Date.now())
-    setMessageSubmitting(true)
-    setTyping(true)
-    postSessionMessage({ content, inputText: content, requestId })
-      .then(() => {
-        inputRef.current?.focus()
-        setTimeout(() => loadHistoryRef.current(), 500)
-      })
-      .catch(() => { inputRef.current?.focus() })
-      .finally(() => setMessageSubmitting(false))
-  }, [sessionId, pendingSendAt, messageSubmitting, addMessage, setTyping, postSessionMessage])
-
   const handleContinueSessionCreated = useCallback((created: any) => {
     setContinueModalOpen(false)
     if (!created?.session_id) return
@@ -3019,56 +2966,12 @@ export function ChatArea() {
           </div>
         </div>
       )}
-      {nextQuestionModalOpen && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="next-question-title">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-            aria-label="关闭智能下一个用户提问"
-            onClick={() => setNextQuestionModalOpen(false)}
-          />
-          <div
-            className="relative w-full max-w-[620px] overflow-hidden rounded-2xl shadow-2xl"
-            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
-              <div className="min-w-0">
-                <div id="next-question-title" className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  智能下一个用户提问
-                </div>
-                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  选择一条指令发送给当前 Session
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setNextQuestionModalOpen(false)}
-                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
-                style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
-                aria-label="关闭"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="max-h-[420px] overflow-y-auto p-3">
-              <div className="space-y-2">
-                {nextQuestionCandidates.map((question, index) => (
-                  <button
-                    key={`${index}-${question}`}
-                    type="button"
-                    onClick={() => sendPredictedNextQuestion(question)}
-                    disabled={messageSubmitting || !!pendingSendAt}
-                    className="w-full rounded-xl border px-3 py-2.5 text-left text-[13px] leading-relaxed transition-colors hover:bg-blue-500/10 hover:border-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}
-                  >
-                    {question}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+      {knowledgeEditorOpen && currentProjectId && currentIssueId && (
+        <KnowledgeEditorModal
+          projectId={currentProjectId}
+          issueId={currentIssueId}
+          onClose={() => setKnowledgeEditorOpen(false)}
+        />
       )}
       {/* 顶栏（会话标题 + 单一状态 chip + Stop + VSCode + 溢出菜单） */}
       <div data-tour="session-chat-header" className="h-12 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
@@ -3486,17 +3389,13 @@ export function ChatArea() {
                 )}
                 <button
                   type="button"
-                  onClick={requestPredictedNextQuestions}
-                  disabled={!sessionId || nextQuestionLoading}
-                  title="智能下一个用户提问"
+                  onClick={() => setKnowledgeEditorOpen(true)}
+                  disabled={!currentProjectId || !currentIssueId}
+                  title="查看当前知识 (项目知识 / 本任务知识)"
                   className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-cyan-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
                 >
-                  {nextQuestionLoading ? (
-                    <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-cyan-400" strokeWidth={1.9} />
-                  ) : (
-                    <Bot className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
-                  )}
-                  <span className="btn-label">智能下个提问</span>
+                  <BookOpen className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
+                  <span className="btn-label">查看当前知识</span>
                 </button>
               </>
             )}

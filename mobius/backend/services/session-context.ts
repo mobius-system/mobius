@@ -18,6 +18,7 @@ import { TARGET_SUBDIR as SKILLS_SUBDIR } from './session-skills-sync';
 import { isGitRepoRoot } from './workspace';
 import { filterReadableContextItems } from './access-control';
 import { isAssistantSession } from './assistant-session';
+import { readIssueKnowledgeShape } from './project-knowledge';
 
 const ISSUE_STATUS_LABELS: Record<string, string> = { active: '开放', in_progress: '进行中', completed: '已解决', open: '开放' };
 const RESEARCH_STATUS_LABELS: Record<string, string> = { active: '开放', completed: '已完成' };
@@ -228,7 +229,7 @@ function zh_add_research_peer_info(lines: string[], peers: any[]): void {
   lines.push('');
 }
 
-function zh_add_memory_info(lines: string[], memories: any[], project: any): void {
+function zh_add_memory_info(lines: string[], memories: any[], project: any, issue: any): void {
   const all = [...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])];
   if (all.length === 0) return;
   lines.push('## 持久 Memory');
@@ -246,7 +247,17 @@ function zh_add_memory_info(lines: string[], memories: any[], project: any): voi
     }
   });
   if (project && project.bind_path) {
-    lines.push(`此外，如果需要记住一些信息供未来使用，请写入 ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md，不要写入 ~/.codex 或者 ~/.claude。`);
+    const pkPath = `${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md`;
+    if (issue && issue.id) {
+      const ikPath = `${project.bind_path}/${HIDDEN_FOLDER_NAME}/issue_knowledge/${issue.id}/issue_knowledge.md`;
+      lines.push(`此外，如果需要记住一些信息供未来使用：`);
+      lines.push(`- 涉及项目的通用知识（整体事实、通用做法、跨任务可复用的经验）写入 \`${pkPath}\`；`);
+      lines.push(`- 较为局限、不太通用、仅与当前任务相关的知识写入 \`${ikPath}\`；`);
+      lines.push(`- 二者不互斥；但一个项目下会有大量 issue，写入 project_knowledge 的内容务必精简、克制。`);
+      lines.push(`- 不要写入 ~/.codex 或 ~/.claude。`);
+    } else {
+      lines.push(`此外，如果需要记住一些信息供未来使用，请写入 ${pkPath}，不要写入 ~/.codex 或者 ~/.claude。`);
+    }
     lines.push('');
   }
 }
@@ -457,7 +468,7 @@ function en_add_research_peer_info(lines: string[], peers: any[]): void {
   lines.push('');
 }
 
-function en_add_memory_info(lines: string[], memories: any[], project: any): void {
+function en_add_memory_info(lines: string[], memories: any[], project: any, issue: any): void {
   const all = [...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])];
   if (all.length === 0) return;
   lines.push('## Persistent Memory');
@@ -475,7 +486,17 @@ function en_add_memory_info(lines: string[], memories: any[], project: any): voi
     }
   });
   if (project && project.bind_path) {
-    lines.push(`Additionally, if you need to remember additional information for future sessions, please write to ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md, do not write to ~/.codex or ~/.claude.`);
+    const pkPath = `${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md`;
+    if (issue && issue.id) {
+      const ikPath = `${project.bind_path}/${HIDDEN_FOLDER_NAME}/issue_knowledge/${issue.id}/issue_knowledge.md`;
+      lines.push(`Additionally, if you need to remember information for future sessions:`);
+      lines.push(`- Project-wide general knowledge (overall facts, common practices, cross-task experience) → write to \`${pkPath}\`;`);
+      lines.push(`- Narrower, less general, task-specific knowledge → write to \`${ikPath}\`;`);
+      lines.push(`- The two are not mutually exclusive; but since a project has many issues, keep what you write into project_knowledge concise and restrained;`);
+      lines.push(`- Do not write to ~/.codex or ~/.claude.`);
+    } else {
+      lines.push(`Additionally, if you need to remember additional information for future sessions, please write to ${pkPath}, do not write to ~/.codex or ~/.claude.`);
+    }
     lines.push('');
   }
 }
@@ -642,7 +663,7 @@ function formatBody({ user, project, issue, research, session, skills, memories,
   fns.research(lines, research);
   fns.researchBlackboard(lines, research, session);
   fns.researchPeer(lines, research_peers);
-  fns.memory(lines, memories, project);
+  fns.memory(lines, memories, project, issue);
   fns.skill(lines, skills);
   fns.worktree(lines, issue, project, session);
   fns.completionFlag(lines, session, project);
@@ -927,7 +948,12 @@ function gatherIssueSources(user: any, issue: any, sessionExclusions: any): any 
       userWhitelist.memory_ids,
     );
     const projectMemories = projectId ? filterReadableContextItems(user, 'memory', Memories.listForProject(projectId)) : [];
-    effectiveMemories = [...userMemories, ...projectMemories]
+    // 本任务知识 (issue_knowledge.md): 与项目知识同构, 但只为本 issue 注入, 不入 memory 库,
+    // 因此不会出现在其它 issue 的记忆列表里. 像普通 memory 一样可被 exMemSet 排除 (可选).
+    const issueKnowledgeMemory = (issue && project) ? readIssueKnowledgeShape(project, issue) : null;
+    const candidateMemories = [...userMemories, ...projectMemories];
+    if (issueKnowledgeMemory) candidateMemories.push(issueKnowledgeMemory);
+    effectiveMemories = candidateMemories
       .filter(m => !exMemSet.has(m.id))
       .map(m => ({
         id: m.id,

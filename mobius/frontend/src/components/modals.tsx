@@ -1656,7 +1656,7 @@ interface SelectionDefaults {
   excluded_skill_ids?: string[]
   excluded_memory_ids?: string[]
 }
-const SCOPE_LABEL_WIZ: Record<string, string> = { user: '用户级', project: '项目级', builtin: '内置' }
+const SCOPE_LABEL_WIZ: Record<string, string> = { user: '用户级', project: '项目级', builtin: '内置', issue: '任务级' }
 
 type ModelKey = string
 
