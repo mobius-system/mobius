@@ -127,7 +127,7 @@ const Conversations = {
   },
 
   listForUser(userId: string): Array<Record<string, unknown>> {
-    return db.prepare(`
+    const rows = db.prepare(`
       SELECT c.id, c.name, c.owner_id, c.created_at, c.last_active, c.type,
              (SELECT content FROM conversation_messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message,
              (SELECT created_at FROM conversation_messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message_at,
@@ -143,6 +143,23 @@ const Conversations = {
       WHERE c.id IN (SELECT conversation_id FROM conversation_members WHERE member_type = 'user' AND member_id = ?)
       ORDER BY c.last_active DESC
     `).all(userId, userId) as Array<Record<string, unknown>>;
+    if (rows.length === 0) return rows;
+    // 附带各会话 user 成员的 display_name 列表(member_names): 1v1 列表显示"对方"名称/头像依赖它
+    // (direct 会话的 conversations.name 是创建者视角的"对方", 对另一方会显示成自己, 不能直接用)。
+    const ids = rows.map(r => String(r.id));
+    const placeholders = ids.map(() => '?').join(',');
+    const members = db.prepare(
+      `SELECT conversation_id, display_name FROM conversation_members
+       WHERE member_type = 'user' AND conversation_id IN (${placeholders})`,
+    ).all(...ids) as Array<{ conversation_id: string; display_name?: string }>;
+    const namesByConv = new Map<string, string[]>();
+    for (const m of members) {
+      const name = String(m.display_name || '').trim();
+      if (!name) continue;
+      if (!namesByConv.has(m.conversation_id)) namesByConv.set(m.conversation_id, []);
+      namesByConv.get(m.conversation_id)!.push(name);
+    }
+    return rows.map(r => ({ ...r, member_names: namesByConv.get(String(r.id)) || [] }));
   },
 
   // 标记该 user 成员已读到 conversation 当前最新消息(打开群聊/SSE 连接时调用).

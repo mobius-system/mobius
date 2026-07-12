@@ -21,8 +21,14 @@
 import jwt from 'jsonwebtoken';
 // @ts-ignore — ws 是 CommonJS, 无 TS 类型
 import { WebSocketServer } from 'ws';
-// @ts-ignore — node-pty 原生模块
-import * as pty from 'node-pty';
+// node-pty 是原生模块, 部分环境缺失 → 缺失时 web 终端降级(拒绝连接)但不阻塞服务启动.
+// @ts-ignore
+let pty: any = null;
+try {
+  pty = require('node-pty');
+} catch {
+  pty = null;
+}
 import fs from 'fs';
 import { JWT_SECRET } from '../config';
 // @ts-ignore — repository 仍是 .js 语义, tsx 透明转译
@@ -88,8 +94,13 @@ export function handleUpgrade(req: any, socket: any, head: Buffer): void {
   if (denied) { socket.destroy(); return; }
 
   wss.handleUpgrade(req, socket, head, (ws: any) => {
+    if (!pty) {
+      try { ws.close(1011, 'web terminal unavailable: node-pty not installed'); } catch { /* ignore */ }
+      console.error('[web-terminal] node-pty not installed, rejecting terminal connection');
+      return;
+    }
     const shell = process.env.SHELL || 'bash';
-    let term: pty.IPty;
+    let term: any;
     try {
       term = pty.spawn(shell, [], {
         name: 'xterm-256color',
