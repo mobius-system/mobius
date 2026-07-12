@@ -149,8 +149,11 @@ const Conversations = {
     const ids = rows.map(r => String(r.id));
     const placeholders = ids.map(() => '?').join(',');
     const members = db.prepare(
-      `SELECT conversation_id, display_name FROM conversation_members
-       WHERE member_type = 'user' AND conversation_id IN (${placeholders})`,
+      `SELECT cm.conversation_id,
+              COALESCE(u.display_name, cm.display_name, cm.member_id) AS display_name
+       FROM conversation_members cm
+       LEFT JOIN users u ON u.id = cm.member_id
+       WHERE cm.member_type = 'user' AND cm.conversation_id IN (${placeholders})`,
     ).all(...ids) as Array<{ conversation_id: string; display_name?: string }>;
     const namesByConv = new Map<string, string[]>();
     for (const m of members) {
@@ -196,9 +199,21 @@ const Conversations = {
   },
 
   listMembers(conversationId: string): MemberRow[] {
-    return db.prepare(
-      'SELECT * FROM conversation_members WHERE conversation_id = ? ORDER BY role DESC, joined_at ASC',
-    ).all(conversationId) as MemberRow[];
+    const rows = db.prepare(
+      `SELECT cm.*,
+        (SELECT u.display_name FROM users u WHERE u.id = cm.member_id) AS _live_display_name
+       FROM conversation_members cm
+       WHERE cm.conversation_id = ?
+       ORDER BY cm.role DESC, cm.joined_at ASC`,
+    ).all(conversationId) as Array<MemberRow & { _live_display_name?: string }>;
+    // user 成员的 display_name 实时取自 users 表(对方改名后顶栏/成员列表同步); agent 成员保持快照.
+    for (const r of rows) {
+      if (r.member_type === 'user' && r._live_display_name) {
+        (r as MemberRow).display_name = r._live_display_name;
+      }
+      delete (r as any)._live_display_name;
+    }
+    return rows as MemberRow[];
   },
 
   findMember(conversationId: string, type: MemberType, memberId: string): MemberRow | undefined {
