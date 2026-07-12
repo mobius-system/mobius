@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useStore, api } from '../store'
-import { ChangePasswordModal, AimuxGuideModal, DesktopDownloadModal } from './modals'
+import { ChangePasswordModal, AimuxGuideModal, DesktopDownloadModal, MobileDownloadModal } from './modals'
 import { GlobalCreateMenu, GlobalCreateRoot, type CreateKind } from './global-create'
 import { SearchModal } from './search-modal'
 import { AdminPanel } from './panels'
@@ -436,6 +436,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const [showChangePw, setShowChangePw] = useState(false)
   const [showAimuxGuide, setShowAimuxGuide] = useState(false)
   const [showDesktopDownload, setShowDesktopDownload] = useState(false)
+  const [showMobileDownload, setShowMobileDownload] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showThemeMenu, setShowThemeMenu] = useState(false)
   const [showGuideHelp, setShowGuideHelp] = useState(false)
@@ -982,6 +983,12 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" /></svg>
                   下载桌面客户端
                 </button>
+                <button onClick={() => { setShowUserMenu(false); setShowMobileDownload(true) }}
+                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" /></svg>
+                  下载移动端 App
+                </button>
                 <button onClick={() => { setShowUserMenu(false); setShowChangePw(true) }}
                   className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                   style={{ color: 'var(--text-primary)' }}>
@@ -1009,6 +1016,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
       {showAimuxGuide && <AimuxGuideModal onClose={() => setShowAimuxGuide(false)} />}
       {showDesktopDownload && <DesktopDownloadModal onClose={() => setShowDesktopDownload(false)} />}
+      {showMobileDownload && <MobileDownloadModal onClose={() => setShowMobileDownload(false)} />}
       {showGuideHelp && <GuideHelpModal onClose={() => setShowGuideHelp(false)} />}
       {showPalette && <CustomThemePalette onClose={() => setShowPalette(false)} />}
       {showSearch && (
