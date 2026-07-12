@@ -10,7 +10,6 @@ import { loadCreds, saveCreds, clearCreds, type StoredCreds } from "./lib/secret
 import { gatherHostInfo, type BootData } from "./lib/host-info";
 import { ensureAimux, upgradeAimux, getAimuxVersion, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
 import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
-import { injectBadge, setBadge } from "./lib/status-overlay";
 import { injectProjectPathOverlay, dismissOverlay, injectToast } from "./lib/project-overlay";
 import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
 import { getAimuxEnabled, setAimuxEnabled } from "./lib/desktop-settings";
@@ -110,17 +109,11 @@ async function ensureProjectPath(projectId: string): Promise<void> {
   void injectProjectPathOverlay(mainWindow.webContents, { projectId, projectName, defaultPath, machineInfo });
 }
 
-// ——— 状态分发：徽标 + 推给 web UI ———
+// ——— 状态分发：推给 web UI（前端 AimuxStatusBadge 通过 IPC 接收，不再由主进程注入徽标）———
 function emitStatus(s: AimuxStatus): void {
   lastStatus = s;
-  applyStatusToBadge();
   broadcast("aimux:status-changed", s);
   if (s.detail) appendLog(`[${s.state}] ${s.detail}`);
-}
-
-function applyStatusToBadge(): void {
-  if (!mainWindow) return;
-  void setBadge(mainWindow.webContents, lastStatus.state, lastStatus.detail);
 }
 
 // ——— 登录 ———
@@ -361,11 +354,10 @@ function createWindow(): void {
     if (origin && !url.startsWith(origin)) _e.preventDefault();
   });
 
-  // 远程页就绪后注入 aimux 状态徽标
+  // 远程页就绪后处理项目本地路径绑定（aimux 状态徽标已移至前端 AimuxStatusBadge）
   mainWindow.webContents.on("did-finish-load", () => {
     const u = mainWindow?.webContents.getURL() || "";
     if (u.startsWith("http")) {
-      void injectBadge(mainWindow!.webContents).then(() => applyStatusToBadge());
       handleProjectUrl(u);
     }
   });

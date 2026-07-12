@@ -251,11 +251,13 @@ function zh_add_memory_info(lines: string[], memories: any[], project: any, issu
     const ikPath = (issue && issue.id)
       ? `${project.bind_path}/${HIDDEN_FOLDER_NAME}/issue_knowledge/${issue.id}/issue_knowledge.md`
       : '';
-    lines.push(`此外，如果需要记住一些信息供未来使用，请写入对应的知识文件（不要写入 ~/.codex 或 ~/.claude）：`);
-    lines.push(`- 项目通用知识（整体事实、通用做法、跨任务可复用的经验）→ \`${pkPath}\`；`);
     if (ikPath) {
+      lines.push(`此外，如果需要记住一些信息供未来使用，请写入对应的知识文件（不要写入 ~/.codex 或 ~/.claude）：`);
+      lines.push(`- 项目通用知识（整体事实、通用做法、跨任务可复用的经验）→ \`${pkPath}\`；`);
       lines.push(`- 仅与当前任务相关、较为局限的知识 → \`${ikPath}\`；`);
       lines.push(`- 两者并不互斥（同一条信息可在两处都写）；但一个项目下会有大量 issue，写入 project_knowledge 的内容务必精简、克制。`);
+    } else {
+      lines.push(`此外，如果需要记住一些信息供未来使用，请写入 ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md，不要写入 ~/.codex 或者 ~/.claude。`);
     }
     lines.push('');
   }

@@ -4,6 +4,7 @@ import { useStore, api } from '../store'
 import { ChangePasswordModal, AimuxGuideModal, DesktopDownloadModal, MobileDownloadModal } from './modals'
 import { GlobalCreateMenu, GlobalCreateRoot, type CreateKind } from './global-create'
 import { SearchModal } from './search-modal'
+import { AimuxStatusBadge } from './aimux-status-badge'
 import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
@@ -755,6 +756,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         {/* 右侧操作 */}
         <div className="mobius-topnav-actions flex min-w-0 flex-shrink items-center gap-1.5 xl:gap-2">
           {rightExtra}
+          {/* 桌面端 aimux 反向连接状态徽标 — 仅 Electron 检测到时渲染（搜索按钮左侧） */}
+          <AimuxStatusBadge />
           {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
           <button
             type="button"
@@ -765,7 +768,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             className="mobius-search-trigger h-8 flex shrink-0 items-center gap-1.5 rounded-lg px-2 border hover:bg-[var(--bg-card-hover)] transition-colors"
             style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}>
             <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-            {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>}
+            {/* {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>} */}
           </button>
           {/* 新建下拉 — 全局 4 类创建 (项目 / Issue / Session / Research Agent) */}
           <GlobalCreateMenu
