@@ -490,11 +490,12 @@ function en_add_memory_info(lines: string[], memories: any[], project: any, issu
     const ikPath = (issue && issue.id)
       ? `${project.bind_path}/${HIDDEN_FOLDER_NAME}/issue_knowledge/${issue.id}/issue_knowledge.md`
       : '';
-    lines.push(`Additionally, if you need to remember information for future sessions, write it to the appropriate knowledge file (do not write to ~/.codex or ~/.claude):`);
-    lines.push(`- Project-wide general knowledge (overall facts, common practices, cross-task experience) → \`${pkPath}\`;`);
     if (ikPath) {
-      lines.push(`- Narrower, task-specific knowledge → \`${ikPath}\`;`);
-      lines.push(`- The two coexist and are NOT mutually exclusive (the same information may be written to both); but since a project has many issues, keep what you write into project_knowledge concise and restrained.`);
+      lines.push(`Additionally, if you need to remember information for future sessions, write it to the appropriate knowledge file (do not write to ~/.codex or ~/.claude):`);
+      lines.push(`- For project-wide general knowledge (overall facts, common practices, cross-task reusable experience; keep what you write into project_knowledge concise and restrained) → \`${pkPath}\`;`);
+      lines.push(`- For knowledge relevant only to the current task with limited generality, write to issue_knowledge → \`${ikPath}\`;`);
+    } else {
+      lines.push(`Additionally, if you need to remember information for future sessions, please write to ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md, do not write to ~/.codex or ~/.claude.`);
     }
     lines.push('');
   }
