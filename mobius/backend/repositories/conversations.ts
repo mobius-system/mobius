@@ -127,7 +127,7 @@ const Conversations = {
   },
 
   listForUser(userId: string): Array<Record<string, unknown>> {
-    return db.prepare(`
+    const rows = db.prepare(`
       SELECT c.id, c.name, c.owner_id, c.created_at, c.last_active, c.type,
              (SELECT content FROM conversation_messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message,
              (SELECT created_at FROM conversation_messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message_at,
@@ -143,6 +143,26 @@ const Conversations = {
       WHERE c.id IN (SELECT conversation_id FROM conversation_members WHERE member_type = 'user' AND member_id = ?)
       ORDER BY c.last_active DESC
     `).all(userId, userId) as Array<Record<string, unknown>>;
+    if (rows.length === 0) return rows;
+    // 附带各会话 user 成员的 display_name 列表(member_names): 1v1 列表显示"对方"名称/头像依赖它
+    // (direct 会话的 conversations.name 是创建者视角的"对方", 对另一方会显示成自己, 不能直接用)。
+    const ids = rows.map(r => String(r.id));
+    const placeholders = ids.map(() => '?').join(',');
+    const members = db.prepare(
+      `SELECT cm.conversation_id,
+              COALESCE(u.display_name, cm.display_name, cm.member_id) AS display_name
+       FROM conversation_members cm
+       LEFT JOIN users u ON u.id = cm.member_id
+       WHERE cm.member_type = 'user' AND cm.conversation_id IN (${placeholders})`,
+    ).all(...ids) as Array<{ conversation_id: string; display_name?: string }>;
+    const namesByConv = new Map<string, string[]>();
+    for (const m of members) {
+      const name = String(m.display_name || '').trim();
+      if (!name) continue;
+      if (!namesByConv.has(m.conversation_id)) namesByConv.set(m.conversation_id, []);
+      namesByConv.get(m.conversation_id)!.push(name);
+    }
+    return rows.map(r => ({ ...r, member_names: namesByConv.get(String(r.id)) || [] }));
   },
 
   // 标记该 user 成员已读到 conversation 当前最新消息(打开群聊/SSE 连接时调用).
@@ -179,9 +199,21 @@ const Conversations = {
   },
 
   listMembers(conversationId: string): MemberRow[] {
-    return db.prepare(
-      'SELECT * FROM conversation_members WHERE conversation_id = ? ORDER BY role DESC, joined_at ASC',
-    ).all(conversationId) as MemberRow[];
+    const rows = db.prepare(
+      `SELECT cm.*,
+        (SELECT u.display_name FROM users u WHERE u.id = cm.member_id) AS _live_display_name
+       FROM conversation_members cm
+       WHERE cm.conversation_id = ?
+       ORDER BY cm.role DESC, cm.joined_at ASC`,
+    ).all(conversationId) as Array<MemberRow & { _live_display_name?: string }>;
+    // user 成员的 display_name 实时取自 users 表(对方改名后顶栏/成员列表同步); agent 成员保持快照.
+    for (const r of rows) {
+      if (r.member_type === 'user' && r._live_display_name) {
+        (r as MemberRow).display_name = r._live_display_name;
+      }
+      delete (r as any)._live_display_name;
+    }
+    return rows as MemberRow[];
   },
 
   findMember(conversationId: string, type: MemberType, memberId: string): MemberRow | undefined {
@@ -200,6 +232,13 @@ const Conversations = {
     return db.prepare(
       'DELETE FROM conversation_members WHERE conversation_id = ? AND member_type = ? AND member_id = ?',
     ).run(conversationId, type, memberId).changes;
+  },
+
+  // 解散/删除整个会话: 群主"删除聊天"时调用. 手动级联删 members+messages(无 FK CASCADE).
+  deleteConversation(conversationId: string): void {
+    db.prepare('DELETE FROM conversation_messages WHERE conversation_id = ?').run(conversationId);
+    db.prepare('DELETE FROM conversation_members WHERE conversation_id = ?').run(conversationId);
+    db.prepare('DELETE FROM conversations WHERE id = ?').run(conversationId);
   },
 
   touch(conversationId: string): void {
