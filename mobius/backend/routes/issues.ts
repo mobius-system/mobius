@@ -13,7 +13,7 @@ import { buildIssueContextPreview, buildIssueSelectionDefaults, buildSessionSele
 // @ts-ignore — service 仍是 .js
 import { recordAdminAuditIfCrossUser } from '../services/admin-audit';
 // @ts-ignore — service 仍是 .js
-import { ensureProjectKnowledgeFile } from '../services/project-knowledge';
+import { ensureProjectKnowledgeFile, issueKnowledgePath, writeIssueKnowledge } from '../services/project-knowledge';
 import { Sessions } from '../repositories/sessions';
 // @ts-ignore — service 仍是 .js
 import modelRegistry from '../services/model-registry';
@@ -353,6 +353,7 @@ function handleContextPreview(req: express.Request, res: express.Response): void
     {
       name: typeof src.name === 'string' ? src.name : '',
       description: typeof src.description === 'string' ? src.description : '',
+      pc_client_metadata: src.pc_client_metadata ?? null,
     },
     toIdList(src.excluded_skill_ids),
     toIdList(src.excluded_memory_ids),
@@ -362,6 +363,42 @@ function handleContextPreview(req: express.Request, res: express.Response): void
 }
 router.get('/:id/context-preview', auth, handleContextPreview);
 router.post('/:id/context-preview', auth, handleContextPreview);
+
+// Issue 级知识: 读写 <bind_path>/<HIDDEN_FOLDER_NAME>/issue_knowledge/<issue_id>/issue_knowledge.md
+// 与 project_knowledge.md 同构 (项目知识 = 项目级通用; 本任务知识 = 仅当前 Issue 相关).
+router.get('/:id/knowledge/content', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
+  const id = req.params.id as any;
+  const issue = Issues.findById(id);
+  if (!issue) { res.status(404).json({ error: '未找到' }); return; }
+  if (!canReadIssue(user, issue)) { res.status(404).json({ error: '未找到' }); return; }
+  const project = Projects.findById(issue.project_id);
+  if (!project || !project.bind_path) { res.status(400).json({ error: '项目未绑定路径' }); return; }
+  const filePath = issueKnowledgePath(project, issue.id);
+  if (!filePath) { res.status(400).json({ error: '项目未绑定路径' }); return; }
+  try {
+    if (!fs.existsSync(filePath)) return res.json({ ok: true, content: '', exists: false });
+    const content = fs.readFileSync(filePath, 'utf8');
+    return res.json({ ok: true, content, exists: true });
+  } catch (e) {
+    return res.status(500).json({ error: `读取任务知识文件失败: ${(e as Error).message}` });
+  }
+});
+
+router.post('/:id/knowledge/upload', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
+  const id = req.params.id as any;
+  const issue = Issues.findById(id) as any;
+  if (!issue) { res.status(404).json({ error: '未找到' }); return; }
+  if (!canManageIssue(user, issue)) { res.status(403).json({ error: '无权修改此 Issue 的任务知识' }); return; }
+  const project = Projects.findById(issue.project_id);
+  if (!project || !project.bind_path) { res.status(400).json({ error: '项目未绑定路径' }); return; }
+  const content = typeof (req.body || {}).content === 'string' ? (req.body as any).content : '';
+  if (!content.trim()) return res.status(400).json({ error: '任务知识内容不能为空' });
+  const result = writeIssueKnowledge(project, issue, content);
+  if (!result.ok) return res.status(400).json({ error: result.error });
+  res.json({ ok: true, path: result.path, memory_name: `${issue.title || issue.id}的任务知识` });
+});
 
 // 用户对 issue 的个人收藏 (区别于 PATCH /:id body.pinned 的项目级全局置顶).
 // 权限: 只要有读权限就能 star/unstar, 不要求 canManage.

@@ -8,6 +8,12 @@ const desktopApi = {
   login: (creds: { server: string; username: string; password: string }) =>
     ipcRenderer.invoke("auth:login", creds),
   getLastServer: () => ipcRenderer.invoke("auth:get-last-server"),
+  setTitleBarOverlay: (opts: { color?: string; symbolColor?: string; height?: number }) =>
+    ipcRenderer.invoke("desktop:set-title-bar-overlay", opts),
+  windowMinimize: () => ipcRenderer.invoke("window:minimize"),
+  windowToggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
+  windowClose: () => ipcRenderer.invoke("window:close"),
+  windowIsMaximized: () => ipcRenderer.invoke("window:is-maximized"),
 };
 contextBridge.exposeInMainWorld("desktop", desktopApi);
 
@@ -18,6 +24,8 @@ const mobiusDesktop = {
   getAimuxDetails: () => ipcRenderer.invoke("aimux:details"),
   getAimuxVersion: () => ipcRenderer.invoke("aimux:version"),
   reconnectAimux: () => ipcRenderer.invoke("aimux:reconnect"),
+  getAimuxEnabled: () => ipcRenderer.invoke("aimux:get-enabled"),
+  setAimuxEnabled: (enabled: boolean) => ipcRenderer.invoke("aimux:set-enabled", enabled),
   onAimuxStatus: (cb: (s: { state: string; detail?: string }) => void) => {
     const listener = (_e: unknown, s: { state: string; detail?: string }) => cb(s);
     ipcRenderer.on("aimux:status-changed", listener);
@@ -35,7 +43,25 @@ const mobiusDesktop = {
   pickDirectory: () => ipcRenderer.invoke("project:pick-directory"),
   confirmProjectPath: (projectId: string, path: string) =>
     ipcRenderer.invoke("project:confirm-path", projectId, path),
+  getProjectBindStatus: (projectId: string) =>
+    ipcRenderer.invoke("project:bind-status", projectId),
   getMachineInfo: () => ipcRenderer.invoke("desktop:machine-info"),
+  getProjectLocalPath: (projectId: string) => ipcRenderer.invoke("project:get-path", projectId),
+  getProjectWorkMode: (projectId: string) => ipcRenderer.invoke("project:get-work-mode", projectId),
+  setProjectWorkMode: (projectId: string, mode: string) => ipcRenderer.invoke("project:set-work-mode", projectId, mode),
+  // 前端切主题后上报: 透明背景 + 当前主题文字色作窗口按钮图标色 (Win/Linux overlay 用)
+  setTitleBarOverlay: (opts: { color?: string; symbolColor?: string; height?: number }) =>
+    ipcRenderer.invoke("desktop:set-title-bar-overlay", opts),
+  // 自绘窗口控制按钮用 (titleBarOverlay 原生按钮符号在此环境不渲染)
+  windowMinimize: () => ipcRenderer.invoke("window:minimize"),
+  windowToggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
+  windowClose: () => ipcRenderer.invoke("window:close"),
+  windowIsMaximized: () => ipcRenderer.invoke("window:is-maximized"),
+  onMaximizeChange: (cb: (maximized: boolean) => void) => {
+    const listener = (_e: unknown, maximized: boolean) => cb(maximized);
+    ipcRenderer.on("window:maximize-changed", listener);
+    return () => ipcRenderer.removeListener("window:maximize-changed", listener);
+  },
   logout: () => ipcRenderer.invoke("auth:logout"),
 };
 contextBridge.exposeInMainWorld("mobiusDesktop", mobiusDesktop);

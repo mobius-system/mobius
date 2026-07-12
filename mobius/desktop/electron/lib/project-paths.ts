@@ -8,7 +8,7 @@ import * as path from "node:path";
 const FILE = (): string => path.join(app.getPath("userData"), "project-paths.json");
 
 interface Store {
-  [k: string]: { path: string; updatedAt: string };
+  [k: string]: { path?: string; workMode?: string; updatedAt: string };
 }
 
 function read(): Store {
@@ -35,7 +35,19 @@ export function getProjectLocalPath(server: string, projectId: string): string |
 
 export function setProjectLocalPath(server: string, projectId: string, p: string): void {
   const store = read();
-  store[key(server, projectId)] = { path: p, updatedAt: new Date().toISOString() };
+  const k = key(server, projectId);
+  store[k] = { ...store[k], path: p, updatedAt: new Date().toISOString() };
+  write(store);
+}
+
+/** Session 工作模式偏好: hub=只在中枢 / pc=只在此电脑 / dual=双侧(默认)。 */
+export function getProjectWorkMode(server: string, projectId: string): string | null {
+  return read()[key(server, projectId)]?.workMode || null;
+}
+export function setProjectWorkMode(server: string, projectId: string, mode: string): void {
+  const store = read();
+  const k = key(server, projectId);
+  store[k] = { ...store[k], workMode: mode, updatedAt: new Date().toISOString() };
   write(store);
 }
 

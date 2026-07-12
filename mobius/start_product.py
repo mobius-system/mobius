@@ -199,7 +199,14 @@ def promote_frontend_build(staging_dir: Path, step_label: str = "[2/4]") -> None
             BACKUP_PUBLIC_DIR.rename(PUBLIC_DIR)
         raise
 
-    # 替换成功, backup 没用了, 删掉.
+    # 替换成功. backup 里的 desktop-builds 是手放的桌面端构建产物 (不在 vite 产物里),
+    # promote 整目录交换会丢; 这里 move 回新 public, 保证 /desktop-builds/* 下载链接不因部署失效.
+    _db_src = BACKUP_PUBLIC_DIR / "desktop-builds"
+    _db_dst = PUBLIC_DIR / "desktop-builds"
+    if _db_src.is_dir() and not _db_dst.exists():
+        _db_src.rename(_db_dst)
+
+    # backup 没用了, 删掉.
     if BACKUP_PUBLIC_DIR.exists():
         shutil.rmtree(BACKUP_PUBLIC_DIR)
 
@@ -252,12 +259,12 @@ def ensure_aimux_bridge_runtime_env() -> None:
     os.environ.setdefault("AIMUX_BRIDGE_HOST", "127.0.0.1")
     os.environ.setdefault("AIMUX_BRIDGE_PORT", "33315")
     # AIMUX_BRIDGE_RUNTIME 不显式设: 让 aimux CLI/broker 走自身默认 fallback (~/.aimux/bridge/runtime.json).
-    # 这样 agent 调 aimux CLI 时无需 export env, 跟 aimux 0.1.9 上游行为一致.
+    # 这样 agent 调 aimux CLI 时无需 export env, 跟 aimux 0.1.10 上游行为一致.
     # 若调用方显式设了 AIMUX_BRIDGE_RUNTIME (如老部署 / 容器化场景), ecosystem.config.js envKeys 仍会透传.
 
 
 def ensure_aimux_bridge_venv() -> None:
-    """Install mobius/.venv-aimux with aimux==0.1.9 if missing (idempotent)."""
+    """Install mobius/.venv-aimux with aimux==0.1.10 if missing (idempotent)."""
     # 用 venv 内的 aimux 二进制存在性作为"是否已装"的哨兵, 避免重复跑 setup 脚本.
     venv_aimux = HERE / ".venv-aimux" / "bin" / "aimux"
     if venv_aimux.exists():

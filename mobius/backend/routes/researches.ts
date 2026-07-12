@@ -320,6 +320,7 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
       selection_snapshot: selectionSnapshot,
       model: resolvedModel.sessionModelValue,
       language: sessionLanguage,
+      pc_client_metadata: req.body?.pc_client_metadata,
     });
   } catch (e) {
     if (String((e as Error).message || '').includes('idx_sessions_v2_one_chief_per_research')) {
@@ -421,6 +422,7 @@ function handleContextPreview(req: express.Request, res: express.Response): void
       name: typeof src.name === 'string' ? src.name : '',
       description: typeof src.description === 'string' ? src.description : '',
       role: typeof src.role === 'string' ? src.role : 'research_assistant',
+      pc_client_metadata: src.pc_client_metadata ?? null,
     },
     toIdList(src.excluded_skill_ids),
     toIdList(src.excluded_memory_ids),

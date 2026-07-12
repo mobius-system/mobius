@@ -57,7 +57,7 @@ function gatherHostInfo(opts) {
     appVersion: opts.appVersion
   };
 }
-const AIMUX_PIN = "aimux==0.1.9";
+const AIMUX_PIN = "aimux";
 const WIN = process.platform === "win32";
 function bundledPythonExe() {
   const candidates = WIN ? [
@@ -80,7 +80,7 @@ const venvPython = () => WIN ? path.join(venvDir(), "Scripts", "python.exe") : p
 function aimuxExe() {
   return WIN ? path.join(venvDir(), "Scripts", "aimux.exe") : path.join(venvDir(), "bin", "aimux");
 }
-function run(cmd, args, onLine) {
+function run(cmd, args, onLine, onRaw) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { windowsHide: true });
     let stdout = "";
@@ -88,6 +88,7 @@ function run(cmd, args, onLine) {
     const feed = (b, sink) => {
       const s = b.toString("utf8");
       sink(s);
+      onRaw?.(s);
       if (onLine) {
         for (const seg of s.split(/[\r\n]+/)) {
           const t = seg.trim();
@@ -101,14 +102,14 @@ function run(cmd, args, onLine) {
     child.on("close", (code) => resolve({ code: code ?? 0, stdout, stderr }));
   });
 }
-async function ensureAimux(onProgress) {
+async function ensureAimux(onProgress, onRaw) {
   if (fs.existsSync(aimuxExe())) {
     onProgress?.({ phase: "ready" });
     return { ok: true };
   }
   const py = pythonExe();
   onProgress?.({ phase: "venv", detail: py });
-  let r = await run(py, ["-m", "venv", venvDir()]);
+  let r = await run(py, ["-m", "venv", venvDir()], void 0, onRaw);
   if (r.code !== 0) return { ok: false, error: `venv 创建失败: ${r.stderr || r.stdout}` };
   onProgress?.({ phase: "install", detail: `下载并安装 ${AIMUX_PIN}…` });
   r = await run(
@@ -118,7 +119,8 @@ async function ensureAimux(onProgress) {
       if (/downloading|collecting|installing|using cached|%\s*\d|━|─/i.test(line)) {
         onProgress?.({ phase: "install", detail: line.slice(0, 100) });
       }
-    }
+    },
+    onRaw
   );
   if (r.code !== 0) return { ok: false, error: `pip install 失败: ${r.stderr || r.stdout}` };
   if (!fs.existsSync(aimuxExe())) return { ok: false, error: `aimux 可执行未生成: ${aimuxExe()}` };
@@ -131,21 +133,36 @@ async function getAimuxVersion() {
   const m = r.stdout.match(/Version:\s*(\S+)/);
   return m ? m[1] : "未知";
 }
-async function upgradeAimux() {
+async function upgradeAimux(onProgress, onRaw) {
   if (!fs.existsSync(venvPython())) return { ok: false, error: "venv 尚未创建" };
-  const r = await run(venvPython(), [
-    "-m",
-    "pip",
-    "install",
-    "--no-input",
-    "--disable-pip-version-check",
-    "--upgrade",
-    "aimux"
-  ]);
+  onProgress?.({ phase: "install", detail: "pip install --upgrade aimux…" });
+  const r = await run(
+    venvPython(),
+    ["-m", "pip", "install", "--no-input", "--disable-pip-version-check", "--upgrade", "aimux"],
+    (line) => {
+      if (/downloading|collecting|installing|using cached|uninstalling|successfully|%\s*\d|━|─/i.test(line)) {
+        onProgress?.({ phase: "install", detail: line.slice(0, 100) });
+      }
+    },
+    onRaw
+  );
   if (r.code !== 0) return { ok: false, error: r.stderr || r.stdout };
   const show = await run(venvPython(), ["-m", "pip", "show", "aimux"]);
   const m = show.stdout.match(/Version:\s*(\S+)/);
+  onProgress?.({ phase: "ready" });
   return { ok: true, version: m ? m[1] : "unknown" };
+}
+function aimuxLogPath() {
+  return path.join(app.getPath("userData"), "logs", "aimux.log");
+}
+function appendAimuxLog(data) {
+  const logPath = aimuxLogPath();
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, data);
+  } catch (e) {
+    console.error(`[aimux-supervisor] 写 aimux 日志失败 (${logPath}):`, e);
+  }
 }
 class AimuxSupervisor {
   child = null;
@@ -163,12 +180,16 @@ class AimuxSupervisor {
   }
   spawnChild() {
     const { aimuxExe: aimuxExe2, bridgeUrl, token, identifier, onStatus } = this.opts;
-    onStatus({ state: "starting", detail: "正在反向连接 mobius…", identifier });
-    const child = spawn(aimuxExe2, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token]);
+    onStatus({ state: "starting", detail: "正在连接 mobius…", identifier });
+    appendAimuxLog(`
+==== [${(/* @__PURE__ */ new Date()).toISOString()}] spawn reverse connect identifier=${identifier} ====
+`);
+    const child = spawn(aimuxExe2, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token, "--replace"]);
     this.child = child;
     const classify = (line) => {
       this.opts.onLog?.(line);
       const lower = line.toLowerCase();
+      if (/command failed|request_id=/.test(lower)) return;
       if (/error|fail|refused|expired|invalid|traceback|exception/.test(lower)) {
         onStatus({ state: "failed", detail: line, identifier });
       } else if (/connected|registered|event stream|sse/i.test(lower)) {
@@ -176,6 +197,7 @@ class AimuxSupervisor {
       }
     };
     const handle = (b) => {
+      appendAimuxLog(b);
       for (const l of b.toString("utf8").split(/[\r\n]+/)) {
         const t = l.trim();
         if (t) classify(t);
@@ -185,6 +207,9 @@ class AimuxSupervisor {
     child.stderr?.on("data", handle);
     child.on("exit", (code) => {
       this.child = null;
+      appendAimuxLog(`
+---- [${(/* @__PURE__ */ new Date()).toISOString()}] child exited code=${code} ----
+`);
       if (this.stopping) {
         this.opts.onStatus({ state: "stopped", identifier });
         return;
@@ -195,6 +220,9 @@ class AimuxSupervisor {
       }, 5e3);
     });
     child.on("error", (err) => {
+      appendAimuxLog(`
+---- [${(/* @__PURE__ */ new Date()).toISOString()}] spawn error: ${err.message} ----
+`);
       this.opts.onStatus({ state: "failed", detail: `spawn 失败: ${err.message}`, identifier });
     });
   }
@@ -255,62 +283,6 @@ class AimuxSupervisor {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     await this.killChild();
     this.opts.onStatus({ state: "stopped", identifier: this.opts.identifier });
-  }
-}
-const BADGE_ID = "__mobius_desktop_status_badge__";
-const CSS$1 = `
-#${BADGE_ID} {
-  position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 2147483647;
-  font: 12px/1.4 -apple-system, "Segoe UI", Roboto, "PingFang SC", sans-serif;
-  padding: 5px 10px; border-radius: 14px; color: #fff;
-  background: rgba(40,40,40,0.92); box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  display: flex; align-items: center; gap: 6px; pointer-events: auto; cursor: pointer; user-select: none;
-}
-#${BADGE_ID}:hover { background: rgba(20,20,20,0.95); }
-#${BADGE_ID} .dot { width: 8px; height: 8px; border-radius: 50%; background: #999; }
-#${BADGE_ID}.s-starting .dot { background: #f5a623; animation: __md_pulse 1s infinite; }
-#${BADGE_ID}.s-connected .dot { background: #34c759; }
-#${BADGE_ID}.s-failed   .dot { background: #ff3b30; }
-#${BADGE_ID}.s-stopped  .dot { background: #999; }
-@keyframes __md_pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-`;
-const TEXT = {
-  starting: "aimux 连接中…",
-  connected: "aimux 已连接",
-  failed: "aimux 断开",
-  stopped: "aimux 已断开"
-};
-async function injectBadge(wc) {
-  try {
-    await wc.insertCSS(CSS$1, { cssOrigin: "user" });
-    await wc.executeJavaScript(`
-      if (!document.getElementById('${BADGE_ID}')) {
-        const el = document.createElement('div');
-        el.id = '${BADGE_ID}';
-        el.className = 's-starting';
-        el.title = '点击查看 aimux 详情';
-        el.innerHTML = '<span class="dot"></span><span class="txt">${TEXT.starting}</span>';
-        el.onclick = () => { try { window.mobiusDesktop && window.mobiusDesktop.openStatusPanel && window.mobiusDesktop.openStatusPanel(); } catch (e) {} };
-        document.documentElement.appendChild(el);
-      }
-      true;
-    `);
-  } catch {
-  }
-}
-async function setBadge(wc, state, detail) {
-  const text = detail ? `aimux: ${state}` : TEXT[state];
-  try {
-    await wc.executeJavaScript(`
-      (() => {
-        const el = document.getElementById('${BADGE_ID}');
-        if (!el) return;
-        el.className = 's-' + ${JSON.stringify(state)};
-        const txt = el.querySelector('.txt'); if (txt) txt.textContent = ${JSON.stringify(text)};
-      })();
-      true;
-    `);
-  } catch {
   }
 }
 const OVERLAY_ID = "__mobius_project_path_overlay__";
@@ -417,7 +389,17 @@ function getProjectLocalPath(server, projectId) {
 }
 function setProjectLocalPath(server, projectId, p) {
   const store = read();
-  store[key(server, projectId)] = { path: p, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  const k = key(server, projectId);
+  store[k] = { ...store[k], path: p, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  write(store);
+}
+function getProjectWorkMode(server, projectId) {
+  return read()[key(server, projectId)]?.workMode || null;
+}
+function setProjectWorkMode(server, projectId, mode) {
+  const store = read();
+  const k = key(server, projectId);
+  store[k] = { ...store[k], workMode: mode, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
   write(store);
 }
 function sanitizeName(name) {
@@ -530,13 +512,8 @@ async function ensureProjectPath(projectId) {
 }
 function emitStatus(s) {
   lastStatus = s;
-  applyStatusToBadge();
   broadcast("aimux:status-changed", s);
   if (s.detail) appendLog(`[${s.state}] ${s.detail}`);
-}
-function applyStatusToBadge() {
-  if (!mainWindow) return;
-  void setBadge(mainWindow.webContents, lastStatus.state, lastStatus.detail);
 }
 async function doLogin(serverRaw, username, password) {
   const server = serverRaw.replace(/\/$/, "");
@@ -618,10 +595,16 @@ async function bootDesktop() {
   const server = serverOrigin();
   installing = true;
   emitStatus({ state: "starting", detail: "首次启动需在本机下载 aimux（联网，约 30-90 秒）…" });
-  const inst = await ensureAimux((p) => {
-    if (p.phase === "venv") emitStatus({ state: "starting", detail: "创建 Python 虚拟环境…" });
-    else if (p.phase === "install") emitStatus({ state: "starting", detail: `下载并安装 aimux… ${p.detail ?? ""}` });
-  });
+  appendAimuxLog(`
+==== [${(/* @__PURE__ */ new Date()).toISOString()}] ensure aimux (install) ====
+`);
+  const inst = await ensureAimux(
+    (p) => {
+      if (p.phase === "venv") emitStatus({ state: "starting", detail: "创建 Python 虚拟环境…" });
+      else if (p.phase === "install") emitStatus({ state: "starting", detail: `下载并安装 aimux… ${p.detail ?? ""}` });
+    },
+    (data) => appendAimuxLog(data)
+  );
   installing = false;
   if (!inst.ok) {
     emitStatus({ state: "failed", detail: inst.error });
@@ -639,13 +622,27 @@ function runSyncReload() {
 }
 async function runUpdateAimux() {
   if (installing) return { ok: false, error: "正在安装中，请稍候" };
+  emitStatus({ state: "starting", detail: "断开现有连接, 准备更新 aimux…" });
+  await supervisor?.stop();
+  supervisor = null;
   emitStatus({ state: "starting", detail: "正在更新 aimux…" });
-  const r = await upgradeAimux();
+  appendAimuxLog(`
+==== [${(/* @__PURE__ */ new Date()).toISOString()}] upgrade aimux ====
+`);
+  const r = await upgradeAimux(
+    (p) => {
+      if (p.detail) {
+        appendLog(p.detail);
+        emitStatus({ state: "starting", detail: p.detail });
+      }
+    },
+    (data) => appendAimuxLog(data)
+  );
   if (!r.ok) {
     emitStatus({ state: "failed", detail: r.error });
     return { ok: false, error: r.error };
   }
-  await supervisor?.stop();
+  emitStatus({ state: "starting", detail: `aimux ${r.version} 已就绪, 正在反向连接…` });
   supervisor = buildSupervisor();
   supervisor?.start();
   return { ok: true, version: r.version };
@@ -691,7 +688,6 @@ function createWindow() {
   mainWindow.webContents.on("did-finish-load", () => {
     const u = mainWindow?.webContents.getURL() || "";
     if (u.startsWith("http")) {
-      void injectBadge(mainWindow.webContents).then(() => applyStatusToBadge());
       handleProjectUrl(u);
     }
   });
@@ -755,6 +751,7 @@ ipcMain.handle("aimux:details", () => ({
   serverOrigin: serverOrigin(),
   venvDir: venvDir(),
   aimuxExe: aimuxExe(),
+  aimuxLogPath: aimuxLogPath(),
   hasBundledPython: hasBundledPython(),
   hostInfo: gatherHostInfo({ aimuxIdentifier: creds?.identifier || "", serverOrigin: serverOrigin(), appVersion: app.getVersion() }),
   logs: [...logBuffer]
@@ -798,6 +795,12 @@ ipcMain.handle("project:confirm-path", async (_e, projectId, pathRaw) => {
   return { ok: true };
 });
 ipcMain.handle("desktop:machine-info", () => `${os.hostname()} · ${process.platform}`);
+ipcMain.handle("project:get-path", (_e, projectId) => getProjectLocalPath(serverOrigin(), projectId));
+ipcMain.handle("project:get-work-mode", (_e, projectId) => getProjectWorkMode(serverOrigin(), projectId));
+ipcMain.handle("project:set-work-mode", (_e, projectId, mode) => {
+  setProjectWorkMode(serverOrigin(), projectId, String(mode || "dual"));
+  return { ok: true };
+});
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();

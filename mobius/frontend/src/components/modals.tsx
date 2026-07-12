@@ -1656,7 +1656,7 @@ interface SelectionDefaults {
   excluded_skill_ids?: string[]
   excluded_memory_ids?: string[]
 }
-const SCOPE_LABEL_WIZ: Record<string, string> = { user: '用户级', project: '项目级', builtin: '内置' }
+const SCOPE_LABEL_WIZ: Record<string, string> = { user: '用户级', project: '项目级', builtin: '内置', issue: '任务级' }
 
 type ModelKey = string
 
@@ -1905,6 +1905,91 @@ function appendAgentSkillInstruction(desc: string, autoText: string, nextText: s
   return base.trim() ? `${base}\n\n${nextText}` : nextText
 }
 
+// PcTaskModeSection — 仅 electron 桌面端: 新建 Session 第1步模型栏上方的 PC 任务模式区块。
+// 通过 window.mobiusDesktop bridge 读写本机 project 绑定路径 + 工作模式偏好 (存桌面端 userData)。
+// 浏览器里 window.mobiusDesktop 不存在 → 不渲染 (NewSessionModal 调用处已用 isDesktop 守卫)。
+export function PcTaskModeSection({ projectId, isDark, onModeChange, onPathChange }: { projectId?: string; isDark: boolean; onModeChange?: (m: 'hub' | 'pc' | 'dual') => void; onPathChange?: (p: string) => void }) {
+  type Mode = 'hub' | 'pc' | 'dual'
+  const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
+  // projectId 兜底从 URL 取: NewSessionModal 某些调用入口未传 projectId, 但用户在项目页时 URL 含 /u/:user/p/:projectId;
+  // 与 main.ts handleProjectUrl 存路径用的 projectId 同源, 保证读写 key 一致 (否则读到 ::undefined 这种脏 key).
+  const pid = projectId || (typeof window !== 'undefined' ? (window.location.pathname.match(/\/u\/[^/]+\/p\/([^/?#]+)/) || [])[1] : undefined)
+  const [path, setPath] = useState('')
+  const [mode, setMode] = useState<Mode>('dual')
+  // aimux 连接状态: 仅 state==='connected' 时 pc/dual 可用; 未连接 (starting/failed/stopped) 时 pc/dual 灰色禁用并回落 hub.
+  const [aimuxConnected, setAimuxConnected] = useState(false)
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    if (!md) { setReady(true); return }
+    if (!pid) { setReady(true); onModeChange?.('dual'); return }
+    let cancelled = false
+    // aimux 状态: 初始快照 + 实时订阅 (连接状态会动态变化)
+    const unsubStatus = md.onAimuxStatus?.((s: { state?: string } | null | undefined) => {
+      if (!cancelled) setAimuxConnected(!!s && s.state === 'connected')
+    })
+    Promise.all([
+      md.getProjectLocalPath?.(pid).then((p: string | null | undefined) => { if (!cancelled) { setPath(p || ''); onPathChange?.(p || '') } }),
+      md.getProjectWorkMode?.(pid).then((m: string | null | undefined) => {
+        if (cancelled) return
+        const valid: Mode = m === 'hub' || m === 'pc' || m === 'dual' ? m : 'dual'
+        setMode(valid); onModeChange?.(valid)
+      }),
+      md.getAimuxStatus?.().then((s: { state?: string } | null | undefined) => { if (!cancelled) setAimuxConnected(!!s && s.state === 'connected') }),
+    ]).finally(() => { if (!cancelled) setReady(true) })
+    return () => { cancelled = true; unsubStatus?.() }
+  }, [md, pid])
+  // 不变式: aimux 未连接时 mode 强制回落 hub (pc/dual 不可用). 覆盖初值/用户偏好为 pc/dual 但 aimux 断开的情形.
+  useEffect(() => {
+    if (!ready) return
+    if (!aimuxConnected && mode !== 'hub') {
+      setMode('hub'); onModeChange?.('hub')
+    }
+  }, [aimuxConnected, mode, ready])
+  const choosePath = async () => {
+    if (!md || !pid) return
+    const picked = await md.pickDirectory?.()
+    if (!picked) return
+    const r = await md.confirmProjectPath?.(pid, picked)
+    if (r?.ok) { setPath(picked); onPathChange?.(picked) }
+  }
+  const chooseMode = (m: Mode) => {
+    // aimux 未连接时 pc/dual 不可选 (按钮已 disabled, 此为双保险)
+    if (m !== 'hub' && !aimuxConnected) return
+    setMode(m); onModeChange?.(m); if (pid) md?.setProjectWorkMode?.(pid, m)
+  }
+  if (!ready) return null
+  const MODES: Array<{ k: Mode; t: string; s: string }> = [
+    { k: 'hub', t: '只在 Mobius 中枢工作', s: 'session 在服务器跑' },
+    { k: 'pc', t: '只在此电脑上工作', s: '调度本机 (aimux)' },
+    { k: 'dual', t: '双侧工作', s: '中枢 + 本机 · 默认' },
+  ]
+  return (
+    <div>
+      <div className="text-[12px] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>PC 任务模式</div>
+      <div className="flex items-center gap-2 rounded-xl px-3 py-2 mb-2" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
+        <Folder className="w-4 h-4 shrink-0" style={{ color: isDark ? '#9ca3af' : '#64748b' }} />
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>本机工作路径</div>
+          <div className="text-[12px] truncate font-mono" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{path || '未绑定'}</div>
+        </div>
+        <button type="button" onClick={choosePath} className="shrink-0 text-[11px] px-2 py-1 rounded border" style={{ borderColor: 'var(--input-border)', color: isDark ? '#93c5fd' : '#2563eb' }}>{path ? '更改' : '选择'}</button>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {MODES.map(opt => {
+          const active = mode === opt.k
+          const disabled = opt.k !== 'hub' && !aimuxConnected
+          return (
+            <button key={opt.k} type="button" disabled={disabled} onClick={() => chooseMode(opt.k)} title={disabled ? 'aimux 未连接，此模式不可用' : undefined} className="min-h-14 rounded-xl text-left px-2.5 py-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: active ? 'rgba(59,130,246,0.12)' : 'var(--input-bg)', border: `1px solid ${active ? '#3b82f6' : 'var(--input-border)'}`, color: isDark ? '#f1f5f9' : '#1e293b' }}>
+              <div className="text-[12px] font-medium leading-snug">{opt.t}</div>
+              <div className="text-[10px] mt-0.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.s}</div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function NewSessionModal({
   issueId,
   researchId,
@@ -1986,6 +2071,26 @@ export function NewSessionModal({
   const [name, setName] = useState(() => isGuidedDemo
     ? (guidedDemoState?.sessionName || '')
     : (initialPreset?.name || initialDraft?.name || defaultName || formatDefaultSessionName(defaultNamePrefix)))
+  // PC 任务模式: work_mode (hub/pc/dual) + aimux_id. 桌面端初值 'dual' (默认双侧, 避免 mount 秒提交时 null 导致 UI 与必选逻辑不一致); web 端恒 null → 不注入、不影响 skill.
+  const [workMode, setWorkMode] = useState<'hub' | 'pc' | 'dual' | null>(
+    typeof window !== 'undefined' && !!(window as any).mobiusDesktop?.isDesktop ? 'dual' : null
+  )
+  const [aimuxId, setAimuxId] = useState<string | null>(null)
+  // PC 端工作路径 (桌面端 PcTaskModeSection 经 onPathChange 回传): 塞进 pc_client_metadata.local_path, 注入 session 提示词; web 端恒 '' → 不追加, 行为不变.
+  const [pcPath, setPcPath] = useState<string>('')
+  // electron 桌面端: session 默认名追加本机标识后缀 [OS · hostname] + 顺带取 aimux_id.
+  // 仅 mount 一次; bootData 异步取, 函数式 setName 不覆盖用户后续编辑; 草稿已带该 tag 则不重复追加.
+  useEffect(() => {
+    const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
+    if (!md?.isDesktop) return
+    md.getBootData?.().then?.((b: any) => {
+      if (!b?.hostname) return
+      setAimuxId(b.aimuxIdentifier || null)
+      const osName = b.platform === 'win32' ? 'Windows' : b.platform === 'darwin' ? 'macOS' : b.platform === 'linux' ? 'Linux' : (b.platform || 'PC')
+      const tag = `[${osName} · ${b.hostname}]`
+      setName(prev => prev && !prev.includes(tag) ? `${prev} ${tag}` : prev)
+    })
+  }, [])
   const [desc, setDesc] = useState(isGuidedDemo
     ? (guidedDemoState?.sessionDescription || '')
     : (initialPreset?.description || initialDraft?.desc || defaultDescription || ''))
@@ -2199,6 +2304,8 @@ export function NewSessionModal({
     return !!chosenAgentSkill && agentSkills.some(sk => sk.id === id && sk.id !== chosenAgentSkill.id)
   }, [agentSkills, chosenAgentSkill])
   const matchesRequiredSkill = useCallback((sk: { id?: string; name?: string; dirName?: string | null }) => {
+    // PC 任务模式 (仅桌面端 pc/dual): mobius-aimux skill 强制必选. web 端 workMode 恒 null → 不触发, 不改变 web 端 skill 行为.
+    if ((workMode === 'pc' || workMode === 'dual') && (sk.dirName || '').replace(/_/g, '-') === 'mobius-aimux') return true
     if (!requiredSessionSkill) return false
     const dirName = requiredSessionSkill.dirName
     const normalizedName = (requiredSessionSkill.name || dirName).replace(/_/g, '-')
@@ -2209,7 +2316,7 @@ export function NewSessionModal({
       || itemName === normalizedName
       || itemId === `builtin:${dirName}`
       || itemId.endsWith(`:${dirName}`)
-  }, [requiredSessionSkill])
+  }, [requiredSessionSkill, workMode])
 
   const normalizeSkillExclusions = useCallback((skillEx: Set<string>, availableSkillIds?: Set<string>) => {
     const next = new Set(skillEx)
@@ -2221,15 +2328,15 @@ export function NewSessionModal({
         }
       })
     }
-    if (requiredSessionSkill) {
-      availableSkills.forEach(sk => {
-        if (matchesRequiredSkill(sk) && (!availableSkillIds || availableSkillIds.has(sk.id))) {
-          next.delete(sk.id)
-        }
-      })
-    }
+    // 必选 skill 从排除集清理 (含 PC 任务模式 pc/dual 的 mobius-aimux; matchesRequiredSkill 自身判 workMode/requiredSessionSkill,
+    // web 端 workMode 恒 null → mobius-aimux 不匹配 → 不清理, 行为不变).
+    availableSkills.forEach(sk => {
+      if (matchesRequiredSkill(sk) && (!availableSkillIds || availableSkillIds.has(sk.id))) {
+        next.delete(sk.id)
+      }
+    })
     return next
-  }, [agentSkills, availableSkills, chosenAgentSkill, matchesRequiredSkill, requiredSessionSkill])
+  }, [agentSkills, availableSkills, chosenAgentSkill, matchesRequiredSkill])
 
   // Step 2 期间, 用户切换勾选 → 重拉 preview, 让"完整注入文本"和字数都跟着变.
   // 用 POST + body 提交: description 可能很长, 放 URL query 会撑爆请求头导致 fail to fetch.
@@ -2251,9 +2358,11 @@ export function NewSessionModal({
         personality,
         excluded_skill_ids: Array.from(skillEx),
         excluded_memory_ids: Array.from(memEx),
+        // PC 任务模式 (仅桌面端): 与 session 创建 body 同源, 让 preview 也注入 PC 提示词; web 端 workMode null 不传.
+        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined } } : {}),
       }),
     }) as WizardPreview
-  }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality])
+  }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality, workMode, aimuxId, pcPath])
 
   const fetchSelectionDefaults = useCallback(async () => {
     const endpoint = isResearch
@@ -2410,6 +2519,8 @@ export function NewSessionModal({
           excluded_skill_ids: Array.from(excludedSkills),
           excluded_memory_ids: Array.from(excludedMemories),
           continue_from_session_id: continueFromSessionId || undefined,
+          // PC 任务模式 (仅桌面端): workMode 非空才附带 pc_client_metadata; web 端 workMode 恒 null → body 完全不变.
+          ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined } } : {}),
         }),
       })
       draftClear(DRAFT_KEY)
@@ -2565,6 +2676,9 @@ export function NewSessionModal({
                     </div>
                   )}
                 </div>
+              )}
+              {typeof window !== 'undefined' && (window as any).mobiusDesktop?.isDesktop && (
+                <PcTaskModeSection projectId={projectId} isDark={isDark} onModeChange={setWorkMode} onPathChange={setPcPath} />
               )}
               <div>
                 <div className="text-[12px] mb-1.5 flex items-center justify-between" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
@@ -3225,6 +3339,147 @@ export function TurnTree({ sessionId, onClose, onRefresh }: { sessionId: string;
 }
 
 // =====================================================================
+// 下载桌面客户端 — 提供 Mobius Desktop (Fork B 薄壳) 三平台下载链接
+//   - 内置 python + 自动装 aimux 反连, 把本机注册为可调度节点
+//   - 产物在服务器 /desktop-builds/ 下, 经同源静态托管提供
+// =====================================================================
+const DESKTOP_VERSION = '0.0.4'
+const DESKTOP_BUILDS: Array<{ label: string; sub: string; file: string }> = [
+  { label: 'Windows', sub: 'x64 · Intel / AMD 64位', file: `mobius-desktop-${DESKTOP_VERSION}-win-x64.zip` },
+  { label: 'macOS', sub: 'Apple Silicon · M1/M2/M3/M4', file: `mobius-desktop-${DESKTOP_VERSION}-mac-arm64.zip` },
+  { label: 'macOS', sub: 'Intel · x64', file: `mobius-desktop-${DESKTOP_VERSION}-mac-x64.zip` },
+]
+
+// 移动端构建清单 — 镜像桌面 DESKTOP_BUILDS
+// TODO: 待补全 APK 信息后回填（filename / size / sha256）
+const MOBILE_VERSION = '0.1.0'
+const MOBILE_BUILDS: Array<{ label: string; sub: string; file: string }> = [
+  {
+    label: 'Android',
+    sub: 'arm64-v8a · 大多数现代手机',
+    file: `mobius-mobile-${MOBILE_VERSION}-android-arm64.apk`,
+  },
+  {
+    label: 'Android',
+    sub: 'armeabi-v7a · 老旧手机',
+    file: `mobius-mobile-${MOBILE_VERSION}-android-armeabi-v7a.apk`,
+  },
+  {
+    label: 'iOS (敬请期待)',
+    sub: 'App Store / TestFlight 上线后回填',
+    file: '',
+  },
+]
+
+export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
+  const { theme } = useStore()
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-[520px] max-w-[92vw] max-h-[85vh] overflow-y-auto rounded-2xl p-6 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>下载桌面客户端</h3>
+            <div className="text-[11px] mt-0.5" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
+              Mobius Desktop v{DESKTOP_VERSION} · 登录后自动把本机注册为可调度节点 (aimux 反连)
+            </div>
+          </div>
+          <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
+        </div>
+
+        <div className="space-y-2 mt-4">
+          {DESKTOP_BUILDS.map(b => (
+            <a key={b.file} href={`/desktop-builds/${b.file}`} download
+              className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
+              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                </svg>
+                <div>
+                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
+                  <div className="text-[11px]" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>{b.sub}</div>
+                </div>
+              </div>
+              <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: '#0a84ff', color: '#fff' }}>下载</span>
+            </a>
+          ))}
+        </div>
+
+        <div className="text-[11px] mt-4 space-y-1" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
+          <div>· 首次启动会自动在本机创建 Python 虚拟环境并安装 aimux (需联网, 约 30-90 秒)</div>
+          <div>· macOS 包未签名, 首次打开需右键 → 打开</div>
+          <div>· 登录后桌面端会以 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>desktop-&lt;主机名&gt;</code> 注册到 AIMUX 节点列表</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function MobileDownloadModal({ onClose }: { onClose: () => void }) {
+  const { theme } = useStore()
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-[520px] max-w-[92vw] max-h-[85vh] overflow-y-auto rounded-2xl p-6 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>下载移动端 App</h3>
+            <div className="text-[11px] mt-0.5" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
+              Mobius Mobile v{MOBILE_VERSION} · 连接 Mobius 服务器，移动端使用小莫助理
+            </div>
+          </div>
+          <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
+        </div>
+
+        <div className="space-y-2 mt-4">
+          {MOBILE_BUILDS.map(b => b.file ? (
+            <a key={b.file} href={`/mobile-builds/${b.file}`} download
+              className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
+              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                </svg>
+                <div>
+                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
+                  <div className="text-[11px]" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>{b.sub}</div>
+                </div>
+              </div>
+              <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: '#0a84ff', color: '#fff' }}>下载</span>
+            </a>
+          ) : (
+            <div key={b.label}
+              className="flex items-center justify-between px-4 py-3 rounded-xl opacity-50"
+              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
+                  <div className="text-[11px]" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>{b.sub}</div>
+                </div>
+              </div>
+              <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>未上线</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="text-[11px] mt-4 space-y-1" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
+          <div>· 首次安装需允许"未知来源应用"（设置 → 安全 → 允许此来源）</div>
+          <div>· 登录后移动端会以 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>mobile-&lt;设备名&gt;</code> 注册到设备列表</div>
+          <div>· 服务器地址可在 App 设置页修改；推荐使用 HTTPS</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // 修改密码
 // =====================================================================
 export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
@@ -3359,7 +3614,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
   // 输入为空时回退到默认值, 避免生成 --identifier 空参数导致命令非法
   const effectiveIdentifier = identifier.trim() || defaultIdentifier
 
-  const installCmd = 'pip install --force-reinstall aimux==0.1.9'
+  const installCmd = 'pip install --force-reinstall aimux==0.1.10'
   const connectCmd = `aimux reverse connect ${baseUrl} --identifier ${effectiveIdentifier} --token ${userJwt}`
 
   const refreshRemotes = useCallback(() => {

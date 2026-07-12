@@ -9,10 +9,9 @@ import * as fs from "node:fs";
 import { loadCreds, saveCreds, clearCreds, type StoredCreds } from "./lib/secrets";
 import { gatherHostInfo, type BootData } from "./lib/host-info";
 import { ensureAimux, upgradeAimux, getAimuxVersion, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
-import { AimuxSupervisor, type AimuxStatus } from "./lib/aimux-supervisor";
-import { injectBadge, setBadge } from "./lib/status-overlay";
-import { injectProjectPathOverlay, dismissOverlay, injectToast } from "./lib/project-overlay";
-import { getProjectLocalPath, setProjectLocalPath, sanitizeName } from "./lib/project-paths";
+import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
+import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
+import { getAimuxEnabled, setAimuxEnabled } from "./lib/desktop-settings";
 import { createStatusWindow } from "./status-window";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -23,6 +22,9 @@ let supervisor: AimuxSupervisor | null = null;
 let creds: StoredCreds | null = null;
 let lastStatus: AimuxStatus = { state: "stopped" };
 let installing = false;
+// aimux 反向连接开关（持久化于 userData/desktop-settings.json，默认开）。
+// 关闭后本机不再作为可调度节点连入 mobius，桌面端其他功能不受影响。
+let aimuxEnabled = true;
 
 // aimux 日志环形缓冲（供状态面板查看历史 + 失败原因）
 const LOG_MAX = 300;
@@ -49,26 +51,8 @@ function defaultIdentifier(): string {
   return `desktop-${host || "pc"}`;
 }
 
-// ——— 项目本地路径自动绑定 ———
-// 进入 /u/:user/p/:project 时检查 userData 是否已绑本机路径：已绑则确保存在(否则创建+toast)；
-// 未绑则注入 overlay 让用户选路径，默认 桌面/MobiusOS/<项目名>。
-let lastProjectId: string | null = null;
-
-function handleProjectUrl(url: string): void {
-  const m = url.match(/\/u\/[^/]+\/p\/([^/?#]+)/);
-  if (!m) {
-    if (lastProjectId !== null) {
-      lastProjectId = null;
-      if (mainWindow) void dismissOverlay(mainWindow.webContents);
-    }
-    return;
-  }
-  const projectId = m[1];
-  if (projectId === lastProjectId) return; // 同项目内子导航不重复触发
-  lastProjectId = projectId;
-  void ensureProjectPath(projectId);
-}
-
+// ——— 项目本地路径绑定状态（供前端 ProjectPathBindGate 拉取决定是否弹绑定弹窗）———
+// 取代旧版主进程注入 overlay：前端在进入项目页时调 project:bind-status，未绑定则自己渲染弹窗。
 async function fetchProjectName(server: string, projectId: string): Promise<string> {
   if (!creds) return projectId;
   try {
@@ -83,40 +67,11 @@ async function fetchProjectName(server: string, projectId: string): Promise<stri
   }
 }
 
-async function ensureProjectPath(projectId: string): Promise<void> {
-  if (!mainWindow || !creds) return;
-  const server = serverOrigin();
-  const saved = getProjectLocalPath(server, projectId);
-  if (saved) {
-    // 已绑定：路径不存在则创建
-    if (!fs.existsSync(saved)) {
-      try {
-        fs.mkdirSync(saved, { recursive: true });
-        void injectToast(mainWindow.webContents, `已创建本地路径：${saved}`, "ok");
-      } catch (e) {
-        void injectToast(mainWindow.webContents, `创建本地路径失败：${(e as Error).message}`, "err");
-      }
-    }
-    return;
-  }
-  // 未绑定：取项目名，弹 overlay
-  const projectName = await fetchProjectName(server, projectId);
-  const defaultPath = join(app.getPath("desktop"), "MobiusOS", sanitizeName(projectName));
-  const machineInfo = `${os.hostname()} · ${process.platform}`;
-  void injectProjectPathOverlay(mainWindow.webContents, { projectId, projectName, defaultPath, machineInfo });
-}
-
-// ——— 状态分发：徽标 + 推给 web UI ———
+// ——— 状态分发：推给 web UI（前端 AimuxStatusBadge 通过 IPC 接收，不再由主进程注入徽标）———
 function emitStatus(s: AimuxStatus): void {
   lastStatus = s;
-  applyStatusToBadge();
   broadcast("aimux:status-changed", s);
   if (s.detail) appendLog(`[${s.state}] ${s.detail}`);
-}
-
-function applyStatusToBadge(): void {
-  if (!mainWindow) return;
-  void setBadge(mainWindow.webContents, lastStatus.state, lastStatus.detail);
 }
 
 // ——— 登录 ———
@@ -197,27 +152,45 @@ async function seedWebAuth(origin: string, jwt: string): Promise<void> {
   });
 }
 
-async function bootDesktop(): Promise<void> {
-  if (!mainWindow || !creds) return;
-  const server = serverOrigin();
-
+/** 装 aimux（幂等）→ 反向连接。供 bootDesktop(启动) 与 applyAimuxEnabled(开启) 共用。
+ *  安装期间若用户关闭开关，装完也不连（末尾按 aimuxEnabled 复核）。 */
+async function startAimuxConnection(): Promise<void> {
+  if (!creds || installing) return;
   installing = true;
   emitStatus({ state: "starting", detail: "首次启动需在本机下载 aimux（联网，约 30-90 秒）…" });
-  const inst = await ensureAimux((p: InstallProgress) => {
-    if (p.phase === "venv") emitStatus({ state: "starting", detail: "创建 Python 虚拟环境…" });
-    else if (p.phase === "install") emitStatus({ state: "starting", detail: `下载并安装 aimux… ${p.detail ?? ""}` });
-  });
+  appendAimuxLog(`\n==== [${new Date().toISOString()}] ensure aimux (install) ====\n`);
+  const inst = await ensureAimux(
+    (p: InstallProgress) => {
+      if (p.phase === "venv") emitStatus({ state: "starting", detail: "创建 Python 虚拟环境…" });
+      else if (p.phase === "install") emitStatus({ state: "starting", detail: `下载并安装 aimux… ${p.detail ?? ""}` });
+    },
+    (data: string) => appendAimuxLog(data),
+  );
   installing = false;
 
   if (!inst.ok) {
     emitStatus({ state: "failed", detail: inst.error });
+    return;
+  }
+  if (!aimuxEnabled) return; // 安装期间用户关闭了开关：装完也不连
+  emitStatus({ state: "starting", detail: "aimux 就绪，正在反向连接 mobius…" });
+  supervisor = buildSupervisor();
+  supervisor?.start();
+}
+
+async function bootDesktop(): Promise<void> {
+  if (!mainWindow || !creds) return;
+  const server = serverOrigin();
+
+  if (aimuxEnabled) {
+    await startAimuxConnection();
+    emitStatus({ state: lastStatus.state, detail: "正在登录工作台…" });
   } else {
-    emitStatus({ state: "starting", detail: "aimux 就绪，正在反向连接 mobius…" });
-    supervisor = buildSupervisor();
-    supervisor?.start();
+    // 用户已关闭 aimux 反连：不装不连，直接进工作台。徽标显示"已关闭"。
+    emitStatus({ state: "disabled", detail: "aimux 连接已关闭（可在 aimux 状态面板开启）" });
+    appendAimuxLog(`\n==== [${new Date().toISOString()}] aimux disabled by user, skip reverse connect ====\n`);
   }
 
-  emitStatus({ state: lastStatus.state, detail: "正在登录工作台…" });
   await seedWebAuth(server, creds.jwt);
   void mainWindow.loadURL(`${server}/u/${encodeURIComponent(creds.username)}`);
 }
@@ -229,15 +202,34 @@ function runSyncReload(): void {
 
 async function runUpdateAimux(): Promise<{ ok: boolean; version?: string; error?: string }> {
   if (installing) return { ok: false, error: "正在安装中，请稍候" };
+  // 1) 先断开现有连接 (停 supervisor + 反连子进程), 释放 venv 文件锁, 避免 pip 升级时 aimux 还在跑.
+  emitStatus({ state: "starting", detail: "断开现有连接, 准备更新 aimux…" });
+  await supervisor?.stop();
+  supervisor = null;
+  // 2) 升级: pip 实时输出 -> appendAimuxLog (aimux.log 持久化) + appendLog (状态面板环形缓冲) + emitStatus (徽标显示当前阶段).
   emitStatus({ state: "starting", detail: "正在更新 aimux…" });
-  const r = await upgradeAimux();
+  appendAimuxLog(`\n==== [${new Date().toISOString()}] upgrade aimux ====\n`);
+  const r = await upgradeAimux(
+    (p) => {
+      if (p.detail) {
+        appendLog(p.detail);
+        emitStatus({ state: "starting", detail: p.detail });
+      }
+    },
+    (data: string) => appendAimuxLog(data),
+  );
   if (!r.ok) {
     emitStatus({ state: "failed", detail: r.error });
     return { ok: false, error: r.error };
   }
-  await supervisor?.stop();
-  supervisor = buildSupervisor();
-  supervisor?.start();
+  // 3) 升级成功. 开关开着才重连；关着则只升级不连。
+  if (aimuxEnabled) {
+    emitStatus({ state: "starting", detail: `aimux ${r.version} 已就绪, 正在反向连接…` });
+    supervisor = buildSupervisor();
+    supervisor?.start();
+  } else {
+    emitStatus({ state: "disabled", detail: `aimux ${r.version} 已更新（连接已关闭）` });
+  }
   return { ok: true, version: r.version };
 }
 
@@ -247,6 +239,39 @@ async function runLogout(): Promise<void> {
   clearCreds();
   creds = null;
   mainWindow?.loadFile(join(currentDir, "../renderer/index.html"));
+}
+
+/** 切换 aimux 反连开关并即时生效：关=停 supervisor+反连子进程；开=装+连（未登录则等下次 boot）。 */
+async function applyAimuxEnabled(enabled: boolean): Promise<void> {
+  aimuxEnabled = enabled;
+  setAimuxEnabled(enabled);
+  if (!enabled) {
+    await supervisor?.stop();
+    supervisor = null;
+    emitStatus({ state: "disabled", detail: "aimux 连接已关闭" });
+    appendAimuxLog(`\n==== [${new Date().toISOString()}] aimux disabled by user ====\n`);
+  } else if (creds && mainWindow) {
+    if (installing) {
+      // 正在安装：装完会按 aimuxEnabled 自动连接，这里只提示
+      emitStatus({ state: "starting", detail: "aimux 安装中，完成后将自动连接…" });
+    } else {
+      await startAimuxConnection();
+    }
+  }
+  updateMenuChecked();
+}
+
+/** 把菜单里 "允许 aimux 反向连接" checkbox 同步到当前 aimuxEnabled（状态面板切换后调用）。 */
+function updateMenuChecked(): void {
+  const menu = Menu.getApplicationMenu();
+  if (!menu) return;
+  for (const top of menu.items) {
+    const sub = top.submenu;
+    if (!sub) continue;
+    for (const it of sub.items) {
+      if (it.label === "允许 aimux 反向连接") { it.checked = aimuxEnabled; return; }
+    }
+  }
 }
 
 // ——— 窗口 ———
@@ -259,7 +284,13 @@ function createWindow(): void {
     show: false,
     backgroundColor: "#ffffff",
     title: "Mobius Desktop",
-    titleBarStyle: isMac ? "hiddenInset" : "default",
+    // Windows/Linux: 隐藏原生标题栏 + titleBarOverlay 叠原生窗口按钮 (VSCode 风),
+    // 让远程 mobius 顶栏充当标题栏; macOS: hiddenInset 已是 VSCode 风 (交通灯内嵌), 保持。
+    titleBarStyle: isMac ? "hiddenInset" : "hidden",
+    // 不用 titleBarOverlay: 此环境 (未签名 exe + 高 DPI 缩放) 下原生窗口按钮符号不渲染 (只剩背景色块)。
+    // 改由前端自绘窗口按钮 (WindowControls) + window:* IPC 控制, 主题自适应可靠。macOS 用系统交通灯。
+    // 隐藏菜单条 (Windows/Linux 按 Alt 唤出, macOS 系统菜单栏不受影响); 快捷键与功能全保留。
+    autoHideMenuBar: true,
     webPreferences: {
       preload: join(currentDir, "../preload/index.mjs"),
       contextIsolation: true,
@@ -280,24 +311,17 @@ function createWindow(): void {
     return { action: "deny" };
   });
 
+  // 最大化状态变化推给前端 (自绘窗口按钮在 最大化↔还原 图标间切换)
+  mainWindow.on("maximize", () => broadcast("window:maximize-changed", true));
+  mainWindow.on("unmaximize", () => broadcast("window:maximize-changed", false));
+
   // 只允许在登录服务器 origin 内导航，防被重定向到钓鱼页
   mainWindow.webContents.on("will-navigate", (_e, url) => {
     if (url.startsWith("file://")) return;
     const origin = serverOrigin();
     if (origin && !url.startsWith(origin)) _e.preventDefault();
   });
-
-  // 远程页就绪后注入 aimux 状态徽标
-  mainWindow.webContents.on("did-finish-load", () => {
-    const u = mainWindow?.webContents.getURL() || "";
-    if (u.startsWith("http")) {
-      void injectBadge(mainWindow!.webContents).then(() => applyStatusToBadge());
-      handleProjectUrl(u);
-    }
-  });
-  // SPA 路由切换（进入/切换项目页）→ 检查本地路径绑定
-  mainWindow.webContents.on("did-navigate-in-page", (_e, url) => handleProjectUrl(url));
-  mainWindow.webContents.on("did-navigate", (_e, url) => handleProjectUrl(url));
+  // 项目本地路径绑定已移至前端 ProjectPathBindGate（进入项目页时拉 project:bind-status 自行渲染弹窗）。
 }
 
 function buildMenu(): void {
@@ -308,9 +332,30 @@ function buildMenu(): void {
         { label: "同步最新代码", accelerator: "CmdOrCtrl+Shift+R", click: () => runSyncReload() },
         { label: "更新 aimux", click: () => void runUpdateAimux() },
         { label: "aimux 状态面板", accelerator: "CmdOrCtrl+Shift+A", click: () => createStatusWindow() },
+        {
+          label: "允许 aimux 反向连接",
+          type: "checkbox",
+          checked: aimuxEnabled,
+          click: (mi) => {
+            if (installing) { mi.checked = aimuxEnabled; return; } // 安装中不允许切换，还原勾选
+            void applyAimuxEnabled(mi.checked);
+          },
+        },
         { type: "separator" },
         { label: "切换账号 / 服务器", click: () => void runLogout() },
         { role: "quit", label: "退出" },
+      ],
+    },
+    {
+      label: "编辑",
+      submenu: [
+        { role: "undo", label: "撤销" },
+        { role: "redo", label: "重做" },
+        { type: "separator" },
+        { role: "cut", label: "剪切" },
+        { role: "copy", label: "复制" },
+        { role: "paste", label: "粘贴" },
+        { role: "selectAll", label: "全选" },
       ],
     },
     {
@@ -354,10 +399,12 @@ ipcMain.handle("app:sync-reload", () => {
 });
 ipcMain.handle("aimux:details", () => ({
   status: lastStatus,
+  aimuxEnabled,
   identifier: creds?.identifier || "",
   serverOrigin: serverOrigin(),
   venvDir: venvDir(),
   aimuxExe: aimuxExe(),
+  aimuxLogPath: aimuxLogPath(),
   hasBundledPython: hasBundledPython(),
   hostInfo: gatherHostInfo({ aimuxIdentifier: creds?.identifier || "", serverOrigin: serverOrigin(), appVersion: app.getVersion() }),
   logs: [...logBuffer],
@@ -365,11 +412,18 @@ ipcMain.handle("aimux:details", () => ({
 ipcMain.handle("aimux:version", () => getAimuxVersion());
 ipcMain.handle("aimux:reconnect", async () => {
   if (!creds) return { ok: false, error: "未登录" };
+  if (!aimuxEnabled) return { ok: false, error: "aimux 连接已关闭，请先开启开关" };
   await supervisor?.stop();
   supervisor = buildSupervisor();
   if (!supervisor) return { ok: false, error: "aimux 未就绪（venv 可能未建好），请稍后重试" };
   supervisor.start();
   return { ok: true };
+});
+ipcMain.handle("aimux:get-enabled", () => aimuxEnabled);
+ipcMain.handle("aimux:set-enabled", async (_e, enabled: boolean) => {
+  if (installing) return { ok: false as const, error: "正在安装 aimux，请稍候" };
+  await applyAimuxEnabled(Boolean(enabled));
+  return { ok: true as const, enabled: aimuxEnabled };
 });
 ipcMain.handle("app:open-status", () => {
   createStatusWindow();
@@ -379,6 +433,22 @@ ipcMain.handle("app:open-devtools", () => {
   mainWindow?.webContents.openDevTools({ mode: "detach" });
   return { ok: true };
 });
+// 前端切主题后上报标题栏覆盖层: 透明背景透出顶栏主题色 + 当前 --text-primary 作窗口按钮图标色。
+// macOS 用原生交通灯, 无 overlay, 直接忽略。
+ipcMain.handle("desktop:set-title-bar-overlay", (_e, opts: { color?: string; symbolColor?: string; height?: number }) => {
+  if (isMac) return { ok: true };
+  try { mainWindow?.setTitleBarOverlay(opts); } catch { /* 窗口未就绪 */ }
+  return { ok: true };
+});
+// 窗口控制 (前端自绘按钮调用; titleBarOverlay 原生按钮符号在此环境不渲染, 故自绘)
+ipcMain.handle("window:minimize", () => { mainWindow?.minimize(); return { ok: true }; });
+ipcMain.handle("window:toggle-maximize", () => {
+  if (!mainWindow) return { ok: true, maximized: false };
+  if (mainWindow.isMaximized()) { mainWindow.unmaximize(); return { ok: true, maximized: false }; }
+  mainWindow.maximize(); return { ok: true, maximized: true };
+});
+ipcMain.handle("window:close", () => { mainWindow?.close(); return { ok: true }; });
+ipcMain.handle("window:is-maximized", () => !!mainWindow?.isMaximized());
 // ——— 项目本地路径绑定 ———
 ipcMain.handle("project:pick-directory", async () => {
   if (!mainWindow) return null;
@@ -393,15 +463,35 @@ ipcMain.handle("project:confirm-path", async (_e, projectId: string, pathRaw: st
   try {
     if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
   } catch (e) {
-    void injectToast(mainWindow.webContents, `创建本地路径失败：${(e as Error).message}`, "err");
     return { ok: false, error: (e as Error).message };
   }
   setProjectLocalPath(serverOrigin(), projectId, p);
-  void dismissOverlay(mainWindow.webContents);
-  void injectToast(mainWindow.webContents, `已绑定本地路径：${p}`, "ok");
-  return { ok: true };
+  return { ok: true, path: p };
+});
+// 进入项目页时前端拉取：已绑则(必要时补建目录)返回 bound:true；未绑返回默认路径供弹窗预填。
+ipcMain.handle("project:bind-status", async (_e, projectId: string) => {
+  if (!creds) return null;
+  const server = serverOrigin();
+  const machineInfo = `${os.hostname()} · ${process.platform}`;
+  const saved = getProjectLocalPath(server, projectId);
+  if (saved) {
+    if (!fs.existsSync(saved)) {
+      try { fs.mkdirSync(saved, { recursive: true }); } catch { /* 前端会提示用户 */ }
+    }
+    return { bound: true, path: saved, machineInfo };
+  }
+  const projectName = await fetchProjectName(server, projectId);
+  const defaultPath = join(app.getPath("desktop"), "MobiusOS", sanitizeName(projectName));
+  return { bound: false, path: null, defaultPath, projectName, machineInfo };
 });
 ipcMain.handle("desktop:machine-info", () => `${os.hostname()} · ${process.platform}`);
+// 读/写 project 的本机路径与工作模式偏好 (新建 Session 第1步 PC 任务模式区块用)
+ipcMain.handle("project:get-path", (_e, projectId: string) => getProjectLocalPath(serverOrigin(), projectId));
+ipcMain.handle("project:get-work-mode", (_e, projectId: string) => getProjectWorkMode(serverOrigin(), projectId));
+ipcMain.handle("project:set-work-mode", (_e, projectId: string, mode: string) => {
+  setProjectWorkMode(serverOrigin(), projectId, String(mode || "dual"));
+  return { ok: true };
+});
 
 // ——— 生命周期 ———
 // 单实例锁：避免重复启动多个进程（每个都会反连注册同一节点，造成 4 个进程 / 节点冲突）
@@ -417,6 +507,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    aimuxEnabled = getAimuxEnabled();
     buildMenu();
     createWindow();
 

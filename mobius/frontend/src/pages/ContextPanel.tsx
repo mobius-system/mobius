@@ -21,7 +21,7 @@ interface ContextPreview {
   user_message_count: number
 }
 
-const SCOPE_LABEL: Record<string, string> = { user: '用户级', project: '项目级', builtin: '内置' }
+const SCOPE_LABEL: Record<string, string> = { user: '用户级', project: '项目级', builtin: '内置', issue: '任务级' }
 
 function formatTime(iso?: string | null) {
   if (!iso) return ''

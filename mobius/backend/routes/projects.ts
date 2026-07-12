@@ -2299,6 +2299,7 @@ function handleArchitectureSessionPresetContextPreview(req: express.Request, res
   const draftSession = {
     name: typeof src.name === 'string' ? src.name : '',
     description: typeof src.description === 'string' ? src.description : '',
+    pc_client_metadata: src.pc_client_metadata ?? null,
   };
   const excludedSkillIds = toIdList(src.excluded_skill_ids);
   const excludedMemoryIds = toIdList(src.excluded_memory_ids);

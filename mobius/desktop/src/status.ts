@@ -1,17 +1,19 @@
 // aimux 状态面板：拉取 details + 订阅 status/log 实时更新；按钮触发主进程动作。
-type State = "stopped" | "starting" | "connected" | "failed";
+type State = "stopped" | "starting" | "connected" | "failed" | "disabled";
 
 const md = window.mobiusDesktop;
 
 const stateEl = document.getElementById("state") as HTMLDivElement;
 const stateTxt = stateEl.querySelector(".txt") as HTMLSpanElement;
 const detailEl = document.getElementById("detail") as HTMLDivElement;
+const toggleEl = document.getElementById("toggle-enabled") as HTMLButtonElement | null;
 
 const STATE_LABEL: Record<State, string> = {
   starting: "连接中",
   connected: "已连接",
   failed: "失败",
   stopped: "已停止",
+  disabled: "已关闭",
 };
 
 function setState(state: string, detail?: string): void {
@@ -28,12 +30,19 @@ function toast(msg: string): void {
   setTimeout(() => { t.hidden = true; }, 3500);
 }
 
+function setToggleUI(enabled: boolean): void {
+  if (!toggleEl) return;
+  toggleEl.setAttribute("aria-checked", enabled ? "true" : "false");
+}
+
 async function refresh(): Promise<void> {
   const d = await md.getAimuxDetails();
   setState(d.status.state, d.status.detail);
+  setToggleUI(d.aimuxEnabled);
   (document.getElementById("identifier") as HTMLElement).textContent = d.identifier || "—";
   (document.getElementById("server") as HTMLElement).textContent = d.serverOrigin || "—";
   (document.getElementById("venv") as HTMLElement).textContent = d.venvDir || "—";
+  (document.getElementById("aimux-log-path") as HTMLElement).textContent = d.aimuxLogPath || "—";
   (document.getElementById("bundled") as HTMLElement).textContent = d.hasBundledPython ? "已内置" : "未内置（回退系统 python）";
   const h = d.hostInfo;
   (document.getElementById("host-os") as HTMLElement).textContent = `${h.platform} ${h.osVersion}`;
@@ -83,6 +92,21 @@ document.getElementById("btn-sync")?.addEventListener("click", async () => {
 document.getElementById("btn-devtools")?.addEventListener("click", () => md.openDevTools());
 document.getElementById("btn-clear-log")?.addEventListener("click", () => {
   (document.getElementById("log") as HTMLPreElement).textContent = "";
+});
+
+// aimux 反连开关：关=停 supervisor+反连子进程；开=装+连
+toggleEl?.addEventListener("click", async () => {
+  const next = toggleEl.getAttribute("aria-checked") !== "true";
+  toggleEl.disabled = true;
+  const r = await md.setAimuxEnabled(next);
+  toggleEl.disabled = false;
+  if (r.ok) {
+    setToggleUI(r.enabled ?? next);
+    toast(r.enabled ? "已开启 aimux 连接" : "已关闭 aimux 连接");
+  } else {
+    toast(`切换失败: ${r.error}`);
+  }
+  refresh();
 });
 
 refresh();

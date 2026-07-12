@@ -1558,6 +1558,7 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     selection_snapshot: selectionSnapshot,
     model: resolvedModel.sessionModelValue,
     language: sessionLanguage,
+    pc_client_metadata: req.body?.pc_client_metadata,
   } as any);
   if (sourceSession && transferResult?.filePath) {
     try {

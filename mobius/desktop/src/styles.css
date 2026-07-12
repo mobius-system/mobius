@@ -11,7 +11,10 @@ body { margin: 0; background: #f5f5f7; }
   align-items: center;
   justify-content: center;
   padding: 24px;
+  -webkit-app-region: drag; /* 桌面端: hidden 标题栏后, 登录页空白区可拖动窗口; 卡片内交互见下 no-drag */
 }
+.login-panel,
+.login-panel * { -webkit-app-region: no-drag; }
 .login-panel {
   width: 100%;
   max-width: 420px;
@@ -72,6 +75,7 @@ body { margin: 0; background: #f5f5f7; }
 .state.s-connected .dot { background: #34c759; }
 .state.s-failed .dot { background: #ff3b30; }
 .state.s-stopped .dot { background: #999; }
+.state.s-disabled .dot { background: #999; }
 .detail { font-size: 12px; color: #6e6e73; word-break: break-word; }
 .detail.err { color: #ff3b30; }
 .card { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
@@ -87,3 +91,13 @@ body { margin: 0; background: #f5f5f7; }
 .actions button.ghost { background: #e5e5ea; color: #1d1d1f; }
 .actions button:hover { opacity: 0.9; }
 .toast { font-size: 12px; color: #0a84ff; }
+
+/* ===== aimux 反连开关 ===== */
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; }
+.toggle-text { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: #1d1d1f; }
+.toggle-text small { color: #8e8e93; font-size: 11px; line-height: 1.45; }
+.switch { position: relative; width: 44px; height: 26px; border-radius: 13px; border: none; background: #d2d2d7; cursor: pointer; padding: 0; flex-shrink: 0; transition: background 0.2s; }
+.switch .knob { position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.3); transition: left 0.2s; }
+.switch[aria-checked="true"] { background: #34c759; }
+.switch[aria-checked="true"] .knob { left: 20px; }
+.switch:disabled { opacity: 0.5; cursor: default; }

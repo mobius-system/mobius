@@ -248,6 +248,101 @@ function ensureProjectKnowledgeFile(project: any): any {
   }
 }
 
+// =========================================================================
+// Issue 级知识 — 与项目知识同构, 存放于
+//   <bind_path>/<HIDDEN_FOLDER_NAME>/issue_knowledge/<issue_id>/issue_knowledge.md
+// 设计与项目知识"合二为一":
+//   - 共享同样的 "md 文件 → 确定记忆" 的投影思路;
+//   - 但 issue 知识**不入 memory 文件库**, 而是在 gatherIssueSources 时按当前 issue
+//     即时读取, 拼成一条 memory 形态 ({id,scope,name,description,body}) 注入, 因此
+//     只会出现在**本 issue 的 Session** 的记忆列表里, 不污染项目下其它 issue.
+//   - 因此它同样可在「创建 Session 第二步」作为可选 memory 勾选/取消, 并进入 prompt.
+// =========================================================================
+const ISSUE_KNOWLEDGE_SUBDIR = 'issue_knowledge';
+const ISSUE_KNOWLEDGE_FILE = 'issue_knowledge.md';
+// 合成 memory id 前缀 (不是 memory 库里的真实 slug, 仅作前端勾选/排除用的稳定 id).
+const ISSUE_KNOWLEDGE_ID_PREFIX = 'issue-knowledge:';
+
+function issueKnowledgeDir(project: any, issueId: any): string {
+  const bindPath = (project?.bind_path || '').trim();
+  const id = String(issueId || '').trim();
+  if (!bindPath || !id) return '';
+  return path.resolve(bindPath, HIDDEN_FOLDER_NAME, ISSUE_KNOWLEDGE_SUBDIR, id);
+}
+
+function issueKnowledgePath(project: any, issueId: any): string {
+  const dir = issueKnowledgeDir(project, issueId);
+  if (!dir) return '';
+  return path.resolve(dir, ISSUE_KNOWLEDGE_FILE);
+}
+
+function issueKnowledgeMemoryId(issueId: any): string {
+  return `${ISSUE_KNOWLEDGE_ID_PREFIX}${String(issueId || '').trim()}`;
+}
+
+function issueKnowledgeMemoryName(issue: any): string {
+  const title = String(issue?.title || issue?.id || '本任务').trim();
+  return `${title}的任务知识`;
+}
+
+const ISSUE_KNOWLEDGE_TEMPLATE = `# 本任务知识
+
+> 由 Mobius 维护，记录仅与当前 Issue 相关的、较为局限的知识（项目级通用知识请写入 project_knowledge.md）
+
+## 背景
+
+（待填写）
+
+## 关键决策 / 约束
+
+（待填写）
+
+## 进展 / 待办
+
+（待填写）
+`;
+
+// 读取 issue 知识并返回 memory 形态投影. 文件不存在 → 返回 null (不报错, 不创建).
+// 由 gatherIssueSources 在拼记忆列表时调用, 让本任务知识像普通 memory 一样可选可注入.
+function readIssueKnowledgeShape(project: any, issue: any): any {
+  if (!project || !issue || !issue.id) return null;
+  const filePath = issueKnowledgePath(project, issue.id);
+  if (!filePath) return null;
+  let stat: fs.Stats;
+  try { stat = fs.statSync(filePath); }
+  catch { return null; }
+  if (!stat.isFile()) return null;
+  if (stat.size > MAX_MEMORY_MARKDOWN_BYTES) return null;
+  let body = '';
+  try { body = fs.readFileSync(filePath, 'utf8'); }
+  catch { return null; }
+  return {
+    id: issueKnowledgeMemoryId(issue.id),
+    scope: 'issue',
+    name: issueKnowledgeMemoryName(issue),
+    description: `本任务知识 (issue_knowledge/${issue.id}/${ISSUE_KNOWLEDGE_FILE})`,
+    body,
+  };
+}
+
+// 写入 issue 知识 md. 不存在则用模板初始化目录. 返回 {ok, path} 或 {ok:false,error}.
+function writeIssueKnowledge(project: any, issue: any, content: string): any {
+  if (!project || !issue || !issue.id) return { ok: false, error: '缺少 project/issue' };
+  const filePath = issueKnowledgePath(project, issue.id);
+  if (!filePath) return { ok: false, error: '项目未绑定路径' };
+  const body = typeof content === 'string' ? content : '';
+  if (Buffer.byteLength(body, 'utf8') > MAX_MEMORY_MARKDOWN_BYTES) {
+    return { ok: false, error: `任务知识文件不能超过 ${formatBytes(MAX_MEMORY_MARKDOWN_BYTES)}` };
+  }
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, body, 'utf8');
+    return { ok: true, path: filePath, created: true };
+  } catch (e) {
+    return { ok: false, error: `写入任务知识文件失败: ${e.message}`, path: filePath };
+  }
+}
+
 export {
   PROJECT_KNOWLEDGE_SLUG,
   projectKnowledgeMemoryName,
@@ -258,4 +353,10 @@ export {
   snapshotProjectKnowledge,
   listProjectKnowledgeHistory,
   readProjectKnowledgeHistoryFile,
+  issueKnowledgePath,
+  issueKnowledgeMemoryId,
+  issueKnowledgeMemoryName,
+  readIssueKnowledgeShape,
+  writeIssueKnowledge,
+  ISSUE_KNOWLEDGE_TEMPLATE,
 };

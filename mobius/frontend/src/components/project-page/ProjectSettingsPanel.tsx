@@ -444,6 +444,63 @@ function SettingsCard({ title, children }: { title: string; children: ReactNode 
   )
 }
 
+// 本机工作路径行 — 仅 Electron 桌面端渲染。读写桌面端 userData 里存的 project 本机路径
+// (与 aimux 调度本机/PC 任务模式同源)。支持复制 + 更改 (走 pickDirectory/confirmProjectPath)。
+// 浏览器里 window.mobiusDesktop 不存在 → 返回 null, 不占位。
+function LocalPcPathRow({ projectId }: { projectId: string }) {
+  const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
+  const isDesktop = !!md?.isDesktop
+  const [path, setPath] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!isDesktop) return
+    let cancelled = false
+    md.getProjectLocalPath?.(projectId).then((p: string | null | undefined) => { if (!cancelled) setPath(p || '') })
+    return () => { cancelled = true }
+  }, [isDesktop, projectId])
+  if (!isDesktop) return null
+  const edit = async () => {
+    if (busy || !md?.pickDirectory) return
+    const picked = await md.pickDirectory()
+    if (!picked) return
+    setBusy(true)
+    try {
+      const r = await md.confirmProjectPath?.(projectId, picked)
+      if (r?.ok) setPath(picked)
+    } finally { setBusy(false) }
+  }
+  const copy = async () => {
+    if (!path) return
+    try {
+      await navigator.clipboard.writeText(path)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    } catch { setCopied(false) }
+  }
+  return (
+    <div>
+      <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>本机工作路径（桌面端 · aimux 调度本机时使用）</label>
+      <div className="flex min-w-0 flex-nowrap items-center gap-2">
+      <input value={path} readOnly placeholder="未绑定"
+        className="flex-1 min-w-0 max-w-[20rem] h-9 px-3 rounded-lg text-[13px] font-mono truncate"
+        style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+      <button type="button" onClick={copy} disabled={!path}
+        title={copied ? '已复制' : '复制路径'} aria-label={copied ? '已复制' : '复制路径'}
+        className="h-9 w-9 flex-shrink-0 rounded-lg text-[12px] bg-[var(--bg-card-hover)] transition-colors border flex items-center justify-center disabled:opacity-40"
+        style={{ color: copied ? '#34d399' : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+        {copied ? <span className="text-[11px] font-medium">已复制</span> : <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />}
+      </button>
+      <button type="button" onClick={edit} disabled={busy}
+        className="h-9 flex-shrink-0 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40">
+        <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
+        <span>{busy ? '…' : path ? '更改' : '选择'}</span>
+      </button>
+      </div>
+    </div>
+  )
+}
+
 export function ProjectSettingsPanel({
   project,
   values,
@@ -881,6 +938,7 @@ export function ProjectSettingsPanel({
         {/* 拓展项目: name / description / bindPath / worktree / research 都由 manifest 锁定 */}
         {project.kind === 'extension' ? null : (
           <SettingsCard title="基本设置">
+            <LocalPcPathRow projectId={project.id} />
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>名称</label>

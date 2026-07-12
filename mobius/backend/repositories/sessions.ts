@@ -2,6 +2,14 @@ import { db } from '../../db';
 import { MODELS, DEFAULT_MODEL_KEY } from '../config';
 import type { SessionRow } from '../types/rows';
 
+// migration: PC 任务模式 pc_client_metadata 列 (幂等; 新旧库都安全; web 端该列恒 null 不影响任何行为).
+(() => {
+  const cols = db.prepare("PRAGMA table_info(sessions_v2)").all() as Array<{ name: string }>;
+  if (!cols.some(c => c.name === 'pc_client_metadata')) {
+    db.exec("ALTER TABLE sessions_v2 ADD COLUMN pc_client_metadata TEXT");
+  }
+})();
+
 type SessionLanguage = 'zh' | 'en';
 type SessionStatus = 'active' | 'completed' | 'archived';
 type SessionScopeType = 'issue' | 'research';
@@ -76,6 +84,8 @@ interface InsertArgs {
   selection_snapshot?: unknown;
   model?: string;
   language?: SessionLanguage;
+  // PC 任务模式 (仅桌面端): { work_mode, aimux_id }; web 端 null/缺省.
+  pc_client_metadata?: { work_mode: string; aimux_id: string } | null;
 }
 
 // Session list endpoints feed cards/sidebars. Keep heavy snapshots out of these
@@ -106,7 +116,8 @@ const SESSION_LIST_COLUMNS = `
       s.original_issue_id,
       s.original_project_id,
       s.deleted_at,
-      s.completed_at`;
+      s.completed_at,
+      s.pc_client_metadata`;
 
 const Sessions = {
   findById: (id: string): SessionRow | undefined => db.prepare('SELECT * FROM sessions_v2 WHERE session_id = ?').get(id) as SessionRow | undefined,
@@ -183,10 +194,11 @@ const Sessions = {
   `).get(researchId) as ReusableSelectionRow | undefined,
 
   insert: (args: InsertArgs): void => {
-    const { session_id, issue_id, project_id, scope_type, research_id, research_role, user_id, name, description, session_key, excluded_skill_ids, excluded_memory_ids, selection_snapshot, model, language } = args;
+    const { session_id, issue_id, project_id, scope_type, research_id, research_role, user_id, name, description, session_key, excluded_skill_ids, excluded_memory_ids, selection_snapshot, model, language, pc_client_metadata } = args;
     const exSk = Array.isArray(excluded_skill_ids) && excluded_skill_ids.length > 0 ? JSON.stringify(excluded_skill_ids) : null;
     const exMm = Array.isArray(excluded_memory_ids) && excluded_memory_ids.length > 0 ? JSON.stringify(excluded_memory_ids) : null;
     const selSnap = selection_snapshot ? JSON.stringify(selection_snapshot) : null;
+    const pcMeta = pc_client_metadata ? JSON.stringify(pc_client_metadata) : null;
     // model 缺省/非法时回退到配置里的默认模型 (单一真相源在 config.MODELS).
     const mdl = (typeof model === 'string' && model.length > 0) ? model : MODELS[DEFAULT_MODEL_KEY];
     const lang = normalizeLanguage(language);
@@ -197,8 +209,8 @@ const Sessions = {
       user_id, name, description, session_key,
       session_excluded_skills, session_excluded_memories,
       session_selection_snapshot, session_selection_snapshot_at,
-      model, language
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?)`)
+      model, language, pc_client_metadata
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, ?)`)
       .run(
         session_id,
         scope === 'issue' ? (issue_id ?? null) : null,
@@ -215,6 +227,7 @@ const Sessions = {
         selSnap,
         mdl,
         lang,
+        pcMeta,
       );
   },
 
