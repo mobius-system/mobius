@@ -47,6 +47,9 @@ export default defineConfig({
       // 见 backend/routes/ext.js 里 unprefixedNextRouter 的注释, 必须代理到后端, 否则
       // vite SPA fallback 会吞掉, 浏览器拿到的是 mobius 主前端 HTML, 报 "Loading chunk failed".
       '/_next': apiTarget,
+      // 桌面客户端 zip 由后端 server.js 的 /desktop-builds 静态路由分发 (build.py 产物).
+      // dev 模式必须代理, 否则下载菜单链接被 vite SPA fallback 吞掉 → 404.
+      '/desktop-builds': apiTarget,
     }
   },
   build: {
