@@ -14,6 +14,7 @@ import { Check, ChevronDown, CircleQuestionMark, Menu, Moon, Palette, Plus, Sear
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { useIsMobile } from './resizable-panel'
+import { WindowControls } from './window-controls'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入); 平台用 navigator.platform 判:
@@ -762,8 +763,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         </div>
 
         {/* 右侧操作 */}
-        <div className="mobius-topnav-actions flex min-w-0 flex-shrink items-center gap-1.5 xl:gap-2"
-          style={IS_DESKTOP && !IS_MAC_PLATFORM ? { paddingRight: '142px' } : undefined}>
+        <div className="mobius-topnav-actions flex min-w-0 flex-shrink items-center gap-1.5 xl:gap-2">
           {rightExtra}
           {/* 桌面端 aimux 反向连接状态徽标 — 仅 Electron 检测到时渲染（搜索按钮左侧） */}
           <AimuxStatusBadge />
@@ -1024,6 +1024,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               </div>
             )}
           </div>
+          {/* 桌面端自绘窗口控制按钮 (Win/Linux; macOS 用系统交通灯) */}
+          {IS_DESKTOP && !IS_MAC_PLATFORM && <WindowControls />}
         </div>
       </div>
 

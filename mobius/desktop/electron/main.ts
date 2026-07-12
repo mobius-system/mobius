@@ -287,11 +287,8 @@ function createWindow(): void {
     // Windows/Linux: 隐藏原生标题栏 + titleBarOverlay 叠原生窗口按钮 (VSCode 风),
     // 让远程 mobius 顶栏充当标题栏; macOS: hiddenInset 已是 VSCode 风 (交通灯内嵌), 保持。
     titleBarStyle: isMac ? "hiddenInset" : "hidden",
-    // overlay 背景透明 → 透出顶栏 var(--bg-primary), 切主题自动变色;
-    // 图标色 symbolColor 初始给深色主题用浅灰, 前端运行时按当前主题 --text-primary 上报修正。
-    titleBarOverlay: isMac
-      ? undefined
-      : { color: "rgba(0,0,0,0)", symbolColor: "#e5e7eb", height: 48 },
+    // 不用 titleBarOverlay: 此环境 (未签名 exe + 高 DPI 缩放) 下原生窗口按钮符号不渲染 (只剩背景色块)。
+    // 改由前端自绘窗口按钮 (WindowControls) + window:* IPC 控制, 主题自适应可靠。macOS 用系统交通灯。
     // 隐藏菜单条 (Windows/Linux 按 Alt 唤出, macOS 系统菜单栏不受影响); 快捷键与功能全保留。
     autoHideMenuBar: true,
     webPreferences: {
@@ -313,6 +310,10 @@ function createWindow(): void {
     void shell.openExternal(url);
     return { action: "deny" };
   });
+
+  // 最大化状态变化推给前端 (自绘窗口按钮在 最大化↔还原 图标间切换)
+  mainWindow.on("maximize", () => broadcast("window:maximize-changed", true));
+  mainWindow.on("unmaximize", () => broadcast("window:maximize-changed", false));
 
   // 只允许在登录服务器 origin 内导航，防被重定向到钓鱼页
   mainWindow.webContents.on("will-navigate", (_e, url) => {
@@ -427,6 +428,15 @@ ipcMain.handle("desktop:set-title-bar-overlay", (_e, opts: { color?: string; sym
   try { mainWindow?.setTitleBarOverlay(opts); } catch { /* 窗口未就绪 */ }
   return { ok: true };
 });
+// 窗口控制 (前端自绘按钮调用; titleBarOverlay 原生按钮符号在此环境不渲染, 故自绘)
+ipcMain.handle("window:minimize", () => { mainWindow?.minimize(); return { ok: true }; });
+ipcMain.handle("window:toggle-maximize", () => {
+  if (!mainWindow) return { ok: true, maximized: false };
+  if (mainWindow.isMaximized()) { mainWindow.unmaximize(); return { ok: true, maximized: false }; }
+  mainWindow.maximize(); return { ok: true, maximized: true };
+});
+ipcMain.handle("window:close", () => { mainWindow?.close(); return { ok: true }; });
+ipcMain.handle("window:is-maximized", () => !!mainWindow?.isMaximized());
 // ——— 项目本地路径绑定 ———
 ipcMain.handle("project:pick-directory", async () => {
   if (!mainWindow) return null;

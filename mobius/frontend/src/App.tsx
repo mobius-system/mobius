@@ -52,8 +52,10 @@ function pushDesktopTitleBarTheme() {
     : undefined
   if (!md?.isDesktop || typeof md.setTitleBarOverlay !== 'function') return
   requestAnimationFrame(() => {
-    const symbolColor = getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim() || '#e5e7eb'
-    md.setTitleBarOverlay!({ color: 'rgba(0,0,0,0)', symbolColor }).catch(() => {})
+    const cs = getComputedStyle(document.documentElement)
+    const color = cs.getPropertyValue('--bg-primary').trim() || '#0a0e16'
+    const symbolColor = cs.getPropertyValue('--text-primary').trim() || '#e5e7eb'
+    md.setTitleBarOverlay!({ color, symbolColor }).catch(() => {})
   })
 }
 
