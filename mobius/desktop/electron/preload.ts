@@ -37,6 +37,8 @@ const mobiusDesktop = {
   pickDirectory: () => ipcRenderer.invoke("project:pick-directory"),
   confirmProjectPath: (projectId: string, path: string) =>
     ipcRenderer.invoke("project:confirm-path", projectId, path),
+  getProjectBindStatus: (projectId: string) =>
+    ipcRenderer.invoke("project:bind-status", projectId),
   getMachineInfo: () => ipcRenderer.invoke("desktop:machine-info"),
   getProjectLocalPath: (projectId: string) => ipcRenderer.invoke("project:get-path", projectId),
   getProjectWorkMode: (projectId: string) => ipcRenderer.invoke("project:get-work-mode", projectId),

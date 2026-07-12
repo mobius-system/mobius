@@ -5,6 +5,7 @@ import { ChangePasswordModal, AimuxGuideModal, DesktopDownloadModal, MobileDownl
 import { GlobalCreateMenu, GlobalCreateRoot, type CreateKind } from './global-create'
 import { SearchModal } from './search-modal'
 import { AimuxStatusBadge } from './aimux-status-badge'
+import { ProjectPathBindGate } from './project-path-bind-gate'
 import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
@@ -758,6 +759,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           {rightExtra}
           {/* 桌面端 aimux 反向连接状态徽标 — 仅 Electron 检测到时渲染（搜索按钮左侧） */}
           <AimuxStatusBadge />
+          {/* 桌面端项目本地路径绑定闸门 — 仅 Electron + 进入未绑定项目时弹窗（替代旧 Electron 注入 overlay） */}
+          <ProjectPathBindGate projectId={projectParam} />
           {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
           <button
             type="button"

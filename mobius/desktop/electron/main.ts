@@ -10,7 +10,6 @@ import { loadCreds, saveCreds, clearCreds, type StoredCreds } from "./lib/secret
 import { gatherHostInfo, type BootData } from "./lib/host-info";
 import { ensureAimux, upgradeAimux, getAimuxVersion, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
 import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
-import { injectProjectPathOverlay, dismissOverlay, injectToast } from "./lib/project-overlay";
 import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
 import { getAimuxEnabled, setAimuxEnabled } from "./lib/desktop-settings";
 import { createStatusWindow } from "./status-window";
@@ -52,26 +51,8 @@ function defaultIdentifier(): string {
   return `desktop-${host || "pc"}`;
 }
 
-// ——— 项目本地路径自动绑定 ———
-// 进入 /u/:user/p/:project 时检查 userData 是否已绑本机路径：已绑则确保存在(否则创建+toast)；
-// 未绑则注入 overlay 让用户选路径，默认 桌面/MobiusOS/<项目名>。
-let lastProjectId: string | null = null;
-
-function handleProjectUrl(url: string): void {
-  const m = url.match(/\/u\/[^/]+\/p\/([^/?#]+)/);
-  if (!m) {
-    if (lastProjectId !== null) {
-      lastProjectId = null;
-      if (mainWindow) void dismissOverlay(mainWindow.webContents);
-    }
-    return;
-  }
-  const projectId = m[1];
-  if (projectId === lastProjectId) return; // 同项目内子导航不重复触发
-  lastProjectId = projectId;
-  void ensureProjectPath(projectId);
-}
-
+// ——— 项目本地路径绑定状态（供前端 ProjectPathBindGate 拉取决定是否弹绑定弹窗）———
+// 取代旧版主进程注入 overlay：前端在进入项目页时调 project:bind-status，未绑定则自己渲染弹窗。
 async function fetchProjectName(server: string, projectId: string): Promise<string> {
   if (!creds) return projectId;
   try {
@@ -84,29 +65,6 @@ async function fetchProjectName(server: string, projectId: string): Promise<stri
   } catch {
     return projectId;
   }
-}
-
-async function ensureProjectPath(projectId: string): Promise<void> {
-  if (!mainWindow || !creds) return;
-  const server = serverOrigin();
-  const saved = getProjectLocalPath(server, projectId);
-  if (saved) {
-    // 已绑定：路径不存在则创建
-    if (!fs.existsSync(saved)) {
-      try {
-        fs.mkdirSync(saved, { recursive: true });
-        void injectToast(mainWindow.webContents, `已创建本地路径：${saved}`, "ok");
-      } catch (e) {
-        void injectToast(mainWindow.webContents, `创建本地路径失败：${(e as Error).message}`, "err");
-      }
-    }
-    return;
-  }
-  // 未绑定：取项目名，弹 overlay
-  const projectName = await fetchProjectName(server, projectId);
-  const defaultPath = join(app.getPath("desktop"), "MobiusOS", sanitizeName(projectName));
-  const machineInfo = `${os.hostname()} · ${process.platform}`;
-  void injectProjectPathOverlay(mainWindow.webContents, { projectId, projectName, defaultPath, machineInfo });
 }
 
 // ——— 状态分发：推给 web UI（前端 AimuxStatusBadge 通过 IPC 接收，不再由主进程注入徽标）———
@@ -353,17 +311,7 @@ function createWindow(): void {
     const origin = serverOrigin();
     if (origin && !url.startsWith(origin)) _e.preventDefault();
   });
-
-  // 远程页就绪后处理项目本地路径绑定（aimux 状态徽标已移至前端 AimuxStatusBadge）
-  mainWindow.webContents.on("did-finish-load", () => {
-    const u = mainWindow?.webContents.getURL() || "";
-    if (u.startsWith("http")) {
-      handleProjectUrl(u);
-    }
-  });
-  // SPA 路由切换（进入/切换项目页）→ 检查本地路径绑定
-  mainWindow.webContents.on("did-navigate-in-page", (_e, url) => handleProjectUrl(url));
-  mainWindow.webContents.on("did-navigate", (_e, url) => handleProjectUrl(url));
+  // 项目本地路径绑定已移至前端 ProjectPathBindGate（进入项目页时拉 project:bind-status 自行渲染弹窗）。
 }
 
 function buildMenu(): void {
@@ -477,13 +425,26 @@ ipcMain.handle("project:confirm-path", async (_e, projectId: string, pathRaw: st
   try {
     if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
   } catch (e) {
-    void injectToast(mainWindow.webContents, `创建本地路径失败：${(e as Error).message}`, "err");
     return { ok: false, error: (e as Error).message };
   }
   setProjectLocalPath(serverOrigin(), projectId, p);
-  void dismissOverlay(mainWindow.webContents);
-  void injectToast(mainWindow.webContents, `已绑定本地路径：${p}`, "ok");
-  return { ok: true };
+  return { ok: true, path: p };
+});
+// 进入项目页时前端拉取：已绑则(必要时补建目录)返回 bound:true；未绑返回默认路径供弹窗预填。
+ipcMain.handle("project:bind-status", async (_e, projectId: string) => {
+  if (!creds) return null;
+  const server = serverOrigin();
+  const machineInfo = `${os.hostname()} · ${process.platform}`;
+  const saved = getProjectLocalPath(server, projectId);
+  if (saved) {
+    if (!fs.existsSync(saved)) {
+      try { fs.mkdirSync(saved, { recursive: true }); } catch { /* 前端会提示用户 */ }
+    }
+    return { bound: true, path: saved, machineInfo };
+  }
+  const projectName = await fetchProjectName(server, projectId);
+  const defaultPath = join(app.getPath("desktop"), "MobiusOS", sanitizeName(projectName));
+  return { bound: false, path: null, defaultPath, projectName, machineInfo };
 });
 ipcMain.handle("desktop:machine-info", () => `${os.hostname()} · ${process.platform}`);
 // 读/写 project 的本机路径与工作模式偏好 (新建 Session 第1步 PC 任务模式区块用)
