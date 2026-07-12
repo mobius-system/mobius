@@ -810,11 +810,13 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           >
             <GithubIcon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
           </a>
-          <div data-tour="top-system-status" className="mobius-topnav-status flex shrink-0 items-center gap-2">
-            <DiskIndicator />
-            <MemoryIndicator />
-            <VersionIndicator />
-          </div>
+          {!IS_DESKTOP && (
+            <div data-tour="top-system-status" className="mobius-topnav-status flex shrink-0 items-center gap-2">
+              <DiskIndicator />
+              <MemoryIndicator />
+              <VersionIndicator />
+            </div>
+          )}
           <div className="relative shrink-0" data-tour="top-theme-toggle">
             <button
               type="button"
