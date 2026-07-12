@@ -1,7 +1,12 @@
 // aimux reverse-connect 子进程的看护：启动 / 状态解析 / 断线重启 / JWT 到期续命 / 退出时杀干净。
+import { app } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
-export type AimuxState = "stopped" | "starting" | "connected" | "failed";
+// disabled：用户手动关闭了 aimux 反连（区别于 stopped=未启动/已停止、failed=连接失败）。
+// supervisor 自身不会产生 disabled，只有 main 进程在用户切换开关时设置。
+export type AimuxState = "stopped" | "starting" | "connected" | "failed" | "disabled";
 
 export interface AimuxStatus {
   state: AimuxState;
@@ -24,6 +29,20 @@ export interface SupervisorOptions {
   onTokenExpired: () => Promise<string | null>;
 }
 
+export function aimuxLogPath(): string {
+  return path.join(app.getPath("userData"), "logs", "aimux.log");
+}
+
+export function appendAimuxLog(data: string | Buffer): void {
+  const logPath = aimuxLogPath();
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, data);
+  } catch (e) {
+    console.error(`[aimux-supervisor] 写 aimux 日志失败 (${logPath}):`, e);
+  }
+}
+
 export class AimuxSupervisor {
   private child: ChildProcess | null = null;
   private stopping = false;
@@ -43,17 +62,19 @@ export class AimuxSupervisor {
 
   private spawnChild(): void {
     const { aimuxExe, bridgeUrl, token, identifier, onStatus } = this.opts;
-    onStatus({ state: "starting", detail: "正在反向连接 mobius…", identifier });
+    onStatus({ state: "starting", detail: "正在连接 mobius…", identifier });
 
-    // aimux session.create 在 Windows 上会弹真实控制台窗口（这是它"被调度执行"的本意），
-    // 故这里不强制 windowsHide；reverse connect 客户端进程本身不弹窗。
-    const child = spawn(aimuxExe, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token]);
+    appendAimuxLog(`\n==== [${new Date().toISOString()}] spawn reverse connect identifier=${identifier} ====\n`);
+    const child = spawn(aimuxExe, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token, "--replace"]);
     this.child = child;
 
     // 粗粒度解析日志推断状态（aimux 内部已带 5/10/20s×3 重连，重连耗尽会 exit → 我们 respawn）
     const classify = (line: string) => {
       this.opts.onLog?.(line);
       const lower = line.toLowerCase();
+      // 命令执行失败 (如 send_keys 到不存在的 session) 不是连接失败 — bridge 仍连着, 只是某条命令报错.
+      // aimux 日志特征: 含 "command failed" 或 "request_id=". 跳过, 不改连接状态, 避免误标 failed.
+      if (/command failed|request_id=/.test(lower)) return;
       if (/error|fail|refused|expired|invalid|traceback|exception/.test(lower)) {
         onStatus({ state: "failed", detail: line, identifier });
       } else if (/connected|registered|event stream|sse/i.test(lower)) {
@@ -61,6 +82,7 @@ export class AimuxSupervisor {
       }
     };
     const handle = (b: Buffer) => {
+      appendAimuxLog(b);
       for (const l of b.toString("utf8").split(/[\r\n]+/)) { const t = l.trim(); if (t) classify(t); }
     };
     child.stdout?.on("data", handle);
@@ -68,6 +90,7 @@ export class AimuxSupervisor {
 
     child.on("exit", (code) => {
       this.child = null;
+      appendAimuxLog(`\n---- [${new Date().toISOString()}] child exited code=${code} ----\n`);
       if (this.stopping) {
         this.opts.onStatus({ state: "stopped", identifier });
         return;
@@ -78,6 +101,7 @@ export class AimuxSupervisor {
       }, 5000);
     });
     child.on("error", (err) => {
+      appendAimuxLog(`\n---- [${new Date().toISOString()}] spawn error: ${err.message} ----\n`);
       this.opts.onStatus({ state: "failed", detail: `spawn 失败: ${err.message}`, identifier });
     });
   }

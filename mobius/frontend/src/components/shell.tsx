@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useStore, api } from '../store'
-import { ChangePasswordModal, AimuxGuideModal } from './modals'
+import { ChangePasswordModal, AimuxGuideModal, DesktopDownloadModal, MobileDownloadModal } from './modals'
 import { GlobalCreateMenu, GlobalCreateRoot, type CreateKind } from './global-create'
 import { SearchModal } from './search-modal'
+import { AimuxStatusBadge } from './aimux-status-badge'
+import { ProjectPathBindGate } from './project-path-bind-gate'
 import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
@@ -12,6 +14,14 @@ import { Check, ChevronDown, CircleQuestionMark, Menu, Moon, Palette, Plus, Sear
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { useIsMobile } from './resizable-panel'
+import { WindowControls } from './window-controls'
+
+// 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
+// isDesktop 来自 window.mobiusDesktop (preload 注入); 平台用 navigator.platform 判:
+// mac 交通灯在左 → 顶栏左让位; win/linux 窗口按钮在右 → 操作区右让位。Web 端 IS_DESKTOP=false, 零影响。
+const DESKTOP_BRIDGE = typeof window !== 'undefined' ? (window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop : undefined
+const IS_DESKTOP = !!DESKTOP_BRIDGE?.isDesktop
+const IS_MAC_PLATFORM = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
 
 const GithubIcon = createLucideIcon('github', [
   ['path', { d: 'M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22', key: 'github' }],
@@ -435,6 +445,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const navigate = useNavigate()
   const [showChangePw, setShowChangePw] = useState(false)
   const [showAimuxGuide, setShowAimuxGuide] = useState(false)
+  const [showDesktopDownload, setShowDesktopDownload] = useState(false)
+  const [showMobileDownload, setShowMobileDownload] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showThemeMenu, setShowThemeMenu] = useState(false)
   const [showGuideHelp, setShowGuideHelp] = useState(false)
@@ -627,8 +639,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 
   return (
     <>
-      <div className="mobius-topnav h-12 border-b flex items-center justify-between px-5 flex-shrink-0 select-none"
-        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+      <div className={`mobius-topnav h-12 border-b flex items-center justify-between px-5 flex-shrink-0 select-none${IS_DESKTOP ? ' mobius-desktop-drag' : ''}`}
+        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', paddingLeft: IS_DESKTOP && IS_MAC_PLATFORM ? '78px' : undefined }}>
         {/* 移动端: 汉堡按钮唤出左侧栏抽屉 */}
         {isMobile && (
           <button
@@ -753,6 +765,10 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         {/* 右侧操作 */}
         <div className="mobius-topnav-actions flex min-w-0 flex-shrink items-center gap-1.5 xl:gap-2">
           {rightExtra}
+          {/* 桌面端 aimux 反向连接状态徽标 — 仅 Electron 检测到时渲染（搜索按钮左侧） */}
+          <AimuxStatusBadge />
+          {/* 桌面端项目本地路径绑定闸门 — 仅 Electron + 进入未绑定项目时弹窗（替代旧 Electron 注入 overlay） */}
+          <ProjectPathBindGate projectId={projectParam} />
           {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
           <button
             type="button"
@@ -763,7 +779,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             className="mobius-search-trigger h-8 flex shrink-0 items-center gap-1.5 rounded-lg px-2 border hover:bg-[var(--bg-card-hover)] transition-colors"
             style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}>
             <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-            {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>}
+            {/* {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>} */}
           </button>
           {/* 新建下拉 — 全局 4 类创建 (项目 / Issue / Session / Research Agent) */}
           <GlobalCreateMenu
@@ -794,11 +810,13 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           >
             <GithubIcon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
           </a>
-          <div data-tour="top-system-status" className="mobius-topnav-status flex shrink-0 items-center gap-2">
-            <DiskIndicator />
-            <MemoryIndicator />
-            <VersionIndicator />
-          </div>
+          {!IS_DESKTOP && (
+            <div data-tour="top-system-status" className="mobius-topnav-status flex shrink-0 items-center gap-2">
+              <DiskIndicator />
+              <MemoryIndicator />
+              <VersionIndicator />
+            </div>
+          )}
           <div className="relative shrink-0" data-tour="top-theme-toggle">
             <button
               type="button"
@@ -975,6 +993,18 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
                   AIMUX 连接指引
                 </button>
+                <button onClick={() => { setShowUserMenu(false); setShowDesktopDownload(true) }}
+                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" /></svg>
+                  下载桌面客户端
+                </button>
+                <button onClick={() => { setShowUserMenu(false); setShowMobileDownload(true) }}
+                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" /></svg>
+                  下载移动端 App
+                </button>
                 <button onClick={() => { setShowUserMenu(false); setShowChangePw(true) }}
                   className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                   style={{ color: 'var(--text-primary)' }}>
@@ -996,11 +1026,15 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               </div>
             )}
           </div>
+          {/* 桌面端自绘窗口控制按钮 (Win/Linux; macOS 用系统交通灯) */}
+          {IS_DESKTOP && !IS_MAC_PLATFORM && <WindowControls />}
         </div>
       </div>
 
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
       {showAimuxGuide && <AimuxGuideModal onClose={() => setShowAimuxGuide(false)} />}
+      {showDesktopDownload && <DesktopDownloadModal onClose={() => setShowDesktopDownload(false)} />}
+      {showMobileDownload && <MobileDownloadModal onClose={() => setShowMobileDownload(false)} />}
       {showGuideHelp && <GuideHelpModal onClose={() => setShowGuideHelp(false)} />}
       {showPalette && <CustomThemePalette onClose={() => setShowPalette(false)} />}
       {showSearch && (

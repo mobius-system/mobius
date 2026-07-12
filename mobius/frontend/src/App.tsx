@@ -43,6 +43,22 @@ function RouteFallback() {
   )
 }
 
+// 桌面端: 把窗口按钮图标色上报给主进程 setTitleBarOverlay。
+// overlay 背景透明 → 直接透出顶栏 var(--bg-primary) (切主题自动变色), 故这里只需让按钮图标色随主题明暗。
+// rAF 延迟一帧, 确保 class / 自定义主题 style 都已落到 :root 再读 CSS 变量。Web 端无 mobiusDesktop → 直接 no-op。
+function pushDesktopTitleBarTheme() {
+  const md = typeof window !== 'undefined'
+    ? (window as { mobiusDesktop?: { isDesktop?: boolean; setTitleBarOverlay?: (o: { color?: string; symbolColor?: string }) => Promise<unknown> } }).mobiusDesktop
+    : undefined
+  if (!md?.isDesktop || typeof md.setTitleBarOverlay !== 'function') return
+  requestAnimationFrame(() => {
+    const cs = getComputedStyle(document.documentElement)
+    const color = cs.getPropertyValue('--bg-primary').trim() || '#0a0e16'
+    const symbolColor = cs.getPropertyValue('--text-primary').trim() || '#e5e7eb'
+    md.setTitleBarOverlay!({ color, symbolColor }).catch(() => {})
+  })
+}
+
 function healthCodeVersion(health: BackendHealth) {
   return health.code_version || health.git_commit || health.version || null
 }
@@ -190,6 +206,7 @@ export default function App() {
     const root = document.documentElement
     root.classList.remove(...THEME_NAMES)
     root.classList.add(theme)
+    pushDesktopTitleBarTheme()
   }, [theme])
 
   useEffect(() => {
@@ -203,6 +220,7 @@ export default function App() {
     if (!activeId) { applyCustomThemeToRoot(null); return }
     const map = loadCustomThemes()
     applyCustomThemeToRoot(map[activeId] || null)
+    pushDesktopTitleBarTheme()
   }, [theme])
 
   if (!token || !user) {

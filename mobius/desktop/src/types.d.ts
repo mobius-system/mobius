@@ -5,17 +5,19 @@ export interface DesktopApi {
 }
 
 export interface AimuxStatus {
-  state: "stopped" | "starting" | "connected" | "failed";
+  state: "stopped" | "starting" | "connected" | "failed" | "disabled";
   detail?: string;
 }
 
 export interface AimuxDetails {
   status: AimuxStatus;
+  aimuxEnabled: boolean;
   identifier: string;
   serverOrigin: string;
   aimuxVersion: string;
   venvDir: string;
   aimuxExe: string;
+  aimuxLogPath: string;
   hasBundledPython: boolean;
   hostInfo: {
     platform: string;
@@ -49,6 +51,8 @@ export interface MobiusDesktopBridge {
   getAimuxDetails: () => Promise<AimuxDetails>;
   getAimuxVersion: () => Promise<string>;
   reconnectAimux: () => Promise<{ ok: boolean; error?: string }>;
+  getAimuxEnabled: () => Promise<boolean>;
+  setAimuxEnabled: (enabled: boolean) => Promise<{ ok: boolean; enabled?: boolean; error?: string }>;
   onAimuxStatus: (cb: (s: AimuxStatus) => void) => () => void;
   onAimuxLog: (cb: (line: string) => void) => () => void;
   updateAimux: () => Promise<{ ok: boolean; version?: string; error?: string }>;
@@ -57,6 +61,9 @@ export interface MobiusDesktopBridge {
   openDevTools: () => Promise<void>;
   pickDirectory: () => Promise<string | null>;
   confirmProjectPath: (projectId: string, path: string) => Promise<{ ok: boolean; error?: string }>;
+  getProjectLocalPath: (projectId: string) => Promise<string | null>;
+  getProjectWorkMode: (projectId: string) => Promise<string | null>;
+  setProjectWorkMode: (projectId: string, mode: string) => Promise<{ ok: boolean }>;
   getMachineInfo: () => Promise<string>;
   logout: () => Promise<void>;
 }

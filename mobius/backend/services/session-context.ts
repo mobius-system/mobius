@@ -18,6 +18,7 @@ import { TARGET_SUBDIR as SKILLS_SUBDIR } from './session-skills-sync';
 import { isGitRepoRoot } from './workspace';
 import { filterReadableContextItems } from './access-control';
 import { isAssistantSession } from './assistant-session';
+import { readIssueKnowledgeShape } from './project-knowledge';
 
 const ISSUE_STATUS_LABELS: Record<string, string> = { active: '开放', in_progress: '进行中', completed: '已解决', open: '开放' };
 const RESEARCH_STATUS_LABELS: Record<string, string> = { active: '开放', completed: '已完成' };
@@ -228,8 +229,8 @@ function zh_add_research_peer_info(lines: string[], peers: any[]): void {
   lines.push('');
 }
 
-function zh_add_memory_info(lines: string[], memories: any[], project: any): void {
-  const all = shuffled([...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])]);
+function zh_add_memory_info(lines: string[], memories: any[], project: any, issue: any): void {
+  const all = [...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])];
   if (all.length === 0) return;
   lines.push('## 持久 Memory');
   lines.push('本用户与项目积累的长期事实 / 偏好如下. 视作已知信息.');
@@ -246,7 +247,17 @@ function zh_add_memory_info(lines: string[], memories: any[], project: any): voi
     }
   });
   if (project && project.bind_path) {
-    lines.push(`此外，如果需要记住一些信息供未来使用，请写入 ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md，不要写入 ~/.codex 或者 ~/.claude。`);
+    const pkPath = `${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md`;
+    const ikPath = (issue && issue.id)
+      ? `${project.bind_path}/${HIDDEN_FOLDER_NAME}/issue_knowledge/${issue.id}/issue_knowledge.md`
+      : '';
+    if (ikPath) {
+      lines.push(`此外，如果需要记住一些信息供未来使用，请写入对应的知识文件（不要写入 ~/.codex 或 ~/.claude）：`);
+      lines.push(`- 如果是项目通用知识（整体事实、通用做法、跨任务可复用的经验，写入 project_knowledge 的内容务必非常非常精简、克制）→ \`${pkPath}\`；`);
+      lines.push(`- 如果是仅与当前任务相关、通用性有限的知识，写入 issue_knowledge（简洁、不要废话） → \`${ikPath}\`；`);
+    } else {
+      lines.push(`此外，如果需要记住一些信息供未来使用，请写入 ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md，不要写入 ~/.codex 或者 ~/.claude。`);
+    }
     lines.push('');
   }
 }
@@ -256,7 +267,7 @@ function zh_add_skill_info(lines: string[], skills: any[]): void {
   lines.push('## 必要 Skill');
   lines.push('以下Skill与当前问题可能有关，在解决问题之前，你必须根据实际需要，有选择性地理解并学习以下skill');
   lines.push('');
-  for (const sk of shuffled(skills)) {
+  for (const sk of skills) {
     const rel = sk.dirName ? `${SKILLS_SUBDIR}/${sk.dirName}/SKILL.md` : '(未知路径)';
     lines.push(`- **${sk.name}**`);
     lines.push(`  - 路径: \`${rel}\``);
@@ -325,6 +336,34 @@ function zh_add_completion_flag_info(lines: string[], session: any, project: any
   lines.push('## 当任务完成时的最后一步');
   lines.push(`当任务最终成功或者最终失败时，你需要删除标记文件 ${flagPath}。但是，不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。`);
   lines.push(`每当用户提出新问题新指令时，都会创建新的running.flag。`);
+}
+
+function zh_add_pc_task_mode_info(lines: string[], session: any): void {
+  if (!session) return;
+  let meta: any = null;
+  try {
+    meta = typeof session.pc_client_metadata === 'string'
+      ? JSON.parse(session.pc_client_metadata)
+      : session.pc_client_metadata;
+  } catch { return; }
+  const mode = meta?.work_mode;
+  const aimuxId = meta?.aimux_id;
+  if (!mode || !aimuxId) return;
+  // PC 端工作目录: 桌面端 PcTaskModeSection 绑定的本机 project 路径. 未绑定/空则不追加;
+  // hub 模式不连 PC, 路径无意义也不追加. web 端 local_path 恒空 → 不追加, 行为不变.
+  const localPath = typeof meta?.local_path === 'string' ? meta.local_path.trim() : '';
+  const pathClause = localPath && mode !== 'hub' ? `。该远程对象上的工作目录为：\`${localPath}\`` : '';
+  let prompt = '';
+  if (mode === 'hub') {
+    prompt = `【不要使用aimux连接到以下远程对象： ${aimuxId}】`;
+  } else if (mode === 'pc') {
+    prompt = `【使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${aimuxId}${pathClause}】`;
+  } else if (mode === 'dual') {
+    prompt = `【你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则，可操作远程路径${pathClause}。】`;
+  }
+  if (!prompt) return;
+  lines.push('\n## PC 任务模式\n');
+  lines.push(prompt + '\n');
 }
 
 // ---------- 英文版 ----------
@@ -429,8 +468,8 @@ function en_add_research_peer_info(lines: string[], peers: any[]): void {
   lines.push('');
 }
 
-function en_add_memory_info(lines: string[], memories: any[], project: any): void {
-  const all = shuffled([...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])]);
+function en_add_memory_info(lines: string[], memories: any[], project: any, issue: any): void {
+  const all = [...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])];
   if (all.length === 0) return;
   lines.push('## Persistent Memory');
   lines.push('Long-term facts / preferences accumulated for this user and project are listed below. Treat them as known information.');
@@ -447,7 +486,17 @@ function en_add_memory_info(lines: string[], memories: any[], project: any): voi
     }
   });
   if (project && project.bind_path) {
-    lines.push(`Additionally, if you need to remember additional information for future sessions, please write to ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md, do not write to ~/.codex or ~/.claude.`);
+    const pkPath = `${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md`;
+    const ikPath = (issue && issue.id)
+      ? `${project.bind_path}/${HIDDEN_FOLDER_NAME}/issue_knowledge/${issue.id}/issue_knowledge.md`
+      : '';
+    if (ikPath) {
+      lines.push(`Additionally, if you need to remember information for future sessions, write it to the appropriate knowledge file (do not write to ~/.codex or ~/.claude):`);
+      lines.push(`- For project-wide general knowledge (overall facts, common practices, cross-task reusable experience; keep what you write into project_knowledge concise and restrained) → \`${pkPath}\`;`);
+      lines.push(`- For knowledge relevant only to the current task with limited generality, write to issue_knowledge → \`${ikPath}\`;`);
+    } else {
+      lines.push(`Additionally, if you need to remember information for future sessions, please write to ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md, do not write to ~/.codex or ~/.claude.`);
+    }
     lines.push('');
   }
 }
@@ -457,7 +506,7 @@ function en_add_skill_info(lines: string[], skills: any[]): void {
   lines.push('## Required Skills');
   lines.push('Before solving the problem, you can read and learn the following skills according to your need.');
   lines.push('');
-  for (const sk of shuffled(skills)) {
+  for (const sk of skills) {
     const rel = sk.dirName ? `${SKILLS_SUBDIR}/${sk.dirName}/SKILL.md` : '(unknown path)';
     lines.push(`- **${sk.name}**`);
     lines.push(`  - Path: \`${rel}\``);
@@ -529,7 +578,7 @@ function en_add_completion_flag_info(lines: string[], session: any, project: any
 }
 
 function buildRandomEmojiPrefix(): string {
-  const emojiCount = Math.random() < 0.5 ? 1 : 2;
+  const emojiCount = 1;
   const pool = [...RANDOM_EMOJIS];
   const picked: string[] = [];
 
@@ -539,6 +588,37 @@ function buildRandomEmojiPrefix(): string {
   }
 
   return `${picked.join('')}\n`;
+}
+
+// PC task mode prompt injection (desktop sessions only, when session.pc_client_metadata is non-null;
+// web sessions are null → early return, web behavior unchanged).
+// pc_client_metadata is stored in the DB as a JSON string {work_mode, aimux_id, local_path?}.
+function en_add_pc_task_mode_info(lines: string[], session: any): void {
+  if (!session) return;
+  let meta: any = null;
+  try {
+    meta = typeof session.pc_client_metadata === 'string'
+      ? JSON.parse(session.pc_client_metadata)
+      : session.pc_client_metadata;
+  } catch { return; }
+  const mode = meta?.work_mode;
+  const aimuxId = meta?.aimux_id;
+  if (!mode || !aimuxId) return;
+  // PC working directory: the local project path bound in the desktop PcTaskModeSection. Skip if unbound/empty;
+  // hub mode never connects to the PC, so the path is irrelevant and also skipped. Web sessions have empty local_path → skipped, behavior unchanged.
+  const localPath = typeof meta?.local_path === 'string' ? meta.local_path.trim() : '';
+  const pathClause = localPath && mode !== 'hub' ? `. The working directory on that remote object is: \`${localPath}\`` : '';
+  let prompt = '';
+  if (mode === 'hub') {
+    prompt = `【Do not use aimux to connect to the following remote object: ${aimuxId}】`;
+  } else if (mode === 'pc') {
+    prompt = `【Use aimux to connect to the following remote object to carry out all work, and try to avoid modifying local code: ${aimuxId}${pathClause}】`;
+  } else if (mode === 'dual') {
+    prompt = `【You are authorized to use aimux to connect to the following remote object: ${aimuxId}. When you need to modify code, first modify the local code, then sync all the code to ${aimuxId}, unless the user objects. When the user asks you to run code, follow the same rule. Remote path you are allowed to operate is: ${pathClause}.】`;
+  }
+  if (!prompt) return;
+  lines.push('\n## PC Task Mode\n');
+  lines.push(prompt + '\n');
 }
 
 const ADD_FNS: Record<string, any> = {
@@ -555,6 +635,7 @@ const ADD_FNS: Record<string, any> = {
     completionFlag: zh_add_completion_flag_info,
     issue: zh_add_issue_level_info,
     session: zh_add_session_level_info,
+    pcTaskMode: zh_add_pc_task_mode_info,
   },
   en: {
     header: en_add_header,
@@ -569,6 +650,7 @@ const ADD_FNS: Record<string, any> = {
     completionFlag: en_add_completion_flag_info,
     issue: en_add_issue_level_info,
     session: en_add_session_level_info,
+    pcTaskMode: en_add_pc_task_mode_info,
   },
 };
 
@@ -581,12 +663,13 @@ function formatBody({ user, project, issue, research, session, skills, memories,
   fns.research(lines, research);
   fns.researchBlackboard(lines, research, session);
   fns.researchPeer(lines, research_peers);
-  fns.memory(lines, memories, project);
+  fns.memory(lines, memories, project, issue);
   fns.skill(lines, skills);
   fns.worktree(lines, issue, project, session);
   fns.completionFlag(lines, session, project);
   fns.issue(lines, issue);
   fns.session(lines, session);
+  fns.pcTaskMode(lines, session);
   return `${buildRandomEmojiPrefix()}${lines.join('\n').trimEnd()}`;
 }
 
@@ -865,7 +948,12 @@ function gatherIssueSources(user: any, issue: any, sessionExclusions: any): any 
       userWhitelist.memory_ids,
     );
     const projectMemories = projectId ? filterReadableContextItems(user, 'memory', Memories.listForProject(projectId)) : [];
-    effectiveMemories = [...userMemories, ...projectMemories]
+    // 本任务知识 (issue_knowledge.md): 与项目知识同构, 但只为本 issue 注入, 不入 memory 库,
+    // 因此不会出现在其它 issue 的记忆列表里. 像普通 memory 一样可被 exMemSet 排除 (可选).
+    const issueKnowledgeMemory = (issue && project) ? readIssueKnowledgeShape(project, issue) : null;
+    const candidateMemories = [...userMemories, ...projectMemories];
+    if (issueKnowledgeMemory) candidateMemories.push(issueKnowledgeMemory);
+    effectiveMemories = candidateMemories
       .filter(m => !exMemSet.has(m.id))
       .map(m => ({
         id: m.id,
@@ -1001,6 +1089,7 @@ function gatherSources(user: any, sessionId: string): any {
         description: session.description || '',
         status: session.status,
         research_role: session.research_role || '',
+        pc_client_metadata: session.pc_client_metadata ?? null,
       },
     };
   }
@@ -1028,6 +1117,7 @@ function gatherSources(user: any, sessionId: string): any {
       name: session.name,
       description: session.description || '',
       status: session.status,
+      pc_client_metadata: session.pc_client_metadata ?? null,
     },
   };
 }
@@ -1055,6 +1145,7 @@ function buildIssueContextPreview(user: any, issueId: any, draftSession: any, ex
       name: draftSession.name || '(未命名)',
       description: draftSession.description || '',
       status: 'active',
+      pc_client_metadata: draftSession.pc_client_metadata ?? null,
     } : null,
   };
   return { body: formatBody(sources), sources };
@@ -1088,6 +1179,7 @@ function buildProjectIssueContextPreview(user: any, projectId: any, draftIssue: 
       name: draftSession.name || '(未命名)',
       description: draftSession.description || '',
       status: 'active',
+      pc_client_metadata: draftSession.pc_client_metadata ?? null,
     } : null,
   };
   return { body: formatBody(sources), sources };

@@ -180,6 +180,8 @@ export interface SessionRawRow {
   original_project_id: string | null;
   deleted_at: string | null;
   completed_at: string | null;
+  /** PC 任务模式元数据 (JSON 字符串 {work_mode, aimux_id, local_path?}); 仅桌面端 session 非空, web 端恒 null */
+  pc_client_metadata: string | null;
 }
 
 export type SessionRow = SessionRawRow;
