@@ -117,6 +117,7 @@ function KnowledgePane({ loadUrl, saveUrl, fileHint, emptyHint }: {
   const [loadError, setLoadError] = useState('')
   const [saveError, setSaveError] = useState('')
   const lastSavedRef = useRef('')
+  const contentRef = useRef('') // 镜像最新 content, 供卸载时刷盘闭包读取
 
   useEffect(() => {
     let cancelled = false
@@ -135,6 +136,9 @@ function KnowledgePane({ loadUrl, saveUrl, fileHint, emptyHint }: {
     return () => { cancelled = true }
   }, [loadUrl])
 
+  // contentRef 始终镜像最新 content (供卸载刷盘闭包读取最新值).
+  useEffect(() => { contentRef.current = content }, [content])
+
   // 防抖保存 500ms.
   useEffect(() => {
     if (content === lastSavedRef.current) return
@@ -150,6 +154,19 @@ function KnowledgePane({ loadUrl, saveUrl, fileHint, emptyHint }: {
     }, 500)
     return () => clearTimeout(t)
   }, [content, saveUrl])
+
+  // 卸载前(切 tab / 关弹窗)把防抖尚未触发的编辑立即刷盘, 避免 <500ms 的编辑丢失.
+  // 空依赖 cleanup 仅在真正卸载时执行 (切 tab 触发 key 变化 → 卸载); content 经 contentRef 读最新值.
+  useEffect(() => {
+    return () => {
+      if (contentRef.current !== lastSavedRef.current) {
+        api(saveUrl, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: contentRef.current }),
+        }).catch(() => {})
+      }
+    }
+  }, [saveUrl])
 
   function forceSave() {
     if (content === lastSavedRef.current) return

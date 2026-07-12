@@ -253,8 +253,8 @@ function zh_add_memory_info(lines: string[], memories: any[], project: any, issu
       : '';
     if (ikPath) {
       lines.push(`此外，如果需要记住一些信息供未来使用，请写入对应的知识文件（不要写入 ~/.codex 或 ~/.claude）：`);
-      lines.push(`- 如果是项目通用知识（整体事实、通用做法、跨任务可复用的经验，写入 project_knowledge 的内容务必精简、克制）→ \`${pkPath}\`；`);
-      lines.push(`- 如果是仅与当前任务相关、通用性有限的知识，写入 issue_knowledge → \`${ikPath}\`；`);
+      lines.push(`- 如果是项目通用知识（整体事实、通用做法、跨任务可复用的经验，写入 project_knowledge 的内容务必非常非常精简、克制）→ \`${pkPath}\`；`);
+      lines.push(`- 如果是仅与当前任务相关、通用性有限的知识，写入 issue_knowledge（简洁、不要废话） → \`${ikPath}\`；`);
     } else {
       lines.push(`此外，如果需要记住一些信息供未来使用，请写入 ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md，不要写入 ~/.codex 或者 ~/.claude。`);
     }
