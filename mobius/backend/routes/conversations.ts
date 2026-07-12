@@ -140,6 +140,22 @@ router.post('/:id/members', auth, (req: express.Request, res: express.Response) 
 
 // 退群 / 移除成员: DELETE /:id/members/:memberType/:memberId
 // 退自己随时; 踢别人仅群主; 群主不可自退(需先转让).
+// 删除/退出会话: 群主=解散整群(影响所有成员), 非群主=仅自己退出(等价 remove member self).
+// 移动端"删除聊天"调它; 解决群主 remove self 被 400 拒绝导致客户端假成功的问题.
+router.delete('/:id', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const me = Conversations.findMember(id, 'user', user.id);
+  if (!me) { res.status(403).json({ error: '你不是该群成员' }); return; }
+  if (me.role === 'owner') {
+    Conversations.deleteConversation(id);
+    res.json({ ok: true, dissolved: true });
+  } else {
+    Conversations.removeMember(id, 'user', user.id);
+    res.json({ ok: true, removed: 1 });
+  }
+});
+
 router.delete('/:id/members/:memberType/:memberId', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const id = String(req.params.id);

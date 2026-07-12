@@ -234,6 +234,13 @@ const Conversations = {
     ).run(conversationId, type, memberId).changes;
   },
 
+  // 解散/删除整个会话: 群主"删除聊天"时调用. 手动级联删 members+messages(无 FK CASCADE).
+  deleteConversation(conversationId: string): void {
+    db.prepare('DELETE FROM conversation_messages WHERE conversation_id = ?').run(conversationId);
+    db.prepare('DELETE FROM conversation_members WHERE conversation_id = ?').run(conversationId);
+    db.prepare('DELETE FROM conversations WHERE id = ?').run(conversationId);
+  },
+
   touch(conversationId: string): void {
     db.prepare(
       "UPDATE conversations SET last_active = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
