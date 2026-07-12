@@ -237,6 +237,17 @@ app.use(express.static(PUBLIC_DIR, {
   setHeaders: setStaticCacheHeaders,
 }));
 
+// ===== 桌面客户端分发 =====
+// build.py --build-electron 把三平台 zip 产到 mobius/desktop-builds/。故意不放 public:
+// vite emptyOutDir:true 每次前端构建会清空 mobius/public, 放那里会被删。这里独立挂一条
+// 静态路由, 同源供 "下载桌面客户端" 菜单 (/desktop-builds/<file>) 分发。
+const DESKTOP_BUILDS_DIR = path.join(__dirname, 'desktop-builds');
+app.use('/desktop-builds', express.static(DESKTOP_BUILDS_DIR, {
+  etag: true,
+  lastModified: true,
+  setHeaders: (res) => res.setHeader('Cache-Control', 'public, max-age=3600'),
+}));
+
 app.get('*', (req, res, next) => {
   const p = req.path || '';
   if (p.startsWith('/api') || p.startsWith('/code-server') || p.startsWith('/extension')) {

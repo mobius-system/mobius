@@ -142,5 +142,6 @@ image*.png
 # Ignore extension
 mobius/extension
 mobius/public/desktop-builds/
+mobius/desktop-builds/
 mobius/public/mobile-builds/
 mobius/frontend/public/mobile-builds/
