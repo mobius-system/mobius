@@ -550,6 +550,39 @@ def attach_to_mobius() -> None:
     print("后端由 PM2 管理。可手动查看日志: cd mobius && npx --no-install pm2 logs mobius-system")
 
 
+def ensure_daily_sync_scheduler(root: Path) -> None:
+    """Best-effort + idempotent: 保证每日 git 同步调度器 (PM2 进程 mobius-daily-sync) 在跑。
+    调度器刻意注册在 ecosystem.config.js 之外 (本函数用独立 pm2 start 拉起), 因此:
+      - PM2 崩溃会自动重启它 (autorestart);
+      - 每次 boot (entrypoint→start.py) 都会由本函数重新注册 -> 重启不丢;
+      - start.py 的 ecosystem reload (包括同步脚本自己触发的 deploy) 永远不会 reload 到它
+        -> 同步脚本可自由调用 start.py 而不会杀死本调度器 (无重入)。
+    循环脚本 daily-sync-loop.sh 每天 04:00 Asia/Shanghai 触发 daily-git-sync.sh。
+    永不抛异常: 调度器注册失败绝不能拖垮 boot。"""
+    loop = root / ".mobius" / "scripts" / "daily-sync-loop.sh"
+    if not loop.is_file():
+        return
+    name = "mobius-daily-sync"
+    try:
+        import json as _json
+        res = _pm2(["jlist"], capture=True, check=False)
+        apps = _json.loads(res.stdout or "[]")
+        app = next((a for a in apps if a.get("name") == name), None)
+        if app:
+            # 已注册: 仅当不在 online 时才拉起 (stopped/errored)。已 online 必须 no-op —
+            # 否则同步脚本调 start.py 时会重启本调度器, 而它正是同步脚本的父进程, 会杀死同步 (重入)。
+            status = (app.get("pm2_env") or {}).get("status", "")
+            if status != "online":
+                _pm2(["start", name], check=False)
+                print(f"   daily-sync scheduler: mobius-daily-sync 复活 (was {status})")
+            return
+        _pm2(["start", str(loop), "--name", name, "--cwd", str(root), "--time"], check=False)
+        _pm2(["save"], check=False)
+        print("   daily-sync scheduler: 已注册 mobius-daily-sync (每天 04:00 Asia/Shanghai 同步)")
+    except Exception as exc:  # 调度器问题绝不阻断 boot
+        print(f"   daily-sync scheduler: skipped ({exc})")
+
+
 def main(
     *,
     script_name: str = "start.py",
@@ -620,6 +653,7 @@ def main(
             return 0
 
         start_code_server(force_restart=args.force_vscode_server_restart)
+        ensure_daily_sync_scheduler(root)
         print_health_check()
         print_summary(root)
 
