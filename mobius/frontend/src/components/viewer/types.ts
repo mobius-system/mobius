@@ -6,7 +6,7 @@
  */
 
 export type AnyEntry = Record<string, any>
-export type CardMode = 'compact' | 'field' | 'code'
+export type CardMode = 'compact' | 'field' | 'code' | 'image'
 
 export type CodeEditFile =
   | {

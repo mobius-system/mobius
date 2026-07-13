@@ -54,7 +54,8 @@ function gatherHostInfo(opts) {
     totalMemGB: Math.round(os.totalmem() / 1024 ** 3 * 10) / 10,
     aimuxIdentifier: opts.aimuxIdentifier,
     serverOrigin: opts.serverOrigin,
-    appVersion: opts.appVersion
+    appVersion: opts.appVersion,
+    desktopPath: app.getPath("desktop")
   };
 }
 const AIMUX_PIN = "aimux";
@@ -285,90 +286,45 @@ class AimuxSupervisor {
     this.opts.onStatus({ state: "stopped", identifier: this.opts.identifier });
   }
 }
-const OVERLAY_ID = "__mobius_project_path_overlay__";
-const TOAST_ID = "__mobius_desktop_toast__";
-const CSS = `
-#${OVERLAY_ID} { position: fixed; inset: 0; z-index: 2147483646; }
-#${OVERLAY_ID} .mdpp-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; }
-#${OVERLAY_ID} .mdpp-card { width: 460px; max-width: calc(100vw - 40px); background: #fff; border-radius: 14px; padding: 22px 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.25); font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC", sans-serif; color: #1d1d1f; }
-#${OVERLAY_ID} h3 { margin: 0 0 10px; font-size: 16px; }
-#${OVERLAY_ID} .mdpp-msg { margin: 0 0 14px; font-size: 13px; color: #6e6e73; }
-#${OVERLAY_ID} label { display: block; font-size: 12px; color: #8e8e93; margin-bottom: 6px; }
-#${OVERLAY_ID} .mdpp-row { display: flex; gap: 8px; }
-#${OVERLAY_ID} .mdpp-row input { flex: 1; padding: 9px 11px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 13px; outline: none; }
-#${OVERLAY_ID} .mdpp-row input:focus { border-color: #0a84ff; }
-#${OVERLAY_ID} .mdpp-row button { padding: 0 14px; border: 1px solid #d2d2d7; background: #f5f5f7; border-radius: 8px; font-size: 13px; cursor: pointer; }
-#${OVERLAY_ID} .mdpp-actions { margin-top: 16px; display: flex; justify-content: flex-end; }
-#${OVERLAY_ID} .mdpp-primary { padding: 9px 20px; border: none; border-radius: 9px; background: #0a84ff; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
-#${OVERLAY_ID} .mdpp-primary:disabled { opacity: 0.6; cursor: default; }
-#${TOAST_ID} { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); z-index: 2147483647; padding: 10px 18px; border-radius: 10px; font: 13px/1.4 -apple-system, "Segoe UI", "PingFang SC", sans-serif; color: #fff; background: rgba(40,40,40,0.94); box-shadow: 0 4px 16px rgba(0,0,0,0.25); transition: opacity 0.3s; opacity: 0; pointer-events: none; max-width: calc(100vw - 40px); }
-#${TOAST_ID}.ok { background: rgba(48,138,76,0.96); }
-#${TOAST_ID}.err { background: rgba(209,72,54,0.96); }
-`;
-async function injectProjectPathOverlay(wc, opts) {
+const FILE$1 = () => path.join(app.getPath("userData"), "project-paths.json");
+function read$1() {
   try {
-    await wc.insertCSS(CSS, { cssOrigin: "user" });
-    const script = `
-(function(){
-  if (document.getElementById(${JSON.stringify(OVERLAY_ID)})) return;
-  var o = ${JSON.stringify(opts)};
-  var root = document.createElement('div'); root.id = ${JSON.stringify(OVERLAY_ID)};
-  var back = document.createElement('div'); back.className = 'mdpp-backdrop';
-  var card = document.createElement('div'); card.className = 'mdpp-card';
-  var h = document.createElement('h3'); h.textContent = '绑定本地工作路径';
-  var p = document.createElement('p'); p.className = 'mdpp-msg';
-  p.textContent = '本项目「' + o.projectName + '」还没有绑定这台机器（' + o.machineInfo + '）的本地工作路径。您必须选择一个本地路径才能继续。';
-  var lab = document.createElement('label'); lab.textContent = '本地路径';
-  var row = document.createElement('div'); row.className = 'mdpp-row';
-  var input = document.createElement('input'); input.type = 'text'; input.value = o.defaultPath; input.style.width = '100%';
-  var browse = document.createElement('button'); browse.textContent = '浏览…';
-  var actions = document.createElement('div'); actions.className = 'mdpp-actions';
-  var confirm = document.createElement('button'); confirm.className = 'mdpp-primary'; confirm.textContent = '确认绑定';
-  row.appendChild(input); row.appendChild(browse);
-  actions.appendChild(confirm);
-  card.appendChild(h); card.appendChild(p); card.appendChild(lab); card.appendChild(row); card.appendChild(actions);
-  back.appendChild(card); root.appendChild(back); document.documentElement.appendChild(root);
-  input.focus(); input.select();
-  browse.onclick = async function () {
-    var d = await window.mobiusDesktop.pickDirectory();
-    if (d) input.value = d;
-  };
-  confirm.onclick = async function () {
-    confirm.disabled = true; confirm.textContent = '处理中…';
-    var r = await window.mobiusDesktop.confirmProjectPath(o.projectId, input.value);
-    if (!r || !r.ok) { confirm.disabled = false; confirm.textContent = '确认绑定'; alert((r && r.error) || '绑定失败'); }
-  };
-})();
-true;`;
-    await wc.executeJavaScript(script);
+    return JSON.parse(fs.readFileSync(FILE$1(), "utf8"));
+  } catch {
+    return {};
+  }
+}
+function write$1(store) {
+  try {
+    fs.writeFileSync(FILE$1(), JSON.stringify(store, null, 2), { mode: 384 });
   } catch (e) {
-    console.error("[project-overlay] 注入失败:", e);
+    console.error("[project-paths] 写入失败:", e);
   }
 }
-async function dismissOverlay(wc) {
-  try {
-    await wc.executeJavaScript(`var e=document.getElementById(${JSON.stringify(OVERLAY_ID)}); if(e) e.remove(); true;`);
-  } catch {
-  }
+const key = (server, projectId) => `${server}::${projectId}`;
+function getProjectLocalPath(server, projectId) {
+  return read$1()[key(server, projectId)]?.path || null;
 }
-async function injectToast(wc, msg, type) {
-  try {
-    await wc.executeJavaScript(`
-(function(){
-  var id = ${JSON.stringify(TOAST_ID)};
-  var t = document.getElementById(id);
-  if (!t) { t = document.createElement('div'); t.id = id; document.documentElement.appendChild(t); }
-  t.className = ${JSON.stringify(type)};
-  t.textContent = ${JSON.stringify(msg)};
-  t.style.opacity = '1';
-  clearTimeout(t.__h);
-  t.__h = setTimeout(function(){ t.style.opacity = '0'; }, 3600);
-})();
-true;`);
-  } catch {
-  }
+function setProjectLocalPath(server, projectId, p) {
+  const store = read$1();
+  const k = key(server, projectId);
+  store[k] = { ...store[k], path: p, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  write$1(store);
 }
-const FILE = () => path.join(app.getPath("userData"), "project-paths.json");
+function getProjectWorkMode(server, projectId) {
+  return read$1()[key(server, projectId)]?.workMode || null;
+}
+function setProjectWorkMode(server, projectId, mode) {
+  const store = read$1();
+  const k = key(server, projectId);
+  store[k] = { ...store[k], workMode: mode, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  write$1(store);
+}
+function sanitizeName(name) {
+  const s = name.replace(/[\/\\:*?"<>|\x00-\x1f]/g, "_").trim();
+  return s || "project";
+}
+const FILE = () => path.join(app.getPath("userData"), "desktop-settings.json");
 function read() {
   try {
     return JSON.parse(fs.readFileSync(FILE(), "utf8"));
@@ -380,31 +336,25 @@ function write(store) {
   try {
     fs.writeFileSync(FILE(), JSON.stringify(store, null, 2), { mode: 384 });
   } catch (e) {
-    console.error("[project-paths] 写入失败:", e);
+    console.error("[desktop-settings] 写入失败:", e);
   }
 }
-const key = (server, projectId) => `${server}::${projectId}`;
-function getProjectLocalPath(server, projectId) {
-  return read()[key(server, projectId)]?.path || null;
+function getAimuxEnabled() {
+  return read().aimuxEnabled !== false;
 }
-function setProjectLocalPath(server, projectId, p) {
+function setAimuxEnabled(enabled) {
+  write({ ...read(), aimuxEnabled: enabled, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+}
+const routeKey = (server, username) => `${server}::${username}`;
+function getLastRoute(server, username) {
+  return read().lastRoutes?.[routeKey(server, username)] || null;
+}
+function setLastRoute(server, username, route) {
   const store = read();
-  const k = key(server, projectId);
-  store[k] = { ...store[k], path: p, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  if (!store.lastRoutes) store.lastRoutes = {};
+  store.lastRoutes[routeKey(server, username)] = route;
+  store.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   write(store);
-}
-function getProjectWorkMode(server, projectId) {
-  return read()[key(server, projectId)]?.workMode || null;
-}
-function setProjectWorkMode(server, projectId, mode) {
-  const store = read();
-  const k = key(server, projectId);
-  store[k] = { ...store[k], workMode: mode, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
-  write(store);
-}
-function sanitizeName(name) {
-  const s = name.replace(/[\/\\:*?"<>|\x00-\x1f]/g, "_").trim();
-  return s || "project";
 }
 const currentDir$1 = dirname(fileURLToPath(import.meta.url));
 let statusWindow = null;
@@ -438,6 +388,7 @@ let supervisor = null;
 let creds = null;
 let lastStatus = { state: "stopped" };
 let installing = false;
+let aimuxEnabled = true;
 const LOG_MAX = 300;
 const logBuffer = [];
 function broadcast(channel, payload) {
@@ -462,21 +413,6 @@ function defaultIdentifier() {
   const host = os.hostname().toLowerCase().replace(/[^a-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
   return `desktop-${host || "pc"}`;
 }
-let lastProjectId = null;
-function handleProjectUrl(url) {
-  const m = url.match(/\/u\/[^/]+\/p\/([^/?#]+)/);
-  if (!m) {
-    if (lastProjectId !== null) {
-      lastProjectId = null;
-      if (mainWindow) void dismissOverlay(mainWindow.webContents);
-    }
-    return;
-  }
-  const projectId = m[1];
-  if (projectId === lastProjectId) return;
-  lastProjectId = projectId;
-  void ensureProjectPath(projectId);
-}
 async function fetchProjectName(server, projectId) {
   if (!creds) return projectId;
   try {
@@ -489,26 +425,6 @@ async function fetchProjectName(server, projectId) {
   } catch {
     return projectId;
   }
-}
-async function ensureProjectPath(projectId) {
-  if (!mainWindow || !creds) return;
-  const server = serverOrigin();
-  const saved = getProjectLocalPath(server, projectId);
-  if (saved) {
-    if (!fs.existsSync(saved)) {
-      try {
-        fs.mkdirSync(saved, { recursive: true });
-        void injectToast(mainWindow.webContents, `已创建本地路径：${saved}`, "ok");
-      } catch (e) {
-        void injectToast(mainWindow.webContents, `创建本地路径失败：${e.message}`, "err");
-      }
-    }
-    return;
-  }
-  const projectName = await fetchProjectName(server, projectId);
-  const defaultPath = join(app.getPath("desktop"), "MobiusOS", sanitizeName(projectName));
-  const machineInfo = `${os.hostname()} · ${process.platform}`;
-  void injectProjectPathOverlay(mainWindow.webContents, { projectId, projectName, defaultPath, machineInfo });
 }
 function emitStatus(s) {
   lastStatus = s;
@@ -590,9 +506,8 @@ async function seedWebAuth(origin, jwt) {
     setTimeout(finish, 5e3);
   });
 }
-async function bootDesktop() {
-  if (!mainWindow || !creds) return;
-  const server = serverOrigin();
+async function startAimuxConnection() {
+  if (!creds || installing) return;
   installing = true;
   emitStatus({ state: "starting", detail: "首次启动需在本机下载 aimux（联网，约 30-90 秒）…" });
   appendAimuxLog(`
@@ -608,14 +523,43 @@ async function bootDesktop() {
   installing = false;
   if (!inst.ok) {
     emitStatus({ state: "failed", detail: inst.error });
-  } else {
-    emitStatus({ state: "starting", detail: "aimux 就绪，正在反向连接 mobius…" });
-    supervisor = buildSupervisor();
-    supervisor?.start();
+    return;
   }
-  emitStatus({ state: lastStatus.state, detail: "正在登录工作台…" });
+  if (!aimuxEnabled) return;
+  emitStatus({ state: "starting", detail: "aimux 就绪，正在反向连接 mobius…" });
+  supervisor = buildSupervisor();
+  supervisor?.start();
+}
+async function bootDesktop() {
+  if (!mainWindow || !creds) return;
+  const server = serverOrigin();
+  if (aimuxEnabled) {
+    await startAimuxConnection();
+    emitStatus({ state: lastStatus.state, detail: "正在登录工作台…" });
+  } else {
+    emitStatus({ state: "disabled", detail: "aimux 连接已关闭（可在 aimux 状态面板开启）" });
+    appendAimuxLog(`
+==== [${(/* @__PURE__ */ new Date()).toISOString()}] aimux disabled by user, skip reverse connect ====
+`);
+  }
   await seedWebAuth(server, creds.jwt);
-  void mainWindow.loadURL(`${server}/u/${encodeURIComponent(creds.username)}`);
+  void mainWindow.loadURL(`${server}/welcome`);
+}
+function persistLastRoute() {
+  if (!mainWindow || !creds) return;
+  const origin = serverOrigin();
+  if (!origin) return;
+  try {
+    const wc = mainWindow.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    const raw = wc.getURL();
+    if (!raw || !raw.startsWith(origin)) return;
+    const path2 = new URL(raw).pathname + new URL(raw).search + new URL(raw).hash;
+    const homePrefix = `/u/${encodeURIComponent(creds.username)}`;
+    if (!path2.startsWith(homePrefix)) return;
+    setLastRoute(origin, creds.username, path2);
+  } catch {
+  }
 }
 function runSyncReload() {
   mainWindow?.webContents.reloadIgnoringCache();
@@ -642,9 +586,13 @@ async function runUpdateAimux() {
     emitStatus({ state: "failed", detail: r.error });
     return { ok: false, error: r.error };
   }
-  emitStatus({ state: "starting", detail: `aimux ${r.version} 已就绪, 正在反向连接…` });
-  supervisor = buildSupervisor();
-  supervisor?.start();
+  if (aimuxEnabled) {
+    emitStatus({ state: "starting", detail: `aimux ${r.version} 已就绪, 正在反向连接…` });
+    supervisor = buildSupervisor();
+    supervisor?.start();
+  } else {
+    emitStatus({ state: "disabled", detail: `aimux ${r.version} 已更新（连接已关闭）` });
+  }
   return { ok: true, version: r.version };
 }
 async function runLogout() {
@@ -653,6 +601,39 @@ async function runLogout() {
   clearCreds();
   creds = null;
   mainWindow?.loadFile(join(currentDir, "../renderer/index.html"));
+}
+async function applyAimuxEnabled(enabled) {
+  aimuxEnabled = enabled;
+  setAimuxEnabled(enabled);
+  if (!enabled) {
+    await supervisor?.stop();
+    supervisor = null;
+    emitStatus({ state: "disabled", detail: "aimux 连接已关闭" });
+    appendAimuxLog(`
+==== [${(/* @__PURE__ */ new Date()).toISOString()}] aimux disabled by user ====
+`);
+  } else if (creds && mainWindow) {
+    if (installing) {
+      emitStatus({ state: "starting", detail: "aimux 安装中，完成后将自动连接…" });
+    } else {
+      await startAimuxConnection();
+    }
+  }
+  updateMenuChecked();
+}
+function updateMenuChecked() {
+  const menu = Menu.getApplicationMenu();
+  if (!menu) return;
+  for (const top of menu.items) {
+    const sub = top.submenu;
+    if (!sub) continue;
+    for (const it of sub.items) {
+      if (it.label === "允许 aimux 反向连接") {
+        it.checked = aimuxEnabled;
+        return;
+      }
+    }
+  }
 }
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -663,7 +644,13 @@ function createWindow() {
     show: false,
     backgroundColor: "#ffffff",
     title: "Mobius Desktop",
-    titleBarStyle: isMac ? "hiddenInset" : "default",
+    // Windows/Linux: 隐藏原生标题栏 + titleBarOverlay 叠原生窗口按钮 (VSCode 风),
+    // 让远程 mobius 顶栏充当标题栏; macOS: hiddenInset 已是 VSCode 风 (交通灯内嵌), 保持。
+    titleBarStyle: isMac ? "hiddenInset" : "hidden",
+    // 不用 titleBarOverlay: 此环境 (未签名 exe + 高 DPI 缩放) 下原生窗口按钮符号不渲染 (只剩背景色块)。
+    // 改由前端自绘窗口按钮 (WindowControls) + window:* IPC 控制, 主题自适应可靠。macOS 用系统交通灯。
+    // 隐藏菜单条 (Windows/Linux 按 Alt 唤出, macOS 系统菜单栏不受影响); 快捷键与功能全保留。
+    autoHideMenuBar: true,
     webPreferences: {
       preload: join(currentDir, "../preload/index.mjs"),
       contextIsolation: true,
@@ -680,19 +667,28 @@ function createWindow() {
     void shell.openExternal(url);
     return { action: "deny" };
   });
+  mainWindow.on("maximize", () => broadcast("window:maximize-changed", true));
+  mainWindow.on("unmaximize", () => broadcast("window:maximize-changed", false));
+  mainWindow.on("will-resize", (event, newBounds) => {
+    if (newBounds.width < newBounds.height) {
+      event.preventDefault();
+      mainWindow?.setBounds({ ...newBounds, height: newBounds.width });
+    }
+  });
   mainWindow.webContents.on("will-navigate", (_e, url) => {
     if (url.startsWith("file://")) return;
     const origin = serverOrigin();
     if (origin && !url.startsWith(origin)) _e.preventDefault();
   });
-  mainWindow.webContents.on("did-finish-load", () => {
-    const u = mainWindow?.webContents.getURL() || "";
-    if (u.startsWith("http")) {
-      handleProjectUrl(u);
-    }
+  mainWindow.webContents.on("before-input-event", (_e, input) => {
+    if (input.type !== "keyDown" || input.key !== "F12") return;
+    _e.preventDefault();
+    const wc = mainWindow?.webContents;
+    if (!wc) return;
+    if (wc.isDevToolsOpened()) wc.closeDevTools();
+    else wc.openDevTools({ mode: "detach" });
   });
-  mainWindow.webContents.on("did-navigate-in-page", (_e, url) => handleProjectUrl(url));
-  mainWindow.webContents.on("did-navigate", (_e, url) => handleProjectUrl(url));
+  mainWindow.on("close", () => persistLastRoute());
 }
 function buildMenu() {
   const tpl = [
@@ -702,9 +698,33 @@ function buildMenu() {
         { label: "同步最新代码", accelerator: "CmdOrCtrl+Shift+R", click: () => runSyncReload() },
         { label: "更新 aimux", click: () => void runUpdateAimux() },
         { label: "aimux 状态面板", accelerator: "CmdOrCtrl+Shift+A", click: () => createStatusWindow() },
+        {
+          label: "允许 aimux 反向连接",
+          type: "checkbox",
+          checked: aimuxEnabled,
+          click: (mi) => {
+            if (installing) {
+              mi.checked = aimuxEnabled;
+              return;
+            }
+            void applyAimuxEnabled(mi.checked);
+          }
+        },
         { type: "separator" },
         { label: "切换账号 / 服务器", click: () => void runLogout() },
         { role: "quit", label: "退出" }
+      ]
+    },
+    {
+      label: "编辑",
+      submenu: [
+        { role: "undo", label: "撤销" },
+        { role: "redo", label: "重做" },
+        { type: "separator" },
+        { role: "cut", label: "剪切" },
+        { role: "copy", label: "复制" },
+        { role: "paste", label: "粘贴" },
+        { role: "selectAll", label: "全选" }
       ]
     },
     {
@@ -739,6 +759,13 @@ ipcMain.handle(
   "desktop:boot-data",
   () => gatherHostInfo({ aimuxIdentifier: creds?.identifier || "", serverOrigin: serverOrigin(), appVersion: app.getVersion() })
 );
+ipcMain.handle("desktop:get-last-route", () => {
+  if (!creds) return null;
+  const saved = getLastRoute(serverOrigin(), creds.username);
+  if (!saved) return null;
+  const homePath = `/u/${encodeURIComponent(creds.username)}`;
+  return saved.startsWith(homePath) ? saved : null;
+});
 ipcMain.handle("aimux:status", () => lastStatus);
 ipcMain.handle("aimux:update", () => runUpdateAimux());
 ipcMain.handle("app:sync-reload", () => {
@@ -747,6 +774,7 @@ ipcMain.handle("app:sync-reload", () => {
 });
 ipcMain.handle("aimux:details", () => ({
   status: lastStatus,
+  aimuxEnabled,
   identifier: creds?.identifier || "",
   serverOrigin: serverOrigin(),
   venvDir: venvDir(),
@@ -759,11 +787,18 @@ ipcMain.handle("aimux:details", () => ({
 ipcMain.handle("aimux:version", () => getAimuxVersion());
 ipcMain.handle("aimux:reconnect", async () => {
   if (!creds) return { ok: false, error: "未登录" };
+  if (!aimuxEnabled) return { ok: false, error: "aimux 连接已关闭，请先开启开关" };
   await supervisor?.stop();
   supervisor = buildSupervisor();
   if (!supervisor) return { ok: false, error: "aimux 未就绪（venv 可能未建好），请稍后重试" };
   supervisor.start();
   return { ok: true };
+});
+ipcMain.handle("aimux:get-enabled", () => aimuxEnabled);
+ipcMain.handle("aimux:set-enabled", async (_e, enabled) => {
+  if (installing) return { ok: false, error: "正在安装 aimux，请稍候" };
+  await applyAimuxEnabled(Boolean(enabled));
+  return { ok: true, enabled: aimuxEnabled };
 });
 ipcMain.handle("app:open-status", () => {
   createStatusWindow();
@@ -773,6 +808,32 @@ ipcMain.handle("app:open-devtools", () => {
   mainWindow?.webContents.openDevTools({ mode: "detach" });
   return { ok: true };
 });
+ipcMain.handle("desktop:set-title-bar-overlay", (_e, opts) => {
+  if (isMac) return { ok: true };
+  try {
+    mainWindow?.setTitleBarOverlay(opts);
+  } catch {
+  }
+  return { ok: true };
+});
+ipcMain.handle("window:minimize", () => {
+  mainWindow?.minimize();
+  return { ok: true };
+});
+ipcMain.handle("window:toggle-maximize", () => {
+  if (!mainWindow) return { ok: true, maximized: false };
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+    return { ok: true, maximized: false };
+  }
+  mainWindow.maximize();
+  return { ok: true, maximized: true };
+});
+ipcMain.handle("window:close", () => {
+  mainWindow?.close();
+  return { ok: true };
+});
+ipcMain.handle("window:is-maximized", () => !!mainWindow?.isMaximized());
 ipcMain.handle("project:pick-directory", async () => {
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
@@ -786,13 +847,28 @@ ipcMain.handle("project:confirm-path", async (_e, projectId, pathRaw) => {
   try {
     if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
   } catch (e) {
-    void injectToast(mainWindow.webContents, `创建本地路径失败：${e.message}`, "err");
     return { ok: false, error: e.message };
   }
   setProjectLocalPath(serverOrigin(), projectId, p);
-  void dismissOverlay(mainWindow.webContents);
-  void injectToast(mainWindow.webContents, `已绑定本地路径：${p}`, "ok");
-  return { ok: true };
+  return { ok: true, path: p };
+});
+ipcMain.handle("project:bind-status", async (_e, projectId) => {
+  if (!creds) return null;
+  const server = serverOrigin();
+  const machineInfo = `${os.hostname()} · ${process.platform}`;
+  const saved = getProjectLocalPath(server, projectId);
+  if (saved) {
+    if (!fs.existsSync(saved)) {
+      try {
+        fs.mkdirSync(saved, { recursive: true });
+      } catch {
+      }
+    }
+    return { bound: true, path: saved, machineInfo };
+  }
+  const projectName = await fetchProjectName(server, projectId);
+  const defaultPath = join(app.getPath("desktop"), "MobiusOS", sanitizeName(projectName));
+  return { bound: false, path: null, defaultPath, projectName, machineInfo };
 });
 ipcMain.handle("desktop:machine-info", () => `${os.hostname()} · ${process.platform}`);
 ipcMain.handle("project:get-path", (_e, projectId) => getProjectLocalPath(serverOrigin(), projectId));
@@ -812,6 +888,7 @@ if (!gotLock) {
     }
   });
   app.whenReady().then(async () => {
+    aimuxEnabled = getAimuxEnabled();
     buildMenu();
     createWindow();
     const saved = loadCreds();
@@ -834,5 +911,6 @@ app.on("window-all-closed", () => {
   if (!isMac) app.quit();
 });
 app.on("before-quit", () => {
+  persistLastRoute();
   void supervisor?.stop();
 });

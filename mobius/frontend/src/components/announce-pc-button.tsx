@@ -115,7 +115,7 @@ function AnnouncePcButtonInner({
         </>
       )}
       <Laptop className="announce-pc-button__icon w-3.5 h-3.5" strokeWidth={1.75} />
-      <span className="relative z-10 whitespace-nowrap">{clicked ? '已告知本机' : '告知本电脑的存在'}</span>
+      <span className="relative z-10 whitespace-nowrap">{clicked ? '已宣告本机存在' : '告知本电脑的存在'}</span>
     </button>
   )
 }

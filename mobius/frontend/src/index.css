@@ -9,9 +9,10 @@
 }
 
 /* ===== 桌面端标题栏拖拽区 =====
-   仅 Electron 桌面端 (window.mobiusDesktop.isDesktop) 时, shell 给顶栏加 mobius-desktop-drag class。
-   顶栏整体可拖拽移动窗口, 其内交互元素 (按钮/链接/输入/右侧操作区) 设为 no-drag 保持可点。
-   Web 端不加该 class → 规则不生效, 零影响。 */
+   仅 Electron 桌面端 (window.mobiusDesktop.isDesktop) 时生效。顶栏不再整体 drag —— 旧做法是整条顶栏
+   drag + 给按钮等打 no-drag 洞, 但 Windows/Electron 下大 drag 父区的 no-drag 洞不可靠, 会吞掉按钮点击。
+   现改为: shell 在顶栏中段插入一条独立空白 spacer 作唯一 drag 区 (无交互子元素, 不存在打洞 → 不会被吞)。
+   下方 no-drag 规则保留作安全网 (spacer 无子元素本就用不到)。Web 端不加该 class → 零影响。 */
 .mobius-desktop-drag { -webkit-app-region: drag; }
 .mobius-desktop-drag button,
 .mobius-desktop-drag a,
@@ -5436,6 +5437,32 @@ body.mobius-resizing .mobius-resizable-handle {
   }
 }
 
+/* ======================================================================
+   代码对话模式: 强制 ChatArea 纵向堆叠 (历史 jsonl 在上、输入在下), 与视口宽度无关.
+   镜像上面 @media(max-width:900px) 的规则, 仅在 .mobius-chat-body--stacked 时生效;
+   !important 用于覆盖 .mobius-chat-history/.mobius-chat-input 的 inline width (68%/32%).
+   桌面宽屏下右栏较窄时, 68/32 横向分栏会变成两个不可用的小栏, 故强制堆叠.
+   ====================================================================== */
+.mobius-chat-body.mobius-chat-body--stacked {
+  flex-direction: column;
+}
+.mobius-chat-body.mobius-chat-body--stacked .mobius-chat-history {
+  width: 100% !important;
+  flex: 1 1 0%;
+  min-height: 0;
+}
+.mobius-chat-body.mobius-chat-body--stacked .mobius-chat-input {
+  width: 100% !important;
+  flex: 0 0 auto;
+  min-height: 0;
+  border-left: 0 !important;
+  border-top: 1px solid var(--border-color) !important;
+}
+.mobius-chat-body.mobius-chat-body--stacked .mobius-chat-input-actions,
+.mobius-chat-body.mobius-chat-body--stacked .mobius-chat-input-side {
+  display: none !important;
+}
+
 /* =====================================================================
    全局「+」新建菜单 (.global-create-modal) — 窄屏移动端基本适配
    CreateModalShell 已用 flex-col + max-h + overflow-y-auto; 这里补窄屏细节.
@@ -5690,4 +5717,23 @@ body.mobius-resizing .mobius-resizable-handle {
 @media (prefers-reduced-motion: reduce) {
   .aimux-mode-menu { animation: none; }
   .aimux-link-indicator--firing { animation: none; }
+}
+
+/* ===== 桌面端旧版 project-path overlay 兜底 (2026-07-13) =====
+   旧版桌面客户端 (Electron 主进程 desktop/index.js, 现已移除注入但用户已安装的老版本仍会)
+   通过 wc.insertCSS({cssOrigin:"user"}) 注入 .mdpp-msg 绑定路径弹窗; 其 user-origin CSS
+   无断行处理, 长主机名/路径 token 单行溢出卡片, 尾部文字溢到深色遮罩上看不见 ("后面的字看不到")。
+   页面 author-origin CSS 优先级高于 user-origin, 在此强制换行 + 视口内滚动,
+   免重打包/免重装客户端, 用户硬刷新即生效。新版客户端已改用 React ProjectPathBindGate。 */
+#__mobius_project_path_overlay__ .mdpp-card {
+  max-width: calc(100vw - 40px) !important;
+  max-height: calc(100vh - 40px) !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+  box-sizing: border-box !important;
+}
+#__mobius_project_path_overlay__ .mdpp-msg {
+  white-space: normal !important;
+  overflow-wrap: break-word !important;
+  word-break: break-word !important;
 }

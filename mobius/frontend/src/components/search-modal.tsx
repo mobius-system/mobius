@@ -78,6 +78,15 @@ function relativeTime(iso: string | null): string {
   return new Date(iso).toLocaleDateString('zh-CN')
 }
 
+// 时间范围过滤选项: 默认仅扫描 7 天内创建的会话以加速搜索 (后端按 created_at 过滤候选集).
+type RangeKey = '1d' | '7d' | '30d' | 'all'
+const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
+  { value: '1d', label: '1天内' },
+  { value: '7d', label: '7天内' },
+  { value: '30d', label: '1个月内' },
+  { value: 'all', label: '全部' },
+]
+
 export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNavigate: (path: string) => void }) {
   const { theme, user } = useStore()
   const dark = theme !== 'light'
@@ -87,6 +96,8 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
   const [err, setErr] = useState('')
   const [meta, setMeta] = useState<{ scanned?: number; candidates?: number; truncated?: boolean } | null>(null)
   const [searched, setSearched] = useState(false) // 是否已发起过搜索 (区分初始空态 vs 无结果)
+  const [range, setRange] = useState<RangeKey>('7d')
+  const rangeLabel = RANGE_OPTIONS.find(o => o.value === range)?.label || '7天内'
   const reqId = useRef(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -98,12 +109,12 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const runSearch = (term: string) => {
+  const runSearch = (term: string, rangeArg: RangeKey = range) => {
     const t = term.trim()
     if (t.length < 2) { setResults([]); setMeta(null); setLoading(false); setErr(''); setSearched(false); return }
     const id = ++reqId.current
     setLoading(true); setErr('')
-    api(`/api/search?q=${encodeURIComponent(t)}&limit=50`).then((r: any) => {
+    api(`/api/search?q=${encodeURIComponent(t)}&limit=50&range=${rangeArg}`).then((r: any) => {
       if (id !== reqId.current) return
       setResults(Array.isArray(r?.results) ? r.results : [])
       setMeta({ scanned: r?.scanned_sessions, candidates: r?.candidate_sessions, truncated: !!r?.truncated })
@@ -118,6 +129,13 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
     debounceRef.current = setTimeout(() => runSearch(v), 450)
   }
   useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
+
+  // 切换时间范围: 用当前关键词立即重搜 (范围切换是显式动作, 不防抖; 空关键词不触发).
+  useEffect(() => {
+    if (q.trim().length < 2) return
+    runSearch(q)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range])
 
   const openSession = (r: SearchResult) => {
     const base = `/u/${user?.id}/p/${r.project_id}`
@@ -143,6 +161,18 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
             className="flex-1 bg-transparent text-[13px] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
             style={{ color: dark ? '#f1f5f9' : '#1e293b' }}
           />
+          {/* 时间范围过滤 (默认 7 天内创建的会话): 缩小候选集加速扫描 */}
+          <select
+            value={range}
+            onChange={e => setRange(e.target.value as RangeKey)}
+            title="时间范围"
+            className="flex-shrink-0 rounded-lg border text-[11px] px-1.5 py-1 cursor-pointer focus:outline-none"
+            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--modal-bg)' }}
+          >
+            {RANGE_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
           {loading && <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
           {q && !loading && (
             <button type="button" onClick={() => { setQ(''); setResults([]); setMeta(null); setSearched(false); inputRef.current?.focus() }}
@@ -167,7 +197,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
             <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
               <FileSearch className="w-7 h-7" style={{ color: 'var(--text-muted)' }} />
               <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>输入关键词搜索会话内容</p>
-              <p className="text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>扫描最近活跃的会话, 命中片段会高亮显示</p>
+              <p className="text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{range === 'all' ? '扫描全部会话' : `仅扫描 ${rangeLabel}创建的会话`}，命中片段会高亮显示</p>
             </div>
           ) : results.length === 0 ? (
             <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
@@ -228,8 +258,9 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
             <span>
               {searched && results.length > 0 ? `命中 ${results.length} 个会话` : ''}
               {meta?.scanned != null ? ` · 扫描 ${meta.scanned}${meta.candidates != null ? `/${meta.candidates}` : ''} 个会话` : ''}
+              {` · 范围: ${rangeLabel}`}
             </span>
-            {meta?.truncated && <span style={{ color: '#f59e0b' }}>部分结果 (已达时间上限, 可缩小范围或换词)</span>}
+            {meta?.truncated && <span style={{ color: '#f59e0b' }}>部分结果 (已达时间上限, 可缩小时间范围或换词)</span>}
           </div>
         )}
       </div>

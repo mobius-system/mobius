@@ -36,6 +36,8 @@ import {
   extractReadCalls,
   extractLocalCommandParts,
   isStartPyToolUse,
+  functionOutputImageUrls,
+  functionOutputTextBody,
 } from './entry-extract'
 import {
   isEditToolUse,
@@ -55,6 +57,7 @@ import { JsonEntryWritePreview } from './WritePreview'
 import { JsonEntryBashCommands } from './BashCards'
 import { JsonEntryReadCalls } from './ReadCards'
 import { JsonEntryLocalCommandBlock } from './LocalCommandBlock'
+import { ImageOutputPanel } from './ImageOutput'
 import { CompactPlainTextFallback } from './text-preview'
 import type { AnyEntry, CardMode, BashToolResult } from './types'
 
@@ -79,13 +82,22 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const type = entry?.type || 'unknown'
   // 超大卡片保护: entry + 工具结果的渲染字符总量超过 10 万时, 用截断版渲染, 避免前端卡顿崩溃.
   // 截断版只影响"展开态内容渲染", 卡片头部摘要 / 配色 / 折叠态不受影响.
-  const { renderEntry, renderBashResults, renderReadResults, oversized, totalChars } = useMemo(() => {
+  const { renderEntry, renderBashResults, renderReadResults, oversized, totalChars, imageOutputUrls, imageOutputText } = useMemo(() => {
+    // codex function_call_output 里的内嵌图片 (input_image base64): 单独抽 data url 走 <img> 渲染,
+    // 不进字段模式递归展开 base64. 图片源取自未截断的原始 entry (截断会破坏 base64).
+    const isImageOutput = entry?.type === 'response_item' && entry?.payload?.type === 'function_call_output'
+    const imageUrls = isImageOutput ? functionOutputImageUrls(entry?.payload?.output) : []
+    const imageText = isImageOutput ? functionOutputTextBody(entry?.payload?.output) : ''
     const total =
       estimateRenderChars(entry) +
       estimateToolResultsChars(bashResults) +
       estimateToolResultsChars(readResults)
+    // 含图片的 output 走专用渲染分支, 不展开 base64 字段, 不会卡顿, 不触发超大卡片保护.
+    if (imageUrls.length > 0) {
+      return { renderEntry: entry, renderBashResults: bashResults, renderReadResults: readResults, oversized: false, totalChars: total, imageOutputUrls: imageUrls, imageOutputText: imageText }
+    }
     if (total <= MAX_CARD_RENDER_CHARS) {
-      return { renderEntry: entry, renderBashResults: bashResults, renderReadResults: readResults, oversized: false, totalChars: total }
+      return { renderEntry: entry, renderBashResults: bashResults, renderReadResults: readResults, oversized: false, totalChars: total, imageOutputUrls: imageUrls, imageOutputText: imageText }
     }
     const budget = { remaining: MAX_CARD_RENDER_CHARS }
     return {
@@ -94,8 +106,11 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
       renderReadResults: clampToolResults(readResults, budget),
       oversized: true,
       totalChars: total,
+      imageOutputUrls: imageUrls,
+      imageOutputText: imageText,
     }
   }, [entry, bashResults, readResults])
+  const canImage = imageOutputUrls.length > 0
   const headerSummary = useMemo(() => buildHeaderSummary(renderEntry), [renderEntry])
   const codeEdit = useMemo(() => extractCodeEdit(renderEntry), [renderEntry])
   const writeCall = useMemo(() => extractWriteToolCall(renderEntry), [renderEntry])
@@ -138,14 +153,14 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   // 仅 summary 被截断时才提供"精简模式"入口; 没截断的卡片只有字段模式
   const canCompact = headerSummary.canCompact
   // 展开后默认: 可代码 → 代码模式; 可精简 → 精简模式; 其它 → 字段模式
-  const [mode, setMode] = useState<CardMode>(canCode ? 'code' : canCompact ? 'compact' : 'field')
+  const [mode, setMode] = useState<CardMode>(canCode ? 'code' : canImage ? 'image' : canCompact ? 'compact' : 'field')
 
   // 卡片展开态受控于本地 state, 跨父组件重渲染 (实时轮询追加 entry) 保持不变.
   // 能精简的卡片总是默认展开, 代码化卡片默认折叠, error 卡片 (TUI 扫描发现的 agent 错误) 也强制展开,
   // 父组件 defaultExpanded 仍能强制展开其它卡片.
   // 用户手动折叠 → onToggle 写回 state, 此后重渲染不再强制掀开.
   const [open, setOpen] = useState<boolean>(
-    (canCompact || type === 'error') || !!defaultExpanded
+    (canCompact || canImage || type === 'error') || !!defaultExpanded
   )
   // 精简模式复制按钮反馈: 点击后短暂显示「已复制 ✓」约 1 秒后还原
   const [copied, setCopied] = useState<boolean>(false)
@@ -160,7 +175,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   // 视觉位置不变, 但 DOM 上 button 是 details 的直接子元素而非 summary 后代, 规范合规.
   // 字段模式也带复制按钮 (复制原始 JSON), 与精简模式的复制按钮对齐, 故 hasHeaderAction
   // 额外纳入 mode === 'field' —— 让只支持字段模式的小卡片也能露出复制入口.
-  const hasHeaderAction = open && ((mode === 'compact') || (mode === 'field') || canCompact || canCode)
+  const hasHeaderAction = open && ((mode === 'compact') || (mode === 'field') || (mode === 'image') || canCompact || canCode || canImage)
   return (
     <details
       data-tour={tourTarget}
@@ -232,7 +247,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
               {copied ? '已复制 ✓' : '复制'}
             </button>
           )}
-          {open && (canCompact || canCode) && (
+          {open && (canCompact || canCode || canImage) && (
             <button
               type="button"
               onClick={(e) => {
@@ -240,16 +255,21 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
                 e.stopPropagation()
                 setMode(m => {
                   if (canCode) return m === 'code' ? 'field' : 'code'
+                  if (canImage) return m === 'image' ? 'field' : 'image'
                   return m === 'compact' ? 'field' : 'compact'
                 })
               }}
               className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
               title={canCode
                 ? (mode === 'code' ? '切换到字段模式 (按 key 展开 JSON)' : writeCall ? '切换到代码模式 (显示 Write 文件预览)' : codeEdit ? '切换到代码模式 (显示 old_string → new_string 的编辑差异)' : readCalls.length > 0 && bashCalls.length > 0 ? '切换到代码模式 (显示工具调用)' : readCalls.length > 0 ? '切换到代码模式 (显示 Read 文件读取)' : '切换到代码模式 (显示 Bash 命令)')
-                : (mode === 'compact' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到精简模式 (显示完整摘要文本)')}>
+                : canImage
+                  ? (mode === 'image' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到图片模式 (渲染内嵌图片)')
+                  : (mode === 'compact' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到精简模式 (显示完整摘要文本)')}>
               {canCode
                 ? (mode === 'code' ? '字段模式' : '代码模式')
-                : (mode === 'compact' ? '字段模式' : '精简模式')}
+                : canImage
+                  ? (mode === 'image' ? '字段模式' : '图片模式')
+                  : (mode === 'compact' ? '字段模式' : '精简模式')}
             </button>
           )}
         </div>
@@ -276,6 +296,8 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
                 <JsonEntryReadCalls calls={readCalls} results={renderReadResults} />
               )}
             </div>
+          ) : mode === 'image' && canImage ? (
+            <ImageOutputPanel imageUrls={imageOutputUrls} textBody={imageOutputText} />
           ) : mode === 'compact' && canCompact && !canCode ? (
             <div className="max-h-[60vh] overflow-y-auto pr-1">
               <Suspense fallback={<CompactPlainTextFallback text={headerSummary.full} />}>

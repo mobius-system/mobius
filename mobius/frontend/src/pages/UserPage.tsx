@@ -29,6 +29,9 @@ function sortProjectsForDisplay(items: any[]) {
   return [...items].sort((a: any, b: any) => {
     const starDiff = Number(!!b.starred) - Number(!!a.starred)
     if (starDiff !== 0) return starDiff
+    const activityA = a.last_session_activity_at ? Date.parse(a.last_session_activity_at) : -Infinity
+    const activityB = b.last_session_activity_at ? Date.parse(b.last_session_activity_at) : -Infinity
+    if (activityA !== activityB) return activityB - activityA
     const activeDiff = new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime()
     if (activeDiff !== 0) return activeDiff
     return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN')
@@ -57,6 +60,44 @@ function projectMatchesSearch(project: any, query: string) {
     || String(project?.description || '').toLowerCase().includes(q)
 }
 
+// 导航按钮: <button> 外观但走 SPA navigate.
+// ⚠️ 必须定义在组件外(模块顶层)! 之前定义在 UserPage 函数体内, 导致每次 UserPage 重渲染
+// LinklessNav 都是新的函数引用(= 新组件类型), React 按组件类型 reconcile 时把所有 <LinklessNav>
+// 实例 unmount/remount -> 按钮 DOM 节点在连点期间被替换 -> 浏览器 mousedown/mouseup 落在不同节点实例
+// 而不触发 click -> 连点偶发无响应. 提到顶层后引用稳定, 重渲染只更新 props 不重挂节点.
+function LinklessNav({ to, className = '', children, onClick, onAuxClick, ...props }: any) {
+  const navigate = useNavigate()
+  const go = (event: any) => {
+    if (!to) return
+    if (event?.metaKey || event?.ctrlKey || event?.shiftKey || event?.button === 1) {
+      window.open(to, '_blank', 'noopener,noreferrer')
+      return
+    }
+    navigate(to)
+  }
+  return (
+    <button
+      type="button"
+      {...props}
+      className={`appearance-none border-0 bg-transparent text-left cursor-pointer ${className}`}
+      onClick={(event) => {
+        onClick?.(event)
+        if (event.defaultPrevented) return
+        go(event)
+      }}
+      onAuxClick={(event) => {
+        onAuxClick?.(event)
+        if (event.defaultPrevented) return
+        if (event.button !== 1) return
+        event.preventDefault()
+        go(event)
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
 export default function UserPage() {
   const params = useParams()
   const navigate = useNavigate()
@@ -67,6 +108,17 @@ export default function UserPage() {
   const userParam = params.user || user?.id || ''
 
   const [showNew, setShowNew] = useState(false)
+  // 个人 Skill / Memory 侧栏折叠状态 (仅自己主页存在该侧栏), 持久化到 localStorage
+  const [skillMemoryCollapsed, setSkillMemoryCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('mobius:ui:sidebar:user-skills:hidden') === '1' } catch { return false }
+  })
+  const toggleSkillMemory = () => {
+    setSkillMemoryCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem('mobius:ui:sidebar:user-skills:hidden', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
   const [search, setSearch] = useState('')
   const [issuesByProject, setIssuesByProject] = useState<Record<string, any[]>>({})
   const [researchesByProject, setResearchesByProject] = useState<Record<string, any[]>>({})
@@ -98,37 +150,6 @@ export default function UserPage() {
   const [mutedProjectsLoading, setMutedProjectsLoading] = useState(false)
   const [mutedBusyId, setMutedBusyId] = useState<string | null>(null)
   const mutedIdSet = useMemo(() => new Set(mutedProjectIds || []), [mutedProjectIds])
-
-  const openNavTarget = (to: string, event: any) => {
-    if (!to) return
-    if (event?.metaKey || event?.ctrlKey || event?.shiftKey || event?.button === 1) {
-      window.open(to, '_blank', 'noopener,noreferrer')
-      return
-    }
-    navigate(to)
-  }
-
-  const LinklessNav = ({ to, className = '', children, onClick, onAuxClick, ...props }: any) => (
-    <button
-      type="button"
-      {...props}
-      className={`appearance-none border-0 bg-transparent text-left cursor-pointer ${className}`}
-      onClick={(event) => {
-        onClick?.(event)
-        if (event.defaultPrevented) return
-        openNavTarget(to, event)
-      }}
-      onAuxClick={(event) => {
-        onAuxClick?.(event)
-        if (event.defaultPrevented) return
-        if (event.button !== 1) return
-        event.preventDefault()
-        openNavTarget(to, event)
-      }}
-    >
-      {children}
-    </button>
-  )
 
   // 进入页面清空更深层选择，避免残留
   useEffect(() => {
@@ -398,15 +419,17 @@ export default function UserPage() {
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
             </div>
             <div className="mt-2 rounded-lg px-2 py-2" style={{ }}>
-              <div className="flex flex-nowrap gap-1.5 overflow-x-auto">
+              <div className="flex gap-1">
                 <button
                   type="button"
                   onClick={() => setProjectFilters([])}
                   title="显示全部未屏蔽项目"
-                  className="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors flex-shrink-0"
-                  style={projectFilters.length === 0
-                    ? { background: 'rgba(59,130,246,0.16)', borderColor: 'rgba(59,130,246,0.55)', color: '#60a5fa' }
-                    : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}
+                  className={`flex-1 h-7 rounded text-[11px] transition-colors ${
+                    projectFilters.length === 0
+                      ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
+                      : 'border border-transparent hover:bg-[var(--bg-card-hover)]'
+                  }`}
+                  style={projectFilters.length !== 0 ? { color: 'var(--text-muted)' } : undefined}
                 >
                   全部
                 </button>
@@ -418,10 +441,12 @@ export default function UserPage() {
                       type="button"
                       onClick={() => toggleProjectFilter(item.key)}
                       title={item.title}
-                      className="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors flex-shrink-0"
-                      style={active
-                        ? { background: 'rgba(59,130,246,0.16)', borderColor: 'rgba(59,130,246,0.55)', color: '#60a5fa' }
-                        : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}
+                      className={`flex-1 h-7 rounded text-[11px] transition-colors ${
+                        active
+                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
+                          : 'border border-transparent hover:bg-[var(--bg-card-hover)]'
+                      }`}
+                      style={!active ? { color: 'var(--text-muted)' } : undefined}
                     >
                       {item.label}
                     </button>
@@ -545,10 +570,23 @@ export default function UserPage() {
             <div className="mb-5">
               <div className="flex items-center justify-between">
                 <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>{pageTitle}</h1>
-                <PrimaryActionButton onClick={() => setShowNew(true)} data-tour="user-new-project"
-                  icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
-                  新建项目
-                </PrimaryActionButton>
+                <div className="flex items-center gap-2">
+                  <PrimaryActionButton onClick={() => setShowNew(true)} data-tour="user-new-project"
+                    icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
+                    新项目
+                  </PrimaryActionButton>
+                  {userParam === user?.id && (
+                    <button type="button" onClick={toggleSkillMemory}
+                      title={skillMemoryCollapsed ? '显示 Skill / Memory' : '隐藏 Skill / Memory'}
+                      aria-label={skillMemoryCollapsed ? '显示 Skill / Memory' : '隐藏 Skill / Memory'}
+                      className="h-8 w-8 hidden xl:inline-flex items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-hover)]"
+                      style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                      {skillMemoryCollapsed
+                        ? <EyeOff className="w-4 h-4" />
+                        : <Eye className="w-4 h-4" />}
+                    </button>
+                  )}
+                </div>
               </div>
               {projectPagination.totalPages > 1 ? (
                 <div className="mt-3">
@@ -829,14 +867,14 @@ export default function UserPage() {
               </div>
             )}
             </div>
-            {userParam === user?.id && (
+            {userParam === user?.id && !skillMemoryCollapsed && (
               <ResizablePanel
                 storageKey="mobius:ui:sidebar:user-skills"
                 defaultWidth={340}
                 minWidth={260}
                 maxWidth={520}
                 side="right"
-                className="hidden lg:block space-y-4"
+                className="hidden xl:block space-y-4"
                 style={{ background: 'transparent' }}>
                 <div>
                   <div className="mb-3">

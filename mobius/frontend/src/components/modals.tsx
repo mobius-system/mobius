@@ -3343,7 +3343,7 @@ export function TurnTree({ sessionId, onClose, onRefresh }: { sessionId: string;
 //   - 内置 python + 自动装 aimux 反连, 把本机注册为可调度节点
 //   - 产物在服务器 /desktop-builds/ 下, 经同源静态托管提供
 // =====================================================================
-const DESKTOP_VERSION = '0.0.4'
+const DESKTOP_VERSION = '0.0.6'
 const DESKTOP_BUILDS: Array<{ label: string; sub: string; file: string }> = [
   { label: 'Windows', sub: 'x64 · Intel / AMD 64位', file: `mobius-desktop-${DESKTOP_VERSION}-win-x64.zip` },
   { label: 'macOS', sub: 'Apple Silicon · M1/M2/M3/M4', file: `mobius-desktop-${DESKTOP_VERSION}-mac-arm64.zip` },
@@ -3644,11 +3644,13 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const SectionTitle = ({ children }: { children: any }) => (
-    <div className="text-[12px] font-semibold mb-2 mt-4 first:mt-0" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>{children}</div>
+  // render function (非内部组件): AimuxGuideModal 有 setInterval(refreshRemotes,3000) 每 3 秒重渲染,
+  // 内部组件会让复制按钮/标题每次 unmount/remount -> 点复制可能 mousedown/mouseup 落不同节点而 click 落空.
+  const renderSectionTitle = (text: string) => (
+    <div className="text-[12px] font-semibold mb-2 mt-4 first:mt-0" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>{text}</div>
   )
 
-  const CodeBlock = ({ label, text }: { label: string; text: string }) => (
+  const renderCodeBlock = (label: string, text: string) => (
     <div className="relative">
       <pre className="text-[12px] rounded-lg p-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all"
         style={{ background: theme !== 'light' ? '#0f172a' : '#f1f5f9', color: theme !== 'light' ? '#e2e8f0' : '#1e293b', border: '1px solid var(--border-color)' }}>
@@ -3678,10 +3680,10 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
         </div>
 
-        <SectionTitle>1. 在外部机器上安装 aimux (Python 3.10+)</SectionTitle>
-        <CodeBlock label="install" text={installCmd} />
+        {renderSectionTitle('1. 在外部机器上安装 aimux (Python 3.10+)')}
+        {renderCodeBlock('install', installCmd)}
 
-        <SectionTitle>2. 启动反向连接 (走 mobius /aimux_bridge 反代)</SectionTitle>
+        {renderSectionTitle('2. 启动反向连接 (走 mobius /aimux_bridge 反代)')}
         <div className="mb-2">
           <div className="text-[11px] mb-1" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>identifier ( mobius 以此名字显示该机器, 默认随机生成, 留空回退 {defaultIdentifier} )</div>
           <input
@@ -3701,9 +3703,9 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
             <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>--token</code> 是你当前登录 mobius 的 JWT (上方已自动填入), 7 天有效
           </div>
         </div>
-        <CodeBlock label="connect" text={connectCmd} />
+        {renderCodeBlock('connect', connectCmd)}
 
-        <SectionTitle>3. 在 mobius 中验证</SectionTitle>
+        {renderSectionTitle('3. 在 mobius 中验证')}
         <div className="text-[12px] mb-2" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
           连接成功后, 该机器会出现在下方列表 (每 3 秒刷新), 即可在 mobius 里向它发 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>session.create</code> / <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>send-keys</code> / <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>capture</code> 等指令
         </div>

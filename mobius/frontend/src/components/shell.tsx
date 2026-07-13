@@ -15,6 +15,7 @@ import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { useIsMobile } from './resizable-panel'
 import { WindowControls } from './window-controls'
+import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入); 平台用 navigator.platform 判:
@@ -77,11 +78,11 @@ export function timeAgoPrecise(date: string) {
   return `${d.getFullYear()}-${mmdd} ${hhmm}`
 }
 
-function LinklessRouteButton({ to, className = '', children, onClick, onAuxClick, ...props }: any) {
+function LinklessRouteButton({ to, className = '', children, onClick, onAuxClick, newTab = false, ...props }: any) {
   const navigate = useNavigate()
   const openTarget = (event: any) => {
     if (!to) return
-    if (event?.metaKey || event?.ctrlKey || event?.shiftKey || event?.button === 1) {
+    if (newTab || event?.metaKey || event?.ctrlKey || event?.shiftKey || event?.button === 1) {
       window.open(to, '_blank', 'noopener,noreferrer')
       return
     }
@@ -382,7 +383,7 @@ function NavSwitcherPanel({
               to={item.to}
               onClick={onPick}
               title={item.label}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
               style={{ background: item.active ? 'var(--bg-active)' : undefined }}
             >
               <span
@@ -639,8 +640,10 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 
   return (
     <>
-      <div className={`mobius-topnav h-12 border-b flex items-center justify-between px-5 flex-shrink-0 select-none${IS_DESKTOP ? ' mobius-desktop-drag' : ''}`}
+      <div className={`mobius-topnav h-12 border-b flex items-center justify-between px-5 flex-shrink-0 select-none`}
         style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', paddingLeft: IS_DESKTOP && IS_MAC_PLATFORM ? '78px' : undefined }}>
+        {/* 桌面端拖拽: 不再让整条顶栏 drag (Windows/Electron 下大 drag 父区 + no-drag 洞会吞按钮点击);
+            改由下方独立空白 spacer 作唯一 drag 区 (无交互子元素 → 不会被吞, 按钮脱离任何 drag 祖主)。 */}
         {/* 移动端: 汉堡按钮唤出左侧栏抽屉 */}
         {isMobile && (
           <button
@@ -654,8 +657,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           </button>
         )}
         {/* Logo + 面包屑 */}
-        <div className="mobius-topnav-crumb flex items-center gap-3 min-w-0 flex-1">
-          <LinklessRouteButton to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0">
+        <div className="mobius-topnav-crumb flex items-center gap-3 min-w-0 flex-shrink-0">
+          <LinklessRouteButton to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0" newTab>
             {!branding.hideLogo && <MobiusLogo size={28} />}
             {branding.systemNameEn && (
               <span className="mobius-topnav-brandtext font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
@@ -762,6 +765,10 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           )}
         </div>
 
+        {/* 桌面端唯一拖拽区: 独立空白 spacer, 无交互子元素 → drag 区不会吞按钮点击; web 端不加 class 零影响。
+            self-stretch 必需: 顶栏 items-center 下空 div 高度会塌成 0 → drag 区无面积拖不动; stretch 撑满 48px 顶栏高。 */}
+        <div className={`flex-1 self-stretch${IS_DESKTOP ? ' mobius-desktop-drag' : ''}`} aria-hidden="true" />
+
         {/* 右侧操作 */}
         <div className="mobius-topnav-actions flex min-w-0 flex-shrink items-center gap-1.5 xl:gap-2">
           {rightExtra}
@@ -769,6 +776,16 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           <AimuxStatusBadge />
           {/* 桌面端项目本地路径绑定闸门 — 仅 Electron + 进入未绑定项目时弹窗（替代旧 Electron 注入 overlay） */}
           <ProjectPathBindGate projectId={projectParam} />
+          {/* 新建下拉 — 全局 4 类创建 (项目 / Issue / Session / Research Agent) */}
+          <GlobalCreateMenu
+            open={showNewMenu}
+            onOpenChange={setShowNewMenu}
+            onPick={setCreateKind}
+            inProject={inProject}
+            currentProject={currentProject}
+          />
+          {/* 工作区布局切换 (会话 ↔ 代码对话) — 仅 Issue/Research 路由渲染, 桌面端可见 */}
+          <WorkspaceLayoutToggle />
           {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
           <button
             type="button"
@@ -781,14 +798,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
             {/* {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>} */}
           </button>
-          {/* 新建下拉 — 全局 4 类创建 (项目 / Issue / Session / Research Agent) */}
-          <GlobalCreateMenu
-            open={showNewMenu}
-            onOpenChange={setShowNewMenu}
-            onPick={setCreateKind}
-            inProject={inProject}
-            currentProject={currentProject}
-          />
           <button
             type="button"
             onClick={() => setShowGuideHelp(true)}

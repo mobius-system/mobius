@@ -83,11 +83,11 @@ function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
     <div className="fixed inset-0 z-[2147483646] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/45" />
       <div
-        className="relative w-[460px] max-w-[calc(100vw-40px)] rounded-[14px] p-[22px_24px] shadow-2xl"
+        className="relative w-[460px] max-w-[calc(100vw-40px)] max-h-[calc(100vh-40px)] overflow-y-auto overscroll-contain rounded-[14px] p-[22px_24px] shadow-2xl"
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
       >
         <h3 className="text-[16px] font-semibold mb-2.5">绑定本地工作路径</h3>
-        <p className="text-[13px] mb-3.5" style={{ color: 'var(--text-secondary)' }}>
+        <p className="text-[13px] mb-3.5 break-words leading-relaxed whitespace-normal" style={{ color: 'var(--text-secondary)' }}>
           本项目「{projectName}」还没有绑定这台机器{machineInfo ? `（${machineInfo}）` : ''}的本地工作路径。您必须选择一个本地路径才能继续。
         </p>
         <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>本地路径</label>

@@ -11,7 +11,7 @@ import { gatherHostInfo, type BootData } from "./lib/host-info";
 import { ensureAimux, upgradeAimux, getAimuxVersion, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
 import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
 import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
-import { getAimuxEnabled, setAimuxEnabled } from "./lib/desktop-settings";
+import { getAimuxEnabled, setAimuxEnabled, getLastRoute, setLastRoute } from "./lib/desktop-settings";
 import { createStatusWindow } from "./status-window";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -192,7 +192,29 @@ async function bootDesktop(): Promise<void> {
   }
 
   await seedWebAuth(server, creds.jwt);
-  void mainWindow.loadURL(`${server}/u/${encodeURIComponent(creds.username)}`);
+  // 桌面端启动统一进 /welcome 欢迎向导 (链接一切的自进化 Agent 操作系统)。
+  // 向导内"从上次结束处继续"经 desktop:get-last-route 读取本机该账号上次退出页;
+  // 首次运行无记录 -> 该项隐藏。不再启动即自动恢复, 把"回到上次页面/开新项目/接入项目"统一交给向导。
+  void mainWindow.loadURL(`${server}/welcome`);
+}
+
+/** 记下当前窗口所在页面路径，供下次启动回到该页。
+ *  只在本服务器 origin 内、且属于本用户工作页前缀(/u/username)时才存：
+ *  登录页(file://)、跨域、或跨账号页面一律不存，避免下次错配恢复。 */
+function persistLastRoute(): void {
+  if (!mainWindow || !creds) return;
+  const origin = serverOrigin();
+  if (!origin) return;
+  try {
+    const wc = mainWindow.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    const raw = wc.getURL();
+    if (!raw || !raw.startsWith(origin)) return; // 登录页 file:// / 跨域 / 加载中空串都不存
+    const path = new URL(raw).pathname + new URL(raw).search + new URL(raw).hash;
+    const homePrefix = `/u/${encodeURIComponent(creds.username)}`;
+    if (!path.startsWith(homePrefix)) return;
+    setLastRoute(origin, creds.username, path);
+  } catch { /* 窗口/webContents 已销毁等，忽略 */ }
 }
 
 // ——— 菜单动作（与 IPC 共用同一份实现）———
@@ -315,12 +337,40 @@ function createWindow(): void {
   mainWindow.on("maximize", () => broadcast("window:maximize-changed", true));
   mainWindow.on("unmaximize", () => broadcast("window:maximize-changed", false));
 
+  // 缩放约束：拖拽时强制 width >= height（不锁 aspectRatio，仅维持不等式 w ≥ h）。
+  // will-resize 在用户手动拖拽改尺寸前触发；setBounds 不会触发本事件，故无递归。
+  // minWidth:1040 / minHeight:760 保持不变（width=1040 时 height 同步为 1040 仍 ≥760，无冲突）；
+  // 最大化/还原不经过 will-resize，行为不受影响。同一份代码三平台统一处理。
+  mainWindow.on("will-resize", (event, newBounds) => {
+    if (newBounds.width < newBounds.height) {
+      event.preventDefault();
+      // 把 height 同步为 width，确保 w ≥ h（相等即满足）。
+      mainWindow?.setBounds({ ...newBounds, height: newBounds.width });
+    }
+  });
+
   // 只允许在登录服务器 origin 内导航，防被重定向到钓鱼页
   mainWindow.webContents.on("will-navigate", (_e, url) => {
     if (url.startsWith("file://")) return;
     const origin = serverOrigin();
     if (origin && !url.startsWith(origin)) _e.preventDefault();
   });
+
+  // 捕获 F12 切换开发者工具：本应用自定义了应用菜单 (Menu.setApplicationMenu)，
+  // Electron 默认菜单里的 F12→toggleDevTools 绑定不复存在，菜单里的「开发者工具」项也没有 accelerator。
+  // 故在主进程 before-input-event 最早处拦截 F12（菜单栏隐藏 / 远程页面聚焦都可靠触发），
+  // 与菜单项 role 互不冲突（不会 double-toggle），detach 模式与 app:open-devtools IPC 保持一致。
+  mainWindow.webContents.on("before-input-event", (_e, input) => {
+    if (input.type !== "keyDown" || input.key !== "F12") return;
+    _e.preventDefault();
+    const wc = mainWindow?.webContents;
+    if (!wc) return;
+    if (wc.isDevToolsOpened()) wc.closeDevTools();
+    else wc.openDevTools({ mode: "detach" });
+  });
+
+  // 窗口关闭时记下当前页面路径：退出/关窗都会触发 close，覆盖 Mac(关窗不退出) 与 三平台退出。
+  mainWindow.on("close", () => persistLastRoute());
   // 项目本地路径绑定已移至前端 ProjectPathBindGate（进入项目页时拉 project:bind-status 自行渲染弹窗）。
 }
 
@@ -391,6 +441,15 @@ ipcMain.handle("auth:logout", () => {
 ipcMain.handle("desktop:boot-data", (): BootData =>
   gatherHostInfo({ aimuxIdentifier: creds?.identifier || "", serverOrigin: serverOrigin(), appVersion: app.getVersion() }),
 );
+// /welcome 欢迎向导"从上次结束处继续"用：返本机该账号上次退出页路径 (仅 /u/username 前缀内, 跨账号/跨域不存)。
+// 无记录 (首次运行) 或未登录返 null -> 向导隐藏该项。
+ipcMain.handle("desktop:get-last-route", () => {
+  if (!creds) return null;
+  const saved = getLastRoute(serverOrigin(), creds.username);
+  if (!saved) return null;
+  const homePath = `/u/${encodeURIComponent(creds.username)}`;
+  return saved.startsWith(homePath) ? saved : null;
+});
 ipcMain.handle("aimux:status", () => lastStatus);
 ipcMain.handle("aimux:update", () => runUpdateAimux());
 ipcMain.handle("app:sync-reload", () => {
@@ -536,5 +595,6 @@ app.on("window-all-closed", () => {
 
 // 退出前务必杀 aimux（Windows taskkill /T 连进程树）
 app.on("before-quit", () => {
+  persistLastRoute(); // 兜底：若 close 未捕获（如异常退出路径），退出前再存一次当前页。
   void supervisor?.stop();
 });

@@ -74,6 +74,30 @@ function continueSessionName(session: any) {
   return `${base} - 更换模型`
 }
 
+// 会话标题中间省略: 末尾形如 " YYYY-MM-DD HH:MM" 的时间戳(由 formatDefaultSessionName 拼接)钉在结尾,
+// 其余正文过长时正文 span 自身 truncate 出现 …, 整体呈「开头…结尾」; 无时间戳的标题整体回退普通尾部省略.
+function splitTitleForMiddleTruncate(name?: string | null): { head: string; tail: string | null } {
+  const fullName = String(name || '')
+  const m = fullName.match(/^(.*?)(\s+\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}(?::\d{2})?)\s*$/)
+  if (m) return { head: m[1].trimEnd(), tail: m[2].trim().replace(/\s+/g, ' ') }
+  return { head: fullName, tail: null }
+}
+
+function SessionTitle({ name, theme }: { name?: string | null; theme: string }) {
+  const { head, tail } = splitTitleForMiddleTruncate(name)
+  const full = String(name || '')
+  return (
+    <h2
+      className="min-w-0 flex items-baseline gap-1 font-semibold text-[14px]"
+      style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}
+      title={full || undefined}
+    >
+      <span className="min-w-0 truncate">{head}</span>
+      {tail ? <span className="flex-shrink-0 whitespace-nowrap">{tail}</span> : null}
+    </h2>
+  )
+}
+
 function makeSendRequestId() {
   return `send-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
@@ -1353,7 +1377,10 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
 // =====================================================================
 // 主对话区（基于 currentSession）
 // =====================================================================
-export function ChatArea() {
+// layout: 'default' = 现有 68/32 横向分栏; 'stacked' = 强制纵向堆叠 (历史在上、输入在下),
+// 用于「代码对话」模式的窄右栏. 仅切换 .mobius-chat-body 上的修饰类 (见 index.css),
+// 不触碰任何 SSE / 草稿 / Stop / Send / Agent 状态逻辑. 向后兼容 (默认 default).
+export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked' } = {}) {
   const { currentSession, currentTask, currentIssue, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [inputExpanded, setInputExpanded] = useState(false)
@@ -2990,12 +3017,10 @@ export function ChatArea() {
         />
       )}
       {/* 顶栏（会话标题 + 单一状态 chip + Stop + VSCode + 溢出菜单） */}
-      <div data-tour="session-chat-header" className="h-12 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+      <div data-tour="session-chat-header" className="h-10 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="min-w-0 flex items-center gap-2">
-            <h2 className="min-w-0 font-semibold text-[14px] truncate" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>
-              {currentSession?.name || currentTask?.name}
-            </h2>
+            <SessionTitle name={currentSession?.name || currentTask?.name} theme={theme} />
             {/* {currentModelLabel && (
               <span className="text-[10px] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"
                 title={`模型: ${currentModelLabel}`}
@@ -3126,8 +3151,9 @@ export function ChatArea() {
         </div>
       )}
 
-      {/* body: 横向分 68% JsonlView + 32% (输入 + skill/memory 编辑). 窄屏改纵向堆叠 (见 index.css .mobius-chat-body). */}
-      <div className="mobius-chat-body flex-1 flex min-h-0">
+      {/* body: 横向分 68% JsonlView + 32% (输入 + skill/memory 编辑). 窄屏改纵向堆叠 (见 index.css .mobius-chat-body).
+          layout='stacked' 时附加 mobius-chat-body--stacked, 与视口无关地强制纵向堆叠 (代码对话模式). */}
+      <div className={`mobius-chat-body flex-1 flex min-h-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}`}>
         {/* 左 68%: JSONL 视图 */}
         <SessionJsonlPanel
           currentProjectId={currentProjectId}

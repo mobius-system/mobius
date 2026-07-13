@@ -36,6 +36,11 @@ const MIN_PANEL_HEIGHT = 280
 const HISTORY_LIMIT = 80
 const ASSISTANT_CLEAR_STORAGE_PREFIX = 'assistant-clear-cutoffs'
 const ASSISTANT_FAB_VOICE_HOLD_MS = 1500
+// 小莫 FAB 可拖动 + 吸附边缘
+const ASSISTANT_FAB_SIZE = 56 // w-14 h-14
+const ASSISTANT_FAB_EDGE_MARGIN = 20 // 与视口边缘留白 (1.25rem)
+const ASSISTANT_FAB_DRAG_THRESHOLD = 6 // 超过该位移视为拖动而非点击
+const ASSISTANT_FAB_POS_STORAGE_KEY = 'mobius-assistant-fab-pos'
 const AUTO_VOICE_CURSOR_STORAGE_PREFIX = 'assistant-auto-voice-cursor'
 const SHARED_VOICE_PLAYBACK_LOCK_PREFIX = 'assistant-voice-playback-lock'
 const SHARED_VOICE_PLAYBACK_CHANNEL_PREFIX = 'assistant-voice-playback'
@@ -735,6 +740,49 @@ function clampPanelRect(left: number, top: number, width: number, height: number
     top: Math.max(0, Math.min(viewportHeight - nextHeight, top)),
     width: nextWidth,
     height: nextHeight,
+  }
+}
+
+// 把 FAB 当前落点吸附到最近的视口边缘 (上下左右四选一), 沿该边保留拖动落点
+function snapFabToEdge(left: number, top: number) {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const margin = ASSISTANT_FAB_EDGE_MARGIN
+  const size = ASSISTANT_FAB_SIZE
+  const cx = left + size / 2
+  const cy = top + size / 2
+  const minHoriz = Math.min(cx, vw - cx) // 离左/右边的最近距离
+  const minVert = Math.min(cy, vh - cy) // 离上/下边的最近距离
+  const clampHoriz = (l: number) => Math.max(margin, Math.min(vw - size - margin, l))
+  const clampVert = (t: number) => Math.max(margin, Math.min(vh - size - margin, t))
+  if (minHoriz <= minVert) {
+    const finalLeft = cx <= vw - cx ? margin : vw - size - margin
+    return { left: finalLeft, top: clampVert(top) }
+  }
+  const finalTop = cy <= vh - cy ? margin : vh - size - margin
+  return { left: clampHoriz(left), top: finalTop }
+}
+
+function readFabPos(): { left: number; top: number } | null {
+  try {
+    const raw = window.localStorage.getItem(ASSISTANT_FAB_POS_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { left?: unknown; top?: unknown }
+    const left = Number(parsed.left)
+    const top = Number(parsed.top)
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return null
+    return { left, top }
+  } catch {
+    return null
+  }
+}
+
+function writeFabPos(pos: { left: number; top: number } | null) {
+  try {
+    if (pos) window.localStorage.setItem(ASSISTANT_FAB_POS_STORAGE_KEY, JSON.stringify(pos))
+    else window.localStorage.removeItem(ASSISTANT_FAB_POS_STORAGE_KEY)
+  } catch {
+    /* localStorage 不可用时静默退化到默认位置 */
   }
 }
 
@@ -1544,6 +1592,9 @@ export function AssistantChat() {
   openRef.current = open
   const [panelSize, setPanelSize] = useState<AssistantPanelSize>('compact')
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({})
+  // 小莫 FAB 自定义位置: null=默认右下角 (CSS), 否则用 inline left/top 定位
+  const [fabPos, setFabPos] = useState<{ left: number; top: number } | null>(null)
+  const [fabDragging, setFabDragging] = useState(false)
   const [input, setInputState] = useState('')
   const [inputExpanded, setInputExpanded] = useState(false)
   const [attachments, setAttachments] = useState<AssistantAttachment[]>([])
@@ -1661,6 +1712,16 @@ export function AssistantChat() {
   const collapsedVoiceStartedRef = useRef(false)
   const stopCollapsedVoiceAfterStartRef = useRef(false)
   const suppressNextFabClickRef = useRef(false)
+  // FAB 拖动会话状态: pointerdown 记录起点, pointermove 越阈值进入拖动, pointerup 吸附
+  const fabDragRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    startLeft: number
+    startTop: number
+    moved: boolean
+    dragging: boolean
+  } | null>(null)
   const inputDraftSaveTimerRef = useRef<number | null>(null)
   const pendingInputDraftRef = useRef('')
   const inputValueRef = useRef('')
@@ -2752,6 +2813,20 @@ export function AssistantChat() {
     interactionRef.current = null
     setPanelStyle({})
   }, [panelSize])
+
+  // 挂载时恢复上次的 FAB 位置; 视口尺寸变化时把 FAB 拉回可视区 (吸附到最近边缘)
+  useEffect(() => {
+    const restored = readFabPos()
+    if (restored) {
+      const snapped = snapFabToEdge(restored.left, restored.top)
+      setFabPos(snapped)
+    }
+    const onResize = () => {
+      setFabPos(prev => (prev ? snapFabToEdge(prev.left, prev.top) : prev))
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const refreshProjects = useCallback(() => {
     api('/api/projects').then((arr: any[]) => setProjects(arr || [])).catch(() => {})

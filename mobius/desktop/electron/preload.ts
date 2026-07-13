@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld("desktop", desktopApi);
 const mobiusDesktop = {
   isDesktop: true as const,
   getBootData: () => ipcRenderer.invoke("desktop:boot-data"),
+  // 本机该账号上次退出页面路径 (供 /welcome 欢迎向导"从上次结束处继续"); 首次运行返 null。
+  getLastRoute: () => ipcRenderer.invoke("desktop:get-last-route"),
   getAimuxStatus: () => ipcRenderer.invoke("aimux:status"),
   getAimuxDetails: () => ipcRenderer.invoke("aimux:details"),
   getAimuxVersion: () => ipcRenderer.invoke("aimux:version"),

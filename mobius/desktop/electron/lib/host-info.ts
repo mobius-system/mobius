@@ -1,4 +1,5 @@
 // 采集本机环境信息，经 preload bridge 暴露给远程 web UI 的 desktop 模式展示。
+import { app } from "electron";
 import * as os from "node:os";
 
 export interface BootData {
@@ -13,6 +14,8 @@ export interface BootData {
   aimuxIdentifier: string;
   serverOrigin: string;
   appVersion: string;
+  // 本机桌面目录绝对路径：欢迎向导用其拼默认本地工作路径 ~/Desktop/MobiusOS/<项目名>。
+  desktopPath: string;
 }
 
 export function gatherHostInfo(opts: {
@@ -41,5 +44,6 @@ export function gatherHostInfo(opts: {
     aimuxIdentifier: opts.aimuxIdentifier,
     serverOrigin: opts.serverOrigin,
     appVersion: opts.appVersion,
+    desktopPath: app.getPath("desktop"),
   };
 }

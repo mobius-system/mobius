@@ -357,6 +357,21 @@ function removeWithProxyForSettingsPath(settingsPath: string): boolean {
   return false
 }
 
+// .withproxy.json 不变量 · capture 开 → 从最新 settings 重新克隆 (带上全部 env, 含 auto-compact);
+// capture 关 → 删除遗留克隆. 任何重写 settings-<key>.json 的地方都应调用, 否则克隆会陈旧:
+//   ① 用户编辑模型后 cc 仍加载旧 withproxy → 新 API key / base url 不生效;
+//   ② auto-compact 字段没同步进克隆 → 与"捕获实时输出"同时开启时压缩阈值失效 (两者看似不能共存).
+function enforceWithProxyInvariant(settingsPath: string, captureOn: boolean): void {
+  const src = String(settingsPath || '').trim()
+  if (!src) return
+  if (captureOn) {
+    try { ensureWithProxyForSettingsPath(src) }
+    catch (e) { console.warn(`[model-access] 同步 withproxy 失败 (${src}): ${(e as Error).message}`) }
+  } else {
+    removeWithProxyForSettingsPath(src)
+  }
+}
+
 // ── 手动上下文限制 · 注入 settings.json / codex toml ─────────────────────────
 // 管理员在"系统设置 → 模型创建限制"为每个模型配置触发自动压缩的 token 阈值.
 //   claude code → settings-<key>.json 的 env.CLAUDE_CODE_AUTO_COMPACT_WINDOW (字符串值)
@@ -382,15 +397,9 @@ function applyAutoCompactToClaudeSettings(settingsPath: any, enabled: any, token
   }
   writeJsonPrivate(src, parsed)
   // 若该模型同时开启"捕获实时输出", cc 实际加载 .withproxy.json (本文件的克隆);
-  // 需重新克隆让 auto-compact 字段同步进 withproxy, 否则压缩阈值不生效.
-  const withProxy = withProxyPathFor(src)
-  if (fs.existsSync(withProxy)) {
-    try {
-      ensureWithProxyForSettingsPath(src)
-    } catch (e) {
-      console.warn(`[model-access] 同步 auto-compact 到 withproxy 失败 (${withProxy}): ${(e as Error).message}`)
-    }
-  }
+  // 需重新克隆让 auto-compact 字段同步进 withproxy, 否则压缩阈值不生效 (两者看似不能共存).
+  // withproxy 存在 ≈ capture 开启; 走统一不变量函数, 与编辑/删除路径一致.
+  enforceWithProxyInvariant(src, fs.existsSync(withProxyPathFor(src)))
   return true
 }
 
@@ -513,6 +522,15 @@ function upsertClaudeCodeModel(input: any, { existingKey = null }: any = {}): an
   } catch (e) {
     console.warn(`[model-access] upsert 后重应用 auto-compact 失败 (${key}): ${(e as Error).message}`)
   }
+  // 用户编辑会重写整个 settings-<key>.json; 若该模型开了"捕获实时输出", cc 实际加载的是
+  // .withproxy.json 克隆. 必须从最新 settings 重新克隆, 否则新 API key / base url / auto-compact
+  // 字段都进不了克隆 → 用户改了配置却不生效 (且 auto-compact 看似与捕获实时输出不能共存).
+  try {
+    const captureOn = adminSettings.getModelCaptureStream(sessionModelForKey(key)) === true
+    enforceWithProxyInvariant(settingsPathForKey(key), captureOn)
+  } catch (e) {
+    console.warn(`[model-access] upsert 后同步 withproxy 失败 (${key}): ${(e as Error).message}`)
+  }
   if (idx >= 0) data.claudeCodeModels[idx] = next
   else data.claudeCodeModels.push(next)
   data.claudeCodeModels.sort((a, b) => a.key.localeCompare(b.key))
@@ -533,6 +551,8 @@ function deleteClaudeCodeModel(keyOrSessionModel: any): boolean {
   } catch (e) {
     console.warn(`[model-access] 删除 settings 文件失败 (${file}): ${e.message}`)
   }
+  // 同步删除 withproxy 克隆, 避免删模型后留下孤儿文件 (capture 开关可能仍为 true → cc 误加载旧克隆).
+  removeWithProxyForSettingsPath(file)
   return true
 }
 
@@ -670,6 +690,7 @@ export {
   withProxyPathFor,
   ensureWithProxyForSettingsPath,
   removeWithProxyForSettingsPath,
+  enforceWithProxyInvariant,
   applyAutoCompactToClaudeSettings,
   applyAutoCompactToCodexConfig,
   listCodexModels,

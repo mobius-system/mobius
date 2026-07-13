@@ -65,6 +65,7 @@ type ProjectRawRowWithExtras = ProjectRawRow & {
   hidden?: number;
   issue_count?: number;
   research_count?: number;
+  last_session_activity_at?: string | null;
   created_by_name?: string;
 };
 
@@ -194,22 +195,24 @@ const Projects = {
           CASE WHEN pus.user_id IS NULL THEN 0 ELSE 1 END AS starred,
           CASE WHEN puh.user_id IS NULL THEN 0 ELSE 1 END AS hidden,
           (SELECT COUNT(*) FROM issues WHERE project_id = p.id) as issue_count,
-          (SELECT COUNT(*) FROM researches WHERE project_id = p.id) as research_count
+          (SELECT COUNT(*) FROM researches WHERE project_id = p.id) as research_count,
+          (SELECT MAX(created_at) FROM sessions_v2 WHERE project_id = p.id) as last_session_activity_at
         FROM projects p
         LEFT JOIN users u ON p.created_by = u.id
         LEFT JOIN project_user_stars pus ON pus.project_id = p.id AND pus.user_id = ?
         LEFT JOIN project_user_hidden puh ON puh.project_id = p.id AND puh.user_id = ?
-        ORDER BY starred DESC, p.last_active DESC, p.name ASC
+        ORDER BY starred DESC, last_session_activity_at DESC, p.last_active DESC, p.name ASC
       `).all(userId, userId) as ProjectRawRowWithExtras[]).map(hydrate);
     }
     return (db.prepare(`
       SELECT p.*, u.display_name as created_by_name,
       0 AS starred, 0 AS hidden,
       (SELECT COUNT(*) FROM issues WHERE project_id = p.id) as issue_count,
-      (SELECT COUNT(*) FROM researches WHERE project_id = p.id) as research_count
+      (SELECT COUNT(*) FROM researches WHERE project_id = p.id) as research_count,
+      (SELECT MAX(created_at) FROM sessions_v2 WHERE project_id = p.id) as last_session_activity_at
       FROM projects p
       LEFT JOIN users u ON p.created_by = u.id
-      ORDER BY p.last_active DESC, p.name ASC
+      ORDER BY starred DESC, last_session_activity_at DESC, p.last_active DESC, p.name ASC
     `).all() as ProjectRawRowWithExtras[]).map(hydrate);
   },
 

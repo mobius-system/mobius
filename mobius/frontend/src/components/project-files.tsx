@@ -255,7 +255,8 @@ function SshForwardModal({
     onOpenTarget(port)
   }
 
-  const CodeBlock = ({ label, text }: { label: string; text: string }) => (
+  // render function (非内部组件): 避免父组件重渲染时 unmount/remount.
+  const renderCodeBlock = (label: string, text: string) => (
     <div className="relative rounded-lg border bg-[var(--bg-primary)]" style={{ borderColor: 'var(--border-color)' }}>
       <pre className="max-h-[230px] overflow-auto whitespace-pre-wrap break-words px-3 py-3 pr-20 text-[11px] leading-relaxed font-mono" style={{ color: 'var(--code-text)' }}>
         {text}
@@ -344,14 +345,14 @@ function SshForwardModal({
                 <div className="mb-1.5 text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
                   Linux / macOS
                 </div>
-                <CodeBlock label="linux" text={commands.linux} />
+                {renderCodeBlock('linux', commands.linux)}
               </div>
 
               <div>
                 <div className="mb-1.5 text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
                   Windows PowerShell
                 </div>
-                <CodeBlock label="windows" text={commands.windows} />
+                {renderCodeBlock('windows', commands.windows)}
               </div>
 
               <div className="rounded-lg border px-3 py-2 text-[11px] bg-[var(--bg-primary)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>

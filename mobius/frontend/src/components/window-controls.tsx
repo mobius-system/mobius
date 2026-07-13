@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import type { CSSProperties, MouseEvent } from 'react'
 
 type Bridge = {
+  isDesktop?: boolean
   syncReload?: () => Promise<unknown>
   windowMinimize?: () => Promise<unknown>
   windowToggleMaximize?: () => Promise<{ maximized?: boolean } | unknown>
@@ -61,7 +62,7 @@ export function WindowControls() {
         style={btnBase}
         onMouseEnter={(e) => enterHover(e, 'var(--bg-hover)')} onMouseLeave={leaveHover}
         onClick={() => md.windowMinimize?.().catch(() => {})}>
-        <svg width="10" height="10" viewBox="0 0 11 11"><rect y="5" width="11" height="1.1" fill="currentColor" /></svg>
+        <svg width="10" height="10" viewBox="0 0 11 11"><rect y="4.6" width="11" height="1.8" fill="currentColor" /></svg>
       </button>
       <button type="button" title={maximized ? '还原' : '最大化'} aria-label={maximized ? '还原' : '最大化'}
         style={btnBase}
@@ -85,6 +86,25 @@ export function WindowControls() {
         onClick={() => md.windowClose?.().catch(() => {})}>
         <svg width="10" height="10" viewBox="0 0 11 11"><path d="M0.5 0.5 L10.5 10.5 M10.5 0.5 L0.5 10.5" stroke="currentColor" strokeWidth="1.1" /></svg>
       </button>
+    </div>
+  )
+}
+
+// 全屏独立页 (如 /welcome 欢迎向导) 的极简桌面顶栏: 唯一拖拽区 + 自绘窗口按钮。
+// 这些页面不走 shell 的 TopNav (拖拽区 + WindowControls 都挂在 TopNav 上), 此处补齐 ——
+// 否则 Win/Linux 上窗口拖不动、也没有最小化/关闭按钮 (用户报: 欢迎页没关闭按钮、无法拖动)。
+// web 端 / macOS 整体不渲染 (macOS 用系统交通灯 hiddenInset, 顶栏原生区域仍可拖; web 无窗口概念)。
+// px-5 对齐 shell TopNav, 让 WindowControls 的 marginRight:-14 把关闭键贴到距右边缘 ~6px (与主界面一致)。
+export function DesktopTitleBar() {
+  const md = getBridge()
+  const isDesktop = !!md?.isDesktop
+  const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+  if (!isDesktop || isMac) return null
+  return (
+    <div className="fixed left-0 right-0 top-0 z-50 flex h-12 items-stretch px-5">
+      {/* 唯一拖拽区: 独立空白 spacer, 无交互子元素 → drag 区不会吞按钮点击 (与 shell TopNav 同策略) */}
+      <div className="mobius-desktop-drag flex-1 self-stretch" aria-hidden="true" />
+      <WindowControls />
     </div>
   )
 }

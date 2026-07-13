@@ -502,6 +502,27 @@ export function functionOutputImageUrls(output: any): string[] {
   return out
 }
 
+// 从 codex function_call_output 数组里提取"非图片" block 的文本 (图片 block 已由
+// functionOutputImageUrls 单独抽出渲染成 <img>, 不再混进文本). 纯图片 output 返回空串,
+// 让图片面板只渲染图片; 含文字说明的 output 把文字附在图片下方.
+export function functionOutputTextBody(output: any): string {
+  if (typeof output === 'string') return output.trim()
+  if (!Array.isArray(output)) return ''
+  const parts: string[] = []
+  for (const block of output) {
+    if (block == null) continue
+    if (typeof block === 'string') { parts.push(block); continue }
+    const btype = block.type
+    if (btype === 'input_image' || btype === 'image' || btype === 'image_url') continue
+    if (btype === 'text' && typeof block.text === 'string') { parts.push(block.text); continue }
+    if (btype === 'output_text' && typeof block.output_text === 'string') { parts.push(block.output_text); continue }
+    const textField = typeof block.text === 'string' ? block.text
+      : typeof block.output_text === 'string' ? block.output_text : ''
+    if (textField) parts.push(textField)
+  }
+  return parts.filter(Boolean).join('\n').trim()
+}
+
 // ── display_images / 附件图片解析 ──────────────────────────────────────
 // 背景: agent 调 Bash 工具执行 `display_images <图1> [图2 ...]` 时, 我们要在该
 // Bash 卡片后追加一张图像卡片. 命令可能被 && / || / ; / | 串接, 也可能套在

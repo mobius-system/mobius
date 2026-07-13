@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, MessageSquarePlus, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, MessageSquarePlus, Sparkles } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
-import { ResizablePanel } from '../components/resizable-panel'
+import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
 import { usePagination, PaginationControls } from '../components/pagination'
 import { PrimaryActionButton } from '../components/primary-action-button'
 import {
@@ -14,6 +14,8 @@ import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
 import { TruncatedText } from '../components/truncated-text'
+import { EditorPane } from '../components/workspace/editor-pane'
+import { useEditorAvailability } from '../components/workspace/use-editor-availability'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/logo-review-demo'
 
@@ -30,12 +32,32 @@ export default function IssuePage() {
   const params = useParams()
   const [search, setSearch] = useSearchParams()
   const { projects, setProjects, setCurrentProject, setCurrentIssue,
-          issuesMap, setIssuesMap, sessionsMap, setSessionsMap, currentSession, setCurrentSession, setCurrentTask } = useStore()
+          issuesMap, setIssuesMap, sessionsMap, setSessionsMap, currentSession, setCurrentSession, setCurrentTask,
+          workspaceLayoutMode } = useStore()
   const userParam = params.user || ''
   const projectId = params.project || ''
   const issueId = params.issue || ''
   const sessionParam = search.get('session') || ''
   const autoOpenNewSession = search.get('newSession') === '1'
+
+  // ===== 「代码对话」模式: 左 code-server 编辑器 + 右 Session 对话 =====
+  const isMobile = useIsMobile()
+  // 有 currentSession 时才查询 (顶栏按钮也查同一缓存), 拿到 bind_path + VSCODE_WEB_URL.
+  const { bindPath: editorBindPath, vscodeWebUrl: editorVscodeUrl } = useEditorAvailability(projectId, !!currentSession)
+  const editorAvailable = !!currentSession && !!editorBindPath && !!editorVscodeUrl
+  // v1 代码对话仅桌面端; 移动端强制走会话模式 (避免 ResizablePanel side=left 在窄屏变抽屉).
+  const useEditorChat = workspaceLayoutMode === 'editor-chat' && editorAvailable && !isMobile
+  // editorMounted: 首次进入代码对话后置 true, 此后切回会话模式仅 hidden 保活 iframe (不卸载).
+  // 切项目时重置 (新项目重新按需挂载). 用 {editorMounted && ...} 占住稳定 React 槽位,
+  // 保证 ChatArea 兄弟索引恒定 → 切换布局时 ChatArea 不重挂 (SSE/草稿/Agent 全不动).
+  const [editorMounted, setEditorMounted] = useState(false)
+  useEffect(() => { setEditorMounted(false) }, [projectId])
+  useEffect(() => { if (useEditorChat) setEditorMounted(true) }, [useEditorChat])
+  // 编辑器默认宽度 ≈ 视口 60% (留 ≥360px 给右侧对话); clamp 在 [min, max], max 不超过 视口-360 保对话最小宽.
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
+  const editorMinWidth = 480
+  const editorMaxWidth = Math.max(editorMinWidth + 240, vw - 360)
+  const editorDefaultWidth = Math.max(editorMinWidth, Math.min(editorMaxWidth, Math.floor(vw * 0.6)))
 
   const [issueState, setIssueState] = useState<any>(null)
   // 优先用从 ProjectPage 缓存的 issuesMap 命中；命中不上才等 GET /api/issues/:id 回来
@@ -221,7 +243,8 @@ export default function IssuePage() {
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
       <TopNav />
       <div className="flex flex-1 min-h-0">
-        {/* 左侧 sidebar */}
+        {/* 左侧 sidebar — 仅「会话模式」可见; contents 让内部 ResizablePanel 仍是 flex 直接子元素 (会话模式零回归) */}
+        <div className={useEditorChat ? 'hidden' : 'contents'}>
         <ResizablePanel
           storageKey="mobius:ui:sidebar:issue-sessions"
           defaultWidth={288}
@@ -349,13 +372,44 @@ export default function IssuePage() {
             onPageChange={sidebarPagination.goToPage}
           />
         </ResizablePanel>
+        </div>
+
+        {/* 左侧编辑器 — 「代码对话」模式可见.
+            editorMounted 首次进入后置 true, 此后切回会话模式仅 hidden 保活 iframe (不卸载/不重连 WS);
+            {!isMobile && ...} 避免 ResizablePanel side=left 在窄屏 portal 成抽屉. 该 {editorMounted && ...}
+            表达式恒占一个 React 子槽位 → ChatArea 兄弟索引恒定 → 切换布局时 ChatArea 不重挂. */}
+        {editorMounted && !isMobile && (
+          <div className={useEditorChat ? 'contents' : 'hidden'}>
+            <ResizablePanel
+              storageKey={`mobius:ui:split:editor-chat:${projectId}`}
+              defaultWidth={editorDefaultWidth}
+              minWidth={editorMinWidth}
+              maxWidth={editorMaxWidth}
+              side="left"
+              className="border-r flex flex-col"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+              <EditorPane
+                projectName={project?.name || projectId}
+                bindPath={editorBindPath}
+                vscodeWebUrl={editorVscodeUrl}
+                leading={
+                  <SessionSwitcher
+                    sessions={sortedSessions}
+                    currentId={currentSession?.session_id}
+                    onPick={goToSession}
+                  />
+                }
+              />
+            </ResizablePanel>
+          </div>
+        )}
 
         {/* 右侧:
-              - 已选中 session → ChatArea
+              - 已选中 session → ChatArea (代码对话模式 layout=stacked; 同一 ChatArea 实例, 切换布局仅改修饰类, 不重挂)
               - URL 有 ?session 但 currentSession 还没对上 (拉取中) → Loading, 不闪 SessionOverview
               - 否则 → SessionOverview */}
         {currentSession ? (
-          <ChatArea />
+          <ChatArea layout={useEditorChat ? 'stacked' : 'default'} />
         ) : sessionParam ? (
           <Loading text="正在加载会话..." />
         ) : (
@@ -601,6 +655,73 @@ function SessionOverviewPagination({
           <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.8} />
         </button>
       </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// SessionSwitcher — 「代码对话」模式下 (左侧 Session 侧栏已隐藏) 的轻量 Session 切换下拉.
+// 复用 NavSwitcherPanel 的视觉语言 (menu-bg / border / 圆角 / hover); 点击外部关闭.
+// 仅用于 EditorPane 工具栏 leading 插槽. 不做抽屉 / 焦点管理 (v1).
+// =====================================================================
+function SessionSwitcher({ sessions, currentId, onPick }: {
+  sessions: any[]
+  currentId?: string
+  onPick: (sid: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [open])
+  const current = sessions.find(s => s?.session_id === currentId)
+  const ql = q.trim().toLowerCase()
+  const filtered = ql ? sessions.filter(s => String(s?.name || '').toLowerCase().includes(ql)) : sessions
+  return (
+    <div className="relative flex-shrink-0">
+      <button
+        type="button"
+        onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
+        title="切换 Session"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex h-6 max-w-[180px] items-center gap-1 rounded px-1.5 transition-colors hover:bg-[var(--bg-card-hover)]">
+        <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{current?.name || '选择 Session'}</span>
+        <ChevronDown className="w-3 h-3 shrink-0" style={{ color: 'var(--text-muted)' }} />
+      </button>
+      {open && (
+        <div
+          className="absolute left-0 top-8 z-50 flex max-h-[50vh] w-[240px] flex-col rounded-lg p-1.5 shadow-xl"
+          style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
+          onClick={e => e.stopPropagation()}>
+          <input
+            autoFocus
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="搜索 Session..."
+            className="mb-1 h-7 w-full rounded-md px-2 text-[12px] focus:outline-none"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+          />
+          <div className="overflow-y-auto">
+            {filtered.length === 0 ? (
+              <div className="px-2 py-2 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>无匹配 Session</div>
+            ) : filtered.map(s => (
+              <button
+                key={s.session_id}
+                type="button"
+                onClick={() => { onPick(s.session_id); setOpen(false) }}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
+                style={{ background: s.session_id === currentId ? 'var(--bg-active)' : undefined }}>
+                <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: s.agent_status === 'completed' ? '#4ade80' : 'var(--accent-primary)' }} />
+                <span className="truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{s.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

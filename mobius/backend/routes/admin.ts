@@ -856,10 +856,9 @@ router.put('/settings/model-prompt-limits', adminAuth, (req: express.Request, re
       try {
         const resolved = modelRegistry.resolveSessionModel(modelKey);
         const settingsPath = resolved?.backend === 'tmux-claude-code' ? (resolved.settingsPath || null) : null;
-        if (settingsPath) {
-          if (captureOn) modelAccess.ensureWithProxyForSettingsPath(settingsPath);
-          else modelAccess.removeWithProxyForSettingsPath(settingsPath);
-        }
+        // 走统一不变量: capture 开 → 从最新 settings 克隆 (带上 auto-compact 等字段); 关 → 删.
+        // 与编辑/删除模型路径同一函数, 保证两者同时开启时压缩阈值也同步进克隆.
+        if (settingsPath) modelAccess.enforceWithProxyInvariant(settingsPath, captureOn);
       } catch (e) {
         // 仅 claude-code 模型可生成 withproxy; 解析不到配置就跳过, 不阻断开关保存.
         console.warn(`[admin] captureStream withproxy 生成跳过 (${modelKey}): ${(e as Error).message}`);

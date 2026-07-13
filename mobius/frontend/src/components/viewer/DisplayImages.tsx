@@ -17,6 +17,17 @@ function displayImageSrc(src: string): { isUrl: boolean; finalSrc: string } {
   return { isUrl, finalSrc: resolveMediaSrc(src) }
 }
 
+// 把图片源描述成 (标签, 显示文本). 对 base64 data url 只给短标签 (内嵌图片 · mime),
+// 不把十几万字符的 base64 拼进 UI (放大弹窗 header / 缩略图 caption 都会因此爆掉).
+export function describeImageSrc(src: string): { label: string; display: string } {
+  if (src.startsWith('data:')) {
+    const mime = (src.match(/^data:([^;,]+)/) || [])[1] || 'image'
+    return { label: '内嵌图片', display: mime }
+  }
+  const isUrl = /^https?:\/\//i.test(src)
+  return { label: isUrl ? 'URL' : '本地文件', display: src }
+}
+
 // 单张图片: URL 直出; 绝对路径走后端 /api/download (与 FileManager 同款, token 走 query).
 function DisplayImageItem({ src, onOpen }: { src: string; onOpen: (src: string) => void }) {
   const [err, setErr] = useState(false)
@@ -50,8 +61,9 @@ function DisplayImageItem({ src, onOpen }: { src: string; onOpen: (src: string) 
   )
 }
 
-function DisplayImagePreviewModal({ src, onClose }: { src: string; onClose: () => void }) {
-  const { isUrl, finalSrc } = displayImageSrc(src)
+export function DisplayImagePreviewModal({ src, onClose }: { src: string; onClose: () => void }) {
+  const { finalSrc } = displayImageSrc(src)
+  const { label: srcLabel, display: srcDisplay } = describeImageSrc(src)
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -81,7 +93,7 @@ function DisplayImagePreviewModal({ src, onClose }: { src: string; onClose: () =
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 border-b px-4 py-2.5" style={{ borderColor: 'var(--border-color)' }}>
           <span className="min-w-0 flex-1 truncate text-[12px] font-mono" style={{ color: 'var(--text-secondary)' }}>
-            {isUrl ? 'URL' : '本地文件'} · {src}
+            {srcLabel} · {srcDisplay}
           </span>
           <a
             href={finalSrc}

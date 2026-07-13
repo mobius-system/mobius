@@ -111,6 +111,7 @@ type PickItem = {
   research_role?: string
   dirName?: string | null
 }
+export type { PickItem, SessionLanguage }
 const SCOPE_LABEL: Record<string, string> = { user: '用户级', project: '项目级', builtin: '内置', issue: '任务级' }
 
 // ---------------------------------------------------------------------
@@ -147,7 +148,7 @@ function TextInput(props: { value: string; onChange: (v: string) => void; placeh
   )
 }
 
-function LanguageSelect({ value, onChange }: { value: SessionLanguage; onChange: (v: SessionLanguage) => void }) {
+export function LanguageSelect({ value, onChange }: { value: SessionLanguage; onChange: (v: SessionLanguage) => void }) {
   return (
     <div className="grid grid-cols-2 gap-1.5">
       {LANGUAGE_CHOICES.map(opt => {
@@ -167,7 +168,7 @@ function LanguageSelect({ value, onChange }: { value: SessionLanguage; onChange:
 }
 
 // 通用项目/issue/research 下拉选择 — 支持动态刷新 (需求: 中途新建的数据可被读到)
-function useAsyncList<T>(fetcher: () => Promise<T[]>, deps: any[]): { list: T[]; loading: boolean; refresh: () => void } {
+export function useAsyncList<T>(fetcher: () => Promise<T[]>, deps: any[]): { list: T[]; loading: boolean; refresh: () => void } {
   const [list, setList] = useState<T[]>([])
   const [loading, setLoading] = useState(false)
   const load = useCallback(() => {
@@ -347,7 +348,7 @@ function DropdownSelect({
 
 // 目的/描述 + 附件 融合输入框 — 对标系统原生 chat composer (单一边框容器内:
 // 附件芯片 + textarea + 上传工具条), 附件不再单独成块, 视觉与交互统一.
-function DescriptionWithAttachments({ value, onValueChange, placeholder, attachments, setAttachments, projectId, dark }: {
+export function DescriptionWithAttachments({ value, onValueChange, placeholder, attachments, setAttachments, projectId, dark }: {
   value: string
   onValueChange: (v: string) => void
   placeholder?: string
@@ -454,7 +455,7 @@ function DescriptionWithAttachments({ value, onValueChange, placeholder, attachm
 // lockedOf(id) → 主Skill 关联锁定, 强制勾选不可取消
 // mutexOf(id)  → 冲突类, 置灰不可选 (互斥禁用)
 // accentOf(id) → 返回 '主Skill' | '互斥' 等角标文字 (仅 Research 用, Session 不传)
-function SkillMemoryPicker({
+export function SkillMemoryPicker({
   skills, memories,
   excludedSkills, excludedMemories,
   onToggleSkill, onToggleMemory,
@@ -814,7 +815,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
       </div>
       <div>
         <SectionLabel>项目名称</SectionLabel>
-        <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="例如：营销活动策划" autoFocus dark={dark} />
+        <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="例如：强化学习最新进展调研" autoFocus dark={dark} />
       </div>
       {projectKind === 'extension' ? (
         <div>
