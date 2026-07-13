@@ -74,7 +74,19 @@ async function main(): Promise<void> {
   console.log(`[fetch-python] 下载 ${PBS_URL}`);
   await download(PBS_URL, tarball);
   console.log(`[fetch-python] 解压到 ${OUT_DIR}`);
-  execFileSync("tar", ["-xzf", tarball, "-C", OUT_DIR], { stdio: "inherit" });
+  // --force-local: GNU tar 默认把含冒号的路径当 host:path 解释 (Windows git-bash 下
+  // D:\a\... 的 D 会被当主机名 -> "Cannot connect to D: resolve failed")。该标志强制把
+  // 冒号当文件名一部分。GNU tar (Linux / git-bash) 支持此标志; macOS 自带 BSD tar 不识别,
+  // 传了会报错退出。这里探测一次: 支持才加, 保证三平台都能跑。
+  const forceLocal = (() => {
+    try {
+      execFileSync("tar", ["--force-local", "--version"], { stdio: "ignore" });
+      return ["--force-local"];
+    } catch {
+      return [];
+    }
+  })();
+  execFileSync("tar", [...forceLocal, "-xzf", tarball, "-C", OUT_DIR], { stdio: "inherit" });
   fs.unlinkSync(tarball);
   const ok = fs.existsSync(path.join(OUT_DIR, t.marker));
   console.log(ok ? `[fetch-python] 完成 → ${OUT_DIR}` : `[fetch-python] ⚠ 解压后未找到 ${t.marker}`);
