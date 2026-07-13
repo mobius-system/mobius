@@ -20,7 +20,9 @@ function getBridge(): Bridge | undefined {
   return typeof window !== 'undefined' ? (window as { mobiusDesktop?: Bridge }).mobiusDesktop : undefined
 }
 
-export function WindowControls() {
+// thickMinimize (默认 false = 主界面原样 1.1px 细线): 仅 /welcome 的 DesktopTitleBar 传 true,
+// 高 DPI 下把最小化横线加粗到 1.8px 可见。作用严格局限调用方, 不影响 shell 主界面 (未传参)。
+export function WindowControls({ thickMinimize = false }: { thickMinimize?: boolean } = {}) {
   const [maximized, setMaximized] = useState(false)
   useEffect(() => {
     const md = getBridge()
@@ -62,7 +64,7 @@ export function WindowControls() {
         style={btnBase}
         onMouseEnter={(e) => enterHover(e, 'var(--bg-hover)')} onMouseLeave={leaveHover}
         onClick={() => md.windowMinimize?.().catch(() => {})}>
-        <svg width="10" height="10" viewBox="0 0 11 11"><rect y="4.6" width="11" height="1.8" fill="currentColor" /></svg>
+        <svg width="10" height="10" viewBox="0 0 11 11"><rect y={thickMinimize ? 4.6 : 5} width="11" height={thickMinimize ? 1.8 : 1.1} fill="currentColor" /></svg>
       </button>
       <button type="button" title={maximized ? '还原' : '最大化'} aria-label={maximized ? '还原' : '最大化'}
         style={btnBase}
@@ -104,7 +106,7 @@ export function DesktopTitleBar() {
     <div className="fixed left-0 right-0 top-0 z-50 flex h-12 items-stretch px-5">
       {/* 唯一拖拽区: 独立空白 spacer, 无交互子元素 → drag 区不会吞按钮点击 (与 shell TopNav 同策略) */}
       <div className="mobius-desktop-drag flex-1 self-stretch" aria-hidden="true" />
-      <WindowControls />
+      <WindowControls thickMinimize />
     </div>
   )
 }
