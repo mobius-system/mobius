@@ -1593,7 +1593,11 @@ export function AssistantChat() {
   const [panelSize, setPanelSize] = useState<AssistantPanelSize>('compact')
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({})
   // 小莫 FAB 自定义位置: null=默认右下角 (CSS), 否则用 inline left/top 定位
-  const [fabPos, setFabPos] = useState<{ left: number; top: number } | null>(null)
+  // 懒初始化从 localStorage 恢复 (并吸附), 避免首屏从默认位闪烁到记忆位
+  const [fabPos, setFabPos] = useState<{ left: number; top: number } | null>(() => {
+    const restored = readFabPos()
+    return restored ? snapFabToEdge(restored.left, restored.top) : null
+  })
   const [fabDragging, setFabDragging] = useState(false)
   const [input, setInputState] = useState('')
   const [inputExpanded, setInputExpanded] = useState(false)
@@ -2222,8 +2226,23 @@ export function AssistantChat() {
   }, [])
 
   const handleFabPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (open) return
     if (event.pointerType === 'mouse' && event.button !== 0) return
+
+    // 记录拖动起点 (打开/收起态都允许拖动 FAB)
+    const rect = event.currentTarget.getBoundingClientRect()
+    fabDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: rect.left,
+      startTop: rect.top,
+      moved: false,
+      dragging: false,
+    }
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch {}
+
+    // 语音长按仅在收起态 + 空闲时启用
+    if (open) return
     if (sendingRef.current || voiceStateRef.current === 'recording' || voiceStateRef.current === 'transcribing') return
 
     clearCollapsedVoiceHoldTimer()
@@ -2231,8 +2250,6 @@ export function AssistantChat() {
     collapsedVoiceStartedRef.current = false
     stopCollapsedVoiceAfterStartRef.current = false
     setCollapsedVoiceHoldState('holding')
-
-    try { event.currentTarget.setPointerCapture(event.pointerId) } catch {}
 
     collapsedVoiceHoldTimerRef.current = window.setTimeout(() => {
       collapsedVoiceHoldTimerRef.current = null
@@ -2247,7 +2264,60 @@ export function AssistantChat() {
     }, ASSISTANT_FAB_VOICE_HOLD_MS)
   }, [clearCollapsedVoiceHoldTimer, open, startVoiceRecording, stopVoiceRecording])
 
+  const handleFabPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = fabDragRef.current
+    if (!drag || event.pointerId !== drag.pointerId) return
+
+    const dx = event.clientX - drag.startX
+    const dy = event.clientY - drag.startY
+
+    if (!drag.dragging) {
+      if (!drag.moved) {
+        if (Math.hypot(dx, dy) < ASSISTANT_FAB_DRAG_THRESHOLD) return
+        drag.moved = true
+      }
+      // 语音录制一旦启动就不再切入拖动 (语音优先)
+      if (collapsedVoiceStartedRef.current) return
+      drag.dragging = true
+      // 取消挂起的语音长按, 让位给拖动
+      clearCollapsedVoiceHoldTimer()
+      collapsedVoicePointerIdRef.current = null
+      setCollapsedVoiceHoldState('idle')
+      suppressNextFabClickRef.current = true
+      setFabDragging(true)
+    }
+
+    const size = ASSISTANT_FAB_SIZE
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const nextLeft = Math.max(0, Math.min(vw - size, drag.startLeft + dx))
+    const nextTop = Math.max(0, Math.min(vh - size, drag.startTop + dy))
+    setFabPos({ left: nextLeft, top: nextTop })
+  }, [clearCollapsedVoiceHoldTimer])
+
   const finishCollapsedVoiceHold = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = fabDragRef.current
+    if (drag && event.pointerId === drag.pointerId) {
+      fabDragRef.current = null
+      // 拖动收尾: 吸附到最近边缘 + 持久化 + 吃掉 click
+      if (drag.dragging) {
+        try { event.currentTarget.releasePointerCapture(drag.pointerId) } catch {}
+        const snapped = snapFabToEdge(
+          drag.startLeft + (event.clientX - drag.startX),
+          drag.startTop + (event.clientY - drag.startY),
+        )
+        setFabPos(snapped)
+        writeFabPos(snapped)
+        suppressNextFabClickRef.current = true
+        setFabDragging(false)
+        clearCollapsedVoiceHoldTimer()
+        collapsedVoicePointerIdRef.current = null
+        collapsedVoiceStartedRef.current = false
+        setCollapsedVoiceHoldState('idle')
+        return
+      }
+    }
+
     const pointerId = collapsedVoicePointerIdRef.current
     if (pointerId !== null && event.pointerId !== pointerId) return
 
@@ -2814,13 +2884,8 @@ export function AssistantChat() {
     setPanelStyle({})
   }, [panelSize])
 
-  // 挂载时恢复上次的 FAB 位置; 视口尺寸变化时把 FAB 拉回可视区 (吸附到最近边缘)
+  // 视口尺寸变化时把 FAB 拉回可视区 (重新吸附到最近边缘)
   useEffect(() => {
-    const restored = readFabPos()
-    if (restored) {
-      const snapped = snapFabToEdge(restored.left, restored.top)
-      setFabPos(snapped)
-    }
     const onResize = () => {
       setFabPos(prev => (prev ? snapFabToEdge(prev.left, prev.top) : prev))
     }
@@ -3463,7 +3528,11 @@ export function AssistantChat() {
           ? `${ASSISTANT_NAME}正在说话`
           : (open ? `收起${ASSISTANT_NAME}` : `打开${ASSISTANT_NAME}`)
   const fabClassName = [
-    'assistant-fab fixed bottom-5 right-5 z-[60] w-14 h-14 rounded-full flex items-center justify-center transition-all hover:scale-105',
+    'assistant-fab fixed z-[60] w-14 h-14 rounded-full flex items-center justify-center',
+    // 有自定义位置时用 inline left/top, 否则回落到默认右下角
+    fabPos ? '' : 'bottom-5 right-5',
+    // 拖动进行中关掉过渡 (跟随指针不拖尾), 释放后恢复过渡以平滑吸附
+    fabDragging ? 'assistant-fab--dragging' : 'transition-all hover:scale-105',
     fabSpeaking ? 'assistant-fab--speaking' : '',
     fabVoiceHolding ? 'assistant-fab--voice-holding' : '',
     fabVoiceRecording ? 'assistant-fab--voice-recording' : '',
@@ -3476,6 +3545,7 @@ export function AssistantChat() {
         data-testid="assistant-bubble"
         data-tour="assistant-bubble"
         onPointerDown={handleFabPointerDown}
+        onPointerMove={handleFabPointerMove}
         onPointerUp={finishCollapsedVoiceHold}
         onPointerCancel={finishCollapsedVoiceHold}
         onClick={handleFabClick}
@@ -3484,6 +3554,7 @@ export function AssistantChat() {
         }}
         title={fabTitle}
         className={fabClassName}
+        style={fabPos ? { left: fabPos.left, top: fabPos.top, right: 'auto', bottom: 'auto' } : undefined}
       >
         <MoAvatar size="lg" active={open || sending || activeCount > 0 || pendingActiveCount > 0 || fabSpeaking || fabVoiceActive} />
         {fabSpeaking ? (
