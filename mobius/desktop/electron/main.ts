@@ -498,7 +498,7 @@ ipcMain.handle("app:clear-cache", async () => {
   try {
     const ses = mainWindow?.webContents.session || session.defaultSession;
     await ses.clearCache().catch(() => {});
-    await ses.clearStorageData({ storages: ["serviceworkers", "caches", "shadercache"] }).catch(() => {});
+    await ses.clearStorageData({ storages: ["serviceworkers", "cachestorage", "shadercache"] }).catch(() => {});
   } catch { /* 忽略, 仍尝试刷新 */ }
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.reloadIgnoringCache();
