@@ -1,0 +1,220 @@
+# Mobius Desktop 三平台客户端发布到 GitHub Release。
+#
+# 构建 win-x64 / mac-arm64 / mac-x64 三个 zip, 上传到 GitHub Release。
+# 桌面端版本号独立 (mobius/desktop/package.json 的 version), 与 mobius 主版本解耦。
+#
+# 触发 (合理可控 —— 两种都是显式动作, 日常 push 绝不误发):
+#   1. workflow_dispatch (手动, 推荐): GitHub Actions 页面点 "Run workflow",
+#      可填 version (留空读 mobius/desktop/package.json) / make_latest / draft。
+#   2. push tag desktop-v* (半自动): 本地
+#        git tag desktop-v0.0.8 && git push github desktop-v0.0.8
+#      version 从 tag 名解析 (desktop-v0.0.8 -> 0.0.8)。
+#
+# 产物文件名 = mobius-desktop-<V>-<os>-<arch>.zip (小写 kebab, 与下载菜单约定一致),
+# 由 electron-builder 默认产物 (Mobius Desktop-<V>-<os>-<arch>.zip, 大写+空格) 重命名而来。
+#
+# 注: 此 workflow 只负责 GitHub Release 发布。下载菜单的 /desktop-builds/ 同源分发
+# 仍由本地 build.py --build-electron 维护, 二者互不影响 (Release 作公开归档/CDN 镜像)。
+
+name: Release Desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (留空则读 mobius/desktop/package.json)'
+        required: false
+        default: ''
+      make_latest:
+        description: '标记为 latest release'
+        type: boolean
+        default: true
+      draft:
+        description: '草稿 release (不公开, 发布前可审)'
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'desktop-v*'
+
+permissions:
+  contents: write   # 创建 tag + release + 上传 asset
+
+# 同一时刻只跑一个 release; 排队不取消, 避免产出半成品 release。
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        # 关键: 全程 bash。windows-latest 自带 git-bash, rm/cp/tar/npx 都可用,
+        # 绕开 npm script 在 cmd.exe 下 `rm -rf` 不存在的坑。
+        shell: bash
+        working-directory: mobius/desktop
+    strategy:
+      fail-fast: false   # 一个平台失败不取消其它, 便于定位
+      matrix:
+        include:
+          - target: win-x64
+            runner: windows-latest
+            plat: win
+            arch: x64
+            os: win
+          - target: mac-arm64
+            runner: macos-latest     # Apple Silicon, 原生 arm64 最稳
+            plat: mac
+            arch: arm64
+            os: mac
+          - target: mac-x64
+            runner: macos-13         # Intel, 原生 x64; 若将来弃用改 macos-latest 交叉
+            plat: mac
+            arch: x64
+            os: mac
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mobius/desktop/package-lock.json
+
+      - name: Resolve version
+        id: ver
+        run: |
+          # 优先级: workflow_dispatch input > tag 名(desktop-v0.0.7->0.0.7) > package.json
+          INPUT="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT" ]; then
+            V="$INPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            V="${GITHUB_REF_NAME#desktop-v}"
+          else
+            V=$(node -p "require('./package.json').version")
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $V"
+
+      - name: Install deps (npm ci)
+        run: npm ci
+
+      - name: Fetch python-build-standalone (${{ matrix.target }})
+        # 从 github.com/astral-sh/python-build-standalone 下载对应 arch 的 cpython,
+        # 解压到 resources/python-<target>/。幂等 (已存在则跳过)。
+        run: npx tsx scripts/fetch-python.ts ${{ matrix.target }}
+
+      - name: Swap python into resources/python
+        # electron-builder.yml 的 extraResources 只认 resources/python (canonical),
+        # 每 target 构建前把对应 arch 的 python 拷进去 (CI 每 job 独立 runner, 不冲突)。
+        run: rm -rf resources/python && cp -r resources/python-${{ matrix.target }} resources/python
+
+      - name: Build renderer + main (tsc --noEmit + electron-vite build)
+        run: npm run build
+
+      - name: Package with electron-builder (--${{ matrix.plat }} --${{ matrix.arch }})
+        # 用平台 + arch 两个独立 CLI 标志 (不用 `--mac zip` 那种带 target 名的形式,
+        # 那会把 arch 覆盖成 host)。免签名: win.signAndEditExecutable:false / mac.identity:null
+        # 已在 electron-builder.yml 配好, 原生 runner 上无需 wine/证书。
+        run: npx electron-builder --${{ matrix.plat }} --${{ matrix.arch }}
+
+      - name: Rename to kebab-case (match download menu)
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          SRC="release/Mobius Desktop-${V}-${{ matrix.os }}-${{ matrix.arch }}.zip"
+          DST="mobius-desktop-${V}-${{ matrix.target }}.zip"
+          if [ ! -f "$SRC" ]; then
+            echo "❌ 预期产物不存在: $SRC"
+            echo "release/ 实际内容:"
+            ls -la release/ 2>/dev/null || true
+            exit 1
+          fi
+          mv "$SRC" "$DST"
+          echo "✓ $DST ($(du -h "$DST" | cut -f1))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: mobius/desktop/mobius-desktop-${{ steps.ver.outputs.version }}-${{ matrix.target }}.zip
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build   # 3 个平台全部成功才发 (不发半成品)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          INPUT="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT" ]; then
+            V="$INPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            V="${GITHUB_REF_NAME#desktop-v}"
+          else
+            V=$(node -p "require('./mobius/desktop/package.json').version")
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $V"
+
+      - name: Create release + upload 3 zips
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          TAG="desktop-v${V}"
+          mkdir -p assets
+          find artifacts -name 'mobius-desktop-*.zip' -exec cp {} assets/ \;
+          echo "=== 待发布资产 ==="
+          ls -la assets/
+          COUNT=$(ls -1 assets/*.zip 2>/dev/null | wc -l)
+          if [ "$COUNT" -ne 3 ]; then
+            echo "❌ 期望 3 个 zip, 实际 $COUNT —— 检查上游 build job 是否有平台失败"
+            exit 1
+          fi
+
+          # make_latest / draft: 仅 workflow_dispatch 有 input; tag push 用默认 (latest=true, draft=false)
+          LATEST_FLAG="--latest"
+          if [ -n "${{ github.event.inputs.make_latest }}" ] && [ "${{ github.event.inputs.make_latest }}" != "true" ]; then
+            LATEST_FLAG="--latest=false"
+          fi
+          DRAFT_FLAG=""
+          if [ "${{ github.event.inputs.draft }}" = "true" ]; then
+            DRAFT_FLAG="--draft"
+          fi
+
+          NOTES="Mobius Desktop v${V} 三平台客户端。
+
+          ## 下载
+          - Windows x64 (Intel/AMD 64位): \`mobius-desktop-${V}-win-x64.zip\`
+          - macOS Apple Silicon (M1/M2/M3/M4): \`mobius-desktop-${V}-mac-arm64.zip\`
+          - macOS Intel x64: \`mobius-desktop-${V}-mac-x64.zip\`
+
+          ## 说明
+          - 首次启动自动在本机创建 Python 虚拟环境并安装 aimux (需联网, 约 30-90 秒)
+          - macOS 包未签名, 首次打开需右键 -> 打开
+          - 登录后桌面端以 desktop-<主机名> 注册到 AIMUX 节点列表"
+
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在, 追加资产 (clobber)"
+            gh release upload "$TAG" assets/*.zip -R "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" assets/*.zip \
+              -R "$GITHUB_REPOSITORY" \
+              --title "Mobius Desktop v${V}" \
+              --notes "$NOTES" \
+              $LATEST_FLAG $DRAFT_FLAG
+          fi
+          echo "✓ Release $TAG 发布完成"
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json url,assets --jq '{url, assets: [.assets[].name]}'

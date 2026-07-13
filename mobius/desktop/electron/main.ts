@@ -1,6 +1,6 @@
 // Mobius Desktop 主进程：登录 → 保证 aimux → reverse connect → loadURL 远程 web UI。
 // 详见 README。关键：退出前务必 supervisor.stop() 杀 aimux；aimux 状态经徽标+IPC 常驻可见。
-import { app, BrowserWindow, Menu, ipcMain, shell, dialog } from "electron";
+import { app, BrowserWindow, Menu, ipcMain, shell, dialog, session } from "electron";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -490,6 +490,19 @@ ipcMain.handle("app:open-status", () => {
 });
 ipcMain.handle("app:open-devtools", () => {
   mainWindow?.webContents.openDevTools({ mode: "detach" });
+  return { ok: true };
+});
+// 清除缓存 (远程前端 HTTP/SW 缓存, 保留登录态 cc-token): clearCache + 清 SW/Cache/Shader (不动 localstorage/cookies),
+// 再 reloadIgnoringCache 让前端拉最新资源。供 /welcome「清除缓存」按钮调用。
+ipcMain.handle("app:clear-cache", async () => {
+  try {
+    const ses = mainWindow?.webContents.session || session.defaultSession;
+    await ses.clearCache().catch(() => {});
+    await ses.clearStorageData({ storages: ["serviceworkers", "caches", "shadercache"] }).catch(() => {});
+  } catch { /* 忽略, 仍尝试刷新 */ }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.reloadIgnoringCache();
+  }
   return { ok: true };
 });
 // 前端切主题后上报标题栏覆盖层: 透明背景透出顶栏主题色 + 当前 --text-primary 作窗口按钮图标色。
