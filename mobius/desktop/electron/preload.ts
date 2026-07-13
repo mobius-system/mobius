@@ -65,5 +65,6 @@ const mobiusDesktop = {
     return () => ipcRenderer.removeListener("window:maximize-changed", listener);
   },
   logout: () => ipcRenderer.invoke("auth:logout"),
+  clearCache: () => ipcRenderer.invoke("app:clear-cache"),
 };
 contextBridge.exposeInMainWorld("mobiusDesktop", mobiusDesktop);

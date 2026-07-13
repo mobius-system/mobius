@@ -26,6 +26,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   History, FolderInput, Plus, FileText, FolderOpen, ChevronLeft, ChevronDown,
   ChevronRight, FolderOpen as FolderBrowse, Dices, Loader2, Sparkles, Star, Search,
+  RefreshCw, LogOut, Trash2,
 } from 'lucide-react'
 import { useStore, api } from '../store'
 import { MobiusLogo } from '../components/mobius-logo'
@@ -59,6 +60,8 @@ interface DesktopBridge {
   getLastRoute?: () => Promise<string | null>
   pickDirectory?: () => Promise<string | null>
   confirmProjectPath?: (projectId: string, path: string) => Promise<{ ok?: boolean; error?: string } | null>
+  logout?: () => Promise<{ ok?: boolean }>
+  clearCache?: () => Promise<{ ok?: boolean }>
 }
 function getDesktopBridge(): DesktopBridge | undefined {
   return typeof window !== 'undefined'
@@ -280,6 +283,43 @@ export default function Welcome() {
           </div>
         )}
         <div className="mt-1.5 px-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>{connectLine}</div>
+
+        {/* 桌面端连接管理: 更换服务器 / 退出登录 / 清除缓存。
+            更换服务器 & 退出登录 均回到本地登录页 (在那里可改 URL 或重新登录);
+            清除缓存 = 清远程前端 HTTP/SW 缓存后刷新本页 (保留登录态)。web 端隐藏。 */}
+        {isDesktop && (md?.logout || md?.clearCache) && (
+          <div className="mt-3 flex items-center justify-center gap-3 text-[11px]">
+            {md?.logout && (
+              <button type="button"
+                onClick={() => { try { void md.logout?.() } catch { /* 主进程会切到登录页, 本页随之销毁 */ } }}
+                className="inline-flex items-center gap-1 transition-colors hover:text-[var(--text-primary)]"
+                style={{ color: 'var(--text-muted)' }}
+                title="返回本地登录页, 重新输入服务器地址">
+                <RefreshCw className="h-3 w-3" />更换服务器
+              </button>
+            )}
+            {md?.logout && md?.clearCache && <span style={{ color: 'var(--text-muted)' }}>·</span>}
+            {md?.logout && (
+              <button type="button"
+                onClick={() => { try { void md.logout?.() } catch { /* ignore */ } }}
+                className="inline-flex items-center gap-1 transition-colors hover:text-[var(--text-primary)]"
+                style={{ color: 'var(--text-muted)' }}
+                title="退出当前账号, 返回登录页">
+                <LogOut className="h-3 w-3" />退出登录
+              </button>
+            )}
+            {md?.logout && md?.clearCache && <span style={{ color: 'var(--text-muted)' }}>·</span>}
+            {md?.clearCache && (
+              <button type="button"
+                onClick={() => { try { void md.clearCache?.() } catch { /* ignore */ } }}
+                className="inline-flex items-center gap-1 transition-colors hover:text-[var(--text-primary)]"
+                style={{ color: 'var(--text-muted)' }}
+                title="清空本机缓存的页面资源并刷新">
+                <Trash2 className="h-3 w-3" />清除缓存
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
