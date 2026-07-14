@@ -27,6 +27,15 @@ function manualChunks(id: string) {
     if (rel.startsWith('renderers/')) return 'three-renderers'
   }
   if (normalizedId.includes('/node_modules/three/build/')) return 'three'
+  // CodeMirror 编辑器核心 (view/state/language/commands/autocomplete/search/theme-one-dark + @uiw):
+  // 抽成独立可缓存 vendor chunk, 让 code-conversation 业务代码 chunk 保持极小, 且跨部署可缓存.
+  // ★ lang-* 语言包必须排除 — 它们被动态 import 按需加载, 若并入此静态 chunk 会破坏懒加载;
+  //   留给 Rollup 默认逻辑, 各自随动态 import 切成独立 lazy chunk. @lezer/* 文法同理不在此匹配.
+  if (normalizedId.includes('/node_modules/@uiw/')) return 'codemirror'
+  if (normalizedId.includes('/node_modules/@codemirror/') &&
+      !normalizedId.includes('/node_modules/@codemirror/lang-')) {
+    return 'codemirror'
+  }
 }
 
 export default defineConfig({

@@ -55,7 +55,7 @@ export function EditorPane({ projectName, bindPath, vscodeWebUrl, className, lea
   return (
     <div className={`flex h-full w-full flex-col ${className || ''}`} style={{ background: 'var(--bg-primary)' }}>
       {/* 工具栏 */}
-      <div className="flex h-8 flex-shrink-0 items-center gap-1 border-b px-2" style={{ borderColor: 'var(--border-color)' }}>
+      {/* <div className="flex h-8 flex-shrink-0 items-center gap-1 border-b px-2" style={{ borderColor: 'var(--border-color)' }}>
         {leading}
         <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }} title={projectName}>{projectName}</span>
         <div className="flex-1" />
@@ -66,7 +66,7 @@ export function EditorPane({ projectName, bindPath, vscodeWebUrl, className, lea
         <button type="button" onClick={openInNewWindow} title="在新窗口打开" aria-label="在新窗口打开编辑器" className="inline-flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
           <ExternalLink className="w-3.5 h-3.5" />
         </button>
-      </div>
+      </div> */}
 
       {/* iframe 区 */}
       <div className="relative flex-1 min-h-0">

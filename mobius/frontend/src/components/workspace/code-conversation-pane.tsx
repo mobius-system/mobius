@@ -3,13 +3,7 @@ import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, 
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView, keymap } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
-import { javascript } from '@codemirror/lang-javascript'
-import { python } from '@codemirror/lang-python'
-import { markdown } from '@codemirror/lang-markdown'
-import { json } from '@codemirror/lang-json'
-import { css } from '@codemirror/lang-css'
-import { html } from '@codemirror/lang-html'
-import { sql } from '@codemirror/lang-sql'
+import type { Extension } from '@codemirror/state'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { api } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
@@ -75,18 +69,33 @@ const lightEditorTheme = EditorView.theme({
   '.cm-foldPlaceholder': { backgroundColor: '#f0f0f0', border: '1px solid #e6e6e6', color: '#9a9a9a' },
 })
 
-// 按扩展名选 CodeMirror 语言包. 命中即给高亮 + 语言感知 (括号/注释/缩进); 未命中走纯文本.
-function languageForFile(name: string) {
+// 按扩展名映射到语言加载键. 命中即按需动态导入对应 CodeMirror 语言包 (含 @lezer 文法),
+// 未命中走纯文本. 语言包体积大 (尤其 @lezer/javascript / markdown), 若静态全量打入会让
+// code-conversation chunk 超 600kB; 改为打开某类型文件时才加载该语言, 各语言独立成小 chunk.
+function langKeyForFile(name: string): string | null {
   const ext = name.split('.').pop()?.toLowerCase() || ''
-  if (['js', 'jsx', 'mjs', 'cjs'].includes(ext)) return javascript({ jsx: true })
-  if (['ts', 'tsx'].includes(ext)) return javascript({ jsx: true, typescript: true })
-  if (ext === 'py') return python()
-  if (['md', 'markdown'].includes(ext)) return markdown()
-  if (ext === 'json') return json()
-  if (['css', 'scss', 'less'].includes(ext)) return css()
-  if (['html', 'htm', 'xml', 'svg'].includes(ext)) return html()
-  if (ext === 'sql') return sql()
-  return undefined
+  if (['js', 'jsx', 'mjs', 'cjs'].includes(ext)) return 'js'
+  if (['ts', 'tsx'].includes(ext)) return 'ts'
+  if (ext === 'py') return 'py'
+  if (['md', 'markdown'].includes(ext)) return 'md'
+  if (ext === 'json') return 'json'
+  if (['css', 'scss', 'less'].includes(ext)) return 'css'
+  if (['html', 'htm', 'xml', 'svg'].includes(ext)) return 'html'
+  if (ext === 'sql') return 'sql'
+  return null
+}
+
+// 各语言的动态加载器: import() 让 Rollup 把每个语言包 (+ 其 @lezer 文法) 切成独立 lazy chunk,
+// 只有真正打开该类型文件时才下载. js/ts 共享 @codemirror/lang-javascript (同 chunk).
+const LANG_LOADERS: Record<string, () => Promise<Extension>> = {
+  js: () => import('@codemirror/lang-javascript').then(m => m.javascript({ jsx: true })),
+  ts: () => import('@codemirror/lang-javascript').then(m => m.javascript({ jsx: true, typescript: true })),
+  py: () => import('@codemirror/lang-python').then(m => m.python()),
+  md: () => import('@codemirror/lang-markdown').then(m => m.markdown()),
+  json: () => import('@codemirror/lang-json').then(m => m.json()),
+  css: () => import('@codemirror/lang-css').then(m => m.css()),
+  html: () => import('@codemirror/lang-html').then(m => m.html()),
+  sql: () => import('@codemirror/lang-sql').then(m => m.sql()),
 }
 
 export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: CodeConversationPaneProps) {
@@ -234,15 +243,27 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
   const filesDefaultWidth = Math.max(180, Math.min(320, Math.floor(vw * 0.18)))
 
+  // 当前文件的语言扩展 (按需动态加载). 加载完成前为 null (纯文本无高亮), 到货后自动应用.
+  // 切换文件时 cleanup 置 cancelled, 避免旧文件的迟到加载覆盖新选择.
+  const [langExt, setLangExt] = useState<Extension | null>(null)
+  useEffect(() => {
+    const key = selected ? langKeyForFile(selected.name) : null
+    if (!key) { setLangExt(null); return }
+    let cancelled = false
+    LANG_LOADERS[key]()
+      .then(ext => { if (!cancelled) setLangExt(ext) })
+      .catch(() => { if (!cancelled) setLangExt(null) })
+    return () => { cancelled = true }
+  }, [selected])
+
   // extensions: basicSetup 默认提供行号/高亮/撤销/括号/折叠/搜索/补全等; 这里只补 indentWithTab + 换行 + 语言包.
   const extensions = useMemo(() => {
-    const lang = selected ? languageForFile(selected.name) : undefined
     return [
       keymap.of([indentWithTab]),
       EditorView.lineWrapping,
-      ...(lang ? [lang] : []),
+      ...(langExt ? [langExt] : []),
     ]
-  }, [selected])
+  }, [langExt])
 
   return (
     <div className="contents">

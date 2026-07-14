@@ -65,23 +65,23 @@ export function WorkspaceLayoutToggle() {
   const options: ModeOption[] = [
     {
       mode: 'session',
-      label: '会话模式',
-      desc: '左 Issue / Session 侧栏 + 右对话',
+      label: '高效会话模式',
+      desc: '快速对话，高效操控智能体',
       icon: PanelLeft,
       available: true,
     },
     {
       mode: 'editor-chat',
-      label: '代码对话 v1',
-      desc: '左 code-server 编辑器 + 右对话（内嵌完整 IDE）',
+      label: 'VSCode 编辑',
+      desc: '接入内置 VSCode 编辑',
       icon: Columns2,
       available: v1Available,
       unavailableReason: !currentSession ? '请先选择 Session' : !bindPath ? '项目未绑定路径' : '未配置 Web 编辑器 (VSCODE_WEB_URL)',
     },
     {
       mode: 'code-conversation',
-      label: '代码对话 v2',
-      desc: '左文件浏览器 + 中代码浏览 + 右对话（轻量原生三栏）',
+      label: '原生文件编辑器',
+      desc: '接入原生文件编辑器编辑',
       icon: Columns3,
       available: v2Available,
       unavailableReason: !currentSession ? '请先选择 Session' : '项目未绑定路径',
@@ -142,10 +142,10 @@ export function WorkspaceLayoutToggle() {
                     <span className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{opt.label}</span>
                     {isCurrent && <Check className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />}
                   </div>
-                  <div className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>{opt.desc}</div>
+                  {/* <div className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>{opt.desc}</div>
                   {!opt.available && opt.unavailableReason && (
                     <div className="mt-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>{opt.unavailableReason}</div>
-                  )}
+                  )} */}
                 </div>
               </button>
             )
