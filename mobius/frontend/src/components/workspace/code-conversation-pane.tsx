@@ -251,6 +251,40 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     })
   }
 
+  const chooseSource = useCallback((next: FileSource) => {
+    if (next === source) return
+    if (next === 'local' && !isDesktop) return
+    if (dirty && selected) {
+      if (!window.confirm(`「${selected.name}」有未保存的修改，切换文件来源将丢弃。确定切换？`)) return
+    }
+    setSourceState(next)
+    try { localStorage.setItem(fileSourceStorageKey(projectId), next) } catch { /* 静默 */ }
+  }, [dirty, isDesktop, projectId, selected, source])
+
+  const chooseLocalPath = useCallback(async () => {
+    if (!desktop?.pickDirectory || !desktop.confirmProjectPath) return
+    const picked = await desktop.pickDirectory()
+    if (!picked) return
+    setLocalPathBusy(true)
+    setRootError('')
+    try {
+      const result = await desktop.confirmProjectPath(projectId, picked)
+      if (!result?.ok) throw new Error(result?.error || '绑定本机路径失败')
+      setLocalBindPath(picked)
+      if (source === 'local') {
+        setDirs({})
+        setExpanded(new Set(['/']))
+        setRootLoaded(false)
+        clearEditorState()
+        loadDir('/')
+      }
+    } catch (e: any) {
+      setRootError(e?.message || '绑定本机路径失败')
+    } finally {
+      setLocalPathBusy(false)
+    }
+  }, [clearEditorState, desktop, loadDir, projectId, source])
+
   const onSelectFile = useCallback(async (entry: Entry) => {
     if (entry.type !== 'file') return
     // 切换前若有未保存改动, 提示确认 (避免静默丢失编辑).
@@ -346,6 +380,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   // 文件浏览器默认宽度 ≈ 视口 18%, 留够空间给代码编辑 + 对话.
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
   const filesDefaultWidth = Math.max(180, Math.min(320, Math.floor(vw * 0.18)))
+  const activeRootPath = source === 'local' ? localBindPath : bindPath
 
   // 当前文件的语言扩展 (按需动态加载). 加载完成前为 null (纯文本无高亮), 到货后自动应用.
   // 切换文件时 cleanup 置 cancelled, 避免旧文件的迟到加载覆盖新选择.
@@ -386,8 +421,62 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
         style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
         <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: 'var(--border-color)' }}>
           <FileCode2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
-          <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }} title={bindPath}>文件浏览器</span>
+          <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }} title={activeRootPath}>
+            {source === 'local' ? '本机文件' : '中枢文件'}
+          </span>
         </div>
+        {isDesktop && (
+          <div className="flex-shrink-0 border-b px-2 py-1.5" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                type="button"
+                onClick={() => chooseSource('hub')}
+                className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors"
+                style={{
+                  borderColor: source === 'hub' ? 'var(--accent-primary)' : 'var(--input-border)',
+                  background: source === 'hub' ? 'color-mix(in srgb, var(--accent-primary) 14%, transparent)' : 'var(--input-bg)',
+                  color: source === 'hub' ? 'var(--text-primary)' : 'var(--text-muted)',
+                }}
+                title="浏览 Mobius 中枢项目路径"
+              >
+                <Server className="h-3.5 w-3.5 flex-shrink-0" />
+                <span className="truncate">中枢</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => chooseSource('local')}
+                className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors"
+                style={{
+                  borderColor: source === 'local' ? 'var(--accent-primary)' : 'var(--input-border)',
+                  background: source === 'local' ? 'color-mix(in srgb, var(--accent-primary) 14%, transparent)' : 'var(--input-bg)',
+                  color: source === 'local' ? 'var(--text-primary)' : 'var(--text-muted)',
+                }}
+                title="浏览这台电脑绑定的本机工作路径"
+              >
+                <Laptop className="h-3.5 w-3.5 flex-shrink-0" />
+                <span className="truncate">本机</span>
+              </button>
+            </div>
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <div className="min-w-0 flex-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }} title={activeRootPath || undefined}>
+                {activeRootPath || (source === 'local' ? '未绑定本机工作路径' : '未绑定项目路径')}
+              </div>
+              {source === 'local' && (
+                <button
+                  type="button"
+                  onClick={chooseLocalPath}
+                  disabled={localPathBusy}
+                  className="inline-flex h-6 flex-shrink-0 items-center gap-1 rounded-md border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+                  style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
+                  title={localBindPath ? '更改本机绑定路径' : '选择本机绑定路径'}
+                >
+                  {localPathBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderOpen className="h-3 w-3" />}
+                  {localBindPath ? '更改' : '选择'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         {/* 文件名搜索过滤 (仅覆盖已展开加载过的目录) */}
         <div className="flex-shrink-0 border-b px-2 py-1.5" style={{ borderColor: 'var(--border-color)' }}>
           <div className="relative">
@@ -410,7 +499,21 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
           {!rootLoaded ? (
             <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
           ) : rootError ? (
-            <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>{rootError}</div>
+            <div className="px-2 py-4 text-center">
+              <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{rootError}</div>
+              {source === 'local' && isDesktop && (
+                <button
+                  type="button"
+                  onClick={chooseLocalPath}
+                  disabled={localPathBusy}
+                  className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+                  style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
+                >
+                  {localPathBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderOpen className="h-3.5 w-3.5" />}
+                  选择本机路径
+                </button>
+              )}
+            </div>
           ) : (
             <FilteredFileTree
               dirs={dirs}
@@ -455,7 +558,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
                 style={{ color: cc.muted }}>
                 {skin === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
               </button>
-              {vscodeWebUrl && (
+              {source === 'hub' && vscodeWebUrl && (
                 <button type="button" onClick={openInVscode} title="在 VSCode 中打开"
                   className={`inline-flex h-6 w-6 items-center justify-center rounded transition-colors ${cc.hover}`}
                   style={{ color: cc.muted }}>
