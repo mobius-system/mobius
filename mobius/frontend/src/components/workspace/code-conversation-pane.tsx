@@ -4,7 +4,8 @@ import CodeMirror from '@uiw/react-codemirror'
 import { EditorView, keymap } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
 import type { Extension } from '@codemirror/state'
-import { oneDark } from '@codemirror/theme-one-dark'
+import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
+import { syntaxHighlighting } from '@codemirror/language'
 import { api } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
@@ -283,7 +284,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
       EditorView.lineWrapping,
       ...(langExt ? [langExt] : []),
     ]
-    return skin === 'dark' ? [...base, oneDark, darkSkinOverride] : base
+    // dark: darkSkinOverride 独占背景/前景/gutter (#121419/#9ea1ff/#7d8799), 不用 oneDark 主题
+    // (它自带 #282c34 背景会竞争覆盖); token 高亮用 oneDarkHighlightStyle (syntaxHighlighting 包一层).
+    return skin === 'dark' ? [...base, darkSkinOverride, syntaxHighlighting(oneDarkHighlightStyle)] : base
   }, [langExt, skin])
 
   return (
