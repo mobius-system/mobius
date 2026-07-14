@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon } from 'lucide-react'
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView, keymap } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
@@ -11,21 +11,25 @@ import { css } from '@codemirror/lang-css'
 import { html } from '@codemirror/lang-html'
 import { sql } from '@codemirror/lang-sql'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { api, useStore } from '../../store'
+import { api } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
 
 // =====================================================================
-// CodeConversationPane - 代码对话模式 v2 的主体 (左文件浏览器 + 中代码浏览/编辑).
+// CodeConversationPane - 代码对话模式 v2 的主体 (左文件浏览器 + 中代码编辑器).
 // 右侧 AI 对话 (ChatArea) 由 IssuePage 渲染, 本组件只负责左+中两栏.
 //
 // 与 v1 (editor-chat: 左 code-server iframe + 右对话) 的区别:
 //   v2 用原生文件树 + CodeMirror 嵌入式编辑器 (高亮+编辑+搜索+撤销+括号匹配),
-//   不嵌 iframe, 轻量、更像 Cursor. 文件树复用 ProjectFilesCard 的 FileTreeLevel;
+//   轻量、更像 Cursor. 文件树复用 ProjectFilesCard 的 FileTreeLevel;
 //   读 /api/projects/:id/file, 保存 POST /api/projects/:id/file.
 //
+// ★ 代码编辑区明暗独立于全局主题: 只用 CodeMirror 自带两套标准主题
+//   (dark=oneDark / light=默认), 背景与高亮配套, 不跟随 var(--bg-*),
+//   避免为每种全局主题适配代码配色的麻烦. 由中栏右上角按钮独立切换, localStorage 持久化.
+//
 // 根 className="contents", 让内部 [文件浏览器 ResizablePanel] + [代码编辑器 flex-1]
-// 直接成为 IssuePage flex row 的成员, 与右侧 ChatArea 平级 -> 三栏布局.
+// 直接成为 IssuePage flex row 成员, 与右侧 ChatArea 平级 -> 三栏布局.
 // =====================================================================
 type CodeConversationPaneProps = {
   projectId: string
@@ -43,6 +47,21 @@ type FileContent = {
   binary: boolean
 }
 
+type CodeSkinKey = 'dark' | 'light'
+// 中栏 (含头部工具栏) 的两套固定配色 — 与对应 CodeMirror 主题背景严格匹配, 独立于全局主题.
+// dark 取 oneDark 背景的前景色族; light 取白底深字. 这样头部工具栏与编辑区视觉一体.
+const CODE_SKINS: Record<CodeSkinKey, { bg: string; fg: string; muted: string; border: string; accent: string; hover: string }> = {
+  dark: { bg: '#282c34', fg: '#abb2bf', muted: '#5c6370', border: '#21252b', accent: '#61afef', hover: 'hover:bg-white/10' },
+  light: { bg: '#ffffff', fg: '#2c2c2c', muted: '#9a9a9a', border: '#e6e6e6', accent: '#2563eb', hover: 'hover:bg-black/5' },
+}
+const CODE_SKIN_STORAGE_KEY = 'mobius:ui:code-editor-skin'
+function loadCodeSkin(): CodeSkinKey {
+  try {
+    const v = localStorage.getItem(CODE_SKIN_STORAGE_KEY)
+    return v === 'light' ? 'light' : 'dark'
+  } catch { return 'dark' }
+}
+
 // 按扩展名选 CodeMirror 语言包. 命中即给高亮 + 语言感知 (括号/注释/缩进); 未命中走纯文本.
 function languageForFile(name: string) {
   const ext = name.split('.').pop()?.toLowerCase() || ''
@@ -57,26 +76,19 @@ function languageForFile(name: string) {
   return undefined
 }
 
-// 透明背景主题: 覆盖 oneDark / 默认主题自带的固定背景色 (深色 #282c34 / 浅色 #fff),
-// 让编辑器背景/行号栏/当前行/选区全部跟随 mobius CSS 变量 -> 与父容器 var(--bg-primary) 融为一体,
-// 深浅主题自适应. 语法高亮的 token 颜色仍由 oneDark(深) / defaultHighlightStyle(浅) 提供.
-// 必须作为 theme prop 传入 (放 extensions 末尾, 才能覆盖前面的固定背景).
-const transparentTheme = EditorView.theme({
-  '&': { backgroundColor: 'transparent', color: 'var(--text-primary)', height: '100%' },
-  '.cm-scroller': { fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', lineHeight: '1.55' },
-  '.cm-content': { backgroundColor: 'transparent' },
-  '.cm-gutters': { backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRight: '1px solid var(--border-color)' },
-  '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--text-primary) 5%, transparent)' },
-  '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--text-secondary)' },
-  '.cm-selectionMatch': { backgroundColor: 'color-mix(in srgb, var(--accent-primary) 25%, transparent)' },
-  '.cm-selectionBackground': { backgroundColor: 'color-mix(in srgb, var(--accent-primary) 30%, transparent)' },
-  '&.cm-focused .cm-selectionBackground': { backgroundColor: 'color-mix(in srgb, var(--accent-primary) 30%, transparent)' },
-  '&.cm-focused': { outline: 'none' },
-  '.cm-foldPlaceholder': { backgroundColor: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' },
-})
-
 export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: CodeConversationPaneProps) {
-  const theme = useStore(s => s.theme)
+  // ★ 代码区明暗: 独立于全局主题, 自带持久化.
+  const [skin, setSkin] = useState<CodeSkinKey>(() => loadCodeSkin())
+  const toggleSkin = useCallback(() => {
+    setSkin(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark'
+      try { localStorage.setItem(CODE_SKIN_STORAGE_KEY, next) } catch { /* 静默 */ }
+      return next
+    })
+  }, [])
+  const cc = CODE_SKINS[skin]
+  const cmTheme: 'light' | 'dark' = skin
+
   // ----- 文件树状态 (复用 ProjectFilesCard 的 loadDir/toggleDir 逻辑) -----
   const [dirs, setDirs] = useState<Record<string, DirState>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
@@ -208,10 +220,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
   const filesDefaultWidth = Math.max(180, Math.min(320, Math.floor(vw * 0.18)))
 
-  // CodeMirror 主题: dark -> oneDark (自带高质量深色); light -> CodeMirror 默认浅色.
-  const cmTheme = theme === 'dark' ? oneDark : 'light'
-  // extensions 只加 basicSetup 默认不含的 (indentWithTab) + 换行 + 语言高亮.
-  // 其余 (行号/当前行高亮/括号匹配/自动闭合/折叠/搜索/撤销/补全/多光标) 全由 basicSetup 默认提供.
+  // extensions: basicSetup 默认提供行号/高亮/撤销/括号/折叠/搜索/补全等; 这里只补 indentWithTab + 换行 + 语言包.
   const extensions = useMemo(() => {
     const lang = selected ? languageForFile(selected.name) : undefined
     return [
@@ -272,16 +281,17 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
         </div>
       </ResizablePanel>
 
-      {/* ===== 中: 代码浏览/编辑 ===== */}
-      <div className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-primary)' }}>
-        <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: 'var(--border-color)' }}>
+      {/* ===== 中: 代码编辑器 (明暗独立于全局主题, 用 cc 固定配色) ===== */}
+      <div className="flex min-w-0 flex-1 flex-col" style={{ background: cc.bg, color: cc.fg }}>
+        {/* 头部工具栏 */}
+        <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: cc.border }}>
           {selected ? (
             <>
-              {dirty && <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: 'var(--accent-primary)' }} title="已修改未保存" />}
+              {dirty && <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: cc.accent }} title="已修改未保存" />}
               <span className="flex-shrink-0 text-[13px]">{fileIcon(selected.name, 'file')}</span>
-              <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }} title={selected.abs_path}>{selected.name}</span>
+              <span className="truncate text-[12px] font-medium" style={{ color: cc.fg }} title={selected.abs_path}>{selected.name}</span>
               {fileData && (
-                <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                <span className="flex-shrink-0 text-[10px]" style={{ color: cc.muted }}>
                   {formatSize(fileData.size)}{fileData.truncated ? ' · 截断' : ''}
                 </span>
               )}
@@ -290,51 +300,59 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
               {saveError && <span className="flex-shrink-0 text-[10px] text-red-400" title={saveError}>保存失败</span>}
               {fileData && !fileData.binary && !fileData.truncated && (
                 <button type="button" onClick={save} disabled={!dirty || saving} title="保存 (Ctrl+S)"
-                  className="inline-flex h-6 items-center gap-1 rounded px-1.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-                  style={{ color: dirty ? 'var(--accent-primary)' : 'var(--text-muted)' }}>
+                  className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${cc.hover}`}
+                  style={{ color: dirty ? cc.accent : cc.muted }}>
                   {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
                   保存
                 </button>
               )}
+              {/* ★ 代码区独立明暗切换 (不随全局主题) */}
+              <button type="button" onClick={toggleSkin} title={skin === 'dark' ? '切换为浅色代码区' : '切换为深色代码区'}
+                className={`inline-flex h-6 w-6 items-center justify-center rounded transition-colors ${cc.hover}`}
+                style={{ color: cc.muted }}>
+                {skin === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              </button>
               {vscodeWebUrl && (
                 <button type="button" onClick={openInVscode} title="在 VSCode 中打开"
-                  className="inline-flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
+                  className={`inline-flex h-6 w-6 items-center justify-center rounded transition-colors ${cc.hover}`}
+                  style={{ color: cc.muted }}>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </button>
               )}
             </>
           ) : (
-            <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>代码浏览</span>
+            <span className="text-[12px]" style={{ color: cc.muted }}>代码浏览</span>
           )}
         </div>
 
-        <div className="relative flex-1 min-h-0 overflow-hidden">
+        {/* 编辑器/占位区 */}
+        <div className="relative flex-1 min-h-0 overflow-hidden" style={{ background: cc.bg }}>
           {!selected ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
               <FileCode2 className="w-8 h-8" />
-              <div className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>从左侧选择一个文件</div>
+              <div className="text-[13px]" style={{ color: cc.fg }}>从左侧选择一个文件</div>
               <div className="text-[11px]">语法高亮 + 可编辑，Ctrl+S 保存</div>
             </div>
           ) : fileLoading ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex h-full flex-col items-center justify-center gap-2" style={{ color: cc.muted }}>
               <Loader2 className="w-5 h-5 animate-spin" />
               <div className="text-[12px]">正在读取文件…</div>
             </div>
           ) : fileError ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
               <AlertTriangle className="w-6 h-6 text-amber-400" />
               <div className="text-[12px] text-red-400">{fileError}</div>
             </div>
           ) : fileData?.binary ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
               <AlertTriangle className="w-6 h-6 text-amber-400" />
-              <div className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>二进制文件，不提供预览</div>
+              <div className="text-[13px]" style={{ color: cc.fg }}>二进制文件，不提供预览</div>
               <div className="text-[11px]">{formatSize(fileData.size)}</div>
             </div>
           ) : fileData?.truncated ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
               <AlertTriangle className="w-6 h-6 text-amber-400" />
-              <div className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>文件过大（&gt; 1.5MB），已截断不提供编辑</div>
+              <div className="text-[13px]" style={{ color: cc.fg }}>文件过大（&gt; 1.5MB），已截断不提供编辑</div>
               <div className="text-[11px]">如需编辑请在 VSCode 中打开</div>
             </div>
           ) : fileData ? (
