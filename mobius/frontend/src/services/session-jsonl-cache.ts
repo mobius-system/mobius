@@ -22,7 +22,7 @@ const INDEX_UPDATED_AT = 'updatedAt'
 // LRU 上限: 最多缓存 128 个 session.
 export const MAX_CACHED_SESSIONS = 128
 // 每个 session 缓存的尾部条目数上限 (与后端 tail / 前端显示窗口对齐).
-export const MAX_ENTRIES_PER_SESSION = 80
+export const MAX_ENTRIES_PER_SESSION = 200
 
 export type JsonlSnapshot = {
   entries: any[]

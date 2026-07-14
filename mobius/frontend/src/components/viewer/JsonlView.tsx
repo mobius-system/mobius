@@ -15,7 +15,7 @@ import { buildRounds } from './rounds'
 import { buildHeaderSummary } from './header-summary'
 import { ContinuationGroup, RoundGroup, EntryCardWithImages } from './RoundGroups'
 
-const JSONL_INITIAL_WINDOW_SIZE = 80
+const JSONL_INITIAL_WINDOW_SIZE = 200
 
 function JsonlInitialSkeleton() {
   return (

@@ -4,7 +4,7 @@ import * as crypto from 'crypto';
 import * as watcher from './jsonl-watcher';
 
 const DEFAULT_MAX_LINES = 10000;
-const DEFAULT_HISTORY_TAIL = 80;
+const DEFAULT_HISTORY_TAIL = 200;
 const MAX_HISTORY_FETCH = 5000;
 const MOBIUS_JSONL_VERSION = 1;
 
