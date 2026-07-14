@@ -190,10 +190,15 @@ class AimuxSupervisor {
     const classify = (line) => {
       this.opts.onLog?.(line);
       const lower = line.toLowerCase();
-      if (/command failed|request_id=/.test(lower)) return;
-      if (/error|fail|refused|expired|invalid|traceback|exception/.test(lower)) {
+      // 命令级噪声（命令崩溃首行 + 整段 Python traceback）与 bridge 连接无关 —— bridge 仍连着，不改连接状态。
+      // 旧版宽泛正则 /error|fail|traceback|exception/ 会把这些行误判成 failed（"诊断太敏感"根因）。
+      if (/command (crashed|failed)|request_id=/.test(lower) || /traceback \(most recent call last\)/.test(lower) || /^file ".+", line \d+, in /.test(lower) || /^\[failed\]/.test(lower)) return;
+      // 仅连接级故障才算 failed（持久性失败由 child.exit 兜底）；通用 error/fail 不再触发。
+      if (/connection (refused|reset|closed|error)|connect.*failed|failed to connect|unauthorized|forbidden|\b40[13]\b|token.*(expired|invalid)|jwt.*(expired|invalid)|reconnect.*(failed|exhaust|gave up|giving up)|max retries exceeded/.test(lower)) {
         onStatus({ state: "failed", detail: line, identifier });
-      } else if (/connected|registered|event stream|sse/i.test(lower)) {
+        return;
+      }
+      if (/connected|registered|event stream|heartbeat|\bsse\b/.test(lower)) {
         onStatus({ state: "connected", detail: line, identifier });
       }
     };

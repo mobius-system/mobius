@@ -72,12 +72,31 @@ export class AimuxSupervisor {
     const classify = (line: string) => {
       this.opts.onLog?.(line);
       const lower = line.toLowerCase();
-      // 命令执行失败 (如 send_keys 到不存在的 session) 不是连接失败 — bridge 仍连着, 只是某条命令报错.
-      // aimux 日志特征: 含 "command failed" 或 "request_id=". 跳过, 不改连接状态, 避免误标 failed.
-      if (/command failed|request_id=/.test(lower)) return;
-      if (/error|fail|refused|expired|invalid|traceback|exception/.test(lower)) {
+
+      // === 命令级噪声：与 bridge 连接无关，不改连接状态（"诊断太敏感"的根因就在这里）===
+      // 某条命令执行失败（如 Windows 上 session.create 因找不到 powershell.exe 崩溃、send_keys 到不存在的 session）
+      // 时，aimux 会打印 "command crashed/failed ... request_id=" 紧跟一整段 Python traceback
+      // （"Traceback (most recent call last):" / 'File "...", line N, in ...' / "[failed] XxxError: ..."）。
+      // 这些行大量命中 error/fail/traceback，旧版宽泛正则会把【健康连接】误判成 failed。
+      // 实际 bridge 仍连着 —— 同期 file.read/write/stat 命令照常成功、心跳照常到达。
+      // （line 已被 handle() trim 过，故 traceback 帧以 "File " 开头。）
+      if (
+        /command (crashed|failed)|request_id=/.test(lower) || // 命令崩溃首行
+        /traceback \(most recent call last\)/.test(lower) ||  // traceback 头
+        /^file ".+", line \d+, in /.test(lower) ||            // traceback 帧
+        /^\[failed\]/.test(lower)                             // loguru [failed] 终止行
+      ) return;
+
+      // === 仅"连接级"故障才算 failed：bridge 连不上 / 被拒 / 鉴权失效 / 反连彻底失败。
+      // 通用 error/fail/exception 不再触发 —— 持久性连接失败由下方 child.exit 兜底
+      // （aimux 5/10/20s×3 重连耗尽会 exit → respawn，那时才标 failed，不会漏报）。
+      if (/connection (refused|reset|closed|error)|connect.*failed|failed to connect|unauthorized|forbidden|\b40[13]\b|token.*(expired|invalid)|jwt.*(expired|invalid)|reconnect.*(failed|exhaust|gave up|giving up)|max retries exceeded/.test(lower)) {
         onStatus({ state: "failed", detail: line, identifier });
-      } else if (/connected|registered|event stream|sse/i.test(lower)) {
+        return;
+      }
+
+      // === 连接健康标志：注册成功 / event stream 建立 / 心跳到达。心跳是连接在用的铁证，兼做误判自愈。
+      if (/connected|registered|event stream|heartbeat|\bsse\b/.test(lower)) {
         onStatus({ state: "connected", detail: line, identifier });
       }
     };
