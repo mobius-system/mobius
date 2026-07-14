@@ -34,6 +34,14 @@ One system to connect your team, AI agents, devices, and compute
 
 
 
+## News
+
+**2026-07-14**
+- **Code Conversation v2** workspace mode: a 3-pane layout (file browser + built-in CodeMirror editor with syntax highlighting and in-place file saving + chat) for browsing, editing, and discussing project files in one place.
+- **Scene-level first-visit tours** added for the Admin Center, Research page, and self-cognition workbench.
+
+
+
 ## Self-Evolving
 
 Mobius rewrites itself from your input. Send a **change request**, a **screenshot**, or a **reference link** — Mobius turns them into real code, UI, plugins, or workflow updates, without interrupting your work. Each iteration replaces a plank on the Ship of Theseus, quietly in the background.
