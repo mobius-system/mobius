@@ -25,6 +25,7 @@ Mobius 是（据我们所知）全球首个**自进化**的开源智能体操作
 - [查看当前知识](tutorial/28_view_current_knowledge.md)
 - [迁移 Skill 和 Memory](tutorial/12_migrate_skill_memory.md)
 - [跨会话搜索内容](tutorial/25_search_session_content.md)
+- [切换工作区布局](tutorial/29_switch_workspace_layout.md)
 
 ### III-管理员基础
 

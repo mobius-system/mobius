@@ -25,6 +25,7 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 - [View Current Knowledge](tutorial/28_view_current_knowledge.md)
 - [Migrate Skills & Memory](tutorial/12_migrate_skill_memory.md)
 - [Search Session Content](tutorial/25_search_session_content.md)
+- [Switch Workspace Layout](tutorial/29_switch_workspace_layout.md)
 
 ### III. Admin Basics
 

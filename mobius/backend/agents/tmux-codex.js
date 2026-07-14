@@ -882,29 +882,41 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, mobiusJsonl = null }) {
+  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, urgent = false, mobiusJsonl = null }) {
     if (!sessionId) throw new Error('sessionId required')
     const persisted = this.runtime.get(sessionId)
 
     if (windowExists(sessionId)) {
-      for (let i = 0; i < 3; i++) {
+      if (urgent) {
+        // 加急: 单次 C-c 中断当前 turn (实测单次足够). 用 await setTimeout 间隔,
+        // 不能用 spawnSync('sleep') 那会阻塞 event loop, 冻住整个 node 进程.
         tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'C-c'])
-        if (i < 2) await new Promise((r) => setTimeout(r, 50))
-      }
-      if (persisted) persisted.working = false
-      await new Promise((r) => setTimeout(r, 300))
-      // 兜底: C-c×3 偶发被 TUI 吞没停下. 空 prompt 软停 (/stop) 场景 escalate 到
-      // tmux kill-window 强杀托底, 保证 /stop 一定能让后台 agent 停下来 (window 死了
-      // 下次发消息会 respawn, 不影响会话续接). 双重确认 (capture busy → 再等 700ms 让
-      // TUI 消化 → 仍 busy) 避免状态行短暂残留导致误杀正常软停的 window.
-      if (!prompt) {
-        _realTimeInfoCache.delete(sessionId)
-        if (codexPaneStillBusy(sessionId)) {
-          await new Promise((r) => setTimeout(r, 700))
+        await new Promise((r) => setTimeout(r, 250))
+        // 中断后旧输入可能回到输入区, 先 Alt+Enter 换行隔开, 否则和新 prompt 粘一起
+        tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'M-Enter'])
+        await new Promise((r) => setTimeout(r, 80))
+      } else {
+        // /stop: 3 个 C-c 中断当前 turn (不 kill window). 实测一次会被 TUI 吞.
+        for (let i = 0; i < 3; i++) {
+          tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'C-c'])
+          if (i < 2) await new Promise((r) => setTimeout(r, 50))
+        }
+        if (persisted) persisted.working = false
+        await new Promise((r) => setTimeout(r, 300))
+        // 兜底: C-c×3 偶发被 TUI 吞没停下. 空 prompt 软停 (/stop) 场景 escalate 到
+        // tmux kill-window 强杀托底, 保证 /stop 一定能让后台 agent 停下来 (window 死了
+        // 下次发消息会 respawn, 不影响会话续接). urgent+新 prompt 路径要保留 window 接
+        // 新输入, 不走强杀. 双重确认 (capture busy → 再等 700ms 让 TUI 消化 → 仍 busy)
+        // 避免状态行短暂残留导致误杀正常软停的 window.
+        if (!prompt) {
           _realTimeInfoCache.delete(sessionId)
-          if (windowExists(sessionId) && codexPaneStillBusy(sessionId)) {
-            tmux(['kill-window', '-t', `${HUB}:${sessionId}`])
-            log(`[tmux-codex] /stop fallback: C-c×3 未停止, kill-window=${sessionId}`)
+          if (codexPaneStillBusy(sessionId)) {
+            await new Promise((r) => setTimeout(r, 700))
+            _realTimeInfoCache.delete(sessionId)
+            if (windowExists(sessionId) && codexPaneStillBusy(sessionId)) {
+              tmux(['kill-window', '-t', `${HUB}:${sessionId}`])
+              log(`[tmux-codex] /stop fallback: C-c×3 未停止, kill-window=${sessionId}`)
+            }
           }
         }
       }
