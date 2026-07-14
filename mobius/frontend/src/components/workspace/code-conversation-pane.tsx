@@ -62,6 +62,19 @@ function loadCodeSkin(): CodeSkinKey {
   } catch { return 'dark' }
 }
 
+// light 模式的编辑器主题: 背景与 cc.bg(#ffffff) 严格匹配, 语法高亮由 basicSetup 的
+// defaultHighlightStyle (深色 token, 为白底设计) 提供. 与 oneDark (dark 模式) 对称.
+const lightEditorTheme = EditorView.theme({
+  '&': { backgroundColor: '#ffffff', color: '#2c2c2c', height: '100%' },
+  '.cm-gutters': { backgroundColor: '#ffffff', color: '#9a9a9a', border: 'none', borderRight: '1px solid #e6e6e6' },
+  '.cm-activeLine': { backgroundColor: 'rgba(0,0,0,0.04)' },
+  '.cm-activeLineGutter': { backgroundColor: '#ffffff', color: '#2c2c2c' },
+  '.cm-selectionBackground': { backgroundColor: 'rgba(37,99,235,0.2)' },
+  '&.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(37,99,235,0.2)' },
+  '&.cm-focused': { outline: 'none' },
+  '.cm-foldPlaceholder': { backgroundColor: '#f0f0f0', border: '1px solid #e6e6e6', color: '#9a9a9a' },
+})
+
 // 按扩展名选 CodeMirror 语言包. 命中即给高亮 + 语言感知 (括号/注释/缩进); 未命中走纯文本.
 function languageForFile(name: string) {
   const ext = name.split('.').pop()?.toLowerCase() || ''
@@ -87,7 +100,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     })
   }, [])
   const cc = CODE_SKINS[skin]
-  const cmTheme: 'light' | 'dark' = skin
+  // 两套明确主题: dark=oneDark (背景 #282c34), light=lightEditorTheme (背景 #fff), 均与 cc.bg 严格匹配.
+  const cmTheme = skin === 'dark' ? oneDark : lightEditorTheme
 
   // ----- 文件树状态 (复用 ProjectFilesCard 的 loadDir/toggleDir 逻辑) -----
   const [dirs, setDirs] = useState<Record<string, DirState>>({})
