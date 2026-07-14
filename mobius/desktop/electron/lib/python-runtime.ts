@@ -78,11 +78,72 @@ export interface InstallProgress {
   detail?: string;
 }
 
-/** 确保 venv + aimux 就绪。已有 aimux 可执行则直接返回（幂等，不强制 pin 版本以免覆盖手动升级）。 */
+/** venv 根目录的 pyvenv.cfg，记录原始 Python 安装路径。 */
+const pyvenvCfgPath = (): string => path.join(venvDir(), "pyvenv.cfg");
+
+/** 从 pyvenv.cfg 提取 home 字段（原始 Python 所在目录）。 */
+function readPyvenvHome(): string | null {
+  const cfg = pyvenvCfgPath();
+  if (!fs.existsSync(cfg)) return null;
+  try {
+    const text = fs.readFileSync(cfg, "utf8");
+    for (const line of text.split("\n")) {
+      const m = line.match(/^\s*home\s*=\s*(.+)\s*$/i);
+      if (m) return m[1].trim();
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** 验证 venv 的 python.exe 是否真实可用。
+ *
+ *  双重检测：
+ *  1. 读 `pyvenv.cfg` 的 `home` 字段，检查指向的原始 Python 二进制是否还在
+ *  2. 真跑 `venvPython() --version` 确认能启动
+ *
+ *  跨版本升级后旧 venv 的 `pyvenv.cfg` 可能指向已被删除的旧版内置 python，
+ *  fs.existsSync 查 file 存在没用，必须溯源判断。 */
+async function verifyVenvPython(): Promise<{ ok: boolean; reason?: string }> {
+  const py = venvPython();
+  if (!fs.existsSync(py)) return { ok: false, reason: "venv python.exe 文件不存在" };
+
+  // 1) 检查 pyvenv.cfg 的 home 指向
+  const home = readPyvenvHome();
+  if (home) {
+    // home 指向的是 python 所在目录（如 resources/python/python/），
+    // 该目录下应有 python.exe（Windows）或 python3（macOS/Linux）
+    const exeCandidate = WIN
+      ? path.join(home, "python.exe")
+      : path.join(home, "bin", "python3");
+    if (!fs.existsSync(exeCandidate)) {
+      return { ok: false, reason: `pyvenv.cfg 指向的 Python 已删除: ${exeCandidate}` };
+    }
+  }
+
+  // 2) 真跑 --version 确认可执行
+  const r = await run(py, ["--version"]);
+  if (r.code !== 0) {
+    return { ok: false, reason: `venv python.exe 启动失败: ${r.stderr || r.stdout || "未知错误"}` };
+  }
+  return { ok: true };
+}
+
+/** 确保 venv + aimux 就绪。已有 aimux 可执行则直接返回（幂等，不强制 pin 版本以免覆盖手动升级）。
+ *  自动检测 venv 的 python 是否损坏（常见于旧版打包 python 路径被删），
+ *  损坏则删 venv 重建，不报"No Python at"迷惑用户。 */
 export async function ensureAimux(onProgress?: (p: InstallProgress) => void, onRaw?: (data: string) => void): Promise<{ ok: boolean; error?: string }> {
+  // Fast-path：aimux 已装好 → 验证 venv python 真实可用才跳过
   if (fs.existsSync(aimuxExe())) {
-    onProgress?.({ phase: "ready" });
-    return { ok: true };
+    const check = await verifyVenvPython();
+    if (check.ok) {
+      onProgress?.({ phase: "ready" });
+      return { ok: true };
+    }
+    // Venv python 坏了。常见原因：用户升级桌面端后，旧 venv 的 pyvenv.cfg 还记着已删旧版 Python 路径。
+    // 删 venv 目录，让下面正常流程用当前 bundled python 重建。
+    onProgress?.({ phase: "venv", detail: `旧 venv 已损坏 (${check.reason})，删除并重建…` });
+    onRaw?.(`[ensureAimux] venv python 不可用: ${check.reason}\n`);
+    await fs.promises.rm(venvDir(), { recursive: true, force: true }).catch(() => {});
   }
   const py = pythonExe();
   // 1) 建 venv。不带 --upgrade-deps：内置 python-build-standalone 的 pip 已够新，省一次联网升级
