@@ -9,13 +9,18 @@ function loadBackgroundFlowEnabled() {
   return stored == null ? false : stored === '1'
 }
 
-// 工作区布局模式: 'session' (现有会话监督布局) | 'editor-chat' (左 code-server 编辑器 + 右 Session 对话).
+// 工作区布局模式:
+//   'session'           - 现有会话监督布局 (左 Issue/sessions 侧栏 + 右 ChatArea)
+//   'editor-chat'       - 代码对话 v1: 左 code-server iframe 编辑器 + 右 Session 对话
+//   'code-conversation' - 代码对话 v2: 左原生文件浏览器 + 中代码浏览 + 右 Session 对话
 // 属于用户全局偏好, 持久化到 localStorage; 非法值一律回落 'session'.
 const WORKSPACE_LAYOUT_STORAGE_KEY = 'mobius:ui:workspace-layout'
-export type WorkspaceLayoutMode = 'session' | 'editor-chat'
+export type WorkspaceLayoutMode = 'session' | 'editor-chat' | 'code-conversation'
+const WORKSPACE_LAYOUT_MODES: WorkspaceLayoutMode[] = ['session', 'editor-chat', 'code-conversation']
 function loadWorkspaceLayoutMode(): WorkspaceLayoutMode {
   try {
-    return localStorage.getItem(WORKSPACE_LAYOUT_STORAGE_KEY) === 'editor-chat' ? 'editor-chat' : 'session'
+    const v = localStorage.getItem(WORKSPACE_LAYOUT_STORAGE_KEY)
+    return (WORKSPACE_LAYOUT_MODES as string[]).includes(v || '') ? (v as WorkspaceLayoutMode) : 'session'
   } catch {
     return 'session'
   }
@@ -362,11 +367,12 @@ export const useStore = create<AppState>((set) => ({
   setMobileNavOpen: (open) => set({ mobileNavOpen: !!open }),
   setMobileNavBreakpoint: (px) => set({ mobileNavBreakpoint: Number.isFinite(px) && px > 0 ? Math.round(px) : 900 }),
   setWorkspaceLayoutMode: (mode) => {
-    const next: WorkspaceLayoutMode = mode === 'editor-chat' ? 'editor-chat' : 'session'
+    const next: WorkspaceLayoutMode = (WORKSPACE_LAYOUT_MODES as string[]).includes(mode) ? mode : 'session'
     try { localStorage.setItem(WORKSPACE_LAYOUT_STORAGE_KEY, next) } catch { /* localStorage 不可用时静默 */ }
     set({ workspaceLayoutMode: next })
   },
   toggleWorkspaceLayoutMode: () => set((s) => {
+    // 兼容旧调用: 仅在 session <-> editor-chat 间切换 (不引入 v2, v2 走弹窗显式选择).
     const next: WorkspaceLayoutMode = s.workspaceLayoutMode === 'editor-chat' ? 'session' : 'editor-chat'
     try { localStorage.setItem(WORKSPACE_LAYOUT_STORAGE_KEY, next) } catch { /* localStorage 不可用时静默 */ }
     return { workspaceLayoutMode: next }

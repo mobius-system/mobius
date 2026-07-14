@@ -2471,6 +2471,38 @@ router.get('/:id/files', auth, (req: express.Request, res: express.Response) => 
   }
 });
 
+// 读取项目 bind_path 下单个文件内容 (代码对话 v2 的"代码浏览"用).
+// 复用 resolveProjectPath 做路径穿越防护; 限制: 必须是文件, ≤ 1.5MB (超出截断 + truncated:true),
+// 含 NUL 字节视为二进制不返回内容. 只读, 不写.
+const FILE_READ_MAX_BYTES = 1.5 * 1024 * 1024;
+router.get('/:id/file', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  if (!project.bind_path) return res.status(400).json({ error: '项目未绑定路径' });
+
+  const resolved = resolveProjectPath(project.bind_path, req.query.path || '/');
+  if ('error' in resolved) return res.status(400).json({ error: resolved.error });
+  const { absPath, relPath } = resolved;
+  let stat: fs.Stats;
+  try { stat = fs.statSync(absPath); } catch { return res.status(404).json({ error: 'Not found' }); }
+  if (!stat.isFile()) return res.status(400).json({ error: 'Not a file' });
+
+  try {
+    const buf = fs.readFileSync(absPath);
+    const name = path.basename(absPath);
+    // 二进制检测: NUL 字节出现即视为二进制, 不返回文本内容 (避免乱码污染前端).
+    if (buf.indexOf(0) !== -1) {
+      return res.json({ path: relPath, name, abs_path: absPath, size: buf.length, content: '', truncated: false, binary: true });
+    }
+    const fullText = buf.toString('utf8');
+    const truncated = buf.length > FILE_READ_MAX_BYTES;
+    const content = truncated ? fullText.slice(0, FILE_READ_MAX_BYTES) : fullText;
+    res.json({ path: relPath, name, abs_path: absPath, size: buf.length, content, truncated, binary: false });
+  } catch {
+    res.status(500).json({ error: 'Read failed' });
+  }
+});
+
 router.get('/:id/main-project-port', auth, (req: express.Request, res: express.Response) => {
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;

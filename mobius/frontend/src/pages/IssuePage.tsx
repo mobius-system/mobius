@@ -15,6 +15,7 @@ import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
 import { TruncatedText } from '../components/truncated-text'
 import { EditorPane } from '../components/workspace/editor-pane'
+import { CodeConversationPane } from '../components/workspace/code-conversation-pane'
 import { useEditorAvailability } from '../components/workspace/use-editor-availability'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/logo-review-demo'
@@ -47,12 +48,17 @@ export default function IssuePage() {
   const editorAvailable = !!currentSession && !!editorBindPath && !!editorVscodeUrl
   // v1 代码对话仅桌面端; 移动端强制走会话模式 (避免 ResizablePanel side=left 在窄屏变抽屉).
   const useEditorChat = workspaceLayoutMode === 'editor-chat' && editorAvailable && !isMobile
+  // v2 代码对话: 左原生文件浏览器 + 中代码浏览 + 右对话. 只需 bind_path, 不依赖 code-server.
+  const ccAvailable = !!currentSession && !!editorBindPath && !isMobile
+  const useCodeConversation = workspaceLayoutMode === 'code-conversation' && ccAvailable
   // editorMounted: 首次进入代码对话后置 true, 此后切回会话模式仅 hidden 保活 iframe (不卸载).
   // 切项目时重置 (新项目重新按需挂载). 用 {editorMounted && ...} 占住稳定 React 槽位,
   // 保证 ChatArea 兄弟索引恒定 → 切换布局时 ChatArea 不重挂 (SSE/草稿/Agent 全不动).
   const [editorMounted, setEditorMounted] = useState(false)
-  useEffect(() => { setEditorMounted(false) }, [projectId])
+  const [v2Mounted, setV2Mounted] = useState(false)
+  useEffect(() => { setEditorMounted(false); setV2Mounted(false) }, [projectId])
   useEffect(() => { if (useEditorChat) setEditorMounted(true) }, [useEditorChat])
+  useEffect(() => { if (useCodeConversation) setV2Mounted(true) }, [useCodeConversation])
   // 编辑器默认宽度 ≈ 视口 60% (留 ≥360px 给右侧对话); clamp 在 [min, max], max 不超过 视口-360 保对话最小宽.
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
   const editorMinWidth = 480
@@ -244,7 +250,7 @@ export default function IssuePage() {
       <TopNav />
       <div className="flex flex-1 min-h-0">
         {/* 左侧 sidebar — 仅「会话模式」可见; contents 让内部 ResizablePanel 仍是 flex 直接子元素 (会话模式零回归) */}
-        <div className={useEditorChat ? 'hidden' : 'contents'}>
+        <div className={(useEditorChat || useCodeConversation) ? 'hidden' : 'contents'}>
         <ResizablePanel
           storageKey="mobius:ui:sidebar:issue-sessions"
           defaultWidth={288}
@@ -404,12 +410,24 @@ export default function IssuePage() {
           </div>
         )}
 
+        {/* 中+左: 「代码对话 v2」三栏主体 (文件浏览器 + 代码浏览). 右侧 ChatArea 由下方渲染.
+            v2Mounted 保活文件树展开/选中状态; 切回会话/v1 仅 hidden. */}
+        {v2Mounted && !isMobile && (
+          <div className={useCodeConversation ? 'contents' : 'hidden'}>
+            <CodeConversationPane
+              projectId={projectId}
+              bindPath={editorBindPath}
+              vscodeWebUrl={editorVscodeUrl}
+            />
+          </div>
+        )}
+
         {/* 右侧:
               - 已选中 session → ChatArea (代码对话模式 layout=stacked; 同一 ChatArea 实例, 切换布局仅改修饰类, 不重挂)
               - URL 有 ?session 但 currentSession 还没对上 (拉取中) → Loading, 不闪 SessionOverview
               - 否则 → SessionOverview */}
         {currentSession ? (
-          <ChatArea layout={useEditorChat ? 'stacked' : 'default'} />
+          <ChatArea layout={(useEditorChat || useCodeConversation) ? 'stacked' : 'default'} />
         ) : sessionParam ? (
           <Loading text="正在加载会话..." />
         ) : (

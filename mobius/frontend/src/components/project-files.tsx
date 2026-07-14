@@ -15,11 +15,15 @@ type Entry = {
   abs_path: string
 }
 
+export type { Entry }
+
 type DirState = {
   loading?: boolean
   error?: string
   entries?: Entry[]
 }
+
+export type { DirState }
 
 function formatSize(n: number | null) {
   if (n === null) return ''
@@ -28,7 +32,9 @@ function formatSize(n: number | null) {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
-function fileIcon(name: string, type: 'dir' | 'file') {
+export { formatSize }
+
+export function fileIcon(name: string, type: 'dir' | 'file') {
   if (type === 'dir') return '📁'
   const ext = name.split('.').pop()?.toLowerCase() || ''
   const m: Record<string, string> = {
@@ -1011,7 +1017,7 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
   )
 }
 
-function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile, vscodeReady }: {
+export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile, vscodeReady, selectedAbsPath, fileActionLabel }: {
   relPath: string
   depth: number
   dirs: Record<string, DirState>
@@ -1019,6 +1025,10 @@ function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile
   onToggleDir: (relPath: string) => void
   onOpenFile: (entry: Entry) => void
   vscodeReady: boolean
+  // v2 代码对话: 当前选中文件的 abs_path, 命中时文件行高亮. 不传则不高亮.
+  selectedAbsPath?: string
+  // v2 代码对话: 文件行 hover title (默认"在 VSCode Web 打开", v2 传"预览文件").
+  fileActionLabel?: string
 }) {
   const state = dirs[relPath]
   if (!state) return null
@@ -1028,6 +1038,7 @@ function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile
   if (entries.length === 0) {
     return <div className="text-[11px] py-1 pl-4" style={{ color: 'var(--text-muted)' }}>(空目录)</div>
   }
+  const actionLabel = fileActionLabel || '在 VSCode Web 打开'
   return (
     <div>
       {entries.map(entry => {
@@ -1056,20 +1067,23 @@ function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile
                   onToggleDir={onToggleDir}
                   onOpenFile={onOpenFile}
                   vscodeReady={vscodeReady}
+                  selectedAbsPath={selectedAbsPath}
+                  fileActionLabel={fileActionLabel}
                 />
               )}
             </div>
           )
         }
+        const selected = !!selectedAbsPath && entry.abs_path === selectedAbsPath
         return (
           <button
             key={childPath}
             data-tour={fileTourTarget(entry.name)}
             onClick={() => vscodeReady && onOpenFile(entry)}
             disabled={!vscodeReady}
-            title={vscodeReady ? '在 VSCode Web 打开' : '未配置 VSCode Web'}
-            className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--bg-card-hover)] transition-colors text-[12px] disabled:cursor-default"
-            style={{ paddingLeft: `${depth * 16 + 8 + 14}px`, color: vscodeReady ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+            title={vscodeReady ? actionLabel : '未配置 VSCode Web'}
+            className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[12px] disabled:cursor-default ${selected ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
+            style={{ paddingLeft: `${depth * 16 + 8 + 14}px`, color: vscodeReady ? 'var(--text-primary)' : 'var(--text-muted)', background: selected ? 'color-mix(in srgb, var(--accent-primary) 16%, transparent)' : undefined }}>
             <span className="flex-shrink-0">{fileIcon(entry.name, 'file')}</span>
             <span className="truncate flex-1">{entry.name}</span>
             {entry.size !== null && (
