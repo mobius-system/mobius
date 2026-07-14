@@ -1,6 +1,6 @@
 {
   "name": "mobius-desktop",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "private": true,
   "description": "Mobius Desktop — thin Electron shell (Fork B) with bundled aimux reverse-connect.",
   "type": "module",
