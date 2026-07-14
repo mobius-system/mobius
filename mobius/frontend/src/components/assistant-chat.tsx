@@ -743,18 +743,22 @@ function clampPanelRect(left: number, top: number, width: number, height: number
   }
 }
 
-// 把 FAB 吸附到最近的视口角落 (左上/右上/左下/右下 四选一)
-// 四角关于视口中心对称, 所以用浮标中心所在象限即可判定最近角
-function snapFabToCorner(left: number, top: number) {
+function assistantFabMinTop() {
+  const isDesktop = typeof window !== 'undefined' && !!(window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop?.isDesktop
+  return isDesktop ? 64 : ASSISTANT_FAB_EDGE_MARGIN
+}
+
+// 把 FAB 吸附到左/右边缘, 纵向保留拖动落点。桌面端保留标题栏点击区, 不允许吸到顶角盖住窗口按钮。
+function snapFabToEdge(left: number, top: number) {
   const vw = window.innerWidth
   const vh = window.innerHeight
   const margin = ASSISTANT_FAB_EDGE_MARGIN
   const size = ASSISTANT_FAB_SIZE
   const cx = left + size / 2
-  const cy = top + size / 2
-  const finalLeft = cx <= vw / 2 ? margin : vw - size - margin
-  const finalTop = cy <= vh / 2 ? margin : vh - size - margin
-  return { left: finalLeft, top: finalTop }
+  const finalLeft = cx <= vw - cx ? margin : vw - size - margin
+  const minTop = assistantFabMinTop()
+  const maxTop = Math.max(minTop, vh - size - margin)
+  return { left: finalLeft, top: Math.max(minTop, Math.min(maxTop, top)) }
 }
 
 function readFabPos(): { left: number; top: number } | null {
@@ -1590,7 +1594,7 @@ export function AssistantChat() {
   // 懒初始化从 localStorage 恢复 (并吸附), 避免首屏从默认位闪烁到记忆位
   const [fabPos, setFabPos] = useState<{ left: number; top: number } | null>(() => {
     const restored = readFabPos()
-    return restored ? snapFabToCorner(restored.left, restored.top) : null
+    return restored ? snapFabToEdge(restored.left, restored.top) : null
   })
   const [fabDragging, setFabDragging] = useState(false)
   const [input, setInputState] = useState('')
@@ -2293,10 +2297,10 @@ export function AssistantChat() {
     const drag = fabDragRef.current
     if (drag && event.pointerId === drag.pointerId) {
       fabDragRef.current = null
-      // 拖动收尾: 吸附到最近角落 + 持久化 + 吃掉 click
+      // 拖动收尾: 吸附到左/右边缘 + 持久化 + 吃掉 click
       if (drag.dragging) {
         try { event.currentTarget.releasePointerCapture(drag.pointerId) } catch {}
-        const snapped = snapFabToCorner(
+        const snapped = snapFabToEdge(
           drag.startLeft + (event.clientX - drag.startX),
           drag.startTop + (event.clientY - drag.startY),
         )
@@ -2878,10 +2882,10 @@ export function AssistantChat() {
     setPanelStyle({})
   }, [panelSize])
 
-  // 视口尺寸变化时把 FAB 拉回可视区 (重新吸附到最近角落)
+  // 视口尺寸变化时把 FAB 拉回可视区 (重新吸附到左/右边缘)
   useEffect(() => {
     const onResize = () => {
-      setFabPos(prev => (prev ? snapFabToCorner(prev.left, prev.top) : prev))
+      setFabPos(prev => (prev ? snapFabToEdge(prev.left, prev.top) : prev))
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
