@@ -3141,8 +3141,116 @@ async function runAdminCenterTour(onDestroyed?: () => void): Promise<boolean> {
   return launchDriver(steps, onDestroyed)
 }
 
+// Research 课题页首触引导. 复用 lo663f 分镜文案 (短句, 中文优先).
+// 三视图 (对话/图谱/黑板) 靠 ?view= search param 切换, 点击后组件异步挂载, 故用与 admin 同构的
+// "点切换按钮 → 等容器挂载 → 讲解" 链式 step (单个 driver 实例内完成).
+function addResearchViewStep(
+  steps: DriveStep[],
+  toggleSelector: string,
+  viewSelector: string,
+  popover: { title: string; description: string; doneBtnText?: string },
+) {
+  addStepIfPresent(steps, toggleSelector, {
+    popover: {
+      ...popover,
+      nextBtnText: '切到这里看',
+      side: 'right',
+      align: 'start',
+    } as any,
+  } as any)
+  const lastStep = steps[steps.length - 1] as any
+  if (lastStep) {
+    const originalNext = lastStep.popover?.onNextClick
+    lastStep.popover = {
+      ...(lastStep.popover as any),
+      onNextClick: async (opts: any) => {
+        if (typeof originalNext === 'function') {
+          try { await originalNext(opts) } catch {}
+        }
+        clickIfPresent(toggleSelector)
+        await waitForElement(viewSelector, 3200)
+        opts.driver.refresh()
+        window.setTimeout(() => { try { opts.driver.moveNext() } catch {} }, 60)
+      },
+    }
+  }
+  addStepIfPresent(steps, viewSelector, {
+    popover: {
+      title: popover.title,
+      description: guideParagraphs(popover.description),
+      doneBtnText: popover.doneBtnText,
+      side: 'left',
+      align: 'start',
+    } as any,
+  } as any)
+}
+
 async function runResearchPageTour(onDestroyed?: () => void): Promise<boolean> {
-  // 占位: 第 3 步 (Research 页) 实现时填充. 期间返回 false 避免空 driver.
-  void onDestroyed
-  return false
+  await waitForElement('[data-tour="research-header"]', 4200)
+  await waitForElement('[data-tour="research-agent-list"]', 1800)
+
+  const steps: DriveStep[] = []
+  addStepIfPresent(steps, '[data-tour="research-header"]', {
+    popover: {
+      title: '研究课题工作台',
+      description: guideParagraphs(
+        '这是莫比乌斯的研究子系统。',
+        '一个研究课题里，可以组建多智能体团队协作。'
+      ),
+      nextBtnText: '看 Agent 列表',
+      doneBtnText: '我了解了',
+      side: 'right',
+      align: 'start',
+    },
+  })
+  addStepIfPresent(steps, '[data-tour="research-agent-list"]', {
+    popover: {
+      title: '研究员列表',
+      description: guideParagraphs(
+        '这里是这个课题里的研究员。',
+        '首席研究员锁定不可删，统筹全局；研究助理并行执行子任务，把进展写回黑板。'
+      ),
+      nextBtnText: '看新建入口',
+      doneBtnText: '我了解了',
+      side: 'right',
+      align: 'start',
+    },
+  })
+  addStepIfPresent(steps, '[data-tour="research-new-agent"]', {
+    popover: {
+      title: '新建研究员',
+      description: guideParagraphs(
+        '点这里可以创建单个研究员，也可以一键拉起一个团队。',
+        '团队默认一名首席加若干助理。'
+      ),
+      nextBtnText: '看协作黑板',
+      doneBtnText: '我了解了',
+      side: 'right',
+      align: 'start',
+    },
+  })
+  addResearchViewStep(steps, '[data-tour="research-toggle-blackboard"]', '[data-tour="research-blackboard"]', {
+    title: '协作黑板',
+    description: '黑板汇总各研究员实时写回的研究进展与结论，自动刷新。',
+    doneBtnText: '看研究图谱',
+  })
+  addResearchViewStep(steps, '[data-tour="research-toggle-graph"]', '[data-tour="research-graph"]', {
+    title: '研究图谱',
+    description: '图谱用节点图展示团队的分工与研究进展，可拖拽布局。',
+    doneBtnText: '完成',
+  })
+  addStepIfPresent(steps, '[data-tour="research-header"]', {
+    popover: {
+      title: '研究是项目级能力',
+      description: guideParagraphs(
+        '研究功能需在项目设置里开启。',
+        '想重看时从右上角问号进引导中心重温。'
+      ),
+      doneBtnText: '完成',
+      side: 'right',
+      align: 'start',
+    },
+  })
+
+  return launchDriver(steps, onDestroyed)
 }
