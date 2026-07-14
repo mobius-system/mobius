@@ -36,7 +36,7 @@ const MIN_PANEL_HEIGHT = 280
 const HISTORY_LIMIT = 80
 const ASSISTANT_CLEAR_STORAGE_PREFIX = 'assistant-clear-cutoffs'
 const ASSISTANT_FAB_VOICE_HOLD_MS = 1500
-// 小莫 FAB 可拖动 + 吸附边缘
+// 小莫 FAB 可拖动 + 吸附到视口角落
 const ASSISTANT_FAB_SIZE = 56 // w-14 h-14
 const ASSISTANT_FAB_EDGE_MARGIN = 20 // 与视口边缘留白 (1.25rem)
 const ASSISTANT_FAB_DRAG_THRESHOLD = 6 // 超过该位移视为拖动而非点击
@@ -743,17 +743,18 @@ function clampPanelRect(left: number, top: number, width: number, height: number
   }
 }
 
-// 把 FAB 吸附到左/右边缘 (按中心更靠近哪一侧决定), 纵向保留拖动落点 (夹在视口内)
-// 注: 不吸附上下边缘, 只在左右两侧之间选择
-function snapFabToEdge(left: number, top: number) {
+// 把 FAB 吸附到最近的视口角落 (左上/右上/左下/右下 四选一)
+// 四角关于视口中心对称, 所以用浮标中心所在象限即可判定最近角
+function snapFabToCorner(left: number, top: number) {
   const vw = window.innerWidth
   const vh = window.innerHeight
   const margin = ASSISTANT_FAB_EDGE_MARGIN
   const size = ASSISTANT_FAB_SIZE
   const cx = left + size / 2
-  const finalLeft = cx <= vw - cx ? margin : vw - size - margin
-  const clampVert = (t: number) => Math.max(margin, Math.min(vh - size - margin, t))
-  return { left: finalLeft, top: clampVert(top) }
+  const cy = top + size / 2
+  const finalLeft = cx <= vw / 2 ? margin : vw - size - margin
+  const finalTop = cy <= vh / 2 ? margin : vh - size - margin
+  return { left: finalLeft, top: finalTop }
 }
 
 function readFabPos(): { left: number; top: number } | null {
@@ -1589,7 +1590,7 @@ export function AssistantChat() {
   // 懒初始化从 localStorage 恢复 (并吸附), 避免首屏从默认位闪烁到记忆位
   const [fabPos, setFabPos] = useState<{ left: number; top: number } | null>(() => {
     const restored = readFabPos()
-    return restored ? snapFabToEdge(restored.left, restored.top) : null
+    return restored ? snapFabToCorner(restored.left, restored.top) : null
   })
   const [fabDragging, setFabDragging] = useState(false)
   const [input, setInputState] = useState('')
@@ -2292,10 +2293,10 @@ export function AssistantChat() {
     const drag = fabDragRef.current
     if (drag && event.pointerId === drag.pointerId) {
       fabDragRef.current = null
-      // 拖动收尾: 吸附到最近边缘 + 持久化 + 吃掉 click
+      // 拖动收尾: 吸附到最近角落 + 持久化 + 吃掉 click
       if (drag.dragging) {
         try { event.currentTarget.releasePointerCapture(drag.pointerId) } catch {}
-        const snapped = snapFabToEdge(
+        const snapped = snapFabToCorner(
           drag.startLeft + (event.clientX - drag.startX),
           drag.startTop + (event.clientY - drag.startY),
         )
@@ -2877,10 +2878,10 @@ export function AssistantChat() {
     setPanelStyle({})
   }, [panelSize])
 
-  // 视口尺寸变化时把 FAB 拉回可视区 (重新吸附到最近边缘)
+  // 视口尺寸变化时把 FAB 拉回可视区 (重新吸附到最近角落)
   useEffect(() => {
     const onResize = () => {
-      setFabPos(prev => (prev ? snapFabToEdge(prev.left, prev.top) : prev))
+      setFabPos(prev => (prev ? snapFabToCorner(prev.left, prev.top) : prev))
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)

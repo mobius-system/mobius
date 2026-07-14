@@ -107,7 +107,7 @@ export function WorkspaceLayoutToggle() {
         }}
       >
         <LayoutTemplate className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-        <span className="text-[12px] font-medium whitespace-nowrap">{currentLabel}</span>
+        {/* <span className="text-[12px] font-medium whitespace-nowrap">{currentLabel}</span> */}
       </button>
 
       {open && (

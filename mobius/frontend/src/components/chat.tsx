@@ -3407,7 +3407,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
               })()}
             </div>
             <div className="pointer-events-none absolute bottom-3 right-3 z-10 max-w-[55%] truncate text-right text-[10px]" style={{ color: sendingHint ? '#facc15' : 'var(--text-muted)' }}>
-              {sendingHint ?? 'Shift+Enter 换行'}
+              {sendingHint ?? ''}
             </div>
           </div>
           <div className="mobius-chat-input-actions mt-2 grid grid-cols-2 items-stretch gap-1.5 px-1">
