@@ -18,7 +18,28 @@ export type EditorAvailability = {
 
 type EditorMeta = { bindPath: string; vscodeWebUrl: string }
 const metaCache = new Map<string, EditorMeta>()
-const inflight = new Set<string>()
+const inflight = new Map<string, Promise<EditorMeta>>()
+
+function fetchEditorMeta(projectId: string): Promise<EditorMeta> {
+  const cached = metaCache.get(projectId)
+  if (cached) return Promise.resolve(cached)
+
+  const existing = inflight.get(projectId)
+  if (existing) return existing
+
+  const promise = api(`/api/projects/${projectId}/files?path=/`)
+    .then((data: any) => {
+      const meta: EditorMeta = { bindPath: data?.bind_path || '', vscodeWebUrl: data?.vscode_web_url || '' }
+      metaCache.set(projectId, meta)
+      return meta
+    })
+    .finally(() => {
+      inflight.delete(projectId)
+    })
+
+  inflight.set(projectId, promise)
+  return promise
+}
 
 export function useEditorAvailability(projectId: string | undefined | null, enabled: boolean): EditorAvailability {
   const key = projectId || ''
@@ -29,18 +50,14 @@ export function useEditorAvailability(projectId: string | undefined | null, enab
   useEffect(() => {
     if (!enabled || !key) return
     if (metaCache.has(key)) { setMeta(metaCache.get(key) ?? null); return }
-    if (inflight.has(key)) return
-    inflight.add(key)
-    setLoading(true)
     let cancelled = false
-    api(`/api/projects/${key}/files?path=/`).then((data: any) => {
-      const m: EditorMeta = { bindPath: data?.bind_path || '', vscodeWebUrl: data?.vscode_web_url || '' }
-      metaCache.set(key, m)
-      if (!cancelled) { setMeta(m); setLoading(false) }
+    setLoading(true)
+    fetchEditorMeta(key).then((m) => {
+      if (!cancelled) setMeta(m)
     }).catch(() => {
-      if (!cancelled) setLoading(false)
+      // 保持旧行为: 查询失败时只结束 loading, 不写入空缓存, 允许后续重试.
     }).finally(() => {
-      inflight.delete(key)
+      if (!cancelled) setLoading(false)
     })
     return () => { cancelled = true }
   }, [key, enabled])
