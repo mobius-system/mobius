@@ -45,7 +45,7 @@ type CodeSkinKey = 'dark' | 'light'
 // 中栏 (含头部工具栏) 的两套固定配色 — 与对应 CodeMirror 主题背景严格匹配, 独立于全局主题.
 // dark 取 oneDark 背景的前景色族; light 取白底深字. 这样头部工具栏与编辑区视觉一体.
 const CODE_SKINS: Record<CodeSkinKey, { bg: string; fg: string; muted: string; border: string; accent: string; hover: string }> = {
-  dark: { bg: '#282c34', fg: '#abb2bf', muted: '#5c6370', border: '#21252b', accent: '#61afef', hover: 'hover:bg-white/10' },
+  dark: { bg: '#121419', fg: '#9ea1ff', muted: '#7d8799', border: '#1f222a', accent: '#9ea1ff', hover: 'hover:bg-white/10' },
   light: { bg: '#ffffff', fg: '#2c2c2c', muted: '#9a9a9a', border: '#e6e6e6', accent: '#2563eb', hover: 'hover:bg-black/5' },
 }
 const CODE_SKIN_STORAGE_KEY = 'mobius:ui:code-editor-skin'
@@ -68,6 +68,23 @@ const lightEditorTheme = EditorView.theme({
   '&.cm-focused': { outline: 'none' },
   '.cm-foldPlaceholder': { backgroundColor: '#f0f0f0', border: '1px solid #e6e6e6', color: '#9a9a9a' },
 })
+
+// dark 模式的背景/前景覆盖层: oneDark 提供语法 token 配色 (深色背景专用, 好看),
+// 本覆盖层把编辑器/gutter 的背景与默认前景改成用户指定值 (#121419 / #9ea1ff / #7d8799),
+// token 高亮仍由 oneDark 提供. 必须放在 oneDark 之后 (extensions 末尾) 才能覆盖.
+const darkSkinOverride = EditorView.theme({
+  '&': { backgroundColor: '#121419', color: '#9ea1ff' },
+  '.cm-gutters': { backgroundColor: '#121419', color: '#7d8799', border: 'none' },
+  '.cm-activeLine': { backgroundColor: '#ffffff08' },
+  '.cm-activeLineGutter': { backgroundColor: '#121419', color: '#9ea1ff' },
+  '.cm-content': { caretColor: '#9ea1ff' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#9ea1ff' },
+  '.cm-selectionBackground': { backgroundColor: '#3a3d5a' },
+  '&.cm-focused .cm-selectionBackground': { backgroundColor: '#3a3d5a' },
+  '.cm-foldPlaceholder': { backgroundColor: '#1a1c22', border: '1px solid #2a2d3e', color: '#7d8799' },
+  '.cm-panels': { backgroundColor: '#121419', color: '#9ea1ff' },
+  '.cm-tooltip': { backgroundColor: '#1f222a', color: '#9ea1ff' },
+}, { dark: true })
 
 // 按扩展名映射到语言加载键. 命中即按需动态导入对应 CodeMirror 语言包 (含 @lezer 文法),
 // 未命中走纯文本. 语言包体积大 (尤其 @lezer/javascript / markdown), 若静态全量打入会让
@@ -109,8 +126,10 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     })
   }, [])
   const cc = CODE_SKINS[skin]
-  // 两套明确主题: dark=oneDark (背景 #282c34), light=lightEditorTheme (背景 #fff), 均与 cc.bg 严格匹配.
-  const cmTheme = skin === 'dark' ? oneDark : lightEditorTheme
+  // dark: theme='none' (不注入 @uiw 默认主题), 改由 extensions 里的 [oneDark, darkSkinOverride] 组合 —
+  //       oneDark 出 token 高亮, darkSkinOverride 在其后覆盖背景/前景为用户指定 #121419/#9ea1ff.
+  // light: theme=lightEditorTheme (背景 #fff).
+  const cmTheme: 'none' | typeof lightEditorTheme = skin === 'dark' ? 'none' : lightEditorTheme
 
   // ----- 文件树状态 (复用 ProjectFilesCard 的 loadDir/toggleDir 逻辑) -----
   const [dirs, setDirs] = useState<Record<string, DirState>>({})
@@ -256,14 +275,16 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     return () => { cancelled = true }
   }, [selected])
 
-  // extensions: basicSetup 默认提供行号/高亮/撤销/括号/折叠/搜索/补全等; 这里只补 indentWithTab + 换行 + 语言包.
+  // extensions: basicSetup 默认提供行号/高亮/撤销/括号/折叠/搜索/补全等; 这里补 indentWithTab + 换行 + 语言包.
+  // dark 模式额外追加 oneDark(token 高亮) + darkSkinOverride(覆盖背景/前景为 #121419/#9ea1ff, 必须在 oneDark 后).
   const extensions = useMemo(() => {
-    return [
+    const base = [
       keymap.of([indentWithTab]),
       EditorView.lineWrapping,
       ...(langExt ? [langExt] : []),
     ]
-  }, [langExt])
+    return skin === 'dark' ? [...base, oneDark, darkSkinOverride] : base
+  }, [langExt, skin])
 
   return (
     <div className="contents">
