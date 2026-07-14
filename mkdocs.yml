@@ -62,6 +62,7 @@ plugins:
             "View Current Knowledge": 查看当前知识
             "Migrate Skills & Memory": 迁移 Skill 和 Memory
             "Search Session Content": 跨会话搜索内容
+            "Switch Workspace Layout": 切换工作区布局
             "III. Admin Basics": III-管理员基础
             "Add a User": 添加用户
             "Monitor Agents": 监控智能体
@@ -103,6 +104,7 @@ nav:
       - View Current Knowledge: tutorial/28_view_current_knowledge.md
       - Migrate Skills & Memory: tutorial/12_migrate_skill_memory.md
       - Search Session Content: tutorial/25_search_session_content.md
+      - Switch Workspace Layout: tutorial/29_switch_workspace_layout.md
   - 'III. Admin Basics':
       - Add a User: tutorial/01_add_user.md
       - Monitor Agents: tutorial/08_monitor_agents.md
