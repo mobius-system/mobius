@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
+import { Component, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { CheckCircle2, X } from 'lucide-react'
 import { useStore, api } from './store'
@@ -6,15 +6,53 @@ import { startTextRedactionRuntime } from './services/text-redaction'
 import { THEME_NAMES } from './theme'
 import { applyCustomThemeToRoot, loadActiveCustomThemeId, loadCustomThemes } from './services/custom-themes'
 import { DesktopTitleBar } from './components/window-controls'
+import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services/handle-stale-chunk'
 
-const Login = lazy(() => import('./pages/Login'))
-const Welcome = lazy(() => import('./pages/Welcome'))
-const UserPage = lazy(() => import('./pages/UserPage'))
-const ProjectPage = lazy(() => import('./pages/ProjectPage'))
-const IssuePage = lazy(() => import('./pages/IssuePage'))
-const ResearchPage = lazy(() => import('./pages/ResearchPage'))
-const AssistantChat = lazy(() => import('./components/assistant-chat').then(module => ({ default: module.AssistantChat })))
-const TourController = lazy(() => import('./components/tour-controller').then(module => ({ default: module.TourController })))
+const Login = lazyWithRetry(() => import('./pages/Login'))
+const Welcome = lazyWithRetry(() => import('./pages/Welcome'))
+const UserPage = lazyWithRetry(() => import('./pages/UserPage'))
+const ProjectPage = lazyWithRetry(() => import('./pages/ProjectPage'))
+const IssuePage = lazyWithRetry(() => import('./pages/IssuePage'))
+const ResearchPage = lazyWithRetry(() => import('./pages/ResearchPage'))
+const AssistantChat = lazyWithRetry(() => import('./components/assistant-chat').then(module => ({ default: module.AssistantChat })))
+const TourController = lazyWithRetry(() => import('./components/tour-controller').then(module => ({ default: module.TourController })))
+
+// 渲染期 chunk 加载失败兜底: 自迭代重新部署后, 旧 tab 拉不到新 chunk 会在 render 抛错.
+// 没有 ErrorBoundary 时 React 18 会卸载整棵树 -> 白屏, 且该错误不冒泡到 window.onerror.
+// 这里捕获后, 若是 stale chunk 就走 triggerStaleReload (弹 confirm 硬刷新); 否则给手动刷新入口.
+class StaleChunkErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+  componentDidCatch(err: unknown) {
+    if (isStaleChunkError(err)) triggerStaleReload()
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          className="flex h-screen w-screen flex-col items-center justify-center gap-3"
+          style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)' }}
+        >
+          <div className="text-sm">页面加载失败，可能是 Mobius 刚完成一次自我迭代。</div>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-md border px-4 py-1.5 text-sm transition-colors hover:bg-[var(--bg-hover)]"
+            style={{ color: 'var(--text-primary)', borderColor: 'var(--border-color-strong)' }}
+          >
+            立即刷新
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 const SELF_ITERATION_STORAGE_KEY = 'mobius:self-iteration:backend-code-version'
 const SELF_ITERATION_WINDOW_MS = 3 * 60 * 1000
@@ -174,17 +212,19 @@ function AuthenticatedApp() {
   }
   return (
     <>
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route path="/" element={<RootRedirect />} />
-          <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
-          <Route path="/u/:user" element={<UserPage />} />
-          <Route path="/u/:user/p/:project" element={<ProjectPage />} />
-          <Route path="/u/:user/p/:project/i/:issue" element={<IssuePage />} />
-          <Route path="/u/:user/p/:project/r/:research" element={<ResearchPage />} />
-          <Route path="*" element={<RootRedirect />} />
-        </Routes>
-      </Suspense>
+      <StaleChunkErrorBoundary>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/" element={<RootRedirect />} />
+            <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
+            <Route path="/u/:user" element={<UserPage />} />
+            <Route path="/u/:user/p/:project" element={<ProjectPage />} />
+            <Route path="/u/:user/p/:project/i/:issue" element={<IssuePage />} />
+            <Route path="/u/:user/p/:project/r/:research" element={<ResearchPage />} />
+            <Route path="*" element={<RootRedirect />} />
+          </Routes>
+        </Suspense>
+      </StaleChunkErrorBoundary>
       <SelfIterationToast />
       <Suspense fallback={null}>
         <TourController />
@@ -245,9 +285,11 @@ export default function App() {
 
   if (!token || !user) {
     return (
-      <Suspense fallback={<RouteFallback />}>
-        <Login />
-      </Suspense>
+      <StaleChunkErrorBoundary>
+        <Suspense fallback={<RouteFallback />}>
+          <Login />
+        </Suspense>
+      </StaleChunkErrorBoundary>
     )
   }
 
