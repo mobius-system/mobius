@@ -473,6 +473,22 @@ function addStepIfPresent(steps: DriveStep[], selector: string, step: Omit<Drive
   })
 }
 
+// 无条件 push 一个 step (不因元素当前不存在而跳过). 用于"点切换→等挂载"链式 step 的目标 step:
+// 此刻元素还没挂载 (条件渲染), 但 onNextClick 的 poll 会等它出现后才 moveNext, 故切过去时元素已存在.
+// 复用 addStepIfPresent 的 onHighlightStarted (scrollIntoView + refresh) 逻辑.
+function pushStepAlways(steps: DriveStep[], selector: string, step: Omit<DriveStep, 'element'>) {
+  const originalOnHighlightStarted = step.onHighlightStarted
+  steps.push({
+    element: selector,
+    ...step,
+    onHighlightStarted: (element, activeStep, opts) => {
+      element?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' })
+      window.requestAnimationFrame(() => opts.driver.refresh())
+      originalOnHighlightStarted?.(element, activeStep, opts)
+    },
+  })
+}
+
 function firstPresent(selectors: string[]) {
   return selectors.find(selector => has(selector)) || ''
 }
@@ -3025,13 +3041,31 @@ export async function startSceneTour(scene: SceneTourKind, onDone?: (finished: b
 
 // 管理中心首触引导. 复用 tcrgsz 分镜文案 (每个 tab 一句中文).
 // 8 个 tab 条件挂载, 故采用"点 tab → 等内容挂载 → 讲解"链式 step (单个 driver 实例内完成).
+// 点切换按钮(tab/视图)后, 轮询等目标 section 挂载, 再 refresh+moveNext.
+// driver.js 的 onNextClick 是同步的, 不能 await; 故 moveNext 放 setTimeout 内轮询, 模仿
+// addClickNextStepIfPresent 的同步模式 (该模式已被现有 demo 路线证明可工作).
+function clickSwitchThenMoveNext(opts: { driver: Driver }, toggleSelector: string, sectionSelector: string) {
+  clickIfPresent(toggleSelector)
+  const started = Date.now()
+  const poll = () => {
+    if (Date.now() - started > 3200) return // 超时放弃, 避免永久卡住
+    if (document.querySelector(sectionSelector)) {
+      try { opts.driver.refresh() } catch {}
+      window.setTimeout(() => { try { opts.driver.moveNext() } catch {} }, 40)
+      return
+    }
+    window.setTimeout(poll, 80)
+  }
+  window.setTimeout(poll, 80)
+}
+
 function addAdminTabStep(
   steps: DriveStep[],
   tabSelector: string,
   sectionSelector: string,
   popover: { title: string; description: string; doneBtnText?: string },
 ) {
-  // 高亮 tab 按钮; 用户点"下一步"时, onNextClick 点该 tab, 等内容挂载, refresh 高亮后 moveNext.
+  // 高亮 tab 按钮; 用户点"下一步"时, 同步点该 tab, 轮询等 section 挂载后 refresh+moveNext 到 section 讲解 step.
   addStepIfPresent(steps, tabSelector, {
     popover: {
       ...popover,
@@ -3040,25 +3074,18 @@ function addAdminTabStep(
       align: 'center',
     } as any,
   } as any)
-  // 上面 step 的 onNextClick: 点 tab, 等内容挂载, 再前进到下面那个 section 讲解 step.
   const lastStep = steps[steps.length - 1] as any
   if (lastStep) {
-    const originalNext = lastStep.popover?.onNextClick
     lastStep.popover = {
       ...(lastStep.popover as any),
-      onNextClick: async (opts: any) => {
-        if (typeof originalNext === 'function') {
-          try { await originalNext(opts) } catch {}
-        }
-        clickIfPresent(tabSelector)
-        await waitForElement(sectionSelector, 3200)
-        opts.driver.refresh()
-        window.setTimeout(() => { try { opts.driver.moveNext() } catch {} }, 60)
+      onNextClick: (_element: any, _step: any, opts: { driver: Driver }) => {
+        clickSwitchThenMoveNext(opts, tabSelector, sectionSelector)
       },
     }
   }
-  // 切换后高亮该 tab 的 section 讲解一句.
-  addStepIfPresent(steps, sectionSelector, {
+  // 切换后高亮该 tab 的 section 讲解一句. 用 pushStepAlways: section 此刻可能未挂载 (条件渲染),
+  // 但 onNextClick 的 poll 会等它出现才 moveNext, 切过去时元素已存在.
+  pushStepAlways(steps, sectionSelector, {
     popover: {
       title: popover.title,
       description: guideParagraphs(popover.description),
@@ -3100,11 +3127,18 @@ async function runAdminCenterTour(onDestroyed?: () => void): Promise<boolean> {
       align: 'start',
     },
   })
-  addAdminTabStep(steps, '[data-tour="admin-tab-users"]', '[data-tour="admin-section-users"]', {
-    title: '用户管理',
-    description: '管员工账号、角色(管理员/成员)和权限。',
-    doneBtnText: '下一个模块',
+  // users 是默认激活 tab (页面打开即显示), 直接高亮讲解, 不需"切换"动作.
+  addStepIfPresent(steps, '[data-tour="admin-section-users"]', {
+    popover: {
+      title: '用户管理',
+      description: guideParagraphs('管员工账号、角色(管理员/成员)和权限。'),
+      nextBtnText: '下一个模块',
+      doneBtnText: '我了解了',
+      side: 'top',
+      align: 'center',
+    },
   })
+  // 其余 tab 需点击切换后讲解 (条件挂载, 故用链式 step: 点 tab → poll 等 section → moveNext).
   addAdminTabStep(steps, '[data-tour="admin-tab-models"]', '[data-tour="admin-section-models"]', {
     title: '模型接入',
     description: '配置各 AI 模型的接入通道、密钥和网络代理。',
@@ -3160,21 +3194,16 @@ function addResearchViewStep(
   } as any)
   const lastStep = steps[steps.length - 1] as any
   if (lastStep) {
-    const originalNext = lastStep.popover?.onNextClick
     lastStep.popover = {
       ...(lastStep.popover as any),
-      onNextClick: async (opts: any) => {
-        if (typeof originalNext === 'function') {
-          try { await originalNext(opts) } catch {}
-        }
-        clickIfPresent(toggleSelector)
-        await waitForElement(viewSelector, 3200)
-        opts.driver.refresh()
-        window.setTimeout(() => { try { opts.driver.moveNext() } catch {} }, 60)
+      onNextClick: (_element: any, _step: any, opts: { driver: Driver }) => {
+        clickSwitchThenMoveNext(opts, toggleSelector, viewSelector)
       },
     }
   }
-  addStepIfPresent(steps, viewSelector, {
+  // 视图切换后高亮容器. 用 pushStepAlways: blackboard/graph 容器此刻未挂载 (?view= 切换才渲染),
+  // 但 poll 会等它出现才 moveNext, 切过去时元素已存在.
+  pushStepAlways(steps, viewSelector, {
     popover: {
       title: popover.title,
       description: guideParagraphs(popover.description),
