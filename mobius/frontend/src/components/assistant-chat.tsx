@@ -743,24 +743,17 @@ function clampPanelRect(left: number, top: number, width: number, height: number
   }
 }
 
-// 把 FAB 当前落点吸附到最近的视口边缘 (上下左右四选一), 沿该边保留拖动落点
+// 把 FAB 吸附到左/右边缘 (按中心更靠近哪一侧决定), 纵向保留拖动落点 (夹在视口内)
+// 注: 不吸附上下边缘, 只在左右两侧之间选择
 function snapFabToEdge(left: number, top: number) {
   const vw = window.innerWidth
   const vh = window.innerHeight
   const margin = ASSISTANT_FAB_EDGE_MARGIN
   const size = ASSISTANT_FAB_SIZE
   const cx = left + size / 2
-  const cy = top + size / 2
-  const minHoriz = Math.min(cx, vw - cx) // 离左/右边的最近距离
-  const minVert = Math.min(cy, vh - cy) // 离上/下边的最近距离
-  const clampHoriz = (l: number) => Math.max(margin, Math.min(vw - size - margin, l))
+  const finalLeft = cx <= vw - cx ? margin : vw - size - margin
   const clampVert = (t: number) => Math.max(margin, Math.min(vh - size - margin, t))
-  if (minHoriz <= minVert) {
-    const finalLeft = cx <= vw - cx ? margin : vw - size - margin
-    return { left: finalLeft, top: clampVert(top) }
-  }
-  const finalTop = cy <= vh - cy ? margin : vh - size - margin
-  return { left: clampHoriz(left), top: finalTop }
+  return { left: finalLeft, top: clampVert(top) }
 }
 
 function readFabPos(): { left: number; top: number } | null {
