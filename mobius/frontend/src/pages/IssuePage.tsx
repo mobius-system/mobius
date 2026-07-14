@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronLeft, ChevronRight, MessageSquarePlus, Sparkles } from 'lucide-react'
 import { useStore, api } from '../store'
@@ -14,11 +14,12 @@ import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
 import { TruncatedText } from '../components/truncated-text'
-import { EditorPane } from '../components/workspace/editor-pane'
-import { CodeConversationPane } from '../components/workspace/code-conversation-pane'
 import { useEditorAvailability } from '../components/workspace/use-editor-availability'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/logo-review-demo'
+
+const EditorPane = lazy(() => import('../components/workspace/editor-pane').then(m => ({ default: m.EditorPane })))
+const CodeConversationPane = lazy(() => import('../components/workspace/code-conversation-pane').then(m => ({ default: m.CodeConversationPane })))
 
 const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
 const SESSION_OVERVIEW_PAGE_SIZE = 15
@@ -394,18 +395,20 @@ export default function IssuePage() {
               side="left"
               className="border-r flex flex-col"
               style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
-              <EditorPane
-                projectName={project?.name || projectId}
-                bindPath={editorBindPath}
-                vscodeWebUrl={editorVscodeUrl}
-                leading={
-                  <SessionSwitcher
-                    sessions={sortedSessions}
-                    currentId={currentSession?.session_id}
-                    onPick={goToSession}
-                  />
-                }
-              />
+              <Suspense fallback={<WorkspacePaneLoading label="正在加载代码对话 v1..." />}>
+                <EditorPane
+                  projectName={project?.name || projectId}
+                  bindPath={editorBindPath}
+                  vscodeWebUrl={editorVscodeUrl}
+                  leading={
+                    <SessionSwitcher
+                      sessions={sortedSessions}
+                      currentId={currentSession?.session_id}
+                      onPick={goToSession}
+                    />
+                  }
+                />
+              </Suspense>
             </ResizablePanel>
           </div>
         )}
@@ -414,11 +417,22 @@ export default function IssuePage() {
             v2Mounted 保活文件树展开/选中状态; 切回会话/v1 仅 hidden. */}
         {v2Mounted && !isMobile && (
           <div className={useCodeConversation ? 'contents' : 'hidden'}>
-            <CodeConversationPane
-              projectId={projectId}
-              bindPath={editorBindPath}
-              vscodeWebUrl={editorVscodeUrl}
-            />
+            <Suspense
+              fallback={
+                <div
+                  className="flex flex-1 items-center justify-center border-r"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
+                >
+                  <WorkspacePaneLoading label="正在加载代码对话 v2..." />
+                </div>
+              }
+            >
+              <CodeConversationPane
+                projectId={projectId}
+                bindPath={editorBindPath}
+                vscodeWebUrl={editorVscodeUrl}
+              />
+            </Suspense>
           </div>
         )}
 
@@ -472,6 +486,15 @@ export default function IssuePage() {
         onClose={() => setDeletingSession(null)}
         confirmText="删除"
         confirmClass="bg-red-500 hover:bg-red-600" />}
+    </div>
+  )
+}
+
+function WorkspacePaneLoading({ label }: { label: string }) {
+  return (
+    <div className="flex h-full min-h-[160px] w-full flex-col items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
+      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+      <div className="text-[12px]">{label}</div>
     </div>
   )
 }

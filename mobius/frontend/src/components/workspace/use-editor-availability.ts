@@ -4,8 +4,8 @@ import { api } from '../../store'
 // =====================================================================
 // useEditorAvailability — 查询某项目是否具备 "左代码" 能力 (bind_path + VSCODE_WEB_URL).
 // 复用 /api/projects/:id/files?path=/ (与 OpenInVSCodeButton / ProjectFilesCard 同源).
-// 模块级缓存 (Map) + 并发去重 (Set): 顶栏按钮 / EditorPane / IssuePage 三处共用,
-// 同一项目只发一次请求, 结果跨组件共享.
+// 模块级缓存 (Map) + 并发 Promise 去重: 顶栏按钮 / EditorPane / IssuePage 三处共用,
+// 同一项目只发一次请求, 所有调用者订阅同一个结果并各自更新本地 state.
 //
 // enabled 为 false 时完全不拉取 (避免在 UserPage/ProjectPage 等无关页面发请求);
 // 典型用法: enabled = 在 issue/research 路由 && 已有 currentSession.
