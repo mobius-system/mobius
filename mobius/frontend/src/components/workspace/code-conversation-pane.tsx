@@ -57,6 +57,24 @@ function languageForFile(name: string) {
   return undefined
 }
 
+// 透明背景主题: 覆盖 oneDark / 默认主题自带的固定背景色 (深色 #282c34 / 浅色 #fff),
+// 让编辑器背景/行号栏/当前行/选区全部跟随 mobius CSS 变量 -> 与父容器 var(--bg-primary) 融为一体,
+// 深浅主题自适应. 语法高亮的 token 颜色仍由 oneDark(深) / defaultHighlightStyle(浅) 提供.
+// 必须作为 theme prop 传入 (放 extensions 末尾, 才能覆盖前面的固定背景).
+const transparentTheme = EditorView.theme({
+  '&': { backgroundColor: 'transparent', color: 'var(--text-primary)', height: '100%' },
+  '.cm-scroller': { fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', lineHeight: '1.55' },
+  '.cm-content': { backgroundColor: 'transparent' },
+  '.cm-gutters': { backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRight: '1px solid var(--border-color)' },
+  '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--text-primary) 5%, transparent)' },
+  '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--text-secondary)' },
+  '.cm-selectionMatch': { backgroundColor: 'color-mix(in srgb, var(--accent-primary) 25%, transparent)' },
+  '.cm-selectionBackground': { backgroundColor: 'color-mix(in srgb, var(--accent-primary) 30%, transparent)' },
+  '&.cm-focused .cm-selectionBackground': { backgroundColor: 'color-mix(in srgb, var(--accent-primary) 30%, transparent)' },
+  '&.cm-focused': { outline: 'none' },
+  '.cm-foldPlaceholder': { backgroundColor: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' },
+})
+
 export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: CodeConversationPaneProps) {
   const theme = useStore(s => s.theme)
   // ----- 文件树状态 (复用 ProjectFilesCard 的 loadDir/toggleDir 逻辑) -----

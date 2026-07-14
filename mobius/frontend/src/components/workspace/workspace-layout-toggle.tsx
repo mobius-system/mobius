@@ -50,7 +50,9 @@ export function WorkspaceLayoutToggle() {
   }, [open])
 
   // UserPage / ProjectPage / 移动端不显示.
-  if (!onIssueOrResearch || isMobile) return null
+  // 自迭代项目 (is_self_develop, bind_path === APP_DIR) 也不显示: 该项目是 AI 自我改造 Mobius
+  // 的内部项目, "代码对话" 是面向终端用户的开发工作区, 在此项目上无意义且干扰 agent 工作流.
+  if (!onIssueOrResearch || isMobile || currentProject?.is_self_develop) return null
 
   const v1Available = !!currentSession && !!bindPath && !!vscodeWebUrl
   const v2Available = !!currentSession && !!bindPath
