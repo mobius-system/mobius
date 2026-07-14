@@ -158,7 +158,7 @@ export default function ResearchBlackboard({ researchId }: { researchId: string 
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0" style={{ background: 'var(--bg-primary)' }}>
+    <div className="flex flex-col h-full min-h-0" style={{ background: 'var(--bg-primary)' }} data-tour="research-blackboard">
       <div className="px-3 py-2 border-b flex items-center gap-2 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
         <div className="flex-1 min-w-0">
           <div className="text-[12px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>

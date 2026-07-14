@@ -114,7 +114,18 @@ const DEFAULTS: any = Object.freeze({
   // 按用户维度持久化: 换设备/换浏览器不再重复触发首登引导. value=true 表示该用户已看过;
   // 管理员在本文件清掉某用户条目后, 该用户下次登录会重新看到首登引导.
   userFirstLoginSeen: {},
+  // 场景级首触引导已看标记 (per-user × per-scene 嵌套字典). 与 userFirstLoginSeen 并行,
+  // 不影响首登引导. scene 取自 SCENE_SEEN_WHITELIST (admin-center/research-page/self-cognition).
+  // 结构: { [userId]: { [scene]: true } }. 清掉某用户某 scene 条目后, 该用户下次进入该场景重新触发引导.
+  userSceneSeen: {},
 })
+
+// 场景级首触引导白名单 (防任意 scene 写入).
+const SCENE_SEEN_WHITELIST = ['admin-center', 'research-page', 'self-cognition'] as const
+function normalizeSceneForSeen(scene: any): string | null {
+  const s = typeof scene === 'string' ? scene : ''
+  return (SCENE_SEEN_WHITELIST as readonly string[]).includes(s) ? s : null
+}
 
 function defaultsClone(): any {
   return JSON.parse(JSON.stringify(DEFAULTS))
@@ -585,6 +596,25 @@ function normalizeUserFirstLoginSeenForRead(value: any): Record<string, true> {
   return out
 }
 
+// 场景级首触引导已看标记 (per-user × per-scene). 只保留白名单 scene 且 value=true 的条目.
+function normalizeUserSceneSeenForRead(value: any): Record<string, Record<string, true>> {
+  const out: Record<string, Record<string, true>> = {}
+  const obj = value && typeof value === 'object' ? value : {}
+  for (const [rawUser, rawScenes] of Object.entries(obj)) {
+    try {
+      const id = normalizeUserId(rawUser)
+      const scenes = rawScenes && typeof rawScenes === 'object' ? rawScenes : {}
+      const cleaned: Record<string, true> = {}
+      for (const [rawScene, rawValue] of Object.entries(scenes)) {
+        const scene = normalizeSceneForSeen(rawScene)
+        if (scene && (rawValue === true || rawValue === 1 || rawValue === 'true')) cleaned[scene] = true
+      }
+      if (Object.keys(cleaned).length > 0) out[id] = cleaned
+    } catch {}
+  }
+  return out
+}
+
 function normalizeLightModelApiForRead(value: any): any {
   const obj = value && typeof value === 'object' ? value : {}
   return {
@@ -651,6 +681,9 @@ function loadSettings(): any {
     }
     if (parsed && typeof parsed === 'object' && parsed.userFirstLoginSeen) {
       merged.userFirstLoginSeen = normalizeUserFirstLoginSeenForRead(parsed.userFirstLoginSeen)
+    }
+    if (parsed && typeof parsed === 'object' && parsed.userSceneSeen) {
+      merged.userSceneSeen = normalizeUserSceneSeenForRead(parsed.userSceneSeen)
     }
     return merged
   } catch (e) {
@@ -929,6 +962,32 @@ function setUserFirstLoginSeen(userId: any): void {
   writeSettings(next)
 }
 
+// 场景级首触引导: 某用户是否已看过某场景引导 (按用户×场景维度持久化, 跨设备生效).
+// scene 必须在白名单内, 否则一律返回 false (视为未看过).
+function getUserSceneSeen(userId: any, scene: any): boolean {
+  const id = normalizeUserId(userId)
+  const sceneKey = normalizeSceneForSeen(scene)
+  if (!sceneKey) return false
+  const map = loadSettings().userSceneSeen || {}
+  return map[id]?.[sceneKey] === true
+}
+
+// 标记某用户已看过某场景引导. scene 不在白名单则忽略. 只置 true, 不提供清除.
+function markUserSceneSeen(userId: any, scene: any): void {
+  const id = normalizeUserId(userId)
+  const sceneKey = normalizeSceneForSeen(scene)
+  if (!sceneKey) return
+  const next = loadSettings()
+  if (!next.userSceneSeen || typeof next.userSceneSeen !== 'object') {
+    next.userSceneSeen = {}
+  }
+  if (!next.userSceneSeen[id] || typeof next.userSceneSeen[id] !== 'object') {
+    next.userSceneSeen[id] = {}
+  }
+  next.userSceneSeen[id][sceneKey] = true
+  writeSettings(next)
+}
+
 const adminSettings = {
   MODEL_PROMPT_LIMIT_WINDOW_HOURS,
   MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
@@ -967,6 +1026,8 @@ const adminSettings = {
   setTextRedactionGlobal,
   getUserFirstLoginSeen,
   setUserFirstLoginSeen,
+  getUserSceneSeen,
+  markUserSceneSeen,
 }
 
 export {
@@ -1007,6 +1068,8 @@ export {
   setTextRedactionGlobal,
   getUserFirstLoginSeen,
   setUserFirstLoginSeen,
+  getUserSceneSeen,
+  markUserSceneSeen,
 }
 
 export default adminSettings

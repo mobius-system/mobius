@@ -2,7 +2,7 @@
  * viewer/JsonlView.tsx — jsonl 视图顶层组件.
  *
  * 从 jsonl-view.tsx 拆出. props.entries 是 jsonl 全部已读 entries; 这里负责:
- *  - 尾部窗口 (默认最近 200 条, 可"展开全部"/"加载全部"),
+ *  - 尾部窗口 (默认最近 JSONL_INITIAL_WINDOW_SIZE 条, 可"展开全部"/"加载全部"),
  *  - tool_result 合并回发起方 (mergeBashToolResultItems),
  *  - 对话轮次分组 (buildRounds),
  *  - 把 preItem / round / continuation 三类 block 喂给虚拟列表 (VirtualizedBlockList).
@@ -15,10 +15,36 @@ import { buildRounds } from './rounds'
 import { buildHeaderSummary } from './header-summary'
 import { ContinuationGroup, RoundGroup, EntryCardWithImages } from './RoundGroups'
 
+const JSONL_INITIAL_WINDOW_SIZE = 200
+
+function JsonlInitialSkeleton() {
+  return (
+    <div className="jsonl-initial-skeleton" aria-live="polite" role="status">
+      <div className="mb-3 flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+        <span className="relative inline-flex h-3.5 w-3.5 flex-shrink-0">
+          <span className="absolute inset-0 rounded-full border-2 border-[var(--text-muted)] opacity-20" />
+          <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-[var(--text-muted)] animate-spin" />
+        </span>
+        <span>正在加载会话数据...</span>
+      </div>
+      <div className="space-y-2" aria-hidden="true">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div key={index} className="jsonl-initial-skeleton__card">
+            <div className="jsonl-initial-skeleton__line w-1/3" />
+            <div className="jsonl-initial-skeleton__line w-5/6" />
+            <div className="jsonl-initial-skeleton__line w-2/3" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function JsonlView({
   entries,
   title,
   emptyLoadingText,
+  initialLoading,
   total,
   onLoadMore,
   loadingMore,
@@ -27,7 +53,8 @@ export function JsonlView({
   entries: AnyEntry[]
   title?: string
   emptyLoadingText?: string
-  // count-then-tail: 后端先发 cheap total (jsonl_meta), 然后只回灌末尾 200 条.
+  initialLoading?: boolean
+  // count-then-tail: 后端先发 cheap total (jsonl_meta), 然后只回灌末尾 JSONL_INITIAL_WINDOW_SIZE 条.
   // 没传 total 时回退到 entries.length 旧行为, 老页面不破.
   total?: number
   // 点 "加载全部" 时调用; 上层负责 REST 拉剩余条目并 set entries.
@@ -37,7 +64,7 @@ export function JsonlView({
   showMeta?: boolean
 }) {
   const [showAll, setShowAll] = useState(false)
-  const recent = useMemo(() => entries.slice(-(showAll ? entries.length : 200)), [entries, showAll])
+  const recent = useMemo(() => entries.slice(-(showAll ? entries.length : JSONL_INITIAL_WINDOW_SIZE)), [entries, showAll])
   const windowOffset = entries.length - recent.length
   const headerTitle = title === undefined ? 'JSONL' : title
   const visibleItems = useMemo(() => mergeBashToolResultItems(recent, windowOffset), [recent, windowOffset])
@@ -116,6 +143,7 @@ export function JsonlView({
   }
 
   if (entries.length === 0) {
+    if (initialLoading) return <JsonlInitialSkeleton />
     if (emptyLoadingText) {
       return (
         <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.05] px-4 py-4 text-[12px] text-amber-200 card-enter" aria-live="polite">
@@ -155,7 +183,7 @@ export function JsonlView({
             {loadingMore ? '加载中…' : `加载全部 (共 ${displayTotal} 条)`}
           </button>
         )}
-        {!hasRemoteMore && entries.length > 200 && !showAll && (
+        {!hasRemoteMore && entries.length > JSONL_INITIAL_WINDOW_SIZE && !showAll && (
           <button onClick={() => setShowAll(true)} className="text-[11px] px-2 py-0.5 rounded border border-[var(--border-color)] hover:bg-[var(--bg-hover)] text-[var(--text-muted)]">
             展开全部 ({entries.length})
           </button>

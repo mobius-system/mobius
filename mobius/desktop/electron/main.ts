@@ -2,7 +2,7 @@
 // 详见 README。关键：退出前务必 supervisor.stop() 杀 aimux；aimux 状态经徽标+IPC 常驻可见。
 import { app, BrowserWindow, Menu, ipcMain, shell, dialog, session } from "electron";
 import { spawn } from "node:child_process";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as os from "node:os";
 import * as fs from "node:fs";
@@ -49,6 +49,21 @@ function serverOrigin(): string {
 function defaultIdentifier(): string {
   const host = os.hostname().toLowerCase().replace(/[^a-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
   return `desktop-${host || "pc"}`;
+}
+
+function resolveLocalProjectPath(projectId: string, rawPath: unknown = "/"): { error: string } | { root: string; relPath: string; absPath: string } {
+  const saved = getProjectLocalPath(serverOrigin(), projectId);
+  if (!saved) return { error: "未绑定本机工作路径" };
+  const root = resolve(saved);
+  try {
+    if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
+  } catch (e) {
+    return { error: (e as Error).message || "本机工作路径不可用" };
+  }
+  const relPathRaw = String(rawPath || "/").replace(/\.\./g, "");
+  const absPath = resolve(root, relPathRaw.replace(/^[/\\]+/, ""));
+  if (absPath !== root && !absPath.startsWith(root + sep)) return { error: "Access denied" };
+  return { root, relPath: "/" + relative(root, absPath).replace(/\\/g, "/"), absPath };
 }
 
 // ——— 项目本地路径绑定状态（供前端 ProjectPathBindGate 拉取决定是否弹绑定弹窗）———
@@ -563,6 +578,74 @@ ipcMain.handle("project:get-work-mode", (_e, projectId: string) => getProjectWor
 ipcMain.handle("project:set-work-mode", (_e, projectId: string, mode: string) => {
   setProjectWorkMode(serverOrigin(), projectId, String(mode || "dual"));
   return { ok: true };
+});
+
+const LOCAL_FILE_READ_MAX_BYTES = 1.5 * 1024 * 1024;
+const LOCAL_FILE_WRITE_MAX_BYTES = 5 * 1024 * 1024;
+
+ipcMain.handle("project:list-local-files", (_e, projectId: string, rawPath: string = "/") => {
+  const resolved = resolveLocalProjectPath(projectId, rawPath);
+  if ("error" in resolved) return { ok: false, error: resolved.error };
+  const { root, absPath, relPath } = resolved;
+  try {
+    const stat = fs.statSync(absPath);
+    if (!stat.isDirectory()) return { ok: false, error: "Not a directory" };
+    const entries = fs.readdirSync(absPath, { withFileTypes: true })
+      .filter((entry) => !entry.name.startsWith(".") && entry.name !== "node_modules")
+      .map((entry) => {
+        const full = join(absPath, entry.name);
+        let st: fs.Stats;
+        try { st = fs.statSync(full); } catch { return null; }
+        return {
+          name: entry.name,
+          type: entry.isDirectory() ? "dir" : "file",
+          size: entry.isFile() ? st.size : null,
+          modified: st.mtime,
+          abs_path: full,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .sort((a, b) => a.type !== b.type ? (a.type === "dir" ? -1 : 1) : a.name.localeCompare(b.name));
+    return { ok: true, bind_path: root, path: relPath, entries };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || "Read failed" };
+  }
+});
+
+ipcMain.handle("project:read-local-file", (_e, projectId: string, rawPath: string = "/") => {
+  const resolved = resolveLocalProjectPath(projectId, rawPath);
+  if ("error" in resolved) return { ok: false, error: resolved.error };
+  const { absPath, relPath } = resolved;
+  try {
+    const stat = fs.statSync(absPath);
+    if (!stat.isFile()) return { ok: false, error: "Not a file" };
+    const buf = fs.readFileSync(absPath);
+    if (buf.indexOf(0) !== -1) {
+      return { ok: true, path: relPath, name: basename(absPath), abs_path: absPath, size: buf.length, content: "", truncated: false, binary: true };
+    }
+    const truncated = buf.length > LOCAL_FILE_READ_MAX_BYTES;
+    const content = (truncated ? buf.subarray(0, LOCAL_FILE_READ_MAX_BYTES) : buf).toString("utf8");
+    return { ok: true, path: relPath, name: basename(absPath), abs_path: absPath, size: buf.length, content, truncated, binary: false };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || "Read failed" };
+  }
+});
+
+ipcMain.handle("project:write-local-file", (_e, projectId: string, rawPath: string = "/", content: string = "") => {
+  const resolved = resolveLocalProjectPath(projectId, rawPath);
+  if ("error" in resolved) return { ok: false, error: resolved.error };
+  const { absPath, relPath } = resolved;
+  if (typeof content !== "string") return { ok: false, error: "content 必须是字符串" };
+  const byteLen = Buffer.byteLength(content, "utf8");
+  if (byteLen > LOCAL_FILE_WRITE_MAX_BYTES) return { ok: false, error: `文件过大 (${byteLen} 字节)，超过 ${LOCAL_FILE_WRITE_MAX_BYTES} 上限` };
+  try {
+    const stat = fs.statSync(absPath);
+    if (!stat.isFile()) return { ok: false, error: "Not a file" };
+    fs.writeFileSync(absPath, content, "utf8");
+    return { ok: true, path: relPath, name: basename(absPath), abs_path: absPath, size: byteLen, saved: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || "Write failed" };
+  }
 });
 
 // ——— 生命周期 ———

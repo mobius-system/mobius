@@ -988,7 +988,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
                 onClick={e => e.stopPropagation()}>
                 {user?.role === 'admin' && (
-                  <button onClick={() => { setShowUserMenu(false); openOverlay('admin') }}
+                  <button onClick={() => { setShowUserMenu(false); window.openAdminOverlay?.() }}
                     className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                     style={{ color: 'var(--text-primary)' }}>
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6m6 0h-6m6 0v-6a2 2 0 012-2h2a2 2 0 012 2v6m-6 0h6" /></svg>
@@ -1068,6 +1068,11 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 // =====================================================================
 type OverlayKind = 'admin' | null
 
+// 全局打开 overlay 的函数 (供引导系统等外部触发, 如「重温管理中心」按钮先打开 overlay 再启动引导).
+window.openAdminOverlay = () => {
+  _setOverlay?.('admin')
+  window.dispatchEvent(new CustomEvent('imac:admin-overlay-opened'))
+}
 let _setOverlay: ((kind: OverlayKind) => void) | null = null
 function openOverlay(kind: OverlayKind) { _setOverlay?.(kind) }
 

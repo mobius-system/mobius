@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { api, useStore } from '../store'
 import { readActiveGuidedDemo } from '../services/guided-demo'
@@ -12,6 +12,8 @@ import {
   PROJECT_IMPORT_DEMO_TOUR_EVENT,
   SELF_EVOLVE_DEMO_TOUR_EVENT,
   runFirstIssueTourForPath,
+  startSceneTour,
+  type SceneTourKind,
 } from '../services/tour'
 
 // 旧 localStorage 门禁 key (imac:first-login-tour-seen:v1:<userId>) 已废弃 — 首登引导改为
@@ -168,6 +170,69 @@ export function TourController() {
       void api('/api/profile/tour-first-login-seen', { method: 'POST' }).catch(() => {})
     }
   }
+
+  // 场景级首触引导: 进入某场景 (管理中心 / Research 课题页) 时, 按用户×场景维度查 seen 门禁,
+  // 未看过则自动启动无状态引导 (不与 demo 路线冲突). tour 销毁时标记 seen (跨设备生效).
+  // 注意: admin overlay 不是路由, 通过 shell.tsx 打开时 dispatch 'imac:admin-overlay-opened' 事件触发;
+  // Research 是路由, 直接在 pathname 含 /r/ 时触发.
+  const sceneMarkedSeenRef = useRef<SceneTourKind | null>(null)
+  useEffect(() => {
+    const userId = user?.id || ''
+    if (!userId) return
+    // demo 路线进行中时不弹场景引导, 避免双引导打架.
+    if (readActiveGuidedDemo()?.state.active) return
+
+    const armScene = (scene: SceneTourKind) => {
+      // 防同场景重复触发 (lastRunKey 不覆盖场景引导, 用本地 ref).
+      if (sceneMarkedSeenRef.current === scene) return
+      sceneMarkedSeenRef.current = scene
+      let cancelled = false
+      void api(`/api/profile/scene-seen/${scene}`)
+        .then((data: any) => {
+          if (cancelled) return
+          if (data?.seen) return
+          // 延迟让目标场景 DOM 渲染稳定再启动引导.
+          window.setTimeout(() => {
+            if (cancelled) return
+            void startSceneTour(scene, (finished) => {
+              if (finished) {
+                void api(`/api/profile/scene-seen/${scene}`, { method: 'POST' }).catch(() => {})
+              }
+            })
+          }, 360)
+        })
+        .catch(() => {})
+      return () => { cancelled = true }
+    }
+
+    const onAdminOpened = () => armScene('admin-center')
+    window.addEventListener('imac:admin-overlay-opened', onAdminOpened)
+
+    // Research 课题页路由触发 (/u/:user/p/:project/r/:research).
+    const researchMatch = /\/r\/[^/]+/.test(location.pathname)
+    if (researchMatch) armScene('research-page')
+    else if (sceneMarkedSeenRef.current === 'research-page') sceneMarkedSeenRef.current = null
+
+    // 手动重温 (guide-help 路线卡片): 跳过 seen 检查直接启动, 不标记 seen (用户主动重看).
+    // admin-center 需先打开 overlay; research-page 直接启动 (用户应在 research 页点).
+    const onSceneTourRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{ scene: SceneTourKind; force?: boolean }>).detail
+      if (!detail?.scene) return
+      const scene = detail.scene
+      if (detail.force) {
+        if (scene === 'admin-center') window.openAdminOverlay?.()
+        window.setTimeout(() => {
+          void startSceneTour(scene)
+        }, scene === 'admin-center' ? 420 : 80)
+      }
+    }
+    window.addEventListener('imac:scene-tour-request', onSceneTourRequest)
+
+    return () => {
+      window.removeEventListener('imac:admin-overlay-opened', onAdminOpened)
+      window.removeEventListener('imac:scene-tour-request', onSceneTourRequest)
+    }
+  }, [location.pathname, user?.id])
 
   return showFirstLoginGuide
     ? <GuideHelpModal firstLogin onClose={closeFirstLoginGuide} />

@@ -1,6 +1,6 @@
 ---
 name: mobius-extension
-description: 在莫比乌斯 AI 中开发一个新拓展插件 (特殊应用). 含后端 handler 协议、前端 SDK / 编译策略、目录与命名规范.
+description: 在莫比乌斯 AI 中开发一个新拓展插件 (特殊应用). 含后端 handler 协议、前端 SDK / 编译策略、目录与命名规范。一旦用户选择了这个SKILL（当然，也不排除选错的可能性），你需要认真考虑如何把用户的需求做成 Mobius 拓展，而不是一个完全独立的项目。
 ---
 
 # 开发 mobius 拓展

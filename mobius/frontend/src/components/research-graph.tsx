@@ -675,7 +675,7 @@ function GraphInner({ researchId }: { researchId: string }) {
   }
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full" data-tour="research-graph">
       <style>{REPLAY_CSS}</style>
       <div className="absolute top-3 right-3 z-10 flex gap-2">
         <button onClick={replaying ? stopReplay : startReplay} title="从头逐个回放节点出现过程"

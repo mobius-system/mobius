@@ -473,6 +473,22 @@ function addStepIfPresent(steps: DriveStep[], selector: string, step: Omit<Drive
   })
 }
 
+// 无条件 push 一个 step (不因元素当前不存在而跳过). 用于"点切换→等挂载"链式 step 的目标 step:
+// 此刻元素还没挂载 (条件渲染), 但 onNextClick 的 poll 会等它出现后才 moveNext, 故切过去时元素已存在.
+// 复用 addStepIfPresent 的 onHighlightStarted (scrollIntoView + refresh) 逻辑.
+function pushStepAlways(steps: DriveStep[], selector: string, step: Omit<DriveStep, 'element'>) {
+  const originalOnHighlightStarted = step.onHighlightStarted
+  steps.push({
+    element: selector,
+    ...step,
+    onHighlightStarted: (element, activeStep, opts) => {
+      element?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' })
+      window.requestAnimationFrame(() => opts.driver.refresh())
+      originalOnHighlightStarted?.(element, activeStep, opts)
+    },
+  })
+}
+
 function firstPresent(selectors: string[]) {
   return selectors.find(selector => has(selector)) || ''
 }
@@ -2995,4 +3011,275 @@ export async function runFirstIssueTourForPath(pathname: string, options: { forc
   } finally {
     preparing = false
   }
+}
+
+// =====================================================================
+// 场景级首触引导 (无状态纯讲解, 不走 demo 门禁).
+// 与 startIntroTour 同构: 不写 sessionStorage demo 状态, 不经 runFirstIssueTourForPath
+// (后者要求 demo.state.active). 由 tour-controller 在首次进入某场景时按 seen 门禁自动启动,
+// 也可由 guide-help 路线卡片手动重温. seen 门禁走后端 /api/profile/scene-seen/:scene (跨设备).
+// =====================================================================
+
+export type SceneTourKind = 'admin-center' | 'research-page'
+
+// 无状态场景引导分发器: 启动前清场 (避免与 demo 路线冲突), 然后跑对应场景路线.
+// onDone 在引导真正启动且销毁时 (用户看完或跳过) 调用, controller 据此标记 seen 门禁.
+// 若该场景路线未实现 (返回 false), 不调 onDone, controller 不标记 seen (避免吃掉未来要做的引导).
+export async function startSceneTour(scene: SceneTourKind, onDone?: (finished: boolean) => void): Promise<boolean> {
+  deactivateActiveDemoTour()
+  destroyActiveTour(true)
+  let started = false
+  const onDestroyed = () => { try { onDone?.(true) } catch {} }
+  if (scene === 'admin-center') started = await runAdminCenterTour(onDestroyed)
+  else if (scene === 'research-page') started = await runResearchPageTour(onDestroyed)
+  if (!started) {
+    // 未启动: 不绑定 seen (该场景路线尚未实现, 避免静默标记吃掉未来引导).
+    try { onDone?.(false) } catch {}
+  }
+  return started
+}
+
+// 管理中心首触引导. 复用 tcrgsz 分镜文案 (每个 tab 一句中文).
+// 8 个 tab 条件挂载, 故采用"点 tab → 等内容挂载 → 讲解"链式 step (单个 driver 实例内完成).
+// 点切换按钮(tab/视图)后, 轮询等目标 section 挂载, 再 refresh+moveNext.
+// driver.js 的 onNextClick 是同步的, 不能 await; 故 moveNext 放 setTimeout 内轮询, 模仿
+// addClickNextStepIfPresent 的同步模式 (该模式已被现有 demo 路线证明可工作).
+function clickSwitchThenMoveNext(opts: { driver: Driver }, toggleSelector: string, sectionSelector: string) {
+  clickIfPresent(toggleSelector)
+  const started = Date.now()
+  const poll = () => {
+    if (Date.now() - started > 3200) return // 超时放弃, 避免永久卡住
+    if (document.querySelector(sectionSelector)) {
+      try { opts.driver.refresh() } catch {}
+      window.setTimeout(() => { try { opts.driver.moveNext() } catch {} }, 40)
+      return
+    }
+    window.setTimeout(poll, 80)
+  }
+  window.setTimeout(poll, 80)
+}
+
+function addAdminTabStep(
+  steps: DriveStep[],
+  tabSelector: string,
+  sectionSelector: string,
+  popover: { title: string; description: string; doneBtnText?: string },
+) {
+  // 高亮 tab 按钮; 用户点"下一步"时, 同步点该 tab, 轮询等 section 挂载后 refresh+moveNext 到 section 讲解 step.
+  addStepIfPresent(steps, tabSelector, {
+    popover: {
+      ...popover,
+      nextBtnText: '切到这里看',
+      side: 'top',
+      align: 'center',
+    } as any,
+  } as any)
+  const lastStep = steps[steps.length - 1] as any
+  if (lastStep) {
+    lastStep.popover = {
+      ...(lastStep.popover as any),
+      onNextClick: (_element: any, _step: any, opts: { driver: Driver }) => {
+        clickSwitchThenMoveNext(opts, tabSelector, sectionSelector)
+      },
+    }
+  }
+  // 切换后高亮该 tab 的 section 讲解一句. 用 pushStepAlways: section 此刻可能未挂载 (条件渲染),
+  // 但 onNextClick 的 poll 会等它出现才 moveNext, 切过去时元素已存在.
+  pushStepAlways(steps, sectionSelector, {
+    popover: {
+      title: popover.title,
+      description: guideParagraphs(popover.description),
+      doneBtnText: popover.doneBtnText,
+      side: 'top',
+      align: 'center',
+    } as any,
+  } as any)
+}
+
+async function runAdminCenterTour(onDestroyed?: () => void): Promise<boolean> {
+  await waitForElement('[data-tour="admin-center-header"]', 4200)
+  await waitForElement('[data-tour="admin-tab-bar"]', 1800)
+
+  const steps: DriveStep[] = []
+  addStepIfPresent(steps, '[data-tour="admin-center-header"]', {
+    popover: {
+      title: '这里是管理中心',
+      description: guideParagraphs(
+        '这是系统级管理的总入口。',
+        '下面的模块按需切换，每个管一个方面。'
+      ),
+      nextBtnText: '看模块切换',
+      doneBtnText: '我了解了',
+      side: 'right',
+      align: 'start',
+    },
+  })
+  addStepIfPresent(steps, '[data-tour="admin-tab-bar"]', {
+    popover: {
+      title: '按模块切换',
+      description: guideParagraphs(
+        '这里八个模块各自独立。',
+        '跟着引导逐个看一遍，了解每个模块管什么。'
+      ),
+      nextBtnText: '看用户管理',
+      doneBtnText: '我了解了',
+      side: 'bottom',
+      align: 'start',
+    },
+  })
+  // users 是默认激活 tab (页面打开即显示), 直接高亮讲解, 不需"切换"动作.
+  addStepIfPresent(steps, '[data-tour="admin-section-users"]', {
+    popover: {
+      title: '用户管理',
+      description: guideParagraphs('管员工账号、角色(管理员/成员)和权限。'),
+      nextBtnText: '下一个模块',
+      doneBtnText: '我了解了',
+      side: 'top',
+      align: 'center',
+    },
+  })
+  // 其余 tab 需点击切换后讲解 (条件挂载, 故用链式 step: 点 tab → poll 等 section → moveNext).
+  addAdminTabStep(steps, '[data-tour="admin-tab-models"]', '[data-tour="admin-section-models"]', {
+    title: '模型接入',
+    description: '配置各 AI 模型的接入通道、密钥和网络代理。',
+    doneBtnText: '下一个模块',
+  })
+  addAdminTabStep(steps, '[data-tour="admin-tab-settings"]', '[data-tour="admin-section-settings"]', {
+    title: '系统设置',
+    description: '模型创建配额、全局默认模型和代理链都在这里。',
+    doneBtnText: '下一个模块',
+  })
+  addAdminTabStep(steps, '[data-tour="admin-tab-extensions"]', '[data-tour="admin-section-extensions"]', {
+    title: '拓展管理',
+    description: '安装、启用、隐藏莫比乌斯的拓展插件。',
+    doneBtnText: '下一个模块',
+  })
+  addAdminTabStep(steps, '[data-tour="admin-tab-migration"]', '[data-tour="skill-memory-manage-panel"]', {
+    title: 'Skill与Memory管理',
+    description: '迁移并管理项目级的技能和记忆。',
+    doneBtnText: '完成',
+  })
+  addStepIfPresent(steps, '[data-tour="admin-center-header"]', {
+    popover: {
+      title: '改动影响所有人',
+      description: guideParagraphs(
+        '这些设置对全站生效，改前先确认。',
+        '想重看时从右上角问号进引导中心重温。'
+      ),
+      doneBtnText: '完成',
+      side: 'right',
+      align: 'start',
+    },
+  })
+
+  return launchDriver(steps, onDestroyed)
+}
+
+// Research 课题页首触引导. 复用 lo663f 分镜文案 (短句, 中文优先).
+// 三视图 (对话/图谱/黑板) 靠 ?view= search param 切换, 点击后组件异步挂载, 故用与 admin 同构的
+// "点切换按钮 → 等容器挂载 → 讲解" 链式 step (单个 driver 实例内完成).
+function addResearchViewStep(
+  steps: DriveStep[],
+  toggleSelector: string,
+  viewSelector: string,
+  popover: { title: string; description: string; doneBtnText?: string },
+) {
+  addStepIfPresent(steps, toggleSelector, {
+    popover: {
+      ...popover,
+      nextBtnText: '切到这里看',
+      side: 'right',
+      align: 'start',
+    } as any,
+  } as any)
+  const lastStep = steps[steps.length - 1] as any
+  if (lastStep) {
+    lastStep.popover = {
+      ...(lastStep.popover as any),
+      onNextClick: (_element: any, _step: any, opts: { driver: Driver }) => {
+        clickSwitchThenMoveNext(opts, toggleSelector, viewSelector)
+      },
+    }
+  }
+  // 视图切换后高亮容器. 用 pushStepAlways: blackboard/graph 容器此刻未挂载 (?view= 切换才渲染),
+  // 但 poll 会等它出现才 moveNext, 切过去时元素已存在.
+  pushStepAlways(steps, viewSelector, {
+    popover: {
+      title: popover.title,
+      description: guideParagraphs(popover.description),
+      doneBtnText: popover.doneBtnText,
+      side: 'left',
+      align: 'start',
+    } as any,
+  } as any)
+}
+
+async function runResearchPageTour(onDestroyed?: () => void): Promise<boolean> {
+  await waitForElement('[data-tour="research-header"]', 4200)
+  await waitForElement('[data-tour="research-agent-list"]', 1800)
+
+  const steps: DriveStep[] = []
+  addStepIfPresent(steps, '[data-tour="research-header"]', {
+    popover: {
+      title: '研究课题工作台',
+      description: guideParagraphs(
+        '这是莫比乌斯的研究子系统。',
+        '一个研究课题里，可以组建多智能体团队协作。'
+      ),
+      nextBtnText: '看 Agent 列表',
+      doneBtnText: '我了解了',
+      side: 'right',
+      align: 'start',
+    },
+  })
+  addStepIfPresent(steps, '[data-tour="research-agent-list"]', {
+    popover: {
+      title: '研究员列表',
+      description: guideParagraphs(
+        '这里是这个课题里的研究员。',
+        '首席研究员锁定不可删，统筹全局；研究助理并行执行子任务，把进展写回黑板。'
+      ),
+      nextBtnText: '看新建入口',
+      doneBtnText: '我了解了',
+      side: 'right',
+      align: 'start',
+    },
+  })
+  addStepIfPresent(steps, '[data-tour="research-new-agent"]', {
+    popover: {
+      title: '新建研究员',
+      description: guideParagraphs(
+        '点这里可以创建单个研究员，也可以一键拉起一个团队。',
+        '团队默认一名首席加若干助理。'
+      ),
+      nextBtnText: '看协作黑板',
+      doneBtnText: '我了解了',
+      side: 'right',
+      align: 'start',
+    },
+  })
+  addResearchViewStep(steps, '[data-tour="research-toggle-blackboard"]', '[data-tour="research-blackboard"]', {
+    title: '协作黑板',
+    description: '黑板汇总各研究员实时写回的研究进展与结论，自动刷新。',
+    doneBtnText: '看研究图谱',
+  })
+  addResearchViewStep(steps, '[data-tour="research-toggle-graph"]', '[data-tour="research-graph"]', {
+    title: '研究图谱',
+    description: '图谱用节点图展示团队的分工与研究进展，可拖拽布局。',
+    doneBtnText: '完成',
+  })
+  addStepIfPresent(steps, '[data-tour="research-header"]', {
+    popover: {
+      title: '研究是项目级能力',
+      description: guideParagraphs(
+        '研究功能需在项目设置里开启。',
+        '想重看时从右上角问号进引导中心重温。'
+      ),
+      doneBtnText: '完成',
+      side: 'right',
+      align: 'start',
+    },
+  })
+
+  return launchDriver(steps, onDestroyed)
 }

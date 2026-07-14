@@ -94,11 +94,21 @@ async function runBuild(entry: any): Promise<void> {
   const distDir = path.join(frontendDir, 'dist');
   const pkgPath = path.join(frontendDir, 'package.json');
 
-  // 零编译兜底: 没有 package.json → 直接把 frontend/ 当 dist
-  if (!fs.existsSync(pkgPath)) {
+  // 零编译兜底: 没有 package.json, 或有 package.json 但无 "build" script → 直接把 frontend/ 当 dist.
+  // 后者常见于纯静态 ES module 拓展 (index.html 直连 <script src=main.js>, 源码即产物, 无需 vite).
+  let pkgHasBuildScript = false;
+  if (fs.existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      pkgHasBuildScript = !!pkg?.scripts && typeof pkg.scripts === 'object' && typeof pkg.scripts.build === 'string';
+    } catch {}
+  }
+  if (!fs.existsSync(pkgPath) || !pkgHasBuildScript) {
     try {
       copyAsDist(frontendDir, distDir);
-      pushLog(st, '[build-pipeline] 无 package.json, 直接拷贝 frontend/* → dist/\n');
+      pushLog(st, fs.existsSync(pkgPath)
+        ? '[build-pipeline] package.json 无 build script, 直接拷贝 frontend/* → dist/\n'
+        : '[build-pipeline] 无 package.json, 直接拷贝 frontend/* → dist/\n');
       st.state = 'ready';
       st.finishedAt = Date.now();
     } catch (e) {

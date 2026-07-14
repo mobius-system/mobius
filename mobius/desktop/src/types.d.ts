@@ -64,6 +64,25 @@ export interface MobiusDesktopBridge {
   getProjectLocalPath: (projectId: string) => Promise<string | null>;
   getProjectWorkMode: (projectId: string) => Promise<string | null>;
   setProjectWorkMode: (projectId: string, mode: string) => Promise<{ ok: boolean }>;
+  listProjectLocalFiles: (projectId: string, path: string) => Promise<{
+    ok: boolean;
+    error?: string;
+    bind_path?: string;
+    path?: string;
+    entries?: Array<{ name: string; type: "dir" | "file"; size: number | null; modified: string; abs_path: string }>;
+  }>;
+  readProjectLocalFile: (projectId: string, path: string) => Promise<{
+    ok: boolean;
+    error?: string;
+    path?: string;
+    name?: string;
+    abs_path?: string;
+    size?: number;
+    content?: string;
+    truncated?: boolean;
+    binary?: boolean;
+  }>;
+  writeProjectLocalFile: (projectId: string, path: string, content: string) => Promise<{ ok: boolean; error?: string; saved?: boolean; size?: number }>;
   getMachineInfo: () => Promise<string>;
   logout: () => Promise<void>;
 }
