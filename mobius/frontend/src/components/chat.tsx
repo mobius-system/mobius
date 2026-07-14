@@ -1418,11 +1418,12 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
   // JSONL 视图: 直接展示当前 backend 的原始 entries (Claude 或 Codex).
   // jsonl_history 覆盖, jsonl_entry 追加. 切 session 时 clear.
   const [jsonlEntries, setJsonlEntries] = useState<any[]>([])
-  // count-then-tail: 后端先发 jsonl_meta {total}, 再回灌末尾 200 条. 这里存服务端 total,
+  // count-then-tail: 后端先发 jsonl_meta {total}, 再回灌末尾窗口. 这里存服务端 total,
   // 用作 "加载全部" 按钮的判断和标题显示, 不依赖 entries.length.
   const [jsonlTotal, setJsonlTotal] = useState<number>(0)
   // 后端在 jsonl_meta 里附带的真实 jsonl 文件绝对路径, 用于原始数据弹窗标题展示.
   const [jsonlPath, setJsonlPath] = useState<string | null>(null)
+  const [jsonlInitialLoading, setJsonlInitialLoading] = useState(false)
   const [jsonlLoadingMore, setJsonlLoadingMore] = useState<boolean>(false)
   const pendingJsonlEntriesRef = useRef<any[]>([])
   const pendingJsonlTotalIncrementRef = useRef(0)
@@ -2496,13 +2497,16 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
           if (!isChunked) {
             clearPendingJsonlEntries()
             setJsonlEntries(entries)
+            setJsonlInitialLoading(false)
             freshHistoryReceivedRef.current = true
           } else if (msg.reset) {
             clearPendingJsonlEntries()
             setJsonlEntries(entries)
+            setJsonlInitialLoading(false)
             freshHistoryReceivedRef.current = true
           } else if (entries.length > 0) {
             setJsonlEntries(prev => prev.concat(entries))
+            setJsonlInitialLoading(false)
           }
           // 兼容老后端: 没有先发 jsonl_meta 时, 用 msg.total / entries.length 回退.
           const fallbackTotal = Number(msg.total)
@@ -2514,10 +2518,12 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
           // backend 写入新 entry, 追加. 后端带 session_id, 与本 stream 订阅的 sid 不符则丢弃 (双保险).
           if (msg.session_id && msg.session_id !== sid) return
           if (typeof msg.entry === 'undefined') return
+          setJsonlInitialLoading(false)
           // live 增量合批写入 state: 高频工具输出时避免一条 entry 触发一次 React render.
           enqueueJsonlEntry(msg.entry)
         }
         else if (msg.event === 'error') {
+          setJsonlInitialLoading(false)
           const text = formatSendError(msg)
           setLastSendError(text)
           addMessage({ role: 'system', content: `❌ ${text}` })
@@ -2531,6 +2537,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
     source.onerror = () => {
       if (source !== eventSourceRef.current) return
       setTyping(false)
+      setJsonlInitialLoading(false)
       setConnectionStatus('disconnected')
     }
   }, [addMessage, clearPendingJsonlEntries, enqueueJsonlEntry])
@@ -2601,6 +2608,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
     setStreamContent('')
     setTyping(false)
     setMessages([])
+    setJsonlInitialLoading(true)
     // stale-while-revalidate: 先同步读内存缓存, 命中则立刻展示上次尾部 (零延迟秒开);
     // 未命中再异步兜底 IndexedDB (跨刷新), 仍命中则在 SSE 权威数据到达前补上.
     // SSE jsonl_history (reset) 到达后会覆盖, 是唯一真相源.
@@ -2630,7 +2638,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
     connectEventStream(sid)
     return () => {
       clearPendingJsonlEntries()
-      // 离开当前 session: 把最新尾部写回浏览器缓存, 下次切回秒开 (只缓存尾部 200 条).
+      // 离开当前 session: 把最新尾部写回浏览器缓存, 下次切回秒开 (只缓存尾部窗口).
       const leavingSid = sid
       const latest = jsonlEntriesRef.current
       if (leavingSid && latest.length > 0) {
@@ -3163,6 +3171,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
           loadedJsonlCount={jsonlEntries.length}
           jsonlTotal={jsonlTotal}
           jsonlEmptyLoadingText={jsonlEmptyLoadingText}
+          jsonlInitialLoading={jsonlInitialLoading}
           jsonlLoadingMore={jsonlLoadingMore}
           showJsonlMeta={showJsonlMeta}
           backendAlive={backendAlive}
@@ -3650,7 +3659,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                 )}
               </span>
               <button onClick={async () => {
-                  // 复制全部前必须确保拿到完整 entries: 后端 SSE 默认只回灌末尾 200 条,
+                  // 复制全部前必须确保拿到完整 entries: 后端 SSE 默认只回灌末尾窗口,
                   // 且 REST 单次最多 5000 条. 这里分页拉满全量, 不省略不截断.
                   try {
                     const sid = currentSession?.session_id || currentTask?.task_id

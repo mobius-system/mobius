@@ -10,6 +10,7 @@ type SessionJsonlPanelProps = {
   loadedJsonlCount: number
   jsonlTotal: number
   jsonlEmptyLoadingText: string
+  jsonlInitialLoading: boolean
   jsonlLoadingMore: boolean
   showJsonlMeta: boolean
   backendAlive: boolean | null
@@ -31,6 +32,7 @@ function SessionJsonlPanelInner({
   loadedJsonlCount,
   jsonlTotal,
   jsonlEmptyLoadingText,
+  jsonlInitialLoading,
   jsonlLoadingMore,
   showJsonlMeta,
   backendAlive,
@@ -64,6 +66,7 @@ function SessionJsonlPanelInner({
               entries={visibleJsonl}
               title=""
               emptyLoadingText={jsonlEmptyLoadingText}
+              initialLoading={jsonlInitialLoading}
               total={effectiveTotal}
               onLoadMore={onLoadAllJsonl}
               loadingMore={jsonlLoadingMore}

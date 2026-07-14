@@ -8,7 +8,7 @@
  *   - 内存层 (Map): 同一次页面加载内, 在已访问过的 session 间反复横跳 → 同步命中, 零延迟.
  *   - IndexedDB 层: 跨刷新/重开浏览器后仍可秒开; LRU 上限 128 个 session, 超出淘汰最久未写.
  *
- * 缓存只存尾部 (最多 MAX_ENTRIES_PER_SESSION 条), 与后端 DEFAULT_HISTORY_TAIL (200) 及
+ * 缓存只存尾部 (最多 MAX_ENTRIES_PER_SESSION 条), 与后端 DEFAULT_HISTORY_TAIL 及
  * JsonlView 显示窗口一致. 用户点 "加载全部" 拉到的头部不进入缓存 (离开时只取尾部).
  *
  * 全部 best-effort: IndexedDB 不可用 (隐私模式 / 老浏览器) 时读返回 null, 写静默跳过, 不抛错.
@@ -22,7 +22,7 @@ const INDEX_UPDATED_AT = 'updatedAt'
 // LRU 上限: 最多缓存 128 个 session.
 export const MAX_CACHED_SESSIONS = 128
 // 每个 session 缓存的尾部条目数上限 (与后端 tail / 前端显示窗口对齐).
-export const MAX_ENTRIES_PER_SESSION = 200
+export const MAX_ENTRIES_PER_SESSION = 80
 
 export type JsonlSnapshot = {
   entries: any[]

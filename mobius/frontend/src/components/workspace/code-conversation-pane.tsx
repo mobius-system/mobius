@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen } from 'lucide-react'
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView, keymap } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
@@ -30,6 +30,37 @@ type CodeConversationPaneProps = {
   projectId: string
   bindPath: string
   vscodeWebUrl?: string
+}
+
+type FileSource = 'hub' | 'local'
+
+type DesktopBridge = {
+  isDesktop?: boolean
+  pickDirectory?: () => Promise<string | null>
+  confirmProjectPath?: (projectId: string, path: string) => Promise<{ ok?: boolean; error?: string } | null>
+  getProjectLocalPath?: (projectId: string) => Promise<string | null>
+  listProjectLocalFiles?: (projectId: string, path: string) => Promise<{ ok?: boolean; error?: string; bind_path?: string; entries?: Entry[] }>
+  readProjectLocalFile?: (projectId: string, path: string) => Promise<({ ok?: boolean; error?: string } & Partial<FileContent>)>
+  writeProjectLocalFile?: (projectId: string, path: string, content: string) => Promise<{ ok?: boolean; error?: string; saved?: boolean; size?: number }>
+}
+
+function getDesktopBridge(): DesktopBridge | undefined {
+  return typeof window !== 'undefined'
+    ? (window as { mobiusDesktop?: DesktopBridge }).mobiusDesktop
+    : undefined
+}
+
+function fileSourceStorageKey(projectId: string) {
+  return `mobius:ui:cc-file-source:${projectId}`
+}
+
+function loadFileSource(projectId: string): FileSource {
+  if (!getDesktopBridge()?.isDesktop) return 'hub'
+  try {
+    return localStorage.getItem(fileSourceStorageKey(projectId)) === 'local' ? 'local' : 'hub'
+  } catch {
+    return 'hub'
+  }
 }
 
 type FileContent = {
@@ -117,6 +148,12 @@ const LANG_LOADERS: Record<string, () => Promise<Extension>> = {
 }
 
 export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: CodeConversationPaneProps) {
+  const desktop = getDesktopBridge()
+  const isDesktop = !!desktop?.isDesktop
+  const [source, setSourceState] = useState<FileSource>(() => loadFileSource(projectId))
+  const [localBindPath, setLocalBindPath] = useState('')
+  const [localPathBusy, setLocalPathBusy] = useState(false)
+
   // ★ 代码区明暗: 独立于全局主题, 自带持久化.
   const [skin, setSkin] = useState<CodeSkinKey>(() => loadCodeSkin())
   const toggleSkin = useCallback(() => {
@@ -139,32 +176,6 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const [rootError, setRootError] = useState('')
   const [filter, setFilter] = useState('')
 
-  const loadDir = useCallback(async (relPath: string) => {
-    setDirs(prev => ({ ...prev, [relPath]: { ...prev[relPath], loading: true, error: undefined } }))
-    try {
-      const data = await api(`/api/projects/${projectId}/files?path=${encodeURIComponent(relPath)}`)
-      if (relPath === '/') {
-        setRootLoaded(true)
-        if (!data.bind_path) setRootError('项目未绑定路径')
-      }
-      setDirs(prev => ({ ...prev, [relPath]: { loading: false, entries: data.entries || [] } }))
-    } catch (e: any) {
-      setDirs(prev => ({ ...prev, [relPath]: { loading: false, error: e?.message || '加载失败' } }))
-      if (relPath === '/') { setRootLoaded(true); setRootError(e?.message || '加载失败') }
-    }
-  }, [projectId])
-
-  useEffect(() => { loadDir('/') }, [loadDir])
-
-  const toggleDir = (relPath: string) => {
-    setExpanded(prev => {
-      const next = new Set(prev)
-      if (next.has(relPath)) next.delete(relPath)
-      else { next.add(relPath); if (!dirs[relPath]) loadDir(relPath) }
-      return next
-    })
-  }
-
   // ----- 代码浏览/编辑状态 -----
   const [selected, setSelected] = useState<Entry | null>(null)
   const [fileData, setFileData] = useState<FileContent | null>(null)
@@ -176,6 +187,69 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveOk, setSaveOk] = useState(false)
+
+  const loadDir = useCallback(async (relPath: string) => {
+    setDirs(prev => ({ ...prev, [relPath]: { ...prev[relPath], loading: true, error: undefined } }))
+    try {
+      const data = source === 'local'
+        ? await desktop?.listProjectLocalFiles?.(projectId, relPath)
+        : await api(`/api/projects/${projectId}/files?path=${encodeURIComponent(relPath)}`)
+      if (source === 'local' && !data?.ok) throw new Error(data?.error || '加载本机文件失败')
+      if (relPath === '/') {
+        setRootLoaded(true)
+        if (source === 'local') {
+          setLocalBindPath(data?.bind_path || '')
+          if (!data?.bind_path) setRootError('未绑定本机工作路径')
+        } else if (!data.bind_path) {
+          setRootError('项目未绑定路径')
+        }
+      }
+      setDirs(prev => ({ ...prev, [relPath]: { loading: false, entries: data.entries || [] } }))
+    } catch (e: any) {
+      setDirs(prev => ({ ...prev, [relPath]: { loading: false, error: e?.message || '加载失败' } }))
+      if (relPath === '/') { setRootLoaded(true); setRootError(e?.message || '加载失败') }
+    }
+  }, [desktop, projectId, source])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!isDesktop) { setSourceState('hub'); setLocalBindPath(''); return }
+    desktop?.getProjectLocalPath?.(projectId)
+      .then(path => { if (!cancelled) setLocalBindPath(path || '') })
+      .catch(() => { if (!cancelled) setLocalBindPath('') })
+    return () => { cancelled = true }
+  }, [desktop, isDesktop, projectId])
+
+  const clearEditorState = useCallback(() => {
+    setSelected(null)
+    setFileData(null)
+    setFileLoading(false)
+    setFileError('')
+    setDoc('')
+    setDirty(false)
+    setSaving(false)
+    setSaveError('')
+    setSaveOk(false)
+  }, [])
+
+  useEffect(() => {
+    setDirs({})
+    setExpanded(new Set(['/']))
+    setRootLoaded(false)
+    setRootError('')
+    setFilter('')
+    clearEditorState()
+    loadDir('/')
+  }, [loadDir, clearEditorState])
+
+  const toggleDir = (relPath: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(relPath)) next.delete(relPath)
+      else { next.add(relPath); if (!dirs[relPath]) loadDir(relPath) }
+      return next
+    })
+  }
 
   const onSelectFile = useCallback(async (entry: Entry) => {
     if (entry.type !== 'file') return
@@ -192,8 +266,12 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     setSaveError('')
     setSaveOk(false)
     try {
-      const rel = relPathUnderBind(entry.abs_path, bindPath)
-      const data = await api(`/api/projects/${projectId}/file?path=${encodeURIComponent(rel)}`)
+      const root = source === 'local' ? localBindPath : bindPath
+      const rel = relPathUnderBind(entry.abs_path, root)
+      const data = source === 'local'
+        ? await desktop?.readProjectLocalFile?.(projectId, rel)
+        : await api(`/api/projects/${projectId}/file?path=${encodeURIComponent(rel)}`)
+      if (source === 'local' && !data?.ok) throw new Error(data?.error || '读取本机文件失败')
       setFileData(data as FileContent)
       setDoc((data as FileContent).content || '')
     } catch (e: any) {
@@ -201,7 +279,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     } finally {
       setFileLoading(false)
     }
-  }, [projectId, bindPath, dirty, selected])
+  }, [desktop, projectId, bindPath, localBindPath, source, dirty, selected])
 
   // 保存: 写回磁盘, 复位 dirty.
   const save = useCallback(async () => {
@@ -210,11 +288,17 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     setSaveError('')
     setSaveOk(false)
     try {
-      const rel = relPathUnderBind(selected.abs_path, bindPath)
-      await api(`/api/projects/${projectId}/file`, {
-        method: 'POST',
-        body: JSON.stringify({ path: rel, content: doc }),
-      })
+      const root = source === 'local' ? localBindPath : bindPath
+      const rel = relPathUnderBind(selected.abs_path, root)
+      if (source === 'local') {
+        const result = await desktop?.writeProjectLocalFile?.(projectId, rel, doc)
+        if (!result?.ok) throw new Error(result?.error || '保存本机文件失败')
+      } else {
+        await api(`/api/projects/${projectId}/file`, {
+          method: 'POST',
+          body: JSON.stringify({ path: rel, content: doc }),
+        })
+      }
       setDirty(false)
       setSaveOk(true)
       setFileData(fd => fd ? { ...fd, content: doc, size: new Blob([doc]).size } : fd)
@@ -224,7 +308,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     } finally {
       setSaving(false)
     }
-  }, [selected, fileData, dirty, saving, projectId, bindPath, doc])
+  }, [desktop, selected, fileData, dirty, saving, projectId, bindPath, localBindPath, source, doc])
 
   // Ctrl/Cmd+S 拦截: 触发保存, 阻止浏览器默认另存对话框.
   useEffect(() => {
@@ -240,7 +324,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   }, [dirty, saving, save])
 
   const openInVscode = () => {
-    if (!vscodeWebUrl || !bindPath || !selected) return
+    if (source !== 'hub' || !vscodeWebUrl || !bindPath || !selected) return
     const url = buildVscodeUrl(vscodeWebUrl, bindPath, selected.abs_path)
     if (url) window.open(url, '_blank', 'noopener,noreferrer')
   }
