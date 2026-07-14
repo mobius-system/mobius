@@ -38,6 +38,8 @@ interface Branding {
 declare global {
   interface Window {
     __BRANDING__?: Branding
+    // 全局打开管理中心 overlay (shell.tsx 注册). 引导系统「重温管理中心」按钮先打开 overlay 再启动引导.
+    openAdminOverlay?: () => void
   }
 }
 

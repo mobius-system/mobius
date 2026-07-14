@@ -2996,3 +2996,153 @@ export async function runFirstIssueTourForPath(pathname: string, options: { forc
     preparing = false
   }
 }
+
+// =====================================================================
+// 场景级首触引导 (无状态纯讲解, 不走 demo 门禁).
+// 与 startIntroTour 同构: 不写 sessionStorage demo 状态, 不经 runFirstIssueTourForPath
+// (后者要求 demo.state.active). 由 tour-controller 在首次进入某场景时按 seen 门禁自动启动,
+// 也可由 guide-help 路线卡片手动重温. seen 门禁走后端 /api/profile/scene-seen/:scene (跨设备).
+// =====================================================================
+
+export type SceneTourKind = 'admin-center' | 'research-page'
+
+// 无状态场景引导分发器: 启动前清场 (避免与 demo 路线冲突), 然后跑对应场景路线.
+// onDone 在引导真正启动且销毁时 (用户看完或跳过) 调用, controller 据此标记 seen 门禁.
+// 若该场景路线未实现 (返回 false), 不调 onDone, controller 不标记 seen (避免吃掉未来要做的引导).
+export async function startSceneTour(scene: SceneTourKind, onDone?: (finished: boolean) => void): Promise<boolean> {
+  deactivateActiveDemoTour()
+  destroyActiveTour(true)
+  let started = false
+  const onDestroyed = () => { try { onDone?.(true) } catch {} }
+  if (scene === 'admin-center') started = await runAdminCenterTour(onDestroyed)
+  else if (scene === 'research-page') started = await runResearchPageTour(onDestroyed)
+  if (!started) {
+    // 未启动: 不绑定 seen (该场景路线尚未实现, 避免静默标记吃掉未来引导).
+    try { onDone?.(false) } catch {}
+  }
+  return started
+}
+
+// 管理中心首触引导. 复用 tcrgsz 分镜文案 (每个 tab 一句中文).
+// 8 个 tab 条件挂载, 故采用"点 tab → 等内容挂载 → 讲解"链式 step (单个 driver 实例内完成).
+function addAdminTabStep(
+  steps: DriveStep[],
+  tabSelector: string,
+  sectionSelector: string,
+  popover: { title: string; description: string; doneBtnText?: string },
+) {
+  // 高亮 tab 按钮; 用户点"下一步"时, onNextClick 点该 tab, 等内容挂载, refresh 高亮后 moveNext.
+  addStepIfPresent(steps, tabSelector, {
+    popover: {
+      ...popover,
+      nextBtnText: '切到这里看',
+      side: 'top',
+      align: 'center',
+    } as any,
+  } as any)
+  // 上面 step 的 onNextClick: 点 tab, 等内容挂载, 再前进到下面那个 section 讲解 step.
+  const lastStep = steps[steps.length - 1] as any
+  if (lastStep) {
+    const originalNext = lastStep.popover?.onNextClick
+    lastStep.popover = {
+      ...(lastStep.popover as any),
+      onNextClick: async (opts: any) => {
+        if (typeof originalNext === 'function') {
+          try { await originalNext(opts) } catch {}
+        }
+        clickIfPresent(tabSelector)
+        await waitForElement(sectionSelector, 3200)
+        opts.driver.refresh()
+        window.setTimeout(() => { try { opts.driver.moveNext() } catch {} }, 60)
+      },
+    }
+  }
+  // 切换后高亮该 tab 的 section 讲解一句.
+  addStepIfPresent(steps, sectionSelector, {
+    popover: {
+      title: popover.title,
+      description: guideParagraphs(popover.description),
+      doneBtnText: popover.doneBtnText,
+      side: 'top',
+      align: 'center',
+    } as any,
+  } as any)
+}
+
+async function runAdminCenterTour(onDestroyed?: () => void): Promise<boolean> {
+  await waitForElement('[data-tour="admin-center-header"]', 4200)
+  await waitForElement('[data-tour="admin-tab-bar"]', 1800)
+
+  const steps: DriveStep[] = []
+  addStepIfPresent(steps, '[data-tour="admin-center-header"]', {
+    popover: {
+      title: '这里是管理中心',
+      description: guideParagraphs(
+        '这是系统级管理的总入口。',
+        '下面的模块按需切换，每个管一个方面。'
+      ),
+      nextBtnText: '看模块切换',
+      doneBtnText: '我了解了',
+      side: 'right',
+      align: 'start',
+    },
+  })
+  addStepIfPresent(steps, '[data-tour="admin-tab-bar"]', {
+    popover: {
+      title: '按模块切换',
+      description: guideParagraphs(
+        '这里八个模块各自独立。',
+        '跟着引导逐个看一遍，了解每个模块管什么。'
+      ),
+      nextBtnText: '看用户管理',
+      doneBtnText: '我了解了',
+      side: 'bottom',
+      align: 'start',
+    },
+  })
+  addAdminTabStep(steps, '[data-tour="admin-tab-users"]', '[data-tour="admin-section-users"]', {
+    title: '用户管理',
+    description: '管员工账号、角色(管理员/成员)和权限。',
+    doneBtnText: '下一个模块',
+  })
+  addAdminTabStep(steps, '[data-tour="admin-tab-models"]', '[data-tour="admin-section-models"]', {
+    title: '模型接入',
+    description: '配置各 AI 模型的接入通道、密钥和网络代理。',
+    doneBtnText: '下一个模块',
+  })
+  addAdminTabStep(steps, '[data-tour="admin-tab-settings"]', '[data-tour="admin-section-settings"]', {
+    title: '系统设置',
+    description: '模型创建配额、全局默认模型和代理链都在这里。',
+    doneBtnText: '下一个模块',
+  })
+  addAdminTabStep(steps, '[data-tour="admin-tab-extensions"]', '[data-tour="admin-section-extensions"]', {
+    title: '拓展管理',
+    description: '安装、启用、隐藏莫比乌斯的拓展插件。',
+    doneBtnText: '下一个模块',
+  })
+  addAdminTabStep(steps, '[data-tour="admin-tab-migration"]', '[data-tour="skill-memory-manage-panel"]', {
+    title: 'Skill与Memory管理',
+    description: '迁移并管理项目级的技能和记忆。',
+    doneBtnText: '完成',
+  })
+  addStepIfPresent(steps, '[data-tour="admin-center-header"]', {
+    popover: {
+      title: '改动影响所有人',
+      description: guideParagraphs(
+        '这些设置对全站生效，改前先确认。',
+        '想重看时从右上角问号进引导中心重温。'
+      ),
+      doneBtnText: '完成',
+      side: 'right',
+      align: 'start',
+    },
+  })
+
+  return launchDriver(steps, onDestroyed)
+}
+
+async function runResearchPageTour(onDestroyed?: () => void): Promise<boolean> {
+  // 占位: 第 3 步 (Research 页) 实现时填充. 期间返回 false 避免空 driver.
+  void onDestroyed
+  return false
+}

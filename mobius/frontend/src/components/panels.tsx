@@ -602,7 +602,7 @@ function AdminUsersPanel() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+      <section className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-users">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -1491,7 +1491,7 @@ function ModelPromptLimitsCard() {
   }
 
   return (
-    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-settings">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>模型创建限制</h3>
@@ -2839,7 +2839,7 @@ function AdminModelsPanel() {
   const [backend, setBackend] = useState<AdminModelsBackend>('claude-code')
 
   return (
-    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-models">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -3458,7 +3458,7 @@ function HiddenExtensionsCard() {
   }
 
   return (
-    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-extensions">
       <div className="mb-2 flex items-center justify-between">
         <div>
           <h3 className="text-[14px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
@@ -5552,6 +5552,7 @@ function AdminTextRedactionPanel() {
   return (
     <section
       data-text-redaction-ignore="true"
+      data-tour="admin-section-redaction"
       className="overflow-hidden rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)]"
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-color)] px-4 py-3">
@@ -5912,7 +5913,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <div className="min-w-0">
+          <div className="min-w-0" data-tour="admin-center-header">
             <h2 className="truncate text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>管理中心</h2>
             <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
               {activeTabLabel}{activeTab === 'runtime' ? ` · 5s 刷新 · 统计窗口 ${data?.window_hours || 5} 小时` : ''}
@@ -5934,13 +5935,14 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
         <div className="mx-auto flex max-w-7xl flex-col gap-4">
-          <div className="flex flex-wrap gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-2">
+          <div className="flex flex-wrap gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-2" data-tour="admin-tab-bar">
             {ADMIN_PANEL_TABS.map((tab) => {
               const active = activeTab === tab.key
               return (
                 <button
                   key={tab.key}
                   type="button"
+                  data-tour={`admin-tab-${tab.key}`}
                   onClick={() => setActiveTab(tab.key)}
                   className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium transition-colors"
                   style={{

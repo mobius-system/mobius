@@ -9,7 +9,7 @@
 // =====================================================================
 import express from 'express';
 import { auth } from '../middleware/auth';
-import { getUserFirstLoginSeen, setUserFirstLoginSeen } from '../services/admin-settings';
+import { getUserFirstLoginSeen, setUserFirstLoginSeen, getUserSceneSeen, markUserSceneSeen } from '../services/admin-settings';
 
 const router = express.Router();
 
@@ -31,6 +31,30 @@ router.post('/tour-first-login-seen', auth, (req: express.Request, res: express.
     return;
   }
   setUserFirstLoginSeen(user.id);
+  res.json({ seen: true });
+});
+
+// 场景级首触引导: 当前登录用户是否已看过某场景引导 (按用户×场景维度持久化, 跨设备生效).
+// :scene 取值白名单: admin-center / research-page / self-cognition (后端校验, 非白名单视为未看过).
+// 用途: 首次进入管理中心 / Research 课题页 / self-cognition 工作台时, 前端据此判断是否自动触发讲解.
+router.get('/scene-seen/:scene', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user as { id?: string } | undefined;
+  if (!user?.id) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  res.json({ seen: getUserSceneSeen(user.id, req.params.scene) });
+});
+
+// 标记当前登录用户已看过某场景引导 (按用户×场景维度持久化, 跨设备生效).
+// tour 结束或用户跳过时前端调用, 后续进入该场景不再自动弹引导. scene 不在白名单则忽略.
+router.post('/scene-seen/:scene', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user as { id?: string } | undefined;
+  if (!user?.id) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  markUserSceneSeen(user.id, req.params.scene);
   res.json({ seen: true });
 });
 
