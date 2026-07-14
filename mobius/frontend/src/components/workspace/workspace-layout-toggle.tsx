@@ -23,6 +23,11 @@ type ModeOption = {
   unavailableReason?: string
 }
 
+// 按用户要求精确隐藏「代码对话」入口的具体 issue (非项目级, 不波及同项目其它 issue).
+// 例如纯 git 提交推送类 issue: session 都是 agent 跑 git 命令, "左代码右对话" 工作区无意义且碍眼.
+// 新增同类 issue 时在此追加 ID. 注意: 仅匹配 issue 路由 (/i/:issue), research 路由不受影响.
+const WORKSPACE_TOGGLE_HIDDEN_ISSUES = new Set<string>(['a2b72394'])
+
 export function WorkspaceLayoutToggle() {
   const params = useParams()
   const isMobile = useIsMobile()
@@ -50,9 +55,9 @@ export function WorkspaceLayoutToggle() {
   }, [open])
 
   // UserPage / ProjectPage / 移动端不显示.
-  // 自迭代项目 (is_self_develop, bind_path === APP_DIR) 也不显示: 该项目是 AI 自我改造 Mobius
-  // 的内部项目, "代码对话" 是面向终端用户的开发工作区, 在此项目上无意义且干扰 agent 工作流.
-  if (!onIssueOrResearch || isMobile || currentProject?.is_self_develop) return null
+  if (!onIssueOrResearch || isMobile) return null
+  // 个别 issue 精确隐藏 (见 WORKSPACE_TOGGLE_HIDDEN_ISSUES 注释).
+  if (params.issue && WORKSPACE_TOGGLE_HIDDEN_ISSUES.has(params.issue)) return null
 
   const v1Available = !!currentSession && !!bindPath && !!vscodeWebUrl
   const v2Available = !!currentSession && !!bindPath
