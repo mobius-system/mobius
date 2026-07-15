@@ -546,10 +546,12 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
     return () => document.removeEventListener('click', closeSwitcher)
   }, [openSwitcher])
 
-  // Tab 标题随 branding.systemNameZh 同步 (REPLACE=true 且 ZH 留空 → tab 显示空白).
+  // Tab 标题: 项目内显示「<项目名> - 莫比乌斯AI」, 非项目内沿用 branding.systemNameZh.
+  // projectName 未异步加载时 fallback 到 projectParam(项目 ID), 保证 tab 不闪空白.
   useEffect(() => {
-    document.title = branding.systemNameZh || ' '
-  }, [branding.systemNameZh])
+    const baseName = branding.systemNameZh || ' '
+    document.title = inProject ? `${projectName || projectParam} - ${baseName}` : baseName
+  }, [branding.systemNameZh, inProject, projectName, projectParam])
 
   // 打开项目切换器时, 若 store 还没有项目列表则按需拉取.
   useEffect(() => {
