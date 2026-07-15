@@ -5,7 +5,7 @@
  * 行号渲染成 "↳#N" 表示"由第 N 条 entry 派生", 而非真实 jsonl 行.
  * 单张图片: URL 直出; 绝对路径走后端 /api/download (与 FileManager 同款, token 走 query).
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { resolveMediaSrc } from '../jsonl-vscode-link'
 import { IMAGES_THEME } from './themes'
@@ -28,15 +28,56 @@ export function describeImageSrc(src: string): { label: string; display: string 
   return { label: isUrl ? 'URL' : '本地文件', display: src }
 }
 
-// 单张图片: URL 直出; 绝对路径走后端 /api/download (与 FileManager 同款, token 走 query).
+// 单张图片: 外链/本地都经 resolveMediaSrc 改写 (外链走 /api/proxy-media 代理).
+// 加载失败时不再只剩死占位: 探测一次代理源拿到 HTTP 状态/原因, 并保留「打开原图」
+// 外链入口 (指向原始 src, 绕开代理直接在新标签打开), 让用户至少能手动看到图.
 function DisplayImageItem({ src, onOpen }: { src: string; onOpen: (src: string) => void }) {
   const [err, setErr] = useState(false)
+  const [reason, setReason] = useState('')
   const { isUrl, finalSrc } = displayImageSrc(src)
+
+  // onError 后探测一次最终 src, 把失败原因 (HTTP 状态 / 代理报错) 显给用户.
+  // 非 2xx 才读响应体 (错误 JSON 很小); 2xx 仍渲染失败说明是解码/格式问题, 立即
+  // 取消响应体, 不为读原因而重复下载整张图.
+  const handleError = useCallback(() => {
+    setErr(true)
+    fetch(finalSrc)
+      .then(async (r) => {
+        if (!r.ok) {
+          let msg = `HTTP ${r.status}`
+          try {
+            const text = await r.text()
+            try { const j = JSON.parse(text); if (j && j.error) msg += ` · ${j.error}` }
+            catch { if (text) msg += ` · ${text.slice(0, 120)}` }
+          } catch { /* 非 JSON / 无 body */ }
+          setReason(msg)
+        } else {
+          try { await r.body?.cancel() } catch { /* ignore */ }
+          setReason('图片无法解码或格式不支持')
+        }
+      })
+      .catch(() => setReason('代理或网络不可达'))
+  }, [finalSrc])
+
   return (
     <figure className="m-0 flex flex-col gap-1">
       {err ? (
-        <div className="flex items-center justify-center h-32 rounded border border-dashed border-[var(--border-color)] bg-[var(--prose-bg)] text-[11px] text-[var(--text-muted)] px-3 text-center">
-          图片加载失败 / 无法访问
+        <div className="flex flex-col items-center justify-center gap-1.5 h-44 rounded border border-dashed border-[var(--border-color)] bg-[var(--prose-bg)] px-3 text-center">
+          <span className="text-[11px] text-[var(--text-muted)]">图片加载失败</span>
+          {reason && (
+            <span className="text-[10px] font-mono text-[var(--text-muted)] opacity-80 break-all line-clamp-3">
+              {reason}
+            </span>
+          )}
+          {isUrl && (
+            <a
+              href={src}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-0.5 text-[11px] text-teal-500 hover:underline">
+              打开原图
+            </a>
+          )}
         </div>
       ) : (
         <button
@@ -49,7 +90,7 @@ function DisplayImageItem({ src, onOpen }: { src: string; onOpen: (src: string) 
             src={finalSrc}
             alt={src}
             loading="lazy"
-            onError={() => setErr(true)}
+            onError={handleError}
             className="h-full w-full object-contain transition-transform duration-150 group-hover:scale-[1.02]"
           />
         </button>
@@ -62,8 +103,11 @@ function DisplayImageItem({ src, onOpen }: { src: string; onOpen: (src: string) 
 }
 
 export function DisplayImagePreviewModal({ src, onClose }: { src: string; onClose: () => void }) {
-  const { finalSrc } = displayImageSrc(src)
+  const { isUrl, finalSrc } = displayImageSrc(src)
   const { label: srcLabel, display: srcDisplay } = describeImageSrc(src)
+  const [err, setErr] = useState(false)
+  // 「打开原图」对 URL 形式指向原始外链 (绕开代理直接打开), 其余指向最终 src.
+  const openOriginalHref = isUrl ? src : finalSrc
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -77,6 +121,9 @@ export function DisplayImagePreviewModal({ src, onClose }: { src: string; onClos
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [onClose])
+
+  // 切图时重置错误态 (同一 modal 实例复用).
+  useEffect(() => { setErr(false) }, [src])
 
   return createPortal(
     <div
@@ -96,7 +143,7 @@ export function DisplayImagePreviewModal({ src, onClose }: { src: string; onClos
             {srcLabel} · {srcDisplay}
           </span>
           <a
-            href={finalSrc}
+            href={openOriginalHref}
             target="_blank"
             rel="noreferrer"
             className="h-7 rounded-xl border px-2.5 py-1 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)]"
@@ -114,11 +161,25 @@ export function DisplayImagePreviewModal({ src, onClose }: { src: string; onClos
           </button>
         </div>
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-black/20 p-3">
-          <img
-            src={finalSrc}
-            alt={src}
-            className="max-h-[calc(92vh-92px)] max-w-full object-contain"
-          />
+          {err ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <span className="text-[12px] text-[var(--text-muted)]">图片加载失败 / 无法访问</span>
+              <a
+                href={openOriginalHref}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[12px] text-teal-500 hover:underline">
+                打开原图
+              </a>
+            </div>
+          ) : (
+            <img
+              src={finalSrc}
+              alt={src}
+              onError={() => setErr(true)}
+              className="max-h-[calc(92vh-92px)] max-w-full object-contain"
+            />
+          )}
         </div>
       </div>
     </div>,

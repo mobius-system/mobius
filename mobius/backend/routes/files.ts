@@ -8,6 +8,7 @@ import { auth, downloadAuth } from '../middleware/auth';
 import { Projects } from '../repositories/projects';
 // @ts-ignore — service 仍是 .js
 import { canReadProject } from '../services/access-control';
+import { proxyMediaHandler } from '../services/proxy-media';
 import {
   APP_DIR,
   UPLOAD_DIR,
@@ -146,6 +147,12 @@ router.get('/files/download', downloadAuth, (req: express.Request, res: express.
   }
   res.download(absPath);
 });
+
+// GET /api/proxy-media?url=<http(s) URL> — 同源外链图片代理.
+// 让 display_images / 附件图片卡片的 http(s) 源走后端服务端 fetch, 绕开浏览器侧
+// 防盗链/跨域/不可达. downloadAuth: <img> 无法带 Authorization 头, token 走 query
+// (与 /api/download 同款). SSRF/大小/超时防护见 services/proxy-media.ts.
+router.get('/proxy-media', downloadAuth, proxyMediaHandler());
 
 router.get('/files', auth, (req: express.Request, res: express.Response) => {
   const resolved = resolveScopedPath(req, (req.query.path as string | undefined) || '/');
