@@ -35,7 +35,9 @@ router.post('/login', (req: express.Request, res: express.Response) => {
     return;
   }
 
-  const user = Users.findById(username);
+  // 用户名大小写不敏感: 前端会把用户名 toLowerCase(), 而账号 id 可能含大写 (如 EvolveWithAI).
+  // 用 findByLoginId (COLLATE NOCASE) 兜底, 否则这类账号永远登不上 (401 User not found).
+  const user = Users.findByLoginId(username);
   if (!user) {
     res.status(401).json({ error: 'User not found' });
     return;
