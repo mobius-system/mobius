@@ -11,6 +11,9 @@ interface Store {
   // 上次退出时所在页面：key=`${serverOrigin}::${username}` → 路径(pathname+search+hash)。
   // 仅存路径不含 origin，按 账号 维度隔离，桌面端启动时回到上次离开的页面。
   lastRoutes?: Record<string, string>;
+  // 多 tab (实验版 0.0.12)：上次退出时该账号打开的 tab 列表，按 tab 顺序存 url(pathname+search+hash)。
+  // 重启后按此恢复 tab 列表 + 激活 tab。key 同 lastRoutes = `${serverOrigin}::${username}`。
+  lastTabs?: Record<string, { urls: string[]; activeUrl?: string }>;
   updatedAt?: string;
 }
 
@@ -54,6 +57,30 @@ export function setLastRoute(server: string, username: string, route: string): v
   const store = read();
   if (!store.lastRoutes) store.lastRoutes = {};
   store.lastRoutes[routeKey(server, username)] = route;
+  store.updatedAt = new Date().toISOString();
+  write(store);
+}
+
+// ——— 多 tab 列表（启动恢复用）———
+export interface SavedTabs {
+  urls: string[];
+  activeUrl?: string;
+}
+
+/** 取本机该账号上次退出时的 tab 列表 (urls + 激活 url)，无则 null。 */
+export function getLastTabs(server: string, username: string): SavedTabs | null {
+  return read().lastTabs?.[routeKey(server, username)] || null;
+}
+
+/** 记录本机该账号上次退出时的 tab 列表 (重启恢复用)。urls 为空则清空该账号记录。 */
+export function setLastTabs(server: string, username: string, tabs: SavedTabs): void {
+  const store = read();
+  if (!store.lastTabs) store.lastTabs = {};
+  if (tabs.urls.length === 0) {
+    delete store.lastTabs[routeKey(server, username)];
+  } else {
+    store.lastTabs[routeKey(server, username)] = tabs;
+  }
   store.updatedAt = new Date().toISOString();
   write(store);
 }

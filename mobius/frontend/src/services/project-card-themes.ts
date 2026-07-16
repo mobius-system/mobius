@@ -1,8 +1,8 @@
 export type ProjectCardBorderThemeId =
   | 'auto'
   | 'neutral'
-  | 'agentjet-gold'
-  | 'agentjet-cyan'
+  | 'dark-gold'
+  | 'dark-cyan'
   | 'latex-paper'
   | 'latex-violet'
   | 'emerald-copper'
@@ -32,8 +32,8 @@ export type ProjectCardBorderThemeOption = {
 export const PROJECT_CARD_BORDER_THEME_IDS: ProjectCardBorderThemeId[] = [
   'auto',
   'neutral',
-  'agentjet-gold',
-  'agentjet-cyan',
+  'dark-gold',
+  'dark-cyan',
   'latex-paper',
   'latex-violet',
   'emerald-copper',
@@ -56,9 +56,9 @@ const NEUTRAL_THEME: ProjectCardBorderTheme = {
 
 const THEMES: Record<Exclude<ProjectCardBorderThemeId, 'auto'>, ProjectCardBorderTheme> = {
   neutral: NEUTRAL_THEME,
-  'agentjet-gold': {
-    id: 'agentjet-gold',
-    label: 'AgentJet 金墨',
+  'dark-gold': {
+    id: 'dark-gold',
+    label: '金墨',
     description: '石墨底色配香槟金边，适合核心项目。',
     swatches: ['#111827', '#f4c95d', '#64748b'],
     background: 'linear-gradient(135deg, rgba(244,201,93,0.085) 0%, rgba(148,163,184,0.035) 46%, var(--bg-primary) 100%)',
@@ -70,9 +70,9 @@ const THEMES: Record<Exclude<ProjectCardBorderThemeId, 'auto'>, ProjectCardBorde
     shadow: '0 0 0 1px rgba(244,201,93,0.08) inset',
     hoverShadow: '0 14px 34px rgba(244,201,93,0.10), 0 0 0 1px rgba(244,201,93,0.10) inset',
   },
-  'agentjet-cyan': {
-    id: 'agentjet-cyan',
-    label: 'AgentJet 冷焰',
+  'dark-cyan': {
+    id: 'dark-cyan',
+    label: '冷焰',
     description: '喷气蓝青配靛紫暗面，技术感更强。',
     swatches: ['#0f172a', '#22d3ee', '#6366f1'],
     background: 'linear-gradient(135deg, rgba(34,211,238,0.080) 0%, rgba(99,102,241,0.070) 44%, var(--bg-primary) 100%)',
@@ -158,7 +158,7 @@ export function projectCardBorderThemeById(id: ProjectCardBorderThemeId): Projec
 
 export function effectiveProjectCardBorderTheme(project: any): ProjectCardBorderTheme {
   const id = normalizeProjectCardBorderThemeId(project?.card_border_theme)
-  if (id === 'auto') return project?.is_self_develop ? THEMES['agentjet-gold'] : NEUTRAL_THEME
+  if (id === 'auto') return project?.is_self_develop ? THEMES['dark-gold'] : NEUTRAL_THEME
   return projectCardBorderThemeById(id)
 }
 

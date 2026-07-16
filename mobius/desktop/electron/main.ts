@@ -1,6 +1,6 @@
 // Mobius Desktop 主进程：登录 → 保证 aimux → reverse connect → loadURL 远程 web UI。
 // 详见 README。关键：退出前务必 supervisor.stop() 杀 aimux；aimux 状态经徽标+IPC 常驻可见。
-import { app, BrowserWindow, Menu, ipcMain, shell, dialog, session, screen } from "electron";
+import { app, BrowserWindow, Menu, ipcMain, shell, dialog, session, screen, type WebPreferences } from "electron";
 import { spawn } from "node:child_process";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,8 +12,9 @@ import { ensureAimux, upgradeAimux, getAimuxVersion, aimuxExe, venvDir, hasBundl
 import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
 import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
 import { FileOpError, validateNewName, assertNoSymlink, isDirEqualOrChild, copyEntryRecursive } from "./lib/project-file-ops";
-import { getAimuxEnabled, setAimuxEnabled, getLastRoute, setLastRoute } from "./lib/desktop-settings";
+import { getAimuxEnabled, setAimuxEnabled, getLastRoute } from "./lib/desktop-settings";
 import { createStatusWindow } from "./status-window";
+import { TabManager } from "./lib/tab-manager";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const isMac = process.platform === "darwin";
@@ -28,15 +29,46 @@ let windowDragTimer: NodeJS.Timeout | null = null;
 // 关闭后本机不再作为可调度节点连入 mobius，桌面端其他功能不受影响。
 let aimuxEnabled = true;
 
+// 多 tab 编排（实验版 0.0.12）。每个 tab = 一个独立 WebContentsView，挂 mainWindow.contentView。
+let tabManager: TabManager | null = null;
+// mainWindow.webContents 降级为空白容器（内容全在子 view）后的占位页。
+const ABOUT_BLANK = "about:blank";
+
+/** 每个 tab view 复用的 webPreferences（与原 mainWindow 同配置：ESM preload 需 sandbox:false）。 */
+function tabWebPreferences(): WebPreferences {
+  return {
+    preload: join(currentDir, "../preload/index.mjs"),
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: false,
+    webSecurity: true,
+  };
+}
+
+/** 延迟创建 TabManager（依赖 mainWindow + creds 就绪）。幂等。 */
+function ensureTabManager(): void {
+  if (tabManager || !mainWindow || !creds) return;
+  tabManager = new TabManager({
+    window: () => mainWindow,
+    serverOrigin: () => serverOrigin(),
+    username: () => creds?.username || "",
+    homePath: () => `/u/${encodeURIComponent(creds?.username || "user")}`,
+    webPreferences: tabWebPreferences(),
+    openExternal: (url) => { void shell.openExternal(url); },
+  });
+}
+
 // aimux 日志环形缓冲（供状态面板查看历史 + 失败原因）
 const LOG_MAX = 300;
 const logBuffer: string[] = [];
 function broadcast(channel: string, payload: unknown): void {
+  // 主窗口容器 + aimux 状态窗口等所有窗口，再 + 所有 tab view（每个 tab 页面都要收 aimux 状态/窗口状态）。
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.isDestroyed()) {
       try { w.webContents.send(channel, payload); } catch { /* 窗口可能正在加载 */ }
     }
   }
+  tabManager?.sendToAllViews(channel, payload);
 }
 function appendLog(line: string): void {
   logBuffer.push(line);
@@ -216,34 +248,23 @@ async function bootDesktop(): Promise<void> {
   }
 
   await seedWebAuth(server, creds.jwt);
-  // 桌面端启动统一进 /welcome 欢迎向导 (链接一切的自进化 Agent 操作系统)。
-  // 向导内"从上次结束处继续"经 desktop:get-last-route 读取本机该账号上次退出页;
-  // 首次运行无记录 -> 该项隐藏。不再启动即自动恢复, 把"回到上次页面/开新项目/接入项目"统一交给向导。
-  void mainWindow.loadURL(`${server}/welcome`);
+  // 多 tab（实验版 0.0.12）：mainWindow.webContents 降级为空白容器，TabManager 接管所有页面。
+  // 每个用户页面 = contentView 的子 WebContentsView，独立 webContents 状态隔离；
+  // restore() 有 lastTabs 则恢复上次 tab 列表，否则建一个用户主页 tab。
+  ensureTabManager();
+  void mainWindow.loadURL(ABOUT_BLANK);
+  tabManager!.restore();
 }
 
-/** 记下当前窗口所在页面路径，供下次启动回到该页。
- *  只在本服务器 origin 内、且属于本用户工作页前缀(/u/username)时才存：
- *  登录页(file://)、跨域、或跨账号页面一律不存，避免下次错配恢复。 */
-function persistLastRoute(): void {
-  if (!mainWindow || !creds) return;
-  const origin = serverOrigin();
-  if (!origin) return;
-  try {
-    const wc = mainWindow.webContents;
-    if (!wc || wc.isDestroyed()) return;
-    const raw = wc.getURL();
-    if (!raw || !raw.startsWith(origin)) return; // 登录页 file:// / 跨域 / 加载中空串都不存
-    const path = new URL(raw).pathname + new URL(raw).search + new URL(raw).hash;
-    const homePrefix = `/u/${encodeURIComponent(creds.username)}`;
-    if (!path.startsWith(homePrefix)) return;
-    setLastRoute(origin, creds.username, path);
-  } catch { /* 窗口/webContents 已销毁等，忽略 */ }
+/** 退出前持久化当前 tab 列表（多 tab 版 0.0.12，取代单页 persistLastRoute）。 */
+function persistTabs(): void {
+  tabManager?.persist();
 }
 
 // ——— 菜单动作（与 IPC 共用同一份实现）———
 function runSyncReload(): void {
-  mainWindow?.webContents.reloadIgnoringCache();
+  // 多 tab：刷新当前激活 tab（而非 mainWindow 容器）。
+  tabManager?.reloadActive();
 }
 
 async function runUpdateAimux(): Promise<{ ok: boolean; version?: string; error?: string }> {
@@ -282,6 +303,9 @@ async function runUpdateAimux(): Promise<{ ok: boolean; version?: string; error?
 async function runLogout(): Promise<void> {
   await supervisor?.stop();
   supervisor = null;
+  // 多 tab：销毁所有 tab view + TabManager，回到登录页。
+  tabManager?.destroyAll();
+  tabManager = null;
   clearCreds();
   creds = null;
   mainWindow?.loadFile(join(currentDir, "../renderer/index.html"));
@@ -357,11 +381,8 @@ function createWindow(): void {
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
 
-  // 外链交给系统浏览器，不在 app 内开新窗口
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
-    return { action: "deny" };
-  });
+  // mainWindow.webContents 是空白容器（多 tab 0.0.12）：不加载用户页面，故不再挂
+  // setWindowOpenHandler / will-navigate / F12。这些改为挂到每个 tab view（见 TabManager.attachHandlers）。
 
   // 最大化状态变化推给前端 (自绘窗口按钮在 最大化↔还原 图标间切换)
   mainWindow.on("maximize", () => broadcast("window:maximize-changed", true));
@@ -379,28 +400,11 @@ function createWindow(): void {
     }
   });
 
-  // 只允许在登录服务器 origin 内导航，防被重定向到钓鱼页
-  mainWindow.webContents.on("will-navigate", (_e, url) => {
-    if (url.startsWith("file://")) return;
-    const origin = serverOrigin();
-    if (origin && !url.startsWith(origin)) _e.preventDefault();
-  });
+  // 窗口尺寸变化时重布局所有 tab view（view 铺满客户区，需跟随 resize）。
+  mainWindow.on("resize", () => tabManager?.relayout());
 
-  // 捕获 F12 切换开发者工具：本应用自定义了应用菜单 (Menu.setApplicationMenu)，
-  // Electron 默认菜单里的 F12→toggleDevTools 绑定不复存在，菜单里的「开发者工具」项也没有 accelerator。
-  // 故在主进程 before-input-event 最早处拦截 F12（菜单栏隐藏 / 远程页面聚焦都可靠触发），
-  // 与菜单项 role 互不冲突（不会 double-toggle），detach 模式与 app:open-devtools IPC 保持一致。
-  mainWindow.webContents.on("before-input-event", (_e, input) => {
-    if (input.type !== "keyDown" || input.key !== "F12") return;
-    _e.preventDefault();
-    const wc = mainWindow?.webContents;
-    if (!wc) return;
-    if (wc.isDevToolsOpened()) wc.closeDevTools();
-    else wc.openDevTools({ mode: "detach" });
-  });
-
-  // 窗口关闭时记下当前页面路径：退出/关窗都会触发 close，覆盖 Mac(关窗不退出) 与 三平台退出。
-  mainWindow.on("close", () => persistLastRoute());
+  // 窗口关闭时持久化当前 tab 列表：退出/关窗都会触发 close，覆盖 Mac(关窗不退出) 与 三平台退出。
+  mainWindow.on("close", () => persistTabs());
   // 项目本地路径绑定已移至前端 ProjectPathBindGate（进入项目页时拉 project:bind-status 自行渲染弹窗）。
 }
 
@@ -480,6 +484,17 @@ ipcMain.handle("desktop:get-last-route", () => {
   const homePath = `/u/${encodeURIComponent(creds.username)}`;
   return saved.startsWith(homePath) ? saved : null;
 });
+// ——— 多 tab（实验版 0.0.12）：前端 tab 栏经这些 IPC 订阅状态、发指令 ———
+ipcMain.handle("tabs:get", () => tabManager?.getTabs() ?? []);
+ipcMain.handle("tabs:get-active", () => tabManager?.getActiveTabId() ?? null);
+ipcMain.handle("tabs:new", (_e, opts?: { url?: string }) => {
+  if (!tabManager) return { ok: false as const, error: "未就绪" };
+  tabManager.createTab(opts?.url, { activate: true });
+  return { ok: true as const };
+});
+ipcMain.handle("tabs:close", (_e, id: string) => { tabManager?.closeTab(id); return { ok: true }; });
+ipcMain.handle("tabs:switch", (_e, id: string) => { tabManager?.switchTab(id); return { ok: true }; });
+ipcMain.handle("tabs:reorder", (_e, ids: string[]) => { tabManager?.reorderTabs(ids); return { ok: true }; });
 ipcMain.handle("aimux:status", () => lastStatus);
 ipcMain.handle("aimux:update", () => runUpdateAimux());
 ipcMain.handle("app:sync-reload", () => {
@@ -519,7 +534,8 @@ ipcMain.handle("app:open-status", () => {
   return { ok: true };
 });
 ipcMain.handle("app:open-devtools", () => {
-  mainWindow?.webContents.openDevTools({ mode: "detach" });
+  // 多 tab：打开激活 tab 的 devtools（而非 mainWindow 容器）。
+  tabManager?.openDevTools();
   return { ok: true };
 });
 // 清除缓存 (远程前端 HTTP/SW 缓存, 保留登录态 cc-token): clearCache + 清 SW/Cache/Shader (不动 localstorage/cookies),
@@ -530,9 +546,8 @@ ipcMain.handle("app:clear-cache", async () => {
     await ses.clearCache().catch(() => {});
     await ses.clearStorageData({ storages: ["serviceworkers", "cachestorage", "shadercache"] }).catch(() => {});
   } catch { /* 忽略, 仍尝试刷新 */ }
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.reloadIgnoringCache();
-  }
+  // 多 tab：刷新激活 tab（所有 tab 共享 defaultSession，清缓存对所有 tab 生效）。
+  tabManager?.reloadActive();
   return { ok: true };
 });
 // 前端切主题后上报标题栏覆盖层: 透明背景透出顶栏主题色 + 当前 --text-primary 作窗口按钮图标色。
@@ -878,6 +893,7 @@ app.on("window-all-closed", () => {
 
 // 退出前务必杀 aimux（Windows taskkill /T 连进程树）
 app.on("before-quit", () => {
-  persistLastRoute(); // 兜底：若 close 未捕获（如异常退出路径），退出前再存一次当前页。
+  persistTabs(); // 兜底：退出前再存一次当前 tab 列表。
+  tabManager?.destroyAll();
   void supervisor?.stop();
 });

@@ -434,8 +434,8 @@ function normalizeDefaultModel(raw: unknown): string | null | undefined {
 const PROJECT_CARD_BORDER_THEME_IDS = new Set([
   'auto',
   'neutral',
-  'agentjet-gold',
-  'agentjet-cyan',
+  'dark-gold',
+  'dark-cyan',
   'latex-paper',
   'latex-violet',
   'emerald-copper',

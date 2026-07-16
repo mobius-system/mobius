@@ -16,6 +16,8 @@ const IssuePage = lazyWithRetry(() => import('./pages/IssuePage'))
 const ResearchPage = lazyWithRetry(() => import('./pages/ResearchPage'))
 const AssistantChat = lazyWithRetry(() => import('./components/assistant-chat').then(module => ({ default: module.AssistantChat })))
 const TourController = lazyWithRetry(() => import('./components/tour-controller').then(module => ({ default: module.TourController })))
+// 桌面端多 tab 卡片栏（实验版 0.0.12）：仅 isDesktop 渲染，web 端自退场，lazy 不进网页端首屏 bundle。
+const DesktopTabBar = lazyWithRetry(() => import('./components/desktop-tab-bar').then(module => ({ default: module.DesktopTabBar })))
 
 // 渲染期 chunk 加载失败兜底: 自迭代重新部署后, 旧 tab 拉不到新 chunk 会在 render 抛错.
 // 没有 ErrorBoundary 时 React 18 会卸载整棵树 -> 白屏, 且该错误不冒泡到 window.onerror.
@@ -231,6 +233,9 @@ function AuthenticatedApp() {
       </Suspense>
       <Suspense fallback={null}>
         <AssistantChat />
+      </Suspense>
+      <Suspense fallback={null}>
+        <DesktopTabBar />
       </Suspense>
     </>
   )
