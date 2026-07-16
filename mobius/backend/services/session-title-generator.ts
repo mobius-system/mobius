@@ -18,7 +18,7 @@ import * as fs from 'fs';
 import adminSettings from './admin-settings';
 import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
-import * as modelAccess from './model-access';
+import * as modelRegistry from './model-registry';
 
 const SCAN_INTERVAL_MS = 60 * 1000;
 const BATCH_PER_SCAN = 3;            // 每轮最多生成几个, 避免短时大量模型调用
@@ -51,17 +51,24 @@ function claudeCodeBackend(model: string): boolean {
 interface Endpoint { baseUrl: string; apiKey: string; model: string }
 
 // 把一个 codex 会话模型解析成可调用的 OpenAI 兼容 endpoint。
+// 注意: 会话 model 可能是裸别名(如 'gpt-5.5')而非 'codex:<channel>' -- findCodexModel 对裸
+// 别名会因渠道名正则不匹配而抛错返 null, 故必须走 model-registry.resolveSessionModel(它能解析
+// 内置别名到对应 ~/.codex/<profile>.config.toml)。base_url/api_key/model 从该 TOML 读取。
 function resolveCodexEndpoint(sessionModel: string): Endpoint | null {
-  let m: any;
-  try { m = modelAccess.findCodexModel(sessionModel, { includeSecret: true }); } catch { return null; }
-  if (!m || m.enabled === false || !m.config_path || !fs.existsSync(m.config_path)) return null;
+  let resolved: any;
+  try { resolved = modelRegistry.resolveSessionModel(sessionModel); } catch { return null; }
+  if (!resolved || resolved.backend !== 'tmux-codex') return null;
+  const configPath = resolved.codexConfigPath;
+  if (!configPath || !fs.existsSync(configPath)) return null;
 
   let toml = '';
-  try { toml = fs.readFileSync(m.config_path, 'utf8'); } catch { return null; }
+  try { toml = fs.readFileSync(configPath, 'utf8'); } catch { return null; }
   const baseUrl = String(toml).match(/base_url\s*=\s*['"]([^'"]+)['"]/)?.[1];
   const tomlApiKey = String(toml).match(/api_key\s*=\s*['"]([^'"]+)['"]/)?.[1];
-  const apiKey = m.secret_value || tomlApiKey;
-  const model = m.codex_model;
+  const apiKey = resolved.codexSecretValue || tomlApiKey;
+  const model = resolved.codexModel
+    || String(toml).match(/(?:^|\n)\s*model\s*=\s*['"]([^'"]+)['"]/)?.[1]
+    || sessionModel;
   if (!baseUrl || !apiKey || !model) return null;
   return { baseUrl, apiKey, model };
 }
