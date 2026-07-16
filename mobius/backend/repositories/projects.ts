@@ -18,6 +18,15 @@ import {
 import type { ProjectRow, ProjectRawRow } from '../types/rows';
 
 type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist';
+const CARD_BORDER_THEME_IDS = new Set([
+  'auto',
+  'neutral',
+  'agentjet-gold',
+  'agentjet-cyan',
+  'latex-paper',
+  'latex-violet',
+  'emerald-copper',
+]);
 
 function normalizeIntervalMinutes(value: unknown, fallback: number, min: number): number {
   const n = Number(value);
@@ -58,6 +67,11 @@ function uniqueIds(ids: unknown): string[] {
     out.push(trimmed);
   }
   return out;
+}
+
+function normalizeCardBorderTheme(value: unknown): string {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return CARD_BORDER_THEME_IDS.has(text) ? text : 'auto';
 }
 
 type ProjectRawRowWithExtras = ProjectRawRow & {
@@ -115,6 +129,7 @@ function hydrate(row: ProjectRawRowWithExtras | null | undefined): ProjectRow | 
     default_model: (typeof row.default_model === 'string' && row.default_model.trim())
       ? row.default_model.trim()
       : null,
+    card_border_theme: normalizeCardBorderTheme(row.card_border_theme),
     // 实际生效的"被遗忘 flag 提醒消息": 配置了用配置, 否则用系统默认.
     // 前端用它预填输入框 (单一真相源在 config.DEFAULT_FORGOTTEN_FLAG_MESSAGE).
     forgotten_flag_message_effective:
@@ -326,6 +341,9 @@ const Projects = {
   updateDefaultModel: (id: string, val: string | null): void => {
     const v = (typeof val === 'string' && val.trim()) ? val.trim() : null;
     db.prepare('UPDATE projects SET default_model = ? WHERE id = ?').run(v, id);
+  },
+  updateCardBorderTheme: (id: string, val: string): void => {
+    db.prepare('UPDATE projects SET card_border_theme = ? WHERE id = ?').run(normalizeCardBorderTheme(val), id);
   },
   // 空串/空白 → 存 NULL, 表示 "用 scanner 内置默认文案".
   updateForgottenFlagMessage: (id: string, msg: string | null): void => {

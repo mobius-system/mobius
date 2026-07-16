@@ -68,6 +68,7 @@ export interface ProjectRawRow {
   extension_name: string | null;
   disabled: number;
   default_model: string | null;
+  card_border_theme: string;
 }
 
 /** hydrate 后的 Project 行：布尔字段已转 boolean，git_repos 已 parse */

@@ -81,6 +81,8 @@ CREATE TABLE IF NOT EXISTS projects (
   -- 项目级默认模型偏好: 新建 Session 时模型下拉的初始值. NULL = 未指定 (跟随系统全局默认).
   -- 存的是 model-registry 暴露的短键 (opus / codex / 管理员导入模型的 key), 与 sessions_v2.model 的 id 不同.
   default_model TEXT,
+  -- 项目卡片边框主题: auto = 自迭代金边/普通默认; 其他值由前端候选主题解释.
+  card_border_theme TEXT NOT NULL DEFAULT 'auto',
   FOREIGN KEY (created_by) REFERENCES users(id)
 );
 

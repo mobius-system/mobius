@@ -431,6 +431,25 @@ function normalizeDefaultModel(raw: unknown): string | null | undefined {
   return trimmed;
 }
 
+const PROJECT_CARD_BORDER_THEME_IDS = new Set([
+  'auto',
+  'neutral',
+  'agentjet-gold',
+  'agentjet-cyan',
+  'latex-paper',
+  'latex-violet',
+  'emerald-copper',
+]);
+
+function normalizeProjectCardBorderTheme(raw: unknown): string {
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  if (!trimmed) return 'auto';
+  if (!PROJECT_CARD_BORDER_THEME_IDS.has(trimmed)) {
+    throw new Error('项目卡片边框主题不在候选列表中');
+  }
+  return trimmed;
+}
+
 function shapeProjectForUser(project: any, user: any, opts: { mutedIds?: Set<string> } = {}): any {
   if (!project) return project;
   const canCreate = canCreateIssue(user, project);
@@ -1991,6 +2010,7 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
     canRunSession,
     visibility,
     defaultModel,
+    cardBorderTheme,
     forgottenFlagMessage,
     forgottenFlagIssueIntervalMinutes,
     forgottenFlagResearchIntervalMinutes,
@@ -2012,6 +2032,7 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
     canRunSession?: unknown;
     visibility?: unknown;
     defaultModel?: unknown;
+    cardBorderTheme?: unknown;
     forgottenFlagMessage?: string;
     forgottenFlagIssueIntervalMinutes?: unknown;
     forgottenFlagResearchIntervalMinutes?: unknown;
@@ -2050,6 +2071,13 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
     try {
       const normalized = normalizeDefaultModel(defaultModel ?? req.body?.default_model);
       Projects.updateDefaultModel(id, normalized as any);
+    } catch (e) {
+      return res.status(400).json({ error: (e as Error).message });
+    }
+  }
+  if (cardBorderTheme !== undefined || req.body?.card_border_theme !== undefined) {
+    try {
+      Projects.updateCardBorderTheme(id, normalizeProjectCardBorderTheme(cardBorderTheme ?? req.body?.card_border_theme));
     } catch (e) {
       return res.status(400).json({ error: (e as Error).message });
     }

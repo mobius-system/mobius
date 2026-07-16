@@ -886,6 +886,21 @@ function migrateProjectsDefaultModel() {
 }
 migrateProjectsDefaultModel();
 
+// ===== 共享 projects 表轻量迁移: 项目卡片边框主题 =====
+// auto = 保持存量行为: 自迭代项目金边, 普通项目默认边框. 其他值由前端候选主题解释.
+function migrateProjectsCardBorderTheme() {
+  try {
+    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c: any) => c.name);
+    if (!cols.includes('card_border_theme')) {
+      db.exec("ALTER TABLE projects ADD COLUMN card_border_theme TEXT NOT NULL DEFAULT 'auto'");
+      console.log("[mobius/db] migrate: projects.card_border_theme 已加 (默认 'auto')");
+    }
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️  projects card_border_theme 迁移失败:', e.message);
+  }
+}
+migrateProjectsCardBorderTheme();
+
 // ===== 每用户的项目星标 =====
 // 星标是用户自己的排序偏好, 不改变项目本身的所有权或元数据.
 function migrateProjectUserStars() {
