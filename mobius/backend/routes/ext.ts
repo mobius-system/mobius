@@ -460,6 +460,71 @@ const MIME: Record<string, string> = {
   '.ogg':  'video/ogg',
 };
 
+// 拓展页桌面端顶栏 (注入到每个拓展 index.html / loading 页 <body> 之后)。
+// 解决: 拓展前端是独立 HTML (非 SPA), 全屏 location.assign 进入后没有返回按钮、
+// Win/Linux 桌面端连窗口控制都没有 (titleBarStyle:hidden + 无 SPA TopNav), 只能重启退出。
+// 顶栏 = 返回主页按钮 (history.back, 兜底 /) + 拖拽区 + 窗口控制 (仅桌面非 Mac)。
+// preload 注入的 window.mobiusDesktop 在拓展页同样可用 (BrowserWindow 级), 复用其窗口 IPC。
+const EXT_TOPBAR_HTML = `<style id="mobius-ext-chrome-style">
+#mobius-ext-chrome{position:fixed;top:0;left:0;right:0;height:38px;z-index:2147483647;display:flex;align-items:center;gap:8px;padding:0 8px;box-sizing:border-box;background:rgba(11,15,23,.78);backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2);border-bottom:1px solid rgba(255,255,255,.08);color:#e5e7eb;font:12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;user-select:none}
+#mobius-ext-chrome .mec-back{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px 0 8px;border:0;border-radius:7px;background:rgba(255,255,255,.10);color:#e5e7eb;cursor:pointer;font:inherit;font-size:12px;-webkit-app-region:no-drag;transition:background .12s;flex-shrink:0}
+#mobius-ext-chrome .mec-back:hover{background:rgba(255,255,255,.20)}
+#mobius-ext-chrome .mec-back svg{width:13px;height:13px}
+#mobius-ext-chrome .mec-drag{flex:1;height:100%;-webkit-app-region:drag;min-width:24px}
+#mobius-ext-chrome .mec-wins{display:flex;align-items:center;height:100%;-webkit-app-region:no-drag;flex-shrink:0}
+#mobius-ext-chrome .mec-win{width:34px;height:100%;display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:#e5e7eb;cursor:pointer}
+#mobius-ext-chrome .mec-win:hover{background:rgba(255,255,255,.12)}
+#mobius-ext-chrome .mec-win.close:hover{background:#e81123;color:#fff}
+#mobius-ext-chrome .mec-win svg{width:11px;height:11px}
+#mobius-ext-chrome.is-mac .mec-back{margin-left:68px}
+</style>
+<div id="mobius-ext-chrome">
+  <button class="mec-back" id="mec-back" type="button" title="返回 Mobius 主页">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    <span>返回</span>
+  </button>
+  <div class="mec-drag" aria-hidden="true"></div>
+  <div class="mec-wins" id="mec-wins"></div>
+</div>
+<script>
+(function(){
+  var c=document.getElementById("mobius-ext-chrome");if(!c)return;
+  var isMac=/Mac/i.test(navigator.platform||"");if(isMac)c.className+=" is-mac";
+  var md=window.mobiusDesktop;var isDesktop=!!(md&&md.isDesktop);
+  document.getElementById("mec-back").addEventListener("click",function(){
+    try{
+      if(window.history.length>1){
+        var done=false;
+        var t=setTimeout(function(){if(!done)window.location.href="/";},300);
+        window.addEventListener("pagehide",function(){done=true;clearTimeout(t);},{once:true});
+        window.history.back();
+      }else{window.location.href="/";}
+    }catch(e){window.location.href="/";}
+  });
+  if(!(isDesktop&&!isMac))return;
+  var wins=document.getElementById("mec-wins");
+  var icMin='<svg viewBox="0 0 11 11"><rect y="5" width="11" height="1.1" fill="currentColor"/></svg>';
+  var icMax='<svg viewBox="0 0 11 11"><rect x="0.7" y="0.7" width="9.6" height="9.6" fill="none" stroke="currentColor" stroke-width="1"/></svg>';
+  var icRes='<svg viewBox="0 0 11 11"><rect x="1" y="3.2" width="6.4" height="6.4" fill="none" stroke="currentColor" stroke-width="1"/><path d="M3.2 3.2 V1 H9.6 V7.4 H7.4" fill="none" stroke="currentColor" stroke-width="1"/></svg>';
+  var icClose='<svg viewBox="0 0 11 11"><path d="M0.5 0.5 L10.5 10.5 M10.5 0.5 L0.5 10.5" stroke="currentColor" stroke-width="1.1"/></svg>';
+  function mk(title,html,cls){var b=document.createElement("button");b.type="button";b.title=title;b.className="mec-win "+cls;b.innerHTML=html;return b;}
+  var bMin=mk("最小化",icMin,"min");bMin.onclick=function(){md.windowMinimize&&md.windowMinimize();};
+  var bMax=mk("最大化",icMax,"max");
+  function setMax(m){bMax.title=m?"还原":"最大化";bMax.innerHTML=m?icRes:icMax;}
+  bMax.onclick=function(){md.windowToggleMaximize&&md.windowToggleMaximize().then(function(r){if(r&&typeof r==="object"&&"maximized" in r)setMax(!!r.maximized);}).catch(function(){});};
+  var bClose=mk("关闭",icClose,"close");bClose.onclick=function(){md.windowClose&&md.windowClose();};
+  wins.appendChild(bMin);wins.appendChild(bMax);wins.appendChild(bClose);
+  if(md.windowIsMaximized){md.windowIsMaximized().then(function(m){setMax(!!m);}).catch(function(){});}
+  if(md.onMaximizeChange){md.onMaximizeChange(function(m){setMax(!!m);});}
+})();
+</script>`;
+
+// 把顶栏注入到拓展 HTML 的 <body> 之后 (无 <body> 标签时前置, 极少见)。
+function injectExtChrome(html: string): string {
+  const withChrome = html.replace(/<body([^>]*)>/i, (m) => `${m}\n${EXT_TOPBAR_HTML}`);
+  return withChrome !== html ? withChrome : `${EXT_TOPBAR_HTML}\n${html}`;
+}
+
 function buildLoadingHtml(entry: any): string {
   const safeName = String(entry.name).replace(/[^a-z0-9-]/g, '');
   return `<!doctype html>
@@ -477,6 +542,7 @@ function buildLoadingHtml(entry: any): string {
   .log{margin-top:12px;font-family:ui-monospace,monospace;font-size:11px;color:#64748b;max-width:560px;white-space:pre-wrap;text-align:left}
 </style>
 </head><body>
+${EXT_TOPBAR_HTML}
 <div class="wrap">
   <div class="spin"></div>
   <div class="title">正在准备拓展: ${entry.display_name}</div>
@@ -563,19 +629,20 @@ async function serveExtension(req: express.Request, res: express.Response, name:
     return;
   }
 
-  // index.html: 注入 window.__EXT_NAME__
+  // index.html: 注入 window.__EXT_NAME__ + 桌面端顶栏 (返回主页 / 窗口控制)
   if (isIndex) {
     const indexPath = path.join(distDir, 'index.html');
     try {
-      const html = fs.readFileSync(indexPath, 'utf8');
+      let html = fs.readFileSync(indexPath, 'utf8');
       const injected = html.replace(
         /<head([^>]*)>/i,
         `<head$1>\n<script>window.__EXT_NAME__=${JSON.stringify(name)};</script>`
       );
+      const withChrome = injectExtChrome(injected);
       res.set('content-type', 'text/html; charset=utf-8');
       // 缓存安全: 用 no-store, 避免开发期 dist 重建后浏览器拿到老 html.
       res.set('cache-control', 'no-store');
-      res.send(injected);
+      res.send(withChrome);
       return;
     } catch (e) {
       const err = e as Error;
