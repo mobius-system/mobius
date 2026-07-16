@@ -809,7 +809,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           </button>
         )}
         {/* Logo + 面包屑 */}
-        <div className="mobius-topnav-crumb flex items-center gap-3 min-w-0 flex-shrink-0">
+        <div className="mobius-topnav-crumb flex items-center gap-2 min-w-0 flex-shrink-0">
           <div className="relative flex-shrink-0">
             <button
               type="button"
