@@ -102,6 +102,10 @@ function subForBuiltin(key: any): string {
 }
 
 function dynamicEntryFor(modelOrKey: any): any {
+  // modelAccess (import * as 的命名空间) 在 tsx/CJS 下偶发为 undefined (模块解析竞争),
+  // 此时直接返回 null, 不要抛 —— 抛出会冒成 unhandledRejection 终止整个 worker 进程,
+  // 瞬间杀掉所有正在进行的 SSE 长连接 (浏览器侧 ERR_HTTP2_PROTOCOL_ERROR).
+  if (!modelAccess || typeof modelAccess.findClaudeCodeModel !== 'function') return null
   const m = modelAccess.findClaudeCodeModel(modelOrKey)
   if (!m || !m.enabled) return null
   if (!fileExists(m.settings_path)) return null
@@ -129,6 +133,8 @@ function dynamicEntryFor(modelOrKey: any): any {
 }
 
 function dynamicCodexEntryFor(modelOrKey: any): any {
+  // 同 dynamicEntryFor: modelAccess 偶发 undefined 时不抛, 返回 null.
+  if (!modelAccess || typeof modelAccess.findCodexModel !== 'function') return null
   const m = modelAccess.findCodexModel(modelOrKey, { includeSecret: true })
   if (!m || !m.enabled) return null
   if (!fileExists(m.config_path)) return null
@@ -220,18 +226,24 @@ function listSessionModelOptions(): any[] {
   // 该记录跟内置 codex 共享同一份 ~/.codex/<profileKey>.config.toml, 仍须从 codexDynamics
   // 剔除避免重复. 覆盖仅作用于 picker, 不改 builtinEntryFor / resolveSessionModel, 故管理员
   // 隐藏 codex 后已有 codex 会话仍可正常运行.
+  // modelAccess 偶发 undefined (tsx/CJS 模块解析竞争) 时降级为空列表, 不要抛.
+  const ma = (modelAccess && typeof modelAccess.listCodexModels === 'function') ? modelAccess : null
   const builtinCodexProfileKey = (MODEL_OPTIONS.codex && MODEL_OPTIONS.codex.profileKey) || null
-  const builtinCodexSeed = builtinCodexProfileKey
-    ? modelAccess.findCodexModel(builtinCodexProfileKey)
+  const builtinCodexSeed = (ma && builtinCodexProfileKey)
+    ? ma.findCodexModel(builtinCodexProfileKey)
     : null
-  const codexDynamics = modelAccess.listCodexModels({ enabledOnly: true })
-    .map((m: any) => dynamicCodexEntryFor(m.session_model))
-    .filter(Boolean)
-    .filter((m: any) => !builtinCodexProfileKey || m.model !== builtinCodexProfileKey)
+  const codexDynamics = ma
+    ? ma.listCodexModels({ enabledOnly: true })
+        .map((m: any) => dynamicCodexEntryFor(m.session_model))
+        .filter(Boolean)
+        .filter((m: any) => !builtinCodexProfileKey || m.model !== builtinCodexProfileKey)
+    : []
 
-  const claudeDynamics = modelAccess.listClaudeCodeModels({ enabledOnly: true })
-    .map((m: any) => dynamicEntryFor(m.session_model))
-    .filter(Boolean)
+  const claudeDynamics = ma
+    ? ma.listClaudeCodeModels({ enabledOnly: true })
+        .map((m: any) => dynamicEntryFor(m.session_model))
+        .filter(Boolean)
+    : []
 
   let builtinCodex = builtins.filter((m) => m.key === 'codex')
   if (builtinCodexSeed) {

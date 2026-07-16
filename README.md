@@ -37,7 +37,7 @@ One system to connect your team, AI agents, devices, and compute
 ## News
 
 **2026-07-16**
-- **Web Terminal now supports two launch modes**: open a shell in the current project directory, or open a terminal that automatically attaches to the current session's Agent tmux backend for live TUI inspection. See the updated [Web Terminal guide](https://nutshellai-tech.github.io/mobius/en/tutorial/26_web_terminal/).
+- **Web Terminal now supports two launch modes**: open a shell in the current project directory, or open a terminal that automatically attaches to the current session's Agent tmux backend for live TUI inspection.
 
 **2026-07-14**
 - **Code Conversation v2** workspace mode: a 3-pane layout (file browser + built-in CodeMirror editor with syntax highlighting and in-place file saving + chat) for browsing, editing, and discussing project files in one place.

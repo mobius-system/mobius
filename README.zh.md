@@ -37,7 +37,7 @@
 ## 最新动态
 
 **2026-07-16**
-- **网页终端新增两种打开方式**：可在当前项目目录打开普通 shell，也可打开终端后自动 attach 到当前会话的 Agent tmux 后台，直接查看 Agent TUI 运行状态。查看更新后的[网页终端教程](https://nutshellai-tech.github.io/mobius/tutorial/26_web_terminal/)。
+- **网页终端新增两种打开方式**：可在当前项目目录打开普通 shell，也可打开终端后自动 attach 到当前会话的 Agent tmux 后台，直接查看 Agent TUI 运行状态。
 
 **2026-07-14**
 - **代码对话 v2**工作空间模式：三栏布局（文件浏览器 + 内置 CodeMirror 编辑器，支持语法高亮与就地保存 + 对话），可在一个界面浏览、编辑、讨论项目文件。

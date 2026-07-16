@@ -63,6 +63,21 @@ function clearEmittedTsShadows() {
 }
 clearEmittedTsShadows();
 
+// 运行期兜底: 异步路由 / 后台任务里未捕获的 Promise rejection 默认会让 Node 18 直接终止
+// worker 进程, PM2 随即重启 —— 这会瞬间杀掉所有正在进行的 SSE 长连接
+// (GET /api/sessions/:id/events), 浏览器侧表现为 ERR_HTTP2_PROTOCOL_ERROR
+// (nginx 侧日志: "upstream prematurely closed connection while reading upstream").
+// 这里统一记录后吞掉, 避免单个请求的异常拖垮全局长连接; 真正的 bug 仍写进错误日志可见,
+// 不会静默丢失. 进程真到内存上限时由 PM2 max_memory_restart 兜底重启.
+function recordRuntimeError(tag, reason) {
+  const detail = (reason && (reason.stack || reason.message)) || String(reason);
+  const msg = `[${new Date().toISOString()}] ${tag}(swallowed): ${detail}\n`;
+  try { fs.appendFileSync(ERROR_LOG, msg); } catch (_) { /* ignore */ }
+  try { process.stderr.write(msg); } catch (_) { /* ignore */ }
+}
+process.on('unhandledRejection', (reason) => recordRuntimeError('unhandledRejection', reason));
+process.on('uncaughtException', (err) => recordRuntimeError('uncaughtException', err));
+
 try {
   require('./server.js');
 } catch (err) {
