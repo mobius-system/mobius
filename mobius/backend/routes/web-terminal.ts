@@ -35,6 +35,8 @@ import { JWT_SECRET } from '../config';
 import { Sessions } from '../repositories/sessions';
 // @ts-ignore
 import { Projects } from '../repositories/projects';
+// @ts-ignore — service 仍是 .js
+import * as modelRegistry from '../services/model-registry';
 
 // noServer 模式: 由 server.js 的 upgrade 事件手动分发到 handleUpgrade, 共享一个 WSS.
 const wss = new WebSocketServer({ noServer: true });
@@ -69,18 +71,40 @@ function verifyUser(token: string | null): { id: string; role?: string } | null 
 }
 
 // 解析终端 cwd: session 归属校验 + 取项目 bind_path. 返回 denied=true 表示无权/不存在.
-function resolveCwd(sid: string, userId: string): { cwd: string; denied: boolean } {
+type TerminalMode = 'cwd' | 'agent';
+
+const AGENT_TMUX_HUBS: Record<string, string> = {
+  'tmux-codex': 'imac_codex_agent_hub',
+  'tmux-claude-code': 'imac_claude_code_agent_hub',
+};
+
+function terminalMode(rawUrl: string): TerminalMode {
+  return queryParam(rawUrl, 'mode') === 'agent' ? 'agent' : 'cwd';
+}
+
+function shellQuote(s: string): string {
+  return `'${String(s).replace(/'/g, `'\\''`)}'`;
+}
+
+function agentTmuxTarget(session: any): string | null {
+  const backend = modelRegistry.backendNameForSessionModel(session?.model);
+  const hub = AGENT_TMUX_HUBS[backend];
+  if (!hub) return null;
+  return `${hub}:${session.session_id}`;
+}
+
+function resolveSessionTerminal(sid: string, userId: string): { cwd: string; denied: boolean; session: any | null } {
   const session = Sessions.findByIdForUser(sid, userId);
-  if (!session) return { cwd: '', denied: true };
+  if (!session) return { cwd: '', denied: true, session: null };
   if (session.project_id) {
     const p = Projects.findById(session.project_id);
     const bp = p?.bind_path;
     if (bp && fs.existsSync(bp) && fs.statSync(bp).isDirectory()) {
-      return { cwd: bp, denied: false };
+      return { cwd: bp, denied: false, session };
     }
   }
   // research/issue session 若项目无可用 bind_path, 回落到后端进程 cwd, 保证总能开.
-  return { cwd: process.cwd(), denied: false };
+  return { cwd: process.cwd(), denied: false, session };
 }
 
 export function handleUpgrade(req: any, socket: any, head: Buffer): void {
@@ -90,7 +114,8 @@ export function handleUpgrade(req: any, socket: any, head: Buffer): void {
   const sid = queryParam(req.url, 'sid');
   if (!sid) { socket.destroy(); return; }
 
-  const { cwd, denied } = resolveCwd(sid, user.id);
+  const mode = terminalMode(req.url);
+  const { cwd, denied, session } = resolveSessionTerminal(sid, user.id);
   if (denied) { socket.destroy(); return; }
 
   wss.handleUpgrade(req, socket, head, (ws: any) => {
@@ -102,12 +127,14 @@ export function handleUpgrade(req: any, socket: any, head: Buffer): void {
     const shell = process.env.SHELL || 'bash';
     let term: any;
     try {
+      const env = { ...process.env, TERM: 'xterm-256color' } as any;
+      delete env.TMUX;
       term = pty.spawn(shell, [], {
         name: 'xterm-256color',
         cols: 80,
         rows: 24,
         cwd,
-        env: { ...process.env, TERM: 'xterm-256color' } as any,
+        env,
       });
     } catch (e) {
       console.error('[web-terminal] spawn failed:', (e as Error).message);
@@ -115,7 +142,17 @@ export function handleUpgrade(req: any, socket: any, head: Buffer): void {
       return;
     }
 
-    console.log(`[web-terminal] open user=${user.id} sid=${sid} cwd=${cwd} pid=${term.pid}`);
+    console.log(`[web-terminal] open user=${user.id} sid=${sid} mode=${mode} cwd=${cwd} pid=${term.pid}`);
+
+    if (mode === 'agent') {
+      const target = agentTmuxTarget(session);
+      const attachCommand = target
+        ? `tmux attach -t ${shellQuote(target)}`
+        : `printf '%s\\n' ${shellQuote('当前 Session 的模型没有可 attach 的 Agent tmux 后台')}`;
+      setTimeout(() => {
+        try { term.write(`${attachCommand}\r`); } catch { /* ignore */ }
+      }, 200);
+    }
 
     // pty 输出 → 浏览器
     term.onData((chunk: string) => {

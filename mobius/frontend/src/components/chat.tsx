@@ -7,7 +7,7 @@ import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor } from './session-welcome'
 import { NewSessionModal } from './modals'
 import { OpenInVSCodeButton, ProjectPortEntryButton } from './project-files'
-import { WebTerminalModal } from './web-terminal-modal'
+import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
 import { useVisibleJsonl } from './session-jsonl-filter'
 import { SessionStatusChip } from './session-status-chip'
@@ -1446,7 +1446,9 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false)
   const [continueModalOpen, setContinueModalOpen] = useState(false)
   // 会话内 Web 终端弹窗 (issue session / research agent 共用 ChatArea, 一处入口覆盖两类会话).
+  const [terminalChoiceOpen, setTerminalChoiceOpen] = useState(false)
   const [terminalOpen, setTerminalOpen] = useState(false)
+  const [terminalMode, setTerminalMode] = useState<WebTerminalMode>('cwd')
   const [projectKnowledgeSending, setProjectKnowledgeSending] = useState(false)
   const [messageSubmitting, setMessageSubmitting] = useState(false)
   // 当前会话模型是否仍可用 (管理员删除该模型配置后 → false, 会话只读, 需"更换模型并继续").
@@ -3101,7 +3103,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
             canSendProjectKnowledge={jsonlEntries.length > 0 && !!currentProjectId && connectionStatus === 'connected'}
             onContinueWithOtherModel={() => setContinueModalOpen(true)}
             canContinueWithOtherModel={!!currentSession?.session_id && (!!currentIssueId || !!(currentSession as any)?.research_id)}
-            onOpenTerminal={() => setTerminalOpen(true)}
+            onOpenTerminal={() => setTerminalChoiceOpen(true)}
             onStop={handleStopSession}
             canStop={!!sessionId}
           />
@@ -3461,6 +3463,16 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   <BookOpen className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
                   <span className="btn-label">查看当前知识</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setTerminalChoiceOpen(true)}
+                  disabled={!currentSession?.session_id}
+                  title="打开当前 Session 终端"
+                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
+                >
+                  <Terminal className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
+                  <span className="btn-label">打开终端</span>
+                </button>
               </>
             )}
           </div>
@@ -3638,9 +3650,75 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
         />
       )}
 
+      {terminalChoiceOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            aria-label="关闭终端打开方式选择"
+            onClick={() => setTerminalChoiceOpen(false)}
+          />
+          <div
+            className="relative flex w-[min(420px,calc(100vw-32px))] flex-col gap-3 rounded-2xl p-4 shadow-2xl"
+            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="flex items-center gap-2">
+              <Terminal className="h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
+              <h3 className="min-w-0 flex-1 text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>打开终端</h3>
+              <button
+                type="button"
+                onClick={() => setTerminalChoiceOpen(false)}
+                title="关闭"
+                className="flex h-7 w-7 items-center justify-center rounded-xl border transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+              >
+                <X className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+            </div>
+            <div className="grid gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setTerminalMode('cwd')
+                  setTerminalChoiceOpen(false)
+                  setTerminalOpen(true)
+                }}
+                className="flex min-h-[58px] w-full items-center gap-3 rounded-xl border px-3 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+              >
+                <Terminal className="h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium">在当前目录打开终端</span>
+                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>进入当前 Session 所属项目目录</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTerminalMode('agent')
+                  setTerminalChoiceOpen(false)
+                  setTerminalOpen(true)
+                }}
+                className="flex min-h-[58px] w-full items-center gap-3 rounded-xl border px-3 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+              >
+                <Bot className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium">打开终端并显示 Agent 后台</span>
+                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>自动 attach 到当前 Session 的 tmux 窗口</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {terminalOpen && (
         <WebTerminalModal
+          key={`${currentSession?.session_id || ''}:${terminalMode}`}
           sessionId={currentSession?.session_id}
+          mode={terminalMode}
           onClose={() => setTerminalOpen(false)}
         />
       )}
