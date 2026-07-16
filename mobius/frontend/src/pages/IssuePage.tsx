@@ -340,9 +340,9 @@ export default function IssuePage() {
               data-tour="issue-sidebar-new-session"
               icon={<MessageSquarePlus className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} />}>
               <span className="whitespace-nowrap">新会话</span>
-              <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-current/10">
+              {/* <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-current/10">
                 <Sparkles className="h-2.5 w-2.5" strokeWidth={2} />
-              </span>
+              </span> */}
             </PrimaryActionButton>
           </div>
 

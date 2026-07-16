@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { ArrowLeft, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
+import { ArrowLeft, BookOpen, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
 import { useStore, api } from '../store'
 import { timeAgo } from './shell'
 import { SkillsManager } from './skills'
@@ -2150,6 +2150,7 @@ export function NewSessionModal({
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set())
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set())
   const [previewingSkill, setPreviewingSkill] = useState<WizardItem | null>(null)
+  const [contextSelectionPanel, setContextSelectionPanel] = useState<null | 'skill' | 'memory'>(null)
   const { theme } = useStore()
   const isDark = theme !== 'light'
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -2881,63 +2882,28 @@ export function NewSessionModal({
                         </div>
                       </div>
                     )}
-                    <div className="flex items-center justify-between mb-1.5">
-                      <h4 className="text-[12px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
-                        Skill ({skillCheckedCount}/{availableSkills.length})
-                      </h4>
-                      {availableSkills.length > 0 && (
-                        <div className="flex gap-1.5">
-                          <button onClick={() => { const none = normalizeSkillExclusions(new Set<string>()); setExcludedSkills(none); fetchPreview(none, excludedMemories).then(setPreview).catch(() => {}) }}
-                            className="text-[10px] px-2 py-0.5 rounded border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>全选</button>
-                          <button onClick={() => { const all = normalizeSkillExclusions(new Set<string>(availableSkills.map(s => s.id))); setExcludedSkills(all); fetchPreview(all, excludedMemories).then(setPreview).catch(() => {}) }}
-                            className="text-[10px] px-2 py-0.5 rounded border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>全不选</button>
+                    <div className="rounded-lg p-3" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h4 className="text-[12px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+                            Skill ({skillCheckedCount}/{availableSkills.length})
+                          </h4>
+                          <p className="mt-1 text-[10px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                            点击右侧按钮打开选择弹窗。取消勾选的 Skill 不会注入当前 {displayEntityLabel}。
+                          </p>
                         </div>
-                      )}
-                    </div>
-                    <div className="rounded-lg p-2.5 space-y-1.5 text-[11px]" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
-                      {availableSkills.length === 0 && <p className="italic" style={{ color: isDark ? '#6b7280' : '#64748b' }}>无 (本 {isResearch ? 'Research' : 'Issue'} 未启用任何 Skill)</p>}
-                      {availableSkills.map(sk => {
-                        const required = matchesRequiredSkill(sk)
-                        const locked = required || isChosenAgentSkill(sk.id)
-                        const mutuallyExclusive = isMutuallyExclusiveAgentSkill(sk.id)
-                        const checked = locked || (!mutuallyExclusive && !excludedSkills.has(sk.id))
-                        return (
-                          <div
-                            key={sk.id}
-                            data-tour={(sk.name === 'mobius-extension' || sk.dirName === 'mobius-extension') ? 'session-preview-mobius-extension-skill' : undefined}
-                            className="flex items-start gap-2 hover:bg-[var(--bg-card)] -mx-1 px-1 py-0.5 rounded"
-                          >
-                            <label className={`flex min-w-0 flex-1 items-start gap-2 ${locked ? 'cursor-default' : mutuallyExclusive ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                              <input type="checkbox" checked={checked} disabled={locked || mutuallyExclusive} onChange={() => toggleSkill(sk.id)}
-                                className="mt-0.5 accent-blue-500 cursor-pointer disabled:cursor-not-allowed" />
-                              <div className="min-w-0 flex-1" style={{ opacity: mutuallyExclusive ? 0.38 : checked ? 1 : 0.45 }}>
-                                <div className="truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{sk.name}</div>
-                                {sk.description && <div className="text-[10px] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{sk.description}</div>}
-                              </div>
-                            </label>
-                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                              {locked && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)', color: isDark ? '#93c5fd' : '#1d4ed8' }}>{required ? '必选' : '主Skill'}</span>}
-                              {mutuallyExclusive && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)', color: isDark ? '#fca5a5' : '#dc2626' }}>互斥</span>}
-                              <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.1)', color: isDark ? '#c084fc' : '#7e22ce' }}>
-                                {SCOPE_LABEL_WIZ[sk.scope] || sk.scope}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setPreviewingSkill(sk)}
-                                className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)]"
-                                style={{ color: isDark ? '#93c5fd' : '#1d4ed8', borderColor: 'var(--input-border)' }}
-                                title={`预览 ${sk.name} 的完整 SKILL.md`}
-                                aria-label={`预览 ${sk.name} 的完整 SKILL.md`}
-                              >
-                                <Eye className="h-3 w-3" strokeWidth={1.8} />
-                                <span>预览</span>
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })}
+                        <button
+                          type="button"
+                          onClick={() => setContextSelectionPanel('skill')}
+                          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
+                          style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}
+                        >
+                          <Puzzle className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />
+                          Skill ({skillCheckedCount}/{availableSkills.length} 启用)
+                        </button>
+                      </div>
                       {availableSkills.length > 0 && !isResearch && (
-                        <p className="pt-1 text-[10px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                        <p className="pt-2 text-[10px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
                           {projectSkillCount > 0
                             ? `已读取当前项目的 ${projectSkillCount} 个项目级 Skill。创建后会固定为本 ${displayEntityLabel} 的快照。`
                             : `这里没有当前项目的项目级 Skill。其他项目里的 Skill 不会进入本 ${displayEntityLabel}；已有 ${displayEntityLabel} 也不会自动补入新添加的 Skill。`}
@@ -2947,52 +2913,26 @@ export function NewSessionModal({
                   </section>
 
                   <section data-tour="session-preview-memories">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <h4 className="text-[12px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
-                        Memory ({memoryCheckedCount}/{availableMemories.length})
-                      </h4>
-                      {availableMemories.length > 0 && (
-                        <div className="flex gap-1.5">
-                          <button onClick={() => { const none = new Set<string>(); setExcludedMemories(none); fetchPreview(excludedSkills, none).then(setPreview).catch(() => {}) }}
-                            className="text-[10px] px-2 py-0.5 rounded border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>全选</button>
-                          <button onClick={() => { const all = new Set<string>(availableMemories.map(m => m.id)); setExcludedMemories(all); fetchPreview(excludedSkills, all).then(setPreview).catch(() => {}) }}
-                            className="text-[10px] px-2 py-0.5 rounded border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>全不选</button>
+                    <div className="rounded-lg p-3" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h4 className="text-[12px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+                            Memory ({memoryCheckedCount}/{availableMemories.length})
+                          </h4>
+                          <p className="mt-1 text-[10px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                            点击右侧按钮打开选择弹窗。取消勾选的 Memory 不会注入当前 {displayEntityLabel}。
+                          </p>
                         </div>
-                      )}
-                    </div>
-                    <div className="rounded-lg p-2.5 space-y-1.5 text-[11px]" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
-                      {availableMemories.length === 0 && <p className="italic" style={{ color: isDark ? '#6b7280' : '#64748b' }}>无</p>}
-                      {availableMemories.map(m => {
-                        const checked = !excludedMemories.has(m.id)
-                        const memoryTour = isSelfEvolveGuidedDemo
-                          ? isSelfEvolveRequiredMemoryItem(m)
-                            ? 'session-preview-self-evolve-required-memory'
-                            : isSelfEvolveProjectMemoryItem(m)
-                              ? 'session-preview-self-evolve-project-memory'
-                              : isSelfEvolveGuideMemoryItem(m)
-                                ? 'session-preview-self-evolve-guide-memory'
-                                : undefined
-                          : m.name.includes('莫比乌斯光点标志空间案例') || m.name.includes('莫比乌斯光点 Logo 空间案例')
-                            ? 'session-preview-logo-memory'
-                            : undefined
-                        return (
-                          <label
-                            key={m.id}
-                            data-tour={memoryTour}
-                            className="flex items-start gap-2 cursor-pointer hover:bg-[var(--bg-card)] -mx-1 px-1 py-0.5 rounded"
-                          >
-                            <input type="checkbox" checked={checked} onChange={() => toggleMemory(m.id)}
-                              className="mt-0.5 accent-blue-500 cursor-pointer" />
-                            <div className="min-w-0 flex-1" style={{ opacity: checked ? 1 : 0.45 }}>
-                              <div className="truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{m.name}</div>
-                              {m.description && <div className="text-[10px] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{m.description}</div>}
-                            </div>
-                            <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)', color: isDark ? '#86efac' : '#15803d' }}>
-                              {SCOPE_LABEL_WIZ[m.scope] || m.scope}
-                            </span>
-                          </label>
-                        )
-                      })}
+                        <button
+                          type="button"
+                          onClick={() => setContextSelectionPanel('memory')}
+                          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
+                          style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}
+                        >
+                          <BookOpen className="h-3.5 w-3.5 text-cyan-400" strokeWidth={1.9} />
+                          Memory ({memoryCheckedCount}/{availableMemories.length} 启用)
+                        </button>
+                      </div>
                     </div>
                   </section>
                 </div>
@@ -3028,6 +2968,192 @@ export function NewSessionModal({
           isDark={isDark}
           onClose={() => setPreviewingSkill(null)}
         />
+      )}
+
+      {contextSelectionPanel && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center px-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            aria-label="关闭选择弹窗"
+            onClick={() => setContextSelectionPanel(null)}
+          />
+          <div
+            className="relative flex w-[min(760px,calc(100vw-32px))] max-h-[min(720px,calc(100vh-48px))] flex-col overflow-hidden rounded-2xl shadow-2xl"
+            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  {contextSelectionPanel === 'skill'
+                    ? <Puzzle className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
+                    : <BookOpen className="h-4 w-4 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />}
+                  <div className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {contextSelectionPanel === 'skill' ? 'Skill 选择' : 'Memory 选择'}
+                  </div>
+                </div>
+                <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  {contextSelectionPanel === 'skill'
+                    ? `${skillCheckedCount}/${availableSkills.length} 已启用 · 取消勾选的 Skill 不会注入当前 ${displayEntityLabel}`
+                    : `${memoryCheckedCount}/${availableMemories.length} 已启用 · 取消勾选的 Memory 不会注入当前 ${displayEntityLabel}`}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setContextSelectionPanel(null)}
+                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                aria-label="关闭"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {contextSelectionPanel === 'skill'
+                  ? '默认全部启用，取消勾选后不会注入上下文。'
+                  : '默认全部启用，取消勾选后不会注入上下文。'}
+              </div>
+              <div className="flex items-center gap-1.5">
+                {contextSelectionPanel === 'skill' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { const none = normalizeSkillExclusions(new Set<string>()); setExcludedSkills(none); fetchPreview(none, excludedMemories).then(setPreview).catch(() => {}) }}
+                      className="h-7 rounded-lg border px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                      style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}
+                    >
+                      全选
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { const all = normalizeSkillExclusions(new Set<string>(availableSkills.map(s => s.id))); setExcludedSkills(all); fetchPreview(all, excludedMemories).then(setPreview).catch(() => {}) }}
+                      className="h-7 rounded-lg border px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                      style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}
+                    >
+                      全不选
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { const none = new Set<string>(); setExcludedMemories(none); fetchPreview(excludedSkills, none).then(setPreview).catch(() => {}) }}
+                      className="h-7 rounded-lg border px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                      style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}
+                    >
+                      全选
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { const all = new Set<string>(availableMemories.map(m => m.id)); setExcludedMemories(all); fetchPreview(excludedSkills, all).then(setPreview).catch(() => {}) }}
+                      className="h-7 rounded-lg border px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                      style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}
+                    >
+                      全不选
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {contextSelectionPanel === 'skill' ? (
+                <div className="space-y-1.5">
+                  {availableSkills.length === 0 && <p className="py-6 text-center text-[11px] italic" style={{ color: 'var(--text-muted)' }}>无 (本 {isResearch ? 'Research' : 'Issue'} 未启用任何 Skill)</p>}
+                  {availableSkills.map(sk => {
+                    const required = matchesRequiredSkill(sk)
+                    const locked = required || isChosenAgentSkill(sk.id)
+                    const mutuallyExclusive = isMutuallyExclusiveAgentSkill(sk.id)
+                    const checked = locked || (!mutuallyExclusive && !excludedSkills.has(sk.id))
+                    return (
+                      <div
+                        key={sk.id}
+                        data-tour={(sk.name === 'mobius-extension' || sk.dirName === 'mobius-extension') ? 'session-preview-mobius-extension-skill' : undefined}
+                        className="flex items-start gap-2 rounded-md px-1.5 py-1 hover:bg-[var(--bg-card-hover)]"
+                      >
+                        <label className={`flex min-w-0 flex-1 items-start gap-2 ${locked ? 'cursor-default' : mutuallyExclusive ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                          <input type="checkbox" checked={checked} disabled={locked || mutuallyExclusive} onChange={() => toggleSkill(sk.id)}
+                            className="mt-0.5 accent-blue-500 cursor-pointer disabled:cursor-not-allowed" />
+                          <div className="min-w-0 flex-1" style={{ opacity: mutuallyExclusive ? 0.38 : checked ? 1 : 0.45 }}>
+                            <div className="truncate text-[12px]" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{sk.name}</div>
+                            {sk.description && <div className="truncate text-[10px]" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{sk.description}</div>}
+                          </div>
+                        </label>
+                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                          {locked && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)', color: isDark ? '#93c5fd' : '#1d4ed8' }}>{required ? '必选' : '主Skill'}</span>}
+                          {mutuallyExclusive && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)', color: isDark ? '#fca5a5' : '#dc2626' }}>互斥</span>}
+                          <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.1)', color: isDark ? '#c084fc' : '#7e22ce' }}>
+                            {SCOPE_LABEL_WIZ[sk.scope] || sk.scope}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => { setContextSelectionPanel(null); setPreviewingSkill(sk) }}
+                            className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                            style={{ color: isDark ? '#93c5fd' : '#1d4ed8', borderColor: 'var(--input-border)' }}
+                            title={`预览 ${sk.name} 的完整 SKILL.md`}
+                            aria-label={`预览 ${sk.name} 的完整 SKILL.md`}
+                          >
+                            <Eye className="h-3 w-3" strokeWidth={1.8} />
+                            <span>预览</span>
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {availableMemories.length === 0 && <p className="py-6 text-center text-[11px] italic" style={{ color: 'var(--text-muted)' }}>无</p>}
+                  {availableMemories.map(m => {
+                    const checked = !excludedMemories.has(m.id)
+                    const memoryTour = isSelfEvolveGuidedDemo
+                      ? isSelfEvolveRequiredMemoryItem(m)
+                        ? 'session-preview-self-evolve-required-memory'
+                        : isSelfEvolveProjectMemoryItem(m)
+                          ? 'session-preview-self-evolve-project-memory'
+                          : isSelfEvolveGuideMemoryItem(m)
+                            ? 'session-preview-self-evolve-guide-memory'
+                            : undefined
+                      : m.name.includes('莫比乌斯光点标志空间案例') || m.name.includes('莫比乌斯光点 Logo 空间案例')
+                        ? 'session-preview-logo-memory'
+                        : undefined
+                    return (
+                      <label
+                        key={m.id}
+                        data-tour={memoryTour}
+                        className="flex items-start gap-2 rounded-md px-1.5 py-1 hover:bg-[var(--bg-card-hover)]"
+                      >
+                        <input type="checkbox" checked={checked} onChange={() => toggleMemory(m.id)}
+                          className="mt-0.5 cursor-pointer accent-blue-500" />
+                        <div className="min-w-0 flex-1" style={{ opacity: checked ? 1 : 0.45 }}>
+                          <div className="truncate text-[12px]" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{m.name}</div>
+                          {m.description && <div className="truncate text-[10px]" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{m.description}</div>}
+                        </div>
+                        <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: isDark ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)', color: isDark ? '#86efac' : '#15803d' }}>
+                          {SCOPE_LABEL_WIZ[m.scope] || m.scope}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end border-t px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
+              <button
+                type="button"
+                onClick={() => setContextSelectionPanel(null)}
+                className="h-8 rounded-lg border px-4 text-[12px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}
+              >
+                完成
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showAgentSkillModal && (
