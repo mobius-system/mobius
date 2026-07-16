@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import type { ProjectFilter, ProjectIssuePagination } from './types'
+import { ListLoadingHint } from '../list-loading-hint'
 
 type ProjectSidebarProps = {
   userParam: string
@@ -8,6 +9,8 @@ type ProjectSidebarProps = {
   search: string
   filter: ProjectFilter
   pagination: ProjectIssuePagination
+  // 切换到未缓存项目时, 列表区域先显示 loading 而不是闪现上个项目的 issue 或"暂无 Issue".
+  issuesLoading?: boolean
   canCreateIssue?: boolean
   onSearchChange: (value: string) => void
   onFilterChange: (value: ProjectFilter) => void
@@ -22,6 +25,7 @@ export function ProjectSidebar({
   search,
   filter,
   pagination,
+  issuesLoading = false,
   canCreateIssue = true,
   onSearchChange,
   onFilterChange,
@@ -65,7 +69,9 @@ export function ProjectSidebar({
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-2 py-1">
-        {issues.length === 0 ? (
+        {issuesLoading && issues.length === 0 ? (
+          <ListLoadingHint />
+        ) : issues.length === 0 ? (
           <div className="text-center py-8 text-[12px]" style={{ color: 'var(--text-muted)' }}>
             {search.trim() ? '未找到匹配' : '暂无 Issue'}
           </div>

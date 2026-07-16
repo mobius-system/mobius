@@ -119,6 +119,10 @@ export default function ProjectPage() {
   useEffect(() => { try { localStorage.setItem(SectionKey, section) } catch {} }, [SectionKey, section])
   const [issuePage, setIssuePage] = useState(1)
   const requestedIssueSessionIds = useRef<Set<string>>(new Set())
+  // 按项目的 issue / research 列表加载态: 切换到未缓存项目时, 列表先显示 loading,
+  // 不再回落渲染上个项目的 issue (旧 issuesMap[projectId] || issues 是闪现旧数据的元凶).
+  const [issuesLoading, setIssuesLoading] = useState(false)
+  const [researchesLoading, setResearchesLoading] = useState(false)
 
   // 编辑右侧 project 元数据（inline）
   const [editName, setEditName] = useState('')
@@ -145,27 +149,44 @@ export default function ProjectPage() {
   const [metaErr, setMetaErr] = useState('')
 
   const project = currentProject?.id === projectId ? currentProject : projects.find((p: any) => p.id === projectId)
-  const projectIssues = (issuesMap[projectId] || issues) as any[]
-  const projectResearches = (researchesMap[projectId] || researches) as any[]
+  // 注意: 故意不再 `|| issues` 回落到全局 store —— 那会是上个项目的 issue 列表,
+  // 切换项目瞬间会闪现旧数据. 未拉到时返回 [], 由 issuesLoading 控制列表显示 loading.
+  const projectIssues = (issuesMap[projectId] || []) as any[]
+  const projectResearches = (researchesMap[projectId] || []) as any[]
   const canCreateIssue = project?.can_create_issue !== false
   const canCreateResearch = !!project?.research_enabled && project?.can_create_research !== false
 
   // 进入页面：清除会话残留 + 拉数据
   useEffect(() => {
+    // alive 防竞态: 快速切换项目时, 旧请求的 .finally 不再翻转新项目的 loading 态.
+    let alive = true
     setCurrentIssue(null)
     setCurrentResearch(null)
     setCurrentSession(null)
     setCurrentTask(null)
     if (!projects.length) api('/api/projects').then(setProjects).catch(() => {})
+
+    // Issue 列表: 命中缓存 → 立即展示(秒开) + 后台静默刷新; 未缓存 → 显示 loading 直到拉到.
+    const issuesCached = !!issuesMap[projectId]
+    setIssuesLoading(!issuesCached)
     api(`/api/projects/${projectId}/issues`).then((arr: any) => {
       setIssues(arr); setIssuesMap(projectId, arr)
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => { if (alive) setIssuesLoading(false) })
+
+    // Research 列表: 与 Issue 同款逻辑, 行为保持一致.
+    const researchesCached = !!researchesMap[projectId]
+    setResearchesLoading(!researchesCached)
     api(`/api/projects/${projectId}/researches`).then((arr: any) => {
       setResearches(arr); setResearchesMap(projectId, arr)
       ;(arr || []).slice(0, 30).forEach((research: any) => {
         api(`/api/researches/${research.id}/sessions`).then((ss: any) => setSessionsMap(research.id, ss)).catch(() => {})
       })
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => { if (alive) setResearchesLoading(false) })
+
+    return () => { alive = false }
+    // 故意不把 issuesMap/researchesMap 放进 deps: 它们仅作"是否命中缓存"的一次性判断,
+    // 成功路径会写入它们, 放进 deps 会触发本 effect 自身重跑(反复拉取).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
   // 同步 currentProject
@@ -552,6 +573,7 @@ export default function ProjectPage() {
             issues={pagedIssues}
             search={search}
             filter={filter}
+            issuesLoading={issuesLoading}
             pagination={{
               page: currentIssuePage,
               pageSize: ISSUE_PAGE_SIZE,
@@ -633,6 +655,8 @@ export default function ProjectPage() {
                   issues={pagedIssues}
                   researches={filteredResearches}
                   sessionsMap={sessionsMap}
+                  issuesLoading={issuesLoading}
+                  researchesLoading={researchesLoading}
                   issuePagination={{
                     page: currentIssuePage,
                     pageSize: ISSUE_PAGE_SIZE,

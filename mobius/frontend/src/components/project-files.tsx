@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { Check, Copy, ExternalLink, KeyRound, Loader2, MonitorUp, Play, TerminalSquare } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
+import { copyTextToClipboard } from '../utils/clipboard'
 
 // =====================================================================
 // ProjectFilesCard — 浏览项目 bind_path 下的文件树.
@@ -16,6 +17,14 @@ type Entry = {
 }
 
 export type { Entry }
+
+// 右键菜单目标节点 (设计文档 §4.1)。relPath 以 / 开头相对项目根。
+// 定义在此处以避免 project-files <-> file-tree-ops 循环依赖。
+export type FileTreeTarget = {
+  entry: Entry
+  relPath: string
+  parentRelPath: string
+}
 
 type DirState = {
   loading?: boolean
@@ -125,33 +134,6 @@ function normalizePortInput(value: string): number | null {
   if (!/^[0-9]{1,5}$/.test(text)) return null
   const port = Number(text)
   return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : null
-}
-
-async function copyTextToClipboard(text: string) {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch {
-    // fall through to the textarea fallback below
-  }
-  try {
-    const el = document.createElement('textarea')
-    el.value = text
-    el.setAttribute('readonly', 'true')
-    el.style.position = 'fixed'
-    el.style.left = '-9999px'
-    el.style.top = '0'
-    document.body.appendChild(el)
-    el.focus()
-    el.select()
-    const ok = document.execCommand('copy')
-    document.body.removeChild(el)
-    return ok
-  } catch {
-    return false
-  }
 }
 
 type SshForwardConfig = {
@@ -1017,7 +999,7 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
   )
 }
 
-export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile, vscodeReady, selectedAbsPath, fileActionLabel }: {
+export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile, vscodeReady, selectedAbsPath, fileActionLabel, onContextMenu, renamingRelPath, renderRenameInput }: {
   relPath: string
   depth: number
   dirs: Record<string, DirState>
@@ -1029,6 +1011,12 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
   selectedAbsPath?: string
   // v2 代码对话: 文件行 hover title (默认"在 VSCode Web 打开", v2 传"预览文件").
   fileActionLabel?: string
+  // v2 右键菜单: 右键节点时回调 (阻止默认菜单由本组件完成)。不传则无右键菜单。
+  onContextMenu?: (event: React.MouseEvent, target: FileTreeTarget) => void
+  // v2 内联重命名: 命中 relPath 的节点渲染为输入框。
+  renamingRelPath?: string
+  // v2 内联重命名: 输入框渲染器, 由宿主提供 (含提交/取消/loading)。
+  renderRenameInput?: (target: FileTreeTarget) => ReactNode
 }) {
   const state = dirs[relPath]
   if (!state) return null
@@ -1039,25 +1027,50 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
     return <div className="text-[11px] py-1 pl-4" style={{ color: 'var(--text-muted)' }}>(空目录)</div>
   }
   const actionLabel = fileActionLabel || '在 VSCode Web 打开'
+  const ctxHandler = (entry: Entry, childPath: string) => onContextMenu
+    ? (e: React.MouseEvent) => {
+        e.preventDefault()
+        // 阻止冒泡, 否则根容器的 onContextMenu 也会触发 (重复打开菜单)。
+        e.stopPropagation()
+        onContextMenu(e, { entry, relPath: childPath, parentRelPath: relPath })
+      }
+    : undefined
   return (
     <div>
       {entries.map(entry => {
         const childPath = relPath === '/' ? `/${entry.name}` : `${relPath}/${entry.name}`
         const isOpen = expanded.has(childPath)
+        const isRenaming = !!renamingRelPath && renamingRelPath === childPath
         if (entry.type === 'dir') {
           return (
             <div key={childPath}>
-              <button
-                data-tour={fileTourTarget(entry.name)}
-                onClick={() => onToggleDir(childPath)}
-                className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--bg-card-hover)] transition-colors text-[12px]"
-                style={{ paddingLeft: `${depth * 16 + 8}px`, color: 'var(--text-primary)' }}>
-                <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                <span className="flex-shrink-0">{fileIcon(entry.name, 'dir')}</span>
-                <span className="truncate">{entry.name}</span>
-              </button>
+              {isRenaming ? (
+                // 重命名时不能把 <input> 嵌进 <button>, 改渲染 div 行。
+                <div
+                  className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[12px]"
+                  style={{ paddingLeft: `${depth * 16 + 8}px`, color: 'var(--text-primary)' }}
+                  onContextMenu={ctxHandler(entry, childPath)}
+                >
+                  <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span className="flex-shrink-0">{fileIcon(entry.name, 'dir')}</span>
+                  {renderRenameInput?.({ entry, relPath: childPath, parentRelPath: relPath })}
+                </div>
+              ) : (
+                <button
+                  data-tour={fileTourTarget(entry.name)}
+                  onClick={() => onToggleDir(childPath)}
+                  onContextMenu={ctxHandler(entry, childPath)}
+                  className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--bg-card-hover)] transition-colors text-[12px]"
+                  style={{ paddingLeft: `${depth * 16 + 8}px`, color: 'var(--text-primary)' }}>
+                  <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span className="flex-shrink-0">{fileIcon(entry.name, 'dir')}</span>
+                  <span className="truncate">{entry.name}</span>
+                </button>
+              )}
               {isOpen && (
                 <FileTreeLevel
                   relPath={childPath}
@@ -1069,17 +1082,34 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
                   vscodeReady={vscodeReady}
                   selectedAbsPath={selectedAbsPath}
                   fileActionLabel={fileActionLabel}
+                  onContextMenu={onContextMenu}
+                  renamingRelPath={renamingRelPath}
+                  renderRenameInput={renderRenameInput}
                 />
               )}
             </div>
           )
         }
         const selected = !!selectedAbsPath && entry.abs_path === selectedAbsPath
+        if (isRenaming) {
+          return (
+            <div
+              key={childPath}
+              className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[12px]"
+              style={{ paddingLeft: `${depth * 16 + 8 + 14}px`, color: 'var(--text-primary)' }}
+              onContextMenu={ctxHandler(entry, childPath)}
+            >
+              <span className="flex-shrink-0">{fileIcon(entry.name, 'file')}</span>
+              {renderRenameInput?.({ entry, relPath: childPath, parentRelPath: relPath })}
+            </div>
+          )
+        }
         return (
           <button
             key={childPath}
             data-tour={fileTourTarget(entry.name)}
             onClick={() => vscodeReady && onOpenFile(entry)}
+            onContextMenu={ctxHandler(entry, childPath)}
             disabled={!vscodeReady}
             title={vscodeReady ? actionLabel : '未配置 VSCode Web'}
             className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[12px] disabled:cursor-default ${selected ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}

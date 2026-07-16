@@ -22,6 +22,16 @@ import {
 import { ensureGuidedDemoAssets } from '../services/guided-demo-assets';
 // @ts-ignore — service 仍是 .js
 import { defaultCodeServerWorkspace } from '../services/code-server-workspace';
+import {
+  FileOpError,
+  validateNewName,
+  assertNoSymlink,
+  isDirEqualOrChild,
+  copyEntryRecursive,
+  contentDispositionAttachment,
+  contentTypeFor,
+} from '../services/project-file-ops';
+import { resolveProjectPath } from '../services/project-path';
 // @ts-ignore — service 仍是 .js
 import {
   canReadProject,
@@ -181,19 +191,7 @@ function spawnProductHardReset(gitHash: string): { pid: number | undefined; log_
   return { pid: child.pid, log_path: logPath };
 }
 
-// 在项目 bind_path 内解析子路径, 返回 { absPath, relPath } 或 { error }.
-// 允许的字符: 任何 (用 path.resolve 规范化), 但绝对值必须落在 bind_path 子树.
-function resolveProjectPath(
-  bindPath: string | null | undefined,
-  rawPath: unknown = '/',
-): { error: string } | { root: string; relPath: string; absPath: string } {
-  if (!bindPath) return { error: '项目未绑定路径' };
-  const root = path.resolve(bindPath);
-  const relPath = String(rawPath || '/').replace(/\.\./g, '');
-  const absPath = path.resolve(root, relPath.replace(/^\/+/, ''));
-  if (absPath !== root && !absPath.startsWith(root + path.sep)) return { error: 'Access denied' };
-  return { root, relPath: '/' + path.relative(root, absPath).replace(/\\/g, '/'), absPath };
-}
+// 在项目 bind_path 内解析子路径的逻辑已抽到 services/project-path.ts (便于单测穿越防护)。
 
 function isProjectImportDemoBindPath(bindPath: unknown): boolean {
   const normalized = path.resolve(String(bindPath || '')).replace(/\\/g, '/');
@@ -2531,6 +2529,167 @@ router.post('/:id/file', auth, (req: express.Request, res: express.Response) => 
     res.json({ path: relPath, name: path.basename(absPath), abs_path: absPath, size: byteLen, saved: true });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message || 'Write failed' });
+  }
+});
+
+// =====================================================================
+// 原生文件编辑器右键菜单: 下载 / 复制 / 重命名 (设计文档 §8, §12, §14)。
+// 写操作权限策略与现有 POST /:id/file (保存) 一致: loadReadableProject
+// (可读成员可改文件) + bind_path 可写 (fs W_OK) + 目标父目录 W_OK。
+// 符号链接一律拒绝, 防止通过链接越出项目根目录。所有错误带统一 code。
+// =====================================================================
+function sendFileOpError(res: express.Response, e: unknown): void {
+  if (e instanceof FileOpError) {
+    res.status(e.status).json({ error: e.message, code: e.code });
+    return;
+  }
+  res.status(500).json({ error: (e as Error)?.message || '操作失败', code: 'UNKNOWN' });
+}
+
+// 校验项目可写 (bind_path 存在 + 服务进程可写)。不可写时已发送响应, 返回 false。
+function ensureProjectWritable(res: express.Response, project: { bind_path?: string | null }): boolean {
+  if (!project.bind_path) {
+    res.status(400).json({ error: '项目未绑定路径', code: 'READ_ONLY' });
+    return false;
+  }
+  try {
+    fs.accessSync(project.bind_path, fs.constants.W_OK);
+  } catch {
+    res.status(403).json({ error: '项目目录只读或无写权限', code: 'READ_ONLY' });
+    return false;
+  }
+  return true;
+}
+
+// GET /:id/file/download?path=<rel> - 流式下载单个文件 (设计文档 §8.1, §14.3)。
+// 只读, 不要求写权限; 拒绝符号链接与目录; 客户端断开时销毁 stream。
+router.get('/:id/file/download', auth, async (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  if (!project.bind_path) return res.status(400).json({ error: '项目未绑定路径', code: 'READ_ONLY' });
+  const resolved = resolveProjectPath(project.bind_path, req.query.path || '/');
+  if ('error' in resolved) return res.status(400).json({ error: resolved.error, code: 'OUTSIDE_ROOT' });
+  const { absPath } = resolved;
+  let lst: fs.Stats;
+  try {
+    lst = await fs.promises.lstat(absPath);
+  } catch {
+    return res.status(404).json({ error: '文件不存在', code: 'NOT_FOUND' });
+  }
+  if (lst.isSymbolicLink()) return res.status(400).json({ error: '不支持下载符号链接', code: 'SYMLINK_UNSUPPORTED' });
+  if (!lst.isFile()) return res.status(400).json({ error: '只能下载文件，目录打包下载暂不支持', code: 'INVALID_NAME' });
+  const name = path.basename(absPath);
+  res.setHeader('Content-Type', contentTypeFor(name));
+  res.setHeader('Content-Disposition', contentDispositionAttachment(name));
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  const stream = fs.createReadStream(absPath);
+  stream.on('error', () => {
+    if (!res.headersSent) res.status(500).json({ error: '下载失败', code: 'UNKNOWN' });
+    else res.destroy();
+  });
+  // 客户端断开 (取消/网络中断) 时销毁 stream, 释放文件句柄。
+  res.on('close', () => { stream.destroy(); });
+  stream.pipe(res);
+});
+
+// POST /:id/files/copy { sourcePath, targetDir } - 同项目内复制文件/目录 (设计文档 §8.3, §14)。
+router.post('/:id/files/copy', auth, async (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  if (!ensureProjectWritable(res, project)) return;
+  const src = resolveProjectPath(project.bind_path, req.body?.sourcePath);
+  if ('error' in src) return res.status(400).json({ error: src.error, code: 'OUTSIDE_ROOT' });
+  const tgt = resolveProjectPath(project.bind_path, req.body?.targetDir);
+  if ('error' in tgt) return res.status(400).json({ error: tgt.error, code: 'OUTSIDE_ROOT' });
+  const { absPath: srcAbs, relPath: srcRel, root } = src;
+  const { absPath: tgtAbs, relPath: tgtRel } = tgt;
+  try {
+    let srcLst: fs.Stats;
+    try {
+      srcLst = await fs.promises.lstat(srcAbs);
+    } catch {
+      return res.status(404).json({ error: '源文件不存在', code: 'NOT_FOUND' });
+    }
+    if (srcLst.isSymbolicLink()) return res.status(400).json({ error: '不支持操作符号链接', code: 'SYMLINK_UNSUPPORTED' });
+    let tgtLst: fs.Stats;
+    try {
+      tgtLst = await fs.promises.lstat(tgtAbs);
+    } catch {
+      return res.status(404).json({ error: '目标目录不存在', code: 'NOT_FOUND' });
+    }
+    if (tgtLst.isSymbolicLink()) return res.status(400).json({ error: '不支持操作符号链接', code: 'SYMLINK_UNSUPPORTED' });
+    if (!tgtLst.isDirectory()) return res.status(400).json({ error: '目标必须是目录', code: 'INVALID_NAME' });
+    // 中间目录符号链接防御 (root -> src / root -> tgt 逐段 lstat)。
+    await assertNoSymlink(root, srcAbs);
+    await assertNoSymlink(root, tgtAbs);
+    try {
+      await fs.promises.access(tgtAbs, fs.constants.W_OK);
+    } catch {
+      return res.status(403).json({ error: '目标目录只读或无写权限', code: 'READ_ONLY' });
+    }
+    // 拒绝把目录复制到自身或子目录, 否则递归爆炸。
+    if (srcLst.isDirectory() && isDirEqualOrChild(srcAbs, tgtAbs)) {
+      return res.status(400).json({ error: '不能将目录复制到自身或其子目录', code: 'CONFLICT' });
+    }
+    const baseName = path.basename(srcAbs);
+    const dstAbs = path.join(tgtAbs, baseName);
+    // 同名冲突: 不静默覆盖 (设计文档 §5.6)。
+    try {
+      await fs.promises.lstat(dstAbs);
+      return res.status(409).json({ error: '目标目录已存在同名文件或目录，请先重命名', code: 'CONFLICT' });
+    } catch { /* 目标不存在, 继续 */ }
+    await copyEntryRecursive(srcAbs, dstAbs);
+    const newPath = (tgtRel === '/' ? '' : tgtRel) + '/' + baseName;
+    res.json({ sourcePath: srcRel, path: newPath, type: srcLst.isDirectory() ? 'dir' : 'file', copied: true });
+  } catch (e) {
+    sendFileOpError(res, e);
+  }
+});
+
+// POST /:id/files/rename { path, newName } - 重命名文件/目录 (设计文档 §8.6, §14)。
+router.post('/:id/files/rename', auth, async (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  if (!ensureProjectWritable(res, project)) return;
+  const resolved = resolveProjectPath(project.bind_path, req.body?.path);
+  if ('error' in resolved) return res.status(400).json({ error: resolved.error, code: 'OUTSIDE_ROOT' });
+  const { root, relPath, absPath } = resolved;
+  if (absPath === root) return res.status(400).json({ error: '不能重命名项目根目录', code: 'INVALID_NAME' });
+  let newName: string;
+  try {
+    newName = validateNewName(req.body?.newName);
+  } catch (e) {
+    return sendFileOpError(res, e);
+  }
+  try {
+    let srcLst: fs.Stats;
+    try {
+      srcLst = await fs.promises.lstat(absPath);
+    } catch {
+      return res.status(404).json({ error: '文件不存在', code: 'NOT_FOUND' });
+    }
+    if (srcLst.isSymbolicLink()) return res.status(400).json({ error: '不支持操作符号链接', code: 'SYMLINK_UNSUPPORTED' });
+    await assertNoSymlink(root, absPath);
+    const parentAbs = path.dirname(absPath);
+    const newAbs = path.join(parentAbs, newName);
+    // newName 已确保无分隔符, 父目录在根内, 新路径必在根内; 仍防御性校验。
+    if (newAbs !== root && !newAbs.startsWith(root + path.sep)) {
+      return res.status(400).json({ error: '新路径越出项目根目录', code: 'OUTSIDE_ROOT' });
+    }
+    try {
+      await fs.promises.lstat(newAbs);
+      return res.status(409).json({ error: '已存在同名文件或目录', code: 'CONFLICT' });
+    } catch { /* 不存在, 继续 */ }
+    try {
+      await fs.promises.access(parentAbs, fs.constants.W_OK);
+    } catch {
+      return res.status(403).json({ error: '目录只读或无写权限', code: 'READ_ONLY' });
+    }
+    await fs.promises.rename(absPath, newAbs);
+    const newRel = '/' + path.relative(root, newAbs).replace(/\\/g, '/');
+    res.json({ oldPath: relPath, path: newRel, name: newName, renamed: true });
+  } catch (e) {
+    sendFileOpError(res, e);
   }
 });
 

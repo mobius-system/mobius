@@ -11,6 +11,7 @@ import { gatherHostInfo, type BootData } from "./lib/host-info";
 import { ensureAimux, upgradeAimux, getAimuxVersion, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
 import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
 import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
+import { FileOpError, validateNewName, assertNoSymlink, isDirEqualOrChild, copyEntryRecursive } from "./lib/project-file-ops";
 import { getAimuxEnabled, setAimuxEnabled, getLastRoute, setLastRoute } from "./lib/desktop-settings";
 import { createStatusWindow } from "./status-window";
 
@@ -645,6 +646,137 @@ ipcMain.handle("project:write-local-file", (_e, projectId: string, rawPath: stri
     return { ok: true, path: relPath, name: basename(absPath), abs_path: absPath, size: byteLen, saved: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message || "Write failed" };
+  }
+});
+
+// —— 原生文件编辑器右键菜单: 本机下载 / 复制 / 重命名 (设计文档 §8, §13) ——
+// 主进程对所有 renderer 传入路径重新校验 (resolveLocalProjectPath + lstat + 符号链接),
+// renderer 的禁用态只用于体验, 不构成安全边界。错误统一带 code。
+// 把 FileOpError 归一成 { ok, error, code } 返回, 与既有本机文件 IPC 形状一致 (额外加 code)。
+function localFileOpError(e: unknown): { ok: false; error: string; code: string } {
+  if (e instanceof FileOpError) return { ok: false, error: e.message, code: e.code };
+  return { ok: false, error: (e as Error)?.message || "操作失败", code: "UNKNOWN" };
+}
+
+// 本机"下载"= 另存为: 校验源是普通文件 (拒绝符号链接) -> 系统保存对话框 -> 异步 copyFile (libuv 流式, 不进内存)。
+ipcMain.handle("project:download-local-file", async (_e, projectId: string, rawPath: string = "/") => {
+  const resolved = resolveLocalProjectPath(projectId, rawPath);
+  if ("error" in resolved) return { ok: false, error: resolved.error, code: "OUTSIDE_ROOT" };
+  const { absPath } = resolved;
+  try {
+    let lst: fs.Stats;
+    try {
+      lst = await fs.promises.lstat(absPath);
+    } catch {
+      return { ok: false, error: "文件不存在", code: "NOT_FOUND" };
+    }
+    if (lst.isSymbolicLink()) return { ok: false, error: "不支持下载符号链接", code: "SYMLINK_UNSUPPORTED" };
+    if (!lst.isFile()) return { ok: false, error: "只能下载文件，目录打包下载暂不支持", code: "INVALID_NAME" };
+    const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const saveResult = win
+      ? await dialog.showSaveDialog(win, { defaultPath: basename(absPath) })
+      : await dialog.showSaveDialog({ defaultPath: basename(absPath) });
+    if (saveResult.canceled || !saveResult.filePath) return { ok: false, error: "已取消", code: "CANCELLED" };
+    // copyFile 由 libuv 流式拷贝, 不把整文件读入 JS 堆。
+    await fs.promises.copyFile(absPath, saveResult.filePath);
+    return { ok: true, savedTo: saveResult.filePath };
+  } catch (e) {
+    return localFileOpError(e);
+  }
+});
+
+// 本机复制: 源/目标均 resolveLocalProjectPath + lstat + 中间目录符号链接校验;
+// 拒绝目录复制到自身/子目录; 同名返回 CONFLICT; 目录异步递归复制带上限。
+ipcMain.handle("project:copy-local-entry", async (_e, projectId: string, sourcePath: string, targetDir: string) => {
+  const src = resolveLocalProjectPath(projectId, sourcePath);
+  if ("error" in src) return { ok: false, error: src.error, code: "OUTSIDE_ROOT" };
+  const tgt = resolveLocalProjectPath(projectId, targetDir);
+  if ("error" in tgt) return { ok: false, error: tgt.error, code: "OUTSIDE_ROOT" };
+  const { absPath: srcAbs, root } = src;
+  const { absPath: tgtAbs, relPath: tgtRel } = tgt;
+  try {
+    let srcLst: fs.Stats;
+    try {
+      srcLst = await fs.promises.lstat(srcAbs);
+    } catch {
+      return { ok: false, error: "源文件不存在", code: "NOT_FOUND" };
+    }
+    if (srcLst.isSymbolicLink()) return { ok: false, error: "不支持操作符号链接", code: "SYMLINK_UNSUPPORTED" };
+    let tgtLst: fs.Stats;
+    try {
+      tgtLst = await fs.promises.lstat(tgtAbs);
+    } catch {
+      return { ok: false, error: "目标目录不存在", code: "NOT_FOUND" };
+    }
+    if (tgtLst.isSymbolicLink()) return { ok: false, error: "不支持操作符号链接", code: "SYMLINK_UNSUPPORTED" };
+    if (!tgtLst.isDirectory()) return { ok: false, error: "目标必须是目录", code: "INVALID_NAME" };
+    await assertNoSymlink(root, srcAbs);
+    await assertNoSymlink(root, tgtAbs);
+    try {
+      await fs.promises.access(tgtAbs, fs.constants.W_OK);
+    } catch {
+      return { ok: false, error: "目标目录只读或无写权限", code: "READ_ONLY" };
+    }
+    if (srcLst.isDirectory() && isDirEqualOrChild(srcAbs, tgtAbs)) {
+      return { ok: false, error: "不能将目录复制到自身或其子目录", code: "CONFLICT" };
+    }
+    const baseName = basename(srcAbs);
+    const dstAbs = join(tgtAbs, baseName);
+    try {
+      await fs.promises.lstat(dstAbs);
+      return { ok: false, error: "目标目录已存在同名文件或目录", code: "CONFLICT" };
+    } catch {
+      /* 目标不存在, 继续 */
+    }
+    await copyEntryRecursive(srcAbs, dstAbs);
+    return { ok: true, path: (tgtRel === "/" ? "" : tgtRel) + "/" + baseName, type: srcLst.isDirectory() ? "dir" : "file" };
+  } catch (e) {
+    return localFileOpError(e);
+  }
+});
+
+// 本机重命名: 校验 newName (单段, 无分隔符) -> 拒绝根目录 -> 符号链接 -> 同名 CONFLICT -> 父目录 W_OK -> rename。
+ipcMain.handle("project:rename-local-entry", async (_e, projectId: string, rawPath: string, newNameRaw: string) => {
+  const resolved = resolveLocalProjectPath(projectId, rawPath);
+  if ("error" in resolved) return { ok: false, error: resolved.error, code: "OUTSIDE_ROOT" };
+  const { root, relPath, absPath } = resolved;
+  if (absPath === root) return { ok: false, error: "不能重命名项目根目录", code: "INVALID_NAME" };
+  let newName: string;
+  try {
+    newName = validateNewName(newNameRaw);
+  } catch (e) {
+    return localFileOpError(e);
+  }
+  try {
+    let srcLst: fs.Stats;
+    try {
+      srcLst = await fs.promises.lstat(absPath);
+    } catch {
+      return { ok: false, error: "文件不存在", code: "NOT_FOUND" };
+    }
+    if (srcLst.isSymbolicLink()) return { ok: false, error: "不支持操作符号链接", code: "SYMLINK_UNSUPPORTED" };
+    await assertNoSymlink(root, absPath);
+    const parentAbs = dirname(absPath);
+    const newAbs = join(parentAbs, newName);
+    if (newAbs !== root && !newAbs.startsWith(root + sep)) {
+      return { ok: false, error: "新路径越出项目根目录", code: "OUTSIDE_ROOT" };
+    }
+    try {
+      await fs.promises.lstat(newAbs);
+      return { ok: false, error: "已存在同名文件或目录", code: "CONFLICT" };
+    } catch {
+      /* 不存在, 继续 */
+    }
+    try {
+      await fs.promises.access(parentAbs, fs.constants.W_OK);
+    } catch {
+      return { ok: false, error: "目录只读或无写权限", code: "READ_ONLY" };
+    }
+    await fs.promises.rename(absPath, newAbs);
+    const newRel = "/" + relative(root, newAbs).replace(/\\/g, "/");
+    return { ok: true, oldPath: relPath, path: newRel, name: newName };
+  } catch (e) {
+    return localFileOpError(e);
   }
 });
 
