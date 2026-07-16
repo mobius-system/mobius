@@ -26,7 +26,7 @@ const CANDIDATE_POOL = BATCH_PER_SCAN * 5; // 多取一些, JS 层按默认名/�
 const MIN_MESSAGES = 2;
 const TITLE_MAX_CHARS = 60;          // 期望标题长度上限
 const DB_TITLE_MAX = 120;            // 与 session-title-syncer MAX_SESSION_TITLE_LENGTH 对齐
-const ATTEMPT_COOLDOWN_MS = 10 * 60 * 1000; // 单会话生成失败后的冷却
+const ATTEMPT_COOLDOWN_MS = 2 * 60 * 1000; // 单会话生成失败后的冷却(短: 多为瞬态, 早重试)
 const REQUEST_TIMEOUT_MS = 30 * 1000;
 const FIRST_MSG_CHARS = 800;
 
@@ -104,11 +104,17 @@ async function generateTitle(endpoint: Endpoint, firstUserText: string): Promise
         ],
       }),
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      console.warn(`[session-title-generator] model HTTP ${resp.status} (${endpoint.model})`);
+      return null;
+    }
     const data: any = await resp.json().catch(() => null);
     const text = data?.choices?.[0]?.message?.content;
-    return cleanTitle(text);
-  } catch {
+    const cleaned = cleanTitle(text);
+    if (!cleaned) console.warn(`[session-title-generator] empty/uncleanable title (raw=${String(text).slice(0, 60)})`);
+    return cleaned;
+  } catch (e: any) {
+    console.warn(`[session-title-generator] model call error: ${(e?.name === 'AbortError' ? 'timeout' : (e?.message || e))}`);
     return null;
   } finally {
     clearTimeout(to);
@@ -134,6 +140,7 @@ async function tryGenerateFor(row: { session_id: string; model: string }): Promi
   const title = await generateTitle(endpoint, firstUser);
   if (!title) return false;
   Sessions.updateName(row.session_id, title.slice(0, DB_TITLE_MAX));
+  console.log(`[session-title-generator] titled ${row.session_id} -> "${title.slice(0, DB_TITLE_MAX)}"`);
   return true;
 }
 

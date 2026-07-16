@@ -1434,13 +1434,9 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [projectKnowledgeSending, setProjectKnowledgeSending] = useState(false)
   const [messageSubmitting, setMessageSubmitting] = useState(false)
-  // 当前会话模型是否仍可用 (管理员删除该模型配置后 → false, 会话只读, 需"更换模型并继续").
+  // 当前会话模型是否仍可用 (管理员删除该模型配置后 → false, 会话只读, 需"修改模型并继续").
   const [modelAvailable, setModelAvailable] = useState(true)
   const modelAvailableRef = useRef(true)
-  // 原地更换模型弹窗 (区别于 continueModal 的"复制到新 session"语义; 本弹窗直接改 session.model).
-  const [modelSwitcherOpen, setModelSwitcherOpen] = useState(false)
-  const [modelSwitcherOptions, setModelSwitcherOptions] = useState<any[]>([])
-  const [modelSwitcherLoading, setModelSwitcherLoading] = useState(false)
   const [voiceState, setVoiceState] = useState<VoiceInputState>('idle')
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [stopFeedbackActive, setStopFeedbackActive] = useState(false)
@@ -2052,59 +2048,6 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
     }
   }, [sessionId, setTyping, setStreamContent, addMessage, hideBackendFailure])
 
-  // 打开"更换模型"弹窗并加载可选项 (复用 /api/sessions/model-options, 与新建会话同源).
-  const openModelSwitcher = useCallback(async () => {
-    setModelSwitcherOpen(true)
-    setModelSwitcherLoading(true)
-    try {
-      const opts = await api('/api/sessions/model-options') as any[]
-      setModelSwitcherOptions(Array.isArray(opts) ? opts : [])
-    } catch {
-      setModelSwitcherOptions([])
-    } finally {
-      setModelSwitcherLoading(false)
-    }
-  }, [])
-
-  // 原地更换当前 session 的模型 (PATCH /api/sessions/:id/model), 成功后恢复可发送.
-  const patchSessionModel = useCallback(async (newModel: string, label?: string) => {
-    if (!sessionId) return
-    setModelSwitcherLoading(true)
-    try {
-      await api(`/api/sessions/${sessionId}/model`, {
-        method: 'PATCH',
-        body: JSON.stringify({ model: newModel }),
-      })
-      // 同步 store 里的 currentSession / currentTask / sessionsMap, 让顶栏 model 标签立即更新.
-      const store = useStore.getState()
-      const cur = store.currentSession
-      if (cur && cur.session_id === sessionId) {
-        store.setCurrentSession({ ...cur, model: newModel, model_label: label } as any)
-      }
-      const tsk = store.currentTask as any
-      if (tsk && tsk.task_id === sessionId) {
-        store.setCurrentTask({ ...tsk, model: newModel, model_label: label } as any)
-      }
-      const listKey = (cur as any)?.issue_id || (cur as any)?.research_id || currentIssueId
-      if (listKey) {
-        const list = store.sessionsMap[listKey] || []
-        if (list.some((s: any) => s.session_id === sessionId)) {
-          store.setSessionsMap(listKey, list.map((s: any) => (
-            s.session_id === sessionId ? { ...s, model: newModel, model_label: label } : s
-          )))
-        }
-      }
-      setModelAvailable(true)
-      modelAvailableRef.current = true
-      setModelSwitcherOpen(false)
-      setLastSendError('')
-    } catch (e: any) {
-      setLastSendError(e?.message || '更换模型失败')
-    } finally {
-      setModelSwitcherLoading(false)
-    }
-  }, [sessionId, currentIssueId])
-
   const clearVoiceTimers = useCallback(() => {
     if (voiceStopTimerRef.current !== null) {
       window.clearTimeout(voiceStopTimerRef.current)
@@ -2700,10 +2643,10 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
   }, [sessionId, addMessage, setTyping, postSessionMessage])
 
   const send = useCallback((urgent = false) => {
-    // 模型被管理员移除 → 会话只读, 拦截发送并打开"更换模型"弹窗.
+    // 模型被管理员移除 → 会话只读, 拦截发送并打开与底部按钮一致的"修改模型并继续"流程.
     if (!modelAvailableRef.current) {
-      setLastSendError('因之前使用的模型被管理员移除，本次会话不能继续，请先"更换模型并继续"。')
-      openModelSwitcher()
+      setLastSendError('因之前使用的模型被管理员移除，本次会话不能继续，请先"修改模型并继续"。')
+      setContinueModalOpen(true)
       return
     }
     const text = input.trim()
@@ -3228,10 +3171,11 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
             <div className="px-3 pt-3 pb-2.5">
               {!modelAvailable && (
                 <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-500/45 bg-amber-500/10 px-3 py-2 text-[12px] leading-snug" style={{ color: 'var(--text-primary)' }}>
-                  <span className="flex-1">因之前使用的模型被管理员移除，本次会话不能继续，如需继续，请点击“更换模型并继续”。</span>
-                  <button type="button" onClick={() => openModelSwitcher()}
+                  <span className="flex-1">因之前使用的模型被管理员移除，本次会话不能继续，如需继续，请点击“修改模型并继续”。</span>
+                  <button type="button" onClick={() => setContinueModalOpen(true)}
+                    disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
                     className="btn-label shrink-0 rounded-md bg-amber-500 px-2.5 py-1 text-[12px] font-medium text-black hover:bg-amber-400">
-                    更换模型并继续
+                    修改模型并继续
                   </button>
                 </div>
               )}
@@ -3585,39 +3529,6 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
         />
       )}
 
-      {modelSwitcherOpen && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="model-switcher-title"
-          onClick={(e) => { if (e.target === e.currentTarget && !modelSwitcherLoading) setModelSwitcherOpen(false) }}>
-          <div className="w-full max-w-lg rounded-2xl border p-5 shadow-2xl" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <h3 id="model-switcher-title" className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>更换模型并继续</h3>
-              <button type="button" onClick={() => setModelSwitcherOpen(false)} disabled={modelSwitcherLoading}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[14px] disabled:opacity-40" style={{ color: 'var(--text-muted)' }}>✕</button>
-            </div>
-            <p className="mb-3 text-[12px] leading-snug" style={{ color: 'var(--text-muted)' }}>本次会话使用的模型已被管理员移除。选择一个新模型以继续此会话（历史消息保留，仅切换底层模型）。</p>
-            {modelSwitcherLoading ? (
-              <div className="py-8 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>加载模型列表…</div>
-            ) : modelSwitcherOptions.length === 0 ? (
-              <div className="py-8 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>暂无可用模型，请联系管理员配置模型。</div>
-            ) : (
-              <div className="grid max-h-[52vh] grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
-                {modelSwitcherOptions.map((opt: any) => {
-                  const blocked = !!opt.usage?.blocked
-                  return (
-                    <button key={opt.key} type="button" disabled={blocked || modelSwitcherLoading} title={blocked ? (opt.usage?.reason || '当前不可用') : (opt.label || opt.key)}
-                      onClick={() => patchSessionModel(opt.key, opt.label)}
-                      className="rounded-lg border px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-                      style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
-                      <div className="btn-label font-medium">{opt.label || opt.key}</div>
-                      {opt.sub && <div className="mt-0.5 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{opt.sub}</div>}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
       {continueModalOpen && currentSession?.session_id && (currentIssueId || !!(currentSession as any)?.research_id) && (
         <NewSessionModal
           issueId={currentIssueId || undefined}
