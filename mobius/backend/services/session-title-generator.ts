@@ -21,7 +21,7 @@ import { Messages } from '../repositories/messages';
 import * as modelRegistry from './model-registry';
 
 const SCAN_INTERVAL_MS = 60 * 1000;
-const BATCH_PER_SCAN = 3;            // 每轮最多生成几个, 避免短时大量模型调用
+const BATCH_PER_SCAN = 8;            // 每轮最多生成几个(调用廉价且串行, 8 可快速清历史积压)
 const CANDIDATE_POOL = BATCH_PER_SCAN * 5; // 多取一些, JS 层按默认名/冷却再筛
 const MIN_MESSAGES = 2;
 const TITLE_MAX_CHARS = 60;          // 期望标题长度上限
