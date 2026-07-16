@@ -14,7 +14,7 @@
     // 同步阻塞拉取品牌配置 (logo/系统名/Tab 标题), 避免 React 挂载后的首屏闪烁.
     // 接口只返回 3 个字段, 极小; 同步 XHR 等待 ~10-50ms 可接受.
     (function () {
-      var DEFAULT = { hideLogo: false, systemNameZh: '莫比乌斯AI', systemNameEn: 'Mobius', hiddenFolderName: '.mobius' };
+      var DEFAULT = { hideLogo: false, systemNameZh: '莫比乌斯AI', systemNameEn: 'Mobius', hiddenFolderName: '.mobius', appDir: '' };
       var branding = DEFAULT;
       try {
         var x = new XMLHttpRequest();
@@ -27,6 +27,7 @@
             systemNameZh: typeof j.systemNameZh === 'string' ? j.systemNameZh : DEFAULT.systemNameZh,
             systemNameEn: typeof j.systemNameEn === 'string' ? j.systemNameEn : DEFAULT.systemNameEn,
             hiddenFolderName: typeof j.hiddenFolderName === 'string' && j.hiddenFolderName ? j.hiddenFolderName : DEFAULT.hiddenFolderName,
+            appDir: typeof j.appDir === 'string' ? j.appDir : DEFAULT.appDir,
           };
         }
       } catch (e) { /* 拉失败时回退默认值, 不阻塞首屏 */ }
