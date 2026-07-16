@@ -491,28 +491,26 @@ export function SessionSkillMemoryEditor({
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <button
-          type="button"
-          onClick={() => setActivePanel('skill')}
-          className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-blue-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-          style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}
-          disabled={loading}
-        >
-          <Puzzle className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
-          <span className="btn-label">Skill ({enabledSkills}/{skillTotal} 启用)</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActivePanel('memory')}
-          className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-cyan-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-          style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}
-          disabled={loading}
-        >
-          <BookOpen className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
-          <span className="btn-label">Memory ({enabledMemories}/{memoryTotal} 启用)</span>
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => setActivePanel('skill')}
+        className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-blue-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
+        style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}
+        disabled={loading}
+      >
+        <Puzzle className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
+        <span className="btn-label">Skill ({enabledSkills}/{skillTotal} 启用)</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => setActivePanel('memory')}
+        className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-cyan-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
+        style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}
+        disabled={loading}
+      >
+        <BookOpen className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
+        <span className="btn-label">Memory ({enabledMemories}/{memoryTotal} 启用)</span>
+      </button>
 
       {activePanel && (
         <div className="fixed inset-0 z-[95] flex items-center justify-center px-4" role="dialog" aria-modal="true">

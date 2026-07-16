@@ -1010,8 +1010,6 @@ function ChatHeaderOverflowMenu({
   jsonlCount, minorCount, hideMinor, onToggleHideMinor, onOpenRaw,
   showJsonlMeta, onToggleShowJsonlMeta,
   onSendProjectKnowledge, projectKnowledgeSending, canSendProjectKnowledge,
-  onContinueWithOtherModel, canContinueWithOtherModel,
-  onOpenTerminal,
   onStop, canStop,
 }: {
   jsonlCount: number
@@ -1024,9 +1022,6 @@ function ChatHeaderOverflowMenu({
   onSendProjectKnowledge: () => void
   projectKnowledgeSending: boolean
   canSendProjectKnowledge: boolean
-  onContinueWithOtherModel: () => void
-  canContinueWithOtherModel: boolean
-  onOpenTerminal: () => void
   onStop: () => void
   canStop: boolean
 }) {
@@ -1078,22 +1073,12 @@ function ChatHeaderOverflowMenu({
             onClick={() => { setOpen(false); onToggleShowJsonlMeta() }}>
             <span>{showJsonlMeta ? '隐藏时间与序号' : '显示时间与序号'}</span>
           </button>
-          <button className={itemClass}
-            onClick={() => { setOpen(false); onOpenTerminal() }}>
-            <span className="flex items-center gap-2">
-              打开终端（Terminal）
-            </span>
-          </button>
           {canSendProjectKnowledge && (
             <button className={itemClass} disabled={projectKnowledgeSending}
               onClick={() => { setOpen(false); onSendProjectKnowledge() }}>
               <span>{projectKnowledgeSending ? '发送中...' : '项目知识沉淀到记忆'}</span>
             </button>
           )}
-          <button className={itemClass} disabled={!canContinueWithOtherModel}
-            onClick={() => { setOpen(false); onContinueWithOtherModel() }}>
-            <span>修改模型并继续</span>
-          </button>
         </div>
       )}
     </div>
@@ -3099,9 +3084,6 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
             onSendProjectKnowledge={sendProjectKnowledgePrompt}
             projectKnowledgeSending={projectKnowledgeSending}
             canSendProjectKnowledge={jsonlEntries.length > 0 && !!currentProjectId && connectionStatus === 'connected'}
-            onContinueWithOtherModel={() => setContinueModalOpen(true)}
-            canContinueWithOtherModel={!!currentSession?.session_id && (!!currentIssueId || !!(currentSession as any)?.research_id)}
-            onOpenTerminal={() => setTerminalOpen(true)}
             onStop={handleStopSession}
             canStop={!!sessionId}
           />
@@ -3419,9 +3401,16 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
               {sendingHint ?? ''}
             </div>
           </div>
-          <div className="mobius-chat-input-actions mt-2 grid grid-cols-2 items-stretch gap-1.5 px-1">
-            {isPlanningSession ? null : (
-              <>
+        </div>
+      </div>
+          {/* 下方操作区: 普通会话展示快捷按钮 + Skill/Memory 快照; 规划模式展示项目知识编辑器. */}
+          {isPlanningSession && currentProjectId ? (
+            <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3">
+              <PlanningEditor projectId={currentProjectId} sessionId={sessionId} />
+            </div>
+          ) : (
+            <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3">
+              <div className="grid grid-cols-2 items-stretch gap-2">
                 <button
                   type="button"
                   onClick={() => setFileChangesOpen(true)}
@@ -3461,22 +3450,31 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   <BookOpen className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
                   <span className="btn-label">查看当前知识</span>
                 </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-          {/* Skill / Memory 编辑区: 滚动. 同 SessionStartModal 判定: message_count>0 或 已有 ui 消息 → 锁定.
-              规划模式下用 PlanningEditor 替代 SkillMemoryEditor, 直接编辑 project_knowledge.md. */}
-          <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3">
-            {isPlanningSession && currentProjectId ? (
-              <PlanningEditor projectId={currentProjectId} sessionId={sessionId} />
-            ) : (
-              <SessionSkillMemoryEditor
-                sessionId={currentSession?.session_id || sessionId}
-              />
-            )}
-          </div>
+                <button
+                  type="button"
+                  onClick={() => setTerminalOpen(true)}
+                  title="打开当前 Session 终端"
+                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
+                >
+                  <Terminal className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
+                  <span className="btn-label">打开终端</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setContinueModalOpen(true)}
+                  disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
+                  title="修改模型并继续"
+                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-violet-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
+                >
+                  <Replace className="h-3.5 w-3.5 flex-shrink-0 text-violet-400" strokeWidth={1.9} />
+                  <span className="btn-label">修改模型并继续</span>
+                </button>
+                <SessionSkillMemoryEditor
+                  sessionId={currentSession?.session_id || sessionId}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
