@@ -618,15 +618,16 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
     setModel(resolveDefaultModelKey({ projectDefaultModel: projectDefaultModel || null, globalDefaultModel: globalDefaultModel || null, fallback: 'codex' }))
   }, [projectDefaultModel, globalDefaultModel])
 
-  // Skill/Memory 全集 (选完 issue 后拉 context-preview + session-selection-defaults)
+  // Skill/Memory 全集 (选完 issue 后拉一次 context-preview: sources + defaults)
   useEffect(() => {
     if (!issueId) { setAvailSkills([]); setAvailMemories([]); return }
     let alive = true
-    Promise.all([
-      api(`/api/issues/${issueId}/context-preview`, { method: 'POST', body: JSON.stringify({ name: name || ' ', description: desc || ' ', excluded_skill_ids: [], excluded_memory_ids: [] }) }),
-      api(`/api/issues/${issueId}/session-selection-defaults`).catch(() => null),
-    ]).then(([p, defaults]: any) => {
+    api(`/api/issues/${issueId}/context-preview`, {
+      method: 'POST',
+      body: JSON.stringify({ name: name || ' ', description: desc || ' ', excluded_skill_ids: [], excluded_memory_ids: [], include_defaults: true, include_body: false, include_item_bodies: false }),
+    }).then((p: any) => {
       if (!alive) return
+      const defaults = p?.defaults || null
       setAvailSkills((p?.sources?.skills || []).map((s: any) => ({ id: s.id, name: s.name, description: s.description, scope: s.scope || 'project', dirName: s.dirName })))
       setAvailMemories((p?.sources?.memories || []).map((m: any) => ({ id: m.id, name: m.name, description: m.description, scope: m.scope || 'project' })))
       const skillIds = new Set((p?.sources?.skills || []).map((s: any) => s.id))

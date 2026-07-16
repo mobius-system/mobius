@@ -42,6 +42,7 @@ const BUILTIN_ROOT = path.resolve(__dirname, '..', '..', '..', 'skills');
 
 // npx skills CLI 把 skill 安装到 cwd 的 .claude/skills/ 下 (Claude Code 约定).
 const SKILL_SUBDIR = path.join('.claude', 'skills');
+const skillFileCache = new Map<string, { mtimeMs: number; size: number; value: any }>();
 
 // `cwd` = 跑 npx 的目录; `skillsHome` = 该 cwd 下实际容纳 SKILL.md 的目录.
 function userDefaultCwd(userId: any): string { return path.join(ROOT, `user=${userId}`, 'default_project'); }
@@ -61,14 +62,19 @@ function listSkillDirs(dir: string): string[] {
 function readSkillFromDir(dir: string): any {
   const skillMd = path.join(dir, 'SKILL.md');
   if (!fs.existsSync(skillMd)) return null;
+  let stat: fs.Stats;
+  try { stat = fs.statSync(skillMd); } catch { return null; }
+  const cached = skillFileCache.get(skillMd);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+    return { ...cached.value };
+  }
   let body = '';
   try { body = fs.readFileSync(skillMd, 'utf8'); } catch { return null; }
   const { meta } = parseFrontmatter(body);
   const dirName = path.basename(dir);
   const name = (meta.name || dirName || '').trim();
   if (!name) return null;
-  const stat = fs.statSync(skillMd);
-  return {
+  const value = {
     name,
     description: (meta.description || '').trim(),
     research_role: (meta.research_role || '').trim(),
@@ -77,6 +83,8 @@ function readSkillFromDir(dir: string): any {
     created_at: stat.birthtime.toISOString(),
     updated_at: stat.mtime.toISOString(),
   };
+  skillFileCache.set(skillMd, { mtimeMs: stat.mtimeMs, size: stat.size, value });
+  return { ...value };
 }
 
 function encodeUserId(userId: any, dirName: string): string { return `user:${userId}:${dirName}`; }

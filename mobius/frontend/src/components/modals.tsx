@@ -1662,6 +1662,7 @@ interface WizardPreview {
     memories?: { id: string; name: string; description?: string; scope: string }[]
     forced_skill_conflicts?: { id: string; name: string }[]
   } | null
+  defaults?: SelectionDefaults | null
 }
 interface SelectionDefaults {
   inherited?: boolean
@@ -2364,7 +2365,11 @@ export function NewSessionModal({
 
   // Step 2 期间, 用户切换勾选 → 重拉 preview, 让"完整注入文本"和字数都跟着变.
   // 用 POST + body 提交: description 可能很长, 放 URL query 会撑爆请求头导致 fail to fetch.
-  const fetchPreview = useCallback(async (skillEx: Set<string>, memEx: Set<string>) => {
+  const fetchPreview = useCallback(async (
+    skillEx: Set<string>,
+    memEx: Set<string>,
+    options: { includeDefaults?: boolean; includeBody?: boolean; includeItemBodies?: boolean } = {},
+  ) => {
     const endpoint = isResearch
       ? `/api/researches/${researchId}/context-preview`
       : presetContextPreviewEndpoint
@@ -2382,30 +2387,22 @@ export function NewSessionModal({
         personality,
         excluded_skill_ids: Array.from(skillEx),
         excluded_memory_ids: Array.from(memEx),
+        ...(options.includeDefaults ? { include_defaults: true } : {}),
+        ...(options.includeBody === false ? { include_body: false } : {}),
+        ...(options.includeItemBodies === false ? { include_item_bodies: false } : {}),
         // PC 任务模式 (仅桌面端): 与 session 创建 body 同源, 让 preview 也注入 PC 提示词; web 端 workMode null 不传.
         ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined } } : {}),
       }),
     }) as WizardPreview
   }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality, workMode, aimuxId, pcPath])
 
-  const fetchSelectionDefaults = useCallback(async () => {
-    const endpoint = isResearch
-      ? `/api/researches/${researchId}/session-selection-defaults`
-      : presetSelectionDefaultsEndpoint
-        ? presetSelectionDefaultsEndpoint
-        : isProjectPreset
-        ? `/api/projects/${projectId}/architecture-session-preset/session-selection-defaults`
-        : `/api/issues/${issueId}/session-selection-defaults`
-    return await api(endpoint) as SelectionDefaults
-  }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetSelectionDefaultsEndpoint])
-
   // 拉取当前 issue/research 的"上次所选模型" (该作用域最近一次 Session 的 model).
   // preset / 引导演示模式不走三级默认, 直接跳过. 仅依赖作用域标识, 避免无谓重拉.
   useEffect(() => {
     if (isPresetMode || isGuidedDemo) { setScopeLastModel(''); return }
     let alive = true
-    fetchSelectionDefaults()
-      .then(d => { if (alive) setScopeLastModel(typeof d?.model === 'string' ? d.model : '') })
+    fetchPreview(new Set(), new Set(), { includeDefaults: true, includeBody: false, includeItemBodies: false })
+      .then(d => { if (alive) setScopeLastModel(typeof d?.defaults?.model === 'string' ? d.defaults.model : '') })
       .catch(() => { if (alive) setScopeLastModel('') })
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2424,10 +2421,8 @@ export function NewSessionModal({
     setStep(2)
     setPreviewLoading(true)
     try {
-      const [defaults, pAll] = await Promise.all([
-        fetchSelectionDefaults(),
-        fetchPreview(new Set(), new Set()),
-      ])
+      const pAll = await fetchPreview(new Set(), new Set(), { includeDefaults: true })
+      const defaults: SelectionDefaults = pAll.defaults || {}
       const availableSkillIds = new Set((pAll.sources?.skills || []).map(s => s.id))
       const availableMemoryIds = new Set((pAll.sources?.memories || []).map(m => m.id))
       const requiredSessionSkillIds = requiredSessionSkill
@@ -2475,7 +2470,7 @@ export function NewSessionModal({
         )
       }
       const hasInheritedExclusions = defaultSkillEx.size > 0 || defaultMemoryEx.size > 0
-      const p0 = hasInheritedExclusions ? await fetchPreview(defaultSkillEx, defaultMemoryEx) : pAll
+      const p0 = hasInheritedExclusions ? await fetchPreview(defaultSkillEx, defaultMemoryEx, { includeDefaults: true }) : pAll
       setAvailableMemories((pAll.sources?.memories || []) as WizardItem[])
       setAvailableSkills((pAll.sources?.skills || []) as WizardItem[])
       setForcedSkillConflicts((pAll.sources?.forced_skill_conflicts || []) as { id: string; name: string }[])
@@ -3382,7 +3377,7 @@ export function TurnTree({ sessionId, onClose, onRefresh }: { sessionId: string;
 //   - 内置 python + 自动装 aimux 反连, 把本机注册为可调度节点
 //   - 产物在服务器 /desktop-builds/ 下, 经同源静态托管提供
 // =====================================================================
-const DESKTOP_VERSION = '0.0.11'
+const DESKTOP_VERSION = '0.0.12'
 const DESKTOP_BUILDS: Array<{ label: string; sub: string; file: string }> = [
   { label: 'Windows', sub: 'x64 · Intel / AMD 64位', file: `mobius-desktop-${DESKTOP_VERSION}-win-x64.zip` },
   { label: 'macOS', sub: 'Apple Silicon · M1/M2/M3/M4', file: `mobius-desktop-${DESKTOP_VERSION}-mac-arm64.zip` },

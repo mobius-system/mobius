@@ -38,6 +38,7 @@ import {
 
 // CORE_DATA_PATH/memories/ stores user memories outside application code.
 const ROOT = path.join(CORE_DATA_PATH, 'memories');
+const memoryFileCache = new Map<string, { mtimeMs: number; size: number; value: any }>();
 
 function userDefaultDir(userId: string): string { return path.join(ROOT, `user=${userId}`, 'default_project'); }
 function userProjectDir(userId: string, projectId: string): string { return path.join(ROOT, `user=${userId}`, `project=${projectId}`); }
@@ -55,14 +56,19 @@ function readMemoryFromFile(file: string): any {
   if (!fs.existsSync(file)) return null;
   const sizeCheck = checkFileSize(file, MAX_MEMORY_MARKDOWN_BYTES, 'Memory Markdown 文件');
   if (!sizeCheck.ok) return null;
+  let stat: fs.Stats;
+  try { stat = fs.statSync(file); } catch { return null; }
+  const cached = memoryFileCache.get(file);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+    return { ...cached.value };
+  }
   let raw = '';
   try { raw = fs.readFileSync(file, 'utf8'); } catch { return null; }
   const { meta, body } = parseFrontmatter(raw);
   const slug = path.basename(file, '.md');
   const name = (meta.name || slug || '').trim();
   if (!name) return null;
-  const stat = fs.statSync(file);
-  return {
+  const value = {
     slug,
     name,
     description: (meta.description || '').trim(),
@@ -70,6 +76,8 @@ function readMemoryFromFile(file: string): any {
     created_at: (meta.created_at || '').trim() || stat.birthtime.toISOString(),
     updated_at: stat.mtime.toISOString(),
   };
+  memoryFileCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, value });
+  return { ...value };
 }
 
 function encodeUserId(userId: string, slug: string): string { return `user:${userId}:${slug}`; }

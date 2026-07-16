@@ -18,6 +18,7 @@ import {
   buildIssueSelectionDefaults,
   buildProjectIssueContextPreview,
   buildProjectIssueSelectionDefaults,
+  stripContextItemBodies,
 } from '../services/session-context';
 // @ts-ignore — service 仍是 .js
 import { ensureGuidedDemoAssets } from '../services/guided-demo-assets';
@@ -2384,9 +2385,13 @@ function handleArchitectureSessionPresetContextPreview(req: express.Request, res
   const excludedSkillIds = toIdList(src.excluded_skill_ids);
   const excludedMemoryIds = toIdList(src.excluded_memory_ids);
   const language = src.language === 'en' ? 'en' : 'zh';
+  const boolFlag = (v: unknown): boolean => v === true || v === 'true' || v === '1' || v === 1;
+  const falseFlag = (v: unknown): boolean => v === false || v === 'false' || v === '0' || v === 0;
+  const includeBody = !falseFlag((src as any).include_body);
+  const includeItemBodies = !falseFlag((src as any).include_item_bodies);
   const existingIssue = findArchitectureIssue(project.id);
   const ctx = existingIssue
-    ? buildIssueContextPreview(user, existingIssue.id, draftSession, excludedSkillIds, excludedMemoryIds, language)
+    ? buildIssueContextPreview(user, existingIssue.id, draftSession, excludedSkillIds, excludedMemoryIds, language, { includeBody })
     : buildProjectIssueContextPreview(
       user,
       project.id,
@@ -2395,8 +2400,23 @@ function handleArchitectureSessionPresetContextPreview(req: express.Request, res
       excludedSkillIds,
       excludedMemoryIds,
       language,
+      { includeBody },
     );
-  res.json({ body: ctx.body, sources: ctx.sources });
+  const canReuseSourcesForDefaults = excludedSkillIds.length === 0 && excludedMemoryIds.length === 0;
+  const includeDefaults = boolFlag((src as any).include_defaults);
+  const defaults = includeDefaults
+    ? existingIssue
+      ? buildIssueSelectionDefaults(user, existingIssue.id, canReuseSourcesForDefaults ? ctx.sources : undefined)
+      : buildProjectIssueSelectionDefaults(user, project.id, {
+        title: ARCHITECTURE_ISSUE_TITLE,
+        description: ARCHITECTURE_ISSUE_DESCRIPTION,
+      }, canReuseSourcesForDefaults ? ctx.sources : undefined)
+    : null;
+  res.json({
+    body: ctx.body,
+    sources: includeItemBodies ? ctx.sources : stripContextItemBodies(ctx.sources),
+    ...(includeDefaults ? { defaults } : {}),
+  });
 }
 
 router.get('/:id/architecture-session-preset/context-preview', auth, handleArchitectureSessionPresetContextPreview);

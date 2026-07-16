@@ -314,9 +314,8 @@ export function ResearchAgentTeamModal({
       setLoadingConfig(true)
       setErr('')
       try {
-        const [models, defaults, preview, skills, globalDefault] = await Promise.all([
+        const [models, preview, skills, globalDefault] = await Promise.all([
           api('/api/sessions/model-options').catch(() => FALLBACK_MODEL_OPTIONS),
-          api(`/api/researches/${researchId}/session-selection-defaults`),
           api(`/api/researches/${researchId}/context-preview`, {
             method: 'POST',
             body: JSON.stringify({
@@ -326,12 +325,16 @@ export function ResearchAgentTeamModal({
               language: 'zh',
               excluded_skill_ids: [],
               excluded_memory_ids: [],
+              include_defaults: true,
+              include_body: false,
+              include_item_bodies: false,
             }),
           }),
           api(`/api/researches/${researchId}/research-agent-skills`).catch(() => []),
           fetchGlobalDefaultModel(),
         ])
         if (!alive) return
+        const defaults = preview?.defaults || null
         setGlobalDefaultModel(globalDefault || '')
         const nextModels = Array.isArray(models) && models.length > 0 ? models : FALLBACK_MODEL_OPTIONS
         const nextAgentSkills = Array.isArray(skills) ? skills : []
@@ -352,7 +355,7 @@ export function ResearchAgentTeamModal({
         setDefaultExcludedSkillIds(defaultSkillEx)
         setDefaultExcludedMemoryIds(defaultMemoryEx)
         // 团队默认模型同样走三级链路: 当前 research 上次所选 > 项目默认 > 全局默认 > 第一个可用 (兜底).
-        // defaults.model / defaults.project_default_model 由后端 session-selection-defaults 回传.
+        // defaults.model / defaults.project_default_model 由 context-preview 的 include_defaults 回传.
         const defaultModel = resolveDefaultModelKey({
           scopeLastModel: (defaults as any)?.model,
           projectDefaultModel: (defaults as any)?.project_default_model,

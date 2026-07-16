@@ -9,7 +9,7 @@ import { Skills } from '../repositories/skills';
 // @ts-ignore — service 仍是 .js
 import { resolveEffectiveSkills } from '../services/skill-resolver';
 // @ts-ignore — service 仍是 .js
-import { buildIssueContextPreview, buildIssueSelectionDefaults, buildSessionSelectionSnapshot, gatherIssueSources } from '../services/session-context';
+import { buildIssueContextPreview, buildIssueSelectionDefaults, buildSessionSelectionSnapshot, gatherIssueSources, stripContextItemBodies } from '../services/session-context';
 // @ts-ignore — service 仍是 .js
 import { recordAdminAuditIfCrossUser } from '../services/admin-audit';
 // @ts-ignore — service 仍是 .js
@@ -348,6 +348,12 @@ function handleContextPreview(req: express.Request, res: express.Response): void
     }
     return [];
   };
+  const boolFlag = (v: unknown): boolean => v === true || v === 'true' || v === '1' || v === 1;
+  const falseFlag = (v: unknown): boolean => v === false || v === 'false' || v === '0' || v === 0;
+  const excludedSkillIds = toIdList(src.excluded_skill_ids);
+  const excludedMemoryIds = toIdList(src.excluded_memory_ids);
+  const includeBody = !falseFlag(src.include_body);
+  const includeItemBodies = !falseFlag(src.include_item_bodies);
   const ctx = buildIssueContextPreview(
     user, id,
     {
@@ -355,11 +361,19 @@ function handleContextPreview(req: express.Request, res: express.Response): void
       description: typeof src.description === 'string' ? src.description : '',
       pc_client_metadata: src.pc_client_metadata ?? null,
     },
-    toIdList(src.excluded_skill_ids),
-    toIdList(src.excluded_memory_ids),
+    excludedSkillIds,
+    excludedMemoryIds,
     src.language === 'en' ? 'en' : 'zh',
+    { includeBody },
   );
-  res.json({ body: ctx.body, sources: ctx.sources });
+  const canReuseSourcesForDefaults = excludedSkillIds.length === 0 && excludedMemoryIds.length === 0;
+  res.json({
+    body: ctx.body,
+    sources: includeItemBodies ? ctx.sources : stripContextItemBodies(ctx.sources),
+    ...(boolFlag(src.include_defaults)
+      ? { defaults: buildIssueSelectionDefaults(user, id, canReuseSourcesForDefaults ? ctx.sources : undefined) }
+      : {}),
+  });
 }
 router.get('/:id/context-preview', auth, handleContextPreview);
 router.post('/:id/context-preview', auth, handleContextPreview);

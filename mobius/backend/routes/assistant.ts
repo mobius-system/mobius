@@ -22,6 +22,7 @@ import {
   buildIssueContextPreview,
   buildSessionContext,
   buildSessionSelectionSnapshot,
+  stripContextItemBodies,
   wrapUserMessage,
 } from '../services/session-context';
 // @ts-ignore — service 仍是 .js
@@ -290,20 +291,24 @@ function availableModelKeys(): Set<string> {
 function assistantDefaultSelectionExclusions(user: any, issueId: string | null): { excluded_skill_ids: string[]; excluded_memory_ids: string[] } {
   if (!issueId) return { excluded_skill_ids: [], excluded_memory_ids: [] };
   try {
-    const ctx = buildIssueContextPreview(user, issueId, null, [], [], 'zh');
-    const skills = Array.isArray(ctx.sources?.skills) ? ctx.sources.skills : [];
-    const memories = Array.isArray(ctx.sources?.memories) ? ctx.sources.memories : [];
-    return {
-      excluded_skill_ids: skills
-        .map((skill: any) => skill?.id)
-        .filter((id: any) => id && !isAssistantRequiredSkillId(id)),
-      excluded_memory_ids: memories
-        .map((memory: any) => memory?.id)
-        .filter(Boolean),
-    };
+    const ctx = buildIssueContextPreview(user, issueId, null, [], [], 'zh', { includeBody: false });
+    return assistantDefaultSelectionExclusionsFromSources(ctx.sources);
   } catch {
     return { excluded_skill_ids: [], excluded_memory_ids: [] };
   }
+}
+
+function assistantDefaultSelectionExclusionsFromSources(sources: any): { excluded_skill_ids: string[]; excluded_memory_ids: string[] } {
+  const skills = Array.isArray(sources?.skills) ? sources.skills : [];
+  const memories = Array.isArray(sources?.memories) ? sources.memories : [];
+  return {
+    excluded_skill_ids: skills
+      .map((skill: any) => skill?.id)
+      .filter((id: any) => id && !isAssistantRequiredSkillId(id)),
+    excluded_memory_ids: memories
+      .map((memory: any) => memory?.id)
+      .filter(Boolean),
+  };
 }
 
 interface AssistantPresetNormalized {
@@ -1109,6 +1114,10 @@ function handleAssistantPresetContextPreview(req: express.Request, res: express.
   const excludedSkillIds = sanitizeAssistantExcludedSkillIds(src.excluded_skill_ids);
   const excludedMemoryIds = safeIdList(src.excluded_memory_ids);
   const language = src.language === 'en' ? 'en' : 'zh';
+  const boolFlag = (v: unknown): boolean => v === true || v === 'true' || v === '1' || v === 1;
+  const falseFlag = (v: unknown): boolean => v === false || v === 'false' || v === '0' || v === 0;
+  const includeBody = !falseFlag(src.include_body);
+  const includeItemBodies = !falseFlag(src.include_item_bodies);
   const ctx = buildIssueContextPreview(
     user,
     issue.id,
@@ -1116,8 +1125,22 @@ function handleAssistantPresetContextPreview(req: express.Request, res: express.
     excludedSkillIds,
     excludedMemoryIds,
     language,
+    { includeBody },
   );
-  res.json({ body: ctx.body, sources: ctx.sources });
+  const canReuseSourcesForDefaults = excludedSkillIds.length === 0 && excludedMemoryIds.length === 0;
+  res.json({
+    body: ctx.body,
+    sources: includeItemBodies ? ctx.sources : stripContextItemBodies(ctx.sources),
+    ...(boolFlag(src.include_defaults)
+      ? {
+        defaults: {
+          inherited: false,
+          source_session: null,
+          ...(canReuseSourcesForDefaults ? assistantDefaultSelectionExclusionsFromSources(ctx.sources) : assistantDefaultSelectionExclusions(user, issue.id)),
+        },
+      }
+      : {}),
+  });
 }
 
 async function startAssistantSession(req: express.Request, session: any, questionText: string, requestId: string, workDir: string, clientContext: any = null, attachments: any[] = [], userContent: string = ''): Promise<void> {

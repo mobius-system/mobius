@@ -1147,7 +1147,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
     setModel(resolveDefaultModelKey({ scopeLastModel, projectDefaultModel, globalDefaultModel, fallback: GLOBAL_DEFAULT_MODEL }))
   }, [scopeLastModel, projectDefaultModel, globalDefaultModel])
 
-  // Skill/Memory 全集: 选完 issue 后拉 context-preview (POST, 拿 sources) + session-selection-defaults (GET, 拿默认排除集).
+  // Skill/Memory 全集: 选完 issue 后拉一次 context-preview (sources + defaults).
   // 默认排除集沿用后端"同 Issue 最新 Session 继承 + 内置 Skill 默认排除"机制, 与 NewSessionModal goPreview 一致,
   // 避免顶栏快捷菜单全选/全不选而忽略传统菜单的默认筛选.
   const [availSkills, setAvailSkills] = useState<PickItem[]>([])
@@ -1155,11 +1155,12 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   useEffect(() => {
     if (!issueId) { setAvailSkills([]); setAvailMemories([]); setScopeLastModel(''); return }
     let alive = true
-    Promise.all([
-      api(`/api/issues/${issueId}/context-preview`, { method: 'POST', body: JSON.stringify({ name: name || ' ', description: desc || ' ', excluded_skill_ids: [], excluded_memory_ids: [] }) }),
-      api(`/api/issues/${issueId}/session-selection-defaults`).catch(() => null),
-    ]).then(([p, defaults]: any) => {
+    api(`/api/issues/${issueId}/context-preview`, {
+      method: 'POST',
+      body: JSON.stringify({ name: name || ' ', description: desc || ' ', excluded_skill_ids: [], excluded_memory_ids: [], include_defaults: true, include_body: false, include_item_bodies: false }),
+    }).then((p: any) => {
       if (!alive) return
+      const defaults = p?.defaults || null
       const skills = (p?.sources?.skills || []).map((s: any) => ({ id: s.id, name: s.name, description: s.description, scope: s.scope || 'project', dirName: s.dirName }))
       const memories = (p?.sources?.memories || []).map((m: any) => ({ id: m.id, name: m.name, description: m.description, scope: m.scope || 'project' }))
       setAvailSkills(skills)
@@ -1362,17 +1363,17 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
     }
   }, [projectId, selectedProject, researchEnabled])
 
-  // 选 research 后拉 agent-skills + context-preview 全集 + session-selection-defaults (默认排除集).
+  // 选 research 后拉 agent-skills + 一次 context-preview 全集 (sources + defaults).
   // 默认排除集沿用后端"同 Research 最新 Session 继承 + 内置 Skill 默认排除"机制, 与 NewSessionModal 一致.
   useEffect(() => {
     if (!researchId) { setAgentSkills([]); setAvailSkills([]); setAvailMemories([]); setChosenMainSkill(null); setExcludedSkills(new Set()); setExcludedMemories(new Set()); setScopeLastModel(''); return }
     let alive = true
     Promise.all([
       api(`/api/researches/${researchId}/research-agent-skills`).catch(() => []),
-      api(`/api/researches/${researchId}/context-preview`, { method: 'POST', body: JSON.stringify({ name: name || ' ', description: desc || ' ', role, excluded_skill_ids: [], excluded_memory_ids: [] }) }).catch(() => null),
-      api(`/api/researches/${researchId}/session-selection-defaults`).catch(() => null),
-    ]).then(([ask, prev, defaults]: any) => {
+      api(`/api/researches/${researchId}/context-preview`, { method: 'POST', body: JSON.stringify({ name: name || ' ', description: desc || ' ', role, excluded_skill_ids: [], excluded_memory_ids: [], include_defaults: true, include_body: false, include_item_bodies: false }) }).catch(() => null),
+    ]).then(([ask, prev]: any) => {
       if (!alive) return
+      const defaults = prev?.defaults || null
       const agentSkillList = (Array.isArray(ask) ? ask : []).map((s: any) => ({ id: s.id, name: s.name, description: s.description, scope: s.scope || 'project', research_role: s.research_role }))
       const previewSkills = (prev?.sources?.skills || []).map((s: any) => ({ id: s.id, name: s.name, description: s.description, scope: s.scope || 'project', research_role: s.research_role }))
       const previewMemories = (prev?.sources?.memories || []).map((m: any) => ({ id: m.id, name: m.name, description: m.description, scope: m.scope || 'project' }))

@@ -31,6 +31,7 @@ import {
   buildResearchContextPreview,
   buildResearchSelectionDefaults,
   buildResearchSessionSelectionSnapshot,
+  stripContextItemBodies,
 } from '../services/session-context';
 // @ts-ignore — service 仍是 .js
 import { appendBlackboardRecord, normalizeWriteInput, readBlackboard } from '../services/research-blackboard';
@@ -415,6 +416,12 @@ function handleContextPreview(req: express.Request, res: express.Response): void
   if (!canReadResearch(user, research)) { res.status(404).json({ error: '未找到' }); return; }
   auditResearchAccess(user, 'read_research_context_preview', research);
   const src: any = (req.method === 'POST' && req.body && typeof req.body === 'object') ? req.body : req.query;
+  const boolFlag = (v: unknown): boolean => v === true || v === 'true' || v === '1' || v === 1;
+  const falseFlag = (v: unknown): boolean => v === false || v === 'false' || v === '0' || v === 0;
+  const excludedSkillIds = toIdList(src.excluded_skill_ids);
+  const excludedMemoryIds = toIdList(src.excluded_memory_ids);
+  const includeBody = !falseFlag(src.include_body);
+  const includeItemBodies = !falseFlag(src.include_item_bodies);
   const ctx = buildResearchContextPreview(
     user,
     String(req.params.id),
@@ -424,11 +431,19 @@ function handleContextPreview(req: express.Request, res: express.Response): void
       role: typeof src.role === 'string' ? src.role : 'research_assistant',
       pc_client_metadata: src.pc_client_metadata ?? null,
     },
-    toIdList(src.excluded_skill_ids),
-    toIdList(src.excluded_memory_ids),
+    excludedSkillIds,
+    excludedMemoryIds,
     src.language === 'en' ? 'en' : 'zh',
+    { includeBody },
   );
-  res.json({ body: ctx.body, sources: ctx.sources });
+  const canReuseSourcesForDefaults = excludedSkillIds.length === 0 && excludedMemoryIds.length === 0;
+  res.json({
+    body: ctx.body,
+    sources: includeItemBodies ? ctx.sources : stripContextItemBodies(ctx.sources),
+    ...(boolFlag(src.include_defaults)
+      ? { defaults: buildResearchSelectionDefaults(user, String(req.params.id), canReuseSourcesForDefaults ? ctx.sources : undefined) }
+      : {}),
+  });
 }
 
 router.get('/:id/context-preview', auth, handleContextPreview);
@@ -452,7 +467,7 @@ router.get('/:id/research-agent-skills', auth, (req: express.Request, res: expre
   if (!research) { res.status(404).json({ error: '未找到' }); return; }
   if (!canReadResearch(user, research)) { res.status(404).json({ error: '未找到' }); return; }
   auditResearchAccess(user, 'read_research_agent_skills', research);
-  const preview = buildResearchContextPreview(user, String(req.params.id), null, [], [], 'zh');
+  const preview = buildResearchContextPreview(user, String(req.params.id), null, [], [], 'zh', { includeBody: false });
   const effective: any[] = Array.isArray(preview.sources?.skills) ? preview.sources.skills : [];
   const agentSkills = effective
     .filter((s) => typeof s.name === 'string' && s.name.startsWith('research-') && s.research_role)

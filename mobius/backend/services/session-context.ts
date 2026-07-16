@@ -698,6 +698,29 @@ function compactMemoryForSnapshot(m: any): any {
   };
 }
 
+function stripContextItemBodies(sources: any): any {
+  if (!sources || typeof sources !== 'object') return sources;
+  const mapSkill = (sk: any) => sk && typeof sk === 'object' ? {
+    id: sk.id,
+    scope: sk.scope,
+    name: sk.name,
+    description: sk.description || '',
+    research_role: sk.research_role || '',
+    dirName: sk.dirName || null,
+  } : sk;
+  const mapMemory = (memory: any) => memory && typeof memory === 'object' ? {
+    id: memory.id,
+    scope: memory.scope,
+    name: memory.name,
+    description: memory.description || '',
+  } : memory;
+  return {
+    ...sources,
+    skills: Array.isArray(sources.skills) ? sources.skills.map(mapSkill) : sources.skills,
+    memories: Array.isArray(sources.memories) ? sources.memories.map(mapMemory) : sources.memories,
+  };
+}
+
 function normalizeSelectionSnapshot(raw: any): any {
   if (!raw) return null;
   let parsed = raw;
@@ -1130,7 +1153,7 @@ function buildSessionContext(user: any, sessionId: string): any {
 
 // 新建 Session Wizard 用: 在 session 还没创建时, 用 issue + 输入框中的 name/desc + 勾选状态预览注入内容.
 // excludedSkillIds / excludedMemoryIds: 用户在 Wizard Step 2 中取消勾选的 id 列表.
-function buildIssueContextPreview(user: any, issueId: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language?: any): any {
+function buildIssueContextPreview(user: any, issueId: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language?: any, options?: any): any {
   const issue = Issues.findById(issueId);
   if (!issue) return { body: '', sources: null };
   const issueSources = gatherIssueSources(user, issue, {
@@ -1148,12 +1171,12 @@ function buildIssueContextPreview(user: any, issueId: any, draftSession: any, ex
       pc_client_metadata: draftSession.pc_client_metadata ?? null,
     } : null,
   };
-  return { body: formatBody(sources), sources };
+  return { body: options?.includeBody === false ? '' : formatBody(sources), sources };
 }
 
 // 项目级 Session 预设用: 特殊 Issue 尚未创建时, 用一个草稿 issue 计算与普通
 // Issue Session 一致的 skill/memory/context 预览, 但不落库。
-function buildProjectIssueContextPreview(user: any, projectId: any, draftIssue: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language: any): any {
+function buildProjectIssueContextPreview(user: any, projectId: any, draftIssue: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language: any, options?: any): any {
   const project = Projects.findById(projectId);
   if (!project) return { body: '', sources: null };
   const issue = {
@@ -1182,10 +1205,10 @@ function buildProjectIssueContextPreview(user: any, projectId: any, draftIssue: 
       pc_client_metadata: draftSession.pc_client_metadata ?? null,
     } : null,
   };
-  return { body: formatBody(sources), sources };
+  return { body: options?.includeBody === false ? '' : formatBody(sources), sources };
 }
 
-function buildResearchContextPreview(user: any, researchId: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language?: any): any {
+function buildResearchContextPreview(user: any, researchId: any, draftSession: any, excludedSkillIds: any, excludedMemoryIds: any, language?: any, options?: any): any {
   const research = Researches.findById(researchId);
   if (!research) return { body: '', sources: null };
   const researchSources = gatherResearchSources(user, research, {
@@ -1211,7 +1234,7 @@ function buildResearchContextPreview(user: any, researchId: any, draftSession: a
       research_role: draftSession.role || 'research_assistant',
     } : null,
   };
-  return { body: formatBody(sources), sources };
+  return { body: options?.includeBody === false ? '' : formatBody(sources), sources };
 }
 
 function buildSessionSelectionSnapshot(user: any, issueId: any, excludedSkillIds: any, excludedMemoryIds: any): any {
@@ -1249,11 +1272,11 @@ function builtinSkillDefaultExclusions(currentSources: any, storedSelection: any
 // 新建 Session Wizard 默认勾选状态:
 // 同一 Issue 下若已有非删除 Session, 继承最新创建 Session 的 skill/memory 勾选状态.
 // 当前已不可用的 id 会被过滤; 新增的 skill/memory 默认保持勾选.
-function buildIssueSelectionDefaults(user: any, issueId: any): any {
+function buildIssueSelectionDefaults(user: any, issueId: any, precomputedSources?: any): any {
   const issue = Issues.findById(issueId);
   if (!issue) return { inherited: false, source_session: null, model: null, excluded_skill_ids: [], excluded_memory_ids: [] };
 
-  const currentSources = gatherIssueSources(user, issue, { skills: [], memories: [] });
+  const currentSources = precomputedSources || gatherIssueSources(user, issue, { skills: [], memories: [] });
   const currentSkillIds = new Set<string>((currentSources.skills || []).map((sk: any) => sk.id));
   const currentMemoryIds = new Set<string>((currentSources.memories || []).map((memory: any) => memory.id));
 
@@ -1303,11 +1326,11 @@ function buildIssueSelectionDefaults(user: any, issueId: any): any {
   };
 }
 
-function buildResearchSelectionDefaults(user: any, researchId: any): any {
+function buildResearchSelectionDefaults(user: any, researchId: any, precomputedSources?: any): any {
   const research = Researches.findById(researchId);
   if (!research) return { inherited: false, source_session: null, model: null, project_default_model: null, excluded_skill_ids: [], excluded_memory_ids: [] };
 
-  const currentSources = gatherResearchSources(user, research, { skills: [], memories: [] });
+  const currentSources = precomputedSources || gatherResearchSources(user, research, { skills: [], memories: [] });
   const currentSkillIds = new Set<string>((currentSources.skills || []).map((sk: any) => sk.id));
   const currentMemoryIds = new Set<string>((currentSources.memories || []).map((memory: any) => memory.id));
 
@@ -1364,7 +1387,7 @@ function buildResearchSelectionDefaults(user: any, researchId: any): any {
   };
 }
 
-function buildProjectIssueSelectionDefaults(user: any, projectId: any, draftIssue: any): any {
+function buildProjectIssueSelectionDefaults(user: any, projectId: any, draftIssue: any, precomputedSources?: any): any {
   const project = Projects.findById(projectId);
   if (!project) return { inherited: false, source_session: null, excluded_skill_ids: [], excluded_memory_ids: [] };
   const issue = {
@@ -1378,7 +1401,7 @@ function buildProjectIssueSelectionDefaults(user: any, projectId: any, draftIssu
     use_worktree: 0,
     worktree_branch: '',
   };
-  const currentSources = gatherIssueSources(user, issue, { skills: [], memories: [] });
+  const currentSources = precomputedSources || gatherIssueSources(user, issue, { skills: [], memories: [] });
   const currentSkillIds = new Set<string>((currentSources.skills || []).map((sk: any) => sk.id));
   return {
     inherited: false,
@@ -1406,4 +1429,5 @@ export {
   buildResearchSelectionDefaults,
   wrapUserMessage,
   gatherIssueSources,
+  stripContextItemBodies,
 };

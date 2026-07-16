@@ -442,6 +442,41 @@ function recentSessionPath(userId: string | undefined, session: RecentSession) {
   return ''
 }
 
+// 近期会话本地缓存 (stale-while-revalidate): 打开下拉先秒显本地缓存, 后台静默刷新。
+// 缓存按用户隔离; TTL 内视为新鲜直接跳过网络; 写入的是已过滤排序后的列表。
+const RECENT_CACHE_TTL_MS = 60_000
+function recentSessionsCacheKey(userId?: string) {
+  return userId ? `mobius:recent-sessions:${userId}` : ''
+}
+function normalizeRecent(arr: unknown): RecentSession[] {
+  return (Array.isArray(arr) ? (arr as any[]) : [])
+    .filter((s: any) => s?.session_id && s?.status !== 'archived')
+    .sort((a: any, b: any) => new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime())
+    .slice(0, 12)
+}
+function readRecentCache(userId?: string): { list: RecentSession[]; ts: number } | null {
+  const key = recentSessionsCacheKey(userId)
+  if (!key) return null
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed.ts !== 'number' || !Array.isArray(parsed.list)) return null
+    return { list: parsed.list, ts: parsed.ts }
+  } catch {
+    return null
+  }
+}
+function writeRecentCache(userId: string | undefined, list: RecentSession[]) {
+  const key = recentSessionsCacheKey(userId)
+  if (!key) return
+  try {
+    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), list }))
+  } catch {
+    /* 配额满或隐私模式: 忽略, 不影响主流程 */
+  }
+}
+
 function RecentSessionsPanel({
   open,
   userId,
@@ -460,19 +495,34 @@ function RecentSessionsPanel({
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    setLoading(true)
     setError('')
+
+    // 1) 先用本地缓存秒显 (stale), 避免每次打开都 loading 闪烁; 有缓存则不显示 loading
+    const cached = readRecentCache(userId)
+    if (cached) {
+      setSessions(cached.list)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
+
+    // 2) 缓存仍在 TTL 内视为新鲜, 直接跳过网络请求
+    if (cached && Date.now() - cached.ts < RECENT_CACHE_TTL_MS) {
+      return () => { cancelled = true }
+    }
+
+    // 3) 后台静默刷新 (revalidate)
     api('/api/tasks/recent?limit=12')
       .then((arr: any) => {
         if (cancelled) return
-        const list = (Array.isArray(arr) ? arr : [])
-          .filter((s: any) => s?.session_id && s?.status !== 'archived')
-          .sort((a: any, b: any) => new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime())
-          .slice(0, 12)
+        const list = normalizeRecent(arr)
         setSessions(list)
+        writeRecentCache(userId, list)
       })
       .catch((e: any) => {
         if (cancelled) return
+        // 有缓存时网络失败静默 (用户已看到旧数据); 无缓存才提示错误
+        if (cached) return
         setError(e?.message || '最近会话加载失败')
         setSessions([])
       })
@@ -480,7 +530,7 @@ function RecentSessionsPanel({
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [open])
+  }, [open, userId])
 
   if (!open) return null
 
