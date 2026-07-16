@@ -751,17 +751,32 @@ function isDesktopClient() {
   return typeof window !== 'undefined' && !!(window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop?.isDesktop
 }
 
-// 把 FAB 吸附到左/右边缘, 纵向保留拖动落点。桌面端保留标题栏点击区, 不允许吸到顶角盖住窗口按钮。
-function snapFabToEdge(left: number, top: number) {
+// 把 FAB 吸附到四个角点。桌面端保留标题栏点击区, 不允许吸到顶栏区域盖住窗口按钮。
+function snapFabToCorner(left: number, top: number) {
   const vw = window.innerWidth
   const vh = window.innerHeight
   const margin = ASSISTANT_FAB_EDGE_MARGIN
   const size = ASSISTANT_FAB_SIZE
-  const cx = left + size / 2
-  const finalLeft = cx <= vw - cx ? margin : vw - size - margin
   const minTop = assistantFabMinTop()
-  const maxTop = Math.max(minTop, vh - size - margin)
-  return { left: finalLeft, top: Math.max(minTop, Math.min(maxTop, top)) }
+  const topY = minTop
+  const bottomY = Math.max(minTop, vh - size - margin)
+  const leftX = margin
+  const rightX = Math.max(leftX, vw - size - margin)
+  const cx = left + size / 2
+  const cy = top + size / 2
+  const corners = [
+    { left: leftX, top: topY },
+    { left: rightX, top: topY },
+    { left: leftX, top: bottomY },
+    { left: rightX, top: bottomY },
+  ]
+  return corners.reduce((best, item) => {
+    const bestDx = cx - (best.left + size / 2)
+    const bestDy = cy - (best.top + size / 2)
+    const itemDx = cx - (item.left + size / 2)
+    const itemDy = cy - (item.top + size / 2)
+    return itemDx * itemDx + itemDy * itemDy < bestDx * bestDx + bestDy * bestDy ? item : best
+  })
 }
 
 function readFabPos(): { left: number; top: number } | null {
@@ -1597,7 +1612,7 @@ export function AssistantChat() {
   // 懒初始化从 localStorage 恢复 (并吸附), 避免首屏从默认位闪烁到记忆位
   const [fabPos, setFabPos] = useState<{ left: number; top: number } | null>(() => {
     const restored = readFabPos()
-    return restored ? snapFabToEdge(restored.left, restored.top) : null
+    return restored ? snapFabToCorner(restored.left, restored.top) : null
   })
   const [fabDragging, setFabDragging] = useState(false)
   const [input, setInputState] = useState('')
@@ -2303,10 +2318,10 @@ export function AssistantChat() {
     const drag = fabDragRef.current
     if (drag && event.pointerId === drag.pointerId) {
       fabDragRef.current = null
-      // 拖动收尾: 吸附到左/右边缘 + 持久化 + 吃掉 click
+      // 拖动收尾: 吸附到四个角点 + 持久化 + 吃掉 click
       if (drag.dragging) {
         try { event.currentTarget.releasePointerCapture(drag.pointerId) } catch {}
-        const snapped = snapFabToEdge(
+        const snapped = snapFabToCorner(
           drag.startLeft + (event.clientX - drag.startX),
           drag.startTop + (event.clientY - drag.startY),
         )
@@ -2888,10 +2903,10 @@ export function AssistantChat() {
     setPanelStyle({})
   }, [panelSize])
 
-  // 视口尺寸变化时把 FAB 拉回可视区 (重新吸附到左/右边缘)
+  // 视口尺寸变化时把 FAB 拉回可视区 (重新吸附到四个角点)
   useEffect(() => {
     const onResize = () => {
-      setFabPos(prev => (prev ? snapFabToEdge(prev.left, prev.top) : prev))
+      setFabPos(prev => (prev ? snapFabToCorner(prev.left, prev.top) : prev))
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)

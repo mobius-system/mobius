@@ -1539,7 +1539,7 @@ button {
     0 0 0 1px rgba(125, 211, 252, .24),
     0 0 38px rgba(45, 212, 191, .24);
 }
-/* 拖动中: 关掉过渡让它紧跟指针, 释放后移除该类即恢复过渡平滑吸附到边缘 */
+/* 拖动中: 关掉过渡让它紧跟指针, 释放后移除该类即恢复过渡平滑吸附到四角 */
 .assistant-fab--dragging {
   cursor: grabbing;
   transition: none !important;
