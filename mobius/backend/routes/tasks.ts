@@ -25,6 +25,13 @@ router.get('/', auth, (req: express.Request, res: express.Response) => {
   res.json(withSessionProxyStates(Sessions.listForUser(user.id)));
 });
 
+router.get('/recent', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
+  const rawLimit = Number(req.query.limit || 12);
+  const limit = Math.max(1, Math.min(50, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 12));
+  res.json(Sessions.listRecentForUser(user.id, limit));
+});
+
 router.post('/', auth, (req: express.Request, res: express.Response) => {
   const user = (req as any).user;
   const { name, description, issue_id } = (req.body || {}) as { name?: string; description?: string; issue_id?: string };

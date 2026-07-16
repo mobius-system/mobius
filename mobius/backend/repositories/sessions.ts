@@ -144,6 +144,17 @@ const Sessions = {
     ORDER BY s.last_active DESC
   `).all(userId) as SessionWithJoinsRow[],
 
+  listRecentForUser: (userId: string, limit: number): SessionWithJoinsRow[] => db.prepare(`
+    SELECT ${SESSION_LIST_COLUMNS}, i.title as issue_title, r.title as research_title, p.name as project_name
+    FROM sessions_v2 s
+    LEFT JOIN issues i ON s.issue_id = i.id
+    LEFT JOIN researches r ON s.research_id = r.id
+    LEFT JOIN projects p ON s.project_id = p.id
+    WHERE s.user_id = ? AND s.status != 'archived' AND s.deleted_at IS NULL
+    ORDER BY s.last_active DESC
+    LIMIT ?
+  `).all(userId, limit) as SessionWithJoinsRow[],
+
   // raw_entry_count: 该 session 在 messages_v2 里的原始数据条目数 (每条 SDK
   // 事件/消息落库为一行). 替代一直显示 0 的 turn_count —— turn_count 列从未被
   // 任何写路径自增, 故 IssuePage 卡片改用本字段反映真实数据量.

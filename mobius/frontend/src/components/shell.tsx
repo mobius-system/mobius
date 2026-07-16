@@ -462,7 +462,7 @@ function RecentSessionsPanel({
     let cancelled = false
     setLoading(true)
     setError('')
-    api('/api/tasks')
+    api('/api/tasks/recent?limit=12')
       .then((arr: any) => {
         if (cancelled) return
         const list = (Array.isArray(arr) ? arr : [])
