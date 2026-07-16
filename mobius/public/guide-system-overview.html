@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>莫比乌斯引导系统总览</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK SC",sans-serif; background:#0b0f17; color:#e2e8f0; }
+  .wrap { max-width:1180px; margin:0 auto; padding:40px 24px 80px; }
+  h1 { font-size:30px; margin:0 0 6px; }
+  .sub { color:#94a3b8; font-size:14px; margin-bottom:32px; }
+  h2 { font-size:21px; margin:40px 0 14px; padding-bottom:8px; border-bottom:1px solid #1e293b; color:#f1f5f9; }
+  h3 { font-size:16px; margin:24px 0 10px; color:#38bdf8; }
+  .route { background:#111827; border:1px solid #1e293b; border-radius:14px; padding:22px 24px; margin-bottom:22px; }
+  .route-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; margin-bottom:6px; }
+  .route-name { font-size:19px; font-weight:700; color:#f1f5f9; }
+  .badge { font-size:11px; padding:3px 9px; border-radius:999px; background:rgba(56,189,248,.15); color:#7dd3fc; border:1px solid rgba(56,189,248,.3); }
+  .badge.scene { background:rgba(16,185,129,.15); color:#6ee7b7; border-color:rgba(16,185,129,.3); }
+  .badge.review { background:rgba(168,85,247,.15); color:#c4b5fd; border-color:rgba(168,85,247,.3); }
+  .route-meta { color:#94a3b8; font-size:13px; margin:4px 0 14px; }
+  .flow { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:10px 0 16px; font-size:12.5px; }
+  .flow .step { background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.25); color:#bae6fd; padding:4px 9px; border-radius:7px; }
+  .flow .arr { color:#475569; }
+  .page-block { margin:16px 0; padding:14px 16px; background:#0f172a; border-left:3px solid #334155; border-radius:0 8px 8px 0; }
+  .page-title { font-weight:600; color:#e2e8f0; font-size:14px; margin-bottom:8px; }
+  .page-title code { background:#1e293b; padding:1px 6px; border-radius:4px; font-size:12.5px; color:#f0abfc; }
+  .items { list-style:none; padding:0; margin:0; }
+  .items li { padding:6px 0; display:flex; gap:10px; align-items:flex-start; font-size:13px; border-bottom:1px dashed #1e293b; }
+  .items li:last-child { border-bottom:0; }
+  .sel { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; color:#7dd3fc; background:#0b1220; padding:2px 7px; border-radius:5px; white-space:nowrap; flex-shrink:0; min-width:0; overflow-x:auto; max-width:48%; }
+  .desc { color:#94a3b8; flex:1; }
+  .desc b { color:#cbd5e1; font-weight:600; }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:30px; font-size:12.5px; color:#94a3b8; }
+  .legend span { display:inline-flex; align-items:center; gap:5px; }
+  .dot { width:9px; height:9px; border-radius:50%; }
+  .note { background:rgba(234,179,8,.08); border:1px solid rgba(234,179,8,.25); color:#fde68a; font-size:12.5px; padding:10px 14px; border-radius:8px; margin:14px 0; }
+  .toc { background:#0f172a; border:1px solid #1e293b; border-radius:12px; padding:16px 22px; margin-bottom:30px; }
+  .toc a { color:#7dd3fc; text-decoration:none; }
+  .toc a:hover { text-decoration:underline; }
+  .toc ul { margin:6px 0; padding-left:18px; }
+  details summary { cursor:pointer; color:#94a3b8; font-size:13px; margin-top:8px; }
+  table { width:100%; border-collapse:collapse; margin:14px 0; font-size:13px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid #1e293b; }
+  th { color:#94a3b8; font-weight:600; }
+  td code { color:#f0abfc; font-family:ui-monospace,monospace; font-size:12px; }
+  .updated { color:#64748b; font-size:12px; margin-top:48px; border-top:1px solid #1e293b; padding-top:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>莫比乌斯引导系统总览</h1>
+  <div class="sub">所有引导路线 → 涉及页面 → 每页高亮的关键展示项目（driver.js 步骤）</div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:#7dd3fc"></span>Demo 路线（带状态，跨页推进）</span>
+    <span><span class="dot" style="background:#6ee7b7"></span>场景级首触（无状态，首次进入触发）</span>
+    <span><span class="dot" style="background:#c4b5fd"></span>验收路线（看完成版）</span>
+    <span><span class="dot" style="background:#fbbf24"></span>无状态讲解</span>
+  </div>
+
+  <div class="toc">
+    <b style="color:#f1f5f9">目录</b>
+    <ul>
+      <li><a href="#scn">场景级首触引导（3 条）</a> — 管理中心 / Research 课题页 / self-cognition 工作台</li>
+      <li><a href="#intro">认识页面（无状态）</a></li>
+      <li><a href="#birthday">创建演示项目（birthday）</a></li>
+      <li><a href="#ctx">配置开发资料（context-setup）</a></li>
+      <li><a href="#imp">导入已有代码（project-import）</a></li>
+      <li><a href="#ext">拓展演示（extension）</a></li>
+      <li><a href="#sev">莫比乌斯自迭代（self-evolve）</a></li>
+      <li><a href="#lr">验收完成案例（logo-review）</a></li>
+    </ul>
+  </div>
+
+  <div class="note">页面 URL 中的 <code>:user</code> / <code>:project</code> / <code>:issue</code> / <code>:research</code> 是动态 ID。带 <code>?session=</code> 的表示已选中某执行会话；<code>?view=</code> 是 Research 视图切换。所有 selector 都是页面上真实存在的 <code>data-tour</code> 属性或 CSS id。</div>
+
+  <!-- ============ 场景级首触 ============ -->
+  <h2 id="scn">一、场景级首触引导（3 条）</h2>
+  <p style="color:#94a3b8;font-size:13px;margin-top:-8px">首次进入某功能区时按用户×场景维度自动触发，看完或跳过标记 seen（跨设备不再弹）。可在帮助中心「重温」重看。</p>
+
+  <div class="route">
+    <div class="route-head"><span class="route-name">管理中心</span><span class="badge scene">场景首触</span></div>
+    <div class="route-meta">触发：管理员首次打开管理中心 overlay（非路由，靠 <code>admin-center-header</code> 元素探测）　·　selector 体系：<code>data-tour="admin-*"</code></div>
+    <div class="flow"><span class="step">管理中心 overlay</span><span class="arr">→</span><span class="step">逐 tab 切换讲解</span><span class="arr">→</span><span class="step">收尾</span></div>
+    <div class="page-block">
+      <div class="page-title">管理中心 overlay（用户菜单 → 管理中心）</div>
+      <ul class="items">
+        <li><span class="sel">admin-center-header</span><span class="desc"><b>这里是管理中心</b>：系统级管理总入口，八个模块按需切换</span></li>
+        <li><span class="sel">admin-tab-bar</span><span class="desc"><b>按模块切换</b>：这里八个模块各自独立</span></li>
+        <li><span class="sel">admin-section-users</span><span class="desc"><b>用户管理</b>：管员工账号、角色、权限（默认 tab，直接讲）</span></li>
+        <li><span class="sel">admin-tab-models → admin-section-models</span><span class="desc"><b>模型接入</b>：配置 AI 模型通道、密钥、代理</span></li>
+        <li><span class="sel">admin-tab-settings → admin-section-settings</span><span class="desc"><b>系统设置</b>：模型创建配额、全局默认模型、代理链</span></li>
+        <li><span class="sel">admin-tab-extensions → admin-section-extensions</span><span class="desc"><b>拓展管理</b>：安装、启用、隐藏莫比乌斯拓展插件</span></li>
+        <li><span class="sel">admin-tab-migration → skill-memory-manage-panel</span><span class="desc"><b>Skill与Memory管理</b>：迁移并管理项目级技能和记忆</span></li>
+        <li><span class="sel">admin-center-header</span><span class="desc"><b>改动影响所有人</b>：全站生效，改前先确认；重看从右上角问号</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="route">
+    <div class="route-head"><span class="route-name">Research 课题页</span><span class="badge scene">场景首触</span></div>
+    <div class="route-meta">触发：路由 <code>/u/:user/p/:project/r/:research</code>（靠 <code>research-header</code> 元素探测）　·　selector 体系：<code>data-tour="research-*"</code></div>
+    <div class="flow"><span class="step">研究课题工作台</span><span class="arr">→</span><span class="step">?view=blackboard</span><span class="arr">→</span><span class="step">?view=graph</span><span class="arr">→</span><span class="step">收尾</span></div>
+    <div class="page-block">
+      <div class="page-title">Research 课题页 <code>/u/:user/p/:project/r/:research</code></div>
+      <ul class="items">
+        <li><span class="sel">research-header</span><span class="desc"><b>研究课题工作台</b>：莫比乌斯的研究子系统，可组建多智能体团队</span></li>
+        <li><span class="sel">research-agent-list</span><span class="desc"><b>研究员列表</b>：首席锁定不可删统筹全局，助理并行写回黑板</span></li>
+        <li><span class="sel">research-new-agent</span><span class="desc"><b>新建研究员</b>：可创建单个，也可一键拉起团队</span></li>
+        <li><span class="sel">research-toggle-blackboard → research-blackboard</span><span class="desc"><b>协作黑板</b>：汇总各研究员实时写回的进展与结论，自动刷新</span></li>
+        <li><span class="sel">research-toggle-graph → research-graph</span><span class="desc"><b>研究图谱</b>：节点图展示团队分工与进展，可拖拽布局</span></li>
+        <li><span class="sel">research-header</span><span class="desc"><b>研究是项目级能力</b>：需在项目设置开启；重看从引导中心</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="route">
+    <div class="route-head"><span class="route-name">self-cognition 工作台</span><span class="badge scene">场景首触 · 独立 driver</span></div>
+    <div class="route-meta">触发：访问 <code>/extension/self-cognition/</code>（扩展页，独立 vanilla JS + esm.sh 加载 driver.js）　·　selector：纯 CSS id</div>
+    <div class="flow"><span class="step">#hero 研究雷达</span><span class="arr">→</span><span class="step">#heroFeed</span><span class="arr">→</span><span class="step">#paper-section</span><span class="arr">→</span><span class="step">#implementation-section</span><span class="arr">→</span><span class="step">#evolution-section</span><span class="arr">→</span><span class="step">闭环</span></div>
+    <div class="page-block">
+      <div class="page-title">self-cognition 扩展页 <code>/extension/self-cognition/</code></div>
+      <ul class="items">
+        <li><span class="sel">#hero</span><span class="desc"><b>研究雷达</b>：莫比乌斯研究自己的工作台，把研究做成持续流程</span></li>
+        <li><span class="sel">#heroFeed</span><span class="desc"><b>卡片流</b>：汇总论文、产品、启发点</span></li>
+        <li><span class="sel">#paper-section</span><span class="desc"><b>论文区</b>：列出待审论文，可打开论文工作台选论文、挑启发</span></li>
+        <li><span class="sel">#implementation-section</span><span class="desc"><b>启发落地区</b>：每条启发可推进成自迭代任务，研究到落地的闭环</span></li>
+        <li><span class="sel">#evolution-section</span><span class="desc"><b>自进化历史</b>：已落地改动按时间线排列</span></li>
+        <li><span class="sel">#hero</span><span class="desc"><b>一条闭环</b>：论文→启发→落地→历史，自我改进完整闭环</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============ 认识页面 ============ -->
+  <h2 id="intro">二、认识页面（无状态讲解）</h2>
+  <div class="route">
+    <div class="route-head"><span class="route-name">startIntroTour · 认识页面</span><span class="badge" style="background:rgba(251,191,36,.15);color:#fcd34d;border-color:rgba(251,191,36,.3)">无状态</span></div>
+    <div class="route-meta">单页路线，从帮助中心「认识页面」启动，先 navigate 到首页再讲。不写状态、不建项目。</div>
+    <div class="flow"><span class="step">用户首页 /u/:user</span></div>
+    <div class="page-block">
+      <div class="page-title">用户首页 <code>/u/:user</code>（单页，8 步高亮顶栏与项目区）</div>
+      <ul class="items">
+        <li><span class="sel">top-nav-brand</span><span class="desc"><b>这里是工作台</b></span></li>
+        <li><span class="sel">user-projects-sidebar</span><span class="desc"><b>项目放代码和资料</b></span></li>
+        <li><span class="sel">user-projects-main</span><span class="desc"><b>项目卡片</b></span></li>
+        <li><span class="sel">user-empty-create-project / user-new-project</span><span class="desc"><b>从新建项目开始</b></span></li>
+        <li><span class="sel">top-guide-help</span><span class="desc"><b>随时回来学习</b>：忘了流程从这重开引导</span></li>
+        <li><span class="sel">top-system-status</span><span class="desc"><b>先看系统是否正常</b></span></li>
+        <li><span class="sel">top-theme-toggle</span><span class="desc"><b>切换外观</b></span></li>
+        <li><span class="sel">top-user-menu</span><span class="desc"><b>个人设置</b>：管理员也从此打开管理中心</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============ Demo 路线公共骨架 ============ -->
+  <h2>三、Demo 路线公共骨架</h2>
+  <p style="color:#94a3b8;font-size:13px">birthday / context-setup / project-import / extension / self-evolve 这 5 条 demo 路线共用同一套 segment（按路由+弹窗探测分发），只是文案分支不同。下表是共用页面与高亮项目，各路线差异见后文。</p>
+  <table>
+    <tr><th>页面 / 段</th><th>路由形态</th><th>高亮 selector（每行一步）</th></tr>
+    <tr><td>首页</td><td><code>/u/:user</code></td><td><code>user-projects-sidebar</code> → <code>user-empty-create-project / user-new-project</code></td></tr>
+    <tr><td>项目表单弹窗</td><td>弹窗 <code>project-modal</code></td><td><code>project-modal</code> → <code>project-name-input</code> → <code>project-path-input</code> → <code>project-worktree-toggle</code> → <code>project-research-toggle</code> → <code>project-submit</code></td></tr>
+    <tr><td>项目任务区</td><td><code>/u/:user/p/:project</code></td><td><code>project-items-panel</code> → <code>project-issue-tab</code> → <code>project-new-issue / project-empty-create-issue / project-sidebar-new-issue</code></td></tr>
+    <tr><td>任务单表单弹窗</td><td>弹窗 <code>issue-modal</code></td><td><code>issue-modal</code> → <code>issue-title-input</code> → <code>issue-description-input</code> → <code>issue-worktree-toggle</code> → <code>issue-submit</code></td></tr>
+    <tr><td>任务单已建</td><td><code>/u/:user/p/:project/i/:issue</code></td><td><code>issue-created-summary</code> → <code>issue-new-session / issue-empty-create-session / issue-sidebar-new-session</code></td></tr>
+    <tr><td>会话向导弹窗</td><td>弹窗 <code>session-modal</code></td><td><code>session-modal</code> → <code>session-name-input</code> → <code>session-description-input</code> → <code>session-model-picker</code> → <code>session-preview-next</code></td></tr>
+    <tr><td>会话预览页</td><td>弹窗 <code>session-preview</code></td><td><code>session-preview</code> → <code>session-preview-skills</code> → <code>session-preview-memories</code> → <code>session-submit</code></td></tr>
+    <tr><td>开始执行确认</td><td>弹窗 <code>session-start-modal</code></td><td><code>session-start-modal</code> → <code>session-start-confirm</code></td></tr>
+    <tr><td>对话执行页</td><td><code>/i/:issue?session=</code></td><td><code>session-chat-header</code> → <code>session-status</code> → <code>session-jsonl-view</code> → <code>session-chat-input</code> → <code>issue-overview-link</code></td></tr>
+    <tr><td>执行完成</td><td><code>/i/:issue</code></td><td><code>session-card</code> → <code>project-files-card</code> → <code>project-file-readme</code> → <code>project-file-agent-output-guide</code> → <code>project-files-vscode-open</code> → <code>project-back-link</code></td></tr>
+    <tr><td>清理演示项目</td><td><code>/u/:user/p/:project</code></td><td><code>project-settings-panel</code> → <code>project-delete</code></td></tr>
+    <tr><td>删除确认弹窗</td><td>弹窗 <code>delete-project-modal</code></td><td><code>delete-project-modal</code> → <code>delete-project-confirm-input</code> → <code>delete-project-final-confirm</code> → <code>delete-project-submit</code></td></tr>
+  </table>
+
+  <!-- ============ 各 demo 路线 ============ -->
+  <h2>四、各 Demo 路线差异</h2>
+
+  <div class="route" id="birthday">
+    <div class="route-head"><span class="route-name">创建演示项目（birthday）</span><span class="badge">demo</span></div>
+    <div class="route-meta">从首页起步，全程手动创建项目→任务→会话。session-chat 走 extension 全套日志卡（birthday 与 extension 共用 segment）。</div>
+    <div class="flow"><span class="step">首页</span><span class="arr">→</span><span class="step">项目表单</span><span class="arr">→</span><span class="step">项目页</span><span class="arr">→</span><span class="step">任务单</span><span class="arr">→</span><span class="step">会话</span><span class="arr">→</span><span class="step">执行</span><span class="arr">→</span><span class="step">完成</span><span class="arr">→</span><span class="step">清理</span></div>
+    <div class="note">走全套公共骨架，session-chat 含 8 张日志卡（user/event/reasoning/tool-call/tool-result/token-count/assistant×2）。</div>
+  </div>
+
+  <div class="route" id="ctx">
+    <div class="route-head"><span class="route-name">配置开发资料（context-setup）</span><span class="badge">demo</span></div>
+    <div class="route-meta">在项目页分三阶段：下载+上传项目知识 → 下载+上传项目方法 → 建验证任务。可选远程算力弹窗。</div>
+    <div class="flow"><span class="step">首页</span><span class="arr">→</span><span class="step">项目表单</span><span class="arr">→</span><span class="step">项目页·知识阶段</span><span class="arr">→</span><span class="step">项目页·方法阶段</span><span class="arr">→</span><span class="step">项目页·建任务</span><span class="arr">→</span><span class="step">任务单→会话→执行→完成→清理</span></div>
+    <div class="page-block">
+      <div class="page-title">项目页·context 专属高亮（<code>/u/:user/p/:project</code>）</div>
+      <ul class="items">
+        <li><span class="sel">project-settings-panel</span><span class="desc">先准备真实资料</span></li>
+        <li><span class="sel">project-context-memory-download</span><span class="desc"><b>下载项目知识</b></span></li>
+        <li><span class="sel">project-context-skill-download</span><span class="desc"><b>下载方法文件</b></span></li>
+        <li><span class="sel">project-memory-manager / project-memory-upload-knowledge</span><span class="desc"><b>上传项目知识</b></span></li>
+        <li><span class="sel">project-skill-manager / project-skill-upload-file</span><span class="desc"><b>上传项目方法</b></span></li>
+        <li><span class="sel">project-context-whitelist</span><span class="desc">个人资料筛选</span></li>
+      </ul>
+      <div class="page-title" style="margin-top:14px">远程算力弹窗（可选，<code>remote-compute-modal</code>）</div>
+      <ul class="items">
+        <li><span class="sel">remote-compute-row / -test / -hardware</span><span class="desc">选机器、测连通、探硬件</span></li>
+        <li><span class="sel">remote-compute-memory-preview / -create-memory</span><span class="desc">预览并创建项目记忆</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="route" id="imp">
+    <div class="route-head"><span class="route-name">导入已有代码（project-import）</span><span class="badge">demo</span></div>
+    <div class="route-meta">在项目页分三阶段：下载上传样例 → 打开 VSCode 确认上传 → 清空样例 → 建导入任务（带 gitUrl）。</div>
+    <div class="flow"><span class="step">首页</span><span class="arr">→</span><span class="step">项目表单</span><span class="arr">→</span><span class="step">项目页·下载样例</span><span class="arr">→</span><span class="step">项目页·上传</span><span class="arr">→</span><span class="step">项目页·清空</span><span class="arr">→</span><span class="step">建导入任务→执行→清理</span></div>
+    <div class="page-block">
+      <div class="page-title">项目页·import 专属高亮（<code>/u/:user/p/:project</code>）</div>
+      <ul class="items">
+        <li><span class="sel">project-import-sample-download</span><span class="desc"><b>下载真实上传样例</b></span></li>
+        <li><span class="sel">vscode-open-button</span><span class="desc"><b>打开网页代码编辑器</b></span></li>
+        <li><span class="sel">project-import-confirm-upload-sample</span><span class="desc">确认上传完成</span></li>
+        <li><span class="sel">project-import-clear-upload-sample</span><span class="desc">清空样例，继续下一种方式</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="route" id="ext">
+    <div class="route-head"><span class="route-name">拓展演示（extension）</span><span class="badge">demo</span></div>
+    <div class="route-meta">与 birthday 同骨架。预览页含 <code>session-preview-mobius-extension-skill</code> + <code>session-preview-logo-memory</code> 两张专属卡。</div>
+    <div class="flow"><span class="step">首页</span><span class="arr">→</span><span class="step">项目表单</span><span class="arr">→</span><span class="step">项目页</span><span class="arr">→</span><span class="step">任务单→会话预览(含拓展技能卡)</span><span class="arr">→</span><span class="step">执行→完成→清理</span></div>
+    <div class="page-block">
+      <div class="page-title">会话预览页·extension 专属（<code>session-preview</code>）</div>
+      <ul class="items">
+        <li><span class="sel">session-preview-mobius-extension-skill</span><span class="desc"><b>保留拓展技能</b>：mobius-extension 协议与边界</span></li>
+        <li><span class="sel">session-preview-logo-memory</span><span class="desc"><b>保留项目知识</b>：光点标志空间案例约束</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="route" id="sev">
+    <div class="route-head"><span class="route-name">莫比乌斯自迭代（self-evolve）</span><span class="badge">demo</span></div>
+    <div class="route-meta">直接进入已有自迭代项目（不新建），任务只改一处演示时间文字。预览页含 3 张专属记忆卡。不走清理（自迭代项目不删）。</div>
+    <div class="flow"><span class="step">自迭代项目页</span><span class="arr">→</span><span class="step">任务单</span><span class="arr">→</span><span class="step">会话预览(3张记忆卡)</span><span class="arr">→</span><span class="step">执行→完成</span></div>
+    <div class="page-block">
+      <div class="page-title">会话预览页·self-evolve 专属（<code>session-preview</code>）</div>
+      <ul class="items">
+        <li><span class="sel">session-preview-self-evolve-required-memory</span><span class="desc"><b>保留项目知识</b>：莫比乌斯自主开发项目知识</span></li>
+        <li><span class="sel">session-preview-self-evolve-project-memory</span><span class="desc"><b>保留实现记录</b>：引导系统与已有实现位置</span></li>
+        <li><span class="sel">session-preview-self-evolve-guide-memory</span><span class="desc"><b>保留文案规则</b>：中文优先、短句、少讲实现</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============ 验收路线 ============ -->
+  <h2>五、验收完成案例（logo-review）</h2>
+  <div class="route" id="lr">
+    <div class="route-head"><span class="route-name">验收完成案例（logo-review）</span><span class="badge review">验收</span></div>
+    <div class="route-meta">不等待新智能体跑完，直接进入固定完成项目 <code>LOGO_REVIEW_PROJECT_ID</code>，学验收+看拓展应用+清理临时项目。</div>
+    <div class="flow"><span class="step">完成会话页</span><span class="arr">→</span><span class="step">任务单概览</span><span class="arr">→</span><span class="step">拓展项目 ext_dot-logo-3d</span><span class="arr">→</span><span class="step">打开拓展网页</span><span class="arr">→</span><span class="step">清理临时项目</span></div>
+    <div class="page-block">
+      <div class="page-title">完成会话页 <code>/u/:user/p/:project/i/:issue?session=</code></div>
+      <ul class="items">
+        <li><span class="sel">session-chat-header / session-status / session-jsonl-view</span><span class="desc">这是完成版会话，阅读执行日志</span></li>
+        <li><span class="sel">session-log-logo-file-tool-call-card / -tool-result-card</span><span class="desc">工具调用看 extension.json / AGENT_OUTPUT_GUIDE</span></li>
+        <li><span class="sel">session-log-logo-extension-answer-card</span><span class="desc"><b>看懂拓展地址</b>：入口 <code>/extension/dot-logo-3d/</code></span></li>
+        <li><span class="sel">issue-overview-link</span><span class="desc">继续验收拓展（点此跳到拓展项目）</span></li>
+      </ul>
+      <div class="page-title" style="margin-top:14px">拓展项目页 <code>/u/:user/p/ext_dot-logo-3d</code></div>
+      <ul class="items">
+        <li><span class="sel">project-extension-entry</span><span class="desc">这是拓展项目</span></li>
+        <li><span class="sel">project-extension-open</span><span class="desc"><b>打开拓展网页</b>：新标签打开 <code>/extension/dot-logo-3d/</code></span></li>
+      </ul>
+      <div class="page-title" style="margin-top:14px">清理临时项目（若有）<code>/u/:user/p/:cleanup</code></div>
+      <ul class="items">
+        <li><span class="sel">project-settings-panel / project-delete</span><span class="desc">删除刚才创建的演示项目</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="updated">梳理时间 2026-07-16 · 来源 <code>tour.ts</code> / <code>self-cognition/frontend/tour.js</code> · 9 个录屏分镜复用</div>
+</div>
+</body>
+</html>
