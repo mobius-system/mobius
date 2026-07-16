@@ -150,7 +150,11 @@ const Sessions = {
     LEFT JOIN issues i ON s.issue_id = i.id
     LEFT JOIN researches r ON s.research_id = r.id
     LEFT JOIN projects p ON s.project_id = p.id
-    WHERE s.user_id = ? AND s.status != 'archived' AND s.deleted_at IS NULL
+    WHERE s.user_id = ?
+      AND s.status != 'archived'
+      AND s.deleted_at IS NULL
+      AND s.session_key NOT LIKE 'assistant-question:%'
+      AND NOT (i.title = '小莫对话' AND p.name LIKE '%小莫助理')
     ORDER BY s.last_active DESC
     LIMIT ?
   `).all(userId, limit) as SessionWithJoinsRow[],
