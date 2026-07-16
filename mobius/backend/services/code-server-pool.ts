@@ -33,11 +33,6 @@ const IDLE_MIN = parseInt(process.env.CS_IDLE_TIMEOUT_MIN || '60', 10);
 const MAX_PER_USER = parseInt(process.env.CS_MAX_PER_USER || '4', 10);
 const MAX_TOTAL = parseInt(process.env.CS_MAX_TOTAL || '16', 10);
 const READY_TIMEOUT_MS = parseInt(process.env.CS_READY_TIMEOUT_MS || '30000', 10);
-const DEFAULT_DISABLED_EXTENSIONS = [
-  // MermaidChart 2.7.x touches the deprecated VS Code node navigator shim on
-  // code-server 4.118 and floods the browser/remote extension logs.
-  'MermaidChart.vscode-mermaid-chart',
-];
 
 fs.mkdirSync(DATA_ROOT, { recursive: true });
 fs.mkdirSync(EXT_ROOT, { recursive: true });
@@ -272,21 +267,6 @@ function appendNodeRequire(existingOptions: string | undefined, requirePath: str
   return `${existingOptions} ${requireOption}`;
 }
 
-function codeServerDisabledExtensions(): string[] {
-  const raw = process.env.CS_DISABLED_EXTENSIONS;
-  const source = typeof raw === 'string' ? raw.split(',') : DEFAULT_DISABLED_EXTENSIONS;
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const item of source) {
-    const id = String(item || '').trim();
-    const key = id.toLowerCase();
-    if (!id || seen.has(key)) continue;
-    seen.add(key);
-    out.push(id);
-  }
-  return out;
-}
-
 async function waitForReady(port: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -354,7 +334,6 @@ async function ensure(user: any, projectId: string, bindPath: string): Promise<{
     '--disable-update-check',
     '--user-data-dir', dataDir,
     '--extensions-dir', extDir,
-    ...codeServerDisabledExtensions().flatMap((id) => ['--disable-extension', id]),
     bindPath,
   ];
   console.log(`[cs-pool] spawn ${CS_BIN} for user=${user.id} project=${projectId} port=${port}`);
