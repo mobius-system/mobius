@@ -1,9 +1,12 @@
 // 项目本地工作路径绑定闸门（桌面端，替代旧 Electron 主进程注入的 project-overlay）。
 // 仅当 Electron 桌面端 (window.mobiusDesktop.isDesktop) 且当前在某项目页时生效：
-//   进入项目 → 拉取 project:bind-status → 未绑定则强制弹窗让用户选/确认本机路径。
+//   进入项目 → 拉取 project:bind-status → 未绑定则弹窗告知并让用户选/确认本机路径(可退出)。
 // 已绑定(主进程会必要时补建目录)则静默放行。绑定确认走 confirmProjectPath IPC。
+// 弹窗起"告知"作用: 行为不变(仍需绑定才能使用项目), 但提供"退出项目"按钮让只想浏览的用户可离开,
+// 不再被强行困住 (issue: 打开扩展/项目时被强制绑定路径, 用户可能只想看看)。
 import { memo, useEffect, useState } from 'react'
-import { FolderOpen } from 'lucide-react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { FolderOpen, LogOut } from 'lucide-react'
 
 interface BindStatus {
   bound: boolean
@@ -28,6 +31,8 @@ function getDesktopBridge(): DesktopBridge | undefined {
 
 function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
   const md = getDesktopBridge()
+  const navigate = useNavigate()
+  const params = useParams()
   const [status, setStatus] = useState<BindStatus | null>(null)
   const [path, setPath] = useState('')
   const [busy, setBusy] = useState(false)
@@ -79,6 +84,13 @@ function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
     }
   }
 
+  // 退出项目: 不绑定, 回到该用户的项目列表。行为不变(仍需绑定才能使用项目),
+  // 只给"只想浏览、不想绑定"的用户一个离开的出口, 不再被强行困住。
+  const exitProject = () => {
+    const u = params.user
+    navigate(u ? `/u/${u}` : '/', { replace: true })
+  }
+
   return (
     <div className="fixed inset-0 z-[2147483646] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/45" />
@@ -88,7 +100,7 @@ function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
       >
         <h3 className="text-[16px] font-semibold mb-2.5">绑定本地工作路径</h3>
         <p className="text-[13px] mb-3.5 break-words leading-relaxed whitespace-normal" style={{ color: 'var(--text-secondary)' }}>
-          本项目「{projectName}」还没有绑定这台机器{machineInfo ? `（${machineInfo}）` : ''}的本地工作路径。您必须选择一个本地路径才能继续。
+          本项目「{projectName}」还没有绑定这台机器{machineInfo ? `（${machineInfo}）` : ''}的本地工作路径。绑定后即可在本机使用该项目；若只是想浏览，可先退出项目。
         </p>
         <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>本地路径</label>
         <div className="flex gap-2 mb-2">
@@ -113,7 +125,17 @@ function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
           </button>
         </div>
         {err && <div className="text-[12px] mb-2" style={{ color: '#ef4444' }}>{err}</div>}
-        <div className="flex justify-end mt-4">
+        <div className="flex items-center justify-between gap-2 mt-4">
+          <button
+            type="button"
+            onClick={exitProject}
+            disabled={busy}
+            className="h-9 px-3 rounded-[9px] text-[13px] flex items-center gap-1.5 disabled:opacity-50"
+            style={{ color: 'var(--text-secondary)', border: '1px solid var(--input-border)', background: 'transparent' }}
+          >
+            <LogOut className="w-3.5 h-3.5" strokeWidth={1.8} />
+            退出项目
+          </button>
           <button
             type="button"
             onClick={confirm}

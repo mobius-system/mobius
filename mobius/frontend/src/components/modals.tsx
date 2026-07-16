@@ -3616,6 +3616,9 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
 
   const installCmd = 'pip install --force-reinstall aimux==0.1.10'
   const connectCmd = `aimux reverse connect ${baseUrl} --identifier ${effectiveIdentifier} --token ${userJwt}`
+  // 步骤4 话术: 命名占位用第2步输入的 identifier (实时随输入更新); skill 路径用系统注入
+  // (session-context.ts) 与 announce-pc-button.tsx 一致的相对路径, agent 必能据此找到
+  const announceText = `当你的任务需要连接 \`${effectiveIdentifier}\` 时，请阅读 mobius-aimux 技能（.imac/skills/mobius-aimux/SKILL.md），根据提示进行连接`
 
   const refreshRemotes = useCallback(() => {
     api('/aimux_bridge/api/remotes').then((data: any) => {
@@ -3737,6 +3740,12 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
             </div>
           )}
         </div>
+
+        {renderSectionTitle('4. 赋能智能体连接能力')}
+        <div className="text-[12px] mb-2" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
+          在与智能体对话时, 复制粘贴以下话术, 赋能智能体连接能力 (话术里的名称会随第 2 步输入实时更新)
+        </div>
+        {renderCodeBlock('announce', announceText)}
 
         <div className="mt-4 pt-3 border-t text-[11px] space-y-1" style={{ borderColor: 'var(--border-color)', color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
           <div>endpoint: <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>{baseUrl}</code> ({displayProto.toUpperCase()} · host: {browserHost} · port: {displayPort})</div>

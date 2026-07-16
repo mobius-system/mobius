@@ -744,8 +744,11 @@ function clampPanelRect(left: number, top: number, width: number, height: number
 }
 
 function assistantFabMinTop() {
-  const isDesktop = typeof window !== 'undefined' && !!(window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop?.isDesktop
-  return isDesktop ? 64 : ASSISTANT_FAB_EDGE_MARGIN
+  return isDesktopClient() ? 64 : ASSISTANT_FAB_EDGE_MARGIN
+}
+
+function isDesktopClient() {
+  return typeof window !== 'undefined' && !!(window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop?.isDesktop
 }
 
 // 把 FAB 吸附到左/右边缘, 纵向保留拖动落点。桌面端保留标题栏点击区, 不允许吸到顶角盖住窗口按钮。
@@ -2226,23 +2229,26 @@ export function AssistantChat() {
   const handleFabPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
 
-    // 记录拖动起点 (打开/收起态都允许拖动 FAB)
-    const rect = event.currentTarget.getBoundingClientRect()
-    fabDragRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      startLeft: rect.left,
-      startTop: rect.top,
-      moved: false,
-      dragging: false,
+    // Electron 桌面端禁用小莫浮标拖动: 浮标一旦进入标题栏区域会遮挡窗口按钮。
+    // Web 端继续支持拖动；桌面端收起态只保留长按语音所需的 pointer capture。
+    if (!isDesktopClient()) {
+      const rect = event.currentTarget.getBoundingClientRect()
+      fabDragRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startLeft: rect.left,
+        startTop: rect.top,
+        moved: false,
+        dragging: false,
+      }
     }
-    try { event.currentTarget.setPointerCapture(event.pointerId) } catch {}
 
     // 语音长按仅在收起态 + 空闲时启用
     if (open) return
     if (sendingRef.current || voiceStateRef.current === 'recording' || voiceStateRef.current === 'transcribing') return
 
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch {}
     clearCollapsedVoiceHoldTimer()
     collapsedVoicePointerIdRef.current = event.pointerId
     collapsedVoiceStartedRef.current = false
@@ -2263,6 +2269,7 @@ export function AssistantChat() {
   }, [clearCollapsedVoiceHoldTimer, open, startVoiceRecording, stopVoiceRecording])
 
   const handleFabPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (isDesktopClient()) return
     const drag = fabDragRef.current
     if (!drag || event.pointerId !== drag.pointerId) return
 
