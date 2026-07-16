@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen, Puzzle, Rocket, X } from 'lucide-react'
+import { BookOpen, Brain, Puzzle, Rocket, X } from 'lucide-react'
 import { api } from '../store'
 
 const AUTO_CONFIRM_SECONDS = 4
@@ -508,7 +508,7 @@ export function SessionSkillMemoryEditor({
         style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}
         disabled={loading}
       >
-        <BookOpen className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
+        <Brain className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
         <span className="btn-label">Memory ({enabledMemories}/{memoryTotal} 启用)</span>
       </button>
 
