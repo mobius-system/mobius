@@ -34,7 +34,7 @@ const MAX_PER_USER = parseInt(process.env.CS_MAX_PER_USER || '4', 10);
 const MAX_TOTAL = parseInt(process.env.CS_MAX_TOTAL || '16', 10);
 const READY_TIMEOUT_MS = parseInt(process.env.CS_READY_TIMEOUT_MS || '30000', 10);
 const DEFAULT_DISABLED_EXTENSIONS = [
-  // MermaidChart 2.7.x touches the deprecated VS Code node navigator shim in
+  // MermaidChart 2.7.x touches the deprecated VS Code node navigator shim on
   // code-server 4.118 and floods the browser/remote extension logs.
   'MermaidChart.vscode-mermaid-chart',
 ];
@@ -287,70 +287,6 @@ function codeServerDisabledExtensions(): string[] {
   return out;
 }
 
-function extensionIdFromEntry(entry: any): string {
-  const direct = entry?.identifier?.id || entry?.identifier?.value || entry?.id || '';
-  return String(direct || '').trim();
-}
-
-function extensionLocationFromEntry(extDir: string, entry: any): string {
-  const rel = typeof entry?.relativeLocation === 'string' ? entry.relativeLocation.trim() : '';
-  if (rel) return path.join(extDir, rel);
-  const loc = entry?.location;
-  const raw = typeof loc?.fsPath === 'string' ? loc.fsPath : (typeof loc?.path === 'string' ? loc.path : '');
-  return raw ? path.resolve(raw) : '';
-}
-
-function isWithinDir(root: string, target: string): boolean {
-  const rootAbs = path.resolve(root);
-  const targetAbs = path.resolve(target);
-  return targetAbs === rootAbs || targetAbs.startsWith(rootAbs + path.sep);
-}
-
-function pruneDisabledExtensions(extDir: string): void {
-  const disabled = new Set(codeServerDisabledExtensions().map((id) => id.toLowerCase()));
-  if (!disabled.size) return;
-
-  const manifestPath = path.join(extDir, 'extensions.json');
-  if (!fs.existsSync(manifestPath)) return;
-
-  let entries: any[] = [];
-  try {
-    const parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    if (!Array.isArray(parsed)) return;
-    entries = parsed;
-  } catch (e) {
-    console.warn(`[cs-pool] extensions.json 解析失败, 跳过禁用扩展清理: ${e.message}`);
-    return;
-  }
-
-  let changed = false;
-  const kept: any[] = [];
-  for (const entry of entries) {
-    const id = extensionIdFromEntry(entry);
-    if (!id || !disabled.has(id.toLowerCase())) {
-      kept.push(entry);
-      continue;
-    }
-
-    changed = true;
-    const loc = extensionLocationFromEntry(extDir, entry);
-    if (loc && isWithinDir(extDir, loc)) {
-      try { fs.rmSync(loc, { recursive: true, force: true }); }
-      catch (e) { console.warn(`[cs-pool] 禁用扩展目录删除失败 ${loc}: ${e.message}`); }
-    }
-    console.log(`[cs-pool] disabled code-server extension ${id}`);
-  }
-
-  if (!changed) return;
-  try {
-    const tmp = `${manifestPath}.tmp-${process.pid}-${Date.now()}`;
-    fs.writeFileSync(tmp, JSON.stringify(kept, null, 2));
-    fs.renameSync(tmp, manifestPath);
-  } catch (e) {
-    console.warn(`[cs-pool] extensions.json 写回失败, 禁用扩展清理可能未完全生效: ${e.message}`);
-  }
-}
-
 async function waitForReady(port: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -396,7 +332,6 @@ async function ensure(user: any, projectId: string, bindPath: string): Promise<{
   const extDir = path.join(EXT_ROOT, user.id, projectId);
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(extDir, { recursive: true });
-  pruneDisabledExtensions(extDir);
 
   // 预置 git identity, 不再被 user 全局 config 污染
   const settingsPath = path.join(dataDir, 'User', 'settings.json');
@@ -419,6 +354,7 @@ async function ensure(user: any, projectId: string, bindPath: string): Promise<{
     '--disable-update-check',
     '--user-data-dir', dataDir,
     '--extensions-dir', extDir,
+    ...codeServerDisabledExtensions().flatMap((id) => ['--disable-extension', id]),
     bindPath,
   ];
   console.log(`[cs-pool] spawn ${CS_BIN} for user=${user.id} project=${projectId} port=${port}`);
