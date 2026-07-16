@@ -16,7 +16,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { auth, adminAuth } from '../middleware/auth';
+import { auth, adminAuth, authOrQuery } from '../middleware/auth';
 import {
   EXTENSION_HANDLER_MAX_PAYLOAD_BYTES,
   EXTENSION_INVOKE_RATE_PER_SEC,
@@ -131,6 +131,43 @@ metaRouter.post('/:name/upload', auth, upload.single('file'), (req: express.Requ
     const err = e as Error;
     res.status(500).json({ ok: false, error: err.message || 'upload failed' });
   }
+});
+
+// 登录用户读取某拓展自己的用户资产。给 <img>/<video>/<a download> 使用:
+// /api/extensions/<name>/user-asset/<rel-under-ext-data/users/<user>>?token=<jwt>
+// 只允许当前用户目录下的媒体文件, 并复用 Range/ETag/Cache-Control 流式发送。
+metaRouter.get('/:name/user-asset/*', authOrQuery, (req: express.Request, res: express.Response) => {
+  const entry = registry.get(req.params.name);
+  if (!entry) {
+    res.status(404).send('extension not found');
+    return;
+  }
+  const user = (req as any).user as { id: string; [k: string]: any };
+  const userSegment = safeUserSegment(user.id);
+  const rel = String((req.params as any)[0] || '').replace(/^\/+/, '');
+  if (!rel || rel.split('/').some((seg) => seg === '..' || seg === '')) {
+    res.status(400).send('bad path');
+    return;
+  }
+  const root = safeResolveUnder(entry.data_dir, 'users', userSegment);
+  const abs = root ? safeResolveUnder(root, rel) : null;
+  if (!abs || !fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+    res.status(404).send('not found');
+    return;
+  }
+  const ext = path.extname(abs).toLowerCase();
+  const allowed = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mov', '.m4v']);
+  if (!allowed.has(ext)) {
+    res.status(403).send('mime not allowed');
+    return;
+  }
+  const mime = MIME[ext];
+  if (!mime) {
+    res.status(403).send('mime not allowed');
+    return;
+  }
+  res.set('content-type', mime);
+  streamAssetWithRange(req, res, abs, `user-asset/${rel}`, 'private, max-age=604800, immutable');
 });
 
 // 管理员: 列出所有"被某用户隐藏的拓展项目"对.
@@ -595,7 +632,13 @@ function extensionAssetCacheControl(rel: string): string {
 // 静态资源带 HTTP Range 支持 — 浏览器 <video>/<audio> 必须靠 Range 分块流式播放,
 // 否则会卡在缓冲(对大视频尤甚). 同时补 Content-Length / Accept-Ranges 头.
 // rel (URL 相对路径) 用于判定内容哈希分级缓存.
-function streamAssetWithRange(req: express.Request, res: express.Response, abs: string, rel: string = ''): void {
+function streamAssetWithRange(
+  req: express.Request,
+  res: express.Response,
+  abs: string,
+  rel: string = '',
+  cacheControlOverride = ''
+): void {
   let stat: fs.Stats;
   try { stat = fs.statSync(abs); } catch {
     res.status(404).send('not found');
@@ -611,7 +654,7 @@ function streamAssetWithRange(req: express.Request, res: express.Response, abs: 
   const etag = `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
   res.set('etag', etag);
   res.set('last-modified', stat.mtime.toUTCString());
-  res.set('cache-control', extensionAssetCacheControl(rel));
+  res.set('cache-control', cacheControlOverride || extensionAssetCacheControl(rel));
   // 条件 GET: If-None-Match 命中 → 304, 省整个响应体. 必须在 Range 处理之前.
   // 浏览器对 video Range 请求走 If-Range (而非 If-None-Match), 故此处 304 不影响 206 分片播放.
   const inm = req.headers['if-none-match'];

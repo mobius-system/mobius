@@ -268,6 +268,7 @@ const { startResearchBlackboardDeliveryScanner } = require('./backend/services/r
 const { startExtensionScheduler } = require('./backend/services/extension-scheduler');
 const { startAgentStatusSyncer } = require('./backend/services/agent-status-syncer');
 const { startSessionTitleSyncer } = require('./backend/services/session-title-syncer');
+const { startSessionTitleGenerator } = require('./backend/services/session-title-generator');
 
 // ===== 启动 =====
 const server = http.createServer(app);
@@ -313,6 +314,9 @@ server.listen(PORT, () => {
   // 自动生成 Session 标题: 订阅 agent shared watcher 的 raw_entry 事件; 功能默认关闭,
   // 开启后仅在 agent 明确产出 type=ai-title 时更新, 不走前端/SSE 回灌/状态轮询.
   startSessionTitleSyncer();
+  // 兜底自动生成 Session 标题: codex / gpt-5.5 等 tmux-codex 后端不产 type=ai-title,
+  // 由本生成器周期扫描, 用会话自身模型把首条提问浓缩成标题写回 name。受同一开关控制。
+  startSessionTitleGenerator();
 });
 
 // 优雅退出

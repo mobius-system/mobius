@@ -5,6 +5,7 @@ import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
 import { usePagination, PaginationControls } from '../components/pagination'
 import { ConfirmModal, NewProjectModal, ProjectSettingsModal, ExtensionDeleteModal } from '../components/modals'
+import { ListLoadingHint } from '../components/list-loading-hint'
 import { PrimaryActionButton } from '../components/primary-action-button'
 import { SkillsManager } from '../components/skills'
 import { MemoriesManager } from '../components/memories'
@@ -122,6 +123,9 @@ export default function UserPage() {
   const [search, setSearch] = useState('')
   const [issuesByProject, setIssuesByProject] = useState<Record<string, any[]>>({})
   const [researchesByProject, setResearchesByProject] = useState<Record<string, any[]>>({})
+  // 卡片 issue/research 概览的加载态: 拉取期间显示 loading, 而不是闪现"暂无 Issue".
+  const [issuesLoadingByProject, setIssuesLoadingByProject] = useState<Record<string, boolean>>({})
+  const [researchesLoadingByProject, setResearchesLoadingByProject] = useState<Record<string, boolean>>({})
   const [editingProject, setEditingProject] = useState<any>(null)
   const [hidingProject, setHidingProject] = useState<any>(null)
   // 拓展项目的隐藏/彻底删除入口；普通项目的屏蔽放在项目操作菜单里。
@@ -342,14 +346,20 @@ export default function UserPage() {
   useEffect(() => {
     myProjects.forEach((p: any) => {
       if (!issuesByProject[p.id]) {
+        setIssuesLoadingByProject(prev => prev[p.id] ? prev : { ...prev, [p.id]: true })
         api(`/api/projects/${p.id}/issues`).then((issues: any[]) => {
           setIssuesByProject(prev => ({ ...prev, [p.id]: issues || [] }))
-        }).catch(() => {})
+        }).catch(() => {}).finally(() => {
+          setIssuesLoadingByProject(prev => ({ ...prev, [p.id]: false }))
+        })
       }
       if (p.research_enabled && !researchesByProject[p.id]) {
+        setResearchesLoadingByProject(prev => prev[p.id] ? prev : { ...prev, [p.id]: true })
         api(`/api/projects/${p.id}/researches`).then((researches: any[]) => {
           setResearchesByProject(prev => ({ ...prev, [p.id]: researches || [] }))
-        }).catch(() => {})
+        }).catch(() => {}).finally(() => {
+          setResearchesLoadingByProject(prev => ({ ...prev, [p.id]: false }))
+        })
       }
     })
   }, [myProjects])
@@ -621,6 +631,12 @@ export default function UserPage() {
                   const showResearch = !!p.research_enabled && !((p.research_count || 0) === 0 && issues.length > 0)
                   const overviewItems = showResearch ? researches : issues
                   const overviewKind = showResearch ? 'research' : 'issue'
+                  // 当前卡片展示的概览(research 或 issue)是否仍在拉取: 拉取期间不显示"暂无 XX"空态.
+                  const overviewLoading = !!(
+                    overviewKind === 'research'
+                      ? (researchesLoadingByProject[p.id] && !researchesByProject[p.id])
+                      : (issuesLoadingByProject[p.id] && !issuesByProject[p.id])
+                  )
                   const active = issues.filter((i: any) => i.status !== 'completed')
                   const completed = issues.filter((i: any) => i.status === 'completed')
                   const isMuted = mutedIdSet.has(p.id)
@@ -795,7 +811,11 @@ export default function UserPage() {
                             className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">查看全部 →</LinklessNav>
                         </div>
                         {overviewItems.length === 0 ? (
-                          <div className="text-[11px] py-2" style={{ color: 'var(--text-muted)' }}>{showResearch ? '暂无 Research' : '暂无 Issue'}</div>
+                          overviewLoading ? (
+                            <ListLoadingHint compact />
+                          ) : (
+                            <div className="text-[11px] py-2" style={{ color: 'var(--text-muted)' }}>{showResearch ? '暂无 Research' : '暂无 Issue'}</div>
+                          )
                         ) : (
                           <div className="space-y-1 min-w-0">
                             {overviewItems.slice(0, 5).map((item: any) => (

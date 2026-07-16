@@ -294,6 +294,10 @@
     -H "Authorization: Bearer ${TOKEN}"
   ```
 
+- **`GET /api/projects/:id/file/download?path=<rel>`** — 流式下载 `bind_path` 下单个文件 (原生文件编辑器右键"下载"). 只读, 拒绝符号链接与目录; `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`. 错误体 `{ error, code }`, code: `NOT_FOUND` / `SYMLINK_UNSUPPORTED` / `OUTSIDE_ROOT` / `INVALID_NAME`.
+- **`POST /api/projects/:id/files/copy`** — 同项目内复制文件/目录. Body `{ "sourcePath": "/a/x.pdf", "targetDir": "/b" }`. 拒绝符号链接(含中间目录)、目录复制到自身/子目录; 同名返回 409 `{ error, code: "CONFLICT" }` (不静默覆盖); 目录异步递归复制带上限(文件数/大小/深度), 失败清理半成品. 返回 `{ sourcePath, path, type, copied }`.
+- **`POST /api/projects/:id/files/rename`** — 重命名文件/目录. Body `{ "path": "/a/x.pdf", "newName": "y.pdf" }`. 拒绝根目录/符号链接/非法名(含 `/` `\` 控制符 `.` `..` 保留名)/同名冲突(409). 返回 `{ oldPath, path, name, renamed }`. 写操作均校验项目可读 + `bind_path` 可写 + 目标父目录 W_OK.
+
 ### 2.5 任务单 `/api/issues` 与 `/api/projects/:projectId/issues`
 
 项目维度(`/api/projects/:projectId/issues`):

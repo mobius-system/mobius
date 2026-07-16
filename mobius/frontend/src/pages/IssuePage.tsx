@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react'
+import { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronLeft, ChevronRight, MessageSquarePlus, Sparkles } from 'lucide-react'
 import { useStore, api } from '../store'
@@ -161,7 +161,51 @@ export default function IssuePage() {
     return () => { cancelled = true }
   }, [sessionParam, sessions, sessionsLoaded])
 
-  const refreshSessions = () => api(`/api/issues/${issueId}/sessions`).then((arr: any) => setSessionsMap(issueId, arr)).catch(() => {})
+  // 刷新 sessions 列表. 合并而非直接覆盖: 当前会话的 agent_status 由 ChatArea 2s 轮询
+  // 实时维护 (并写回 DB), 这里保留本地值, 避免周期刷新用 DB 滞后值覆盖 -> 当前会话小圆点
+  // 闪烁 (尤其点"终止"后的 3s 抑制窗内 DB 仍报 running). 其余会话取后端最新值.
+  const refreshSessions = useCallback(() => {
+    return api(`/api/issues/${issueId}/sessions`).then((arr: any) => {
+      const list = Array.isArray(arr) ? arr : []
+      const store = useStore.getState()
+      const cur = store.currentSession
+      const prevById = new Map((store.sessionsMap[issueId] || []).map((s: any) => [s.session_id, s]))
+      const merged = list.map((s: any) => {
+        if (cur && s.session_id === cur.session_id) {
+          const local = prevById.get(s.session_id)
+          if (local && local.agent_status) return { ...s, agent_status: local.agent_status }
+        }
+        return s
+      })
+      setSessionsMap(issueId, merged)
+    }).catch(() => {})
+  }, [issueId, setSessionsMap])
+
+  // 周期刷新 sessions 列表, 让侧栏其它 (非当前) session 的状态点也能实时更新, 而不是只有
+  // 点进去后才变. 后端 agent-status-syncer 每 60s 重算 agent_status 写库, 这里 10s 拉一次
+  // 列表即可及时拿到. 仅页面可见时轮询, 切走/最小化时停.
+  useEffect(() => {
+    if (!issueId) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const tick = () => {
+      if (cancelled) return
+      if (document.visibilityState === 'visible') refreshSessions()
+      timer = setTimeout(tick, 10000)
+    }
+    const onVis = () => {
+      if (cancelled || document.visibilityState !== 'visible') return
+      if (timer) { clearTimeout(timer); timer = null }
+      tick()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    timer = setTimeout(tick, 10000)
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [issueId, refreshSessions])
 
   const toggleIssueStar = (iss: any) => {
     if (!iss) return
@@ -340,9 +384,9 @@ export default function IssuePage() {
               data-tour="issue-sidebar-new-session"
               icon={<MessageSquarePlus className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} />}>
               <span className="whitespace-nowrap">新会话</span>
-              <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-current/10">
+              {/* <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-current/10">
                 <Sparkles className="h-2.5 w-2.5" strokeWidth={2} />
-              </span>
+              </span> */}
             </PrimaryActionButton>
           </div>
 

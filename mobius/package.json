@@ -12,6 +12,8 @@
     "test:assistant-running-flag": "node --require tsx/cjs tests/assistant-running-flag.js",
     "test:assistant-tts-cache": "node --require tsx/cjs tests/assistant-tts-cache.js",
     "test:code-server-workspace": "node --require tsx/cjs tests/code-server-workspace.js",
+    "test:native-file-menu": "node --require tsx/cjs tests/native-file-menu.js",
+    "test:file-tree-menu-logic": "node --require tsx/cjs tests/file-tree-menu-logic.js",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",
     "start:tsx": "tsx server.js"
   },

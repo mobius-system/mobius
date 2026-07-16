@@ -119,19 +119,30 @@ export function isLikelyFilesystemPath(href: string): boolean {
   return FS_PATH_PREFIXES.some(p => href.startsWith(p))
 }
 
-// Rewrite a media src (markdown <img>, display_images card, ...) that points at
-// an absolute server-side filesystem path into a backend-served URL. Mirrors how
-// FileManager surfaces local files: route them through GET /api/download, which
-// is gated by downloadAuth and only serves paths the user may read (work_dir,
-// mobius upload dir, system temp, extension user-data). This is what makes an
-// agent message like ![shot](/home/.../x.png) actually render — a raw filesystem
-// path in <img src> 404s against the dev/prod host. http(s) / data: / blob: and
-// already-API URLs pass through untouched; relative or in-app paths are left as
-// they are (isLikelyFilesystemPath keeps us from hijacking those).
+// 把一个外链 http(s) / 协议相对 // 媒体 URL 改写成走同源后端代理.
+// 浏览器直连 <img src="https://外链"> 在图床做防盗链(Referer 校验)/不可达/
+// 混合内容拦截/CORS 时普遍 onError, 卡片只剩死占位. 改由后端服务端 fetch
+// (带浏览器 UA + 同源 Referer 绕过防盗链, SSRF 防护 + 大小上限, 见
+// backend/services/proxy-media.ts) 流式回吐. token 走 query 因为 <img> 不能带
+// Authorization 头 — 与 /api/download 同款.
+function proxyMediaUrl(src: string): string {
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('cc-token') || '') : ''
+  return `/api/proxy-media?url=${encodeURIComponent(src)}${token ? `&token=${encodeURIComponent(token)}` : ''}`
+}
+
+// Rewrite a media src (markdown <img>, display_images card, ...) into a URL the
+// browser can actually render:
+//   - 外链 http(s) / 协议相对 // => 走同源后端代理 (proxyMediaUrl), 绕开防盗链/不可达;
+//   - 绝对服务器文件路径 => 走 GET /api/download (与 FileManager 同款, downloadAuth
+//     鉴权, 只服务用户可读路径). 这让 agent 消息 ![shot](/home/.../x.png) 能渲染 —
+//     原始文件路径在 <img src> 里会对 dev/prod host 404;
+//   - data: / blob: / 已是 /api 的 URL => 原样透传;
+//   - 相对或站内路径 => 不动 (isLikelyFilesystemPath 避免劫持它们).
 export function resolveMediaSrc(src: string): string {
   if (!src) return src
-  if (/^https?:\/\//i.test(src)) return src
-  if (src.startsWith('//') || src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('/api/')) return src
+  if (/^https?:\/\//i.test(src)) return proxyMediaUrl(src)
+  if (src.startsWith('//')) return proxyMediaUrl('https:' + src)
+  if (src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('/api/')) return src
   if (!isLikelyFilesystemPath(src)) return src
   const token = typeof window !== 'undefined' ? (localStorage.getItem('cc-token') || '') : ''
   return `/api/download?path=${encodeURIComponent(src)}${token ? `&token=${encodeURIComponent(token)}` : ''}`

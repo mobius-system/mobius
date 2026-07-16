@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, Link, FolderTree } from 'lucide-react'
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView, keymap } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
@@ -9,6 +9,21 @@ import { syntaxHighlighting } from '@codemirror/language'
 import { api } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
+import { FileTreeContextMenu, type ContextMenuItem } from './file-tree-context-menu'
+import { InlineRenameInput } from './inline-rename-input'
+import { HubProjectFileSource, LocalProjectFileSource, type ProjectFileSource, type DesktopFileBridge } from './project-file-source'
+import {
+  type FileTreeTarget,
+  type FileClipboardItem,
+  type FileOperationErrorCode,
+  FileOperationError,
+  targetDirForPaste,
+  canPaste,
+  errorCodeToMessage,
+  isNameValidClient,
+  migrateExpandedPaths,
+} from './file-tree-ops'
+import { copyTextToClipboard } from '../../utils/clipboard'
 
 // =====================================================================
 // CodeConversationPane - 代码对话模式 v2 的主体 (左文件浏览器 + 中代码编辑器).
@@ -39,9 +54,13 @@ type DesktopBridge = {
   pickDirectory?: () => Promise<string | null>
   confirmProjectPath?: (projectId: string, path: string) => Promise<{ ok?: boolean; error?: string } | null>
   getProjectLocalPath?: (projectId: string) => Promise<string | null>
-  listProjectLocalFiles?: (projectId: string, path: string) => Promise<{ ok?: boolean; error?: string; bind_path?: string; entries?: Entry[] }>
+  listProjectLocalFiles?: (projectId: string, path: string) => Promise<{ ok?: boolean; error?: string; code?: string; bind_path?: string; entries?: Entry[] }>
   readProjectLocalFile?: (projectId: string, path: string) => Promise<({ ok?: boolean; error?: string } & Partial<FileContent>)>
   writeProjectLocalFile?: (projectId: string, path: string, content: string) => Promise<{ ok?: boolean; error?: string; saved?: boolean; size?: number }>
+  // 右键菜单本机操作 (preload 已暴露)
+  downloadProjectLocalFile?: (projectId: string, path: string) => Promise<{ ok?: boolean; error?: string; code?: string; savedTo?: string }>
+  copyProjectLocalEntry?: (projectId: string, sourcePath: string, targetDir: string) => Promise<{ ok?: boolean; error?: string; code?: string; path?: string; type?: string }>
+  renameProjectLocalEntry?: (projectId: string, path: string, newName: string) => Promise<{ ok?: boolean; error?: string; code?: string; oldPath?: string; path?: string; name?: string }>
 }
 
 function getDesktopBridge(): DesktopBridge | undefined {
@@ -190,6 +209,18 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const [saveError, setSaveError] = useState('')
   const [saveOk, setSaveOk] = useState(false)
 
+  // ----- 右键菜单 / 文件操作状态 (设计文档 §9) -----
+  // writable: 数据源是否可写 (hub 用 bind_path_writable; local 默认 true, 写权限由主进程 W_OK 兜底)。
+  const [writable, setWritable] = useState(true)
+  const [menu, setMenu] = useState<{ x: number; y: number; target: FileTreeTarget | null } | null>(null)
+  // 应用内文件剪贴板 (页面生命周期内有效, 不写 localStorage; 切换项目/数据源清空)。
+  const [clipboard, setClipboard] = useState<FileClipboardItem | null>(null)
+  const [rename, setRename] = useState<{ target: FileTreeTarget; submitting?: boolean; error?: string } | null>(null)
+  // 正在粘贴的目录集合, 同一目录禁止并发粘贴 (设计文档 §15)。
+  const [pastingDirs, setPastingDirs] = useState<Set<string>>(new Set())
+  const [toast, setToast] = useState<{ text: string; kind: 'info' | 'error' } | null>(null)
+  const toastTimerRef = useRef<number | null>(null)
+
   const loadDir = useCallback(async (relPath: string) => {
     setDirs(prev => ({ ...prev, [relPath]: { ...prev[relPath], loading: true, error: undefined } }))
     try {
@@ -201,9 +232,13 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
         setRootLoaded(true)
         if (source === 'local') {
           setLocalBindPath(data?.bind_path || '')
+          // 本机数据源默认可写 (主进程 IPC 用 W_OK 兜底真实权限)。
+          setWritable(!!data?.bind_path)
           if (!data?.bind_path) setRootError('未绑定本机工作路径')
-        } else if (!data.bind_path) {
-          setRootError('项目未绑定路径')
+        } else {
+          // 中枢: 用后端返回的 bind_path_writable 决定粘贴/重命名是否可用。
+          setWritable(!!data?.bind_path_writable)
+          if (!data.bind_path) setRootError('项目未绑定路径')
         }
       }
       setDirs(prev => ({ ...prev, [relPath]: { loading: false, entries: data.entries || [] } }))
@@ -317,9 +352,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     }
   }, [desktop, projectId, bindPath, localBindPath, source, dirty, selected])
 
-  // 保存: 写回磁盘, 复位 dirty.
-  const save = useCallback(async () => {
-    if (!selected || !fileData || !dirty || saving) return
+  // 保存: 写回磁盘, 复位 dirty. 返回是否保存成功 (供重命名前确认使用)。
+  const save = useCallback(async (): Promise<boolean> => {
+    if (!selected || !fileData || !dirty || saving) return false
     setSaving(true)
     setSaveError('')
     setSaveOk(false)
@@ -339,8 +374,10 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
       setSaveOk(true)
       setFileData(fd => fd ? { ...fd, content: doc, size: new Blob([doc]).size } : fd)
       window.setTimeout(() => setSaveOk(false), 1500)
+      return true
     } catch (e: any) {
       setSaveError(e?.message || '保存失败')
+      return false
     } finally {
       setSaving(false)
     }
@@ -378,6 +415,208 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     setDirty(val !== (fileData?.content || ''))
     setSaveOk(false)
   }, [fileData])
+
+  // ===== 右键菜单数据源 (统一 hub REST / local IPC, 设计文档 §10) =====
+  const fileSource = useMemo<ProjectFileSource>(() => {
+    const root = source === 'local' ? localBindPath : bindPath
+    if (source === 'local' && desktop && desktop.copyProjectLocalEntry && desktop.downloadProjectLocalFile && desktop.renameProjectLocalEntry) {
+      return new LocalProjectFileSource(projectId, root, writable, desktop as DesktopFileBridge)
+    }
+    return new HubProjectFileSource(projectId, root, writable)
+  }, [source, localBindPath, bindPath, writable, projectId, desktop])
+
+  const showToast = useCallback((text: string, kind: 'info' | 'error' = 'info') => {
+    setToast({ text, kind })
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = window.setTimeout(() => setToast(null), kind === 'error' ? 5000 : 2400)
+  }, [])
+  useEffect(() => () => { if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current) }, [])
+
+  // 异常归一成 { code, msg }。CANCELLED 静默 (保存对话框取消等)。
+  function opErrorMessage(e: unknown): { code?: FileOperationErrorCode; msg: string } {
+    if (e instanceof FileOperationError) return { code: e.code, msg: e.message || errorCodeToMessage(e.code) }
+    return { msg: (e as Error)?.message || '操作失败' }
+  }
+
+  // 局部刷新某目录 (复用 loadDir, 保留 expanded/选中/滚动)。
+  const refreshDir = useCallback(async (relPath: string) => { await loadDir(relPath) }, [loadDir])
+
+  // 切换项目/数据源立即清空菜单/重命名/内部剪贴板 (设计文档 §9)。
+  useEffect(() => {
+    setMenu(null); setRename(null); setClipboard(null); setPastingDirs(new Set())
+  }, [projectId, source])
+
+  async function onCopyRel(target: FileTreeTarget) {
+    const ok = await copyTextToClipboard(target.relPath)
+    showToast(ok ? '已复制相对路径' : '浏览器未允许访问剪贴板，请手动复制', ok ? 'info' : 'error')
+  }
+  async function onCopyAbs(target: FileTreeTarget) {
+    const ok = await copyTextToClipboard(target.entry.abs_path)
+    const label = source === 'local' ? '本机' : '中枢'
+    showToast(ok ? `已复制${label}绝对路径` : '浏览器未允许访问剪贴板，请手动复制', ok ? 'info' : 'error')
+  }
+  function onCopy(target: FileTreeTarget) {
+    setClipboard({ projectId, source, relPath: target.relPath, type: target.entry.type, name: target.entry.name })
+    showToast(`已复制「${target.entry.name}」，请选择目标目录粘贴`)
+  }
+  async function onDownload(target: FileTreeTarget) {
+    // 大文件预警 (>100MB), 设计文档 §8.1/§15。
+    const size = target.entry.size
+    if (size !== null && size > 100 * 1024 * 1024) {
+      if (!window.confirm(`文件较大（${formatSize(size)}），确认下载？`)) return
+    }
+    showToast(`正在下载「${target.entry.name}」`)
+    try {
+      await fileSource.downloadFile(target.relPath)
+    } catch (e) {
+      const { code, msg } = opErrorMessage(e)
+      if (code === 'CANCELLED') return
+      showToast(msg, 'error')
+      if (code === 'NOT_FOUND') refreshDir(target.parentRelPath)
+    }
+  }
+  async function onPaste(target: FileTreeTarget | null) {
+    if (!clipboard) return
+    const targetDir = targetDirForPaste(target)
+    if (pastingDirs.has(targetDir)) return // 同一目录禁止并发粘贴
+    setPastingDirs(prev => new Set(prev).add(targetDir))
+    try {
+      const res = await fileSource.copyEntry(clipboard.relPath, targetDir)
+      await refreshDir(targetDir)
+      showToast(`已复制到「${res.path || targetDir}」`)
+    } catch (e) {
+      const { code, msg } = opErrorMessage(e)
+      if (code !== 'CANCELLED') showToast(msg, 'error')
+      if (code === 'NOT_FOUND') refreshDir(targetDir)
+      // 失败不清空剪贴板, 允许修正目标后重试 (设计文档 §9)。
+    } finally {
+      setPastingDirs(prev => { const n = new Set(prev); n.delete(targetDir); return n })
+    }
+  }
+  function onStartRename(target: FileTreeTarget) {
+    setRename({ target })
+  }
+  async function onSubmitRename(newNameRaw: string) {
+    const target = rename?.target
+    if (!target) return
+    const newName = newNameRaw.trim()
+    if (!isNameValidClient(newName)) { setRename(r => (r ? { ...r, error: '名称不合法' } : r)); return }
+    if (newName === target.entry.name) { setRename(null); return }
+    // 重命名当前编辑文件且有未保存改动: 先保存; 保存失败则中止 (设计文档 §18.3)。
+    if (dirty && selected && selected.abs_path === target.entry.abs_path) {
+      const saved = await save()
+      if (!saved) {
+        setRename(r => (r ? { ...r, submitting: false, error: '保存未完成，已取消重命名' } : r))
+        showToast('保存未完成，已取消重命名', 'error')
+        return
+      }
+    }
+    setRename(r => (r ? { ...r, submitting: true, error: undefined } : r))
+    try {
+      const res = await fileSource.renameEntry(target.relPath, newName)
+      await applyRename(target, res)
+      setRename(null)
+      showToast(`已重命名为「${res.name}」`)
+    } catch (e) {
+      const { code, msg } = opErrorMessage(e)
+      if (code === 'CANCELLED') { setRename(null); return }
+      setRename(r => (r ? { ...r, submitting: false, error: msg } : r))
+      showToast(msg, 'error')
+      if (code === 'NOT_FOUND') refreshDir(target.parentRelPath)
+    }
+  }
+  // 重命名成功后同步状态: 刷新父目录; 目录迁移 expanded/dirs 缓存; 当前编辑文件更新路径 (保留撤销栈)。
+  async function applyRename(target: FileTreeTarget, res: { path: string; name: string }) {
+    const oldRel = target.relPath
+    const newRel = res.path
+    const isDir = target.entry.type === 'dir'
+    await refreshDir(target.parentRelPath)
+    if (isDir) {
+      setExpanded(prev => migrateExpandedPaths(prev, oldRel, newRel))
+      setDirs(prev => {
+        const next: Record<string, DirState> = {}
+        for (const [k, v] of Object.entries(prev)) {
+          if (k === oldRel) next[newRel] = v
+          else if (k.startsWith(oldRel + '/')) next[newRel + k.slice(oldRel.length)] = v
+          else next[k] = v
+        }
+        return next
+      })
+    }
+    // 当前编辑文件是被重命名节点本身, 或位于被重命名目录子树内 -> 迁移编辑器路径 (CodeMirror 文档不重建, 保留撤销栈)。
+    if (selected) {
+      const oldAbs = target.entry.abs_path
+      const under = selected.abs_path === oldAbs
+        || selected.abs_path.startsWith(oldAbs + '/')
+        || selected.abs_path.startsWith(oldAbs + '\\')
+      if (under) {
+        const sepIdx = Math.max(oldAbs.lastIndexOf('/'), oldAbs.lastIndexOf('\\'))
+        const nodeNewAbs = sepIdx >= 0 ? oldAbs.slice(0, sepIdx + 1) + res.name : res.name
+        const suffix = selected.abs_path.slice(oldAbs.length) // '' (节点自身) 或 '/子路径'
+        const newSelAbs = nodeNewAbs + suffix
+        const isSelf = suffix === '' || suffix === '/'
+        setSelected(s => (s ? { ...s, name: isSelf ? res.name : s.name, abs_path: newSelAbs } : s))
+        setFileData(fd => {
+          if (!fd) return fd
+          const underRel = fd.path === oldRel || fd.path.startsWith(oldRel + '/')
+          const newFdRel = underRel ? (fd.path === oldRel ? newRel : newRel + fd.path.slice(oldRel.length)) : fd.path
+          return { ...fd, name: isSelf ? res.name : fd.name, path: newFdRel, abs_path: newSelAbs }
+        })
+      }
+    }
+  }
+
+  // 内联重命名渲染器 (传给 FileTreeLevel)。
+  const renderRenameInput = (target: FileTreeTarget) => (
+    <InlineRenameInput
+      defaultName={target.entry.name}
+      submitting={rename?.target?.relPath === target.relPath ? rename.submitting : undefined}
+      error={rename?.target?.relPath === target.relPath ? rename.error : undefined}
+      onSubmit={(v: string) => onSubmitRename(v)}
+      onCancel={() => setRename(null)}
+    />
+  )
+
+  // 构建右键菜单项 (设计文档 §5.1, §5.3)。target=null 为根目录空白区域, 仅显示"粘贴"。
+  function buildMenuItems(target: FileTreeTarget | null): ContextMenuItem[] {
+    const iconCls = 'w-3.5 h-3.5 flex-shrink-0'
+    if (!target) {
+      const paste = canPaste(clipboard, null, projectId, source, writable)
+      return [{
+        type: 'item', key: 'paste', label: '粘贴', icon: <ClipboardPaste className={iconCls} />,
+        disabled: !paste.ok || pastingDirs.has('/'),
+        disabledReason: !paste.ok ? paste.reason : (pastingDirs.has('/') ? '正在粘贴…' : undefined),
+        onRun: () => onPaste(null),
+      }]
+    }
+    const type = target.entry.type
+    const paste = canPaste(clipboard, target, projectId, source, writable)
+    const targetDir = targetDirForPaste(target)
+    return [
+      { type: 'item', key: 'download', label: '下载', icon: <Download className={iconCls} />,
+        disabled: type === 'dir', disabledReason: type === 'dir' ? '目录打包下载将在后续版本支持' : undefined,
+        onRun: () => onDownload(target) },
+      { type: 'separator' },
+      { type: 'item', key: 'copy', label: '复制', icon: <Copy className={iconCls} />, onRun: () => onCopy(target) },
+      { type: 'item', key: 'paste', label: '粘贴', icon: <ClipboardPaste className={iconCls} />,
+        disabled: !paste.ok || pastingDirs.has(targetDir),
+        disabledReason: !paste.ok ? paste.reason : (pastingDirs.has(targetDir) ? '正在粘贴…' : undefined),
+        onRun: () => onPaste(target) },
+      { type: 'separator' },
+      { type: 'item', key: 'copyRel', label: '复制相对路径', icon: <Link className={iconCls} />, onRun: () => onCopyRel(target) },
+      { type: 'item', key: 'copyAbs', label: '复制绝对路径', icon: <FolderTree className={iconCls} />, onRun: () => onCopyAbs(target) },
+      { type: 'separator' },
+      { type: 'item', key: 'rename', label: '重命名', icon: <Pencil className={iconCls} />,
+        disabled: !writable, disabledReason: !writable ? '只读数据源' : undefined,
+        onRun: () => onStartRename(target) },
+    ]
+  }
+
+  function openTreeContextMenu(e: React.MouseEvent, target: FileTreeTarget | null) {
+    // 节点右键阻止冒泡, 根空白区域在此打开 (target=null)。
+    e.preventDefault()
+    setMenu({ x: e.clientX, y: e.clientY, target })
+  }
 
   // 文件浏览器默认宽度 ≈ 视口 18%, 留够空间给代码编辑 + 对话.
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
@@ -497,7 +736,10 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
             )}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-1.5 py-1.5">
+        <div
+          className="flex-1 overflow-y-auto px-1.5 py-1.5"
+          onContextMenu={(e) => openTreeContextMenu(e, null)}
+        >
           {!rootLoaded ? (
             <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
           ) : rootError ? (
@@ -524,6 +766,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
               onSelectFile={onSelectFile}
               selectedAbsPath={selected?.abs_path}
               filter={filter}
+              onContextMenu={(e, target) => openTreeContextMenu(e, target)}
+              renamingRelPath={rename?.target.relPath}
+              renderRenameInput={renderRenameInput}
             />
           )}
         </div>
@@ -615,6 +860,42 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
           ) : null}
         </div>
       </div>
+
+      {/* ===== 右键菜单浮层 (定位/键盘/关闭由组件自理) ===== */}
+      {menu && (
+        <FileTreeContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={buildMenuItems(menu.target)}
+          onClose={() => setMenu(null)}
+        />
+      )}
+
+      {/* ===== 操作 Toast (设计文档 §7.4, §16) ===== */}
+      {toast && (
+        <div
+          className="mobius-file-toast"
+          role="status"
+          aria-live={toast.kind === 'error' ? 'assertive' : 'polite'}
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 55,
+            padding: '8px 16px',
+            borderRadius: '8px',
+            fontSize: '12px',
+            color: '#fff',
+            background: toast.kind === 'error' ? 'rgba(239, 68, 68, 0.95)' : 'rgba(16, 185, 129, 0.95)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+            maxWidth: '80vw',
+            pointerEvents: 'none',
+          }}
+        >
+          {toast.text}
+        </div>
+      )}
     </div>
   )
 }
@@ -625,13 +906,16 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
 // 注意: 过滤只覆盖已加载进 dirs 的目录 (懒加载, 未展开过的目录不参与),
 // 避免递归拉全树打爆大仓库; 用户先展开感兴趣的目录再过滤.
 // =====================================================================
-function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedAbsPath, filter }: {
+function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedAbsPath, filter, onContextMenu, renamingRelPath, renderRenameInput }: {
   dirs: Record<string, DirState>
   expanded: Set<string>
   onToggleDir: (relPath: string) => void
   onSelectFile: (entry: Entry) => void
   selectedAbsPath?: string
   filter: string
+  onContextMenu?: (event: React.MouseEvent, target: FileTreeTarget) => void
+  renamingRelPath?: string
+  renderRenameInput?: (target: FileTreeTarget) => React.ReactNode
 }) {
   const q = filter.trim().toLowerCase()
   if (!q) {
@@ -646,6 +930,9 @@ function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedA
         vscodeReady={true}
         selectedAbsPath={selectedAbsPath}
         fileActionLabel="预览/编辑文件"
+        onContextMenu={onContextMenu}
+        renamingRelPath={renamingRelPath}
+        renderRenameInput={renderRenameInput}
       />
     )
   }

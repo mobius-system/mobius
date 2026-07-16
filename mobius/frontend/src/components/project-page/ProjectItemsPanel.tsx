@@ -3,6 +3,7 @@ import { IssueCard } from './IssueCard'
 import { ProjectTabButton, ProjectTabList } from './ProjectTabs'
 import { PrimaryActionButton } from '../primary-action-button'
 import { ResearchCard } from './ResearchCard'
+import { ListLoadingHint } from '../list-loading-hint'
 import type { IssueConfirmAction, ProjectFilter, ProjectIssuePagination, ProjectListSection } from './types'
 
 const EXTENSION_DEVELOPMENT_LINKS: Record<string, { label: string; href: string; description: string }> = {
@@ -24,6 +25,9 @@ type ProjectItemsPanelProps = {
   researches: any[]
   sessionsMap: Record<string, any[]>
   issuePagination: ProjectIssuePagination
+  // 切换到未缓存项目时, 列表先显示 loading 而不是闪现"暂无 Issue/Research".
+  issuesLoading?: boolean
+  researchesLoading?: boolean
   canCreateIssue?: boolean
   canCreateResearch?: boolean
   onSectionChange: (section: ProjectListSection) => void
@@ -49,6 +53,8 @@ export function ProjectItemsPanel({
   researches,
   sessionsMap,
   issuePagination,
+  issuesLoading = false,
+  researchesLoading = false,
   canCreateIssue = true,
   canCreateResearch = true,
   onSectionChange,
@@ -181,6 +187,7 @@ export function ProjectItemsPanel({
           filter={filter}
           search={search}
           pagination={issuePagination}
+          issuesLoading={issuesLoading}
           canCreateIssue={canCreateIssue}
           onCreateIssue={onCreateIssue}
           onCreatePlanningIssue={onCreatePlanningIssue}
@@ -202,6 +209,7 @@ export function ProjectItemsPanel({
           projectId={projectId}
           filter={filter}
           search={search}
+          researchesLoading={researchesLoading}
           canCreateResearch={canCreateResearch}
           onCreateResearch={onCreateResearch}
           onEditResearch={onEditResearch}
@@ -220,6 +228,7 @@ type IssueListProps = {
   filter: ProjectFilter
   search: string
   pagination: ProjectIssuePagination
+  issuesLoading?: boolean
   canCreateIssue: boolean
   onCreateIssue: () => void
   onCreatePlanningIssue?: () => void
@@ -236,6 +245,7 @@ function IssueList({
   filter,
   search,
   pagination,
+  issuesLoading = false,
   canCreateIssue,
   onCreateIssue,
   onCreatePlanningIssue,
@@ -244,6 +254,14 @@ function IssueList({
   onToggleIssueStar,
 }: IssueListProps) {
   if (issues.length === 0) {
+    // 切换项目首次拉取 issue 列表时, 不要直接渲染"暂无 Issue"空态, 先显示 loading.
+    if (issuesLoading) {
+      return (
+        <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
+          <ListLoadingHint />
+        </div>
+      )
+    }
     const showQuickPlanning = !search.trim() && filter === 'all' && !!onCreatePlanningIssue
     return (
       <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
@@ -336,6 +354,7 @@ type ResearchListProps = {
   projectId: string
   filter: ProjectFilter
   search: string
+  researchesLoading?: boolean
   canCreateResearch: boolean
   onCreateResearch: () => void
   onEditResearch: (research: any) => void
@@ -349,12 +368,21 @@ function ResearchList({
   projectId,
   filter,
   search,
+  researchesLoading = false,
   canCreateResearch,
   onCreateResearch,
   onEditResearch,
   onToggleResearchStatus,
 }: ResearchListProps) {
   if (researches.length === 0) {
+    // 切换项目首次拉取 research 列表时, 不要直接渲染"暂无 Research"空态, 先显示 loading.
+    if (researchesLoading) {
+      return (
+        <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
+          <ListLoadingHint />
+        </div>
+      )
+    }
     return (
       <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
         <div className="text-[13px] mb-3" style={{ color: 'var(--text-muted)' }}>

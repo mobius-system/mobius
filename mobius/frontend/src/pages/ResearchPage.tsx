@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState, useEffect, useMemo, useRef } from 'react'
+import { Suspense, lazy, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Bot, Users, Trash2 } from 'lucide-react'
 import { useStore, api } from '../store'
@@ -105,7 +105,51 @@ export default function ResearchPage() {
     return () => { cancelled = true }
   }, [sessionParam, sessions, sessionsLoaded])
 
-  const refreshSessions = () => api(`/api/researches/${researchId}/sessions`).then((arr: any) => setSessionsMap(researchId, arr)).catch(() => {})
+  // 刷新 sessions 列表. 合并而非直接覆盖: 当前会话的 agent_status 由 ChatArea 2s 轮询
+  // 实时维护 (并写回 DB), 这里保留本地值, 避免周期刷新用 DB 滞后值覆盖 -> 当前会话小圆点
+  // 闪烁 (尤其点"终止"后的 3s 抑制窗内 DB 仍报 running). 其余会话取后端最新值.
+  const refreshSessions = useCallback(() => {
+    return api(`/api/researches/${researchId}/sessions`).then((arr: any) => {
+      const list = Array.isArray(arr) ? arr : []
+      const store = useStore.getState()
+      const cur = store.currentSession
+      const prevById = new Map((store.sessionsMap[researchId] || []).map((s: any) => [s.session_id, s]))
+      const merged = list.map((s: any) => {
+        if (cur && s.session_id === cur.session_id) {
+          const local = prevById.get(s.session_id)
+          if (local && local.agent_status) return { ...s, agent_status: local.agent_status }
+        }
+        return s
+      })
+      setSessionsMap(researchId, merged)
+    }).catch(() => {})
+  }, [researchId, setSessionsMap])
+
+  // 周期刷新 sessions 列表, 让侧栏其它 (非当前) session 的状态点也能实时更新, 而不是只有
+  // 点进去后才变. 后端 agent-status-syncer 每 60s 重算 agent_status 写库, 这里 10s 拉一次
+  // 列表即可及时拿到. 仅页面可见时轮询, 切走/最小化时停.
+  useEffect(() => {
+    if (!researchId) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const tick = () => {
+      if (cancelled) return
+      if (document.visibilityState === 'visible') refreshSessions()
+      timer = setTimeout(tick, 10000)
+    }
+    const onVis = () => {
+      if (cancelled || document.visibilityState !== 'visible') return
+      if (timer) { clearTimeout(timer); timer = null }
+      tick()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    timer = setTimeout(tick, 10000)
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [researchId, refreshSessions])
   const openCreateChoice = () => setShowCreateChoice(true)
 
   const currentView = search.get('view')
@@ -544,27 +588,27 @@ function ResearchAgentCreateChoiceModal({ onClose, onSingle, onTeam }: {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
           <button onClick={onSingle}
-            className="rounded-xl border p-4 text-left transition-colors hover:border-blue-500/40 hover:bg-blue-500/5"
+            className="min-w-0 rounded-xl border p-4 text-left whitespace-normal transition-colors hover:border-blue-500/40 hover:bg-blue-500/5"
             style={optionStyle}>
             <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400">
               <Bot className="h-5 w-5" strokeWidth={1.8} />
             </div>
-            <div className="text-[14px] font-semibold">创建单个 Agent</div>
-            <div className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <div className="min-w-0 whitespace-normal break-words text-[14px] font-semibold">创建单个 Agent</div>
+            <div className="mt-1 min-w-0 whitespace-normal break-words text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               使用当前两步菜单，单独配置名称、目的、模型、Skill 和 Memory。
             </div>
           </button>
 
           <button onClick={onTeam}
-            className="rounded-xl border p-4 text-left transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/5"
+            className="min-w-0 rounded-xl border p-4 text-left whitespace-normal transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/5"
             style={optionStyle}>
             <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
               <Users className="h-5 w-5" strokeWidth={1.8} />
             </div>
-            <div className="text-[14px] font-semibold">创建 Agent 团队</div>
-            <div className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <div className="min-w-0 whitespace-normal break-words text-[14px] font-semibold">创建 Agent 团队</div>
+            <div className="mt-1 min-w-0 whitespace-normal break-words text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               默认三个 Agent，已有 Agent 会进入列表并锁定，右侧显示团队棋盘。
             </div>
           </button>

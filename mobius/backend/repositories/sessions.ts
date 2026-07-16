@@ -282,6 +282,15 @@ const Sessions = {
 
   findNameById: (id: string): { name: string } | undefined => db.prepare('SELECT name FROM sessions_v2 WHERE session_id = ?').get(id) as { name: string } | undefined,
 
+  // 自动生成标题候选: 非删除 + 有足够消息 + 非 claude-code 后端(codex/gpt-5.5 等, 这些 agent
+  // 不产 type=ai-title, 由 session-title-generator 兜底). 默认名(含时间戳)的过滤放 JS 层.
+  listTitleGenCandidates: (minMessages: number, limit: number): Array<{ session_id: string; name: string; model: string; message_count: number }> => db.prepare(
+    `SELECT session_id, name, model, message_count FROM sessions_v2
+     WHERE deleted_at IS NULL AND message_count >= ?
+       AND (model LIKE 'codex:%' OR model IN ('gpt-5.5', 'codex'))
+     ORDER BY last_active DESC LIMIT ?`
+  ).all(minMessages, limit) as Array<{ session_id: string; name: string; model: string; message_count: number }>,
+
   // 上下文快照: 首次发消息时由 chat.js 写入, 此后不再覆盖.
   getContextSnapshot: (id: string): { context_snapshot_body: string | null; context_snapshot_sources: string | null; context_snapshot_at: string | null } | undefined => db.prepare(
     'SELECT context_snapshot_body, context_snapshot_sources, context_snapshot_at FROM sessions_v2 WHERE session_id = ?'
