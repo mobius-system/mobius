@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, MoreHorizontal, Settings, Star } from 'lucide-react'
 import { useStore, api } from '../store'
@@ -126,6 +126,8 @@ export default function UserPage() {
   // 卡片 issue/research 概览的加载态: 拉取期间显示 loading, 而不是闪现"暂无 Issue".
   const [issuesLoadingByProject, setIssuesLoadingByProject] = useState<Record<string, boolean>>({})
   const [researchesLoadingByProject, setResearchesLoadingByProject] = useState<Record<string, boolean>>({})
+  const issuePreviewRequests = useRef<Set<string>>(new Set())
+  const researchPreviewRequests = useRef<Set<string>>(new Set())
   const [editingProject, setEditingProject] = useState<any>(null)
   const [hidingProject, setHidingProject] = useState<any>(null)
   // 拓展项目的隐藏/彻底删除入口；普通项目的屏蔽放在项目操作菜单里。
@@ -298,7 +300,7 @@ export default function UserPage() {
   )
   const visibleProjectCount = myProjects.length + (search.trim() ? searchMutedProjects.length : 0)
 
-  // 主区项目卡片分页: 只渲染当前页的 15 个, 翻页时切片切换 (myProjects 本身不变, issues 概览拉取不受影响).
+  // 主区项目卡片分页: 只渲染当前页的 16 个, 翻页时再按需加载这些卡片的概览.
   const projectPagination = usePagination(myProjects, PROJECT_PAGE_SIZE)
   // 搜索词 / 筛选 chip 变化 → 列表范围改变, 重置到第 1 页, 避免停在超出范围的页.
   useEffect(() => {
@@ -344,25 +346,30 @@ export default function UserPage() {
   }
 
   useEffect(() => {
-    myProjects.forEach((p: any) => {
-      if (!issuesByProject[p.id]) {
+    projectPagination.pagedItems.forEach((p: any) => {
+      if (!p?.id) return
+      if (!issuesByProject[p.id] && !issuePreviewRequests.current.has(p.id)) {
+        issuePreviewRequests.current.add(p.id)
         setIssuesLoadingByProject(prev => prev[p.id] ? prev : { ...prev, [p.id]: true })
         api(`/api/projects/${p.id}/issues`).then((issues: any[]) => {
           setIssuesByProject(prev => ({ ...prev, [p.id]: issues || [] }))
         }).catch(() => {}).finally(() => {
+          issuePreviewRequests.current.delete(p.id)
           setIssuesLoadingByProject(prev => ({ ...prev, [p.id]: false }))
         })
       }
-      if (p.research_enabled && !researchesByProject[p.id]) {
+      if (p.research_enabled && !researchesByProject[p.id] && !researchPreviewRequests.current.has(p.id)) {
+        researchPreviewRequests.current.add(p.id)
         setResearchesLoadingByProject(prev => prev[p.id] ? prev : { ...prev, [p.id]: true })
         api(`/api/projects/${p.id}/researches`).then((researches: any[]) => {
           setResearchesByProject(prev => ({ ...prev, [p.id]: researches || [] }))
         }).catch(() => {}).finally(() => {
+          researchPreviewRequests.current.delete(p.id)
           setResearchesLoadingByProject(prev => ({ ...prev, [p.id]: false }))
         })
       }
     })
-  }, [myProjects])
+  }, [projectPagination.pagedItems, issuesByProject, researchesByProject])
 
   // 按 created_by 分组（sidebar）
   const grouped = useMemo(() => {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { ArrowLeft, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
-import { useStore, api } from '../store'
+import { useStore, api, APP_DIR } from '../store'
 import { timeAgo } from './shell'
 import { SkillsManager } from './skills'
 import { MemoriesManager } from './memories'
@@ -3616,9 +3616,11 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
 
   const installCmd = 'pip install --force-reinstall aimux==0.1.10'
   const connectCmd = `aimux reverse connect ${baseUrl} --identifier ${effectiveIdentifier} --token ${userJwt}`
-  // 步骤4 话术: 命名占位用第2步输入的 identifier (实时随输入更新); skill 路径用系统注入
-  // (session-context.ts) 与 announce-pc-button.tsx 一致的相对路径, agent 必能据此找到
-  const announceText = `当你的任务需要连接 \`${effectiveIdentifier}\` 时，请阅读 mobius-aimux 技能（.imac/skills/mobius-aimux/SKILL.md），根据提示进行连接`
+  // 步骤4 话术: 命名占位用第2步输入的 identifier (实时随输入更新); skill 路径用后端 branding 下发的
+  // APP_DIR 绝对路径展开 (用户要求显示绝对路径, agent 无论 cwd 在哪都能直达内置 skill 源目录);
+  // APP_DIR 为空 (旧后端未下发) 时回退相对路径, agent 仍可在 workDir 下找到镜像副本.
+  const skillPath = APP_DIR ? `${APP_DIR}/skills/mobius-aimux` : '.imac/skills/mobius-aimux/SKILL.md'
+  const announceText = `当你的任务需要连接 \`${effectiveIdentifier}\` 时，请阅读 mobius-aimux 技能（${skillPath}），根据提示进行连接`
 
   const refreshRemotes = useCallback(() => {
     api('/aimux_bridge/api/remotes').then((data: any) => {

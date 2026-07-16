@@ -33,6 +33,7 @@ interface Branding {
   systemNameZh: string
   systemNameEn: string
   hiddenFolderName: string
+  appDir: string
 }
 
 declare global {
@@ -48,6 +49,7 @@ const DEFAULT_BRANDING: Branding = {
   systemNameZh: '莫比乌斯AI',
   systemNameEn: 'Mobius',
   hiddenFolderName: '.mobius',
+  appDir: '',
 }
 
 function loadInitialBranding(): Branding {
@@ -58,12 +60,17 @@ function loadInitialBranding(): Branding {
     systemNameZh: typeof injected.systemNameZh === 'string' ? injected.systemNameZh : DEFAULT_BRANDING.systemNameZh,
     systemNameEn: typeof injected.systemNameEn === 'string' ? injected.systemNameEn : DEFAULT_BRANDING.systemNameEn,
     hiddenFolderName: typeof injected.hiddenFolderName === 'string' && injected.hiddenFolderName ? injected.hiddenFolderName : DEFAULT_BRANDING.hiddenFolderName,
+    appDir: typeof injected.appDir === 'string' ? injected.appDir : DEFAULT_BRANDING.appDir,
   }
 }
 
 // 隐藏工作缓存目录名 (.imac / .mobius): 由 index.html 同步注入 window.__BRANDING__, 启动时定型,
 // 运行期不再变化, 故作为模块级常量导出; 组件拼 <bindPath>/<HIDDEN_FOLDER_NAME>/... 路径时直接 import 使用.
 export const HIDDEN_FOLDER_NAME = loadInitialBranding().hiddenFolderName
+
+// 仓库根绝对路径 (APP_DIR): 同样由 index.html 同步注入, 启动时定型. 用于给 agent 展示 skill 绝对路径等,
+// 避免前端硬编码部署路径. 空字符串表示后端未下发 (旧版), 调用方需自行回退.
+export const APP_DIR = loadInitialBranding().appDir
 
 interface User {
   id: string

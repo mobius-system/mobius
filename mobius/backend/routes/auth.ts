@@ -1,7 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { JWT_SECRET, ENABLE_PASSWORD_LOGIN, BRANDING, HIDDEN_FOLDER_NAME } from '../config';
+import { JWT_SECRET, ENABLE_PASSWORD_LOGIN, BRANDING, HIDDEN_FOLDER_NAME, APP_DIR } from '../config';
 import { auth } from '../middleware/auth';
 import { Users } from '../repositories/users';
 import { db } from '../../db';
@@ -21,6 +21,8 @@ router.get('/branding', (_req: express.Request, res: express.Response) => {
     systemNameEn: BRANDING.systemNameEn,
     // 隐藏工作缓存目录名 (.imac / .mobius), 前端拼 <bindPath>/<该目录>/... 路径时用, 必须与后端一致.
     hiddenFolderName: HIDDEN_FOLDER_NAME,
+    // 仓库根绝对路径 (APP_DIR), 前端展示给 agent 的 skill 绝对路径等场景用, 避免硬编码部署路径.
+    appDir: APP_DIR,
   });
 });
 
