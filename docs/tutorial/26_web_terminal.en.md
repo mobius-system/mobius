@@ -1,27 +1,36 @@
-# Web Terminal: Run Commands Anytime Inside a Session
+# Web Terminal: Open a Project Shell or Inspect the Agent Backend
 
 ‍
 
-> In any session (an Issue's Session or a Research Agent), you can pop up a web terminal in two clicks — no need to switch to an external SSH client — and run commands directly on the server: check logs, run scripts, start services, or edit configs with vim.
+> In any session (an Issue's Session or a Research Agent), you can open a web terminal without switching to SSH. Choose a normal project shell when you want to run commands, or attach directly to the current Agent's tmux backend when you want to inspect what it is actually doing.
 
-## ① Open the "…" menu and choose "Web Terminal"
+## ① Click "Open Terminal"
 
-Click the "**…**" button in the session header, then choose "**Web Terminal**" from the menu — it sits just below the "Show / hide time & index" item.
+Open any session and click "**Open Terminal**" in the session tool area.
 
-![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_01.jpg)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_agent_01_open-button_v2.jpg)
 
-## ② Terminal connected — start typing
+## ② Choose how to open it
 
-Once the popup opens, a green "**Connected**" label appears at the top. Below it is a real shell whose working directory defaults to the current project's folder. Just type your commands.
+Mobius shows two choices:
 
-![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_02.jpg)
+- **Open terminal in current directory**: enter the current project folder, useful for inspecting files, running scripts, and reading logs.
+- **Open terminal and show Agent backend**: open the terminal and automatically attach to the current session's Agent tmux window.
 
-## ③ Commands run live on the server
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_agent_02_mode-choice_v2.jpg)
 
-Type a command and press Enter — the output streams back in real time, exactly like a local terminal. It's a full PTY, so vim, top, arrow keys, and Tab completion all work.
+## ③ Run commands in the current directory
 
-![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_03.jpg)
+Choose "**Open terminal in current directory**". A green "**Connected**" label appears at the top, and the terminal opens as a real shell in the current project's folder. Type a command and press Enter to run it live on the server.
+
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_agent_03_cwd-terminal_v2.jpg)
+
+## ④ Inspect the Agent backend
+
+Choose "**Open terminal and show Agent backend**". Mobius first opens the web terminal, then runs `tmux attach` automatically and enters the Agent backend window for the current session. Use this when you want to inspect the Agent TUI, check whether it is stuck, or copy backend logs.
+
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_agent_04_agent-terminal_v2.jpg)
 
 ‍
 
-> Tip: The terminal opens in the current project directory by default. Pressing **Esc does NOT close the popup** (Esc is reserved for programs like vim) — click the ✕ at the top-right or click the backdrop to close. Closing the popup reclaims the process; nothing is left running on the server.
+> Tip: Pressing **Esc does NOT close the popup** (Esc is reserved for vim, tmux, Agent TUIs, and similar programs). Click the ✕ at the top-right or the backdrop to close it. Closing the web terminal only disconnects this viewer; it does not kill the running Agent backend.

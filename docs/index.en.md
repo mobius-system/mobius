@@ -46,7 +46,7 @@ Mobius is — as far as we know — the world's first **self-evolving** open-sou
 - [Change the Frontend Theme](tutorial/16_change_frontend_theme.md)
 - [Mark a Key Project (Favorite)](tutorial/17_favorite_project.md)
 - [Package & Download Project Files](tutorial/18_package_download_project.md)
-- [Web Terminal: Run Commands Anytime Inside a Session](tutorial/26_web_terminal.md)
+- [Web Terminal: Open a Project Shell or Inspect the Agent Backend](tutorial/26_web_terminal.md)
 
 ### VI. Deep Research
 

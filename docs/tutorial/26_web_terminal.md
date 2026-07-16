@@ -1,27 +1,36 @@
-# 网页终端：在会话里随时开终端跑命令
+# 网页终端：打开目录终端，也能直看 Agent 后台
 
 ‍
 
-> 在任意会话（Issue 的 Session 或 Research 的 Agent）里，不用切到外部 SSH，点两下就能弹出一个网页终端，直接在服务器上敲命令——查日志、跑脚本、起服务、用 vim 改配置都行。
+> 在任意会话（Issue 的 Session 或 Research 的 Agent）里，不用切到外部 SSH，点两下就能弹出一个网页终端。你可以选择进入当前项目目录跑命令，也可以直接 attach 到当前 Agent 的 tmux 后台，看它真实在做什么。
 
-## ① 打开「…」菜单，选「Web 终端」
+## ① 点击「打开终端」
 
-在会话头部点右上角的「**…**」按钮，在弹出的菜单里（「显示时间与序号」这一项的**下方**）选择「**Web 终端**」。
+进入任意会话后，在会话工具区点击「**打开终端**」。
 
-![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_01.jpg)
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_agent_01_open-button_v2.jpg)
 
-## ② 终端已连接，直接敲命令
+## ② 选择打开方式
 
-弹窗打开后，顶部会显示绿色「**已连接**」，下方就是一个真实的 shell。它的工作目录默认就是当前项目目录，直接敲命令即可。
+弹窗会给出两个选项：
 
-![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_02.jpg)
+- **在当前目录打开终端**：进入当前项目目录，适合查文件、跑脚本、看日志。
+- **打开终端并显示 Agent 后台**：打开终端后自动 attach 到当前会话对应的 Agent tmux 窗口。
 
-## ③ 命令在服务器上实时执行
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_agent_02_mode-choice_v2.jpg)
 
-输入命令回车，输出实时回显——和本地终端一模一样。它是一个完整的伪终端（PTY），vim、top、方向键、Tab 补全等交互都正常工作。
+## ③ 在当前目录直接运行命令
 
-![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_03.jpg)
+选择「在当前目录打开终端」后，顶部会显示绿色「**已连接**」，下方就是一个真实 shell。工作目录默认是当前项目目录，输入命令回车即可实时执行。
+
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_agent_03_cwd-terminal_v2.jpg)
+
+## ④ 打开 Agent 后台
+
+选择「打开终端并显示 Agent 后台」后，Mobius 会先打开 Web 终端，再自动执行 `tmux attach`，进入当前会话的 Agent 后台窗口。这里适合检查 Agent TUI 状态、观察是否卡住、复制后台日志。
+
+![image](https://serve.nutshellai.cn/publish/auto/tutorial/26_web_terminal_agent_04_agent-terminal_v2.jpg)
 
 ‍
 
-> 小贴士：终端默认开在当前项目目录；按 **Esc 不会关闭弹窗**（Esc 留给 vim 等程序用），点右上角的 ✕ 或点弹窗外的遮罩即可关闭；关闭即释放，不会在服务器留下后台进程。
+> 小贴士：按 **Esc 不会关闭弹窗**（Esc 留给 vim、tmux、Agent TUI 等程序用），点右上角的 ✕ 或点弹窗外的遮罩即可关闭。关闭 Web 终端只会断开这次查看，不会杀掉正在运行的 Agent 后台。
