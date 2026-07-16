@@ -5,6 +5,8 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
+  ArrowDown,
+  ArrowUp,
   BarChart3,
   Building2,
   Check,
@@ -1226,6 +1228,7 @@ function ModelPromptLimitsCard() {
   const [savingCompactKey, setSavingCompactKey] = useState<string | null>(null)
   const [savingCompactTokenKey, setSavingCompactTokenKey] = useState<string | null>(null)
   const [savingAutoTitle, setSavingAutoTitle] = useState(false)
+  const [savingOrderKey, setSavingOrderKey] = useState<string | null>(null)
   const [error, setError] = useState('')
 
   const fieldKey = (modelKey: string, field: keyof ModelPromptLimitConfig) => `${modelKey}::${field}`
@@ -1490,6 +1493,33 @@ function ModelPromptLimitsCard() {
     }
   }
 
+  const moveModel = async (row: ModelPromptLimitRow, direction: -1 | 1) => {
+    if (!payload) return
+    const index = payload.models.findIndex(item => item.key === row.key)
+    const nextIndex = index + direction
+    if (index < 0 || nextIndex < 0 || nextIndex >= payload.models.length) return
+    const reordered = payload.models.slice()
+    const [picked] = reordered.splice(index, 1)
+    reordered.splice(nextIndex, 0, picked)
+    const previous = payload
+    setPayload({ ...payload, models: reordered })
+    setSavingOrderKey(row.key)
+    try {
+      const next = await api('/api/admin/settings/model-display-order', {
+        method: 'PUT',
+        body: JSON.stringify({ order: reordered.map(item => item.key) }),
+      }) as ModelPromptLimitsPayload
+      setPayload(next)
+      syncInputs(next)
+      setError('')
+    } catch (e: any) {
+      setPayload(previous)
+      setError(e?.message || String(e))
+    } finally {
+      setSavingOrderKey(null)
+    }
+  }
+
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-settings">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1565,7 +1595,7 @@ function ModelPromptLimitsCard() {
         </ToggleSwitch>
       </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {(payload?.models || []).map(row => {
+        {(payload?.models || []).map((row, index) => {
           const saving = savingKey === row.key
           const savingProxy = savingProxyKey === row.key
           const savingCapture = savingCaptureKey === row.key
@@ -1575,6 +1605,7 @@ function ModelPromptLimitsCard() {
           const compactEnabled = row.auto_compact?.enabled === true
           const savingCompact = savingCompactKey === row.key
           const savingCompactToken = savingCompactTokenKey === row.key
+          const savingOrder = savingOrderKey === row.key
           const isClaudeCode = row.backend === 'tmux-claude-code'
           return (
             <div key={row.key}
@@ -1595,10 +1626,24 @@ function ModelPromptLimitsCard() {
                     {row.config_path || '未找到配置文件路径'}
                   </div>
                 </div>
-                <span className="shrink-0 rounded border px-1.5 py-0.5 text-[10px]"
-                  style={{ color: configured ? '#3b82f6' : 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
-                  {configured ? '已配置' : '默认'}
-                </span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button type="button" title="上移显示顺序"
+                    onClick={() => moveModel(row, -1)}
+                    disabled={loading || !!savingOrderKey || index === 0}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-35">
+                    {savingOrder ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5" />}
+                  </button>
+                  <button type="button" title="下移显示顺序"
+                    onClick={() => moveModel(row, 1)}
+                    disabled={loading || !!savingOrderKey || index >= (payload?.models.length || 0) - 1}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-35">
+                    {savingOrder ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                  </button>
+                  <span className="rounded border px-1.5 py-0.5 text-[10px]"
+                    style={{ color: configured ? '#3b82f6' : 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+                    {configured ? '已配置' : '默认'}
+                  </span>
+                </div>
               </div>
               <div className="mb-2 grid grid-cols-2 gap-2">
                 {limitFields.map(field => {

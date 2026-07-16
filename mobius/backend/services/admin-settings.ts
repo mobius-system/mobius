@@ -74,6 +74,8 @@ const DEFAULTS: any = Object.freeze({
   // 优先级 (新建 Session / 快捷新建 / 小莫): 用户/草稿选择 > 项目级 default_model > 全局默认 > 内置 'codex'.
   // null/空串 = 未设置, 系统沿用原行为 (内置 codex / 小莫 MiniMax 启发式).
   globalDefaultModel: null,
+  // 新建 Session 模型选择器显示顺序. 存 option.key 数组; 未出现的新模型按系统默认顺序追加.
+  modelDisplayOrder: [],
   // 自动生成 Session 标题: 默认关闭. 开启后后端订阅 agent raw JSONL 事件,
   // 仅在收到 type='ai-title' 这类明确标题事件时更新 sessions_v2.name.
   autoGenerateSessionTitle: {
@@ -340,6 +342,36 @@ function normalizeGlobalDefaultModelForWrite(value: any): string | null {
   if (trimmed.length > 200) throw new Error('模型 key 最多 200 个字符')
   if (trimmed.includes('\0')) throw new Error('模型 key 包含非法字符')
   return trimmed
+}
+
+function normalizeModelDisplayOrderForRead(value: any): string[] {
+  const raw = Array.isArray(value) ? value : (Array.isArray(value?.order) ? value.order : [])
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    try {
+      const key = normalizeModelKey(item)
+      if (!seen.has(key)) {
+        seen.add(key)
+        out.push(key)
+      }
+    } catch {}
+  }
+  return out
+}
+
+function normalizeModelDisplayOrderForWrite(value: any): string[] {
+  if (!Array.isArray(value)) throw new Error('模型显示顺序必须是数组')
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    const key = normalizeModelKey(item)
+    if (!seen.has(key)) {
+      seen.add(key)
+      out.push(key)
+    }
+  }
+  return out
 }
 
 function parseBooleanSetting(value: any, fallback: boolean = false): boolean {
@@ -664,6 +696,9 @@ function loadSettings(): any {
     if (parsed && Object.prototype.hasOwnProperty.call(parsed, 'globalDefaultModel')) {
       merged.globalDefaultModel = normalizeGlobalDefaultModelForRead((parsed as any).globalDefaultModel)
     }
+    if (parsed && Object.prototype.hasOwnProperty.call(parsed, 'modelDisplayOrder')) {
+      merged.modelDisplayOrder = normalizeModelDisplayOrderForRead((parsed as any).modelDisplayOrder)
+    }
     if (parsed && Object.prototype.hasOwnProperty.call(parsed, 'autoGenerateSessionTitle')) {
       merged.autoGenerateSessionTitle = normalizeAutoGenerateSessionTitleForRead((parsed as any).autoGenerateSessionTitle)
     }
@@ -801,6 +836,18 @@ function setGlobalDefaultModel(value: any): string | null {
   next.globalDefaultModel = normalized
   writeSettings(next)
   return next.globalDefaultModel
+}
+
+function getModelDisplayOrder(): string[] {
+  return normalizeModelDisplayOrderForRead(loadSettings().modelDisplayOrder)
+}
+
+function setModelDisplayOrder(value: any): string[] {
+  const normalized = normalizeModelDisplayOrderForWrite(value)
+  const next = loadSettings()
+  next.modelDisplayOrder = normalized
+  writeSettings(next)
+  return getModelDisplayOrder()
 }
 
 function getAutoGenerateSessionTitle(): any {
@@ -1008,6 +1055,8 @@ const adminSettings = {
   setModelAutoCompact,
   getGlobalDefaultModel,
   setGlobalDefaultModel,
+  getModelDisplayOrder,
+  setModelDisplayOrder,
   getAutoGenerateSessionTitle,
   isAutoGenerateSessionTitleEnabled,
   setAutoGenerateSessionTitle,
@@ -1050,6 +1099,8 @@ export {
   setModelAutoCompact,
   getGlobalDefaultModel,
   setGlobalDefaultModel,
+  getModelDisplayOrder,
+  setModelDisplayOrder,
   getAutoGenerateSessionTitle,
   isAutoGenerateSessionTitleEnabled,
   setAutoGenerateSessionTitle,

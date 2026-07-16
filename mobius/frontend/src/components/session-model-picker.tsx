@@ -7,9 +7,9 @@
 //   3. 超额模型 disabled (usage.blocked), 标红 "已达限额 · 暂不可选".
 // 传统与顶栏快捷共用此组件, 行为统一.
 // =====================================================================
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../store'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, ChevronDown } from 'lucide-react'
 
 type SessionModelOption = {
   key: string
@@ -69,6 +69,22 @@ const FALLBACK_OPTIONS: SessionModelOption[] = [
   { key: 'codex', label: 'GPT-5.5', title: 'GPT-5.5', sub: 'Codex · 强力', backend: 'tmux-codex' },
   { key: 'opus', label: 'Opus', title: 'Opus', sub: 'Claude Code · 强力', backend: 'tmux-claude-code' },
 ]
+const MODEL_PICKER_COLLAPSED_ROWS = 3
+
+function useResponsiveModelColumns() {
+  const [columns, setColumns] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches ? 3 : 2
+  ))
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(min-width: 640px)')
+    const update = () => setColumns(mq.matches ? 3 : 2)
+    update()
+    mq.addEventListener?.('change', update)
+    return () => mq.removeEventListener?.('change', update)
+  }, [])
+  return columns
+}
 
 export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true }: {
   value: string
@@ -79,6 +95,8 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true 
 }) {
   const [options, setOptions] = useState<SessionModelOption[]>(FALLBACK_OPTIONS)
   const [stats, setStats] = useState<PromptStats | null>(null)
+  const [manuallyExpanded, setManuallyExpanded] = useState(false)
+  const responsiveColumns = useResponsiveModelColumns()
 
   useEffect(() => {
     let alive = true
@@ -97,6 +115,12 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true 
   }, [])
 
   const selected = options.find(o => o.key === value) || null
+  const collapsedVisibleCount = responsiveColumns * MODEL_PICKER_COLLAPSED_ROWS
+  const selectedIndex = useMemo(() => options.findIndex(o => o.key === value), [options, value])
+  const hasCollapsedOverflow = options.length > collapsedVisibleCount
+  const expandedForSelection = selectedIndex >= collapsedVisibleCount
+  const modelGridExpanded = manuallyExpanded || expandedForSelection || !hasCollapsedOverflow
+  const hiddenModelCount = Math.max(0, options.length - collapsedVisibleCount)
   const selectedBackendKey = promptBackendKeyForOption(selected)
   const selectedUsage = stats?.model_usage_limits?.models?.[value] || null
   const selectedTmux = selectedUsage?.usage?.tmuxWindows || null
@@ -107,7 +131,9 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true 
   return (
     <div>
       <div className="text-[12px] mb-1.5" style={{ color: dark ? '#9ca3af' : '#64748b' }}>模型（创建后不可更改）</div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div
+        className={`grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
+      >
         {options.map(opt => {
           const active = value === opt.key
           const backendKey = promptBackendKeyForOption(opt)
@@ -158,6 +184,18 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true 
           )
         })}
       </div>
+      {hasCollapsedOverflow && !expandedForSelection && (
+        <button type="button" onClick={() => setManuallyExpanded(v => !v)}
+          className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
+          style={{
+            borderColor: 'var(--input-border)',
+            color: dark ? '#9ca3af' : '#64748b',
+            background: 'var(--input-bg)',
+          }}>
+          <span>{manuallyExpanded ? '收起模型' : `展开剩余 ${hiddenModelCount} 个模型`}</span>
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${manuallyExpanded ? 'rotate-180' : ''}`} />
+        </button>
+      )}
       {selectedUsage?.limit != null && (
         <div className="mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px]"
           style={{

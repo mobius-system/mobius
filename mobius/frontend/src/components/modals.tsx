@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { ArrowLeft, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
 import { useStore, api, APP_DIR } from '../store'
 import { timeAgo } from './shell'
 import { SkillsManager } from './skills'
@@ -74,6 +74,22 @@ const RANDOM_PROJECT_NOUNS = [
   'leaf', 'light', 'meadow', 'moon', 'mountain', 'river', 'seed', 'snake',
   'spark', 'star', 'stone', 'sun', 'tree', 'valley', 'wave', 'wind',
 ]
+const MODEL_PICKER_COLLAPSED_ROWS = 3
+
+function useResponsiveModelColumns() {
+  const [columns, setColumns] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches ? 3 : 2
+  ))
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(min-width: 640px)')
+    const update = () => setColumns(mq.matches ? 3 : 2)
+    update()
+    mq.addEventListener?.('change', update)
+    return () => mq.removeEventListener?.('change', update)
+  }, [])
+  return columns
+}
 
 function randomProjectWord(words: string[]) {
   return words[Math.floor(Math.random() * words.length)] || words[0]
@@ -2163,10 +2179,18 @@ export function NewSessionModal({
   // 全站 5h 提问量 (codex / claude_code) — 用于在模型按钮显示渠道负载与高负荷警告
   const [promptStats, setPromptStats] = useState<PromptStats | null>(null)
   const [modelOptions, setModelOptions] = useState<SessionModelOption[]>(FALLBACK_SESSION_MODEL_CHOICES)
+  const [modelGridManuallyExpanded, setModelGridManuallyExpanded] = useState(false)
+  const modelGridColumns = useResponsiveModelColumns()
   const selectedModelOption = useMemo(
     () => modelOptions.find(opt => opt.key === model) || modelOptions[0] || FALLBACK_SESSION_MODEL_CHOICES[0],
     [modelOptions, model],
   )
+  const collapsedModelVisibleCount = modelGridColumns * MODEL_PICKER_COLLAPSED_ROWS
+  const selectedModelIndex = useMemo(() => modelOptions.findIndex(opt => opt.key === model), [modelOptions, model])
+  const hasCollapsedModelOverflow = modelOptions.length > collapsedModelVisibleCount
+  const modelExpandedForSelection = selectedModelIndex >= collapsedModelVisibleCount
+  const modelGridExpanded = modelGridManuallyExpanded || modelExpandedForSelection || !hasCollapsedModelOverflow
+  const hiddenModelCount = Math.max(0, modelOptions.length - collapsedModelVisibleCount)
   const selectedPersonality = useMemo(
     () => personalityOptions.find(option => option.key === personality) || personalityOptions[0] || null,
     [personalityOptions, personality],
@@ -2684,7 +2708,10 @@ export function NewSessionModal({
                 <div className="text-[12px] mb-1.5 flex items-center justify-between" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
                   <span>模型（创建后不可更改）</span>
                 </div>
-                <div data-tour="session-model-picker" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <div
+                  data-tour="session-model-picker"
+                  className={`grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
+                >
                   {modelOptions.map(opt => {
                     const active = model === opt.key
                     const backendKey = promptBackendKeyForOption(opt)
@@ -2739,6 +2766,18 @@ export function NewSessionModal({
                     )
                   })}
                 </div>
+                {hasCollapsedModelOverflow && !modelExpandedForSelection && (
+                  <button type="button" onClick={() => setModelGridManuallyExpanded(v => !v)}
+                    className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{
+                      borderColor: 'var(--input-border)',
+                      color: isDark ? '#9ca3af' : '#64748b',
+                      background: 'var(--input-bg)',
+                    }}>
+                    <span>{modelGridManuallyExpanded ? '收起模型' : `展开剩余 ${hiddenModelCount} 个模型`}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${modelGridManuallyExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                )}
                 {selectedModelUsage?.limit != null && (
                   <div className="mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px]"
                     style={{

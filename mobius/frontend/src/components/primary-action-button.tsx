@@ -24,7 +24,7 @@ export function PrimaryActionButton({
 }: PrimaryActionButtonProps) {
   return (
     <button
-      className={`btn-primary rounded-lg flex flex-shrink-0 items-center transition-colors h-8 px-3 text-[12px] gap-1.5 ${className}`}
+      className={`btn-primary rounded-lg flex flex-shrink-0 items-center transition-colors h-7 px-3 text-[12px] gap-1.5 ${className}`}
       {...rest}
     >
       {icon}

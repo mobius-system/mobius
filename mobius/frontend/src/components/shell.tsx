@@ -324,10 +324,10 @@ function VersionIndicator() {
       className="h-8 max-w-[210px] px-2 flex items-center gap-1.5 border rounded-lg select-none"
       title={title}
       style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
-      <span className="text-[11px] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>ver</span>
+      {/* <span className="text-[11px] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>ver</span>
       <span className="text-[12px] tabular-nums truncate" style={{ color: 'var(--text-secondary)' }}>
         {version}
-      </span>
+      </span> */}
       <span className="text-[11px] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>up</span>
       <span className="text-[12px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>
         {uptime}

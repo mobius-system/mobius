@@ -22,6 +22,21 @@ import * as modelAccess from './model-access'
 
 const BUILTIN_ORDER = ['codex', 'opus']
 
+function applyDisplayOrder(options: any[]): any[] {
+  const order = adminSettings.getModelDisplayOrder()
+  if (!Array.isArray(order) || order.length === 0) return options
+  const rank = new Map(order.map((key, index) => [key, index]))
+  return options
+    .map((option, index) => ({ option, index }))
+    .sort((a, b) => {
+      const ar = rank.has(a.option.key) ? rank.get(a.option.key) as number : Number.MAX_SAFE_INTEGER
+      const br = rank.has(b.option.key) ? rank.get(b.option.key) as number : Number.MAX_SAFE_INTEGER
+      if (ar !== br) return ar - br
+      return a.index - b.index
+    })
+    .map(item => item.option)
+}
+
 function defaultUseProxyForBackend(backend: any): boolean {
   return false
 }
@@ -261,7 +276,7 @@ function listSessionModelOptions(): any[] {
   }
   const builtinClaude = builtins.filter((m) => m.key !== 'codex')
 
-  const ordered = [...builtinCodex, ...codexDynamics, ...claudeDynamics, ...builtinClaude]
+  const ordered = applyDisplayOrder([...builtinCodex, ...codexDynamics, ...claudeDynamics, ...builtinClaude])
   return ordered.map((m) => ({
     key: m.key,
     value: m.value,

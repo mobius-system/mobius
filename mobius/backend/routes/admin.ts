@@ -915,6 +915,25 @@ router.put('/settings/global-default-model', adminAuth, (req: express.Request, r
   }
 });
 
+// ── 模型显示顺序: 影响 /api/sessions/model-options 与所有新建 Session 模型选择器 ──
+// body: { order: string[] }. 未包含的新模型会在系统默认顺序末尾追加.
+router.put('/settings/model-display-order', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    const body = (req.body || {}) as any;
+    const rawOrder = Array.isArray(body.order) ? body.order : body.model_order;
+    if (!Array.isArray(rawOrder)) {
+      res.status(400).json({ error: 'order 必须是模型 key 数组' });
+      return;
+    }
+    const available = new Set(modelRegistry.listSessionModelOptions().map((opt: any) => opt.key));
+    const filtered = rawOrder.filter((key: any) => available.has(String(key || '').trim()));
+    adminSettings.setModelDisplayOrder(filtered);
+    res.json(modelPromptLimits.adminLimitsPayload());
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
+  }
+});
+
 // ── 自动生成 Session 标题: 默认关闭; 开启后由后端订阅 agent raw_entry 事件更新 sessions_v2.name ──
 router.get('/settings/auto-generate-session-title', adminAuth, (_req: express.Request, res: express.Response) => {
   try {
