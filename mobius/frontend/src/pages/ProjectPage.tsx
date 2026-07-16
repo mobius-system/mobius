@@ -137,6 +137,7 @@ export default function ProjectPage() {
   const [editCanPostIssue, setEditCanPostIssue] = useState<boolean>(false)
   const [editCanRunSession, setEditCanRunSession] = useState<boolean>(false)
   const [editDefaultModel, setEditDefaultModel] = useState<string>('')
+  const [editCardBorderTheme, setEditCardBorderTheme] = useState<string>('auto')
   const [editForgottenFlagMessage, setEditForgottenFlagMessage] = useState('')
   const [editForgottenFlagIssueInit, setEditForgottenFlagIssueInit] = useState(String(DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES))
   const [editForgottenFlagIssueBackoff, setEditForgottenFlagIssueBackoff] = useState(String(DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF))
@@ -218,6 +219,7 @@ export default function ProjectPage() {
       setEditCanPostIssue(!!project.can_post_issue)
       setEditCanRunSession(!!project.can_run_session)
       setEditDefaultModel(typeof project.default_model === 'string' ? project.default_model : '')
+      setEditCardBorderTheme(typeof project.card_border_theme === 'string' ? project.card_border_theme : 'auto')
       setEditForgottenFlagMessage(project.forgotten_flag_message_effective ?? (project.forgotten_flag_message || ''))
       setEditForgottenFlagIssueInit(intervalInputValue(project.forgotten_flag_issue_init_minutes ?? project.forgotten_flag_issue_interval_minutes, DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES))
       setEditForgottenFlagIssueBackoff(numberInputValue(project.forgotten_flag_issue_backoff, DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF))
@@ -353,6 +355,8 @@ export default function ProjectPage() {
   const forgottenFlagMessageDirty = !!project && !forgottenFlagMessageMatches(project, editForgottenFlagMessage)
   const savedDefaultModel = typeof project?.default_model === 'string' ? project.default_model : ''
   const defaultModelDirty = !!project && editDefaultModel !== savedDefaultModel
+  const savedCardBorderTheme = typeof project?.card_border_theme === 'string' ? project.card_border_theme : 'auto'
+  const cardBorderThemeDirty = !!project && editCardBorderTheme !== savedCardBorderTheme
   const issuePolicyDirty = !!project && (
     !intervalDraftMatchesSaved(
       editForgottenFlagIssueInit,
@@ -402,7 +406,8 @@ export default function ProjectPage() {
     forgottenFlagMessageDirty ||
     issuePolicyDirty ||
     researchPolicyDirty ||
-    defaultModelDirty
+    defaultModelDirty ||
+    cardBorderThemeDirty
   )
 
   const saveMeta = useCallback(async () => {
@@ -434,6 +439,7 @@ export default function ProjectPage() {
       }
       if (defaultModelDirty) body.defaultModel = editDefaultModel || null
     }
+    if (cardBorderThemeDirty) body.cardBorderTheme = editCardBorderTheme || 'auto'
     if (forgottenFlagMessageDirty) body.forgottenFlagMessage = editForgottenFlagMessage
     try {
       if (issuePolicyDirty) {
@@ -486,6 +492,7 @@ export default function ProjectPage() {
     editForgottenFlagResearchBackoff,
     editForgottenFlagResearchPatience,
     editDefaultModel,
+    editCardBorderTheme,
     nameDirty,
     descDirty,
     bindPathDirty,
@@ -498,6 +505,7 @@ export default function ProjectPage() {
     issuePolicyDirty,
     researchPolicyDirty,
     defaultModelDirty,
+    cardBorderThemeDirty,
     setProjects,
     setCurrentProject,
   ])
@@ -607,6 +615,7 @@ export default function ProjectPage() {
                     editCanPostIssue,
                     editCanRunSession,
                     editDefaultModel,
+                    editCardBorderTheme,
                     editForgottenFlagMessage,
                     editForgottenFlagIssueInit,
                     editForgottenFlagIssueBackoff,
@@ -628,6 +637,7 @@ export default function ProjectPage() {
                     setEditCanPostIssue,
                     setEditCanRunSession,
                     setEditDefaultModel,
+                    setEditCardBorderTheme,
                     setEditForgottenFlagMessage,
                     setEditForgottenFlagIssueInit,
                     setEditForgottenFlagIssueBackoff,

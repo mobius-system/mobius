@@ -25,6 +25,7 @@ import {
 import { LOGO_REVIEW_PROJECT_ID, readLogoReviewDemoState } from '../services/logo-review-demo'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
+import { ProjectCardThemePicker } from './project-card-theme-picker'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
@@ -798,6 +799,7 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
   // 同组 (team) 或任意读者 (public) 才能创建任务单 / 触发 Session.
   const [canPostIssue, setCanPostIssue] = useState<boolean>(!!project.can_post_issue)
   const [canRunSession, setCanRunSession] = useState<boolean>(!!project.can_run_session)
+  const [cardBorderTheme, setCardBorderTheme] = useState<string>(typeof project.card_border_theme === 'string' ? project.card_border_theme : 'auto')
   const [forgottenFlagMessage, setForgottenFlagMessage] = useState<string>(project.forgotten_flag_message_effective ?? (project.forgotten_flag_message || ''))
   const [forgottenFlagIssueInit, setForgottenFlagIssueInit] = useState<string>(
     intervalInputValue(project.forgotten_flag_issue_init_minutes ?? project.forgotten_flag_issue_interval_minutes, DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES)
@@ -849,6 +851,7 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
         visibility,
         can_post_issue: canPostIssue,
         can_run_session: canRunSession,
+        cardBorderTheme,
         // 项目级规则: Research 启用时强制禁用 worktree (后端也会兜底强制)
         defaultUseWorktree: researchEnabled ? false : defaultUseWorktree,
         researchEnabled,
@@ -971,6 +974,13 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
               启用 Research 系统
             </ToggleSwitch>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示 Research 入口；Research 与 Issues 并列管理。启用时会自动禁用 git worktree</p>
+          </div>
+          <div>
+            <ProjectCardThemePicker
+              value={cardBorderTheme}
+              project={project}
+              onChange={(value) => { setCardBorderTheme(value); setErr('') }}
+            />
           </div>
           <div>
             <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒消息</label>

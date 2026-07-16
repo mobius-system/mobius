@@ -8,6 +8,7 @@ import { SkillsManager } from '../skills'
 import { UserPicker } from '../user-picker'
 import { timeAgo } from '../shell'
 import { api, useStore } from '../../store'
+import { ProjectCardThemePicker } from '../project-card-theme-picker'
 import { readContextSetupDemoState } from '../../services/context-setup-demo'
 import {
   PROJECT_IMPORT_DEMO_TOUR_EVENT,
@@ -39,6 +40,7 @@ type ProjectMetaValues = {
   editCanPostIssue: boolean
   editCanRunSession: boolean
   editDefaultModel: string
+  editCardBorderTheme: string
   editForgottenFlagMessage: string
   editForgottenFlagIssueInit: string
   editForgottenFlagIssueBackoff: string
@@ -61,6 +63,7 @@ type ProjectMetaSetters = {
   setEditCanPostIssue: Dispatch<SetStateAction<boolean>>
   setEditCanRunSession: Dispatch<SetStateAction<boolean>>
   setEditDefaultModel: Dispatch<SetStateAction<string>>
+  setEditCardBorderTheme: Dispatch<SetStateAction<string>>
   setEditForgottenFlagMessage: Dispatch<SetStateAction<string>>
   setEditForgottenFlagIssueInit: Dispatch<SetStateAction<string>>
   setEditForgottenFlagIssueBackoff: Dispatch<SetStateAction<string>>
@@ -525,6 +528,7 @@ export function ProjectSettingsPanel({
     editCanPostIssue,
     editCanRunSession,
     editDefaultModel,
+    editCardBorderTheme,
     editForgottenFlagMessage,
     editForgottenFlagIssueInit,
     editForgottenFlagIssueBackoff,
@@ -546,6 +550,7 @@ export function ProjectSettingsPanel({
     setEditCanPostIssue,
     setEditCanRunSession,
     setEditDefaultModel,
+    setEditCardBorderTheme,
     setEditForgottenFlagMessage,
     setEditForgottenFlagIssueInit,
     setEditForgottenFlagIssueBackoff,
@@ -1107,6 +1112,14 @@ export function ProjectSettingsPanel({
           </SettingsCard>
         )}
 
+        <SettingsCard title="项目外观">
+          <ProjectCardThemePicker
+            value={editCardBorderTheme}
+            disabled={!canManageProject}
+            project={project}
+            onChange={setEditCardBorderTheme}
+          />
+        </SettingsCard>
 
         {metaErr && <div className="text-[12px] text-red-400">{metaErr}</div>}
         {/* <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
