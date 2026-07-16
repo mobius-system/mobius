@@ -2788,7 +2788,7 @@ export function NewSessionModal({
               {isPresetMode && personalityOptions.length > 0 && (
                 <div>
                   <div className="text-[12px] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>性格预设</div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">
                     {personalityOptions.map(opt => {
                       const active = personality === opt.key
                       return (
@@ -2796,15 +2796,15 @@ export function NewSessionModal({
                           key={opt.key}
                           type="button"
                           onClick={() => { setPersonality(opt.key); setErr('') }}
-                          className="min-h-16 rounded-xl text-left px-3 py-2 transition-colors"
+                          className="min-w-0 min-h-16 rounded-xl text-left whitespace-normal px-3 py-2 transition-colors"
                           style={{
                             background: active ? 'rgba(59,130,246,0.12)' : 'var(--input-bg)',
                             border: `1px solid ${active ? '#3b82f6' : 'var(--input-border)'}`,
                             color: isDark ? '#f1f5f9' : '#1e293b',
                           }}
                         >
-                          <div className="text-[13px] font-medium truncate">{opt.label}</div>
-                          <div className="mt-0.5 text-[11px] leading-snug" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.description}</div>
+                          <div className="min-w-0 truncate text-[13px] font-medium">{opt.label}</div>
+                          <div className="mt-0.5 min-w-0 whitespace-normal break-words text-[11px] leading-snug" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.description}</div>
                         </button>
                       )
                     })}
