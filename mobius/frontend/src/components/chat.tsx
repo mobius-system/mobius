@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip } from 'lucide-react'
+import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ChevronDown, ChevronRight } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -1432,6 +1432,17 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
   const [continueModalOpen, setContinueModalOpen] = useState(false)
   // 会话内 Web 终端弹窗 (issue session / research agent 共用 ChatArea, 一处入口覆盖两类会话).
   const [terminalOpen, setTerminalOpen] = useState(false)
+  // Skill / Memory 上下文快照卡片默认隐藏 (减少输入框下方操作区拥挤); 点击「上下文快照」入口展开, 偏好持久化到 localStorage.
+  const [skillMemoryExpanded, setSkillMemoryExpanded] = useState<boolean>(() => {
+    try { return localStorage.getItem('mobius.chat.skillMemoryExpanded') === '1' } catch { return false }
+  })
+  const toggleSkillMemory = useCallback(() => {
+    setSkillMemoryExpanded((prev) => {
+      const next = !prev
+      try { localStorage.setItem('mobius.chat.skillMemoryExpanded', next ? '1' : '0') } catch {}
+      return next
+    })
+  }, [])
   const [projectKnowledgeSending, setProjectKnowledgeSending] = useState(false)
   const [messageSubmitting, setMessageSubmitting] = useState(false)
   // 当前会话模型是否仍可用 (管理员删除该模型配置后 → false, 会话只读, 需"更换模型并继续").
@@ -3431,15 +3442,13 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   <Terminal className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
                   <span className="btn-label">查看运行命令</span>
                 </button>
-                {currentProjectId && (
-                  <ProjectPortEntryButton
-                    projectId={currentProjectId}
-                    subPath={currentVscodeSubPath}
-                    label="进入项目端口"
-                    className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                    onRequestRunProject={sendRunProjectPortPrompt}
-                  />
-                )}
+                <ProjectPortEntryButton
+                  projectId={currentProjectId}
+                  subPath={currentVscodeSubPath}
+                  label="进入项目端口"
+                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
+                  onRequestRunProject={sendRunProjectPortPrompt}
+                />
                 <button
                   type="button"
                   onClick={() => setKnowledgeEditorOpen(true)}
@@ -3469,9 +3478,28 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   <Replace className="h-3.5 w-3.5 flex-shrink-0 text-violet-400" strokeWidth={1.9} />
                   <span className="btn-label">修改模型并继续</span>
                 </button>
-                <SessionSkillMemoryEditor
-                  sessionId={currentSession?.session_id || sessionId}
-                />
+              </div>
+              {/* Skill / Memory 上下文快照: 默认隐藏这两张卡片, 点击「上下文快照」入口才展开查看 session 创建时定型的快照. */}
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={toggleSkillMemory}
+                  aria-expanded={skillMemoryExpanded}
+                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5 text-center text-[11.5px] leading-snug transition-colors hover:bg-[var(--bg-card-hover)]"
+                  style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}
+                >
+                  {skillMemoryExpanded
+                    ? <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.9} />
+                    : <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.9} />}
+                  <span>上下文快照 (Skill / Memory)</span>
+                </button>
+                {skillMemoryExpanded && (
+                  <div className="grid grid-cols-2 items-stretch gap-2 mt-2">
+                    <SessionSkillMemoryEditor
+                      sessionId={currentSession?.session_id || sessionId}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -588,27 +588,27 @@ function ResearchAgentCreateChoiceModal({ onClose, onSingle, onTeam }: {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
           <button onClick={onSingle}
-            className="rounded-xl border p-4 text-left transition-colors hover:border-blue-500/40 hover:bg-blue-500/5"
+            className="min-w-0 rounded-xl border p-4 text-left whitespace-normal transition-colors hover:border-blue-500/40 hover:bg-blue-500/5"
             style={optionStyle}>
             <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400">
               <Bot className="h-5 w-5" strokeWidth={1.8} />
             </div>
-            <div className="text-[14px] font-semibold">创建单个 Agent</div>
-            <div className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <div className="min-w-0 whitespace-normal break-words text-[14px] font-semibold">创建单个 Agent</div>
+            <div className="mt-1 min-w-0 whitespace-normal break-words text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               使用当前两步菜单，单独配置名称、目的、模型、Skill 和 Memory。
             </div>
           </button>
 
           <button onClick={onTeam}
-            className="rounded-xl border p-4 text-left transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/5"
+            className="min-w-0 rounded-xl border p-4 text-left whitespace-normal transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/5"
             style={optionStyle}>
             <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
               <Users className="h-5 w-5" strokeWidth={1.8} />
             </div>
-            <div className="text-[14px] font-semibold">创建 Agent 团队</div>
-            <div className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <div className="min-w-0 whitespace-normal break-words text-[14px] font-semibold">创建 Agent 团队</div>
+            <div className="mt-1 min-w-0 whitespace-normal break-words text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               默认三个 Agent，已有 Agent 会进入列表并锁定，右侧显示团队棋盘。
             </div>
           </button>

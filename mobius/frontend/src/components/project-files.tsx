@@ -704,7 +704,21 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, o
     }
   }
 
-  if (!ready) return null
+  if (!ready) {
+    return (
+      <button
+        type="button"
+        disabled
+        title={projectId ? '正在加载项目端口' : '正在加载项目信息'}
+        className={buttonClassName}
+      >
+        {projectId && loading
+          ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+          : <MonitorUp className="w-3.5 h-3.5 shrink-0" />}
+        <span className="btn-label">{buttonLabel}</span>
+      </button>
+    )
+  }
 
   return (
     <>

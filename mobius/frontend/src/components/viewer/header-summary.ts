@@ -11,6 +11,7 @@ import {
   codeFence,
   parseFunctionCallArguments,
   isNonEmptyString,
+  basename,
 } from './utils'
 import {
   extractLocalCommandParts,
@@ -156,6 +157,20 @@ function summarizeLocalCommandForHeader(parts: LocalCommandPart[]): string {
   return parts.map((p) => p.body).filter(Boolean).join(' · ') || '本地命令'
 }
 
+// patch_apply_end 的 changes 对象 -> 一行文件名列表 (move 显示 src -> dst). 无 changes 返回 null.
+function summarizePatchApplyFiles(changes: any): string | null {
+  if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return null
+  const entries = Object.entries(changes) as [string, any][]
+  if (entries.length === 0) return null
+  const names = entries.map(([filePath, change]) => {
+    if (change?.type === 'move' && typeof change?.move_path === 'string' && change.move_path) {
+      return `${basename(filePath)} -> ${basename(change.move_path)}`
+    }
+    return basename(filePath)
+  })
+  return names.join(', ')
+}
+
 export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
   const t = entry?.type
   const msg = entry?.message
@@ -176,6 +191,12 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
     if (pt === 'token_count') {
       const usage = payload?.info?.last_token_usage || payload?.info?.total_token_usage
       return clip(usage ? `${pt} · ${usage.total_tokens || 0} tokens` : pt, HEADER_SHORT_LIMIT)
+    }
+    // patch_apply_end: 摘要展示被修改的文件名 (changes 的 key), 失败时标 "失败". move 显示 src -> dst.
+    if (pt === 'patch_apply_end') {
+      const files = summarizePatchApplyFiles(payload?.changes)
+      const prefix = payload?.success === false ? 'patch_apply 失败' : 'patch_apply'
+      return clip(files ? `${prefix} · ${files}` : prefix, HEADER_SHORT_LIMIT)
     }
     return clip(pt, HEADER_SHORT_LIMIT)
   }
