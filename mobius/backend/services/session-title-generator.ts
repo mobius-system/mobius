@@ -40,7 +40,10 @@ let timer: NodeJS.Timeout | null = null;
 const recentAttempts = new Map<string, number>();
 
 function isDefaultName(name: string | null | undefined): boolean {
-  return !!name && DEFAULT_NAME_RE.test(String(name).trim());
+  const n = String(name ?? '').trim();
+  if (!n) return true;              // 空/纯空白: 未命名
+  if (/^-+$/.test(n)) return true;  // 仅连字符 ('-'/'--'): 新会话占位名(源自首条消息首行)
+  return DEFAULT_NAME_RE.test(n);   // 默认「<issue标题> YYYY-MM-DD HH:MM」
 }
 
 function claudeCodeBackend(model: string): boolean {
