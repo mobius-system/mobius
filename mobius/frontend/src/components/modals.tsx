@@ -3679,7 +3679,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
           <div>
             <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>AIMUX 连接指引</h3>
             <div className="text-[11px] mt-0.5" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
-              把外部机器 (Windows/Mac/Linux) 反向连到本 server, 即可在 mobius 里直接调度它
+              把您的计算机 (Windows/Mac/Linux) 连接到 Mobius 中枢，然后允许智能体联合您的计算机一起执行任务。
             </div>
           </div>
           <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
@@ -3688,9 +3688,9 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
         {renderSectionTitle('1. 在外部机器上安装 aimux (Python 3.10+)')}
         {renderCodeBlock('install', installCmd)}
 
-        {renderSectionTitle('2. 启动反向连接 (走 mobius /aimux_bridge 反代)')}
+        {renderSectionTitle('2. 启动连接')}
         <div className="mb-2">
-          <div className="text-[11px] mb-1" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>identifier ( mobius 以此名字显示该机器, 默认随机生成, 留空回退 {defaultIdentifier} )</div>
+          <div className="text-[11px] mb-1" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>identifier ( 给您的计算机起一个绰号，作为辨识名称。 )</div>
           <input
             value={identifier}
             onChange={e => handleIdentifierChange(e.target.value)}
@@ -3702,17 +3702,17 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="text-[11px] mb-2 space-y-1" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
           <div>
-            <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>--identifier</code> 改成你想要的名字 (字母/数字/_.-), mobius 会以这个名字显示该机器
+            <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>--identifier</code> 改成你想要的名字 (字母/数字/_.-)
           </div>
           <div>
-            <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>--token</code> 是你当前登录 mobius 的 JWT (上方已自动填入), 7 天有效
+            <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>--token</code> 是你当前登录 Mobius 的 JWT (已自动填入), 7 天有效
           </div>
         </div>
         {renderCodeBlock('connect', connectCmd)}
 
         {renderSectionTitle('3. 在 mobius 中验证')}
         <div className="text-[12px] mb-2" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
-          连接成功后, 该机器会出现在下方列表 (每 3 秒刷新), 即可在 mobius 里向它发 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>session.create</code> / <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>send-keys</code> / <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>capture</code> 等指令
+          连接成功后, 该机器会出现在下方列表 (每 3 秒刷新)
         </div>
 
         <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border-color)' }}>
@@ -3751,8 +3751,6 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
 
         <div className="mt-4 pt-3 border-t text-[11px] space-y-1" style={{ borderColor: 'var(--border-color)', color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
           <div>endpoint: <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>{baseUrl}</code> ({displayProto.toUpperCase()} · host: {browserHost} · port: {displayPort})</div>
-          <div>bridge broker 仅 bind 127.0.0.1, 外部不可达; 所有外部流量都经 mobius /aimux_bridge/* 反代</div>
-          <div>JWT 透传给反代, 由 mobius 内部换成 bridge Bearer; bridge token 不暴露给客户端</div>
         </div>
 
         <div className="flex justify-end mt-5">

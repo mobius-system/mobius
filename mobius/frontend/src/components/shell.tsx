@@ -829,11 +829,11 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               className="flex items-center gap-2 border-0 bg-transparent p-0 text-left flex-shrink-0 cursor-pointer"
             >
               {!branding.hideLogo && <MobiusLogo size={28} />}
-              {branding.systemNameEn && (
+              {/* {branding.systemNameEn && (
                 <span className="mobius-topnav-brandtext font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
                   {branding.systemNameEn}
                 </span>
-              )}
+              )} */}
             </button>
             {showRecentSessions && (
               <RecentSessionsPanel
