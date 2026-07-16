@@ -46,6 +46,7 @@ const MAX_Q = 200;
 const DEFAULT_CANDIDATES = 200;
 const MAX_CANDIDATES = 600;
 const FILE_READ_CAP = 1.5 * 1024 * 1024; // 1.5MB, 超过只读尾部
+const MAX_EXTRACTED_TEXT = 200 * 1024; // 单条消息展示文本上限；需覆盖长上下文里的命中窗口
 const MAX_FRAGMENTS_PER_SESSION = 3;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -99,8 +100,9 @@ function extractTextFromEntry(entry: any): { role: string; text: string; timesta
   } else if (entry.type === 'error' && typeof msg?.content === 'string') {
     text = msg.content;
   }
-  // 去掉 NUL, 限长, 避免巨型片段.
-  text = String(text || '').replace(/\x00/g, '').slice(0, 4000);
+  // 去掉 NUL, 保留足够长的正文用于定位命中窗口。旧版这里截到 4000 字，
+  // 会导致长上下文后半段命中但展示片段不含关键词。
+  text = String(text || '').replace(/\x00/g, '').slice(0, MAX_EXTRACTED_TEXT);
   if (!text.trim()) return null;
   return { role, text, timestamp };
 }
@@ -172,7 +174,8 @@ async function scanSession(sessionId: string, model: any, qLower: string, qlen: 
       const ext = extractTextFromEntry(entry);
       if (!ext) continue;
       const mIdx = ext.text.toLowerCase().indexOf(qLower);
-      const snippet = mIdx >= 0 ? windowAround(ext.text, mIdx, qlen) : windowAround(ext.text, 0, 0);
+      if (mIdx < 0) continue;
+      const snippet = windowAround(ext.text, mIdx, qlen);
       const key = ext.role + '|' + snippet.slice(0, 60);
       if (seen.has(key)) continue;
       seen.add(key);
