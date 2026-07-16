@@ -1,6 +1,6 @@
 // Mobius Desktop 主进程：登录 → 保证 aimux → reverse connect → loadURL 远程 web UI。
 // 详见 README。关键：退出前务必 supervisor.stop() 杀 aimux；aimux 状态经徽标+IPC 常驻可见。
-import { app, BrowserWindow, Menu, ipcMain, shell, dialog, session } from "electron";
+import { app, BrowserWindow, Menu, ipcMain, shell, dialog, session, screen } from "electron";
 import { spawn } from "node:child_process";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +23,7 @@ let supervisor: AimuxSupervisor | null = null;
 let creds: StoredCreds | null = null;
 let lastStatus: AimuxStatus = { state: "stopped" };
 let installing = false;
+let windowDragTimer: NodeJS.Timeout | null = null;
 // aimux 反向连接开关（持久化于 userData/desktop-settings.json，默认开）。
 // 关闭后本机不再作为可调度节点连入 mobius，桌面端其他功能不受影响。
 let aimuxEnabled = true;
@@ -41,6 +42,13 @@ function appendLog(line: string): void {
   logBuffer.push(line);
   if (logBuffer.length > LOG_MAX) logBuffer.splice(0, logBuffer.length - LOG_MAX);
   broadcast("aimux:log", line);
+}
+
+function stopWindowDrag(): void {
+  if (windowDragTimer) {
+    clearInterval(windowDragTimer);
+    windowDragTimer = null;
+  }
 }
 
 function serverOrigin(): string {
@@ -537,6 +545,44 @@ ipcMain.handle("window:toggle-maximize", () => {
 });
 ipcMain.handle("window:close", () => { mainWindow?.close(); return { ok: true }; });
 ipcMain.handle("window:is-maximized", () => !!mainWindow?.isMaximized());
+ipcMain.handle("window:start-drag", () => {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return { ok: false };
+  if (isMac) return { ok: true };
+  stopWindowDrag();
+
+  const startCursor = screen.getCursorScreenPoint();
+  if (win.isMaximized()) {
+    const maximizedBounds = win.getBounds();
+    const xRatio = maximizedBounds.width > 0
+      ? Math.max(0, Math.min(1, (startCursor.x - maximizedBounds.x) / maximizedBounds.width))
+      : 0.5;
+    win.unmaximize();
+    const restored = win.getBounds();
+    win.setBounds({
+      ...restored,
+      x: Math.round(startCursor.x - restored.width * xRatio),
+      y: Math.round(startCursor.y - 18),
+    });
+  }
+
+  const dragCursor = screen.getCursorScreenPoint();
+  const startBounds = win.getBounds();
+  windowDragTimer = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      stopWindowDrag();
+      return;
+    }
+    const p = screen.getCursorScreenPoint();
+    mainWindow.setBounds({
+      ...startBounds,
+      x: Math.round(startBounds.x + p.x - dragCursor.x),
+      y: Math.round(startBounds.y + p.y - dragCursor.y),
+    });
+  }, 16);
+  return { ok: true };
+});
+ipcMain.handle("window:end-drag", () => { stopWindowDrag(); return { ok: true }; });
 // ——— 项目本地路径绑定 ———
 ipcMain.handle("project:pick-directory", async () => {
   if (!mainWindow) return null;

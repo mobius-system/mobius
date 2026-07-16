@@ -14,6 +14,8 @@ const desktopApi = {
   windowToggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
   windowClose: () => ipcRenderer.invoke("window:close"),
   windowIsMaximized: () => ipcRenderer.invoke("window:is-maximized"),
+  windowStartDrag: () => ipcRenderer.invoke("window:start-drag"),
+  windowEndDrag: () => ipcRenderer.invoke("window:end-drag"),
 };
 contextBridge.exposeInMainWorld("desktop", desktopApi);
 
@@ -66,6 +68,8 @@ const mobiusDesktop = {
   windowToggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
   windowClose: () => ipcRenderer.invoke("window:close"),
   windowIsMaximized: () => ipcRenderer.invoke("window:is-maximized"),
+  windowStartDrag: () => ipcRenderer.invoke("window:start-drag"),
+  windowEndDrag: () => ipcRenderer.invoke("window:end-drag"),
   onMaximizeChange: (cb: (maximized: boolean) => void) => {
     const listener = (_e: unknown, maximized: boolean) => cb(maximized);
     ipcRenderer.on("window:maximize-changed", listener);

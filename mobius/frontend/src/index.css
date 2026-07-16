@@ -9,19 +9,22 @@
 }
 
 /* ===== 桌面端标题栏拖拽区 =====
-   仅 Electron 桌面端 (window.mobiusDesktop.isDesktop) 时生效。顶栏不再整体 drag —— 旧做法是整条顶栏
-   drag + 给按钮等打 no-drag 洞, 但 Windows/Electron 下大 drag 父区的 no-drag 洞不可靠, 会吞掉按钮点击。
-   现改为: shell 在顶栏中段插入一条独立空白 spacer 作唯一 drag 区 (无交互子元素, 不存在打洞 → 不会被吞)。
-   下方 no-drag 规则保留作安全网 (spacer 无子元素本就用不到)。Web 端不加该 class → 零影响。 */
-.mobius-desktop-drag { -webkit-app-region: drag; }
-.mobius-desktop-drag button,
-.mobius-desktop-drag a,
-.mobius-desktop-drag input,
-.mobius-desktop-drag textarea,
-.mobius-desktop-drag select,
-.mobius-desktop-drag [role="button"],
-.mobius-desktop-drag .mobius-topnav-actions,
-.mobius-desktop-drag .no-drag { -webkit-app-region: no-drag; }
+   Windows/Linux Electron 不再使用 -webkit-app-region: drag; 标题栏空白区通过 IPC 手动拖窗。
+   app-region 会进入原生命中测试, 容易和浮动层/可拖控件抢事件。这里保留 no-drag 保险,
+   防止未来误加 app-region 时交互元素被吞。 */
+.mobius-desktop-drag { -webkit-app-region: no-drag; }
+.no-drag,
+button,
+a,
+input,
+textarea,
+select,
+label,
+[role="button"],
+[role="menuitem"],
+[contenteditable="true"],
+.assistant-fab,
+.assistant-panel { -webkit-app-region: no-drag; }
 
 /* ===== 主题变量 ===== */
 :root {

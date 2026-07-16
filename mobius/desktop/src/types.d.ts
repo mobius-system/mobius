@@ -57,6 +57,8 @@ export interface MobiusDesktopBridge {
   onAimuxLog: (cb: (line: string) => void) => () => void;
   updateAimux: () => Promise<{ ok: boolean; version?: string; error?: string }>;
   syncReload: () => Promise<void>;
+  windowStartDrag: () => Promise<{ ok?: boolean }>;
+  windowEndDrag: () => Promise<{ ok?: boolean }>;
   openStatusPanel: () => Promise<void>;
   openDevTools: () => Promise<void>;
   pickDirectory: () => Promise<string | null>;

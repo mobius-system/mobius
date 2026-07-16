@@ -3,8 +3,8 @@
 // 而 titleBarOverlay 的原生按钮符号在本环境 (未签名 exe + 高 DPI) 不渲染 (只剩背景色块), 故前端自绘。
 // macOS 用系统交通灯 (titleBarStyle:hiddenInset), 此组件由 shell 的 IS_MAC_PLATFORM 判断不挂载。
 // 主题自适应: 图标色 var(--text-primary), hover 用 var(--bg-hover), 关闭键 hover 红 (#e81123)。
-import { useEffect, useState } from 'react'
-import type { CSSProperties, MouseEvent } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 
 type Bridge = {
   isDesktop?: boolean
@@ -13,11 +13,51 @@ type Bridge = {
   windowToggleMaximize?: () => Promise<{ maximized?: boolean } | unknown>
   windowClose?: () => Promise<unknown>
   windowIsMaximized?: () => Promise<boolean>
+  windowStartDrag?: () => Promise<unknown>
+  windowEndDrag?: () => Promise<unknown>
   onMaximizeChange?: (cb: (m: boolean) => void) => (() => void) | undefined
 }
 
 function getBridge(): Bridge | undefined {
   return typeof window !== 'undefined' ? (window as { mobiusDesktop?: Bridge }).mobiusDesktop : undefined
+}
+
+function isMacPlatform() {
+  return typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+}
+
+export function DesktopDragHandle({ className = '', 'aria-hidden': ariaHidden }: { className?: string; 'aria-hidden'?: boolean }) {
+  const md = getBridge()
+  const enabled = !!md?.isDesktop && !isMacPlatform() && typeof md.windowStartDrag === 'function'
+
+  const endDrag = useCallback(() => {
+    md?.windowEndDrag?.().catch(() => {})
+  }, [md])
+
+  const startDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!enabled) return
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.preventDefault()
+    md?.windowStartDrag?.().catch(() => {})
+    window.addEventListener('pointerup', endDrag, { once: true })
+    window.addEventListener('blur', endDrag, { once: true })
+  }, [enabled, endDrag, md])
+
+  const toggleMaximize = useCallback(() => {
+    if (!enabled) return
+    md?.windowToggleMaximize?.().catch(() => {})
+  }, [enabled, md])
+
+  return (
+    <div
+      className={className}
+      aria-hidden={ariaHidden}
+      onPointerDown={startDrag}
+      onPointerCancel={endDrag}
+      onDoubleClick={toggleMaximize}
+      style={enabled ? { cursor: 'grab', userSelect: 'none' } : undefined}
+    />
+  )
 }
 
 // thickMinimize (默认 false = 主界面原样 1.1px 细线): 仅 /welcome 的 DesktopTitleBar 传 true,
@@ -100,12 +140,12 @@ export function WindowControls({ thickMinimize = false }: { thickMinimize?: bool
 export function DesktopTitleBar() {
   const md = getBridge()
   const isDesktop = !!md?.isDesktop
-  const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+  const isMac = isMacPlatform()
   if (!isDesktop || isMac) return null
   return (
-    <div className="fixed left-0 right-0 top-0 z-50 flex h-12 items-stretch px-5">
+    <div className="pointer-events-none fixed left-0 right-0 top-0 z-50 flex h-12 items-stretch px-5">
       {/* 唯一拖拽区: 独立空白 spacer, 无交互子元素 → drag 区不会吞按钮点击 (与 shell TopNav 同策略) */}
-      <div className="mobius-desktop-drag flex-1 self-stretch" aria-hidden="true" />
+      <DesktopDragHandle className="pointer-events-auto flex-1 self-stretch" aria-hidden />
       <WindowControls thickMinimize />
     </div>
   )

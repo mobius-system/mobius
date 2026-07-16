@@ -11,8 +11,23 @@ interface DesktopApi {
   login: (c: { server: string; username: string; password: string }) => Promise<{ ok: boolean; error?: string }>;
   getLastServer: () => Promise<string>;
   setTitleBarOverlay?: (o: { color?: string; symbolColor?: string }) => Promise<unknown>;
+  windowStartDrag?: () => Promise<unknown>;
+  windowEndDrag?: () => Promise<unknown>;
 }
 const desktop = (window as unknown as { desktop: DesktopApi }).desktop;
+
+const endWindowDrag = () => {
+  desktop?.windowEndDrag?.().catch(() => {});
+};
+document.querySelector(".login")?.addEventListener("pointerdown", (event) => {
+  const e = event as PointerEvent;
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  if ((e.target as HTMLElement | null)?.closest(".login-panel")) return;
+  e.preventDefault();
+  desktop?.windowStartDrag?.().catch(() => {});
+  window.addEventListener("pointerup", endWindowDrag, { once: true });
+  window.addEventListener("blur", endWindowDrag, { once: true });
+});
 
 // 预填上次服务器地址
 desktop

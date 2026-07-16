@@ -11,7 +11,6 @@ body { margin: 0; background: #f5f5f7; }
   align-items: center;
   justify-content: center;
   padding: 24px;
-  -webkit-app-region: drag; /* 桌面端: hidden 标题栏后, 登录页空白区可拖动窗口; 卡片内交互见下 no-drag */
 }
 .login-panel,
 .login-panel * { -webkit-app-region: no-drag; }

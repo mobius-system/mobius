@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useStore, api } from '../store'
 import { ChangePasswordModal, AimuxGuideModal, DesktopDownloadModal, MobileDownloadModal } from './modals'
 import { GlobalCreateMenu, GlobalCreateRoot, type CreateKind } from './global-create'
@@ -10,11 +10,11 @@ import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, CircleQuestionMark, Menu, Moon, Palette, Plus, Search, Sliders, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, History, Menu, MessageSquare, Moon, Palette, Plus, Search, Sliders, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { useIsMobile } from './resizable-panel'
-import { WindowControls } from './window-controls'
+import { DesktopDragHandle, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
@@ -153,6 +153,21 @@ type HealthInfo = {
   started_at_ms?: number
   uptime_ms?: number
   sampledAtMs?: number
+}
+
+type RecentSession = {
+  session_id: string
+  name?: string
+  project_id?: string | null
+  project_name?: string | null
+  issue_id?: string | null
+  issue_title?: string | null
+  research_id?: string | null
+  research_title?: string | null
+  scope_type?: 'issue' | 'research'
+  agent_status?: string
+  message_count?: number
+  last_active?: string
 }
 
 function compactUptime(ms: number | null | undefined) {
@@ -414,6 +429,131 @@ function NavSwitcherPanel({
   )
 }
 
+function recentSessionPath(userId: string | undefined, session: RecentSession) {
+  if (!userId || !session.session_id || !session.project_id) return ''
+  const base = `/u/${encodeURIComponent(userId)}/p/${encodeURIComponent(session.project_id)}`
+  const qs = `?session=${encodeURIComponent(session.session_id)}`
+  if (session.scope_type === 'research' && session.research_id) {
+    return `${base}/r/${encodeURIComponent(session.research_id)}${qs}`
+  }
+  if (session.issue_id) {
+    return `${base}/i/${encodeURIComponent(session.issue_id)}${qs}`
+  }
+  return ''
+}
+
+function RecentSessionsPanel({
+  open,
+  userId,
+  activeSessionId,
+  onPick,
+}: {
+  open: boolean
+  userId?: string
+  activeSessionId?: string
+  onPick: () => void
+}) {
+  const [sessions, setSessions] = useState<RecentSession[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setLoading(true)
+    setError('')
+    api('/api/tasks')
+      .then((arr: any) => {
+        if (cancelled) return
+        const list = (Array.isArray(arr) ? arr : [])
+          .filter((s: any) => s?.session_id && s?.status !== 'archived')
+          .sort((a: any, b: any) => new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime())
+          .slice(0, 12)
+        setSessions(list)
+      })
+      .catch((e: any) => {
+        if (cancelled) return
+        setError(e?.message || '最近会话加载失败')
+        setSessions([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [open])
+
+  if (!open) return null
+
+  return (
+    <div
+      className="absolute left-0 top-10 z-50 flex max-h-[min(68vh,520px)] w-[360px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-lg p-1.5 shadow-xl"
+      style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
+      onClick={event => event.stopPropagation()}
+    >
+      <div className="flex items-center gap-2 px-2.5 py-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
+        <History className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />
+        <span className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>近期活跃会话</span>
+      </div>
+      <div className="overflow-y-auto py-1">
+        {loading ? (
+          <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+        ) : error ? (
+          <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>{error}</div>
+        ) : sessions.length === 0 ? (
+          <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无近期会话</div>
+        ) : (
+          sessions.map(session => {
+            const to = recentSessionPath(userId, session)
+            const active = session.session_id === activeSessionId
+            const isResearch = session.scope_type === 'research'
+            const subject = isResearch
+              ? (session.research_title || session.research_id || 'Research')
+              : (session.issue_title || session.issue_id || 'Issue')
+            const project = session.project_name || session.project_id || '项目'
+            const statusColor = session.agent_status === 'running'
+              ? '#f59e0b'
+              : (active ? 'var(--accent-primary)' : 'var(--text-muted)')
+
+            return (
+              <LinklessRouteButton
+                key={session.session_id}
+                to={to}
+                onClick={onPick}
+                title={session.name || session.session_id}
+                className={`flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors ${to ? 'hover:bg-[var(--bg-hover)]' : 'cursor-default opacity-60'}`}
+                style={{ background: active ? 'var(--bg-active)' : undefined }}
+              >
+                <span className="mt-1 inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md" style={{ background: isResearch ? 'rgba(168,85,247,0.14)' : 'rgba(59,130,246,0.14)', color: isResearch ? '#c084fc' : '#60a5fa' }}>
+                  {isResearch ? <FlaskConical className="h-3 w-3" /> : <CircleDot className="h-3 w-3" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-[12px] font-medium leading-5" style={{ color: 'var(--text-primary)' }}>
+                      {session.name || session.session_id}
+                    </span>
+                    <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: statusColor }} />
+                  </span>
+                  <span className="block truncate text-[10px] leading-4" style={{ color: 'var(--text-secondary)' }}>
+                    {project} / {subject}
+                  </span>
+                  <span className="mt-0.5 flex items-center gap-2 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                    <span>{timeAgoPrecise(session.last_active || '')}</span>
+                    <span className="inline-flex items-center gap-1">
+                      <MessageSquare className="h-3 w-3" />
+                      {session.message_count || 0}
+                    </span>
+                  </span>
+                </span>
+                {active && <Check className="mt-1 h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />}
+              </LinklessRouteButton>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+}
+
 // =====================================================================
 // 顶部导航 — 所有页面共享
 // 包含：Mobius logo、面包屑（user/project/issue）、搜索、主题切换、用户菜单
@@ -444,12 +584,14 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const isMobile = useIsMobile()
   const params = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const [showChangePw, setShowChangePw] = useState(false)
   const [showAimuxGuide, setShowAimuxGuide] = useState(false)
   const [showDesktopDownload, setShowDesktopDownload] = useState(false)
   const [showMobileDownload, setShowMobileDownload] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showThemeMenu, setShowThemeMenu] = useState(false)
+  const [showRecentSessions, setShowRecentSessions] = useState(false)
   const [showGuideHelp, setShowGuideHelp] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
   // 调色盘里的主题列表与当前激活 id — 在下拉菜单和顶栏按钮里都用到.
@@ -516,6 +658,13 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
     return () => document.removeEventListener('click', close)
   }, [showThemeMenu])
 
+  useEffect(() => {
+    if (!showRecentSessions) return
+    const close = () => setShowRecentSessions(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [showRecentSessions])
+
   // 新建下拉: 点击外部关闭 (与主题/用户菜单同款机制).
   useEffect(() => {
     if (!showNewMenu) return
@@ -528,6 +677,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const projectParam = params.project
   const issueParam = params.issue
   const researchParam = params.research
+  const activeSessionId = new URLSearchParams(location.search).get('session') || undefined
 
   const projectName = currentProject?.name || projectParam
   const issueTitle = currentIssue?.title || issueParam
@@ -660,14 +810,40 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         )}
         {/* Logo + 面包屑 */}
         <div className="mobius-topnav-crumb flex items-center gap-3 min-w-0 flex-shrink-0">
-          <LinklessRouteButton to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0" newTab>
-            {!branding.hideLogo && <MobiusLogo size={28} />}
-            {branding.systemNameEn && (
-              <span className="mobius-topnav-brandtext font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
-                {branding.systemNameEn}
-              </span>
+          <div className="relative flex-shrink-0">
+            <button
+              type="button"
+              data-tour="top-nav-brand"
+              aria-label="打开近期活跃会话"
+              aria-haspopup="menu"
+              aria-expanded={showRecentSessions}
+              title="近期活跃会话"
+              onClick={(event) => {
+                event.stopPropagation()
+                setShowThemeMenu(false)
+                setShowUserMenu(false)
+                setShowNewMenu(false)
+                closeSwitcher()
+                setShowRecentSessions(v => !v)
+              }}
+              className="flex items-center gap-2 border-0 bg-transparent p-0 text-left flex-shrink-0 cursor-pointer"
+            >
+              {!branding.hideLogo && <MobiusLogo size={28} />}
+              {branding.systemNameEn && (
+                <span className="mobius-topnav-brandtext font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                  {branding.systemNameEn}
+                </span>
+              )}
+            </button>
+            {showRecentSessions && (
+              <RecentSessionsPanel
+                open={showRecentSessions}
+                userId={user?.id}
+                activeSessionId={activeSessionId}
+                onPick={() => setShowRecentSessions(false)}
+              />
             )}
-          </LinklessRouteButton>
+          </div>
           <span className="mobius-topnav-sep-pre text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
           <LinklessRouteButton to={`/u/${userParam}`} className="mobius-topnav-userlink text-[13px] hover:text-blue-400 truncate flex-shrink-0"
             style={{ color: 'var(--text-secondary)', maxWidth: 140 }}>
@@ -767,9 +943,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           )}
         </div>
 
-        {/* 桌面端唯一拖拽区: 独立空白 spacer, 无交互子元素 → drag 区不会吞按钮点击; web 端不加 class 零影响。
-            self-stretch 必需: 顶栏 items-center 下空 div 高度会塌成 0 → drag 区无面积拖不动; stretch 撑满 48px 顶栏高。 */}
-        <div className={`flex-1 self-stretch${IS_DESKTOP ? ' mobius-desktop-drag' : ''}`} aria-hidden="true" />
+        {/* 桌面端唯一拖拽区: 独立空白 spacer, 通过 IPC 手动拖窗; 不再使用 -webkit-app-region: drag。 */}
+        <DesktopDragHandle className="flex-1 self-stretch" aria-hidden />
 
         {/* 右侧操作 */}
         <div className="mobius-topnav-actions flex min-w-0 flex-shrink items-center gap-1.5 xl:gap-2">
