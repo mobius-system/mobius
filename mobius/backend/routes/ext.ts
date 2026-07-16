@@ -489,6 +489,10 @@ function desktopHostBarInjection(title: string): string {
     font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
     user-select: none !important;
   }
+  body.mobius-desktop-hostbar-active {
+    padding-top: 48px !important;
+    box-sizing: border-box !important;
+  }
   .mobius-desktop-hostbar--mac {
     padding-left: 78px !important;
   }
@@ -629,6 +633,7 @@ function desktopHostBarInjection(title: string): string {
     const titleEl = bar.querySelector('.mobius-desktop-hostbar__title');
     if (titleEl) titleEl.textContent = TITLE || document.title || 'Mobius';
     document.body.prepend(bar);
+    document.body.classList.add('mobius-desktop-hostbar-active');
 
     const goBack = () => {
       const before = location.href;
