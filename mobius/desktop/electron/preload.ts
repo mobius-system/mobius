@@ -77,5 +77,24 @@ const mobiusDesktop = {
   },
   logout: () => ipcRenderer.invoke("auth:logout"),
   clearCache: () => ipcRenderer.invoke("app:clear-cache"),
+  // 多 tab 管理 (实验版 0.0.12)：每个 tab = 一个独立 webContents (WebContentsView)。
+  // 壳侧 TabManager 维护 tab 列表，前端 tab 栏经这些 API 订阅状态、发切换/新建/关闭/排序指令。
+  newTab: (opts?: { url?: string }) => ipcRenderer.invoke("tabs:new", opts),
+  closeTab: (id: string) => ipcRenderer.invoke("tabs:close", id),
+  switchTab: (id: string) => ipcRenderer.invoke("tabs:switch", id),
+  reorderTabs: (ids: string[]) => ipcRenderer.invoke("tabs:reorder", ids),
+  getTabs: () =>
+    ipcRenderer.invoke("tabs:get") as Promise<Array<{ id: string; url: string; title?: string }>>,
+  getActiveTabId: () => ipcRenderer.invoke("tabs:get-active") as Promise<string | null>,
+  onTabsChanged: (
+    cb: (tabs: Array<{ id: string; url: string; title?: string }>, activeId: string | null) => void,
+  ) => {
+    const listener = (
+      _e: unknown,
+      payload: { tabs: Array<{ id: string; url: string; title?: string }>; activeId: string | null },
+    ) => cb(payload.tabs, payload.activeId);
+    ipcRenderer.on("tabs:changed", listener);
+    return () => ipcRenderer.removeListener("tabs:changed", listener);
+  },
 };
 contextBridge.exposeInMainWorld("mobiusDesktop", mobiusDesktop);

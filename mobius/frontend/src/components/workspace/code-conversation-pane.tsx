@@ -1,11 +1,5 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, Link, FolderTree } from 'lucide-react'
-import CodeMirror from '@uiw/react-codemirror'
-import { EditorView, keymap } from '@codemirror/view'
-import { indentWithTab } from '@codemirror/commands'
-import type { Extension } from '@codemirror/state'
-import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
-import { syntaxHighlighting } from '@codemirror/language'
 import { api } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
@@ -24,6 +18,9 @@ import {
   migrateExpandedPaths,
 } from './file-tree-ops'
 import { copyTextToClipboard } from '../../utils/clipboard'
+import type { CodeSkinKey } from './code-mirror-editor'
+
+const LazyCodeMirrorEditor = lazy(() => import('./code-mirror-editor').then(module => ({ default: module.CodeMirrorEditor })))
 
 // =====================================================================
 // CodeConversationPane - 代码对话模式 v2 的主体 (左文件浏览器 + 中代码编辑器).
@@ -92,7 +89,6 @@ type FileContent = {
   binary: boolean
 }
 
-type CodeSkinKey = 'dark' | 'light'
 // 中栏 (含头部工具栏) 的两套固定配色 — 与对应 CodeMirror 主题背景严格匹配, 独立于全局主题.
 // dark 取 oneDark 背景的前景色族; light 取白底深字. 这样头部工具栏与编辑区视觉一体.
 const main_text_color_dark = '#c9c9c9'
@@ -106,66 +102,6 @@ function loadCodeSkin(): CodeSkinKey {
     const v = localStorage.getItem(CODE_SKIN_STORAGE_KEY)
     return v === 'light' ? 'light' : 'dark'
   } catch { return 'dark' }
-}
-
-// light 模式的编辑器主题: 背景与 cc.bg(#ffffff) 严格匹配, 语法高亮由 basicSetup 的
-// defaultHighlightStyle (深色 token, 为白底设计) 提供. 与 oneDark (dark 模式) 对称.
-const lightEditorTheme = EditorView.theme({
-  '&': { backgroundColor: '#ffffff', color: '#2c2c2c', height: '100%' },
-  '.cm-gutters': { backgroundColor: '#ffffff', color: '#9a9a9a', border: 'none', borderRight: '1px solid #e6e6e6' },
-  '.cm-activeLine': { backgroundColor: 'rgba(0,0,0,0.04)' },
-  '.cm-activeLineGutter': { backgroundColor: '#ffffff', color: '#2c2c2c' },
-  '.cm-selectionBackground': { backgroundColor: 'rgba(37,99,235,0.2)' },
-  '&.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(37,99,235,0.2)' },
-  '&.cm-focused': { outline: 'none' },
-  '.cm-foldPlaceholder': { backgroundColor: '#f0f0f0', border: '1px solid #e6e6e6', color: '#9a9a9a' },
-})
-
-// dark 模式的背景/前景覆盖层: oneDark 提供语法 token 配色 (深色背景专用, 好看),
-// 本覆盖层把编辑器/gutter 的背景与默认前景改成用户指定值 (#121419 / #9ea1ff / #7d8799),
-// token 高亮仍由 oneDark 提供. 必须放在 oneDark 之后 (extensions 末尾) 才能覆盖.
-
-const darkSkinOverride = EditorView.theme({
-  '&': { backgroundColor: '#121419', color: main_text_color_dark },
-  '.cm-gutters': { backgroundColor: '#121419', color: '#7d8799', border: 'none' },
-  '.cm-activeLine': { backgroundColor: '#ffffff08' },
-  '.cm-activeLineGutter': { backgroundColor: '#121419', color: main_text_color_dark },
-  '.cm-content': { caretColor: main_text_color_dark },
-  '.cm-cursor, .cm-dropCursor': { borderLeftColor: main_text_color_dark },
-  '.cm-selectionBackground': { backgroundColor: '#3a3d5a' },
-  '&.cm-focused .cm-selectionBackground': { backgroundColor: '#3a3d5a' },
-  '.cm-foldPlaceholder': { backgroundColor: '#1a1c22', border: '1px solid #2a2d3e', color: '#7d8799' },
-  '.cm-panels': { backgroundColor: '#121419', color: main_text_color_dark },
-  '.cm-tooltip': { backgroundColor: '#1f222a', color: main_text_color_dark },
-}, { dark: true })
-
-// 按扩展名映射到语言加载键. 命中即按需动态导入对应 CodeMirror 语言包 (含 @lezer 文法),
-// 未命中走纯文本. 语言包体积大 (尤其 @lezer/javascript / markdown), 若静态全量打入会让
-// code-conversation chunk 超 600kB; 改为打开某类型文件时才加载该语言, 各语言独立成小 chunk.
-function langKeyForFile(name: string): string | null {
-  const ext = name.split('.').pop()?.toLowerCase() || ''
-  if (['js', 'jsx', 'mjs', 'cjs'].includes(ext)) return 'js'
-  if (['ts', 'tsx'].includes(ext)) return 'ts'
-  if (ext === 'py') return 'py'
-  if (['md', 'markdown'].includes(ext)) return 'md'
-  if (ext === 'json') return 'json'
-  if (['css', 'scss', 'less'].includes(ext)) return 'css'
-  if (['html', 'htm', 'xml', 'svg'].includes(ext)) return 'html'
-  if (ext === 'sql') return 'sql'
-  return null
-}
-
-// 各语言的动态加载器: import() 让 Rollup 把每个语言包 (+ 其 @lezer 文法) 切成独立 lazy chunk,
-// 只有真正打开该类型文件时才下载. js/ts 共享 @codemirror/lang-javascript (同 chunk).
-const LANG_LOADERS: Record<string, () => Promise<Extension>> = {
-  js: () => import('@codemirror/lang-javascript').then(m => m.javascript({ jsx: true })),
-  ts: () => import('@codemirror/lang-javascript').then(m => m.javascript({ jsx: true, typescript: true })),
-  py: () => import('@codemirror/lang-python').then(m => m.python()),
-  md: () => import('@codemirror/lang-markdown').then(m => m.markdown()),
-  json: () => import('@codemirror/lang-json').then(m => m.json()),
-  css: () => import('@codemirror/lang-css').then(m => m.css()),
-  html: () => import('@codemirror/lang-html').then(m => m.html()),
-  sql: () => import('@codemirror/lang-sql').then(m => m.sql()),
 }
 
 export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: CodeConversationPaneProps) {
@@ -185,11 +121,6 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     })
   }, [])
   const cc = CODE_SKINS[skin]
-  // dark: theme='none' (不注入 @uiw 默认主题), 改由 extensions 里的 [oneDark, darkSkinOverride] 组合 —
-  //       oneDark 出 token 高亮, darkSkinOverride 在其后覆盖背景/前景为用户指定 #121419/#9ea1ff.
-  // light: theme=lightEditorTheme (背景 #fff).
-  const cmTheme: 'none' | typeof lightEditorTheme = skin === 'dark' ? 'none' : lightEditorTheme
-
   // ----- 文件树状态 (复用 ProjectFilesCard 的 loadDir/toggleDir 逻辑) -----
   const [dirs, setDirs] = useState<Record<string, DirState>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
@@ -623,32 +554,6 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const filesDefaultWidth = Math.max(180, Math.min(320, Math.floor(vw * 0.18)))
   const activeRootPath = source === 'local' ? localBindPath : bindPath
 
-  // 当前文件的语言扩展 (按需动态加载). 加载完成前为 null (纯文本无高亮), 到货后自动应用.
-  // 切换文件时 cleanup 置 cancelled, 避免旧文件的迟到加载覆盖新选择.
-  const [langExt, setLangExt] = useState<Extension | null>(null)
-  useEffect(() => {
-    const key = selected ? langKeyForFile(selected.name) : null
-    if (!key) { setLangExt(null); return }
-    let cancelled = false
-    LANG_LOADERS[key]()
-      .then(ext => { if (!cancelled) setLangExt(ext) })
-      .catch(() => { if (!cancelled) setLangExt(null) })
-    return () => { cancelled = true }
-  }, [selected])
-
-  // extensions: basicSetup 默认提供行号/高亮/撤销/括号/折叠/搜索/补全等; 这里补 indentWithTab + 换行 + 语言包.
-  // dark 模式额外追加 oneDark(token 高亮) + darkSkinOverride(覆盖背景/前景为 #121419/#9ea1ff, 必须在 oneDark 后).
-  const extensions = useMemo(() => {
-    const base = [
-      keymap.of([indentWithTab]),
-      EditorView.lineWrapping,
-      ...(langExt ? [langExt] : []),
-    ]
-    // dark: darkSkinOverride 独占背景/前景/gutter (#121419/#9ea1ff/#7d8799), 不用 oneDark 主题
-    // (它自带 #282c34 背景会竞争覆盖); token 高亮用 oneDarkHighlightStyle (syntaxHighlighting 包一层).
-    return skin === 'dark' ? [...base, darkSkinOverride, syntaxHighlighting(oneDarkHighlightStyle)] : base
-  }, [langExt, skin])
-
   return (
     <div className="contents">
       {/* ===== 左: 文件浏览器 ===== */}
@@ -849,14 +754,21 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
               <div className="text-[11px]">如需编辑请在 VSCode 中打开</div>
             </div>
           ) : fileData ? (
-            <CodeMirror
-              value={doc}
-              onChange={onChange}
-              theme={cmTheme}
-              extensions={extensions}
-              height="100%"
-              style={{ height: '100%', fontSize: '12.5px' }}
-            />
+            <Suspense
+              fallback={(
+                <div className="flex h-full flex-col items-center justify-center gap-2" style={{ color: cc.muted }}>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <div className="text-[12px]">代码编辑器按需加载中…</div>
+                </div>
+              )}
+            >
+              <LazyCodeMirrorEditor
+                fileName={selected?.name || ''}
+                value={doc}
+                skin={skin}
+                onChange={onChange}
+              />
+            </Suspense>
           ) : null}
         </div>
       </div>
