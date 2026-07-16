@@ -24,6 +24,7 @@ document.querySelector(".login")?.addEventListener("pointerdown", (event) => {
   if (e.pointerType === "mouse" && e.button !== 0) return;
   if ((e.target as HTMLElement | null)?.closest(".login-panel")) return;
   e.preventDefault();
+  try { (e.currentTarget as HTMLElement | null)?.setPointerCapture(e.pointerId); } catch { /* ignore */ }
   desktop?.windowStartDrag?.().catch(() => {});
   window.addEventListener("pointerup", endWindowDrag, { once: true });
   window.addEventListener("blur", endWindowDrag, { once: true });

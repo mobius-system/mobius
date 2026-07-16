@@ -559,26 +559,29 @@ ipcMain.handle("window:start-drag", () => {
       : 0.5;
     win.unmaximize();
     const restored = win.getBounds();
-    win.setBounds({
-      ...restored,
-      x: Math.round(startCursor.x - restored.width * xRatio),
-      y: Math.round(startCursor.y - 18),
-    });
+    win.setPosition(
+      Math.round(startCursor.x - restored.width * xRatio),
+      Math.round(startCursor.y - 18),
+      false,
+    );
   }
 
   const dragCursor = screen.getCursorScreenPoint();
   const startBounds = win.getBounds();
+  let lastX = startBounds.x;
+  let lastY = startBounds.y;
   windowDragTimer = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       stopWindowDrag();
       return;
     }
     const p = screen.getCursorScreenPoint();
-    mainWindow.setBounds({
-      ...startBounds,
-      x: Math.round(startBounds.x + p.x - dragCursor.x),
-      y: Math.round(startBounds.y + p.y - dragCursor.y),
-    });
+    const x = Math.round(startBounds.x + p.x - dragCursor.x);
+    const y = Math.round(startBounds.y + p.y - dragCursor.y);
+    if (x === lastX && y === lastY) return;
+    lastX = x;
+    lastY = y;
+    mainWindow.setPosition(x, y, false);
   }, 16);
   return { ok: true };
 });

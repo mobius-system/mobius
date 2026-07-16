@@ -38,6 +38,7 @@ export function DesktopDragHandle({ className = '', 'aria-hidden': ariaHidden }:
     if (!enabled) return
     if (event.pointerType === 'mouse' && event.button !== 0) return
     event.preventDefault()
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* ignore */ }
     md?.windowStartDrag?.().catch(() => {})
     window.addEventListener('pointerup', endDrag, { once: true })
     window.addEventListener('blur', endDrag, { once: true })
@@ -53,6 +54,7 @@ export function DesktopDragHandle({ className = '', 'aria-hidden': ariaHidden }:
       className={className}
       aria-hidden={ariaHidden}
       onPointerDown={startDrag}
+      onPointerUp={endDrag}
       onPointerCancel={endDrag}
       onDoubleClick={toggleMaximize}
       style={enabled ? { cursor: 'grab', userSelect: 'none' } : undefined}
