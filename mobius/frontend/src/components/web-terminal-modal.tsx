@@ -11,8 +11,9 @@ import '@xterm/xterm/css/xterm.css'
 import { useStore } from '../store'
 
 type Status = 'connecting' | 'connected' | 'closed' | 'error'
+export type WebTerminalMode = 'cwd' | 'agent'
 
-export function WebTerminalModal({ sessionId, onClose }: { sessionId: string | undefined; onClose: () => void }) {
+export function WebTerminalModal({ sessionId, mode = 'cwd', onClose }: { sessionId: string | undefined; mode?: WebTerminalMode; onClose: () => void }) {
   const { theme, token } = useStore()
   const isDark = theme !== 'light'
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -44,7 +45,7 @@ export function WebTerminalModal({ sessionId, onClose }: { sessionId: string | u
     term.focus()
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = `${proto}//${location.host}/api/terminal/ws?sid=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}`
+    const url = `${proto}//${location.host}/api/terminal/ws?sid=${encodeURIComponent(sessionId)}&mode=${encodeURIComponent(mode)}&token=${encodeURIComponent(token)}`
     let ws: WebSocket
     try {
       ws = new WebSocket(url)
@@ -110,7 +111,9 @@ export function WebTerminalModal({ sessionId, onClose }: { sessionId: string | u
         {/* 头部 */}
         <div className="flex items-center gap-2 border-b px-4 py-2.5" style={{ borderColor: 'var(--border-color)' }}>
           <Terminal className="h-4 w-4 flex-shrink-0" strokeWidth={1.75} style={{ color: 'var(--text-secondary)' }} />
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Web 终端</span>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {mode === 'agent' ? 'Agent 后台终端' : 'Web 终端'}
+          </span>
           {sessionId && (
             <span className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
               sid: {sessionId.slice(0, 8)}
