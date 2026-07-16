@@ -113,7 +113,7 @@ function dynamicEntryFor(modelOrKey: any): any {
     model: m.session_model,
     label: m.label,
     title: m.label,
-    sub: 'Claude Code · 自定义',
+    sub: 'Claude Code',
     backend: 'tmux-claude-code',
     imported: true,
     useProxy,
@@ -140,7 +140,7 @@ function dynamicCodexEntryFor(modelOrKey: any): any {
     model: m.channel || m.key,     // 传给 --profile
     label: m.label,
     title: m.label,
-    sub: useProxy ? 'Codex · 代理' : 'Codex · 自定义',
+    sub: 'Codex',
     backend: 'tmux-codex',
     imported: true,
     useProxy,

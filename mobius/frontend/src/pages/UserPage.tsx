@@ -624,7 +624,7 @@ export default function UserPage() {
               </div>
               {projectPagination.totalPages > 1 ? (
                 <div className="mt-3">
-                  <PaginationControls {...projectPaginationProps} />
+                  <PaginationControls {...projectPaginationProps} inlinePageSwitch />
                 </div>
               ) : (
                 <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>共 {visibleProjectCount} 个项目</p>

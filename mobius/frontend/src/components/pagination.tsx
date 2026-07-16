@@ -55,6 +55,8 @@ type PaginationControlsProps = {
   onPageChange: (page: number) => void
   /** sidebar 窄列用 compact; 主区宽列用常规 (多一行 "第 X/Y 页"). */
   compact?: boolean
+  /** 主区头部可用: 将上一页/下一页作为文字按钮内联到页码信息后. */
+  inlinePageSwitch?: boolean
 }
 
 export function PaginationControls({
@@ -65,6 +67,7 @@ export function PaginationControls({
   totalItems,
   onPageChange,
   compact = false,
+  inlinePageSwitch = false,
 }: PaginationControlsProps) {
   if (totalItems === 0 || totalPages <= 1) return null
   const goTo = (n: number) => onPageChange(Math.min(Math.max(n, 1), totalPages))
@@ -90,6 +93,36 @@ export function PaginationControls({
           disabled={page >= totalPages}
           className="h-8 sm:h-7 px-2 rounded-md border text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
           style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+        >
+          下一页
+        </button>
+      </div>
+    )
+  }
+
+  if (inlinePageSwitch) {
+    const inlineButtonClass = 'align-baseline text-[11px] transition-colors hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[var(--text-muted)]'
+
+    return (
+      <div className="flex items-center gap-1.5 text-[11px] tabular-nums flex-wrap" style={{ color: 'var(--text-muted)' }}>
+        <span>显示 {pageStart}-{pageEnd} / {totalItems} 个</span>
+        <span>·</span>
+        <span>第 {page} / {totalPages} 页</span>
+        <span>·</span>
+        <button
+          type="button"
+          onClick={() => goTo(page - 1)}
+          disabled={page <= 1}
+          className={inlineButtonClass}
+        >
+          上一页
+        </button>
+        <span>·</span>
+        <button
+          type="button"
+          onClick={() => goTo(page + 1)}
+          disabled={page >= totalPages}
+          className={inlineButtonClass}
         >
           下一页
         </button>
