@@ -92,7 +92,7 @@ function AnnouncePcButtonInner({
   }
 
   const base =
-    'announce-pc-button h-7 px-2.5 text-[11px] rounded-xl transition-all hidden md:inline-flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer select-none'
+    'announce-pc-button px-2 py-0.5 text-[11px] rounded-full transition-all hidden md:inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer select-none'
   const tone = clicked
     ? 'border border-gray-500/25 text-gray-400 hover:bg-gray-500/10'
     : 'border border-green-500/30 text-green-300 hover:bg-green-500/15 hover:text-green-100'
@@ -114,7 +114,7 @@ function AnnouncePcButtonInner({
           <span className="announce-pc-button__ring announce-pc-button__ring--two" />
         </>
       )}
-      <Laptop className="announce-pc-button__icon w-3.5 h-3.5" strokeWidth={1.75} />
+      <Laptop className="announce-pc-button__icon w-3 h-3" strokeWidth={1.75} />
       <span className="relative z-10 whitespace-nowrap">{clicked ? '已宣告本机存在' : '告知本电脑的存在'}</span>
     </button>
   )
