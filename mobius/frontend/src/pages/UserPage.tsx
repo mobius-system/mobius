@@ -123,11 +123,11 @@ export default function UserPage() {
   const [search, setSearch] = useState('')
   const [issuesByProject, setIssuesByProject] = useState<Record<string, any[]>>({})
   const [researchesByProject, setResearchesByProject] = useState<Record<string, any[]>>({})
+  const [overviewByProject, setOverviewByProject] = useState<Record<string, any>>({})
   // 卡片 issue/research 概览的加载态: 拉取期间显示 loading, 而不是闪现"暂无 Issue".
   const [issuesLoadingByProject, setIssuesLoadingByProject] = useState<Record<string, boolean>>({})
   const [researchesLoadingByProject, setResearchesLoadingByProject] = useState<Record<string, boolean>>({})
-  const issuePreviewRequests = useRef<Set<string>>(new Set())
-  const researchPreviewRequests = useRef<Set<string>>(new Set())
+  const overviewPreviewRequests = useRef<Set<string>>(new Set())
   const [editingProject, setEditingProject] = useState<any>(null)
   const [hidingProject, setHidingProject] = useState<any>(null)
   // 拓展项目的隐藏/彻底删除入口；普通项目的屏蔽放在项目操作菜单里。
@@ -346,30 +346,47 @@ export default function UserPage() {
   }
 
   useEffect(() => {
-    projectPagination.pagedItems.forEach((p: any) => {
-      if (!p?.id) return
-      if (!issuesByProject[p.id] && !issuePreviewRequests.current.has(p.id)) {
-        issuePreviewRequests.current.add(p.id)
-        setIssuesLoadingByProject(prev => prev[p.id] ? prev : { ...prev, [p.id]: true })
-        api(`/api/projects/${p.id}/issues`).then((issues: any[]) => {
-          setIssuesByProject(prev => ({ ...prev, [p.id]: issues || [] }))
-        }).catch(() => {}).finally(() => {
-          issuePreviewRequests.current.delete(p.id)
-          setIssuesLoadingByProject(prev => ({ ...prev, [p.id]: false }))
-        })
-      }
-      if (p.research_enabled && !researchesByProject[p.id] && !researchPreviewRequests.current.has(p.id)) {
-        researchPreviewRequests.current.add(p.id)
+    const pending = projectPagination.pagedItems
+      .filter((p: any) => p?.id && !overviewByProject[p.id] && !overviewPreviewRequests.current.has(p.id))
+    if (pending.length === 0) return
+
+    pending.forEach((p: any) => {
+      overviewPreviewRequests.current.add(p.id)
+      setIssuesLoadingByProject(prev => prev[p.id] ? prev : { ...prev, [p.id]: true })
+      if (p.research_enabled) {
         setResearchesLoadingByProject(prev => prev[p.id] ? prev : { ...prev, [p.id]: true })
-        api(`/api/projects/${p.id}/researches`).then((researches: any[]) => {
-          setResearchesByProject(prev => ({ ...prev, [p.id]: researches || [] }))
-        }).catch(() => {}).finally(() => {
-          researchPreviewRequests.current.delete(p.id)
-          setResearchesLoadingByProject(prev => ({ ...prev, [p.id]: false }))
-        })
       }
     })
-  }, [projectPagination.pagedItems, issuesByProject, researchesByProject])
+    const ids = pending.map((p: any) => encodeURIComponent(p.id)).join(',')
+    api(`/api/projects/overview?ids=${ids}&limit=5`).then((payload: Record<string, any>) => {
+      const data = payload || {}
+      setOverviewByProject(prev => {
+        const next = { ...prev }
+        pending.forEach((p: any) => { next[p.id] = data[p.id] || { issues: [], researches: [], issue_counts: { total: 0, active: 0, completed: 0 }, research_counts: { total: 0, active: 0, completed: 0 } } })
+        return next
+      })
+      setIssuesByProject(prev => {
+        const next = { ...prev }
+        pending.forEach((p: any) => { next[p.id] = data[p.id]?.issues || [] })
+        return next
+      })
+      setResearchesByProject(prev => {
+        const next = { ...prev }
+        pending.forEach((p: any) => {
+          if (p.research_enabled) next[p.id] = data[p.id]?.researches || []
+        })
+        return next
+      })
+    }).catch(() => {}).finally(() => {
+      pending.forEach((p: any) => {
+        overviewPreviewRequests.current.delete(p.id)
+        setIssuesLoadingByProject(prev => ({ ...prev, [p.id]: false }))
+        if (p.research_enabled) {
+          setResearchesLoadingByProject(prev => ({ ...prev, [p.id]: false }))
+        }
+      })
+    })
+  }, [projectPagination.pagedItems, overviewByProject])
 
   // 按 created_by 分组（sidebar）
   const grouped = useMemo(() => {
@@ -633,19 +650,25 @@ export default function UserPage() {
               <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {projectPagination.pagedItems.map((p: any) => {
+                  const overview = overviewByProject[p.id] || null
                   const issues = issuesByProject[p.id] || []
                   const researches = researchesByProject[p.id] || []
                   const showResearch = !!p.research_enabled && !((p.research_count || 0) === 0 && issues.length > 0)
                   const overviewItems = showResearch ? researches : issues
                   const overviewKind = showResearch ? 'research' : 'issue'
+                  const issueCounts = overview?.issue_counts || null
+                  const researchCounts = overview?.research_counts || null
+                  const activeIssueCount = issueCounts ? issueCounts.active : issues.filter((i: any) => i.status !== 'completed').length
+                  const completedIssueCount = issueCounts ? issueCounts.completed : issues.filter((i: any) => i.status === 'completed').length
+                  const overviewTotal = showResearch
+                    ? (researchCounts?.total ?? overviewItems.length)
+                    : (issueCounts?.total ?? overviewItems.length)
                   // 当前卡片展示的概览(research 或 issue)是否仍在拉取: 拉取期间不显示"暂无 XX"空态.
                   const overviewLoading = !!(
                     overviewKind === 'research'
                       ? (researchesLoadingByProject[p.id] && !researchesByProject[p.id])
                       : (issuesLoadingByProject[p.id] && !issuesByProject[p.id])
                   )
-                  const active = issues.filter((i: any) => i.status !== 'completed')
-                  const completed = issues.filter((i: any) => i.status === 'completed')
                   const isMuted = mutedIdSet.has(p.id)
                   return (
                     <div key={p.id} data-tour="user-project-card"
@@ -786,8 +809,8 @@ export default function UserPage() {
                           <p className="text-[12px] italic mb-2" style={{ color: 'var(--text-muted)' }}>无描述</p>
                         )}
                         <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                          <span>{active.length} 进行中</span>
-                          <span>{completed.length} 已完成</span>
+                          <span>{activeIssueCount} 进行中</span>
+                          <span>{completedIssueCount} 已完成</span>
                           {p.research_enabled && <span>{p.research_count || 0} Research</span>}
                           <span className="ml-auto">活跃 {timeAgo(p.last_active)}</span>
                         </div>
@@ -838,9 +861,9 @@ export default function UserPage() {
                                 )}
                               </LinklessNav>
                             ))}
-                            {overviewItems.length > 5 && (
+                            {overviewTotal > 5 && (
                               <div className="text-[11px] py-1 px-2" style={{ color: 'var(--text-muted)' }}>
-                                还有 {overviewItems.length - 5} 个...
+                                还有 {overviewTotal - 5} 个...
                               </div>
                             )}
                           </div>

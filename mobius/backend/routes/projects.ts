@@ -8,6 +8,7 @@ import { auth } from '../middleware/auth';
 import { Projects } from '../repositories/projects';
 import { ProjectTodos } from '../repositories/project-todos';
 import { Issues } from '../repositories/issues';
+import { Researches } from '../repositories/researches';
 import { Skills } from '../repositories/skills';
 import { Memories } from '../repositories/memories';
 import { Users } from '../repositories/users';
@@ -35,6 +36,8 @@ import { resolveProjectPath } from '../services/project-path';
 // @ts-ignore — service 仍是 .js
 import {
   canReadProject,
+  canReadIssue,
+  canReadResearch,
   canManageProject,
   canCreateIssue,
   isHidden,
@@ -375,6 +378,8 @@ const TODO_TITLE_MAX_LENGTH = 500;
 const TODO_DESCRIPTION_MAX_LENGTH = 4000;
 const EXTENSION_DISPLAY_NAME_MAX_LENGTH = 120;
 const EXTENSION_DESCRIPTION_MAX_LENGTH = 1000;
+const PROJECT_OVERVIEW_MAX_PROJECTS = 100;
+const PROJECT_OVERVIEW_ITEM_LIMIT = 5;
 
 function hasOwn(obj: any, key: string): boolean {
   return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
@@ -1612,6 +1617,83 @@ function sendProjectSearch(req: express.Request, res: express.Response): void {
   auditAdminProjectList(req, 'search_projects', projects);
   res.json(shapeProjectList(projects, req));
 }
+
+function parseProjectOverviewIds(raw: unknown): string[] {
+  const input = Array.isArray(raw) ? raw.join(',') : String(raw || '');
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  input.split(',').forEach((part) => {
+    const id = part.trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    ids.push(id);
+  });
+  return ids.slice(0, PROJECT_OVERVIEW_MAX_PROJECTS);
+}
+
+function projectOverviewLimit(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n)) return PROJECT_OVERVIEW_ITEM_LIMIT;
+  return Math.min(Math.max(n, 1), 20);
+}
+
+function statusCounts(items: Array<{ status?: string }>): { total: number; active: number; completed: number } {
+  let active = 0;
+  let completed = 0;
+  items.forEach((item) => {
+    if (item?.status === 'completed') completed += 1;
+    else active += 1;
+  });
+  return { total: items.length, active, completed };
+}
+
+function shapeOverviewItem(item: any): any {
+  return {
+    id: item.id,
+    project_id: item.project_id,
+    title: item.title,
+    description: item.description,
+    status: item.status,
+    created_by: item.created_by,
+    pinned: item.pinned,
+    created_at: item.created_at,
+    last_active: item.last_active,
+    message_count: item.message_count,
+    session_count: item.session_count,
+    chief_count: item.chief_count,
+    starred: item.starred,
+    visibility: item.visibility,
+  };
+}
+
+router.get('/overview', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const ids = parseProjectOverviewIds(req.query.ids);
+  const limit = projectOverviewLimit(req.query.limit);
+  if (ids.length === 0) { res.json({}); return; }
+
+  const result: Record<string, any> = {};
+  const auditedProjects: any[] = [];
+  ids.forEach((projectId) => {
+    const project = Projects.findById(projectId);
+    if (!project || !canReadProject(user, project) || isHidden(user.id, 'project', project.id)) return;
+    auditedProjects.push(project);
+    const readableIssues = Issues.listForProject(project.id, undefined, user?.id)
+      .filter((issue: any) => canReadIssue(user, issue));
+    const readableResearches = project.research_enabled
+      ? Researches.listForProject(project.id)
+        .filter((research: any) => canReadResearch(user, research))
+      : [];
+    result[project.id] = {
+      issue_counts: statusCounts(readableIssues),
+      research_counts: statusCounts(readableResearches),
+      issues: readableIssues.slice(0, limit).map(shapeOverviewItem),
+      researches: readableResearches.slice(0, limit).map(shapeOverviewItem),
+    };
+  });
+  auditAdminProjectList(req, 'overview_projects', auditedProjects);
+  res.json(result);
+});
 
 router.get('/', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
