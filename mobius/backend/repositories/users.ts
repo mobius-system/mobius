@@ -314,6 +314,16 @@ const Users = {
     LEFT JOIN user_groups g ON g.id = u.group_id
     WHERE u.id = ? AND ${ACTIVE_USER_SQL}
   `).get(id) as UserRow | undefined),
+  // 登录专用: 用户名大小写不敏感. 前端登录页会把输入的用户名 toLowerCase()
+  // (见 pages/Login.tsx), 而历史/手动创建的账号 id 可能含大写字母 (如 EvolveWithAI),
+  // 用大小写敏感的 findById 会让这类账号永远返回 401 "User not found". 这里用
+  // COLLATE NOCASE 兜底, 返回真实 (大小写原样) 的 user.id, 后续 JWT/鉴权仍走精确匹配.
+  findByLoginId: (id: string): UserRow | undefined => ensureUsableWorkDir(db.prepare(`
+    SELECT u.*, g.name AS group_name, g.description AS group_description
+    FROM users u
+    LEFT JOIN user_groups g ON g.id = u.group_id
+    WHERE u.id = ? COLLATE NOCASE AND ${ACTIVE_USER_SQL}
+  `).get(id) as UserRow | undefined),
   findAuthById: (id: string) => ensureUsableWorkDir(db.prepare(`
     SELECT u.id, u.display_name, u.role, u.work_dir, u.group_id, g.name AS group_name
     FROM users u
