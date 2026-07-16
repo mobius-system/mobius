@@ -322,6 +322,11 @@ function updateMenuChecked(): void {
 
 // ——— 窗口 ———
 function createWindow(): void {
+  // 应用图标：打包后从 extraResources 读 (process.resourcesPath/icon.png)，dev 时读源 build/icon.png。
+  // Windows/Linux 任务栏 + 窗口图标用它；macOS 走 .app 内 icns (构建期由 build/icon.png 自动生成)。
+  const appIconPath = app.isPackaged
+    ? join(process.resourcesPath, "icon.png")
+    : join(currentDir, "../../build/icon.png");
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 960,
@@ -330,6 +335,7 @@ function createWindow(): void {
     show: false,
     backgroundColor: "#ffffff",
     title: "Mobius Desktop",
+    icon: appIconPath,
     // Windows/Linux: 隐藏原生标题栏 + titleBarOverlay 叠原生窗口按钮 (VSCode 风),
     // 让远程 mobius 顶栏充当标题栏; macOS: hiddenInset 已是 VSCode 风 (交通灯内嵌), 保持。
     titleBarStyle: isMac ? "hiddenInset" : "hidden",

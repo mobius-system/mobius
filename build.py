@@ -94,7 +94,10 @@ def write_arch_config(key: str) -> Path:
     # release/<key>。这是并行的前提 —— 不再共享 resources/python swap, 不再共享 release/。
     cfg = json.loads(json.dumps(EB_BASE_CONFIG))  # deep copy
     cfg["directories"] = {"output": f"release/{key}"}
-    cfg["extraResources"] = [{"from": f"resources/python-{key}", "to": "python", "filter": ["**/*"]}]
+    cfg["extraResources"] = [
+        {"from": f"resources/python-{key}", "to": "python", "filter": ["**/*"]},
+        {"from": "build/icon.png", "to": "icon.png"},  # 应用图标随包下发, 供 BrowserWindow({icon}) 运行时读取
+    ]
     cfg_path = TMP_DIR / f"mobius-eb-{key}.json"
     cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     return cfg_path

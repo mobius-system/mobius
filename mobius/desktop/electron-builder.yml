@@ -15,6 +15,10 @@ extraResources:
   - from: resources/python
     to: python
     filter: ["**/*"]
+  # 应用图标：随包下发到 resources/icon.png，供 BrowserWindow({icon}) 运行时读取。
+  # mac 的 .app 内 icns 由 build/icon.png 在构建期自动生成；win .exe 内嵌图标需 rcedit(wine)。
+  - from: build/icon.png
+    to: icon.png
 win:
   target:
     - zip
