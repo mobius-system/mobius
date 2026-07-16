@@ -1484,6 +1484,15 @@ button {
   width: 8px; height: 8px; border-radius: 50%; background: #10B981;
   animation: pulse-ring 2s infinite;
 }
+
+.project-card-themed {
+  box-shadow: var(--project-card-shadow, none);
+}
+
+.project-card-themed:hover {
+  border-color: var(--project-card-hover-border, var(--project-card-border)) !important;
+  box-shadow: var(--project-card-hover-shadow, var(--project-card-shadow, none));
+}
 @keyframes pulse-ring {
   0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.45); }
   70% { box-shadow: 0 0 0 5px rgba(16,185,129,0); }
