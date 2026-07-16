@@ -460,9 +460,240 @@ const MIME: Record<string, string> = {
   '.ogg':  'video/ogg',
 };
 
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+function desktopHostBarInjection(title: string): string {
+  return `
+<style id="mobius-desktop-hostbar-style">
+  .mobius-desktop-hostbar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: 48px !important;
+    z-index: 2147483000 !important;
+    display: flex !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    box-sizing: border-box !important;
+    padding: 0 20px !important;
+    pointer-events: none !important;
+    color: #e5e7eb !important;
+    background: rgba(10, 14, 22, 0.82) !important;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18) !important;
+    box-shadow: 0 10px 32px rgba(2, 6, 23, 0.22) !important;
+    backdrop-filter: blur(16px) saturate(1.12) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(1.12) !important;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+    user-select: none !important;
+  }
+  .mobius-desktop-hostbar--mac {
+    padding-left: 78px !important;
+  }
+  .mobius-desktop-hostbar * {
+    box-sizing: border-box !important;
+  }
+  .mobius-desktop-hostbar__back,
+  .mobius-desktop-hostbar__button {
+    all: unset !important;
+    pointer-events: auto !important;
+    height: 48px !important;
+    min-width: 38px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    border-radius: 0 !important;
+    color: inherit !important;
+    cursor: pointer !important;
+    transition: background 0.12s ease, color 0.12s ease !important;
+  }
+  .mobius-desktop-hostbar__back {
+    min-width: 74px !important;
+    padding: 0 10px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
+  }
+  .mobius-desktop-hostbar__button {
+    width: 38px !important;
+  }
+  .mobius-desktop-hostbar__back:hover,
+  .mobius-desktop-hostbar__button:hover {
+    background: rgba(148, 163, 184, 0.15) !important;
+  }
+  .mobius-desktop-hostbar__button--close:hover {
+    background: #e81123 !important;
+    color: #fff !important;
+  }
+  .mobius-desktop-hostbar svg {
+    width: 14px !important;
+    height: 14px !important;
+    flex: none !important;
+  }
+  .mobius-desktop-hostbar__title {
+    pointer-events: none !important;
+    min-width: 0 !important;
+    max-width: min(360px, 42vw) !important;
+    align-self: center !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    color: rgba(226, 232, 240, 0.86) !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
+  }
+  .mobius-desktop-hostbar__drag {
+    pointer-events: auto !important;
+    flex: 1 1 auto !important;
+    min-width: 24px !important;
+    height: 48px !important;
+    cursor: grab !important;
+  }
+  .mobius-desktop-hostbar--mac .mobius-desktop-hostbar__drag {
+    cursor: default !important;
+  }
+  .mobius-desktop-hostbar__controls {
+    display: inline-flex !important;
+    align-items: stretch !important;
+    flex: none !important;
+    pointer-events: auto !important;
+    margin-right: -14px !important;
+  }
+  .mobius-desktop-hostbar--mac .mobius-desktop-hostbar__controls {
+    display: none !important;
+  }
+  .mobius-desktop-hostbar__max-restore {
+    display: none !important;
+  }
+  .mobius-desktop-hostbar--maximized .mobius-desktop-hostbar__max {
+    display: none !important;
+  }
+  .mobius-desktop-hostbar--maximized .mobius-desktop-hostbar__max-restore {
+    display: block !important;
+  }
+  @media (max-width: 640px) {
+    .mobius-desktop-hostbar {
+      padding-left: 12px !important;
+      padding-right: 12px !important;
+    }
+    .mobius-desktop-hostbar--mac {
+      padding-left: 78px !important;
+    }
+    .mobius-desktop-hostbar__title {
+      display: none !important;
+    }
+    .mobius-desktop-hostbar__back {
+      min-width: 42px !important;
+      padding: 0 8px !important;
+    }
+    .mobius-desktop-hostbar__back-label {
+      display: none !important;
+    }
+  }
+</style>
+<script>
+(() => {
+  const TITLE = ${scriptJson(title)};
+  const FALLBACK = '/';
+  const md = window.mobiusDesktop;
+  if (!md || !md.isDesktop) return;
+  const isMac = /Mac/i.test(navigator.platform || '');
+  const ready = (fn) => {
+    if (document.body) fn();
+    else document.addEventListener('DOMContentLoaded', fn, { once: true });
+  };
+  ready(() => {
+    if (document.querySelector('.mobius-desktop-hostbar')) return;
+    const bar = document.createElement('div');
+    bar.className = 'mobius-desktop-hostbar' + (isMac ? ' mobius-desktop-hostbar--mac' : '');
+    bar.innerHTML = [
+      '<button type="button" class="mobius-desktop-hostbar__back" data-action="back" title="返回上一页" aria-label="返回上一页">',
+      '  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>',
+      '  <span class="mobius-desktop-hostbar__back-label">返回</span>',
+      '</button>',
+      '<div class="mobius-desktop-hostbar__title"></div>',
+      '<div class="mobius-desktop-hostbar__drag" data-action="drag" aria-hidden="true"></div>',
+      '<button type="button" class="mobius-desktop-hostbar__button" data-action="reload" title="刷新页面" aria-label="刷新页面">',
+      '  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v5h-5"/></svg>',
+      '</button>',
+      '<div class="mobius-desktop-hostbar__controls" aria-label="窗口控制">',
+      '  <button type="button" class="mobius-desktop-hostbar__button" data-action="minimize" title="最小化" aria-label="最小化"><svg viewBox="0 0 11 11" aria-hidden="true"><rect y="4.6" width="11" height="1.8" fill="currentColor"/></svg></button>',
+      '  <button type="button" class="mobius-desktop-hostbar__button" data-action="maximize" title="最大化" aria-label="最大化"><svg class="mobius-desktop-hostbar__max" viewBox="0 0 11 11" aria-hidden="true"><rect x="0.7" y="0.7" width="9.6" height="9.6" fill="none" stroke="currentColor" stroke-width="1"/></svg><svg class="mobius-desktop-hostbar__max-restore" viewBox="0 0 11 11" aria-hidden="true"><rect x="1" y="3.2" width="6.4" height="6.4" fill="none" stroke="currentColor" stroke-width="1"/><path d="M3.2 3.2 V1 H9.6 V7.4 H7.4" fill="none" stroke="currentColor" stroke-width="1"/></svg></button>',
+      '  <button type="button" class="mobius-desktop-hostbar__button mobius-desktop-hostbar__button--close" data-action="close" title="关闭" aria-label="关闭"><svg viewBox="0 0 11 11" aria-hidden="true"><path d="M0.5 0.5 L10.5 10.5 M10.5 0.5 L0.5 10.5" stroke="currentColor" stroke-width="1.2"/></svg></button>',
+      '</div>',
+    ].join('');
+    const titleEl = bar.querySelector('.mobius-desktop-hostbar__title');
+    if (titleEl) titleEl.textContent = TITLE || document.title || 'Mobius';
+    document.body.prepend(bar);
+
+    const goBack = () => {
+      const before = location.href;
+      if (history.length > 1) {
+        history.back();
+        window.setTimeout(() => {
+          if (location.href === before) location.assign(FALLBACK);
+        }, 700);
+      } else {
+        location.assign(FALLBACK);
+      }
+    };
+    const endDrag = () => { try { void md.windowEndDrag?.(); } catch (_) {} };
+    const startDrag = (event) => {
+      if (isMac) return;
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      event.preventDefault();
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch (_) {}
+      try { void md.windowStartDrag?.(); } catch (_) {}
+      window.addEventListener('pointerup', endDrag, { once: true });
+      window.addEventListener('blur', endDrag, { once: true });
+    };
+    const setMaximized = (maximized) => {
+      bar.classList.toggle('mobius-desktop-hostbar--maximized', !!maximized);
+      const btn = bar.querySelector('[data-action="maximize"]');
+      if (btn) {
+        btn.setAttribute('title', maximized ? '还原' : '最大化');
+        btn.setAttribute('aria-label', maximized ? '还原' : '最大化');
+      }
+    };
+
+    bar.querySelector('[data-action="back"]')?.addEventListener('click', goBack);
+    bar.querySelector('[data-action="reload"]')?.addEventListener('click', () => location.reload());
+    bar.querySelector('[data-action="minimize"]')?.addEventListener('click', () => { try { void md.windowMinimize?.(); } catch (_) {} });
+    bar.querySelector('[data-action="maximize"]')?.addEventListener('click', () => {
+      try {
+        Promise.resolve(md.windowToggleMaximize?.()).then((r) => {
+          if (r && typeof r === 'object' && 'maximized' in r) setMaximized(!!r.maximized);
+        }).catch(() => {});
+      } catch (_) {}
+    });
+    bar.querySelector('[data-action="close"]')?.addEventListener('click', () => { try { void md.windowClose?.(); } catch (_) {} });
+    const drag = bar.querySelector('[data-action="drag"]');
+    drag?.addEventListener('pointerdown', startDrag);
+    drag?.addEventListener('pointerup', endDrag);
+    drag?.addEventListener('pointercancel', endDrag);
+    drag?.addEventListener('dblclick', () => { if (!isMac) { try { void md.windowToggleMaximize?.(); } catch (_) {} } });
+    try { Promise.resolve(md.windowIsMaximized?.()).then(setMaximized).catch(() => {}); } catch (_) {}
+    try { md.onMaximizeChange?.(setMaximized); } catch (_) {}
+  });
+})();
+</script>`;
+}
+
+function injectDesktopHostBar(html: string, title: string): string {
+  const injection = desktopHostBarInjection(title);
+  if (/<head([^>]*)>/i.test(html)) {
+    return html.replace(/<head([^>]*)>/i, `<head$1>\n${injection}`);
+  }
+  return `${injection}\n${html}`;
+}
+
 function buildLoadingHtml(entry: any): string {
   const safeName = String(entry.name).replace(/[^a-z0-9-]/g, '');
-  return `<!doctype html>
+  return injectDesktopHostBar(`<!doctype html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -509,7 +740,7 @@ async function tick() {
 }
 tick();
 </script>
-</body></html>`;
+</body></html>`, `${entry.display_name || entry.name} - 加载中`);
 }
 
 function safeResolveAsset(distDir: string, rel: string): string | null {
@@ -568,10 +799,11 @@ async function serveExtension(req: express.Request, res: express.Response, name:
     const indexPath = path.join(distDir, 'index.html');
     try {
       const html = fs.readFileSync(indexPath, 'utf8');
-      const injected = html.replace(
+      const withExtName = html.replace(
         /<head([^>]*)>/i,
         `<head$1>\n<script>window.__EXT_NAME__=${JSON.stringify(name)};</script>`
       );
+      const injected = injectDesktopHostBar(withExtName, entry.display_name || name);
       res.set('content-type', 'text/html; charset=utf-8');
       // 缓存安全: 用 no-store, 避免开发期 dist 重建后浏览器拿到老 html.
       res.set('cache-control', 'no-store');
