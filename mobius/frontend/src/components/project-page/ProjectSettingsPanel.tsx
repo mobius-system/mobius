@@ -875,7 +875,7 @@ export function ProjectSettingsPanel({
         />
       </div>
 
-      <div className="flex items-center gap-2 border rounded-lg mt-5" style={{background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+      <div className="flex items-center gap-2 border rounded-lg mt-3" style={{background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
         {project.kind === 'extension' && (
           <div className="px-5 py-3 border-b text-[12px]"
             style={{ borderColor: 'var(--border-color)', background: 'rgba(167,139,250,0.06)', color: '#a78bfa' }}>
@@ -927,7 +927,7 @@ export function ProjectSettingsPanel({
             onHardResetVersion={hardResetVersion}
           />
         ) : (
-        <div className="p-5 space-y-4">
+        <div className="p-3 space-y-4">
           {!canManageProject && (
             <div className="rounded-lg border px-3 py-2 text-[12px] leading-5"
               style={{ borderColor: 'rgba(59,130,246,0.28)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-secondary)' }}>
