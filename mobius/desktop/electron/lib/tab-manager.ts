@@ -165,16 +165,20 @@ export class TabManager {
     return id;
   }
 
-  /** 激活指定 tab（显示它、隐藏其余），fromCreate 区分是否跳过重复 persist。 */
+  /** 激活指定 tab（显示它、隐藏其余），fromCreate 区分是否跳过重复 persist。
+   *  先显新 view 再隐旧的，避免切换瞬间所有 view 都隐藏、about:blank 容器露出造成白闪。 */
   private activate(id: string, fromCreate = false): void {
-    for (const t of this.tabs) {
-      try { t.view.setVisible(t.id === id); } catch { /* ignore */ }
-    }
-    this.activeId = id;
     const target = this.tabs.find((t) => t.id === id);
     if (target) {
       try { target.view.setBounds(this.contentBounds()); } catch { /* ignore */ }
+      try { target.view.setVisible(true); } catch { /* ignore */ }
     }
+    for (const t of this.tabs) {
+      if (t.id !== id) {
+        try { t.view.setVisible(false); } catch { /* ignore */ }
+      }
+    }
+    this.activeId = id;
     this.broadcast();
     if (!fromCreate) this.persist();
   }

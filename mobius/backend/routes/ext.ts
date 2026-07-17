@@ -688,8 +688,86 @@ function desktopHostBarInjection(title: string): string {
 </script>`;
 }
 
+// 扩展页是独立前端（不含 mobius React SPA → 不含 DesktopTabBar 组件）。
+// 这里用原生 DOM 注入一个底部 tab 栏（与 mobius 页的 desktop-tab-bar 视觉/行为一致），
+// 调 preload 桥 md.getTabs/switchTab/onTabsChanged/newTab/closeTab，让扩展页也能切换/新建/关闭 tab。
+function desktopTabBarInjection(): string {
+  return `
+<style id="mobius-desktop-tabbar-style">
+  .mobius-desktop-tabbar {
+    position: fixed !important; bottom: 16px !important; left: 16px !important;
+    z-index: 2147483000 !important; display: flex !important; align-items: center !important;
+    gap: 4px !important; padding: 6px !important; border-radius: 12px !important;
+    background: rgba(10, 14, 22, 0.82) !important; border: 1px solid rgba(148, 163, 184, 0.18) !important;
+    box-shadow: 0 10px 32px rgba(2, 6, 23, 0.22) !important;
+    backdrop-filter: blur(16px) saturate(1.12) !important; -webkit-backdrop-filter: blur(16px) saturate(1.12) !important;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif !important;
+    user-select: none !important; max-width: calc(100vw - 32px) !important;
+  }
+  .mobius-desktop-tabbar__tab {
+    display: inline-flex !important; align-items: center !important; gap: 6px !important;
+    max-width: 180px !important; padding: 6px 10px !important; border-radius: 8px !important;
+    border: 1px solid transparent !important; background: transparent !important;
+    color: rgba(226, 232, 240, 0.7) !important; cursor: pointer !important;
+    transition: background 0.12s ease, border-color 0.12s ease !important;
+  }
+  .mobius-desktop-tabbar__tab:hover { background: rgba(148, 163, 184, 0.15) !important; }
+  .mobius-desktop-tabbar__tab--active {
+    border-color: #3b82f6 !important; background: rgba(148, 163, 184, 0.18) !important; color: #e5e7eb !important;
+  }
+  .mobius-desktop-tabbar__label {
+    font-size: 12px !important; font-weight: 500 !important; overflow: hidden !important;
+    text-overflow: ellipsis !important; white-space: nowrap !important; max-width: 140px !important;
+  }
+  .mobius-desktop-tabbar__close, .mobius-desktop-tabbar__new {
+    all: unset !important; display: inline-flex !important; align-items: center !important;
+    justify-content: center !important; border-radius: 6px !important; cursor: pointer !important; color: inherit !important;
+  }
+  .mobius-desktop-tabbar__close { width: 16px !important; height: 16px !important; opacity: 0.6 !important; }
+  .mobius-desktop-tabbar__close:hover { background: rgba(148, 163, 184, 0.25) !important; opacity: 1 !important; }
+  .mobius-desktop-tabbar__new { width: 28px !important; height: 28px !important; color: rgba(226, 232, 240, 0.7) !important; }
+  .mobius-desktop-tabbar__new:hover { background: rgba(148, 163, 184, 0.15) !important; }
+  .mobius-desktop-tabbar svg { width: 14px !important; height: 14px !important; flex: none !important; }
+</style>
+<script>
+(() => {
+  const md = window.mobiusDesktop;
+  if (!md || !md.isDesktop || !md.getTabs || !md.switchTab) return;
+  const ready = (fn) => { if (document.body) fn(); else document.addEventListener('DOMContentLoaded', fn, { once: true }); };
+  const labelOf = (t) => (t.title && String(t.title).trim()) ? String(t.title) : decodeURIComponent((t.url || '').replace(/[?#].*$/, '').split('/').filter(Boolean).pop() || '页面');
+  const X_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+  const PLUS_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>';
+  let state = { tabs: [], activeId: null };
+  const render = () => {
+    ready(() => {
+      let bar = document.querySelector('.mobius-desktop-tabbar');
+      if (!bar) { bar = document.createElement('div'); bar.className = 'mobius-desktop-tabbar'; document.body.appendChild(bar); }
+      bar.innerHTML = '';
+      state.tabs.forEach((t) => {
+        const el = document.createElement('div');
+        el.className = 'mobius-desktop-tabbar__tab' + (t.id === state.activeId ? ' mobius-desktop-tabbar__tab--active' : '');
+        el.title = labelOf(t);
+        const lbl = document.createElement('span'); lbl.className = 'mobius-desktop-tabbar__label'; lbl.textContent = labelOf(t); el.appendChild(lbl);
+        const close = document.createElement('button'); close.type = 'button'; close.className = 'mobius-desktop-tabbar__close'; close.title = '关闭标签页'; close.setAttribute('aria-label', '关闭标签页'); close.innerHTML = X_SVG;
+        close.addEventListener('click', (e) => { e.stopPropagation(); try { void md.closeTab?.(t.id); } catch (_) {} });
+        el.appendChild(close);
+        el.addEventListener('click', (e) => { if (e.target.closest('.mobius-desktop-tabbar__close')) return; try { void md.switchTab?.(t.id); } catch (_) {} });
+        bar.appendChild(el);
+      });
+      const plus = document.createElement('button'); plus.type = 'button'; plus.className = 'mobius-desktop-tabbar__new'; plus.title = '新建标签页'; plus.setAttribute('aria-label', '新建标签页'); plus.innerHTML = PLUS_SVG;
+      plus.addEventListener('click', () => { try { void md.newTab?.(); } catch (_) {} });
+      bar.appendChild(plus);
+    });
+  };
+  const update = (tabs, activeId) => { state = { tabs: tabs || [], activeId: activeId || null }; render(); };
+  try { Promise.resolve(md.getTabs()).then((tabs) => Promise.resolve(md.getActiveTabId?.()).then((activeId) => update(tabs, activeId)).catch(() => update(tabs, null))).catch(() => {}); } catch (_) {}
+  try { md.onTabsChanged?.((tabs, activeId) => update(tabs, activeId)); } catch (_) {}
+})();
+</script>`;
+}
+
 function injectDesktopHostBar(html: string, title: string): string {
-  const injection = desktopHostBarInjection(title);
+  const injection = desktopHostBarInjection(title) + desktopTabBarInjection();
   if (/<head([^>]*)>/i.test(html)) {
     return html.replace(/<head([^>]*)>/i, `<head$1>\n${injection}`);
   }
