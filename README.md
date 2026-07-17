@@ -91,30 +91,9 @@ Mobius schedules browsers, terminals, GPU clusters, embedded boards, cloud serve
 
 Reach your resources through SSH, AIMUX, and controllable proxies:
 
-```mermaid
-flowchart TD
-  M["Mobius (XiaoMo)"]
-
-  subgraph P["Protocols"]
-    SSH["SSH / SFTP"]
-    AIMUX["AIMUX"]
-    PROXY["Controllable Proxy"]
-  end
-
-  subgraph R["Resources"]
-    GPU["GPU Compute Cluster"]
-    NX["Embedded Boards"]
-    NAS["NAS / OSS / Cloud Storage"]
-    CLOUD["Cloud Servers"]
-    PC["Workstations"]
-    NET["Web / Open Literature"]
-  end
-
-  M --> SSH & AIMUX & PROXY
-  SSH --> GPU & NAS & CLOUD
-  AIMUX --> NX & PC
-  PROXY --> NET
-```
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/9da18254-119e-4a84-bb88-98f9366a7716" alt="Team collaboration demo" width="480" />
+</p>
 
 
 
