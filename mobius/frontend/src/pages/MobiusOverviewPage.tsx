@@ -186,7 +186,7 @@ function buildGraph(project: any, data: ProjectGraphData): { nodes: GraphNode[];
 
   const parentX = 330
   const childX = 610
-  const startY = 44
+  const verticalPadding = 58
   const minGroupHeight = 44
   const childGap = 38
   const groupGap = 24
@@ -194,14 +194,22 @@ function buildGraph(project: any, data: ProjectGraphData): { nodes: GraphNode[];
     ...sortByRecent(data.issues).map((item) => ({ kind: 'issue' as const, item, children: data.sessionsByIssue[item.id] || [] })),
     ...sortByRecent(data.researches).map((item) => ({ kind: 'research' as const, item, children: data.sessionsByResearch[item.id] || [] })),
   ].sort((a, b) => activeTimeMs(b.item) - activeTimeMs(a.item))
+  const groups = parentItems.map(({ kind, item, children }) => {
+    const sortedChildren = sortByRecent(children)
+    const groupHeight = Math.max(minGroupHeight, Math.max(1, sortedChildren.length) * childGap)
+    return { kind, item, sortedChildren, groupHeight }
+  })
+  const totalGroupHeight = groups.reduce((sum, group, idx) => (
+    sum + group.groupHeight + (idx === groups.length - 1 ? 0 : groupGap)
+  ), 0)
+  const contentHeight = Math.max(560, totalGroupHeight + verticalPadding * 2)
+  const startY = Math.max(verticalPadding, (contentHeight - totalGroupHeight) / 2)
 
   const nodes: GraphNode[] = []
   const edges: GraphEdge[] = []
   let cursor = startY
 
-  parentItems.forEach(({ kind, item, children }) => {
-    const sortedChildren = sortByRecent(children)
-    const groupHeight = Math.max(minGroupHeight, Math.max(1, sortedChildren.length) * childGap)
+  groups.forEach(({ kind, item, sortedChildren, groupHeight }) => {
     const parentY = cursor + groupHeight / 2 - NODE_SIZES.subject.height / 2
     nodes.push({
       id: item.id,
@@ -242,7 +250,6 @@ function buildGraph(project: any, data: ProjectGraphData): { nodes: GraphNode[];
     cursor += groupHeight + groupGap
   })
 
-  const contentHeight = Math.max(560, cursor + 60)
   const projectNode: GraphNode = {
     id: project.id,
     kind: 'project',
@@ -321,9 +328,9 @@ function GraphNodeButton({
       >
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-[12px] font-semibold leading-4">{node.title}</span>
-          <span className="flex-shrink-0 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+          {/* <span className="flex-shrink-0 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
             {kindLabel(node.kind, node.source?.research_role)}
-          </span>
+          </span> */}
         </span>
         <span className="block truncate text-[10px] leading-4" style={{ color: 'var(--text-secondary)' }}>{meta}</span>
       </span>
