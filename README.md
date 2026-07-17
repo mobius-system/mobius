@@ -92,9 +92,8 @@ Mobius schedules browsers, terminals, GPU clusters, embedded boards, cloud serve
 Reach your resources through SSH, AIMUX, and controllable proxies:
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/9da18254-119e-4a84-bb88-98f9366a7716" alt="Team collaboration demo" width="480" />
+  <img src="https://github.com/user-attachments/assets/cd5ef0ba-1d38-4017-bf8a-e7b93d17fca0" alt="Team collaboration demo" width="480" />
 </p>
-
 
 
 ## Team Collaboration
