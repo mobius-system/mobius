@@ -182,7 +182,7 @@ const Sessions = {
       s.last_active DESC
   `).all(researchId) as SessionListRow[],
 
-  listActiveForProjectCardIds: (projectId: string, issueIds: string[] = [], researchIds: string[] = []): SessionListRow[] => {
+  listActiveForProjectCardIds: (projectId: string, issueIds: string[] = [], researchIds: string[] = [], previewLimit = 4): SessionListRow[] => {
     const cleanIssueIds = Array.from(new Set(issueIds.map((id) => String(id || '').trim()).filter(Boolean))).slice(0, 100);
     const cleanResearchIds = Array.from(new Set(researchIds.map((id) => String(id || '').trim()).filter(Boolean))).slice(0, 100);
     const clauses: string[] = [];
@@ -196,9 +196,8 @@ const Sessions = {
       params.push(...cleanResearchIds);
     }
     if (clauses.length === 0) return [];
-    return db.prepare(`
-      SELECT ${SESSION_LIST_COLUMNS}, u.display_name as user_display_name,
-        (SELECT COUNT(*) FROM messages_v2 WHERE task_id = s.session_id) AS raw_entry_count
+    const rows = db.prepare(`
+      SELECT ${SESSION_LIST_COLUMNS}, u.display_name as user_display_name
       FROM sessions_v2 s
       LEFT JOIN users u ON s.user_id = u.id
       WHERE s.project_id = ?
@@ -210,6 +209,16 @@ const Sessions = {
         CASE s.research_role WHEN 'chief_researcher' THEN 0 ELSE 1 END,
         s.last_active DESC
     `).all(...params) as SessionListRow[];
+    const limit = Math.max(1, Math.min(Number(previewLimit) || 4, 10));
+    const seen = new Map<string, number>();
+    return rows.filter((row: any) => {
+      const parentId = row.scope_type === 'research' ? row.research_id : row.issue_id;
+      const key = `${row.scope_type}:${parentId || ''}`;
+      const count = seen.get(key) || 0;
+      if (count >= limit) return false;
+      seen.set(key, count + 1);
+      return true;
+    });
   },
 
   listActiveByIssue: (issueId: string): SessionRow[] => db.prepare("SELECT * FROM sessions_v2 WHERE issue_id = ? AND scope_type = 'issue' AND status = 'active'").all(issueId) as SessionRow[],
