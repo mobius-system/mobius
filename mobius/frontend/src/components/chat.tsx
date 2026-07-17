@@ -18,6 +18,7 @@ import { readJsonlCacheSync, readJsonlCacheFromIdb, writeJsonlCache } from '../s
 import { MobiusLogo } from './mobius-logo'
 import { PlanningEditor } from './planning-editor'
 import { KnowledgeEditorModal } from './knowledge-editor-modal'
+import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { isFireAndForgetSession } from '../services/session-start-policy'
 import {
@@ -3356,67 +3357,61 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
             </div>
           ) : (
             <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3">
-              <div className="grid grid-cols-2 items-stretch gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFileChangesOpen(true)}
-                  disabled={!sessionId}
-                  title="查看当前会话所有文件修改"
-                  className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-blue-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                  style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
-                  <FileDiff className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
-                  <span className="btn-label">查看文件修改</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBashCommandsOpen(true)}
-                  disabled={!sessionId}
-                  title="查看当前会话运行的所有Bash命令"
-                  className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                  style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
-                  <ScrollText className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
-                  <span className="btn-label">查看运行命令</span>
-                </button>
-                <ProjectPortEntryButton
-                  projectId={currentProjectId}
-                  subPath={currentVscodeSubPath}
-                  label="进入项目端口"
-                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                  onRequestRunProject={sendRunProjectPortPrompt}
-                />
-                <button
-                  type="button"
-                  onClick={() => setKnowledgeEditorOpen(true)}
-                  disabled={!currentProjectId || !currentIssueId}
-                  title="查看当前知识 (项目知识 / 本任务知识)"
-                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-cyan-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                >
-                  <BookOpen className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
-                  <span className="btn-label">查看当前知识</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTerminalChoiceOpen(true)}
-                  disabled={!currentSession?.session_id}
-                  title="打开当前会话终端"
-                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                >
-                  <Terminal className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
-                  <span className="btn-label">打开终端</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setContinueModalOpen(true)}
-                  disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
-                  title="修改模型并继续"
-                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-violet-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                >
-                  <Replace className="h-3.5 w-3.5 flex-shrink-0 text-violet-400" strokeWidth={1.9} />
-                  <span className="btn-label">修改模型并继续</span>
-                </button>
-                <SessionSkillMemoryEditor
-                  sessionId={currentSession?.session_id || sessionId}
-                />
+              <div className="space-y-2">
+                <div className="grid grid-cols-6 items-stretch gap-2">
+                  <AdvancedInteractionBtn
+                    onClick={() => setFileChangesOpen(true)}
+                    disabled={!sessionId}
+                    label="查看文件修改"
+                    tooltip="查看当前会话所有文件修改"
+                    accent="blue"
+                    icon={<FileDiff className="h-5 w-5" strokeWidth={1.9} />}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setBashCommandsOpen(true)}
+                    disabled={!sessionId}
+                    label="查看运行命令"
+                    tooltip="查看当前会话运行的所有Bash命令"
+                    accent="emerald"
+                    icon={<ScrollText className="h-5 w-5" strokeWidth={1.9} />}
+                  />
+                  <ProjectPortEntryButton
+                    projectId={currentProjectId}
+                    subPath={currentVscodeSubPath}
+                    label="进入项目端口"
+                    triggerVariant="advanced"
+                    onRequestRunProject={sendRunProjectPortPrompt}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setKnowledgeEditorOpen(true)}
+                    disabled={!currentProjectId || !currentIssueId}
+                    label="查看当前知识"
+                    tooltip="查看当前知识 (项目知识 / 本任务知识)"
+                    accent="cyan"
+                    icon={<BookOpen className="h-5 w-5" strokeWidth={1.9} />}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setTerminalChoiceOpen(true)}
+                    disabled={!currentSession?.session_id}
+                    label="打开终端"
+                    tooltip="打开当前会话终端"
+                    accent="emerald"
+                    icon={<Terminal className="h-5 w-5" strokeWidth={1.9} />}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setContinueModalOpen(true)}
+                    disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
+                    label="修改模型并继续"
+                    tooltip="修改模型并继续"
+                    accent="violet"
+                    icon={<Replace className="h-5 w-5" strokeWidth={1.9} />}
+                  />
+                </div>
+                <div className="grid grid-cols-2 items-stretch gap-2">
+                  <SessionSkillMemoryEditor
+                    sessionId={currentSession?.session_id || sessionId}
+                  />
+                </div>
               </div>
             </div>
           )}

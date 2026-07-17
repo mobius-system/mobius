@@ -2907,10 +2907,10 @@ export function NewSessionModal({
                     border: `1px solid ${isDark ? 'rgba(59,130,246,0.3)' : 'rgba(59,130,246,0.25)'}`,
                     color: isDark ? '#93c5fd' : '#1d4ed8',
                   }}>
-                    勾选要在本 {displayEntityLabel} 启用的 Skill / Memory. <strong>{isPresetMode ? '保存预设时' : `创建 ${displayEntityLabel} 时`}</strong>会记录这份配置, 首次发消息按配置注入所选智能体, 修改全局 Skill/Memory 不再影响已创建的 {displayEntityLabel}.
+                    勾选要在本{displayEntityLabel}启用的 Skill / Memory. <strong>{isPresetMode ? '保存预设时' : `创建${displayEntityLabel}时`}</strong>会记录这份配置, 首次发消息按配置注入所选智能体。
                     {isResearch && <div className="mt-1.5">研究角色: <strong>{role}</strong>（创建后不可更改）</div>}
                     <div className="mt-1.5">模型: <strong>{selectedModelOption?.label || SESSION_MODEL_LABEL[model] || model}</strong>（创建后不可更改, 如需更换请返回上一步）</div>
-                    <div className="mt-1">语言: <strong>{SESSION_LANGUAGE_LABEL[language]}</strong>（创建后不可更改）</div>
+                    <div className="mt-1">语言: <strong>{SESSION_LANGUAGE_LABEL[language]}</strong>（创建后不可更改, 如需更换请返回上一步）</div>
                     {selectedPersonality && <div className="mt-1">性格: <strong>{selectedPersonality?.label}</strong></div>}
                     {requiredSessionSkill && <div className="mt-1">必选 Skill: <strong>{requiredSessionSkill.label || requiredSessionSkill.dirName}</strong></div>}
                   </div>
