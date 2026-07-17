@@ -875,7 +875,7 @@ export function ProjectSettingsPanel({
         />
       </div>
 
-      <div className="flex items-center gap-2 border rounded-lg mt-10" style={{background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+      <div className="flex items-center gap-2 border rounded-lg mt-5" style={{background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
         {project.kind === 'extension' && (
           <div className="px-5 py-3 border-b text-[12px]"
             style={{ borderColor: 'var(--border-color)', background: 'rgba(167,139,250,0.06)', color: '#a78bfa' }}>
