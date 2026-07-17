@@ -164,7 +164,10 @@ function edgePath(from: GraphNode, to: GraphNode) {
   const y1 = from.y + from.height / 2
   const x2 = to.x
   const y2 = to.y + to.height / 2
-  return `M ${x1} ${y1} L ${x2} ${y2}`
+  const dx = Math.max(80, x2 - x1)
+  const curve = Math.max(64, dx * 0.5)
+  const sameLineBow = Math.abs(y2 - y1) < 8 ? 18 : 0
+  return `M ${x1} ${y1} C ${x1 + curve} ${y1 + sameLineBow}, ${x2 - curve} ${y2 - sameLineBow}, ${x2} ${y2}`
 }
 
 function buildGraph(project: any, data: ProjectGraphData): { nodes: GraphNode[]; edges: GraphEdge[]; width: number; height: number } {
@@ -443,6 +446,9 @@ export default function MobiusOverviewPage() {
   const [viewportOffset, setViewportOffset] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
   const panRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null)
+  const viewportOffsetRef = useRef({ x: 0, y: 0 })
+  const graphCanvasRef = useRef<HTMLDivElement | null>(null)
+  const panFrameRef = useRef<number | null>(null)
 
   const selectedRange = useMemo(
     () => TIME_RANGE_OPTIONS.find((option) => option.key === timeRange) || TIME_RANGE_OPTIONS[3],
@@ -457,6 +463,10 @@ export default function MobiusOverviewPage() {
     setCurrentSession(null)
     setCurrentTask(null)
   }, [setCurrentProject, setCurrentIssue, setCurrentResearch, setCurrentSession, setCurrentTask])
+
+  useEffect(() => () => {
+    if (panFrameRef.current != null) cancelAnimationFrame(panFrameRef.current)
+  }, [])
 
   useEffect(() => {
     api('/api/projects?all=true')
@@ -499,7 +509,10 @@ export default function MobiusOverviewPage() {
   useEffect(() => {
     if (selectedProject?.id) setCurrentProject(selectedProject)
     setSelectedNode(null)
-    setViewportOffset({ x: 0, y: 0 })
+    const nextOffset = { x: 0, y: 0 }
+    viewportOffsetRef.current = nextOffset
+    setViewportOffset(nextOffset)
+    if (graphCanvasRef.current) graphCanvasRef.current.style.transform = 'translate3d(0px, 0px, 0)'
   }, [selectedProject?.id, timeRange, setCurrentProject])
 
   const loadProjectGraph = useCallback((projectId: string) => {
@@ -574,20 +587,33 @@ export default function MobiusOverviewPage() {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      originX: viewportOffset.x,
-      originY: viewportOffset.y,
+      originX: viewportOffsetRef.current.x,
+      originY: viewportOffsetRef.current.y,
     }
     setIsPanning(true)
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
+  const schedulePanTransform = () => {
+    if (panFrameRef.current != null) return
+    panFrameRef.current = requestAnimationFrame(() => {
+      panFrameRef.current = null
+      const el = graphCanvasRef.current
+      if (!el) return
+      const { x, y } = viewportOffsetRef.current
+      el.style.transform = `translate3d(${x}px, ${y}px, 0)`
+    })
+  }
+
   const handlePanMove = (event: PointerEvent<HTMLDivElement>) => {
     const pan = panRef.current
     if (!pan || pan.pointerId !== event.pointerId) return
-    setViewportOffset({
+    event.preventDefault()
+    viewportOffsetRef.current = {
       x: pan.originX + event.clientX - pan.startX,
       y: pan.originY + event.clientY - pan.startY,
-    })
+    }
+    schedulePanTransform()
   }
 
   const endPan = (event: PointerEvent<HTMLDivElement>) => {
@@ -595,6 +621,7 @@ export default function MobiusOverviewPage() {
     if (pan && pan.pointerId === event.pointerId) {
       panRef.current = null
       setIsPanning(false)
+      setViewportOffset(viewportOffsetRef.current)
       try { event.currentTarget.releasePointerCapture(event.pointerId) } catch {}
     }
   }
@@ -705,11 +732,12 @@ export default function MobiusOverviewPage() {
             onPointerCancel={endPan}
           >
             <div
-              className="relative transition-transform duration-75"
+              ref={graphCanvasRef}
+              className={`relative will-change-transform ${isPanning ? '' : 'transition-transform duration-150'}`}
               style={{
                 width: graph.width,
                 height: graph.height,
-                transform: `translate(${viewportOffset.x}px, ${viewportOffset.y}px)`,
+                transform: `translate3d(${viewportOffset.x}px, ${viewportOffset.y}px, 0)`,
               }}
             >
               <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" width={graph.width} height={graph.height}>
@@ -722,9 +750,10 @@ export default function MobiusOverviewPage() {
                       key={edge.id}
                       d={edgePath(from, to)}
                       fill="none"
-                      stroke="rgba(148, 163, 184, 0.55)"
-                      strokeWidth={1.4}
+                      stroke="rgba(148, 163, 184, 0.58)"
+                      strokeWidth={1.55}
                       strokeLinecap="round"
+                      strokeLinejoin="round"
                       className="transition-all duration-500"
                     />
                   )
