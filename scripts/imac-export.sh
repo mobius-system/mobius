@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
-# imac-export.sh — 在源机抽 User+Skill+Memory 包 (zip)
 #
-# 用法:
-#   bash imac-export.sh                                # 默认: 所有用户, 带 password_hash, 输出到当前目录
-#   bash imac-export.sh --out /tmp/bundle.zip          # 自定义输出
-#   bash imac-export.sh --no-password                  # 对外分享时务必加这个 (剔除 bcrypt hash)
-#   bash imac-export.sh --users alice,bob               # 只导部分用户（替换为实际用户 ID）
 #
-# 依赖: 当前机器要有 node + mobius/node_modules (better-sqlite3, js-yaml); python3 (zipfile)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -33,14 +26,12 @@ STAGING="$(mktemp -d -t imac-bundle-XXXXXX)"
 trap 'rm -rf "$STAGING"' EXIT
 
 cd "$ROOT/mobius"
-# 默认 DB / protected 路径相对仓库根, 让 node 解析
 EXTRA_ARGS+=(--staging "$STAGING")
 node scripts/imac-export.js \
   --db "$DB" \
   --protected "$PROTECTED" \
   "${EXTRA_ARGS[@]}"
 
-# 用 python3 标准库打包 (避免 zip 工具依赖)
 cd "$STAGING"
 python3 -c "
 import zipfile, os, sys

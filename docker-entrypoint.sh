@@ -13,12 +13,6 @@ set -euo pipefail
 : "${MOBIUS_SSH_URL:=localhost:${MOBIUS_SSH_PORT}}"
 : "${MOBIUS_SSH_FORWARD_USER:=mobius-forward}"
 
-# aimux bridge 反向代理 broker: 内置于 mobius 容器, 通过 PM2 ecosystem mobius-system-bridge 拉起.
-# runtime.json 是 mobius 反代路由 /aimux_bridge/* 的服务发现凭据 (url + token).
-# Bridge 只 bind 127.0.0.1: 外部 aimux client 不直连 bridge, 而是走 mobius /aimux_bridge/* 反代,
-# 用 mobius JWT 鉴权 (proxy 内部把 JWT 换成 bridge Bearer 再转发).
-# AIMUX_BRIDGE_RUNTIME 不显式设: 让 aimux CLI/broker 走自身默认 fallback (~/.aimux/bridge/runtime.json).
-# 这样 agent 调 aimux CLI 时无需 export env, 跟 aimux 0.1.3 上游行为一致.
 : "${AIMUX_BRIDGE_HOST:=127.0.0.1}"
 : "${AIMUX_BRIDGE_PORT:=33315}"
 export AIMUX_BRIDGE_HOST AIMUX_BRIDGE_PORT
@@ -49,8 +43,6 @@ if [[ -f /app_image/scripts/install-dummy-bash-cmd-list.bash ]] && [[ ! -x /usr/
 fi
 
 # -- seed codex credentials into the persistent bind mount on first boot --
-# $HOME/.codex 现在是宿主机挂载, 首次为空 → 从构建期种子 /opt/codex-seed 拷入。
-# 之后运行时对 token 的刷新都会落到宿主机, 容器重建不丢。
 CODEX_HOME_DIR="${CODEX_HOME:-${HOME:-/root}/.codex}"
 if [[ -d /opt/codex-seed ]] && [[ -z "$(ls -A "$CODEX_HOME_DIR" 2>/dev/null)" ]]; then
   echo "[entrypoint] seeding $CODEX_HOME_DIR from /opt/codex-seed (first boot)"
@@ -59,8 +51,6 @@ if [[ -d /opt/codex-seed ]] && [[ -z "$(ls -A "$CODEX_HOME_DIR" 2>/dev/null)" ]]
 fi
 
 # -- seed claude settings into the persistent bind mount on first boot --
-# $HOME/.claude 现在是宿主机挂载, 首次为空 → 从构建期种子 /opt/claude-seed 拷入。
-# 之后运行时对 settings/projects 的刷新都会落到宿主机, 容器重建不丢。
 CLAUDE_HOME_DIR="${HOME:-/root}/.claude"
 if [[ -d /opt/claude-seed ]] && [[ -z "$(ls -A "$CLAUDE_HOME_DIR" 2>/dev/null)" ]]; then
   echo "[entrypoint] seeding $CLAUDE_HOME_DIR from /opt/claude-seed (first boot)"

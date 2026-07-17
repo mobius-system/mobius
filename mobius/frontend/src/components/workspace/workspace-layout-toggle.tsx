@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { Check, Columns2, Columns3, LayoutTemplate, PanelLeft } from 'lucide-react'
 import { useStore, type WorkspaceLayoutMode } from '../../store'
 import { useIsMobile } from '../resizable-panel'
+import { TopNavActionElement } from '../top-nav-action'
 import { useEditorAvailability } from './use-editor-availability'
 
 // =====================================================================
@@ -92,14 +93,14 @@ export function WorkspaceLayoutToggle() {
 
   return (
     <div className="relative flex-shrink-0">
-      <button
+      <TopNavActionElement
         type="button"
-        onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
+        onClick={(e: any) => { e.stopPropagation(); setOpen(o => !o) }}
         aria-haspopup="menu"
         aria-expanded={open}
         data-tour="top-layout-toggle"
         title="切换工作区布局"
-        className="mobius-workspace-toggle h-8 flex shrink-0 items-center gap-1.5 rounded-lg px-2 border transition-colors"
+        className="mobius-workspace-toggle"
         style={{
           color: mode !== 'session' ? 'var(--accent-primary)' : 'var(--text-secondary)',
           borderColor: mode !== 'session' ? 'color-mix(in srgb, var(--accent-primary) 45%, var(--border-color))' : 'var(--border-color)',
@@ -108,7 +109,7 @@ export function WorkspaceLayoutToggle() {
       >
         <LayoutTemplate className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
         {/* <span className="text-[12px] font-medium whitespace-nowrap">{currentLabel}</span> */}
-      </button>
+      </TopNavActionElement>
 
       {open && (
         <div

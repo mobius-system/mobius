@@ -16,6 +16,7 @@ import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveC
 import { useIsMobile } from './resizable-panel'
 import { DesktopDragHandle, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
+import { TopNavActionElement } from './top-nav-action'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入); 平台用 navigator.platform 判:
@@ -228,8 +229,10 @@ function DiskIndicator() {
     : '系统磁盘占用'
 
   return (
-    <div
-      className="h-8 px-2 flex items-center gap-1.5 border rounded-lg select-none"
+    <TopNavActionElement
+      as="div"
+      interactive={false}
+      className="select-none"
       title={title}
       style={{ color, borderColor: danger ? 'rgba(239,68,68,0.4)' : 'var(--border-color)' }}>
       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -241,7 +244,7 @@ function DiskIndicator() {
       <span className="text-[12px] tabular-nums font-medium">
         {pct != null ? `${pct}%` : '--'}
       </span>
-    </div>
+    </TopNavActionElement>
   )
 }
 
@@ -268,8 +271,10 @@ function MemoryIndicator() {
   const color = danger ? '#ef4444' : 'var(--text-muted)'
 
   return (
-    <div
-      className="h-8 px-2 flex items-center gap-1.5 border rounded-lg select-none"
+    <TopNavActionElement
+      as="div"
+      interactive={false}
+      className="select-none"
       title={mem ? `服务器内存占用 ${pct}%（${mem.usedMb} / ${mem.totalMb} MB）` : '服务器内存占用'}
       style={{ color, borderColor: danger ? 'rgba(239,68,68,0.4)' : 'var(--border-color)' }}>
       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -279,7 +284,7 @@ function MemoryIndicator() {
       <span className="text-[12px] tabular-nums font-medium">
         {pct != null ? `${pct}%` : '--'}
       </span>
-    </div>
+    </TopNavActionElement>
   )
 }
 
@@ -320,8 +325,10 @@ function VersionIndicator() {
     : 'Mobius 版本与启动时长'
 
   return (
-    <div
-      className="h-8 max-w-[210px] px-2 flex items-center gap-1.5 border rounded-lg select-none"
+    <TopNavActionElement
+      as="div"
+      interactive={false}
+      className="max-w-[210px] select-none"
       title={title}
       style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
       {/* <span className="text-[11px] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>ver</span>
@@ -332,7 +339,7 @@ function VersionIndicator() {
       <span className="text-[12px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>
         {uptime}
       </span>
-    </div>
+    </TopNavActionElement>
   )
 }
 
@@ -868,7 +875,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               aria-haspopup="menu"
               aria-expanded={showRecentSessions}
               title="近期活跃会话"
-              onClick={(event) => {
+              onClick={(event: any) => {
                 event.stopPropagation()
                 setShowThemeMenu(false)
                 setShowUserMenu(false)
@@ -1014,38 +1021,35 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           {/* 工作区布局切换 (会话 ↔ 代码对话) — 仅 Issue/Research 路由渲染, 桌面端可见 */}
           <WorkspaceLayoutToggle />
           {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
-          <button
+          <TopNavActionElement
             type="button"
             onClick={() => setShowSearch(true)}
             title="搜索会话内容"
             aria-label="搜索会话内容"
             data-tour="top-search"
-            className="mobius-search-trigger h-8 flex shrink-0 items-center gap-1.5 rounded-lg px-2 border hover:bg-[var(--bg-card-hover)] transition-colors"
-            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}>
+            className="mobius-search-trigger">
             <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
             {/* {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>} */}
-          </button>
-          <button
+          </TopNavActionElement>
+          <TopNavActionElement
             type="button"
             onClick={() => setShowGuideHelp(true)}
             title="帮助与引导"
             data-tour="top-guide-help"
-            className="h-8 w-8 flex shrink-0 items-center justify-center border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
-            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
+            iconOnly
           >
             <CircleQuestionMark className="w-3.5 h-3.5" strokeWidth={2} />
-          </button>
-          <a
+          </TopNavActionElement>
+          <TopNavActionElement
+            as="a"
             href="https://github.com/nutshellai-tech/mobius.git"
             target="_blank"
             rel="noopener noreferrer"
             title="GitHub"
             aria-label="GitHub"
-            className="h-8 flex shrink-0 items-center gap-1.5 rounded-lg px-2 border hover:bg-[var(--bg-card-hover)] transition-colors"
-            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
           >
             <GithubIcon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-          </a>
+          </TopNavActionElement>
           {!IS_DESKTOP && (
             <div data-tour="top-system-status" className="mobius-topnav-status flex shrink-0 items-center gap-2">
               <DiskIndicator />
@@ -1054,9 +1058,9 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             </div>
           )}
           <div className="relative shrink-0" data-tour="top-theme-toggle">
-            <button
+            <TopNavActionElement
               type="button"
-              onClick={(event) => {
+              onClick={(event: any) => {
                 if (event.altKey) {
                   toggleTheme()
                   return
@@ -1067,18 +1071,14 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               title={`当前主题: ${headerLabel}。Alt+点击切换下一个主题`}
               aria-label="选择主题"
               aria-expanded={showThemeMenu}
-              className="h-8 max-w-[128px] min-w-0 px-2 flex items-center justify-center gap-1.5 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
-              style={{
-                color: 'var(--text-secondary)',
-                borderColor: 'var(--border-color)',
-              }}
+              className="max-w-[128px] min-w-0 justify-center"
             >
               {headerIconKey === 'light' ? <Sun className="w-3.5 h-3.5 shrink-0" strokeWidth={2} /> : headerIconKey === 'dark' ? <Moon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} /> : <Sliders className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />}
               <span className="mobius-topnav-theme-label min-w-0 max-w-[80px] truncate text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>{headerLabel}</span>
-            </button>
+            </TopNavActionElement>
             {showThemeMenu && (
               <div
-                className="absolute right-0 top-10 z-50 max-h-[calc(100vh-82px)] w-[260px] overflow-y-auto rounded-lg p-1.5 shadow-xl"
+                className="absolute right-0 top-9 z-50 max-h-[calc(100vh-82px)] w-[260px] overflow-y-auto rounded-lg p-1.5 shadow-xl"
                 style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
                 onClick={event => event.stopPropagation()}
               >
@@ -1201,17 +1201,18 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 
           {/* 用户菜单 */}
           <div className="relative" data-tour="top-user-menu">
-            <button onClick={(e) => { e.stopPropagation(); setShowUserMenu(s => !s) }}
-              className="h-8 flex items-center gap-2 pl-1 pr-2 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
-              style={{ borderColor: 'var(--border-color)' }}>
+            <TopNavActionElement
+              type="button"
+              onClick={(e: any) => { e.stopPropagation(); setShowUserMenu((s) => !s) }}
+              className="gap-2 pl-1 pr-2">
               <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500/30 to-cyan-500/20 flex items-center justify-center text-blue-300 text-[11px] font-semibold border border-blue-500/20">
                 {user?.display_name?.[0]}
               </div>
               {!isMobile && <span className="text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>{user?.display_name}</span>}
               {!isMobile && <svg className="w-3 h-3" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>}
-            </button>
+            </TopNavActionElement>
             {showUserMenu && (
-              <div className="absolute right-0 top-10 z-50 rounded-lg shadow-xl py-1 min-w-[180px]"
+              <div className="absolute right-0 top-9 z-50 rounded-lg shadow-xl py-1 min-w-[180px]"
                 style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
                 onClick={e => e.stopPropagation()}>
                 {user?.role === 'admin' && (

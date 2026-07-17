@@ -1,19 +1,10 @@
 #!/usr/bin/env bash
-# imac-import.sh — 在目标机把 export 包还原: UPSERT users/preferences + 还原 skill/memory FS
 #
-# 推荐在容器内运行 (避免装宿主 node):
 #   podman cp imac-user-bundle-xxx.zip imac:/tmp/bundle.zip
 #   podman exec imac bash /app/imac-import.sh --bundle /tmp/bundle.zip
 #
-# 宿主跑也行 (要 node + mobius/node_modules + python3):
 #   bash imac-import.sh --bundle /path/to/bundle.zip
 #
-# 选项:
-#   --bundle <zip>                必填
-#   --workspace-root <path>       默认 $WORKSPACE_ROOT 或 /data/workspace
-#   --skip-password               即使包里有 hash 也不导入 (开源场景, 让用户重设)
-#   --reset-prompt                清空 personal_prompt
-#   --db / --protected <path>     默认优先读 DB_PATH / CORE_DATA_PATH
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -36,7 +27,7 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown arg: $1"; exit 2;;
   esac
 done
-[[ -z "$BUNDLE" ]] && { echo "需要 --bundle <zip>"; exit 2; }
+[[ -z "$BUNDLE" ]] && { echo "missing --bundle <zip>"; exit 2; }
 [[ -f "$BUNDLE" ]] || { echo "bundle not found: $BUNDLE"; exit 2; }
 
 STAGING="$(mktemp -d -t imac-bundle-XXXXXX)"
