@@ -881,7 +881,7 @@ export function ProjectSettingsPanel({
           这是一个特殊拓展项目, 由 <code style={{ background: 'rgba(0,0,0,0.2)', padding: '0 4px', borderRadius: 3 }}>mobius/extension/{project.extension_name}</code> 自动同步.
           名称 / 描述 / 路径 / worktree / Research 由 manifest 锁定, 不可在此修改.
           {project.disabled && <span style={{ color: '#f87171' }}> [目录已消失, 但数据保留]</span>}
-          <span className="block mt-1">本项目所有 Session 必选 mobius-extension skill, 用于带上拓展开发的协议与目录规范.</span>
+          <span className="block mt-1">本项目所有会话必选 mobius-extension skill, 用于带上拓展开发的协议与目录规范.</span>
         </div>
       )}
 
@@ -1149,8 +1149,8 @@ export function ProjectSettingsPanel({
               </ToggleSwitch>
               <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
                 {editResearchEnabled
-                  ? '已启用 Research 系统，本项目强制禁用 worktree'
-                  : '开启后，本项目新建 Issue 时「使用 git worktree」默认打钩，否则默认不打钩'}
+                  ? '已启用研究系统，本项目强制禁用 worktree'
+                  : '开启后，本项目新建任务时「使用 git worktree」默认打钩，否则默认不打钩'}
               </p>
             </div>
             <div className="pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
@@ -1165,7 +1165,7 @@ export function ProjectSettingsPanel({
                 style={{ color: 'var(--text-primary)' }}>
                 启用 Research 系统
               </ToggleSwitch>
-              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示 Research 入口；Research 与 Issues 并列管理。启用时会自动禁用 git worktree</p>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示研究入口；研究与任务并列管理。启用时会自动禁用 git worktree</p>
             </div>
             <div className="pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
               <div className="flex items-center justify-between mb-2 gap-2">
@@ -1228,7 +1228,7 @@ export function ProjectSettingsPanel({
             <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒策略</label>
             <div className="space-y-3">
               <div>
-                <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>Issue Session</div>
+                <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>任务会话</div>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
@@ -1260,7 +1260,7 @@ export function ProjectSettingsPanel({
                 </div>
               </div>
               <div>
-                <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>Research Agent</div>
+                <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>研究智能体</div>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
@@ -1292,7 +1292,7 @@ export function ProjectSettingsPanel({
                 </div>
               </div>
             </div>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>默认 Issue: 10 / 2 / 3；Research: 30 / 5 / 5。第 N 次后的下一次等待为 Init × Backoff^N；达到 Patience 后只记录日志。</p>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>默认任务: 10 / 2 / 3；研究: 30 / 5 / 5。第 N 次后的下一次等待为 Init × Backoff^N；达到 Patience 后只记录日志。</p>
           </div>
         </SettingsCard>
 

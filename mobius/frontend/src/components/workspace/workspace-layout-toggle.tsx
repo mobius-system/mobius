@@ -76,7 +76,7 @@ export function WorkspaceLayoutToggle() {
       desc: '接入内置 VSCode 编辑',
       icon: Columns2,
       available: v1Available,
-      unavailableReason: !currentSession ? '请先选择 Session' : !bindPath ? '项目未绑定路径' : '未配置 Web 编辑器 (VSCODE_WEB_URL)',
+      unavailableReason: !currentSession ? '请先选择会话' : !bindPath ? '项目未绑定路径' : '未配置 Web 编辑器 (VSCODE_WEB_URL)',
     },
     {
       mode: 'code-conversation',
@@ -84,7 +84,7 @@ export function WorkspaceLayoutToggle() {
       desc: '接入原生文件编辑器编辑',
       icon: Columns3,
       available: v2Available,
-      unavailableReason: !currentSession ? '请先选择 Session' : '项目未绑定路径',
+      unavailableReason: !currentSession ? '请先选择会话' : '项目未绑定路径',
     },
   ]
 

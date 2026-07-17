@@ -50,19 +50,19 @@ export function ResearchCard({
       )}
 
       <div className="px-4 py-2 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        <span>{activeSessions.length} 活跃 · {sessions.length} 个 Research Agent</span>
+        <span>{activeSessions.length} 活跃 · {sessions.length} 个研究智能体</span>
         <span>{chief ? '已有 chief' : '未创建 chief'}</span>
         <span className="ml-auto">活跃 {timeAgo(research.last_active)}</span>
       </div>
 
       <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>Research Agents</span>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>研究智能体</span>
           <Link to={`/u/${userParam}/p/${projectId}/r/${research.id}`}
             className="text-[11px] text-emerald-400 hover:text-emerald-300 transition-colors">进入研究 →</Link>
         </div>
         {sessions.length === 0 ? (
-          <div className="text-[11px] py-1" style={{ color: 'var(--text-muted)' }}>暂无 Research Agent</div>
+          <div className="text-[11px] py-1" style={{ color: 'var(--text-muted)' }}>暂无研究智能体</div>
         ) : (
           <div className="space-y-1">
             {sessions.slice(0, 4).map((s: any) => (

@@ -316,7 +316,7 @@ export default function IssuePage() {
                   data-tour="issue-overview-link"
                   className={`block w-full text-left text-[13px] font-semibold leading-tight hover:text-blue-400 transition-colors truncate ${issue?.status === 'completed' ? 'line-through' : ''}`}
                   style={{ color: issue?.status === 'completed' ? 'var(--text-muted)' : 'var(--text-primary)' }}
-                  title="返回Session列表">
+                  title="返回会话列表">
                   {issue?.title || '加载中...'}
                 </button>
                 {project && (
@@ -331,7 +331,7 @@ export default function IssuePage() {
                 className="p-1 rounded hover:bg-[var(--bg-hover)] transition-colors flex-shrink-0" style={{ color: issue?.starred ? '#f59e0b' : 'var(--text-muted)' }}>
                 <svg className="w-3.5 h-3.5" fill={issue?.starred ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
               </button>
-              <button onClick={() => setEditingIssue(true)} title="编辑 Issue"
+              <button onClick={() => setEditingIssue(true)} title="编辑任务"
                 className="p-1 rounded hover:bg-[var(--bg-hover)] transition-colors flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
               </button>
@@ -339,15 +339,15 @@ export default function IssuePage() {
             {selectedSession ? (
               <div className="space-y-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                 <div>
-                  <div className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Issue现状</div>
+                  <div className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>任务现状</div>
                   <TruncatedText text={issueSummary || '暂无描述'} lines={2} />
                 </div>
                 <div>
-                  <div className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Session名称</div>
-                  <TruncatedText text={selectedSessionName || '未命名Session'} lines={1} />
+                  <div className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>会话名称</div>
+                  <TruncatedText text={selectedSessionName || '未命名会话'} lines={1} />
                 </div>
                 <div>
-                  <div className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Session目的</div>
+                  <div className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>会话目的</div>
                   <TruncatedText text={selectedSessionPurpose || '未填写'} lines={2} />
                 </div>
               </div>
@@ -372,7 +372,7 @@ export default function IssuePage() {
               <button onClick={goToOverview}
                 className="text-[12px] font-semibold hover:text-blue-400 transition-colors flex-shrink-0"
                 style={{ color: 'var(--text-muted)' }}
-                title="返回Session列表">
+                title="返回会话列表">
                 Sessions
               </button>
               {/* <span className="rounded-full border px-2 py-0.5 text-[10px] font-medium flex-shrink-0"
@@ -380,7 +380,7 @@ export default function IssuePage() {
                 {sessions.length} 个
               </span> */}
             </div>
-            <PrimaryActionButton onClick={() => setShowNewSession(true)} title="新建Session"
+            <PrimaryActionButton onClick={() => setShowNewSession(true)} title="新建会话"
               data-tour="issue-sidebar-new-session"
               icon={<MessageSquarePlus className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} />}>
               <span className="whitespace-nowrap">新会话</span>
@@ -397,7 +397,7 @@ export default function IssuePage() {
                 className="mt-2 w-full rounded-xl border border-dashed px-3 py-5 text-center transition-colors hover:border-blue-500/35 hover:bg-blue-500/5"
                 style={{ borderColor: 'var(--border-color)' }}>
                 <MessageSquarePlus className="mx-auto mb-2 h-5 w-5 text-blue-400" strokeWidth={1.8} />
-                <div className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>创建第一个 Session</div>
+                <div className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>创建第一个会话</div>
                 <div className="mt-1 text-[10px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                   为当前 Issue 开启一次智能体执行
                 </div>
@@ -524,8 +524,8 @@ export default function IssuePage() {
           setCurrentIssue(updated)
         }} />}
       {deletingSession && <ConfirmModal
-        title="删除Session"
-        message={`确定删除Session「${deletingSession.name}」？删除后将立即永久删除，不再保留。`}
+        title="删除会话"
+        message={`确定删除会话「${deletingSession.name}」？删除后将立即永久删除，不再保留。`}
         onConfirm={handleDeleteSession}
         onClose={() => setDeletingSession(null)}
         confirmText="删除"
@@ -584,18 +584,18 @@ function SessionOverview({ sessions, issueId, onOpenSession, onNewSession, onEdi
       <div className="max-w-5xl mx-auto p-6">
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>所有Session</h1>
+            <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>所有会话</h1>
             <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>
               {showPagination
-                ? `共 ${sessions.length} 个Session · 当前显示 ${pageStart}-${pageEnd} 个`
-                : `共 ${sessions.length} 个Session · 点击进入对话或新建Session`}
+                ? `共 ${sessions.length} 个会话 · 当前显示 ${pageStart}-${pageEnd} 个`
+                : `共 ${sessions.length} 个会话 · 点击进入对话或新建会话`}
             </p>
           </div>
         </div>
 
         {sessions.length === 0 ? (
           <div className="rounded-2xl border-dashed border-2 p-12 text-center" style={{ borderColor: 'var(--border-color)' }}>
-            <div className="text-[14px] mb-3" style={{ color: 'var(--text-muted)' }}>当前 Issue 还没有Session</div>
+            <div className="text-[14px] mb-3" style={{ color: 'var(--text-muted)' }}>当前任务还没有会话</div>
             <button onClick={onNewSession}
               data-tour="issue-empty-create-session"
               className="h-10 px-4 rounded-xl text-[13px] btn-primary transition-colors inline-flex items-center gap-2 shadow-lg shadow-black/10">
@@ -770,11 +770,11 @@ function SessionSwitcher({ sessions, currentId, onPick }: {
       <button
         type="button"
         onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
-        title="切换 Session"
+        title="切换会话"
         aria-haspopup="menu"
         aria-expanded={open}
         className="inline-flex h-6 max-w-[180px] items-center gap-1 rounded px-1.5 transition-colors hover:bg-[var(--bg-card-hover)]">
-        <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{current?.name || '选择 Session'}</span>
+        <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{current?.name || '选择会话'}</span>
         <ChevronDown className="w-3 h-3 shrink-0" style={{ color: 'var(--text-muted)' }} />
       </button>
       {open && (
@@ -786,13 +786,13 @@ function SessionSwitcher({ sessions, currentId, onPick }: {
             autoFocus
             value={q}
             onChange={e => setQ(e.target.value)}
-            placeholder="搜索 Session..."
+            placeholder="搜索会话..."
             className="mb-1 h-7 w-full rounded-md px-2 text-[12px] focus:outline-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
           />
           <div className="overflow-y-auto">
             {filtered.length === 0 ? (
-              <div className="px-2 py-2 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>无匹配 Session</div>
+              <div className="px-2 py-2 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>无匹配会话</div>
             ) : filtered.map(s => (
               <button
                 key={s.session_id}

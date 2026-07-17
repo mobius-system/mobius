@@ -63,14 +63,14 @@ const PROJECT_KIND_PRESETS: Array<{
   {
     kind: 'default',
     label: '经典项目',
-    desc: '导入或新建项目，后续可转 Research',
-    note: '默认不开 Research',
+    desc: '导入或新建项目，后续可转研究',
+    note: '默认不开研究',
   },
   {
     kind: 'research',
-    label: 'Research 项目',
+    label: '研究项目',
     desc: '多智能体长周期开放研究',
-    note: '自动启用 Research',
+    note: '自动启用研究',
   },
   {
     kind: 'extension',
@@ -461,7 +461,7 @@ export function SkillMemoryPicker({
   onToggleSkill, onToggleMemory,
   skillLockedOf, skillMutexOf, skillAccentOf,
   disabled, dark,
-  emptySkillText = '该 Issue 未启用 Skill',
+  emptySkillText = '该任务未启用 Skill',
   emptyMemoryText = '无可用 Memory',
 }: {
   skills: PickItem[]
@@ -589,7 +589,7 @@ export function SkillMemoryPicker({
 // 创建成功 — 次级确认弹窗 (需求: 跳转详情 → 新开 Tab; 否 → 仅关闭)
 function CreateSuccessDialog({ kind, name, detailUrl, onClose }: { kind: CreateKind; name: string; detailUrl?: string; onClose: () => void }) {
   const isDark = useStore(s => s.theme) !== 'light'
-  const labelMap: Record<CreateKind, string> = { project: '项目', issue: 'Issue', session: 'Session', research: 'Research Agent' }
+  const labelMap: Record<CreateKind, string> = { project: '项目', issue: '任务', session: '会话', research: '研究智能体' }
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center px-4">
       <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
@@ -787,7 +787,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   ) : null
 
   return (
-    <CreateModalShell title={projectKind === 'extension' ? '新建拓展项目' : projectKind === 'research' ? '新建 Research 项目' : '新建项目'} onClose={onClose} dark={dark} width={600}
+    <CreateModalShell title={projectKind === 'extension' ? '新建拓展项目' : projectKind === 'research' ? '新建研究项目' : '新建项目'} onClose={onClose} dark={dark} width={600}
       footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} />}>
       {/* 项目类型: 下拉菜单, 选定后下方字段自动联动 */}
       <div>
@@ -867,12 +867,12 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               onChange={enabled => { setResearchEnabled(enabled); if (enabled) setDefaultUseWorktree(false) }}
               className="flex items-start gap-3 text-[13px]"
               style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-              <span><span className="font-medium">启用 Research 系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建 Research Agent 团队</span></span>
+              <span><span className="font-medium">启用研究系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建研究智能体团队</span></span>
             </ToggleSwitch>
           )}
           {projectKind === 'research' && (
             <div className="rounded-xl px-3 py-2 text-[11px] flex items-center gap-2" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
-              <FlaskConical className="w-3.5 h-3.5" /> Research 项目已自动启用 Research 系统并禁用 git worktree
+              <FlaskConical className="w-3.5 h-3.5" /> 研究项目已自动启用研究系统并禁用 git worktree
             </div>
           )}
           {!researchEnabled && (
@@ -881,7 +881,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               onChange={setDefaultUseWorktree}
               className="flex items-center gap-3 text-[13px]"
               style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-              默认使用 git worktree（新建 Issue 时在绑定路径下开独立工作区）
+              默认使用 git worktree（新建任务时在绑定路径下开独立工作区）
             </ToggleSwitch>
           )}
         </>
@@ -950,8 +950,8 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
 
   const submit = async () => {
     if (!projectId) { setErr('请选择目标项目'); return }
-    if (!title.trim()) { setErr('请填写 Issue 标题'); return }
-    if (!effectiveDesc.trim()) { setErr('请填写 Issue 描述'); return }
+    if (!title.trim()) { setErr('请填写任务标题'); return }
+    if (!effectiveDesc.trim()) { setErr('请填写任务描述'); return }
     setLoading(true); setErr('')
     try {
       const iss = await api(`/api/projects/${projectId}/issues`, { method: 'POST', body: JSON.stringify({
@@ -971,8 +971,8 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
       <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setPermissionOpen(false)} />
       <div className="relative w-[420px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
         onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h4 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>修改 Issue 权限</h4>
-        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个 Issue。可选范围受所属项目权限限制。</p>
+        <h4 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>修改任务权限</h4>
+        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个任务。可选范围受所属项目权限限制。</p>
         <div>
           <div className="grid grid-cols-2 gap-1.5">
             {issueVisibilityOptions.map(opt => {
@@ -996,7 +996,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
   ) : null
 
   return (
-    <CreateModalShell title="新建 Issue" onClose={onClose} dark={dark} width={600}
+    <CreateModalShell title="新建任务" onClose={onClose} dark={dark} width={600}
       footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} disabled={!projectId} />}>
       <SelectShell label="目标项目" current={selectedProject?.name} loading={projects.loading} onRefresh={projects.refresh} dark={dark}
         hint={!defaultProjectId ? '可在任意项目下创建' : undefined}>
@@ -1012,18 +1012,18 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
               value: String(p.id),
               label: String(p.name),
               description: p.description ? String(p.description) : undefined,
-              badge: p.research_enabled ? { text: 'Research', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : undefined,
+              badge: p.research_enabled ? { text: '研究', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : undefined,
             })),
           ]}
         />
       </SelectShell>
       <div>
-        <SectionLabel>Issue 标题</SectionLabel>
+        <SectionLabel>任务标题</SectionLabel>
         <TextInput value={title} onChange={v => { setTitle(v); setErr('') }} placeholder="一句话说清这次任务" autoFocus dark={dark} />
       </div>
       <div>
-        <SectionLabel hint="默认同标题, 选填">Issue 描述</SectionLabel>
-        <ExpandableTextarea value={effectiveDesc} onValueChange={v => { setDesc(v); setDescTouched(true); setErr('') }} placeholder="详细说明任务目标与约束" overlayTitle="编辑 Issue 描述"
+        <SectionLabel hint="默认同标题, 选填">任务描述</SectionLabel>
+        <ExpandableTextarea value={effectiveDesc} onValueChange={v => { setDesc(v); setDescTouched(true); setErr('') }} placeholder="详细说明任务目标与约束" overlayTitle="编辑任务描述"
           className="w-full h-24 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
           style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }} />
       </div>
@@ -1032,7 +1032,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
         style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
         <Eye className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
         <span className="min-w-0 flex-1">
-          <span className="block text-[12px] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>修改 Issue 权限</span>
+          <span className="block text-[12px] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>修改任务权限</span>
           <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
             {visibilityOption.label} · 项目为{parentVisibilityLabel}，可选范围已收窄
           </span>
@@ -1055,11 +1055,11 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
             onChange={v => { setUseWorktree(v); setErr('') }}
             className="flex items-center gap-3 text-[13px]"
             style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-            使用 git worktree（在绑定路径下为本 Issue 开独立工作区）
+            使用 git worktree（在绑定路径下为本任务开独立工作区）
           </ToggleSwitch>
           {useWorktree && (
             <div>
-              <SectionLabel hint="留空则用 Issue 标识">分支名称</SectionLabel>
+              <SectionLabel hint="留空则用任务标识">分支名称</SectionLabel>
               <TextInput value={branch} onChange={v => { setBranch(v); setErr('') }} placeholder="例如：feature/login" dark={dark} />
             </div>
           )}
@@ -1207,8 +1207,8 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
 
   const submit = async () => {
     if (!projectId) { setErr('请选择目标项目'); return }
-    if (!issueId) { setErr('请选择目标 Issue'); return }
-    if (!name.trim()) { setErr('请填写 Session 名称'); return }
+    if (!issueId) { setErr('请选择目标任务'); return }
+    if (!name.trim()) { setErr('请填写会话名称'); return }
     setLoading(true); setErr('')
     try {
       const finalDesc = appendAttachmentsToDesc(desc.trim() || name, attachments)
@@ -1232,7 +1232,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   }
 
   return (
-    <CreateModalShell title="新建 Session" onClose={onClose} dark={dark} width={600}
+    <CreateModalShell title="新建会话" onClose={onClose} dark={dark} width={600}
       footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} disabled={!projectId || !issueId} />}>
       <SelectShell label="目标项目" current={selectedProject?.name} loading={projects.loading} onRefresh={projects.refresh} dark={dark}>
         <DropdownSelect
@@ -1247,21 +1247,21 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
               value: String(p.id),
               label: String(p.name),
               description: p.description ? String(p.description) : undefined,
-              badge: p.research_enabled ? { text: 'Research', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : undefined,
+              badge: p.research_enabled ? { text: '研究', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : undefined,
             })),
           ]}
         />
       </SelectShell>
-      <SelectShell label="目标 Issue" current={selectedIssue?.title} loading={issues.loading} onRefresh={issues.refresh} dark={dark} hint={projectId ? '' : '请先选择项目'}>
+      <SelectShell label="目标任务" current={selectedIssue?.title} loading={issues.loading} onRefresh={issues.refresh} dark={dark} hint={projectId ? '' : '请先选择项目'}>
         <DropdownSelect
           value={issueId}
           onChange={v => { setIssueId(v); setSelectionReady(false); setErr('') }}
           disabled={!projectId}
           dark={dark}
-          placeholder={projectId ? '— 选择 Issue —' : '请先选择项目'}
-          emptyText={projectId ? '该项目下暂无 Issue' : '请先选择项目'}
+          placeholder={projectId ? '— 选择任务 —' : '请先选择项目'}
+          emptyText={projectId ? '该项目下暂无任务' : '请先选择项目'}
           options={[
-            { value: '', label: projectId ? '— 选择 Issue —' : '请先选择项目', description: '取消选择' },
+            { value: '', label: projectId ? '— 选择任务 —' : '请先选择项目', description: '取消选择' },
             ...issues.list.map((i: any) => ({
               value: String(i.id),
               label: String(i.title),
@@ -1271,7 +1271,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
         />
       </SelectShell>
       <div>
-        <SectionLabel>Session 名称</SectionLabel>
+        <SectionLabel>会话名称</SectionLabel>
         <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="给这个会话起个名字" autoFocus dark={dark} />
       </div>
       <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个会话完成什么" attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
@@ -1284,7 +1284,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
         <LanguageSelect value={language} onChange={setLanguage} />
       </div>
       <div>
-        <SectionLabel hint={issueId ? '点击展开二级弹窗选择' : '选择 Issue 后可配置'}>Skill / Memory</SectionLabel>
+        <SectionLabel hint={issueId ? '点击展开二级弹窗选择' : '选择任务后可配置'}>Skill / Memory</SectionLabel>
         <SkillMemoryPicker
           skills={availSkills}
           memories={availMemories}
@@ -1441,11 +1441,11 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
     return undefined
   }, [isMainSkill, isMutexSkill])
 
-  const blockedReason = !projectId ? null : !researchEnabled ? '当前项目未启用 Research 系统，请前往项目设置开启' : null
+  const blockedReason = !projectId ? null : !researchEnabled ? '当前项目未启用研究系统，请前往项目设置开启' : null
 
   const submit = async () => {
     if (blockedReason) { setErr(blockedReason); return }
-    if (!researchId) { setErr('请选择目标 Research'); return }
+    if (!researchId) { setErr('请选择目标研究'); return }
     if (!name.trim()) { setErr('请填写 Agent 名称'); return }
     setLoading(true); setErr('')
     try {
@@ -1462,7 +1462,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   }
 
   return (
-    <CreateModalShell title="新建 Research Agent" onClose={onClose} dark={dark} width={600}
+    <CreateModalShell title="新建研究智能体" onClose={onClose} dark={dark} width={600}
       footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} disabled={!!blockedReason || !researchId} />}>
       <SelectShell label="目标项目" current={selectedProject?.name} loading={projects.loading} onRefresh={projects.refresh} dark={dark}>
         <DropdownSelect
@@ -1478,27 +1478,27 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
               label: String(p.name),
               description: p.research_enabled
                 ? (p.description ? String(p.description) : undefined)
-                : (p.description ? `${String(p.description)} · 未启用 Research` : '未启用 Research'),
-              badge: p.research_enabled ? { text: 'Research', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : { text: '未启用', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+                : (p.description ? `${String(p.description)} · 未启用研究` : '未启用研究'),
+              badge: p.research_enabled ? { text: '研究', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : { text: '未启用', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
             })),
           ]}
         />
       </SelectShell>
       {projectId && !researchEnabled && (
         <div className="rounded-xl px-3 py-2 text-[12px] flex items-center gap-2" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444' }}>
-          <Ban className="w-3.5 h-3.5" /> 当前项目未启用 Research 系统，请前往项目设置开启后再创建 Research Agent。
+          <Ban className="w-3.5 h-3.5" /> 当前项目未启用研究系统，请前往项目设置开启后再创建研究智能体。
         </div>
       )}
-      <SelectShell label="目标 Research" current={selectedResearch?.title} loading={researches.loading} onRefresh={researches.refresh} dark={dark} hint={researchEnabled ? '已激活的 Research' : ''}>
+      <SelectShell label="目标研究" current={selectedResearch?.title} loading={researches.loading} onRefresh={researches.refresh} dark={dark} hint={researchEnabled ? '已激活的研究' : ''}>
         <DropdownSelect
           value={researchId}
           onChange={v => { setResearchId(v); setErr('') }}
           disabled={!researchEnabled}
           dark={dark}
-          placeholder={researchEnabled ? '— 选择 Research —' : '请先选择已启用 Research 的项目'}
-          emptyText={researchEnabled ? '该项目下暂无激活的 Research' : '请先选择已启用 Research 的项目'}
+          placeholder={researchEnabled ? '— 选择研究 —' : '请先选择已启用研究的项目'}
+          emptyText={researchEnabled ? '该项目下暂无激活的研究' : '请先选择已启用研究的项目'}
           options={[
-            { value: '', label: researchEnabled ? '— 选择 Research —' : '请先选择已启用 Research 的项目', description: '取消选择' },
+            { value: '', label: researchEnabled ? '— 选择研究 —' : '请先选择已启用研究的项目', description: '取消选择' },
             ...researches.list.map((r: any) => ({
               value: String(r.id),
               label: String(r.title),
@@ -1531,7 +1531,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
         />
       </div>
       <div>
-        <SectionLabel hint={researchId ? '选定后关联 Skill 自动锁定、冲突 Skill 自动互斥' : '选择 Research 后可配置'}>主 Skill</SectionLabel>
+        <SectionLabel hint={researchId ? '选定后关联 Skill 自动锁定、冲突 Skill 自动互斥' : '选择研究后可配置'}>主 Skill</SectionLabel>
         <DropdownSelect
           value={chosenMainSkill?.id || ''}
           onChange={v => {
@@ -1540,10 +1540,10 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
           }}
           disabled={!researchId || agentSkills.length === 0}
           dark={dark}
-          placeholder={agentSkills.length === 0 ? '该 Research 无可用 Agent Skill' : '不选择主 Skill（完全自定义）'}
-          emptyText="该 Research 无可用 Agent Skill"
+          placeholder={agentSkills.length === 0 ? '该研究无可用 Agent Skill' : '不选择主 Skill（完全自定义）'}
+          emptyText="该研究无可用 Agent Skill"
           options={[
-            { value: '', label: agentSkills.length === 0 ? '该 Research 无可用 Agent Skill' : '不选择主 Skill（完全自定义）', description: '完全自定义' },
+            { value: '', label: agentSkills.length === 0 ? '该研究无可用 Agent Skill' : '不选择主 Skill（完全自定义）', description: '完全自定义' },
             ...agentSkills.map(sk => ({
               value: String(sk.id),
               label: String(sk.name),
@@ -1554,7 +1554,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
         />
       </div>
       <div>
-        <SectionLabel hint={researchId ? '主 Skill 关联锁定 / 冲突互斥, 点击展开选择' : '选择 Research 后可配置'}>Skill / Memory</SectionLabel>
+        <SectionLabel hint={researchId ? '主 Skill 关联锁定 / 冲突互斥, 点击展开选择' : '选择研究后可配置'}>Skill / Memory</SectionLabel>
         <SkillMemoryPicker
           skills={availSkills}
           memories={availMemories}
@@ -1579,9 +1579,9 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
 // =====================================================================
 const MENU_ITEMS: { kind: CreateKind; label: string; icon: any }[] = [
   { kind: 'project', label: '新建项目', icon: FolderPlus },
-  { kind: 'issue', label: '新建 Issue', icon: CircleDot },
-  { kind: 'session', label: '新建 Session', icon: MessagesSquare },
-  { kind: 'research', label: '新建 Research Agent', icon: FlaskConical },
+  { kind: 'issue', label: '新建任务', icon: CircleDot },
+  { kind: 'session', label: '新建会话', icon: MessagesSquare },
+  { kind: 'research', label: '新建研究智能体', icon: FlaskConical },
 ]
 
 export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, currentProject }: {

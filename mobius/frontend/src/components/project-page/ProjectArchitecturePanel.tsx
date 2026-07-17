@@ -88,7 +88,7 @@ function readFigureKind(res: Response, fileName: string): ArchitectureFigureKind
 }
 
 function sessionLabel(session: any) {
-  return session?.name || session?.session_id || '未命名 Session'
+  return session?.name || session?.session_id || '未命名会话'
 }
 
 function existingSessionActionLabel(action?: ExistingSessionAction) {
@@ -192,21 +192,21 @@ export function ProjectArchitecturePanel({
 
     if (action === 'block_new') {
       const names = oldSessions.slice(0, 3).map(sessionLabel).join('、')
-      throw new Error(`已存在 ${oldSessions.length} 个旧 Session（${names}${oldSessions.length > 3 ? ' 等' : ''}），已按预设阻止新 Session 运行。`)
+      throw new Error(`已存在 ${oldSessions.length} 个旧会话（${names}${oldSessions.length > 3 ? ' 等' : ''}），已按预设阻止新会话运行。`)
     }
 
     if (action === 'terminate_old') {
       for (const session of oldSessions) {
         await api(`/api/sessions/${session.session_id}/terminate`, { method: 'POST' })
       }
-      return `已终止 ${oldSessions.length} 个旧 Session。`
+      return `已终止 ${oldSessions.length} 个旧会话。`
     }
 
     if (action === 'delete_old') {
       for (const session of oldSessions) {
         await api(`/api/sessions/${session.session_id}`, { method: 'DELETE' })
       }
-      return `已删除 ${oldSessions.length} 个旧 Session。`
+      return `已删除 ${oldSessions.length} 个旧会话。`
     }
 
     return ''
@@ -248,11 +248,11 @@ export function ProjectArchitecturePanel({
       await loadFigure()
       setNotice([
         existingMessage,
-        `已创建 Session「${session.name || session.session_id}」，正在后台生成项目结构图。`,
+        `已创建会话「${session.name || session.session_id}」，正在后台生成项目结构图。`,
       ].filter(Boolean).join(' '))
       onSessionCreated(issue, session)
     } catch (e: any) {
-      setErr(e?.message || '创建项目结构绘制 Session 失败')
+      setErr(e?.message || '创建项目结构绘制会话失败')
     } finally {
       setStarting(false)
     }
@@ -263,7 +263,7 @@ export function ProjectArchitecturePanel({
       <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Session预设</div>
+            <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>会话预设</div>
             <div className="text-[11px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
               {preset ? `${preset.name} · ${preset.language === 'en' ? 'English' : '中文'} · ${existingSessionActionLabel(preset.existing_session_action)}` : '未配置'}
             </div>

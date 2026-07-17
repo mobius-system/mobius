@@ -443,14 +443,14 @@ export default function ProjectPage() {
     if (forgottenFlagMessageDirty) body.forgottenFlagMessage = editForgottenFlagMessage
     try {
       if (issuePolicyDirty) {
-        body.forgottenFlagIssueInitMinutes = parseIntervalInput(editForgottenFlagIssueInit, 'Issue Session Init', 1)
-        body.forgottenFlagIssueBackoff = parseBackoffInput(editForgottenFlagIssueBackoff, 'Issue Session Backoff')
-        body.forgottenFlagIssuePatience = parsePatienceInput(editForgottenFlagIssuePatience, 'Issue Session Patience')
+        body.forgottenFlagIssueInitMinutes = parseIntervalInput(editForgottenFlagIssueInit, '任务会话 Init', 1)
+        body.forgottenFlagIssueBackoff = parseBackoffInput(editForgottenFlagIssueBackoff, '任务会话 Backoff')
+        body.forgottenFlagIssuePatience = parsePatienceInput(editForgottenFlagIssuePatience, '任务会话 Patience')
       }
       if (researchPolicyDirty) {
-        body.forgottenFlagResearchInitMinutes = parseIntervalInput(editForgottenFlagResearchInit, 'Research Agent Init', 30)
-        body.forgottenFlagResearchBackoff = parseBackoffInput(editForgottenFlagResearchBackoff, 'Research Agent Backoff')
-        body.forgottenFlagResearchPatience = parsePatienceInput(editForgottenFlagResearchPatience, 'Research Agent Patience')
+        body.forgottenFlagResearchInitMinutes = parseIntervalInput(editForgottenFlagResearchInit, '研究智能体 Init', 30)
+        body.forgottenFlagResearchBackoff = parseBackoffInput(editForgottenFlagResearchBackoff, '研究智能体 Backoff')
+        body.forgottenFlagResearchPatience = parsePatienceInput(editForgottenFlagResearchPatience, '研究智能体 Patience')
       }
     } catch (e: any) {
       setMetaErr(e?.message || '提醒策略格式错误')
@@ -731,18 +731,18 @@ export default function ProjectPage() {
         onRenamed={() => { setEditingResearch(null); refreshResearches() }} />}
       {confirmAction && <ConfirmModal
         title={
-          confirmAction.kind === 'complete' ? '完成 Issue' :
-          confirmAction.kind === 'reopen' ? '重新打开 Issue' :
-          confirmAction.kind === 'pin' ? '置顶 Issue' :
+          confirmAction.kind === 'complete' ? '完成任务' :
+          confirmAction.kind === 'reopen' ? '重新打开任务' :
+          confirmAction.kind === 'pin' ? '置顶任务' :
           confirmAction.kind === 'unpin' ? '取消置顶' :
-          '删除 Issue'
+          '删除任务'
         }
         message={
           confirmAction.kind === 'delete'
-            ? `确定删除 Issue「${confirmAction.issue.title}」？此操作不可恢复。`
-            : `确定${confirmAction.kind === 'complete' ? '将此 Issue 标记为完成' :
-                 confirmAction.kind === 'reopen' ? '重新打开此 Issue' :
-                 confirmAction.kind === 'pin' ? '置顶此 Issue' : '取消置顶此 Issue'}？`
+            ? `确定删除任务「${confirmAction.issue.title}」？此操作不可恢复。`
+            : `确定${confirmAction.kind === 'complete' ? '将此任务标记为完成' :
+                 confirmAction.kind === 'reopen' ? '重新打开此任务' :
+                 confirmAction.kind === 'pin' ? '置顶此任务' : '取消置顶此任务'}？`
         }
         onConfirm={handleConfirm}
         onClose={() => setConfirmAction(null)}

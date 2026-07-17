@@ -157,7 +157,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
             value={q}
             onChange={e => onType(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { if (debounceRef.current) clearTimeout(debounceRef.current); runSearch(q) } }}
-            placeholder="搜索所有会话内容 (项目 → Issue/Research → Session → 命中片段)…"
+            placeholder="搜索所有会话内容 (项目 → 任务/研究 → 会话 → 命中片段)…"
             className="flex-1 bg-transparent text-[13px] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
             style={{ color: dark ? '#f1f5f9' : '#1e293b' }}
           />
@@ -222,7 +222,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
                       <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                       <span className="inline-flex items-center gap-1 truncate" style={{ color: 'var(--text-secondary)' }}>
                         <ScopeIcon className="w-3 h-3 flex-shrink-0" style={{ color: isResearch ? '#10b981' : '#60a5fa' }} />
-                        <span className="truncate max-w-[180px]">{isResearch ? (r.research_title || '(Research)') : (r.issue_title || '(Issue)')}</span>
+                        <span className="truncate max-w-[180px]">{isResearch ? (r.research_title || '(研究)') : (r.issue_title || '(任务)')}</span>
                       </span>
                       <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                       <span className="inline-flex items-center gap-1 truncate font-medium" style={{ color: dark ? '#e2e8f0' : '#1e293b' }}>

@@ -121,11 +121,11 @@ export function ProjectAssistantPresetPanel({ projectId }: { projectId: string }
       </div>
 
       <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
-        <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>当前小莫 Session</div>
+        <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>当前小莫会话</div>
         <div className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
           {data?.current_session
-            ? `当前会继续沿用「${data.current_session.name || data.current_session.session_id}」。保存变更并确认后会删除它，下次提问会创建新的小莫 Session。`
-            : '当前没有可复用的小莫 Session。下次提问会按预设创建新 Session。'}
+            ? `当前会继续沿用「${data.current_session.name || data.current_session.session_id}」。保存变更并确认后会删除它，下次提问会创建新的小莫会话。`
+            : '当前没有可复用的小莫会话。下次提问会按预设创建新会话。'}
         </div>
         {notice ? <div className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-400">{notice}</div> : null}
       </div>
@@ -136,7 +136,7 @@ export function ProjectAssistantPresetPanel({ projectId }: { projectId: string }
           onClose={() => setShowPresetModal(false)}
           onSaved={(payload) => {
             setData(payload)
-            setNotice(payload.deleted_session ? '已保存预设，并删除当前小莫 Session。' : '已保存小莫预设。')
+            setNotice(payload.deleted_session ? '已保存预设，并删除当前小莫会话。' : '已保存小莫预设。')
             refreshProjects()
           }}
         />

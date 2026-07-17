@@ -536,12 +536,12 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, onBack, onIntoSess
                   <ToggleSwitch checked={researchEnabled}
                     onChange={enabled => { setResearchEnabled(enabled); if (enabled) setDefaultUseWorktree(false) }}
                     className="flex items-start gap-3 text-[13px]" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-                    <span><span className="font-medium">启动 Research 系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建 Research Agent 团队</span></span>
+                    <span><span className="font-medium">启动研究系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建研究智能体团队</span></span>
                   </ToggleSwitch>
                   {!researchEnabled && (
                     <ToggleSwitch checked={defaultUseWorktree} onChange={setDefaultUseWorktree}
                       className="flex items-center gap-3 text-[13px]" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-                      <span>默认使用 git worktree（新建 Issue 时开独立工作区）</span>
+                      <span>默认使用 git worktree（新建任务时开独立工作区）</span>
                     </ToggleSwitch>
                   )}
                 </div>
@@ -662,7 +662,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
   }
 
   const submit = async () => {
-    if (!name.trim()) { setErr('请填写 Session 名称'); return }
+    if (!name.trim()) { setErr('请填写会话名称'); return }
     setSubmitting(true); setErr(''); setProgress(0)
     const startTs = Date.now()
     // 进度条 5s 动画
@@ -753,7 +753,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
               {advancedOpen && (
                 <div className="px-3 pb-3 pt-1 space-y-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
                   <div>
-                    <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>Session 名称</label>
+                    <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>会话名称</label>
                     <input type="text" value={name} onChange={e => { setName(e.target.value); setErr('') }} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
@@ -857,7 +857,7 @@ function WelcomeProjectList({ dark, onBack, onPick }: {
                   <span className="flex items-center gap-1.5">
                     {p.starred && <Star className="h-3 w-3 flex-shrink-0 fill-current" style={{ color: '#f59e0b' }} />}
                     <span className="block text-[14px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</span>
-                    {p.research_enabled && <span className="rounded-full px-1.5 py-0.5 text-[10px] flex-shrink-0" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>Research</span>}
+                    {p.research_enabled && <span className="rounded-full px-1.5 py-0.5 text-[10px] flex-shrink-0" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>研究</span>}
                   </span>
                   <span className="mt-0.5 block text-[12px] truncate" style={{ color: 'var(--text-muted)' }}>{p.description || '无描述'}</span>
                 </span>
