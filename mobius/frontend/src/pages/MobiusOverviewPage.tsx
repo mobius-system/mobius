@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Activity,
@@ -8,8 +8,11 @@ import {
   GitBranch,
   MessageSquare,
   PanelRightClose,
+  RotateCcw,
   Search,
   Sparkles,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react'
 import { api, useStore } from '../store'
 import { TopNav, timeAgoPrecise } from '../components/shell'
@@ -52,6 +55,9 @@ const NODE_SIZES = {
   session: { width: 260, height: 32 },
 }
 const NODE_DOT_SIZE = 18
+const MIN_ZOOM = 0.45
+const MAX_ZOOM = 2.2
+const ZOOM_STEP = 0.18
 
 const EMPTY_GRAPH_DATA: ProjectGraphData = {
   issues: [],
@@ -76,6 +82,11 @@ function activeTimeMs(item: any) {
 
 function sortByRecent(items: any[]) {
   return [...(items || [])].sort((a: any, b: any) => activeTimeMs(b) - activeTimeMs(a))
+}
+
+function clampZoom(value: number) {
+  if (!Number.isFinite(value)) return 1
+  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value))
 }
 
 function isActiveWithin(item: any, cutoffMs: number) {
@@ -442,16 +453,19 @@ export default function MobiusOverviewPage() {
   const [loadingProjectId, setLoadingProjectId] = useState('')
   const [error, setError] = useState('')
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
-  const [timeRange, setTimeRange] = useState<TimeRangeKey>('7d')
+  const [timeRange, setTimeRange] = useState<TimeRangeKey>('24h')
   const [viewportOffset, setViewportOffset] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
   const [isPanning, setIsPanning] = useState(false)
   const panRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null)
   const viewportOffsetRef = useRef({ x: 0, y: 0 })
+  const zoomRef = useRef(1)
+  const graphViewportRef = useRef<HTMLDivElement | null>(null)
   const graphCanvasRef = useRef<HTMLDivElement | null>(null)
   const panFrameRef = useRef<number | null>(null)
 
   const selectedRange = useMemo(
-    () => TIME_RANGE_OPTIONS.find((option) => option.key === timeRange) || TIME_RANGE_OPTIONS[3],
+    () => TIME_RANGE_OPTIONS.find((option) => option.key === timeRange) || TIME_RANGE_OPTIONS[0],
     [timeRange],
   )
   const cutoffMs = useMemo(() => Date.now() - selectedRange.ms, [selectedRange.ms])
@@ -511,8 +525,10 @@ export default function MobiusOverviewPage() {
     setSelectedNode(null)
     const nextOffset = { x: 0, y: 0 }
     viewportOffsetRef.current = nextOffset
+    zoomRef.current = 1
     setViewportOffset(nextOffset)
-    if (graphCanvasRef.current) graphCanvasRef.current.style.transform = 'translate3d(0px, 0px, 0)'
+    setZoom(1)
+    if (graphCanvasRef.current) graphCanvasRef.current.style.transform = 'translate3d(0px, 0px, 0) scale(1)'
   }, [selectedProject?.id, timeRange, setCurrentProject])
 
   const loadProjectGraph = useCallback((projectId: string) => {
@@ -601,8 +617,54 @@ export default function MobiusOverviewPage() {
       const el = graphCanvasRef.current
       if (!el) return
       const { x, y } = viewportOffsetRef.current
-      el.style.transform = `translate3d(${x}px, ${y}px, 0)`
+      el.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${zoomRef.current})`
     })
+  }
+
+  const applyZoom = (nextZoom: number, anchor?: { x: number; y: number }) => {
+    const currentZoom = zoomRef.current
+    const clampedZoom = clampZoom(nextZoom)
+    if (Math.abs(clampedZoom - currentZoom) < 0.001) return
+    const currentOffset = viewportOffsetRef.current
+    const ratio = clampedZoom / currentZoom
+    const nextOffset = anchor
+      ? {
+        x: anchor.x - (anchor.x - currentOffset.x) * ratio,
+        y: anchor.y - (anchor.y - currentOffset.y) * ratio,
+      }
+      : currentOffset
+    zoomRef.current = clampedZoom
+    viewportOffsetRef.current = nextOffset
+    setZoom(clampedZoom)
+    setViewportOffset(nextOffset)
+    const el = graphCanvasRef.current
+    if (el) el.style.transform = `translate3d(${nextOffset.x}px, ${nextOffset.y}px, 0) scale(${clampedZoom})`
+  }
+
+  const graphViewportAnchor = () => {
+    const rect = graphViewportRef.current?.getBoundingClientRect()
+    if (!rect) return undefined
+    return { x: rect.width / 2, y: Math.max(0, rect.height - 58) / 2 }
+  }
+
+  const resetViewport = () => {
+    const nextOffset = { x: 0, y: 0 }
+    viewportOffsetRef.current = nextOffset
+    zoomRef.current = 1
+    setViewportOffset(nextOffset)
+    setZoom(1)
+    const el = graphCanvasRef.current
+    if (el) el.style.transform = 'translate3d(0px, 0px, 0) scale(1)'
+  }
+
+  const handleWheelZoom = (event: WheelEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const rect = event.currentTarget.getBoundingClientRect()
+    const anchor = {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top - 58,
+    }
+    applyZoom(zoomRef.current * (event.deltaY < 0 ? 1.12 : 0.88), anchor)
   }
 
   const handlePanMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -715,6 +777,36 @@ export default function MobiusOverviewPage() {
                 )
               })}
             </div>
+            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <button
+                type="button"
+                title="缩小"
+                onClick={() => applyZoom(zoomRef.current - ZOOM_STEP, graphViewportAnchor())}
+                className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                <ZoomOut className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                title="重置缩放"
+                onClick={resetViewport}
+                className="flex h-7 min-w-[54px] items-center justify-center gap-1 rounded px-1.5 text-[11px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                <RotateCcw className="h-3 w-3" />
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                type="button"
+                title="放大"
+                onClick={() => applyZoom(zoomRef.current + ZOOM_STEP, graphViewportAnchor())}
+                className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                <ZoomIn className="h-3.5 w-3.5" />
+              </button>
+            </div>
             {isLoadingGraph && (
               <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
                 <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -725,11 +817,13 @@ export default function MobiusOverviewPage() {
           </div>
 
           <div
+            ref={graphViewportRef}
             className={`absolute inset-0 overflow-hidden pt-[58px] ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
             onPointerDown={handlePanStart}
             onPointerMove={handlePanMove}
             onPointerUp={endPan}
             onPointerCancel={endPan}
+            onWheel={handleWheelZoom}
           >
             <div
               ref={graphCanvasRef}
@@ -737,7 +831,8 @@ export default function MobiusOverviewPage() {
               style={{
                 width: graph.width,
                 height: graph.height,
-                transform: `translate3d(${viewportOffset.x}px, ${viewportOffset.y}px, 0)`,
+                transform: `translate3d(${viewportOffset.x}px, ${viewportOffset.y}px, 0) scale(${zoom})`,
+                transformOrigin: '0 0',
               }}
             >
               <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" width={graph.width} height={graph.height}>
