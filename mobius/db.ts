@@ -901,6 +901,19 @@ function migrateProjectsCardBorderTheme() {
 }
 migrateProjectsCardBorderTheme();
 
+function migrateProjectsAimuxRemoteInventory() {
+  try {
+    const cols = db.prepare('PRAGMA table_info(projects)').all().map((c: any) => c.name);
+    if (!cols.includes('aimux_remote_inventory')) {
+      db.exec("ALTER TABLE projects ADD COLUMN aimux_remote_inventory TEXT NOT NULL DEFAULT '[]'");
+      console.log("[mobius/db] migrate: projects.aimux_remote_inventory 已加 (默认 [])");
+    }
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️  projects aimux_remote_inventory 迁移失败:', e.message);
+  }
+}
+migrateProjectsAimuxRemoteInventory();
+
 // ===== 每用户的项目星标 =====
 // 星标是用户自己的排序偏好, 不改变项目本身的所有权或元数据.
 function migrateProjectUserStars() {

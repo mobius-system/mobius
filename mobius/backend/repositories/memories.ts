@@ -19,6 +19,7 @@ const Memories = {
   findById: memoriesFs.findById,
   create: memoriesFs.create,
   upsertProjectMemory: memoriesFs.upsertProjectMemory,
+  replaceProjectAimuxRemoteInventory: memoriesFs.replaceProjectAimuxRemoteInventory,
   update: memoriesFs.update,
   delete: memoriesFs.deleteById,
   deleteForProject: memoriesFs.deleteForProject,

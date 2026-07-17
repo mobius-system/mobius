@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS projects (
   default_model TEXT,
   -- 项目卡片边框主题: auto = 自迭代金边/普通默认; 其他值由前端候选主题解释.
   card_border_theme TEXT NOT NULL DEFAULT 'auto',
+  aimux_remote_inventory TEXT NOT NULL DEFAULT '[]',
   FOREIGN KEY (created_by) REFERENCES users(id)
 );
 

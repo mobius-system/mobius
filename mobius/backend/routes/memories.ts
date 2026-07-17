@@ -16,6 +16,8 @@ import multer from 'multer';
 import { auth } from '../middleware/auth';
 import { Memories } from '../repositories/memories';
 import { Projects } from '../repositories/projects';
+import type { AimuxRemoteInventoryEntry } from '../types/rows';
+import * as aimuxRemote from '../services/aimux-remote';
 // @ts-ignore — config 仍是 .js
 import { UPLOAD_DIR, HIDDEN_FOLDER_NAME } from '../config';
 // @ts-ignore — service 仍是 .js
@@ -36,6 +38,7 @@ import {
 // @ts-ignore — service 仍是 .js
 import {
   canContributeProjectContext,
+  canManageProject,
   canManageContextItem,
   canReadContextItem,
   canReadProject,
@@ -55,6 +58,12 @@ const memoryUpload = multer({
   limits: { fileSize: MAX_MEMORY_MARKDOWN_BYTES as number },
 });
 
+const AIMUX_REMOTE_INVENTORY_SLUG = 'aimux-remote-inventory';
+
+function isAimuxRemoteInventoryMemory(row: any): boolean {
+  return !!row && row.scope === 'project' && String(row.id || '').endsWith(`:${AIMUX_REMOTE_INVENTORY_SLUG}`);
+}
+
 // 项目知识 Memory 是 <bind_path>/.imac/project_knowledge.md 的自动同步投影
 // (slug 固定为 PROJECT_KNOWLEDGE_SLUG, 由 listForProject 的同步逻辑重建).
 // 对它直接 编辑/删除 会被下次列表同步覆盖/重建 → 表现为"编辑无效/删除无效".
@@ -67,7 +76,9 @@ function isProjectKnowledgeMemory(row: any): boolean {
 
 function shape(row: any): any {
   if (!row) return row;
-  const managedKind = isProjectKnowledgeMemory(row) ? 'project_knowledge' : null;
+  const managedKind = isProjectKnowledgeMemory(row)
+    ? 'project_knowledge'
+    : (isAimuxRemoteInventoryMemory(row) ? 'aimux_remote_inventory' : null);
   return {
     id: row.id,
     scope: row.scope,
@@ -354,6 +365,65 @@ projectScoped.get('/', auth, (req: express.Request, res: express.Response) => {
   const user = (req as any).user as AccessUser;
   const acc = ensureProjectAccess(req, res); if (!acc) return;
   res.json(visibleMemoryList(user, Memories.listForProject(String(req.params.projectId))).map((m: any) => shapeMemory(m, user, true)));
+});
+
+projectScoped.post('/aimux-remote-inventory', auth, async (req: express.Request, res: express.Response) => {
+  const user = (req as any).user as AccessUser;
+  const acc = ensureProjectAccess(req, res); if (!acc) return;
+  if (!canManageProject(user, acc.project)) return res.status(403).json({ error: '无权更新此项目的远程算力清单' });
+
+  const body = req.body || {};
+  const requestedNames: string[] = Array.isArray(body.selected_names)
+    ? body.selected_names.map((value: unknown) => String(value || '').trim()).filter(Boolean)
+    : [];
+  const names = Array.from(new Set<string>(requestedNames));
+  if (names.length === 0) return res.status(400).json({ error: '请至少选择一台 remote' });
+  if (names.length > 100) return res.status(400).json({ error: '远程算力数量不能超过 100 台' });
+
+  const paths = body.remote_paths && typeof body.remote_paths === 'object' ? body.remote_paths : {};
+  const hardwareByName = body.hardware_by_name && typeof body.hardware_by_name === 'object' ? body.hardware_by_name : {};
+  const cleanText = (value: unknown, max: number): string => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (text.length > max || /[\r\n\0]/.test(text)) throw new Error('远程算力字段格式非法');
+    return text;
+  };
+
+  try {
+    const currentRemotes = await aimuxRemote.listRemotes();
+    const remoteByName = new Map(currentRemotes.map((remote: any) => [remote.name, remote]));
+    const entries: AimuxRemoteInventoryEntry[] = names.map((name) => {
+      const remote = remoteByName.get(name);
+      if (!remote) throw new Error(`远程算力不存在或已被移除: ${name}`);
+      return {
+        name: remote.name,
+        user: remote.user || '',
+        hostname: remote.hostname || '',
+        port: Number(remote.port) || 22,
+        status: remote.status || '',
+        rtt_ms: typeof remote.rtt_ms === 'number' ? remote.rtt_ms : null,
+        remote_path: cleanText(paths[name], 1000),
+        hardware: cleanText(hardwareByName[name], 2000),
+      };
+    });
+    const markdown = String(body.markdown || '');
+    if (!markdown.trim()) throw new Error('远程算力清单内容不能为空');
+    Projects.updateAimuxRemoteInventory(String(req.params.projectId), entries);
+    const result = Memories.replaceProjectAimuxRemoteInventory({
+      userId: user.id,
+      projectId: String(req.params.projectId),
+      description: `由 ${entries.length} 台 aimux remote 生成`,
+      body: markdown,
+    } as any);
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    res.json({
+      ok: true,
+      entries,
+      removed_legacy_memories: result.removed || 0,
+      memory: shapeMemory(result.memory, user, true),
+    });
+  } catch (e) {
+    return res.status(400).json({ error: (e as Error).message || '保存远程算力清单失败' });
+  }
 });
 
 // 手动刷新: 把 <project.bind_path>/.imac/project_knowledge.md 同步成

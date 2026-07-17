@@ -39,6 +39,8 @@ import {
 // CORE_DATA_PATH/memories/ stores user memories outside application code.
 const ROOT = path.join(CORE_DATA_PATH, 'memories');
 const memoryFileCache = new Map<string, { mtimeMs: number; size: number; value: any }>();
+const AIMUX_REMOTE_INVENTORY_NAME = 'Aimux 远程算力清单';
+const AIMUX_REMOTE_INVENTORY_SLUG = 'aimux-remote-inventory';
 
 function userDefaultDir(userId: string): string { return path.join(ROOT, `user=${userId}`, 'default_project'); }
 function userProjectDir(userId: string, projectId: string): string { return path.join(ROOT, `user=${userId}`, `project=${projectId}`); }
@@ -285,6 +287,35 @@ function upsertProjectMemory({ userId, projectId, slug, name, description, body 
   return { ok: true, memory: shapeProject(m, ownerId, targetProjectId), changed: shouldWrite };
 }
 
+function replaceProjectAimuxRemoteInventory({ userId, projectId, description, body }: any): any {
+  const ownerId = String(userId || '').trim();
+  const targetProjectId = String(projectId || '').trim();
+  if (!ownerId) return { ok: false, error: 'userId 不能为空' };
+  if (!targetProjectId) return { ok: false, error: 'projectId 不能为空' };
+
+  let removed = 0;
+  for (const memory of listForProject(targetProjectId)) {
+    const parsed = parseMemoryId(memory.id);
+    if (!parsed || parsed.scope !== 'project') continue;
+    if (parsed.slug !== AIMUX_REMOTE_INVENTORY_SLUG && memory.name !== AIMUX_REMOTE_INVENTORY_NAME) continue;
+    const file = targetPathFor({ userId: parsed.userId, projectId: targetProjectId, slug: parsed.slug });
+    if (!withinRoot(file) || !fs.existsSync(file)) continue;
+    fs.unlinkSync(file);
+    memoryFileCache.delete(file);
+    removed += 1;
+  }
+
+  const result = upsertProjectMemory({
+    userId: ownerId,
+    projectId: targetProjectId,
+    slug: AIMUX_REMOTE_INVENTORY_SLUG,
+    name: AIMUX_REMOTE_INVENTORY_NAME,
+    description,
+    body,
+  });
+  return { ...result, removed };
+}
+
 function update({ id, name, description, body }: any): any {
   const parsed = parseMemoryId(id);
   if (!parsed) return { ok: false, error: 'id 非法' };
@@ -520,6 +551,9 @@ export {
   findById,
   create,
   upsertProjectMemory,
+  replaceProjectAimuxRemoteInventory,
+  AIMUX_REMOTE_INVENTORY_NAME,
+  AIMUX_REMOTE_INVENTORY_SLUG,
   update,
   deleteById,
   deleteForProject,
