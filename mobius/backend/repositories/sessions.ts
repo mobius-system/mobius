@@ -209,7 +209,7 @@ const Sessions = {
         CASE s.research_role WHEN 'chief_researcher' THEN 0 ELSE 1 END,
         s.last_active DESC
     `).all(...params) as SessionListRow[];
-    const limit = Math.max(1, Math.min(Number(previewLimit) || 4, 10));
+    const limit = Math.max(1, Math.min(Number(previewLimit) || 4, 100));
     const seen = new Map<string, number>();
     return rows.filter((row: any) => {
       const parentId = row.scope_type === 'research' ? row.research_id : row.issue_id;
