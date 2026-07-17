@@ -267,6 +267,18 @@ function runSyncReload(): void {
   tabManager?.reloadActive();
 }
 
+// 切换到相邻 tab（offset=1 下一个，-1 上一个，循环）。供菜单 Cmd+Tab / Cmd+Shift+Tab。
+function switchTabOffset(offset: number): void {
+  if (!tabManager) return;
+  const tabs = tabManager.getTabs();
+  const active = tabManager.getActiveTabId();
+  if (tabs.length < 2 || !active) return;
+  const idx = tabs.findIndex((t) => t.id === active);
+  if (idx < 0) return;
+  const next = (idx + offset + tabs.length) % tabs.length;
+  tabManager.switchTab(tabs[next].id);
+}
+
 async function runUpdateAimux(): Promise<{ ok: boolean; version?: string; error?: string }> {
   if (installing) return { ok: false, error: "正在安装中，请稍候" };
   // 1) 先断开现有连接 (停 supervisor + 反连子进程), 释放 venv 文件锁, 避免 pip 升级时 aimux 还在跑.
@@ -445,6 +457,11 @@ function buildMenu(): void {
     {
       label: "视图",
       submenu: [
+        { label: "新建标签页", accelerator: "CmdOrCtrl+T", click: () => tabManager?.createTab(undefined, { activate: true }) },
+        { label: "关闭标签页", accelerator: "CmdOrCtrl+W", click: () => { const id = tabManager?.getActiveTabId(); if (id) tabManager?.closeTab(id); } },
+        { label: "下一个标签页", accelerator: "CmdOrCtrl+Tab", click: () => switchTabOffset(1) },
+        { label: "上一个标签页", accelerator: "CmdOrCtrl+Shift+Tab", click: () => switchTabOffset(-1) },
+        { type: "separator" },
         { role: "reload", label: "刷新" },
         { role: "forceReload", label: "强制刷新" },
         { role: "toggleDevTools", label: "开发者工具" },
