@@ -182,6 +182,21 @@ const Sessions = {
       s.last_active DESC
   `).all(researchId) as SessionListRow[],
 
+  listActiveForProjectCards: (projectId: string): SessionListRow[] => db.prepare(`
+    SELECT ${SESSION_LIST_COLUMNS}, u.display_name as user_display_name,
+      (SELECT COUNT(*) FROM messages_v2 WHERE task_id = s.session_id) AS raw_entry_count
+    FROM sessions_v2 s
+    LEFT JOIN users u ON s.user_id = u.id
+    WHERE s.project_id = ?
+      AND s.status = 'active'
+      AND s.scope_type IN ('issue', 'research')
+    ORDER BY
+      s.scope_type ASC,
+      COALESCE(s.issue_id, s.research_id) ASC,
+      CASE s.research_role WHEN 'chief_researcher' THEN 0 ELSE 1 END,
+      s.last_active DESC
+  `).all(projectId) as SessionListRow[],
+
   listActiveByIssue: (issueId: string): SessionRow[] => db.prepare("SELECT * FROM sessions_v2 WHERE issue_id = ? AND scope_type = 'issue' AND status = 'active'").all(issueId) as SessionRow[],
   listAllByIssue: (issueId: string): SessionRow[] => db.prepare("SELECT * FROM sessions_v2 WHERE issue_id = ? AND scope_type = 'issue' ORDER BY created_at ASC").all(issueId) as SessionRow[],
   listActiveByResearch: (researchId: string): SessionRow[] => db.prepare("SELECT * FROM sessions_v2 WHERE research_id = ? AND scope_type = 'research' AND status = 'active'").all(researchId) as SessionRow[],

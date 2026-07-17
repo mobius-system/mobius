@@ -9,6 +9,7 @@ import { Projects } from '../repositories/projects';
 import { ProjectTodos } from '../repositories/project-todos';
 import { Issues } from '../repositories/issues';
 import { Researches } from '../repositories/researches';
+import { Sessions } from '../repositories/sessions';
 import { Skills } from '../repositories/skills';
 import { Memories } from '../repositories/memories';
 import { Users } from '../repositories/users';
@@ -39,6 +40,7 @@ import {
   canReadProject,
   canReadIssue,
   canReadResearch,
+  canReadSession,
   canManageProject,
   canCreateIssue,
   isHidden,
@@ -77,6 +79,9 @@ import {
   FORGOTTEN_FLAG_PATIENCE_MAX,
   HIDDEN_FOLDER_NAME,
 } from '../config';
+// @ts-ignore — service 仍是 .js
+import { withSessionProxyState } from '../services/session-proxy-state';
+import { readJobFlagState } from '../utils/session-flags';
 
 const router = express.Router();
 const MAIN_PROJECT_PORT_REL = path.join(HIDDEN_FOLDER_NAME, 'port_forward', 'main_project_port.txt');
@@ -1686,6 +1691,25 @@ function shapeOverviewItem(item: any): any {
   };
 }
 
+function createSessionBucket(ids: Set<string>): Record<string, any[]> {
+  const bucket: Record<string, any[]> = {};
+  ids.forEach((id) => { bucket[id] = []; });
+  return bucket;
+}
+
+function enrichProjectCardSession(session: any, root: string | null): any {
+  let job_accomplished: boolean | null = null;
+  let job_failed: boolean | null = null;
+  if (root) {
+    try {
+      const st = readJobFlagState(root, session.session_id);
+      job_accomplished = st.accomplished;
+      job_failed = st.failed;
+    } catch {}
+  }
+  return { ...withSessionProxyState(session), job_accomplished, job_failed };
+}
+
 router.get('/overview', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const ids = parseProjectOverviewIds(req.query.ids);
@@ -1713,6 +1737,48 @@ router.get('/overview', auth, (req: express.Request, res: express.Response) => {
   });
   auditAdminProjectList(req, 'overview_projects', auditedProjects);
   res.json(result);
+});
+
+router.get('/:id/sessions-overview', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const projectId = String(req.params.id);
+  const project = Projects.findById(projectId);
+  if (!project) { res.status(404).json({ error: '未找到' }); return; }
+  if (!canReadProject(user, project) || isHidden(user.id, 'project', project.id)) {
+    res.status(404).json({ error: '未找到' });
+    return;
+  }
+
+  const readableIssues = Issues.listForProject(project.id, undefined, user?.id)
+    .filter((issue: any) => canReadIssue(user, issue));
+  const readableResearches = project.research_enabled
+    ? Researches.listForProject(project.id)
+      .filter((research: any) => canReadResearch(user, research))
+    : [];
+  const readableIssueIds = new Set(readableIssues.map((issue: any) => String(issue.id)));
+  const readableResearchIds = new Set(readableResearches.map((research: any) => String(research.id)));
+  const issues = createSessionBucket(readableIssueIds);
+  const researches = createSessionBucket(readableResearchIds);
+  const root = (project.bind_path || '').trim() ? path.resolve(project.bind_path as string) : null;
+
+  const sessions = Sessions.listActiveForProjectCards(project.id);
+  sessions.forEach((session: any) => {
+    if (!canReadSession(user, session)) return;
+    if (session.scope_type === 'issue') {
+      const issueId = String(session.issue_id || '');
+      if (!readableIssueIds.has(issueId)) return;
+      issues[issueId].push(enrichProjectCardSession(session, root));
+      return;
+    }
+    if (session.scope_type === 'research') {
+      const researchId = String(session.research_id || '');
+      if (!readableResearchIds.has(researchId)) return;
+      researches[researchId].push(enrichProjectCardSession(session, root));
+    }
+  });
+
+  auditAdminProjectList(req, 'overview_project_sessions', [project]);
+  res.json({ issues, researches });
 });
 
 router.get('/', auth, (req: express.Request, res: express.Response) => {

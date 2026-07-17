@@ -842,7 +842,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 
   return (
     <>
-      <div className={`mobius-topnav h-12 border-b flex items-center justify-between px-5 flex-shrink-0 select-none`}
+      <div className={`mobius-topnav h-10 border-b flex items-center justify-between px-5 flex-shrink-0 select-none`}
         style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', paddingLeft: IS_DESKTOP && IS_MAC_PLATFORM ? '78px' : undefined }}>
         {/* 桌面端拖拽: 不再让整条顶栏 drag (Windows/Electron 下大 drag 父区 + no-drag 洞会吞按钮点击);
             改由下方独立空白 spacer 作唯一 drag 区 (无交互子元素 → 不会被吞, 按钮脱离任何 drag 祖主)。 */}
