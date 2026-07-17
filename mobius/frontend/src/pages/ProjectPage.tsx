@@ -180,14 +180,6 @@ export default function ProjectPage() {
       setResearches(arr); setResearchesMap(projectId, arr)
     }).catch(() => {}).finally(() => { if (alive) setResearchesLoading(false) })
 
-    api(`/api/projects/${projectId}/sessions-overview`).then((payload: any) => {
-      if (!alive) return
-      setSessionsMapBatch({
-        ...(payload?.issues || {}),
-        ...(payload?.researches || {}),
-      })
-    }).catch(() => {})
-
     return () => { alive = false }
     // 故意不把 issuesMap/researchesMap 放进 deps: 它们仅作"是否命中缓存"的一次性判断,
     // 成功路径会写入它们, 放进 deps 会触发本 effect 自身重跑(反复拉取).
@@ -266,6 +258,14 @@ export default function ProjectPage() {
     const start = (currentIssuePage - 1) * ISSUE_PAGE_SIZE
     return filteredIssues.slice(start, start + ISSUE_PAGE_SIZE)
   }, [filteredIssues, currentIssuePage])
+  const pagedIssueIdsKey = useMemo(() => (
+    pagedIssues.map((issue: any) => String(issue?.id || '').trim()).filter(Boolean).join(',')
+  ), [pagedIssues])
+  const visibleResearchIdsKey = useMemo(() => (
+    section === 'researches'
+      ? filteredResearches.map((research: any) => String(research?.id || '').trim()).filter(Boolean).join(',')
+      : ''
+  ), [section, filteredResearches])
 
   useEffect(() => {
     setIssuePage(1)
@@ -274,6 +274,24 @@ export default function ProjectPage() {
   useEffect(() => {
     if (issuePage > issueTotalPages) setIssuePage(issueTotalPages)
   }, [issuePage, issueTotalPages])
+
+  useEffect(() => {
+    const issueIds = section === 'issues' ? pagedIssueIdsKey : ''
+    const researchIds = section === 'researches' ? visibleResearchIdsKey : ''
+    if (!issueIds && !researchIds) return
+    let alive = true
+    const qs = new URLSearchParams()
+    if (issueIds) qs.set('issue_ids', issueIds)
+    if (researchIds) qs.set('research_ids', researchIds)
+    api(`/api/projects/${projectId}/sessions-overview?${qs.toString()}`).then((payload: any) => {
+      if (!alive) return
+      setSessionsMapBatch({
+        ...(payload?.issues || {}),
+        ...(payload?.researches || {}),
+      })
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [projectId, section, pagedIssueIdsKey, visibleResearchIdsKey, setSessionsMapBatch])
 
   const refreshIssues = () => api(`/api/projects/${projectId}/issues`).then((arr: any) => { setIssues(arr); setIssuesMap(projectId, arr) }).catch(() => {})
   const refreshResearches = () => api(`/api/projects/${projectId}/researches`).then((arr: any) => { setResearches(arr); setResearchesMap(projectId, arr) }).catch(() => {})

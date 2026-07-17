@@ -1749,19 +1749,40 @@ router.get('/:id/sessions-overview', auth, (req: express.Request, res: express.R
     return;
   }
 
-  const readableIssues = Issues.listForProject(project.id, undefined, user?.id)
-    .filter((issue: any) => canReadIssue(user, issue));
-  const readableResearches = project.research_enabled
-    ? Researches.listForProject(project.id)
-      .filter((research: any) => canReadResearch(user, research))
+  const requestedIssueIds = parseProjectOverviewIds(req.query.issue_ids ?? req.query.issueIds);
+  const requestedResearchIds = project.research_enabled
+    ? parseProjectOverviewIds(req.query.research_ids ?? req.query.researchIds)
     : [];
-  const readableIssueIds = new Set(readableIssues.map((issue: any) => String(issue.id)));
-  const readableResearchIds = new Set(readableResearches.map((research: any) => String(research.id)));
+  const requestScoped = requestedIssueIds.length > 0 || requestedResearchIds.length > 0;
+  const readableIssueIds = new Set<string>();
+  if (requestScoped) {
+    requestedIssueIds.forEach((issueId) => {
+      const issue = Issues.findById(issueId, user?.id);
+      if (!issue || String(issue.project_id) !== project.id || !canReadIssue(user, issue)) return;
+      readableIssueIds.add(issueId);
+    });
+  } else {
+    Issues.listForProject(project.id, undefined, user?.id)
+      .filter((issue: any) => canReadIssue(user, issue))
+      .forEach((issue: any) => readableIssueIds.add(String(issue.id)));
+  }
+  const readableResearchIds = new Set<string>();
+  if (requestScoped) {
+    requestedResearchIds.forEach((researchId) => {
+      const research = Researches.findById(researchId);
+      if (!research || String(research.project_id) !== project.id || !canReadResearch(user, research)) return;
+      readableResearchIds.add(researchId);
+    });
+  } else if (project.research_enabled) {
+    Researches.listForProject(project.id)
+      .filter((research: any) => canReadResearch(user, research))
+      .forEach((research: any) => readableResearchIds.add(String(research.id)));
+  }
   const issues = createSessionBucket(readableIssueIds);
   const researches = createSessionBucket(readableResearchIds);
   const root = (project.bind_path || '').trim() ? path.resolve(project.bind_path as string) : null;
 
-  const sessions = Sessions.listActiveForProjectCards(project.id);
+  const sessions = Sessions.listActiveForProjectCardIds(project.id, [...readableIssueIds], [...readableResearchIds]);
   sessions.forEach((session: any) => {
     if (!canReadSession(user, session)) return;
     if (session.scope_type === 'issue') {
