@@ -875,16 +875,17 @@ export function ProjectSettingsPanel({
         />
       </div>
 
+      {project.kind === 'extension' && (
+        <div className="px-5 py-3 border-b text-[12px]"
+          style={{ borderColor: 'var(--border-color)', background: 'rgba(167,139,250,0.06)', color: '#a78bfa' }}>
+          这是一个特殊拓展项目, 由 <code style={{ background: 'rgba(0,0,0,0.2)', padding: '0 4px', borderRadius: 3 }}>mobius/extension/{project.extension_name}</code> 自动同步.
+          名称 / 描述 / 路径 / worktree / Research 由 manifest 锁定, 不可在此修改.
+          {project.disabled && <span style={{ color: '#f87171' }}> [目录已消失, 但数据保留]</span>}
+          <span className="block mt-1">本项目所有会话必选 mobius-extension skill, 用于带上拓展开发的协议与目录规范.</span>
+        </div>
+      )}
+
       <div className="flex items-center gap-2 border rounded-lg mt-3" style={{background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
-        {project.kind === 'extension' && (
-          <div className="px-5 py-3 border-b text-[12px]"
-            style={{ borderColor: 'var(--border-color)', background: 'rgba(167,139,250,0.06)', color: '#a78bfa' }}>
-            这是一个特殊拓展项目, 由 <code style={{ background: 'rgba(0,0,0,0.2)', padding: '0 4px', borderRadius: 3 }}>mobius/extension/{project.extension_name}</code> 自动同步.
-            名称 / 描述 / 路径 / worktree / Research 由 manifest 锁定, 不可在此修改.
-            {project.disabled && <span style={{ color: '#f87171' }}> [目录已消失, 但数据保留]</span>}
-            <span className="block mt-1">本项目所有会话必选 mobius-extension skill, 用于带上拓展开发的协议与目录规范.</span>
-          </div>
-        )}
 
         {activePane === 'assistant' && assistantProject ? (
           <div className="p-5">
