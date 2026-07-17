@@ -3365,7 +3365,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                     label="查看文件修改"
                     tooltip="查看当前会话所有文件修改"
                     accent="blue"
-                    icon={<FileDiff className="h-5 w-5" strokeWidth={1.9} />}
+                    icon={<FileDiff className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
                     onClick={() => setBashCommandsOpen(true)}
@@ -3373,7 +3373,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                     label="查看运行命令"
                     tooltip="查看当前会话运行的所有Bash命令"
                     accent="emerald"
-                    icon={<ScrollText className="h-5 w-5" strokeWidth={1.9} />}
+                    icon={<ScrollText className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <ProjectPortEntryButton
                     projectId={currentProjectId}
@@ -3388,7 +3388,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                     label="查看当前知识"
                     tooltip="查看当前知识 (项目知识 / 本任务知识)"
                     accent="cyan"
-                    icon={<BookOpen className="h-5 w-5" strokeWidth={1.9} />}
+                    icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
                     onClick={() => setTerminalChoiceOpen(true)}
@@ -3396,7 +3396,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                     label="打开终端"
                     tooltip="打开当前会话终端"
                     accent="emerald"
-                    icon={<Terminal className="h-5 w-5" strokeWidth={1.9} />}
+                    icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
                     onClick={() => setContinueModalOpen(true)}
@@ -3404,7 +3404,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                     label="修改模型并继续"
                     tooltip="修改模型并继续"
                     accent="violet"
-                    icon={<Replace className="h-5 w-5" strokeWidth={1.9} />}
+                    icon={<Replace className="h-4 w-4" strokeWidth={1.9} />}
                   />
                 </div>
                 <div className="grid grid-cols-2 items-stretch gap-2">
