@@ -318,31 +318,32 @@ function IssuePaginationControls({ pagination, compact = false }: IssuePaginatio
   const pageEnd = Math.min(pagination.page * pagination.pageSize, pagination.totalItems)
   const goToPage = (page: number) => pagination.onPageChange(Math.min(Math.max(page, 1), pagination.totalPages))
 
+  // 上一页/下一页作为文字按钮内联到页码信息后 (与通用 PaginationControls 的 inlinePageSwitch 同款).
+  const inlineButtonClass = 'align-baseline text-[11px] transition-colors hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[var(--text-muted)]'
+
   return (
-    <div className={`flex items-center justify-between gap-3 ${compact ? 'pt-1' : ''}`}>
-      <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-        显示 {pageStart}-{pageEnd} / {pagination.totalItems} 个任务 · 第 {pagination.page} / {pagination.totalPages} 页
-      </span>
-      <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => goToPage(pagination.page - 1)}
-          disabled={pagination.page <= 1}
-          className="h-8 sm:h-7 px-2.5 rounded-md border text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
-        >
-          上一页
-        </button>
-        <button
-          type="button"
-          onClick={() => goToPage(pagination.page + 1)}
-          disabled={pagination.page >= pagination.totalPages}
-          className="h-8 sm:h-7 px-2.5 rounded-md border text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
-        >
-          下一页
-        </button>
-      </div>
+    <div className={`flex items-center gap-1.5 text-[11px] tabular-nums flex-wrap ${compact ? 'pt-1' : ''}`} style={{ color: 'var(--text-muted)' }}>
+      <span>显示 {pageStart}-{pageEnd} / {pagination.totalItems} 个任务</span>
+      <span>·</span>
+      <span>第 {pagination.page} / {pagination.totalPages} 页</span>
+      <span>·</span>
+      <button
+        type="button"
+        onClick={() => goToPage(pagination.page - 1)}
+        disabled={pagination.page <= 1}
+        className={inlineButtonClass}
+      >
+        上一页
+      </button>
+      <span>·</span>
+      <button
+        type="button"
+        onClick={() => goToPage(pagination.page + 1)}
+        disabled={pagination.page >= pagination.totalPages}
+        className={inlineButtonClass}
+      >
+        下一页
+      </button>
     </div>
   )
 }
