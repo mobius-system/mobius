@@ -319,8 +319,8 @@ export function ResearchAgentTeamModal({
           api(`/api/researches/${researchId}/context-preview`, {
             method: 'POST',
             body: JSON.stringify({
-              name: defaultNamePrefix || 'Research Agent 团队',
-              description: defaultDescription || '创建 Research Agent 团队',
+              name: defaultNamePrefix || '研究智能体团队',
+              description: defaultDescription || '创建研究智能体团队',
               role: 'research_assistant',
               language: 'zh',
               excluded_skill_ids: [],
@@ -548,7 +548,7 @@ export function ResearchAgentTeamModal({
       status: agent.status || null,
     }))
     const content = [
-      `Research Agent 团队已加入并启动: 共 ${finalAgents.length} 个 Agent。`,
+      `研究智能体团队已加入并启动: 共 ${finalAgents.length} 个 Agent。`,
       ...members.map((m, index) => `${index + 1}. ${m.role}: session_id=${m.session_id || '-'}, name=${m.name}, main_skill=${m.main_skill || '完全自定义'}`),
       errors.length > 0 ? `部分步骤失败: ${errors.length} 项。` : '',
     ].filter(Boolean).join('\n')
@@ -705,7 +705,7 @@ export function ResearchAgentTeamModal({
               <Users className="h-4 w-4" strokeWidth={1.8} />
             </div>
             <div>
-              <div className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{mode === 'single' ? '创建单个 Research Agent' : '创建 Research Agent 团队'}</div>
+              <div className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{mode === 'single' ? '创建单个研究智能体' : '创建研究智能体团队'}</div>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 {agents.length}/{MAX_TEAM_SIZE} 个 Agent · 逐个创建并自动启动
               </div>

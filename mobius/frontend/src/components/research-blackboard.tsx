@@ -212,7 +212,7 @@ export default function ResearchBlackboard({ researchId }: { researchId: string 
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full px-4 text-center gap-2">
             <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-              {entries.length === 0 ? '当前 Research 尚无 Blackboard 记录' : '当前筛选下无记录'}
+              {entries.length === 0 ? '当前研究尚无 Blackboard 记录' : '当前筛选下无记录'}
             </div>
             <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
               文件位置: <code>{HIDDEN_FOLDER_NAME}/blackboard/{researchId}/blackboard.jsonl</code>

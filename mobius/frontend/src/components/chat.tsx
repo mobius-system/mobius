@@ -70,7 +70,7 @@ function buildProjectKnowledgePrompt(knowledgePath: string) {
 }
 
 function continueSessionName(session: any) {
-  const base = String(session?.name || '').trim() || '未命名Session'
+  const base = String(session?.name || '').trim() || '未命名会话'
   return `${base} - 更换模型`
 }
 
@@ -325,7 +325,7 @@ function AttachmentImagePreviewModal({ preview, onClose }: {
   )
 }
 
-const TUI_CONTACT_TIMEOUT_MESSAGE = '任务失败，与后台TUI联络超时，请尝试继续提问，或者重建session。'
+const TUI_CONTACT_TIMEOUT_MESSAGE = '任务失败，与后台TUI联络超时，请尝试继续提问，或者重建会话。'
 
 function isTuiContactTimeoutText(text: string) {
   return text === TUI_CONTACT_TIMEOUT_MESSAGE || /TUI was not ready within \d+ms/i.test(text || '')
@@ -914,7 +914,7 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
         <div className="flex flex-shrink-0 items-center gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Terminal className="h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.8} />
-            <span className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>Session Bash 命令</span>
+            <span className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>会话 Bash 命令</span>
             <span className="flex-shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>· {commands.length} 条</span>
           </div>
           <button
@@ -1333,7 +1333,7 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
           )}
           {session.research_role && (
             <span className="flex-shrink-0 rounded px-1.5 py-[1px] text-[9px] leading-4 border"
-              title={`Research Role: ${session.research_role}`}
+              title={`研究角色: ${session.research_role}`}
               style={{
                 color: session.research_role === 'chief_researcher' ? '#34d399' : '#a78bfa',
                 background: session.research_role === 'chief_researcher' ? 'rgba(52,211,153,0.10)' : 'rgba(167,139,250,0.10)',
@@ -2026,7 +2026,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
     requestId: string
     urgent?: boolean
   }) => {
-    if (!sessionId) throw new Error('当前没有可发送消息的 Session')
+    if (!sessionId) throw new Error('当前没有可发送消息的会话')
     const payload: Record<string, any> = { content, request_id: requestId }
     if (typeof inputText === 'string') payload.input_text = inputText
     if (urgent) payload.urgent = true
@@ -2193,7 +2193,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
       stopVoiceStream()
       mediaRecorderRef.current = null
       setVoiceState('error')
-      setLastSendError(permissionErrorMessage(error, 'Session 输入'))
+      setLastSendError(permissionErrorMessage(error, '会话输入'))
     }
   }, [clearVoiceTimers, messageSubmitting, stopVoiceRecording, stopVoiceStream, submitVoiceBlob, voiceState])
 
@@ -2630,7 +2630,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
     const content = '/compact'
     setCompactConfirmOpen(false)
     if (!sessionId) {
-      setLastSendError('当前没有可发送指令的 Session')
+      setLastSendError('当前没有可发送指令的会话')
       return
     }
 
@@ -2739,7 +2739,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
 
   const sendRunProjectPortPrompt = useCallback((mainProjectPortPath: string) => {
     if (!sessionId) {
-      setLastSendError('当前没有可发送指令的 Session')
+      setLastSendError('当前没有可发送指令的会话')
       return
     }
     const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
@@ -2784,11 +2784,11 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
   // 由"开始执行?"弹窗的「立即执行!」按钮触发: 自动用 Session 元数据
   // (name / description) 拼成第一条消息发出去, 不需要用户再输入.
   const startSession = useCallback(async (): Promise<void> => {
-    if (!currentSession) throw new Error('当前 Session 未加载')
+    if (!currentSession) throw new Error('当前会话未加载')
     const name = (currentSession.name || '').trim()
     const description = ((currentSession as any).description || '').trim()
     const content = [name, description].filter(Boolean).join('\n\n')
-    if (!content) throw new Error('Session 名称和描述都为空, 无内容可发送')
+    if (!content) throw new Error('会话名称和描述都为空, 无内容可发送')
 
     const requestId = makeSendRequestId()
     setLastSendError('')
@@ -2877,7 +2877,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
       <div className="text-center max-w-md">
         <MobiusLogo size={72} className="mx-auto mb-6" />
         <h2 className="text-2xl font-bold mb-2" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>Mobius 莫比乌斯</h2>
-        <p className="text-[14px] leading-relaxed" style={{ color: theme !== 'light' ? '#6b7280' : '#64748b' }}>从左侧选择Session或新建Session开始对话</p>
+        <p className="text-[14px] leading-relaxed" style={{ color: theme !== 'light' ? '#6b7280' : '#64748b' }}>从左侧选择会话或新建会话开始对话</p>
       </div>
     </div>
   )
@@ -2906,7 +2906,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   确认发送运行项目指令
                 </div>
                 <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  下面的消息将发送给当前 Session
+                  下面的消息将发送给当前会话
                 </div>
               </div>
               <button
@@ -3361,7 +3361,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   type="button"
                   onClick={() => setFileChangesOpen(true)}
                   disabled={!sessionId}
-                  title="查看当前session所有文件修改"
+                  title="查看当前会话所有文件修改"
                   className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-blue-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
                   style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
                   <FileDiff className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
@@ -3371,7 +3371,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   type="button"
                   onClick={() => setBashCommandsOpen(true)}
                   disabled={!sessionId}
-                  title="查看当前session运行的所有Bash命令"
+                  title="查看当前会话运行的所有Bash命令"
                   className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
                   style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
                   <ScrollText className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
@@ -3398,7 +3398,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   type="button"
                   onClick={() => setTerminalChoiceOpen(true)}
                   disabled={!currentSession?.session_id}
-                  title="打开当前 Session 终端"
+                  title="打开当前会话终端"
                   className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
                 >
                   <Terminal className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
@@ -3588,7 +3588,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                 <Terminal className="h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
                 <span className="min-w-0">
                   <span className="block text-[13px] font-medium">在当前目录打开终端</span>
-                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>进入当前 Session 所属项目目录</span>
+                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>进入当前会话所属项目目录</span>
                 </span>
               </button>
               <button
@@ -3604,7 +3604,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                 <Bot className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
                 <span className="min-w-0">
                   <span className="block text-[13px] font-medium">打开终端并显示 Agent 后台</span>
-                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>自动 attach 到当前 Session 的 tmux 窗口</span>
+                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>自动 attach 到当前会话的 tmux 窗口</span>
                 </span>
               </button>
             </div>
@@ -3675,7 +3675,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
             </div>
             <div className="flex-1 overflow-y-auto">
               {jsonlEntries.length === 0 ? (
-                <div className="text-center text-[13px] py-8" style={{ color: 'var(--text-muted)' }}>暂无 JSONL 数据 (session 尚未产生输出)</div>
+                <div className="text-center text-[13px] py-8" style={{ color: 'var(--text-muted)' }}>暂无 JSONL 数据 (会话尚未产生输出)</div>
               ) : (
                 <pre className="text-[11px] leading-relaxed p-5 m-0 whitespace-pre font-mono select-text"
                   style={{ color: 'var(--text-secondary)' }}>

@@ -10,7 +10,7 @@ const EXTENSION_DEVELOPMENT_LINKS: Record<string, { label: string; href: string;
   'finance-news-wall': {
     label: '继续开发金融新闻墙',
     href: '/u/alice/p/9a533442/i/baf5d4dd?session=4921f111',
-    description: '打开原来的开发 Issue 和 Session，继续修改金融新闻墙代码。',
+    description: '打开原来的开发任务和会话，继续修改金融新闻墙代码。',
   },
 }
 
@@ -174,7 +174,7 @@ export function ProjectItemsPanel({
           data-tour={section === 'issues' ? 'project-new-issue' : 'project-new-research'}
           disabled={section === 'issues' ? !canCreateIssue : (!project.research_enabled || !canCreateResearch)}
           icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
-          {section === 'issues' ? '新建 Issue' : '新建 Research'}
+          {section === 'issues' ? '新建任务' : '新建研究'}
         </PrimaryActionButton>
       </div>
 
@@ -198,7 +198,7 @@ export function ProjectItemsPanel({
       ) : !project.research_enabled ? (
         <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
           <div className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
-            请先在项目设置中勾选「启用 Research 系统」
+            请先在项目设置中勾选「启用研究系统」
           </div>
         </div>
       ) : (
@@ -266,12 +266,12 @@ function IssueList({
     return (
       <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
         <div className="text-[13px] mb-3" style={{ color: 'var(--text-muted)' }}>
-          {search.trim() || filter !== 'all' ? '没有匹配的 Issue' : '暂无 Issue'}
+          {search.trim() || filter !== 'all' ? '没有匹配的任务' : '暂无任务'}
         </div>
         <div className="flex items-center justify-center gap-2 flex-wrap">
           <button onClick={onCreateIssue} disabled={!canCreateIssue} data-tour="project-empty-create-issue"
             className="h-9 px-4 rounded-lg text-[13px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-            创建第一个 Issue
+            创建第一个任务
           </button>
           {showQuickPlanning && (
             <button onClick={onCreatePlanningIssue} disabled={!canCreateIssue}
@@ -321,7 +321,7 @@ function IssuePaginationControls({ pagination, compact = false }: IssuePaginatio
   return (
     <div className={`flex items-center justify-between gap-3 ${compact ? 'pt-1' : ''}`}>
       <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-        显示 {pageStart}-{pageEnd} / {pagination.totalItems} 个 Issue · 第 {pagination.page} / {pagination.totalPages} 页
+        显示 {pageStart}-{pageEnd} / {pagination.totalItems} 个任务 · 第 {pagination.page} / {pagination.totalPages} 页
       </span>
       <div className="flex items-center gap-1.5">
         <button
@@ -386,11 +386,11 @@ function ResearchList({
     return (
       <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
         <div className="text-[13px] mb-3" style={{ color: 'var(--text-muted)' }}>
-          {search.trim() || filter !== 'all' ? '没有匹配的 Research' : '暂无 Research'}
+          {search.trim() || filter !== 'all' ? '没有匹配的研究' : '暂无研究'}
         </div>
         <button onClick={onCreateResearch} disabled={!canCreateResearch}
           className="h-9 px-4 rounded-lg text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-          创建第一个 Research
+          创建第一个研究
         </button>
       </div>
     )

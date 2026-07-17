@@ -557,8 +557,8 @@ function RecentSessionsPanel({
             const active = session.session_id === activeSessionId
             const isResearch = session.scope_type === 'research'
             const subject = isResearch
-              ? (session.research_title || session.research_id || 'Research')
-              : (session.issue_title || session.issue_id || 'Issue')
+              ? (session.research_title || session.research_id || '研究')
+              : (session.issue_title || session.issue_id || '任务')
             const project = session.project_name || session.project_id || '项目'
             const statusColor = session.agent_status === 'running'
               ? '#f59e0b'
@@ -940,8 +940,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); toggleSwitcher('issue') }}
-                  title="切换 Issue"
-                  aria-label="切换 Issue"
+                  title="切换任务"
+                  aria-label="切换任务"
                   aria-haspopup="menu"
                   aria-expanded={openSwitcher === 'issue'}
                   className="flex min-w-0 items-center gap-0.5 text-[13px] hover:text-blue-400"
@@ -956,7 +956,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                     search={switcherSearch}
                     onSearchChange={setSwitcherSearch}
                     onPick={closeSwitcher}
-                    emptyText="该项目暂无 Issue"
+                    emptyText="该项目暂无任务"
                   />
                 )}
               </div>
@@ -969,8 +969,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); toggleSwitcher('research') }}
-                  title="切换 Research"
-                  aria-label="切换 Research"
+                  title="切换研究"
+                  aria-label="切换研究"
                   aria-haspopup="menu"
                   aria-expanded={openSwitcher === 'research'}
                   className="flex min-w-0 items-center gap-0.5 text-[13px] hover:text-blue-400"
@@ -985,7 +985,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                     search={switcherSearch}
                     onSearchChange={setSwitcherSearch}
                     onPick={closeSwitcher}
-                    emptyText="该项目暂无 Research"
+                    emptyText="该项目暂无研究"
                   />
                 )}
               </div>

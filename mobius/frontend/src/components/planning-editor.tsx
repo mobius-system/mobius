@@ -237,7 +237,7 @@ export function PlanningEditor({ projectId, sessionId }: PlanningEditorProps) {
             />
           )}
           <div className="mt-1.5 text-[10px] px-1" style={{ color: 'var(--text-muted)' }}>
-            编辑后 500ms 自动保存 · Ctrl+S 立即保存 · Agent 写入时只读 · 同步为项目级 Memory 供所有 Session 检索
+            编辑后 500ms 自动保存 · Ctrl+S 立即保存 · Agent 写入时只读 · 同步为项目级 Memory 供所有会话检索
           </div>
         </div>
       )}
@@ -324,7 +324,7 @@ function PlanningTextarea({
   async function createExecutionIssueFromSelection() {
     if (!menu?.selectedText) return
     try {
-      const title = menu.selectedText.split('\n')[0].replace(/^#+\s*/, '').trim().slice(0, 60) || '从规划创建执行 Issue'
+      const title = menu.selectedText.split('\n')[0].replace(/^#+\s*/, '').trim().slice(0, 60) || '从规划创建执行任务'
       const resp: any = await api(`/api/projects/${projectId}/issues`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

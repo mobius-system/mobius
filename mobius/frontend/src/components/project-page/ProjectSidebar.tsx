@@ -40,8 +40,8 @@ export function ProjectSidebar({
   return (
     <>
       <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-color)' }}>
-        <span className="text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>Issues</span>
-        <button onClick={onCreateIssue} disabled={!canCreateIssue} title={canCreateIssue ? '新建 Issue' : '无权新建 Issue'} data-tour="project-sidebar-new-issue"
+        <span className="text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>任务</span>
+        <button onClick={onCreateIssue} disabled={!canCreateIssue} title={canCreateIssue ? '新建任务' : '无权新建任务'} data-tour="project-sidebar-new-issue"
           className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-[var(--bg-hover)] text-blue-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
         </button>
@@ -52,7 +52,7 @@ export function ProjectSidebar({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           <input value={search} onChange={e => onSearchChange(e.target.value)}
-            placeholder="搜索 issue..."
+            placeholder="搜索任务..."
             className="w-full h-8 pl-8 pr-3 rounded-lg text-[12px] focus:outline-none focus:border-blue-500/30"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
         </div>
@@ -73,7 +73,7 @@ export function ProjectSidebar({
           <ListLoadingHint />
         ) : issues.length === 0 ? (
           <div className="text-center py-8 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-            {search.trim() ? '未找到匹配' : '暂无 Issue'}
+            {search.trim() ? '未找到匹配' : '暂无任务'}
           </div>
         ) : issues.map((iss: any) => {
           const isCompleted = iss.status === 'completed'

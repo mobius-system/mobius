@@ -73,8 +73,8 @@ export function SessionStartModal({
   const modalHint = loading
     ? '正在发送开始执行指令'
     : autoConfirm && autoPending
-      ? `本次 Session 的目的 / 待解决的问题如下, ${countdown} 秒后自动执行`
-      : '本次 Session 的目的 / 待解决的问题如下'
+      ? `本次会话的目的 / 待解决的问题如下, ${countdown} 秒后自动执行`
+      : '本次会话的目的 / 待解决的问题如下'
 
   return (
     <div

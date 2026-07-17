@@ -815,7 +815,7 @@ export default function UserPage() {
                         <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                           <span>{activeIssueCount} 进行中</span>
                           <span>{completedIssueCount} 已完成</span>
-                          {p.research_enabled && <span>{p.research_count || 0} Research</span>}
+                          {p.research_enabled && <span>{p.research_count || 0} 研究</span>}
                           <span className="ml-auto">活跃 {timeAgo(p.last_active)}</span>
                         </div>
                       </div>
@@ -840,7 +840,7 @@ export default function UserPage() {
                       {/* Issues / Research 概览 */}
                       <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>{showResearch ? 'Research' : 'Issues'}</span>
+                          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>{showResearch ? '研究' : '任务'}</span>
                           <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
                             className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">查看全部 →</LinklessNav>
                         </div>
@@ -848,7 +848,7 @@ export default function UserPage() {
                           overviewLoading ? (
                             <ListLoadingHint compact />
                           ) : (
-                            <div className="text-[11px] py-2" style={{ color: 'var(--text-muted)' }}>{showResearch ? '暂无 Research' : '暂无 Issue'}</div>
+                            <div className="text-[11px] py-2" style={{ color: 'var(--text-muted)' }}>{showResearch ? '暂无研究' : '暂无任务'}</div>
                           )
                         ) : (
                           <div className="space-y-1 min-w-0">
@@ -933,7 +933,7 @@ export default function UserPage() {
                 <div>
                   <div className="mb-3">
                     <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>个人 Skill</h2>
-                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>用户级 skill, 在你创建的所有 Issue 中默认可用</p>
+                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>用户级 skill, 在你创建的所有任务中默认可用</p>
                   </div>
                   <SkillsManager scope="user" />
                 </div>

@@ -653,7 +653,7 @@ function GraphInner({ researchId }: { researchId: string }) {
   }, [edges, replaying, revealedCount])
 
   if (state.loading) {
-    return <div className="flex items-center justify-center h-full text-[13px]" style={{ color: 'var(--text-muted)' }}>正在加载 Research Graph...</div>
+    return <div className="flex items-center justify-center h-full text-[13px]" style={{ color: 'var(--text-muted)' }}>正在加载研究图谱...</div>
   }
   if (state.error) {
     return <div className="flex items-center justify-center h-full text-[13px] text-red-400">{state.error}</div>
@@ -662,7 +662,7 @@ function GraphInner({ researchId }: { researchId: string }) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
         <div className="text-[14px]" style={{ color: 'var(--text-muted)' }}>
-          {state.exists ? 'research-graph.yml 中暂无有效节点' : '当前 Research 尚未创建 research-graph.yml'}
+          {state.exists ? 'research-graph.yml 中暂无有效节点' : '当前研究尚未创建 research-graph.yml'}
         </div>
         <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
           文件位置: <code>{HIDDEN_FOLDER_NAME}/blackboard/{researchId}/research-graph.yml</code>

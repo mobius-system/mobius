@@ -865,7 +865,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, o
                     发送运行前端的指令
                   </div>
                   <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    让当前 Session 启动项目并写入端口文件
+                    让当前会话启动项目并写入端口文件
                   </div>
                 </button>
               )}

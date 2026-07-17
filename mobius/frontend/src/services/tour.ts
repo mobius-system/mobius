@@ -884,18 +884,18 @@ async function runProjectFormSegment() {
       title: '本案例不启用研究',
       description: isContext
         ? guideParagraphs(
-          '研究（Research）适合较长的开放问题，例如比较方案、收集资料、跟踪结论。',
+          '研究适合较长的开放问题，例如比较方案、收集资料、跟踪结论。',
           '这个案例目标很明确：确认项目知识和项目方法会进入会话。',
           '它不是开放式调研，所以研究保持关闭。'
         )
         : isImport
           ? guideParagraphs(
-            '研究（Research）适合较长的开放问题，例如比较方案、收集资料、跟踪结论。',
+            '研究适合较长的开放问题，例如比较方案、收集资料、跟踪结论。',
             '这个案例只是导入一个公开示例项目。',
             '它不是开放式调研，所以研究保持关闭。'
           )
           : guideParagraphs(
-            '研究（Research）适合较长的开放问题，例如比较方案、收集资料、跟踪结论。',
+            '研究适合较长的开放问题，例如比较方案、收集资料、跟踪结论。',
             isExtension ? '这个案例目标明确：检查并迭代一个拓展原型。' : '这个案例目标明确：修改一个小网页。',
             '它不是开放式调研，所以研究保持关闭。'
           ),
@@ -1103,7 +1103,7 @@ async function runContextSetupProjectSegment(demo: ActiveGuidedDemo) {
     popover: {
       title: '做一次小验证',
       description: guideParagraphs(
-        '右侧是任务单（Issue）和研究（Research）区。',
+        '右侧是任务单和研究区。',
         '这个案例不是开放式调研，所以研究区没有内容。',
         '接下来只创建一个小任务，确认刚导入的资料能被带入执行会话。'
       ),

@@ -1173,7 +1173,7 @@ const PendingMessage = memo(function PendingMessage({ failed }: { failed?: boole
         <span className="assistant-msg-name">{ASSISTANT_NAME}</span>
       </div>
       <div className="assistant-session-message__content">
-        {failed ? '这次小莫 Session 启动或执行失败。' : '小莫思考中…'}
+        {failed ? '这次小莫会话启动或执行失败。' : '小莫思考中…'}
       </div>
     </div>
   )
@@ -1430,13 +1430,13 @@ function DeleteCurrentSessionConfirmModal({
   onConfirm: () => void
   onClose: () => void
 }) {
-  const name = sessionName.trim() || '当前小莫 Session'
+  const name = sessionName.trim() || '当前小莫会话'
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center">
       <button
         type="button"
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        aria-label="取消删除当前小莫 Session"
+        aria-label="取消删除当前小莫会话"
         onClick={deleting ? undefined : onClose}
       />
       <div
@@ -1447,9 +1447,9 @@ function DeleteCurrentSessionConfirmModal({
         <div className="mb-3 flex items-start gap-2">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-400" />
           <div className="min-w-0">
-            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>删除当前小莫 Session</h3>
+            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>删除当前小莫会话</h3>
             <p className="mt-1 text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              确认后会关闭后台执行，并永久删除 Session「{name}」。删除后不会保留在回收站；下一次向小莫提问时会创建新的小莫 Session。
+              确认后会关闭后台执行，并永久删除会话「{name}」。删除后不会保留在回收站；下一次向小莫提问时会创建新的小莫会话。
             </p>
           </div>
         </div>
@@ -1474,7 +1474,7 @@ function DeleteCurrentSessionConfirmModal({
             disabled={deleting}
             className="h-9 flex-1 rounded-xl bg-red-500 text-[13px] text-white transition-colors hover:bg-red-600 disabled:opacity-40"
           >
-            {deleting ? '删除中...' : '删除 Session'}
+            {deleting ? '删除中...' : '删除会话'}
           </button>
         </div>
       </div>
@@ -3367,7 +3367,7 @@ export function AssistantChat() {
     try {
       const workspace = await api('/api/assistant/workspace') as { issue?: { id?: string }, project?: { id?: string } }
       const issueId = workspace?.issue?.id
-      if (!issueId) throw new Error('未找到小莫 Issue，无法创建分身')
+      if (!issueId) throw new Error('未找到小莫任务，无法创建分身')
       const created = await api(`/api/issues/${encodeURIComponent(issueId)}/sessions/`, {
         method: 'POST',
         body: JSON.stringify({
@@ -3382,7 +3382,7 @@ export function AssistantChat() {
         }),
       }) as { session_id?: string }
       const sessionId = created?.session_id
-      if (!sessionId) throw new Error('分身 Session 创建失败')
+      if (!sessionId) throw new Error('分身会话创建失败')
       await api(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
         method: 'POST',
         body: JSON.stringify({
@@ -3483,24 +3483,24 @@ export function AssistantChat() {
       refreshProjects()
       setDeleteConfirmOpen(false)
     } catch (e: any) {
-      setDeleteErr(e?.message || '删除当前小莫 Session 失败')
+      setDeleteErr(e?.message || '删除当前小莫会话失败')
     } finally {
       setDeletingSession(false)
     }
   }, [currentSessionId, currentSnapshot, deleteAssistantSessionById, deletingSession, refreshProjects, sessions])
 
   const headerSubtitle = sending
-    ? (currentSessionId ? '正在发送到当前 Session' : '正在创建主小莫')
+    ? (currentSessionId ? '正在发送到当前会话' : '正在创建主小莫')
     : activeCount > 0 || pendingActiveCount > 0
-      ? '小莫 Session 正在回复'
+      ? '小莫会话正在回复'
       : currentSessionId
         ? (currentSessionRole === 'main' ? '主体负责分发、汇总和播报' : '分身只处理当前单项任务')
         : '首次提问会创建主小莫'
-  const openSessionTip = currentSessionUrl ? '在新窗口打开当前 Session' : '小莫 Session 创建后可跳转'
-  const deleteSessionTip = currentSessionId ? '删除当前小莫 Session' : '小莫 Session 创建后可删除'
+  const openSessionTip = currentSessionUrl ? '在新窗口打开当前会话' : '小莫会话创建后可跳转'
+  const deleteSessionTip = currentSessionId ? '删除当前小莫会话' : '小莫会话创建后可删除'
   const clearConversationTip = currentSessionId
     ? '清空前端对话并压缩上文'
-    : '小莫 Session 创建后可清空前端对话'
+    : '小莫会话创建后可清空前端对话'
   const resizeTip = panelSize === 'compact'
     ? '放大查看'
     : panelSize === 'expanded'
@@ -3642,7 +3642,7 @@ export function AssistantChat() {
                 {!sidebarCollapsed ? (
                   <div>
                     <div className="assistant-session-sidebar__title">小莫列表</div>
-                    <div className="assistant-session-sidebar__meta">{sessions.length} 个 Session</div>
+                    <div className="assistant-session-sidebar__meta">{sessions.length} 个会话</div>
                   </div>
                 ) : null}
                 <AssistantTooltip label={sidebarCollapsed ? '展开列表' : '折叠列表'} side="top">
@@ -3747,7 +3747,7 @@ export function AssistantChat() {
                     disabled={!currentSessionUrl}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    <span>当前 Session</span>
+                    <span>当前会话</span>
                   </button>
                 </AssistantTooltip>
                 {user?.role === 'admin' ? (
@@ -3848,7 +3848,7 @@ export function AssistantChat() {
             <div className="assistant-session-body">
               <div className="assistant-session-toolbar">
                 <div className="assistant-session-toolbar__copy">
-                  <div className="assistant-session-toolbar__title">当前 Session</div>
+                  <div className="assistant-session-toolbar__title">当前会话</div>
                   <div className="assistant-session-toolbar__name" title={currentSessionDisplayName}>
                     {currentSessionDisplayName}
                   </div>
@@ -3915,7 +3915,7 @@ export function AssistantChat() {
 
               <div ref={logRef} className="assistant-session-log">
                 {loading && sessions.length === 0 && visiblePendingTurns.length === 0 ? (
-                  <div className="assistant-session-placeholder">正在读取小莫 Session...</div>
+                  <div className="assistant-session-placeholder">正在读取小莫会话...</div>
                 ) : sessions.length === 0 && visiblePendingTurns.length === 0 ? (
                   <div className="assistant-session-placeholder">还没有小莫提问。首次发送会创建“我的主小莫”。</div>
                 ) : visibleMessageCount === 0 && visiblePendingTurns.length === 0 && currentClearCutoff ? (
