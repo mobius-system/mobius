@@ -18,6 +18,7 @@ type AdvancedInteractionBtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   tooltip?: string
   buttonClassName?: string
   iconClassName?: string
+  motion?: 'tilt' | 'breathe'
 }
 
 export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInteractionBtnProps>(function AdvancedInteractionBtn({
@@ -29,6 +30,7 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
   className = '',
   disabled,
   iconClassName,
+  motion = 'tilt',
   onBlur,
   onFocus,
   onMouseEnter,
@@ -112,7 +114,7 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
         }}
         className={`group/advanced-interaction relative inline-flex ${buttonClassName || 'h-7 w-full rounded-md'} min-w-0 items-center justify-center bg-transparent px-0 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]} ${className}`}
       >
-        <span className={`inline-flex ${iconClassName || 'h-4 w-4'} items-center justify-center transition-transform duration-200 group-hover/advanced-interaction:-translate-y-0.5 group-hover/advanced-interaction:rotate-[-8deg] group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:-translate-y-0.5 group-focus-visible/advanced-interaction:rotate-[-8deg] group-focus-visible/advanced-interaction:scale-110`}>
+        <span className={`inline-flex ${iconClassName || 'h-4 w-4'} items-center justify-center transition-transform ${motion === 'breathe' ? 'duration-300 ease-out group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:scale-110' : 'duration-200 group-hover/advanced-interaction:-translate-y-0.5 group-hover/advanced-interaction:rotate-[-8deg] group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:-translate-y-0.5 group-focus-visible/advanced-interaction:rotate-[-8deg] group-focus-visible/advanced-interaction:scale-110'}`}>
           {icon}
         </span>
       </button>
