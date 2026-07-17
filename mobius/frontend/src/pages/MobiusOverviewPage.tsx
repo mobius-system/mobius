@@ -45,10 +45,11 @@ type ProjectGraphData = {
 }
 
 const NODE_SIZES = {
-  project: { width: 230, height: 76 },
-  subject: { width: 250, height: 66 },
-  session: { width: 250, height: 58 },
+  project: { width: 260, height: 38 },
+  subject: { width: 260, height: 34 },
+  session: { width: 260, height: 32 },
 }
+const NODE_DOT_SIZE = 18
 
 const EMPTY_GRAPH_DATA: ProjectGraphData = {
   issues: [],
@@ -57,12 +58,14 @@ const EMPTY_GRAPH_DATA: ProjectGraphData = {
   sessionsByResearch: {},
 }
 
+function activeTimeMs(item: any) {
+  const value = item?.last_session_activity_at || item?.last_active || item?.updated_at || item?.created_at
+  const ms = new Date(value || 0).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
 function sortByRecent(items: any[]) {
-  return [...(items || [])].sort((a: any, b: any) => {
-    const pinnedDiff = Number(!!b?.pinned) - Number(!!a?.pinned)
-    if (pinnedDiff !== 0) return pinnedDiff
-    return new Date(b?.last_active || b?.created_at || 0).getTime() - new Date(a?.last_active || a?.created_at || 0).getTime()
-  })
+  return [...(items || [])].sort((a: any, b: any) => activeTimeMs(b) - activeTimeMs(a))
 }
 
 function projectMatchesSearch(project: any, query: string) {
@@ -125,7 +128,7 @@ function getNodePath(userParam: string, node: GraphNode) {
 }
 
 function edgePath(from: GraphNode, to: GraphNode) {
-  const x1 = from.x + from.width
+  const x1 = from.x + NODE_DOT_SIZE
   const y1 = from.y + from.height / 2
   const x2 = to.x
   const y2 = to.y + to.height / 2
@@ -136,16 +139,16 @@ function edgePath(from: GraphNode, to: GraphNode) {
 function buildGraph(project: any, data: ProjectGraphData): { nodes: GraphNode[]; edges: GraphEdge[]; width: number; height: number } {
   if (!project?.id) return { nodes: [], edges: [], width: 900, height: 560 }
 
-  const parentX = 390
-  const childX = 720
-  const startY = 72
-  const minGroupHeight = 96
-  const childGap = 74
-  const groupGap = 38
+  const parentX = 330
+  const childX = 610
+  const startY = 44
+  const minGroupHeight = 44
+  const childGap = 38
+  const groupGap = 24
   const parentItems = [
     ...sortByRecent(data.issues).map((item) => ({ kind: 'issue' as const, item, children: data.sessionsByIssue[item.id] || [] })),
     ...sortByRecent(data.researches).map((item) => ({ kind: 'research' as const, item, children: data.sessionsByResearch[item.id] || [] })),
-  ]
+  ].sort((a, b) => activeTimeMs(b.item) - activeTimeMs(a.item))
 
   const nodes: GraphNode[] = []
   const edges: GraphEdge[] = []
@@ -212,7 +215,7 @@ function buildGraph(project: any, data: ProjectGraphData): { nodes: GraphNode[];
   return {
     nodes: [projectNode, ...nodes],
     edges,
-    width: 1040,
+    width: 930,
     height: contentHeight,
   }
 }
@@ -245,35 +248,39 @@ function GraphNodeButton({
       type="button"
       onClick={() => onSelect(node)}
       title={node.title}
-      className={`absolute flex flex-col justify-between overflow-hidden rounded-lg border px-3 py-2 text-left shadow-sm transition-all duration-500 hover:-translate-y-0.5 hover:shadow-lg ${selected ? 'ring-2' : ''}`}
+      className={`absolute flex items-center gap-2 rounded-md px-0 py-0 text-left transition-all duration-500 hover:-translate-y-0.5 ${selected ? 'z-10' : ''}`}
       style={{
         left: node.x,
         top: node.y,
         width: node.width,
         height: node.height,
         color: 'var(--text-primary)',
-        background: selected ? 'color-mix(in srgb, var(--bg-active) 78%, var(--modal-bg))' : 'var(--card-bg)',
-        borderColor: selected ? accent : 'var(--border-color)',
-        ['--tw-ring-color' as any]: accent,
       }}
     >
-      <span className="flex min-w-0 items-start gap-2">
-        <span
-          className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md"
-          style={{ color: accent, background: `${accent}1f` }}
-        >
-          <NodeIcon kind={node.kind} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-semibold leading-5">{node.title}</span>
-          <span className="mt-0.5 block truncate text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+      <span
+        className={`flex flex-shrink-0 items-center justify-center rounded-full border shadow-sm transition-all duration-300 ${selected ? 'scale-125' : ''}`}
+        style={{
+          width: NODE_DOT_SIZE,
+          height: NODE_DOT_SIZE,
+          color: selected ? '#fff' : accent,
+          background: selected ? accent : 'var(--bg-primary)',
+          borderColor: accent,
+          boxShadow: selected ? `0 0 0 5px ${accent}24` : undefined,
+        }}
+      >
+        <span className="h-2 w-2 rounded-full" style={{ background: selected ? '#fff' : accent }} />
+      </span>
+      <span
+        className="min-w-0 flex-1 rounded-md px-2 py-1 transition-colors"
+        style={{ background: selected ? 'var(--bg-active)' : 'transparent' }}
+      >
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-[12px] font-semibold leading-4">{node.title}</span>
+          <span className="flex-shrink-0 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
             {kindLabel(node.kind, node.source?.research_role)}
           </span>
         </span>
-      </span>
-      <span className="flex items-center gap-1.5 text-[10px] leading-4" style={{ color: 'var(--text-secondary)' }}>
-        <span className="h-1.5 w-1.5 rounded-full" style={{ background: accent }} />
-        <span className="truncate">{meta}</span>
+        <span className="block truncate text-[10px] leading-4" style={{ color: 'var(--text-secondary)' }}>{meta}</span>
       </span>
     </button>
   )
@@ -446,9 +453,18 @@ export default function MobiusOverviewPage() {
     Promise.all([
       api(`/api/projects/${encodeURIComponent(projectId)}/issues`),
       api(`/api/projects/${encodeURIComponent(projectId)}/researches`),
-      api(`/api/projects/${encodeURIComponent(projectId)}/sessions-overview`),
     ])
-      .then(([issues, researches, sessionsOverview]: any[]) => {
+      .then(([issues, researches]: any[]) => {
+        const issueIds = (issues || []).map((issue: any) => String(issue?.id || '').trim()).filter(Boolean)
+        const researchIds = (researches || []).map((research: any) => String(research?.id || '').trim()).filter(Boolean)
+        const qs = new URLSearchParams()
+        if (issueIds.length > 0) qs.set('issue_ids', issueIds.join(','))
+        if (researchIds.length > 0) qs.set('research_ids', researchIds.join(','))
+        qs.set('preview_limit', '100')
+        return api(`/api/projects/${encodeURIComponent(projectId)}/sessions-overview?${qs.toString()}`)
+          .then((sessionsOverview: any) => ({ issues, researches, sessionsOverview }))
+      })
+      .then(({ issues, researches, sessionsOverview }: any) => {
         setGraphDataByProject((prev) => ({
           ...prev,
           [projectId]: {
