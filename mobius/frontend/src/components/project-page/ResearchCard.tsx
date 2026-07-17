@@ -20,7 +20,10 @@ export function ResearchCard({
 }: ResearchCardProps) {
   const isCompleted = research.status === 'completed'
   const activeSessions = sessions.filter((s: any) => s.status === 'active')
+  const sessionTotal = Number.isFinite(Number(research.session_count)) ? Number(research.session_count) : sessions.length
+  const activeSessionTotal = Number.isFinite(Number(research.session_count)) ? sessionTotal : activeSessions.length
   const chief = sessions.find((s: any) => s.research_role === 'chief_researcher')
+  const hasChief = !!chief || Number(research.chief_count || 0) > 0
 
   return (
     <div className="rounded-xl border overflow-hidden flex flex-col group transition-all hover:border-emerald-500/30"
@@ -50,8 +53,8 @@ export function ResearchCard({
       )}
 
       <div className="px-4 py-2 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        <span>{activeSessions.length} 活跃 · {sessions.length} 个研究智能体</span>
-        <span>{chief ? '已有 chief' : '未创建 chief'}</span>
+        <span>{activeSessionTotal} 活跃 · {sessionTotal} 个研究智能体</span>
+        <span>{hasChief ? '已有 chief' : '未创建 chief'}</span>
         <span className="ml-auto">活跃 {timeAgo(research.last_active)}</span>
       </div>
 
@@ -75,9 +78,9 @@ export function ResearchCard({
                 </span>
               </Link>
             ))}
-            {sessions.length > 4 && (
+            {sessionTotal > sessions.length && (
               <div className="text-[11px] py-1 px-2" style={{ color: 'var(--text-muted)' }}>
-                还有 {sessions.length - 4} 个 Research Agent...
+                还有 {sessionTotal - sessions.length} 个 Research Agent...
               </div>
             )}
           </div>
