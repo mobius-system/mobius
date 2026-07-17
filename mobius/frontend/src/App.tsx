@@ -11,6 +11,7 @@ import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services
 const Login = lazyWithRetry(() => import('./pages/Login'))
 const Welcome = lazyWithRetry(() => import('./pages/Welcome'))
 const UserPage = lazyWithRetry(() => import('./pages/UserPage'))
+const MobiusOverviewPage = lazyWithRetry(() => import('./pages/MobiusOverviewPage'))
 const ProjectPage = lazyWithRetry(() => import('./pages/ProjectPage'))
 const IssuePage = lazyWithRetry(() => import('./pages/IssuePage'))
 const ResearchPage = lazyWithRetry(() => import('./pages/ResearchPage'))
@@ -220,6 +221,7 @@ function AuthenticatedApp() {
             <Route path="/" element={<RootRedirect />} />
             <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
             <Route path="/u/:user" element={<UserPage />} />
+            <Route path="/u/:user/mobius_overview" element={<MobiusOverviewPage />} />
             <Route path="/u/:user/p/:project" element={<ProjectPage />} />
             <Route path="/u/:user/p/:project/i/:issue" element={<IssuePage />} />
             <Route path="/u/:user/p/:project/r/:research" element={<ResearchPage />} />

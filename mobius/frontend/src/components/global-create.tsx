@@ -18,7 +18,7 @@ import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
-import { ErrBanner, PathPickerModal, PcTaskModeSection } from './modals'
+import { ErrBanner, PathPickerModal, PcTaskModeSection, formatDefaultSessionName } from './modals'
 import { ToggleSwitch } from './toggle-switch'
 import { SessionModelPicker } from './session-model-picker'
 import { ExpandableTextarea } from './expandable-textarea'
@@ -1075,6 +1075,10 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
 // =====================================================================
 // 表单 3: 创建 Session (两级联动 Project→Issue + 单页 + Skill/Memory 浮层 + 附件)
 // =====================================================================
+// 顶栏快捷新建会话: 名称输入框的占位哨兵值. 选定目标任务后若名称仍为此值,
+// 自动替换为"任务标题 + 时间戳" (复用 NewSessionModal 的 formatDefaultSessionName).
+const SESSION_NAME_PLACEHOLDER = '请填写会话名称'
+
 export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIssueId }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void; defaultProjectId?: string; defaultIssueId?: string }) {
   const { theme, user } = useStore()
   const dark = theme !== 'light'
@@ -1083,7 +1087,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const d = draftLoad<any>(DRAFT_KEY) || {}
   const [projectId, setProjectId] = useState(defaultProjectId || d.projectId || '')
   const [issueId, setIssueId] = useState(defaultIssueId || d.issueId || '')
-  const [name, setName] = useState(d.name || '')
+  const [name, setName] = useState(d.name || SESSION_NAME_PLACEHOLDER)
   const [desc, setDesc] = useState(d.desc || '')
   // 模型默认值: 仅由 (当前 issue 上次所选 > 项目默认 > 全局默认) 三级决定.
   // 不再从全局草稿 (gc:new-session) 读/写 model —— 那会把"上次所选"泄漏到其他 issue/项目/新项目.
@@ -1122,7 +1126,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
       setAimuxId(b.aimuxIdentifier || null)
       const osName = b.platform === 'win32' ? 'Windows' : b.platform === 'darwin' ? 'macOS' : b.platform === 'linux' ? 'Linux' : (b.platform || 'PC')
       const tag = `[${osName} · ${b.hostname}]`
-      setName((prev: string) => prev && !prev.includes(tag) ? `${prev} ${tag}` : prev)
+      setName((prev: string) => prev && prev !== SESSION_NAME_PLACEHOLDER && !prev.includes(tag) ? `${prev} ${tag}` : prev)
     })
   }, [])
 
@@ -1131,6 +1135,15 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const issues = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/issues?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.issues || [])) : Promise.resolve([]), [projectId])
   const selectedProject = projects.list.find((p: any) => p.id === projectId)
   const selectedIssue = issues.list.find((i: any) => i.id === issueId)
+
+  // 选定目标任务后, 若名称仍是占位哨兵, 自动填"任务标题 + 时间戳" (复用 NewSessionModal 的格式).
+  // 仅在目标任务变化时触发; 用户手动改名后不再覆盖. 覆盖初始 defaultIssueId 预选与用户切换两种情况.
+  useEffect(() => {
+    if (selectedIssue && name === SESSION_NAME_PLACEHOLDER) {
+      setName(formatDefaultSessionName(selectedIssue.title))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIssue])
 
   // 项目级默认模型偏好 (default_model): 项目无偏好时为 null/''.
   const projectDefaultModel = selectedProject?.default_model
@@ -1209,7 +1222,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const submit = async () => {
     if (!projectId) { setErr('请选择目标项目'); return }
     if (!issueId) { setErr('请选择目标任务'); return }
-    if (!name.trim()) { setErr('请填写会话名称'); return }
+    if (!name.trim() || name === SESSION_NAME_PLACEHOLDER) { setErr('请填写会话名称'); return }
     setLoading(true); setErr('')
     try {
       const finalDesc = appendAttachmentsToDesc(desc.trim() || name, attachments)
@@ -1228,7 +1241,14 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
       }) })
       if (s?.error) { setErr(s.error); return }
       draftClear(DRAFT_KEY)
-      onDone(s, s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/i/${issueId}?session=${s.session_id}` : undefined)
+      // 顶栏快捷菜单: 创建后立即发出启动请求 (把名称+描述作为首条消息), 不跳转会话页、不弹"是否开始执行"确认.
+      // 与 ChatArea.startSession 同链路 (POST /api/sessions/:id/messages); fire-and-forget 后直接关闭菜单.
+      const startContent = [name.trim(), finalDesc].filter(Boolean).join('\n\n')
+      if (s?.session_id && startContent) {
+        const requestId = `gc-start-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        api(`/api/sessions/${s.session_id}/messages`, { method: 'POST', body: JSON.stringify({ content: startContent, request_id: requestId }) }).catch(() => {})
+      }
+      onClose()
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
   }
 
@@ -1253,33 +1273,37 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
           ]}
         />
       </SelectShell>
-      <SelectShell label="目标任务" current={selectedIssue?.title} loading={issues.loading} onRefresh={issues.refresh} dark={dark} hint={projectId ? '' : '请先选择项目'}>
-        <DropdownSelect
-          value={issueId}
-          onChange={v => { setIssueId(v); setSelectionReady(false); setErr('') }}
-          disabled={!projectId}
-          dark={dark}
-          placeholder={projectId ? '— 选择任务 —' : '请先选择项目'}
-          emptyText={projectId ? '该项目下暂无任务' : '请先选择项目'}
-          options={[
-            { value: '', label: projectId ? '— 选择任务 —' : '请先选择项目', description: '取消选择' },
-            ...issues.list.map((i: any) => ({
-              value: String(i.id),
-              label: String(i.title),
-              description: i.description ? String(i.description) : undefined,
-            })),
-          ]}
-        />
-      </SelectShell>
-      <div>
-        <SectionLabel>会话名称</SectionLabel>
-        <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="给这个会话起个名字" autoFocus dark={dark} />
+      <div className="flex gap-3">
+        <div className="flex-1 min-w-0">
+          <SelectShell label="目标任务" current={selectedIssue?.title} loading={issues.loading} onRefresh={issues.refresh} dark={dark} hint={projectId ? '' : '请先选择项目'}>
+            <DropdownSelect
+              value={issueId}
+              onChange={v => { setIssueId(v); setSelectionReady(false); setErr('') }}
+              disabled={!projectId}
+              dark={dark}
+              placeholder={projectId ? '— 选择任务 —' : '请先选择项目'}
+              emptyText={projectId ? '该项目下暂无任务' : '请先选择项目'}
+              options={[
+                { value: '', label: projectId ? '— 选择任务 —' : '请先选择项目', description: '取消选择' },
+                ...issues.list.map((i: any) => ({
+                  value: String(i.id),
+                  label: String(i.title),
+                  description: i.description ? String(i.description) : undefined,
+                })),
+              ]}
+            />
+          </SelectShell>
+        </div>
+        <div className="flex-1 min-w-0">
+          <SectionLabel>会话名称</SectionLabel>
+          <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="给这个会话起个名字" dark={dark} />
+        </div>
       </div>
       <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个会话完成什么" attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
       {isDesktop && (
         <PcTaskModeSection projectId={projectId || undefined} isDark={dark} onModeChange={setWorkMode} onPathChange={setPcPath} />
       )}
-      <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
+      <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} collapsedRows={1} />
       <div>
         <SectionLabel hint="注入上下文语言">语言</SectionLabel>
         <LanguageSelect value={language} onChange={setLanguage} />

@@ -1643,7 +1643,7 @@ function formatNowForName(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-function formatDefaultSessionName(scopeTitle?: string): string {
+export function formatDefaultSessionName(scopeTitle?: string): string {
   const time = formatNowForName()
   const title = (scopeTitle || '').replace(/\s+/g, ' ').trim()
   return title ? `${title} ${time}` : time
