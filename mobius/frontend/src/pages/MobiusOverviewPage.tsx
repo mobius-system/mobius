@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Activity,
@@ -44,6 +44,8 @@ type ProjectGraphData = {
   sessionsByResearch: Record<string, any[]>
 }
 
+type TimeRangeKey = '24h' | '48h' | '72h' | '7d' | '30d'
+
 const NODE_SIZES = {
   project: { width: 260, height: 38 },
   subject: { width: 260, height: 34 },
@@ -58,6 +60,14 @@ const EMPTY_GRAPH_DATA: ProjectGraphData = {
   sessionsByResearch: {},
 }
 
+const TIME_RANGE_OPTIONS: Array<{ key: TimeRangeKey; label: string; ms: number }> = [
+  { key: '24h', label: '24小时', ms: 24 * 60 * 60 * 1000 },
+  { key: '48h', label: '48小时', ms: 48 * 60 * 60 * 1000 },
+  { key: '72h', label: '72小时', ms: 72 * 60 * 60 * 1000 },
+  { key: '7d', label: '1周', ms: 7 * 24 * 60 * 60 * 1000 },
+  { key: '30d', label: '1月', ms: 30 * 24 * 60 * 60 * 1000 },
+]
+
 function activeTimeMs(item: any) {
   const value = item?.last_session_activity_at || item?.last_active || item?.updated_at || item?.created_at
   const ms = new Date(value || 0).getTime()
@@ -66,6 +76,28 @@ function activeTimeMs(item: any) {
 
 function sortByRecent(items: any[]) {
   return [...(items || [])].sort((a: any, b: any) => activeTimeMs(b) - activeTimeMs(a))
+}
+
+function isActiveWithin(item: any, cutoffMs: number) {
+  return activeTimeMs(item) >= cutoffMs
+}
+
+function filterGraphDataByActivity(data: ProjectGraphData, cutoffMs: number): ProjectGraphData {
+  const sessionsByIssue: Record<string, any[]> = {}
+  const sessionsByResearch: Record<string, any[]> = {}
+  const issues = (data.issues || []).filter((issue: any) => {
+    const sessions = sortByRecent((data.sessionsByIssue[issue.id] || []).filter((session: any) => isActiveWithin(session, cutoffMs)))
+    if (sessions.length === 0) return false
+    sessionsByIssue[issue.id] = sessions
+    return true
+  })
+  const researches = (data.researches || []).filter((research: any) => {
+    const sessions = sortByRecent((data.sessionsByResearch[research.id] || []).filter((session: any) => isActiveWithin(session, cutoffMs)))
+    if (sessions.length === 0) return false
+    sessionsByResearch[research.id] = sessions
+    return true
+  })
+  return { issues, researches, sessionsByIssue, sessionsByResearch }
 }
 
 function projectMatchesSearch(project: any, query: string) {
@@ -132,8 +164,7 @@ function edgePath(from: GraphNode, to: GraphNode) {
   const y1 = from.y + from.height / 2
   const x2 = to.x
   const y2 = to.y + to.height / 2
-  const mid = Math.max(64, (x2 - x1) * 0.55)
-  return `M ${x1} ${y1} C ${x1 + mid} ${y1}, ${x2 - mid} ${y2}, ${x2} ${y2}`
+  return `M ${x1} ${y1} L ${x2} ${y2}`
 }
 
 function buildGraph(project: any, data: ProjectGraphData): { nodes: GraphNode[]; edges: GraphEdge[]; width: number; height: number } {
@@ -408,6 +439,16 @@ export default function MobiusOverviewPage() {
   const [loadingProjectId, setLoadingProjectId] = useState('')
   const [error, setError] = useState('')
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
+  const [timeRange, setTimeRange] = useState<TimeRangeKey>('7d')
+  const [viewportOffset, setViewportOffset] = useState({ x: 0, y: 0 })
+  const [isPanning, setIsPanning] = useState(false)
+  const panRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null)
+
+  const selectedRange = useMemo(
+    () => TIME_RANGE_OPTIONS.find((option) => option.key === timeRange) || TIME_RANGE_OPTIONS[3],
+    [timeRange],
+  )
+  const cutoffMs = useMemo(() => Date.now() - selectedRange.ms, [selectedRange.ms])
 
   useEffect(() => {
     setCurrentProject(null)
@@ -428,23 +469,38 @@ export default function MobiusOverviewPage() {
   }, [setProjects])
 
   const visibleProjects = useMemo(
-    () => sortByRecent((projects || []).filter((project: any) => !project.hidden && projectMatchesSearch(project, query))),
-    [projects, query]
+    () => sortByRecent((projects || []).filter((project: any) => (
+      !project.hidden
+      && projectMatchesSearch(project, query)
+      && isActiveWithin(project, cutoffMs)
+    ))),
+    [projects, query, cutoffMs]
   )
 
   const selectedProject = useMemo(
     () => visibleProjects.find((project: any) => project.id === selectedProjectId)
-      || projects.find((project: any) => project.id === selectedProjectId)
       || visibleProjects[0]
       || null,
-    [visibleProjects, projects, selectedProjectId]
+    [visibleProjects, selectedProjectId]
   )
 
   useEffect(() => {
-    if (!selectedProject?.id) return
-    setCurrentProject(selectedProject)
+    if (!visibleProjects.length) {
+      setSelectedProjectId('')
+      setCurrentProject(null)
+      setSelectedNode(null)
+      return
+    }
+    if (!selectedProjectId || !visibleProjects.some((project: any) => project.id === selectedProjectId)) {
+      setSelectedProjectId(visibleProjects[0].id)
+    }
+  }, [visibleProjects, selectedProjectId, setCurrentProject])
+
+  useEffect(() => {
+    if (selectedProject?.id) setCurrentProject(selectedProject)
     setSelectedNode(null)
-  }, [selectedProject?.id, setCurrentProject])
+    setViewportOffset({ x: 0, y: 0 })
+  }, [selectedProject?.id, timeRange, setCurrentProject])
 
   const loadProjectGraph = useCallback((projectId: string) => {
     if (!projectId || graphDataByProject[projectId] || loadingProjectId === projectId) return
@@ -484,9 +540,16 @@ export default function MobiusOverviewPage() {
     loadProjectGraph(selectedProject.id)
   }, [selectedProject?.id, loadProjectGraph])
 
+  const activeGraphData = useMemo(
+    () => filterGraphDataByActivity(
+      selectedProject?.id ? graphDataByProject[selectedProject.id] || EMPTY_GRAPH_DATA : EMPTY_GRAPH_DATA,
+      cutoffMs,
+    ),
+    [selectedProject?.id, graphDataByProject, cutoffMs],
+  )
   const graph = useMemo(
-    () => buildGraph(selectedProject, selectedProject?.id ? graphDataByProject[selectedProject.id] || EMPTY_GRAPH_DATA : EMPTY_GRAPH_DATA),
-    [selectedProject, graphDataByProject]
+    () => buildGraph(selectedProject, activeGraphData),
+    [selectedProject, activeGraphData]
   )
   const nodeMap = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes])
   const isLoadingGraph = !!selectedProject?.id && loadingProjectId === selectedProject.id && !graphDataByProject[selectedProject.id]
@@ -501,6 +564,39 @@ export default function MobiusOverviewPage() {
     if (node.kind === 'issue') setCurrentIssue(node.source)
     if (node.kind === 'research') setCurrentResearch(node.source)
     if (node.kind === 'session') setCurrentSession(node.source)
+  }
+
+  const handlePanStart = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest('button, input, select, textarea, a')) return
+    panRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: viewportOffset.x,
+      originY: viewportOffset.y,
+    }
+    setIsPanning(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const handlePanMove = (event: PointerEvent<HTMLDivElement>) => {
+    const pan = panRef.current
+    if (!pan || pan.pointerId !== event.pointerId) return
+    setViewportOffset({
+      x: pan.originX + event.clientX - pan.startX,
+      y: pan.originY + event.clientY - pan.startY,
+    })
+  }
+
+  const endPan = (event: PointerEvent<HTMLDivElement>) => {
+    const pan = panRef.current
+    if (pan && pan.pointerId === event.pointerId) {
+      panRef.current = null
+      setIsPanning(false)
+      try { event.currentTarget.releasePointerCapture(event.pointerId) } catch {}
+    }
   }
 
   return (
@@ -573,6 +669,25 @@ export default function MobiusOverviewPage() {
                 <span>{graph.nodes.filter((node) => node.kind === 'session').length} Sessions / Agents</span>
               </div>
             </div>
+            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              {TIME_RANGE_OPTIONS.map((option) => {
+                const active = option.key === timeRange
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setTimeRange(option.key)}
+                    className="h-7 rounded px-2.5 text-[11px] font-medium transition-colors"
+                    style={{
+                      color: active ? '#fff' : 'var(--text-secondary)',
+                      background: active ? 'var(--accent-primary)' : 'transparent',
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
             {isLoadingGraph && (
               <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
                 <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -582,15 +697,22 @@ export default function MobiusOverviewPage() {
             {error && <div className="max-w-[360px] truncate text-[12px] text-red-400">{error}</div>}
           </div>
 
-          <div className="absolute inset-0 overflow-auto pt-[58px]">
-            <div className="relative" style={{ width: graph.width, height: graph.height }}>
-              <svg className="absolute inset-0 h-full w-full overflow-visible" width={graph.width} height={graph.height}>
-                <defs>
-                  <linearGradient id="overviewEdgeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="var(--accent-primary)" stopOpacity="0.5" />
-                    <stop offset="100%" stopColor="var(--text-muted)" stopOpacity="0.25" />
-                  </linearGradient>
-                </defs>
+          <div
+            className={`absolute inset-0 overflow-hidden pt-[58px] ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
+            onPointerDown={handlePanStart}
+            onPointerMove={handlePanMove}
+            onPointerUp={endPan}
+            onPointerCancel={endPan}
+          >
+            <div
+              className="relative transition-transform duration-75"
+              style={{
+                width: graph.width,
+                height: graph.height,
+                transform: `translate(${viewportOffset.x}px, ${viewportOffset.y}px)`,
+              }}
+            >
+              <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" width={graph.width} height={graph.height}>
                 {graph.edges.map((edge) => {
                   const from = nodeMap.get(edge.from)
                   const to = nodeMap.get(edge.to)
@@ -600,8 +722,8 @@ export default function MobiusOverviewPage() {
                       key={edge.id}
                       d={edgePath(from, to)}
                       fill="none"
-                      stroke="url(#overviewEdgeGradient)"
-                      strokeWidth={1.6}
+                      stroke="rgba(148, 163, 184, 0.55)"
+                      strokeWidth={1.4}
                       strokeLinecap="round"
                       className="transition-all duration-500"
                     />
@@ -622,7 +744,7 @@ export default function MobiusOverviewPage() {
                   style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)', background: 'var(--card-bg)' }}
                 >
                   <Activity className="h-5 w-5 flex-shrink-0" />
-                  <div className="text-[12px] leading-5">这个 Project 还没有可展示的 Issue、Research 或会话。</div>
+                  <div className="text-[12px] leading-5">这个 Project 在{selectedRange.label}内没有可展示的活跃 Session 或 Research Agent。</div>
                 </div>
               )}
             </div>
