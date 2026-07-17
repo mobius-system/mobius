@@ -48,8 +48,7 @@ export function DesktopTabBar() {
   const md = getBridge()
   // 仅桌面端渲染（web 端 mobiusDesktop 不存在 → return null，零影响）。
   if (!md?.isDesktop) return null
-  // 仅 1 个 tab 时隐藏卡片栏（避免单页多余 UI）。
-  if (tabs.length <= 1) return null
+  // 始终显示卡片栏（含「+」新建入口）。早期"仅 1 tab 隐藏"会让用户看不到「+」无法新建 → 死循环，故常驻。
 
   const onDrop = (targetId: string) => {
     if (!dragId || dragId === targetId) { setDragId(null); return }
