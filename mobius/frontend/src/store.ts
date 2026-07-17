@@ -314,6 +314,7 @@ interface AppState {
   setCurrentResearch: (research: Research | null) => void
   setSessions: (sessions: Session[]) => void
   setSessionsMap: (issueId: string, sessions: Session[]) => void
+  setSessionsMapBatch: (entries: Record<string, Session[]>) => void
   setCurrentSession: (session: Session | null) => void
   setTurns: (turns: Turn[]) => void
   setTasks: (tasks: Task[]) => void
@@ -396,6 +397,7 @@ export const useStore = create<AppState>((set) => ({
   setCurrentResearch: (research) => set({ currentResearch: research }),
   setSessions: (sessions) => set({ sessions }),
   setSessionsMap: (issueId, sessions) => set((s) => ({ sessionsMap: { ...s.sessionsMap, [issueId]: sessions } })),
+  setSessionsMapBatch: (entries) => set((s) => ({ sessionsMap: { ...s.sessionsMap, ...entries } })),
   setCurrentSession: (session) => set({ currentSession: session }),
   setTurns: (turns) => set({ turns }),
   setTasks: (tasks) => set({ tasks }),

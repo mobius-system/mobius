@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } from 'react'
+import { useState, useEffect, useMemo, useCallback, type ReactNode } from 'react'
 import { useParams, useNavigate, Navigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
@@ -90,7 +90,7 @@ export default function ProjectPage() {
   const { projects, setProjects, currentProject, setCurrentProject,
           issues, issuesMap, setIssues, setIssuesMap, setCurrentIssue,
           researches, researchesMap, setResearches, setResearchesMap, setCurrentResearch,
-          sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask } = useStore()
+          sessionsMap, setSessionsMap, setSessionsMapBatch, setCurrentSession, setCurrentTask } = useStore()
   const userParam = params.user || ''
   const projectId = params.project || ''
 
@@ -118,7 +118,6 @@ export default function ProjectPage() {
   const [section, setSection] = useState<ProjectListSection>(sectionInit)
   useEffect(() => { try { localStorage.setItem(SectionKey, section) } catch {} }, [SectionKey, section])
   const [issuePage, setIssuePage] = useState(1)
-  const requestedIssueSessionIds = useRef<Set<string>>(new Set())
   // 按项目的 issue / research 列表加载态: 切换到未缓存项目时, 列表先显示 loading,
   // 不再回落渲染上个项目的 issue (旧 issuesMap[projectId] || issues 是闪现旧数据的元凶).
   const [issuesLoading, setIssuesLoading] = useState(false)
@@ -179,10 +178,15 @@ export default function ProjectPage() {
     setResearchesLoading(!researchesCached)
     api(`/api/projects/${projectId}/researches`).then((arr: any) => {
       setResearches(arr); setResearchesMap(projectId, arr)
-      ;(arr || []).slice(0, 30).forEach((research: any) => {
-        api(`/api/researches/${research.id}/sessions`).then((ss: any) => setSessionsMap(research.id, ss)).catch(() => {})
-      })
     }).catch(() => {}).finally(() => { if (alive) setResearchesLoading(false) })
+
+    api(`/api/projects/${projectId}/sessions-overview`).then((payload: any) => {
+      if (!alive) return
+      setSessionsMapBatch({
+        ...(payload?.issues || {}),
+        ...(payload?.researches || {}),
+      })
+    }).catch(() => {})
 
     return () => { alive = false }
     // 故意不把 issuesMap/researchesMap 放进 deps: 它们仅作"是否命中缓存"的一次性判断,
@@ -270,22 +274,6 @@ export default function ProjectPage() {
   useEffect(() => {
     if (issuePage > issueTotalPages) setIssuePage(issueTotalPages)
   }, [issuePage, issueTotalPages])
-
-  useEffect(() => {
-    requestedIssueSessionIds.current.clear()
-  }, [projectId])
-
-  useEffect(() => {
-    pagedIssues.forEach((issue: any) => {
-      if (!issue?.id) return
-      if (Object.prototype.hasOwnProperty.call(sessionsMap, issue.id)) return
-      if (requestedIssueSessionIds.current.has(issue.id)) return
-      requestedIssueSessionIds.current.add(issue.id)
-      api(`/api/issues/${issue.id}/sessions`)
-        .then((ss: any) => setSessionsMap(issue.id, ss))
-        .catch(() => { requestedIssueSessionIds.current.delete(issue.id) })
-    })
-  }, [pagedIssues, sessionsMap, setSessionsMap])
 
   const refreshIssues = () => api(`/api/projects/${projectId}/issues`).then((arr: any) => { setIssues(arr); setIssuesMap(projectId, arr) }).catch(() => {})
   const refreshResearches = () => api(`/api/projects/${projectId}/researches`).then((arr: any) => { setResearches(arr); setResearchesMap(projectId, arr) }).catch(() => {})
