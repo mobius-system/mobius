@@ -3223,22 +3223,23 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
             </div>
             <div className="relative flex items-end gap-2 px-3 pb-3 pt-0">
               <div className="relative">
-                <button
+                <AdvancedInteractionBtn
                   ref={inputMenuButtonRef}
-                  type="button"
                   onClick={toggleInputMenu}
                   aria-haspopup="menu"
                   aria-expanded={inputMenuOpen}
-                  aria-label="更多输入功能"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors"
+                  label="更多输入功能"
+                  tooltip="更多输入功能"
+                  accent="blue"
+                  buttonClassName="h-7 w-7 rounded-full"
+                  iconClassName="h-[17px] w-[17px]"
                   style={{
                     color: theme !== 'light' ? '#d1d5db' : '#374151',
                     border: `1px solid ${inputMenuOpen ? 'rgba(96,165,250,0.38)' : (theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)')}`,
-                    background: inputMenuOpen ? 'rgba(59,130,246,0.12)' : 'transparent',
+                    background: inputMenuOpen ? 'rgba(59,130,246,0.12)' : undefined,
                   }}
-                >
-                  <Plus className="h-[17px] w-[17px]" strokeWidth={2.2} />
-                </button>
+                  icon={<Plus className="h-[17px] w-[17px]" strokeWidth={2.2} />}
+                />
                 {inputMenuOpen && (
                   <div
                     ref={inputMenuRef}
@@ -3271,41 +3272,43 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   </div>
                 )}
               </div>
-              <button type="button"
+              <AdvancedInteractionBtn
                 onClick={() => setInputReplayOpen(true)}
                 disabled={!sessionId}
-                title="回放输入"
-                aria-label="回放输入"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                label="回放输入"
+                tooltip="回放输入"
+                accent="blue"
+                buttonClassName="h-7 w-7 rounded-full"
+                iconClassName="h-[17px] w-[17px]"
                 style={{
                   color: theme !== 'light' ? '#d1d5db' : '#374151',
                   border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
-                  background: 'transparent',
                 }}
-              >
-                <History className="w-[17px] h-[17px]" strokeWidth={2} />
-              </button>
-              <button type="button"
+                icon={<History className="w-[17px] h-[17px]" strokeWidth={2} />}
+              />
+              <AdvancedInteractionBtn
                 onClick={toggleVoiceRecording}
                 disabled={messageSubmitting || voiceState === 'transcribing'}
-                title={voiceTip}
-                aria-label={voiceTip}
                 aria-pressed={voiceState === 'recording'}
-                className={`inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors assistant-session-input__voice assistant-session-input__voice--${voiceState} disabled:opacity-40 disabled:cursor-not-allowed`}
+                label={voiceTip}
+                tooltip={voiceTip}
+                accent="cyan"
+                buttonClassName="h-7 w-7 rounded-full"
+                iconClassName="h-[17px] w-[17px]"
+                className={`assistant-session-input__voice assistant-session-input__voice--${voiceState}`}
                 style={{
                   color: voiceState === 'recording' ? '#f87171' : (voiceState === 'transcribing' ? '#38bdf8' : (theme !== 'light' ? '#d1d5db' : '#374151')),
                   border: `1px solid ${voiceState === 'recording' ? 'rgba(248,113,113,0.34)' : (voiceState === 'transcribing' ? 'rgba(56,189,248,0.34)' : (theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'))}`,
-                  background: voiceState === 'recording' ? 'rgba(239,68,68,0.13)' : (voiceState === 'transcribing' ? 'rgba(14,165,233,0.12)' : 'transparent'),
+                  background: voiceState === 'recording' ? 'rgba(239,68,68,0.13)' : (voiceState === 'transcribing' ? 'rgba(14,165,233,0.12)' : undefined),
                 }}
-              >
-                {voiceState === 'recording' ? (
+                icon={voiceState === 'recording' ? (
                   <Square className="w-[17px] h-[17px]" fill="currentColor" />
                 ) : voiceState === 'transcribing' ? (
                   <RefreshCw className="w-[17px] h-[17px] animate-spin" />
                 ) : (
                   <Mic className="w-[17px] h-[17px]" />
                 )}
-              </button>
+              />
               {(() => {
                 // 硬约束: 发送按钮永远只执行 send, 不允许根据 agentActive / running / pending
                 // 切换成 "停止生成" 或任何终止语义. 终止必须使用上方独立的 "终止" 按钮.
@@ -3318,28 +3321,34 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   : (theme !== 'light' ? '#111827' : '#ffffff')
                 return (
                   <>
-                    <button type="button" onClick={() => send(true)} disabled={sendDisabled}
+                    <AdvancedInteractionBtn onClick={() => send(true)} disabled={sendDisabled}
                       data-tour="session-chat-send-urgent"
-                      title="发送（加急）— 打断当前输出并立即发送"
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      label="加急发送"
+                      tooltip="发送（加急）— 打断当前输出并立即发送"
+                      accent="amber"
+                      buttonClassName="h-7 w-7 rounded-full"
+                      iconClassName="h-[17px] w-[17px]"
                       style={{
                         color: theme !== 'light' ? '#d1d5db' : '#374151',
                         border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
-                        background: 'transparent',
-                      }}>
-                      <Zap className="w-[17px] h-[17px]" />
-                    </button>
-                    <button onClick={() => send()} disabled={sendDisabled}
+                      }}
+                      icon={<Zap className="w-[17px] h-[17px]" />}
+                    />
+                    <AdvancedInteractionBtn onClick={() => send()} disabled={sendDisabled}
                       data-tour="session-chat-send"
-                      title={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
-                      className="w-7 h-7 flex items-center justify-center rounded-full transition-all active:scale-95"
-                      style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}>
-                      {anyUploading || voiceState === 'transcribing' ? (
+                      label="发送"
+                      tooltip={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
+                      accent="emerald"
+                      buttonClassName="h-7 w-7 rounded-full"
+                      iconClassName="h-[18px] w-[18px]"
+                      className="transition-all active:scale-95 hover:brightness-95"
+                      style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}
+                      icon={anyUploading || voiceState === 'transcribing' ? (
                         <RefreshCw className="w-4 h-4 animate-spin" />
                       ) : (
                         <SendHorizontal className="w-[18px] h-[18px]" strokeWidth={2.4} />
                       )}
-                    </button>
+                    />
                   </>
                 )
               })()}

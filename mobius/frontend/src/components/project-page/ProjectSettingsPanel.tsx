@@ -876,7 +876,7 @@ export function ProjectSettingsPanel({
       </div>
 
       {project.kind === 'extension' && (
-        <div className="px-5 py-3 border-b text-[12px]"
+        <div className="px-5 py-3 border mt-3 rounded-lg text-[12px]"
           style={{ borderColor: 'var(--border-color)', background: 'rgba(167,139,250,0.06)', color: '#a78bfa' }}>
           这是一个特殊拓展项目, 由 <code style={{ background: 'rgba(0,0,0,0.2)', padding: '0 4px', borderRadius: 3 }}>mobius/extension/{project.extension_name}</code> 自动同步.
           名称 / 描述 / 路径 / worktree / Research 由 manifest 锁定, 不可在此修改.
