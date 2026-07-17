@@ -79,9 +79,6 @@ import {
   FORGOTTEN_FLAG_PATIENCE_MAX,
   HIDDEN_FOLDER_NAME,
 } from '../config';
-// @ts-ignore — service 仍是 .js
-import { withSessionProxyState } from '../services/session-proxy-state';
-import { readJobFlagState } from '../utils/session-flags';
 
 const router = express.Router();
 const MAIN_PROJECT_PORT_REL = path.join(HIDDEN_FOLDER_NAME, 'port_forward', 'main_project_port.txt');
@@ -1697,19 +1694,6 @@ function createSessionBucket(ids: Set<string>): Record<string, any[]> {
   return bucket;
 }
 
-function enrichProjectCardSession(session: any, root: string | null): any {
-  let job_accomplished: boolean | null = null;
-  let job_failed: boolean | null = null;
-  if (root) {
-    try {
-      const st = readJobFlagState(root, session.session_id);
-      job_accomplished = st.accomplished;
-      job_failed = st.failed;
-    } catch {}
-  }
-  return { ...withSessionProxyState(session), job_accomplished, job_failed };
-}
-
 router.get('/overview', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const ids = parseProjectOverviewIds(req.query.ids);
@@ -1753,34 +1737,20 @@ router.get('/:id/sessions-overview', auth, (req: express.Request, res: express.R
   const requestedResearchIds = project.research_enabled
     ? parseProjectOverviewIds(req.query.research_ids ?? req.query.researchIds)
     : [];
-  const requestScoped = requestedIssueIds.length > 0 || requestedResearchIds.length > 0;
   const readableIssueIds = new Set<string>();
-  if (requestScoped) {
-    requestedIssueIds.forEach((issueId) => {
-      const issue = Issues.findById(issueId, user?.id);
-      if (!issue || String(issue.project_id) !== project.id || !canReadIssue(user, issue)) return;
-      readableIssueIds.add(issueId);
-    });
-  } else {
-    Issues.listForProject(project.id, undefined, user?.id)
-      .filter((issue: any) => canReadIssue(user, issue))
-      .forEach((issue: any) => readableIssueIds.add(String(issue.id)));
-  }
+  requestedIssueIds.forEach((issueId) => {
+    const issue = Issues.findById(issueId, user?.id);
+    if (!issue || String(issue.project_id) !== project.id || !canReadIssue(user, issue)) return;
+    readableIssueIds.add(issueId);
+  });
   const readableResearchIds = new Set<string>();
-  if (requestScoped) {
-    requestedResearchIds.forEach((researchId) => {
-      const research = Researches.findById(researchId);
-      if (!research || String(research.project_id) !== project.id || !canReadResearch(user, research)) return;
-      readableResearchIds.add(researchId);
-    });
-  } else if (project.research_enabled) {
-    Researches.listForProject(project.id)
-      .filter((research: any) => canReadResearch(user, research))
-      .forEach((research: any) => readableResearchIds.add(String(research.id)));
-  }
+  requestedResearchIds.forEach((researchId) => {
+    const research = Researches.findById(researchId);
+    if (!research || String(research.project_id) !== project.id || !canReadResearch(user, research)) return;
+    readableResearchIds.add(researchId);
+  });
   const issues = createSessionBucket(readableIssueIds);
   const researches = createSessionBucket(readableResearchIds);
-  const root = (project.bind_path || '').trim() ? path.resolve(project.bind_path as string) : null;
 
   const sessions = Sessions.listActiveForProjectCardIds(project.id, [...readableIssueIds], [...readableResearchIds]);
   sessions.forEach((session: any) => {
@@ -1788,13 +1758,13 @@ router.get('/:id/sessions-overview', auth, (req: express.Request, res: express.R
     if (session.scope_type === 'issue') {
       const issueId = String(session.issue_id || '');
       if (!readableIssueIds.has(issueId)) return;
-      issues[issueId].push(enrichProjectCardSession(session, root));
+      issues[issueId].push(session);
       return;
     }
     if (session.scope_type === 'research') {
       const researchId = String(session.research_id || '');
       if (!readableResearchIds.has(researchId)) return;
-      researches[researchId].push(enrichProjectCardSession(session, root));
+      researches[researchId].push(session);
     }
   });
 

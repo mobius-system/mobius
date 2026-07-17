@@ -3356,7 +3356,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
               <PlanningEditor projectId={currentProjectId} sessionId={sessionId} />
             </div>
           ) : (
-            <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3">
+            <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3 pt-0">
               <div className="space-y-2">
                 <div className="grid grid-cols-6 items-stretch gap-2">
                   <AdvancedInteractionBtn
