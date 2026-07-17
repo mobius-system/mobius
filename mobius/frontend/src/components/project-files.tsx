@@ -654,7 +654,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
       tooltip={title}
       accent="emerald"
       className={className}
-      icon={loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <MonitorUp className="h-5 w-5" />}
+      icon={loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MonitorUp className="h-4 w-4" />}
     />
   )
 

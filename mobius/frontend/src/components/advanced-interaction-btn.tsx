@@ -3,10 +3,10 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 type AdvancedInteractionAccent = 'blue' | 'emerald' | 'cyan' | 'violet'
 
 const ACCENT_CLASS: Record<AdvancedInteractionAccent, string> = {
-  blue: 'text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/35 focus-visible:border-blue-500/45',
-  emerald: 'text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/35 focus-visible:border-emerald-500/45',
-  cyan: 'text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-500/35 focus-visible:border-cyan-500/45',
-  violet: 'text-violet-400 hover:bg-violet-500/10 hover:border-violet-500/35 focus-visible:border-violet-500/45',
+  blue: 'text-blue-400 hover:bg-blue-500/10',
+  emerald: 'text-emerald-400 hover:bg-emerald-500/10',
+  cyan: 'text-cyan-400 hover:bg-cyan-500/10',
+  violet: 'text-violet-400 hover:bg-violet-500/10',
 }
 
 type AdvancedInteractionBtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -34,7 +34,7 @@ export function AdvancedInteractionBtn({
       disabled={disabled}
       aria-label={label}
       title={tooltipText}
-      className={`group/advanced-interaction relative inline-flex h-10 w-full min-w-0 items-center justify-center rounded-lg border border-[var(--border-color-strong)] bg-transparent px-0 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]} ${className}`}
+      className={`group/advanced-interaction relative inline-flex h-7 w-full min-w-0 items-center justify-center rounded-md bg-transparent px-0 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]} ${className}`}
     >
       <span
         aria-hidden="true"
@@ -42,7 +42,7 @@ export function AdvancedInteractionBtn({
       >
         {label}
       </span>
-      <span className="inline-flex h-5 w-5 items-center justify-center transition-transform duration-200 group-hover/advanced-interaction:-translate-y-0.5 group-hover/advanced-interaction:rotate-[-8deg] group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:-translate-y-0.5 group-focus-visible/advanced-interaction:rotate-[-8deg] group-focus-visible/advanced-interaction:scale-110">
+      <span className="inline-flex h-4 w-4 items-center justify-center transition-transform duration-200 group-hover/advanced-interaction:-translate-y-0.5 group-hover/advanced-interaction:rotate-[-8deg] group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:-translate-y-0.5 group-focus-visible/advanced-interaction:rotate-[-8deg] group-focus-visible/advanced-interaction:scale-110">
         {icon}
       </span>
     </button>
