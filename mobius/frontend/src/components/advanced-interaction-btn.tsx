@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { forwardRef, useCallback, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
-type AdvancedInteractionAccent = 'blue' | 'emerald' | 'cyan' | 'violet'
+type AdvancedInteractionAccent = 'blue' | 'emerald' | 'cyan' | 'violet' | 'amber'
 
 const ACCENT_CLASS: Record<AdvancedInteractionAccent, string> = {
   blue: 'text-blue-400 hover:bg-blue-500/10',
   emerald: 'text-emerald-400 hover:bg-emerald-500/10',
   cyan: 'text-cyan-400 hover:bg-cyan-500/10',
   violet: 'text-violet-400 hover:bg-violet-500/10',
+  amber: 'text-amber-400 hover:bg-amber-500/10',
 }
 
 type AdvancedInteractionBtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -15,21 +16,25 @@ type AdvancedInteractionBtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string
   accent?: AdvancedInteractionAccent
   tooltip?: string
+  buttonClassName?: string
+  iconClassName?: string
 }
 
-export function AdvancedInteractionBtn({
+export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInteractionBtnProps>(function AdvancedInteractionBtn({
   icon,
   label,
   accent = 'emerald',
   tooltip,
+  buttonClassName,
   className = '',
   disabled,
+  iconClassName,
   onBlur,
   onFocus,
   onMouseEnter,
   onMouseLeave,
   ...props
-}: AdvancedInteractionBtnProps) {
+}, forwardedRef) {
   const tooltipText = tooltip || label
   const tooltipId = useId()
   const buttonRef = useRef<HTMLButtonElement | null>(null)
@@ -71,11 +76,20 @@ export function AdvancedInteractionBtn({
     setTooltipOpen(false)
   }, [])
 
+  const setButtonRef = useCallback((node: HTMLButtonElement | null) => {
+    buttonRef.current = node
+    if (typeof forwardedRef === 'function') {
+      forwardedRef(node)
+    } else if (forwardedRef) {
+      forwardedRef.current = node
+    }
+  }, [forwardedRef])
+
   return (
     <>
       <button
         {...props}
-        ref={buttonRef}
+        ref={setButtonRef}
         type={props.type || 'button'}
         disabled={disabled}
         aria-label={label}
@@ -96,9 +110,9 @@ export function AdvancedInteractionBtn({
           onBlur?.(event)
           hideTooltip()
         }}
-        className={`group/advanced-interaction relative inline-flex h-7 w-full min-w-0 items-center justify-center rounded-md bg-transparent px-0 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]} ${className}`}
+        className={`group/advanced-interaction relative inline-flex ${buttonClassName || 'h-7 w-full rounded-md'} min-w-0 items-center justify-center bg-transparent px-0 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]} ${className}`}
       >
-        <span className="inline-flex h-4 w-4 items-center justify-center transition-transform duration-200 group-hover/advanced-interaction:-translate-y-0.5 group-hover/advanced-interaction:rotate-[-8deg] group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:-translate-y-0.5 group-focus-visible/advanced-interaction:rotate-[-8deg] group-focus-visible/advanced-interaction:scale-110">
+        <span className={`inline-flex ${iconClassName || 'h-4 w-4'} items-center justify-center transition-transform duration-200 group-hover/advanced-interaction:-translate-y-0.5 group-hover/advanced-interaction:rotate-[-8deg] group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:-translate-y-0.5 group-focus-visible/advanced-interaction:rotate-[-8deg] group-focus-visible/advanced-interaction:scale-110`}>
           {icon}
         </span>
       </button>
@@ -123,4 +137,4 @@ export function AdvancedInteractionBtn({
         : null}
     </>
   )
-}
+})
