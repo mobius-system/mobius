@@ -175,10 +175,10 @@ function edgePath(from: GraphNode, to: GraphNode) {
   const y1 = from.y + from.height / 2
   const x2 = to.x
   const y2 = to.y + to.height / 2
+  if (Math.abs(y2 - y1) < 8) return `M ${x1} ${y1} L ${x2} ${y2}`
   const dx = Math.max(80, x2 - x1)
   const curve = Math.max(64, dx * 0.5)
-  const sameLineBow = Math.abs(y2 - y1) < 8 ? 18 : 0
-  return `M ${x1} ${y1} C ${x1 + curve} ${y1 + sameLineBow}, ${x2 - curve} ${y2 - sameLineBow}, ${x2} ${y2}`
+  return `M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}`
 }
 
 function buildGraph(project: any, data: ProjectGraphData): { nodes: GraphNode[]; edges: GraphEdge[]; width: number; height: number } {
