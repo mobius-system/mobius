@@ -170,7 +170,7 @@ export function JsonlView({
 
   return (
     <div className="text-[12px]">
-      <div className="flex items-center gap-2 px-1 py-2 sticky top-0 z-10 backdrop-blur-lg bg-[var(--bg-page)]/80">
+      <div className="flex items-center gap-2 px-1 py-1 sticky top-0 z-10 backdrop-blur-lg bg-[var(--bg-page)]/80">
         {headerTitle && <span className="min-w-0 truncate text-[var(--text-secondary)] font-semibold" title={headerTitle}>{headerTitle}</span>}
         {rounds.length > 0 && <span className="text-[var(--text-muted)] text-[11px]">{rounds.length} 轮</span>}
         {/* {hasOmittedHead && <span className="text-[var(--text-muted)] text-[11px]">· 已显示尾部</span>} */}
