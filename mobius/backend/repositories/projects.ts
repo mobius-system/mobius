@@ -15,7 +15,7 @@ import {
   FORGOTTEN_FLAG_PATIENCE_MIN,
   FORGOTTEN_FLAG_PATIENCE_MAX,
 } from '../config';
-import type { ProjectRow, ProjectRawRow } from '../types/rows';
+import type { AimuxRemoteInventoryEntry, ProjectRow, ProjectRawRow } from '../types/rows';
 
 type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist';
 const CARD_BORDER_THEME_IDS = new Set([
@@ -74,6 +74,33 @@ function normalizeCardBorderTheme(value: unknown): string {
   return CARD_BORDER_THEME_IDS.has(text) ? text : 'auto';
 }
 
+function normalizeAimuxRemoteInventory(value: unknown): AimuxRemoteInventoryEntry[] {
+  const raw = typeof value === 'string' ? value : JSON.stringify(value || []);
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw || '[]'); } catch { return []; }
+  if (!Array.isArray(parsed)) return [];
+  const seen = new Set<string>();
+  const entries: AimuxRemoteInventoryEntry[] = [];
+  for (const item of parsed) {
+    if (!item || typeof item !== 'object') continue;
+    const name = typeof (item as any).name === 'string' ? (item as any).name.trim() : '';
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const port = Number((item as any).port);
+    entries.push({
+      name,
+      user: typeof (item as any).user === 'string' ? (item as any).user.trim() : '',
+      hostname: typeof (item as any).hostname === 'string' ? (item as any).hostname.trim() : '',
+      port: Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 22,
+      status: typeof (item as any).status === 'string' ? (item as any).status.trim() : '',
+      rtt_ms: typeof (item as any).rtt_ms === 'number' && Number.isFinite((item as any).rtt_ms) ? (item as any).rtt_ms : null,
+      remote_path: typeof (item as any).remote_path === 'string' ? (item as any).remote_path.trim() : '',
+      hardware: typeof (item as any).hardware === 'string' ? (item as any).hardware.trim() : '',
+    });
+  }
+  return entries;
+}
+
 type ProjectRawRowWithExtras = ProjectRawRow & {
   starred?: number;
   hidden?: number;
@@ -130,6 +157,7 @@ function hydrate(row: ProjectRawRowWithExtras | null | undefined): ProjectRow | 
       ? row.default_model.trim()
       : null,
     card_border_theme: normalizeCardBorderTheme(row.card_border_theme),
+    aimux_remote_inventory: normalizeAimuxRemoteInventory(row.aimux_remote_inventory),
     // 实际生效的"被遗忘 flag 提醒消息": 配置了用配置, 否则用系统默认.
     // 前端用它预填输入框 (单一真相源在 config.DEFAULT_FORGOTTEN_FLAG_MESSAGE).
     forgotten_flag_message_effective:
@@ -344,6 +372,10 @@ const Projects = {
   },
   updateCardBorderTheme: (id: string, val: string): void => {
     db.prepare('UPDATE projects SET card_border_theme = ? WHERE id = ?').run(normalizeCardBorderTheme(val), id);
+  },
+  updateAimuxRemoteInventory: (id: string, entries: AimuxRemoteInventoryEntry[]): void => {
+    const normalized = normalizeAimuxRemoteInventory(entries);
+    db.prepare('UPDATE projects SET aimux_remote_inventory = ? WHERE id = ?').run(JSON.stringify(normalized), id);
   },
   // 空串/空白 → 存 NULL, 表示 "用 scanner 内置默认文案".
   updateForgottenFlagMessage: (id: string, msg: string | null): void => {

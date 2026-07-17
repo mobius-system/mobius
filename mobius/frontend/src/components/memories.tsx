@@ -559,7 +559,6 @@ function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved }: {
   const [hardwareInfo, setHardwareInfo] = useState<Record<string, string>>({})
   const [remotePaths, setRemotePaths] = useState<Record<string, string>>({})
   const [pathPicker, setPathPicker] = useState<{ remote: AimuxRemote; path: string } | null>(null)
-  const [memoryName, setMemoryName] = useState('Aimux 远程算力清单')
   const [addForm, setAddForm] = useState<AddRemoteForm>({
     name: '',
     host: '',
@@ -685,23 +684,22 @@ function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved }: {
     }
   }
 
-  const createMemory = async () => {
-    const name = memoryName.trim()
-    if (!name) { setErr('Memory 标题不能为空'); return }
+  const saveRemoteInventory = async () => {
     if (selectedRemotes.length === 0) { setErr('请至少勾选一台 remote'); return }
     setSaving(true); setErr(''); setInfo('')
     try {
-      await api(baseUrl, {
+      await api(`${baseUrl}/aimux-remote-inventory`, {
         method: 'POST',
         body: JSON.stringify({
-          name,
-          description: `由 ${selectedRemotes.length} 台 aimux remote 生成`,
-          body: bodyPreview,
+          selected_names: selectedRemotes.map(remote => remote.name),
+          remote_paths: remotePaths,
+          hardware_by_name: hardwareInfo,
+          markdown: bodyPreview,
         }),
       })
       onSaved()
     } catch (e: any) {
-      setErr(e?.message || '创建 Memory 失败')
+      setErr(e?.message || '保存远程算力清单失败')
     } finally {
       setSaving(false)
     }
@@ -878,13 +876,8 @@ function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved }: {
             </div>
 
             <div className="flex-1 min-h-0 p-5 space-y-3 overflow-auto">
-              <div>
-                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>Memory 标题</label>
-                <input value={memoryName} onChange={e => { setMemoryName(e.target.value); setErr('') }}
-                  data-tour="remote-compute-memory-title"
-                  disabled={saving}
-                  className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
-                  style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              <div className="text-[11px] rounded border px-3 py-2" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+                将同步唯一的项目 Memory：<span className="font-medium" style={{ color: 'var(--text-primary)' }}>Aimux 远程算力清单</span>；旧同名清单会自动移除。
               </div>
               <div>
                 <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>Memory 文本预览</label>
@@ -905,11 +898,11 @@ function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved }: {
             <button onClick={onClose} disabled={saving}
               className="h-8 px-3 text-[12px] rounded border disabled:opacity-40"
               style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
-            <button onClick={createMemory} disabled={saving || selectedRemotes.length === 0 || !memoryName.trim()}
+            <button onClick={saveRemoteInventory} disabled={saving || selectedRemotes.length === 0}
               data-tour="remote-compute-create-memory"
               className="h-8 px-4 text-[12px] rounded btn-primary transition-colors disabled:opacity-40 inline-flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={1.8} />
-              {saving ? '创建中...' : '创建项目 Memory'}
+              {saving ? '保存中...' : '保存项目远程清单'}
             </button>
           </div>
         </div>
