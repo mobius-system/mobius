@@ -23,7 +23,7 @@ import * as modelRegistry from './model-registry';
 const SCAN_INTERVAL_MS = 60 * 1000;
 const BATCH_PER_SCAN = 8;            // 每轮最多生成几个(调用廉价且串行, 8 可快速清历史积压)
 const CANDIDATE_POOL = BATCH_PER_SCAN * 5; // 多取一些, JS 层按默认名/冷却再筛
-const MIN_MESSAGES = 2;
+const MIN_MESSAGES = 1;            // 首条用户消息即足以生成标题(codex 的 assistant 回复常不计入 message_count)
 const TITLE_MAX_CHARS = 60;          // 期望标题长度上限
 const DB_TITLE_MAX = 120;            // 与 session-title-syncer MAX_SESSION_TITLE_LENGTH 对齐
 const ATTEMPT_COOLDOWN_MS = 2 * 60 * 1000; // 单会话生成失败后的冷却(短: 多为瞬态, 早重试)
