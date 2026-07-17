@@ -3116,7 +3116,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
         {/* 右 32%: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽 (见 index.css .mobius-chat-input). */}
         <div className="mobius-chat-input flex flex-col border-l flex-shrink-0" style={{ width: '32%', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
           {/* 输入区 */}
-          <div className="border-b p-3 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="p-3 flex-shrink-0">
             <div>
           {replyTo && (
             <div className="flex items-center gap-2 mb-2 px-4 py-2 bg-blue-500/5 border border-blue-500/15 rounded-xl">

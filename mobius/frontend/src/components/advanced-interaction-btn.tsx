@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 type AdvancedInteractionAccent = 'blue' | 'emerald' | 'cyan' | 'violet'
 
@@ -23,28 +24,103 @@ export function AdvancedInteractionBtn({
   tooltip,
   className = '',
   disabled,
+  onBlur,
+  onFocus,
+  onMouseEnter,
+  onMouseLeave,
   ...props
 }: AdvancedInteractionBtnProps) {
   const tooltipText = tooltip || label
+  const tooltipId = useId()
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const [tooltipOpen, setTooltipOpen] = useState(false)
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number; placement: 'top' | 'bottom' } | null>(null)
+
+  const updateTooltipPosition = useCallback(() => {
+    const button = buttonRef.current
+    if (!button || typeof window === 'undefined') return
+    const rect = button.getBoundingClientRect()
+    const gap = 8
+    const tooltipApproxHeight = 30
+    const placement = rect.bottom + gap + tooltipApproxHeight <= window.innerHeight ? 'bottom' : 'top'
+    const top = placement === 'bottom'
+      ? rect.bottom + gap
+      : Math.max(8, rect.top - gap)
+    const left = Math.min(Math.max(rect.left + rect.width / 2, 12), window.innerWidth - 12)
+    setTooltipPos({ left, top, placement })
+  }, [])
+
+  useEffect(() => {
+    if (!tooltipOpen) return
+    updateTooltipPosition()
+    window.addEventListener('resize', updateTooltipPosition)
+    window.addEventListener('scroll', updateTooltipPosition, true)
+    return () => {
+      window.removeEventListener('resize', updateTooltipPosition)
+      window.removeEventListener('scroll', updateTooltipPosition, true)
+    }
+  }, [tooltipOpen, updateTooltipPosition])
+
+  const showTooltip = useCallback(() => {
+    if (disabled) return
+    updateTooltipPosition()
+    setTooltipOpen(true)
+  }, [disabled, updateTooltipPosition])
+
+  const hideTooltip = useCallback(() => {
+    setTooltipOpen(false)
+  }, [])
 
   return (
-    <button
-      {...props}
-      type={props.type || 'button'}
-      disabled={disabled}
-      aria-label={label}
-      title={tooltipText}
-      className={`group/advanced-interaction relative inline-flex h-7 w-full min-w-0 items-center justify-center rounded-md bg-transparent px-0 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]} ${className}`}
-    >
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-[calc(100%+8px)] z-30 max-w-[180px] -translate-x-1/2 -translate-y-1 scale-95 whitespace-nowrap rounded-md border border-[var(--border-color)] bg-[var(--modal-bg)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-lg transition-all duration-150 group-hover/advanced-interaction:translate-y-0 group-hover/advanced-interaction:scale-100 group-hover/advanced-interaction:opacity-100 group-focus-visible/advanced-interaction:translate-y-0 group-focus-visible/advanced-interaction:scale-100 group-focus-visible/advanced-interaction:opacity-100"
+    <>
+      <button
+        {...props}
+        ref={buttonRef}
+        type={props.type || 'button'}
+        disabled={disabled}
+        aria-label={label}
+        aria-describedby={tooltipOpen ? tooltipId : undefined}
+        onMouseEnter={(event) => {
+          onMouseEnter?.(event)
+          showTooltip()
+        }}
+        onMouseLeave={(event) => {
+          onMouseLeave?.(event)
+          hideTooltip()
+        }}
+        onFocus={(event) => {
+          onFocus?.(event)
+          showTooltip()
+        }}
+        onBlur={(event) => {
+          onBlur?.(event)
+          hideTooltip()
+        }}
+        className={`group/advanced-interaction relative inline-flex h-7 w-full min-w-0 items-center justify-center rounded-md bg-transparent px-0 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]} ${className}`}
       >
-        {label}
-      </span>
-      <span className="inline-flex h-4 w-4 items-center justify-center transition-transform duration-200 group-hover/advanced-interaction:-translate-y-0.5 group-hover/advanced-interaction:rotate-[-8deg] group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:-translate-y-0.5 group-focus-visible/advanced-interaction:rotate-[-8deg] group-focus-visible/advanced-interaction:scale-110">
-        {icon}
-      </span>
-    </button>
+        <span className="inline-flex h-4 w-4 items-center justify-center transition-transform duration-200 group-hover/advanced-interaction:-translate-y-0.5 group-hover/advanced-interaction:rotate-[-8deg] group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:-translate-y-0.5 group-focus-visible/advanced-interaction:rotate-[-8deg] group-focus-visible/advanced-interaction:scale-110">
+          {icon}
+        </span>
+      </button>
+      {tooltipOpen && tooltipPos && typeof document !== 'undefined'
+        ? createPortal(
+          <div
+            id={tooltipId}
+            role="tooltip"
+            className="pointer-events-none fixed z-[1000] max-w-[220px] whitespace-nowrap rounded-md border border-[var(--border-color)] bg-[var(--modal-bg)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] opacity-100 shadow-xl"
+            style={{
+              left: tooltipPos.left,
+              top: tooltipPos.top,
+              transform: tooltipPos.placement === 'bottom'
+                ? 'translate(-50%, 0)'
+                : 'translate(-50%, -100%)',
+            }}
+          >
+            {tooltipText}
+          </div>,
+          document.body,
+        )
+        : null}
+    </>
   )
 }

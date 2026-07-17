@@ -69,7 +69,6 @@ const FALLBACK_OPTIONS: SessionModelOption[] = [
   { key: 'codex', label: 'GPT-5.5', title: 'GPT-5.5', sub: 'Codex · 强力', backend: 'tmux-codex' },
   { key: 'opus', label: 'Opus', title: 'Opus', sub: 'Claude Code · 强力', backend: 'tmux-claude-code' },
 ]
-const MODEL_PICKER_COLLAPSED_ROWS = 3
 
 function useResponsiveModelColumns() {
   const [columns, setColumns] = useState(() => (
@@ -86,12 +85,14 @@ function useResponsiveModelColumns() {
   return columns
 }
 
-export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true }: {
+export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true, collapsedRows = 3 }: {
   value: string
   onChange: (key: string) => void
   dark: boolean
   /** preset 模式不禁用超额模型 (对齐传统 isPresetMode 行为); 默认启用配额拦截 */
   quotaEnabled?: boolean
+  /** 折叠态保留几行 (1 = 顶栏快捷菜单只显一行, 其余收进"展开剩余"; 默认 3 对齐传统 NewSessionModal). */
+  collapsedRows?: number
 }) {
   const [options, setOptions] = useState<SessionModelOption[]>(FALLBACK_OPTIONS)
   const [stats, setStats] = useState<PromptStats | null>(null)
@@ -115,7 +116,9 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true 
   }, [])
 
   const selected = options.find(o => o.key === value) || null
-  const collapsedVisibleCount = responsiveColumns * MODEL_PICKER_COLLAPSED_ROWS
+  const collapsedVisibleCount = responsiveColumns * collapsedRows
+  // 折叠态最大高度: 1 行约一张卡 (min-h-16=4rem + 间隙); 3 行沿用 13.5rem 与传统菜单一致.
+  const collapsedMaxH = collapsedRows <= 1 ? '4.5rem' : '13.5rem'
   const selectedIndex = useMemo(() => options.findIndex(o => o.key === value), [options, value])
   const hasCollapsedOverflow = options.length > collapsedVisibleCount
   const expandedForSelection = selectedIndex >= collapsedVisibleCount
@@ -132,7 +135,8 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true 
     <div>
       <div className="text-[12px] mb-1.5" style={{ color: dark ? '#9ca3af' : '#64748b' }}>模型（创建后不可更改）</div>
       <div
-        className={`grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
+        className="grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3"
+        style={{ maxHeight: modelGridExpanded ? 'none' : collapsedMaxH }}
       >
         {options.map(opt => {
           const active = value === opt.key
