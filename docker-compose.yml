@@ -21,8 +21,7 @@ services:
       - "${VITE_PORT}:${VITE_PORT}"
       - "${MOBIUS_SSH_PORT:-33318}:${MOBIUS_SSH_PORT:-33318}"
     volumes:
-      # 当前部署兼容挂载: 对应 deploy/.env 中的显式路径, 不迁移既有数据。
       - ./host-data/app:/app                      # DB / turn-summaries / model-access / agent runtime JSON
       - ./host-data/data:/data                      # DB / turn-summaries / model-access / agent runtime JSON
-      - ./host-data/codex:/root/.codex              # codex 凭证/配置 (entrypoint 首次从 /opt/codex-seed 播种)
-      - ./host-data/claude:/root/.claude            # claude-code agent 运行时配置
+      - ./host-data/codex:/root/.codex
+      - ./host-data/claude:/root/.claude

@@ -3,14 +3,7 @@ const path = require('path');
 const mobiusDir = __dirname;
 const entrypoint = process.env.MOBIUS_PM2_ENTRYPOINT || path.join(mobiusDir, 'pm2-entrypoint.js');
 const instances = process.env.MOBIUS_PM2_INSTANCES || '1';
-// v1.9 起数据层 (db.ts + backend/repositories/*.ts) 已迁移到 TypeScript, 后端运行时
-// 通过 tsx/cjs 即时转译 .ts, 无需构建步骤. PM2 cluster 模式下 worker 会继承
-// interpreter_args, 所以 --require tsx/cjs 在 master 和 worker 都生效.
-// 不能直接把 interpreter 设为 tsx 二进制: PM2 cluster 模式不向 worker 传递自定义
-// interpreter, 会导致 worker 仍用 node 加载 .ts 文件而失败.
 const tsxHook = process.env.MOBIUS_TSX_HOOK || `tsx/cjs`;
-// 集中日志目录: 默认 /data/logs, 被 docker-compose 挂载到宿主机 (./host-data/data/logs)。
-// 所有 PM2 out/error_file 都落在这里, 宿主机可直接查看, 无需 docker exec。
 const LOG_DIR = process.env.MOBIUS_LOG_DIR || '/data/logs';
 
 const envKeys = [
@@ -99,8 +92,6 @@ module.exports = {
       },
     },
     {
-      // aimux bridge broker: 反向 SSE broker, 客户端 (windows/外部机器) 反向连进来,
-      // mobius 后端 /aimux_bridge/* 反代到本进程. runtime.json 由它自己写入 AIMUX_BRIDGE_RUNTIME.
       name: 'mobius-system-bridge',
       cwd: mobiusDir,
       script: path.join(mobiusDir, '.venv-aimux', 'bin', 'aimux'),
@@ -118,10 +109,6 @@ module.exports = {
       },
     },
     {
-      // 黑客帝国数字雨 · token 中转代理 (server.ts). cc 用 .withproxy.json 把请求发到
-      // 127.0.0.1:MOBIUS_TOKEN_PROXY_PORT, 本进程解码 mpx1. token 后转发到真实模型上游,
-      // 流式回传给 cc 的同时旁路抓取 text_delta 到环形缓冲, /token_stream 供数字雨消费.
-      // 隔离为独立进程: 流式转发不压主后端单 worker 事件循环.
       name: 'mobius-system-tokenproxy',
       cwd: mobiusDir,
       script: path.join(mobiusDir, 'backend', 'token-proxy', 'entry.js'),

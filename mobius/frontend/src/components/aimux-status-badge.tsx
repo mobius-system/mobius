@@ -4,6 +4,7 @@
 // 状态来源不变：preload 暴露的 window.mobiusDesktop.getAimuxStatus()/onAimuxStatus()（IPC 不变）。
 // 点击打开 aimux 状态面板 (openStatusPanel)。
 import { memo, useEffect, useState } from 'react'
+import { TopNavActionElement } from './top-nav-action'
 
 type AimuxState = 'stopped' | 'starting' | 'connected' | 'failed' | 'disabled'
 
@@ -57,14 +58,13 @@ function AimuxStatusBadgeInner() {
   const title = detail ? `${meta.label} · ${detail}` : `${meta.label}（点击查看详情）`
 
   return (
-    <button
+    <TopNavActionElement
       type="button"
       onClick={() => md?.openStatusPanel?.()}
       title={title}
       aria-label={meta.label}
       data-tour="top-aimux-status"
-      className="mobius-aimux-status h-8 flex shrink-0 items-center gap-1.5 rounded-lg px-2 border hover:bg-[var(--bg-card-hover)] transition-colors"
-      style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
+      className="mobius-aimux-status"
     >
       <span className="relative inline-flex h-2 w-2 items-center justify-center">
         <span
@@ -73,7 +73,7 @@ function AimuxStatusBadgeInner() {
         />
       </span>
       <span className="text-[12px] font-medium">{meta.label}</span>
-    </button>
+    </TopNavActionElement>
   )
 }
 
