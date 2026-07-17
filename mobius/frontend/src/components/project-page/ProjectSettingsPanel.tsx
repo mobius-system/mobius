@@ -206,7 +206,7 @@ function GitTrackingPanel({
     : '工作区干净'
 
   return (
-    <div className="p-5 space-y-4">
+    <div className="p-3 w-full space-y-4">
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -888,22 +888,22 @@ export function ProjectSettingsPanel({
       <div className="flex items-center gap-2 border rounded-lg mt-3" style={{background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
 
         {activePane === 'assistant' && assistantProject ? (
-          <div className="p-5">
+          <div className="p-3 w-full">
             <ProjectAssistantPresetPanel projectId={project.id} />
           </div>
         ) : activePane === 'architecture' ? (
-          <div className="p-5">
+          <div className="p-3 w-full">
             <ProjectArchitecturePanel
               projectId={project.id}
               onSessionCreated={onArchitectureSessionCreated}
             />
           </div>
         ) : activePane === 'todos' ? (
-          <div className="p-5">
+          <div className="p-3 w-full">
             <ProjectTodosPanel projectId={project.id} canManage={canManageProject} />
           </div>
         ) : activePane === 'package' ? (
-          <div className="p-5">
+          <div className="p-3 w-full">
             <ProjectPackagePanel projectId={project.id} />
           </div>
         ) : activePane === 'versions' ? (
