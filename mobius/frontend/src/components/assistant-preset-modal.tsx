@@ -135,18 +135,18 @@ function DeleteSessionConfirmModal({
   onConfirm: () => void
   onClose: () => void
 }) {
-  const name = session?.name || session?.session_id || '当前小莫 Session'
+  const name = session?.name || session?.session_id || '当前小莫会话'
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center">
-      <button type="button" className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-label="取消删除当前小莫 Session" onClick={saving ? undefined : onClose} />
+      <button type="button" className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-label="取消删除当前小莫会话" onClick={saving ? undefined : onClose} />
       <div className="relative w-[420px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl"
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="mb-3 flex items-start gap-2">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-400" />
           <div className="min-w-0">
-            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>删除当前小莫 Session</h3>
+            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>删除当前小莫会话</h3>
             <p className="mt-1 text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              保存新的预设后，当前 Session「{name}」使用的模型和资料快照会过期。确认后会关闭后台执行，并永久删除这个小莫 Session。
+              保存新的预设后，当前会话「{name}」使用的模型和资料快照会过期。确认后会关闭后台执行，并永久删除这个小莫会话。
             </p>
           </div>
         </div>
@@ -229,7 +229,7 @@ export function AssistantPresetModal({
     setConfirmSaving(true)
     setConfirmErr('')
     savePreset(pendingPreset, true)
-      .catch((e: any) => setConfirmErr(e?.message || '删除当前小莫 Session 失败'))
+      .catch((e: any) => setConfirmErr(e?.message || '删除当前小莫会话失败'))
       .finally(() => setConfirmSaving(false))
   }
 
@@ -262,7 +262,7 @@ export function AssistantPresetModal({
         initialPreset={payload.preset}
         defaultName="小莫助理"
         defaultDescription="你是小莫，莫比乌斯AI的项目助理。先读取skills/mobius-assistant/SKILL.md获取你的服务指南，再执行任务。征求用户的确认时，你必须参考“正确服务话术案例”与用户沟通！"
-        entityLabel="小莫助理 Session"
+        entityLabel="小莫助理会话"
         requiredSkill={ASSISTANT_REQUIRED_SKILL}
         personalityOptions={payload.personality_options?.length ? payload.personality_options : ASSISTANT_PERSONALITY_OPTIONS}
         presetContextPreviewEndpoint="/api/assistant/preset/context-preview"

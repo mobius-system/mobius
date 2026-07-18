@@ -11,7 +11,6 @@ UV_BIN="${UV_BIN:-uv}"
 
 need_install=1
 if [[ -x "$VENV_DIR/bin/aimux" ]]; then
-  # uv venv 默认不装 pip, 直接读 dist-info 目录拿版本号
   dist_info="$(ls -d "$VENV_DIR"/lib/python*/site-packages/aimux-*.dist-info 2>/dev/null | head -n1 || true)"
   if [[ -n "$dist_info" ]]; then
     installed="$(basename "$dist_info" | sed -n 's/^aimux-\(.*\)\.dist-info$/\1/p')"

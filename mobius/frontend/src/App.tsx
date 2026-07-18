@@ -11,11 +11,15 @@ import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services
 const Login = lazyWithRetry(() => import('./pages/Login'))
 const Welcome = lazyWithRetry(() => import('./pages/Welcome'))
 const UserPage = lazyWithRetry(() => import('./pages/UserPage'))
+const MobiusOverviewPage = lazyWithRetry(() => import('./pages/MobiusOverviewPage'))
+const MobiusOverviewClusterPage = lazyWithRetry(() => import('./pages/MobiusOverviewClusterPage'))
 const ProjectPage = lazyWithRetry(() => import('./pages/ProjectPage'))
 const IssuePage = lazyWithRetry(() => import('./pages/IssuePage'))
 const ResearchPage = lazyWithRetry(() => import('./pages/ResearchPage'))
 const AssistantChat = lazyWithRetry(() => import('./components/assistant-chat').then(module => ({ default: module.AssistantChat })))
 const TourController = lazyWithRetry(() => import('./components/tour-controller').then(module => ({ default: module.TourController })))
+// 桌面端多 tab 卡片栏（实验版 0.0.12）：仅 isDesktop 渲染，web 端自退场，lazy 不进网页端首屏 bundle。
+const DesktopTabBar = lazyWithRetry(() => import('./components/desktop-tab-bar').then(module => ({ default: module.DesktopTabBar })))
 
 // 渲染期 chunk 加载失败兜底: 自迭代重新部署后, 旧 tab 拉不到新 chunk 会在 render 抛错.
 // 没有 ErrorBoundary 时 React 18 会卸载整棵树 -> 白屏, 且该错误不冒泡到 window.onerror.
@@ -218,6 +222,8 @@ function AuthenticatedApp() {
             <Route path="/" element={<RootRedirect />} />
             <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
             <Route path="/u/:user" element={<UserPage />} />
+            <Route path="/u/:user/mobius_overview" element={<MobiusOverviewPage />} />
+            <Route path="/u/:user/mobius_overview_cluster" element={<MobiusOverviewClusterPage />} />
             <Route path="/u/:user/p/:project" element={<ProjectPage />} />
             <Route path="/u/:user/p/:project/i/:issue" element={<IssuePage />} />
             <Route path="/u/:user/p/:project/r/:research" element={<ResearchPage />} />
@@ -231,6 +237,9 @@ function AuthenticatedApp() {
       </Suspense>
       <Suspense fallback={null}>
         <AssistantChat />
+      </Suspense>
+      <Suspense fallback={null}>
+        <DesktopTabBar />
       </Suspense>
     </>
   )

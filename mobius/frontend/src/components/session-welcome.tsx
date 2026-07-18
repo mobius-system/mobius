@@ -73,8 +73,8 @@ export function SessionStartModal({
   const modalHint = loading
     ? '正在发送开始执行指令'
     : autoConfirm && autoPending
-      ? `本次 Session 的目的 / 待解决的问题如下, ${countdown} 秒后自动执行`
-      : '本次 Session 的目的 / 待解决的问题如下'
+      ? `本次会话的目的 / 待解决的问题如下, ${countdown} 秒后自动执行`
+      : '本次会话的目的 / 待解决的问题如下'
 
   return (
     <div
@@ -426,43 +426,47 @@ export function SessionSkillMemoryEditor({
           const btnDisabled = !sessionId || btnState === 'sending' || btnState === 'done'
           return (
             <div key={it.id}
-              className={`flex items-start gap-2 px-2 py-1.5 rounded border text-[11px] ${enabled ? '' : 'opacity-50'}`}
+              className="flex items-start gap-2 px-2 py-1.5 rounded border text-[11px]"
               style={{
                 borderColor: 'var(--border-color)',
                 background: enabled ? 'rgba(255,255,255,0.02)' : 'transparent',
               }}>
-              <input
-                type="checkbox"
-                checked={enabled}
-                disabled
-                readOnly
-                className="mt-0.5 flex-shrink-0 accent-blue-500"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate" style={{ color: 'var(--text-primary)' }}>{it.name}</span>
-                  <span
-                    className="text-[9px] px-1 py-px rounded flex-shrink-0 border"
-                    style={{
-                      color: scopeStyle.color,
-                      background: scopeStyle.bg,
-                      borderColor: scopeStyle.border,
-                    }}>
-                    {scopeStyle.label}
-                  </span>
-                  {!enabled && (
-                    <span className="text-[9px] px-1 py-px rounded flex-shrink-0 border" style={{
-                      color: 'var(--text-muted)',
-                      borderColor: 'var(--border-color)',
-                      background: 'rgba(255,255,255,0.02)',
-                    }}>
-                      未启用
-                    </span>
-                  )}
+              <div className={`min-w-0 flex-1 ${enabled ? '' : 'opacity-65'}`}>
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    disabled
+                    readOnly
+                    className="mt-0.5 flex-shrink-0 accent-blue-500"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate" style={{ color: 'var(--text-primary)' }}>{it.name}</span>
+                      <span
+                        className="text-[9px] px-1 py-px rounded flex-shrink-0 border"
+                        style={{
+                          color: scopeStyle.color,
+                          background: scopeStyle.bg,
+                          borderColor: scopeStyle.border,
+                        }}>
+                        {scopeStyle.label}
+                      </span>
+                      {!enabled && (
+                        <span className="text-[9px] px-1 py-px rounded flex-shrink-0 border" style={{
+                          color: 'var(--text-muted)',
+                          borderColor: 'var(--border-color)',
+                          background: 'rgba(255,255,255,0.02)',
+                        }}>
+                          未启用
+                        </span>
+                      )}
+                    </div>
+                    {it.description && (
+                      <div className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{it.description}</div>
+                    )}
+                  </div>
                 </div>
-                {it.description && (
-                  <div className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{it.description}</div>
-                )}
               </div>
               <button
                 type="button"
@@ -470,9 +474,9 @@ export function SessionSkillMemoryEditor({
                 onClick={() => handleEmphasize(kind, it.id)}
                 className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded border transition-colors disabled:opacity-50 disabled:cursor-wait"
                 style={{
-                  color: btnState === 'done' ? '#22c55e' : 'var(--text-muted)',
-                  borderColor: 'var(--border-color)',
-                  background: btnState === 'done' ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.02)',
+                  color: btnState === 'done' ? '#22c55e' : 'var(--text-primary)',
+                  borderColor: btnState === 'done' ? 'rgba(34,197,94,0.25)' : 'var(--border-color-strong)',
+                  background: btnState === 'done' ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.04)',
                 }}
               >
                 {btnLabel}

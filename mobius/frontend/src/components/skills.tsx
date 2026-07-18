@@ -190,8 +190,8 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
 
   const title = scope === 'user' ? '用户级 Skill' : '项目级 Skill'
   const desc = scope === 'user'
-    ? '可直接写入或粘贴 SKILL.md 内容，也可上传 .md / skill 压缩包，或从 GitHub 包安装。这些 Skill 在你创建的所有 Issue 中默认可用'
-    : '可直接写入或粘贴 SKILL.md 内容，也可上传 .md / skill 压缩包，或从 GitHub 包安装。只对本项目下后续创建的 Session 默认可用；已有 Session 已固定快照，不会自动补入。'
+    ? '可直接写入或粘贴 SKILL.md 内容，也可上传 .md / skill 压缩包，或从 GitHub 包安装。这些 Skill 在你创建的所有任务中默认可用'
+    : '可直接写入或粘贴 SKILL.md 内容，也可上传 .md / skill 压缩包，或从 GitHub 包安装。只对本项目下后续创建的会话默认可用；已有会话已固定快照，不会自动补入。'
   const managerTour = scope === 'user' ? 'user-skill-manager' : 'project-skill-manager'
   const copyTour = scope === 'user' ? 'user-skill-copy' : 'project-skill-copy'
   const addTour = scope === 'user' ? 'user-skill-add' : 'project-skill-add'

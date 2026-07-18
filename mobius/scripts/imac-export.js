@@ -1,16 +1,10 @@
 #!/usr/bin/env node
-// imac-export.js — 把 User+Skill+Memory 抽成一棵临时目录, 由 wrapper 打 zip
-// transfer.md §5: 只搬"人 + 知识", 不搬 project/issue/session/历史
 //
-// 用法 (一般由 imac-export.sh 调):
 //   node scripts/imac-export.js \
 //     --db data/mobuis.db \
 //     --protected protected_data \
 //     --staging /tmp/imac-bundle-staging \
-//     [--no-password]              # 对外分享时务必带这个
-//     [--users id1,id2]            # 默认所有 (排除 __test__)
 //
-// staging 目录结构 (wrapper 负责 zip 它):
 //   manifest.yaml
 //   users.yaml
 //   skills/<userId>/<skillName>/...
@@ -40,7 +34,6 @@ function rmrf(p) {
   if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
 }
 
-// 这些是开发临时产物, 跨机迁移没意义且占空间, 不入包
 const SKILL_GARBAGE = new Set(['.pytest_cache', '__pycache__', 'node_modules', '.venv', 'venv', 'dist', '.next', '.cache']);
 
 function copyDirIfExists(src, dst) {
@@ -70,7 +63,6 @@ function main() {
   const Database = require('better-sqlite3');
   const db = new Database(dbPath, { readonly: true });
 
-  // 用户列表 (默认排除测试帐号 __test__; 这里默认全保留, 测试帐号交给 --users 过滤)
   let userRows = db.prepare('SELECT * FROM users').all();
   if (args.users && args.users.length) {
     const want = new Set(args.users);
@@ -85,7 +77,6 @@ function main() {
       id: u.id,
       display_name: u.display_name,
       role: u.role,
-      // work_dir 是宿主机绝对路径, 导入端会按 WORKSPACE_ROOT 重置, 这里置空保留语义
       work_dir: null,
       created_at: u.created_at,
       preferences: {
@@ -101,7 +92,6 @@ function main() {
 
   fs.writeFileSync(path.join(staging, 'users.yaml'), yaml.dump({ users }, { lineWidth: 120 }));
 
-  // 用户级 skill / memory (default_project/ 子树)
   const stats = { skills_users: 0, memories_users: 0, skill_dirs: 0, memory_files: 0 };
   for (const u of users) {
     const sSrc = path.join(protectedDir, 'skills',   `user=${u.id}`, 'default_project', '.claude', 'skills');
@@ -114,7 +104,6 @@ function main() {
       try { stats.skill_dirs += fs.readdirSync(sDst, { withFileTypes: true }).filter(d => d.isDirectory()).length; } catch {}
     }
     if (fs.existsSync(mSrc) && fs.statSync(mSrc).isDirectory()) {
-      // memories 是单层 *.md (不要嵌套项目目录)
       fs.mkdirSync(mDst, { recursive: true });
       let cnt = 0;
       for (const f of fs.readdirSync(mSrc)) {
@@ -123,7 +112,6 @@ function main() {
           fs.copyFileSync(src, path.join(mDst, f));
           cnt += 1;
         } else if (fs.statSync(src).isDirectory()) {
-          // 用户级 default_project 下也可能有子目录 (按 memory FS 设计), 一并拷
           fs.cpSync(src, path.join(mDst, f), { recursive: true });
         }
       }
@@ -141,7 +129,7 @@ function main() {
     contains_password_hash: !args.noPassword,
     users: users.map(u => u.id),
     stats,
-    note: 'project/issue/session/messages 不在此包内, 目标机需重建项目',
+    note: 'project/issue/session/messages are not included; recreate projects on the target machine',
   };
   fs.writeFileSync(path.join(staging, 'manifest.yaml'), yaml.dump(manifest, { lineWidth: 120 }));
 

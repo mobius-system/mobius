@@ -182,6 +182,45 @@ const Sessions = {
       s.last_active DESC
   `).all(researchId) as SessionListRow[],
 
+  listActiveForProjectCardIds: (projectId: string, issueIds: string[] = [], researchIds: string[] = [], previewLimit = 4): SessionListRow[] => {
+    const cleanIssueIds = Array.from(new Set(issueIds.map((id) => String(id || '').trim()).filter(Boolean))).slice(0, 100);
+    const cleanResearchIds = Array.from(new Set(researchIds.map((id) => String(id || '').trim()).filter(Boolean))).slice(0, 100);
+    const clauses: string[] = [];
+    const params: string[] = [projectId];
+    if (cleanIssueIds.length > 0) {
+      clauses.push(`(s.scope_type = 'issue' AND s.issue_id IN (${cleanIssueIds.map(() => '?').join(',')}))`);
+      params.push(...cleanIssueIds);
+    }
+    if (cleanResearchIds.length > 0) {
+      clauses.push(`(s.scope_type = 'research' AND s.research_id IN (${cleanResearchIds.map(() => '?').join(',')}))`);
+      params.push(...cleanResearchIds);
+    }
+    if (clauses.length === 0) return [];
+    const rows = db.prepare(`
+      SELECT ${SESSION_LIST_COLUMNS}, u.display_name as user_display_name
+      FROM sessions_v2 s
+      LEFT JOIN users u ON s.user_id = u.id
+      WHERE s.project_id = ?
+        AND s.status = 'active'
+        AND (${clauses.join(' OR ')})
+      ORDER BY
+        s.scope_type ASC,
+        COALESCE(s.issue_id, s.research_id) ASC,
+        CASE s.research_role WHEN 'chief_researcher' THEN 0 ELSE 1 END,
+        s.last_active DESC
+    `).all(...params) as SessionListRow[];
+    const limit = Math.max(1, Math.min(Number(previewLimit) || 4, 500));
+    const seen = new Map<string, number>();
+    return rows.filter((row: any) => {
+      const parentId = row.scope_type === 'research' ? row.research_id : row.issue_id;
+      const key = `${row.scope_type}:${parentId || ''}`;
+      const count = seen.get(key) || 0;
+      if (count >= limit) return false;
+      seen.set(key, count + 1);
+      return true;
+    });
+  },
+
   listActiveByIssue: (issueId: string): SessionRow[] => db.prepare("SELECT * FROM sessions_v2 WHERE issue_id = ? AND scope_type = 'issue' AND status = 'active'").all(issueId) as SessionRow[],
   listAllByIssue: (issueId: string): SessionRow[] => db.prepare("SELECT * FROM sessions_v2 WHERE issue_id = ? AND scope_type = 'issue' ORDER BY created_at ASC").all(issueId) as SessionRow[],
   listActiveByResearch: (researchId: string): SessionRow[] => db.prepare("SELECT * FROM sessions_v2 WHERE research_id = ? AND scope_type = 'research' AND status = 'active'").all(researchId) as SessionRow[],

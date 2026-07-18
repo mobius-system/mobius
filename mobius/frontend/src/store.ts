@@ -141,6 +141,8 @@ interface Project {
   // 项目级默认模型偏好: 新建 Session 时模型下拉的初始值. null/缺省 = 未指定 (跟系统全局默认).
   // 存的是 model-registry 暴露的短键 (opus / codex / 管理员导入模型的 key).
   default_model?: string | null
+  // 项目主页卡片边框主题: auto/neutral/dark-gold/...
+  card_border_theme?: string | null
 }
 
 interface Issue {
@@ -312,6 +314,7 @@ interface AppState {
   setCurrentResearch: (research: Research | null) => void
   setSessions: (sessions: Session[]) => void
   setSessionsMap: (issueId: string, sessions: Session[]) => void
+  setSessionsMapBatch: (entries: Record<string, Session[]>) => void
   setCurrentSession: (session: Session | null) => void
   setTurns: (turns: Turn[]) => void
   setTasks: (tasks: Task[]) => void
@@ -394,6 +397,7 @@ export const useStore = create<AppState>((set) => ({
   setCurrentResearch: (research) => set({ currentResearch: research }),
   setSessions: (sessions) => set({ sessions }),
   setSessionsMap: (issueId, sessions) => set((s) => ({ sessionsMap: { ...s.sessionsMap, [issueId]: sessions } })),
+  setSessionsMapBatch: (entries) => set((s) => ({ sessionsMap: { ...s.sessionsMap, ...entries } })),
   setCurrentSession: (session) => set({ currentSession: session }),
   setTurns: (turns) => set({ turns }),
   setTasks: (tasks) => set({ tasks }),

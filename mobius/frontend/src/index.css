@@ -1484,6 +1484,15 @@ button {
   width: 8px; height: 8px; border-radius: 50%; background: #10B981;
   animation: pulse-ring 2s infinite;
 }
+
+.project-card-themed {
+  box-shadow: var(--project-card-shadow, none);
+}
+
+.project-card-themed:hover {
+  border-color: var(--project-card-hover-border, var(--project-card-border)) !important;
+  box-shadow: var(--project-card-hover-shadow, var(--project-card-shadow, none));
+}
 @keyframes pulse-ring {
   0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.45); }
   70% { box-shadow: 0 0 0 5px rgba(16,185,129,0); }
@@ -4825,6 +4834,62 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .jsonl-entry-card {
   content-visibility: auto;
   contain-intrinsic-size: auto 180px;
+}
+
+.jsonl-copy-icon-button {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-card) 72%, transparent);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .03);
+  transition:
+    transform .16s ease,
+    color .16s ease,
+    background-color .16s ease,
+    border-color .16s ease,
+    box-shadow .16s ease;
+}
+
+.jsonl-copy-icon-button:hover:not(:disabled) {
+  color: var(--text-secondary);
+  background: var(--bg-card-hover);
+  border-color: var(--border-color-strong);
+  box-shadow: 0 5px 14px rgba(15, 23, 42, .14);
+  transform: translateY(-1px);
+}
+
+.jsonl-copy-icon-button:active:not(:disabled) {
+  transform: translateY(0) scale(.92);
+  transition-duration: .08s;
+}
+
+.jsonl-copy-icon-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, #60a5fa 74%, transparent);
+  outline-offset: 2px;
+}
+
+.jsonl-copy-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.jsonl-copy-icon-button--copied {
+  color: #22c55e;
+  border-color: color-mix(in srgb, #22c55e 42%, var(--border-color));
+  background: color-mix(in srgb, #22c55e 12%, var(--bg-card));
+  animation: jsonl-copy-pop .34s cubic-bezier(.2, 1.4, .32, 1);
+}
+
+@keyframes jsonl-copy-pop {
+  0% { transform: scale(.88); }
+  55% { transform: scale(1.08); }
+  100% { transform: scale(1); }
 }
 
 .jsonl-initial-skeleton {

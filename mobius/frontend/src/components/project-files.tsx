@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { Check, Copy, ExternalLink, KeyRound, Loader2, MonitorUp, Play, TerminalSquare } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { copyTextToClipboard } from '../utils/clipboard'
+import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 
 // =====================================================================
 // ProjectFilesCard — 浏览项目 bind_path 下的文件树.
@@ -560,10 +561,11 @@ type ProjectPortEntryButtonProps = {
   subPath?: string | null
   className?: string
   label?: string
+  triggerVariant?: 'default' | 'advanced'
   onRequestRunProject?: (mainProjectPortPath: string) => void
 }
 
-export function ProjectPortEntryButton({ projectId, subPath, className, label, onRequestRunProject }: ProjectPortEntryButtonProps) {
+export function ProjectPortEntryButton({ projectId, subPath, className, label, triggerVariant = 'default', onRequestRunProject }: ProjectPortEntryButtonProps) {
   const [bindPath, setBindPath] = useState('')
   const [vscodeWorkspacePath, setVscodeWorkspacePath] = useState('')
   const [vscodeWebUrl, setVscodeWebUrl] = useState('')
@@ -644,6 +646,17 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, o
   const mainProjectPortPath = bindPath ? `${bindPath.replace(/\/+$/, '')}/${HIDDEN_FOLDER_NAME}/port_forward/main_project_port.txt` : ''
   const buttonClassName = className || 'h-7 px-2.5 text-[11px] border border-emerald-500/20 text-emerald-400 rounded-xl hover:bg-emerald-500/10 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-45 disabled:cursor-not-allowed'
   const buttonLabel = label || '进入项目端口'
+  const renderAdvancedTrigger = (disabled: boolean, title: string, onClick?: () => void) => (
+    <AdvancedInteractionBtn
+      onClick={onClick}
+      disabled={disabled}
+      label={buttonLabel}
+      tooltip={title}
+      accent="emerald"
+      className={className}
+      icon={loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MonitorUp className="h-4 w-4" />}
+    />
+  )
 
   const openProxyPort = (port: number) => {
     const url = buildCodeServerProxyUrl(vscodeWebUrl, port)
@@ -705,6 +718,9 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, o
   }
 
   if (!ready) {
+    if (triggerVariant === 'advanced') {
+      return renderAdvancedTrigger(true, projectId ? '正在加载项目端口' : '正在加载项目信息')
+    }
     return (
       <button
         type="button"
@@ -722,22 +738,30 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, o
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => {
+      {triggerVariant === 'advanced' ? renderAdvancedTrigger(loading, '进入项目端口', () => {
           setShowDialog(true)
           setShowSshForwardDialog(false)
           setManualOpen(false)
           setError('')
           if (!loading) loadMetadata()
-        }}
-        disabled={loading}
-        title="进入项目端口"
-        className={buttonClassName}
-      >
-        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> : <MonitorUp className="w-3.5 h-3.5 shrink-0" />}
-        <span className="btn-label">{buttonLabel}</span>
-      </button>
+        }) : (
+        <button
+          type="button"
+          onClick={() => {
+            setShowDialog(true)
+            setShowSshForwardDialog(false)
+            setManualOpen(false)
+            setError('')
+            if (!loading) loadMetadata()
+          }}
+          disabled={loading}
+          title="进入项目端口"
+          className={buttonClassName}
+        >
+          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> : <MonitorUp className="w-3.5 h-3.5 shrink-0" />}
+          <span className="btn-label">{buttonLabel}</span>
+        </button>
+      )}
 
       {showDialog && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-4" onClick={() => {
@@ -865,7 +889,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, o
                     发送运行前端的指令
                   </div>
                   <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    让当前 Session 启动项目并写入端口文件
+                    让当前会话启动项目并写入端口文件
                   </div>
                 </button>
               )}

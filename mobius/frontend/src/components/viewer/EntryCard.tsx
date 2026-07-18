@@ -59,6 +59,7 @@ import { JsonEntryReadCalls } from './ReadCards'
 import { JsonEntryLocalCommandBlock } from './LocalCommandBlock'
 import { ImageOutputPanel } from './ImageOutput'
 import { CompactPlainTextFallback } from './text-preview'
+import { JsonlCopyButton } from './JsonlCopyButton'
 import type { AnyEntry, CardMode, BashToolResult } from './types'
 
 const CompactMarkdown = lazy(() => import('../jsonl-compact-markdown'))
@@ -121,6 +122,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   // canCode 覆盖代码视图: Edit diff / Write 文件预览 / Bash 命令卡片 / Read 文件读取卡片.
   // 字段模式仍是入口的兜底, 让用户随时切回看原始 JSON.
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
+  const isPatchApplyEvent = entry?.type === 'event_msg' && String(entry?.payload?.type || '').startsWith('patch_apply')
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
   // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > user /goal 设置信号 (gold) > user 其他本地命令产物 (gold) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
@@ -156,13 +158,13 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const [mode, setMode] = useState<CardMode>(canCode ? 'code' : canImage ? 'image' : canCompact ? 'compact' : 'field')
 
   // 卡片展开态受控于本地 state, 跨父组件重渲染 (实时轮询追加 entry) 保持不变.
-  // 能精简的卡片总是默认展开, 代码化卡片默认折叠, error 卡片 (TUI 扫描发现的 agent 错误) 也强制展开,
+  // 能精简的纯文本卡片默认展开, 代码化卡片默认折叠; patch_apply / error 保留默认展开,
   // 父组件 defaultExpanded 仍能强制展开其它卡片.
   // 用户手动折叠 → onToggle 写回 state, 此后重渲染不再强制掀开.
   const [open, setOpen] = useState<boolean>(
-    (canCompact || canImage || type === 'error') || !!defaultExpanded
+    isPatchApplyEvent || (!canCode && (canCompact || canImage || type === 'error')) || !!defaultExpanded
   )
-  // 精简模式复制按钮反馈: 点击后短暂显示「已复制 ✓」约 1 秒后还原
+  // 精简/字段模式复制按钮反馈: 点击后短暂切换为 Check 图标再还原.
   const [copied, setCopied] = useState<boolean>(false)
   const tourTarget = jsonEntryTourTarget(entry)
 
@@ -209,8 +211,10 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
       {hasHeaderAction && (
         <div className="absolute top-1 right-2 flex items-center gap-1.5 z-[5]">
           {open && mode === 'compact' && (
-            <button
-              type="button"
+            <JsonlCopyButton
+              copied={copied}
+              title="复制渲染前的原始 markdown 源"
+              copiedTitle="Markdown 已复制"
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -219,15 +223,13 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
                   setTimeout(() => setCopied(false), 1000)
                 })
               }}
-              className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
-              title="复制渲染前的原始 markdown 源"
-            >
-              {copied ? '已复制 ✓' : '复制'}
-            </button>
+            />
           )}
           {open && mode === 'field' && (
-            <button
-              type="button"
+            <JsonlCopyButton
+              copied={copied}
+              title="复制原始 JSON 到剪贴板"
+              copiedTitle="JSON 已复制"
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -241,11 +243,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
                   setTimeout(() => setCopied(false), 1000)
                 })
               }}
-              className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
-              title="复制原始 JSON 到剪贴板"
-            >
-              {copied ? '已复制 ✓' : '复制'}
-            </button>
+            />
           )}
           {open && (canCompact || canCode || canImage) && (
             <button

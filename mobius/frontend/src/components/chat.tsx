@@ -10,6 +10,7 @@ import { OpenInVSCodeButton, ProjectPortEntryButton } from './project-files'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
 import { useVisibleJsonl } from './session-jsonl-filter'
+import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
 import { AimuxLinkIndicator } from './aimux-link-indicator'
 import { AnnouncePcButton } from './announce-pc-button'
@@ -18,6 +19,7 @@ import { readJsonlCacheSync, readJsonlCacheFromIdb, writeJsonlCache } from '../s
 import { MobiusLogo } from './mobius-logo'
 import { PlanningEditor } from './planning-editor'
 import { KnowledgeEditorModal } from './knowledge-editor-modal'
+import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { isFireAndForgetSession } from '../services/session-start-policy'
 import {
@@ -70,7 +72,7 @@ function buildProjectKnowledgePrompt(knowledgePath: string) {
 }
 
 function continueSessionName(session: any) {
-  const base = String(session?.name || '').trim() || '未命名Session'
+  const base = String(session?.name || '').trim() || '未命名会话'
   return `${base} - 更换模型`
 }
 
@@ -325,7 +327,7 @@ function AttachmentImagePreviewModal({ preview, onClose }: {
   )
 }
 
-const TUI_CONTACT_TIMEOUT_MESSAGE = '任务失败，与后台TUI联络超时，请尝试继续提问，或者重建session。'
+const TUI_CONTACT_TIMEOUT_MESSAGE = '任务失败，与后台TUI联络超时，请尝试继续提问，或者重建会话。'
 
 function isTuiContactTimeoutText(text: string) {
   return text === TUI_CONTACT_TIMEOUT_MESSAGE || /TUI was not ready within \d+ms/i.test(text || '')
@@ -914,7 +916,7 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
         <div className="flex flex-shrink-0 items-center gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Terminal className="h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.8} />
-            <span className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>Session Bash 命令</span>
+            <span className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>会话 Bash 命令</span>
             <span className="flex-shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>· {commands.length} 条</span>
           </div>
           <button
@@ -1333,7 +1335,7 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
           )}
           {session.research_role && (
             <span className="flex-shrink-0 rounded px-1.5 py-[1px] text-[9px] leading-4 border"
-              title={`Research Role: ${session.research_role}`}
+              title={`研究角色: ${session.research_role}`}
               style={{
                 color: session.research_role === 'chief_researcher' ? '#34d399' : '#a78bfa',
                 background: session.research_role === 'chief_researcher' ? 'rgba(52,211,153,0.10)' : 'rgba(167,139,250,0.10)',
@@ -1425,6 +1427,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
   // 当前 session 是否已收到 SSE 权威 jsonl_history (reset). true 后缓存兜底不再覆盖, 避免用旧值盖掉新值.
   const freshHistoryReceivedRef = useRef(false)
   const [showRaw, setShowRaw] = useState(false)
+  const [rawJsonlCopied, setRawJsonlCopied] = useState(false)
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
   const [fileChangesOpen, setFileChangesOpen] = useState(false)
   const [bashCommandsOpen, setBashCommandsOpen] = useState(false)
@@ -2026,7 +2029,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
     requestId: string
     urgent?: boolean
   }) => {
-    if (!sessionId) throw new Error('当前没有可发送消息的 Session')
+    if (!sessionId) throw new Error('当前没有可发送消息的会话')
     const payload: Record<string, any> = { content, request_id: requestId }
     if (typeof inputText === 'string') payload.input_text = inputText
     if (urgent) payload.urgent = true
@@ -2193,7 +2196,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
       stopVoiceStream()
       mediaRecorderRef.current = null
       setVoiceState('error')
-      setLastSendError(permissionErrorMessage(error, 'Session 输入'))
+      setLastSendError(permissionErrorMessage(error, '会话输入'))
     }
   }, [clearVoiceTimers, messageSubmitting, stopVoiceRecording, stopVoiceStream, submitVoiceBlob, voiceState])
 
@@ -2630,7 +2633,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
     const content = '/compact'
     setCompactConfirmOpen(false)
     if (!sessionId) {
-      setLastSendError('当前没有可发送指令的 Session')
+      setLastSendError('当前没有可发送指令的会话')
       return
     }
 
@@ -2739,7 +2742,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
 
   const sendRunProjectPortPrompt = useCallback((mainProjectPortPath: string) => {
     if (!sessionId) {
-      setLastSendError('当前没有可发送指令的 Session')
+      setLastSendError('当前没有可发送指令的会话')
       return
     }
     const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
@@ -2784,11 +2787,11 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
   // 由"开始执行?"弹窗的「立即执行!」按钮触发: 自动用 Session 元数据
   // (name / description) 拼成第一条消息发出去, 不需要用户再输入.
   const startSession = useCallback(async (): Promise<void> => {
-    if (!currentSession) throw new Error('当前 Session 未加载')
+    if (!currentSession) throw new Error('当前会话未加载')
     const name = (currentSession.name || '').trim()
     const description = ((currentSession as any).description || '').trim()
     const content = [name, description].filter(Boolean).join('\n\n')
-    if (!content) throw new Error('Session 名称和描述都为空, 无内容可发送')
+    if (!content) throw new Error('会话名称和描述都为空, 无内容可发送')
 
     const requestId = makeSendRequestId()
     setLastSendError('')
@@ -2877,7 +2880,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
       <div className="text-center max-w-md">
         <MobiusLogo size={72} className="mx-auto mb-6" />
         <h2 className="text-2xl font-bold mb-2" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>Mobius 莫比乌斯</h2>
-        <p className="text-[14px] leading-relaxed" style={{ color: theme !== 'light' ? '#6b7280' : '#64748b' }}>从左侧选择Session或新建Session开始对话</p>
+        <p className="text-[14px] leading-relaxed" style={{ color: theme !== 'light' ? '#6b7280' : '#64748b' }}>从左侧选择会话或新建会话开始对话</p>
       </div>
     </div>
   )
@@ -2906,7 +2909,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   确认发送运行项目指令
                 </div>
                 <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  下面的消息将发送给当前 Session
+                  下面的消息将发送给当前会话
                 </div>
               </div>
               <button
@@ -3115,7 +3118,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
         {/* 右 32%: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽 (见 index.css .mobius-chat-input). */}
         <div className="mobius-chat-input flex flex-col border-l flex-shrink-0" style={{ width: '32%', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
           {/* 输入区 */}
-          <div className="border-b p-3 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="p-3 flex-shrink-0">
             <div>
           {replyTo && (
             <div className="flex items-center gap-2 mb-2 px-4 py-2 bg-blue-500/5 border border-blue-500/15 rounded-xl">
@@ -3222,22 +3225,24 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
             </div>
             <div className="relative flex items-end gap-2 px-3 pb-3 pt-0">
               <div className="relative">
-                <button
+                <AdvancedInteractionBtn
                   ref={inputMenuButtonRef}
-                  type="button"
                   onClick={toggleInputMenu}
                   aria-haspopup="menu"
                   aria-expanded={inputMenuOpen}
-                  aria-label="更多输入功能"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors"
+                  label="更多输入功能"
+                  tooltip="更多输入功能"
+                  accent="blue"
+                  motion="breathe"
+                  buttonClassName="h-7 w-7 rounded-full"
+                  iconClassName="h-[17px] w-[17px]"
                   style={{
                     color: theme !== 'light' ? '#d1d5db' : '#374151',
                     border: `1px solid ${inputMenuOpen ? 'rgba(96,165,250,0.38)' : (theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)')}`,
-                    background: inputMenuOpen ? 'rgba(59,130,246,0.12)' : 'transparent',
+                    background: inputMenuOpen ? 'rgba(59,130,246,0.12)' : undefined,
                   }}
-                >
-                  <Plus className="h-[17px] w-[17px]" strokeWidth={2.2} />
-                </button>
+                  icon={<Plus className="h-[17px] w-[17px]" strokeWidth={2.2} />}
+                />
                 {inputMenuOpen && (
                   <div
                     ref={inputMenuRef}
@@ -3270,41 +3275,45 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   </div>
                 )}
               </div>
-              <button type="button"
+              <AdvancedInteractionBtn
                 onClick={() => setInputReplayOpen(true)}
                 disabled={!sessionId}
-                title="回放输入"
-                aria-label="回放输入"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                label="回放输入"
+                tooltip="回放输入"
+                accent="blue"
+                motion="breathe"
+                buttonClassName="h-7 w-7 rounded-full"
+                iconClassName="h-[17px] w-[17px]"
                 style={{
                   color: theme !== 'light' ? '#d1d5db' : '#374151',
                   border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
-                  background: 'transparent',
                 }}
-              >
-                <History className="w-[17px] h-[17px]" strokeWidth={2} />
-              </button>
-              <button type="button"
+                icon={<History className="w-[17px] h-[17px]" strokeWidth={2} />}
+              />
+              <AdvancedInteractionBtn
                 onClick={toggleVoiceRecording}
                 disabled={messageSubmitting || voiceState === 'transcribing'}
-                title={voiceTip}
-                aria-label={voiceTip}
                 aria-pressed={voiceState === 'recording'}
-                className={`inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors assistant-session-input__voice assistant-session-input__voice--${voiceState} disabled:opacity-40 disabled:cursor-not-allowed`}
+                label={voiceTip}
+                tooltip={voiceTip}
+                accent="cyan"
+                motion="breathe"
+                buttonClassName="h-7 w-7 rounded-full"
+                iconClassName="h-[17px] w-[17px]"
+                className={`assistant-session-input__voice assistant-session-input__voice--${voiceState}`}
                 style={{
                   color: voiceState === 'recording' ? '#f87171' : (voiceState === 'transcribing' ? '#38bdf8' : (theme !== 'light' ? '#d1d5db' : '#374151')),
                   border: `1px solid ${voiceState === 'recording' ? 'rgba(248,113,113,0.34)' : (voiceState === 'transcribing' ? 'rgba(56,189,248,0.34)' : (theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'))}`,
-                  background: voiceState === 'recording' ? 'rgba(239,68,68,0.13)' : (voiceState === 'transcribing' ? 'rgba(14,165,233,0.12)' : 'transparent'),
+                  background: voiceState === 'recording' ? 'rgba(239,68,68,0.13)' : (voiceState === 'transcribing' ? 'rgba(14,165,233,0.12)' : undefined),
                 }}
-              >
-                {voiceState === 'recording' ? (
+                icon={voiceState === 'recording' ? (
                   <Square className="w-[17px] h-[17px]" fill="currentColor" />
                 ) : voiceState === 'transcribing' ? (
                   <RefreshCw className="w-[17px] h-[17px] animate-spin" />
                 ) : (
                   <Mic className="w-[17px] h-[17px]" />
                 )}
-              </button>
+              />
               {(() => {
                 // 硬约束: 发送按钮永远只执行 send, 不允许根据 agentActive / running / pending
                 // 切换成 "停止生成" 或任何终止语义. 终止必须使用上方独立的 "终止" 按钮.
@@ -3317,28 +3326,36 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   : (theme !== 'light' ? '#111827' : '#ffffff')
                 return (
                   <>
-                    <button type="button" onClick={() => send(true)} disabled={sendDisabled}
+                    <AdvancedInteractionBtn onClick={() => send(true)} disabled={sendDisabled}
                       data-tour="session-chat-send-urgent"
-                      title="发送（加急）— 打断当前输出并立即发送"
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      label="加急发送"
+                      tooltip="发送（加急）— 打断当前输出并立即发送"
+                      accent="amber"
+                      motion="breathe"
+                      buttonClassName="h-7 w-7 rounded-full"
+                      iconClassName="h-[17px] w-[17px]"
                       style={{
                         color: theme !== 'light' ? '#d1d5db' : '#374151',
                         border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
-                        background: 'transparent',
-                      }}>
-                      <Zap className="w-[17px] h-[17px]" />
-                    </button>
-                    <button onClick={() => send()} disabled={sendDisabled}
+                      }}
+                      icon={<Zap className="w-[17px] h-[17px]" />}
+                    />
+                    <AdvancedInteractionBtn onClick={() => send()} disabled={sendDisabled}
                       data-tour="session-chat-send"
-                      title={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
-                      className="w-7 h-7 flex items-center justify-center rounded-full transition-all active:scale-95"
-                      style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}>
-                      {anyUploading || voiceState === 'transcribing' ? (
+                      label="发送"
+                      tooltip={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
+                      accent="emerald"
+                      motion="breathe"
+                      buttonClassName="h-7 w-7 rounded-full"
+                      iconClassName="h-[18px] w-[18px]"
+                      className="transition-all active:scale-95 hover:brightness-95"
+                      style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}
+                      icon={anyUploading || voiceState === 'transcribing' ? (
                         <RefreshCw className="w-4 h-4 animate-spin" />
                       ) : (
                         <SendHorizontal className="w-[18px] h-[18px]" strokeWidth={2.4} />
                       )}
-                    </button>
+                    />
                   </>
                 )
               })()}
@@ -3355,68 +3372,62 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
               <PlanningEditor projectId={currentProjectId} sessionId={sessionId} />
             </div>
           ) : (
-            <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3">
-              <div className="grid grid-cols-2 items-stretch gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFileChangesOpen(true)}
-                  disabled={!sessionId}
-                  title="查看当前session所有文件修改"
-                  className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-blue-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                  style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
-                  <FileDiff className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
-                  <span className="btn-label">查看文件修改</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBashCommandsOpen(true)}
-                  disabled={!sessionId}
-                  title="查看当前session运行的所有Bash命令"
-                  className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                  style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
-                  <ScrollText className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
-                  <span className="btn-label">查看运行命令</span>
-                </button>
-                <ProjectPortEntryButton
-                  projectId={currentProjectId}
-                  subPath={currentVscodeSubPath}
-                  label="进入项目端口"
-                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                  onRequestRunProject={sendRunProjectPortPrompt}
-                />
-                <button
-                  type="button"
-                  onClick={() => setKnowledgeEditorOpen(true)}
-                  disabled={!currentProjectId || !currentIssueId}
-                  title="查看当前知识 (项目知识 / 本任务知识)"
-                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-cyan-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                >
-                  <BookOpen className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
-                  <span className="btn-label">查看当前知识</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTerminalChoiceOpen(true)}
-                  disabled={!currentSession?.session_id}
-                  title="打开当前 Session 终端"
-                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                >
-                  <Terminal className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
-                  <span className="btn-label">打开终端</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setContinueModalOpen(true)}
-                  disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
-                  title="修改模型并继续"
-                  className="min-h-9 h-full w-full rounded-lg border border-[var(--border-color-strong)] px-2 py-2 text-center text-[12px] leading-snug text-[var(--text-secondary)] transition-colors hover:bg-violet-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-                >
-                  <Replace className="h-3.5 w-3.5 flex-shrink-0 text-violet-400" strokeWidth={1.9} />
-                  <span className="btn-label">修改模型并继续</span>
-                </button>
-                <SessionSkillMemoryEditor
-                  sessionId={currentSession?.session_id || sessionId}
-                />
+            <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3 pt-0">
+              <div className="space-y-2">
+                <div className="grid grid-cols-6 items-stretch gap-2">
+                  <AdvancedInteractionBtn
+                    onClick={() => setFileChangesOpen(true)}
+                    disabled={!sessionId}
+                    label="查看文件修改"
+                    tooltip="查看当前会话所有文件修改"
+                    accent="blue"
+                    icon={<FileDiff className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setBashCommandsOpen(true)}
+                    disabled={!sessionId}
+                    label="查看运行命令"
+                    tooltip="查看当前会话运行的所有Bash命令"
+                    accent="emerald"
+                    icon={<ScrollText className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                  <ProjectPortEntryButton
+                    projectId={currentProjectId}
+                    subPath={currentVscodeSubPath}
+                    label="进入项目端口"
+                    triggerVariant="advanced"
+                    onRequestRunProject={sendRunProjectPortPrompt}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setKnowledgeEditorOpen(true)}
+                    disabled={!currentProjectId || !currentIssueId}
+                    label="查看当前知识"
+                    tooltip="查看当前知识 (项目知识 / 本任务知识)"
+                    accent="cyan"
+                    icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setTerminalChoiceOpen(true)}
+                    disabled={!currentSession?.session_id}
+                    label="打开终端"
+                    tooltip="打开当前会话终端"
+                    accent="emerald"
+                    icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setContinueModalOpen(true)}
+                    disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
+                    label="修改模型并继续"
+                    tooltip="修改模型并继续"
+                    accent="violet"
+                    icon={<Replace className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                </div>
+                <div className="grid grid-cols-2 items-stretch gap-2">
+                  <SessionSkillMemoryEditor
+                    sessionId={currentSession?.session_id || sessionId}
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -3588,7 +3599,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                 <Terminal className="h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
                 <span className="min-w-0">
                   <span className="block text-[13px] font-medium">在当前目录打开终端</span>
-                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>进入当前 Session 所属项目目录</span>
+                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>进入当前会话所属项目目录</span>
                 </span>
               </button>
               <button
@@ -3604,7 +3615,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                 <Bot className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
                 <span className="min-w-0">
                   <span className="block text-[13px] font-medium">打开终端并显示 Agent 后台</span>
-                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>自动 attach 到当前 Session 的 tmux 窗口</span>
+                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>自动 attach 到当前会话的 tmux 窗口</span>
                 </span>
               </button>
             </div>
@@ -3634,7 +3645,11 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   <span className="text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }} title={jsonlPath}>{jsonlPath}</span>
                 )}
               </span>
-              <button onClick={async () => {
+              <JsonlCopyButton
+                copied={rawJsonlCopied}
+                title="复制全部 JSONL 到剪贴板"
+                copiedTitle="JSONL 已复制"
+                onClick={async () => {
                   // 复制全部前必须确保拿到完整 entries: 后端 SSE 默认只回灌末尾窗口,
                   // 且 REST 单次最多 5000 条. 这里分页拉满全量, 不省略不截断.
                   try {
@@ -3664,18 +3679,18 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                       }
                     }
                     await navigator.clipboard.writeText(entriesToCopy.map(e => JSON.stringify(e)).join('\n'))
+                    setRawJsonlCopied(true)
+                    setTimeout(() => setRawJsonlCopied(false), 1000)
                   } catch {}
                 }}
-                className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
-                style={{ color: 'var(--text-secondary)' }}
-                title="复制全部 JSONL 到剪贴板">复制全部</button>
+              />
               <button onClick={() => setShowRaw(false)}
                 className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
                 style={{ color: 'var(--text-secondary)' }}>关闭</button>
             </div>
             <div className="flex-1 overflow-y-auto">
               {jsonlEntries.length === 0 ? (
-                <div className="text-center text-[13px] py-8" style={{ color: 'var(--text-muted)' }}>暂无 JSONL 数据 (session 尚未产生输出)</div>
+                <div className="text-center text-[13px] py-8" style={{ color: 'var(--text-muted)' }}>暂无 JSONL 数据 (会话尚未产生输出)</div>
               ) : (
                 <pre className="text-[11px] leading-relaxed p-5 m-0 whitespace-pre font-mono select-text"
                   style={{ color: 'var(--text-secondary)' }}>

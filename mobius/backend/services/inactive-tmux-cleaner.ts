@@ -86,14 +86,39 @@ function normalizeEpochMs(value: any): number | null {
   return n < 10_000_000_000 ? n * 1000 : n;
 }
 
-function statMtimeMs(filePath: string | null | undefined): number | null {
+function parseJsonlEntryTimeMs(entry: any): number | null {
+  if (!entry || typeof entry !== 'object') return null;
+  const raw = entry.timestamp ?? entry.created_at ?? entry.createdAt ?? entry.time ?? entry.ts;
+  if (raw == null) return null;
+  if (typeof raw === 'number') return normalizeEpochMs(raw);
+  const ms = Date.parse(String(raw));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function lastJsonlEventTimeMs(filePath: string | null | undefined): number | null {
   if (!filePath) return null;
   try {
+    if (!fs.existsSync(filePath)) return null;
     const st = fs.statSync(filePath);
-    return Number.isFinite(st.mtimeMs) ? st.mtimeMs : null;
+    if (!st.isFile() || st.size <= 0) return null;
+    const len = Math.min(st.size, 256 * 1024);
+    const buf = Buffer.alloc(len);
+    const fd = fs.openSync(filePath, 'r');
+    try { fs.readSync(fd, buf, 0, len, st.size - len); }
+    finally { fs.closeSync(fd); }
+    const lines = buf.toString('utf8').split('\n').filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const ms = parseJsonlEntryTimeMs(JSON.parse(lines[i]));
+        if (ms) return ms;
+      } catch {
+        // Tail windows can start in the middle of a large JSON line. Skip it.
+      }
+    }
   } catch {
     return null;
   }
+  return null;
 }
 
 interface ActivitySource { ms: number; label: string; }
@@ -157,7 +182,7 @@ function activityForWindow(backend: any, windowInfo: any, dbSession: DbSessionRo
   const sources = [
     source(normalizeEpochMs(windowInfo.lastActivityMs), 'tmux.window_activity'),
     source(normalizeEpochMs(runtime?.startedAt), 'runtime.startedAt'),
-    source(statMtimeMs(runtime?.jsonlPath), 'runtime.jsonl_mtime'),
+    source(lastJsonlEventTimeMs(runtime?.jsonlPath), 'runtime.jsonl_event_time'),
     source(parseDbTime(dbSession?.last_active), 'db.last_active'),
     source(parseDbTime(dbSession?.last_agent_event), 'db.last_agent_event'),
     source(parseDbTime(dbSession?.last_message_at), 'db.last_message_at'),

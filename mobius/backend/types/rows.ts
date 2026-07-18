@@ -69,6 +69,18 @@ export interface ProjectRawRow {
   disabled: number;
   default_model: string | null;
   card_border_theme: string;
+  aimux_remote_inventory: string;
+}
+
+export interface AimuxRemoteInventoryEntry {
+  name: string;
+  user: string;
+  hostname: string;
+  port: number;
+  status: string;
+  rtt_ms: number | null;
+  remote_path: string;
+  hardware: string;
 }
 
 /** hydrate 后的 Project 行：布尔字段已转 boolean，git_repos 已 parse */
@@ -79,7 +91,8 @@ export interface ProjectRow extends Omit<ProjectRawRow,
   | 'bind_path_manual'
   | 'disabled'
   | 'can_post_issue'
-  | 'can_run_session'> {
+  | 'can_run_session'
+  | 'aimux_remote_inventory'> {
   git_repos: string[];
   default_use_worktree: boolean;
   research_enabled: boolean;
@@ -87,6 +100,7 @@ export interface ProjectRow extends Omit<ProjectRawRow,
   disabled: boolean;
   can_post_issue: boolean;
   can_run_session: boolean;
+  aimux_remote_inventory: AimuxRemoteInventoryEntry[];
   /** LEFT JOIN 注入：用户在该项目上是否星标 */
   starred?: boolean;
   /** LEFT JOIN 注入：用户是否隐藏了该项目（仅拓展真正用到；拓展一律默认可见） */

@@ -25,6 +25,7 @@ import {
 import { LOGO_REVIEW_PROJECT_ID, readLogoReviewDemoState } from '../services/logo-review-demo'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
+import { ProjectCardThemePicker } from './project-card-theme-picker'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
@@ -61,7 +62,7 @@ const ISSUE_VISIBILITY_OPTIONS: Array<{ value: IssueVisibility; label: string; d
 type NewProjectKind = 'default' | 'research' | 'extension'
 const NEW_PROJECT_KIND_LABELS: Record<NewProjectKind, string> = {
   default: '经典项目',
-  research: 'Research 项目',
+  research: '研究项目',
   extension: '莫比乌斯拓展项目',
 }
 const RANDOM_PROJECT_ADJECTIVES = [
@@ -590,15 +591,15 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
     {
       kind: 'default',
       label: '经典项目（推荐）',
-      description: '导入或新建一个项目，后续可以随时转化为 Research 项目。',
-      note: '默认不启动 Research 系统',
+      description: '导入或新建一个项目，后续可以随时转化为研究项目。',
+      note: '默认不启动研究系统',
       icon: <FolderPlus className="h-5 w-5" strokeWidth={1.8} />,
     },
     {
       kind: 'research',
-      label: 'Research 项目',
+      label: '研究项目',
       description: '通过多智能体协作完成需要持续整夜甚至数周的开放研究任务。',
-      note: '自动启用 Research，并禁用 git worktree',
+      note: '自动启用研究，并禁用 git worktree',
       icon: <FlaskConical className="h-5 w-5" strokeWidth={1.8} />,
     },
     {
@@ -663,9 +664,9 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
                 <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建{NEW_PROJECT_KIND_LABELS[projectKind]}</h3>
                 <p className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   {projectKind === 'default'
-                    ? '经典项目默认不启动 Research 系统。'
+                    ? '经典项目默认不启动研究系统。'
                     : projectKind === 'research'
-                      ? 'Research 项目会自动启用 Research，并禁用 git worktree。'
+                      ? '研究项目会自动启用研究，并禁用 git worktree。'
                       : '拓展项目会创建 mobius/extension 下的可加载拓展骨架。'}
                 </p>
               </div>
@@ -727,10 +728,10 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
                     onChange={setDefaultUseWorktree}
                     className="flex items-center gap-3 text-[13px]"
                     style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
-                    默认使用 git worktree（新建 Issue 时该选项默认打钩）
+                    默认使用 git worktree（新建任务时该选项默认打钩）
                   </ToggleSwitch>
                   {researchEnabled && (
-                    <p className="text-[11px] -mt-1" style={{ color: 'var(--text-muted)' }}>已启用 Research 系统，本项目强制禁用 worktree</p>
+                    <p className="text-[11px] -mt-1" style={{ color: 'var(--text-muted)' }}>已启用研究系统，本项目强制禁用 worktree</p>
                   )}
                   {projectKind === 'default' && (
                     <ToggleSwitch
@@ -742,7 +743,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
                       }}
                       className="flex items-center gap-3 text-[13px]"
                       style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
-                      启用 Research 系统（默认关闭，开启后自动禁用 git worktree）
+                      启用研究系统（默认关闭，开启后自动禁用 git worktree）
                     </ToggleSwitch>
                   )}
                 </>
@@ -798,6 +799,7 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
   // 同组 (team) 或任意读者 (public) 才能创建任务单 / 触发 Session.
   const [canPostIssue, setCanPostIssue] = useState<boolean>(!!project.can_post_issue)
   const [canRunSession, setCanRunSession] = useState<boolean>(!!project.can_run_session)
+  const [cardBorderTheme, setCardBorderTheme] = useState<string>(typeof project.card_border_theme === 'string' ? project.card_border_theme : 'auto')
   const [forgottenFlagMessage, setForgottenFlagMessage] = useState<string>(project.forgotten_flag_message_effective ?? (project.forgotten_flag_message || ''))
   const [forgottenFlagIssueInit, setForgottenFlagIssueInit] = useState<string>(
     intervalInputValue(project.forgotten_flag_issue_init_minutes ?? project.forgotten_flag_issue_interval_minutes, DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES)
@@ -831,12 +833,12 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
     let researchBackoff: number
     let researchPatience: number
     try {
-      issueInit = parseIntervalInput(forgottenFlagIssueInit, 'Issue Session Init', 1)
-      issueBackoff = parseBackoffInput(forgottenFlagIssueBackoff, 'Issue Session Backoff')
-      issuePatience = parsePatienceInput(forgottenFlagIssuePatience, 'Issue Session Patience')
-      researchInit = parseIntervalInput(forgottenFlagResearchInit, 'Research Agent Init', 30)
-      researchBackoff = parseBackoffInput(forgottenFlagResearchBackoff, 'Research Agent Backoff')
-      researchPatience = parsePatienceInput(forgottenFlagResearchPatience, 'Research Agent Patience')
+      issueInit = parseIntervalInput(forgottenFlagIssueInit, '任务会话 Init', 1)
+      issueBackoff = parseBackoffInput(forgottenFlagIssueBackoff, '任务会话 Backoff')
+      issuePatience = parsePatienceInput(forgottenFlagIssuePatience, '任务会话 Patience')
+      researchInit = parseIntervalInput(forgottenFlagResearchInit, '研究智能体 Init', 30)
+      researchBackoff = parseBackoffInput(forgottenFlagResearchBackoff, '研究智能体 Backoff')
+      researchPatience = parsePatienceInput(forgottenFlagResearchPatience, '研究智能体 Patience')
     } catch (e: any) {
       setErr(e?.message || '提醒策略格式错误')
       return
@@ -849,6 +851,7 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
         visibility,
         can_post_issue: canPostIssue,
         can_run_session: canRunSession,
+        cardBorderTheme,
         // 项目级规则: Research 启用时强制禁用 worktree (后端也会兜底强制)
         defaultUseWorktree: researchEnabled ? false : defaultUseWorktree,
         researchEnabled,
@@ -958,8 +961,8 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
             </ToggleSwitch>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
               {researchEnabled
-                ? '已启用 Research 系统，本项目强制禁用 worktree'
-                : '开启后，本项目新建 Issue 时「使用 git worktree」默认打钩，否则默认不打钩'}
+                ? '已启用研究系统，本项目强制禁用 worktree'
+                : '开启后，本项目新建任务时「使用 git worktree」默认打钩，否则默认不打钩'}
             </p>
           </div>
           <div>
@@ -968,9 +971,16 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
               onChange={v => { setResearchEnabled(v); setErr('') }}
               className="flex items-center gap-3 text-[13px]"
               style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
-              启用 Research 系统
+              启用研究系统
             </ToggleSwitch>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示 Research 入口；Research 与 Issues 并列管理。启用时会自动禁用 git worktree</p>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示研究入口；研究与任务并列管理。启用时会自动禁用 git worktree</p>
+          </div>
+          <div>
+            <ProjectCardThemePicker
+              value={cardBorderTheme}
+              project={project}
+              onChange={(value) => { setCardBorderTheme(value); setErr('') }}
+            />
           </div>
           <div>
             <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒消息</label>
@@ -984,7 +994,7 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
             <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒策略</label>
             <div className="space-y-3">
               <div>
-                <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>Issue Session</div>
+                <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>任务会话</div>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
@@ -1013,7 +1023,7 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
                 </div>
               </div>
               <div>
-                <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>Research Agent</div>
+                <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>研究智能体</div>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
@@ -1042,7 +1052,7 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
                 </div>
               </div>
             </div>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>默认 Issue: 10 / 2 / 3；Research: 30 / 5 / 5。达到 Patience 后只记录日志，不改状态。</p>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>默认任务: 10 / 2 / 3；研究: 30 / 5 / 5。达到 Patience 后只记录日志，不改状态。</p>
           </div>
 
           <div className="pt-2">
@@ -1132,7 +1142,7 @@ export function DeleteProjectModal({ project, onClose, onDeleted }: { project: a
           <div className="min-w-0">
             {isFixedLogoReviewProject
               ? '这个项目是“验收完成案例”路线使用的固定完成案例，不能删除。其他同名临时演示项目仍可删除。'
-              : '删除会移除该项目及其 Issue、Session 记录，删除后不能从回收站恢复。'}
+              : '删除会移除该项目及其任务、会话记录，删除后不能从回收站恢复。'}
           </div>
         </div>
         <div className="space-y-3 mb-4">
@@ -1286,8 +1296,8 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
     if (!isGuidedDemo) draftSave(DRAFT_KEY, { title, desc: descTouched ? desc : '', descTouched, useWorktree, createFirstSession, branch, visibility, isPlanning })
   }, [DRAFT_KEY, isGuidedDemo, title, desc, descTouched, useWorktree, createFirstSession, branch, visibility, isPlanning])
   const submit = async () => {
-    if (!title.trim()) { setErr('请填写 Issue 标题'); return }
-    if (!effectiveDesc.trim()) { setErr('请填写 Issue 描述'); return }
+    if (!title.trim()) { setErr('请填写任务标题'); return }
+    if (!effectiveDesc.trim()) { setErr('请填写任务描述'); return }
     setLoading(true); setErr('')
     try {
       const iss = await api(`/api/projects/${projectId}/issues`, {
@@ -1337,8 +1347,8 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
       <div className="relative w-[420px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
         onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h4 className="text-[15px] font-semibold mb-1" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>修改 Issue 权限</h4>
-        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个 Issue。可选范围会受所属项目权限限制。</p>
+        <h4 className="text-[15px] font-semibold mb-1" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>修改任务权限</h4>
+        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个任务。可选范围会受所属项目权限限制。</p>
         {issuePermissionControl}
         <div className="mt-5 flex gap-2">
           <button type="button" onClick={() => setPermissionOpen(false)}
@@ -1354,17 +1364,17 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div data-tour="issue-modal" className="relative w-[440px] rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建 Issue</h3>
+        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建任务</h3>
         <div className="space-y-3 mb-4">
           <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setErr('') }}
             data-tour="issue-title-input"
-            placeholder="Issue 标题" onKeyDown={e => e.key === 'Enter' && submit()}
+            placeholder="任务标题" onKeyDown={e => e.key === 'Enter' && submit()}
             className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <ExpandableTextarea value={effectiveDesc} onValueChange={value => { setDesc(value); setDescTouched(true); setErr('') }}
             data-tour="issue-description-input"
-            placeholder="Issue 描述（默认同标题）"
-            overlayTitle="编辑 Issue 描述"
+            placeholder="任务描述（默认同标题）"
+            overlayTitle="编辑任务描述"
             className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
 
@@ -1374,7 +1384,7 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
             style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
             <Eye className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
             <span className="min-w-0 flex-1">
-              <span className="block text-[12px] font-medium" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>修改 Issue 权限</span>
+              <span className="block text-[12px] font-medium" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>修改任务权限</span>
               <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 {visibilityOption.label} · 项目为{parentVisibilityLabel}，可选范围已收窄
               </span>
@@ -1388,13 +1398,13 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
             onChange={v => { setUseWorktree(v); setErr('') }}
             className="flex items-center gap-3 text-[13px]"
             style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
-            使用 git worktree（在绑定路径下为本 Issue 开独立工作区）
+            使用 git worktree（在绑定路径下为本任务开独立工作区）
           </ToggleSwitch>
           {useWorktree && (
             <div className="space-y-1.5">
               <input value={branch} onChange={e => { setBranch(e.target.value); setErr('') }}
                 data-tour="issue-branch-input"
-                placeholder="分支名称（留空默认使用 Issue 标识）"
+                placeholder="分支名称（留空默认使用任务标识）"
                 onKeyDown={e => e.key === 'Enter' && submit()}
                 className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: isDark ? '#f1f5f9' : '#1e293b' }} />
@@ -1420,7 +1430,7 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
               onChange={v => { setCreateFirstSession(v); setErr('') }}
               className="flex items-start gap-3 text-[13px] leading-5"
               style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
-              <span>立即创建第一个 Session（创建后自动打开新 Session 菜单）</span>
+              <span>立即创建第一个会话（创建后自动打开新会话菜单）</span>
             </ToggleSwitch>
           )}
         </div>
@@ -1465,7 +1475,7 @@ export function RenameIssueModal({ issue, onClose, onRenamed }: { issue: any; on
   if (parentVisibility === 'public') { allowedVisibilities.push('private', 'team', 'public') }
   if (parentVisibility === 'allowlist') { allowedVisibilities.push('private', 'allowlist') }
   const submit = async () => {
-    if (!name.trim()) { setErr('请输入 Issue 标题'); return }
+    if (!name.trim()) { setErr('请输入任务标题'); return }
     setLoading(true); setErr('')
     try {
       const updated = await api(`/api/issues/${issue.id}`, { method: 'PATCH', body: JSON.stringify({ title: name, description: desc, visibility }) })
@@ -1476,15 +1486,15 @@ export function RenameIssueModal({ issue, onClose, onRenamed }: { issue: any; on
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative w-96 rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改 Issue</h3>
+        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改任务</h3>
         <div className="space-y-3 mb-4">
           <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
-            placeholder="Issue 标题" onKeyDown={e => e.key === 'Enter' && submit()}
+            placeholder="任务标题" onKeyDown={e => e.key === 'Enter' && submit()}
             className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <ExpandableTextarea value={desc} onValueChange={setDesc}
-            placeholder="Issue 描述（选填）"
-            overlayTitle="编辑 Issue 描述"
+            placeholder="任务描述（选填）"
+            overlayTitle="编辑任务描述"
             className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <div>
@@ -1542,8 +1552,8 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
     draftSave(DRAFT_KEY, { title, desc: descTouched ? desc : '', descTouched })
   }, [DRAFT_KEY, title, desc, descTouched])
   const submit = async () => {
-    if (!title.trim()) { setErr('请填写 Research 标题'); return }
-    if (!effectiveDesc.trim()) { setErr('请填写 Research 描述'); return }
+    if (!title.trim()) { setErr('请填写研究标题'); return }
+    if (!effectiveDesc.trim()) { setErr('请填写研究描述'); return }
     setLoading(true); setErr('')
     try {
       const research = await api(`/api/projects/${projectId}/researches`, {
@@ -1558,15 +1568,15 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative w-[440px] rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建 Research</h3>
+        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建研究</h3>
         <div className="space-y-3 mb-4">
           <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setErr('') }}
-            placeholder="Research 标题" onKeyDown={e => e.key === 'Enter' && submit()}
+            placeholder="研究标题" onKeyDown={e => e.key === 'Enter' && submit()}
             className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <ExpandableTextarea value={effectiveDesc} onValueChange={value => { setDesc(value); setDescTouched(true); setErr('') }}
-            placeholder="Research 描述（默认同标题）"
-            overlayTitle="编辑 Research 描述"
+            placeholder="研究描述（默认同标题）"
+            overlayTitle="编辑研究描述"
             className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
         </div>
@@ -1590,7 +1600,7 @@ export function RenameResearchModal({ research, onClose, onRenamed }: { research
   const [err, setErr] = useState('')
   const { theme } = useStore()
   const submit = async () => {
-    if (!title.trim()) { setErr('请输入 Research 标题'); return }
+    if (!title.trim()) { setErr('请输入研究标题'); return }
     setLoading(true); setErr('')
     try {
       const updated = await api(`/api/researches/${research.id}`, { method: 'PATCH', body: JSON.stringify({ title, description: desc }) })
@@ -1601,15 +1611,15 @@ export function RenameResearchModal({ research, onClose, onRenamed }: { research
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative w-96 rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改 Research</h3>
+        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改研究</h3>
         <div className="space-y-3 mb-4">
           <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setErr('') }}
-            placeholder="Research 标题" onKeyDown={e => e.key === 'Enter' && submit()}
+            placeholder="研究标题" onKeyDown={e => e.key === 'Enter' && submit()}
             className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <ExpandableTextarea value={desc} onValueChange={setDesc}
-            placeholder="Research 描述（选填）"
-            overlayTitle="编辑 Research 描述"
+            placeholder="研究描述（选填）"
+            overlayTitle="编辑研究描述"
             className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
         </div>
@@ -1633,7 +1643,7 @@ function formatNowForName(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-function formatDefaultSessionName(scopeTitle?: string): string {
+export function formatDefaultSessionName(scopeTitle?: string): string {
   const time = formatNowForName()
   const title = (scopeTitle || '').replace(/\s+/g, ' ').trim()
   return title ? `${title} ${time}` : time
@@ -1858,17 +1868,17 @@ export const EXISTING_SESSION_ACTION_OPTIONS: {
   title: string
   sub: string
 }[] = [
-  { key: 'ignore', title: '无视', sub: '直接创建新的 Session' },
-  { key: 'block_new', title: '阻止新session运行', sub: '存在旧 Session 时不创建新的 Session' },
-  { key: 'terminate_old', title: '终止旧session', sub: '先终止旧 Session 的后台执行' },
-  { key: 'delete_old', title: '删除旧session', sub: '先永久删除旧 Session' },
+  { key: 'ignore', title: '无视', sub: '直接创建新的会话' },
+  { key: 'block_new', title: '阻止新会话运行', sub: '存在旧会话时不创建新的会话' },
+  { key: 'terminate_old', title: '终止旧会话', sub: '先终止旧会话的后台执行' },
+  { key: 'delete_old', title: '删除旧会话', sub: '先永久删除旧会话' },
 ]
 
 export const EXISTING_SESSION_ACTION_LABEL: Record<ExistingSessionAction, string> = {
   ignore: '无视',
-  block_new: '阻止新session运行',
-  terminate_old: '终止旧session',
-  delete_old: '删除旧session',
+  block_new: '阻止新会话运行',
+  terminate_old: '终止旧会话',
+  delete_old: '删除旧会话',
 }
 
 export function normalizeExistingSessionAction(value: any): ExistingSessionAction {
@@ -1976,7 +1986,7 @@ export function PcTaskModeSection({ projectId, isDark, onModeChange, onPathChang
   }
   if (!ready) return null
   const MODES: Array<{ k: Mode; t: string; s: string }> = [
-    { k: 'hub', t: '只在 Mobius 中枢工作', s: 'session 在服务器跑' },
+    { k: 'hub', t: '只在 Mobius 中枢工作', s: '会话在服务器跑' },
     { k: 'pc', t: '只在此电脑上工作', s: '调度本机 (aimux)' },
     { k: 'dual', t: '双侧工作', s: '中枢 + 本机 · 默认' },
   ]
@@ -2053,7 +2063,7 @@ export function NewSessionModal({
   const isResearch = !!researchId
   const isPresetMode = mode === 'preset'
   const isProjectPreset = isPresetMode && !!projectId && !issueId && !researchId
-  const displayEntityLabel = entityLabel || (isResearch ? 'Research Agent' : 'Session')
+  const displayEntityLabel = entityLabel || (isResearch ? '研究智能体' : '会话')
   const entityNameLabel = isResearch ? `${displayEntityLabel} 名称` : `${displayEntityLabel}名称`
   const entityPurposeLabel = isResearch ? `${displayEntityLabel} 目的/问题描述` : `${displayEntityLabel}目的/问题描述`
   const chiefExists = existingSessions.some((s: any) => s.research_role === 'chief_researcher')
@@ -2559,7 +2569,7 @@ export function NewSessionModal({
   const descTextarea = (
     <ExpandableTextarea value={desc} onValueChange={value => { setDesc(value); setErr('') }}
       data-tour="session-description-input"
-      placeholder={`${isResearch ? `${displayEntityLabel} 目的` : 'Session目的'}/要解决的问题（必填）`}
+      placeholder={`${isResearch ? `${displayEntityLabel} 目的` : '会话目的'}/要解决的问题（必填）`}
       overlayTitle={`编辑 ${displayEntityLabel} 目的/问题描述`}
       expandButtonClassName="w-20"
       innerControl={canDeferPurpose ? (
@@ -2597,7 +2607,7 @@ export function NewSessionModal({
       }}>
         <div className="flex items-center justify-between gap-3 mb-4">
           <h3 className="text-[15px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
-            {modalTitle || (isPresetMode ? 'Session预设菜单' : `新建 ${displayEntityLabel}`)} · {step === 1 ? '第 1 步 / 共 2 步' : '第 2 步 / 共 2 步'}
+            {modalTitle || (isPresetMode ? '会话预设菜单' : `新建 ${displayEntityLabel}`)} · {step === 1 ? '第 1 步 / 共 2 步' : '第 2 步 / 共 2 步'}
           </h3>
           <div className="flex shrink-0 items-center gap-2">
             <div className="flex items-center gap-1.5">
@@ -2621,7 +2631,7 @@ export function NewSessionModal({
           <>
             <p className="text-[12px] mb-3 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
               {isPresetMode
-                ? '这里只保存未来创建 Session 时要使用的参数，不会立即创建真正的 Session。'
+                ? '这里只保存未来创建会话时要使用的参数，不会立即创建真正的会话。'
                 : `${displayEntityLabel} 创建后, 当前的 Skill 与 Memory 会作为快照定型, 之后修改不影响此 ${displayEntityLabel}.`}
               {requiredSessionSkill && <span className="block mt-1">必选 Skill: {requiredSessionSkill.label || requiredSessionSkill.dirName}</span>}
             </p>
@@ -2654,7 +2664,7 @@ export function NewSessionModal({
               )}
               {isResearch && (
                 <div>
-                  <div className="text-[12px] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>Research Role（创建后不可更改）</div>
+                  <div className="text-[12px] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>研究角色（创建后不可更改）</div>
                   <div className="grid grid-cols-2 gap-2">
                     <button type="button" disabled={chiefExists}
                       onClick={() => { setRole('chief_researcher'); setErr(''); if (agentSkills.length > 0) setShowAgentSkillModal(true) }}
@@ -2666,7 +2676,7 @@ export function NewSessionModal({
                       }}>
                       <div className="text-[13px] font-medium">chief_researcher</div>
                       <div className="text-[11px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
-                        {chiefExists ? '当前 Research 已存在' : '每个 Research 只能有一个'}
+                        {chiefExists ? '当前研究已存在' : '每个研究只能有一个'}
                       </div>
                     </button>
                     <button type="button"
@@ -2847,7 +2857,7 @@ export function NewSessionModal({
               )}
               {isPresetMode && showExistingSessionAction && (
                 <div>
-                  <div className="text-[12px] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>旧session存在时的动作</div>
+                  <div className="text-[12px] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>旧会话存在时的动作</div>
                   <div className="grid grid-cols-2 gap-2">
                     {EXISTING_SESSION_ACTION_OPTIONS.map(opt => {
                       const active = existingSessionAction === opt.key
@@ -2897,10 +2907,10 @@ export function NewSessionModal({
                     border: `1px solid ${isDark ? 'rgba(59,130,246,0.3)' : 'rgba(59,130,246,0.25)'}`,
                     color: isDark ? '#93c5fd' : '#1d4ed8',
                   }}>
-                    勾选要在本 {displayEntityLabel} 启用的 Skill / Memory. <strong>{isPresetMode ? '保存预设时' : `创建 ${displayEntityLabel} 时`}</strong>会记录这份配置, 首次发消息按配置注入所选智能体, 修改全局 Skill/Memory 不再影响已创建的 {displayEntityLabel}.
-                    {isResearch && <div className="mt-1.5">Research Role: <strong>{role}</strong>（创建后不可更改）</div>}
+                    勾选要在本{displayEntityLabel}启用的 Skill / Memory. <strong>{isPresetMode ? '保存预设时' : `创建${displayEntityLabel}时`}</strong>会记录这份配置, 首次发消息按配置注入所选智能体。
+                    {isResearch && <div className="mt-1.5">研究角色: <strong>{role}</strong>（创建后不可更改）</div>}
                     <div className="mt-1.5">模型: <strong>{selectedModelOption?.label || SESSION_MODEL_LABEL[model] || model}</strong>（创建后不可更改, 如需更换请返回上一步）</div>
-                    <div className="mt-1">语言: <strong>{SESSION_LANGUAGE_LABEL[language]}</strong>（创建后不可更改）</div>
+                    <div className="mt-1">语言: <strong>{SESSION_LANGUAGE_LABEL[language]}</strong>（创建后不可更改, 如需更换请返回上一步）</div>
                     {selectedPersonality && <div className="mt-1">性格: <strong>{selectedPersonality?.label}</strong></div>}
                     {requiredSessionSkill && <div className="mt-1">必选 Skill: <strong>{requiredSessionSkill.label || requiredSessionSkill.dirName}</strong></div>}
                   </div>
@@ -2911,7 +2921,7 @@ export function NewSessionModal({
                            style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)', color: isDark ? '#fca5a5' : '#b91c1c' }}>
                         <div className="font-medium">【必选skill与当前的skill白名单冲突】</div>
                         <div className="mt-0.5 opacity-90">
-                          以下必选 Skill 被白名单过滤, 本次 Session 不会注入: {forcedSkillConflicts.map(s => s.name).join('、')}
+                          以下必选 Skill 被白名单过滤, 本次会话不会注入: {forcedSkillConflicts.map(s => s.name).join('、')}
                         </div>
                       </div>
                     )}
@@ -2929,7 +2939,7 @@ export function NewSessionModal({
                       )}
                     </div>
                     <div className="rounded-lg p-2.5 space-y-1.5 text-[11px]" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
-                      {availableSkills.length === 0 && <p className="italic" style={{ color: isDark ? '#6b7280' : '#64748b' }}>无 (本 {isResearch ? 'Research' : 'Issue'} 未启用任何 Skill)</p>}
+                      {availableSkills.length === 0 && <p className="italic" style={{ color: isDark ? '#6b7280' : '#64748b' }}>无 (本 {isResearch ? '研究' : '任务'} 未启用任何 Skill)</p>}
                       {availableSkills.map(sk => {
                         const required = matchesRequiredSkill(sk)
                         const locked = required || isChosenAgentSkill(sk.id)
@@ -3071,7 +3081,7 @@ export function NewSessionModal({
             width: 'min(560px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 64px)',
             background: 'var(--modal-bg)', border: '1px solid var(--border-color)',
           }}>
-            <h3 className="text-[15px] font-semibold mb-1" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>选择 Research Agent Skill</h3>
+            <h3 className="text-[15px] font-semibold mb-1" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>选择研究智能体 Skill</h3>
             <p className="text-[12px] mb-3 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
               选中后会把「按照该 skill 完成任务」追加到当前 {displayEntityLabel} 目的末尾，并确保该 skill 注入当前 {displayEntityLabel}（第二步不可取消）。
             </p>
@@ -3114,7 +3124,7 @@ export function NewSessionModal({
 // =====================================================================
 // 重命名 Session
 // =====================================================================
-export function RenameSessionModal({ session, onClose, onRenamed, entityLabel = 'Session' }: {
+export function RenameSessionModal({ session, onClose, onRenamed, entityLabel = '会话' }: {
   session: any
   onClose: () => void
   onRenamed: (s: any) => void
@@ -3124,10 +3134,10 @@ export function RenameSessionModal({ session, onClose, onRenamed, entityLabel = 
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   const { theme } = useStore()
-  const entityNameLabel = entityLabel === 'Session' ? 'Session名称' : `${entityLabel} 名称`
-  const entityTitleLabel = entityLabel === 'Session' ? 'Session' : ` ${entityLabel}`
+  const entityNameLabel = entityLabel === '会话' ? '会话名称' : `${entityLabel} 名称`
+  const entityTitleLabel = entityLabel === '会话' ? '会话' : ` ${entityLabel}`
   const submit = async () => {
-    if (!name.trim()) { setErr(`请输入${entityLabel === 'Session' ? '' : ' '}${entityNameLabel}`); return }
+    if (!name.trim()) { setErr(`请输入${entityLabel === '会话' ? '' : ' '}${entityNameLabel}`); return }
     setLoading(true); setErr('')
     try {
       const updated = await api(`/api/sessions/${session.session_id}`, { method: 'PATCH', body: JSON.stringify({ name }) })
@@ -3381,7 +3391,7 @@ const DESKTOP_VERSION = '0.0.12'
 const DESKTOP_BUILDS: Array<{ label: string; sub: string; file: string }> = [
   { label: 'Windows', sub: 'x64 · Intel / AMD 64位', file: `mobius-desktop-${DESKTOP_VERSION}-win-x64.zip` },
   { label: 'macOS', sub: 'Apple Silicon · M1/M2/M3/M4', file: `mobius-desktop-${DESKTOP_VERSION}-mac-arm64.zip` },
-  { label: 'macOS', sub: 'Intel · x64', file: `mobius-desktop-${DESKTOP_VERSION}-mac-x64.zip` },
+  { label: 'macOS', sub: 'Intel · x64 · DMG 安装包', file: `mobius-desktop-${DESKTOP_VERSION}-mac-x64.dmg` },
 ]
 
 // 移动端构建清单 — 镜像桌面 DESKTOP_BUILDS
@@ -3902,7 +3912,7 @@ export function SinkAsMemoryModal({ sessionId, sessionName, projectId, onClose, 
             border: `1px solid ${isDark ? 'rgba(244,63,94,0.25)' : 'rgba(244,63,94,0.2)'}`,
             color: isDark ? '#fda4af' : '#9f1239',
           }}>
-            保存后,本 Memory 会按所选 scope 自动注入到符合条件的<strong>新会话</strong>(用户级 → 你创建的所有 Issue;项目级 → 该项目下所有 Issue).
+            保存后,本 Memory 会按所选 scope 自动注入到符合条件的<strong>新会话</strong>(用户级 → 你创建的所有任务;项目级 → 该项目下所有任务).
           </div>
 
           <div>

@@ -9,6 +9,7 @@ import { Projects } from '../repositories/projects';
 import { ProjectTodos } from '../repositories/project-todos';
 import { Issues } from '../repositories/issues';
 import { Researches } from '../repositories/researches';
+import { Sessions } from '../repositories/sessions';
 import { Skills } from '../repositories/skills';
 import { Memories } from '../repositories/memories';
 import { Users } from '../repositories/users';
@@ -39,6 +40,7 @@ import {
   canReadProject,
   canReadIssue,
   canReadResearch,
+  canReadSession,
   canManageProject,
   canCreateIssue,
   isHidden,
@@ -434,8 +436,8 @@ function normalizeDefaultModel(raw: unknown): string | null | undefined {
 const PROJECT_CARD_BORDER_THEME_IDS = new Set([
   'auto',
   'neutral',
-  'agentjet-gold',
-  'agentjet-cyan',
+  'dark-gold',
+  'dark-cyan',
   'latex-paper',
   'latex-violet',
   'emerald-copper',
@@ -1686,6 +1688,12 @@ function shapeOverviewItem(item: any): any {
   };
 }
 
+function createSessionBucket(ids: Set<string>): Record<string, any[]> {
+  const bucket: Record<string, any[]> = {};
+  ids.forEach((id) => { bucket[id] = []; });
+  return bucket;
+}
+
 router.get('/overview', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const ids = parseProjectOverviewIds(req.query.ids);
@@ -1713,6 +1721,56 @@ router.get('/overview', auth, (req: express.Request, res: express.Response) => {
   });
   auditAdminProjectList(req, 'overview_projects', auditedProjects);
   res.json(result);
+});
+
+router.get('/:id/sessions-overview', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const projectId = String(req.params.id);
+  const project = Projects.findById(projectId);
+  if (!project) { res.status(404).json({ error: '未找到' }); return; }
+  if (!canReadProject(user, project) || isHidden(user.id, 'project', project.id)) {
+    res.status(404).json({ error: '未找到' });
+    return;
+  }
+
+  const requestedIssueIds = parseProjectOverviewIds(req.query.issue_ids ?? req.query.issueIds);
+  const requestedResearchIds = project.research_enabled
+    ? parseProjectOverviewIds(req.query.research_ids ?? req.query.researchIds)
+    : [];
+  const readableIssueIds = new Set<string>();
+  requestedIssueIds.forEach((issueId) => {
+    const issue = Issues.findById(issueId, user?.id);
+    if (!issue || String(issue.project_id) !== project.id || !canReadIssue(user, issue)) return;
+    readableIssueIds.add(issueId);
+  });
+  const readableResearchIds = new Set<string>();
+  requestedResearchIds.forEach((researchId) => {
+    const research = Researches.findById(researchId);
+    if (!research || String(research.project_id) !== project.id || !canReadResearch(user, research)) return;
+    readableResearchIds.add(researchId);
+  });
+  const issues = createSessionBucket(readableIssueIds);
+  const researches = createSessionBucket(readableResearchIds);
+
+  const previewLimit = Math.max(1, Math.min(Number(req.query.preview_limit ?? req.query.previewLimit) || 4, 500));
+  const sessions = Sessions.listActiveForProjectCardIds(project.id, [...readableIssueIds], [...readableResearchIds], previewLimit);
+  sessions.forEach((session: any) => {
+    if (!canReadSession(user, session)) return;
+    if (session.scope_type === 'issue') {
+      const issueId = String(session.issue_id || '');
+      if (!readableIssueIds.has(issueId)) return;
+      issues[issueId].push(session);
+      return;
+    }
+    if (session.scope_type === 'research') {
+      const researchId = String(session.research_id || '');
+      if (!readableResearchIds.has(researchId)) return;
+      researches[researchId].push(session);
+    }
+  });
+
+  auditAdminProjectList(req, 'overview_project_sessions', [project]);
+  res.json({ issues, researches });
 });
 
 router.get('/', auth, (req: express.Request, res: express.Response) => {

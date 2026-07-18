@@ -1,15 +1,10 @@
 #!/usr/bin/env node
-// imac-import.js — 把 export 包还原到目标机 (DB 空库自建表后 UPSERT users; FS 还原 skill/memory)
-// transfer.md §5: 目标机从空库起步, 项目由用户在新机重建
 //
-// 用法 (一般由 imac-import.sh 调):
 //   node scripts/imac-import.js \
 //     --staging /tmp/imac-bundle-extracted \
 //     --db data/mobuis.db \
 //     --protected protected_data \
 //     --workspace-root /data/workspace \
-//     [--skip-password]          # 包里没 hash, 或者外部强制忽略
-//     [--reset-prompt]           # 清空 personal_prompt (谨慎: 默认保留)
 
 const path = require('path');
 const fs = require('fs');
@@ -59,7 +54,6 @@ function main() {
     console.error('[import] users.yaml malformed'); process.exit(2);
   }
 
-  // DB: 复用 db.js 的 bootstrap (schema.sql 会自建表)
   process.env.DB_PATH = dbPath;
   const { db } = require(path.resolve(__dirname, '..', 'db.js'));
 
@@ -110,7 +104,6 @@ function main() {
   });
   txn();
 
-  // FS: skill/memory 还原到 user=<id>/default_project/...
   for (const u of usersDoc.users) {
     const sSrc = path.join(staging,  'skills',   u.id);
     const mSrc = path.join(staging,  'memories', u.id);
@@ -123,7 +116,7 @@ function main() {
   console.log(`[import] bundle: ${manifest.bundle_scope} v${manifest.bundle_version}, src=${manifest.source_host}`);
   console.log(`[import] users=${stats.users} (pwd=${stats.password_imported}) prefs=${stats.prefs}`);
   console.log(`[import] skills_users=${stats.skills_users} memories_users=${stats.memories_users}`);
-  console.log(`[import] work_dir 重置为 ${workspaceRoot}/<userId>`);
+  console.log(`[import] work_dir reset to ${workspaceRoot}/<userId>`);
 }
 
 try { main(); } catch (e) { console.error('[import] FAIL:', e.message); console.error(e.stack); process.exit(1); }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } from 'react'
+import { useState, useEffect, useMemo, useCallback, type ReactNode } from 'react'
 import { useParams, useNavigate, Navigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
@@ -90,7 +90,7 @@ export default function ProjectPage() {
   const { projects, setProjects, currentProject, setCurrentProject,
           issues, issuesMap, setIssues, setIssuesMap, setCurrentIssue,
           researches, researchesMap, setResearches, setResearchesMap, setCurrentResearch,
-          sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask } = useStore()
+          sessionsMap, setSessionsMap, setSessionsMapBatch, setCurrentSession, setCurrentTask } = useStore()
   const userParam = params.user || ''
   const projectId = params.project || ''
 
@@ -118,7 +118,6 @@ export default function ProjectPage() {
   const [section, setSection] = useState<ProjectListSection>(sectionInit)
   useEffect(() => { try { localStorage.setItem(SectionKey, section) } catch {} }, [SectionKey, section])
   const [issuePage, setIssuePage] = useState(1)
-  const requestedIssueSessionIds = useRef<Set<string>>(new Set())
   // 按项目的 issue / research 列表加载态: 切换到未缓存项目时, 列表先显示 loading,
   // 不再回落渲染上个项目的 issue (旧 issuesMap[projectId] || issues 是闪现旧数据的元凶).
   const [issuesLoading, setIssuesLoading] = useState(false)
@@ -137,6 +136,7 @@ export default function ProjectPage() {
   const [editCanPostIssue, setEditCanPostIssue] = useState<boolean>(false)
   const [editCanRunSession, setEditCanRunSession] = useState<boolean>(false)
   const [editDefaultModel, setEditDefaultModel] = useState<string>('')
+  const [editCardBorderTheme, setEditCardBorderTheme] = useState<string>('auto')
   const [editForgottenFlagMessage, setEditForgottenFlagMessage] = useState('')
   const [editForgottenFlagIssueInit, setEditForgottenFlagIssueInit] = useState(String(DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES))
   const [editForgottenFlagIssueBackoff, setEditForgottenFlagIssueBackoff] = useState(String(DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF))
@@ -178,9 +178,6 @@ export default function ProjectPage() {
     setResearchesLoading(!researchesCached)
     api(`/api/projects/${projectId}/researches`).then((arr: any) => {
       setResearches(arr); setResearchesMap(projectId, arr)
-      ;(arr || []).slice(0, 30).forEach((research: any) => {
-        api(`/api/researches/${research.id}/sessions`).then((ss: any) => setSessionsMap(research.id, ss)).catch(() => {})
-      })
     }).catch(() => {}).finally(() => { if (alive) setResearchesLoading(false) })
 
     return () => { alive = false }
@@ -218,6 +215,7 @@ export default function ProjectPage() {
       setEditCanPostIssue(!!project.can_post_issue)
       setEditCanRunSession(!!project.can_run_session)
       setEditDefaultModel(typeof project.default_model === 'string' ? project.default_model : '')
+      setEditCardBorderTheme(typeof project.card_border_theme === 'string' ? project.card_border_theme : 'auto')
       setEditForgottenFlagMessage(project.forgotten_flag_message_effective ?? (project.forgotten_flag_message || ''))
       setEditForgottenFlagIssueInit(intervalInputValue(project.forgotten_flag_issue_init_minutes ?? project.forgotten_flag_issue_interval_minutes, DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES))
       setEditForgottenFlagIssueBackoff(numberInputValue(project.forgotten_flag_issue_backoff, DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF))
@@ -260,6 +258,14 @@ export default function ProjectPage() {
     const start = (currentIssuePage - 1) * ISSUE_PAGE_SIZE
     return filteredIssues.slice(start, start + ISSUE_PAGE_SIZE)
   }, [filteredIssues, currentIssuePage])
+  const pagedIssueIdsKey = useMemo(() => (
+    pagedIssues.map((issue: any) => String(issue?.id || '').trim()).filter(Boolean).join(',')
+  ), [pagedIssues])
+  const visibleResearchIdsKey = useMemo(() => (
+    section === 'researches'
+      ? filteredResearches.map((research: any) => String(research?.id || '').trim()).filter(Boolean).join(',')
+      : ''
+  ), [section, filteredResearches])
 
   useEffect(() => {
     setIssuePage(1)
@@ -270,20 +276,22 @@ export default function ProjectPage() {
   }, [issuePage, issueTotalPages])
 
   useEffect(() => {
-    requestedIssueSessionIds.current.clear()
-  }, [projectId])
-
-  useEffect(() => {
-    pagedIssues.forEach((issue: any) => {
-      if (!issue?.id) return
-      if (Object.prototype.hasOwnProperty.call(sessionsMap, issue.id)) return
-      if (requestedIssueSessionIds.current.has(issue.id)) return
-      requestedIssueSessionIds.current.add(issue.id)
-      api(`/api/issues/${issue.id}/sessions`)
-        .then((ss: any) => setSessionsMap(issue.id, ss))
-        .catch(() => { requestedIssueSessionIds.current.delete(issue.id) })
-    })
-  }, [pagedIssues, sessionsMap, setSessionsMap])
+    const issueIds = section === 'issues' ? pagedIssueIdsKey : ''
+    const researchIds = section === 'researches' ? visibleResearchIdsKey : ''
+    if (!issueIds && !researchIds) return
+    let alive = true
+    const qs = new URLSearchParams()
+    if (issueIds) qs.set('issue_ids', issueIds)
+    if (researchIds) qs.set('research_ids', researchIds)
+    api(`/api/projects/${projectId}/sessions-overview?${qs.toString()}`).then((payload: any) => {
+      if (!alive) return
+      setSessionsMapBatch({
+        ...(payload?.issues || {}),
+        ...(payload?.researches || {}),
+      })
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [projectId, section, pagedIssueIdsKey, visibleResearchIdsKey, setSessionsMapBatch])
 
   const refreshIssues = () => api(`/api/projects/${projectId}/issues`).then((arr: any) => { setIssues(arr); setIssuesMap(projectId, arr) }).catch(() => {})
   const refreshResearches = () => api(`/api/projects/${projectId}/researches`).then((arr: any) => { setResearches(arr); setResearchesMap(projectId, arr) }).catch(() => {})
@@ -353,6 +361,8 @@ export default function ProjectPage() {
   const forgottenFlagMessageDirty = !!project && !forgottenFlagMessageMatches(project, editForgottenFlagMessage)
   const savedDefaultModel = typeof project?.default_model === 'string' ? project.default_model : ''
   const defaultModelDirty = !!project && editDefaultModel !== savedDefaultModel
+  const savedCardBorderTheme = typeof project?.card_border_theme === 'string' ? project.card_border_theme : 'auto'
+  const cardBorderThemeDirty = !!project && editCardBorderTheme !== savedCardBorderTheme
   const issuePolicyDirty = !!project && (
     !intervalDraftMatchesSaved(
       editForgottenFlagIssueInit,
@@ -402,7 +412,8 @@ export default function ProjectPage() {
     forgottenFlagMessageDirty ||
     issuePolicyDirty ||
     researchPolicyDirty ||
-    defaultModelDirty
+    defaultModelDirty ||
+    cardBorderThemeDirty
   )
 
   const saveMeta = useCallback(async () => {
@@ -434,17 +445,18 @@ export default function ProjectPage() {
       }
       if (defaultModelDirty) body.defaultModel = editDefaultModel || null
     }
+    if (cardBorderThemeDirty) body.cardBorderTheme = editCardBorderTheme || 'auto'
     if (forgottenFlagMessageDirty) body.forgottenFlagMessage = editForgottenFlagMessage
     try {
       if (issuePolicyDirty) {
-        body.forgottenFlagIssueInitMinutes = parseIntervalInput(editForgottenFlagIssueInit, 'Issue Session Init', 1)
-        body.forgottenFlagIssueBackoff = parseBackoffInput(editForgottenFlagIssueBackoff, 'Issue Session Backoff')
-        body.forgottenFlagIssuePatience = parsePatienceInput(editForgottenFlagIssuePatience, 'Issue Session Patience')
+        body.forgottenFlagIssueInitMinutes = parseIntervalInput(editForgottenFlagIssueInit, '任务会话 Init', 1)
+        body.forgottenFlagIssueBackoff = parseBackoffInput(editForgottenFlagIssueBackoff, '任务会话 Backoff')
+        body.forgottenFlagIssuePatience = parsePatienceInput(editForgottenFlagIssuePatience, '任务会话 Patience')
       }
       if (researchPolicyDirty) {
-        body.forgottenFlagResearchInitMinutes = parseIntervalInput(editForgottenFlagResearchInit, 'Research Agent Init', 30)
-        body.forgottenFlagResearchBackoff = parseBackoffInput(editForgottenFlagResearchBackoff, 'Research Agent Backoff')
-        body.forgottenFlagResearchPatience = parsePatienceInput(editForgottenFlagResearchPatience, 'Research Agent Patience')
+        body.forgottenFlagResearchInitMinutes = parseIntervalInput(editForgottenFlagResearchInit, '研究智能体 Init', 30)
+        body.forgottenFlagResearchBackoff = parseBackoffInput(editForgottenFlagResearchBackoff, '研究智能体 Backoff')
+        body.forgottenFlagResearchPatience = parsePatienceInput(editForgottenFlagResearchPatience, '研究智能体 Patience')
       }
     } catch (e: any) {
       setMetaErr(e?.message || '提醒策略格式错误')
@@ -486,6 +498,7 @@ export default function ProjectPage() {
     editForgottenFlagResearchBackoff,
     editForgottenFlagResearchPatience,
     editDefaultModel,
+    editCardBorderTheme,
     nameDirty,
     descDirty,
     bindPathDirty,
@@ -498,6 +511,7 @@ export default function ProjectPage() {
     issuePolicyDirty,
     researchPolicyDirty,
     defaultModelDirty,
+    cardBorderThemeDirty,
     setProjects,
     setCurrentProject,
   ])
@@ -607,6 +621,7 @@ export default function ProjectPage() {
                     editCanPostIssue,
                     editCanRunSession,
                     editDefaultModel,
+                    editCardBorderTheme,
                     editForgottenFlagMessage,
                     editForgottenFlagIssueInit,
                     editForgottenFlagIssueBackoff,
@@ -628,6 +643,7 @@ export default function ProjectPage() {
                     setEditCanPostIssue,
                     setEditCanRunSession,
                     setEditDefaultModel,
+                    setEditCardBorderTheme,
                     setEditForgottenFlagMessage,
                     setEditForgottenFlagIssueInit,
                     setEditForgottenFlagIssueBackoff,
@@ -721,18 +737,18 @@ export default function ProjectPage() {
         onRenamed={() => { setEditingResearch(null); refreshResearches() }} />}
       {confirmAction && <ConfirmModal
         title={
-          confirmAction.kind === 'complete' ? '完成 Issue' :
-          confirmAction.kind === 'reopen' ? '重新打开 Issue' :
-          confirmAction.kind === 'pin' ? '置顶 Issue' :
+          confirmAction.kind === 'complete' ? '完成任务' :
+          confirmAction.kind === 'reopen' ? '重新打开任务' :
+          confirmAction.kind === 'pin' ? '置顶任务' :
           confirmAction.kind === 'unpin' ? '取消置顶' :
-          '删除 Issue'
+          '删除任务'
         }
         message={
           confirmAction.kind === 'delete'
-            ? `确定删除 Issue「${confirmAction.issue.title}」？此操作不可恢复。`
-            : `确定${confirmAction.kind === 'complete' ? '将此 Issue 标记为完成' :
-                 confirmAction.kind === 'reopen' ? '重新打开此 Issue' :
-                 confirmAction.kind === 'pin' ? '置顶此 Issue' : '取消置顶此 Issue'}？`
+            ? `确定删除任务「${confirmAction.issue.title}」？此操作不可恢复。`
+            : `确定${confirmAction.kind === 'complete' ? '将此任务标记为完成' :
+                 confirmAction.kind === 'reopen' ? '重新打开此任务' :
+                 confirmAction.kind === 'pin' ? '置顶此任务' : '取消置顶此任务'}？`
         }
         onConfirm={handleConfirm}
         onClose={() => setConfirmAction(null)}

@@ -75,6 +75,20 @@ XiaoMo is the natural-language interface to the entire system. Talk to it: creat
   <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo.jpg" alt="XiaoMo assistant interface" width="720" />
 </p>
 
+**On the web.** Zero install — open a browser on any device and the full Mobius workspace is ready instantly.
+
+<p align="center">
+  <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-app.jpg" alt="XiaoMo on mobile" width="720" />
+</p>
+
+**On your phone.** XiaoMo goes wherever you go — chat with your agents, track progress, and approve decisions from anywhere. The iOS and Android apps are fully available now.
+
+<p align="center">
+  <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-desktop-v2.png" alt="XiaoMo desktop app" width="720" />
+</p>
+
+**On your desktop.** A native app that turns your PC into a Mobius workstation — read and write local project files directly, enroll this machine as a controllable node, and run multi-tab workflows. Available now on Windows, macOS, and Linux.
+
 > The demos on this page were produced by XiaoMo itself, with zero human participation in recording.
 
 

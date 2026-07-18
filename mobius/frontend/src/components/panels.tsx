@@ -615,7 +615,7 @@ function AdminUsersPanel() {
               <span>员工 {totalEmployees}</span>
               <span>管理员 {adminCount}</span>
               <span>群组 {totalGroups}</span>
-              <span>Session {totalSessions}</span>
+              <span>会话 {totalSessions}</span>
               <span>活跃 {activeSessions}</span>
               <span>平均提示词 {formatPromptLength(averagePromptLength)} 字</span>
             </div>
@@ -648,7 +648,7 @@ function AdminUsersPanel() {
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <StatTile icon={<UsersIcon className="h-4 w-4 text-cyan-400" />} label="启用员工" value={totalEmployees} sub={`管理员 ${adminCount}`} />
           <StatTile icon={<Building2 className="h-4 w-4 text-emerald-400" />} label="群组" value={totalGroups} sub="单群组组织分类" />
-          <StatTile icon={<BarChart3 className="h-4 w-4 text-sky-400" />} label="Session" value={totalSessions} sub={`活跃 ${activeSessions}`} />
+          <StatTile icon={<BarChart3 className="h-4 w-4 text-sky-400" />} label="会话" value={totalSessions} sub={`活跃 ${activeSessions}`} />
           <StatTile icon={<FileText className="h-4 w-4 text-amber-400" />} label="平均提示词" value={formatPromptLength(averagePromptLength)} sub="任务单 + 执行会话字数" />
           <StatTile icon={<MessageSquare className="h-4 w-4 text-violet-400" />} label="消息" value={chartRows.reduce((sum, row) => sum + row.totalMessages, 0)} sub="全部员工累计" />
         </div>
@@ -902,7 +902,7 @@ function AdminUsersPanel() {
                 <th className="px-2 py-1 font-medium">员工</th>
                 <th className="px-2 py-1 font-medium">群组</th>
                 <th className="px-2 py-1 font-medium">角色</th>
-                <th className="px-2 py-1 font-medium">Session</th>
+                <th className="px-2 py-1 font-medium">会话</th>
                 <th className="px-2 py-1 font-medium">平均提示词</th>
                 <th className="px-2 py-1 font-medium">工作目录</th>
                 <th className="px-2 py-1 font-medium">创建时间</th>
@@ -1027,7 +1027,7 @@ function BackendSection({
           <table className="min-w-[1040px] w-full border-collapse">
             <thead>
               <tr className="border-b border-[var(--border-color)] bg-[var(--bg-primary)]">
-                {['状态', 'Tmux Window', 'Session', '所属', '运行时', '活动', '5小时提问', '操作'].map((h) => (
+                {['状态', 'Tmux Window', '会话', '所属', '运行时', '活动', '5小时提问', '操作'].map((h) => (
                   <th key={h} className="px-4 py-2.5 text-left text-[12px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{h}</th>
                 ))}
               </tr>
@@ -1116,7 +1116,7 @@ function BackendSection({
                       <div className="mt-1 max-w-[230px] truncate text-[11px]" title={subject?.title || ''} style={{ color: 'var(--text-muted)' }}>
                         {subject ? (
                           <>
-                            {subject.type === 'research' ? 'Research' : 'Issue'}:{' '}
+                            {subject.type === 'research' ? '研究' : '任务'}:{' '}
                             {sessionHref ? (
                               <Link
                                 to={sessionHref}
@@ -1571,7 +1571,7 @@ function ModelPromptLimitsCard() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
             <Sparkles className="h-3.5 w-3.5" style={{ color: autoTitleEnabled ? '#10b981' : 'var(--text-muted)' }} />
-            <span>自动生成 Session 标题</span>
+            <span>自动生成会话标题</span>
           </div>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
             后端收到 agent 明确产出的标题事件时自动改名；不扫描历史、不依赖前端打开页面、不走状态轮询。默认关闭。

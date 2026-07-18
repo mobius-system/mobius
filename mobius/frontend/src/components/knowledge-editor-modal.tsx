@@ -35,7 +35,7 @@ export function KnowledgeEditorModal({ projectId, issueId, onClose }: KnowledgeE
             <BookOpen className="h-4 w-4 flex-shrink-0 text-cyan-400" />
             <div className="min-w-0">
               <div className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>查看当前知识</div>
-              <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>项目通用知识宜精简克制；本任务知识记录仅与当前 Issue 相关的内容</div>
+              <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>项目通用知识宜精简克制；本任务知识记录仅与当前任务相关的内容</div>
             </div>
           </div>
           <button
@@ -61,8 +61,8 @@ export function KnowledgeEditorModal({ projectId, issueId, onClose }: KnowledgeE
               key="project"
               loadUrl={`/api/projects/${projectId}/memories/project-knowledge/content`}
               saveUrl={`/api/projects/${projectId}/memories/project-knowledge/upload`}
-              fileHint={`${HIDDEN_FOLDER_NAME}/project_knowledge.md · 项目级通用知识, 所有 Session 共享`}
-              emptyHint="暂无项目知识。项目知识记录整体事实、通用做法、跨任务复用的经验，请保持精简克制（一个项目下会有大量 Issue）。"
+              fileHint={`${HIDDEN_FOLDER_NAME}/project_knowledge.md · 项目级通用知识, 所有会话共享`}
+              emptyHint="暂无项目知识。项目知识记录整体事实、通用做法、跨任务复用的经验，请保持精简克制（一个项目下会有大量任务）。"
             />
           ) : (
             <KnowledgePane
@@ -70,7 +70,7 @@ export function KnowledgeEditorModal({ projectId, issueId, onClose }: KnowledgeE
               loadUrl={`/api/issues/${issueId}/knowledge/content`}
               saveUrl={`/api/issues/${issueId}/knowledge/upload`}
               fileHint={`${HIDDEN_FOLDER_NAME}/issue_knowledge/${issueId}/issue_knowledge.md · 仅本任务相关`}
-              emptyHint="暂无本任务知识。编辑后将保存到该文件，并作为可选 Memory 注入本 Issue 的 Session 上下文。"
+              emptyHint="暂无本任务知识。编辑后将保存到该文件，并作为可选 Memory 注入本任务的会话上下文。"
             />
           )}
         </div>

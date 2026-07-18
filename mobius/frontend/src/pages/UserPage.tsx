@@ -10,6 +10,11 @@ import { PrimaryActionButton } from '../components/primary-action-button'
 import { SkillsManager } from '../components/skills'
 import { MemoriesManager } from '../components/memories'
 import { ResizablePanel } from '../components/resizable-panel'
+import {
+  effectiveProjectCardBorderTheme,
+  projectCardHeaderStyle,
+  projectCardThemeStyle,
+} from '../services/project-card-themes'
 
 type ProjectFilterKey = 'owned' | 'starred' | 'extension'
 const PROJECT_FILTERS: Array<{ key: ProjectFilterKey; label: string; title: string }> = [
@@ -670,18 +675,17 @@ export default function UserPage() {
                       : (issuesLoadingByProject[p.id] && !issuesByProject[p.id])
                   )
                   const isMuted = mutedIdSet.has(p.id)
+                  const cardTheme = effectiveProjectCardBorderTheme(p)
                   return (
                     <div key={p.id} data-tour="user-project-card"
-                      className={`rounded-xl border overflow-hidden flex flex-col group transition-all min-w-0 ${p.is_self_develop ? 'hover:border-yellow-400/60' : 'hover:border-blue-500/30'}`}
-                      style={p.is_self_develop
-                        ? { background: 'linear-gradient(135deg, rgba(251,191,36,0.06) 0%, var(--bg-primary) 60%)', borderColor: 'rgba(251,191,36,0.45)' }
-                        : { background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+                      className="project-card-themed rounded-xl border overflow-hidden flex flex-col group transition-all min-w-0"
+                      style={projectCardThemeStyle(cardTheme)}>
                       {/* 卡片头部 */}
-                      <div className="px-4 py-3 border-b" style={{ borderColor: p.is_self_develop ? 'rgba(251,191,36,0.25)' : 'var(--border-color)' }}>
+                      <div className="px-4 py-3 border-b" style={projectCardHeaderStyle(cardTheme)}>
                         <div className="flex items-center gap-2 min-w-0">
-                          <svg className={`w-4 h-4 flex-shrink-0 ${p.is_self_develop ? 'text-yellow-400' : 'text-blue-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+                          <svg className="w-4 h-4 flex-shrink-0" style={{ color: cardTheme.iconColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
                           <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
-                            className={`text-[14px] font-semibold truncate flex-1 min-w-0 transition-colors ${p.is_self_develop ? 'hover:text-yellow-400' : 'hover:text-blue-400'}`}
+                            className="text-[14px] font-semibold truncate flex-1 min-w-0 transition-colors hover:!text-[var(--project-card-accent)]"
                             style={{ color: 'var(--text-primary)' }}
                             title={p.name}>
                             {p.name}
@@ -811,7 +815,7 @@ export default function UserPage() {
                         <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                           <span>{activeIssueCount} 进行中</span>
                           <span>{completedIssueCount} 已完成</span>
-                          {p.research_enabled && <span>{p.research_count || 0} Research</span>}
+                          {p.research_enabled && <span>{p.research_count || 0} 研究</span>}
                           <span className="ml-auto">活跃 {timeAgo(p.last_active)}</span>
                         </div>
                       </div>
@@ -836,7 +840,7 @@ export default function UserPage() {
                       {/* Issues / Research 概览 */}
                       <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>{showResearch ? 'Research' : 'Issues'}</span>
+                          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>{showResearch ? '研究' : '任务'}</span>
                           <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
                             className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">查看全部 →</LinklessNav>
                         </div>
@@ -844,7 +848,7 @@ export default function UserPage() {
                           overviewLoading ? (
                             <ListLoadingHint compact />
                           ) : (
-                            <div className="text-[11px] py-2" style={{ color: 'var(--text-muted)' }}>{showResearch ? '暂无 Research' : '暂无 Issue'}</div>
+                            <div className="text-[11px] py-2" style={{ color: 'var(--text-muted)' }}>{showResearch ? '暂无研究' : '暂无任务'}</div>
                           )
                         ) : (
                           <div className="space-y-1 min-w-0">
@@ -929,7 +933,7 @@ export default function UserPage() {
                 <div>
                   <div className="mb-3">
                     <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>个人 Skill</h2>
-                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>用户级 skill, 在你创建的所有 Issue 中默认可用</p>
+                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>用户级 skill, 在你创建的所有任务中默认可用</p>
                   </div>
                   <SkillsManager scope="user" />
                 </div>

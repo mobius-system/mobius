@@ -15,14 +15,14 @@ import {
   FORGOTTEN_FLAG_PATIENCE_MIN,
   FORGOTTEN_FLAG_PATIENCE_MAX,
 } from '../config';
-import type { ProjectRow, ProjectRawRow } from '../types/rows';
+import type { AimuxRemoteInventoryEntry, ProjectRow, ProjectRawRow } from '../types/rows';
 
 type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist';
 const CARD_BORDER_THEME_IDS = new Set([
   'auto',
   'neutral',
-  'agentjet-gold',
-  'agentjet-cyan',
+  'dark-gold',
+  'dark-cyan',
   'latex-paper',
   'latex-violet',
   'emerald-copper',
@@ -72,6 +72,33 @@ function uniqueIds(ids: unknown): string[] {
 function normalizeCardBorderTheme(value: unknown): string {
   const text = typeof value === 'string' ? value.trim() : '';
   return CARD_BORDER_THEME_IDS.has(text) ? text : 'auto';
+}
+
+function normalizeAimuxRemoteInventory(value: unknown): AimuxRemoteInventoryEntry[] {
+  const raw = typeof value === 'string' ? value : JSON.stringify(value || []);
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw || '[]'); } catch { return []; }
+  if (!Array.isArray(parsed)) return [];
+  const seen = new Set<string>();
+  const entries: AimuxRemoteInventoryEntry[] = [];
+  for (const item of parsed) {
+    if (!item || typeof item !== 'object') continue;
+    const name = typeof (item as any).name === 'string' ? (item as any).name.trim() : '';
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const port = Number((item as any).port);
+    entries.push({
+      name,
+      user: typeof (item as any).user === 'string' ? (item as any).user.trim() : '',
+      hostname: typeof (item as any).hostname === 'string' ? (item as any).hostname.trim() : '',
+      port: Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 22,
+      status: typeof (item as any).status === 'string' ? (item as any).status.trim() : '',
+      rtt_ms: typeof (item as any).rtt_ms === 'number' && Number.isFinite((item as any).rtt_ms) ? (item as any).rtt_ms : null,
+      remote_path: typeof (item as any).remote_path === 'string' ? (item as any).remote_path.trim() : '',
+      hardware: typeof (item as any).hardware === 'string' ? (item as any).hardware.trim() : '',
+    });
+  }
+  return entries;
 }
 
 type ProjectRawRowWithExtras = ProjectRawRow & {
@@ -130,6 +157,7 @@ function hydrate(row: ProjectRawRowWithExtras | null | undefined): ProjectRow | 
       ? row.default_model.trim()
       : null,
     card_border_theme: normalizeCardBorderTheme(row.card_border_theme),
+    aimux_remote_inventory: normalizeAimuxRemoteInventory(row.aimux_remote_inventory),
     // 实际生效的"被遗忘 flag 提醒消息": 配置了用配置, 否则用系统默认.
     // 前端用它预填输入框 (单一真相源在 config.DEFAULT_FORGOTTEN_FLAG_MESSAGE).
     forgotten_flag_message_effective:
@@ -211,7 +239,7 @@ const Projects = {
           CASE WHEN puh.user_id IS NULL THEN 0 ELSE 1 END AS hidden,
           (SELECT COUNT(*) FROM issues WHERE project_id = p.id) as issue_count,
           (SELECT COUNT(*) FROM researches WHERE project_id = p.id) as research_count,
-          (SELECT MAX(created_at) FROM sessions_v2 WHERE project_id = p.id) as last_session_activity_at
+          (SELECT MAX(last_active) FROM sessions_v2 WHERE project_id = p.id) as last_session_activity_at
         FROM projects p
         LEFT JOIN users u ON p.created_by = u.id
         LEFT JOIN project_user_stars pus ON pus.project_id = p.id AND pus.user_id = ?
@@ -224,7 +252,7 @@ const Projects = {
       0 AS starred, 0 AS hidden,
       (SELECT COUNT(*) FROM issues WHERE project_id = p.id) as issue_count,
       (SELECT COUNT(*) FROM researches WHERE project_id = p.id) as research_count,
-      (SELECT MAX(created_at) FROM sessions_v2 WHERE project_id = p.id) as last_session_activity_at
+      (SELECT MAX(last_active) FROM sessions_v2 WHERE project_id = p.id) as last_session_activity_at
       FROM projects p
       LEFT JOIN users u ON p.created_by = u.id
       ORDER BY starred DESC, last_session_activity_at DESC, p.last_active DESC, p.name ASC
@@ -344,6 +372,10 @@ const Projects = {
   },
   updateCardBorderTheme: (id: string, val: string): void => {
     db.prepare('UPDATE projects SET card_border_theme = ? WHERE id = ?').run(normalizeCardBorderTheme(val), id);
+  },
+  updateAimuxRemoteInventory: (id: string, entries: AimuxRemoteInventoryEntry[]): void => {
+    const normalized = normalizeAimuxRemoteInventory(entries);
+    db.prepare('UPDATE projects SET aimux_remote_inventory = ? WHERE id = ?').run(JSON.stringify(normalized), id);
   },
   // 空串/空白 → 存 NULL, 表示 "用 scanner 内置默认文案".
   updateForgottenFlagMessage: (id: string, msg: string | null): void => {

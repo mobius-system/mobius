@@ -249,7 +249,7 @@ export default function ContextPanel({ onClose }: { onClose: () => void }) {
         {/* Footer */}
         <div className="px-5 py-3 border-t" style={{ borderColor }}>
           <p className="text-[10px] text-center leading-relaxed" style={{ color: textMuted }}>
-            Skill/Memory 在创建 Session 时定型 · 修改 Skill/Memory 请在 <strong>用户中心</strong>, 新会话才会生效
+            Skill/Memory 在创建会话时定型 · 修改 Skill/Memory 请在 <strong>用户中心</strong>, 新会话才会生效
           </p>
         </div>
       </div>

@@ -29,6 +29,8 @@ export function IssueCard({
 }: IssueCardProps) {
   const isCompleted = issue.status === 'completed'
   const activeSessions = sessions.filter((s: any) => s.status === 'active')
+  const sessionTotal = Number.isFinite(Number(issue.session_count)) ? Number(issue.session_count) : sessions.length
+  const activeSessionTotal = Number.isFinite(Number(issue.session_count)) ? sessionTotal : activeSessions.length
   const isLogoReviewIssue = projectId === LOGO_REVIEW_PROJECT_ID
     && String(issue.title || '').includes(LOGO_REVIEW_ISSUE_TITLE)
   // v3 写权限: can_manage=false (非 owner, 不是允许名单, 项目不可写) 时隐藏所有管理按钮.
@@ -78,18 +80,18 @@ export function IssueCard({
       )}
 
       <div className="px-4 py-2 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        <span>{activeSessions.length} 活跃 · {sessions.length} 总Session</span>
+        <span>{activeSessionTotal} 活跃 · {sessionTotal} 总会话</span>
         <span className="ml-auto">活跃 {timeAgo(issue.last_active)}</span>
       </div>
 
       <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>Sessions</span>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>会话</span>
           <Link to={`/u/${userParam}/p/${projectId}/i/${issue.id}`}
             className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">进入对话 →</Link>
         </div>
         {sessions.length === 0 ? (
-          <div className="text-[11px] py-1" style={{ color: 'var(--text-muted)' }}>暂无Session</div>
+          <div className="text-[11px] py-1" style={{ color: 'var(--text-muted)' }}>暂无会话</div>
         ) : (
           <div className="space-y-1">
             {sessions.slice(0, 4).map((s: any) => {
@@ -104,9 +106,9 @@ export function IssueCard({
               </Link>
               )
             })}
-            {sessions.length > 4 && (
+            {sessionTotal > sessions.length && (
               <div className="text-[11px] py-1 px-2" style={{ color: 'var(--text-muted)' }}>
-                还有 {sessions.length - 4} 个Session...
+                还有 {sessionTotal - sessions.length} 个会话...
               </div>
             )}
           </div>
