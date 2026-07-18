@@ -1062,6 +1062,14 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
   updateClusterShapes(parentClusters, projectClusters)
 }
 
+function tickProjectGatherOnly(parentClusters: ParentCluster[], projectClusters: ProjectCluster[], alpha: number) {
+  updateClusterShapes(parentClusters, projectClusters)
+  attractProjectClusters(projectClusters, alpha)
+  updateClusterShapes(parentClusters, projectClusters)
+  resolveParentAndProjectOverlaps(parentClusters, projectClusters)
+  updateClusterShapes(parentClusters, projectClusters)
+}
+
 function drawShape(ctx: CanvasRenderingContext2D, shape: ClusterShape) {
   if (shape.type === 'circle') {
     ctx.beginPath()
@@ -1763,14 +1771,20 @@ export default function MobiusOverviewClusterPage() {
     const step = () => {
       const gatherExcess = projectGatherExcess(modelRef.current.projectClusters)
       const needsProjectGather = gatherExcess > PROJECT_GATHER_STOP_EXCESS
-      if (!pausedRef.current && (alphaRef.current > 0.018 || needsProjectGather)) {
+      if (!pausedRef.current && alphaRef.current > 0.018) {
         tickLayout(
           modelRef.current.nodes,
           modelRef.current.parentClusters,
           modelRef.current.projectClusters,
           needsProjectGather ? Math.max(alphaRef.current, PROJECT_GATHER_MIN_ALPHA) : alphaRef.current,
         )
-        if (alphaRef.current > 0.018) alphaRef.current *= 0.986
+        alphaRef.current *= 0.986
+      } else if (!pausedRef.current && needsProjectGather) {
+        tickProjectGatherOnly(
+          modelRef.current.parentClusters,
+          modelRef.current.projectClusters,
+          PROJECT_GATHER_MIN_ALPHA,
+        )
       } else {
         updateClusterShapes(modelRef.current.parentClusters, modelRef.current.projectClusters)
       }

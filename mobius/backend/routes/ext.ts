@@ -170,6 +170,42 @@ metaRouter.get('/:name/user-asset/*', authOrQuery, (req: express.Request, res: e
   streamAssetWithRange(req, res, abs, `user-asset/${rel}`, 'private, max-age=604800, immutable');
 });
 
+// 任何登录用户读取某拓展的「共享资产」(全体用户共享的公共数据, 如公共素材库).
+// GET /api/extensions/:name/shared-asset/<rel-under-ext-data/shared>?token=<jwt>
+// 与 user-asset 对称, 仅 root 从 users/<user> 换成 shared; 同样禁 .. 、白名单媒体扩展、Range 流式.
+// 这是通用能力: 任何拓展都可以有自己的 shared/ 区, 不为单个拓展服务.
+metaRouter.get('/:name/shared-asset/*', authOrQuery, (req: express.Request, res: express.Response) => {
+  const entry = registry.get(req.params.name);
+  if (!entry) {
+    res.status(404).send('extension not found');
+    return;
+  }
+  const rel = String((req.params as any)[0] || '').replace(/^\/+/, '');
+  if (!rel || rel.split('/').some((seg) => seg === '..' || seg === '')) {
+    res.status(400).send('bad path');
+    return;
+  }
+  const root = safeResolveUnder(entry.data_dir, 'shared');
+  const abs = root ? safeResolveUnder(root, rel) : null;
+  if (!abs || !fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+    res.status(404).send('not found');
+    return;
+  }
+  const ext = path.extname(abs).toLowerCase();
+  const allowed = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mov', '.m4v']);
+  if (!allowed.has(ext)) {
+    res.status(403).send('mime not allowed');
+    return;
+  }
+  const mime = MIME[ext];
+  if (!mime) {
+    res.status(403).send('mime not allowed');
+    return;
+  }
+  res.set('content-type', mime);
+  streamAssetWithRange(req, res, abs, `shared-asset/${rel}`, 'public, max-age=604800, immutable');
+});
+
 // 管理员: 列出所有"被某用户隐藏的拓展项目"对.
 // 路径不与 GET /:name 冲突 (express 按注册顺序, /:name 只匹配单段;
 // 但 "hidden" 万一被当成扩展名匹到 /:name 也会 404, 故为稳妥起见放在前面).
