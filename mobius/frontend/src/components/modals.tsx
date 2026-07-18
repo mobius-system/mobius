@@ -3391,7 +3391,7 @@ const DESKTOP_VERSION = '0.0.12'
 const DESKTOP_BUILDS: Array<{ label: string; sub: string; file: string }> = [
   { label: 'Windows', sub: 'x64 · Intel / AMD 64位', file: `mobius-desktop-${DESKTOP_VERSION}-win-x64.zip` },
   { label: 'macOS', sub: 'Apple Silicon · M1/M2/M3/M4', file: `mobius-desktop-${DESKTOP_VERSION}-mac-arm64.zip` },
-  { label: 'macOS', sub: 'Intel · x64', file: `mobius-desktop-${DESKTOP_VERSION}-mac-x64.zip` },
+  { label: 'macOS', sub: 'Intel · x64 · DMG 安装包', file: `mobius-desktop-${DESKTOP_VERSION}-mac-x64.dmg` },
 ]
 
 // 移动端构建清单 — 镜像桌面 DESKTOP_BUILDS
