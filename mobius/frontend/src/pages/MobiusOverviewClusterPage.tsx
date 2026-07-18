@@ -145,7 +145,7 @@ const TIME_RANGE_OPTIONS: Array<{ key: TimeRangeKey; label: string; ms: number }
   { key: '30d', label: '1月', ms: 30 * 24 * 60 * 60 * 1000 },
 ]
 
-const MIN_ZOOM = 0.25
+const MIN_ZOOM = 0.1
 const MAX_ZOOM = 3.2
 const ZOOM_STEP = 1.18
 const TOP_BAR_HEIGHT = 58
@@ -1473,6 +1473,7 @@ export default function MobiusOverviewClusterPage() {
   const modelRef = useRef<ClusterModel>({ nodes: [], parentClusters: [], projectClusters: [] })
   const selectedRef = useRef<Selection | null>(null)
   const didInitialFitRef = useRef(false)
+  const pendingAutoFitRef = useRef(false)
   const alphaRef = useRef(0.85)
   const pausedRef = useRef(false)
   const zoomRef = useRef(1)
@@ -1578,6 +1579,10 @@ export default function MobiusOverviewClusterPage() {
     [candidateProjects, activeProjectIds, loadingIds, graphDataByProject],
   )
   const loadingCount = loadingIds.size
+  const pendingProjectCount = useMemo(
+    () => candidateProjects.reduce((count: number, project: any) => count + (graphDataByProject[project.id] ? 0 : 1), 0),
+    [candidateProjects, graphDataByProject],
+  )
 
   const worldFromClientPoint = useCallback((clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect()
@@ -1674,17 +1679,19 @@ export default function MobiusOverviewClusterPage() {
     const now = performance.now()
     nodes.forEach((node) => drawSessionNode(ctx, node, now, zoomRef.current))
 
-    if (zoomRef.current > 0.62) {
+    if (zoomRef.current > 0.48) {
       parents.forEach((cluster) => {
-        if (cluster.radius < 42) return
+        if (cluster.sessions.length === 0) return
+        if (cluster.radius < 42 && cluster.sessions.length > 1) return
+        const compact = cluster.radius < 42 || cluster.sessions.length === 1
         drawClusterLabel(
           ctx,
           cluster.title,
           cluster.cx,
-          cluster.cy - cluster.radius + 19,
-          Math.max(48, Math.min(180, cluster.radius * 1.45)),
+          cluster.cy - cluster.radius - (compact ? 8 : -19),
+          Math.max(compact ? 64 : 48, Math.min(180, cluster.radius * (compact ? 2 : 1.45))),
           cluster.color,
-          '500 10px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          `500 ${compact ? 9 : 10}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`,
         )
       })
     }
@@ -1783,6 +1790,16 @@ export default function MobiusOverviewClusterPage() {
     draw()
   }, [cancelViewportAnimation, draw])
 
+  useEffect(() => {
+    if (!pendingAutoFitRef.current || loadingCount > 0 || pendingProjectCount > 0 || model.nodes.length === 0) return undefined
+    const timer = window.setTimeout(() => {
+      if (!pendingAutoFitRef.current) return
+      pendingAutoFitRef.current = false
+      fitView(modelRef.current.nodes, 0.9, true)
+    }, 320)
+    return () => window.clearTimeout(timer)
+  }, [fitView, loadingCount, model.nodes.length, pendingProjectCount])
+
   useEffect(() => () => cancelViewportAnimation(), [cancelViewportAnimation])
 
   useEffect(() => {
@@ -1855,6 +1872,17 @@ export default function MobiusOverviewClusterPage() {
     offsetRef.current = nextOffset
     setZoom(clampedZoom)
     draw()
+  }
+
+  const handleQueryChange = (value: string) => {
+    pendingAutoFitRef.current = true
+    setQuery(value)
+  }
+
+  const handleTimeRangeChange = (value: TimeRangeKey) => {
+    if (value === timeRange) return
+    pendingAutoFitRef.current = true
+    setTimeRange(value)
   }
 
   useEffect(() => {
@@ -1966,7 +1994,7 @@ export default function MobiusOverviewClusterPage() {
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
               <input
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => handleQueryChange(event.target.value)}
                 className="h-8 w-full rounded-md border bg-transparent pl-8 pr-2 text-[12px] outline-none transition-colors focus:border-[var(--accent-primary)]"
                 style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                 placeholder="搜索 Project"
@@ -2024,7 +2052,7 @@ export default function MobiusOverviewClusterPage() {
                   <button
                     key={option.key}
                     type="button"
-                    onClick={() => setTimeRange(option.key)}
+                    onClick={() => handleTimeRangeChange(option.key)}
                     className="h-7 rounded px-2.5 text-[11px] font-medium transition-colors"
                     style={{
                       color: active ? '#fff' : 'var(--text-secondary)',

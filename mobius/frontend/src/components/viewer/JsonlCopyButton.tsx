@@ -22,8 +22,8 @@ export function JsonlCopyButton({ copied, title, copiedTitle = '已复制', disa
       aria-label={label}
     >
       {copied
-        ? <Check className="h-3.5 w-3.5" strokeWidth={2.2} aria-hidden="true" />
-        : <Copy className="h-3.5 w-3.5" strokeWidth={1.9} aria-hidden="true" />}
+        ? <Check className="h-2.5 w-2.5" strokeWidth={2.2} aria-hidden="true" />
+        : <Copy className="h-2.5 w-2.5" strokeWidth={1.9} aria-hidden="true" />}
     </button>
   )
 }
