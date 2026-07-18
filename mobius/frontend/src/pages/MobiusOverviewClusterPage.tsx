@@ -1474,6 +1474,8 @@ export default function MobiusOverviewClusterPage() {
   const selectedRef = useRef<Selection | null>(null)
   const didInitialFitRef = useRef(false)
   const pendingAutoFitRef = useRef(false)
+  const settledAutoFitTimerRef = useRef<number | null>(null)
+  const userViewportInteractedRef = useRef(false)
   const alphaRef = useRef(0.85)
   const pausedRef = useRef(false)
   const zoomRef = useRef(1)
@@ -1796,9 +1798,17 @@ export default function MobiusOverviewClusterPage() {
       if (!pendingAutoFitRef.current) return
       pendingAutoFitRef.current = false
       fitView(modelRef.current.nodes, 0.9, true)
+      settledAutoFitTimerRef.current = window.setTimeout(() => {
+        settledAutoFitTimerRef.current = null
+        if (!userViewportInteractedRef.current) fitView(modelRef.current.nodes, 0.9, true)
+      }, 12000)
     }, 320)
     return () => window.clearTimeout(timer)
   }, [fitView, loadingCount, model.nodes.length, pendingProjectCount])
+
+  useEffect(() => () => {
+    if (settledAutoFitTimerRef.current != null) window.clearTimeout(settledAutoFitTimerRef.current)
+  }, [])
 
   useEffect(() => () => cancelViewportAnimation(), [cancelViewportAnimation])
 
@@ -1857,6 +1867,7 @@ export default function MobiusOverviewClusterPage() {
   }, [draw])
 
   const applyZoom = (nextZoom: number, anchor?: Point) => {
+    userViewportInteractedRef.current = true
     cancelViewportAnimation()
     const currentZoom = zoomRef.current
     const clampedZoom = clampZoom(nextZoom)
@@ -1875,12 +1886,18 @@ export default function MobiusOverviewClusterPage() {
   }
 
   const handleQueryChange = (value: string) => {
+    if (settledAutoFitTimerRef.current != null) window.clearTimeout(settledAutoFitTimerRef.current)
+    settledAutoFitTimerRef.current = null
+    userViewportInteractedRef.current = false
     pendingAutoFitRef.current = true
     setQuery(value)
   }
 
   const handleTimeRangeChange = (value: TimeRangeKey) => {
     if (value === timeRange) return
+    if (settledAutoFitTimerRef.current != null) window.clearTimeout(settledAutoFitTimerRef.current)
+    settledAutoFitTimerRef.current = null
+    userViewportInteractedRef.current = false
     pendingAutoFitRef.current = true
     setTimeRange(value)
   }
@@ -1903,6 +1920,7 @@ export default function MobiusOverviewClusterPage() {
 
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     if (event.button !== 0) return
+    userViewportInteractedRef.current = true
     cancelViewportAnimation()
     const world = worldFromEvent(event)
     const hit = hitTest(world)
