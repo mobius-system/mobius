@@ -50,7 +50,8 @@ type ClusterSession = {
   vx: number
   vy: number
   r: number
-  hexIndex: number
+  hexX: number
+  hexY: number
   fixed?: boolean
 }
 
@@ -324,9 +325,11 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
     parents.forEach((parent, parentIndex) => {
       const anchor = parentAnchor(pAnchor, parentIndex, parents.length)
       const parentSessions: ClusterSession[] = []
-      sortByRecent(parent.sessions).forEach((session: any, sessionIndex: number) => {
+      const sortedSessions = sortByRecent(parent.sessions)
+      const slots = balancedHexGridSlots(sortedSessions.length)
+      sortedSessions.forEach((session: any, sessionIndex: number) => {
         const id = session.session_id || session.id
-        const slot = hexGridOffset(sessionIndex)
+        const slot = slots[sessionIndex] || { x: 0, y: 0 }
         const jitter = seededOffset(`${project.id}:${parent.item.id}:${id}`, 1.6)
         const node: ClusterSession = {
           id,
@@ -346,7 +349,8 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
           vx: 0,
           vy: 0,
           r: session.agent_status === 'running' ? 6.2 : isResearchAgent(session) ? 5.2 : 4.6,
-          hexIndex: sessionIndex,
+          hexX: slot.x,
+          hexY: slot.y,
         }
         nodes.push(node)
         parentSessions.push(node)
@@ -397,8 +401,14 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
   return { nodes, parentClusters, projectClusters }
 }
 
-function hexGridOffset(index: number, spacing = 22) {
-  if (index <= 0) return { x: 0, y: 0 }
+function axialToPoint(q: number, r: number, spacing: number): Point {
+  return {
+    x: spacing * Math.sqrt(3) * (q + r / 2),
+    y: spacing * 1.5 * r,
+  }
+}
+
+function hexRingSlots(ring: number, spacing: number) {
   const directions = [
     { q: -1, r: 1 },
     { q: -1, r: 0 },
@@ -407,31 +417,43 @@ function hexGridOffset(index: number, spacing = 22) {
     { q: 1, r: 0 },
     { q: 0, r: 1 },
   ]
-  let cursor = 1
-  for (let ring = 1; ring < 512; ring += 1) {
-    let q = ring
-    let r = 0
-    for (const dir of directions) {
-      for (let step = 0; step < ring; step += 1) {
-        if (cursor === index) {
-          return {
-            x: spacing * Math.sqrt(3) * (q + r / 2),
-            y: spacing * 1.5 * r,
-          }
-        }
-        q += dir.q
-        r += dir.r
-        cursor += 1
-      }
+  const slots: Point[] = []
+  let q = ring
+  let r = 0
+  for (const dir of directions) {
+    for (let step = 0; step < ring; step += 1) {
+      slots.push(axialToPoint(q, r, spacing))
+      q += dir.q
+      r += dir.r
     }
   }
-  return { x: 0, y: 0 }
+  return slots
+}
+
+function balancedHexGridSlots(count: number, spacing = 22) {
+  if (count <= 0) return []
+  const slots: Point[] = [{ x: 0, y: 0 }]
+  for (let ring = 1; slots.length < count && ring < 512; ring += 1) {
+    const ringSlots = hexRingSlots(ring, spacing)
+    const remaining = count - slots.length
+    if (remaining >= ringSlots.length) {
+      slots.push(...ringSlots)
+      continue
+    }
+    const used = new Set<number>()
+    for (let i = 0; i < remaining; i += 1) {
+      let idx = Math.floor(((i + 0.5) * ringSlots.length) / remaining) % ringSlots.length
+      while (used.has(idx)) idx = (idx + 1) % ringSlots.length
+      used.add(idx)
+      slots.push(ringSlots[idx])
+    }
+  }
+  return slots.slice(0, count)
 }
 
 function parentBubbleRadius(cluster: ParentCluster) {
   const gridRadius = cluster.sessions.reduce((maxRadius, node) => {
-    const slot = hexGridOffset(node.hexIndex)
-    return Math.max(maxRadius, Math.hypot(slot.x, slot.y) + node.r + 18)
+    return Math.max(maxRadius, Math.hypot(node.hexX, node.hexY) + node.r + 22)
   }, 0)
   return Math.max(38, gridRadius)
 }
@@ -626,9 +648,8 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
     const project = projectById.get(node.projectId)
     if (!node.fixed) {
       if (parent) {
-        const slot = hexGridOffset(node.hexIndex)
-        const targetX = parent.anchorX + slot.x
-        const targetY = parent.anchorY + slot.y
+        const targetX = parent.anchorX + node.hexX
+        const targetY = parent.anchorY + node.hexY
         node.vx += (targetX - node.x) * 0.09 * alpha
         node.vy += (targetY - node.y) * 0.09 * alpha
       }
@@ -735,6 +756,44 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: ClusterShape) {
     ctx.quadraticCurveTo(point.x, point.y, (point.x + next.x) / 2, (point.y + next.y) / 2)
   })
   ctx.closePath()
+}
+
+function roundedRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.min(radius, width / 2, height / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + width - r, y)
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r)
+  ctx.lineTo(x + width, y + height - r)
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height)
+  ctx.lineTo(x + r, y + height)
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r)
+  ctx.lineTo(x, y + r)
+  ctx.quadraticCurveTo(x, y, x + r, y)
+  ctx.closePath()
+}
+
+function drawClusterLabel(ctx: CanvasRenderingContext2D, label: string, x: number, y: number, maxWidth: number, color: string, font: string) {
+  ctx.font = font
+  ctx.textBaseline = 'middle'
+  const text = textEllipsis(ctx, label, Math.max(36, maxWidth))
+  const width = Math.min(maxWidth, ctx.measureText(text).width + 14)
+  const height = 18
+  const left = x - width / 2
+  const top = y - height / 2
+  roundedRectPath(ctx, left, top, width, height, 6)
+  ctx.fillStyle = 'rgba(7, 18, 24, 0.72)'
+  ctx.fill()
+  ctx.strokeStyle = rgba(color, 0.28)
+  ctx.lineWidth = 0.7 / zoomSafe(ctx)
+  ctx.stroke()
+  ctx.fillStyle = rgba(color, 0.9)
+  ctx.fillText(text, x - ctx.measureText(text).width / 2, y + 0.5)
+}
+
+function zoomSafe(ctx: CanvasRenderingContext2D) {
+  const transform = ctx.getTransform()
+  return Math.max(0.1, Math.hypot(transform.a, transform.b))
 }
 
 function pointInShape(point: Point, shape: ClusterShape) {
@@ -1115,24 +1174,17 @@ export default function MobiusOverviewClusterPage() {
     })
 
     if (zoomRef.current > 0.35) {
-      ctx.textBaseline = 'middle'
       projectClusters.forEach((cluster) => {
         if (cluster.radius < 64) return
-        ctx.font = '600 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-        ctx.fillStyle = rgba(cluster.color, 0.88)
-        const label = textEllipsis(ctx, cluster.title, Math.max(70, cluster.radius * 1.25))
-        ctx.fillText(label, cluster.cx - ctx.measureText(label).width / 2, cluster.cy - cluster.radius + 24)
-      })
-    }
-
-    if (zoomRef.current > 0.62) {
-      ctx.textBaseline = 'middle'
-      parents.forEach((cluster) => {
-        if (cluster.radius < 42) return
-        ctx.font = '500 10px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-        ctx.fillStyle = rgba(cluster.color, 0.76)
-        const label = textEllipsis(ctx, cluster.title, Math.max(48, cluster.radius * 1.2))
-        ctx.fillText(label, cluster.cx - ctx.measureText(label).width / 2, cluster.cy)
+        drawClusterLabel(
+          ctx,
+          cluster.title,
+          cluster.cx,
+          cluster.cy - cluster.radius + 24,
+          Math.max(70, cluster.radius * 1.25),
+          cluster.color,
+          '600 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        )
       })
     }
 
@@ -1153,6 +1205,21 @@ export default function MobiusOverviewClusterPage() {
         ctx.stroke()
       }
     })
+
+    if (zoomRef.current > 0.62) {
+      parents.forEach((cluster) => {
+        if (cluster.radius < 42) return
+        drawClusterLabel(
+          ctx,
+          cluster.title,
+          cluster.cx,
+          cluster.cy - cluster.radius + 19,
+          Math.max(48, Math.min(180, cluster.radius * 1.45)),
+          cluster.color,
+          '500 10px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        )
+      })
+    }
 
     const currentSelected = selectedRef.current
     if (currentSelected) {
