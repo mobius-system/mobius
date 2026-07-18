@@ -78,10 +78,10 @@ XiaoMo is the natural-language interface to the entire system. Talk to it: creat
 <table align="center" width="60%">
   <tr>
     <td width="50%" align="center">
-      <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-app-left.jpg" alt="XiaoMo on mobile" />
+      <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-app-left-v2.jpg" alt="XiaoMo on mobile" />
     </td>
     <td width="50%" align="center">
-      <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-app-right.jpg" alt="XiaoMo on mobile" />
+      <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-app-right-v2.jpg" alt="XiaoMo on mobile" />
     </td>
   </tr>
 </table>
@@ -89,7 +89,7 @@ XiaoMo is the natural-language interface to the entire system. Talk to it: creat
 **On your phone.** XiaoMo goes wherever you go — chat with your agents, track progress, and approve decisions from anywhere. The iOS and Android apps are fully available now.
 
 <p align="center">
-  <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-desktop.png" alt="XiaoMo desktop app" width="720" />
+  <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-desktop-v2.png" alt="XiaoMo desktop app" width="720" />
 </p>
 
 **On your desktop.** A native app that turns your PC into a Mobius workstation — read and write local project files directly, enroll this machine as a controllable node, and run multi-tab workflows. Available now on Windows, macOS, and Linux.
