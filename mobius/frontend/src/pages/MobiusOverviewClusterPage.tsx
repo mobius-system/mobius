@@ -142,6 +142,8 @@ const MAX_ZOOM = 3.2
 const ZOOM_STEP = 1.18
 const TOP_BAR_HEIGHT = 58
 const SESSION_RADIUS_SCALE = 2
+const PROJECT_TARGET_GAP = 34
+const PROJECT_COLLISION_GAP = 18
 const PROJECT_COLORS = ['#0ea5e9', '#22c55e', '#f97316', '#a855f7', '#14b8a6', '#e11d48', '#84cc16', '#6366f1', '#f59e0b', '#06b6d4']
 
 function activeTimeMs(item: any) {
@@ -713,7 +715,7 @@ function resolveParentAndProjectOverlaps(parentClusters: ParentCluster[], projec
       const a = projectClusters[i]
       for (let j = i + 1; j < projectClusters.length; j += 1) {
         const b = projectClusters[j]
-        const sep = separateCircles(a.cx, a.cy, a.radius, b.cx, b.cy, b.radius, 18)
+        const sep = separateCircles(a.cx, a.cy, a.radius, b.cx, b.cy, b.radius, PROJECT_COLLISION_GAP)
         if (!sep) continue
         moved = true
         translateProjectCluster(a, -sep.x, -sep.y)
@@ -722,6 +724,52 @@ function resolveParentAndProjectOverlaps(parentClusters: ParentCluster[], projec
     }
     updateClusterShapes(parentClusters, projectClusters)
     if (!moved) break
+  }
+}
+
+function attractProjectClusters(projectClusters: ProjectCluster[], alpha: number) {
+  if (projectClusters.length <= 1) return
+  let totalWeight = 0
+  let centroidX = 0
+  let centroidY = 0
+  projectClusters.forEach((cluster) => {
+    const weight = Math.max(1, Math.sqrt(cluster.sessions.length))
+    totalWeight += weight
+    centroidX += cluster.cx * weight
+    centroidY += cluster.cy * weight
+  })
+  centroidX /= Math.max(1, totalWeight)
+  centroidY /= Math.max(1, totalWeight)
+
+  projectClusters.forEach((cluster) => {
+    const dx = centroidX - cluster.cx
+    const dy = centroidY - cluster.cy
+    const dist = Math.hypot(dx, dy)
+    if (dist < cluster.radius * 0.18) return
+    const pull = Math.min(6.5, Math.max(0, dist - cluster.radius * 0.18) * 0.012) * alpha
+    translateProjectCluster(cluster, (dx / dist) * pull, (dy / dist) * pull)
+  })
+
+  for (let i = 0; i < projectClusters.length; i += 1) {
+    const a = projectClusters[i]
+    for (let j = i + 1; j < projectClusters.length; j += 1) {
+      const b = projectClusters[j]
+      let dx = b.cx - a.cx
+      let dy = b.cy - a.cy
+      let dist = Math.hypot(dx, dy)
+      if (dist < 0.001) {
+        dx = 0.01 + ((hashValue(`${a.id}:${b.id}`) % 100) / 1000)
+        dy = 0.01
+        dist = Math.hypot(dx, dy)
+      }
+      const targetDist = a.radius + b.radius + PROJECT_TARGET_GAP
+      if (dist <= targetDist) continue
+      const nx = dx / dist
+      const ny = dy / dist
+      const pull = Math.min(10, (dist - targetDist) * 0.018) * alpha
+      translateProjectCluster(a, nx * pull * 0.5, ny * pull * 0.5)
+      translateProjectCluster(b, -nx * pull * 0.5, -ny * pull * 0.5)
+    }
   }
 }
 
@@ -792,6 +840,8 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
     node.y += node.vy
   })
 
+  updateClusterShapes(parentClusters, projectClusters)
+  attractProjectClusters(projectClusters, alpha)
   updateClusterShapes(parentClusters, projectClusters)
   constrainSessionsToParents(parentClusters)
   resolveSessionOverlaps(nodes)
