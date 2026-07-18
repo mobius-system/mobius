@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowUpRight,
@@ -929,6 +929,7 @@ export default function MobiusOverviewClusterPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const modelRef = useRef<{ nodes: ClusterSession[]; parents: ParentCluster[]; projects: ProjectCluster[] }>({ nodes: [], parents: [], projects: [] })
+  const selectedRef = useRef<Selection | null>(null)
   const alphaRef = useRef(0.85)
   const pausedRef = useRef(false)
   const zoomRef = useRef(1)
@@ -1036,16 +1037,18 @@ export default function MobiusOverviewClusterPage() {
   )
   const loadingCount = loadingIds.size
 
-  const worldFromEvent = useCallback((event: PointerEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>) => {
+  const worldFromClientPoint = useCallback((clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return { x: 0, y: 0 }
-    const sx = event.clientX - rect.left
-    const sy = event.clientY - rect.top
+    const sx = clientX - rect.left
+    const sy = clientY - rect.top
     return {
       x: (sx - offsetRef.current.x) / zoomRef.current,
       y: (sy - offsetRef.current.y) / zoomRef.current,
     }
   }, [])
+
+  const worldFromEvent = useCallback((event: PointerEvent<HTMLCanvasElement>) => worldFromClientPoint(event.clientX, event.clientY), [worldFromClientPoint])
 
   const hitTest = useCallback((world: Point): HitTarget | null => {
     const { nodes, parents, projects: projectClusters } = modelRef.current
@@ -1151,22 +1154,27 @@ export default function MobiusOverviewClusterPage() {
       }
     })
 
-    if (selected) {
-      if (isSessionSelection(selected)) {
-        const node = selected.session
+    const currentSelected = selectedRef.current
+    if (currentSelected) {
+      if (isSessionSelection(currentSelected)) {
+        const node = currentSelected.session
         ctx.beginPath()
         ctx.arc(node.x, node.y, node.r + 8, 0, Math.PI * 2)
         ctx.strokeStyle = rgba(sessionColor(node), 0.85)
         ctx.lineWidth = 2.5 / zoomRef.current
         ctx.stroke()
-      } else if (isClusterSelection(selected)) {
-        const cluster = selected.cluster
+      } else if (isClusterSelection(currentSelected)) {
+        const cluster = currentSelected.cluster
         drawShape(ctx, cluster.shape)
         ctx.lineWidth = 2.2 / zoomRef.current
         ctx.strokeStyle = rgba(cluster.color, 0.78)
         ctx.stroke()
       }
     }
+  }, [])
+
+  useEffect(() => {
+    selectedRef.current = selected
   }, [selected])
 
   useEffect(() => {
@@ -1300,14 +1308,21 @@ export default function MobiusOverviewClusterPage() {
     draw()
   }
 
-  const handleWheel = (event: WheelEvent<HTMLCanvasElement>) => {
-    event.preventDefault()
-    const rect = event.currentTarget.getBoundingClientRect()
-    applyZoom(zoomRef.current * (event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    })
-  }
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return undefined
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      applyZoom(zoomRef.current * (event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      })
+    }
+    canvas.addEventListener('wheel', handleWheel, { passive: false })
+    return () => canvas.removeEventListener('wheel', handleWheel)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     if (event.button !== 0) return
@@ -1520,7 +1535,6 @@ export default function MobiusOverviewClusterPage() {
             <canvas
               ref={canvasRef}
               className="block h-full w-full cursor-crosshair"
-              onWheel={handleWheel}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
