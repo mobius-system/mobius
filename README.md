@@ -75,6 +75,8 @@ XiaoMo is the natural-language interface to the entire system. Talk to it: creat
   <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo.jpg" alt="XiaoMo assistant interface" width="720" />
 </p>
 
+**On the web.** Zero install — open a browser on any device and the full Mobius workspace is ready instantly.
+
 <p align="center">
   <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-app.jpg" alt="XiaoMo on mobile" width="720" />
 </p>
