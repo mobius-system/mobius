@@ -283,13 +283,6 @@ function filterGraphDataByActivity(data: ProjectGraphData, cutoffMs: number): Pr
   return { issues, researches, sessionsByIssue, sessionsByResearch }
 }
 
-function seededOffset(id: string, scale: number) {
-  const h = hashValue(id)
-  const a = (h % 6283) / 1000
-  const r = (((h >> 8) % 1000) / 1000) * scale
-  return { x: Math.cos(a) * r, y: Math.sin(a) * r }
-}
-
 function projectAnchor(index: number) {
   if (index === 0) return { x: 0, y: 0 }
   const angle = index * 2.399963
@@ -330,7 +323,6 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
       sortedSessions.forEach((session: any, sessionIndex: number) => {
         const id = session.session_id || session.id
         const slot = slots[sessionIndex] || { x: 0, y: 0 }
-        const jitter = seededOffset(`${project.id}:${parent.item.id}:${id}`, 1.6)
         const node: ClusterSession = {
           id,
           kind: isResearchAgent(session) ? 'research_agent' : 'session',
@@ -344,8 +336,8 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
           parentKind: parent.kind,
           parentTitle: parentTitle(parent.item),
           source: session,
-          x: anchor.x + slot.x + jitter.x,
-          y: anchor.y + slot.y + jitter.y,
+          x: anchor.x + slot.x,
+          y: anchor.y + slot.y,
           vx: 0,
           vy: 0,
           r: session.agent_status === 'running' ? 6.2 : isResearchAgent(session) ? 5.2 : 4.6,
@@ -408,7 +400,10 @@ function axialToPoint(q: number, r: number, spacing: number): Point {
   }
 }
 
-function hexRingSlots(ring: number, spacing: number) {
+type HexCell = Point & { q: number; r: number }
+
+function hexRingCells(ring: number, spacing: number): HexCell[] {
+  if (ring <= 0) return [{ q: 0, r: 0, ...axialToPoint(0, 0, spacing) }]
   const directions = [
     { q: -1, r: 1 },
     { q: -1, r: 0 },
@@ -417,12 +412,12 @@ function hexRingSlots(ring: number, spacing: number) {
     { q: 1, r: 0 },
     { q: 0, r: 1 },
   ]
-  const slots: Point[] = []
+  const slots: HexCell[] = []
   let q = ring
   let r = 0
   for (const dir of directions) {
     for (let step = 0; step < ring; step += 1) {
-      slots.push(axialToPoint(q, r, spacing))
+      slots.push({ q, r, ...axialToPoint(q, r, spacing) })
       q += dir.q
       r += dir.r
     }
@@ -430,25 +425,111 @@ function hexRingSlots(ring: number, spacing: number) {
   return slots
 }
 
-function balancedHexGridSlots(count: number, spacing = 22) {
-  if (count <= 0) return []
-  const slots: Point[] = [{ x: 0, y: 0 }]
-  for (let ring = 1; slots.length < count && ring < 512; ring += 1) {
-    const ringSlots = hexRingSlots(ring, spacing)
-    const remaining = count - slots.length
-    if (remaining >= ringSlots.length) {
-      slots.push(...ringSlots)
-      continue
-    }
-    const used = new Set<number>()
-    for (let i = 0; i < remaining; i += 1) {
-      let idx = Math.floor(((i + 0.5) * ringSlots.length) / remaining) % ringSlots.length
-      while (used.has(idx)) idx = (idx + 1) % ringSlots.length
-      used.add(idx)
-      slots.push(ringSlots[idx])
+function hexCapacity(ring: number) {
+  return 1 + 3 * ring * (ring + 1)
+}
+
+function hexGridCandidates(count: number, spacing: number) {
+  let ringLimit = 0
+  while (hexCapacity(ringLimit) < count + 6) ringLimit += 1
+  const cells: HexCell[] = []
+  for (let ring = 0; ring <= ringLimit + 1; ring += 1) {
+    cells.push(...hexRingCells(ring, spacing))
+  }
+  return cells
+}
+
+function sampleHexOffsets(spacing: number, count: number) {
+  const subdivisions = count <= 18 ? 6 : 4
+  const offsets: Point[] = []
+  for (let qi = -subdivisions; qi <= subdivisions; qi += 1) {
+    for (let ri = -subdivisions; ri <= subdivisions; ri += 1) {
+      const q = qi / subdivisions
+      const r = ri / subdivisions
+      if (Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r)) > 1) continue
+      offsets.push(axialToPoint(q, r, spacing))
     }
   }
-  return slots.slice(0, count)
+  return offsets
+}
+
+function recenterLayout(points: Point[]) {
+  const cx = points.reduce((sum, point) => sum + point.x, 0) / Math.max(1, points.length)
+  const cy = points.reduce((sum, point) => sum + point.y, 0) / Math.max(1, points.length)
+  return points.map((point) => {
+    const x = point.x - cx
+    const y = point.y - cy
+    return { x: Math.abs(x) < 0.001 ? 0 : x, y: Math.abs(y) < 0.001 ? 0 : y }
+  })
+}
+
+function scoreHexLayout(points: Point[], spacing: number) {
+  if (points.length <= 1) return 0
+  let maxRadius = 0
+  let moment = 0
+  let varX = 0
+  let varY = 0
+  let cov = 0
+  let minPair = Infinity
+  for (let i = 0; i < points.length; i += 1) {
+    const a = points[i]
+    const radius = Math.hypot(a.x, a.y)
+    maxRadius = Math.max(maxRadius, radius)
+    moment += radius * radius
+    varX += a.x * a.x
+    varY += a.y * a.y
+    cov += a.x * a.y
+    for (let j = i + 1; j < points.length; j += 1) {
+      const b = points[j]
+      minPair = Math.min(minPair, Math.hypot(a.x - b.x, a.y - b.y))
+    }
+  }
+  varX /= points.length
+  varY /= points.length
+  cov /= points.length
+  moment /= points.length
+  const trace = Math.max(1, varX + varY)
+  const anisotropy = Math.sqrt((varX - varY) ** 2 + 4 * cov * cov) / trace
+  const targetMinPair = spacing * Math.sqrt(3)
+  const pairPenalty = Math.abs((Number.isFinite(minPair) ? minPair : targetMinPair) - targetMinPair)
+  const shapePenalty = points.length <= 2 ? 0 : anisotropy * 18
+  return maxRadius * 8 + moment * 0.045 + pairPenalty * 2.8 + shapePenalty
+}
+
+function orderHexSlots(points: Point[]) {
+  return [...points].sort((a, b) => {
+    const row = Math.round(a.y * 1000) - Math.round(b.y * 1000)
+    if (row !== 0) return row
+    return a.x - b.x
+  })
+}
+
+function balancedHexGridSlots(count: number, spacing = 22): Point[] {
+  if (count <= 0) return []
+  if (count === 1) return [{ x: 0, y: 0 }]
+  const candidates = hexGridCandidates(count, spacing)
+  let best: Point[] = []
+  let bestScore = Infinity
+  sampleHexOffsets(spacing, count).forEach((offset) => {
+    const chosen = [...candidates]
+      .sort((a, b) => {
+        const da = (a.x - offset.x) ** 2 + (a.y - offset.y) ** 2
+        const db = (b.x - offset.x) ** 2 + (b.y - offset.y) ** 2
+        if (da !== db) return da - db
+        return Math.atan2(a.y, a.x) - Math.atan2(b.y, b.x)
+      })
+      .slice(0, count)
+    const layout = recenterLayout(chosen)
+    const score = scoreHexLayout(layout, spacing)
+    if (score < bestScore) {
+      bestScore = score
+      best = layout
+    }
+  })
+  if (best.length === 0) {
+    best = recenterLayout(candidates.slice(0, count))
+  }
+  return orderHexSlots(best)
 }
 
 function parentBubbleRadius(cluster: ParentCluster) {
