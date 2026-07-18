@@ -316,11 +316,22 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
   const parentClusters: ParentCluster[] = []
   const projectClusters: ProjectCluster[] = []
   const orderedProjects = sortByRecent(projects)
+  const filteredByProject = new Map<string, ProjectGraphData>()
+  const layoutOrder = orderedProjects
+    .map((project: any) => {
+      const filtered = filterGraphDataByActivity(dataByProject[project.id] || EMPTY_GRAPH_DATA, cutoffMs)
+      const sessionCount = Object.values(filtered.sessionsByIssue).reduce((sum, sessions) => sum + sessions.length, 0)
+        + Object.values(filtered.sessionsByResearch).reduce((sum, sessions) => sum + sessions.length, 0)
+      filteredByProject.set(project.id, filtered)
+      return { project, sessionCount, activeMs: activeTimeMs(project) }
+    })
+    .filter((entry) => entry.sessionCount > 0)
+    .sort((a, b) => b.sessionCount - a.sessionCount || b.activeMs - a.activeMs)
+  const layoutIndexByProject = new Map(layoutOrder.map((entry, index) => [entry.project.id, index]))
 
   orderedProjects.forEach((project: any, projectIndex: number) => {
-    const rawData = dataByProject[project.id] || EMPTY_GRAPH_DATA
-    const filtered = filterGraphDataByActivity(rawData, cutoffMs)
-    const pAnchor = projectAnchor(projectIndex)
+    const filtered = filteredByProject.get(project.id) || EMPTY_GRAPH_DATA
+    const pAnchor = projectAnchor(layoutIndexByProject.get(project.id) ?? projectIndex)
     const color = projectColor(project.id)
     const parents = [
       ...sortByRecent(filtered.issues).map((item) => ({ kind: 'issue' as const, item, sessions: filtered.sessionsByIssue[item.id] || [] })),
@@ -437,6 +448,8 @@ function projectSpawnPoint(project: ProjectCluster, previousProjects: ProjectClu
     cy += cluster.cy * w
   })
   const center = { x: cx / Math.max(1, weight), y: cy / Math.max(1, weight) }
+  const largestExisting = Math.max(...previousProjects.map((cluster) => cluster.sessions.length))
+  if (project.sessions.length >= largestExisting) return center
   const averageRadius = previousProjects.reduce((sum, cluster) => sum + cluster.radius, 0) / previousProjects.length
   return spawnPointAround(center, `project:${project.id}`, Math.max(140, averageRadius + project.radius + PROJECT_TARGET_GAP))
 }
