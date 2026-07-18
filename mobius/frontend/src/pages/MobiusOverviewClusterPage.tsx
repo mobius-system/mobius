@@ -291,14 +291,14 @@ function seededOffset(id: string, scale: number) {
 function projectAnchor(index: number) {
   if (index === 0) return { x: 0, y: 0 }
   const angle = index * 2.399963
-  const radius = 360 + Math.sqrt(index) * 250
+  const radius = 190 + Math.sqrt(index) * 120
   return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius }
 }
 
 function parentAnchor(project: { x: number; y: number }, index: number, count: number) {
   if (count <= 1) return { x: project.x, y: project.y }
   const angle = index * 2.399963
-  const ring = 95 + Math.sqrt(index) * 55
+  const ring = 72 + Math.sqrt(index) * 34
   return { x: project.x + Math.cos(angle) * ring, y: project.y + Math.sin(angle) * ring }
 }
 
@@ -325,7 +325,7 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
       const parentSessions: ClusterSession[] = []
       sortByRecent(parent.sessions).forEach((session: any, sessionIndex: number) => {
         const id = session.session_id || session.id
-        const offset = seededOffset(`${project.id}:${parent.item.id}:${id}`, 34 + Math.sqrt(sessionIndex) * 9)
+        const offset = seededOffset(`${project.id}:${parent.item.id}:${id}`, 26 + Math.sqrt(sessionIndex) * 6)
         const node: ClusterSession = {
           id,
           kind: isResearchAgent(session) ? 'research_agent' : 'session',
@@ -456,14 +456,14 @@ function buildClusterShape(nodes: ClusterSession[], padding: number): { shape: C
 
 function updateClusterShapes(parentClusters: ParentCluster[], projectClusters: ProjectCluster[]) {
   parentClusters.forEach((cluster) => {
-    const next = buildClusterShape(cluster.sessions, 30)
+    const next = buildClusterShape(cluster.sessions, 24)
     cluster.cx = next.cx
     cluster.cy = next.cy
     cluster.radius = next.radius
     cluster.shape = next.shape
   })
   projectClusters.forEach((cluster) => {
-    const next = buildClusterShape(cluster.sessions, 78)
+    const next = buildClusterShape(cluster.sessions, 50)
     cluster.cx = next.cx
     cluster.cy = next.cy
     cluster.radius = next.radius
@@ -496,12 +496,12 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
     const project = projectById.get(node.projectId)
     if (!node.fixed) {
       if (parent) {
-        node.vx += (parent.anchorX - node.x) * 0.024 * alpha
-        node.vy += (parent.anchorY - node.y) * 0.024 * alpha
+        node.vx += (parent.anchorX - node.x) * 0.028 * alpha
+        node.vy += (parent.anchorY - node.y) * 0.028 * alpha
       }
       if (project) {
-        node.vx += (project.anchorX - node.x) * 0.0045 * alpha
-        node.vy += (project.anchorY - node.y) * 0.0045 * alpha
+        node.vx += (project.anchorX - node.x) * 0.007 * alpha
+        node.vy += (project.anchorY - node.y) * 0.007 * alpha
       }
     }
   })
@@ -520,13 +520,13 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
       }
       const sameParent = a.parentId === b.parentId
       const sameProject = a.projectId === b.projectId
-      const minDist = a.r + b.r + (sameParent ? 8 : sameProject ? 18 : 34)
-      const influence = sameParent ? 92 : sameProject ? 170 : 260
+      const minDist = a.r + b.r + (sameParent ? 7 : sameProject ? 14 : 22)
+      const influence = sameParent ? 84 : sameProject ? 130 : 178
       if (dist > influence && dist > minDist) continue
       const nx = dx / dist
       const ny = dy / dist
       const overlap = Math.max(0, minDist - dist)
-      const repel = (sameParent ? 0.23 : sameProject ? 0.55 : 1.05) * alpha
+      const repel = (sameParent ? 0.22 : sameProject ? 0.4 : 0.68) * alpha
       const strength = (overlap * 0.08 + repel / Math.max(1, dist * 0.025)) * 0.5
       if (!a.fixed) {
         a.vx -= nx * strength
@@ -549,11 +549,11 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
       let dx = b.cx - a.cx
       let dy = b.cy - a.cy
       let dist = Math.max(1, Math.hypot(dx, dy))
-      const minDist = a.radius + b.radius + (sameProject ? 22 : 46)
+      const minDist = a.radius + b.radius + (sameProject ? 16 : 26)
       if (dist >= minDist) continue
       dx /= dist
       dy /= dist
-      const push = (minDist - dist) * (sameProject ? 0.0012 : 0.0007) * alpha
+      const push = (minDist - dist) * (sameProject ? 0.001 : 0.00055) * alpha
       applyClusterPush(a, b, dx * push, dy * push)
     }
   }
@@ -565,11 +565,11 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
       let dx = b.cx - a.cx
       let dy = b.cy - a.cy
       let dist = Math.max(1, Math.hypot(dx, dy))
-      const minDist = a.radius + b.radius + 110
+      const minDist = a.radius + b.radius + 42
       if (dist >= minDist) continue
       dx /= dist
       dy /= dist
-      const push = (minDist - dist) * 0.0014 * alpha
+      const push = (minDist - dist) * 0.0009 * alpha
       applyClusterPush(a, b, dx * push, dy * push)
     }
   }
@@ -599,20 +599,33 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: ClusterShape) {
     const len = Math.max(1, Math.hypot(dx, dy))
     const nx = -dy / len
     const ny = dx / len
+    const a1 = Math.atan2(ny, nx)
+    const a2 = a1 + Math.PI
     ctx.beginPath()
     ctx.moveTo(shape.x1 + nx * shape.r, shape.y1 + ny * shape.r)
     ctx.lineTo(shape.x2 + nx * shape.r, shape.y2 + ny * shape.r)
-    ctx.arc(shape.x2, shape.y2, shape.r, Math.atan2(ny, nx), Math.atan2(-ny, -nx))
+    ctx.arc(shape.x2, shape.y2, shape.r, a1, a2)
     ctx.lineTo(shape.x1 - nx * shape.r, shape.y1 - ny * shape.r)
-    ctx.arc(shape.x1, shape.y1, shape.r, Math.atan2(-ny, -nx), Math.atan2(ny, nx))
+    ctx.arc(shape.x1, shape.y1, shape.r, a2, a1)
+    ctx.closePath()
     return
   }
   const points = shape.points
   ctx.beginPath()
   if (!points.length) return
+  if (points.length < 3) {
+    points.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y)
+      else ctx.lineTo(point.x, point.y)
+    })
+    return
+  }
+  const first = points[0]
+  const last = points[points.length - 1]
+  ctx.moveTo((first.x + last.x) / 2, (first.y + last.y) / 2)
   points.forEach((point, index) => {
-    if (index === 0) ctx.moveTo(point.x, point.y)
-    else ctx.lineTo(point.x, point.y)
+    const next = points[(index + 1) % points.length]
+    ctx.quadraticCurveTo(point.x, point.y, (point.x + next.x) / 2, (point.y + next.y) / 2)
   })
   ctx.closePath()
 }
@@ -976,8 +989,8 @@ export default function MobiusOverviewClusterPage() {
       drawShape(ctx, cluster.shape)
       ctx.fillStyle = rgba(cluster.color, 0.105)
       ctx.fill()
-      ctx.lineWidth = 1.2 / zoomRef.current
-      ctx.strokeStyle = rgba(cluster.color, 0.22)
+      ctx.lineWidth = 0.8 / zoomRef.current
+      ctx.strokeStyle = rgba(cluster.color, 0.18)
       ctx.stroke()
     })
 
@@ -985,8 +998,8 @@ export default function MobiusOverviewClusterPage() {
       drawShape(ctx, cluster.shape)
       ctx.fillStyle = rgba(cluster.color, cluster.kind === 'research' ? 0.17 : 0.145)
       ctx.fill()
-      ctx.lineWidth = 1 / zoomRef.current
-      ctx.strokeStyle = rgba(cluster.color, 0.36)
+      ctx.lineWidth = 0.75 / zoomRef.current
+      ctx.strokeStyle = rgba(cluster.color, 0.3)
       ctx.stroke()
     })
 
