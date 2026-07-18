@@ -29,8 +29,8 @@ mac:
   target:
     - dmg
     - zip
-  # macOS 主机原生签名分发。证书名须与 keychain 里 "Developer ID Application: ..." 完全一致。
-  identity: "Developer ID Application: NutShell AI(Beijing)Technology Co., Ltd (6FMVHL6RLY)"
+  # identity 不设置：electron-builder 自动选 keychain 里 "Developer ID Application" 证书签名。
+  # （identity: null 会显式跳过签名；手动指定证书名须去掉 "Developer ID Application:" 前缀。）
   hardenedRuntime: true
   gatekeeperAssess: false
   # 公证：构建前须 export APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID。
