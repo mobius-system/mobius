@@ -618,6 +618,43 @@ function CreateSuccessDialog({ kind, name, detailUrl, onClose }: { kind: CreateK
   )
 }
 
+// 顶栏快捷新建会话: 创建成功弹窗 (查看 / 再创建一个 / 关闭).
+// 与项目·任务的 CreateSuccessDialog 不同: 会话已自动启动, "查看"走 SPA 内导航 (onNavigate) 而非新开 Tab;
+// 另提供"再创建一个"由父组件原地重置表单 (保留项目/任务, 仅重置名称/描述/附件).
+function SessionCreateSuccess({ name, canView, onView, onCreateAnother, onClose, dark }: {
+  name: string; canView: boolean; onView: () => void; onCreateAnother: () => void; onClose: () => void; dark: boolean
+}) {
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
+      <div className="relative w-[400px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl flex flex-col items-center text-center"
+        style={modalShellStyle(dark)}>
+        <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'rgba(34,197,94,0.15)' }}>
+          <CheckCircle2 className="w-7 h-7" style={{ color: '#22c55e' }} />
+        </div>
+        <h3 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>创建成功</h3>
+        <p className="text-[12px] mb-5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          会话「<span style={{ color: dark ? '#e2e8f0' : '#334155' }}>{name || '(未命名)'}</span>」已创建并开始执行。
+        </p>
+        <div className="flex flex-col gap-2 w-full">
+          <button type="button" onClick={onView} disabled={!canView}
+            className="h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            查看
+          </button>
+          <div className="flex gap-2 w-full">
+            <button type="button" onClick={onCreateAnother}
+              className="flex-1 h-9 rounded-xl text-[13px] border transition-colors hover:bg-[var(--bg-card-hover)]"
+              style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>再创建一个</button>
+            <button type="button" onClick={onClose}
+              className="flex-1 h-9 rounded-xl text-[13px] border transition-colors hover:bg-[var(--bg-card-hover)]"
+              style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>关闭</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // 弹窗外壳 — 统一容器 (响应式: 窄屏顶部对齐可滚动)
 function CreateModalShell({ title, onClose, children, footer, dark, width = 560 }: {
   title: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode; dark: boolean; width?: number
@@ -1079,7 +1116,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
 // 自动替换为"任务标题 + 时间戳" (复用 NewSessionModal 的 formatDefaultSessionName).
 const SESSION_NAME_PLACEHOLDER = '请填写会话名称'
 
-export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIssueId }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void; defaultProjectId?: string; defaultIssueId?: string }) {
+export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectId, defaultIssueId }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void; onNavigate?: (path: string) => void; defaultProjectId?: string; defaultIssueId?: string }) {
   const { theme, user } = useStore()
   const dark = theme !== 'light'
   const userParam = user?.id
@@ -1088,6 +1125,8 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const [projectId, setProjectId] = useState(defaultProjectId || d.projectId || '')
   const [issueId, setIssueId] = useState(defaultIssueId || d.issueId || '')
   const [name, setName] = useState(d.name || SESSION_NAME_PLACEHOLDER)
+  // 会话名称是否被人类用户手动编辑过. false → 当前是占位/自动生成, 更换目标任务时跟随重生成; true → 用户权威, 不覆盖.
+  const nameUserTouchedRef = useRef<boolean>(!!d.name_touched)
   const [desc, setDesc] = useState(d.desc || '')
   // 模型默认值: 仅由 (当前 issue 上次所选 > 项目默认 > 全局默认) 三级决定.
   // 不再从全局草稿 (gc:new-session) 读/写 model —— 那会把"上次所选"泄漏到其他 issue/项目/新项目.
@@ -1109,6 +1148,8 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
+  // 创建成功弹窗 (查看 / 再创建一个 / 关闭). null = 不显示.
+  const [success, setSuccess] = useState<{ sessionId?: string; detailUrl?: string; name: string } | null>(null)
   // PC 任务模式 (仅 electron 桌面端, 与 NewSessionModal 同源): work_mode/aimux_id/local_path
   // 经 pc_client_metadata 注入 session 提示词; pc/dual 时 mobius-aimux skill 强制必选.
   // web 端无 window.mobiusDesktop → workMode 恒 null → 不渲染区块、不附 body、不锁 skill, 行为完全不变.
@@ -1136,10 +1177,10 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   const selectedProject = projects.list.find((p: any) => p.id === projectId)
   const selectedIssue = issues.list.find((i: any) => i.id === issueId)
 
-  // 选定目标任务后, 若名称仍是占位哨兵, 自动填"任务标题 + 时间戳" (复用 NewSessionModal 的格式).
-  // 仅在目标任务变化时触发; 用户手动改名后不再覆盖. 覆盖初始 defaultIssueId 预选与用户切换两种情况.
+  // 选定/更换目标任务时, 若名称未被用户手动改过, 自动填"任务标题 + 时间戳" (复用 NewSessionModal 的格式).
+  // 用户一旦手动编辑名称即视为权威 (nameUserTouchedRef=true), 后续换任务不再覆盖. 覆盖初始预选与切换两种情况.
   useEffect(() => {
-    if (selectedIssue && name === SESSION_NAME_PLACEHOLDER) {
+    if (selectedIssue && !nameUserTouchedRef.current) {
       setName(formatDefaultSessionName(selectedIssue.title))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1203,7 +1244,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
   useEffect(() => {
     // 注意: 刻意不持久化 model —— 顶栏草稿是全局的 (不绑 issue), 写入 model 会把"上次所选"泄漏到
     // 其他 issue/项目/新项目. 模型默认完全由 (当前 issue 上次所选 > 项目默认 > 全局默认) 即时计算.
-    draftSave(DRAFT_KEY, { projectId, issueId, name, desc, language, excluded_skills: Array.from(excludedSkills), excluded_memories: Array.from(excludedMemories), selection_ready: selectionReady }, { minChars: 0 })
+    draftSave(DRAFT_KEY, { projectId, issueId, name, name_touched: nameUserTouchedRef.current, desc, language, excluded_skills: Array.from(excludedSkills), excluded_memories: Array.from(excludedMemories), selection_ready: selectionReady }, { minChars: 0 })
   }, [projectId, issueId, name, desc, language, excludedSkills, excludedMemories, selectionReady])
 
   const toggle = (set: Set<string>, id: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
@@ -1248,8 +1289,29 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
         const requestId = `gc-start-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
         api(`/api/sessions/${s.session_id}/messages`, { method: 'POST', body: JSON.stringify({ content: startContent, request_id: requestId }) }).catch(() => {})
       }
-      onClose()
+      // 已自动启动 → 弹"创建成功"提示 (查看 / 再创建一个 / 关闭), 不自动跳转.
+      const detailUrl = s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/i/${issueId}?session=${s.session_id}` : undefined
+      setSuccess({ sessionId: s?.session_id, detailUrl, name: name.trim() })
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
+  }
+
+  // 创建成功弹窗: 已自动启动, 提供 查看(SPA 内进入会话) / 再创建一个(保留项目任务, 重置名称描述) / 关闭.
+  if (success) {
+    return (
+      <SessionCreateSuccess
+        name={success.name}
+        canView={!!success.detailUrl && !!onNavigate}
+        onView={() => { if (success.detailUrl && onNavigate) onNavigate(success.detailUrl); onClose() }}
+        onCreateAnother={() => {
+          // 重置为"未手动编辑", 让名称按当前目标任务重新自动生成 (带新时间戳); 保留项目/任务/模型/语言/Skill·Memory.
+          nameUserTouchedRef.current = false
+          setName(selectedIssue ? formatDefaultSessionName(selectedIssue.title) : SESSION_NAME_PLACEHOLDER)
+          setDesc(''); setAttachments([]); setErr(''); setSuccess(null)
+        }}
+        onClose={onClose}
+        dark={dark}
+      />
+    )
   }
 
   return (
@@ -1296,7 +1358,7 @@ export function CreateSessionForm({ onClose, onDone, defaultProjectId, defaultIs
         </div>
         <div className="flex-1 min-w-0">
           <SectionLabel>会话名称</SectionLabel>
-          <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="给这个会话起个名字" dark={dark} />
+          <TextInput value={name} onChange={v => { setName(v); nameUserTouchedRef.current = true; setErr('') }} placeholder="给这个会话起个名字" dark={dark} />
         </div>
       </div>
       <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个会话完成什么" attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
@@ -1692,7 +1754,7 @@ export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate }: {
 
   if (kind === 'project') return <CreateProjectForm onClose={onClose} onDone={handleDone} />
   if (kind === 'issue') return <CreateIssueForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />
-  if (kind === 'session') return <CreateSessionForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} defaultIssueId={ctx.issueId} />
+  if (kind === 'session') return <CreateSessionForm onClose={onClose} onDone={handleDone} onNavigate={onNavigate} defaultProjectId={ctx.projectId} defaultIssueId={ctx.issueId} />
   if (kind === 'research') return <CreateResearchForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />
   return null
 }

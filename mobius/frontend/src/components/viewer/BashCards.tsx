@@ -10,6 +10,7 @@
 import { Suspense, lazy, useMemo, useState } from 'react'
 import { splitDiffValue, codeFence } from './utils'
 import { CodePreviewRows, ResultTextPreview, CompactPlainTextFallback, WRITE_PREVIEW_LINE_LIMIT } from './text-preview'
+import { JsonlCopyButton } from './JsonlCopyButton'
 import type { BashToolResult } from './types'
 import type { BashCall } from '../jsonl-bash-helpers'
 
@@ -67,8 +68,10 @@ function BashCallCard({ call, index, results = [] }: { call: BashCall; index: nu
         <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
           {lines.length} lines
         </span>
-        <button
-          type="button"
+        <JsonlCopyButton
+          copied={copied}
+          title="复制完整命令到剪贴板"
+          copiedTitle="命令已复制"
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
@@ -77,11 +80,7 @@ function BashCallCard({ call, index, results = [] }: { call: BashCall; index: nu
               setTimeout(() => setCopied(false), 1000)
             })
           }}
-          className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
-          title="复制完整命令到剪贴板"
-        >
-          {copied ? '已复制 ✓' : '复制'}
-        </button>
+        />
       </div>
       <div className="max-h-[34rem] overflow-auto">
         {/* 多行命令首屏截断预览 (纯文本带行号), 折叠区里仍给完整高亮版; 单行/短命令直接全量高亮. */}
@@ -155,8 +154,10 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
           </>
         )}
         {copyText && (
-          <button
-            type="button"
+          <JsonlCopyButton
+            copied={copied}
+            title="复制完整返回结果到剪贴板"
+            copiedTitle="返回结果已复制"
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
@@ -165,11 +166,7 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
                 setTimeout(() => setCopied(false), 1000)
               })
             }}
-            className="flex-shrink-0 rounded border border-[var(--border-color)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-secondary)]"
-            title="复制完整返回结果到剪贴板"
-          >
-            {copied ? '已复制 ✓' : '复制'}
-          </button>
+          />
         )}
       </div>
       {result.imageUrls && result.imageUrls.length > 0 ? (

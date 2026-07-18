@@ -7,6 +7,7 @@
 import { useMemo, useState } from 'react'
 import { splitDiffValue, basename } from './utils'
 import { ResultTextPreview } from './text-preview'
+import { JsonlCopyButton } from './JsonlCopyButton'
 import type { ReadToolCall, BashToolResult } from './types'
 
 export function JsonEntryReadCalls({ calls, results = [] }: { calls: ReadToolCall[]; results?: BashToolResult[] }) {
@@ -56,8 +57,10 @@ function ReadCallCard({ call, index, results = [] }: { call: ReadToolCall; index
             {meta}
           </span>
         )}
-        <button
-          type="button"
+        <JsonlCopyButton
+          copied={copied}
+          title="复制文件路径到剪贴板"
+          copiedTitle="文件路径已复制"
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
@@ -66,11 +69,7 @@ function ReadCallCard({ call, index, results = [] }: { call: ReadToolCall; index
               setTimeout(() => setCopied(false), 1000)
             })
           }}
-          className="flex-shrink-0 rounded border border-[var(--border-color)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-secondary)]"
-          title="复制文件路径到剪贴板"
-        >
-          {copied ? '已复制 ✓' : '复制路径'}
-        </button>
+        />
       </div>
       {results.length > 0 ? (
         <div>
@@ -114,8 +113,10 @@ function ReadResultPanel({ result, fallbackPath }: { result: BashToolResult; fal
           </span>
         )}
         {text && (
-          <button
-            type="button"
+          <JsonlCopyButton
+            copied={copied}
+            title="复制读取内容到剪贴板"
+            copiedTitle="读取内容已复制"
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
@@ -124,11 +125,7 @@ function ReadResultPanel({ result, fallbackPath }: { result: BashToolResult; fal
                 setTimeout(() => setCopied(false), 1000)
               })
             }}
-            className="flex-shrink-0 rounded border border-[var(--border-color)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-secondary)]"
-            title="复制读取内容到剪贴板"
-          >
-            {copied ? '已复制 ✓' : '复制内容'}
-          </button>
+          />
         )}
       </div>
       {text ? (

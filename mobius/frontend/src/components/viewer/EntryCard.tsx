@@ -59,6 +59,7 @@ import { JsonEntryReadCalls } from './ReadCards'
 import { JsonEntryLocalCommandBlock } from './LocalCommandBlock'
 import { ImageOutputPanel } from './ImageOutput'
 import { CompactPlainTextFallback } from './text-preview'
+import { JsonlCopyButton } from './JsonlCopyButton'
 import type { AnyEntry, CardMode, BashToolResult } from './types'
 
 const CompactMarkdown = lazy(() => import('../jsonl-compact-markdown'))
@@ -163,7 +164,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const [open, setOpen] = useState<boolean>(
     isPatchApplyEvent || (!canCode && (canCompact || canImage || type === 'error')) || !!defaultExpanded
   )
-  // 精简模式复制按钮反馈: 点击后短暂显示「已复制 ✓」约 1 秒后还原
+  // 精简/字段模式复制按钮反馈: 点击后短暂切换为 Check 图标再还原.
   const [copied, setCopied] = useState<boolean>(false)
   const tourTarget = jsonEntryTourTarget(entry)
 
@@ -210,8 +211,10 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
       {hasHeaderAction && (
         <div className="absolute top-1 right-2 flex items-center gap-1.5 z-[5]">
           {open && mode === 'compact' && (
-            <button
-              type="button"
+            <JsonlCopyButton
+              copied={copied}
+              title="复制渲染前的原始 markdown 源"
+              copiedTitle="Markdown 已复制"
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -220,15 +223,13 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
                   setTimeout(() => setCopied(false), 1000)
                 })
               }}
-              className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
-              title="复制渲染前的原始 markdown 源"
-            >
-              {copied ? '已复制 ✓' : '复制'}
-            </button>
+            />
           )}
           {open && mode === 'field' && (
-            <button
-              type="button"
+            <JsonlCopyButton
+              copied={copied}
+              title="复制原始 JSON 到剪贴板"
+              copiedTitle="JSON 已复制"
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -242,11 +243,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
                   setTimeout(() => setCopied(false), 1000)
                 })
               }}
-              className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
-              title="复制原始 JSON 到剪贴板"
-            >
-              {copied ? '已复制 ✓' : '复制'}
-            </button>
+            />
           )}
           {open && (canCompact || canCode || canImage) && (
             <button
