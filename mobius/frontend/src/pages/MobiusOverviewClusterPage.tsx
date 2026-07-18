@@ -436,6 +436,14 @@ function spawnPointAround(center: Point, key: string, radius: number) {
   }
 }
 
+function spawnPointOnRing(center: Point, key: string, radius: number) {
+  const angle = ((hashValue(key) % 6283) / 1000)
+  return {
+    x: center.x + Math.cos(angle) * radius,
+    y: center.y + Math.sin(angle) * radius,
+  }
+}
+
 function projectSpawnPoint(project: ProjectCluster, previousProjects: ProjectCluster[]) {
   if (!previousProjects.length) return { x: project.anchorX, y: project.anchorY }
   let weight = 0
@@ -448,10 +456,10 @@ function projectSpawnPoint(project: ProjectCluster, previousProjects: ProjectClu
     cy += cluster.cy * w
   })
   const center = { x: cx / Math.max(1, weight), y: cy / Math.max(1, weight) }
-  const largestExisting = Math.max(...previousProjects.map((cluster) => cluster.sessions.length))
-  if (project.sessions.length >= largestExisting) return center
-  const averageRadius = previousProjects.reduce((sum, cluster) => sum + cluster.radius, 0) / previousProjects.length
-  return spawnPointAround(center, `project:${project.id}`, Math.max(140, averageRadius + project.radius + PROJECT_TARGET_GAP))
+  const outerRadius = previousProjects.reduce((maxRadius, cluster) => {
+    return Math.max(maxRadius, Math.hypot(cluster.cx - center.x, cluster.cy - center.y) + cluster.radius)
+  }, 0)
+  return spawnPointOnRing(center, `project:${project.id}`, outerRadius + project.radius + PROJECT_TARGET_GAP + 72)
 }
 
 function remapSelection(selection: Selection | null, model: ClusterModel): Selection | null {
