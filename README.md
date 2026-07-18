@@ -75,16 +75,9 @@ XiaoMo is the natural-language interface to the entire system. Talk to it: creat
   <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo.jpg" alt="XiaoMo assistant interface" width="720" />
 </p>
 
-<table align="center">
-  <tr>
-    <td width="50%" align="center">
-      <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-app-left-v2.jpg" alt="XiaoMo on mobile" width="60%" />
-    </td>
-    <td width="50%" align="center">
-      <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-app-right-v2.jpg" alt="XiaoMo on mobile" width="60%" />
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-app.jpg" alt="XiaoMo on mobile" width="720" />
+</p>
 
 **On your phone.** XiaoMo goes wherever you go — chat with your agents, track progress, and approve decisions from anywhere. The iOS and Android apps are fully available now.
 
