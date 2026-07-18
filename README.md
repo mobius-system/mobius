@@ -75,7 +75,7 @@ XiaoMo is the natural-language interface to the entire system. Talk to it: creat
   <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo.jpg" alt="XiaoMo assistant interface" width="720" />
 </p>
 
-<table>
+<table align="center" width="60%">
   <tr>
     <td width="50%" align="center">
       <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-app-left.jpg" alt="XiaoMo on mobile" />
