@@ -10,6 +10,7 @@ import { OpenInVSCodeButton, ProjectPortEntryButton } from './project-files'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
 import { useVisibleJsonl } from './session-jsonl-filter'
+import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
 import { AimuxLinkIndicator } from './aimux-link-indicator'
 import { AnnouncePcButton } from './announce-pc-button'
@@ -1426,6 +1427,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
   // 当前 session 是否已收到 SSE 权威 jsonl_history (reset). true 后缓存兜底不再覆盖, 避免用旧值盖掉新值.
   const freshHistoryReceivedRef = useRef(false)
   const [showRaw, setShowRaw] = useState(false)
+  const [rawJsonlCopied, setRawJsonlCopied] = useState(false)
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
   const [fileChangesOpen, setFileChangesOpen] = useState(false)
   const [bashCommandsOpen, setBashCommandsOpen] = useState(false)
@@ -3643,7 +3645,11 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                   <span className="text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }} title={jsonlPath}>{jsonlPath}</span>
                 )}
               </span>
-              <button onClick={async () => {
+              <JsonlCopyButton
+                copied={rawJsonlCopied}
+                title="复制全部 JSONL 到剪贴板"
+                copiedTitle="JSONL 已复制"
+                onClick={async () => {
                   // 复制全部前必须确保拿到完整 entries: 后端 SSE 默认只回灌末尾窗口,
                   // 且 REST 单次最多 5000 条. 这里分页拉满全量, 不省略不截断.
                   try {
@@ -3673,11 +3679,11 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
                       }
                     }
                     await navigator.clipboard.writeText(entriesToCopy.map(e => JSON.stringify(e)).join('\n'))
+                    setRawJsonlCopied(true)
+                    setTimeout(() => setRawJsonlCopied(false), 1000)
                   } catch {}
                 }}
-                className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
-                style={{ color: 'var(--text-secondary)' }}
-                title="复制全部 JSONL 到剪贴板">复制全部</button>
+              />
               <button onClick={() => setShowRaw(false)}
                 className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
                 style={{ color: 'var(--text-secondary)' }}>关闭</button>
