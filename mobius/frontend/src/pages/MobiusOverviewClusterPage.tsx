@@ -32,6 +32,12 @@ type ProjectGraphData = {
   sessionsByResearch: Record<string, any[]>
 }
 
+type ClusterModel = {
+  nodes: ClusterSession[]
+  parentClusters: ParentCluster[]
+  projectClusters: ProjectCluster[]
+}
+
 type ClusterSession = {
   id: string
   kind: SessionKind
@@ -305,7 +311,7 @@ function parentAnchor(project: { x: number; y: number }, index: number, count: n
   return { x: project.x + Math.cos(angle) * ring, y: project.y + Math.sin(angle) * ring }
 }
 
-function buildClusterModel(projects: any[], dataByProject: Record<string, ProjectGraphData>, cutoffMs: number) {
+function buildClusterModel(projects: any[], dataByProject: Record<string, ProjectGraphData>, cutoffMs: number): ClusterModel {
   const nodes: ClusterSession[] = []
   const parentClusters: ParentCluster[] = []
   const projectClusters: ProjectCluster[] = []
@@ -398,6 +404,171 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
     }
   })
 
+  return { nodes, parentClusters, projectClusters }
+}
+
+function parentClusterKey(cluster: Pick<ParentCluster, 'projectId' | 'kind' | 'id'>) {
+  return `${cluster.projectId}:${cluster.kind}:${cluster.id}`
+}
+
+function sessionNodeKey(node: Pick<ClusterSession, 'projectId' | 'parentKind' | 'parentId' | 'id'>) {
+  return `${node.projectId}:${node.parentKind}:${node.parentId}:${node.id}`
+}
+
+function spawnPointAround(center: Point, key: string, radius: number) {
+  const h = hashValue(key)
+  const angle = ((h % 6283) / 1000)
+  const distance = radius * (0.45 + (((h >> 9) % 1000) / 1000) * 0.55)
+  return {
+    x: center.x + Math.cos(angle) * distance,
+    y: center.y + Math.sin(angle) * distance,
+  }
+}
+
+function projectSpawnPoint(project: ProjectCluster, previousProjects: ProjectCluster[]) {
+  if (!previousProjects.length) return { x: project.anchorX, y: project.anchorY }
+  let weight = 0
+  let cx = 0
+  let cy = 0
+  previousProjects.forEach((cluster) => {
+    const w = Math.max(1, Math.sqrt(cluster.sessions.length))
+    weight += w
+    cx += cluster.cx * w
+    cy += cluster.cy * w
+  })
+  const center = { x: cx / Math.max(1, weight), y: cy / Math.max(1, weight) }
+  const averageRadius = previousProjects.reduce((sum, cluster) => sum + cluster.radius, 0) / previousProjects.length
+  return spawnPointAround(center, `project:${project.id}`, Math.max(140, averageRadius + project.radius + PROJECT_TARGET_GAP))
+}
+
+function remapSelection(selection: Selection | null, model: ClusterModel): Selection | null {
+  if (!selection) return null
+  if (selection.kind === 'project') {
+    const cluster = model.projectClusters.find((item) => item.id === selection.id)
+    return cluster ? { kind: 'project', id: cluster.id, title: cluster.title, source: cluster.source, cluster } : null
+  }
+  if (selection.kind === 'issue' || selection.kind === 'research') {
+    const cluster = model.parentClusters.find((item) => item.projectId === selection.cluster.projectId && item.kind === selection.kind && item.id === selection.id)
+    return cluster ? { kind: cluster.kind, id: cluster.id, title: cluster.title, source: cluster.source, cluster } : null
+  }
+  if (!isSessionSelection(selection)) return null
+  const node = model.nodes.find((item) => (
+    item.projectId === selection.session.projectId
+    && item.parentKind === selection.session.parentKind
+    && item.parentId === selection.session.parentId
+    && item.kind === selection.kind
+    && item.id === selection.id
+  ))
+  return node ? { kind: node.kind, id: node.id, title: node.title, source: node.source, session: node } : null
+}
+
+function reconcileClusterModel(previous: ClusterModel, desired: ClusterModel): ClusterModel {
+  if (!previous.nodes.length && !previous.parentClusters.length && !previous.projectClusters.length) {
+    updateClusterShapes(desired.parentClusters, desired.projectClusters)
+    return desired
+  }
+
+  const previousProjectById = new Map(previous.projectClusters.map((cluster) => [cluster.id, cluster]))
+  const previousParentByKey = new Map(previous.parentClusters.map((cluster) => [parentClusterKey(cluster), cluster]))
+  const previousNodeByKey = new Map(previous.nodes.map((node) => [sessionNodeKey(node), node]))
+  const projectById = new Map<string, ProjectCluster>()
+  const parentByKey = new Map<string, ParentCluster>()
+  const projectClusters: ProjectCluster[] = []
+  const parentClusters: ParentCluster[] = []
+  const nodes: ClusterSession[] = []
+
+  desired.projectClusters.forEach((desiredProject) => {
+    const previousProject = previousProjectById.get(desiredProject.id)
+    const spawn = previousProject
+      ? { x: previousProject.anchorX, y: previousProject.anchorY, cx: previousProject.cx, cy: previousProject.cy }
+      : (() => {
+          const point = projectSpawnPoint(desiredProject, previous.projectClusters)
+          return { x: point.x, y: point.y, cx: point.x, cy: point.y }
+        })()
+    const cluster: ProjectCluster = {
+      ...desiredProject,
+      parents: [],
+      sessions: [],
+      anchorX: spawn.x,
+      anchorY: spawn.y,
+      cx: spawn.cx,
+      cy: spawn.cy,
+      radius: previousProject?.radius || desiredProject.radius,
+      shape: previousProject?.shape || { type: 'circle', cx: spawn.cx, cy: spawn.cy, r: desiredProject.radius },
+    }
+    projectById.set(cluster.id, cluster)
+    projectClusters.push(cluster)
+  })
+
+  desired.parentClusters.forEach((desiredParent) => {
+    const project = projectById.get(desiredParent.projectId)
+    if (!project) return
+    const key = parentClusterKey(desiredParent)
+    const previousParent = previousParentByKey.get(key)
+    const spawn = previousParent
+      ? { x: previousParent.anchorX, y: previousParent.anchorY, cx: previousParent.cx, cy: previousParent.cy }
+      : (() => {
+          const point = spawnPointAround(
+            { x: project.anchorX, y: project.anchorY },
+            `parent:${key}`,
+            Math.max(54, Math.min(150, project.radius * 0.42)),
+          )
+          return { x: point.x, y: point.y, cx: point.x, cy: point.y }
+        })()
+    const cluster: ParentCluster = {
+      ...desiredParent,
+      sessions: [],
+      anchorX: spawn.x,
+      anchorY: spawn.y,
+      cx: spawn.cx,
+      cy: spawn.cy,
+      radius: previousParent?.radius || desiredParent.radius,
+      shape: previousParent?.shape || { type: 'circle', cx: spawn.cx, cy: spawn.cy, r: desiredParent.radius },
+    }
+    parentByKey.set(key, cluster)
+    parentClusters.push(cluster)
+    project.parents.push(cluster)
+  })
+
+  desired.nodes.forEach((desiredNode) => {
+    const parent = parentByKey.get(parentClusterKey({
+      projectId: desiredNode.projectId,
+      kind: desiredNode.parentKind,
+      id: desiredNode.parentId,
+    }))
+    const project = projectById.get(desiredNode.projectId)
+    if (!parent || !project) return
+    const key = sessionNodeKey(desiredNode)
+    const previousNode = previousNodeByKey.get(key)
+    const node: ClusterSession = { ...desiredNode }
+    if (previousNode) {
+      node.x = previousNode.x
+      node.y = previousNode.y
+      node.vx = previousNode.vx
+      node.vy = previousNode.vy
+      node.fixed = previousNode.fixed
+    } else {
+      const target = { x: parent.anchorX + desiredNode.hexX, y: parent.anchorY + desiredNode.hexY }
+      const siblings = parent.sessions
+      const center = siblings.length
+        ? {
+            x: siblings.reduce((sum, item) => sum + item.x, 0) / siblings.length,
+            y: siblings.reduce((sum, item) => sum + item.y, 0) / siblings.length,
+          }
+        : { x: parent.anchorX, y: parent.anchorY }
+      const spawn = spawnPointAround(center, `session:${key}`, Math.max(16, desiredNode.r * 2.6))
+      node.x = spawn.x
+      node.y = spawn.y
+      node.vx = (target.x - spawn.x) * 0.025
+      node.vy = (target.y - spawn.y) * 0.025
+    }
+    nodes.push(node)
+    parent.sessions.push(node)
+    project.sessions.push(node)
+  })
+
+  updateClusterShapes(parentClusters, projectClusters)
+  resolveParentAndProjectOverlaps(parentClusters, projectClusters)
   return { nodes, parentClusters, projectClusters }
 }
 
@@ -1210,8 +1381,9 @@ export default function MobiusOverviewClusterPage() {
   const [paused, setPaused] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
-  const modelRef = useRef<{ nodes: ClusterSession[]; parents: ParentCluster[]; projects: ProjectCluster[] }>({ nodes: [], parents: [], projects: [] })
+  const modelRef = useRef<ClusterModel>({ nodes: [], parentClusters: [], projectClusters: [] })
   const selectedRef = useRef<Selection | null>(null)
+  const didInitialFitRef = useRef(false)
   const alphaRef = useRef(0.85)
   const pausedRef = useRef(false)
   const zoomRef = useRef(1)
@@ -1333,7 +1505,7 @@ export default function MobiusOverviewClusterPage() {
   const worldFromEvent = useCallback((event: PointerEvent<HTMLCanvasElement>) => worldFromClientPoint(event.clientX, event.clientY), [worldFromClientPoint])
 
   const hitTest = useCallback((world: Point): HitTarget | null => {
-    const { nodes, parents, projects: projectClusters } = modelRef.current
+    const { nodes, parentClusters: parents, projectClusters } = modelRef.current
     let bestNode: ClusterSession | null = null
     let bestDist = Infinity
     const hitRadius = Math.max(9, 11 / zoomRef.current)
@@ -1370,7 +1542,7 @@ export default function MobiusOverviewClusterPage() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const { width, height, dpr } = sizeRef.current
-    const { nodes, parents, projects: projectClusters } = modelRef.current
+    const { nodes, parentClusters: parents, projectClusters } = modelRef.current
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, width, height)
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#0f172a'
@@ -1453,16 +1625,17 @@ export default function MobiusOverviewClusterPage() {
   }, [selected])
 
   useEffect(() => {
-    modelRef.current = {
-      nodes: model.nodes,
-      parents: model.parentClusters,
-      projects: model.projectClusters,
-    }
-    updateClusterShapes(model.parentClusters, model.projectClusters)
-    alphaRef.current = 0.9
-    setSelected(null)
+    const previous = modelRef.current
+    const reconciled = reconcileClusterModel(previous, model)
+    const wasEmpty = previous.nodes.length === 0
+    modelRef.current = reconciled
+    alphaRef.current = Math.max(alphaRef.current, wasEmpty ? 0.9 : 0.58)
+    setSelected((current) => remapSelection(current, reconciled))
     setHoverLabel(null)
-    requestAnimationFrame(() => fitView(model.nodes, 0.82, true))
+    if (!didInitialFitRef.current && reconciled.nodes.length > 0) {
+      didInitialFitRef.current = true
+      requestAnimationFrame(() => fitView(reconciled.nodes, 0.82, true))
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model])
 
@@ -1551,10 +1724,10 @@ export default function MobiusOverviewClusterPage() {
   useEffect(() => {
     const step = () => {
       if (!pausedRef.current && alphaRef.current > 0.018) {
-        tickLayout(modelRef.current.nodes, modelRef.current.parents, modelRef.current.projects, alphaRef.current)
+        tickLayout(modelRef.current.nodes, modelRef.current.parentClusters, modelRef.current.projectClusters, alphaRef.current)
         alphaRef.current *= 0.986
       } else {
-        updateClusterShapes(modelRef.current.parents, modelRef.current.projects)
+        updateClusterShapes(modelRef.current.parentClusters, modelRef.current.projectClusters)
       }
       draw()
       frameRef.current = requestAnimationFrame(step)
@@ -1686,7 +1859,7 @@ export default function MobiusOverviewClusterPage() {
 
   const focusProject = (projectId: string) => {
     cancelViewportAnimation()
-    const cluster = modelRef.current.projects.find((item) => item.id === projectId)
+    const cluster = modelRef.current.projectClusters.find((item) => item.id === projectId)
     if (!cluster) return
     setSelected({ kind: 'project', id: cluster.id, title: cluster.title, source: cluster.source, cluster })
   }
