@@ -151,6 +151,10 @@ const SESSION_RADIUS_SCALE = 2
 const PROJECT_TARGET_GAP = 34
 const PROJECT_COLLISION_GAP = 18
 const DOMINANT_PROJECT_ANCHOR_PULL = 0.08
+const PROJECT_GATHER_MIN_ALPHA = 0.24
+const PROJECT_GATHER_STRENGTH = 0.075
+const PROJECT_GATHER_MAX_STEP = 28
+const PROJECT_GATHER_STOP_EXCESS = 2
 const PROJECT_COLORS = ['#0ea5e9', '#22c55e', '#f97316', '#a855f7', '#14b8a6', '#e11d48', '#84cc16', '#6366f1', '#f59e0b', '#06b6d4']
 
 function activeTimeMs(item: any) {
@@ -942,13 +946,26 @@ function dominantProjectCluster(projectClusters: ProjectCluster[]) {
   }, null)
 }
 
+function projectGatherExcess(projectClusters: ProjectCluster[]) {
+  if (projectClusters.length <= 1) return 0
+  const centerProject = dominantProjectCluster(projectClusters)
+  if (!centerProject) return 0
+  return projectClusters.reduce((maxExcess, cluster) => {
+    if (cluster.id === centerProject.id) return maxExcess
+    const dist = Math.hypot(cluster.cx - centerProject.cx, cluster.cy - centerProject.cy)
+    const targetDist = centerProject.radius + cluster.radius + PROJECT_TARGET_GAP
+    return Math.max(maxExcess, dist - targetDist)
+  }, 0)
+}
+
 function attractProjectClusters(projectClusters: ProjectCluster[], alpha: number) {
   if (projectClusters.length <= 1) return
   const centerProject = dominantProjectCluster(projectClusters)
   if (!centerProject) return
+  const gatherAlpha = Math.max(alpha, PROJECT_GATHER_MIN_ALPHA)
   const centerOffset = Math.hypot(centerProject.cx, centerProject.cy)
   if (centerOffset > 0.5) {
-    const pull = Math.min(9, centerOffset * DOMINANT_PROJECT_ANCHOR_PULL) * alpha
+    const pull = Math.min(9, centerOffset * DOMINANT_PROJECT_ANCHOR_PULL) * gatherAlpha
     translateProjectCluster(centerProject, (-centerProject.cx / centerOffset) * pull, (-centerProject.cy / centerOffset) * pull)
   }
   const centerX = centerProject.cx
@@ -961,37 +978,9 @@ function attractProjectClusters(projectClusters: ProjectCluster[], alpha: number
     const dist = Math.hypot(dx, dy)
     const restDistance = centerProject.radius + cluster.radius + PROJECT_TARGET_GAP
     if (dist <= restDistance) return
-    const pull = Math.min(6.5, (dist - restDistance) * 0.012) * alpha
+    const pull = Math.min(PROJECT_GATHER_MAX_STEP, (dist - restDistance) * PROJECT_GATHER_STRENGTH) * gatherAlpha
     translateProjectCluster(cluster, (dx / dist) * pull, (dy / dist) * pull)
   })
-
-  for (let i = 0; i < projectClusters.length; i += 1) {
-    const a = projectClusters[i]
-    for (let j = i + 1; j < projectClusters.length; j += 1) {
-      const b = projectClusters[j]
-      let dx = b.cx - a.cx
-      let dy = b.cy - a.cy
-      let dist = Math.hypot(dx, dy)
-      if (dist < 0.001) {
-        dx = 0.01 + ((hashValue(`${a.id}:${b.id}`) % 100) / 1000)
-        dy = 0.01
-        dist = Math.hypot(dx, dy)
-      }
-      const targetDist = a.radius + b.radius + PROJECT_TARGET_GAP
-      if (dist <= targetDist) continue
-      const nx = dx / dist
-      const ny = dy / dist
-      const pull = Math.min(10, (dist - targetDist) * 0.018) * alpha
-      if (a.id === centerProject.id) {
-        translateProjectCluster(b, -nx * pull, -ny * pull)
-      } else if (b.id === centerProject.id) {
-        translateProjectCluster(a, nx * pull, ny * pull)
-      } else {
-        translateProjectCluster(a, nx * pull * 0.5, ny * pull * 0.5)
-        translateProjectCluster(b, -nx * pull * 0.5, -ny * pull * 0.5)
-      }
-    }
-  }
 }
 
 function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], projectClusters: ProjectCluster[], alpha: number) {
@@ -1772,9 +1761,16 @@ export default function MobiusOverviewClusterPage() {
 
   useEffect(() => {
     const step = () => {
-      if (!pausedRef.current && alphaRef.current > 0.018) {
-        tickLayout(modelRef.current.nodes, modelRef.current.parentClusters, modelRef.current.projectClusters, alphaRef.current)
-        alphaRef.current *= 0.986
+      const gatherExcess = projectGatherExcess(modelRef.current.projectClusters)
+      const needsProjectGather = gatherExcess > PROJECT_GATHER_STOP_EXCESS
+      if (!pausedRef.current && (alphaRef.current > 0.018 || needsProjectGather)) {
+        tickLayout(
+          modelRef.current.nodes,
+          modelRef.current.parentClusters,
+          modelRef.current.projectClusters,
+          needsProjectGather ? Math.max(alphaRef.current, PROJECT_GATHER_MIN_ALPHA) : alphaRef.current,
+        )
+        if (alphaRef.current > 0.018) alphaRef.current *= 0.986
       } else {
         updateClusterShapes(modelRef.current.parentClusters, modelRef.current.projectClusters)
       }
