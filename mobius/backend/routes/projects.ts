@@ -1752,7 +1752,7 @@ router.get('/:id/sessions-overview', auth, (req: express.Request, res: express.R
   const issues = createSessionBucket(readableIssueIds);
   const researches = createSessionBucket(readableResearchIds);
 
-  const previewLimit = Math.max(1, Math.min(Number(req.query.preview_limit ?? req.query.previewLimit) || 4, 100));
+  const previewLimit = Math.max(1, Math.min(Number(req.query.preview_limit ?? req.query.previewLimit) || 4, 500));
   const sessions = Sessions.listActiveForProjectCardIds(project.id, [...readableIssueIds], [...readableResearchIds], previewLimit);
   sessions.forEach((session: any) => {
     if (!canReadSession(user, session)) return;

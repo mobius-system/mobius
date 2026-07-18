@@ -27,8 +27,20 @@ win:
   signAndEditExecutable: false
 mac:
   target:
+    - dmg
     - zip
-  identity: null  # 非 macOS 主机无法签名，显式关闭；产物免签名，用户首次打开需右键“打开”
+  # macOS 主机原生签名分发。证书名须与 keychain 里 "Developer ID Application: ..." 完全一致。
+  identity: "Developer ID Application: NutShell AI(Beijing)Technology Co., Ltd (6FMVHL6RLY)"
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # 公证：构建前须 export APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID。
+  # electron-builder 调 notarytool 提交 Apple，通过后自动 staple 到 dmg，用户可双击直接打开。
+  notarize:
+    teamId: 6FMVHL6RLY
+  # entitlements：Electron 需 allow-jit/allow-unsigned-executable-memory；
+  # disable-library-validation 让内置 python-build-standalone 的动态库可加载（公证必需）。
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
