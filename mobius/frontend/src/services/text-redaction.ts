@@ -505,8 +505,6 @@ export function startTextRedactionRuntime() {
 
   const textStates = new WeakMap<Text, TextNodeState>()
   const attributeStates = new WeakMap<Element, Map<string, AttributeState>>()
-  const trackedTexts = new Set<Text>()
-  const trackedElements = new Set<Element>()
   let enabled = readTextRedactionEnabled()
   let rules = enabled ? activeRules(readTextRedactionRules()) : []
 
@@ -519,7 +517,6 @@ export function startTextRedactionRuntime() {
     const redacted = redactValue(original, rules)
 
     textStates.set(node, { original, redacted })
-    trackedTexts.add(node)
     if (current !== redacted) node.nodeValue = redacted
   }
 
@@ -530,7 +527,6 @@ export function startTextRedactionRuntime() {
     if (!state) {
       state = new Map()
       attributeStates.set(element, state)
-      trackedElements.add(element)
     }
 
     for (const attr of REDACTED_ATTRIBUTES) {
@@ -576,7 +572,6 @@ export function startTextRedactionRuntime() {
   // ── 文本框 mask: textarea / 文本 input 的 value 命中关键词时, 整框视觉模糊. ──
   // 不改 value (避免污染表单提交), 只用 CSS filter: blur().
   const MASKABLE_INPUT_TYPES = new Set(['text', 'search', 'url', 'email', 'tel', 'number', ''])
-  const maskedElements = new Set<HTMLElement>()
 
   function ensureMaskStyleElement() {
     const STYLE_ID = 'mobius-text-redaction-mask-style'
@@ -627,7 +622,6 @@ export function startTextRedactionRuntime() {
       if (!element.classList.contains(TEXT_REDACTION_MASK_CLASS)) {
         element.classList.add(TEXT_REDACTION_MASK_CLASS)
       }
-      maskedElements.add(element)
     } else if (element.classList.contains(TEXT_REDACTION_MASK_CLASS)) {
       element.classList.remove(TEXT_REDACTION_MASK_CLASS)
     }
@@ -735,25 +729,34 @@ export function startTextRedactionRuntime() {
     document.body.removeEventListener('input', handleInput, true)
     document.body.removeEventListener('change', handleChange, true)
 
-    for (const node of trackedTexts) {
+    // 还原文本节点：只遍历当前仍挂在文档中的文本节点。
+    // 已脱离文档的节点即将被 GC，无需还原（这也是不再持有强引用的前提）。
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+    for (
+      let node = walker.nextNode() as Text | null;
+      node;
+      node = walker.nextNode() as Text | null
+    ) {
       const state = textStates.get(node)
       if (state && node.nodeValue === state.redacted) node.nodeValue = state.original
     }
 
-    for (const element of trackedElements) {
+    // 还原属性：遍历 body 及其所有后代元素。
+    const restoreAttributes = (element: Element) => {
       const state = attributeStates.get(element)
-      if (!state) continue
-
+      if (!state) return
       for (const [attr, attrState] of state.entries()) {
         if (element.getAttribute(attr) === attrState.redacted) {
           element.setAttribute(attr, attrState.original)
         }
       }
     }
+    restoreAttributes(document.body)
+    document.body.querySelectorAll('*').forEach(restoreAttributes)
 
-    for (const element of maskedElements) {
-      element.classList.remove(TEXT_REDACTION_MASK_CLASS)
-    }
-    maskedElements.clear()
+    // 清除输入框 mask 类。
+    document.body
+      .querySelectorAll<HTMLElement>('.' + TEXT_REDACTION_MASK_CLASS)
+      .forEach((el) => el.classList.remove(TEXT_REDACTION_MASK_CLASS))
   }
 }
