@@ -69,10 +69,9 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
   }, [tooltipOpen, updateTooltipPosition])
 
   const showTooltip = useCallback(() => {
-    if (disabled) return
     updateTooltipPosition()
     setTooltipOpen(true)
-  }, [disabled, updateTooltipPosition])
+  }, [updateTooltipPosition])
 
   const hideTooltip = useCallback(() => {
     setTooltipOpen(false)
