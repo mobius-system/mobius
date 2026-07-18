@@ -150,6 +150,7 @@ const TOP_BAR_HEIGHT = 58
 const SESSION_RADIUS_SCALE = 2
 const PROJECT_TARGET_GAP = 34
 const PROJECT_COLLISION_GAP = 18
+const DOMINANT_PROJECT_ANCHOR_PULL = 0.08
 const PROJECT_COLORS = ['#0ea5e9', '#22c55e', '#f97316', '#a855f7', '#14b8a6', '#e11d48', '#84cc16', '#6366f1', '#f59e0b', '#06b6d4']
 
 function activeTimeMs(item: any) {
@@ -875,6 +876,7 @@ function resolveSessionOverlaps(nodes: ClusterSession[]) {
 
 function resolveParentAndProjectOverlaps(parentClusters: ParentCluster[], projectClusters: ProjectCluster[]) {
   const projectById = new Map(projectClusters.map((cluster) => [cluster.id, cluster]))
+  const centerProject = dominantProjectCluster(projectClusters)
   updateClusterShapes(parentClusters, projectClusters)
 
   for (let iter = 0; iter < 10; iter += 1) {
@@ -892,8 +894,14 @@ function resolveParentAndProjectOverlaps(parentClusters: ParentCluster[], projec
         } else {
           const pa = projectById.get(a.projectId)
           const pb = projectById.get(b.projectId)
-          if (pa) translateProjectCluster(pa, -sep.x, -sep.y)
-          if (pb) translateProjectCluster(pb, sep.x, sep.y)
+          if (pa?.id === centerProject?.id) {
+            if (pb) translateProjectCluster(pb, sep.x * 2, sep.y * 2)
+          } else if (pb?.id === centerProject?.id) {
+            if (pa) translateProjectCluster(pa, -sep.x * 2, -sep.y * 2)
+          } else {
+            if (pa) translateProjectCluster(pa, -sep.x, -sep.y)
+            if (pb) translateProjectCluster(pb, sep.x, sep.y)
+          }
         }
       }
     }
@@ -910,8 +918,14 @@ function resolveParentAndProjectOverlaps(parentClusters: ParentCluster[], projec
         const sep = separateCircles(a.cx, a.cy, a.radius, b.cx, b.cy, b.radius, PROJECT_COLLISION_GAP)
         if (!sep) continue
         moved = true
-        translateProjectCluster(a, -sep.x, -sep.y)
-        translateProjectCluster(b, sep.x, sep.y)
+        if (a.id === centerProject?.id) {
+          translateProjectCluster(b, sep.x * 2, sep.y * 2)
+        } else if (b.id === centerProject?.id) {
+          translateProjectCluster(a, -sep.x * 2, -sep.y * 2)
+        } else {
+          translateProjectCluster(a, -sep.x, -sep.y)
+          translateProjectCluster(b, sep.x, sep.y)
+        }
       }
     }
     updateClusterShapes(parentClusters, projectClusters)
@@ -932,6 +946,11 @@ function attractProjectClusters(projectClusters: ProjectCluster[], alpha: number
   if (projectClusters.length <= 1) return
   const centerProject = dominantProjectCluster(projectClusters)
   if (!centerProject) return
+  const centerOffset = Math.hypot(centerProject.cx, centerProject.cy)
+  if (centerOffset > 0.5) {
+    const pull = Math.min(9, centerOffset * DOMINANT_PROJECT_ANCHOR_PULL) * alpha
+    translateProjectCluster(centerProject, (-centerProject.cx / centerOffset) * pull, (-centerProject.cy / centerOffset) * pull)
+  }
   const centerX = centerProject.cx
   const centerY = centerProject.cy
 
@@ -963,8 +982,14 @@ function attractProjectClusters(projectClusters: ProjectCluster[], alpha: number
       const nx = dx / dist
       const ny = dy / dist
       const pull = Math.min(10, (dist - targetDist) * 0.018) * alpha
-      translateProjectCluster(a, nx * pull * 0.5, ny * pull * 0.5)
-      translateProjectCluster(b, -nx * pull * 0.5, -ny * pull * 0.5)
+      if (a.id === centerProject.id) {
+        translateProjectCluster(b, -nx * pull, -ny * pull)
+      } else if (b.id === centerProject.id) {
+        translateProjectCluster(a, nx * pull, ny * pull)
+      } else {
+        translateProjectCluster(a, nx * pull * 0.5, ny * pull * 0.5)
+        translateProjectCluster(b, -nx * pull * 0.5, -ny * pull * 0.5)
+      }
     }
   }
 }
@@ -1418,12 +1443,11 @@ export default function MobiusOverviewClusterPage() {
   const viewportAnimationRef = useRef<null | { frame: number; startedAt: number; duration: number; fromZoom: number; toZoom: number; fromOffset: Point; toOffset: Point }>(null)
   const dragRef = useRef<null | {
     pointerId: number
-    mode: 'pan' | 'node'
+    mode: 'pan'
     startX: number
     startY: number
     originX: number
     originY: number
-    node?: ClusterSession
     moved: boolean
     hit?: HitTarget | null
   }>(null)
@@ -1802,23 +1826,15 @@ export default function MobiusOverviewClusterPage() {
     cancelViewportAnimation()
     const world = worldFromEvent(event)
     const hit = hitTest(world)
-    const node = hit && isSessionHit(hit) ? hit.session : null
     dragRef.current = {
       pointerId: event.pointerId,
-      mode: node ? 'node' : 'pan',
+      mode: 'pan',
       startX: event.clientX,
       startY: event.clientY,
       originX: offsetRef.current.x,
       originY: offsetRef.current.y,
-      node: node || undefined,
       moved: false,
       hit,
-    }
-    if (node) {
-      node.fixed = true
-      node.x = world.x
-      node.y = world.y
-      alphaRef.current = Math.max(alphaRef.current, 0.34)
     }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -1829,13 +1845,7 @@ export default function MobiusOverviewClusterPage() {
     if (drag && drag.pointerId === event.pointerId) {
       const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 3
       drag.moved = drag.moved || moved
-      if (drag.mode === 'node' && drag.node) {
-        drag.node.x = world.x
-        drag.node.y = world.y
-        drag.node.vx = 0
-        drag.node.vy = 0
-        alphaRef.current = Math.max(alphaRef.current, 0.2)
-      } else if (drag.mode === 'pan') {
+      if (drag.mode === 'pan') {
         offsetRef.current = {
           x: drag.originX + event.clientX - drag.startX,
           y: drag.originY + event.clientY - drag.startY,
@@ -1863,13 +1873,6 @@ export default function MobiusOverviewClusterPage() {
   const handlePointerUp = (event: PointerEvent<HTMLCanvasElement>) => {
     const drag = dragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    if (drag.mode === 'node' && drag.node) {
-      const node = drag.node
-      window.setTimeout(() => {
-        node.fixed = false
-        alphaRef.current = Math.max(alphaRef.current, 0.18)
-      }, 900)
-    }
     if (!drag.moved) {
       const selection = selectionFromHit(drag.hit || hitTest(worldFromEvent(event)))
       setSelected(selection)
