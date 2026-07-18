@@ -50,6 +50,7 @@ type ClusterSession = {
   vx: number
   vy: number
   r: number
+  hexIndex: number
   fixed?: boolean
 }
 
@@ -325,7 +326,8 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
       const parentSessions: ClusterSession[] = []
       sortByRecent(parent.sessions).forEach((session: any, sessionIndex: number) => {
         const id = session.session_id || session.id
-        const offset = seededOffset(`${project.id}:${parent.item.id}:${id}`, 26 + Math.sqrt(sessionIndex) * 6)
+        const slot = hexGridOffset(sessionIndex)
+        const jitter = seededOffset(`${project.id}:${parent.item.id}:${id}`, 1.6)
         const node: ClusterSession = {
           id,
           kind: isResearchAgent(session) ? 'research_agent' : 'session',
@@ -339,11 +341,12 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
           parentKind: parent.kind,
           parentTitle: parentTitle(parent.item),
           source: session,
-          x: anchor.x + offset.x,
-          y: anchor.y + offset.y,
+          x: anchor.x + slot.x + jitter.x,
+          y: anchor.y + slot.y + jitter.y,
           vx: 0,
           vy: 0,
           r: session.agent_status === 'running' ? 6.2 : isResearchAgent(session) ? 5.2 : 4.6,
+          hexIndex: sessionIndex,
         }
         nodes.push(node)
         parentSessions.push(node)
@@ -394,96 +397,223 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
   return { nodes, parentClusters, projectClusters }
 }
 
-function averagePoint(nodes: ClusterSession[]) {
-  if (!nodes.length) return { x: 0, y: 0 }
-  let x = 0
-  let y = 0
-  nodes.forEach((node) => {
-    x += node.x
-    y += node.y
-  })
-  return { x: x / nodes.length, y: y / nodes.length }
-}
-
-function convexHull(points: Point[]) {
-  if (points.length <= 2) return points
-  const sorted = [...points].sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x)
-  const cross = (o: Point, a: Point, b: Point) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
-  const lower: Point[] = []
-  sorted.forEach((point) => {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop()
-    lower.push(point)
-  })
-  const upper: Point[] = []
-  for (let i = sorted.length - 1; i >= 0; i -= 1) {
-    const point = sorted[i]
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop()
-    upper.push(point)
-  }
-  upper.pop()
-  lower.pop()
-  return lower.concat(upper)
-}
-
-function buildClusterShape(nodes: ClusterSession[], padding: number): { shape: ClusterShape; cx: number; cy: number; radius: number } {
-  const center = averagePoint(nodes)
-  if (nodes.length === 0) return { shape: { type: 'circle', cx: center.x, cy: center.y, r: padding }, cx: center.x, cy: center.y, radius: padding }
-  if (nodes.length === 1) {
-    const r = padding + 18
-    return { shape: { type: 'circle', cx: center.x, cy: center.y, r }, cx: center.x, cy: center.y, radius: r }
-  }
-  if (nodes.length === 2) {
-    const [a, b] = nodes
-    const distance = Math.hypot(b.x - a.x, b.y - a.y)
-    const r = padding + 16
-    return {
-      shape: { type: 'capsule', x1: a.x, y1: a.y, x2: b.x, y2: b.y, r },
-      cx: center.x,
-      cy: center.y,
-      radius: distance / 2 + r,
+function hexGridOffset(index: number, spacing = 22) {
+  if (index <= 0) return { x: 0, y: 0 }
+  const directions = [
+    { q: -1, r: 1 },
+    { q: -1, r: 0 },
+    { q: 0, r: -1 },
+    { q: 1, r: -1 },
+    { q: 1, r: 0 },
+    { q: 0, r: 1 },
+  ]
+  let cursor = 1
+  for (let ring = 1; ring < 512; ring += 1) {
+    let q = ring
+    let r = 0
+    for (const dir of directions) {
+      for (let step = 0; step < ring; step += 1) {
+        if (cursor === index) {
+          return {
+            x: spacing * Math.sqrt(3) * (q + r / 2),
+            y: spacing * 1.5 * r,
+          }
+        }
+        q += dir.q
+        r += dir.r
+        cursor += 1
+      }
     }
   }
-  const hull = convexHull(nodes.map((node) => ({ x: node.x, y: node.y })))
-  const expanded = hull.map((point) => {
-    const dx = point.x - center.x
-    const dy = point.y - center.y
-    const len = Math.max(1, Math.hypot(dx, dy))
-    return { x: point.x + (dx / len) * padding, y: point.y + (dy / len) * padding }
+  return { x: 0, y: 0 }
+}
+
+function parentBubbleRadius(cluster: ParentCluster) {
+  const gridRadius = cluster.sessions.reduce((maxRadius, node) => {
+    const slot = hexGridOffset(node.hexIndex)
+    return Math.max(maxRadius, Math.hypot(slot.x, slot.y) + node.r + 18)
+  }, 0)
+  return Math.max(38, gridRadius)
+}
+
+function updateParentBubble(cluster: ParentCluster) {
+  const radius = parentBubbleRadius(cluster)
+  cluster.cx = cluster.anchorX
+  cluster.cy = cluster.anchorY
+  cluster.radius = radius
+  cluster.shape = { type: 'circle', cx: cluster.anchorX, cy: cluster.anchorY, r: radius }
+}
+
+function updateProjectBubble(cluster: ProjectCluster) {
+  if (!cluster.parents.length) {
+    cluster.cx = cluster.anchorX
+    cluster.cy = cluster.anchorY
+    cluster.radius = 80
+    cluster.shape = { type: 'circle', cx: cluster.anchorX, cy: cluster.anchorY, r: cluster.radius }
+    return
+  }
+  let weight = 0
+  let cx = 0
+  let cy = 0
+  cluster.parents.forEach((parent) => {
+    const w = Math.max(1, parent.sessions.length)
+    weight += w
+    cx += parent.cx * w
+    cy += parent.cy * w
   })
-  const radius = Math.max(...expanded.map((point) => Math.hypot(point.x - center.x, point.y - center.y)), padding)
-  return { shape: { type: 'polygon', points: expanded }, cx: center.x, cy: center.y, radius }
+  cx /= Math.max(1, weight)
+  cy /= Math.max(1, weight)
+  const radius = Math.max(
+    92,
+    ...cluster.parents.map((parent) => Math.hypot(parent.cx - cx, parent.cy - cy) + parent.radius + 34),
+  )
+  cluster.cx = cx
+  cluster.cy = cy
+  cluster.radius = radius
+  cluster.shape = { type: 'circle', cx, cy, r: radius }
 }
 
 function updateClusterShapes(parentClusters: ParentCluster[], projectClusters: ProjectCluster[]) {
-  parentClusters.forEach((cluster) => {
-    const next = buildClusterShape(cluster.sessions, 24)
-    cluster.cx = next.cx
-    cluster.cy = next.cy
-    cluster.radius = next.radius
-    cluster.shape = next.shape
-  })
-  projectClusters.forEach((cluster) => {
-    const next = buildClusterShape(cluster.sessions, 50)
-    cluster.cx = next.cx
-    cluster.cy = next.cy
-    cluster.radius = next.radius
-    cluster.shape = next.shape
+  parentClusters.forEach(updateParentBubble)
+  projectClusters.forEach(updateProjectBubble)
+}
+
+function translateParentCluster(cluster: ParentCluster, dx: number, dy: number) {
+  cluster.anchorX += dx
+  cluster.anchorY += dy
+  cluster.cx += dx
+  cluster.cy += dy
+  if (cluster.shape.type === 'circle') {
+    cluster.shape.cx += dx
+    cluster.shape.cy += dy
+  }
+  cluster.sessions.forEach((node) => {
+    node.x += dx
+    node.y += dy
   })
 }
 
-function applyClusterPush(a: { sessions: ClusterSession[] }, b: { sessions: ClusterSession[] }, dx: number, dy: number) {
-  a.sessions.forEach((node) => {
-    if (!node.fixed) {
-      node.vx -= dx
-      node.vy -= dy
-    }
+function translateProjectCluster(cluster: ProjectCluster, dx: number, dy: number) {
+  cluster.anchorX += dx
+  cluster.anchorY += dy
+  cluster.cx += dx
+  cluster.cy += dy
+  if (cluster.shape.type === 'circle') {
+    cluster.shape.cx += dx
+    cluster.shape.cy += dy
+  }
+  cluster.parents.forEach((parent) => translateParentCluster(parent, dx, dy))
+}
+
+function separateCircles(
+  ax: number,
+  ay: number,
+  ar: number,
+  bx: number,
+  by: number,
+  br: number,
+  gap: number,
+) {
+  let dx = bx - ax
+  let dy = by - ay
+  let dist = Math.hypot(dx, dy)
+  if (dist < 0.001) {
+    dx = 0.01
+    dy = 0.01
+    dist = Math.hypot(dx, dy)
+  }
+  const minDist = ar + br + gap
+  if (dist >= minDist) return null
+  const nx = dx / dist
+  const ny = dy / dist
+  const push = (minDist - dist) / 2 + 0.35
+  return { x: nx * push, y: ny * push }
+}
+
+function constrainSessionsToParents(parentClusters: ParentCluster[]) {
+  parentClusters.forEach((cluster) => {
+    const limit = Math.max(12, cluster.radius - 16)
+    cluster.sessions.forEach((node) => {
+      const dx = node.x - cluster.anchorX
+      const dy = node.y - cluster.anchorY
+      const dist = Math.hypot(dx, dy)
+      const maxDist = Math.max(4, limit - node.r)
+      if (dist <= maxDist) return
+      const nx = dx / Math.max(1, dist)
+      const ny = dy / Math.max(1, dist)
+      node.x = cluster.anchorX + nx * maxDist
+      node.y = cluster.anchorY + ny * maxDist
+      node.vx *= 0.35
+      node.vy *= 0.35
+    })
   })
-  b.sessions.forEach((node) => {
-    if (!node.fixed) {
-      node.vx += dx
-      node.vy += dy
+}
+
+function resolveSessionOverlaps(nodes: ClusterSession[]) {
+  for (let iter = 0; iter < 3; iter += 1) {
+    for (let i = 0; i < nodes.length; i += 1) {
+      const a = nodes[i]
+      for (let j = i + 1; j < nodes.length; j += 1) {
+        const b = nodes[j]
+        const sep = separateCircles(a.x, a.y, a.r, b.x, b.y, b.r, a.parentId === b.parentId ? 4 : 8)
+        if (!sep) continue
+        if (!a.fixed) {
+          a.x -= sep.x
+          a.y -= sep.y
+        }
+        if (!b.fixed) {
+          b.x += sep.x
+          b.y += sep.y
+        }
+      }
     }
-  })
+  }
+}
+
+function resolveParentAndProjectOverlaps(parentClusters: ParentCluster[], projectClusters: ProjectCluster[]) {
+  const projectById = new Map(projectClusters.map((cluster) => [cluster.id, cluster]))
+  updateClusterShapes(parentClusters, projectClusters)
+
+  for (let iter = 0; iter < 10; iter += 1) {
+    let moved = false
+    for (let i = 0; i < parentClusters.length; i += 1) {
+      const a = parentClusters[i]
+      for (let j = i + 1; j < parentClusters.length; j += 1) {
+        const b = parentClusters[j]
+        const sep = separateCircles(a.cx, a.cy, a.radius, b.cx, b.cy, b.radius, 12)
+        if (!sep) continue
+        moved = true
+        if (a.projectId === b.projectId) {
+          translateParentCluster(a, -sep.x, -sep.y)
+          translateParentCluster(b, sep.x, sep.y)
+        } else {
+          const pa = projectById.get(a.projectId)
+          const pb = projectById.get(b.projectId)
+          if (pa) translateProjectCluster(pa, -sep.x, -sep.y)
+          if (pb) translateProjectCluster(pb, sep.x, sep.y)
+        }
+      }
+    }
+    updateClusterShapes(parentClusters, projectClusters)
+    if (!moved) break
+  }
+
+  for (let iter = 0; iter < 8; iter += 1) {
+    let moved = false
+    for (let i = 0; i < projectClusters.length; i += 1) {
+      const a = projectClusters[i]
+      for (let j = i + 1; j < projectClusters.length; j += 1) {
+        const b = projectClusters[j]
+        const sep = separateCircles(a.cx, a.cy, a.radius, b.cx, b.cy, b.radius, 18)
+        if (!sep) continue
+        moved = true
+        translateProjectCluster(a, -sep.x, -sep.y)
+        translateProjectCluster(b, sep.x, sep.y)
+      }
+    }
+    updateClusterShapes(parentClusters, projectClusters)
+    if (!moved) break
+  }
 }
 
 function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], projectClusters: ProjectCluster[], alpha: number) {
@@ -496,12 +626,15 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
     const project = projectById.get(node.projectId)
     if (!node.fixed) {
       if (parent) {
-        node.vx += (parent.anchorX - node.x) * 0.028 * alpha
-        node.vy += (parent.anchorY - node.y) * 0.028 * alpha
+        const slot = hexGridOffset(node.hexIndex)
+        const targetX = parent.anchorX + slot.x
+        const targetY = parent.anchorY + slot.y
+        node.vx += (targetX - node.x) * 0.09 * alpha
+        node.vy += (targetY - node.y) * 0.09 * alpha
       }
       if (project) {
-        node.vx += (project.anchorX - node.x) * 0.007 * alpha
-        node.vy += (project.anchorY - node.y) * 0.007 * alpha
+        node.vx += (project.anchorX - node.x) * 0.0025 * alpha
+        node.vy += (project.anchorY - node.y) * 0.0025 * alpha
       }
     }
   })
@@ -539,41 +672,6 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
     }
   }
 
-  updateClusterShapes(parentClusters, projectClusters)
-
-  for (let i = 0; i < parentClusters.length; i += 1) {
-    const a = parentClusters[i]
-    for (let j = i + 1; j < parentClusters.length; j += 1) {
-      const b = parentClusters[j]
-      const sameProject = a.projectId === b.projectId
-      let dx = b.cx - a.cx
-      let dy = b.cy - a.cy
-      let dist = Math.max(1, Math.hypot(dx, dy))
-      const minDist = a.radius + b.radius + (sameProject ? 16 : 26)
-      if (dist >= minDist) continue
-      dx /= dist
-      dy /= dist
-      const push = (minDist - dist) * (sameProject ? 0.001 : 0.00055) * alpha
-      applyClusterPush(a, b, dx * push, dy * push)
-    }
-  }
-
-  for (let i = 0; i < projectClusters.length; i += 1) {
-    const a = projectClusters[i]
-    for (let j = i + 1; j < projectClusters.length; j += 1) {
-      const b = projectClusters[j]
-      let dx = b.cx - a.cx
-      let dy = b.cy - a.cy
-      let dist = Math.max(1, Math.hypot(dx, dy))
-      const minDist = a.radius + b.radius + 42
-      if (dist >= minDist) continue
-      dx /= dist
-      dy /= dist
-      const push = (minDist - dist) * 0.0009 * alpha
-      applyClusterPush(a, b, dx * push, dy * push)
-    }
-  }
-
   nodes.forEach((node) => {
     if (node.fixed) {
       node.vx = 0
@@ -585,6 +683,15 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
     node.x += node.vx
     node.y += node.vy
   })
+
+  updateClusterShapes(parentClusters, projectClusters)
+  constrainSessionsToParents(parentClusters)
+  resolveSessionOverlaps(nodes)
+  updateClusterShapes(parentClusters, projectClusters)
+  resolveParentAndProjectOverlaps(parentClusters, projectClusters)
+  constrainSessionsToParents(parentClusters)
+  resolveSessionOverlaps(nodes)
+  updateClusterShapes(parentClusters, projectClusters)
 }
 
 function drawShape(ctx: CanvasRenderingContext2D, shape: ClusterShape) {
@@ -1009,7 +1116,8 @@ export default function MobiusOverviewClusterPage() {
         if (cluster.radius < 64) return
         ctx.font = '600 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
         ctx.fillStyle = rgba(cluster.color, 0.88)
-        ctx.fillText(textEllipsis(ctx, cluster.title, Math.max(90, cluster.radius * 1.2)), cluster.cx - cluster.radius + 24, cluster.cy - cluster.radius + 25)
+        const label = textEllipsis(ctx, cluster.title, Math.max(70, cluster.radius * 1.25))
+        ctx.fillText(label, cluster.cx - ctx.measureText(label).width / 2, cluster.cy - cluster.radius + 24)
       })
     }
 
@@ -1019,7 +1127,8 @@ export default function MobiusOverviewClusterPage() {
         if (cluster.radius < 42) return
         ctx.font = '500 10px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
         ctx.fillStyle = rgba(cluster.color, 0.76)
-        ctx.fillText(textEllipsis(ctx, cluster.title, Math.max(70, cluster.radius * 1.35)), cluster.cx - cluster.radius + 16, cluster.cy)
+        const label = textEllipsis(ctx, cluster.title, Math.max(48, cluster.radius * 1.2))
+        ctx.fillText(label, cluster.cx - ctx.measureText(label).width / 2, cluster.cy)
       })
     }
 
