@@ -935,6 +935,7 @@ export default function MobiusOverviewClusterPage() {
   const offsetRef = useRef({ x: 0, y: 0 })
   const sizeRef = useRef({ width: 1, height: 1, dpr: 1 })
   const frameRef = useRef<number | null>(null)
+  const viewportAnimationRef = useRef<null | { frame: number; startedAt: number; duration: number; fromZoom: number; toZoom: number; fromOffset: Point; toOffset: Point }>(null)
   const dragRef = useRef<null | {
     pointerId: number
     mode: 'pan' | 'node'
@@ -1178,11 +1179,18 @@ export default function MobiusOverviewClusterPage() {
     alphaRef.current = 0.9
     setSelected(null)
     setHoverLabel(null)
-    requestAnimationFrame(() => fitView(model.nodes, 0.82))
+    requestAnimationFrame(() => fitView(model.nodes, 0.82, true))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model])
 
-  const fitView = useCallback((nodes = modelRef.current.nodes, maxZoom = 1.25) => {
+  const cancelViewportAnimation = useCallback(() => {
+    const animation = viewportAnimationRef.current
+    if (!animation) return
+    cancelAnimationFrame(animation.frame)
+    viewportAnimationRef.current = null
+  }, [])
+
+  const fitView = useCallback((nodes = modelRef.current.nodes, maxZoom = 1.25, smooth = false) => {
     const canvas = canvasRef.current
     if (!canvas) return
     const { width, height } = sizeRef.current
@@ -1194,11 +1202,44 @@ export default function MobiusOverviewClusterPage() {
       x: width / 2 - ((bounds.minX + bounds.maxX) / 2) * nextZoom,
       y: height / 2 - ((bounds.minY + bounds.maxY) / 2) * nextZoom,
     }
+    if (smooth) {
+      cancelViewportAnimation()
+      const startedAt = performance.now()
+      const fromZoom = zoomRef.current
+      const fromOffset = { ...offsetRef.current }
+      const duration = 480
+      const step = (now: number) => {
+        const rawT = clamp((now - startedAt) / duration, 0, 1)
+        const t = 1 - Math.pow(1 - rawT, 3)
+        zoomRef.current = fromZoom + (nextZoom - fromZoom) * t
+        offsetRef.current = {
+          x: fromOffset.x + (nextOffset.x - fromOffset.x) * t,
+          y: fromOffset.y + (nextOffset.y - fromOffset.y) * t,
+        }
+        setZoom(zoomRef.current)
+        if (rawT < 1) {
+          const frame = requestAnimationFrame(step)
+          viewportAnimationRef.current = { frame, startedAt, duration, fromZoom, toZoom: nextZoom, fromOffset, toOffset: nextOffset }
+        } else {
+          zoomRef.current = nextZoom
+          offsetRef.current = nextOffset
+          setZoom(nextZoom)
+          viewportAnimationRef.current = null
+        }
+        draw()
+      }
+      const frame = requestAnimationFrame(step)
+      viewportAnimationRef.current = { frame, startedAt, duration, fromZoom, toZoom: nextZoom, fromOffset, toOffset: nextOffset }
+      return
+    }
+    cancelViewportAnimation()
     zoomRef.current = nextZoom
     offsetRef.current = nextOffset
     setZoom(nextZoom)
     draw()
-  }, [draw])
+  }, [cancelViewportAnimation, draw])
+
+  useEffect(() => () => cancelViewportAnimation(), [cancelViewportAnimation])
 
   useEffect(() => {
     const viewport = viewportRef.current
@@ -1242,6 +1283,7 @@ export default function MobiusOverviewClusterPage() {
   }, [draw])
 
   const applyZoom = (nextZoom: number, anchor?: Point) => {
+    cancelViewportAnimation()
     const currentZoom = zoomRef.current
     const clampedZoom = clampZoom(nextZoom)
     if (Math.abs(clampedZoom - currentZoom) < 0.001) return
@@ -1269,6 +1311,7 @@ export default function MobiusOverviewClusterPage() {
 
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     if (event.button !== 0) return
+    cancelViewportAnimation()
     const world = worldFromEvent(event)
     const hit = hitTest(world)
     const node = hit && isSessionHit(hit) ? hit.session : null
@@ -1352,10 +1395,9 @@ export default function MobiusOverviewClusterPage() {
   }
 
   const focusProject = (projectId: string) => {
+    cancelViewportAnimation()
     const cluster = modelRef.current.projects.find((item) => item.id === projectId)
     if (!cluster) return
-    const nodes = cluster.sessions
-    fitView(nodes, 1.55)
     setSelected({ kind: 'project', id: cluster.id, title: cluster.title, source: cluster.source, cluster })
   }
 
