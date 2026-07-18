@@ -919,26 +919,30 @@ function resolveParentAndProjectOverlaps(parentClusters: ParentCluster[], projec
   }
 }
 
+function dominantProjectCluster(projectClusters: ProjectCluster[]) {
+  return projectClusters.reduce<ProjectCluster | null>((best, cluster) => {
+    if (!best) return cluster
+    const countDiff = cluster.sessions.length - best.sessions.length
+    if (countDiff !== 0) return countDiff > 0 ? cluster : best
+    return cluster.activeMs > best.activeMs ? cluster : best
+  }, null)
+}
+
 function attractProjectClusters(projectClusters: ProjectCluster[], alpha: number) {
   if (projectClusters.length <= 1) return
-  let totalWeight = 0
-  let centroidX = 0
-  let centroidY = 0
-  projectClusters.forEach((cluster) => {
-    const weight = Math.max(1, Math.sqrt(cluster.sessions.length))
-    totalWeight += weight
-    centroidX += cluster.cx * weight
-    centroidY += cluster.cy * weight
-  })
-  centroidX /= Math.max(1, totalWeight)
-  centroidY /= Math.max(1, totalWeight)
+  const centerProject = dominantProjectCluster(projectClusters)
+  if (!centerProject) return
+  const centerX = centerProject.cx
+  const centerY = centerProject.cy
 
   projectClusters.forEach((cluster) => {
-    const dx = centroidX - cluster.cx
-    const dy = centroidY - cluster.cy
+    if (cluster.id === centerProject.id) return
+    const dx = centerX - cluster.cx
+    const dy = centerY - cluster.cy
     const dist = Math.hypot(dx, dy)
-    if (dist < cluster.radius * 0.18) return
-    const pull = Math.min(6.5, Math.max(0, dist - cluster.radius * 0.18) * 0.012) * alpha
+    const restDistance = centerProject.radius + cluster.radius + PROJECT_TARGET_GAP
+    if (dist <= restDistance) return
+    const pull = Math.min(6.5, (dist - restDistance) * 0.012) * alpha
     translateProjectCluster(cluster, (dx / dist) * pull, (dy / dist) * pull)
   })
 
