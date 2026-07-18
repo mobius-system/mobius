@@ -77,6 +77,8 @@ type ParentCluster = {
   shape: ClusterShape
   anchorX: number
   anchorY: number
+  targetAnchorX?: number
+  targetAnchorY?: number
 }
 
 type ProjectCluster = {
@@ -155,6 +157,9 @@ const PROJECT_GATHER_MIN_ALPHA = 0.24
 const PROJECT_GATHER_STRENGTH = 0.075
 const PROJECT_GATHER_MAX_STEP = 28
 const PROJECT_GATHER_STOP_EXCESS = 2
+const CLUSTER_RADIUS_GROW_LERP = 0.42
+const CLUSTER_RADIUS_SHRINK_LERP = 0.2
+const EXISTING_PARENT_ANCHOR_REPACK_LERP = 0.28
 const PROJECT_COLORS = ['#0ea5e9', '#22c55e', '#f97316', '#a855f7', '#14b8a6', '#e11d48', '#84cc16', '#6366f1', '#f59e0b', '#06b6d4']
 
 function activeTimeMs(item: any) {
@@ -189,6 +194,13 @@ function clamp(value: number, min: number, max: number) {
 function clampZoom(value: number) {
   if (!Number.isFinite(value)) return 1
   return clamp(value, MIN_ZOOM, MAX_ZOOM)
+}
+
+function smoothValue(current: number, target: number, growFactor = CLUSTER_RADIUS_GROW_LERP, shrinkFactor = CLUSTER_RADIUS_SHRINK_LERP) {
+  if (!Number.isFinite(current)) return target
+  if (Math.abs(current - target) < 0.4) return target
+  const factor = target > current ? growFactor : shrinkFactor
+  return current + (target - current) * factor
 }
 
 function hashValue(value: string) {
@@ -497,6 +509,7 @@ function reconcileClusterModel(previous: ClusterModel, desired: ClusterModel): C
   const previousProjectById = new Map(previous.projectClusters.map((cluster) => [cluster.id, cluster]))
   const previousParentByKey = new Map(previous.parentClusters.map((cluster) => [parentClusterKey(cluster), cluster]))
   const previousNodeByKey = new Map(previous.nodes.map((node) => [sessionNodeKey(node), node]))
+  const desiredProjectById = new Map(desired.projectClusters.map((cluster) => [cluster.id, cluster]))
   const projectById = new Map<string, ProjectCluster>()
   const parentByKey = new Map<string, ParentCluster>()
   const projectClusters: ProjectCluster[] = []
@@ -531,6 +544,13 @@ function reconcileClusterModel(previous: ClusterModel, desired: ClusterModel): C
     if (!project) return
     const key = parentClusterKey(desiredParent)
     const previousParent = previousParentByKey.get(key)
+    const desiredProject = desiredProjectById.get(desiredParent.projectId)
+    const targetAnchor = desiredProject
+      ? {
+          x: project.anchorX + desiredParent.anchorX - desiredProject.anchorX,
+          y: project.anchorY + desiredParent.anchorY - desiredProject.anchorY,
+        }
+      : { x: desiredParent.anchorX, y: desiredParent.anchorY }
     const spawn = previousParent
       ? { x: previousParent.anchorX, y: previousParent.anchorY, cx: previousParent.cx, cy: previousParent.cy }
       : (() => {
@@ -541,6 +561,12 @@ function reconcileClusterModel(previous: ClusterModel, desired: ClusterModel): C
           )
           return { x: point.x, y: point.y, cx: point.x, cy: point.y }
         })()
+    if (previousParent) {
+      spawn.x = smoothValue(previousParent.anchorX, targetAnchor.x, EXISTING_PARENT_ANCHOR_REPACK_LERP, EXISTING_PARENT_ANCHOR_REPACK_LERP)
+      spawn.y = smoothValue(previousParent.anchorY, targetAnchor.y, EXISTING_PARENT_ANCHOR_REPACK_LERP, EXISTING_PARENT_ANCHOR_REPACK_LERP)
+      spawn.cx += spawn.x - previousParent.anchorX
+      spawn.cy += spawn.y - previousParent.anchorY
+    }
     const cluster: ParentCluster = {
       ...desiredParent,
       sessions: [],
@@ -550,6 +576,8 @@ function reconcileClusterModel(previous: ClusterModel, desired: ClusterModel): C
       cy: spawn.cy,
       radius: previousParent?.radius || desiredParent.radius,
       shape: previousParent?.shape || { type: 'circle', cx: spawn.cx, cy: spawn.cy, r: desiredParent.radius },
+      targetAnchorX: targetAnchor.x,
+      targetAnchorY: targetAnchor.y,
     }
     parentByKey.set(key, cluster)
     parentClusters.push(cluster)
@@ -745,7 +773,19 @@ function parentBubbleRadius(cluster: ParentCluster) {
 }
 
 function updateParentBubble(cluster: ParentCluster) {
-  const radius = parentBubbleRadius(cluster)
+  if (cluster.targetAnchorX !== undefined && cluster.targetAnchorY !== undefined) {
+    const nextAnchorX = smoothValue(cluster.anchorX, cluster.targetAnchorX, EXISTING_PARENT_ANCHOR_REPACK_LERP, EXISTING_PARENT_ANCHOR_REPACK_LERP)
+    const nextAnchorY = smoothValue(cluster.anchorY, cluster.targetAnchorY, EXISTING_PARENT_ANCHOR_REPACK_LERP, EXISTING_PARENT_ANCHOR_REPACK_LERP)
+    const dx = nextAnchorX - cluster.anchorX
+    const dy = nextAnchorY - cluster.anchorY
+    cluster.anchorX = nextAnchorX
+    cluster.anchorY = nextAnchorY
+    cluster.sessions.forEach((node) => {
+      node.x += dx
+      node.y += dy
+    })
+  }
+  const radius = smoothValue(cluster.radius, parentBubbleRadius(cluster))
   cluster.cx = cluster.anchorX
   cluster.cy = cluster.anchorY
   cluster.radius = radius
@@ -756,7 +796,7 @@ function updateProjectBubble(cluster: ProjectCluster) {
   if (!cluster.parents.length) {
     cluster.cx = cluster.anchorX
     cluster.cy = cluster.anchorY
-    cluster.radius = 80
+    cluster.radius = smoothValue(cluster.radius, 80)
     cluster.shape = { type: 'circle', cx: cluster.anchorX, cy: cluster.anchorY, r: cluster.radius }
     return
   }
@@ -771,14 +811,14 @@ function updateProjectBubble(cluster: ProjectCluster) {
   })
   cx /= Math.max(1, weight)
   cy /= Math.max(1, weight)
-  const radius = Math.max(
+  const targetRadius = Math.max(
     92,
     ...cluster.parents.map((parent) => Math.hypot(parent.cx - cx, parent.cy - cy) + parent.radius + 34),
   )
   cluster.cx = cx
   cluster.cy = cy
-  cluster.radius = radius
-  cluster.shape = { type: 'circle', cx, cy, r: radius }
+  cluster.radius = smoothValue(cluster.radius, targetRadius)
+  cluster.shape = { type: 'circle', cx, cy, r: cluster.radius }
 }
 
 function updateClusterShapes(parentClusters: ParentCluster[], projectClusters: ProjectCluster[]) {
@@ -789,6 +829,8 @@ function updateClusterShapes(parentClusters: ParentCluster[], projectClusters: P
 function translateParentCluster(cluster: ParentCluster, dx: number, dy: number) {
   cluster.anchorX += dx
   cluster.anchorY += dy
+  if (cluster.targetAnchorX !== undefined) cluster.targetAnchorX += dx
+  if (cluster.targetAnchorY !== undefined) cluster.targetAnchorY += dy
   cluster.cx += dx
   cluster.cy += dy
   if (cluster.shape.type === 'circle') {
