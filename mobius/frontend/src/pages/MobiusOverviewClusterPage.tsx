@@ -141,6 +141,7 @@ const MIN_ZOOM = 0.25
 const MAX_ZOOM = 3.2
 const ZOOM_STEP = 1.18
 const TOP_BAR_HEIGHT = 58
+const SESSION_RADIUS_SCALE = 2
 const PROJECT_COLORS = ['#0ea5e9', '#22c55e', '#f97316', '#a855f7', '#14b8a6', '#e11d48', '#84cc16', '#6366f1', '#f59e0b', '#06b6d4']
 
 function activeTimeMs(item: any) {
@@ -216,6 +217,11 @@ function sessionColor(session: ClusterSession) {
   if (session.status === 'stale') return '#f59e0b'
   if (session.kind === 'research_agent') return '#a855f7'
   return '#94a3b8'
+}
+
+function sessionRadius(session: any) {
+  const base = session.agent_status === 'running' ? 6.2 : isResearchAgent(session) ? 5.2 : 4.6
+  return base * SESSION_RADIUS_SCALE
 }
 
 function projectMatchesSearch(project: any, query: string) {
@@ -340,7 +346,7 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
           y: anchor.y + slot.y,
           vx: 0,
           vy: 0,
-          r: session.agent_status === 'running' ? 6.2 : isResearchAgent(session) ? 5.2 : 4.6,
+          r: sessionRadius(session),
           hexX: slot.x,
           hexY: slot.y,
         }
@@ -872,6 +878,92 @@ function drawClusterLabel(ctx: CanvasRenderingContext2D, label: string, x: numbe
   ctx.fillText(text, x - ctx.measureText(text).width / 2, y + 0.5)
 }
 
+function drawDiamondPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  ctx.beginPath()
+  ctx.moveTo(x, y - r)
+  ctx.lineTo(x + r, y)
+  ctx.lineTo(x, y + r)
+  ctx.lineTo(x - r, y)
+  ctx.closePath()
+}
+
+function drawCirclePath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+}
+
+function drawSessionPath(ctx: CanvasRenderingContext2D, node: ClusterSession, r = node.r) {
+  if (node.kind === 'research_agent') {
+    drawDiamondPath(ctx, node.x, node.y, r * 0.96)
+    return
+  }
+  drawCirclePath(ctx, node.x, node.y, r)
+}
+
+function drawSessionNode(ctx: CanvasRenderingContext2D, node: ClusterSession, now: number, zoom: number) {
+  const fill = sessionColor(node)
+  const isRunning = node.source?.agent_status === 'running' || node.status === 'running'
+  const isFailed = node.source?.job_failed || node.status === 'failed'
+  const isCompleted = node.source?.job_accomplished || node.status === 'completed'
+  const pulse = (Math.sin(now / 420 + (hashValue(node.id) % 628) / 100) + 1) / 2
+  const glowRadius = node.r * (isRunning ? 3.15 + pulse * 0.55 : isFailed ? 2.65 : node.kind === 'research_agent' ? 2.35 : 2.05)
+  const glow = ctx.createRadialGradient(node.x, node.y, node.r * 0.25, node.x, node.y, glowRadius)
+  glow.addColorStop(0, rgba(fill, isRunning ? 0.55 : isFailed ? 0.46 : 0.34))
+  glow.addColorStop(0.42, rgba(fill, isRunning ? 0.2 + pulse * 0.1 : 0.15))
+  glow.addColorStop(1, rgba(fill, 0))
+  drawCirclePath(ctx, node.x, node.y, glowRadius)
+  ctx.fillStyle = glow
+  ctx.fill()
+
+  if (isRunning) {
+    drawCirclePath(ctx, node.x, node.y, node.r + 4 + pulse * 7)
+    ctx.strokeStyle = rgba(fill, 0.2 + pulse * 0.42)
+    ctx.lineWidth = Math.max(1, 1.7 / zoom)
+    ctx.stroke()
+  }
+
+  drawSessionPath(ctx, node)
+  const body = ctx.createRadialGradient(node.x - node.r * 0.34, node.y - node.r * 0.42, node.r * 0.12, node.x, node.y, node.r * 1.15)
+  body.addColorStop(0, 'rgba(255,255,255,0.96)')
+  body.addColorStop(0.22, rgba(fill, 0.95))
+  body.addColorStop(1, rgba(fill, 0.74))
+  ctx.fillStyle = body
+  ctx.fill()
+  ctx.lineWidth = Math.max(1, 1.45 / zoom)
+  ctx.strokeStyle = isFailed ? 'rgba(255,255,255,0.86)' : 'rgba(255,255,255,0.72)'
+  ctx.stroke()
+
+  drawSessionPath(ctx, node, node.r + 1.8)
+  ctx.strokeStyle = rgba(fill, isRunning ? 0.9 : 0.62)
+  ctx.lineWidth = Math.max(1, 1.1 / zoom)
+  ctx.stroke()
+
+  if (isCompleted) {
+    drawCirclePath(ctx, node.x, node.y, node.r * 0.46)
+    ctx.strokeStyle = 'rgba(255,255,255,0.82)'
+    ctx.lineWidth = Math.max(1, 1.4 / zoom)
+    ctx.stroke()
+  }
+
+  if (isFailed) {
+    ctx.beginPath()
+    ctx.moveTo(node.x - node.r * 0.42, node.y - node.r * 0.42)
+    ctx.lineTo(node.x + node.r * 0.42, node.y + node.r * 0.42)
+    ctx.moveTo(node.x + node.r * 0.42, node.y - node.r * 0.42)
+    ctx.lineTo(node.x - node.r * 0.42, node.y + node.r * 0.42)
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+    ctx.lineWidth = Math.max(1, 1.6 / zoom)
+    ctx.stroke()
+  }
+
+  if (node.fixed) {
+    drawCirclePath(ctx, node.x, node.y, node.r + 7)
+    ctx.strokeStyle = rgba(fill, 0.62)
+    ctx.lineWidth = Math.max(1, 2 / zoom)
+    ctx.stroke()
+  }
+}
+
 function zoomSafe(ctx: CanvasRenderingContext2D) {
   const transform = ctx.getTransform()
   return Math.max(0.1, Math.hypot(transform.a, transform.b))
@@ -1269,23 +1361,8 @@ export default function MobiusOverviewClusterPage() {
       })
     }
 
-    nodes.forEach((node) => {
-      const fill = sessionColor(node)
-      ctx.beginPath()
-      ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2)
-      ctx.fillStyle = fill
-      ctx.fill()
-      ctx.lineWidth = 1.6 / zoomRef.current
-      ctx.strokeStyle = 'rgba(255,255,255,0.72)'
-      ctx.stroke()
-      if (node.fixed) {
-        ctx.beginPath()
-        ctx.arc(node.x, node.y, node.r + 5, 0, Math.PI * 2)
-        ctx.strokeStyle = rgba(fill, 0.55)
-        ctx.lineWidth = 2 / zoomRef.current
-        ctx.stroke()
-      }
-    })
+    const now = performance.now()
+    nodes.forEach((node) => drawSessionNode(ctx, node, now, zoomRef.current))
 
     if (zoomRef.current > 0.62) {
       parents.forEach((cluster) => {
