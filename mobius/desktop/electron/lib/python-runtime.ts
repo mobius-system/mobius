@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-// 首装 pin 的 aimux 版本（与 mobius 引导页一致）。升级后由 upgradeAimux 改写 marker。
+// 首装包名。桌面端启动后会后台检查 PyPI 最新版，发现新版本再自动 upgrade。
 export const AIMUX_PIN = "aimux";
 
 const WIN = process.platform === "win32";
@@ -76,6 +76,14 @@ function run(cmd: string, args: string[], onLine?: (line: string) => void, onRaw
 export interface InstallProgress {
   phase: "venv" | "install" | "ready";
   detail?: string;
+}
+
+export interface AimuxUpdateCheck {
+  ok: boolean;
+  current?: string;
+  latest?: string;
+  updateAvailable?: boolean;
+  error?: string;
 }
 
 /** venv 根目录的 pyvenv.cfg，记录原始 Python 安装路径。 */
@@ -176,6 +184,42 @@ export async function getAimuxVersion(): Promise<string> {
   const r = await run(venvPython(), ["-m", "pip", "show", "aimux"]);
   const m = r.stdout.match(/Version:\s*(\S+)/);
   return m ? m[1] : "未知";
+}
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(/[.+-]/).map((x) => Number.parseInt(x, 10));
+  const pb = b.split(/[.+-]/).map((x) => Number.parseInt(x, 10));
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i += 1) {
+    const av = Number.isFinite(pa[i]) ? pa[i] : 0;
+    const bv = Number.isFinite(pb[i]) ? pb[i] : 0;
+    if (av !== bv) return av > bv ? 1 : -1;
+  }
+  return 0;
+}
+
+/** 轻量检查 PyPI 上 aimux 是否有新版本。失败只返回 error，由调用方记录日志，不影响启动。 */
+export async function checkAimuxUpdate(onRaw?: (data: string) => void): Promise<AimuxUpdateCheck> {
+  if (!fs.existsSync(venvPython())) return { ok: false, error: "venv 尚未创建" };
+  const r = await run(
+    venvPython(),
+    ["-m", "pip", "index", "versions", "aimux", "--disable-pip-version-check"],
+    undefined,
+    onRaw,
+  );
+  const output = `${r.stdout}\n${r.stderr}`;
+  if (r.code !== 0) return { ok: false, error: output.trim() || "pip index versions aimux 失败" };
+  const current = output.match(/INSTALLED:\s*(\S+)/)?.[1] || await getAimuxVersion();
+  const latest = output.match(/LATEST:\s*(\S+)/)?.[1] || output.match(/^aimux\s+\(([^)]+)\)/m)?.[1];
+  if (!latest || !current || current === "未知" || current === "未安装") {
+    return { ok: false, current, latest, error: "无法解析 aimux 版本信息" };
+  }
+  return {
+    ok: true,
+    current,
+    latest,
+    updateAvailable: compareVersions(latest, current) > 0,
+  };
 }
 
 /** "更新 aimux"按钮：升到最新版并回写 marker（解除首装 pin）。onProgress 回传 pip 实时输出供状态面板显示。 */

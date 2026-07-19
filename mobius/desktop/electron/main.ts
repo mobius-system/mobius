@@ -8,7 +8,7 @@ import * as os from "node:os";
 import * as fs from "node:fs";
 import { loadCreds, saveCreds, clearCreds, type StoredCreds } from "./lib/secrets";
 import { gatherHostInfo, type BootData } from "./lib/host-info";
-import { ensureAimux, upgradeAimux, getAimuxVersion, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
+import { ensureAimux, upgradeAimux, getAimuxVersion, checkAimuxUpdate, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
 import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
 import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
 import { FileOpError, validateNewName, assertNoSymlink, isDirEqualOrChild, copyEntryRecursive } from "./lib/project-file-ops";
@@ -24,6 +24,8 @@ let supervisor: AimuxSupervisor | null = null;
 let creds: StoredCreds | null = null;
 let lastStatus: AimuxStatus = { state: "stopped" };
 let installing = false;
+let updatingAimux = false;
+let autoUpdateTimer: NodeJS.Timeout | null = null;
 let windowDragTimer: NodeJS.Timeout | null = null;
 // aimux 反向连接开关（持久化于 userData/desktop-settings.json，默认开）。
 // 关闭后本机不再作为可调度节点连入 mobius，桌面端其他功能不受影响。
@@ -76,10 +78,22 @@ function appendLog(line: string): void {
   broadcast("aimux:log", line);
 }
 
+function appendAimuxLine(line: string): void {
+  appendLog(line);
+  appendAimuxLog(`${line}\n`);
+}
+
 function stopWindowDrag(): void {
   if (windowDragTimer) {
     clearInterval(windowDragTimer);
     windowDragTimer = null;
+  }
+}
+
+function cancelAutoAimuxUpdateCheck(): void {
+  if (autoUpdateTimer) {
+    clearTimeout(autoUpdateTimer);
+    autoUpdateTimer = null;
   }
 }
 
@@ -254,6 +268,7 @@ async function bootDesktop(): Promise<void> {
   ensureTabManager();
   void mainWindow.loadURL(ABOUT_BLANK);
   tabManager!.restore();
+  scheduleAutoAimuxUpdateCheck();
 }
 
 /** 退出前持久化当前 tab 列表（多 tab 版 0.0.12，取代单页 persistLastRoute）。 */
@@ -279,40 +294,76 @@ function switchTabOffset(offset: number): void {
   tabManager.switchTab(tabs[next].id);
 }
 
-async function runUpdateAimux(): Promise<{ ok: boolean; version?: string; error?: string }> {
+async function runUpdateAimux(source: "manual" | "auto" = "manual"): Promise<{ ok: boolean; version?: string; error?: string }> {
   if (installing) return { ok: false, error: "正在安装中，请稍候" };
+  if (updatingAimux) return { ok: false, error: "正在更新中，请稍候" };
+  updatingAimux = true;
   // 1) 先断开现有连接 (停 supervisor + 反连子进程), 释放 venv 文件锁, 避免 pip 升级时 aimux 还在跑.
-  emitStatus({ state: "starting", detail: "断开现有连接, 准备更新 aimux…" });
-  await supervisor?.stop();
-  supervisor = null;
-  // 2) 升级: pip 实时输出 -> appendAimuxLog (aimux.log 持久化) + appendLog (状态面板环形缓冲) + emitStatus (徽标显示当前阶段).
-  emitStatus({ state: "starting", detail: "正在更新 aimux…" });
-  appendAimuxLog(`\n==== [${new Date().toISOString()}] upgrade aimux ====\n`);
-  const r = await upgradeAimux(
-    (p) => {
-      if (p.detail) {
-        appendLog(p.detail);
-        emitStatus({ state: "starting", detail: p.detail });
-      }
-    },
-    (data: string) => appendAimuxLog(data),
-  );
-  if (!r.ok) {
-    emitStatus({ state: "failed", detail: r.error });
-    return { ok: false, error: r.error };
+  try {
+    emitStatus({ state: "starting", detail: source === "auto" ? "检测到 aimux 新版本，准备后台更新…" : "断开现有连接, 准备更新 aimux…" });
+    await supervisor?.stop();
+    supervisor = null;
+    // 2) 升级: pip 实时输出 -> appendAimuxLog (aimux.log 持久化) + appendLog (状态面板环形缓冲) + emitStatus (徽标显示当前阶段).
+    emitStatus({ state: "starting", detail: source === "auto" ? "正在后台更新 aimux…" : "正在更新 aimux…" });
+    appendAimuxLog(`\n==== [${new Date().toISOString()}] ${source} upgrade aimux ====\n`);
+    const r = await upgradeAimux(
+      (p) => {
+        if (p.detail) {
+          appendLog(p.detail);
+          emitStatus({ state: "starting", detail: p.detail });
+        }
+      },
+      (data: string) => appendAimuxLog(data),
+    );
+    if (!r.ok) {
+      emitStatus({ state: "failed", detail: r.error });
+      return { ok: false, error: r.error };
+    }
+    // 3) 升级成功. 开关开着才重连；关着则只升级不连。
+    if (aimuxEnabled) {
+      emitStatus({ state: "starting", detail: `aimux ${r.version} 已就绪, 正在反向连接…` });
+      supervisor = buildSupervisor();
+      supervisor?.start();
+    } else {
+      emitStatus({ state: "disabled", detail: `aimux ${r.version} 已更新（连接已关闭）` });
+    }
+    return { ok: true, version: r.version };
+  } finally {
+    updatingAimux = false;
   }
-  // 3) 升级成功. 开关开着才重连；关着则只升级不连。
-  if (aimuxEnabled) {
-    emitStatus({ state: "starting", detail: `aimux ${r.version} 已就绪, 正在反向连接…` });
-    supervisor = buildSupervisor();
-    supervisor?.start();
-  } else {
-    emitStatus({ state: "disabled", detail: `aimux ${r.version} 已更新（连接已关闭）` });
+}
+
+function scheduleAutoAimuxUpdateCheck(): void {
+  if (autoUpdateTimer) clearTimeout(autoUpdateTimer);
+  autoUpdateTimer = setTimeout(() => {
+    autoUpdateTimer = null;
+    void runAutoAimuxUpdateCheck();
+  }, 8000);
+}
+
+async function runAutoAimuxUpdateCheck(): Promise<void> {
+  if (!creds || installing || updatingAimux) return;
+  if (!fs.existsSync(aimuxExe())) {
+    appendAimuxLine(`[aimux auto-update] skip: aimux 尚未安装`);
+    return;
   }
-  return { ok: true, version: r.version };
+  appendAimuxLog(`\n==== [${new Date().toISOString()}] auto check aimux update ====\n`);
+  const check = await checkAimuxUpdate((data: string) => appendAimuxLog(data));
+  if (!check.ok) {
+    appendAimuxLine(`[aimux auto-update] check failed: ${check.error || "unknown error"}`);
+    return;
+  }
+  appendAimuxLine(`[aimux auto-update] current=${check.current} latest=${check.latest}`);
+  if (!check.updateAvailable) return;
+  appendAimuxLine(`[aimux auto-update] upgrading aimux ${check.current} -> ${check.latest}`);
+  const result = await runUpdateAimux("auto");
+  appendAimuxLine(result.ok
+    ? `[aimux auto-update] upgraded to ${result.version || check.latest}`
+    : `[aimux auto-update] upgrade failed: ${result.error || "unknown error"}`);
 }
 
 async function runLogout(): Promise<void> {
+  cancelAutoAimuxUpdateCheck();
   await supervisor?.stop();
   supervisor = null;
   // 多 tab：销毁所有 tab view + TabManager，回到登录页。
@@ -910,6 +961,7 @@ app.on("window-all-closed", () => {
 
 // 退出前务必杀 aimux（Windows taskkill /T 连进程树）
 app.on("before-quit", () => {
+  cancelAutoAimuxUpdateCheck();
   persistTabs(); // 兜底：退出前再存一次当前 tab 列表。
   tabManager?.destroyAll();
   void supervisor?.stop();
