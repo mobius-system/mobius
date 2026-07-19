@@ -32,9 +32,12 @@ import { runSessionMessage } from '../services/session-message-runner';
 
 // ===== meta router =====
 const metaRouter = express.Router();
+// 扩展上传单文件上限, 可由 env MOBIUS_EXT_UPLOAD_MAX_MB (单位 MB) 配置, 默认 50MB。
+// 通用能力: 所有扩展的上传都受此约束, 需要大文件上传的扩展 (如宣传视频集锦) 可调高。
+const EXT_UPLOAD_MAX_BYTES = (Number(process.env.MOBIUS_EXT_UPLOAD_MAX_MB) || 50) * 1024 * 1024;
 const upload = multer({
   dest: path.join(os.tmpdir(), 'mobius-extension-upload'),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: EXT_UPLOAD_MAX_BYTES },
 });
 
 function safeUserSegment(username: unknown): string {

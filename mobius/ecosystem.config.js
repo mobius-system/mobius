@@ -88,6 +88,7 @@ module.exports = {
       merge_logs: true,
       env: {
         NODE_ENV: 'production',
+        MOBIUS_EXT_UPLOAD_MAX_MB: '500',
         ...inheritedEnv,
       },
     },
