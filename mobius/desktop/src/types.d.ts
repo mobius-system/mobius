@@ -51,6 +51,7 @@ export interface MobiusDesktopBridge {
   getAimuxDetails: () => Promise<AimuxDetails>;
   getAimuxVersion: () => Promise<string>;
   reconnectAimux: () => Promise<{ ok: boolean; error?: string }>;
+  startAimuxPortForward: (remotePort: number) => Promise<{ ok: boolean; url?: string; localPort?: number; remotePort?: number; reused?: boolean; error?: string }>;
   getAimuxEnabled: () => Promise<boolean>;
   setAimuxEnabled: (enabled: boolean) => Promise<{ ok: boolean; enabled?: boolean; error?: string }>;
   onAimuxStatus: (cb: (s: AimuxStatus) => void) => () => void;

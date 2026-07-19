@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
-import { ExternalLink, Loader2, MonitorUp, Play } from 'lucide-react'
+import { Cable, ExternalLink, Loader2, MonitorUp, Play } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 
@@ -318,6 +318,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
   const [vscodeWebUrl, setVscodeWebUrl] = useState('')
   const [autoPort, setAutoPort] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+  const [aimuxForwarding, setAimuxForwarding] = useState(false)
   const [showDialog, setShowDialog] = useState(false)
   const [error, setError] = useState('')
 
@@ -367,6 +368,8 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
   }, [showDialog])
 
   const ready = !!projectId && !!vscodeWebUrl && !!bindPath
+  const desktopBridge: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
+  const canUseAimuxPortForward = !!desktopBridge?.isDesktop && typeof desktopBridge?.startAimuxPortForward === 'function'
   const mainProjectPortPath = bindPath ? `${bindPath.replace(/\/+$/, '')}/${HIDDEN_FOLDER_NAME}/port_forward/main_project_port.txt` : ''
   const buttonClassName = className || 'h-7 px-2.5 text-[11px] border border-emerald-500/20 text-emerald-400 rounded-xl hover:bg-emerald-500/10 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-45 disabled:cursor-not-allowed'
   const buttonLabel = label || '进入项目端口'
@@ -390,6 +393,28 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
     }
     window.open(url, '_blank', 'noopener,noreferrer')
     setShowDialog(false)
+  }
+
+  const openAimuxPort = async (port: number) => {
+    if (!canUseAimuxPortForward) {
+      setError('当前不是支持 AIMUX port forward 的桌面端')
+      return
+    }
+    setAimuxForwarding(true)
+    setError('')
+    try {
+      const result = await desktopBridge.startAimuxPortForward(port)
+      if (!result?.ok || !result?.url) {
+        setError(result?.error || 'AIMUX port forward 启动失败')
+        return
+      }
+      window.open(result.url, '_blank', 'noopener,noreferrer')
+      setShowDialog(false)
+    } catch (e: any) {
+      setError(e?.message || 'AIMUX port forward 启动失败')
+    } finally {
+      setAimuxForwarding(false)
+    }
   }
 
   if (!ready) {
@@ -474,6 +499,24 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
                   {autoPort !== null ? `proxy/${autoPort}/` : `${HIDDEN_FOLDER_NAME}/port_forward/main_project_port.txt 未检测到有效端口`}
                 </div>
               </button>
+
+              {canUseAimuxPortForward && (
+                <button
+                  type="button"
+                  onClick={() => autoPort !== null && openAimuxPort(autoPort)}
+                  disabled={autoPort === null || aimuxForwarding}
+                  className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-sky-500/10 hover:border-sky-500/30 disabled:cursor-not-allowed disabled:opacity-55"
+                  style={{ borderColor: 'var(--border-color)' }}
+                >
+                  <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {aimuxForwarding ? <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" /> : <Cable className="w-3.5 h-3.5 text-sky-400" />}
+                    打开端口（AIMUX）
+                  </div>
+                  <div className="mt-1 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>
+                    {autoPort !== null ? `aimux port forward -> 127.0.0.1` : `${HIDDEN_FOLDER_NAME}/port_forward/main_project_port.txt 未检测到有效端口`}
+                  </div>
+                </button>
+              )}
 
               {onRequestRunProject && (
                 <button

@@ -28,6 +28,7 @@ const mobiusDesktop = {
   getAimuxDetails: () => ipcRenderer.invoke("aimux:details"),
   getAimuxVersion: () => ipcRenderer.invoke("aimux:version"),
   reconnectAimux: () => ipcRenderer.invoke("aimux:reconnect"),
+  startAimuxPortForward: (remotePort: number) => ipcRenderer.invoke("aimux:port-forward", { remotePort }),
   getAimuxEnabled: () => ipcRenderer.invoke("aimux:get-enabled"),
   setAimuxEnabled: (enabled: boolean) => ipcRenderer.invoke("aimux:set-enabled", enabled),
   onAimuxStatus: (cb: (s: { state: string; detail?: string }) => void) => {

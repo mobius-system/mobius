@@ -1,7 +1,8 @@
 // Mobius Desktop 主进程：登录 → 保证 aimux → reverse connect → loadURL 远程 web UI。
 // 详见 README。关键：退出前务必 supervisor.stop() 杀 aimux；aimux 状态经徽标+IPC 常驻可见。
 import { app, BrowserWindow, Menu, ipcMain, shell, dialog, session, screen, type WebPreferences } from "electron";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
+import * as net from "node:net";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as os from "node:os";
@@ -35,6 +36,14 @@ let aimuxEnabled = true;
 let tabManager: TabManager | null = null;
 // mainWindow.webContents 降级为空白容器（内容全在子 view）后的占位页。
 const ABOUT_BLANK = "about:blank";
+
+type PortForwardEntry = {
+  remotePort: number;
+  localPort: number;
+  child: ChildProcess;
+};
+
+const portForwards = new Map<number, PortForwardEntry>();
 
 /** 每个 tab view 复用的 webPreferences（与原 mainWindow 同配置：ESM preload 需 sandbox:false）。 */
 function tabWebPreferences(): WebPreferences {
@@ -191,6 +200,158 @@ function buildSupervisor(): AimuxSupervisor | null {
       return r.jwt;
     },
   });
+}
+
+function normalizePort(value: unknown): number | null {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return port;
+}
+
+function isPortForwardAlive(entry: PortForwardEntry): boolean {
+  return !!entry.child.pid && entry.child.exitCode === null && !entry.child.killed;
+}
+
+function localPortUrl(port: number): string {
+  return `http://127.0.0.1:${port}/`;
+}
+
+function findFreeLocalPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close(() => {
+        if (port > 0) resolve(port);
+        else reject(new Error("无法分配本地端口"));
+      });
+    });
+  });
+}
+
+function waitForTcpPort(port: number, timeoutMs = 12000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve, reject) => {
+    const tryConnect = () => {
+      const socket = net.createConnection({ host: "127.0.0.1", port });
+      let settled = false;
+      const done = (err?: Error) => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        if (!err) {
+          resolve();
+          return;
+        }
+        if (Date.now() >= deadline) {
+          reject(new Error(`本地端口 ${port} 未在 ${timeoutMs}ms 内就绪`));
+          return;
+        }
+        setTimeout(tryConnect, 250);
+      };
+      socket.setTimeout(1000, () => done(new Error("timeout")));
+      socket.on("connect", () => done());
+      socket.on("error", (err) => done(err));
+    };
+    tryConnect();
+  });
+}
+
+async function ensureAimuxForPortForward(): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (installing) return { ok: false, error: "aimux 正在安装中，请稍后再试" };
+  installing = true;
+  emitStatus({ state: "starting", detail: "正在检查 aimux port forward 环境…" });
+  appendAimuxLog(`\n==== [${new Date().toISOString()}] ensure aimux (port forward) ====\n`);
+  try {
+    const r = await ensureAimux(
+      (p: InstallProgress) => {
+        if (p.phase === "venv") emitStatus({ state: "starting", detail: "创建 Python 虚拟环境…" });
+        else if (p.phase === "install") emitStatus({ state: "starting", detail: `下载并安装 aimux… ${p.detail ?? ""}` });
+      },
+      (data: string) => appendAimuxLog(data),
+    );
+    return r.ok ? { ok: true } : { ok: false, error: r.error || "aimux 安装失败" };
+  } finally {
+    installing = false;
+  }
+}
+
+async function startAimuxPortForward(remotePortValue: unknown): Promise<{ ok: boolean; url?: string; localPort?: number; remotePort?: number; reused?: boolean; error?: string }> {
+  if (!creds) return { ok: false, error: "未登录" };
+  const remotePort = normalizePort(remotePortValue);
+  if (!remotePort) return { ok: false, error: "项目端口必须是 1-65535 的整数" };
+
+  const existing = portForwards.get(remotePort);
+  if (existing && isPortForwardAlive(existing)) {
+    return { ok: true, url: localPortUrl(existing.localPort), localPort: existing.localPort, remotePort, reused: true };
+  }
+  if (existing) portForwards.delete(remotePort);
+
+  const ready = await ensureAimuxForPortForward();
+  if (!ready.ok) return ready;
+
+  const localPort = await findFreeLocalPort();
+  const exe = aimuxExe();
+  const bridgeUrl = `${serverOrigin()}/aimux_bridge`;
+  const args = [
+    "port", "forward", bridgeUrl,
+    "--local-host", "127.0.0.1",
+    "--local-port", String(localPort),
+    "--remote-host", "127.0.0.1",
+    "--remote-port", String(remotePort),
+    "--token", creds.jwt,
+  ];
+  appendAimuxLog(`\n==== [${new Date().toISOString()}] spawn port forward local=${localPort} remote=${remotePort} ====\n`);
+  const child = spawn(exe, args, { windowsHide: true });
+  const entry: PortForwardEntry = { remotePort, localPort, child };
+  portForwards.set(remotePort, entry);
+
+  const handle = (b: Buffer) => {
+    appendAimuxLog(b);
+    for (const line of b.toString("utf8").split(/[\r\n]+/)) {
+      const t = line.trim();
+      if (t) appendLog(`[port ${remotePort}] ${t}`);
+    }
+  };
+  child.stdout?.on("data", handle);
+  child.stderr?.on("data", handle);
+  child.on("exit", (code) => {
+    appendAimuxLog(`\n---- [${new Date().toISOString()}] port forward remote=${remotePort} exited code=${code} ----\n`);
+    const current = portForwards.get(remotePort);
+    if (current?.child === child) portForwards.delete(remotePort);
+  });
+  child.on("error", (err) => {
+    appendAimuxLine(`[aimux port-forward] spawn failed remote=${remotePort}: ${err.message}`);
+  });
+
+  try {
+    await waitForTcpPort(localPort);
+  } catch (e) {
+    portForwards.delete(remotePort);
+    try { child.kill(); } catch { /* ignore */ }
+    return { ok: false, error: (e as Error).message || "aimux port forward 启动失败" };
+  }
+
+  appendAimuxLine(`[aimux port-forward] ready remote=${remotePort} local=${localPort}`);
+  return { ok: true, url: localPortUrl(localPort), localPort, remotePort, reused: false };
+}
+
+async function stopAllPortForwards(): Promise<void> {
+  const entries = [...portForwards.values()];
+  portForwards.clear();
+  await Promise.all(entries.map((entry) => new Promise<void>((resolveDone) => {
+    const child = entry.child;
+    if (!child.pid || child.exitCode !== null || child.killed) {
+      resolveDone();
+      return;
+    }
+    child.once("exit", () => resolveDone());
+    try { child.kill(); } catch { resolveDone(); }
+    setTimeout(resolveDone, 1500).unref?.();
+  })));
 }
 
 // ——— 登录成功后：装 aimux → 反连 → 加载用户主页 ———
@@ -364,6 +525,7 @@ async function runAutoAimuxUpdateCheck(): Promise<void> {
 
 async function runLogout(): Promise<void> {
   cancelAutoAimuxUpdateCheck();
+  await stopAllPortForwards();
   await supervisor?.stop();
   supervisor = null;
   // 多 tab：销毁所有 tab view + TabManager，回到登录页。
@@ -590,6 +752,9 @@ ipcMain.handle("aimux:reconnect", async () => {
   if (!supervisor) return { ok: false, error: "aimux 未就绪（venv 可能未建好），请稍后重试" };
   supervisor.start();
   return { ok: true };
+});
+ipcMain.handle("aimux:port-forward", async (_e, opts: { remotePort?: number }) => {
+  return startAimuxPortForward(opts?.remotePort);
 });
 ipcMain.handle("aimux:get-enabled", () => aimuxEnabled);
 ipcMain.handle("aimux:set-enabled", async (_e, enabled: boolean) => {
@@ -964,5 +1129,6 @@ app.on("before-quit", () => {
   cancelAutoAimuxUpdateCheck();
   persistTabs(); // 兜底：退出前再存一次当前 tab 列表。
   tabManager?.destroyAll();
+  void stopAllPortForwards();
   void supervisor?.stop();
 });
