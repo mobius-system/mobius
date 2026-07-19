@@ -5,6 +5,7 @@
 //
 // 设计要点：
 // - window.open 拦截：同源 URL → 新 tab；外链 → 系统浏览器（openExternal）。复用前端 20 处 window.open(_blank)。
+//   例外：/code-server/* 是独立 Web app，不渲染 Mobius tab 栏/窗口按钮，必须开原生子窗口。
 // - will-navigate 限定登录服务器 origin（防钓鱼），同 main.ts 既有逻辑。
 // - aimux supervisor / seedWebAuth 仍全局一份（共享 defaultSession），本类不管。
 // - 布局：tab 栏是前端 fixed 浮层不占空间 → 每个 view 铺满窗口客户区。
@@ -31,6 +32,7 @@ export interface TabManagerOptions {
   homePath: () => string; // 新建空白 tab 默认 pathname（如 /u/username）
   webPreferences: WebPreferences; // 每个 view 的 webPreferences（复用 main.ts 配置）
   openExternal: (url: string) => void; // 外链 window.open → 系统浏览器
+  openDetached: (url: string) => void; // code-server 等非 Mobius 壳页面 → 原生子窗口
 }
 
 export class TabManager {
@@ -74,6 +76,14 @@ export class TabManager {
     }
   }
 
+  private isCodeServerPath(pathOnly: string): boolean {
+    return pathOnly === "/code-server" || pathOnly.startsWith("/code-server/");
+  }
+
+  private isRestorablePath(pathOnly: string): boolean {
+    return !!pathOnly && !this.isCodeServerPath(pathOnly);
+  }
+
   getTabs(): TabInfo[] {
     return this.tabs.map((t) => ({ id: t.id, url: t.pathOnly, title: t.title }));
   }
@@ -104,7 +114,8 @@ export class TabManager {
     wc.setWindowOpenHandler(({ url }) => {
       if (this.isSameOrigin(url)) {
         const path = this.toPathOnly(url);
-        if (path) this.createTab(path, { activate: true });
+        if (path && this.isCodeServerPath(path)) this.opts.openDetached(this.origin() + path);
+        else if (path) this.createTab(path, { activate: true });
       } else {
         this.opts.openExternal(url);
       }
@@ -118,6 +129,11 @@ export class TabManager {
         return;
       }
       const path = this.toPathOnly(url);
+      if (path && this.isCodeServerPath(path)) {
+        e.preventDefault();
+        this.opts.openDetached(this.origin() + path);
+        return;
+      }
       if (path) tab.pathOnly = path;
     });
     wc.on("did-navigate", (_e, url) => {
@@ -248,9 +264,10 @@ export class TabManager {
     const u = this.opts.username();
     const s = this.opts.serverOrigin();
     if (!u || !s) return;
-    const urls = this.tabs.map((t) => t.pathOnly);
+    const urls = this.tabs.map((t) => t.pathOnly).filter((path) => this.isRestorablePath(path));
     const active = this.tabs.find((t) => t.id === this.activeId);
-    setLastTabs(s, u, { urls, activeUrl: active?.pathOnly });
+    const activeUrl = active && this.isRestorablePath(active.pathOnly) ? active.pathOnly : urls[0];
+    setLastTabs(s, u, { urls, activeUrl });
   }
 
   /** 启动恢复：有 lastTabs 则按序重建并激活上次的 tab；否则建一个 home tab。 */
@@ -258,9 +275,10 @@ export class TabManager {
     const s = this.opts.serverOrigin();
     const u = this.opts.username();
     const saved = s && u ? getLastTabs(s, u) : null;
-    if (saved && saved.urls.length > 0) {
-      const want = (saved.activeUrl && saved.urls.includes(saved.activeUrl)) ? saved.activeUrl : saved.urls[0];
-      for (const url of saved.urls) this.createTab(url, { activate: false });
+    const urls = saved?.urls.filter((url) => this.isRestorablePath(url)) ?? [];
+    if (urls.length > 0) {
+      const want = (saved?.activeUrl && urls.includes(saved.activeUrl)) ? saved.activeUrl : urls[0];
+      for (const url of urls) this.createTab(url, { activate: false });
       const target = this.tabs.find((t) => t.pathOnly === want) || this.tabs[0];
       if (target) this.activate(target.id);
     } else {

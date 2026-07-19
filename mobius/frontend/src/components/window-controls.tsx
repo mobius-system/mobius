@@ -102,6 +102,16 @@ export function WindowControls({ thickMinimize = false }: { thickMinimize?: bool
           <path d="M21 3v5h-5" />
         </svg>
       </button>
+      <button type="button" title="返回欢迎页" aria-label="返回欢迎页"
+        style={btnBase}
+        onMouseEnter={(e) => enterHover(e, 'var(--bg-hover)')} onMouseLeave={leaveHover}
+        onClick={() => window.location.assign('/welcome')}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 11.5 12 4l9 7.5" />
+          <path d="M5.5 10.5V20h13v-9.5" />
+          <path d="M9.5 20v-5.5h5V20" />
+        </svg>
+      </button>
       <button type="button" title="最小化" aria-label="最小化"
         style={btnBase}
         onMouseEnter={(e) => enterHover(e, 'var(--bg-hover)')} onMouseLeave={leaveHover}

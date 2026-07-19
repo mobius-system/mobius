@@ -66,6 +66,51 @@ function ensureTabManager(): void {
     homePath: () => `/u/${encodeURIComponent(creds?.username || "user")}`,
     webPreferences: tabWebPreferences(),
     openExternal: (url) => { void shell.openExternal(url); },
+    openDetached: (url) => openDetachedCodeServerWindow(url),
+  });
+}
+
+function openDetachedCodeServerWindow(url: string): void {
+  const origin = serverOrigin();
+  const isCodeServerUrl = (target: string) => target === origin + "/code-server" || target.startsWith(origin + "/code-server/");
+  if (!origin || !isCodeServerUrl(url)) {
+    void shell.openExternal(url);
+    return;
+  }
+  const child = new BrowserWindow({
+    width: 1320,
+    height: 920,
+    minWidth: 900,
+    minHeight: 640,
+    title: "Mobius Code Server",
+    autoHideMenuBar: true,
+    backgroundColor: "#1e1e1e",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+    },
+  });
+  child.webContents.setWindowOpenHandler(({ url: nextUrl }) => {
+    if (isCodeServerUrl(nextUrl)) openDetachedCodeServerWindow(nextUrl);
+    else void shell.openExternal(nextUrl);
+    return { action: "deny" };
+  });
+  child.webContents.on("will-navigate", (e, nextUrl) => {
+    if (isCodeServerUrl(nextUrl)) return;
+    e.preventDefault();
+    void shell.openExternal(nextUrl);
+  });
+  child.webContents.on("before-input-event", (e, input) => {
+    if (input.type !== "keyDown" || input.key !== "F12") return;
+    e.preventDefault();
+    if (child.webContents.isDevToolsOpened()) child.webContents.closeDevTools();
+    else child.webContents.openDevTools({ mode: "detach" });
+  });
+  child.loadURL(url).catch((error) => {
+    dialog.showErrorBox("code-server 打开失败", error?.message || String(error));
+    try { child.close(); } catch { /* ignore */ }
   });
 }
 
