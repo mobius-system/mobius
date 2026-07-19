@@ -24,7 +24,10 @@ import fs from 'fs';
 import http from 'http';
 import path from 'path';
 import url from 'url';
+import jwt from 'jsonwebtoken';
+import { JWT_SECRET } from '../config';
 import { auth, authOrQuery } from '../middleware/auth';
+import { Users } from '../repositories/users';
 
 const router = express.Router();
 
@@ -99,6 +102,10 @@ function buildUpstreamPath(req: express.Request): string {
   return req.url;
 }
 
+function pathWithoutQuery(rawPath: string): string {
+  return rawPath.split('?')[0];
+}
+
 function proxyRequest(req: express.Request, res: express.Response): void {
   let target: BridgeTarget;
   try {
@@ -117,6 +124,7 @@ function proxyRequest(req: express.Request, res: express.Response): void {
 
   const upstreamPath = buildUpstreamPath(req);
   const isSSE = req.method === 'GET' && upstreamPath.startsWith('/client/events');
+  const isForward = pathWithoutQuery(upstreamPath) === '/api/forward';
 
   const headers: http.OutgoingHttpHeaders = { ...req.headers };
   for (const h of Object.keys(headers)) {
@@ -127,9 +135,8 @@ function proxyRequest(req: express.Request, res: express.Response): void {
   headers['x-forwarded-for'] = req.ip || '';
   headers['x-forwarded-proto'] = req.protocol || 'http';
 
-  if (isSSE) {
+  if (isSSE || isForward) {
     logBridgeProxy(req, 'sse open');
-    // GET /client/events: 流式透传, 无 body
     const upstreamReq = http.request({
       hostname: target.hostname,
       port: target.port,
@@ -143,9 +150,11 @@ function proxyRequest(req: express.Request, res: express.Response): void {
       // X-Accel-Buffering: no 让 nginx 对该响应关闭缓冲, 心跳/事件即时 flush 到 client.
       const responseHeaders: http.OutgoingHttpHeaders = {
         ...upstreamRes.headers,
-        'cache-control': 'no-cache, no-transform',
         'x-accel-buffering': 'no',
       };
+      if (isSSE || String(upstreamRes.headers['content-type'] || '').includes('text/event-stream')) {
+        responseHeaders['cache-control'] = 'no-cache, no-transform';
+      }
       res.writeHead(upstreamRes.statusCode || 200, responseHeaders);
       upstreamRes.pipe(res);
       upstreamRes.on('end', () => logBridgeProxy(req, 'sse upstream end'));
@@ -158,12 +167,15 @@ function proxyRequest(req: express.Request, res: express.Response): void {
       });
     });
     upstreamReq.setTimeout(0);
-    req.on('close', () => {
+    req.on('aborted', () => {
       logBridgeProxy(req, 'sse client close');
       upstreamReq.destroy();
     });
-    // SSE 无 body, 直接 end
-    upstreamReq.end();
+    res.on('close', () => {
+      if (!res.writableEnded) upstreamReq.destroy();
+    });
+    if (isForward) req.pipe(upstreamReq);
+    else upstreamReq.end();
     return;
   }
 
@@ -211,4 +223,65 @@ function proxyRequest(req: express.Request, res: express.Response): void {
 router.get('/client/events', authOrQuery, proxyRequest);
 router.use(auth, proxyRequest);
 
+function verifyUpgrade(req: any): boolean {
+  const authorization = String(req.headers?.authorization || '');
+  const token = authorization.replace(/^Bearer\s+/i, '');
+  if (!token) return false;
+  try {
+    const payload: any = jwt.verify(token, JWT_SECRET);
+    const id = typeof payload === 'string' ? payload : payload?.id;
+    return Boolean(id && Users.findAuthById(id));
+  } catch {
+    return false;
+  }
+}
+
+function handleUpgrade(req: any, socket: any, head: Buffer): void {
+  const rawPath = String(req.url || '');
+  if (pathWithoutQuery(rawPath) !== '/aimux_bridge/api/forward' || !verifyUpgrade(req)) {
+    socket.destroy();
+    return;
+  }
+  let target: BridgeTarget;
+  try {
+    target = readBridgeTarget();
+  } catch {
+    socket.destroy();
+    return;
+  }
+  const headers: http.OutgoingHttpHeaders = { ...req.headers };
+  for (const name of Object.keys(headers)) {
+    if (name.toLowerCase() === 'host' || name.toLowerCase() === 'authorization') delete (headers as any)[name];
+  }
+  headers.host = `${target.hostname}:${target.port}`;
+  headers.authorization = `Bearer ${target.token}`;
+  const upstreamReq = http.request({
+    hostname: target.hostname,
+    port: target.port,
+    method: 'GET',
+    path: '/api/forward',
+    headers,
+  });
+  upstreamReq.on('upgrade', (upstreamRes, upstreamSocket, upstreamHead) => {
+    const statusLine = `HTTP/${upstreamRes.httpVersion} ${upstreamRes.statusCode} ${upstreamRes.statusMessage}\r\n`;
+    socket.write(statusLine);
+    for (let index = 0; index < upstreamRes.rawHeaders.length; index += 2) {
+      socket.write(`${upstreamRes.rawHeaders[index]}: ${upstreamRes.rawHeaders[index + 1]}\r\n`);
+    }
+    socket.write('\r\n');
+    if (upstreamHead.length) socket.write(upstreamHead);
+    if (head.length) upstreamSocket.write(head);
+    upstreamSocket.pipe(socket);
+    socket.pipe(upstreamSocket);
+  });
+  upstreamReq.on('response', (upstreamRes) => {
+    socket.write(`HTTP/${upstreamRes.httpVersion} ${upstreamRes.statusCode} ${upstreamRes.statusMessage}\r\nConnection: close\r\n\r\n`);
+    upstreamRes.pipe(socket);
+  });
+  upstreamReq.on('error', () => socket.destroy());
+  upstreamReq.setTimeout(0);
+  upstreamReq.end();
+}
+
+(router as any).handleUpgrade = handleUpgrade;
 export = router;

@@ -280,6 +280,8 @@ server.on('upgrade', (req, socket, head) => {
     codeServerProxy.handleUpgrade(req, socket, head);
   } else if (p.startsWith('/api/terminal/')) {
     webTerminal.handleUpgrade(req, socket, head);
+  } else if (p === '/aimux_bridge/api/forward') {
+    aimuxBridgeProxy.handleUpgrade(req, socket, head);
   } else {
     socket.destroy();
   }

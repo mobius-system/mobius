@@ -203,11 +203,8 @@ def ensure_aimux_bridge_runtime_env() -> None:
 
 
 def ensure_aimux_bridge_venv() -> None:
-    """Install mobius/.venv-aimux with aimux==0.1.10 if missing (idempotent)."""
-    venv_aimux = HERE / ".venv-aimux" / "bin" / "aimux"
-    if venv_aimux.exists():
-        return
-    print("=== setting up aimux bridge venv (mobius/.venv-aimux) ===", flush=True)
+    """Install or refresh mobius/.venv-aimux with aimux==0.1.11 (idempotent)."""
+    print("=== ensuring aimux bridge venv (mobius/.venv-aimux) ===", flush=True)
     run(["bash", str(HERE / "scripts" / "setup-aimux-bridge.sh")], cwd=HERE)
 
 
