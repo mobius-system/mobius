@@ -114,7 +114,10 @@ metaRouter.post('/:name/upload', auth, upload.single('file'), (req: express.Requ
   }
   try {
     fs.mkdirSync(uploadDir, { recursive: true });
-    const originalName = safeFileName(file.originalname);
+    // multer 把 originalname 当 latin1 解码, UTF-8 中文会变乱码字节被 safeFileName 替换成下划线。
+    // 先 latin1→utf8 还原真实文件名 (纯 ASCII 不受影响), 让中文文件名正确保留。
+    const rawName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    const originalName = safeFileName(rawName);
     const stampedName = `${Date.now()}-${originalName}`;
     const dest = safeResolveUnder(uploadDir, stampedName);
     if (!dest) throw new Error('bad destination');
