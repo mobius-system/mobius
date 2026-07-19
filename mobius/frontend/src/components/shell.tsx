@@ -575,6 +575,7 @@ function RecentSessionsPanel({
               <LinklessRouteButton
                 key={session.session_id}
                 to={to}
+                newTab
                 onClick={onPick}
                 title={session.name || session.session_id}
                 className={`flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors ${to ? 'hover:bg-[var(--bg-hover)]' : 'cursor-default opacity-60'}`}
