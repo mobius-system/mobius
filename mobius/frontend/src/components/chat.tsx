@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ScrollText } from 'lucide-react'
+import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ScrollText, ExternalLink } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -21,6 +21,7 @@ import { PlanningEditor } from './planning-editor'
 import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
+import { extensionAppUrlForProject } from '../services/extension-entry'
 import { isFireAndForgetSession } from '../services/session-start-policy'
 import {
   formatVoiceSeconds,
@@ -1464,6 +1465,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
   const projectForSession = currentProject?.id === currentProjectId
     ? currentProject
     : projects.find((p: any) => p.id === currentProjectId)
+  const extensionAppUrl = extensionAppUrlForProject(projectForSession)
   const currentModelLabel = sessionModelLabel(
     (currentSession as any)?.model || (currentTask as any)?.model,
     (currentSession as any)?.model_label || (currentTask as any)?.model_label,
@@ -3012,6 +3014,18 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
             <span className="session-stop-button__square inline-block w-1.5 h-1.5 rounded-sm bg-current opacity-90" />
             <span className="relative z-10 whitespace-nowrap">{stopFeedbackActive ? '已触发' : '终止'}</span>
           </button>
+          {extensionAppUrl && (
+            <button
+              type="button"
+              onClick={() => window.open(extensionAppUrl, '_blank', 'noopener,noreferrer')}
+              data-tour="session-extension-open"
+              title={`打开 ${projectForSession?.name || '拓展应用'}`}
+              className="h-7 px-2.5 text-[11px] border border-violet-500/25 text-violet-400 rounded-xl hover:bg-violet-500/10 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
+              <span>打开应用</span>
+            </button>
+          )}
           {currentProjectId && (
             <OpenInVSCodeButton
               projectId={currentProjectId}
