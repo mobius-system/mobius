@@ -159,17 +159,23 @@ export function PathPickerModal({ initialPath, onClose, onPick }: { initialPath?
     onPick(p, p, true)
   }
 
-  const loadDir = useCallback(async (p: string) => {
-    setLoading(true); setErr('')
+  // silent: 不设置/不清除错误横幅。初次加载不存在的绑定路径时静默失败, 由调用方回退到
+  // workspace 根, 避免一闪而过的「读取目录失败」再被回退覆盖。返回是否加载成功。
+  const loadDir = useCallback(async (p: string, opts?: { silent?: boolean }): Promise<boolean> => {
+    setLoading(true)
+    if (!opts?.silent) setErr('')
     try {
       const data = await api(`/api/files?path=${encodeURIComponent(p)}`)
       setEntries((data.entries || []).filter((e: any) => e.type === 'dir'))
       setCurrentPath(data.path || p)
+      setLoading(false)
+      return true
     } catch {
-      setErr('读取目录失败')
       setEntries([])
+      if (!opts?.silent) setErr('读取目录失败')
+      setLoading(false)
+      return false
     }
-    setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -190,7 +196,12 @@ export function PathPickerModal({ initialPath, onClose, onPick }: { initialPath?
       } else {
         setUserHome(home)
       }
-      if (alive) loadDir(toRel(initialPath || '/', home))
+      if (alive) {
+        // 初次加载绑定路径: 若路径不存在(例如随机生成的、或已被删除的绑定路径), 静默回退到
+        // 当前用户的 workspace 根目录, 而不是直接报错卡住路径浏览器。
+        const ok = await loadDir(toRel(initialPath || '/', home), { silent: true })
+        if (alive && !ok) await loadDir('/')
+      }
     }
     boot()
     return () => { alive = false }
