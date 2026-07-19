@@ -159,7 +159,7 @@ metaRouter.get('/:name/user-asset/*', authOrQuery, (req: express.Request, res: e
     return;
   }
   const ext = path.extname(abs).toLowerCase();
-  const allowed = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mov', '.m4v']);
+  const allowed = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mov', '.m4v', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.md', '.csv', '.rtf']);
   if (!allowed.has(ext)) {
     res.status(403).send('mime not allowed');
     return;
@@ -195,7 +195,7 @@ metaRouter.get('/:name/shared-asset/*', authOrQuery, (req: express.Request, res:
     return;
   }
   const ext = path.extname(abs).toLowerCase();
-  const allowed = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mov', '.m4v']);
+  const allowed = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mov', '.m4v', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.md', '.csv', '.rtf']);
   if (!allowed.has(ext)) {
     res.status(403).send('mime not allowed');
     return;
@@ -497,6 +497,17 @@ const MIME: Record<string, string> = {
   '.mov':  'video/quicktime',
   '.m4v':  'video/mp4',
   '.ogg':  'video/ogg',
+  '.pdf':  'application/pdf',
+  '.doc':  'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls':  'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt':  'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.txt':  'text/plain; charset=utf-8',
+  '.md':   'text/markdown; charset=utf-8',
+  '.csv':  'text/csv; charset=utf-8',
+  '.rtf':  'application/rtf',
 };
 
 function scriptJson(value: unknown): string {
