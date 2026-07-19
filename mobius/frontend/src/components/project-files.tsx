@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
-import { Check, Copy, ExternalLink, KeyRound, Loader2, MonitorUp, Play, TerminalSquare } from 'lucide-react'
+import { ExternalLink, Loader2, MonitorUp, Play } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
-import { copyTextToClipboard } from '../utils/clipboard'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 
 // =====================================================================
@@ -128,257 +127,6 @@ export function buildCodeServerProxyUrl(base: string, port: number | string): st
     url += `?_jwt=${encodeURIComponent(token)}`
   }
   return url
-}
-
-function normalizePortInput(value: string): number | null {
-  const text = value.trim()
-  if (!/^[0-9]{1,5}$/.test(text)) return null
-  const port = Number(text)
-  return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : null
-}
-
-type SshForwardConfig = {
-  enabled?: boolean
-  ssh_url?: string
-  host?: string
-  port?: number | null
-  mobius_ssh_port?: number | null
-  user?: string
-  private_key?: string
-  private_key_path?: string
-  private_key_exists?: boolean
-  missing?: string[]
-  error?: string
-}
-
-function sshHostTarget(host: string) {
-  const text = String(host || '').trim()
-  if (!text) return ''
-  if (text.includes(':') && !text.startsWith('[')) return `[${text}]`
-  return text
-}
-
-function buildSshForwardCommands(config: SshForwardConfig, remotePort: number, localPort: number) {
-  const keyName = 'mobius-ssh-forward-ed25519'
-  const host = sshHostTarget(config.host || '')
-  const user = config.user || 'mobius-forward'
-  const sshPort = config.port || config.mobius_ssh_port || 33318
-  const privateKey = String(config.private_key || '').trimEnd()
-  const target = `${user}@${host}`
-  const linuxKeyPath = `~/.mobius/${keyName}`
-  const linux = [
-    'mkdir -p ~/.mobius',
-    `cat > ${linuxKeyPath} <<'MOBIUS_SSH_KEY'`,
-    privateKey,
-    'MOBIUS_SSH_KEY',
-    `chmod 600 ${linuxKeyPath}`,
-    `ssh -N -L 127.0.0.1:${localPort}:127.0.0.1:${remotePort} -p ${sshPort} -i ${linuxKeyPath} -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new ${target}`,
-  ].join('\n')
-
-  const windows = [
-    '$dir = Join-Path $env:USERPROFILE ".mobius"',
-    'New-Item -ItemType Directory -Force -Path $dir | Out-Null',
-    `$key = Join-Path $dir "${keyName}"`,
-    "@'",
-    privateKey,
-    "'@ | Set-Content -NoNewline -Encoding ascii $key",
-    'icacls $key /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null',
-    `ssh -N -L 127.0.0.1:${localPort}:127.0.0.1:${remotePort} -p ${sshPort} -i $key -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new ${target}`,
-  ].join('\n')
-
-  return { linux, windows }
-}
-
-function sshForwardMissingLabel(key: string) {
-  const labels: Record<string, string> = {
-    MOBIUS_SSH_URL: 'MOBIUS_SSH_URL 未配置',
-    MOBIUS_SSH_PORT: 'MOBIUS_SSH_PORT 未配置或不可用',
-    MOBIUS_SSH_URL_port_must_not_be_443: 'MOBIUS_SSH_URL 不能使用 443 端口',
-    ssh_private_key: 'SSH 私钥尚未生成',
-    ssh_forward_config: 'SSH 映射配置接口不可用',
-  }
-  return labels[key] || key
-}
-
-function SshForwardModal({
-  config,
-  remotePort,
-  localPort,
-  onLocalPortChange,
-  onClose,
-  onOpenTarget,
-}: {
-  config: SshForwardConfig | null
-  remotePort: number
-  localPort: string
-  onLocalPortChange: (value: string) => void
-  onClose: () => void
-  onOpenTarget: (port: number) => void
-}) {
-  const [copied, setCopied] = useState('')
-  const [copyError, setCopyError] = useState('')
-  const [openError, setOpenError] = useState('')
-  const localPortNumber = normalizePortInput(localPort)
-  const ready = !!config?.enabled && !!localPortNumber && !!config?.host && !!(config?.port || config?.mobius_ssh_port) && !!config?.private_key
-  const commands = ready ? buildSshForwardCommands(config, remotePort, localPortNumber) : null
-  const missing = config?.missing || []
-
-  const copyBlock = async (key: string, text: string) => {
-    const ok = await copyTextToClipboard(text)
-    if (!ok) {
-      setCopyError('复制失败，请手动选择文本复制')
-      return
-    }
-    setCopyError('')
-    setCopied(key)
-    window.setTimeout(() => setCopied(''), 1500)
-  }
-
-  const openLocalTarget = () => {
-    const port = normalizePortInput(localPort)
-    if (port === null) {
-      setOpenError('请输入 1-65535 的本地映射端口')
-      return
-    }
-    setOpenError('')
-    onOpenTarget(port)
-  }
-
-  // render function (非内部组件): 避免父组件重渲染时 unmount/remount.
-  const renderCodeBlock = (label: string, text: string) => (
-    <div className="relative rounded-lg border bg-[var(--bg-primary)]" style={{ borderColor: 'var(--border-color)' }}>
-      <pre className="max-h-[230px] overflow-auto whitespace-pre-wrap break-words px-3 py-3 pr-20 text-[11px] leading-relaxed font-mono" style={{ color: 'var(--code-text)' }}>
-        {text}
-      </pre>
-      <button
-        type="button"
-        onClick={() => copyBlock(label, text)}
-        className="absolute right-2 top-2 h-7 px-2 rounded-md border text-[11px] inline-flex items-center gap-1.5 transition-colors hover:bg-[var(--bg-hover)]"
-        style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
-      >
-        {copied === label ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-        {copied === label ? '已复制' : '复制'}
-      </button>
-    </div>
-  )
-
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center px-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="ssh-forward-title"
-        className="relative w-full max-w-[760px] max-h-[88vh] overflow-hidden rounded-2xl shadow-2xl"
-        onClick={e => e.stopPropagation()}
-        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
-      >
-        <div className="px-5 py-3 border-b flex items-center gap-3" style={{ borderColor: 'var(--border-color)' }}>
-          <KeyRound className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div id="ssh-forward-title" className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-              映射端口访问（从个人PC）
-            </div>
-            <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-              SSH local forward 到当前项目活跃端口 {remotePort}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-7 px-2 rounded-md border text-[11px] hover:bg-[var(--bg-hover)]"
-            style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
-          >
-            关闭
-          </button>
-        </div>
-
-        <div className="p-4 space-y-3 overflow-y-auto max-h-[calc(88vh-58px)]">
-          <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
-            <div className="rounded-lg border px-3 py-2 bg-[var(--bg-primary)]" style={{ borderColor: 'var(--border-color)' }}>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>SSH 入口</div>
-              <div className="mt-1 text-[12px] font-mono break-all" style={{ color: 'var(--text-primary)' }}>
-                {config?.ssh_url || '未配置 MOBIUS_SSH_URL'}
-              </div>
-              <div className="mt-1 text-[11px] font-mono break-all" style={{ color: 'var(--text-muted)' }}>
-                {config?.user || 'mobius-forward'}@{config?.host || '-'}:{config?.port || config?.mobius_ssh_port || '-'}
-              </div>
-            </div>
-            <label className="rounded-lg border px-3 py-2 bg-[var(--bg-primary)]" style={{ borderColor: 'var(--border-color)' }}>
-              <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>本地映射端口</span>
-              <input
-                value={localPort}
-                onChange={e => {
-                  onLocalPortChange(e.target.value)
-                  setOpenError('')
-                }}
-                inputMode="numeric"
-                pattern="[0-9]*"
-                className="mt-1 h-8 w-full rounded-md border bg-transparent px-2 text-[12px] outline-none focus:border-cyan-400"
-                style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-              />
-            </label>
-          </div>
-
-          {!ready && (
-            <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200">
-              {config?.error || (missing.length
-                ? `SSH 映射配置未就绪：${missing.map(sshForwardMissingLabel).join('，')}`
-                : 'SSH 映射配置未就绪')}
-            </div>
-          )}
-
-          {ready && commands && (
-            <>
-              <div>
-                <div className="mb-1.5 text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Linux / macOS
-                </div>
-                {renderCodeBlock('linux', commands.linux)}
-              </div>
-
-              <div>
-                <div className="mb-1.5 text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Windows PowerShell
-                </div>
-                {renderCodeBlock('windows', commands.windows)}
-              </div>
-
-              <div className="rounded-lg border px-3 py-2 text-[11px] bg-[var(--bg-primary)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-                服务端私钥来源：<span className="font-mono break-all">{config?.private_key_path || '-'}</span>
-              </div>
-            </>
-          )}
-
-          {(copyError || openError) && (
-            <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
-              {copyError || openError}
-            </div>
-          )}
-
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-8 px-3 rounded-md border text-[12px] hover:bg-[var(--bg-hover)]"
-              style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
-            >
-              返回
-            </button>
-            <button
-              type="button"
-              onClick={openLocalTarget}
-              className="h-8 px-3 rounded-md bg-cyan-500 text-white text-[12px] inline-flex items-center gap-1.5 disabled:opacity-55"
-              disabled={!localPortNumber}
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              我已运行，打开目标
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // =====================================================================
@@ -567,17 +315,10 @@ type ProjectPortEntryButtonProps = {
 
 export function ProjectPortEntryButton({ projectId, subPath, className, label, triggerVariant = 'default', onRequestRunProject }: ProjectPortEntryButtonProps) {
   const [bindPath, setBindPath] = useState('')
-  const [vscodeWorkspacePath, setVscodeWorkspacePath] = useState('')
   const [vscodeWebUrl, setVscodeWebUrl] = useState('')
   const [autoPort, setAutoPort] = useState<number | null>(null)
-  const [sshForwardConfig, setSshForwardConfig] = useState<SshForwardConfig | null>(null)
   const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [showDialog, setShowDialog] = useState(false)
-  const [showSshForwardDialog, setShowSshForwardDialog] = useState(false)
-  const [manualOpen, setManualOpen] = useState(false)
-  const [manualPort, setManualPort] = useState('')
-  const [localForwardPort, setLocalForwardPort] = useState('')
   const [error, setError] = useState('')
 
   const loadMetadata = useCallback(async () => {
@@ -585,20 +326,13 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
     setLoading(true)
     setError('')
     try {
-      const [files, portInfo, sshInfo] = await Promise.all([
+      const [files, portInfo] = await Promise.all([
         api(`/api/projects/${projectId}/files?path=/`),
         api(`/api/projects/${projectId}/main-project-port`),
-        api(`/api/projects/${projectId}/ssh-forward-config`).catch((e: any) => ({
-          enabled: false,
-          error: e?.message || '加载 SSH 映射配置失败',
-          missing: ['ssh_forward_config'],
-        })),
       ])
       setBindPath(files?.bind_path || '')
-      setVscodeWorkspacePath(files?.vscode_workspace_path || files?.bind_path || '')
       setVscodeWebUrl(files?.vscode_web_url || '')
       setAutoPort(portInfo?.valid && typeof portInfo?.port === 'number' ? portInfo.port : null)
-      setSshForwardConfig(sshInfo || null)
     } catch (e: any) {
       setError(e?.message || '加载项目端口失败')
     } finally {
@@ -609,22 +343,15 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
   useEffect(() => {
     if (!projectId) {
       setBindPath('')
-      setVscodeWorkspacePath('')
       setVscodeWebUrl('')
       setAutoPort(null)
-      setSshForwardConfig(null)
       setShowDialog(false)
-      setShowSshForwardDialog(false)
       return
     }
     loadMetadata()
   }, [projectId, loadMetadata])
 
   useEffect(() => {
-    setManualOpen(false)
-    setManualPort('')
-    setLocalForwardPort('')
-    setShowSshForwardDialog(false)
     setError('')
   }, [projectId, subPath])
 
@@ -633,7 +360,6 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setShowDialog(false)
-        setShowSshForwardDialog(false)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -641,8 +367,6 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
   }, [showDialog])
 
   const ready = !!projectId && !!vscodeWebUrl && !!bindPath
-  const sub = (subPath || '').trim().replace(/^\/+|\/+$/g, '')
-  const worktreeFolder = sub ? `${bindPath.replace(/\/+$/, '')}/${sub}` : (vscodeWorkspacePath || bindPath)
   const mainProjectPortPath = bindPath ? `${bindPath.replace(/\/+$/, '')}/${HIDDEN_FOLDER_NAME}/port_forward/main_project_port.txt` : ''
   const buttonClassName = className || 'h-7 px-2.5 text-[11px] border border-emerald-500/20 text-emerald-400 rounded-xl hover:bg-emerald-500/10 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-45 disabled:cursor-not-allowed'
   const buttonLabel = label || '进入项目端口'
@@ -668,55 +392,6 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
     setShowDialog(false)
   }
 
-  const openVscode = () => {
-    const url = buildVscodeUrl(vscodeWebUrl, worktreeFolder)
-    if (!url) {
-      setError('VSCode URL 生成失败')
-      return
-    }
-    window.open(url, '_blank', 'noopener,noreferrer')
-    setShowDialog(false)
-  }
-
-  const openSshForwardDialog = () => {
-    if (autoPort === null) {
-      setError('当前项目没有活跃端口，请先启动项目或手动写入端口')
-      return
-    }
-    setLocalForwardPort(prev => normalizePortInput(prev) === null ? String(autoPort) : prev)
-    setError('')
-    setShowSshForwardDialog(true)
-  }
-
-  const openLocalForwardTarget = (port: number) => {
-    window.open(`http://localhost:${port}/`, '_blank', 'noopener,noreferrer')
-    setShowSshForwardDialog(false)
-    setShowDialog(false)
-  }
-
-  const saveManualPort = async () => {
-    const port = normalizePortInput(manualPort)
-    if (port === null) {
-      setError('请输入 1-65535 的整数端口')
-      return
-    }
-    if (!projectId) return
-    setSaving(true)
-    setError('')
-    try {
-      await api(`/api/projects/${projectId}/main-project-port`, {
-        method: 'POST',
-        body: JSON.stringify({ port }),
-      })
-      setAutoPort(port)
-      openProxyPort(port)
-    } catch (e: any) {
-      setError(e?.message || '保存项目端口失败')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   if (!ready) {
     if (triggerVariant === 'advanced') {
       return renderAdvancedTrigger(true, projectId ? '正在加载项目端口' : '正在加载项目信息')
@@ -740,8 +415,6 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
     <>
       {triggerVariant === 'advanced' ? renderAdvancedTrigger(loading, '进入项目端口', () => {
           setShowDialog(true)
-          setShowSshForwardDialog(false)
-          setManualOpen(false)
           setError('')
           if (!loading) loadMetadata()
         }) : (
@@ -749,8 +422,6 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
           type="button"
           onClick={() => {
             setShowDialog(true)
-            setShowSshForwardDialog(false)
-            setManualOpen(false)
             setError('')
             if (!loading) loadMetadata()
           }}
@@ -766,7 +437,6 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
       {showDialog && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-4" onClick={() => {
           setShowDialog(false)
-          setShowSshForwardDialog(false)
         }}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <div
@@ -789,84 +459,19 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
               </div>
             </div>
             <div className="p-3 space-y-2">
-              {autoPort !== null && (
-                <button
-                  type="button"
-                  onClick={() => openProxyPort(autoPort)}
-                  className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-emerald-500/10 hover:border-emerald-500/30"
-                  style={{ borderColor: 'var(--border-color)' }}
-                >
-                  <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                    <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
-                    自动
-                  </div>
-                  <div className="mt-1 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>
-                    proxy/{autoPort}/
-                  </div>
-                </button>
-              )}
-
               <button
                 type="button"
-                onClick={() => {
-                  setManualOpen(v => !v)
-                  setError('')
-                }}
-                className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-blue-500/10 hover:border-blue-500/30"
+                onClick={() => autoPort !== null && openProxyPort(autoPort)}
+                disabled={autoPort === null}
+                className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-emerald-500/10 hover:border-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-55"
                 style={{ borderColor: 'var(--border-color)' }}
               >
                 <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                  <ExternalLink className="w-3.5 h-3.5 text-blue-400" />
-                  手动输入端口
+                  <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+                  自动
                 </div>
-                <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  保存到 {HIDDEN_FOLDER_NAME}/port_forward/main_project_port.txt 后打开
-                </div>
-              </button>
-
-              {manualOpen && (
-                <div className="rounded-lg border p-3 bg-[var(--bg-primary)]" style={{ borderColor: 'var(--border-color)' }}>
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={manualPort}
-                      onChange={e => {
-                        setManualPort(e.target.value)
-                        setError('')
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') saveManualPort()
-                      }}
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      placeholder="例如 9090"
-                      className="h-8 min-w-0 flex-1 rounded-md border bg-transparent px-2 text-[12px] outline-none focus:border-blue-400"
-                      style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={saveManualPort}
-                      disabled={saving}
-                      className="h-8 px-3 rounded-md bg-blue-500 text-white text-[12px] inline-flex items-center gap-1.5 disabled:opacity-60"
-                    >
-                      {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                      打开
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={openSshForwardDialog}
-                className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-cyan-500/10 hover:border-cyan-500/30"
-                style={{ borderColor: 'var(--border-color)' }}
-              >
-                <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                  <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
-                  映射端口访问（从个人PC）
-                </div>
-                <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  复制 SSH local forward 命令后从本机 localhost 打开
+                <div className="mt-1 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>
+                  {autoPort !== null ? `proxy/${autoPort}/` : `${HIDDEN_FOLDER_NAME}/port_forward/main_project_port.txt 未检测到有效端口`}
                 </div>
               </button>
 
@@ -886,28 +491,13 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
                 >
                   <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
                     <Play className="w-3.5 h-3.5 text-amber-400" />
-                    发送运行前端的指令
+                    发送运行前端的命令
                   </div>
                   <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                     让当前会话启动项目并写入端口文件
                   </div>
                 </button>
               )}
-
-              <button
-                type="button"
-                onClick={openVscode}
-                className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-purple-500/10 hover:border-purple-500/30"
-                style={{ borderColor: 'var(--border-color)' }}
-              >
-                <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                  <TerminalSquare className="w-3.5 h-3.5 text-purple-400" />
-                  高级
-                </div>
-                <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  打开 VSCode，自行创建多个端口 proxy
-                </div>
-              </button>
 
               {error && (
                 <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
@@ -919,16 +509,6 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
         </div>
       )}
 
-      {showSshForwardDialog && autoPort !== null && (
-        <SshForwardModal
-          config={sshForwardConfig}
-          remotePort={autoPort}
-          localPort={localForwardPort}
-          onLocalPortChange={setLocalForwardPort}
-          onClose={() => setShowSshForwardDialog(false)}
-          onOpenTarget={openLocalForwardTarget}
-        />
-      )}
     </>
   )
 }

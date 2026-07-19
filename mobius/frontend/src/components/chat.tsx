@@ -2897,7 +2897,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
           <button
             type="button"
             className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-            aria-label="取消发送运行项目指令"
+            aria-label="取消发送运行前端命令"
             onClick={() => setRunProjectPrompt('')}
           />
           <div
@@ -2908,7 +2908,7 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
             <div className="flex items-center justify-between gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
               <div className="min-w-0">
                 <div id="run-project-port-title" className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  确认发送运行项目指令
+                  确认发送运行前端命令
                 </div>
                 <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   下面的消息将发送给当前会话
