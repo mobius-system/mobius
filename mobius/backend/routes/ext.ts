@@ -477,6 +477,14 @@ staticRouter.get('/_sdk/ext.js', (_req: express.Request, res: express.Response) 
   res.send(SDK_JS);
 });
 
+const DESKTOP_PAGE_ACTIONS_FILE = path.join(__dirname, '..', 'assets', 'desktop-page-actions.js');
+
+staticRouter.get('/_sdk/desktop-page-actions.js', (_req: express.Request, res: express.Response) => {
+  res.set('content-type', 'application/javascript; charset=utf-8');
+  res.set('cache-control', 'public, max-age=300');
+  res.sendFile(DESKTOP_PAGE_ACTIONS_FILE);
+});
+
 // /extension/<name>/        → loading 或 index.html (注入 window.__EXT_NAME__)
 // /extension/<name>/<asset> → dist/<asset> (mime 白名单)
 const MIME: Record<string, string> = {
@@ -519,6 +527,7 @@ function scriptJson(value: unknown): string {
 
 function desktopHostBarInjection(title: string): string {
   return `
+<script src="/extension/_sdk/desktop-page-actions.js"></script>
 <style id="mobius-desktop-hostbar-style">
   .mobius-desktop-hostbar {
     position: fixed !important;
@@ -552,7 +561,6 @@ function desktopHostBarInjection(title: string): string {
   .mobius-desktop-hostbar * {
     box-sizing: border-box !important;
   }
-  .mobius-desktop-hostbar__back,
   .mobius-desktop-hostbar__button {
     all: unset !important;
     pointer-events: auto !important;
@@ -567,17 +575,9 @@ function desktopHostBarInjection(title: string): string {
     cursor: pointer !important;
     transition: background 0.12s ease, color 0.12s ease !important;
   }
-  .mobius-desktop-hostbar__back {
-    min-width: 74px !important;
-    padding: 0 10px !important;
-    font-size: 12px !important;
-    font-weight: 600 !important;
-    letter-spacing: 0 !important;
-  }
   .mobius-desktop-hostbar__button {
     width: 38px !important;
   }
-  .mobius-desktop-hostbar__back:hover,
   .mobius-desktop-hostbar__button:hover {
     background: rgba(148, 163, 184, 0.15) !important;
   }
@@ -620,6 +620,12 @@ function desktopHostBarInjection(title: string): string {
     pointer-events: auto !important;
     margin-right: -14px !important;
   }
+  .mobius-desktop-hostbar mobius-desktop-page-actions {
+    --mobius-page-actions-hover: rgba(148, 163, 184, 0.15);
+    --mobius-page-actions-bg: #111827;
+    --mobius-page-actions-border: rgba(148, 163, 184, 0.24);
+    --mobius-page-actions-color: #e5e7eb;
+  }
   .mobius-desktop-hostbar--mac .mobius-desktop-hostbar__controls {
     display: none !important;
   }
@@ -643,19 +649,11 @@ function desktopHostBarInjection(title: string): string {
     .mobius-desktop-hostbar__title {
       display: none !important;
     }
-    .mobius-desktop-hostbar__back {
-      min-width: 42px !important;
-      padding: 0 8px !important;
-    }
-    .mobius-desktop-hostbar__back-label {
-      display: none !important;
-    }
   }
 </style>
 <script>
 (() => {
   const TITLE = ${scriptJson(title)};
-  const FALLBACK = '/';
   const md = window.mobiusDesktop;
   if (!md || !md.isDesktop) return;
   const isMac = /Mac/i.test(navigator.platform || '');
@@ -668,15 +666,9 @@ function desktopHostBarInjection(title: string): string {
     const bar = document.createElement('div');
     bar.className = 'mobius-desktop-hostbar' + (isMac ? ' mobius-desktop-hostbar--mac' : '');
     bar.innerHTML = [
-      '<button type="button" class="mobius-desktop-hostbar__back" data-action="back" title="返回上一页" aria-label="返回上一页">',
-      '  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>',
-      '  <span class="mobius-desktop-hostbar__back-label">返回</span>',
-      '</button>',
       '<div class="mobius-desktop-hostbar__title"></div>',
       '<div class="mobius-desktop-hostbar__drag" data-action="drag" aria-hidden="true"></div>',
-      '<button type="button" class="mobius-desktop-hostbar__button" data-action="reload" title="刷新页面" aria-label="刷新页面">',
-      '  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v5h-5"/></svg>',
-      '</button>',
+      '<mobius-desktop-page-actions back-fallback="/" welcome-path="/welcome"></mobius-desktop-page-actions>',
       '<div class="mobius-desktop-hostbar__controls" aria-label="窗口控制">',
       '  <button type="button" class="mobius-desktop-hostbar__button" data-action="minimize" title="最小化" aria-label="最小化"><svg viewBox="0 0 11 11" aria-hidden="true"><rect y="4.6" width="11" height="1.8" fill="currentColor"/></svg></button>',
       '  <button type="button" class="mobius-desktop-hostbar__button" data-action="maximize" title="最大化" aria-label="最大化"><svg class="mobius-desktop-hostbar__max" viewBox="0 0 11 11" aria-hidden="true"><rect x="0.7" y="0.7" width="9.6" height="9.6" fill="none" stroke="currentColor" stroke-width="1"/></svg><svg class="mobius-desktop-hostbar__max-restore" viewBox="0 0 11 11" aria-hidden="true"><rect x="1" y="3.2" width="6.4" height="6.4" fill="none" stroke="currentColor" stroke-width="1"/><path d="M3.2 3.2 V1 H9.6 V7.4 H7.4" fill="none" stroke="currentColor" stroke-width="1"/></svg></button>',
@@ -688,17 +680,6 @@ function desktopHostBarInjection(title: string): string {
     document.body.prepend(bar);
     document.body.classList.add('mobius-desktop-hostbar-active');
 
-    const goBack = () => {
-      const before = location.href;
-      if (history.length > 1) {
-        history.back();
-        window.setTimeout(() => {
-          if (location.href === before) location.assign(FALLBACK);
-        }, 700);
-      } else {
-        location.assign(FALLBACK);
-      }
-    };
     const endDrag = () => { try { void md.windowEndDrag?.(); } catch (_) {} };
     const startDrag = (event) => {
       if (isMac) return;
@@ -718,8 +699,6 @@ function desktopHostBarInjection(title: string): string {
       }
     };
 
-    bar.querySelector('[data-action="back"]')?.addEventListener('click', goBack);
-    bar.querySelector('[data-action="reload"]')?.addEventListener('click', () => location.reload());
     bar.querySelector('[data-action="minimize"]')?.addEventListener('click', () => { try { void md.windowMinimize?.(); } catch (_) {} });
     bar.querySelector('[data-action="maximize"]')?.addEventListener('click', () => {
       try {

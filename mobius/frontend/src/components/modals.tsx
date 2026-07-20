@@ -3398,7 +3398,7 @@ export function TurnTree({ sessionId, onClose, onRefresh }: { sessionId: string;
 //   - 内置 python + 自动装 aimux 反连, 把本机注册为可调度节点
 //   - 产物在服务器 /desktop-builds/ 下, 经同源静态托管提供
 // =====================================================================
-const DESKTOP_VERSION = '0.0.14'
+const DESKTOP_VERSION = '0.0.15'
 const DESKTOP_BUILDS: Array<{ label: string; sub: string; file: string }> = [
   { label: 'Windows', sub: 'x64 · Intel / AMD 64位', file: `mobius-desktop-${DESKTOP_VERSION}-win-x64.zip` },
   { label: 'macOS', sub: 'Apple Silicon · M1/M2/M3/M4', file: `mobius-desktop-${DESKTOP_VERSION}-mac-arm64.zip` },

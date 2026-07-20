@@ -80,6 +80,8 @@ temp/
 .mobius
 
 assets
+!mobius/backend/assets/
+!mobius/backend/assets/desktop-page-actions.js
 
 # Local external checkouts / machine-specific helpers
 /jsoncrack

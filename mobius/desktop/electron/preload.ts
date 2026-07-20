@@ -11,6 +11,8 @@ const desktopApi = {
   setTitleBarOverlay: (opts: { color?: string; symbolColor?: string; height?: number }) =>
     ipcRenderer.invoke("desktop:set-title-bar-overlay", opts),
   windowMinimize: () => ipcRenderer.invoke("window:minimize"),
+  windowZoomIn: () => ipcRenderer.invoke("window:zoom-in"),
+  windowZoomOut: () => ipcRenderer.invoke("window:zoom-out"),
   windowToggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
   windowClose: () => ipcRenderer.invoke("window:close"),
   windowIsMaximized: () => ipcRenderer.invoke("window:is-maximized"),
@@ -66,6 +68,8 @@ const mobiusDesktop = {
     ipcRenderer.invoke("desktop:set-title-bar-overlay", opts),
   // 自绘窗口控制按钮用 (titleBarOverlay 原生按钮符号在此环境不渲染)
   windowMinimize: () => ipcRenderer.invoke("window:minimize"),
+  windowZoomIn: () => ipcRenderer.invoke("window:zoom-in"),
+  windowZoomOut: () => ipcRenderer.invoke("window:zoom-out"),
   windowToggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
   windowClose: () => ipcRenderer.invoke("window:close"),
   windowIsMaximized: () => ipcRenderer.invoke("window:is-maximized"),

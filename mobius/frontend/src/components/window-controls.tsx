@@ -3,12 +3,15 @@
 // 而 titleBarOverlay 的原生按钮符号在本环境 (未签名 exe + 高 DPI) 不渲染 (只剩背景色块), 故前端自绘。
 // macOS 用系统交通灯 (titleBarStyle:hiddenInset), 此组件由 shell 的 IS_MAC_PLATFORM 判断不挂载。
 // 主题自适应: 图标色 var(--text-primary), hover 用 var(--bg-hover), 关闭键 hover 红 (#e81123)。
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from 'react'
+import { DesktopPageActions } from './desktop-page-actions'
 
 type Bridge = {
   isDesktop?: boolean
   syncReload?: () => Promise<unknown>
+  windowZoomIn?: () => Promise<unknown>
+  windowZoomOut?: () => Promise<unknown>
   windowMinimize?: () => Promise<unknown>
   windowToggleMaximize?: () => Promise<{ maximized?: boolean } | unknown>
   windowClose?: () => Promise<unknown>
@@ -66,8 +69,6 @@ export function DesktopDragHandle({ className = '', 'aria-hidden': ariaHidden }:
 // 高 DPI 下把最小化横线加粗到 1.8px 可见。作用严格局限调用方, 不影响 shell 主界面 (未传参)。
 export function WindowControls({ thickMinimize = false }: { thickMinimize?: boolean } = {}) {
   const [maximized, setMaximized] = useState(false)
-  const [pageMenuOpen, setPageMenuOpen] = useState(false)
-  const pageMenuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const md = getBridge()
     if (!md?.windowIsMaximized) return
@@ -75,21 +76,6 @@ export function WindowControls({ thickMinimize = false }: { thickMinimize?: bool
     const off = md.onMaximizeChange?.((m) => setMaximized(m))
     return () => { off?.() }
   }, [])
-  useEffect(() => {
-    if (!pageMenuOpen) return
-    const closeOnOutside = (event: globalThis.PointerEvent) => {
-      if (!pageMenuRef.current?.contains(event.target as Node)) setPageMenuOpen(false)
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setPageMenuOpen(false)
-    }
-    document.addEventListener('pointerdown', closeOnOutside)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('pointerdown', closeOnOutside)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [pageMenuOpen])
   const md = getBridge()
   if (!md?.windowMinimize) return null
 
@@ -110,33 +96,13 @@ export function WindowControls({ thickMinimize = false }: { thickMinimize?: bool
 
   return (
     <div className="flex items-stretch flex-shrink-0 no-drag" style={{ height: 48, marginLeft: 4, marginRight: -14 }}>
-      <div ref={pageMenuRef} className="relative flex h-full items-stretch">
-        <button type="button" title="页面操作" aria-label="打开页面操作菜单" aria-haspopup="menu" aria-expanded={pageMenuOpen}
-          style={btnBase}
-          onMouseEnter={(e) => enterHover(e, 'var(--bg-hover)')} onMouseLeave={leaveHover}
-          onClick={() => setPageMenuOpen((open) => !open)}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-            <path d="M5 7h14M5 12h14M5 17h14" />
-          </svg>
-        </button>
-        {pageMenuOpen && (
-          <div role="menu" className="absolute right-0 top-full z-[70] w-36 overflow-hidden rounded-md border py-1 shadow-xl"
-            style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
-            <button type="button" role="menuitem" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-[var(--bg-hover)]"
-              onClick={() => { setPageMenuOpen(false); window.history.back() }}>
-              <span aria-hidden>←</span><span>后退</span>
-            </button>
-            <button type="button" role="menuitem" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-[var(--bg-hover)]"
-              onClick={() => { setPageMenuOpen(false); md.syncReload?.().catch(() => {}) }}>
-              <span aria-hidden>↻</span><span>刷新</span>
-            </button>
-            <button type="button" role="menuitem" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-[var(--bg-hover)]"
-              onClick={() => { setPageMenuOpen(false); window.location.assign('/welcome') }}>
-              <span aria-hidden>⌂</span><span>返回欢迎页</span>
-            </button>
-          </div>
-        )}
-      </div>
+      <DesktopPageActions
+        onBack={() => window.history.back()}
+        onReload={() => md.syncReload?.().catch(() => {})}
+        onZoomIn={() => md.windowZoomIn?.().catch(() => {})}
+        onZoomOut={() => md.windowZoomOut?.().catch(() => {})}
+        onWelcome={() => window.location.assign('/welcome')}
+      />
       <button type="button" title="最小化" aria-label="最小化"
         style={btnBase}
         onMouseEnter={(e) => enterHover(e, 'var(--bg-hover)')} onMouseLeave={leaveHover}

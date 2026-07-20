@@ -81,7 +81,7 @@ export class TabManager {
   }
 
   private isRestorablePath(pathOnly: string): boolean {
-    return !!pathOnly && !this.isCodeServerPath(pathOnly);
+    return !!pathOnly && pathOnly.startsWith("/u/") && !this.isCodeServerPath(pathOnly);
   }
 
   getTabs(): TabInfo[] {
