@@ -48,6 +48,8 @@ export class AimuxSupervisor {
   private stopping = false;
   private respawnTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private stdoutRemainder = "";
+  private stderrRemainder = "";
   private opts: SupervisorOptions;
 
   constructor(opts: SupervisorOptions) {
@@ -100,12 +102,22 @@ export class AimuxSupervisor {
         onStatus({ state: "connected", detail: line, identifier });
       }
     };
-    const handle = (b: Buffer) => {
+    const handle = (b: Buffer, stream: "stdout" | "stderr") => {
       appendAimuxLog(b);
-      for (const l of b.toString("utf8").split(/[\r\n]+/)) { const t = l.trim(); if (t) classify(t); }
+      const combined = (stream === "stdout" ? this.stdoutRemainder : this.stderrRemainder) + b.toString("utf8");
+      const lines = combined.split(/\r?\n/);
+      const remainder = lines.pop() ?? "";
+
+      if (stream === "stdout") this.stdoutRemainder = remainder;
+      else this.stderrRemainder = remainder;
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed) classify(trimmed);
+      }
     };
-    child.stdout?.on("data", handle);
-    child.stderr?.on("data", handle);
+    child.stdout?.on("data", (b: Buffer) => handle(b, "stdout"));
+    child.stderr?.on("data", (b: Buffer) => handle(b, "stderr"));
 
     child.on("exit", (code) => {
       this.child = null;
