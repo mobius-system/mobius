@@ -29,7 +29,7 @@ echo "[setup-aimux-bridge] creating venv at $VENV_DIR"
 UV_VENV_CLEAR=1 "$UV_BIN" venv "$VENV_DIR" --python 3.12
 
 echo "[setup-aimux-bridge] installing aimux==$AIMUX_VERSION"
-install_args=(pip install --python "$VENV_DIR" --index-url https://pypi.org/simple/ "aimux==$AIMUX_VERSION")
+install_args=(pip install --python "$VENV_DIR" --no-cache --index-url https://pypi.org/simple/ "aimux==$AIMUX_VERSION")
 # In Docker build (no proxychains in PATH), the env may pre-set http_proxy via build args.
 # On host we expect callers to wrap with proxychains if PyPI is slow.
 if command -v proxychains >/dev/null 2>&1 && [[ -z "${AIMUX_NO_PROXYCHAINS:-}" ]]; then
