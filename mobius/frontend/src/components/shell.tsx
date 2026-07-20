@@ -690,6 +690,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
     setTheme,
     backgroundFlowEnabled,
     toggleBackgroundFlow,
+    assistantBubbleEnabled,
+    toggleAssistantBubble,
     currentProject,
     currentIssue,
     currentResearch,
@@ -1204,6 +1206,39 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                         background: backgroundFlowEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
                         transform: backgroundFlowEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
                         boxShadow: backgroundFlowEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
+                      }}
+                    />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={assistantBubbleEnabled}
+                  onClick={toggleAssistantBubble}
+                  className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  <CircleDot className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12px] font-semibold leading-4">小莫光点</span>
+                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                      浮动入口 · {assistantBubbleEnabled ? '已显示' : '已隐藏'}
+                    </span>
+                  </span>
+                  <span
+                    className="relative h-5 w-9 shrink-0 rounded-full border transition-colors"
+                    style={{
+                      background: assistantBubbleEnabled ? 'color-mix(in srgb, var(--accent-primary) 28%, transparent)' : 'var(--input-bg)',
+                      borderColor: assistantBubbleEnabled ? 'color-mix(in srgb, var(--accent-primary) 46%, var(--border-color))' : 'var(--border-color-strong)',
+                    }}
+                  >
+                    <span
+                      className="absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-transform"
+                      style={{
+                        left: 2,
+                        background: assistantBubbleEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
+                        transform: assistantBubbleEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
+                        boxShadow: assistantBubbleEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
                       }}
                     />
                   </span>

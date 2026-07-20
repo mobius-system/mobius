@@ -2,11 +2,17 @@ import { create } from 'zustand'
 import { type ThemeName, nextThemeName, normalizeTheme } from './theme'
 
 const BACKGROUND_FLOW_STORAGE_KEY = 'cc-background-flow'
+const ASSISTANT_BUBBLE_STORAGE_KEY = 'mobius:ui:assistant-bubble'
 
 function loadBackgroundFlowEnabled() {
   // 默认关闭; localStorage 中未存储过 (新用户) 时不开启背景光流.
   const stored = localStorage.getItem(BACKGROUND_FLOW_STORAGE_KEY)
   return stored == null ? false : stored === '1'
+}
+
+function loadAssistantBubbleEnabled() {
+  const stored = localStorage.getItem(ASSISTANT_BUBBLE_STORAGE_KEY)
+  return stored == null ? true : stored !== '0'
 }
 
 // 工作区布局模式:
@@ -282,6 +288,7 @@ interface AppState {
   agentStatus: 'idle' | 'running' | 'stale'
   theme: ThemeName
   backgroundFlowEnabled: boolean
+  assistantBubbleEnabled: boolean
   // 用户隔离 v3: 全局视图偏好 (hide_others_projects)
   hideOthersProjects: boolean
   // 用户隔离 v3: 当前用户已 mute 的项目 ID 集合
@@ -328,6 +335,8 @@ interface AppState {
   toggleTheme: () => void
   setBackgroundFlowEnabled: (enabled: boolean) => void
   toggleBackgroundFlow: () => void
+  setAssistantBubbleEnabled: (enabled: boolean) => void
+  toggleAssistantBubble: () => void
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -358,6 +367,7 @@ export const useStore = create<AppState>((set) => ({
   agentStatus: 'idle' as const,
   theme: normalizeTheme(localStorage.getItem('cc-theme')),
   backgroundFlowEnabled: loadBackgroundFlowEnabled(),
+  assistantBubbleEnabled: loadAssistantBubbleEnabled(),
   hideOthersProjects: false,
   mutedProjectIds: [],
   branding: loadInitialBranding(),
@@ -424,6 +434,15 @@ export const useStore = create<AppState>((set) => ({
     const next = !s.backgroundFlowEnabled
     localStorage.setItem(BACKGROUND_FLOW_STORAGE_KEY, next ? '1' : '0')
     return { backgroundFlowEnabled: next }
+  }),
+  setAssistantBubbleEnabled: (enabled) => {
+    localStorage.setItem(ASSISTANT_BUBBLE_STORAGE_KEY, enabled ? '1' : '0')
+    set({ assistantBubbleEnabled: enabled })
+  },
+  toggleAssistantBubble: () => set((s) => {
+    const next = !s.assistantBubbleEnabled
+    localStorage.setItem(ASSISTANT_BUBBLE_STORAGE_KEY, next ? '1' : '0')
+    return { assistantBubbleEnabled: next }
   }),
 }))
 

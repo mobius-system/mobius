@@ -204,7 +204,7 @@ function RootRedirect() {
 }
 
 function AuthenticatedApp() {
-  const { user } = useStore()
+  const { user, assistantBubbleEnabled } = useStore()
   const location = useLocation()
 
   useEffect(() => startTextRedactionRuntime(), [])
@@ -235,9 +235,11 @@ function AuthenticatedApp() {
       <Suspense fallback={null}>
         <TourController />
       </Suspense>
-      <Suspense fallback={null}>
-        <AssistantChat />
-      </Suspense>
+      {assistantBubbleEnabled ? (
+        <Suspense fallback={null}>
+          <AssistantChat />
+        </Suspense>
+      ) : null}
       <Suspense fallback={null}>
         <DesktopTabBar />
       </Suspense>
