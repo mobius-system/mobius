@@ -4,6 +4,17 @@
 // contextIsolation:true → 页面只能读不能改这些桥。
 import { contextBridge, ipcRenderer } from "electron";
 
+let lastZoomWheelAt = 0;
+window.addEventListener("wheel", (event) => {
+  if (!event.ctrlKey || event.deltaY === 0) return;
+  event.preventDefault();
+  const now = Date.now();
+  if (now - lastZoomWheelAt < 80) return;
+  lastZoomWheelAt = now;
+  const channel = event.deltaY < 0 ? "window:zoom-in" : "window:zoom-out";
+  void ipcRenderer.invoke(channel).catch(() => {});
+}, { capture: true, passive: false });
+
 const desktopApi = {
   login: (creds: { server: string; username: string; password: string }) =>
     ipcRenderer.invoke("auth:login", creds),

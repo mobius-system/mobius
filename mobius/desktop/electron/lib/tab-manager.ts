@@ -11,6 +11,7 @@
 // - 布局：tab 栏是前端 fixed 浮层不占空间 → 每个 view 铺满窗口客户区。
 import { type BrowserWindow, WebContentsView, type WebContents, type WebPreferences } from "electron";
 import { getLastTabs, setLastTabs } from "./desktop-settings";
+import { installWebContentsShortcuts } from "./web-contents-shortcuts";
 
 export interface TabInfo {
   id: string;
@@ -144,13 +145,7 @@ export class TabManager {
         this.persist();
       }
     });
-    // F12 切换 devtools（detach 模式），同 main.ts 既有 before-input-event。
-    wc.on("before-input-event", (e, input) => {
-      if (input.type !== "keyDown" || input.key !== "F12") return;
-      e.preventDefault();
-      if (wc.isDevToolsOpened()) wc.closeDevTools();
-      else wc.openDevTools({ mode: "detach" });
-    });
+    installWebContentsShortcuts(wc);
     // 页面标题更新 → tab.title（tab 栏卡片显示）。
     wc.on("page-title-updated", (_e, title) => {
       tab.title = title;

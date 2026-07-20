@@ -53,7 +53,7 @@
       .menu[hidden] { display: none; }
       .item {
         width: 100%;
-        min-height: 32px;
+        min-height: 17px;
         display: flex;
         align-items: center;
         gap: 8px;

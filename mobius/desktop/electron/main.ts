@@ -16,6 +16,7 @@ import { FileOpError, validateNewName, assertNoSymlink, isDirEqualOrChild, copyE
 import { getAimuxEnabled, setAimuxEnabled, getLastRoute } from "./lib/desktop-settings";
 import { createStatusWindow } from "./status-window";
 import { TabManager } from "./lib/tab-manager";
+import { changeWebContentsZoom, installWebContentsShortcuts } from "./lib/web-contents-shortcuts";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const isMac = process.platform === "darwin";
@@ -103,12 +104,7 @@ function openDetachedCodeServerWindow(url: string): void {
     e.preventDefault();
     void shell.openExternal(nextUrl);
   });
-  child.webContents.on("before-input-event", (e, input) => {
-    if (input.type !== "keyDown" || input.key !== "F12") return;
-    e.preventDefault();
-    if (child.webContents.isDevToolsOpened()) child.webContents.closeDevTools();
-    else child.webContents.openDevTools({ mode: "detach" });
-  });
+  installWebContentsShortcuts(child.webContents);
   child.loadURL(url).catch((error) => {
     dialog.showErrorBox("code-server 打开失败", error?.message || String(error));
     try { child.close(); } catch { /* ignore */ }
@@ -842,15 +838,11 @@ ipcMain.handle("desktop:set-title-bar-overlay", (_e, opts: { color?: string; sym
 // 窗口控制 (前端自绘按钮调用; titleBarOverlay 原生按钮符号在此环境不渲染, 故自绘)
 ipcMain.handle("window:minimize", () => { mainWindow?.minimize(); return { ok: true }; });
 ipcMain.handle("window:zoom-in", (event) => {
-  const current = event.sender.getZoomFactor();
-  const zoomFactor = Math.min(2, Math.round((current + 0.1) * 10) / 10);
-  event.sender.setZoomFactor(zoomFactor);
+  const zoomFactor = changeWebContentsZoom(event.sender, 0.1);
   return { ok: true, zoomFactor };
 });
 ipcMain.handle("window:zoom-out", (event) => {
-  const current = event.sender.getZoomFactor();
-  const zoomFactor = Math.max(0.5, Math.round((current - 0.1) * 10) / 10);
-  event.sender.setZoomFactor(zoomFactor);
+  const zoomFactor = changeWebContentsZoom(event.sender, -0.1);
   return { ok: true, zoomFactor };
 });
 ipcMain.handle("window:toggle-maximize", () => {
