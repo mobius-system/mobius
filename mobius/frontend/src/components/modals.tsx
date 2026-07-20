@@ -2574,6 +2574,12 @@ export function NewSessionModal({
   const skillCheckedCount = availableSkills.filter(s => matchesRequiredSkill(s) || isChosenAgentSkill(s.id) || (!isMutuallyExclusiveAgentSkill(s.id) && !excludedSkills.has(s.id))).length
   const memoryCheckedCount = availableMemories.filter(m => !excludedMemories.has(m.id)).length
   const projectSkillCount = availableSkills.filter(s => s.scope === 'project').length
+  const pcTaskRequiresAimux = workMode === 'pc' || workMode === 'dual'
+  const requiredSkillNames = [
+    ...(requiredSessionSkill ? [requiredSessionSkill.label || requiredSessionSkill.dirName] : []),
+    ...(pcTaskRequiresAimux ? ['mobius-aimux'] : []),
+  ].filter(Boolean)
+  const previewBodyText = typeof preview?.body === 'string' ? preview.body : ''
 
   // 目的/描述输入框: preset 模板模式保留自带边框(裸); 正常创建模式下边框透明,
   // 交给 AttachmentComposer 的整合容器统一包边, 使附件芯片/上传按钮与输入框融为一体.
@@ -2644,7 +2650,7 @@ export function NewSessionModal({
               {isPresetMode
                 ? '这里只保存未来创建会话时要使用的参数，不会立即创建真正的会话。'
                 : `${displayEntityLabel} 创建后, 当前的 Skill 与 Memory 会作为快照定型, 之后修改不影响此 ${displayEntityLabel}.`}
-              {requiredSessionSkill && <span className="block mt-1">必选 Skill: {requiredSessionSkill.label || requiredSessionSkill.dirName}</span>}
+              {requiredSkillNames.length > 0 && <span className="block mt-1">必选 Skill: {requiredSkillNames.join('、')}</span>}
             </p>
             <div className="flex-1 min-h-0 space-y-3 mb-4 overflow-y-auto overscroll-contain pr-1">
               <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
@@ -2910,9 +2916,9 @@ export function NewSessionModal({
 
         {step === 2 && preview && (
           <>
-            <div data-tour="session-preview" className="flex-1 min-h-0 mb-4 overflow-y-auto lg:overflow-hidden pr-1 lg:pr-0">
-              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.92fr)_minmax(320px,1.08fr)] gap-4 lg:h-full lg:min-h-0 lg:overflow-hidden">
-                <div className="space-y-3 min-h-0 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-2">
+            <div data-tour="session-preview" className="flex-1 min-h-0 mb-4 overflow-y-auto xl:overflow-hidden pr-1 xl:pr-0">
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.92fr)_minmax(320px,1.08fr)] gap-4 xl:h-full xl:min-h-0 xl:overflow-hidden">
+                <div className="space-y-3 min-h-0 xl:h-full xl:overflow-y-auto xl:overscroll-contain xl:pr-2">
                   <div className="rounded-lg p-3 text-[11px] leading-relaxed" style={{
                     background: isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.06)',
                     border: `1px solid ${isDark ? 'rgba(59,130,246,0.3)' : 'rgba(59,130,246,0.25)'}`,
@@ -2923,7 +2929,7 @@ export function NewSessionModal({
                     <div className="mt-1.5">模型: <strong>{selectedModelOption?.label || SESSION_MODEL_LABEL[model] || model}</strong>（创建后不可更改, 如需更换请返回上一步）</div>
                     <div className="mt-1">语言: <strong>{SESSION_LANGUAGE_LABEL[language]}</strong>（创建后不可更改, 如需更换请返回上一步）</div>
                     {selectedPersonality && <div className="mt-1">性格: <strong>{selectedPersonality?.label}</strong></div>}
-                    {requiredSessionSkill && <div className="mt-1">必选 Skill: <strong>{requiredSessionSkill.label || requiredSessionSkill.dirName}</strong></div>}
+                    {requiredSkillNames.length > 0 && <div className="mt-1">必选 Skill: <strong>{requiredSkillNames.join('、')}</strong></div>}
                   </div>
 
                   <section data-tour="session-preview-skills">
@@ -3052,13 +3058,13 @@ export function NewSessionModal({
                   </section>
                 </div>
 
-                <section className="min-h-[320px] lg:h-full lg:min-h-0 flex flex-col overflow-hidden rounded-lg p-3" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
+                <section className="order-first min-h-[320px] xl:order-none xl:h-full xl:min-h-0 flex flex-col overflow-hidden rounded-lg p-3" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
                   <h4 className="shrink-0 text-[12px] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
-                    完整注入文本 ({preview.body.length} 字)
+                    完整注入文本 ({previewBodyText.length} 字)
                   </h4>
-                  <pre className="m-0 flex-1 min-h-[260px] lg:min-h-0 max-h-[45vh] lg:max-h-none overflow-y-auto overscroll-contain text-[10px] leading-snug whitespace-pre-wrap break-words rounded-md p-2"
+                  <pre className="m-0 flex-1 min-h-[260px] xl:min-h-0 max-h-[45vh] xl:max-h-none overflow-y-auto overscroll-contain text-[10px] leading-snug whitespace-pre-wrap break-words rounded-md p-2"
                     style={{ background: isDark ? '#111827' : '#ffffff', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}`, color: isDark ? '#f1f5f9' : '#1e293b', fontFamily: 'ui-monospace,SFMono-Regular,monospace' }}>
-                    {preview.body}
+                    {previewBodyText || '暂无可注入文本。'}
                   </pre>
                 </section>
               </div>

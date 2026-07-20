@@ -911,6 +911,17 @@ const PLANNING_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-planner';
 // 自迭代项目 (project.is_self_develop, 即 bind_path === APP_DIR) 的所有 Session
 // 强制必选 mobius-self-iter skill, 保证 agent 知道"先 commit 再 python3 start.py"的自迭代协议.
 const SELF_ITER_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-self-iter';
+// Electron PC/dual 任务模式需要 aimux 操作远程对象, 后端必须与前端"必选"标签同源强制注入.
+const PC_TASK_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-aimux';
+
+function pcTaskModeRequiresAimux(meta: any): boolean {
+  let parsed = meta;
+  if (typeof parsed === 'string') {
+    try { parsed = JSON.parse(parsed); } catch { parsed = null; }
+  }
+  const mode = parsed && typeof parsed === 'object' ? parsed.work_mode : null;
+  return mode === 'pc' || mode === 'dual';
+}
 
 function forcedIssueSkillIds(issue: any, project: any): Set<string> {
   const ids = new Set<string>();
@@ -936,6 +947,9 @@ function gatherIssueSources(user: any, issue: any, sessionExclusions: any): any 
   const project = projectId ? Projects.findById(projectId) : null;
   const userWhitelist = getProjectUserContextWhitelist(projectId, user);
   const forcedSkillSet = forcedIssueSkillIds(issue, project);
+  if (pcTaskModeRequiresAimux(sessionExclusions?.pc_client_metadata)) {
+    forcedSkillSet.add(PC_TASK_REQUIRED_BUILTIN_SKILL_ID);
+  }
 
   let skillSelected = [], skillExcluded = [];
   if (issue) {
@@ -1010,6 +1024,9 @@ function gatherResearchSources(user: any, research: any, sessionExclusions: any)
   const project = projectId ? Projects.findById(projectId) : null;
   const userWhitelist = getProjectUserContextWhitelist(projectId, user);
   const forcedSkillSet = forcedResearchSkillIds(project);
+  if (pcTaskModeRequiresAimux(sessionExclusions?.pc_client_metadata)) {
+    forcedSkillSet.add(PC_TASK_REQUIRED_BUILTIN_SKILL_ID);
+  }
   const exSkillSet = new Set(sessionExclusions && Array.isArray(sessionExclusions.skills) ? sessionExclusions.skills : []);
   const exMemSet = new Set(sessionExclusions && Array.isArray(sessionExclusions.memories) ? sessionExclusions.memories : []);
 
@@ -1080,7 +1097,9 @@ function gatherSources(user: any, sessionId: string): any {
     const researchSources = gatherResearchSources(
       user,
       research,
-      storedSelection ? { skills: [], memories: [] } : { skills: exSkills, memories: exMemories },
+      storedSelection
+        ? { skills: [], memories: [], pc_client_metadata: session.pc_client_metadata }
+        : { skills: exSkills, memories: exMemories, pc_client_metadata: session.pc_client_metadata },
     );
     if (storedSelection) {
       researchSources.skills = storedSelection.skills;
@@ -1121,7 +1140,9 @@ function gatherSources(user: any, sessionId: string): any {
   const issueSources = gatherIssueSources(
     user,
     issue,
-    storedSelection ? { skills: [], memories: [] } : { skills: exSkills, memories: exMemories },
+    storedSelection
+      ? { skills: [], memories: [], pc_client_metadata: session.pc_client_metadata }
+      : { skills: exSkills, memories: exMemories, pc_client_metadata: session.pc_client_metadata },
   );
   if (storedSelection) {
     issueSources.skills = storedSelection.skills;
@@ -1159,6 +1180,7 @@ function buildIssueContextPreview(user: any, issueId: any, draftSession: any, ex
   const issueSources = gatherIssueSources(user, issue, {
     skills: Array.isArray(excludedSkillIds) ? excludedSkillIds : [],
     memories: Array.isArray(excludedMemoryIds) ? excludedMemoryIds : [],
+    pc_client_metadata: draftSession?.pc_client_metadata ?? null,
   });
   const sources = {
     ...issueSources,
@@ -1193,6 +1215,7 @@ function buildProjectIssueContextPreview(user: any, projectId: any, draftIssue: 
   const issueSources = gatherIssueSources(user, issue, {
     skills: Array.isArray(excludedSkillIds) ? excludedSkillIds : [],
     memories: Array.isArray(excludedMemoryIds) ? excludedMemoryIds : [],
+    pc_client_metadata: draftSession?.pc_client_metadata ?? null,
   });
   const sources = {
     ...issueSources,
@@ -1214,6 +1237,7 @@ function buildResearchContextPreview(user: any, researchId: any, draftSession: a
   const researchSources = gatherResearchSources(user, research, {
     skills: Array.isArray(excludedSkillIds) ? excludedSkillIds : [],
     memories: Array.isArray(excludedMemoryIds) ? excludedMemoryIds : [],
+    pc_client_metadata: draftSession?.pc_client_metadata ?? null,
   });
   const peers = Sessions.listAllByResearch(researchId).map(s => ({
     session_id: s.session_id,
@@ -1237,15 +1261,17 @@ function buildResearchContextPreview(user: any, researchId: any, draftSession: a
   return { body: options?.includeBody === false ? '' : formatBody(sources), sources };
 }
 
-function buildSessionSelectionSnapshot(user: any, issueId: any, excludedSkillIds: any, excludedMemoryIds: any): any {
-  const selected = buildIssueContextPreview(user, issueId, null, excludedSkillIds, excludedMemoryIds).sources;
-  const total = buildIssueContextPreview(user, issueId, null, [], []).sources;
+function buildSessionSelectionSnapshot(user: any, issueId: any, excludedSkillIds: any, excludedMemoryIds: any, options?: any): any {
+  const draftSession = options?.pc_client_metadata ? { pc_client_metadata: options.pc_client_metadata } : null;
+  const selected = buildIssueContextPreview(user, issueId, draftSession, excludedSkillIds, excludedMemoryIds).sources;
+  const total = buildIssueContextPreview(user, issueId, draftSession, [], []).sources;
   return buildSelectionSnapshotFromSources(selected, total, excludedSkillIds, excludedMemoryIds);
 }
 
-function buildResearchSessionSelectionSnapshot(user: any, researchId: any, excludedSkillIds: any, excludedMemoryIds: any): any {
-  const selected = buildResearchContextPreview(user, researchId, null, excludedSkillIds, excludedMemoryIds).sources;
-  const total = buildResearchContextPreview(user, researchId, null, [], []).sources;
+function buildResearchSessionSelectionSnapshot(user: any, researchId: any, excludedSkillIds: any, excludedMemoryIds: any, options?: any): any {
+  const draftSession = options?.pc_client_metadata ? { pc_client_metadata: options.pc_client_metadata } : null;
+  const selected = buildResearchContextPreview(user, researchId, draftSession, excludedSkillIds, excludedMemoryIds).sources;
+  const total = buildResearchContextPreview(user, researchId, draftSession, [], []).sources;
   return buildSelectionSnapshotFromSources(selected, total, excludedSkillIds, excludedMemoryIds);
 }
 
