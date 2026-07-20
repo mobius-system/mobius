@@ -266,11 +266,13 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
   const sessionKey = `web:${user.id}:${sessionId}`;
   const excludedSkillIds = sanitizeIds(excluded_skill_ids);
   const excludedMemoryIds = sanitizeIds(excluded_memory_ids);
+  const pcClientMetadata = req.body?.pc_client_metadata;
   const selectionSnapshot = buildResearchSessionSelectionSnapshot(
     user,
     String(req.params.researchId),
     excludedSkillIds,
     excludedMemoryIds,
+    { pc_client_metadata: pcClientMetadata },
   );
 
   let sourceSession: AnySession | null = null;
@@ -321,7 +323,7 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
       selection_snapshot: selectionSnapshot,
       model: resolvedModel.sessionModelValue,
       language: sessionLanguage,
-      pc_client_metadata: req.body?.pc_client_metadata,
+      pc_client_metadata: pcClientMetadata,
     });
   } catch (e) {
     if (String((e as Error).message || '').includes('idx_sessions_v2_one_chief_per_research')) {
