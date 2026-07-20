@@ -1,4 +1,4 @@
-// aimux reverse-connect 子进程的看护：启动 / 状态解析 / 断线重启 / JWT 到期续命 / 退出时杀干净。
+// aimux reverse-connect 子进程的看护：启动 / bridge 状态同步 / 断线重启 / JWT 到期续命 / 退出时杀干净。
 import { app } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
@@ -25,6 +25,8 @@ export interface SupervisorOptions {
   onStatus: (s: AimuxStatus) => void;
   /** 每行 stdout/stderr 日志回调（主进程进环形缓冲供状态面板查看） */
   onLog?: (line: string) => void;
+  /** 从 bridge 查询当前 identifier 是否仍有活动事件流。 */
+  probeBridgeConnection: () => Promise<boolean>;
   /** JWT 即将到期时主进程据此重登，返回新 token 或 null */
   onTokenExpired: () => Promise<string | null>;
 }
@@ -48,8 +50,9 @@ export class AimuxSupervisor {
   private stopping = false;
   private respawnTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
-  private stdoutRemainder = "";
-  private stderrRemainder = "";
+  private connectionProbeTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectionProbeEpoch = 0;
+  private bridgeConnected = false;
   private opts: SupervisorOptions;
 
   constructor(opts: SupervisorOptions) {
@@ -69,58 +72,20 @@ export class AimuxSupervisor {
     appendAimuxLog(`\n==== [${new Date().toISOString()}] spawn reverse connect identifier=${identifier} ====\n`);
     const child = spawn(aimuxExe, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token, "--replace"]);
     this.child = child;
+    this.startConnectionProbe();
 
-    // 粗粒度解析日志推断状态（aimux 内部已带 5/10/20s×3 重连，重连耗尽会 exit → 我们 respawn）
-    const classify = (line: string) => {
-      this.opts.onLog?.(line);
-      const lower = line.toLowerCase();
-
-      // === 命令级噪声：与 bridge 连接无关，不改连接状态（"诊断太敏感"的根因就在这里）===
-      // 某条命令执行失败（如 Windows 上 session.create 因找不到 powershell.exe 崩溃、send_keys 到不存在的 session）
-      // 时，aimux 会打印 "command crashed/failed ... request_id=" 紧跟一整段 Python traceback
-      // （"Traceback (most recent call last):" / 'File "...", line N, in ...' / "[failed] XxxError: ..."）。
-      // 这些行大量命中 error/fail/traceback，旧版宽泛正则会把【健康连接】误判成 failed。
-      // 实际 bridge 仍连着 —— 同期 file.read/write/stat 命令照常成功、心跳照常到达。
-      // （line 已被 handle() trim 过，故 traceback 帧以 "File " 开头。）
-      if (
-        /command (crashed|failed)|request_id=/.test(lower) || // 命令崩溃首行
-        /traceback \(most recent call last\)/.test(lower) ||  // traceback 头
-        /^file ".+", line \d+, in /.test(lower) ||            // traceback 帧
-        /^\[failed\]/.test(lower)                             // loguru [failed] 终止行
-      ) return;
-
-      // === 仅"连接级"故障才算 failed：bridge 连不上 / 被拒 / 鉴权失效 / 反连彻底失败。
-      // 通用 error/fail/exception 不再触发 —— 持久性连接失败由下方 child.exit 兜底
-      // （aimux 5/10/20s×3 重连耗尽会 exit → respawn，那时才标 failed，不会漏报）。
-      if (/connection (refused|reset|closed|error)|connect.*failed|failed to connect|unauthorized|forbidden|\b40[13]\b|token.*(expired|invalid)|jwt.*(expired|invalid)|reconnect.*(failed|exhaust|gave up|giving up)|max retries exceeded/.test(lower)) {
-        onStatus({ state: "failed", detail: line, identifier });
-        return;
-      }
-
-      // === 连接健康标志：注册成功 / event stream 建立 / 心跳到达。心跳是连接在用的铁证，兼做误判自愈。
-      if (/connected|registered|event stream|heartbeat|\bsse\b/.test(lower)) {
-        onStatus({ state: "connected", detail: line, identifier });
-      }
-    };
-    const handle = (b: Buffer, stream: "stdout" | "stderr") => {
+    const handle = (b: Buffer) => {
       appendAimuxLog(b);
-      const combined = (stream === "stdout" ? this.stdoutRemainder : this.stderrRemainder) + b.toString("utf8");
-      const lines = combined.split(/\r?\n/);
-      const remainder = lines.pop() ?? "";
-
-      if (stream === "stdout") this.stdoutRemainder = remainder;
-      else this.stderrRemainder = remainder;
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed) classify(trimmed);
-      }
+      const text = b.toString("utf8").trim();
+      if (text) this.opts.onLog?.(text);
     };
-    child.stdout?.on("data", (b: Buffer) => handle(b, "stdout"));
-    child.stderr?.on("data", (b: Buffer) => handle(b, "stderr"));
+    child.stdout?.on("data", handle);
+    child.stderr?.on("data", handle);
 
     child.on("exit", (code) => {
+      if (this.child !== child) return;
       this.child = null;
+      this.stopConnectionProbe();
       appendAimuxLog(`\n---- [${new Date().toISOString()}] child exited code=${code} ----\n`);
       if (this.stopping) {
         this.opts.onStatus({ state: "stopped", identifier });
@@ -132,9 +97,41 @@ export class AimuxSupervisor {
       }, 5000);
     });
     child.on("error", (err) => {
+      if (this.child !== child) return;
       appendAimuxLog(`\n---- [${new Date().toISOString()}] spawn error: ${err.message} ----\n`);
       this.opts.onStatus({ state: "failed", detail: `spawn 失败: ${err.message}`, identifier });
     });
+  }
+
+  private startConnectionProbe(): void {
+    this.stopConnectionProbe();
+    this.bridgeConnected = false;
+    const epoch = ++this.connectionProbeEpoch;
+    void this.probeBridgeConnection(epoch);
+  }
+
+  private stopConnectionProbe(): void {
+    this.connectionProbeEpoch += 1;
+    if (this.connectionProbeTimer) clearTimeout(this.connectionProbeTimer);
+    this.connectionProbeTimer = null;
+  }
+
+  private async probeBridgeConnection(epoch: number): Promise<void> {
+    let connected = false;
+    try {
+      connected = await this.opts.probeBridgeConnection();
+    } catch {
+      connected = false;
+    }
+    if (this.stopping || epoch !== this.connectionProbeEpoch) return;
+
+    if (connected !== this.bridgeConnected) {
+      this.bridgeConnected = connected;
+      this.opts.onStatus(connected
+        ? { state: "connected", detail: "bridge 已确认当前反向连接在线", identifier: this.opts.identifier }
+        : { state: "starting", detail: "等待 bridge 确认当前反向连接", identifier: this.opts.identifier });
+    }
+    this.connectionProbeTimer = setTimeout(() => void this.probeBridgeConnection(epoch), 2000);
   }
 
   /** 用新 token 重启（JWT 续期后调用）。 */
@@ -200,6 +197,7 @@ export class AimuxSupervisor {
     this.stopping = true;
     if (this.respawnTimer) clearTimeout(this.respawnTimer);
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    this.stopConnectionProbe();
     await this.killChild();
     this.opts.onStatus({ state: "stopped", identifier: this.opts.identifier });
   }

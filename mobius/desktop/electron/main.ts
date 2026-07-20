@@ -195,6 +195,25 @@ function emitStatus(s: AimuxStatus): void {
   if (s.detail) appendLog(`[${s.state}] ${s.detail}`);
 }
 
+async function probeAimuxBridgeConnection(identifier: string): Promise<boolean> {
+  if (!creds || !serverUrl) return false;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+  try {
+    const response = await fetch(`${serverOrigin()}/aimux_bridge/api/remotes/${encodeURIComponent(identifier)}/connection`, {
+      headers: { Authorization: `Bearer ${creds.jwt}` },
+      signal: controller.signal,
+    });
+    if (!response.ok) return false;
+    const data = await response.json() as { identifier?: unknown; event_stream_connected?: unknown };
+    return data.identifier === identifier && data.event_stream_connected === true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // ——— 登录 ———
 async function doLogin(serverRaw: string, username: string, password: string): Promise<StoredCreds | { error: string }> {
   const server = serverRaw.replace(/\/$/, "");
@@ -233,6 +252,7 @@ function buildSupervisor(): AimuxSupervisor | null {
     identifier: creds.identifier,
     onStatus: emitStatus,
     onLog: (line) => appendLog(line),
+    probeBridgeConnection: () => probeAimuxBridgeConnection(creds!.identifier),
     onTokenExpired: async () => {
       if (!creds || !serverUrl) return null;
       const r = await doLogin(serverUrl, creds.username, creds.password);
