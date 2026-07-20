@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Activity, CheckCircle2, Cpu, FolderInput, FolderOpen, Lock, Pencil, Plus, RefreshCw, Server, Trash2, Upload } from 'lucide-react'
+import { Activity, CheckCircle2, Cpu, FolderInput, FolderOpen, Lock, Pencil, Plus, RefreshCw, SendHorizontal, Server, Trash2, Upload } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { ContextAccessModal } from './context-access'
 import { MoveScopeModal } from './modals'
@@ -543,11 +543,17 @@ function buildRemoteComputeMemoryBody(
   return lines.join('\n')
 }
 
-function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved }: {
+// mode='memory' (默认): 勾选 remote → 写入项目 Memory "Aimux 远程算力清单" (旧同名自动移除).
+// mode='announce': 同样的勾选/探测/路径 UI, 但确认时不写 Memory, 而是把生成的声明文本
+//   经 onAnnounce 作为一条消息发给当前会话的 agent (用于"声明可合作计算机").
+export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'memory', onAnnounce }: {
   baseUrl: string
   onClose: () => void
-  onSaved: () => void
+  onSaved?: () => void
+  mode?: 'memory' | 'announce'
+  onAnnounce?: (body: string) => void
 }) {
+  const isAnnounce = mode === 'announce'
   const [remotes, setRemotes] = useState<AimuxRemote[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -697,12 +703,21 @@ function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved }: {
           markdown: bodyPreview,
         }),
       })
-      onSaved()
+      onSaved?.()
     } catch (e: any) {
       setErr(e?.message || '保存远程算力清单失败')
     } finally {
       setSaving(false)
     }
+  }
+
+  // announce 模式: 不写 Memory, 把声明文本经 onAnnounce 发给当前会话 agent.
+  const sendAnnounce = () => {
+    if (selectedRemotes.length === 0) { setErr('请至少勾选一台 remote'); return }
+    setErr('')
+    const header = '【用户声明：以下计算机可与当前会话的 agent 合作。当任务需要远程算力或需要与这些机器交互时，agent 可通过 aimux 连接并使用它们（参考下方 aimux 使用说明）。】\n\n'
+    onAnnounce?.(`${header}${bodyPreview}`)
+    onClose()
   }
 
   return (
@@ -714,7 +729,7 @@ function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved }: {
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2 min-w-0">
             <Server className="w-4 h-4 text-cyan-400 flex-shrink-0" strokeWidth={1.8} />
-            <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>添加远程算力</span>
+            <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>{isAnnounce ? '声明可合作计算机' : '添加远程算力'}</span>
             <span className="text-[11px] px-2 py-0.5 rounded border" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
               aimux remote
             </span>
@@ -877,13 +892,16 @@ function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved }: {
 
             <div className="flex-1 min-h-0 p-5 space-y-3 overflow-auto">
               <div className="text-[11px] rounded border px-3 py-2" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
-                将同步唯一的项目 Memory：<span className="font-medium" style={{ color: 'var(--text-primary)' }}>Aimux 远程算力清单</span>；旧同名清单会自动移除。
+                {isAnnounce
+                  ? <>点击确认后，以下内容将作为一条消息发送给当前会话的 agent，<span className="font-medium" style={{ color: 'var(--text-primary)' }}>不会写入 Memory</span>。</>
+                  : <>将同步唯一的项目 Memory：<span className="font-medium" style={{ color: 'var(--text-primary)' }}>Aimux 远程算力清单</span>；旧同名清单会自动移除。</>
+                }
               </div>
               <div>
-                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>Memory 文本预览</label>
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>{isAnnounce ? '发送内容预览' : 'Memory 文本预览'}</label>
                 <pre data-tour="remote-compute-memory-preview" className="text-[11px] leading-relaxed whitespace-pre-wrap font-mono p-3 rounded-lg border min-h-[220px] max-h-[320px] overflow-auto"
                   style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>
-                  {selectedRemotes.length > 0 ? bodyPreview : '勾选 remote 后生成 Memory 文本'}
+                  {selectedRemotes.length > 0 ? bodyPreview : (isAnnounce ? '勾选 remote 后生成声明内容' : '勾选 remote 后生成 Memory 文本')}
                 </pre>
               </div>
             </div>
@@ -892,18 +910,28 @@ function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved }: {
 
         <div className="flex items-center justify-between gap-2 px-5 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            {selectedRemotes.length > 0 ? `将写入 ${selectedRemotes.length} 台 remote` : '未选择 remote'}
+            {selectedRemotes.length > 0
+              ? (isAnnounce ? `将声明 ${selectedRemotes.length} 台可合作计算机` : `将写入 ${selectedRemotes.length} 台 remote`)
+              : '未选择 remote'}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onClose} disabled={saving}
               className="h-8 px-3 text-[12px] rounded border disabled:opacity-40"
               style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
-            <button onClick={saveRemoteInventory} disabled={saving || selectedRemotes.length === 0}
-              data-tour="remote-compute-create-memory"
-              className="h-8 px-4 text-[12px] rounded btn-primary transition-colors disabled:opacity-40 inline-flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={1.8} />
-              {saving ? '保存中...' : '保存项目远程清单'}
-            </button>
+            {isAnnounce ? (
+              <button onClick={sendAnnounce} disabled={selectedRemotes.length === 0}
+                className="h-8 px-4 text-[12px] rounded btn-primary transition-colors disabled:opacity-40 inline-flex items-center gap-1.5">
+                <SendHorizontal className="w-3.5 h-3.5" strokeWidth={1.8} />
+                发送给当前会话
+              </button>
+            ) : (
+              <button onClick={saveRemoteInventory} disabled={saving || selectedRemotes.length === 0}
+                data-tour="remote-compute-create-memory"
+                className="h-8 px-4 text-[12px] rounded btn-primary transition-colors disabled:opacity-40 inline-flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                {saving ? '保存中...' : '保存项目远程清单'}
+              </button>
+            )}
           </div>
         </div>
       </div>

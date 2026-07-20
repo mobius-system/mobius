@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ScrollText, ExternalLink } from 'lucide-react'
+import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ScrollText, ExternalLink, Network } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -19,6 +19,7 @@ import { readJsonlCacheSync, readJsonlCacheFromIdb, writeJsonlCache } from '../s
 import { MobiusLogo } from './mobius-logo'
 import { PlanningEditor } from './planning-editor'
 import { KnowledgeEditorModal } from './knowledge-editor-modal'
+import { RemoteComputeMemoryModal } from './memories'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { extensionAppUrlForProject } from '../services/extension-entry'
@@ -1437,6 +1438,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [bashCommandsOpen, setBashCommandsOpen] = useState(false)
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false)
   const [continueModalOpen, setContinueModalOpen] = useState(false)
+  const [cooperablePcOpen, setCooperablePcOpen] = useState(false)
   // 会话内 Web 终端弹窗 (issue session / research agent 共用 ChatArea, 一处入口覆盖两类会话).
   const [terminalChoiceOpen, setTerminalChoiceOpen] = useState(false)
   const [terminalOpen, setTerminalOpen] = useState(false)
@@ -2962,6 +2964,15 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           onClose={() => setKnowledgeEditorOpen(false)}
         />
       )}
+      {/* 声明可合作计算机: 勾选 aimux remote → 生成声明文本作为消息发给当前会话 agent (不写 Memory) */}
+      {cooperablePcOpen && (
+        <RemoteComputeMemoryModal
+          baseUrl={`/api/projects/${currentProjectId}/memories`}
+          mode="announce"
+          onClose={() => setCooperablePcOpen(false)}
+          onAnnounce={(body) => { handleAnnouncePc(body); setCooperablePcOpen(false) }}
+        />
+      )}
       {/* 顶栏（会话标题 + 单一状态 chip + Stop + VSCode + 溢出菜单） */}
       <div data-tour="session-chat-header" className="h-10 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -3442,6 +3453,14 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     tooltip="打开当前会话终端"
                     accent="emerald"
                     icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setCooperablePcOpen(true)}
+                    disabled={!currentSession?.session_id}
+                    label="可合作计算机"
+                    tooltip="声明可合作计算机 (勾选 aimux remote, 生成声明直接发给当前 agent, 不写 Memory)"
+                    accent="amber"
+                    icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
                     onClick={() => setContinueModalOpen(true)}
