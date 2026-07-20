@@ -1368,7 +1368,10 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
 // layout: 'default' = 现有 68/32 横向分栏; 'stacked' = 强制纵向堆叠 (历史在上、输入在下),
 // 用于「代码对话」模式的窄右栏. 仅切换 .mobius-chat-body 上的修饰类 (见 index.css),
 // 不触碰任何 SSE / 草稿 / Stop / Send / Agent 状态逻辑. 向后兼容 (默认 default).
-export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked' } = {}) {
+export function ChatArea({ layout = 'default', onNewSession }: {
+  layout?: 'default' | 'stacked'
+  onNewSession?: () => void
+} = {}) {
   const { currentSession, currentTask, currentIssue, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [inputExpanded, setInputExpanded] = useState(false)
@@ -3014,6 +3017,18 @@ export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked
             <span className="session-stop-button__square inline-block w-1.5 h-1.5 rounded-sm bg-current opacity-90" />
             <span className="relative z-10 whitespace-nowrap">{stopFeedbackActive ? '已触发' : '终止'}</span>
           </button>
+          {onNewSession && (
+            <button
+              type="button"
+              onClick={onNewSession}
+              data-tour="session-header-new-session"
+              title="新建会话"
+              className="h-7 px-2.5 text-[11px] border border-emerald-500/25 text-emerald-400 rounded-xl hover:bg-emerald-500/10 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+              <span>新会话</span>
+            </button>
+          )}
           {extensionAppUrl && (
             <button
               type="button"

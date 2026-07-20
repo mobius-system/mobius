@@ -485,7 +485,10 @@ export default function IssuePage() {
               - URL 有 ?session 但 currentSession 还没对上 (拉取中) → Loading, 不闪 SessionOverview
               - 否则 → SessionOverview */}
         {currentSession ? (
-          <ChatArea layout={(useEditorChat || useCodeConversation) ? 'stacked' : 'default'} />
+          <ChatArea
+            layout={(useEditorChat || useCodeConversation) ? 'stacked' : 'default'}
+            onNewSession={(useEditorChat || useCodeConversation) ? () => setShowNewSession(true) : undefined}
+          />
         ) : sessionParam ? (
           <Loading text="正在加载会话..." />
         ) : (
