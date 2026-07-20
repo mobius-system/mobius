@@ -1325,17 +1325,21 @@ export function ProjectSettingsPanel({
                     checked={editCanPostIssue}
                     disabled={!canManageProject}
                     onChange={setEditCanPostIssue}
-                    className="flex items-center gap-3 text-[12px]"
+                    className="flex w-full min-w-0 max-w-full items-start gap-3 text-[12px]"
                     style={{ color: 'var(--text-secondary)' }}>
-                    读者可创建任务单 (private 永远只允许 owner, 不受此开关影响)
+                    <span className="min-w-0 flex-1 break-words">
+                      读者可创建任务单 (private 永远只允许 owner, 不受此开关影响)
+                    </span>
                   </ToggleSwitch>
                   <ToggleSwitch
                     checked={editCanRunSession}
                     disabled={!canManageProject}
                     onChange={setEditCanRunSession}
-                    className="flex items-center gap-3 text-[12px]"
+                    className="flex w-full min-w-0 max-w-full items-start gap-3 text-[12px]"
                     style={{ color: 'var(--text-secondary)' }}>
-                    读者可启动执行会话 (同上, private 永远只允许 owner)
+                    <span className="min-w-0 flex-1 break-words">
+                      读者可启动执行会话 (同上, private 永远只允许 owner)
+                    </span>
                   </ToggleSwitch>
                 </div>
               </div>
