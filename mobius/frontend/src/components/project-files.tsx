@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
-import { Cable, ExternalLink, Loader2, MonitorUp, Play } from 'lucide-react'
+import { Cable, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorUp, Play, RefreshCw } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 
@@ -24,6 +24,23 @@ export type FileTreeTarget = {
   entry: Entry
   relPath: string
   parentRelPath: string
+}
+
+type CreateKind = 'file' | 'dir'
+
+type FileTreeContextMenuState = {
+  x: number
+  y: number
+  dirRelPath: string
+  label: string
+}
+
+type FileTreeCreateDialogState = {
+  kind: CreateKind
+  dirRelPath: string
+  name: string
+  error: string
+  loading: boolean
 }
 
 type DirState = {
@@ -71,6 +88,12 @@ function dirnamePosix(absPath: string) {
   const idx = normalized.lastIndexOf('/')
   if (idx <= 0) return '/'
   return normalized.slice(0, idx)
+}
+
+function basenamePosix(relPath: string) {
+  const normalized = String(relPath || '/').replace(/\/+$/g, '') || '/'
+  if (normalized === '/') return '项目根目录'
+  return normalized.split('/').filter(Boolean).pop() || normalized
 }
 
 // 剥掉路径末尾的 `:line` 或 `:line:col` 后缀 (markdown 行号语法, 如 `/abs/file.md:1`).
@@ -564,6 +587,8 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
   const [rootLoaded, setRootLoaded] = useState(false)
   const [rootError, setRootError] = useState('')
+  const [contextMenu, setContextMenu] = useState<FileTreeContextMenuState | null>(null)
+  const [createDialog, setCreateDialog] = useState<FileTreeCreateDialogState | null>(null)
 
   const loadDir = useCallback(async (relPath: string) => {
     setDirs(prev => ({ ...prev, [relPath]: { ...prev[relPath], loading: true, error: undefined } }))
@@ -585,6 +610,18 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
 
   useEffect(() => { loadDir('/') }, [loadDir])
 
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = () => setContextMenu(null)
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') close() }
+    window.addEventListener('click', close)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [contextMenu])
+
   const toggleDir = (relPath: string) => {
     const next = new Set(expanded)
     if (next.has(relPath)) next.delete(relPath)
@@ -604,6 +641,57 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
+  const refreshTree = useCallback(async () => {
+    const paths = Array.from(expanded)
+    if (!paths.includes('/')) paths.unshift('/')
+    await Promise.all(paths.map((path) => loadDir(path)))
+  }, [expanded, loadDir])
+
+  const openDirMenu = (event: React.MouseEvent, dirRelPath: string) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!bindPath || rootError) return
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      dirRelPath,
+      label: basenamePosix(dirRelPath),
+    })
+  }
+
+  const openNodeMenu = (event: React.MouseEvent, target: FileTreeTarget) => {
+    openDirMenu(event, target.entry.type === 'dir' ? target.relPath : target.parentRelPath)
+  }
+
+  const startCreate = (kind: CreateKind, dirRelPath: string) => {
+    setContextMenu(null)
+    setCreateDialog({ kind, dirRelPath, name: '', error: '', loading: false })
+  }
+
+  const submitCreate = async () => {
+    if (!createDialog || createDialog.loading) return
+    const name = createDialog.name.trim()
+    if (!name) {
+      setCreateDialog(prev => prev ? { ...prev, error: '请输入名称' } : prev)
+      return
+    }
+    setCreateDialog(prev => prev ? { ...prev, error: '', loading: true } : prev)
+    try {
+      const endpoint = createDialog.kind === 'dir' ? 'mkdir' : 'create'
+      await api(`/api/projects/${projectId}/files/${endpoint}`, {
+        method: 'POST',
+        body: JSON.stringify({ parentPath: createDialog.dirRelPath, name }),
+      })
+      await loadDir(createDialog.dirRelPath)
+      if (createDialog.kind === 'dir') {
+        setExpanded(prev => new Set([...Array.from(prev), createDialog.dirRelPath]))
+      }
+      setCreateDialog(null)
+    } catch (e: any) {
+      setCreateDialog(prev => prev ? { ...prev, error: e?.message || '创建失败', loading: false } : prev)
+    }
+  }
+
   const vscodeReady = !!vscodeWebUrl && !!bindPath
 
   return (
@@ -619,6 +707,17 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
             {bindPath || '(未绑定路径)'}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={refreshTree}
+          disabled={!rootLoaded}
+          title="刷新文件列表"
+          aria-label="刷新文件列表"
+          className="h-7 w-7 rounded border transition-colors inline-flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--bg-card-hover)]"
+          style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${dirs['/']?.loading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
+        </button>
         {vscodeReady && (
           <button onClick={openProject}
             data-tour="project-files-vscode-open"
@@ -639,7 +738,12 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
       )}
 
       {/* 文件树 */}
-      <div className="px-2 py-2 max-h-[420px] overflow-y-auto">
+      <div
+        className="px-2 py-2 max-h-[420px] min-h-[120px] overflow-y-auto"
+        onContextMenu={event => {
+          if (event.target === event.currentTarget) openDirMenu(event, '/')
+        }}
+      >
         {!rootLoaded ? (
           <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
         ) : rootError ? (
@@ -653,14 +757,122 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
             onToggleDir={toggleDir}
             onOpenFile={openFile}
             vscodeReady={vscodeReady}
+            onContextMenu={openNodeMenu}
+            onBlankContextMenu={openDirMenu}
           />
         )}
       </div>
+
+      {contextMenu && (
+        <div
+          role="menu"
+          className="fixed z-[80] min-w-[172px] rounded-lg border p-1 shadow-xl"
+          style={{
+            left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 188)),
+            top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 98)),
+            background: 'var(--modal-bg)',
+            borderColor: 'var(--border-color)',
+          }}
+          onClick={event => event.stopPropagation()}
+        >
+          <div className="px-2 py-1.5 text-[11px] truncate" title={contextMenu.dirRelPath} style={{ color: 'var(--text-muted)' }}>
+            {contextMenu.label}
+          </div>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => startCreate('file', contextMenu.dirRelPath)}
+            className="w-full px-2 py-1.5 rounded-md text-left text-[12px] inline-flex items-center gap-2 hover:bg-[var(--bg-card-hover)]"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            <FilePlus2 className="w-3.5 h-3.5 text-blue-400" strokeWidth={1.8} />
+            新建文件
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => startCreate('dir', contextMenu.dirRelPath)}
+            className="w-full px-2 py-1.5 rounded-md text-left text-[12px] inline-flex items-center gap-2 hover:bg-[var(--bg-card-hover)]"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            <FolderPlus className="w-3.5 h-3.5 text-emerald-400" strokeWidth={1.8} />
+            新建目录
+          </button>
+        </div>
+      )}
+
+      {createDialog && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4" onClick={() => !createDialog.loading && setCreateDialog(null)}>
+          <div className="absolute inset-0 bg-black/45 backdrop-blur-sm" />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative w-full max-w-[380px] rounded-xl border shadow-2xl overflow-hidden"
+            style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)' }}
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
+              {createDialog.kind === 'dir'
+                ? <FolderPlus className="w-4 h-4 text-emerald-400" strokeWidth={1.8} />
+                : <FilePlus2 className="w-4 h-4 text-blue-400" strokeWidth={1.8} />}
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  {createDialog.kind === 'dir' ? '新建目录' : '新建文件'}
+                </div>
+                <div className="text-[11px] truncate" title={createDialog.dirRelPath} style={{ color: 'var(--text-muted)' }}>
+                  {basenamePosix(createDialog.dirRelPath)}
+                </div>
+              </div>
+            </div>
+            <form
+              className="p-4 space-y-3"
+              onSubmit={event => {
+                event.preventDefault()
+                submitCreate()
+              }}
+            >
+              <input
+                autoFocus
+                value={createDialog.name}
+                disabled={createDialog.loading}
+                onChange={event => setCreateDialog(prev => prev ? { ...prev, name: event.target.value, error: '' } : prev)}
+                placeholder={createDialog.kind === 'dir' ? '目录名' : '文件名'}
+                className="w-full h-9 px-3 rounded-lg border bg-[var(--bg-primary)] text-[13px] outline-none focus:border-blue-500/60 disabled:opacity-60"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+              />
+              {createDialog.error && (
+                <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
+                  {createDialog.error}
+                </div>
+              )}
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={createDialog.loading}
+                  onClick={() => setCreateDialog(null)}
+                  className="h-8 px-3 rounded-lg border text-[12px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-60"
+                  style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={createDialog.loading}
+                  className="h-8 px-3 rounded-lg bg-blue-500 text-white text-[12px] transition-colors hover:bg-blue-600 disabled:opacity-60 inline-flex items-center gap-1.5"
+                >
+                  {createDialog.loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  创建
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile, vscodeReady, selectedAbsPath, fileActionLabel, onContextMenu, renamingRelPath, renderRenameInput }: {
+export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile, vscodeReady, selectedAbsPath, fileActionLabel, onContextMenu, onBlankContextMenu, renamingRelPath, renderRenameInput }: {
   relPath: string
   depth: number
   dirs: Record<string, DirState>
@@ -674,6 +886,8 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
   fileActionLabel?: string
   // v2 右键菜单: 右键节点时回调 (阻止默认菜单由本组件完成)。不传则无右键菜单。
   onContextMenu?: (event: React.MouseEvent, target: FileTreeTarget) => void
+  // 右键空目录占位行时回调。宿主决定该空白区域代表哪个目录。
+  onBlankContextMenu?: (event: React.MouseEvent, relPath: string) => void
   // v2 内联重命名: 命中 relPath 的节点渲染为输入框。
   renamingRelPath?: string
   // v2 内联重命名: 输入框渲染器, 由宿主提供 (含提交/取消/loading)。
@@ -685,7 +899,15 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
   if (state.error) return <div className="text-[11px] py-1 pl-4 text-red-400">{state.error}</div>
   const entries = state.entries || []
   if (entries.length === 0) {
-    return <div className="text-[11px] py-1 pl-4" style={{ color: 'var(--text-muted)' }}>(空目录)</div>
+    return (
+      <div
+        className="text-[11px] py-1 pl-4"
+        style={{ color: 'var(--text-muted)' }}
+        onContextMenu={onBlankContextMenu ? (event) => onBlankContextMenu(event, relPath) : undefined}
+      >
+        (空目录)
+      </div>
+    )
   }
   const actionLabel = fileActionLabel || '在 VSCode Web 打开'
   const ctxHandler = (entry: Entry, childPath: string) => onContextMenu
@@ -744,6 +966,7 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
                   selectedAbsPath={selectedAbsPath}
                   fileActionLabel={fileActionLabel}
                   onContextMenu={onContextMenu}
+                  onBlankContextMenu={onBlankContextMenu}
                   renamingRelPath={renamingRelPath}
                   renderRenameInput={renderRenameInput}
                 />

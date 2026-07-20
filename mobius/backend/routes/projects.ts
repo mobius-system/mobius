@@ -2834,6 +2834,97 @@ router.post('/:id/files/copy', auth, async (req: express.Request, res: express.R
   }
 });
 
+// POST /:id/files/mkdir { parentPath, name } - 在项目目录内创建单个新目录。
+router.post('/:id/files/mkdir', auth, async (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  if (!ensureProjectWritable(res, project)) return;
+  const parent = resolveProjectPath(project.bind_path, req.body?.parentPath || '/');
+  if ('error' in parent) return res.status(400).json({ error: parent.error, code: 'OUTSIDE_ROOT' });
+  let name: string;
+  try {
+    name = validateNewName(req.body?.name);
+  } catch (e) {
+    return sendFileOpError(res, e);
+  }
+  const { root, absPath: parentAbs, relPath: parentRel } = parent;
+  try {
+    let parentLst: fs.Stats;
+    try {
+      parentLst = await fs.promises.lstat(parentAbs);
+    } catch {
+      return res.status(404).json({ error: '父目录不存在', code: 'NOT_FOUND' });
+    }
+    if (parentLst.isSymbolicLink()) return res.status(400).json({ error: '不支持操作符号链接', code: 'SYMLINK_UNSUPPORTED' });
+    if (!parentLst.isDirectory()) return res.status(400).json({ error: '目标父路径不是目录', code: 'INVALID_NAME' });
+    await assertNoSymlink(root, parentAbs);
+    try {
+      await fs.promises.access(parentAbs, fs.constants.W_OK);
+    } catch {
+      return res.status(403).json({ error: '目录只读或无写权限', code: 'READ_ONLY' });
+    }
+    const dstAbs = path.join(parentAbs, name);
+    if (dstAbs !== root && !dstAbs.startsWith(root + path.sep)) {
+      return res.status(400).json({ error: '新路径越出项目根目录', code: 'OUTSIDE_ROOT' });
+    }
+    try {
+      await fs.promises.lstat(dstAbs);
+      return res.status(409).json({ error: '已存在同名文件或目录', code: 'CONFLICT' });
+    } catch { /* 目标不存在, 继续 */ }
+    await fs.promises.mkdir(dstAbs, { recursive: false });
+    const newRel = '/' + path.relative(root, dstAbs).replace(/\\/g, '/');
+    res.json({ parentPath: parentRel, path: newRel, name, type: 'dir', created: true });
+  } catch (e) {
+    sendFileOpError(res, e);
+  }
+});
+
+// POST /:id/files/create { parentPath, name } - 在项目目录内创建空文件。
+router.post('/:id/files/create', auth, async (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  if (!ensureProjectWritable(res, project)) return;
+  const parent = resolveProjectPath(project.bind_path, req.body?.parentPath || '/');
+  if ('error' in parent) return res.status(400).json({ error: parent.error, code: 'OUTSIDE_ROOT' });
+  let name: string;
+  try {
+    name = validateNewName(req.body?.name);
+  } catch (e) {
+    return sendFileOpError(res, e);
+  }
+  const { root, absPath: parentAbs, relPath: parentRel } = parent;
+  try {
+    let parentLst: fs.Stats;
+    try {
+      parentLst = await fs.promises.lstat(parentAbs);
+    } catch {
+      return res.status(404).json({ error: '父目录不存在', code: 'NOT_FOUND' });
+    }
+    if (parentLst.isSymbolicLink()) return res.status(400).json({ error: '不支持操作符号链接', code: 'SYMLINK_UNSUPPORTED' });
+    if (!parentLst.isDirectory()) return res.status(400).json({ error: '目标父路径不是目录', code: 'INVALID_NAME' });
+    await assertNoSymlink(root, parentAbs);
+    try {
+      await fs.promises.access(parentAbs, fs.constants.W_OK);
+    } catch {
+      return res.status(403).json({ error: '目录只读或无写权限', code: 'READ_ONLY' });
+    }
+    const dstAbs = path.join(parentAbs, name);
+    if (dstAbs !== root && !dstAbs.startsWith(root + path.sep)) {
+      return res.status(400).json({ error: '新路径越出项目根目录', code: 'OUTSIDE_ROOT' });
+    }
+    try {
+      await fs.promises.writeFile(dstAbs, '', { flag: 'wx' });
+    } catch (e: any) {
+      if (e?.code === 'EEXIST') return res.status(409).json({ error: '已存在同名文件或目录', code: 'CONFLICT' });
+      throw e;
+    }
+    const newRel = '/' + path.relative(root, dstAbs).replace(/\\/g, '/');
+    res.json({ parentPath: parentRel, path: newRel, name, type: 'file', created: true });
+  } catch (e) {
+    sendFileOpError(res, e);
+  }
+});
+
 // POST /:id/files/rename { path, newName } - 重命名文件/目录 (设计文档 §8.6, §14)。
 router.post('/:id/files/rename', auth, async (req: express.Request, res: express.Response) => {
   const project = loadReadableProject(req, res, String(req.params.id));
