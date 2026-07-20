@@ -155,9 +155,9 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
 
   return (
     <div data-tour={managerTour} className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-4">
-      <div className="flex items-center justify-between gap-2 mb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <h3 className="text-[13px] font-semibold whitespace-nowrap flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{title}</h3>
-        <div className="flex flex-shrink-0 gap-1">
+        <div className="flex min-w-0 flex-wrap justify-end gap-1">
           <input
             ref={memoryFileRef}
             type="file"
