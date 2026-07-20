@@ -19,6 +19,10 @@ export function isContextCompactedEvent(entry: AnyEntry): boolean {
   return entry?.type === 'event_msg' && entry?.payload?.type === 'context_compacted'
 }
 
+export function isTokenCountEvent(entry: AnyEntry): boolean {
+  return entry?.type === 'event_msg' && entry?.payload?.type === 'token_count'
+}
+
 export function isAssistantEndTurnEntry(entry: AnyEntry): boolean {
   return entry?.type === 'assistant' && entry?.message?.stop_reason === 'end_turn'
 }

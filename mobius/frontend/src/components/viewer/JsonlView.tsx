@@ -14,6 +14,7 @@ import { mergeBashToolResultItems } from './entry-extract'
 import { buildRounds } from './rounds'
 import { buildHeaderSummary } from './header-summary'
 import { ContinuationGroup, RoundGroup, EntryCardWithImages } from './RoundGroups'
+import { isTokenCountEvent } from './entry-classify'
 
 const JSONL_INITIAL_WINDOW_SIZE = 200
 
@@ -67,7 +68,10 @@ export function JsonlView({
   const recent = useMemo(() => entries.slice(-(showAll ? entries.length : JSONL_INITIAL_WINDOW_SIZE)), [entries, showAll])
   const windowOffset = entries.length - recent.length
   const headerTitle = title === undefined ? 'JSONL' : title
-  const visibleItems = useMemo(() => mergeBashToolResultItems(recent, windowOffset), [recent, windowOffset])
+  const visibleItems = useMemo(
+    () => mergeBashToolResultItems(recent, windowOffset).filter((item) => !isTokenCountEvent(item.entry)),
+    [recent, windowOffset],
+  )
   const { preItems, rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
   // 总数显示: 优先用后端给的 total (服务器侧 count, 比前端 entries.length 准)
   const displayTotal = typeof total === 'number' && total > entries.length ? total : entries.length
