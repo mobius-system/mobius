@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Create or refresh mobius/.venv-aimux with aimux==0.1.11 from PyPI.
+# Create or refresh mobius/.venv-aimux with aimux==0.1.13 from PyPI.
 # Idempotent: skips install when aimux of the right version is already on disk.
 # Used by start_product.py / Dockerfile.
 set -euo pipefail
 
 MOBIUS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="${AIMUX_VENV:-$MOBIUS_DIR/.venv-aimux}"
-AIMUX_VERSION="${AIMUX_VERSION:-0.1.11}"
+AIMUX_VERSION="${AIMUX_VERSION:-0.1.13}"
 UV_BIN="${UV_BIN:-uv}"
 
 need_install=1
