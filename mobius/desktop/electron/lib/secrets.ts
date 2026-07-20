@@ -12,7 +12,6 @@ export interface MobiusUser {
 }
 
 export interface StoredCreds {
-  server: string;
   username: string;
   password: string;
   jwt: string;
@@ -31,7 +30,7 @@ export function loadCreds(): StoredCreds | null {
       ? safeStorage.decryptString(buf)
       : buf.toString("utf8");
     const data = JSON.parse(json);
-    if (!data || !data.server || !data.jwt) return null;
+    if (!data || !data.jwt) return null;
     return data as StoredCreds;
   } catch {
     return null;
@@ -55,5 +54,44 @@ export function clearCreds(): void {
     fs.unlinkSync(file());
   } catch {
     /* 不存在即视为已清 */
+  }
+}
+
+// ——— 服务器 URL（纯文本独立存储，不在加密文件中）———
+
+function serverUrlFile(): string {
+  return path.join(app.getPath("userData"), "server-url.json");
+}
+
+export function loadServerUrl(): string | null {
+  try {
+    const data = JSON.parse(fs.readFileSync(serverUrlFile(), "utf8"));
+    return typeof data.server === "string" && data.server ? data.server : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveServerUrl(server: string): void {
+  try {
+    fs.writeFileSync(serverUrlFile(), JSON.stringify({ server }), { mode: 0o600 });
+  } catch (e) {
+    console.error("[secrets] 服务器 URL 写入失败:", e);
+  }
+}
+
+/** 从旧版 secrets.enc 提取 server 字段（迁移用：首次启动没有 server-url.json 时兜底） */
+export function loadServerFromOldCreds(): string | null {
+  try {
+    const f = file();
+    if (!fs.existsSync(f)) return null;
+    const buf = fs.readFileSync(f);
+    const json = safeStorage.isEncryptionAvailable()
+      ? safeStorage.decryptString(buf)
+      : buf.toString("utf8");
+    const data = JSON.parse(json);
+    return typeof data.server === "string" && data.server ? data.server : null;
+  } catch {
+    return null;
   }
 }

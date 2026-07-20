@@ -7,7 +7,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as os from "node:os";
 import * as fs from "node:fs";
-import { loadCreds, saveCreds, clearCreds, type StoredCreds } from "./lib/secrets";
+import { loadCreds, saveCreds, clearCreds, loadServerUrl, saveServerUrl, loadServerFromOldCreds, type StoredCreds } from "./lib/secrets";
 import { gatherHostInfo, type BootData } from "./lib/host-info";
 import { ensureAimux, upgradeAimux, getAimuxVersion, checkAimuxUpdate, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
 import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
@@ -23,6 +23,7 @@ const isMac = process.platform === "darwin";
 let mainWindow: BrowserWindow | null = null;
 let supervisor: AimuxSupervisor | null = null;
 let creds: StoredCreds | null = null;
+let serverUrl: string | null = null;
 let lastStatus: AimuxStatus = { state: "stopped" };
 let installing = false;
 let updatingAimux = false;
@@ -152,7 +153,7 @@ function cancelAutoAimuxUpdateCheck(): void {
 }
 
 function serverOrigin(): string {
-  return (creds?.server || "").replace(/\/$/, "");
+  return (serverUrl || "").replace(/\/$/, "");
 }
 
 function defaultIdentifier(): string {
@@ -219,7 +220,7 @@ async function doLogin(serverRaw: string, username: string, password: string): P
     const user = (data.user || data) as StoredCreds["user"];
     if (!token) return { error: "登录响应缺少 token" };
     const identifier = creds?.identifier || defaultIdentifier();
-    return { server, username, password, jwt: token, user, identifier };
+    return { username, password, jwt: token, user, identifier };
   } catch (e) {
     return { error: `登录请求失败: ${(e as Error).message}` };
   }
@@ -237,8 +238,8 @@ function buildSupervisor(): AimuxSupervisor | null {
     onStatus: emitStatus,
     onLog: (line) => appendLog(line),
     onTokenExpired: async () => {
-      if (!creds) return null;
-      const r = await doLogin(creds.server, creds.username, creds.password);
+      if (!creds || !serverUrl) return null;
+      const r = await doLogin(serverUrl, creds.username, creds.password);
       if ("error" in r) return null;
       creds.jwt = r.jwt;
       saveCreds(creds);
@@ -578,6 +579,7 @@ async function runLogout(): Promise<void> {
   tabManager = null;
   clearCreds();
   creds = null;
+  // serverUrl 不清除，保留给登录页预填（URL 本身不是敏感信息）
   mainWindow?.loadFile(join(currentDir, "../renderer/index.html"));
 }
 
@@ -738,11 +740,13 @@ ipcMain.handle("auth:login", async (_e, c: { server: string; username: string; p
   const r = await doLogin(c.server, c.username, c.password);
   if ("error" in r) return { ok: false as const, error: r.error };
   creds = r;
+  serverUrl = c.server.replace(/\/$/, "");
   saveCreds(creds);
+  saveServerUrl(serverUrl);
   void bootDesktop();
   return { ok: true as const };
 });
-ipcMain.handle("auth:get-last-server", () => creds?.server || "");
+ipcMain.handle("auth:get-last-server", () => serverUrl || "");
 ipcMain.handle("auth:logout", () => {
   void runLogout();
   return { ok: true };
@@ -1147,9 +1151,16 @@ if (!gotLock) {
     createWindow();
 
     // 启动恢复：有保存的凭据就静默重登直进；否则进登录页
+    // serverUrl 从纯文本 server-url.json 读取（不在加密文件中）
     const saved = loadCreds();
-    if (saved) {
-      const r = await doLogin(saved.server, saved.username, saved.password);
+    let savedUrl = loadServerUrl();
+    if (!savedUrl) {
+      savedUrl = loadServerFromOldCreds(); // 迁移：旧格式 URL 在 secrets.enc 里
+      if (savedUrl) saveServerUrl(savedUrl);
+    }
+    if (savedUrl) serverUrl = savedUrl;
+    if (saved && serverUrl) {
+      const r = await doLogin(serverUrl, saved.username, saved.password);
       if (!("error" in r)) {
         creds = { ...saved, jwt: r.jwt, user: r.user };
         saveCreds(creds);
