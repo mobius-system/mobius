@@ -7,6 +7,8 @@ import { FileOperationError, type FileOperationErrorCode, type FileSourceKind } 
 export type FileListResult = { entries: Entry[] }
 export type FileCopyResult = { path: string; type: 'file' | 'dir' }
 export type FileRenameResult = { oldPath: string; path: string; name: string }
+export type FileCreateKind = 'file' | 'dir'
+export type FileCreateResult = { path: string; type: FileCreateKind; name: string }
 
 export interface ProjectFileSource {
   readonly kind: FileSourceKind
@@ -16,6 +18,7 @@ export interface ProjectFileSource {
   downloadFile(relPath: string): Promise<void>
   copyEntry(sourcePath: string, targetDir: string): Promise<FileCopyResult>
   renameEntry(relPath: string, newName: string): Promise<FileRenameResult>
+  createEntry(parentPath: string, name: string, kind: FileCreateKind): Promise<FileCreateResult>
 }
 
 // 读响应错误体 { error, code } 并抛 FileOperationError; 成功直接返回。
@@ -87,6 +90,17 @@ export class HubProjectFileSource implements ProjectFileSource {
     await throwIfFileOpError(res)
     return await res.json()
   }
+  async createEntry(parentPath: string, name: string, kind: FileCreateKind): Promise<FileCreateResult> {
+    const endpoint = kind === 'dir' ? 'mkdir' : 'create'
+    const res = await fetch(`/api/projects/${this.projectId}/files/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
+      body: JSON.stringify({ parentPath, name }),
+    })
+    await throwIfFileOpError(res)
+    const data = await res.json()
+    return { path: data.path, type: data.type === 'dir' ? 'dir' : 'file', name: data.name || name }
+  }
 }
 
 type LocalFileOpResult = {
@@ -135,5 +149,8 @@ export class LocalProjectFileSource implements ProjectFileSource {
     const r = await this.bridge.renameProjectLocalEntry(this.projectId, relPath, newName)
     this.unwrap(r, '重命名失败')
     return { oldPath: r.oldPath || relPath, path: r.path || relPath, name: r.name || newName }
+  }
+  async createEntry(_parentPath: string, _name: string, _kind: FileCreateKind): Promise<FileCreateResult> {
+    throw new FileOperationError('READ_ONLY', '本机文件创建暂未接入桌面端')
   }
 }

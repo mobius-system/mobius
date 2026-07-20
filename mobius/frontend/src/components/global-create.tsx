@@ -27,7 +27,7 @@ import { TopNavActionElement } from './top-nav-action'
 import {
   Plus, ChevronDown, FolderPlus, CircleDot, MessagesSquare, FlaskConical,
   X, Eye, RefreshCw, Paperclip, Image as ImageIcon, Trash2,
-  CheckCircle2, ExternalLink, Lock, Ban, Search, Dices, FolderOpen,
+  CheckCircle2, ExternalLink, Lock, Ban, Search, Dices, FolderOpen, History,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------
@@ -656,17 +656,20 @@ function SessionCreateSuccess({ name, canView, onView, onCreateAnother, onClose,
 }
 
 // 弹窗外壳 — 统一容器 (响应式: 窄屏顶部对齐可滚动)
-function CreateModalShell({ title, onClose, children, footer, dark, width = 560 }: {
-  title: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode; dark: boolean; width?: number
+function CreateModalShell({ title, onClose, children, footer, dark, width = 560, headerExtra }: {
+  title: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode; dark: boolean; width?: number; headerExtra?: React.ReactNode
 }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="global-create-modal relative w-full flex flex-col rounded-2xl shadow-2xl max-h-[calc(100vh-24px)]"
         style={{ ...modalShellStyle(dark), maxWidth: `min(${width}px, calc(100vw - 24px))` }}>
-        <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0" style={{ borderColor: 'var(--border-color)' }}>
-          <h3 className="text-[15px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{title}</h3>
-          <button type="button" onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0 gap-2" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex items-center gap-2 min-w-0">
+            <h3 className="text-[15px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{title}</h3>
+            {headerExtra}
+          </div>
+          <button type="button" onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-card-hover)] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -1116,6 +1119,27 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
 // 自动替换为"任务标题 + 时间戳" (复用 NewSessionModal 的 formatDefaultSessionName).
 const SESSION_NAME_PLACEHOLDER = '请填写会话名称'
 
+// 顶栏快捷新建会话 · 「恢复上次选择」快照: 记录上次成功提交的项目/任务/语言/Skill·Memory 排除集.
+// 与工作草稿 gc:new-session 区分 —— 草稿提交即清, 此快照持久保留, 仅作"一键回填上次"用途.
+// 刻意不存 model: 模型由目标任务"上次所选"三级默认自动还原 (与 CreateSessionForm 模型隔离哲学一致, 不跨作用域泄漏).
+const LAST_SELECTION_KEY = 'gc:last-session'
+type LastSessionSelection = {
+  projectId: string
+  issueId: string
+  projectName?: string
+  issueTitle?: string
+  language: SessionLanguage
+  excluded_skills: string[]
+  excluded_memories: string[]
+  ts: number
+}
+function loadLastSelection(): LastSessionSelection | null {
+  return draftLoad<LastSessionSelection>(LAST_SELECTION_KEY)
+}
+function saveLastSelection(snap: LastSessionSelection) {
+  draftSave(LAST_SELECTION_KEY, snap, { minChars: 0 })
+}
+
 export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectId, defaultIssueId }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void; onNavigate?: (path: string) => void; defaultProjectId?: string; defaultIssueId?: string }) {
   const { theme, user } = useStore()
   const dark = theme !== 'light'
@@ -1145,6 +1169,10 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   const [selectionReady, setSelectionReady] = useState<boolean>(!!d.selection_ready)
   const selectionReadyRef = useRef(selectionReady)
   selectionReadyRef.current = selectionReady
+  // 「恢复上次选择」: 上次成功提交的会话配置快照 (项目/任务/语言/Skill·Memory). 仅当 localStorage 存在时标题栏才显示恢复按钮.
+  const [lastSelection] = useState<LastSessionSelection | null>(() => loadLastSelection())
+  // 恢复时若 issueId 变化, context-preview 会重拉全集并覆盖 Skill/Memory; 此 ref 让 effect 解析后优先套用快照排除集.
+  const pendingRestoreRef = useRef<LastSessionSelection | null>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
@@ -1224,15 +1252,21 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
       setScopeLastModel(typeof defaults?.model === 'string' ? defaults.model : '')
       const skillIds = new Set(skills.map((s: any) => s.id))
       const memIds = new Set(memories.map((m: any) => m.id))
-      // 重开且用户此前已定稿勾选 → 沿用草稿快照; 否则 → 沿用后端默认选择机制.
-      if (selectionReadyRef.current && ((d.excluded_skills && d.excluded_skills.length) || (d.excluded_memories && d.excluded_memories.length))) {
+      // 「恢复上次选择」优先: pendingRestoreRef 命中当前任务 → 套用快照的 Skill/Memory 排除集 (按当前可用 ID 过滤), 不走草稿/默认.
+      const pr = pendingRestoreRef.current
+      if (pr && pr.issueId === issueId) {
+        pendingRestoreRef.current = null
+        setExcludedSkills(new Set((pr.excluded_skills || []).filter((id: string) => skillIds.has(id))))
+        setExcludedMemories(new Set((pr.excluded_memories || []).filter((id: string) => memIds.has(id))))
+        setSelectionReady(true)
+      } else if (selectionReadyRef.current && ((d.excluded_skills && d.excluded_skills.length) || (d.excluded_memories && d.excluded_memories.length))) {
         setExcludedSkills(new Set((d.excluded_skills || []).filter((id: string) => skillIds.has(id))))
         setExcludedMemories(new Set((d.excluded_memories || []).filter((id: string) => memIds.has(id))))
       } else {
         setExcludedSkills(new Set((defaults?.excluded_skill_ids || []).filter((id: string) => skillIds.has(id))))
         setExcludedMemories(new Set((defaults?.excluded_memory_ids || []).filter((id: string) => memIds.has(id))))
       }
-    }).catch(() => { if (alive) { setAvailSkills([]); setAvailMemories([]); setScopeLastModel('') } })
+    }).catch(() => { if (alive) { pendingRestoreRef.current = null; setAvailSkills([]); setAvailMemories([]); setScopeLastModel('') } })
     return () => { alive = false }
     // 仅在 issueId 变化时拉全集; 勾选/改名不重拉.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1281,6 +1315,13 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
         ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined } } : {}),
       }) })
       if (s?.error) { setErr(s.error); return }
+      // 记录「恢复上次选择」快照 (项目/任务/语言/Skill·Memory), 下次新建可一键回填. 与工作草稿 (gc:new-session) 不同键, 提交清草稿不影响此快照.
+      saveLastSelection({
+        projectId, issueId,
+        projectName: selectedProject?.name, issueTitle: selectedIssue?.title,
+        language, excluded_skills: Array.from(excludedSkills), excluded_memories: Array.from(excludedMemories),
+        ts: Date.now(),
+      })
       draftClear(DRAFT_KEY)
       // 顶栏快捷菜单: 创建后立即发出启动请求 (把名称+描述作为首条消息), 不跳转会话页、不弹"是否开始执行"确认.
       // 与 ChatArea.startSession 同链路 (POST /api/sessions/:id/messages); fire-and-forget 后直接关闭菜单.
@@ -1314,8 +1355,38 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
     )
   }
 
+  // 一键回填上次成功提交的选择 (项目/任务/语言/Skill·Memory); 模型交由该任务"上次所选"三级默认自动还原.
+  const restoreLastSelection = () => {
+    if (!lastSelection) return
+    const snap = lastSelection
+    // issueId 不变 → context-preview 不会重跑: 直接按当前已加载全集套用; issueId 变化 → 挂 pending, 由 effect 解析后权威套用.
+    if (issueId !== snap.issueId) pendingRestoreRef.current = snap
+    const skillIds = new Set(availSkills.map(s => s.id))
+    const memIds = new Set(availMemories.map(m => m.id))
+    setExcludedSkills(new Set((snap.excluded_skills || []).filter(id => skillIds.has(id))))
+    setExcludedMemories(new Set((snap.excluded_memories || []).filter(id => memIds.has(id))))
+    setSelectionReady(true)
+    setProjectId(snap.projectId)
+    setIssueId(snap.issueId)
+    setLanguage(snap.language)
+    // 名称按恢复后的目标任务自动重生成 (沿用 selectedIssue → formatDefaultSessionName 既有 effect).
+    nameUserTouchedRef.current = false
+    setErr('')
+  }
+
+  // 标题栏「恢复上次选择」按钮: 仅当 localStorage 存在上次成功提交的快照时才渲染 (需求: 仅在有相关存储时显示).
+  const headerExtra = lastSelection ? (
+    <button key="restore-last" type="button" onClick={restoreLastSelection}
+      title={`恢复上次选择：${lastSelection.projectName || '项目'} / ${lastSelection.issueTitle || '任务'}`}
+      className="h-7 px-2 rounded-lg flex items-center gap-1 text-[11px] hover:bg-[var(--bg-card-hover)] transition-colors"
+      style={{ color: 'var(--text-muted)' }}>
+      <History className="w-3 h-3" />
+      <span>恢复上次选择</span>
+    </button>
+  ) : null
+
   return (
-    <CreateModalShell title="新建会话" onClose={onClose} dark={dark} width={600}
+    <CreateModalShell title="新建会话" onClose={onClose} dark={dark} width={600} headerExtra={headerExtra}
       footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} disabled={!projectId || !issueId} />}>
       <SelectShell label="目标项目" current={selectedProject?.name} loading={projects.loading} onRefresh={projects.refresh} dark={dark}>
         <DropdownSelect

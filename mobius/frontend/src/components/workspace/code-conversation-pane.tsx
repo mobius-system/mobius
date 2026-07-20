@@ -1,11 +1,11 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, Link, FolderTree } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, Link, FolderTree, FilePlus2, FolderPlus, RefreshCw } from 'lucide-react'
 import { api } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
 import { FileTreeContextMenu, type ContextMenuItem } from './file-tree-context-menu'
 import { InlineRenameInput } from './inline-rename-input'
-import { HubProjectFileSource, LocalProjectFileSource, type ProjectFileSource, type DesktopFileBridge } from './project-file-source'
+import { HubProjectFileSource, LocalProjectFileSource, type ProjectFileSource, type DesktopFileBridge, type FileCreateKind } from './project-file-source'
 import {
   type FileTreeTarget,
   type FileClipboardItem,
@@ -143,10 +143,11 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   // ----- 右键菜单 / 文件操作状态 (设计文档 §9) -----
   // writable: 数据源是否可写 (hub 用 bind_path_writable; local 默认 true, 写权限由主进程 W_OK 兜底)。
   const [writable, setWritable] = useState(true)
-  const [menu, setMenu] = useState<{ x: number; y: number; target: FileTreeTarget | null } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; target: FileTreeTarget | null; blankDirRelPath?: string } | null>(null)
   // 应用内文件剪贴板 (页面生命周期内有效, 不写 localStorage; 切换项目/数据源清空)。
   const [clipboard, setClipboard] = useState<FileClipboardItem | null>(null)
   const [rename, setRename] = useState<{ target: FileTreeTarget; submitting?: boolean; error?: string } | null>(null)
+  const [creating, setCreating] = useState<{ kind: FileCreateKind; parentPath: string; name: string; submitting?: boolean; error?: string } | null>(null)
   // 正在粘贴的目录集合, 同一目录禁止并发粘贴 (设计文档 §15)。
   const [pastingDirs, setPastingDirs] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<{ text: string; kind: 'info' | 'error' } | null>(null)
@@ -371,11 +372,32 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
 
   // 局部刷新某目录 (复用 loadDir, 保留 expanded/选中/滚动)。
   const refreshDir = useCallback(async (relPath: string) => { await loadDir(relPath) }, [loadDir])
+  const refreshTree = useCallback(async () => {
+    const paths = Array.from(expanded)
+    if (!paths.includes('/')) paths.unshift('/')
+    await Promise.all(paths.map(path => loadDir(path)))
+  }, [expanded, loadDir])
 
   // 切换项目/数据源立即清空菜单/重命名/内部剪贴板 (设计文档 §9)。
   useEffect(() => {
-    setMenu(null); setRename(null); setClipboard(null); setPastingDirs(new Set())
+    setMenu(null); setRename(null); setCreating(null); setClipboard(null); setPastingDirs(new Set())
   }, [projectId, source])
+
+  function targetDirForMenu(target: FileTreeTarget | null, blankDirRelPath?: string): string {
+    return blankDirRelPath || targetDirForPaste(target)
+  }
+
+  function canPasteIntoDir(targetDir: string): { ok: boolean; reason?: string } {
+    if (!clipboard) return { ok: false, reason: '剪贴板为空' }
+    if (!writable) return { ok: false, reason: '当前数据源只读' }
+    if (clipboard.projectId !== projectId || clipboard.source !== source) {
+      return { ok: false, reason: '暂不支持跨项目或跨数据源粘贴' }
+    }
+    if (clipboard.type === 'dir' && (clipboard.relPath === targetDir || targetDir.startsWith(clipboard.relPath + '/'))) {
+      return { ok: false, reason: '不能将目录复制到自身或其子目录' }
+    }
+    return { ok: true }
+  }
 
   async function onCopyRel(target: FileTreeTarget) {
     const ok = await copyTextToClipboard(target.relPath)
@@ -406,9 +428,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
       if (code === 'NOT_FOUND') refreshDir(target.parentRelPath)
     }
   }
-  async function onPaste(target: FileTreeTarget | null) {
+  async function onPaste(target: FileTreeTarget | null, blankDirRelPath?: string) {
     if (!clipboard) return
-    const targetDir = targetDirForPaste(target)
+    const targetDir = targetDirForMenu(target, blankDirRelPath)
     if (pastingDirs.has(targetDir)) return // 同一目录禁止并发粘贴
     setPastingDirs(prev => new Set(prev).add(targetDir))
     try {
@@ -426,6 +448,34 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   }
   function onStartRename(target: FileTreeTarget) {
     setRename({ target })
+  }
+  function onStartCreate(kind: FileCreateKind, target: FileTreeTarget | null, blankDirRelPath?: string) {
+    if (!writable) return
+    setCreating({ kind, parentPath: targetDirForMenu(target, blankDirRelPath), name: '' })
+  }
+  async function onSubmitCreate() {
+    if (!creating || creating.submitting) return
+    const name = creating.name.trim()
+    if (!isNameValidClient(name)) {
+      setCreating(prev => prev ? { ...prev, error: '名称不合法' } : prev)
+      return
+    }
+    setCreating(prev => prev ? { ...prev, submitting: true, error: undefined } : prev)
+    try {
+      const res = await fileSource.createEntry(creating.parentPath, name, creating.kind)
+      await refreshDir(creating.parentPath)
+      if (creating.kind === 'dir') {
+        setExpanded(prev => new Set([...Array.from(prev), creating.parentPath]))
+      }
+      setCreating(null)
+      showToast(`已创建「${res.name || name}」`)
+    } catch (e) {
+      const { code, msg } = opErrorMessage(e)
+      if (code === 'CANCELLED') { setCreating(null); return }
+      setCreating(prev => prev ? { ...prev, submitting: false, error: msg } : prev)
+      showToast(msg, 'error')
+      if (code === 'NOT_FOUND') refreshDir(creating.parentPath)
+    }
   }
   async function onSubmitRename(newNameRaw: string) {
     const target = rename?.target
@@ -508,22 +558,38 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     />
   )
 
-  // 构建右键菜单项 (设计文档 §5.1, §5.3)。target=null 为根目录空白区域, 仅显示"粘贴"。
-  function buildMenuItems(target: FileTreeTarget | null): ContextMenuItem[] {
+  // 构建右键菜单项 (设计文档 §5.1, §5.3)。target=null 为目录空白区域, blankDirRelPath 缺省时落根目录。
+  function buildMenuItems(target: FileTreeTarget | null, blankDirRelPath?: string): ContextMenuItem[] {
     const iconCls = 'w-3.5 h-3.5 flex-shrink-0'
+    const createDisabled = !writable || source !== 'hub'
+    const createDisabledReason = !writable ? '只读数据源' : (source !== 'hub' ? '本机文件创建暂未接入桌面端' : undefined)
+    const createItems: ContextMenuItem[] = [
+      { type: 'item', key: 'createFile', label: '新建文件', icon: <FilePlus2 className={iconCls} />,
+        disabled: createDisabled, disabledReason: createDisabledReason,
+        onRun: () => onStartCreate('file', target, blankDirRelPath) },
+      { type: 'item', key: 'createDir', label: '新建目录', icon: <FolderPlus className={iconCls} />,
+        disabled: createDisabled, disabledReason: createDisabledReason,
+        onRun: () => onStartCreate('dir', target, blankDirRelPath) },
+    ]
     if (!target) {
-      const paste = canPaste(clipboard, null, projectId, source, writable)
-      return [{
+      const targetDir = targetDirForMenu(null, blankDirRelPath)
+      const paste = canPasteIntoDir(targetDir)
+      return [
+        ...createItems,
+        { type: 'separator' },
+        {
         type: 'item', key: 'paste', label: '粘贴', icon: <ClipboardPaste className={iconCls} />,
-        disabled: !paste.ok || pastingDirs.has('/'),
-        disabledReason: !paste.ok ? paste.reason : (pastingDirs.has('/') ? '正在粘贴…' : undefined),
-        onRun: () => onPaste(null),
+        disabled: !paste.ok || pastingDirs.has(targetDir),
+        disabledReason: !paste.ok ? paste.reason : (pastingDirs.has(targetDir) ? '正在粘贴…' : undefined),
+        onRun: () => onPaste(null, blankDirRelPath),
       }]
     }
     const type = target.entry.type
     const paste = canPaste(clipboard, target, projectId, source, writable)
     const targetDir = targetDirForPaste(target)
     return [
+      ...createItems,
+      { type: 'separator' },
       { type: 'item', key: 'download', label: '下载', icon: <Download className={iconCls} />,
         disabled: type === 'dir', disabledReason: type === 'dir' ? '目录打包下载将在后续版本支持' : undefined,
         onRun: () => onDownload(target) },
@@ -543,10 +609,11 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     ]
   }
 
-  function openTreeContextMenu(e: React.MouseEvent, target: FileTreeTarget | null) {
+  function openTreeContextMenu(e: React.MouseEvent, target: FileTreeTarget | null, blankDirRelPath?: string) {
     // 节点右键阻止冒泡, 根空白区域在此打开 (target=null)。
     e.preventDefault()
-    setMenu({ x: e.clientX, y: e.clientY, target })
+    e.stopPropagation()
+    setMenu({ x: e.clientX, y: e.clientY, target, blankDirRelPath })
   }
 
   // 文件浏览器默认宽度 ≈ 视口 18%, 留够空间给代码编辑 + 对话.
@@ -570,6 +637,18 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
           <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }} title={activeRootPath}>
             {source === 'local' ? '本机文件' : '中枢文件'}
           </span>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={refreshTree}
+            disabled={!rootLoaded}
+            title="刷新文件列表"
+            aria-label="刷新文件列表"
+            className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-45"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${dirs['/']?.loading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
+          </button>
         </div>
         {isDesktop && (
           <div className="flex-shrink-0 border-b px-2 py-1.5" style={{ borderColor: 'var(--border-color)' }}>
@@ -672,6 +751,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
               selectedAbsPath={selected?.abs_path}
               filter={filter}
               onContextMenu={(e, target) => openTreeContextMenu(e, target)}
+              onBlankContextMenu={(e, relPath) => openTreeContextMenu(e, null, relPath)}
               renamingRelPath={rename?.target.relPath}
               renderRenameInput={renderRenameInput}
             />
@@ -773,12 +853,84 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
         </div>
       </div>
 
+      {/* ===== 新建文件/目录弹窗 ===== */}
+      {creating && (
+        <div
+          className="fixed inset-0 z-[65] flex items-center justify-center px-4"
+          onClick={() => !creating.submitting && setCreating(null)}
+        >
+          <div className="absolute inset-0 bg-black/45 backdrop-blur-sm" />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative w-full max-w-[380px] rounded-xl border shadow-2xl overflow-hidden"
+            style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)' }}
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
+              {creating.kind === 'dir'
+                ? <FolderPlus className="h-4 w-4 text-emerald-400" strokeWidth={1.8} />
+                : <FilePlus2 className="h-4 w-4 text-blue-400" strokeWidth={1.8} />}
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  {creating.kind === 'dir' ? '新建目录' : '新建文件'}
+                </div>
+                <div className="truncate text-[11px] font-mono" title={creating.parentPath} style={{ color: 'var(--text-muted)' }}>
+                  {creating.parentPath}
+                </div>
+              </div>
+            </div>
+            <form
+              className="space-y-3 p-4"
+              onSubmit={event => {
+                event.preventDefault()
+                onSubmitCreate()
+              }}
+            >
+              <input
+                autoFocus
+                value={creating.name}
+                disabled={creating.submitting}
+                onChange={event => setCreating(prev => prev ? { ...prev, name: event.target.value, error: undefined } : prev)}
+                placeholder={creating.kind === 'dir' ? '目录名' : '文件名'}
+                className="h-9 w-full rounded-lg border bg-[var(--bg-primary)] px-3 text-[13px] outline-none focus:border-blue-500/60 disabled:opacity-60"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+              />
+              {creating.error && (
+                <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
+                  {creating.error}
+                </div>
+              )}
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={creating.submitting}
+                  onClick={() => setCreating(null)}
+                  className="h-8 rounded-lg border px-3 text-[12px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-60"
+                  style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating.submitting}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-blue-500 px-3 text-[12px] text-white transition-colors hover:bg-blue-600 disabled:opacity-60"
+                >
+                  {creating.submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  创建
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* ===== 右键菜单浮层 (定位/键盘/关闭由组件自理) ===== */}
       {menu && (
         <FileTreeContextMenu
           x={menu.x}
           y={menu.y}
-          items={buildMenuItems(menu.target)}
+          items={buildMenuItems(menu.target, menu.blankDirRelPath)}
           onClose={() => setMenu(null)}
         />
       )}
@@ -818,7 +970,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
 // 注意: 过滤只覆盖已加载进 dirs 的目录 (懒加载, 未展开过的目录不参与),
 // 避免递归拉全树打爆大仓库; 用户先展开感兴趣的目录再过滤.
 // =====================================================================
-function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedAbsPath, filter, onContextMenu, renamingRelPath, renderRenameInput }: {
+function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedAbsPath, filter, onContextMenu, onBlankContextMenu, renamingRelPath, renderRenameInput }: {
   dirs: Record<string, DirState>
   expanded: Set<string>
   onToggleDir: (relPath: string) => void
@@ -826,6 +978,7 @@ function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedA
   selectedAbsPath?: string
   filter: string
   onContextMenu?: (event: React.MouseEvent, target: FileTreeTarget) => void
+  onBlankContextMenu?: (event: React.MouseEvent, relPath: string) => void
   renamingRelPath?: string
   renderRenameInput?: (target: FileTreeTarget) => React.ReactNode
 }) {
@@ -843,6 +996,7 @@ function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedA
         selectedAbsPath={selectedAbsPath}
         fileActionLabel="预览/编辑文件"
         onContextMenu={onContextMenu}
+        onBlankContextMenu={onBlankContextMenu}
         renamingRelPath={renamingRelPath}
         renderRenameInput={renderRenameInput}
       />
