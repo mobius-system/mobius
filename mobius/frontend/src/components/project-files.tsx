@@ -433,11 +433,27 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
       }
       window.open(result.url, '_blank', 'noopener,noreferrer')
       setShowDialog(false)
+      window.alert('请注意，Mobius桌面端退出时，端口映射会自动失效')
     } catch (e: any) {
       setError(e?.message || 'AIMUX port forward 启动失败')
     } finally {
       setAimuxForwarding(false)
     }
+  }
+
+  const openManualAimuxPort = () => {
+    const portText = window.prompt('请输入要打开的项目端口号（1-65535）', '')?.trim()
+    if (portText === undefined) return
+    if (!/^\d{1,5}$/.test(portText)) {
+      setError('请输入 1-65535 的端口号')
+      return
+    }
+    const port = Number(portText)
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      setError('请输入 1-65535 的端口号')
+      return
+    }
+    void openAimuxPort(port)
   }
 
   if (!ready) {
@@ -524,21 +540,41 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
               </button>
 
               {canUseAimuxPortForward && (
-                <button
-                  type="button"
-                  onClick={() => autoPort !== null && openAimuxPort(autoPort)}
-                  disabled={autoPort === null || aimuxForwarding}
-                  className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-sky-500/10 hover:border-sky-500/30 disabled:cursor-not-allowed disabled:opacity-55"
-                  style={{ borderColor: 'var(--border-color)' }}
-                >
-                  <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {aimuxForwarding ? <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" /> : <Cable className="w-3.5 h-3.5 text-sky-400" />}
-                    打开端口（AIMUX）
-                  </div>
-                  <div className="mt-1 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>
-                    {autoPort !== null ? `aimux port forward -> 127.0.0.1` : `${HIDDEN_FOLDER_NAME}/port_forward/main_project_port.txt 未检测到有效端口`}
-                  </div>
-                </button>
+                <>
+                  {autoPort !== null && (
+                    <button
+                      type="button"
+                      onClick={() => openAimuxPort(autoPort)}
+                      disabled={aimuxForwarding}
+                      className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-sky-500/10 hover:border-sky-500/30 disabled:cursor-not-allowed disabled:opacity-55"
+                      style={{ borderColor: 'var(--border-color)' }}
+                    >
+                      <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                        {aimuxForwarding ? <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" /> : <Cable className="w-3.5 h-3.5 text-sky-400" />}
+                        打开端口（AIMUX 自动）
+                      </div>
+                      <div className="mt-1 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>
+                        读取 main_project_port.txt：{autoPort}
+                      </div>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={openManualAimuxPort}
+                    disabled={aimuxForwarding}
+                    className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-sky-500/10 hover:border-sky-500/30 disabled:cursor-not-allowed disabled:opacity-55"
+                    style={{ borderColor: 'var(--border-color)' }}
+                  >
+                    <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                      {aimuxForwarding ? <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" /> : <Cable className="w-3.5 h-3.5 text-sky-400" />}
+                      打开端口（AIMUX 手动）
+                    </div>
+                    <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      点击后输入端口号码
+                    </div>
+                  </button>
+                </>
               )}
 
               {onRequestRunProject && (
