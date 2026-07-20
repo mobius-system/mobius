@@ -4,7 +4,7 @@
 // 桌面端 bootDesktop() 登录后统一 loadURL(${server}/welcome) 进此页 (electron 特殊机制)。
 // 浏览器端也可访问 /welcome, 桌面端独有字段 (本地路径 / 本机信息 / continue-from-last) 优雅降级隐藏。
 //
-// 页面 1 (menu): 欢迎语 + 5 个去向 + 本机信息 & mobius 连接信息小字。
+// 页面 1 (menu): 欢迎语 + 6 个去向 + 本机信息 & mobius 连接信息小字。
 //   - 从上次结束处继续: 跳上次退出页 (首次运行隐藏)
 //   - 接入已有项目 / 创建全新项目 -> 页面 2 (项目创建菜单) -> 页面 3 (创建第一个任务)
 //   - 导入零散文件随便聊聊 -> 检查 let-us-chat 项目: 无则页面 2, 有则直进页面 3 (导入文件随便聊聊)
@@ -26,7 +26,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   History, FolderInput, Plus, FileText, FolderOpen, ChevronLeft, ChevronDown,
   ChevronRight, FolderOpen as FolderBrowse, Dices, Loader2, Sparkles, Star, Search,
-  RefreshCw, LogOut, Trash2,
+  RefreshCw, LogOut, Trash2, Network,
 } from 'lucide-react'
 import { useStore, api } from '../store'
 import { MobiusLogo } from '../components/mobius-logo'
@@ -223,6 +223,7 @@ export default function Welcome() {
     { key: 'new', icon: Plus, title: '创建一个全新项目', desc: '从零开始一个新项目, 本地路径自动生成', onClick: () => startFlow('new') },
     { key: 'import', icon: FileText, title: '导入一些零散文件，随便聊聊', desc: '丢几个文件进来, 和小莫自由对话', onClick: () => void startImport(), busy: checking },
     { key: 'enter', icon: FolderOpen, title: '进入已创建的 Mobius 项目', desc: '浏览我已有的项目列表', onClick: () => setStep('projectList') },
+    { key: 'visualization', icon: Network, title: '系统可视化', desc: '查看 Mobius 系统集群与运行状态', onClick: () => navigate('/u/fuqingxu/mobius_overview_cluster') },
   ]
 
   const machineLines: string[] = []

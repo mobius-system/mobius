@@ -668,7 +668,7 @@ function desktopHostBarInjection(title: string): string {
     bar.innerHTML = [
       '<div class="mobius-desktop-hostbar__title"></div>',
       '<div class="mobius-desktop-hostbar__drag" data-action="drag" aria-hidden="true"></div>',
-      '<mobius-desktop-page-actions back-fallback="/" welcome-path="/welcome"></mobius-desktop-page-actions>',
+      '<mobius-desktop-page-actions back-fallback="/" welcome-path="/welcome" visualization-path="/u/fuqingxu/mobius_overview_cluster"></mobius-desktop-page-actions>',
       '<div class="mobius-desktop-hostbar__controls" aria-label="窗口控制">',
       '  <button type="button" class="mobius-desktop-hostbar__button" data-action="minimize" title="最小化" aria-label="最小化"><svg viewBox="0 0 11 11" aria-hidden="true"><rect y="4.6" width="11" height="1.8" fill="currentColor"/></svg></button>',
       '  <button type="button" class="mobius-desktop-hostbar__button" data-action="maximize" title="最大化" aria-label="最大化"><svg class="mobius-desktop-hostbar__max" viewBox="0 0 11 11" aria-hidden="true"><rect x="0.7" y="0.7" width="9.6" height="9.6" fill="none" stroke="currentColor" stroke-width="1"/></svg><svg class="mobius-desktop-hostbar__max-restore" viewBox="0 0 11 11" aria-hidden="true"><rect x="1" y="3.2" width="6.4" height="6.4" fill="none" stroke="currentColor" stroke-width="1"/><path d="M3.2 3.2 V1 H9.6 V7.4 H7.4" fill="none" stroke="currentColor" stroke-width="1"/></svg></button>',

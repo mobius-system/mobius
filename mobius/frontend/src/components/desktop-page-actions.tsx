@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { CSSProperties, DetailedHTMLProps, HTMLAttributes } from 'react'
 
-export type DesktopPageAction = 'back' | 'reload' | 'zoom-in' | 'zoom-out' | 'welcome'
+export type DesktopPageAction = 'back' | 'reload' | 'zoom-in' | 'zoom-out' | 'welcome' | 'system-visualization'
 
 type DesktopPageActionsProps = {
   onBack: () => void
@@ -9,9 +9,10 @@ type DesktopPageActionsProps = {
   onZoomIn: () => void
   onZoomOut: () => void
   onWelcome: () => void
+  onSystemVisualization: () => void
 }
 
-export function DesktopPageActions({ onBack, onReload, onZoomIn, onZoomOut, onWelcome }: DesktopPageActionsProps) {
+export function DesktopPageActions({ onBack, onReload, onZoomIn, onZoomOut, onWelcome, onSystemVisualization }: DesktopPageActionsProps) {
   const elementRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
@@ -35,10 +36,11 @@ export function DesktopPageActions({ onBack, onReload, onZoomIn, onZoomOut, onWe
       else if (actionEvent.detail?.action === 'zoom-in') onZoomIn()
       else if (actionEvent.detail?.action === 'zoom-out') onZoomOut()
       else if (actionEvent.detail?.action === 'welcome') onWelcome()
+      else if (actionEvent.detail?.action === 'system-visualization') onSystemVisualization()
     }
     element.addEventListener('mobius-page-action', handleAction)
     return () => element.removeEventListener('mobius-page-action', handleAction)
-  }, [onBack, onReload, onWelcome, onZoomIn, onZoomOut])
+  }, [onBack, onReload, onSystemVisualization, onWelcome, onZoomIn, onZoomOut])
 
   const style = {
     '--mobius-page-actions-hover': 'var(--bg-hover)',
@@ -47,7 +49,7 @@ export function DesktopPageActions({ onBack, onReload, onZoomIn, onZoomOut, onWe
     '--mobius-page-actions-color': 'var(--text-primary)',
   } as CSSProperties
 
-  return <mobius-desktop-page-actions ref={elementRef} style={style} back-fallback="/" welcome-path="/welcome" />
+  return <mobius-desktop-page-actions ref={elementRef} style={style} back-fallback="/" welcome-path="/welcome" visualization-path="/u/fuqingxu/mobius_overview_cluster" />
 }
 
 declare global {
@@ -56,6 +58,7 @@ declare global {
       'mobius-desktop-page-actions': DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement> & {
         'back-fallback'?: string
         'welcome-path'?: string
+        'visualization-path'?: string
       }
     }
   }

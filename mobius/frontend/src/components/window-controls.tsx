@@ -102,6 +102,7 @@ export function WindowControls({ thickMinimize = false }: { thickMinimize?: bool
         onZoomIn={() => md.windowZoomIn?.().catch(() => {})}
         onZoomOut={() => md.windowZoomOut?.().catch(() => {})}
         onWelcome={() => window.location.assign('/welcome')}
+        onSystemVisualization={() => window.location.assign('/u/fuqingxu/mobius_overview_cluster')}
       />
       <button type="button" title="最小化" aria-label="最小化"
         style={btnBase}

@@ -85,6 +85,7 @@
       <button type="button" class="item" role="menuitem" data-page-action="zoom-out"><span class="icon" aria-hidden="true">－</span><span>缩小</span></button>
       <button type="button" class="item" role="menuitem" data-page-action="back"><span class="icon" aria-hidden="true">←</span><span>后退</span></button>
       <button type="button" class="item" role="menuitem" data-page-action="welcome"><span class="icon" aria-hidden="true">⌂</span><span>返回欢迎页</span></button>
+      <button type="button" class="item" role="menuitem" data-page-action="system-visualization"><span class="icon" aria-hidden="true">◎</span><span>系统可视化</span></button>
     </div>
   `;
 
@@ -161,6 +162,8 @@
         try { void window.mobiusDesktop?.windowZoomOut?.(); } catch (_) {}
       } else if (action === 'welcome') {
         location.assign(this.getAttribute('welcome-path') || '/welcome');
+      } else if (action === 'system-visualization') {
+        location.assign(this.getAttribute('visualization-path') || '/u/fuqingxu/mobius_overview_cluster');
       }
     }
   }
