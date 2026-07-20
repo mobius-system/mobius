@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useStore, api } from '../store'
 import { ChangePasswordModal, AimuxGuideModal, DesktopDownloadModal, MobileDownloadModal } from './modals'
@@ -484,6 +484,21 @@ function writeRecentCache(userId: string | undefined, list: RecentSession[]) {
   }
 }
 
+// 项目筛选 chip 样式: 选中态用 accent-primary 高亮 (主题自适应), 未选态中性描边 + hover。
+function projectChipStyle(active: boolean): React.CSSProperties {
+  return active
+    ? {
+        background: 'color-mix(in srgb, var(--accent-primary) 16%, transparent)',
+        color: 'var(--accent-primary)',
+        border: '1px solid color-mix(in srgb, var(--accent-primary) 40%, var(--border-color))',
+      }
+    : {
+        background: 'transparent',
+        color: 'var(--text-secondary)',
+        border: '1px solid var(--border-color)',
+      }
+}
+
 function RecentSessionsPanel({
   open,
   userId,
@@ -498,6 +513,31 @@ function RecentSessionsPanel({
   const [sessions, setSessions] = useState<RecentSession[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  // 按项目快速筛选: null = 全部。面板每次打开都是新挂载, 默认回到「全部」。
+  const [selectedProject, setSelectedProject] = useState<string | null>(null)
+
+  // 从已加载会话里聚合出可选项目 (按最近活跃排序, 带会话数), 仅用于筛选 chips。
+  const projects = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; count: number; lastActive: number }>()
+    for (const s of sessions) {
+      if (!s.project_id) continue
+      const la = new Date(s.last_active || 0).getTime()
+      const existing = map.get(s.project_id)
+      if (existing) {
+        existing.count += 1
+        if (la > existing.lastActive) existing.lastActive = la
+      } else {
+        map.set(s.project_id, { id: s.project_id, name: s.project_name || s.project_id, count: 1, lastActive: la })
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.lastActive - a.lastActive)
+  }, [sessions])
+
+  // 选中项可能在后台刷新后失效 (该项目已不在列表), 失效时退回「全部」。
+  const effectiveProject = selectedProject && projects.some(p => p.id === selectedProject) ? selectedProject : null
+  const visibleSessions = effectiveProject
+    ? sessions.filter(s => s.project_id === effectiveProject)
+    : sessions
 
   useEffect(() => {
     if (!open) return
@@ -551,15 +591,40 @@ function RecentSessionsPanel({
         <History className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />
         <span className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>近期活跃会话</span>
       </div>
+      {projects.length > 1 && (
+        <div className="flex flex-wrap gap-1 px-2 py-1.5" style={{ borderBottom: '1px solid var(--border-color)' }}>
+          <button
+            type="button"
+            onClick={() => setSelectedProject(null)}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] leading-none transition-colors"
+            style={projectChipStyle(effectiveProject === null)}
+          >
+            <span>全部</span>
+          </button>
+          {projects.map(p => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setSelectedProject(p.id)}
+              title={p.name}
+              className="inline-flex max-w-[160px] items-center gap-1 rounded-md px-2 py-1 text-[11px] leading-none transition-colors"
+              style={projectChipStyle(effectiveProject === p.id)}
+            >
+              <span className="truncate">{p.name}</span>
+              <span style={{ opacity: 0.7 }}>{p.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="overflow-y-auto py-1">
         {loading ? (
           <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
         ) : error ? (
           <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>{error}</div>
-        ) : sessions.length === 0 ? (
+        ) : visibleSessions.length === 0 ? (
           <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无近期会话</div>
         ) : (
-          sessions.map(session => {
+          visibleSessions.map(session => {
             const to = recentSessionPath(userId, session)
             const active = session.session_id === activeSessionId
             const isResearch = session.scope_type === 'research'
