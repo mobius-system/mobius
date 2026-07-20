@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen, Brain, Puzzle, Rocket, X } from 'lucide-react'
+import { BookOpen, Brain, Eye, Puzzle, Rocket, X } from 'lucide-react'
 import { api } from '../store'
 
 const AUTO_CONFIRM_SECONDS = 4
@@ -181,7 +181,7 @@ export function SessionStartModal({
 // 后端返回的列表项里已带 scope/owner_id 字段, 这里前端为安全起见再次标注.
 // =====================================================================
 
-type Scope = 'user' | 'project' | 'builtin'
+type Scope = 'user' | 'project' | 'builtin' | 'issue'
 
 type Item = {
   id: string
@@ -194,6 +194,7 @@ const SCOPE_STYLE: Record<Scope, { label: string; color: string; bg: string; bor
   project: { label: '项目级', color: '#22c55e', bg: 'rgba(34,197,94,0.08)', border: 'rgba(34,197,94,0.25)' },
   user: { label: '用户级', color: '#60a5fa', bg: 'rgba(96,165,250,0.08)', border: 'rgba(96,165,250,0.25)' },
   builtin: { label: '内置', color: '#c084fc', bg: 'rgba(168,85,247,0.08)', border: 'rgba(168,85,247,0.25)' },
+  issue: { label: '任务级', color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)' },
 }
 
 // 排序: 项目级 → 用户级 → 内置
@@ -287,6 +288,7 @@ type EditorItem = {
   name: string
   description?: string
   scope: Scope
+  body?: string
   enabled?: boolean
 }
 
@@ -328,6 +330,7 @@ export function SessionSkillMemoryEditor({
   // 按钮三态: idle / sending / done. key = `${kind}:${itemId}`
   const [emphasizeState, setEmphasizeState] = useState<Record<string, 'idle' | 'sending' | 'done'>>({})
   const [activePanel, setActivePanel] = useState<null | 'skill' | 'memory'>(null)
+  const [previewItem, setPreviewItem] = useState<null | { kind: 'skill' | 'memory'; item: EditorItem }>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -336,6 +339,7 @@ export function SessionSkillMemoryEditor({
       setSkills([])
       setTotals({ skills: 0, memories: 0 })
       setSnapshotAt(null)
+      setPreviewItem(null)
       setLoading(false)
       return () => { cancelled = true }
     }
@@ -470,6 +474,21 @@ export function SessionSkillMemoryEditor({
               </div>
               <button
                 type="button"
+                onClick={() => setPreviewItem({ kind, item: it })}
+                className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded border transition-colors inline-flex items-center gap-1 hover:bg-[var(--bg-card-hover)]"
+                style={{
+                  color: 'var(--text-secondary)',
+                  borderColor: 'var(--border-color-strong)',
+                  background: 'transparent',
+                }}
+                title={`浏览 ${it.name} 的快照正文`}
+                aria-label={`浏览 ${it.name} 的快照正文`}
+              >
+                <Eye className="h-3 w-3" strokeWidth={1.9} />
+                <span>浏览</span>
+              </button>
+              <button
+                type="button"
                 disabled={btnDisabled}
                 onClick={() => handleEmphasize(kind, it.id)}
                 className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded border transition-colors disabled:opacity-50 disabled:cursor-wait"
@@ -562,6 +581,71 @@ export function SessionSkillMemoryEditor({
               {activePanel === 'skill'
                 ? renderList(skills, '暂无 Skill', 'skill')
                 : renderList(memories, '暂无 Memory', 'memory')}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {previewItem && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center px-4" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            aria-label="关闭正文浏览"
+            onClick={() => setPreviewItem(null)}
+          />
+          <div
+            className="relative flex w-full max-w-[860px] flex-col overflow-hidden rounded-2xl shadow-2xl"
+            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxHeight: 'min(760px, calc(100vh - 48px))' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <header className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  {previewItem.kind === 'skill'
+                    ? <Puzzle className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
+                    : <BookOpen className="h-4 w-4 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />}
+                  <h3 className="min-w-0 text-[15px] font-semibold leading-6 break-words" style={{ color: 'var(--text-primary)' }}>
+                    {previewItem.item.name}
+                  </h3>
+                  <ScopeBadge scope={previewItem.item.scope} />
+                  <span
+                    className="shrink-0 rounded border px-1.5 py-0.5 text-[10px]"
+                    style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.04)' }}
+                  >
+                    {(previewItem.item.body || '').length} 字
+                  </span>
+                </div>
+                {previewItem.item.description && (
+                  <p className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    {previewItem.item.description}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewItem(null)}
+                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                aria-label="关闭正文浏览"
+                title="关闭"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </header>
+
+            <div className="min-h-0 flex-1 overflow-auto p-5">
+              <pre
+                className="m-0 min-h-[360px] whitespace-pre-wrap break-words rounded-xl border p-4 text-[12px] leading-relaxed"
+                style={{
+                  background: 'var(--bg-primary)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'ui-monospace,SFMono-Regular,monospace',
+                }}
+              >
+                {previewItem.item.body || '这个快照条目没有可浏览的正文。'}
+              </pre>
             </div>
           </div>
         </div>

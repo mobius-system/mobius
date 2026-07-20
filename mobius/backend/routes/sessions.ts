@@ -1241,6 +1241,7 @@ router.get('/:id/selection-snapshot', auth, (req: express.Request, res: express.
       name: s.name,
       description: s.description || '',
       dirName: s.dirName || null,
+      body: typeof s.body === 'string' ? s.body : '',
       enabled: s.enabled !== false,
     });
     const mapMemory = (m: any) => ({
@@ -1248,6 +1249,7 @@ router.get('/:id/selection-snapshot', auth, (req: express.Request, res: express.
       scope: m.scope,
       name: m.name,
       description: m.description || '',
+      body: typeof m.body === 'string' ? m.body : '',
       enabled: m.enabled !== false,
     });
     return {
