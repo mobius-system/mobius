@@ -164,9 +164,26 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
     scrollRootRef.current = el
   }, [])
 
-  // 跳转到 scrollToKey 指定的 block. 虚拟化下目标可能尚未渲染: 先用 layout 估算位置滚过去,
-  // 滚动让新 block 进入视口 -> 测高 -> heightVersion 变 -> 本 effect 重跑, 直到能在 DOM 里
-  // 查到该 block 做精确对齐, 然后调 onScrollToKeyDone 清掉 scrollToKey 停止自校正.
+  // 内容尺寸版本: 卡片 (代码块/差异/图片) 异步渲染会持续改变内容高度, 单次滚动会落点过时.
+  // 用 ResizeObserver 盯 scrollRoot, 高度一变就 bump contentVersion, 驱动跳转 effect 重滚,
+  // 把目标 block 重新钉到 sticky header 下方, 直到内容稳定. (非虚拟路径没有 MeasuredVirtualBlock,
+  // heightVersion 不会 bump, 必须靠这个 contentVersion 才能在非虚拟路径自校正.)
+  const [contentVersion, setContentVersion] = useState(0)
+  useEffect(() => {
+    const root = scrollRootRef.current
+    if (!root) return
+    let raf = 0
+    const ro = new ResizeObserver(() => {
+      if (raf) cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => setContentVersion(v => v + 1))
+    })
+    ro.observe(root)
+    return () => { ro.disconnect(); if (raf) cancelAnimationFrame(raf) }
+  }, [])
+
+  // 跳转到 scrollToKey 指定的 block. 内容仍在渲染时 block 位置会漂移, 因此每次 contentVersion/
+  // heightVersion 变化都重滚一次 (instant), 把 block 顶部钉到 scrollOffset (sticky header 高度) 之下.
+  // 虚拟化下目标可能尚未渲染: 先用 layout 估算位置滚过去让它进视口, 下一轮重滚即可走 DOM 精确分支.
   useEffect(() => {
     if (!scrollToKey) return
     const root = scrollRootRef.current
@@ -177,23 +194,34 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
     const node = root.querySelector<HTMLElement>(sel)
     const parentTop = scrollParent.getBoundingClientRect().top
     const headerOffset = scrollOffset ?? 0
+    let desired: number
     if (node) {
-      const nodeTopInScroll = node.getBoundingClientRect().top - parentTop + scrollParent.scrollTop
-      const desired = Math.max(0, nodeTopInScroll - headerOffset)
-      if (Math.abs(scrollParent.scrollTop - desired) > 2) {
-        scrollParent.scrollTo({ top: desired, behavior: 'smooth' })
-      }
-      onScrollToKeyDoneRef.current?.()
-      return
+      desired = node.getBoundingClientRect().top - parentTop + scrollParent.scrollTop - headerOffset
+    } else {
+      const index = blocks.findIndex(b => b.key === scrollToKey)
+      if (index < 0) { onScrollToKeyDoneRef.current?.(); return }
+      desired = root.getBoundingClientRect().top - parentTop + scrollParent.scrollTop + (layout.starts[index] ?? 0) - headerOffset
     }
-    const index = blocks.findIndex(b => b.key === scrollToKey)
-    if (index < 0) { onScrollToKeyDoneRef.current?.(); return }
-    const rootTopInScroll = root.getBoundingClientRect().top - parentTop + scrollParent.scrollTop
-    const desired = Math.max(0, rootTopInScroll + (layout.starts[index] ?? 0) - headerOffset)
-    scrollParent.scrollTo({ top: desired, behavior: 'auto' })
-    // 不调 done: 等 heightVersion 变化 (新测高) 后重跑, 改走上面的 DOM 精确分支.
+    desired = Math.max(0, desired)
+    if (Math.abs(scrollParent.scrollTop - desired) > 2) {
+      scrollParent.scrollTo({ top: desired, behavior: 'auto' })
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollToKey, heightVersion, scrollOffset, blocks, layout])
+  }, [scrollToKey, contentVersion, heightVersion, scrollOffset, blocks, layout])
+
+  // 内容稳定 800ms 后视为到位, 清掉 scrollToKey 停止自校正. 每次 contentVersion/heightVersion 变都重置计时.
+  useEffect(() => {
+    if (!scrollToKey) return
+    const tm = setTimeout(() => { onScrollToKeyDoneRef.current?.() }, 800)
+    return () => clearTimeout(tm)
+  }, [scrollToKey, contentVersion, heightVersion])
+
+  // 兜底硬上限: 无论内容是否稳定, 3s 后强制结束 (防活流式会话无限追位).
+  useEffect(() => {
+    if (!scrollToKey) return
+    const tm = setTimeout(() => { onScrollToKeyDoneRef.current?.() }, 3000)
+    return () => clearTimeout(tm)
+  }, [scrollToKey])
 
   if (blocks.length <= minBlocks) {
     // 兜底 (非虚拟化) 路径: 每个 block 包一层带 data-block-key 的 div, 供 scrollToKey 查询.
