@@ -1179,8 +1179,20 @@ const PendingMessage = memo(function PendingMessage({ failed }: { failed?: boole
   )
 })
 
-function buildAssistantClientContext(user: any) {
+async function buildAssistantClientContext(user: any) {
   const token = localStorage.getItem('cc-token') || ''
+  const desktop = typeof window !== 'undefined'
+    ? (window as { mobiusDesktop?: { isDesktop?: boolean; getBootData?: () => Promise<{ aimuxIdentifier?: string }> } }).mobiusDesktop
+    : undefined
+  let desktopDeviceId = ''
+  if (desktop?.isDesktop && typeof desktop.getBootData === 'function') {
+    try {
+      const bootData = await desktop.getBootData()
+      desktopDeviceId = typeof bootData?.aimuxIdentifier === 'string' ? bootData.aimuxIdentifier.trim() : ''
+    } catch {
+      desktopDeviceId = ''
+    }
+  }
   return {
     current_url: window.location.href,
     origin: window.location.origin,
@@ -1193,6 +1205,10 @@ function buildAssistantClientContext(user: any) {
       user_id: user?.id || '',
       display_name: user?.display_name || '',
       role: user?.role || '',
+    },
+    desktop: {
+      is_electron: !!desktop?.isDesktop,
+      device_id: desktopDeviceId,
     },
   }
 }
@@ -3262,7 +3278,7 @@ export function AssistantChat() {
           body: JSON.stringify({
             content: outboundContent,
             input_text: text,
-            client_context: buildAssistantClientContext(user),
+            client_context: await buildAssistantClientContext(user),
             request_id: requestId,
             attachments: promptAttachments,
           }),

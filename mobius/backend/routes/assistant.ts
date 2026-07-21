@@ -501,6 +501,10 @@ function backendForSession(session: any): any {
 function normalizeAssistantClientContext(raw: any, user: any, authorizationHeader: string = ''): any {
   const src = raw && typeof raw === 'object' ? raw : {};
   const auth = src.auth && typeof src.auth === 'object' ? src.auth : {};
+  const desktop = src.desktop && typeof src.desktop === 'object' ? src.desktop : {};
+  const desktopDeviceId = typeof desktop.device_id === 'string'
+    ? desktop.device_id.replace(/[\r\n]+/g, '').trim().slice(0, 256)
+    : '';
   const token = typeof auth.token === 'string' ? auth.token : '';
   const authorization = typeof auth.authorization === 'string' && auth.authorization.trim()
     ? auth.authorization.trim()
@@ -517,6 +521,10 @@ function normalizeAssistantClientContext(raw: any, user: any, authorizationHeade
       user_id: user?.id || '',
       display_name: user?.display_name || user?.id || '',
       role: user?.role || '',
+    },
+    desktop: {
+      is_electron: desktop.is_electron === true,
+      device_id: desktopDeviceId,
     },
   };
 }
@@ -547,10 +555,17 @@ function assistantPersonalityPromptLines(personality: unknown): string[] {
   ];
 }
 
+function assistantElectronPrompt(clientContext: any): string {
+  const desktop = clientContext?.desktop;
+  if (desktop?.is_electron !== true || !desktop.device_id) return '';
+  return `【非常重要：用户当前正在 electron 桌面端向你发出提问。仅对当前问题，如果用户的问题涉及在他的桌面电脑进行操作，请使用 mobius-aimux skill（$APP_DIR/skills/mobius-aimux）连接桌面设备，桌面设备ID=${desktop.device_id}】`;
+}
+
 function assistantPrompt(question: string, sessionId: string, clientContext: any = null, personality: unknown = DEFAULT_ASSISTANT_PERSONALITY): string {
   const text = String(question || '').trim();
   if (text.startsWith('/compact')) return text;
   const clientContextBlock = assistantClientContextText(clientContext);
+  const electronPrompt = assistantElectronPrompt(clientContext);
   return [
     '你是小莫，莫比乌斯AI的项目助理。',
     '你是“主体小莫”。你的固定 Session 名称应为“我的主小莫”。',
@@ -571,6 +586,8 @@ function assistantPrompt(question: string, sessionId: string, clientContext: any
     text,
     clientContextBlock ? '\n追加的当前用户浏览器上下文与认证信息：' : '',
     clientContextBlock,
+    electronPrompt ? '\n当前 Electron 桌面端操作提示：' : '',
+    electronPrompt,
     '',
     '发出每轮回复前做语音自检：本回复有 TTS 精选价值吗？有，输出一行裸 PushVoiceToUser("...")；没有，不输出任何 PushVoiceToUser 标记。如果输出，确认整行独立，且没有反引号、Markdown 或正文包裹。',
   ].join('\n');
