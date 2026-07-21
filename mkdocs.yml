@@ -55,6 +55,7 @@ plugins:
             "Concepts: Skills & Memory": 概念入门：技能与记忆
             "II. Advanced Capabilities": II-高级能力
             "Add Remote Compute": 添加远程算力
+            "Declare Cooperable Computers": 声明可合作计算机
             "Connect from Your PC (aimux)": 从个人电脑连接（aimux）
             "Xiaomo Assistant (Web)": 小莫助手 Web 端
             "Prevent Agent Idle (Patrol & Nudge)": 防止 Agent 偷懒
@@ -97,6 +98,7 @@ nav:
       - 'Concepts: Skills & Memory': tutorial/03a_using_skill_and_memory.md
   - 'II. Advanced Capabilities':
       - Add Remote Compute: tutorial/04_add_remote_server.md
+      - Declare Cooperable Computers: tutorial/30_declare_cooperable_computers.md
       - Connect from Your PC (aimux): tutorial/27_aimux_from_pc.md
       - Xiaomo Assistant (Web): tutorial/05_using_xiaomo_assistant.md
       - Prevent Agent Idle (Patrol & Nudge): tutorial/06_prevent_agent_idle.md
