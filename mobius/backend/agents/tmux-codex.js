@@ -97,7 +97,7 @@ const READY_SENTINELS = [
   'permissions: YOLO mode',
   '/model to change',
 ]
-const READY_HISTORY_SIZE_THRESHOLD = 100
+const READY_HISTORY_SIZE_THRESHOLD = 1000
 const READY_HISTORY_CONSECUTIVE_POLLS = 2
 const TRUST_PROMPT_SENTINELS = [
   'Do you trust the contents of this directory',
