@@ -344,6 +344,8 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
   const [aimuxForwarding, setAimuxForwarding] = useState(false)
   const [showDialog, setShowDialog] = useState(false)
   const [error, setError] = useState('')
+  const [manualPort, setManualPort] = useState('')
+  const [showManualInput, setShowManualInput] = useState(false)
 
   const loadMetadata = useCallback(async () => {
     if (!projectId) return
@@ -380,7 +382,11 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
   }, [projectId, subPath])
 
   useEffect(() => {
-    if (!showDialog) return
+    if (!showDialog) {
+      setShowManualInput(false)
+      setManualPort('')
+      return
+    }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setShowDialog(false)
@@ -441,9 +447,8 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
     }
   }
 
-  const openManualAimuxPort = () => {
-    const portText = window.prompt('请输入要打开的项目端口号（1-65535）', '')?.trim()
-    if (portText === undefined) return
+  const submitManualAimuxPort = () => {
+    const portText = manualPort.trim()
     if (!/^\d{1,5}$/.test(portText)) {
       setError('请输入 1-65535 的端口号')
       return
@@ -453,6 +458,8 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
       setError('请输入 1-65535 的端口号')
       return
     }
+    setShowManualInput(false)
+    setManualPort('')
     void openAimuxPort(port)
   }
 
@@ -561,19 +568,69 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
 
                   <button
                     type="button"
-                    onClick={openManualAimuxPort}
+                    onClick={() => {
+                      setShowManualInput(prev => !prev)
+                      setError('')
+                    }}
                     disabled={aimuxForwarding}
                     className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-sky-500/10 hover:border-sky-500/30 disabled:cursor-not-allowed disabled:opacity-55"
-                    style={{ borderColor: 'var(--border-color)' }}
+                    style={{ borderColor: showManualInput ? 'rgba(56,189,248,0.55)' : 'var(--border-color)' }}
                   >
                     <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
                       {aimuxForwarding ? <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" /> : <Cable className="w-3.5 h-3.5 text-sky-400" />}
                       打开端口（AIMUX 手动）
                     </div>
                     <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                      点击后输入端口号码
+                      {showManualInput ? '在下方输入端口号' : '点击后输入端口号码'}
                     </div>
                   </button>
+
+                  {showManualInput && (
+                    <form
+                      className="rounded-lg border border-sky-500/25 bg-sky-500/5 p-2.5 space-y-2"
+                      onSubmit={event => {
+                        event.preventDefault()
+                        submitManualAimuxPort()
+                      }}
+                    >
+                      <input
+                        autoFocus
+                        inputMode="numeric"
+                        value={manualPort}
+                        disabled={aimuxForwarding}
+                        onChange={event => {
+                          setManualPort(event.target.value)
+                          setError('')
+                        }}
+                        placeholder="端口号（1-65535）"
+                        className="w-full h-8 px-2.5 rounded-md border bg-[var(--bg-primary)] text-[13px] font-mono outline-none focus:border-sky-500/60 disabled:opacity-60"
+                        style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                      />
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          disabled={aimuxForwarding}
+                          onClick={() => {
+                            setShowManualInput(false)
+                            setManualPort('')
+                            setError('')
+                          }}
+                          className="h-7 px-2.5 rounded-md border text-[12px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-60"
+                          style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={aimuxForwarding}
+                          className="h-7 px-2.5 rounded-md bg-sky-500 text-white text-[12px] transition-colors hover:bg-sky-600 disabled:opacity-60 inline-flex items-center gap-1.5"
+                        >
+                          {aimuxForwarding && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                          打开
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </>
               )}
 

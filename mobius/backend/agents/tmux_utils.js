@@ -7,7 +7,11 @@ function take_tmux_window_text(target, capture_head_and_tail_line = 100) {
   const headCap = Number.isFinite(hsN) && hsN > capture_head_and_tail_line * 2
     ? tmux(['capture-pane', '-pt', target, '-p', '-S', `-${hsN}`, '-E', String(-hsN + capture_head_and_tail_line - 1)])
     : { status: 1, stdout: '' }
-  return [headCap.status === 0 ? headCap.stdout : '', tailCap.status === 0 ? tailCap.stdout : ''].filter(Boolean).join('\n')
+  const text = [headCap.status === 0 ? headCap.stdout : '', tailCap.status === 0 ? tailCap.stdout : ''].filter(Boolean).join('\n')
+  return {
+    text,
+    historySize: Number.isFinite(hsN) ? hsN : 0,
+  }
 }
 
 module.exports = { take_tmux_window_text }

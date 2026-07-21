@@ -893,7 +893,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 在超时前持续轮询 tmux pane 内容。
     while (Date.now() < deadline) {
       // capture 失败时按空屏幕处理，下一轮继续尝试。
-      const screen = take_tmux_window_text(target, 100)
+      const { text: screen } = take_tmux_window_text(target, 100)
       // 看到 ready 哨兵文本就结束等待。
       if (screen.includes(READY_SENTINEL)) { ready = true; break }
       // 信任对话框: 默认已高亮 "❯ 1. Yes, I trust this folder", 回车即确认.

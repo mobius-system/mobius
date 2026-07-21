@@ -3675,7 +3675,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
   // 输入为空时回退到默认值, 避免生成 --identifier 空参数导致命令非法
   const effectiveIdentifier = identifier.trim() || defaultIdentifier
 
-  const installCmd = 'pip install --force-reinstall aimux==0.1.13'
+  const installCmd = 'pip install --force-reinstall aimux==0.1.14'
   const connectCmd = `aimux reverse connect ${baseUrl} --identifier ${effectiveIdentifier} --token ${userJwt}`
   // 步骤4 话术: 命名占位用第2步输入的 identifier (实时随输入更新); skill 路径用后端 branding 下发的
   // APP_DIR 绝对路径展开 (用户要求显示绝对路径, agent 无论 cwd 在哪都能直达内置 skill 源目录);
