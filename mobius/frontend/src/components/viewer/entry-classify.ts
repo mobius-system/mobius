@@ -23,6 +23,38 @@ export function isTokenCountEvent(entry: AnyEntry): boolean {
   return entry?.type === 'event_msg' && entry?.payload?.type === 'token_count'
 }
 
+// codex 在每轮开始会以 response_item.message[role=user] 注入一条 <environment_context>…</environment_context>
+// 系统上下文 (cwd/shell/date/timezone/filesystem 等). 它套了 user 外壳但不是人类提问, 在 jsonl 卡片
+// 视图里属于噪声, 与 token_count 同级整卡过滤隐藏.
+const ENVIRONMENT_CONTEXT_TAG_PATTERN = /<environment_context\b[^>]*>[\s\S]*?<\/environment_context>/gi
+
+// 抽取 entry 里 user 角色消息的可见文本 (覆盖 response_item.message[role=user] 与 type:user 两种形态).
+function entryUserText(entry: AnyEntry): string {
+  if (entry?.type === 'response_item' && entry?.payload?.type === 'message' && entry?.payload?.role === 'user') {
+    const c = entry?.payload?.content
+    if (typeof c === 'string') return c
+    if (Array.isArray(c)) return c.map((b: any) => (typeof b === 'string' ? b : (b?.text ?? b?.input_text ?? ''))).filter(Boolean).join('\n')
+    return ''
+  }
+  if (entry?.type === 'user') {
+    const c = entry?.message?.content
+    if (typeof c === 'string') return c
+    if (Array.isArray(c)) return c.map((b: any) => (typeof b === 'string' ? b : (b?.text ?? ''))).filter(Boolean).join('\n')
+    return ''
+  }
+  return ''
+}
+
+// 该 entry 是否为 "纯 <environment_context> 系统注入" 的 user 消息: 整条只剩环境上下文块, 无人类提问.
+// 仅当剥掉 <environment_context>…</environment_context> 块后无任何非空白文本时才判 true,
+// 避免误伤把环境上下文与真实提问拼在同一条消息里的情形 (此时保留卡片, 不隐藏真实问题).
+export function isEnvironmentContextEntry(entry: AnyEntry): boolean {
+  const text = entryUserText(entry)
+  if (!text) return false
+  const stripped = text.replace(ENVIRONMENT_CONTEXT_TAG_PATTERN, '')
+  return stripped.trim().length === 0 && stripped !== text
+}
+
 export function isAssistantEndTurnEntry(entry: AnyEntry): boolean {
   return entry?.type === 'assistant' && entry?.message?.stop_reason === 'end_turn'
 }

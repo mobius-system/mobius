@@ -14,7 +14,7 @@ import { mergeBashToolResultItems } from './entry-extract'
 import { buildRounds } from './rounds'
 import { buildHeaderSummary } from './header-summary'
 import { ContinuationGroup, RoundGroup, EntryCardWithImages } from './RoundGroups'
-import { isTokenCountEvent } from './entry-classify'
+import { isTokenCountEvent, isEnvironmentContextEntry } from './entry-classify'
 
 const JSONL_INITIAL_WINDOW_SIZE = 200
 
@@ -69,7 +69,9 @@ export function JsonlView({
   const windowOffset = entries.length - recent.length
   const headerTitle = title === undefined ? 'JSONL' : title
   const visibleItems = useMemo(
-    () => mergeBashToolResultItems(recent, windowOffset).filter((item) => !isTokenCountEvent(item.entry)),
+    () => mergeBashToolResultItems(recent, windowOffset).filter(
+      (item) => !isTokenCountEvent(item.entry) && !isEnvironmentContextEntry(item.entry),
+    ),
     [recent, windowOffset],
   )
   const { preItems, rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
