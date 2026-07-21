@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ScrollText, ExternalLink, Network } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
@@ -1007,6 +1008,54 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
 }
 
 // =====================================================================
+// HeaderActionButton — 顶栏操作按钮统一元件.
+// 尺寸/圆角/字号与 SessionStatusChip 严格对齐 (text-[11px] + py-0.5 + rounded-full),
+// 让 终止 / 新会话 / 打开应用 / 更多 等不再比 [执行中] 状态 chip 高出一截.
+// tone 复刻各按钮原有的语义色; iconOnly 用于纯图标按钮 (如 [...] 菜单触发器).
+// =====================================================================
+type HeaderActionTone = 'red' | 'emerald' | 'violet' | 'blue' | 'neutral'
+
+const HEADER_ACTION_TONE_CLASS: Record<HeaderActionTone, string> = {
+  red:     'border-red-500/25 text-red-300 hover:bg-red-500/15 hover:text-red-100',
+  emerald: 'border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10',
+  violet:  'border-violet-500/25 text-violet-400 hover:bg-violet-500/10',
+  blue:    'border-blue-500/20 text-blue-400 hover:bg-blue-500/10',
+  neutral: 'border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]',
+}
+
+type HeaderActionButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & {
+  tone?: HeaderActionTone
+  icon?: ReactNode
+  iconOnly?: boolean
+  className?: string
+}
+
+function HeaderActionButton({
+  tone = 'neutral',
+  icon,
+  iconOnly = false,
+  className = '',
+  children,
+  ...rest
+}: HeaderActionButtonProps) {
+  return (
+    <button
+      type="button"
+      className={[
+        'text-[11px] rounded-full border inline-flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-45 disabled:cursor-not-allowed',
+        iconOnly ? 'h-[22px] w-[22px] p-0' : 'px-2.5 py-0.5',
+        HEADER_ACTION_TONE_CLASS[tone],
+        className,
+      ].filter(Boolean).join(' ')}
+      {...rest}
+    >
+      {icon}
+      {!iconOnly && children}
+    </button>
+  )
+}
+
+// =====================================================================
 // ChatHeaderOverflowMenu — 把次要 chat 头部按钮收纳进 `…` 菜单
 // (原始数据 / 隐藏次要 / 显示时间与序号 / 项目知识沉淀)
 // =====================================================================
@@ -1039,14 +1088,13 @@ function ChatHeaderOverflowMenu({
   const itemClass = "w-full px-3 py-2 text-left text-[12px] hover:bg-[var(--bg-card-hover)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-between gap-3"
   return (
     <div className="relative">
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen(v => !v) }}
+      <HeaderActionButton
+        tone="neutral"
+        iconOnly
         title="更多操作"
-        className="h-7 w-7 flex items-center justify-center rounded-xl border hover:bg-[var(--bg-card-hover)] transition-colors"
-        style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-        <MoreHorizontal className="w-4 h-4" strokeWidth={1.75} />
-      </button>
+        onClick={(e) => { e.stopPropagation(); setOpen(v => !v) }}
+        icon={<MoreHorizontal className="w-4 h-4" strokeWidth={1.75} />}
+      />
       {open && (
         <div
           onClick={(e) => e.stopPropagation()}
@@ -3011,13 +3059,13 @@ export function ChatArea({ layout = 'default', onNewSession }: {
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {/* Stop: 终止当前 turn — 独立于发送按钮, 保持常驻可见. */}
-          <button
-            type="button"
-            onClick={handleStopSession}
+          <HeaderActionButton
+            tone="red"
+            title="终止当前智能体正在执行的操作"
             disabled={!sessionId}
             aria-live="polite"
-            title="终止当前智能体正在执行的操作"
-            className={`session-stop-button h-7 px-2.5 text-[11px] border border-red-500/25 text-red-300 rounded-xl hover:bg-red-500/15 hover:text-red-100 transition-all hidden md:inline-flex items-center justify-center gap-1 disabled:opacity-45 disabled:cursor-not-allowed ${stopFeedbackActive ? 'session-stop-button--active' : ''}`}>
+            onClick={handleStopSession}
+            className={`session-stop-button hidden md:inline-flex ${stopFeedbackActive ? 'session-stop-button--active' : ''}`}>
             {stopFeedbackActive && (
               <>
                 <span className="session-stop-button__shock" />
@@ -3027,37 +3075,37 @@ export function ChatArea({ layout = 'default', onNewSession }: {
             )}
             <span className="session-stop-button__square inline-block w-1.5 h-1.5 rounded-sm bg-current opacity-90" />
             <span className="relative z-10 whitespace-nowrap">{stopFeedbackActive ? '已触发' : '终止'}</span>
-          </button>
+          </HeaderActionButton>
           {onNewSession && (
-            <button
-              type="button"
-              onClick={onNewSession}
+            <HeaderActionButton
+              tone="emerald"
               data-tour="session-header-new-session"
               title="新建会话"
-              className="h-7 px-2.5 text-[11px] border border-emerald-500/25 text-emerald-400 rounded-xl hover:bg-emerald-500/10 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
+              className="hidden md:inline-flex"
+              onClick={onNewSession}
+              icon={<Plus className="h-3.5 w-3.5" strokeWidth={2} />}
             >
-              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
               <span>新会话</span>
-            </button>
+            </HeaderActionButton>
           )}
           {extensionAppUrl && (
-            <button
-              type="button"
-              onClick={() => window.open(extensionAppUrl, '_blank', 'noopener,noreferrer')}
+            <HeaderActionButton
+              tone="violet"
               data-tour="session-extension-open"
               title={`打开 ${projectForSession?.name || '拓展应用'}`}
-              className="h-7 px-2.5 text-[11px] border border-violet-500/25 text-violet-400 rounded-xl hover:bg-violet-500/10 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
+              className="hidden md:inline-flex"
+              onClick={() => window.open(extensionAppUrl, '_blank', 'noopener,noreferrer')}
+              icon={<ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />}
             >
-              <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
               <span>打开应用</span>
-            </button>
+            </HeaderActionButton>
           )}
           {currentProjectId && (
             <OpenInVSCodeButton
               projectId={currentProjectId}
               subPath={currentVscodeSubPath}
               showWorktreeOption={!!currentVscodeSubPath}
-              className="h-7 px-2.5 text-[11px] border border-blue-500/20 text-blue-400 rounded-xl hover:bg-blue-500/10 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
+              className="text-[11px] rounded-full px-2.5 py-0.5 border border-blue-500/20 text-blue-400 hover:bg-blue-500/10 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
             />
           )}
           {/* … 溢出菜单: 把 "原始数据 / 隐藏次要条目 / 项目知识沉淀" 收纳进来 */}
