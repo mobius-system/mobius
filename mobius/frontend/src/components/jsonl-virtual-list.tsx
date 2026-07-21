@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 export type VirtualListBlock = { key: string }
 
@@ -54,6 +54,7 @@ function MeasuredVirtualBlock({
   return (
     <div
       ref={ref}
+      data-block-key={blockKey}
       className="absolute left-0 right-0"
       style={{ transform: `translateY(${top}px)` }}
     >
@@ -68,17 +69,32 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
   minBlocks = DEFAULT_MIN_BLOCKS,
   overscanPx = DEFAULT_OVERSCAN_PX,
   estimatedHeight = DEFAULT_ESTIMATED_HEIGHT,
+  scrollToKey,
+  scrollOffset = 0,
+  onScrollToKeyDone,
 }: {
   blocks: TBlock[]
   renderBlock: (block: TBlock) => ReactNode
   minBlocks?: number
   overscanPx?: number
   estimatedHeight?: number
+  // 跳转到指定 block (按 block.key 匹配). 设置后, 列表滚动让该 block 顶部贴在
+  // scrollOffset (通常是 sticky header 高度) 之下; 到位后调 onScrollToKeyDone 清除.
+  scrollToKey?: string | null
+  scrollOffset?: number
+  onScrollToKeyDone?: () => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
+  // scrollToKey 的滚动用 root: 两条渲染路径 (虚拟/非虚拟) 都挂这个 ref, 使跳转逻辑统一.
+  // 注意: 这与 rootRef 不同 -- rootRef 只在虚拟路径挂, 让滚动监听 effect 在非虚拟路径因
+  // rootRef.current===null 而 bail, 避免非虚拟路径每次滚动都 setScrollState 重渲染.
+  const scrollRootRef = useRef<HTMLDivElement | null>(null)
   const heightsRef = useRef<Map<string, number>>(new Map())
   const [scrollState, setScrollState] = useState({ top: 0, height: 800 })
   const [heightVersion, setHeightVersion] = useState(0)
+  // onScrollToKeyDone 存进 ref, 避免 scrollToKey effect 把它列入依赖导致每次渲染重跑.
+  const onScrollToKeyDoneRef = useRef(onScrollToKeyDone)
+  onScrollToKeyDoneRef.current = onScrollToKeyDone
 
   useEffect(() => {
     const root = rootRef.current
@@ -142,15 +158,59 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
     }
   }, [blocks.length, layout, minBlocks, overscanPx, scrollState.height, scrollState.top])
 
+  // 虚拟路径的根节点同时挂 rootRef (滚动监听用) 和 scrollRootRef (跳转查询用).
+  const setRootRef = useCallback((el: HTMLDivElement | null) => {
+    rootRef.current = el
+    scrollRootRef.current = el
+  }, [])
+
+  // 跳转到 scrollToKey 指定的 block. 虚拟化下目标可能尚未渲染: 先用 layout 估算位置滚过去,
+  // 滚动让新 block 进入视口 -> 测高 -> heightVersion 变 -> 本 effect 重跑, 直到能在 DOM 里
+  // 查到该 block 做精确对齐, 然后调 onScrollToKeyDone 清掉 scrollToKey 停止自校正.
+  useEffect(() => {
+    if (!scrollToKey) return
+    const root = scrollRootRef.current
+    if (!root) return
+    const scrollParent = findScrollParent(root)
+    if (!scrollParent) return
+    const sel = `[data-block-key="${scrollToKey.replace(/["\\]/g, '\\$&')}"]`
+    const node = root.querySelector<HTMLElement>(sel)
+    const parentTop = scrollParent.getBoundingClientRect().top
+    const headerOffset = scrollOffset ?? 0
+    if (node) {
+      const nodeTopInScroll = node.getBoundingClientRect().top - parentTop + scrollParent.scrollTop
+      const desired = Math.max(0, nodeTopInScroll - headerOffset)
+      if (Math.abs(scrollParent.scrollTop - desired) > 2) {
+        scrollParent.scrollTo({ top: desired, behavior: 'smooth' })
+      }
+      onScrollToKeyDoneRef.current?.()
+      return
+    }
+    const index = blocks.findIndex(b => b.key === scrollToKey)
+    if (index < 0) { onScrollToKeyDoneRef.current?.(); return }
+    const rootTopInScroll = root.getBoundingClientRect().top - parentTop + scrollParent.scrollTop
+    const desired = Math.max(0, rootTopInScroll + (layout.starts[index] ?? 0) - headerOffset)
+    scrollParent.scrollTo({ top: desired, behavior: 'auto' })
+    // 不调 done: 等 heightVersion 变化 (新测高) 后重跑, 改走上面的 DOM 精确分支.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollToKey, heightVersion, scrollOffset, blocks, layout])
+
   if (blocks.length <= minBlocks) {
-    // 兜底 (非虚拟化) 路径: block 自带 key 字段, 这里补上 React key, 避免列表子元素缺 key 告警.
-    // (虚拟化路径用 <MeasuredVirtualBlock key={block.key}> 包裹, 已有 key, 无此问题.)
-    return <>{blocks.map(b => <Fragment key={b.key}>{renderBlock(b)}</Fragment>)}</>
+    // 兜底 (非虚拟化) 路径: 每个 block 包一层带 data-block-key 的 div, 供 scrollToKey 查询.
+    return (
+      <div ref={scrollRootRef}>
+        {blocks.map(b => (
+          <div key={b.key} data-block-key={b.key}>
+            {renderBlock(b)}
+          </div>
+        ))}
+      </div>
+    )
   }
 
   const visibleBlocks = blocks.slice(visibleRange.start, visibleRange.end)
   return (
-    <div ref={rootRef} className="relative" style={{ height: `${layout.total}px` }}>
+    <div ref={setRootRef} className="relative" style={{ height: `${layout.total}px` }}>
       {visibleBlocks.map((block, idx) => {
         const absoluteIndex = visibleRange.start + idx
         return (
