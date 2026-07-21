@@ -11,7 +11,7 @@
  *  - 超大卡片保护: entry + 工具结果渲染字符总量超 10 万时截断后再渲染, 避免前端卡顿崩溃.
  */
 import { Suspense, lazy, memo, useMemo, useState } from 'react'
-import { Code2 } from 'lucide-react'
+import { Code2, ListChecks } from 'lucide-react'
 import { BLACKBOARD_MARKER } from '../jsonl-round-helpers'
 import {
   TYPE_THEME,
@@ -27,6 +27,7 @@ import {
   LOCAL_COMMAND_THEME,
   ASSISTANT_RESPONSE_KEYWORD_THEME,
   BLACKBOARD_THEME,
+  PLAN_THEME,
 } from './themes'
 import { formatTs } from './utils'
 import {
@@ -38,6 +39,7 @@ import {
   isStartPyToolUse,
   functionOutputImageUrls,
   functionOutputTextBody,
+  extractPlanUpdate,
 } from './entry-extract'
 import {
   isEditToolUse,
@@ -47,6 +49,7 @@ import {
   isCompactDoneEntry,
   isGoalSetEntry,
   isLocalCommandEntry,
+  isPlanUpdateEntry,
   jsonEntryTourTarget,
 } from './entry-classify'
 import { buildHeaderSummary } from './header-summary'
@@ -57,6 +60,7 @@ import { JsonEntryWritePreview } from './WritePreview'
 import { JsonEntryBashCommands } from './BashCards'
 import { JsonEntryReadCalls } from './ReadCards'
 import { JsonEntryLocalCommandBlock } from './LocalCommandBlock'
+import { JsonEntryPlanCard } from './PlanCard'
 import { ImageOutputPanel } from './ImageOutput'
 import { CompactPlainTextFallback } from './text-preview'
 import { JsonlCopyButton } from './JsonlCopyButton'
@@ -119,9 +123,13 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const readCalls = useMemo(() => extractReadCalls(renderEntry), [renderEntry])
   // 本地命令产物标签 (非空 = 命中 /compact 等 slash command 产物): 展开时走专属金色提示块, 不铺原始 JSON 字段.
   const localCommandParts = useMemo(() => extractLocalCommandParts(renderEntry), [renderEntry])
+  // codex 计划模式 (update_plan): 展开时走专属计划卡片, 不铺原始 JSON 字段.
+  const planUpdate = useMemo(() => extractPlanUpdate(renderEntry), [renderEntry])
   // canCode 覆盖代码视图: Edit diff / Write 文件预览 / Bash 命令卡片 / Read 文件读取卡片.
   // 字段模式仍是入口的兜底, 让用户随时切回看原始 JSON.
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
+  // canPlan 覆盖计划视图: update_plan function_call 走可视化步骤卡片.
+  const canPlan = !!planUpdate
   const isPatchApplyEvent = entry?.type === 'event_msg' && String(entry?.payload?.type || '').startsWith('patch_apply')
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
@@ -150,19 +158,21 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
     ? READ_TOOL_THEME
     : isContextCompactedEvent(entry)
     ? CONTEXT_COMPACTED_THEME
+    : isPlanUpdateEntry(entry)
+    ? PLAN_THEME
     : (TYPE_THEME[type] || DEFAULT_THEME)
   const ts = entry?.timestamp ? formatTs(entry.timestamp) : null
   // 仅 summary 被截断时才提供"精简模式"入口; 没截断的卡片只有字段模式
   const canCompact = headerSummary.canCompact
-  // 展开后默认: 可代码 → 代码模式; 可精简 → 精简模式; 其它 → 字段模式
-  const [mode, setMode] = useState<CardMode>(canCode ? 'code' : canImage ? 'image' : canCompact ? 'compact' : 'field')
+  // 展开后默认: 可计划 → 计划模式; 可代码 → 代码模式; 可图片 → 图片模式; 可精简 → 精简模式; 其它 → 字段模式
+  const [mode, setMode] = useState<CardMode>(canPlan ? 'plan' : canCode ? 'code' : canImage ? 'image' : canCompact ? 'compact' : 'field')
 
   // 卡片展开态受控于本地 state, 跨父组件重渲染 (实时轮询追加 entry) 保持不变.
   // 能精简的纯文本卡片默认展开, 代码化卡片默认折叠; patch_apply / error 保留默认展开,
   // 父组件 defaultExpanded 仍能强制展开其它卡片.
   // 用户手动折叠 → onToggle 写回 state, 此后重渲染不再强制掀开.
   const [open, setOpen] = useState<boolean>(
-    isPatchApplyEvent || (!canCode && (canCompact || canImage || type === 'error')) || !!defaultExpanded
+    isPatchApplyEvent || canPlan || (!canCode && (canCompact || canImage || type === 'error')) || !!defaultExpanded
   )
   // 精简/字段模式复制按钮反馈: 点击后短暂切换为 Check 图标再还原.
   const [copied, setCopied] = useState<boolean>(false)
@@ -177,7 +187,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   // 视觉位置不变, 但 DOM 上 button 是 details 的直接子元素而非 summary 后代, 规范合规.
   // 字段模式也带复制按钮 (复制原始 JSON), 与精简模式的复制按钮对齐, 故 hasHeaderAction
   // 额外纳入 mode === 'field' —— 让只支持字段模式的小卡片也能露出复制入口.
-  const hasHeaderAction = open && ((mode === 'compact') || (mode === 'field') || (mode === 'image') || canCompact || canCode || canImage)
+  const hasHeaderAction = open && ((mode === 'compact') || (mode === 'field') || (mode === 'image') || (mode === 'plan') || canCompact || canCode || canImage || canPlan)
   return (
     <details
       data-tour={tourTarget}
@@ -196,6 +206,15 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
             aria-label="代码模式"
           >
             <Code2 className="h-3 w-3" strokeWidth={2.2} aria-hidden="true" />
+          </span>
+        )}
+        {canPlan && (
+          <span
+            className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border-current/30 ${theme.text}`}
+            title="计划模式 — 点击展开查看分步计划"
+            aria-label="计划模式"
+          >
+            <ListChecks className="h-3 w-3" strokeWidth={2.2} aria-hidden="true" />
           </span>
         )}
         {oversized && (
@@ -245,7 +264,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
               }}
             />
           )}
-          {open && (canCompact || canCode || canImage) && (
+          {open && (canCompact || canCode || canImage || canPlan) && (
             <button
               type="button"
               onClick={(e) => {
@@ -254,6 +273,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
                 setMode(m => {
                   if (canCode) return m === 'code' ? 'field' : 'code'
                   if (canImage) return m === 'image' ? 'field' : 'image'
+                  if (canPlan) return m === 'plan' ? 'field' : 'plan'
                   return m === 'compact' ? 'field' : 'compact'
                 })
               }}
@@ -262,12 +282,16 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
                 ? (mode === 'code' ? '切换到字段模式 (按 key 展开 JSON)' : writeCall ? '切换到代码模式 (显示 Write 文件预览)' : codeEdit ? '切换到代码模式 (显示 old_string → new_string 的编辑差异)' : readCalls.length > 0 && bashCalls.length > 0 ? '切换到代码模式 (显示工具调用)' : readCalls.length > 0 ? '切换到代码模式 (显示 Read 文件读取)' : '切换到代码模式 (显示 Bash 命令)')
                 : canImage
                   ? (mode === 'image' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到图片模式 (渲染内嵌图片)')
-                  : (mode === 'compact' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到精简模式 (显示完整摘要文本)')}>
+                  : canPlan
+                    ? (mode === 'plan' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到计划模式 (显示分步计划)')
+                    : (mode === 'compact' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到精简模式 (显示完整摘要文本)')}>
               {canCode
                 ? (mode === 'code' ? '字段模式' : '代码模式')
                 : canImage
                   ? (mode === 'image' ? '字段模式' : '图片模式')
-                  : (mode === 'compact' ? '字段模式' : '精简模式')}
+                  : canPlan
+                    ? (mode === 'plan' ? '字段模式' : '计划模式')
+                    : (mode === 'compact' ? '字段模式' : '精简模式')}
             </button>
           )}
         </div>
@@ -296,6 +320,8 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
             </div>
           ) : mode === 'image' && canImage ? (
             <ImageOutputPanel imageUrls={imageOutputUrls} textBody={imageOutputText} />
+          ) : mode === 'plan' && planUpdate ? (
+            <JsonEntryPlanCard plan={planUpdate} />
           ) : mode === 'compact' && canCompact && !canCode ? (
             <div className="max-h-[60vh] overflow-y-auto pr-1">
               <Suspense fallback={<CompactPlainTextFallback text={headerSummary.full} />}>

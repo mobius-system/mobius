@@ -37,6 +37,9 @@ import type {
   StringCodeEditFile,
   UnifiedCodeEditFile,
   LocalCommandPart,
+  PlanStep,
+  PlanStepStatus,
+  PlanUpdate,
 } from './types'
 
 // re-export: 部分模块 (BashCall 类型 / block 级抽取 / 一行摘要) 直接复用 jsonl-bash-helpers 的实现.
@@ -521,6 +524,49 @@ export function functionOutputTextBody(output: any): string {
     if (textField) parts.push(textField)
   }
   return parts.filter(Boolean).join('\n').trim()
+}
+
+// ── update_plan (codex 计划模式) ─────────────────────────────────────────
+// codex 执行任务时会通过 update_plan function_call 发布/更新一个分步计划,
+// arguments 是 JSON 字符串 {"plan":[{"step": "...", "status": "completed|in_progress|pending"}, ...]}.
+// 这里把它解析成 PlanUpdate 供计划卡片渲染, 并给标题栏一行摘要.
+function normalizePlanStepStatus(raw: any): PlanStepStatus {
+  return raw === 'completed' || raw === 'in_progress' || raw === 'pending' ? raw : 'pending'
+}
+
+export function extractPlanUpdate(entry: AnyEntry): PlanUpdate | null {
+  if (entry?.type !== 'response_item') return null
+  const payload = entry?.payload
+  if (!payload || payload?.type !== 'function_call') return null
+  const name = typeof payload?.name === 'string' ? payload.name : ''
+  if (name !== 'update_plan') return null
+
+  const args = parseFunctionCallArguments(payload?.arguments)
+  const rawPlan = args?.plan ?? args?.input?.plan
+  if (!Array.isArray(rawPlan) || rawPlan.length === 0) return null
+
+  const steps: PlanStep[] = []
+  for (const item of rawPlan) {
+    if (!item || typeof item !== 'object') continue
+    const stepText = typeof item.step === 'string' ? item.step.trim() : ''
+    if (!stepText && !item.status) continue
+    steps.push({ step: stepText || '(空步骤)', status: normalizePlanStepStatus(item.status) })
+  }
+  if (steps.length === 0) return null
+
+  const completed = steps.filter((s) => s.status === 'completed').length
+  const inProgress = steps.filter((s) => s.status === 'in_progress').length
+  const pending = steps.filter((s) => s.status === 'pending').length
+  const currentStep = steps.find((s) => s.status === 'in_progress')?.step ?? null
+
+  return { steps, completed, inProgress, pending, currentStep }
+}
+
+// 计划一行摘要: "计划 · X/N", 有进行中步骤则追加 "· 进行中: <步骤>".
+export function summarizePlanUpdate(plan: PlanUpdate): string {
+  const parts = [`计划 · ${plan.completed}/${plan.steps.length}`]
+  if (plan.currentStep) parts.push(`进行中: ${plan.currentStep}`)
+  return parts.join(' · ')
 }
 
 // ── display_images / 附件图片解析 ──────────────────────────────────────

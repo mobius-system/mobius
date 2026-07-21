@@ -25,6 +25,8 @@ import {
   extractBashCallFromBlock,
   bashCallOneLineSummary,
   isBashToolUseName,
+  extractPlanUpdate,
+  summarizePlanUpdate,
 } from './entry-extract'
 
 // 阈值=80: 一行 summary 在常规桌面宽度下大概 80~100 字就会被 CSS truncate 截断,
@@ -207,6 +209,10 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
       return clip(`${payload?.role || 'message'}${body ? ` · ${body}` : ''}`, HEADER_SHORT_LIMIT)
     }
     if (pt === 'function_call') {
+      if (payload?.name === 'update_plan') {
+        const plan = extractPlanUpdate(entry)
+        if (plan) return clip(summarizePlanUpdate(plan), HEADER_SHORT_LIMIT)
+      }
       if (payload?.name === 'Write') {
         const args = parseFunctionCallArguments(payload?.arguments)
         const writeSummary = summarizeWriteToolInput(payload?.input ?? args?.input ?? args)
