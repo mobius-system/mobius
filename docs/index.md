@@ -18,6 +18,7 @@ Mobius 是（据我们所知）全球首个**自进化**的开源智能体操作
 ### II-高级能力
 
 - [添加远程算力](tutorial/04_add_remote_server.md)
+- [声明可合作计算机](tutorial/30_declare_cooperable_computers.md)
 - [从个人电脑连接（aimux）](tutorial/27_aimux_from_pc.md)
 - [使用小莫助手 Web 端](tutorial/05_using_xiaomo_assistant.md)
 - [防止 Agent 偷懒（巡检 / 鞭策）](tutorial/06_prevent_agent_idle.md)

@@ -49,7 +49,7 @@ import { runSessionMessage } from '../services/session-message-runner';
 import * as presence from '../services/user-presence';
 import { pushToUser as pushToUserExt, isEnabled as isExtPushEnabled } from '../services/extension-push';
 // @ts-ignore — service 仍是 .js
-import { writeSessionTransferDocument } from '../services/session-transfer';
+import { writeSessionTransferBundle } from '../services/session-transfer';
 // @ts-ignore — service 仍是 .js
 import { predictNextQuestionsForSession } from '../services/session-next-question-predictor';
 // @ts-ignore — service 仍是 .js
@@ -1537,7 +1537,7 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     const jsonlPath = sessionJsonlPath(sourceSession, continueFromSessionId);
     if (!jsonlPath) { res.status(400).json({ error: '旧 Session 没有可读取的 JSONL 记录' }); return; }
     try {
-      transferResult = writeSessionTransferDocument({
+      transferResult = writeSessionTransferBundle({
         bindPath,
         sourceSession,
         targetSessionId: sessionId,
@@ -1565,16 +1565,26 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     language: sessionLanguage,
     pc_client_metadata: pcClientMetadata,
   } as any);
-  if (sourceSession && transferResult?.filePath) {
+  if (sourceSession && transferResult?.paths?.full) {
     try {
       Messages.insertSystem(
         sessionId,
         JSON.stringify({
           type: 'session_transfer',
+          format_version: 2,
+          delivery_mode: 'file_references',
           from_session_id: sourceSession.session_id,
-          path: transferResult.filePath,
+          path: transferResult.paths.full,
+          paths: {
+            full: transferResult.paths.full,
+            user_messages: transferResult.paths.user_messages,
+            metadata: transferResult.paths.metadata,
+          },
           section_count: transferResult.sectionCount,
           entry_count: transferResult.entryCount,
+          user_message_count: transferResult.userMessageCount,
+          cards_omitted: transferResult.cardsOmitted,
+          individual_cards_truncated: transferResult.individualCardsTruncated,
           truncated: transferResult.truncated,
         }),
         null as any,
@@ -1592,7 +1602,13 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     try {
       Messages.insertSystem(
         sourceSession.session_id,
-        `${closed.message}\n已创建更换模型继续的转接文档: ${transferResult.filePath}`,
+        [
+          closed.message,
+          '已创建更换模型继续的转接文件:',
+          `- 完整记录: ${transferResult.paths.full}`,
+          `- 仅用户消息: ${transferResult.paths.user_messages}`,
+          `- Session 元数据: ${transferResult.paths.metadata}`,
+        ].join('\n'),
         null as any,
         '修改模型并继续',
       );
@@ -1600,7 +1616,8 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     audit(user.id, 'session.continue_with_model', 'session', sessionId,
       JSON.stringify({
         from_session_id: sourceSession.session_id,
-        transfer_path: transferResult.filePath,
+        transfer_path: transferResult.paths.full,
+        transfer_paths: transferResult.paths,
         background_was_alive: closed.wasAlive,
         background_was_working: closed.wasWorking,
         background_terminated: closed.terminated,
@@ -1631,7 +1648,8 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
   res.json({
     ...(withSessionProxyState(Sessions.findById(sessionId)) as any),
     continue_from_session_id: sourceSession?.session_id || null,
-    transfer_path: transferResult?.filePath || null,
+    transfer_path: transferResult?.paths?.full || null,
+    transfer_paths: transferResult?.paths || null,
   });
 });
 

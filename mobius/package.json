@@ -14,6 +14,7 @@
     "test:code-server-workspace": "node --require tsx/cjs tests/code-server-workspace.js",
     "test:native-file-menu": "node --require tsx/cjs tests/native-file-menu.js",
     "test:file-tree-menu-logic": "node --require tsx/cjs tests/file-tree-menu-logic.js",
+    "test:session-transfer": "node --require tsx/cjs tests/session-transfer.js",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",
     "start:tsx": "tsx server.js"
   },

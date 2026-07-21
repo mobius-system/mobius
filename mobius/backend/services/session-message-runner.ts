@@ -7,7 +7,7 @@ import { resolveSessionWorkspace } from './workspace';
 import { appendSessionInput } from './session-inputs';
 import { syncSkillsToWorkspace } from './session-skills-sync';
 import { formatBackendSendFailure } from './session-errors';
-import { transferAppendPrompt } from './session-transfer';
+import { transferReferencePrompt } from './session-transfer';
 import { canOperateSession } from './access-control';
 import {
   normalizeSessionAttachments,
@@ -35,7 +35,13 @@ function mobiusPromptKind(content: any): string {
   return String(content || '').trim().startsWith('/compact') ? 'compact' : 'user_input';
 }
 
-function readPendingTransferPath(sessionId: any): string | null {
+interface PendingTransferPaths {
+  full: string | null;
+  user_messages: string | null;
+  metadata: string | null;
+}
+
+function readPendingTransferPaths(sessionId: any): PendingTransferPaths | null {
   try {
     const row = db.prepare(`
       SELECT content
@@ -46,7 +52,20 @@ function readPendingTransferPath(sessionId: any): string | null {
     `).get(sessionId) as { content?: string } | undefined;
     if (!row?.content) return null;
     const parsed = JSON.parse(row.content);
-    return typeof parsed?.path === 'string' && parsed.path.trim() ? parsed.path.trim() : null;
+    const full = typeof parsed?.paths?.full === 'string' && parsed.paths.full.trim()
+      ? parsed.paths.full.trim()
+      : typeof parsed?.path === 'string' && parsed.path.trim()
+        ? parsed.path.trim()
+        : null;
+    const userMessages = typeof parsed?.paths?.user_messages === 'string' && parsed.paths.user_messages.trim()
+      ? parsed.paths.user_messages.trim()
+      : typeof parsed?.paths?.userMessages === 'string' && parsed.paths.userMessages.trim()
+        ? parsed.paths.userMessages.trim()
+        : null;
+    const metadata = typeof parsed?.paths?.metadata === 'string' && parsed.paths.metadata.trim()
+      ? parsed.paths.metadata.trim()
+      : null;
+    return full || userMessages || metadata ? { full, user_messages: userMessages, metadata } : null;
   } catch {
     return null;
   }
@@ -167,12 +186,12 @@ async function runSessionMessage({
       }
       finalContent = wrapUserMessage(ctx.body, finalContent, ctx.language);
     }
-    const transferPath = readPendingTransferPath(normalizedSessionId);
-    if (transferPath) {
+    const transferPaths = readPendingTransferPaths(normalizedSessionId);
+    if (transferPaths) {
       try {
-        finalContent = transferAppendPrompt(transferPath, finalContent);
+        finalContent = transferReferencePrompt(transferPaths, finalContent);
       } catch (e) {
-        logger?.warn?.(`[sessions/messages] append session transfer failed (${normalizedSessionId}): ${e.message}`);
+        logger?.warn?.(`[sessions/messages] append session transfer references failed (${normalizedSessionId}): ${e.message}`);
       }
     }
   }

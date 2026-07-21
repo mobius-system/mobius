@@ -7,14 +7,14 @@
  *  - 对话轮次分组 (buildRounds),
  *  - 把 preItem / round / continuation 三类 block 喂给虚拟列表 (VirtualizedBlockList).
  */
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { VirtualizedBlockList } from '../jsonl-virtual-list'
 import type { AnyEntry, JsonlViewItem, JsonlRenderBlock } from './types'
 import { mergeBashToolResultItems } from './entry-extract'
 import { buildRounds } from './rounds'
 import { buildHeaderSummary } from './header-summary'
 import { ContinuationGroup, RoundGroup, EntryCardWithImages } from './RoundGroups'
-import { isTokenCountEvent } from './entry-classify'
+import { isTokenCountEvent, isEnvironmentContextEntry } from './entry-classify'
 
 const JSONL_INITIAL_WINDOW_SIZE = 200
 
@@ -69,7 +69,9 @@ export function JsonlView({
   const windowOffset = entries.length - recent.length
   const headerTitle = title === undefined ? 'JSONL' : title
   const visibleItems = useMemo(
-    () => mergeBashToolResultItems(recent, windowOffset).filter((item) => !isTokenCountEvent(item.entry)),
+    () => mergeBashToolResultItems(recent, windowOffset).filter(
+      (item) => !isTokenCountEvent(item.entry) && !isEnvironmentContextEntry(item.entry),
+    ),
     [recent, windowOffset],
   )
   const { preItems, rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
@@ -94,6 +96,18 @@ export function JsonlView({
     const userItem = rounds[rounds.length - 1].items[0]
     return userItem ? buildHeaderSummary(userItem.entry).shortTail : ''
   }, [rounds])
+
+  // 点击 header "末轮" 摘要 -> 跳转到最后一个 RoundGroup. scrollToKey 必须与 renderBlocks 里
+  // round block 的 key 公式完全一致, 列表才能按 data-block-key 查到目标.
+  const headerRef = useRef<HTMLDivElement>(null)
+  const [scrollTarget, setScrollTarget] = useState<{ key: string; offset: number } | null>(null)
+  const jumpToLastRound = () => {
+    if (rounds.length === 0) return
+    const lastRound = rounds[rounds.length - 1]
+    const firstItem = lastRound.items[0]
+    const key = `round:${firstItem?.entry?.uuid || firstItem?.lineNo || lastRound.roundNum}`
+    setScrollTarget({ key, offset: headerRef.current?.offsetHeight ?? 0 })
+  }
 
   const renderBlocks = useMemo<JsonlRenderBlock[]>(() => {
     const blocks: JsonlRenderBlock[] = []
@@ -174,7 +188,7 @@ export function JsonlView({
 
   return (
     <div className="text-[12px]">
-      <div className="flex items-center gap-2 px-1 py-1 sticky top-0 z-10 backdrop-blur-lg bg-[var(--bg-page)]/80">
+      <div ref={headerRef} className="flex items-center gap-2 px-1 py-1 sticky top-0 z-10 backdrop-blur-lg bg-[var(--bg-page)]/80">
         {headerTitle && <span className="min-w-0 truncate text-[var(--text-secondary)] font-semibold" title={headerTitle}>{headerTitle}</span>}
         {rounds.length > 0 && <span className="text-[var(--text-muted)] text-[11px]">{rounds.length} 轮</span>}
         {/* {hasOmittedHead && <span className="text-[var(--text-muted)] text-[11px]">· 已显示尾部</span>} */}
@@ -193,15 +207,23 @@ export function JsonlView({
           </button>
         )}
         {lastRoundUserSummary && (
-          <span
-            className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-muted)]"
-            title={lastRoundUserSummary}
+          <button
+            type="button"
+            onClick={jumpToLastRound}
+            className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] bg-transparent border-0 p-0 cursor-pointer text-left transition-colors"
+            title={`点击跳转到末轮：${lastRoundUserSummary}`}
           >
             <span className="opacity-60">末轮 ·</span> {lastRoundUserSummary}
-          </span>
+          </button>
         )}
       </div>
-      <VirtualizedBlockList blocks={renderBlocks} renderBlock={renderBlock} />
+      <VirtualizedBlockList
+        blocks={renderBlocks}
+        renderBlock={renderBlock}
+        scrollToKey={scrollTarget?.key ?? null}
+        scrollOffset={scrollTarget?.offset ?? 0}
+        onScrollToKeyDone={() => setScrollTarget(null)}
+      />
     </div>
   )
 }

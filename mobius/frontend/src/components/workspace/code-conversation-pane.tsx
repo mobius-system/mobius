@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, Link, FolderTree, FilePlus2, FolderPlus, RefreshCw } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw } from 'lucide-react'
 import { api } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
@@ -399,10 +399,6 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     return { ok: true }
   }
 
-  async function onCopyRel(target: FileTreeTarget) {
-    const ok = await copyTextToClipboard(target.relPath)
-    showToast(ok ? '已复制相对路径' : '浏览器未允许访问剪贴板，请手动复制', ok ? 'info' : 'error')
-  }
   async function onCopyAbs(target: FileTreeTarget) {
     const ok = await copyTextToClipboard(target.entry.abs_path)
     const label = source === 'local' ? '本机' : '中枢'
@@ -600,7 +596,6 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
         disabledReason: !paste.ok ? paste.reason : (pastingDirs.has(targetDir) ? '正在粘贴…' : undefined),
         onRun: () => onPaste(target) },
       { type: 'separator' },
-      { type: 'item', key: 'copyRel', label: '复制相对路径', icon: <Link className={iconCls} />, onRun: () => onCopyRel(target) },
       { type: 'item', key: 'copyAbs', label: '复制绝对路径', icon: <FolderTree className={iconCls} />, onRun: () => onCopyAbs(target) },
       { type: 'separator' },
       { type: 'item', key: 'rename', label: '重命名', icon: <Pencil className={iconCls} />,

@@ -6,7 +6,7 @@
  */
 
 export type AnyEntry = Record<string, any>
-export type CardMode = 'compact' | 'field' | 'code' | 'image'
+export type CardMode = 'compact' | 'field' | 'code' | 'image' | 'plan'
 
 export type CodeEditFile =
   | {
@@ -70,6 +70,24 @@ export type ReadToolCall = {
   filePath: string
   offset?: number
   limit?: number
+}
+
+// ── codex 计划模式 (update_plan function_call) ──────────────────────────
+// codex 在执行任务时通过 update_plan function_call 发布/更新一个分步计划,
+// arguments 是 JSON 字符串 {"plan":[{"step": "...", "status": "completed|in_progress|pending"}, ...]}.
+export type PlanStepStatus = 'completed' | 'in_progress' | 'pending'
+
+export type PlanStep = {
+  step: string
+  status: PlanStepStatus
+}
+
+export type PlanUpdate = {
+  steps: PlanStep[]
+  completed: number
+  inProgress: number
+  pending: number
+  currentStep: string | null  // 当前 in_progress 的步骤文案 (没有则为 null)
 }
 
 export type JsonlViewItem = {

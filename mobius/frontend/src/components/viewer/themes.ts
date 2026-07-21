@@ -75,3 +75,7 @@ export const BLACKBOARD_THEME: CardTheme = { dot: 'bg-fuchsia-400', border: 'bor
 
 // display_images 派生图像卡片主题 (teal, 与其它工具主题拉开).
 export const IMAGES_THEME: CardTheme = { dot: 'bg-teal-400', border: 'border-teal-500/20', bg: 'bg-teal-500/[0.06]', text: 'text-teal-300', label: 'images' }
+
+// 特例: codex 计划模式 (update_plan function_call) 卡片.
+// 用 violet, 与 Edit indigo / Bash cyan / Read sky 等工具主题都拉开, 让分步计划在长列表里一眼可扫.
+export const PLAN_THEME: CardTheme = { dot: 'bg-violet-400', border: 'border-violet-500/20', bg: 'bg-violet-500/[0.06]', text: 'text-violet-300', label: 'plan' }
