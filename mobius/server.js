@@ -248,6 +248,17 @@ app.use('/desktop-builds', express.static(DESKTOP_BUILDS_DIR, {
   setHeaders: (res) => res.setHeader('Cache-Control', 'public, max-age=3600'),
 }));
 
+// ===== 移动客户端分发 =====
+// build.py --build-mobile 从 momo-mobile 项目 (d78c6e39) 拷 arm64 / armeabi-v7a APK 到
+// mobius/mobile-builds/。同样独立挂一条静态路由 (不放 public, 原因同 desktop),
+// 同源供 "下载移动端 App" 菜单 (/mobile-builds/<file>) 分发。
+const MOBILE_BUILDS_DIR = path.join(__dirname, 'mobile-builds');
+app.use('/mobile-builds', express.static(MOBILE_BUILDS_DIR, {
+  etag: true,
+  lastModified: true,
+  setHeaders: (res) => res.setHeader('Cache-Control', 'public, max-age=3600'),
+}));
+
 app.get('*', (req, res, next) => {
   const p = req.path || '';
   if (p.startsWith('/api') || p.startsWith('/code-server') || p.startsWith('/extension')) {

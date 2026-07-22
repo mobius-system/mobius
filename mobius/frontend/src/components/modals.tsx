@@ -3411,26 +3411,40 @@ const DESKTOP_BUILDS: Array<{ label: string; sub: string; file: string }> = [
   { label: 'macOS', sub: 'Intel · x64 · ZIP 压缩包', file: `mobius-desktop-${DESKTOP_VERSION}-mac-x64.zip` },
 ]
 
-// 移动端构建清单 — 镜像桌面 DESKTOP_BUILDS
-// TODO: 待补全 APK 信息后回填（filename / size / sha256）
-const MOBILE_VERSION = '0.1.0'
-const MOBILE_BUILDS: Array<{ label: string; sub: string; file: string }> = [
+// 移动端构建清单 — 镜像桌面 DESKTOP_BUILDS。
+// size / sha256 由 build.py --build-mobile 从 momo-mobile 拷 APK 后自动回填
+// (按各 ABI 的 file 行匹配更新); iOS 暂留空 (file='' → 显示「未上线」)。
+const MOBILE_VERSION = '0.1.7'
+const MOBILE_BUILDS: Array<{ label: string; sub: string; file: string; size: number; sha256: string }> = [
   {
     label: 'Android',
     sub: 'arm64-v8a · 大多数现代手机',
     file: `mobius-mobile-${MOBILE_VERSION}-android-arm64.apk`,
+    size: 15433314,
+    sha256: '5ed0f075cadd6f6cbbe422a267ff06bc142d75381239a049ea773620fddae212',
   },
   {
     label: 'Android',
     sub: 'armeabi-v7a · 老旧手机',
     file: `mobius-mobile-${MOBILE_VERSION}-android-armeabi-v7a.apk`,
+    size: 15441282,
+    sha256: '0a67ad4d98335549355f0e62c2e67de370e5fb305340208f6dc46eed50fb9820',
   },
   {
     label: 'iOS (敬请期待)',
     sub: 'App Store / TestFlight 上线后回填',
     file: '',
+    size: 0,
+    sha256: '',
   },
 ]
+
+// 把字节数格式化为人类可读体积 (供移动端下载菜单显示包大小)。
+function formatBytes(n: number): string {
+  if (!n || n <= 0) return ''
+  const mb = n / (1024 * 1024)
+  return mb >= 100 ? `${mb.toFixed(0)} MB` : `${mb.toFixed(1)} MB`
+}
 
 export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
   const { theme } = useStore()
@@ -3500,6 +3514,7 @@ export function MobileDownloadModal({ onClose }: { onClose: () => void }) {
         <div className="space-y-2 mt-4">
           {MOBILE_BUILDS.map(b => b.file ? (
             <a key={b.file} href={`/mobile-builds/${b.file}`} download
+              title={b.sha256 ? `SHA256: ${b.sha256}` : undefined}
               className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
               style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
               <div className="flex items-center gap-3">
@@ -3508,7 +3523,9 @@ export function MobileDownloadModal({ onClose }: { onClose: () => void }) {
                 </svg>
                 <div>
                   <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
-                  <div className="text-[11px]" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>{b.sub}</div>
+                  <div className="text-[11px]" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>
+                    {b.sub}{formatBytes(b.size) ? ` · ${formatBytes(b.size)}` : ''}
+                  </div>
                 </div>
               </div>
               <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: '#0a84ff', color: '#fff' }}>下载</span>
