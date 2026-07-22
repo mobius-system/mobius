@@ -338,18 +338,21 @@ export default function IssuePage() {
             </div>
             {selectedSession ? (
               <div className="space-y-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                <div>
-                  <div className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>任务现状</div>
-                  <TruncatedText text={issueSummary || '暂无描述'} lines={2} />
-                </div>
-                <div>
-                  <div className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>会话名称</div>
-                  <TruncatedText text={selectedSessionName || '未命名会话'} lines={1} />
-                </div>
-                <div>
-                  <div className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>会话目的</div>
-                  <TruncatedText text={selectedSessionPurpose || '未填写'} lines={2} />
-                </div>
+                <TruncatedText
+                  text={issueSummary || '暂无描述'}
+                  lines={2}
+                  prefix={<span className="font-medium" style={{ color: 'var(--text-muted)' }}>任务现状: </span>}
+                />
+                <TruncatedText
+                  text={selectedSessionName || '未命名会话'}
+                  lines={1}
+                  prefix={<span className="font-medium" style={{ color: 'var(--text-muted)' }}>会话名称: </span>}
+                />
+                <TruncatedText
+                  text={selectedSessionPurpose || '未填写'}
+                  lines={2}
+                  prefix={<span className="font-medium" style={{ color: 'var(--text-muted)' }}>会话目的: </span>}
+                />
               </div>
             ) : issue?.description && (
               <TruncatedText

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 type Lines = 1 | 2 | 3
 
@@ -8,6 +8,8 @@ interface TruncatedTextProps {
   className?: string
   detailLabel?: string
   collapseLabel?: string
+  /** Inline label rendered before the text, participating in the same line-clamp. */
+  prefix?: ReactNode
 }
 
 const CLAMP: Record<Lines, string> = {
@@ -22,6 +24,7 @@ export function TruncatedText({
   className,
   detailLabel = '...查看详情...',
   collapseLabel = '收起',
+  prefix,
 }: TruncatedTextProps) {
   const ref = useRef<HTMLDivElement | null>(null)
   const [truncated, setTruncated] = useState(false)
@@ -48,7 +51,7 @@ export function TruncatedText({
   if (expanded) {
     return (
       <div className={className}>
-        <div className="whitespace-pre-wrap break-words max-h-[220px] overflow-y-auto pr-1">{text}</div>
+        <div className="whitespace-pre-wrap break-words max-h-[220px] overflow-y-auto pr-1">{prefix}{text}</div>
         <button
           type="button"
           onClick={(e) => {
@@ -66,7 +69,7 @@ export function TruncatedText({
 
   return (
     <div className={className}>
-      <div ref={ref} className={CLAMP[lines]}>{text}</div>
+      <div ref={ref} className={CLAMP[lines]}>{prefix}{text}</div>
       {truncated && (
         <button
           type="button"
