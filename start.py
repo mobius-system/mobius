@@ -374,6 +374,7 @@ def print_health_check() -> None:
 
 def print_summary(root: Path) -> None:
     frontend_port = os.environ["MOBIUS_PORT"]
+    agent_tmux_socket = os.environ.get("MOBIUS_AGENT_TMUX_SOCKET") or "mobius-agent"
 
     print()
     print(f"accepted settings: {root / 'accepted_setting.log'}")
@@ -381,8 +382,8 @@ def print_summary(root: Path) -> None:
     print(f"backend health: http://0.0.0.0:{os.environ['MOBIUS_PORT']}/api/v2/health")
     print(f"mobius PM2:     cd {root / 'mobius'} && npx --no-install pm2 logs mobius-system")
     print("code-server:    tmux attach -t code-server")
-    print("claude code hub: tmux attach -t imac_claude_code_agent_hub  (starts on demand when the user sends the first message)")
-    print(f"stop all:       cd {root / 'mobius'} && npx --no-install pm2 stop mobius-system; tmux kill-session -t code-server -t imac_claude_code_agent_hub")
+    print(f"agent tmux hub:  tmux -L {agent_tmux_socket} attach -t imac_claude_code_agent_hub  (starts on demand when the user sends the first message)")
+    print(f"stop all:       cd {root / 'mobius'} && npx --no-install pm2 stop mobius-system; tmux kill-session -t code-server; tmux -L {agent_tmux_socket} kill-session -t imac_claude_code_agent_hub; tmux -L {agent_tmux_socket} kill-session -t imac_codex_agent_hub")
 
 
 def print_frontend_update_summary(root: Path) -> None:

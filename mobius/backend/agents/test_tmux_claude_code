@@ -17,6 +17,7 @@
  */
 const path = require('path')
 const { TmuxClaudeCodeBackend, HUB } = require('./tmux-claude-code')
+const { AGENT_TMUX_SOCKET } = require('./tmux-operation-log')
 
 function parseArgs(argv) {
   const out = { _: [] }
@@ -157,7 +158,7 @@ async function main() {
     }
     case 'attach': {
       const sessionId = need(args, 'sessionid')
-      print(`tmux attach -t ${HUB} \\; select-window -t ${sessionId}`)
+      print(`tmux -L ${AGENT_TMUX_SOCKET} attach -t ${HUB} \\; select-window -t ${sessionId}`)
       break
     }
     default:

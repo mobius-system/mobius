@@ -1,8 +1,8 @@
 /**
  * tmux-claude-code.js — TmuxClaudeCodeBackend.
  *
- * 在固定 tmux session `imac_claude_code_agent_hub` 里, 每个 MOBIUS session_id → 一个
- * tmux window, window 名 = session_id. window 内跑 `proxychains -q -f
+ * 在专用 tmux server 的固定 session `imac_claude_code_agent_hub` 里, 每个
+ * MOBIUS session_id → 一个 tmux window, window 名 = session_id. window 内跑 `proxychains -q -f
  * ~/proxy_claude.conf claude --dangerously-skip-permissions ...` (交互式 TUI 模式).
  *
  * 写入: tmux load-buffer + paste-buffer -p (bracketed) + send-keys Enter×3
@@ -41,7 +41,7 @@ const {
   safeRemoveFlagDir,
 } = require('../utils/session-flags')
 const { MOBIUS_DATA_PATH } = require('../config')
-const { log, tmux } = require('./tmux-operation-log')
+const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
 
 // ── 常量 ────────────────────────────────────────────────
@@ -176,6 +176,22 @@ const CLAUDE_WORKING_TAIL_BYTES = 256 * 1024
 //   ② "(29s · thinking more)"                       — 仅 elapsed + 状态词 (思考早期未出 token)
 // 命中即返回整行 (含 spinner + 任务描述 + 括号组). \( 后紧跟数字+时间单位, 排除 "(3 files changed)" 等输出.
 const CLAUDE_STATUS_LINE_RE = /\(\d+(?:s|m\s+\d+s|h\s+\d+m\s+\d+s)[^()]*\)/u
+// claude TUI API 连接失败后的自动重试状态. 该行没有常规状态行的 elapsed 括号组:
+//   ✻ Unable to connect to API (ConnectionRefused) · Retrying in 25s · attempt 10/10
+// 独立成与 CLAUDE_STATUS_LINE_RE 并列的特例, 以后若有误判可单独移除, 不影响原规则.
+const CLAUDE_RETRYING_LINE_RE = /·\s*Retrying\s+in\s+\d+s\s*·/i
+
+function findClaudeRealTimeInfo(paneText) {
+  const lines = String(paneText || '').split('\n')
+  // 从末尾往上找最近一条状态行 (TUI 同时只显示一条).
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]
+    if (line && (CLAUDE_STATUS_LINE_RE.test(line) || CLAUDE_RETRYING_LINE_RE.test(line))) {
+      return line.trim()
+    }
+  }
+  return ''
+}
 // claude TUI "等待 background agents" 状态行. 主 agent 派出后台子 agent (Task 工具) 后,
 // 本轮 JSONL 常以 end_turn 收尾 (Task 当 fire-and-forget), 但 TUI 实际显示
 // "✻ Waiting for 3 background agents to finish". JSONL 反向扫描此时判 false → 误判"待命",
@@ -352,7 +368,7 @@ function pickInitialContextGreeting() {
   if (proxyMissing.length) {
     console.warn(`[tmux-claude-code] ⚠️  proxychains 依赖不完整; use_proxy=false 的会话仍可直连启动: ${proxyMissing.join(', ')}`)
   }
-  log(`[tmux-claude-code] ✅ preflight pass (HUB=${HUB})`)
+  log(`[tmux-claude-code] ✅ preflight pass (SOCKET=${AGENT_TMUX_SOCKET}, HUB=${HUB})`)
 })()
 
 // ── Backend ────────────────────────────────────────────
@@ -522,12 +538,8 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         // 正好覆盖此态. fire-and-forget 自愈 (Esc + 等 5s + resume), 不阻塞 /status 轮询.
         const danger = detectDangerPermission(paneText)
         if (danger.pending) this._maybeHealDangerPermission(sessionId, danger.warning)
-        const lines = paneText.split('\n')
-        // 从末尾往上找最近一条状态行 (TUI 同时只显示一条).
-        for (let i = lines.length - 1; i >= 0; i--) {
-          const line = lines[i]
-          if (line && CLAUDE_STATUS_LINE_RE.test(line)) return line.trim()
-        }
+        const info = findClaudeRealTimeInfo(paneText)
+        if (info) return info
       }
     } catch { /* best-effort: 失败即 "" */ }
     return ''
@@ -1065,4 +1077,12 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 }
 
-module.exports = { TmuxClaudeCodeBackend, HUB, encodeCwd, jsonlPathOf, runningFlagPathOf, failedFlagPathOf }
+module.exports = {
+  TmuxClaudeCodeBackend,
+  HUB,
+  encodeCwd,
+  jsonlPathOf,
+  runningFlagPathOf,
+  failedFlagPathOf,
+  findClaudeRealTimeInfo,
+}

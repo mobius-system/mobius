@@ -18,6 +18,8 @@ import {
   summarizeWriteToolInput,
   functionCallCommand,
   functionOutputBody,
+  isFunctionCallPayload,
+  isFunctionCallOutputPayload,
   isReadToolUseName,
   extractReadCallFromBlock,
   readCallOneLineSummary,
@@ -26,6 +28,7 @@ import {
   bashCallOneLineSummary,
   isBashToolUseName,
   extractPlanUpdate,
+  extractTaskReminder,
   summarizePlanUpdate,
 } from './entry-extract'
 
@@ -208,7 +211,7 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
       const body = contentBlocksText(payload?.content)
       return clip(`${payload?.role || 'message'}${body ? ` · ${body}` : ''}`, HEADER_SHORT_LIMIT)
     }
-    if (pt === 'function_call') {
+    if (isFunctionCallPayload(payload)) {
       if (payload?.name === 'update_plan') {
         const plan = extractPlanUpdate(entry)
         if (plan) return clip(summarizePlanUpdate(plan), HEADER_SHORT_LIMIT)
@@ -222,7 +225,7 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
       if (cmd) return compactCodeSummary(cmd, 'bash')
       return clip(`tool_call · ${payload?.name || ''} ${payload?.arguments || ''}`, HEADER_SHORT_LIMIT)
     }
-    if (pt === 'function_call_output') return compactCodeSummary(functionOutputBody(payload?.output))
+    if (isFunctionCallOutputPayload(payload)) return compactCodeSummary(functionOutputBody(payload?.output))
     if (pt === 'reasoning') {
       const encryptedContent = payload?.encrypted_content
       return clip(typeof encryptedContent === 'string' && encryptedContent.length > 0 ? ENCRYPTED_REASONING_LABEL : 'reasoning', HEADER_SHORT_LIMIT)
@@ -302,6 +305,9 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
     return clip(parts.join('\n\n'), HEADER_SHORT_LIMIT)
   }
   if (t === 'attachment') {
+    // Claude Code task_reminder (计划模式): 走统一计划摘要 "计划 · X/N · 进行中: 步骤".
+    const taskPlan = extractTaskReminder(entry)
+    if (taskPlan) return clip(summarizePlanUpdate(taskPlan), HEADER_SHORT_LIMIT)
     const taskReminderSummary = buildTaskReminderSummary(entry)
     if (taskReminderSummary) return taskReminderSummary
     const a = entry.attachment

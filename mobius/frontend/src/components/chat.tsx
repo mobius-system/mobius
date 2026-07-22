@@ -71,7 +71,7 @@ function sessionProxyLabel(useProxy?: any, model?: string) {
 
 function buildProjectKnowledgePrompt(knowledgePath: string) {
   const safePath = knowledgePath.replace(/`/g, '\\`')
-  return `When you finish all the works, please update the knowledge about this project written in \`${safePath}\`, read and update this document, create it if it does not exist.`
+  return `完成当前任务后，请把本次工作中对未来会话有长期复用价值的知识，分别沉淀到对应的知识文件。请先读取并合并更新已有内容，不要覆盖有效信息：如果是项目通用知识（整体事实、通用做法、跨任务可复用的经验，写入 project_knowledge 的内容务必非常非常精简、克制），写入 \`${safePath}\`；如果是仅与当前任务相关、通用性有限的知识，写入 issue_knowledge（简洁、不要废话） → \`/home/tianyi/imac-test/.imac/issue_knowledge/dca1dadf/issue_knowledge.md\`。不要记录一次性过程、重复内容、个人信息或凭据；如果没有新的可复用知识，不要修改文件。`
 }
 
 function continueSessionName(session: any) {
@@ -1057,12 +1057,11 @@ function HeaderActionButton({
 
 // =====================================================================
 // ChatHeaderOverflowMenu — 把次要 chat 头部按钮收纳进 `…` 菜单
-// (原始数据 / 隐藏次要 / 显示时间与序号 / 项目知识沉淀)
+// (原始数据 / 隐藏次要 / 显示时间与序号)
 // =====================================================================
 function ChatHeaderOverflowMenu({
   jsonlCount, minorCount, hideMinor, onToggleHideMinor, onOpenRaw,
   showJsonlMeta, onToggleShowJsonlMeta,
-  onSendProjectKnowledge, projectKnowledgeSending, canSendProjectKnowledge,
   onStop, canStop,
 }: {
   jsonlCount: number
@@ -1072,9 +1071,6 @@ function ChatHeaderOverflowMenu({
   onOpenRaw: () => void
   showJsonlMeta: boolean
   onToggleShowJsonlMeta: () => void
-  onSendProjectKnowledge: () => void
-  projectKnowledgeSending: boolean
-  canSendProjectKnowledge: boolean
   onStop: () => void
   canStop: boolean
 }) {
@@ -1125,12 +1121,6 @@ function ChatHeaderOverflowMenu({
             onClick={() => { setOpen(false); onToggleShowJsonlMeta() }}>
             <span>{showJsonlMeta ? '隐藏时间与序号' : '显示时间与序号'}</span>
           </button>
-          {canSendProjectKnowledge && (
-            <button className={itemClass} disabled={projectKnowledgeSending}
-              onClick={() => { setOpen(false); onSendProjectKnowledge() }}>
-              <span>{projectKnowledgeSending ? '发送中...' : '项目知识沉淀到记忆'}</span>
-            </button>
-          )}
         </div>
       )}
     </div>
@@ -3108,7 +3098,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
               className="text-[11px] rounded-full px-2.5 py-0.5 border border-blue-500/20 text-blue-400 hover:bg-blue-500/10 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
             />
           )}
-          {/* … 溢出菜单: 把 "原始数据 / 隐藏次要条目 / 项目知识沉淀" 收纳进来 */}
+          {/* … 溢出菜单: 把 "原始数据 / 隐藏次要条目" 收纳进来 */}
           <ChatHeaderOverflowMenu
             jsonlCount={jsonlEntries.length}
             minorCount={minorCount}
@@ -3117,9 +3107,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
             onOpenRaw={() => setShowRaw(true)}
             showJsonlMeta={showJsonlMeta}
             onToggleShowJsonlMeta={() => setShowJsonlMeta(v => !v)}
-            onSendProjectKnowledge={sendProjectKnowledgePrompt}
-            projectKnowledgeSending={projectKnowledgeSending}
-            canSendProjectKnowledge={jsonlEntries.length > 0 && !!currentProjectId && connectionStatus === 'connected'}
             onStop={handleStopSession}
             canStop={!!sessionId}
           />
@@ -3462,7 +3449,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           ) : (
             <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3 pt-0">
               <div className="space-y-2">
-                <div className="grid grid-cols-7 items-stretch gap-2">
+                <div className="grid grid-cols-4 items-stretch gap-2 md:grid-cols-8">
                   <AdvancedInteractionBtn
                     onClick={() => setFileChangesOpen(true)}
                     disabled={!sessionId}
@@ -3493,6 +3480,16 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     tooltip="查看当前知识 (项目知识 / 本任务知识)"
                     accent="cyan"
                     icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={sendProjectKnowledgePrompt}
+                    disabled={jsonlEntries.length === 0 || !currentProjectId || connectionStatus !== 'connected' || projectKnowledgeSending}
+                    label="项目知识沉淀到记忆"
+                    tooltip={projectKnowledgeSending ? '正在发送项目知识沉淀指令...' : '请智能体整理并更新项目级与任务级可复用知识'}
+                    accent="violet"
+                    icon={projectKnowledgeSending
+                      ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.9} />
+                      : <Archive className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
                     onClick={() => setTerminalChoiceOpen(true)}

@@ -49,20 +49,38 @@ const STATUS_META: Record<PlanStepStatus, StatusMeta> = {
 function PlanRow({ index, step }: { index: number; step: PlanStep }) {
   const meta = STATUS_META[step.status]
   const Icon = meta.icon
+  // 有 id 用任务 id (#6), 否则用顺序序号 (codex update_plan 无 id).
+  const label = step.id ? `#${step.id}` : String(index)
+  const detail = step.description || step.activeForm
+  const depParts: string[] = []
+  if (step.blocks?.length) depParts.push(`阻塞 ${step.blocks.map((b) => '#' + b).join(' ')}`)
+  if (step.blockedBy?.length) depParts.push(`被阻塞 ${step.blockedBy.map((b) => '#' + b).join(' ')}`)
   return (
     <div className="flex items-start gap-2 px-2.5 py-1.5 border-b border-[var(--border-color)]/40 last:border-b-0">
-      <span className="mt-0.5 flex-shrink-0 w-4 text-right font-mono text-[10px] leading-[1.35] text-[var(--text-muted)] select-none">{index}</span>
+      <span className="mt-0.5 flex-shrink-0 min-w-[1.25rem] text-right font-mono text-[10px] leading-[1.35] text-[var(--text-muted)] select-none">{label}</span>
       <Icon
         className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${meta.iconClass}${meta.spin ? ' animate-spin' : ''}`}
         strokeWidth={2.4}
         aria-hidden="true"
       />
-      <span className={`min-w-0 flex-1 text-[11.5px] leading-snug break-words ${meta.textClass}`}>
-        {step.step}
-      </span>
-      <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-mono leading-none ${meta.badgeClass}`}>
-        {meta.label}
-      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start gap-2">
+          <span className={`min-w-0 flex-1 text-[11.5px] leading-snug break-words ${meta.textClass}`}>
+            {step.step}
+          </span>
+          <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-mono leading-none ${meta.badgeClass}`}>
+            {meta.label}
+          </span>
+        </div>
+        {detail && (
+          <div className="mt-0.5 text-[10.5px] leading-snug text-[var(--text-muted)] break-words">
+            {detail}
+          </div>
+        )}
+        {depParts.length > 0 && (
+          <div className="mt-0.5 text-[9px] font-mono text-[var(--text-dimmed)]">{depParts.join(' · ')}</div>
+        )}
+      </div>
     </div>
   )
 }

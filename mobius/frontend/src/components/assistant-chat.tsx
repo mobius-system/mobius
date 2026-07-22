@@ -1062,7 +1062,7 @@ function isAssistantActivityEntry(entry: any) {
     return ['task_started', 'user_message', 'agent_message'].includes(entry.payload?.type)
   }
   if (entry.type === 'response_item') {
-    return ['message', 'function_call', 'function_call_output', 'reasoning', 'output_text', 'text']
+    return ['message', 'function_call', 'function_call_output', 'custom_tool_call', 'custom_tool_call_output', 'reasoning', 'output_text', 'text']
       .includes(entry.payload?.type)
   }
   return false

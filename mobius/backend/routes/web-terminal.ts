@@ -30,7 +30,7 @@ try {
   pty = null;
 }
 import fs from 'fs';
-import { JWT_SECRET } from '../config';
+import { AGENT_TMUX_SOCKET, JWT_SECRET } from '../config';
 // @ts-ignore — repository 仍是 .js 语义, tsx 透明转译
 import { Sessions } from '../repositories/sessions';
 // @ts-ignore
@@ -77,7 +77,6 @@ const AGENT_TMUX_HUBS: Record<string, string> = {
   'tmux-codex': 'imac_codex_agent_hub',
   'tmux-claude-code': 'imac_claude_code_agent_hub',
 };
-
 function terminalMode(rawUrl: string): TerminalMode {
   return queryParam(rawUrl, 'mode') === 'agent' ? 'agent' : 'cwd';
 }
@@ -147,7 +146,7 @@ export function handleUpgrade(req: any, socket: any, head: Buffer): void {
     if (mode === 'agent') {
       const target = agentTmuxTarget(session);
       const attachCommand = target
-        ? `tmux attach -t ${shellQuote(target)}`
+        ? `tmux -L ${shellQuote(AGENT_TMUX_SOCKET)} attach -t ${shellQuote(target)}`
         : `printf '%s\\n' ${shellQuote('当前 Session 的模型没有可 attach 的 Agent tmux 后台')}`;
       setTimeout(() => {
         try { term.write(`${attachCommand}\r`); } catch { /* ignore */ }
