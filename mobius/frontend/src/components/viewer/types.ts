@@ -80,6 +80,12 @@ export type PlanStepStatus = 'completed' | 'in_progress' | 'pending'
 export type PlanStep = {
   step: string
   status: PlanStepStatus
+  // Claude Code task_reminder 附件的额外字段 (codex update_plan 不带, 全部可选):
+  id?: string                 // 任务 id (task_reminder.content[].id)
+  description?: string        // 任务详情 (task_reminder.content[].description)
+  activeForm?: string         // 进行式短语 (task_reminder.content[].activeForm)
+  blocks?: string[]           // 阻塞了哪些任务 id
+  blockedBy?: string[]        // 被哪些任务 id 阻塞
 }
 
 export type PlanUpdate = {

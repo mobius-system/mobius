@@ -17,7 +17,7 @@ const path = require('path');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 
-const { PORT, PUBLIC_DIR, TEST_ROOT } = require('./backend/config');
+const { AGENT_TMUX_SOCKET, PORT, PUBLIC_DIR, TEST_ROOT } = require('./backend/config');
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const VERSION = require('./package.json').version;
 const SERVER_STARTED_AT_MS = Date.now();
@@ -176,7 +176,7 @@ app.get('/api/v2/health', (req, res) => {
     uptime_ms: now - SERVER_STARTED_AT_MS,
     env: NODE_ENV,
     port: PORT,
-    backend: 'agents/tmux-claude-code + jsonl-watcher',
+    backend: `agents/tmux + jsonl-watcher (socket=${AGENT_TMUX_SOCKET})`,
   });
 });
 
@@ -301,7 +301,7 @@ server.on('upgrade', (req, socket, head) => {
 server.listen(PORT, () => {
   console.log(`[mobius] MOBIUS Mobius listening on http://0.0.0.0:${PORT}`);
   console.log(`[mobius] health: http://0.0.0.0:${PORT}/api/v2/health`);
-  console.log(`[mobius] backend: agents/tmux-claude-code (window-per-session) + jsonl-watcher`);
+  console.log(`[mobius] backend: tmux agents (socket=${AGENT_TMUX_SOCKET}, window-per-session) + jsonl-watcher`);
   // 拓展系统启动 diff: 扫描 mobius/extension/<name>/extension.json, 与 projects(kind=extension) 同步.
   try {
     const r = extensionRegistry.reload();

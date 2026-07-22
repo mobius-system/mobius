@@ -1320,27 +1320,34 @@ export function ProjectSettingsPanel({
                 <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
                   {PROJECT_VISIBILITY_OPTIONS.find(option => option.value === editVisibility)?.description}
                 </p>
-                <div className="mt-2 space-y-1.5">
-                  <ToggleSwitch
-                    checked={editCanPostIssue}
-                    disabled={!canManageProject}
-                    onChange={setEditCanPostIssue}
-                    className="flex w-full min-w-0 max-w-full items-start gap-3 text-[12px]"
-                    style={{ color: 'var(--text-secondary)' }}>
-                    <span className="min-w-0 flex-1 break-words">
-                      读者可创建任务单 (private 永远只允许 owner, 不受此开关影响)
-                    </span>
-                  </ToggleSwitch>
-                  <ToggleSwitch
-                    checked={editCanRunSession}
-                    disabled={!canManageProject}
-                    onChange={setEditCanRunSession}
-                    className="flex w-full min-w-0 max-w-full items-start gap-3 text-[12px]"
-                    style={{ color: 'var(--text-secondary)' }}>
-                    <span className="min-w-0 flex-1 break-words">
-                      读者可启动执行会话 (同上, private 永远只允许 owner)
-                    </span>
-                  </ToggleSwitch>
+                <div className="mt-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="min-w-0 rounded-lg border p-2" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+                      <div className="mb-1.5 text-[11px]" style={{ color: 'var(--text-secondary)' }}>创建任务单</div>
+                      <ToggleSwitch
+                        checked={editCanPostIssue}
+                        disabled={!canManageProject}
+                        onChange={setEditCanPostIssue}
+                        aria-label="允许读者创建任务单"
+                        title="允许非项目所有者创建任务单"
+                        className="inline-flex items-center"
+                      />
+                    </div>
+                    <div className="min-w-0 rounded-lg border p-2" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+                      <div className="mb-1.5 text-[11px]" style={{ color: 'var(--text-secondary)' }}>启动执行会话</div>
+                      <ToggleSwitch
+                        checked={editCanRunSession}
+                        disabled={!canManageProject}
+                        onChange={setEditCanRunSession}
+                        aria-label="允许读者启动执行会话"
+                        title="允许非项目所有者启动执行会话"
+                        className="inline-flex items-center"
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                    仅影响非项目所有者；项目设为「仅自己」时不生效。
+                  </p>
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-3">

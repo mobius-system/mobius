@@ -72,7 +72,7 @@ function extractWriteToolCall(entry: AnyEntry): WriteToolCall | null {
     }
   }
 
-  if (entry?.type === 'response_item' && entry?.payload?.type === 'function_call' && entry?.payload?.name === 'Write') {
+  if (entry?.type === 'response_item' && isFunctionCallPayload(entry?.payload) && entry?.payload?.name === 'Write') {
     const args = parseFunctionCallArguments(entry.payload.arguments)
     const writeCall = normalizeWriteInput(entry.payload.input ?? args?.input ?? args)
     if (writeCall) return writeCall
@@ -178,13 +178,13 @@ export function extractBashCalls(entry: AnyEntry): BashCall[] {
   const claudeCalls = extractBashCallsFromHelpers(entry)
   if (claudeCalls.length > 0) return claudeCalls
 
-  if (entry?.type === 'response_item' && entry?.payload?.type === 'function_call') {
+  if (entry?.type === 'response_item' && isFunctionCallPayload(entry?.payload)) {
     const payload = entry.payload
     const cmd = functionCallCommand(payload)
     if (!cmd) return []
-    const args = parseFunctionCallArguments(payload?.arguments) || {}
+    const args = functionCallArguments(payload) || {}
     const name = typeof payload?.name === 'string' ? payload.name : ''
-    if (name && name !== 'exec_command' && name !== 'bash' && name !== 'shell') return []
+    if (name && name !== 'exec' && name !== 'exec_command' && name !== 'bash' && name !== 'shell') return []
 
     const cwd = stringField(args.workdir) || stringField(args.cwd) || stringField(args?.input?.workdir) || stringField(args?.input?.cwd) || stringField(entry?.cwd)
     let commandSource: BashCall['commandSource'] = 'command'
@@ -286,7 +286,7 @@ function toolResultContentText(content: any): string {
 }
 
 export function isPureToolResultEntry(entry: AnyEntry): boolean {
-  if (entry?.type === 'response_item' && entry?.payload?.type === 'function_call_output') return true
+  if (entry?.type === 'response_item' && isFunctionCallOutputPayload(entry?.payload)) return true
   const content = entry?.message?.content
   return entry?.type === 'user'
     && Array.isArray(content)
@@ -295,7 +295,7 @@ export function isPureToolResultEntry(entry: AnyEntry): boolean {
 }
 
 export function extractBashToolResultRecords(entry: AnyEntry, lineNo: number): BashToolResult[] {
-  if (entry?.type === 'response_item' && entry?.payload?.type === 'function_call_output') {
+  if (entry?.type === 'response_item' && isFunctionCallOutputPayload(entry?.payload)) {
     const output = functionOutputBody(entry.payload?.output)
     const imageUrls = functionOutputImageUrls(entry.payload?.output)
     return [{
@@ -439,11 +439,84 @@ export function mergeBashToolResultItems(visibleEntries: AnyEntry[], windowOffse
   })
 }
 
-// ── function_call / function_call_output 解析 ──────────────────────────
+// ── function_call / custom_tool_call 解析 ──────────────────────────────
+// Codex 新版把 exec 调用写成 custom_tool_call/custom_tool_call_output，
+// 其中 input 是一段 tools.exec_command({...}) JavaScript，而不是旧版 JSON arguments。
+// 统一在这里归一化，调用方无需区分协议版本。
+export function isFunctionCallPayload(payload: any): boolean {
+  return payload?.type === 'function_call' || payload?.type === 'custom_tool_call'
+}
+
+export function isFunctionCallOutputPayload(payload: any): boolean {
+  return payload?.type === 'function_call_output' || payload?.type === 'custom_tool_call_output'
+}
+
+function decodeJsString(raw: string): string {
+  try { return JSON.parse(`"${raw}"`) }
+  catch { return raw.replace(/\\([\\"'nrt])/g, (_m, c) => ({ n: '\n', r: '\r', t: '\t' } as Record<string, string>)[c] || c) }
+}
+
+function parseCustomToolInput(raw: any): Record<string, any> | null {
+  if (!raw) return null
+  if (typeof raw === 'object') return raw
+  if (typeof raw !== 'string') return null
+  const marker = /(?:tools\.)?exec_command\s*\(/g
+  const match = marker.exec(raw)
+  if (!match) return null
+  const objectStart = raw.indexOf('{', match.index + match[0].length)
+  if (objectStart < 0) return null
+  let quote = ''
+  let escaped = false
+  let depth = 0
+  let objectEnd = -1
+  for (let i = objectStart; i < raw.length; i++) {
+    const ch = raw[i]
+    if (quote) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === quote) quote = ''
+      continue
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue }
+    if (ch === '{') depth++
+    else if (ch === '}' && --depth === 0) { objectEnd = i; break }
+  }
+  if (objectEnd < 0) return null
+  const source = raw.slice(objectStart, objectEnd + 1)
+  try {
+    const parsed = JSON.parse(source)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    const out: Record<string, any> = {}
+    const patterns = [
+      /(?:^|[,{])\s*(cmd|command|script|workdir|cwd)\s*:\s*"((?:\\.|[^"\\])*)"/g,
+      /(?:^|[,{])\s*(cmd|command|script|workdir|cwd)\s*:\s*'((?:\\.|[^'\\])*)'/g,
+    ]
+    for (const fieldPattern of patterns) {
+      let field: RegExpExecArray | null
+      while ((field = fieldPattern.exec(source))) out[field[1]] = decodeJsString(field[2])
+    }
+    return Object.keys(out).length > 0 ? out : null
+  }
+}
+
+function functionCallArguments(payload: any): Record<string, any> | null {
+  return parseFunctionCallArguments(payload?.arguments)
+    || parseCustomToolInput(payload?.input)
+}
+
 export function functionCallCommand(payload: any): string | null {
-  const args = parseFunctionCallArguments(payload?.arguments)
+  const args = functionCallArguments(payload)
   const cmd = args?.cmd ?? args?.command ?? args?.input?.cmd ?? args?.input?.command
-  return typeof cmd === 'string' && cmd.trim() ? cmd : null
+  if (typeof cmd === 'string' && cmd.trim()) return cmd
+  // 新版 Codex 的 custom_tool_call(name="exec") 不只包装 exec_command，也会包装
+  // write_stdin / apply_patch 等工具。它们没有 shell cmd，但仍必须成为一个可按 call_id
+  // 接收 custom_tool_call_output 的调用卡片；否则调用与结果会再次拆成两张字段卡。
+  if (payload?.type === 'custom_tool_call' && payload?.name === 'exec') {
+    const input = stringField(payload?.input).trim()
+    if (input) return input
+  }
+  return null
 }
 
 export function functionOutputBody(output: any): string {
@@ -472,6 +545,12 @@ export function functionOutputBody(output: any): string {
         continue
       }
       if (btype === 'text' && typeof block.text === 'string') { parts.push(block.text); continue }
+      // custom_tool_call_output 使用 input_text；空文本块表示没有新增输出，不能落入
+      // JSON.stringify 兜底显示成 {"type":"input_text","text":""} 伪内容。
+      if (btype === 'input_text' && typeof block.text === 'string') {
+        if (block.text) parts.push(block.text)
+        continue
+      }
       if (btype === 'output_text' && typeof block.output_text === 'string') { parts.push(block.output_text); continue }
       const textField = typeof block.text === 'string' ? block.text
         : typeof block.output_text === 'string' ? block.output_text
@@ -534,6 +613,16 @@ function normalizePlanStepStatus(raw: any): PlanStepStatus {
   return raw === 'completed' || raw === 'in_progress' || raw === 'pending' ? raw : 'pending'
 }
 
+// 从已归一的 steps 数组汇总 completed/inProgress/pending 计数与当前进行中步骤.
+function buildPlanUpdate(steps: PlanStep[]): PlanUpdate {
+  const completed = steps.filter((s) => s.status === 'completed').length
+  const inProgress = steps.filter((s) => s.status === 'in_progress').length
+  const pending = steps.filter((s) => s.status === 'pending').length
+  const currentStep = steps.find((s) => s.status === 'in_progress')?.step ?? null
+  return { steps, completed, inProgress, pending, currentStep }
+}
+
+// codex update_plan function_call → PlanUpdate.
 export function extractPlanUpdate(entry: AnyEntry): PlanUpdate | null {
   if (entry?.type !== 'response_item') return null
   const payload = entry?.payload
@@ -553,13 +642,46 @@ export function extractPlanUpdate(entry: AnyEntry): PlanUpdate | null {
     steps.push({ step: stepText || '(空步骤)', status: normalizePlanStepStatus(item.status) })
   }
   if (steps.length === 0) return null
+  return buildPlanUpdate(steps)
+}
 
-  const completed = steps.filter((s) => s.status === 'completed').length
-  const inProgress = steps.filter((s) => s.status === 'in_progress').length
-  const pending = steps.filter((s) => s.status === 'pending').length
-  const currentStep = steps.find((s) => s.status === 'in_progress')?.step ?? null
+// Claude Code 的 task_reminder 附件 (type:attachment, attachment.type:task_reminder,
+// attachment.content:[{id,subject,description,activeForm,status,blocks,blockedBy},...]).
+// 它和 codex update_plan 是同一类东西 (分步计划/待办), 这里也归一成 PlanUpdate,
+// 让两种计划源共用同一张可视化卡片: subject→step, status 归一, 其余字段挂可选属性.
+export function extractTaskReminder(entry: AnyEntry): PlanUpdate | null {
+  if (entry?.type !== 'attachment') return null
+  const attachment = entry?.attachment
+  if (!attachment || attachment?.type !== 'task_reminder') return null
+  const content = attachment?.content
+  if (!Array.isArray(content) || content.length === 0) return null
 
-  return { steps, completed, inProgress, pending, currentStep }
+  const steps: PlanStep[] = []
+  for (const item of content) {
+    if (!item || typeof item !== 'object') continue
+    const subject = typeof item.subject === 'string' ? item.subject.trim() : ''
+    const description = typeof item.description === 'string' ? item.description.trim() : ''
+    if (!subject && !description) continue
+    const activeForm = typeof item.activeForm === 'string' && item.activeForm.trim() ? item.activeForm.trim() : ''
+    const blocks = Array.isArray(item.blocks) ? item.blocks.map((b: any) => String(b)).filter(Boolean) : undefined
+    const blockedBy = Array.isArray(item.blockedBy) ? item.blockedBy.map((b: any) => String(b)).filter(Boolean) : undefined
+    steps.push({
+      step: subject || description.slice(0, 80) || '(空任务)',
+      status: normalizePlanStepStatus(item.status),
+      id: item.id == null ? undefined : String(item.id),
+      description: description || undefined,
+      activeForm: activeForm && activeForm !== subject ? activeForm : undefined,
+      blocks: blocks && blocks.length > 0 ? blocks : undefined,
+      blockedBy: blockedBy && blockedBy.length > 0 ? blockedBy : undefined,
+    })
+  }
+  if (steps.length === 0) return null
+  return buildPlanUpdate(steps)
+}
+
+// 统一计划卡片数据入口: codex update_plan 优先, 其次 Claude task_reminder.
+export function extractPlanCard(entry: AnyEntry): PlanUpdate | null {
+  return extractPlanUpdate(entry) ?? extractTaskReminder(entry)
 }
 
 // 计划一行摘要: "计划 · X/N", 有进行中步骤则追加 "· 进行中: <步骤>".
@@ -698,8 +820,8 @@ export function entryDisplayImages(entry: AnyEntry): string[] {
     }
   }
 
-  if (entry?.type === 'response_item' && entry?.payload?.type === 'function_call') {
-    const args = parseFunctionCallArguments(entry.payload.arguments)
+  if (entry?.type === 'response_item' && isFunctionCallPayload(entry?.payload)) {
+    const args = functionCallArguments(entry.payload)
     collectDisplayImagesFromCommand(args?.cmd ?? args?.command ?? args?.input?.command, out)
   }
 

@@ -55,6 +55,17 @@ Mobius rewrites itself from your input. Send a **change request**, a **screensho
 
 [View self-evolution examples](https://nutshellai-tech.github.io/mobius/self-evo-demo/)
 
+## Serve Every Scenario and Project
+
+- Serve Every Scenario (toggle the most convienient interface, for all possible scenarios)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/4c948e53-5c8e-4ae5-8eb3-d3ca035908c9" alt="Self-evolving Agent OS demo" width="480" />
+</p>
+
+- Manage All Projects (project overview, where you can overwatch all agents working for you)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/7868ef41-068f-4316-ae6b-b17561a119ac" alt="Self-evolving Agent OS demo" width="480" />
+</p>
 
 
 ## Auto Research

@@ -35,7 +35,7 @@ function isAssistantOutput(e: AnyEntry): boolean {
   if (e?.type === 'event_msg' && e?.payload?.type === 'agent_message') return true
   if (e?.type === 'response_item') {
     const pt = e?.payload?.type
-    if (pt === 'function_call' || pt === 'function_call_output' || pt === 'reasoning') return true
+    if (pt === 'function_call' || pt === 'function_call_output' || pt === 'custom_tool_call' || pt === 'custom_tool_call_output' || pt === 'reasoning') return true
     if (pt === 'message') {
       const role = e?.payload?.role
       return !!role && role !== 'user'

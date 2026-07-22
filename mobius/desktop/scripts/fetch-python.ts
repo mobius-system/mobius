@@ -86,7 +86,11 @@ async function main(): Promise<void> {
       return [];
     }
   })();
-  execFileSync("tar", [...forceLocal, "-xzf", tarball, "-C", OUT_DIR], { stdio: "inherit" });
+  // GNU tar (含 git-bash) 还会把反斜杠当转义符: Windows 绝对路径 D:\a\mobius 的 \a \m
+  // 被吞掉/改写, 即使加了 --force-local(只绕开冒号) 仍报 "Cannot open: No such file or directory"。
+  // 统一成正斜杠: Linux/mac 本就无反斜杠(空操作), Windows 下 D:/a/mobius/... GNU tar 正常解析。
+  const posix = (p: string) => p.split(path.sep).join("/");
+  execFileSync("tar", [...forceLocal, "-xzf", posix(tarball), "-C", posix(OUT_DIR)], { stdio: "inherit" });
   fs.unlinkSync(tarball);
   const ok = fs.existsSync(path.join(OUT_DIR, t.marker));
   console.log(ok ? `[fetch-python] 完成 → ${OUT_DIR}` : `[fetch-python] ⚠ 解压后未找到 ${t.marker}`);

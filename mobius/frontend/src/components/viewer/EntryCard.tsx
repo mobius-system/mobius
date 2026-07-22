@@ -39,7 +39,8 @@ import {
   isStartPyToolUse,
   functionOutputImageUrls,
   functionOutputTextBody,
-  extractPlanUpdate,
+  isFunctionCallOutputPayload,
+  extractPlanCard,
 } from './entry-extract'
 import {
   isEditToolUse,
@@ -49,7 +50,6 @@ import {
   isCompactDoneEntry,
   isGoalSetEntry,
   isLocalCommandEntry,
-  isPlanUpdateEntry,
   jsonEntryTourTarget,
 } from './entry-classify'
 import { buildHeaderSummary } from './header-summary'
@@ -90,7 +90,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const { renderEntry, renderBashResults, renderReadResults, oversized, totalChars, imageOutputUrls, imageOutputText } = useMemo(() => {
     // codex function_call_output 里的内嵌图片 (input_image base64): 单独抽 data url 走 <img> 渲染,
     // 不进字段模式递归展开 base64. 图片源取自未截断的原始 entry (截断会破坏 base64).
-    const isImageOutput = entry?.type === 'response_item' && entry?.payload?.type === 'function_call_output'
+    const isImageOutput = entry?.type === 'response_item' && isFunctionCallOutputPayload(entry?.payload)
     const imageUrls = isImageOutput ? functionOutputImageUrls(entry?.payload?.output) : []
     const imageText = isImageOutput ? functionOutputTextBody(entry?.payload?.output) : ''
     const total =
@@ -123,8 +123,8 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const readCalls = useMemo(() => extractReadCalls(renderEntry), [renderEntry])
   // 本地命令产物标签 (非空 = 命中 /compact 等 slash command 产物): 展开时走专属金色提示块, 不铺原始 JSON 字段.
   const localCommandParts = useMemo(() => extractLocalCommandParts(renderEntry), [renderEntry])
-  // codex 计划模式 (update_plan): 展开时走专属计划卡片, 不铺原始 JSON 字段.
-  const planUpdate = useMemo(() => extractPlanUpdate(renderEntry), [renderEntry])
+  // 计划模式 (codex update_plan / Claude task_reminder): 展开时走专属计划卡片, 不铺原始 JSON 字段.
+  const planUpdate = useMemo(() => extractPlanCard(renderEntry), [renderEntry])
   // canCode 覆盖代码视图: Edit diff / Write 文件预览 / Bash 命令卡片 / Read 文件读取卡片.
   // 字段模式仍是入口的兜底, 让用户随时切回看原始 JSON.
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
@@ -158,7 +158,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
     ? READ_TOOL_THEME
     : isContextCompactedEvent(entry)
     ? CONTEXT_COMPACTED_THEME
-    : isPlanUpdateEntry(entry)
+    : canPlan
     ? PLAN_THEME
     : (TYPE_THEME[type] || DEFAULT_THEME)
   const ts = entry?.timestamp ? formatTs(entry.timestamp) : null

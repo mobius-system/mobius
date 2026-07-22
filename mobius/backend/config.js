@@ -3,6 +3,9 @@ const path = require('path');
 const TEST_ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_MODEL_KEY = 'codex';
 const DEFAULT_AGENT_BACKEND = 'tmux-codex';
+// All Mobius agent hubs use this dedicated tmux server socket instead of the
+// caller's/default tmux server. `tmux -L` accepts a socket name, not a path.
+const AGENT_TMUX_SOCKET = String(process.env.MOBIUS_AGENT_TMUX_SOCKET || 'mobius-agent').trim() || 'mobius-agent';
 
 // 工作区根: 每个用户的 work_dir = WORKSPACE_ROOT/<userId>,
 // 新建项目的 bind_path 必须落在该用户 work_dir 之内 (见 routes/projects.js resolveBindPath)。
@@ -118,6 +121,7 @@ function backendNameForModel(modelOrKey) {
 
 module.exports = {
   PORT: parseInt(process.env.MOBIUS_PORT || '45614', 10),
+  AGENT_TMUX_SOCKET,
   MOBIUS_DATA_PATH,
   DB_PATH: process.env.DB_PATH || path.join(MOBIUS_DATA_PATH, 'mobuis.db'),
   MODEL_ACCESS_PATH,

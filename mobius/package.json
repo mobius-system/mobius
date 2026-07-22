@@ -15,6 +15,8 @@
     "test:native-file-menu": "node --require tsx/cjs tests/native-file-menu.js",
     "test:file-tree-menu-logic": "node --require tsx/cjs tests/file-tree-menu-logic.js",
     "test:session-transfer": "node --require tsx/cjs tests/session-transfer.js",
+    "test:agent-tmux-server": "node tests/agent-tmux-server.js",
+    "test:claude-realtime-info": "node --require tsx/cjs tests/claude-realtime-info.js",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",
     "start:tsx": "tsx server.js"
   },
