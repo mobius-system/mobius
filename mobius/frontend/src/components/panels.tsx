@@ -3026,9 +3026,11 @@ function ClaudeCodeModelsSubPanel() {
     }
   }
 
-  const settingsFilePreview = form.key.trim()
-    ? `~/.claude/settings-${encodeURIComponent(form.key.trim())}.json`
-    : '~/.claude/settings-<model-key>.json'
+  const settingsFilePreview = form.key.trim() === 'mobiusdefault'
+    ? '~/.claude/mobiusdefault.settings.json'
+    : form.key.trim()
+      ? `~/.claude/settings-${encodeURIComponent(form.key.trim())}.json`
+      : '~/.claude/settings-<model-key>.json'
 
   return (
     <div>

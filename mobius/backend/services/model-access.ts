@@ -20,6 +20,11 @@ const CLAUDE_DIR = path.join(HOME, '.claude')
 const CODEX_DIR = path.join(HOME, '.codex')
 const SESSION_MODEL_PREFIX = 'claude-code:'
 const SESSION_MODEL_PREFIX_CODEX = 'codex:'
+// 内置 Claude Code (Opus) 的固定 key 与 settings 文件名. 与 model-registry.builtinClaudeSettingsPath()
+// 指向同一个 ~/.claude/mobiusdefault.settings.json, 使 seed 记录能被 model-registry 读回并接管其
+// 启用 / 显示名称 (对齐内置 Codex 的 profileKey 机制). 前端/后端已把该 key 视为"只能改不能删".
+const BUILTIN_CLAUDE_KEY = 'mobiusdefault'
+const BUILTIN_CLAUDE_SETTINGS_FILENAME = 'mobiusdefault.settings.json'
 // Codex 渠道就是 --profile 的 plain name, 业务约束为纯英文字母.
 const CODEX_CHANNEL_RE = /^[A-Za-z]+$/
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -67,6 +72,8 @@ function normalizeSecretValue(value: any): string {
 }
 
 function settingsFilenameForKey(key: string): string {
+  // 内置 Claude 走固定文件名, 与 model-registry 读取的路径一致; 其余导入模型走 settings-<key>.json.
+  if (normalizeKey(key) === BUILTIN_CLAUDE_KEY) return BUILTIN_CLAUDE_SETTINGS_FILENAME
   return `settings-${encodeURIComponent(normalizeKey(key))}.json`
 }
 
@@ -233,6 +240,7 @@ function loadData(): { claudeCodeModels: any[]; codexModels: any[] } {
       }
     }
     seedBuiltinCodexIfNeeded(data)
+    seedBuiltinClaudeIfNeeded(data)
     return data
   } catch (e) {
     console.warn(`[model-access] 读取失败, 回退空配置: ${e.message}`)
@@ -278,6 +286,46 @@ function seedBuiltinCodexIfNeeded(data: { claudeCodeModels: any[]; codexModels: 
     console.log(`[model-access] seeded builtin codex channel '${key}' from ${configPath}`)
   } catch (e) {
     console.warn(`[model-access] seed builtin codex 落盘失败 (${key}): ${e.message}`)
+  }
+}
+
+// 把内置 Claude Code (Opus, key='mobiusdefault') seed 进 claudeCodeModels 表, 使
+// "系统配置 → 模型接入 → Claude Code" 能列出并编辑它 (启用/屏蔽/改显示名), 对齐内置 Codex.
+// 仅在表里缺该 key 且 ~/.claude/mobiusdefault.settings.json 存在时执行; 解析后立即落盘,
+// 后续读取直接从 JSON 走, 不会再触发 seed. 文件不存在 (干净部署) → 不 seed, 不显示.
+function seedBuiltinClaudeIfNeeded(data: { claudeCodeModels: any[]; codexModels: any[] }): void {
+  const builtin = MODEL_OPTIONS && MODEL_OPTIONS.opus
+  if (!builtin) return
+  const key = BUILTIN_CLAUDE_KEY
+  if (data.claudeCodeModels.some((m) => m.key === key)) return
+  const settingsPath = settingsPathForKey(key)
+  if (!fs.existsSync(settingsPath)) return
+  let claudeModel = builtin.id || 'opus'
+  try {
+    const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) || {}
+    const fromModel = typeof parsed.model === 'string' ? parsed.model.trim() : ''
+    const fromEnv = typeof parsed?.env?.ANTHROPIC_MODEL === 'string' ? parsed.env.ANTHROPIC_MODEL.trim() : ''
+    claudeModel = fromModel || fromEnv || claudeModel
+  } catch { /* settings 解析失败 → 用内置 id 兜底 */ }
+  const now = nowIso()
+  data.claudeCodeModels.push({
+    key,
+    label: builtin.label || 'Opus',
+    claude_model: claudeModel,
+    settings_file: displaySettingsPathForKey(key),
+    enabled: true,
+    imported: true,
+    backend: 'tmux-claude-code',
+    use_proxy: false,
+    created_at: now,
+    updated_at: now,
+  })
+  data.claudeCodeModels.sort((a, b) => a.key.localeCompare(b.key))
+  try {
+    saveData(data)
+    console.log(`[model-access] seeded builtin claude '${key}' from ${settingsPath}`)
+  } catch (e) {
+    console.warn(`[model-access] seed builtin claude 落盘失败 (${key}): ${(e as Error).message}`)
   }
 }
 

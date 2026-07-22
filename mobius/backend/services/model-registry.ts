@@ -21,6 +21,8 @@ import adminSettings from './admin-settings'
 import * as modelAccess from './model-access'
 
 const BUILTIN_ORDER = ['codex', 'opus']
+// 内置 Claude (Opus) 在 model-access 表里的 seed key (= settings 文件 mobiusdefault.settings.json).
+const BUILTIN_CLAUDE_KEY = 'mobiusdefault'
 
 function applyDisplayOrder(options: any[]): any[] {
   const order = adminSettings.getModelDisplayOrder()
@@ -254,10 +256,18 @@ function listSessionModelOptions(): any[] {
         .filter((m: any) => !builtinCodexProfileKey || m.model !== builtinCodexProfileKey)
     : []
 
+  // 内置 Claude (Opus) 也已作为兜底 seed 进 model-access 表, 读回该记录让 picker 尊重管理员设置:
+  //   - enabled=false → 内置 Opus 从选择菜单 + 系统设置隐藏 (满足"屏蔽内置 Opus");
+  //   - 自定义 label  → 覆盖内置 Opus 的 label/title.
+  // 该记录跟内置 Opus 共享同一份 ~/.claude/mobiusdefault.settings.json, 须从 claudeDynamics 剔除避免重复.
+  const builtinClaudeSeed = ma ? ma.findClaudeCodeModel(BUILTIN_CLAUDE_KEY) : null
+  const builtinClaudeSessionModel = ma ? ma.sessionModelForKey(BUILTIN_CLAUDE_KEY) : null
+
   const claudeDynamics = ma
     ? ma.listClaudeCodeModels({ enabledOnly: true })
         .map((m: any) => dynamicEntryFor(m.session_model))
         .filter(Boolean)
+        .filter((m: any) => !builtinClaudeSessionModel || m.key !== builtinClaudeSessionModel)
     : []
 
   let builtinCodex = builtins.filter((m) => m.key === 'codex')
@@ -274,7 +284,20 @@ function listSessionModelOptions(): any[] {
       }))
     }
   }
-  const builtinClaude = builtins.filter((m) => m.key !== 'codex')
+  let builtinClaude = builtins.filter((m) => m.key !== 'codex')
+  if (builtinClaudeSeed) {
+    if (builtinClaudeSeed.enabled === false) {
+      // 管理员在内置 Opus 上取消勾选"启用" → 从选择菜单 + 系统设置隐藏.
+      builtinClaude = []
+    } else {
+      // 管理员自定义"显示名称"生效: 用 seed 记录的 label 覆盖内置 Opus 的 label/title.
+      builtinClaude = builtinClaude.map((m) => ({
+        ...m,
+        label: builtinClaudeSeed.label || m.label,
+        title: builtinClaudeSeed.label || m.title,
+      }))
+    }
+  }
 
   const ordered = applyDisplayOrder([...builtinCodex, ...codexDynamics, ...claudeDynamics, ...builtinClaude])
   return ordered.map((m) => ({
