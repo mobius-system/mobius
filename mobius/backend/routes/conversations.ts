@@ -111,17 +111,13 @@ router.get('/:id', auth, (req: express.Request, res: express.Response) => {
   res.json({ conversation: conv, members: listMembersWithOnline(id) });
 });
 
-// 邀请成员 (仅群主)
+// 邀请成员 (任意群成员均可, 用于邀请自己的小莫/分身或其他成员进群)
 router.post('/:id/members', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const id = String(req.params.id);
   const me = Conversations.findMember(id, 'user', user.id);
   if (!me) {
     res.status(403).json({ error: '你不是该群成员' });
-    return;
-  }
-  if (me.role !== 'owner') {
-    res.status(403).json({ error: '仅群主可邀请成员' });
     return;
   }
   const member = normalizeMember((req.body || {}));
@@ -172,8 +168,13 @@ router.delete('/:id/members/:memberType/:memberId', auth, (req: express.Request,
     return;
   }
   if (!isSelf && me.role !== 'owner') {
-    res.status(403).json({ error: '仅群主可移除其他成员' });
-    return;
+    // 非群主: 仅允许移除「自己的小莫/分身」(agent_owner_id 归属当前用户); 移除其他真人/他人的分身仍需群主.
+    const target = Conversations.findMember(id, memberType, memberId);
+    const isOwnAgent = memberType === 'agent' && !!target && String(target.agent_owner_id) === String(user.id);
+    if (!isOwnAgent) {
+      res.status(403).json({ error: '仅群主可移除其他成员, 你只能移除自己的小莫/分身' });
+      return;
+    }
   }
   const changes = Conversations.removeMember(id, memberType, memberId);
   res.json({ ok: true, removed: changes });
