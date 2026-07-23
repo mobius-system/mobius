@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
-import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ScrollText, ExternalLink, Network } from 'lucide-react'
+import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ScrollText, ExternalLink, Network, Hash } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -3441,8 +3441,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
             <div className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0">
               {/* 超级会话按钮组: 2 行, 第一行 4 第二行 5, 行间细线分组. 9 个按钮全部进网格, 无独立主按钮. */}
               <div className="flex flex-col gap-1.5">
-                {/* Row 1: 4 buttons (会话回溯 + 项目端口) */}
-                <div className="grid grid-cols-4 items-stretch gap-2">
+                {/* Row 1: 5 buttons (会话回溯 + 时间序号 + 项目端口) */}
+                <div className="grid grid-cols-5 items-stretch gap-2">
                   <AdvancedInteractionBtn
                     onClick={() => setFileChangesOpen(true)}
                     disabled={!sessionId}
@@ -3466,6 +3466,16 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     tooltip="回放输入"
                     accent="blue"
                     icon={<History className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setShowJsonlMeta(v => !v)}
+                    disabled={jsonlEntries.length === 0}
+                    label={showJsonlMeta ? '隐藏时间与序号' : '显示时间与序号'}
+                    tooltip={showJsonlMeta ? '隐藏 JSONL 卡片标题里的序号与时间前缀' : '在 JSONL 卡片标题里显示 #序号 与 MM-DD HH:MM:SS 时间前缀'}
+                    accent="blue"
+                    aria-pressed={showJsonlMeta}
+                    className={showJsonlMeta ? 'bg-blue-500/15' : ''}
+                    icon={<Hash className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <ProjectPortEntryButton
                     projectId={currentProjectId}
