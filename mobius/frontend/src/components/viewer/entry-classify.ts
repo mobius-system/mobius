@@ -61,6 +61,14 @@ export function isEnvironmentContextEntry(entry: AnyEntry): boolean {
   return stripped.trim().length === 0 && stripped !== text
 }
 
+// codex 会话首条的 session_meta: payload 含 session_id/cwd/git/model_provider, 以及巨大的
+// base_instructions (GPT-5/Codex 系统提示词, 数千~上万字符纯噪声). 卡片标题虽只显 "id · cwd",
+// 但展开会把整段 base_instructions 铺成 JSON 字段, 属浏览噪声, 与 token_count/environment_context
+// 同级整卡过滤隐藏.
+export function isSessionMetaEntry(entry: AnyEntry): boolean {
+  return entry?.type === 'session_meta'
+}
+
 export function isAssistantEndTurnEntry(entry: AnyEntry): boolean {
   return entry?.type === 'assistant' && entry?.message?.stop_reason === 'end_turn'
 }
