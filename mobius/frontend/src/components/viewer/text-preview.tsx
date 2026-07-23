@@ -48,6 +48,6 @@ export function ResultTextPreview({ text, startLine = 1 }: { text: string; start
 
 export function CompactPlainTextFallback({ text }: { text: string }) {
   return (
-    <pre className="text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono px-2 py-1.5 rounded bg-[var(--prose-bg)] text-[var(--text-secondary)] select-text">{text}</pre>
+    <pre className="text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono px-2 py-1.5 rounded bg-[var(--prose-bg)] text-[var(--text-primary)] select-text">{text}</pre>
   )
 }

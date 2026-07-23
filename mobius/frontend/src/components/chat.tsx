@@ -913,7 +913,7 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} data-tour="session-bash-overlay" />
       <div className="relative flex h-[80vh] w-[min(920px,94vw)] flex-col overflow-hidden rounded-2xl shadow-2xl"
         onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>

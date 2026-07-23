@@ -61,7 +61,7 @@ function MarkdownImage({ src, alt, node: _node, ...rest }: ComponentPropsWithout
 
 export default function JsonlCompactMarkdown({ text }: { text: string }) {
   return (
-    <div className="jsonl-compact-md px-2 py-1.5 rounded bg-[var(--prose-bg)] text-[var(--text-secondary)] select-text">
+    <div className="jsonl-compact-md px-2 py-1.5 rounded bg-[var(--prose-bg)] text-[var(--text-primary)] select-text">
       <ReactMarkdown
         remarkPlugins={MARKDOWN_REMARK_PLUGINS as any}
         rehypePlugins={MARKDOWN_REHYPE_PLUGINS}

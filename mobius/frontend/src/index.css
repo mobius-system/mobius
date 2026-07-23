@@ -1447,6 +1447,10 @@ button {
   background: var(--bg-card-hover);
   border: 1px solid var(--input-border);
 }
+/* 强制点击步 (runSessionPageTour): 隐藏"下一步"按钮, 用户必须点击高亮元素本身才前进. */
+.driver-popover.imac-driver-click-advance .driver-popover-next-btn {
+  display: none !important;
+}
 .driver-popover.imac-driver-popover .driver-popover-footer button:hover,
 .driver-popover.imac-driver-popover .driver-popover-footer button:focus {
   background: var(--bg-hover);

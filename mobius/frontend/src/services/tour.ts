@@ -588,6 +588,52 @@ function addImmediateActionStepIfPresent(
   })
 }
 
+// 强制点击步: 隐藏 popover 的"下一步"按钮, 用户必须点击高亮元素本身才前进.
+// 在 capture 阶段监听元素 click (先于按钮自身 onClick 执行), 按钮原有功能仍真实触发;
+// 点击后可选关闭其打开的浮层 (closeSelector, 如 Bash 命令弹窗遮罩, 避免遮挡下一步) 再前进.
+// done=true 用于最后一步: 点击后销毁引导 (而非 moveNext). 其余步 moveNext 到下一步.
+function addClickToAdvanceStep(
+  steps: DriveStep[],
+  selector: string,
+  popover: { title: string; description: string; doneBtnText?: string; side?: any; align?: any },
+  opts?: { closeSelector?: string; done?: boolean },
+) {
+  if (!has(selector)) return
+  const closeSelector = opts?.closeSelector
+  const isDone = !!opts?.done
+  steps.push({
+    element: selector,
+    popover: {
+      title: popover.title,
+      description: popover.description,
+      popoverClass: 'imac-driver-popover imac-driver-click-advance',
+      side: popover.side,
+      align: popover.align,
+      doneBtnText: popover.doneBtnText,
+    } as any,
+    onHighlightStarted: (element: Element | undefined, _activeStep: DriveStep | undefined, dOpts: { driver: Driver }) => {
+      element?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' })
+      window.requestAnimationFrame(() => { try { dOpts.driver.refresh() } catch {} })
+      const el = element as HTMLElement | undefined
+      if (!el || (el as any).__tourClickAdvanceBound) return
+      ;(el as any).__tourClickAdvanceBound = true
+      const handler = () => {
+        el.removeEventListener('click', handler, true)
+        window.setTimeout(() => {
+          if (closeSelector) clickIfPresent(closeSelector)
+          window.setTimeout(() => {
+            try {
+              if (isDone) dOpts.driver.destroy()
+              else dOpts.driver.moveNext()
+            } catch {}
+          }, closeSelector ? 180 : 40)
+        }, 60)
+      }
+      el.addEventListener('click', handler, true)
+    },
+  } as any)
+}
+
 function launchDriver(steps: DriveStep[], onDestroyed?: () => void) {
   if (!steps.length) return false
 
@@ -3338,21 +3384,18 @@ async function runResearchPageTour(onDestroyed?: () => void): Promise<boolean> {
 }
 
 // Session 会话页首触引导. 仅在 controller 检测到有 currentSession 时触发 (无 session 不讲).
-// 5 个常驻按钮 (布局/发送/Skill&Memory/Bash命令/可合作计算机) 全部常驻渲染, 无需切视图,
-// 故直接用 addStepIfPresent 顺序讲解 (无 admin/research 的链式 step). 文案短句, 中文优先.
+// 强制点击式: 除"发送"外, 每步隐藏"下一步"按钮, 用户必须点击高亮按钮本身才前进 (capture 监听),
+// 按钮真实功能照常触发; Bash 步点击会开弹窗, 点击后自动关遮罩再前进.
+// "发送"步例外: 空输入时按钮 disabled 点不动, 故用普通"下一步" (讲解而非强制点击).
 async function runSessionPageTour(onDestroyed?: () => void): Promise<boolean> {
   await waitForElement('[data-tour="session-chat-send"]', 4200)
 
   const steps: DriveStep[] = []
-  addStepIfPresent(steps, '[data-tour="top-layout-toggle"]', {
-    popover: {
-      title: '切换工作区布局',
-      description: '在三种不同的工作布局之间快速切换（日常、代码、文件）。',
-      nextBtnText: '看发送',
-      doneBtnText: '我了解了',
-      side: 'bottom',
-      align: 'end',
-    },
+  addClickToAdvanceStep(steps, '[data-tour="top-layout-toggle"]', {
+    title: '切换工作区布局',
+    description: '在三种不同的工作布局之间快速切换（日常、代码、文件）。\n点击此按钮继续。',
+    side: 'bottom',
+    align: 'end',
   })
   addStepIfPresent(steps, '[data-tour="session-chat-send"]', {
     popover: {
@@ -3364,35 +3407,25 @@ async function runSessionPageTour(onDestroyed?: () => void): Promise<boolean> {
       align: 'start',
     },
   })
-  addStepIfPresent(steps, '[data-tour="session-memory-toggle"]', {
-    popover: {
-      title: 'Skill 与记忆',
-      description: '这里显示当前会话启用的技能和记忆，智能体忘了时可临时追加给它。',
-      nextBtnText: '看会话命令',
-      doneBtnText: '我了解了',
-      side: 'top',
-      align: 'start',
-    },
+  addClickToAdvanceStep(steps, '[data-tour="session-memory-toggle"]', {
+    title: 'Skill 与记忆',
+    description: '这里显示当前会话启用的技能和记忆，智能体忘了时可临时追加给它。\n点击此按钮继续。',
+    side: 'top',
+    align: 'start',
   })
-  addStepIfPresent(steps, '[data-tour="session-bash-commands"]', {
-    popover: {
-      title: '查看会话命令',
-      description: '回看智能体执行过的所有 Bash 命令与结果。',
-      nextBtnText: '看可合作计算机',
-      doneBtnText: '我了解了',
-      side: 'top',
-      align: 'start',
-    },
-  })
-  addStepIfPresent(steps, '[data-tour="session-cooperable-pc"]', {
-    popover: {
-      title: '声明可合作计算机',
-      description: '生成一条声明直接发给智能体，告诉它需要时可调用 SSH 服务器算力，或与任意笔记本电脑、工作站、嵌入式设备、云 GPU 服务器协同工作。',
-      doneBtnText: '完成',
-      side: 'top',
-      align: 'start',
-    },
-  })
+  addClickToAdvanceStep(steps, '[data-tour="session-bash-commands"]', {
+    title: '查看会话命令',
+    description: '回看智能体执行过的所有 Bash 命令与结果。\n点击此按钮继续。',
+    side: 'top',
+    align: 'start',
+  }, { closeSelector: '[data-tour="session-bash-overlay"]' })
+  addClickToAdvanceStep(steps, '[data-tour="session-cooperable-pc"]', {
+    title: '声明可合作计算机',
+    description: '生成一条声明直接发给智能体，告诉它需要时可调用 SSH 服务器算力，或与任意笔记本电脑、工作站、嵌入式设备、云 GPU 服务器协同工作。\n点击此按钮完成引导。',
+    doneBtnText: '完成',
+    side: 'top',
+    align: 'start',
+  }, { done: true })
 
   return launchDriver(steps, onDestroyed)
 }
