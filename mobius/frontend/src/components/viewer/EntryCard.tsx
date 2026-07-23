@@ -75,6 +75,19 @@ const CompactMarkdown = lazy(() => import('../jsonl-compact-markdown'))
 const MAX_CARD_RENDER_CHARS = 100_000
 
 /**
+ * 各卡片视图模式对应的图标 (模式切换按钮的文字 → 图标).
+ * 按钮显示"点击后将切换到的目标模式"的图标, 与原文字按钮语义一致 (文字时也是显示目标模式名).
+ * 详细说明收进 title/aria-label (悬停可见); 尺寸样式与复制按钮一致 (共用 .jsonl-icon-button).
+ */
+const MODE_ICON: Record<CardMode, LucideIcon> = {
+  code: Code2,           // 代码模式: diff / Write 文件预览 / Bash 命令 / Read 读取
+  plan: ListChecks,      // 计划模式: 分步计划
+  image: ImageIcon,      // 图片模式: 内嵌图片渲染
+  compact: AlignLeft,    // 精简模式: 渲染后的摘要文本
+  field: Braces,         // 字段模式: 按 key 递归展开原始 JSON
+}
+
+/**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
 function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, bashResults = [], readResults = [] }: {
@@ -189,6 +202,34 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   // 字段模式也带复制按钮 (复制原始 JSON), 与精简模式的复制按钮对齐, 故 hasHeaderAction
   // 额外纳入 mode === 'field' —— 让只支持字段模式的小卡片也能露出复制入口.
   const hasHeaderAction = open && ((mode === 'compact') || (mode === 'field') || (mode === 'image') || (mode === 'plan') || canCompact || canCode || canImage || canPlan)
+  // 模式切换图标按钮: 计算点击后将切换到的目标模式 + 悬停说明.
+  // (原为文字按钮显示目标模式名, 现改为图标按钮, 文字说明收进 title.)
+  const modeToggle = (canCompact || canCode || canImage || canPlan)
+    ? (() => {
+        let target: CardMode
+        let title: string
+        if (canCode) {
+          target = mode === 'code' ? 'field' : 'code'
+          title = mode === 'code'
+            ? '切换到字段模式 (按 key 展开 JSON)'
+            : writeCall ? '切换到代码模式 (显示 Write 文件预览)'
+              : codeEdit ? '切换到代码模式 (显示 old_string → new_string 的编辑差异)'
+                : readCalls.length > 0 && bashCalls.length > 0 ? '切换到代码模式 (显示工具调用)'
+                  : readCalls.length > 0 ? '切换到代码模式 (显示 Read 文件读取)'
+                    : '切换到代码模式 (显示 Bash 命令)'
+        } else if (canImage) {
+          target = mode === 'image' ? 'field' : 'image'
+          title = mode === 'image' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到图片模式 (渲染内嵌图片)'
+        } else if (canPlan) {
+          target = mode === 'plan' ? 'field' : 'plan'
+          title = mode === 'plan' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到计划模式 (显示分步计划)'
+        } else {
+          target = mode === 'compact' ? 'field' : 'compact'
+          title = mode === 'compact' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到精简模式 (显示完整摘要文本)'
+        }
+        return { target, title, Icon: MODE_ICON[target] }
+      })()
+    : null
   return (
     <details
       data-tour={tourTarget}
@@ -265,34 +306,19 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
               }}
             />
           )}
-          {open && (canCompact || canCode || canImage || canPlan) && (
+          {modeToggle && (
             <button
               type="button"
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
-                setMode(m => {
-                  if (canCode) return m === 'code' ? 'field' : 'code'
-                  if (canImage) return m === 'image' ? 'field' : 'image'
-                  if (canPlan) return m === 'plan' ? 'field' : 'plan'
-                  return m === 'compact' ? 'field' : 'compact'
-                })
+                setMode(modeToggle.target)
               }}
-              className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
-              title={canCode
-                ? (mode === 'code' ? '切换到字段模式 (按 key 展开 JSON)' : writeCall ? '切换到代码模式 (显示 Write 文件预览)' : codeEdit ? '切换到代码模式 (显示 old_string → new_string 的编辑差异)' : readCalls.length > 0 && bashCalls.length > 0 ? '切换到代码模式 (显示工具调用)' : readCalls.length > 0 ? '切换到代码模式 (显示 Read 文件读取)' : '切换到代码模式 (显示 Bash 命令)')
-                : canImage
-                  ? (mode === 'image' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到图片模式 (渲染内嵌图片)')
-                  : canPlan
-                    ? (mode === 'plan' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到计划模式 (显示分步计划)')
-                    : (mode === 'compact' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到精简模式 (显示完整摘要文本)')}>
-              {canCode
-                ? (mode === 'code' ? '字段模式' : '代码模式')
-                : canImage
-                  ? (mode === 'image' ? '字段模式' : '图片模式')
-                  : canPlan
-                    ? (mode === 'plan' ? '字段模式' : '计划模式')
-                    : (mode === 'compact' ? '字段模式' : '精简模式')}
+              className="jsonl-icon-button"
+              title={modeToggle.title}
+              aria-label={modeToggle.title}
+            >
+              <modeToggle.Icon className="h-2.5 w-2.5" strokeWidth={2.2} aria-hidden="true" />
             </button>
           )}
         </div>
