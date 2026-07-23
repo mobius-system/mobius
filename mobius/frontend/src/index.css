@@ -8,6 +8,32 @@
   body { overflow: hidden; }
 }
 
+/* ===== 本地中文字体: 思源黑体 Noto Sans SC (self-hosted, 不依赖 Google Fonts CDN) =====
+   chinese-simplified 子集, 单文件覆盖全部常用简体中文 (~1.1MB/字重)。
+   与 tailwind.config.js font-sans 栈里的 'Noto Sans SC' 配对; 客户端无外网也恒定渲染。
+   字体文件在 frontend/public/fonts/, 构建后由 Vite 原样拷到根 /fonts/ 提供服务。 */
+@font-face {
+  font-family: 'Noto Sans SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/noto-sans-sc-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Sans SC';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/noto-sans-sc-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Sans SC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/noto-sans-sc-700.woff2') format('woff2');
+}
+
 /* ===== 桌面端标题栏拖拽区 =====
    Windows/Linux Electron 不再使用 -webkit-app-region: drag; 标题栏空白区通过 IPC 手动拖窗。
    app-region 会进入原生命中测试, 容易和浮动层/可拖控件抢事件。这里保留 no-drag 保险,
@@ -4836,19 +4862,22 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   contain-intrinsic-size: auto 180px;
 }
 
-/* JsonlEntryCard 正文展开/收起动画: 仅在用户手动点击 summary 展开/收起时播放
-   (EntryCard 里 phase === 'enter' / 'leave' 才挂这两个 class; 初始默认展开的卡片首屏
-   phase 为 null, 不播放). 只动 opacity + transform, 不动 height, 避免触发虚拟列表的
-   ResizeObserver 持续重排. leave 用 forwards 让正文停在 opacity 0, 计时器卸载时不可见. */
-.jsonl-card-body--enter { animation: jsonl-card-body-in .15s ease-out; }
-.jsonl-card-body--leave { animation: jsonl-card-body-out .15s ease-out forwards; }
-@keyframes jsonl-card-body-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: none; }
+/* JsonlEntryCard 正文展开/收起高度过渡 (仅人类点击 summary 触发; 初始默认展开的卡片首屏
+   expanded 直接为 true, grid-template-rows 一开始就是 1fr, 不过渡).
+   用 grid-template-rows 0fr↔1fr 做"高度从 0 平滑长开 / 平滑收起到 0", 不需测量内容高度,
+   适配任意高度卡片. 关键: inner 必须 overflow:hidden —— 0fr 时裁掉溢出行高的内容,
+   且内容只按自身宽度布局一次, 高度过渡期间仅改变可见裁剪区, 不重排/重绘内容,
+   避免超大卡片 (10 万字符) 动画时逐帧重绘子树造成的卡顿. contain 进一步隔离绘制. */
+.jsonl-card-body-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows .15s ease;
 }
-@keyframes jsonl-card-body-out {
-  from { opacity: 1; transform: none; }
-  to   { opacity: 0; transform: translateY(-6px); }
+.jsonl-card-body-wrap--open { grid-template-rows: 1fr; }
+.jsonl-card-body-inner {
+  /* overflow:hidden 让 0fr 时裁掉溢出行高的内容; 不加 contain, 避免给内部代码差异/绝对定位
+     子元素引入新的包含块. */
+  overflow: hidden;
 }
 
 /* jsonl 卡片右上角图标按钮的共享基底 (复制 / 模式切换等共用同一套尺寸与样式). */

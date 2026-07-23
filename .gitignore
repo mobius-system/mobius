@@ -55,6 +55,7 @@ logs/
 .trash
 mobius/public/index.html
 mobius/public/assets
+mobius/public/fonts
 mobius/server_tmp_version.js
 mobius/.build/other-versions/
 outputs/
