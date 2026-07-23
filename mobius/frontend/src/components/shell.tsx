@@ -1312,11 +1312,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           <div className="relative" data-tour="top-user-menu">
             <TopNavActionElement
               type="button"
-              onClick={(e: any) => { e.stopPropagation(); setShowUserMenu((s) => !s) }}
-              className="gap-2 pl-1 pr-2">
-              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500/30 to-cyan-500/20 flex items-center justify-center text-blue-300 text-[11px] font-semibold border border-blue-500/20">
-                {user?.display_name?.[0]}
-              </div>
+              onClick={(e: any) => { e.stopPropagation(); setShowUserMenu((s) => !s) }}>
               {!isMobile && <span className="text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>{user?.display_name}</span>}
               {!isMobile && <svg className="w-3 h-3" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>}
             </TopNavActionElement>

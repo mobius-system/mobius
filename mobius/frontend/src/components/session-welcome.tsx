@@ -549,12 +549,9 @@ export function SessionSkillMemoryEditor({
           </button>
         </div>
 
-        {/* 内联菜单: 直接占据 tab 下方剩余空间, 不再开弹窗 */}
+        {/* 内联菜单: 直接占据 tab 下方剩余空间, 不再开弹窗. 无独立背景/边框/圆角, 无缝融入侧栏 */}
         {activePanel && (
-          <div
-            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border"
-            style={{ background: 'var(--bg-tertiary, rgba(255,255,255,0.02))', borderColor: 'var(--border-color)' }}
-          >
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div
               className="flex items-center justify-between gap-2 border-b px-3 py-1.5"
               style={{ borderColor: 'var(--border-color)' }}
