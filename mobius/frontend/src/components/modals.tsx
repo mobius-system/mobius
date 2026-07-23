@@ -1747,7 +1747,7 @@ function SessionSkillPreviewDialog({ skill, isDark, onClose }: { skill: WizardIt
               background: isDark ? '#111827' : '#ffffff',
               borderColor: isDark ? '#374151' : '#e5e7eb',
               color: isDark ? '#f1f5f9' : '#1e293b',
-              fontFamily: 'ui-monospace,SFMono-Regular,monospace',
+              fontFamily: 'ui-monospace,SFMono-Regular,"Noto Sans SC",monospace',
             }}
           >
             {body || '未读取到 SKILL.md 正文。'}
@@ -3078,7 +3078,7 @@ export function NewSessionModal({
                     完整注入文本 ({previewBodyText.length} 字)
                   </h4>
                   <pre className="m-0 flex-1 min-h-[260px] xl:min-h-0 max-h-[45vh] xl:max-h-none overflow-y-auto overscroll-contain text-[10px] leading-snug whitespace-pre-wrap break-words rounded-md p-2"
-                    style={{ background: isDark ? '#111827' : '#ffffff', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}`, color: isDark ? '#f1f5f9' : '#1e293b', fontFamily: 'ui-monospace,SFMono-Regular,monospace' }}>
+                    style={{ background: isDark ? '#111827' : '#ffffff', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}`, color: isDark ? '#f1f5f9' : '#1e293b', fontFamily: 'ui-monospace,SFMono-Regular,"Noto Sans SC",monospace' }}>
                     {previewBodyText || '暂无可注入文本。'}
                   </pre>
                 </section>

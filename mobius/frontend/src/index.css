@@ -2651,7 +2651,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 }
 .assistant-session-toolbar__id {
   flex: 0 0 auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", "Noto Sans SC", monospace;
   letter-spacing: 0;
 }
 .assistant-session-toolbar__hint,
@@ -5183,7 +5183,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 }
 .prose-code-copy-btn:hover { opacity: 1; background: var(--bg-card-hover, rgba(255,255,255,.16)); color: var(--text-primary); }
 .prose-code-copy-btn:focus-visible { opacity: 1; outline: 2px solid var(--accent-color, #6366f1); outline-offset: 1px; }
-.prose-chat code { font-family: 'JetBrains Mono','Cascadia Code',monospace; font-size: .8rem; }
+.prose-chat code { font-family: 'JetBrains Mono','Cascadia Code','Noto Sans SC',monospace; font-size: .8rem; }
 .prose-chat :not(pre)>code { background: var(--prose-code-bg); padding: .15em .35em; border-radius: .25rem; color: var(--prose-code-color); }
 .prose-chat ul, .prose-chat ol { padding-left: 1.4em; margin: .4em 0; }
 .prose-chat ul { list-style: disc; }
@@ -5252,7 +5252,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .jsonl-compact-md > :last-child { margin-bottom: 0; }
 .jsonl-compact-md p { margin: .25rem 0; white-space: pre-wrap; }
 .jsonl-compact-md pre { margin: .45rem 0; padding: .6rem .7rem; border-radius: .375rem; border: 1px solid var(--code-border); background: var(--code-bg); overflow: auto; max-height: 28rem; }
-.jsonl-compact-md code { font-family: 'JetBrains Mono','Cascadia Code','Fira Code',monospace; font-size: .95em; }
+.jsonl-compact-md code { font-family: 'JetBrains Mono','Cascadia Code','Fira Code','Noto Sans SC',monospace; font-size: .95em; }
 .jsonl-compact-md pre code { display: block; white-space: pre; color: var(--code-text); }
 .jsonl-compact-md :not(pre) > code { background: var(--prose-code-bg); color: var(--prose-code-color); padding: .1em .32em; border-radius: .25rem; }
 .jsonl-compact-md ul, .jsonl-compact-md ol { padding-left: 1.25rem; margin: .35rem 0; }
@@ -6001,8 +6001,8 @@ body.mobius-resizing .mobius-resizable-handle {
 .cc-wysiwyg .ProseMirror { outline: none; min-height: 100%; }
 .cc-wysiwyg .ProseMirror:focus { outline: none; }
 .cc-wysiwyg .ProseMirror > *:first-child { margin-top: 0; }
-.cc-wysiwyg .ProseMirror code { font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace); }
-.cc-wysiwyg .ProseMirror pre { font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace); }
+.cc-wysiwyg .ProseMirror code { font-family: var(--font-mono, ui-monospace, SFMono-Regular, "Noto Sans SC", monospace); }
+.cc-wysiwyg .ProseMirror pre { font-family: var(--font-mono, ui-monospace, SFMono-Regular, "Noto Sans SC", monospace); }
 .cc-wysiwyg .ProseMirror a { color: var(--accent-primary, #2563eb); text-decoration: underline; }
 /* GFM 任务列表 (Tiptap TaskList): checkbox + 内容, 与普通列表样式区分 */
 .cc-wysiwyg ul[data-type="taskList"] { list-style: none; padding: 0; margin: .4em 0; }

@@ -593,7 +593,7 @@ export function SessionSkillMemoryEditor({
                   background: 'var(--bg-primary)',
                   borderColor: 'var(--border-color)',
                   color: 'var(--text-primary)',
-                  fontFamily: 'ui-monospace,SFMono-Regular,monospace',
+                  fontFamily: 'ui-monospace,SFMono-Regular,"Noto Sans SC",monospace',
                 }}
               >
                 {previewItem.item.body || '这个快照条目没有可浏览的正文。'}

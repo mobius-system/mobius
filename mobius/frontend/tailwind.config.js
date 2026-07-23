@@ -17,7 +17,7 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
-        mono: ['JetBrains Mono', 'Cascadia Code', 'Fira Code', 'monospace'],
+        mono: ['JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Noto Sans SC', 'monospace'],
       },
     },
   },

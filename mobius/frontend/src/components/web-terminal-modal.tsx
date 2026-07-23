@@ -29,7 +29,7 @@ export function WebTerminalModal({ sessionId, mode = 'cwd', onClose }: { session
 
     const term = new XTerm({
       cursorBlink: true,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Noto Sans SC", monospace',
       fontSize: 13,
       theme: isDark
         ? { background: '#0d1117', foreground: '#e6edf3', cursor: '#e6edf3', selectionBackground: 'rgba(255,255,255,0.22)' }
