@@ -14,7 +14,7 @@ import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, Histor
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { useIsMobile } from './resizable-panel'
-import { DesktopDragHandle, WindowControls } from './window-controls'
+import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
 
@@ -707,6 +707,20 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   } = useStore()
   // 移动端才显示汉堡按钮 (断点与 ResizablePanel 抽屉态同源, 不会错位)
   const isMobile = useIsMobile()
+  // 桌面端窗口拖拽: 整条顶栏空白区作拖拽热区 (pointerdown 命中交互元素则放行, 否则启动 IPC 拖窗)。
+  const topnavDrag = useDesktopWindowDrag()
+  // 点中 button/a/input 等交互元素时放行 (照搬 assistant-chat 的 closest 分层), 不抢点击、不拖窗。
+  const onTopNavPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!topnavDrag.enabled) return
+    if ((event.target as Element | null)?.closest?.('button, a, input, select, textarea, [role="button"], [role="menuitem"]')) return
+    topnavDrag.startDrag(event)
+  }
+  // 双击非交互空白区切换最大化 (双击按钮不触发, 避免 + / 搜索 / 帮助 等被双击误最大化)。
+  const onTopNavDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!topnavDrag.enabled) return
+    if ((event.target as Element | null)?.closest?.('button, a, input, select, textarea, [role="button"], [role="menuitem"]')) return
+    topnavDrag.toggleMaximize()
+  }
   const params = useParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -918,9 +932,12 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   return (
     <>
       <div className={`mobius-topnav h-10 border-b flex items-center justify-between px-5 flex-shrink-0 select-none`}
-        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', paddingLeft: IS_DESKTOP && IS_MAC_PLATFORM ? '78px' : undefined }}>
-        {/* 桌面端拖拽: 不再让整条顶栏 drag (Windows/Electron 下大 drag 父区 + no-drag 洞会吞按钮点击);
-            改由下方独立空白 spacer 作唯一 drag 区 (无交互子元素 → 不会被吞, 按钮脱离任何 drag 祖主)。 */}
+        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', paddingLeft: IS_DESKTOP && IS_MAC_PLATFORM ? '78px' : undefined }}
+        onPointerDown={onTopNavPointerDown}
+        onDoubleClick={onTopNavDoubleClick}>
+        {/* 桌面端拖拽: 整条顶栏空白区作拖拽热区 (pointerdown 命中 button/a/input 等交互元素则放行点击,
+            否则启动 IPC 拖窗; 双击空白区切换最大化)。不再用 -webkit-app-region: drag。
+            web/mac 下 topnavDrag.enabled=false → handler 直接 return, 零影响。 */}
         {/* 移动端: 汉堡按钮唤出左侧栏抽屉 */}
         {isMobile && (
           <button
@@ -1068,8 +1085,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           )}
         </div>
 
-        {/* 桌面端唯一拖拽区: 独立空白 spacer, 通过 IPC 手动拖窗; 不再使用 -webkit-app-region: drag。 */}
-        <DesktopDragHandle className="flex-1 self-stretch" aria-hidden />
+        {/* 中间弹性填充 spacer (整条顶栏已统一挂拖拽, 此处仅占位; 不再单独挂 DesktopDragHandle 以免重复触发)。 */}
+        <div className="flex-1 self-stretch" aria-hidden style={{ cursor: topnavDrag.enabled ? 'grab' : undefined }} />
 
         {/* 右侧操作 */}
         <div className="mobius-topnav-actions flex min-w-0 flex-shrink items-center gap-1.5 xl:gap-2">

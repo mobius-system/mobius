@@ -29,7 +29,10 @@ function isMacPlatform() {
   return typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
 }
 
-export function DesktopDragHandle({ className = '', 'aria-hidden': ariaHidden }: { className?: string; 'aria-hidden'?: boolean }) {
+// 桌面端窗口拖拽 (pointer 事件 → IPC window:start-drag/end-drag), 抽成 hook 供
+// DesktopDragHandle 与 shell TopNav 根容器复用, 保证整条顶栏拖拽行为一致。
+// 仅 Win/Linux 桌面端 enabled; web 与 macOS 不启用 (mac 用系统交通灯)。
+export function useDesktopWindowDrag() {
   const md = getBridge()
   const enabled = !!md?.isDesktop && !isMacPlatform() && typeof md.windowStartDrag === 'function'
 
@@ -37,7 +40,7 @@ export function DesktopDragHandle({ className = '', 'aria-hidden': ariaHidden }:
     md?.windowEndDrag?.().catch(() => {})
   }, [md])
 
-  const startDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+  const startDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (!enabled) return
     if (event.pointerType === 'mouse' && event.button !== 0) return
     event.preventDefault()
@@ -52,6 +55,11 @@ export function DesktopDragHandle({ className = '', 'aria-hidden': ariaHidden }:
     md?.windowToggleMaximize?.().catch(() => {})
   }, [enabled, md])
 
+  return { enabled, startDrag, endDrag, toggleMaximize }
+}
+
+export function DesktopDragHandle({ className = '', 'aria-hidden': ariaHidden }: { className?: string; 'aria-hidden'?: boolean }) {
+  const { enabled, startDrag, endDrag, toggleMaximize } = useDesktopWindowDrag()
   return (
     <div
       className={className}
