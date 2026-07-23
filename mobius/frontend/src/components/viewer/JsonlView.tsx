@@ -168,22 +168,26 @@ export function JsonlView({
   const unresolvedFiredRef = useRef(false)
   useEffect(() => {
     if (!extActive) { setExtTarget(null); unresolvedFiredRef.current = false; return }
+    // 首屏历史还在加载 (entries 空 / initialLoading) 时既不放弃也不触发 loadAll:
+    // 此时 hasRemoteMore 因 total 未知而为 false, 直接判 "找不到" 会误清 target, 让跳转失效.
+    if (initialLoading || entries.length === 0) { setExtTarget(null); return }
     const round = findRoundForMatch(rounds, scrollToEntryUuid ?? null, scrollToMatchTs ?? null)
     if (round) {
       setExtTarget({ key: roundKeyOf(round), offset: headerRef.current?.offsetHeight ?? 0 })
-    } else {
+    } else if (hasRemoteMore) {
+      // 命中条目不在已加载尾部窗口 → 触发 "加载全部" 再解析 (只触发一次).
       setExtTarget(null)
-      if (hasRemoteMore && !unresolvedFiredRef.current) {
-        // 命中条目不在已加载范围 → 触发 "加载全部" 再解析 (只触发一次).
+      if (!unresolvedFiredRef.current) {
         unresolvedFiredRef.current = true
         onUnresolvedRef.current?.()
-      } else if (!hasRemoteMore) {
-        // 已无远端可加载仍找不到 (uuid/ts 都对不上) → 放弃, 清掉 target 恢复默认行为.
-        onResolvedRef.current?.()
       }
+    } else {
+      // 已加载完毕且无远端剩余仍找不到 (uuid/ts 都对不上) → 放弃, 清 target 恢复默认.
+      setExtTarget(null)
+      onResolvedRef.current?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [extActive, scrollToEntryUuid, scrollToMatchTs, rounds, hasRemoteMore])
+  }, [extActive, scrollToEntryUuid, scrollToMatchTs, rounds, hasRemoteMore, initialLoading, entries.length])
 
   // 外部跳转优先; 内部末轮跳转作 fallback. 两者都为 null 时不滚.
   const activeTarget = extTarget ?? internalTarget
