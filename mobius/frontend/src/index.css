@@ -4866,26 +4866,6 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   contain-intrinsic-size: auto 180px;
 }
 
-/* JsonlEntryCard 正文展开/收起高度过渡 (仅人类点击 summary 触发; 初始默认展开的卡片首屏
-   expanded 直接为 true, grid-template-rows 一开始就是 1fr, 不过渡).
-   用 grid-template-rows 0fr↔1fr 做"高度从 0 平滑长开 / 平滑收起到 0", 不需测量内容高度,
-   适配任意高度卡片. 关键: inner 必须 overflow:hidden —— 0fr 时裁掉溢出行高的内容,
-   且内容只按自身宽度布局一次, 高度过渡期间仅改变可见裁剪区, 不重排/重绘内容,
-   避免超大卡片 (10 万字符) 动画时逐帧重绘子树造成的卡顿. contain 进一步隔离绘制. */
-.jsonl-card-body-wrap {
-  display: grid;
-  /* minmax(0, 0fr)↔minmax(0, 1fr): 必须用 minmax(0, …) 才能真正收到 0 (默认轨道最小值是
-     auto/min-content, 裸 0fr 收不下去, 且 0fr/1fr 不可插值会瞬间跳变). 这是 grid 手风琴的标准写法. */
-  grid-template-rows: minmax(0, 0fr);
-  transition: grid-template-rows .18s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.jsonl-card-body-wrap--open { grid-template-rows: minmax(0, 1fr); }
-.jsonl-card-body-inner {
-  /* overflow:hidden 让 0fr 时裁掉溢出行高的内容; 不加 contain, 避免给内部代码差异/绝对定位
-     子元素引入新的包含块. */
-  overflow: hidden;
-}
-
 /* jsonl 卡片右上角图标按钮的共享基底 (复制 / 模式切换等共用同一套尺寸与样式). */
 .jsonl-icon-button {
   width: 1.25rem;

@@ -10,7 +10,7 @@
  *  - 展开后默认: 可代码 → 代码模式; 可精简 → 精简模式; 其它 → 字段模式 (递归 KeyNode).
  *  - 超大卡片保护: entry + 工具结果渲染字符总量超 10 万时截断后再渲染, 避免前端卡顿崩溃.
  */
-import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, memo, useMemo, useState } from 'react'
 import { Code2, ListChecks, AlignLeft, Braces, Image as ImageIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { BLACKBOARD_MARKER } from '../jsonl-round-helpers'
@@ -184,27 +184,10 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   // 卡片展开态受控于本地 state, 跨父组件重渲染 (实时轮询追加 entry) 保持不变.
   // 能精简的纯文本卡片默认展开, 代码化卡片默认折叠; patch_apply / error 保留默认展开,
   // 父组件 defaultExpanded 仍能强制展开其它卡片.
-  // 用户手动折叠 → handleSummaryClick 写回 state, 此后重渲染不再强制掀开.
-  const initialOpen =
+  // 用户手动折叠 → onToggle 写回 state, 此后重渲染不再强制掀开.
+  const [open, setOpen] = useState<boolean>(
     isPatchApplyEvent || canPlan || (!canCode && (canCompact || canImage || type === 'error')) || !!defaultExpanded
-  const [open, setOpen] = useState<boolean>(initialOpen)
-  // 正文是否实际挂载在 DOM. 展开: 立即挂载 (collapsed); 收起: 延迟到高度过渡结束再卸载.
-  // (原生 <details> 收起会瞬间隐藏非 summary 子节点, 没法在其上做高度过渡, 故用 present 解耦挂载时机.)
-  const [present, setPresent] = useState<boolean>(initialOpen)
-  // 正文是否展开到全高 (驱动 grid-template-rows: minmax(0,1fr)). 与 present 解耦:
-  //  - 展开: 先 present=true 挂载 (expanded=false ⇒ 0fr), 双 rAF 后 expanded=true ⇒ 平滑长开.
-  //  - 收起: expanded=false ⇒ 平滑收起 (1fr→0fr), 过渡结束再 present=false 卸载.
-  // 初始默认展开的卡片 present=expanded=true, 首屏直接 1fr 无过渡 —— 满足"仅人类操作播放动画".
-  // 用 grid minmax(0,0fr)↔minmax(0,1fr): inner overflow:hidden 让内容只布局一次再被裁剪,
-  // 高度过渡期间不触发内容重排/重绘 —— 避免超大卡片动画时的卡顿.
-  const [expanded, setExpanded] = useState<boolean>(initialOpen)
-  // 收起过渡结束后的卸载计时器 + 触发 0fr→1fr 的 rAF 句柄; 卸载时清理.
-  const leaveTimerRef = useRef<number | null>(null)
-  const expandRafRef = useRef<number | null>(null)
-  useEffect(() => () => {
-    if (leaveTimerRef.current != null) clearTimeout(leaveTimerRef.current)
-    if (expandRafRef.current != null) cancelAnimationFrame(expandRafRef.current)
-  }, [])
+  )
   // 精简/字段模式复制按钮反馈: 点击后短暂切换为 Check 图标再还原.
   const [copied, setCopied] = useState<boolean>(false)
   const tourTarget = jsonEntryTourTarget(entry)
@@ -251,38 +234,9 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
     <details
       data-tour={tourTarget}
       open={open}
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
       className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm card-enter ${theme.border} ${theme.bg}`}>
-      <summary
-        className={`cursor-pointer px-3 py-1.5 flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}
-        onClick={(e) => {
-          // preventDefault 阻止 <details> 原生切换 —— 原生收起会瞬间隐藏正文, 没法做高度过渡.
-          // 改由本 handler 完全控制 open/present/expanded, 展开/收起各播一段高度平滑变化.
-          // summary 的 Enter/Space 也会走到这里, 故键盘操作同样有动画. 只有本 handler 会改 expanded,
-          // 因此动画只在人类操作时触发; 初始默认展开的卡片首屏 expanded=直接 true 不过渡.
-          e.preventDefault()
-          if (leaveTimerRef.current != null) { clearTimeout(leaveTimerRef.current); leaveTimerRef.current = null }
-          if (open) {
-            // 收起: <details> 暂不关, 让正文高度从 1fr 平滑过渡回 0fr (CSS .18s); 过渡结束再 setOpen(false)+卸载.
-            setExpanded(false)
-            leaveTimerRef.current = window.setTimeout(() => {
-              setOpen(false)
-              setPresent(false)
-              leaveTimerRef.current = null
-            }, 200)
-          } else {
-            // 展开: 立即打开 <details> 并挂载正文 (expanded=false ⇒ 0fr). 用"双 rAF"在 0fr 帧
-            // 绘制之后再把 expanded 置 true (⇒ 1fr), 确保过渡真正触发 —— 单 rAF 或 useEffect 都可能
-            // 在重型内容同步挂载时把 0fr/1fr 提交挤在同一次绘制前, 导致过渡失效瞬间跳变.
-            setOpen(true)
-            setPresent(true)
-            setExpanded(false)
-            const r1 = requestAnimationFrame(() => {
-              const r2 = requestAnimationFrame(() => { setExpanded(true); expandRafRef.current = null })
-              expandRafRef.current = r2
-            })
-            expandRafRef.current = r1
-          }
-        }}>
+      <summary className={`cursor-pointer px-3 py-1.5 flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
         {showMeta && typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
         {showMeta && ts && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
         <span className={`w-1.5 h-1.5 rounded-full ${theme.dot} flex-shrink-0`}></span>
@@ -371,9 +325,8 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
           )}
         </div>
       )}
-      {present && (
-        <div className={`jsonl-card-body-wrap${expanded ? ' jsonl-card-body-wrap--open' : ''}`}>
-        <div className="jsonl-card-body-inner px-1 pb-1 pt-1">
+      {open && (
+        <div className="px-1 pb-1 pt-1">
           {oversized && (
             <div className="mb-2 rounded border border-amber-500/30 bg-amber-500/[0.06] px-2 py-1 text-[11px] text-amber-200">
               ⚠ 该条目原始约 {totalChars.toLocaleString()} 字符, 超过 10 万字符渲染上限, 超出部分已截断以避免前端卡顿.
@@ -407,7 +360,6 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
           ) : (
             Object.entries(renderEntry).map(([k, v]) => <KeyNode key={k} k={k} v={v} depth={0} />)
           )}
-        </div>
         </div>
       )}
     </details>
