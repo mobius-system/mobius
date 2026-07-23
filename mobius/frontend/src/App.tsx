@@ -5,6 +5,7 @@ import { useStore, api } from './store'
 import { startTextRedactionRuntime } from './services/text-redaction'
 import { THEME_NAMES } from './theme'
 import { applyCustomThemeToRoot, loadActiveCustomThemeId, loadCustomThemes } from './services/custom-themes'
+import { pollRecursive } from './services/polling'
 import { DesktopTitleBar } from './components/window-controls'
 import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services/handle-stale-chunk'
 
@@ -135,29 +136,23 @@ function SelfIterationToast() {
   useEffect(() => {
     let alive = true
 
-    const checkBackendVersion = async () => {
-      try {
-        const health = await api('/api/v2/health') as BackendHealth
-        if (!alive) return
+    // 自递归轮询: 上一次返回(或超时放弃)后才排下一次, 10s 超时主动 abort, 卡顿时不堆积.
+    const stop = pollRecursive(async (signal) => {
+      const health = await api('/api/v2/health', { signal }) as BackendHealth
+      if (!alive) return
 
-        const codeVersion = healthCodeVersion(health)
-        if (!codeVersion) return
+      const codeVersion = healthCodeVersion(health)
+      if (!codeVersion) return
 
-        const remembered = readRememberedCodeVersion()
-        const uptimeMs = healthUptimeMs(health)
-        const backendJustStarted = uptimeMs != null && uptimeMs >= 0 && uptimeMs <= SELF_ITERATION_WINDOW_MS
-        const codeChanged = remembered != null && remembered !== codeVersion
+      const remembered = readRememberedCodeVersion()
+      const uptimeMs = healthUptimeMs(health)
+      const backendJustStarted = uptimeMs != null && uptimeMs >= 0 && uptimeMs <= SELF_ITERATION_WINDOW_MS
+      const codeChanged = remembered != null && remembered !== codeVersion
 
-        rememberCodeVersion(codeVersion)
-        if (backendJustStarted && codeChanged) setVisible(true)
-      } catch (_) {
-        /* Health polling should not affect normal app startup. */
-      }
-    }
-
-    checkBackendVersion()
-    const poll = window.setInterval(checkBackendVersion, SELF_ITERATION_POLL_MS)
-    return () => { alive = false; window.clearInterval(poll) }
+      rememberCodeVersion(codeVersion)
+      if (backendJustStarted && codeChanged) setVisible(true)
+    }, SELF_ITERATION_POLL_MS)
+    return () => { alive = false; stop() }
   }, [])
 
   useEffect(() => {

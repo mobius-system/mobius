@@ -55,6 +55,7 @@ import {
   writeTextRedactionRules,
   type TextRedactionRule,
 } from '../services/text-redaction'
+import { pollRecursive } from '../services/polling'
 import { ToggleSwitch } from './toggle-switch'
 
 type AdminTmuxContext = {
@@ -356,17 +357,18 @@ function AdminUsersPanel() {
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const refresh = async (quiet = false) => {
+  const refresh = async (quiet = false, signal?: AbortSignal) => {
     if (!quiet) setLoading(true)
     try {
       const [userData, groupData] = await Promise.all([
-        api('/api/admin/users'),
-        api('/api/admin/user-groups'),
+        api('/api/admin/users', { signal }),
+        api('/api/admin/user-groups', { signal }),
       ])
       setUsers(Array.isArray(userData) ? userData : [])
       setGroups(Array.isArray(groupData) ? groupData : [])
       setError('')
     } catch (e: any) {
+      if (e?.name === 'AbortError') return // 轮询超时/卸载放弃, 不算错误
       setError(e?.message || String(e))
     } finally {
       if (!quiet) setLoading(false)
@@ -375,8 +377,9 @@ function AdminUsersPanel() {
 
   useEffect(() => {
     refresh()
-    const timer = window.setInterval(() => refresh(true), 10000)
-    return () => window.clearInterval(timer)
+    // 自递归轮询: 上一次返回(或超时放弃)后才排下一次, 10s 超时主动 abort, 卡顿时不堆积.
+    const stop = pollRecursive((signal) => refresh(true, signal), 10_000, 10_000, { startImmediately: false })
+    return () => stop()
   }, [])
 
   useEffect(() => {
@@ -5897,13 +5900,14 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
   const [closingKey, setClosingKey] = useState<string | null>(null)
   const [showClosedWindows, setShowClosedWindows] = useState(false)
 
-  const refresh = async (quiet = false) => {
+  const refresh = async (quiet = false, signal?: AbortSignal) => {
     if (!quiet) setLoading(true)
     try {
-      const next = await api('/api/admin/tmux')
+      const next = await api('/api/admin/tmux', { signal })
       setData(next)
       setError('')
     } catch (e: any) {
+      if (e?.name === 'AbortError') return // 轮询超时/卸载放弃, 不算错误
       setError(e?.message || String(e))
     } finally {
       if (!quiet) setLoading(false)
@@ -5912,8 +5916,9 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     refresh()
-    const timer = window.setInterval(() => refresh(true), 5000)
-    return () => window.clearInterval(timer)
+    // 自递归轮询: 上一次返回(或超时放弃)后才排下一次, 10s 超时主动 abort, 卡顿时不堆积.
+    const stop = pollRecursive((signal) => refresh(true, signal), 5_000, 10_000, { startImmediately: false })
+    return () => stop()
   }, [])
 
   const totals = useMemo(() => ({

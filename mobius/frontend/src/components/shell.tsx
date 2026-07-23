@@ -13,6 +13,7 @@ import { CustomThemePalette } from './custom-theme-palette'
 import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, History, Menu, MessageSquare, Moon, Palette, Plus, Search, Sliders, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
+import { pollRecursive } from '../services/polling'
 import { useIsMobile } from './resizable-panel'
 import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
@@ -207,15 +208,12 @@ function DiskIndicator() {
 
   useEffect(() => {
     let alive = true
-    const load = async () => {
-      try {
-        const d = await api('/api/health/disk')
-        if (alive) setDisk(d)
-      } catch { /* 忽略本次失败, 下个周期重试 */ }
-    }
-    load()
-    const t = setInterval(load, 60 * 1000)
-    return () => { alive = false; clearInterval(t) }
+    // 自递归轮询: 上一次返回(或超时放弃)后才排下一次, 10s 超时主动 abort, 卡顿时不堆积.
+    const stop = pollRecursive(async (signal) => {
+      const d = await api('/api/health/disk', { signal })
+      if (alive) setDisk(d)
+    }, 60 * 1000)
+    return () => { alive = false; stop() }
   }, [])
 
   const pct = disk?.usedPercent
@@ -253,15 +251,11 @@ function MemoryIndicator() {
 
   useEffect(() => {
     let alive = true
-    const load = async () => {
-      try {
-        const d = await api('/api/health/memory')
-        if (alive) setMem(d)
-      } catch { /* 忽略本次失败, 下个周期重试 */ }
-    }
-    load()
-    const t = setInterval(load, 60 * 1000)
-    return () => { alive = false; clearInterval(t) }
+    const stop = pollRecursive(async (signal) => {
+      const d = await api('/api/health/memory', { signal })
+      if (alive) setMem(d)
+    }, 60 * 1000)
+    return () => { alive = false; stop() }
   }, [])
 
   const pct = mem?.usedPercent
@@ -294,18 +288,15 @@ function VersionIndicator() {
 
   useEffect(() => {
     let alive = true
-    const load = async () => {
-      try {
-        const d = await api('/api/v2/health')
-        if (alive) setHealth({ ...d, sampledAtMs: Date.now() })
-      } catch { /* 忽略本次失败, 下个周期重试 */ }
-    }
-    load()
-    const poll = setInterval(load, 30 * 1000)
+    const stop = pollRecursive(async (signal) => {
+      const d = await api('/api/v2/health', { signal })
+      if (alive) setHealth({ ...d, sampledAtMs: Date.now() })
+    }, 30 * 1000)
+    // uptime 文案是纯前端按时间推进重算, 与网络无关, 保留独立 tick.
     const tick = setInterval(() => setTick(v => v + 1), 10 * 1000)
     return () => {
       alive = false
-      clearInterval(poll)
+      stop()
       clearInterval(tick)
     }
   }, [])

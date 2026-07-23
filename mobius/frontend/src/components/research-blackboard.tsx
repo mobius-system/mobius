@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import { ErrBanner } from './modals'
 import { timeAgoPrecise } from './shell'
 import { HIDDEN_FOLDER_NAME } from '../store'
+import { pollRecursive } from '../services/polling'
 
 interface DeliveryState {
   status?: string
@@ -69,9 +70,10 @@ function statusBadge(record: BlackboardRecord): { label: string; cls: string } {
   return { label: status, cls: 'bg-slate-500/15 text-slate-300 border-slate-500/40' }
 }
 
-function fetchBlackboardText(researchId: string): Promise<string> {
+function fetchBlackboardText(researchId: string, signal?: AbortSignal): Promise<string> {
   const token = localStorage.getItem('cc-token') || ''
   return fetch(`/api/research-blackboard/${encodeURIComponent(researchId)}`, {
+    signal,
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   }).then(async (res) => {
     if (res.status === 404) {
@@ -95,15 +97,16 @@ export default function ResearchBlackboard({ researchId }: { researchId: string 
   const autoRefreshRef = useRef(autoRefresh)
   autoRefreshRef.current = autoRefresh
 
-  const fetchBlackboard = useCallback((silent: boolean) => {
+  const fetchBlackboard = useCallback((silent: boolean, signal?: AbortSignal) => {
     if (!silent) setState((s) => ({ ...s, loading: true, error: null }))
-    fetchBlackboardText(researchId)
+    fetchBlackboardText(researchId, signal)
       .then((text) => {
         const parsed = parseEntries(text)
         setEntries(parsed)
         setState({ loading: false, error: null, lastUpdated: Date.now() })
       })
       .catch((e: any) => {
+        if (e?.name === 'AbortError') return // 轮询超时/卸载放弃, 不算错误
         setState((s) => ({ loading: false, error: e?.message || '加载失败', lastUpdated: s.lastUpdated }))
       })
   }, [researchId])
@@ -112,10 +115,11 @@ export default function ResearchBlackboard({ researchId }: { researchId: string 
 
   useEffect(() => {
     if (!autoRefresh) return
-    const t = window.setInterval(() => {
-      if (autoRefreshRef.current && !document.hidden) fetchBlackboard(true)
+    // 自递归轮询: 上一次返回(或超时放弃)后才排下一次, 10s 超时主动 abort, 卡顿时不堆积.
+    const stop = pollRecursive((signal) => {
+      if (autoRefreshRef.current && !document.hidden) fetchBlackboard(true, signal)
     }, REFRESH_INTERVAL_MS)
-    return () => window.clearInterval(t)
+    return () => stop()
   }, [autoRefresh, fetchBlackboard])
 
   const filtered = useMemo(() => {

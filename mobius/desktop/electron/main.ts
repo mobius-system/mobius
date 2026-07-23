@@ -322,11 +322,14 @@ function waitForTcpPort(port: number, timeoutMs = 12000): Promise<void> {
   });
 }
 
-async function ensureAimuxForPortForward(): Promise<{ ok: true } | { ok: false; error: string }> {
+/** 通用的“确保 aimux 就绪”包装：带 installing 互斥锁 + emitStatus 进度 + 日志。
+ *  port-forward / reconnect / sync-reload 在检测到 aimux 未就绪时都调它重装，而非各自报错卡死。 */
+async function ensureAimuxWithStatus(reason: string): Promise<{ ok: true } | { ok: false; error: string }> {
   if (installing) return { ok: false, error: "aimux 正在安装中，请稍后再试" };
   installing = true;
-  emitStatus({ state: "starting", detail: "正在检查 aimux port forward 环境…" });
-  appendAimuxLog(`\n==== [${new Date().toISOString()}] ensure aimux (port forward) ====\n`);
+  const detail = reason === "port-forward" ? "正在检查 aimux port forward 环境…" : "aimux 未就绪，正在重新安装…";
+  emitStatus({ state: "starting", detail });
+  appendAimuxLog(`\n==== [${new Date().toISOString()}] ensure aimux (${reason}) ====\n`);
   try {
     const r = await ensureAimux(
       (p: InstallProgress) => {
@@ -352,7 +355,7 @@ async function startAimuxPortForward(remotePortValue: unknown): Promise<{ ok: bo
   }
   if (existing) portForwards.delete(remotePort);
 
-  const ready = await ensureAimuxForPortForward();
+  const ready = await ensureAimuxWithStatus("port-forward");
   if (!ready.ok) return ready;
 
   const localPort = await findFreeLocalPort();
@@ -503,6 +506,15 @@ function persistTabs(): void {
 function runSyncReload(): void {
   // 多 tab：刷新当前激活 tab（而非 mainWindow 容器）。
   tabManager?.reloadActive();
+  // aimux 开关开着但未就绪时, 借“同步最新代码”之机后台重装恢复 (用户期望此按钮也能修好坏掉的 aimux)。
+  // 不阻塞 reload: 后台跑, 装完自动 start supervisor, 状态经 emitStatus 推给刷新后的页面。
+  if (aimuxEnabled && creds && !fs.existsSync(aimuxExe())) {
+    void ensureAimuxWithStatus("sync-reload").then((ready) => {
+      if (!ready.ok) return;
+      supervisor = buildSupervisor();
+      supervisor?.start();
+    });
+  }
 }
 
 // 切换到相邻 tab（offset=1 下一个，-1 上一个，循环）。供菜单 Cmd+Tab / Cmd+Shift+Tab。
@@ -812,9 +824,14 @@ ipcMain.handle("aimux:version", () => getAimuxVersion());
 ipcMain.handle("aimux:reconnect", async () => {
   if (!creds) return { ok: false, error: "未登录" };
   if (!aimuxEnabled) return { ok: false, error: "aimux 连接已关闭，请先开启开关" };
+  // aimux/venv 未就绪 (首装失败 / venv 损坏 / 内置 python 坏): 先重装, 而非直接报 "未就绪" 卡死。
+  if (!fs.existsSync(aimuxExe())) {
+    const ready = await ensureAimuxWithStatus("reconnect");
+    if (!ready.ok) return ready;
+  }
   await supervisor?.stop();
   supervisor = buildSupervisor();
-  if (!supervisor) return { ok: false, error: "aimux 未就绪（venv 可能未建好），请稍后重试" };
+  if (!supervisor) return { ok: false, error: "aimux 未就绪，请稍后重试" };
   supervisor.start();
   return { ok: true };
 });

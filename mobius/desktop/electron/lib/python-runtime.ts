@@ -157,6 +157,16 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void, onR
   // 1) 建 venv。不带 --upgrade-deps：内置 python-build-standalone 的 pip 已够新，省一次联网升级
   onProgress?.({ phase: "venv", detail: py });
   let r = await run(py, ["-m", "venv", venvDir()], undefined, onRaw);
+  // 内置 python 可能损坏 / 架构不匹配 (报 spawn ENOENT 或非零退出): 回退系统 python3 重试一次,
+  // 避免一直卡在 "venv 创建失败"。系统 python 需用户预装, 且 aimux 要求 3.10+。
+  if (r.code !== 0) {
+    const sysPy = WIN ? "python.exe" : "python3";
+    if (py !== sysPy) {
+      onRaw?.(`[ensureAimux] bundled python 不可用 (${(r.stderr || r.stdout).trim()}), 回退系统 ${sysPy}…\n`);
+      onProgress?.({ phase: "venv", detail: `内置 Python 不可用，改用系统 ${sysPy}…` });
+      r = await run(sysPy, ["-m", "venv", venvDir()], undefined, onRaw);
+    }
+  }
   if (r.code !== 0) return { ok: false, error: `venv 创建失败: ${r.stderr || r.stdout}` };
 
   // 2) 装 aimux（--no-input 防交互卡死，--disable-pip-version-check 减噪音）；实时回传 pip 下载进度
@@ -224,7 +234,14 @@ export async function checkAimuxUpdate(onRaw?: (data: string) => void): Promise<
 
 /** "更新 aimux"按钮：升到最新版并回写 marker（解除首装 pin）。onProgress 回传 pip 实时输出供状态面板显示。 */
 export async function upgradeAimux(onProgress?: (p: InstallProgress) => void, onRaw?: (data: string) => void): Promise<{ ok: boolean; version?: string; error?: string }> {
-  if (!fs.existsSync(venvPython())) return { ok: false, error: "venv 尚未创建" };
+  // venv 尚未创建/损坏: 走完整安装 (ensureAimux 幂等, 会重建损坏 venv, 内置 python 坏时回退系统 python),
+  // 而非直接报 "venv 尚未创建" 卡死。这样 "更新 aimux" 按钮在首装失败 / venv 损坏时也能恢复。
+  if (!fs.existsSync(venvPython())) {
+    onProgress?.({ phase: "venv", detail: "aimux 未就绪，重新安装…" });
+    const inst = await ensureAimux(onProgress, onRaw);
+    if (!inst.ok) return { ok: false, error: inst.error };
+    return { ok: true, version: await getAimuxVersion() };
+  }
   onProgress?.({ phase: "install", detail: "pip install --upgrade aimux…" });
   const r = await run(
     venvPython(),

@@ -43,6 +43,7 @@ import {
   parsePatienceInput,
 } from './project-page/utils'
 import { markFireAndForgetSession } from '../services/session-start-policy'
+import { pollRecursive } from '../services/polling'
 
 type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist'
 type IssueVisibility = 'inherit' | ProjectVisibility
@@ -3700,12 +3701,13 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
   const skillPath = APP_DIR ? `${APP_DIR}/skills/mobius-aimux` : '.imac/skills/mobius-aimux/SKILL.md'
   const announceText = `当你的任务需要连接 \`${effectiveIdentifier}\` 时，请阅读 mobius-aimux 技能（${skillPath}），根据提示进行连接`
 
-  const refreshRemotes = useCallback(() => {
-    api('/aimux_bridge/api/remotes').then((data: any) => {
+  const refreshRemotes = useCallback((signal?: AbortSignal) => {
+    api('/aimux_bridge/api/remotes', { signal }).then((data: any) => {
       const list = Array.isArray(data?.remotes) ? data.remotes : []
       setRemotes(list)
       setRemotesErr('')
     }).catch((e: any) => {
+      if (e?.name === 'AbortError') return // 轮询超时/卸载放弃, 不算错误
       setRemotesErr(e?.message || 'bridge 不可用')
       setRemotes([])
     })
@@ -3713,8 +3715,9 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     refreshRemotes()
-    const id = setInterval(refreshRemotes, 3000)
-    return () => clearInterval(id)
+    // 自递归轮询: 上一次返回(或超时放弃)后才排下一次, 10s 超时主动 abort, 卡顿时不堆积.
+    const stop = pollRecursive((signal) => refreshRemotes(signal), 3000)
+    return () => stop()
   }, [refreshRemotes])
 
   const copy = async (label: string, text: string) => {
