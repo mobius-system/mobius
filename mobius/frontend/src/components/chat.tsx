@@ -3439,8 +3439,10 @@ export function ChatArea({ layout = 'default', onNewSession }: {
             </div>
           ) : (
             <div className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0">
-              <div className="grid grid-cols-4 items-stretch gap-2 md:grid-cols-8">
-                  {/* 超级会话按钮组 */}
+              {/* 超级会话按钮组: 3×3 子网格按功能分组, 行间加细分隔线; 视觉上均衡无孤行. */}
+              <div className="flex flex-col gap-1.5">
+                {/* Row 1: 会话回溯 (历史/回顾) */}
+                <div className="grid grid-cols-3 items-stretch gap-2">
                   <AdvancedInteractionBtn
                     onClick={() => setFileChangesOpen(true)}
                     disabled={!sessionId}
@@ -3457,6 +3459,19 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     accent="emerald"
                     icon={<ScrollText className="h-4 w-4" strokeWidth={1.9} />}
                   />
+                  <AdvancedInteractionBtn
+                    onClick={() => setInputReplayOpen(true)}
+                    disabled={!sessionId}
+                    label="回放输入"
+                    tooltip="回放输入"
+                    accent="blue"
+                    icon={<History className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                </div>
+                {/* Row separator */}
+                <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
+                {/* Row 2: 操作工具 */}
+                <div className="grid grid-cols-3 items-stretch gap-2">
                   <ProjectPortEntryButton
                     projectId={currentProjectId}
                     subPath={currentVscodeSubPath}
@@ -3464,6 +3479,27 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     triggerVariant="advanced"
                     onRequestRunProject={sendRunProjectPortPrompt}
                   />
+                  <AdvancedInteractionBtn
+                    onClick={() => setTerminalChoiceOpen(true)}
+                    disabled={!currentSession?.session_id}
+                    label="打开终端"
+                    tooltip="打开当前会话终端"
+                    accent="emerald"
+                    icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setCooperablePcOpen(true)}
+                    disabled={!currentSession?.session_id}
+                    label="可合作计算机"
+                    tooltip="声明可合作计算机 (勾选 aimux remote, 生成声明直接发给当前 agent, 不写 Memory)"
+                    accent="amber"
+                    icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                </div>
+                {/* Row separator */}
+                <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
+                {/* Row 3: 知识与控制 */}
+                <div className="grid grid-cols-3 items-stretch gap-2">
                   <AdvancedInteractionBtn
                     onClick={() => setKnowledgeEditorOpen(true)}
                     disabled={!currentProjectId || !currentIssueId}
@@ -3483,22 +3519,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                       : <Archive className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
-                    onClick={() => setTerminalChoiceOpen(true)}
-                    disabled={!currentSession?.session_id}
-                    label="打开终端"
-                    tooltip="打开当前会话终端"
-                    accent="emerald"
-                    icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
-                  />
-                  <AdvancedInteractionBtn
-                    onClick={() => setCooperablePcOpen(true)}
-                    disabled={!currentSession?.session_id}
-                    label="可合作计算机"
-                    tooltip="声明可合作计算机 (勾选 aimux remote, 生成声明直接发给当前 agent, 不写 Memory)"
-                    accent="amber"
-                    icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
-                  />
-                  <AdvancedInteractionBtn
                     onClick={() => setContinueModalOpen(true)}
                     disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
                     label="修改模型并继续"
@@ -3506,15 +3526,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     accent="violet"
                     icon={<Replace className="h-4 w-4" strokeWidth={1.9} />}
                   />
-                  <AdvancedInteractionBtn
-                    onClick={() => setInputReplayOpen(true)}
-                    disabled={!sessionId}
-                    label="回放输入"
-                    tooltip="回放输入"
-                    accent="blue"
-                    icon={<History className="h-4 w-4" strokeWidth={1.9} />}
-                  />
                 </div>
+              </div>
                 <SessionSkillMemoryEditor
                   sessionId={currentSession?.session_id || sessionId}
                 />

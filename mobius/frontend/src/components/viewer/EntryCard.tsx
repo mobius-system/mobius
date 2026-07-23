@@ -267,7 +267,9 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
             ⚠ 已截断
           </span>
         )}
-        {headerSummary.short && <span className="text-[11px] text-[var(--text-muted)] truncate flex-1">{headerSummary.short}</span>}
+        {/* 精简模式展开时正文已渲染完整摘要 (headerSummary.full), header 顶部 short 与之重复 → 隐藏;
+            折叠态或 code/field/plan/image 等其它模式仍保留 short 作预览. */}
+        {headerSummary.short && !(open && mode === 'compact') && <span className="text-[11px] text-[var(--text-muted)] truncate flex-1">{headerSummary.short}</span>}
       </summary>
       {hasHeaderAction && (
         <div className="absolute top-1 right-2 flex items-center gap-1.5 z-[5]">
@@ -324,7 +326,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
         </div>
       )}
       {open && (
-        <div className="px-3 pb-2 pt-1">
+        <div className="px-1 pb-1 pt-1">
           {oversized && (
             <div className="mb-2 rounded border border-amber-500/30 bg-amber-500/[0.06] px-2 py-1 text-[11px] text-amber-200">
               ⚠ 该条目原始约 {totalChars.toLocaleString()} 字符, 超过 10 万字符渲染上限, 超出部分已截断以避免前端卡顿.

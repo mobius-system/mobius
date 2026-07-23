@@ -76,6 +76,37 @@ export function isTurnDurationSystemEntry(entry: AnyEntry): boolean {
   return entry?.type === 'system' && entry?.subtype === 'turn_duration'
 }
 
+// Claude Code 注入的可用 Skill 清单附件 (attachment.type:"skill_listing"): content 是全部 skill 的
+// 描述文本拼接 (巨量), 属会话起始注入的上下文噪声, 对浏览对话内容无价值, 整卡过滤隐藏.
+export function isSkillListingAttachment(entry: AnyEntry): boolean {
+  return entry?.type === 'attachment' && entry?.attachment?.type === 'skill_listing'
+}
+
+// Claude Code 注入的可用 subagent 清单附件 (attachment.type:"agent_listing_delta"): addedLines 是各
+// subagent 描述拼接, 属上下文注入噪声, 对浏览对话内容无价值, 与 skill_listing 同级整卡过滤隐藏.
+export function isAgentListingDeltaAttachment(entry: AnyEntry): boolean {
+  return entry?.type === 'attachment' && entry?.attachment?.type === 'agent_listing_delta'
+}
+
+// jsonl 卡片视图里"整卡过滤隐藏"的噪声 entry 集合: 对浏览对话内容无价值的系统注入/元数据噪声.
+// 集中在此一处, viewer/JsonlView 的 visibleItems 过滤只调本谓词, 以后新增噪声类型往这里加即可.
+//   - token_count         : codex 每轮 token 用量统计 (event_msg)
+//   - environment_context : codex 每轮注入的 <environment_context> 系统 user 消息
+//   - session_meta        : codex 会话首条元数据 (含巨大 base_instructions 系统提示词)
+//   - turn_duration       : Claude Code 每轮结束注入的 system 耗时/消息数统计
+//   - skill_listing       : Claude Code 注入的可用 Skill 清单 (巨量 skill 描述文本)
+//   - agent_listing_delta : Claude Code 注入的可用 subagent 清单
+export function isHiddenJsonlNoiseEntry(entry: AnyEntry): boolean {
+  return (
+    isTokenCountEvent(entry) ||
+    isEnvironmentContextEntry(entry) ||
+    isSessionMetaEntry(entry) ||
+    isTurnDurationSystemEntry(entry) ||
+    isSkillListingAttachment(entry) ||
+    isAgentListingDeltaAttachment(entry)
+  )
+}
+
 export function isAssistantEndTurnEntry(entry: AnyEntry): boolean {
   return entry?.type === 'assistant' && entry?.message?.stop_reason === 'end_turn'
 }
