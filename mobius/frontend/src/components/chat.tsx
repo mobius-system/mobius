@@ -3357,21 +3357,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                 )}
               </div>
               <AdvancedInteractionBtn
-                onClick={() => setInputReplayOpen(true)}
-                disabled={!sessionId}
-                label="回放输入"
-                tooltip="回放输入"
-                accent="blue"
-                motion="breathe"
-                buttonClassName="h-7 w-7 rounded-full"
-                iconClassName="h-[17px] w-[17px]"
-                style={{
-                  color: theme !== 'light' ? '#d1d5db' : '#374151',
-                  border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
-                }}
-                icon={<History className="w-[17px] h-[17px]" strokeWidth={2} />}
-              />
-              <AdvancedInteractionBtn
                 onClick={toggleVoiceRecording}
                 disabled={messageSubmitting || voiceState === 'transcribing'}
                 aria-pressed={voiceState === 'recording'}
@@ -3455,6 +3440,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           ) : (
             <div className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0">
               <div className="grid grid-cols-4 items-stretch gap-2 md:grid-cols-8">
+                  {/* 超级会话按钮组 */}
                   <AdvancedInteractionBtn
                     onClick={() => setFileChangesOpen(true)}
                     disabled={!sessionId}
@@ -3519,6 +3505,14 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     tooltip="修改模型并继续"
                     accent="violet"
                     icon={<Replace className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setInputReplayOpen(true)}
+                    disabled={!sessionId}
+                    label="回放输入"
+                    tooltip="回放输入"
+                    accent="blue"
+                    icon={<History className="h-4 w-4" strokeWidth={1.9} />}
                   />
                 </div>
                 <SessionSkillMemoryEditor

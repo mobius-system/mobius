@@ -17,7 +17,7 @@ export function JsonlCopyButton({ copied, title, copiedTitle = '已复制', disa
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`jsonl-copy-icon-button ${copied ? 'jsonl-copy-icon-button--copied' : ''}`}
+      className={`jsonl-icon-button ${copied ? 'jsonl-icon-button--copied' : ''}`}
       title={label}
       aria-label={label}
     >

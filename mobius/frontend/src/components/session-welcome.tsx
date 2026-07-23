@@ -517,17 +517,15 @@ export function SessionSkillMemoryEditor({
   return (
     <>
       <div className="flex min-h-0 flex-1 flex-col gap-2">
-        {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗 */}
-        <div className="grid grid-cols-2 items-stretch gap-2">
+        {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
+            下划线 tab 样式: 两个 tab 紧挨成 tab 条, 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
+        <div className="grid grid-cols-2 items-stretch">
           <button
             type="button"
             onClick={() => setActivePanel(prev => (prev === 'skill' ? null : 'skill'))}
             aria-pressed={skillActive}
-            className={`min-h-9 w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden ${skillActive ? 'bg-blue-500/15' : 'hover:bg-blue-500/10'}`}
-            style={{
-              color: skillActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-              borderColor: skillActive ? 'rgba(96,165,250,0.45)' : 'var(--border-color-strong)',
-            }}
+            className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${skillActive ? 'border-blue-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
+            style={{ color: skillActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
             disabled={loading}
           >
             <Puzzle className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
@@ -537,11 +535,8 @@ export function SessionSkillMemoryEditor({
             type="button"
             onClick={() => setActivePanel(prev => (prev === 'memory' ? null : 'memory'))}
             aria-pressed={memActive}
-            className={`min-h-9 w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden ${memActive ? 'bg-cyan-500/15' : 'hover:bg-cyan-500/10'}`}
-            style={{
-              color: memActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-              borderColor: memActive ? 'rgba(34,211,238,0.45)' : 'var(--border-color-strong)',
-            }}
+            className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${memActive ? 'border-cyan-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
+            style={{ color: memActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
             disabled={loading}
           >
             <Brain className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />

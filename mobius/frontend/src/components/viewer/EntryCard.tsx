@@ -11,7 +11,8 @@
  *  - 超大卡片保护: entry + 工具结果渲染字符总量超 10 万时截断后再渲染, 避免前端卡顿崩溃.
  */
 import { Suspense, lazy, memo, useMemo, useState } from 'react'
-import { Code2, ListChecks } from 'lucide-react'
+import { Code2, ListChecks, AlignLeft, Braces, Image as ImageIcon } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { BLACKBOARD_MARKER } from '../jsonl-round-helpers'
 import {
   TYPE_THEME,

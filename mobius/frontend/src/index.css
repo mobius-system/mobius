@@ -4836,7 +4836,8 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   contain-intrinsic-size: auto 180px;
 }
 
-.jsonl-copy-icon-button {
+/* jsonl 卡片右上角图标按钮的共享基底 (复制 / 模式切换等共用同一套尺寸与样式). */
+.jsonl-icon-button {
   width: 1.25rem;
   height: 1.25rem;
   flex-shrink: 0;
@@ -4856,7 +4857,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
     box-shadow .16s ease;
 }
 
-.jsonl-copy-icon-button:hover:not(:disabled) {
+.jsonl-icon-button:hover:not(:disabled) {
   color: var(--text-secondary);
   background: var(--bg-card-hover);
   border-color: var(--border-color-strong);
@@ -4864,22 +4865,22 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   transform: translateY(-1px);
 }
 
-.jsonl-copy-icon-button:active:not(:disabled) {
+.jsonl-icon-button:active:not(:disabled) {
   transform: translateY(0) scale(.92);
   transition-duration: .08s;
 }
 
-.jsonl-copy-icon-button:focus-visible {
+.jsonl-icon-button:focus-visible {
   outline: 2px solid color-mix(in srgb, #60a5fa 74%, transparent);
   outline-offset: 2px;
 }
 
-.jsonl-copy-icon-button:disabled {
+.jsonl-icon-button:disabled {
   cursor: not-allowed;
   opacity: .45;
 }
 
-.jsonl-copy-icon-button--copied {
+.jsonl-icon-button--copied {
   color: #22c55e;
   border-color: color-mix(in srgb, #22c55e 42%, var(--border-color));
   background: color-mix(in srgb, #22c55e 12%, var(--bg-card));
