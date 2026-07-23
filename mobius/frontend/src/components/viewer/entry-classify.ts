@@ -69,6 +69,13 @@ export function isSessionMetaEntry(entry: AnyEntry): boolean {
   return entry?.type === 'session_meta'
 }
 
+// Claude Code 每轮结束注入的 system 卡片 (subtype:"turn_duration"): 仅记录本轮耗时/消息数等
+// 统计元数据 (durationMs/messageCount), 对浏览对话内容无价值, 与 token_count/environment_context/
+// session_meta 同级整卡过滤隐藏. 只命中 turn_duration 子类型, 不影响其它可能有用 system 子类型.
+export function isTurnDurationSystemEntry(entry: AnyEntry): boolean {
+  return entry?.type === 'system' && entry?.subtype === 'turn_duration'
+}
+
 export function isAssistantEndTurnEntry(entry: AnyEntry): boolean {
   return entry?.type === 'assistant' && entry?.message?.stop_reason === 'end_turn'
 }

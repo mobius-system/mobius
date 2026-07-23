@@ -511,80 +511,84 @@ export function SessionSkillMemoryEditor({
   const enabledMemories = memories.filter(it => it.enabled !== false).length
   const skillTotal = totals.skills || skills.length
   const memoryTotal = totals.memories || memories.length
+  const skillActive = activePanel === 'skill'
+  const memActive = activePanel === 'memory'
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setActivePanel('skill')}
-        className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-blue-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-        style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}
-        disabled={loading}
-      >
-        <Puzzle className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
-        <span className="btn-label">Skill ({enabledSkills}/{skillTotal} 启用)</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => setActivePanel('memory')}
-        className="min-h-9 h-full w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors hover:bg-cyan-500/10 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden"
-        style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}
-        disabled={loading}
-      >
-        <Brain className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
-        <span className="btn-label">Memory ({enabledMemories}/{memoryTotal} 启用)</span>
-      </button>
-
-      {activePanel && (
-        <div className="fixed inset-0 z-[95] flex items-center justify-center px-4" role="dialog" aria-modal="true">
+      <div className="flex flex-col gap-2">
+        {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗 */}
+        <div className="grid grid-cols-2 items-stretch gap-2">
           <button
             type="button"
-            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-            aria-label="关闭上下文快照"
-            onClick={() => setActivePanel(null)}
-          />
-          <div
-            className="relative flex w-full max-w-[760px] flex-col overflow-hidden rounded-2xl shadow-2xl"
-            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxHeight: 'min(680px, calc(100vh - 48px))' }}
-            onClick={e => e.stopPropagation()}
+            onClick={() => setActivePanel(prev => (prev === 'skill' ? null : 'skill'))}
+            aria-pressed={skillActive}
+            className={`min-h-9 w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden ${skillActive ? 'bg-blue-500/15' : 'hover:bg-blue-500/10'}`}
+            style={{
+              color: skillActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+              borderColor: skillActive ? 'rgba(96,165,250,0.45)' : 'var(--border-color-strong)',
+            }}
+            disabled={loading}
           >
-            <header className="flex items-center justify-between gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
-              <div className="flex min-w-0 items-center gap-2">
-                {activePanel === 'skill'
-                  ? <Puzzle className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
-                  : <BookOpen className="h-4 w-4 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />}
-                <div className="min-w-0">
-                  <div className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {activePanel === 'skill'
-                      ? `Skill (${enabledSkills}/${skillTotal} 启用)`
-                      : `Memory (${enabledMemories}/${memoryTotal} 启用)`}
-                  </div>
-                  <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    当前 Session 创建时固定的上下文快照
-                    {snapshotAt ? ` · ${formatSnapshotTime(snapshotAt)}` : ''}
-                    {legacy ? ' · 兼容模式' : source === 'live' ? ' · 实时来源' : ''}
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActivePanel(null)}
-                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
-                style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
-                aria-label="关闭"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </header>
+            <Puzzle className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
+            <span className="btn-label">Skill ({enabledSkills}/{skillTotal} 启用)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActivePanel(prev => (prev === 'memory' ? null : 'memory'))}
+            aria-pressed={memActive}
+            className={`min-h-9 w-full rounded-lg border px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden ${memActive ? 'bg-cyan-500/15' : 'hover:bg-cyan-500/10'}`}
+            style={{
+              color: memActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+              borderColor: memActive ? 'rgba(34,211,238,0.45)' : 'var(--border-color-strong)',
+            }}
+            disabled={loading}
+          >
+            <Brain className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
+            <span className="btn-label">Memory ({enabledMemories}/{memoryTotal} 启用)</span>
+          </button>
+        </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              {activePanel === 'skill'
+        {/* 内联菜单: 直接占据 tab 下方剩余空间, 不再开弹窗 */}
+        {activePanel && (
+          <div
+            className="flex flex-col overflow-hidden rounded-lg border"
+            style={{ background: 'var(--bg-tertiary, rgba(255,255,255,0.02))', borderColor: 'var(--border-color)' }}
+          >
+            <div
+              className="flex items-center justify-between gap-2 border-b px-3 py-1.5"
+              style={{ borderColor: 'var(--border-color)' }}
+            >
+              <div className="flex min-w-0 items-center gap-1.5">
+                {skillActive
+                  ? <Puzzle className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
+                  : <Brain className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />}
+                <span className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  {skillActive ? 'Skill' : 'Memory'}
+                </span>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  {skillActive ? `${enabledSkills}/${skillTotal} 启用` : `${enabledMemories}/${memoryTotal} 启用`}
+                </span>
+              </div>
+              {snapshotAt && (
+                <span
+                  className="truncate text-[10px]"
+                  style={{ color: 'var(--text-muted)' }}
+                  title={formatSnapshotTime(snapshotAt)}
+                >
+                  {formatSnapshotTime(snapshotAt)}
+                  {legacy ? ' · 兼容' : source === 'live' ? ' · 实时' : ''}
+                </span>
+              )}
+            </div>
+            <div className="max-h-[300px] min-h-0 overflow-y-auto p-2">
+              {skillActive
                 ? renderList(skills, '暂无 Skill', 'skill')
                 : renderList(memories, '暂无 Memory', 'memory')}
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {previewItem && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center px-4" role="dialog" aria-modal="true">

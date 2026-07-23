@@ -433,7 +433,8 @@ export function DescriptionWithAttachments({ value, onValueChange, placeholder, 
             ))}
           </div>
         )}
-        <textarea value={value} onChange={e => onValueChange(e.target.value)} placeholder={placeholder}
+        <ExpandableTextarea value={value} onValueChange={onValueChange} placeholder={placeholder}
+          overlayTitle="编辑目的 / 问题描述"
           className="w-full bg-transparent resize-none border-0 px-3 py-2 text-[13px] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none"
           style={{ minHeight: 72, color: dark ? '#f1f5f9' : '#1e293b' }} />
         <div className="flex items-center gap-2 px-3 pb-2">
@@ -1178,6 +1179,8 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   const [err, setErr] = useState('')
   // 创建成功弹窗 (查看 / 再创建一个 / 关闭). null = 不显示.
   const [success, setSuccess] = useState<{ sessionId?: string; detailUrl?: string; name: string } | null>(null)
+  // 「更多会话设置」折叠: 会话名称 / 模型 / 语言 / Skill·Memory 收纳其中, 默认收起 (快捷会话核心只需 项目+任务+描述).
+  const [moreOpen, setMoreOpen] = useState(false)
   // PC 任务模式 (仅 electron 桌面端, 与 NewSessionModal 同源): work_mode/aimux_id/local_path
   // 经 pc_client_metadata 注入 session 提示词; pc/dual 时 mobius-aimux skill 强制必选.
   // web 端无 window.mobiusDesktop → workMode 恒 null → 不渲染区块、不附 body、不锁 skill, 行为完全不变.
@@ -1386,7 +1389,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   ) : null
 
   return (
-    <CreateModalShell title="新建会话" onClose={onClose} dark={dark} width={600} headerExtra={headerExtra}
+    <CreateModalShell title="新建快捷会话" onClose={onClose} dark={dark} width={600} headerExtra={headerExtra}
       footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} disabled={!projectId || !issueId} />}>
       <SelectShell label="目标项目" current={selectedProject?.name} loading={projects.loading} onRefresh={projects.refresh} dark={dark}>
         <DropdownSelect
@@ -1406,55 +1409,61 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
           ]}
         />
       </SelectShell>
-      <div className="flex gap-3">
-        <div className="flex-1 min-w-0">
-          <SelectShell label="目标任务" current={selectedIssue?.title} loading={issues.loading} onRefresh={issues.refresh} dark={dark} hint={projectId ? '' : '请先选择项目'}>
-            <DropdownSelect
-              value={issueId}
-              onChange={v => { setIssueId(v); setSelectionReady(false); setErr('') }}
-              disabled={!projectId}
-              dark={dark}
-              placeholder={projectId ? '— 选择任务 —' : '请先选择项目'}
-              emptyText={projectId ? '该项目下暂无任务' : '请先选择项目'}
-              options={[
-                { value: '', label: projectId ? '— 选择任务 —' : '请先选择项目', description: '取消选择' },
-                ...issues.list.map((i: any) => ({
-                  value: String(i.id),
-                  label: String(i.title),
-                  description: i.description ? String(i.description) : undefined,
-                })),
-              ]}
-            />
-          </SelectShell>
-        </div>
-        <div className="flex-1 min-w-0">
-          <SectionLabel>会话名称</SectionLabel>
-          <TextInput value={name} onChange={v => { setName(v); nameUserTouchedRef.current = true; setErr('') }} placeholder="给这个会话起个名字" dark={dark} />
-        </div>
-      </div>
+      <SelectShell label="目标任务" current={selectedIssue?.title} loading={issues.loading} onRefresh={issues.refresh} dark={dark} hint={projectId ? '' : '请先选择项目'}>
+        <DropdownSelect
+          value={issueId}
+          onChange={v => { setIssueId(v); setSelectionReady(false); setErr('') }}
+          disabled={!projectId}
+          dark={dark}
+          placeholder={projectId ? '— 选择任务 —' : '请先选择项目'}
+          emptyText={projectId ? '该项目下暂无任务' : '请先选择项目'}
+          options={[
+            { value: '', label: projectId ? '— 选择任务 —' : '请先选择项目', description: '取消选择' },
+            ...issues.list.map((i: any) => ({
+              value: String(i.id),
+              label: String(i.title),
+              description: i.description ? String(i.description) : undefined,
+            })),
+          ]}
+        />
+      </SelectShell>
       <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个会话完成什么" attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
       {isDesktop && (
         <PcTaskModeSection projectId={projectId || undefined} isDark={dark} onModeChange={setWorkMode} onPathChange={setPcPath} />
       )}
-      <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} collapsedRows={1} />
-      <div>
-        <SectionLabel hint="注入上下文语言">语言</SectionLabel>
-        <LanguageSelect value={language} onChange={setLanguage} />
-      </div>
-      <div>
-        <SectionLabel hint={issueId ? '点击展开二级弹窗选择' : '选择任务后可配置'}>Skill / Memory</SectionLabel>
-        <SkillMemoryPicker
-          skills={availSkills}
-          memories={availMemories}
-          excludedSkills={excludedSkills}
-          excludedMemories={excludedMemories}
-          onToggleSkill={id => { toggle(excludedSkills, id, setExcludedSkills); setSelectionReady(true) }}
-          onToggleMemory={id => { toggle(excludedMemories, id, setExcludedMemories); setSelectionReady(true) }}
-          skillLockedOf={skillLockedOf}
-          disabled={!issueId}
-          dark={dark}
-        />
-      </div>
+      <button type="button" onClick={() => setMoreOpen(v => !v)}
+        className="flex w-full items-center gap-1.5 py-1 text-[12px] font-medium rounded-lg transition-colors hover:bg-[var(--bg-card-hover)]"
+        style={{ color: 'var(--text-secondary)' }}>
+        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${moreOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
+        <span>更多会话设置</span>
+      </button>
+      {moreOpen && (
+        <>
+          <div>
+            <SectionLabel>会话名称</SectionLabel>
+            <TextInput value={name} onChange={v => { setName(v); nameUserTouchedRef.current = true; setErr('') }} placeholder="给这个会话起个名字" dark={dark} />
+          </div>
+          <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} collapsedRows={1} />
+          <div>
+            <SectionLabel hint="注入上下文语言">语言</SectionLabel>
+            <LanguageSelect value={language} onChange={setLanguage} />
+          </div>
+          <div>
+            <SectionLabel hint={issueId ? '点击展开二级弹窗选择' : '选择任务后可配置'}>Skill / Memory</SectionLabel>
+            <SkillMemoryPicker
+              skills={availSkills}
+              memories={availMemories}
+              excludedSkills={excludedSkills}
+              excludedMemories={excludedMemories}
+              onToggleSkill={id => { toggle(excludedSkills, id, setExcludedSkills); setSelectionReady(true) }}
+              onToggleMemory={id => { toggle(excludedMemories, id, setExcludedMemories); setSelectionReady(true) }}
+              skillLockedOf={skillLockedOf}
+              disabled={!issueId}
+              dark={dark}
+            />
+          </div>
+        </>
+      )}
       {err && <ErrBanner>{err}</ErrBanner>}
     </CreateModalShell>
   )
@@ -1738,7 +1747,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
 const MENU_ITEMS: { kind: CreateKind; label: string; icon: any }[] = [
   { kind: 'project', label: '新建项目', icon: FolderPlus },
   { kind: 'issue', label: '新建任务', icon: CircleDot },
-  { kind: 'session', label: '新建会话', icon: MessagesSquare },
+  { kind: 'session', label: '新建快捷会话', icon: MessagesSquare },
   { kind: 'research', label: '新建研究智能体', icon: FlaskConical },
 ]
 

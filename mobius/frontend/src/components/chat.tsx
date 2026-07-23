@@ -3516,11 +3516,9 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     icon={<Replace className="h-4 w-4" strokeWidth={1.9} />}
                   />
                 </div>
-                <div className="grid grid-cols-2 items-stretch gap-2">
-                  <SessionSkillMemoryEditor
-                    sessionId={currentSession?.session_id || sessionId}
-                  />
-                </div>
+                <SessionSkillMemoryEditor
+                  sessionId={currentSession?.session_id || sessionId}
+                />
               </div>
             </div>
           )}

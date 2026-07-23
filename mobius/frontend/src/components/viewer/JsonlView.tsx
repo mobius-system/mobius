@@ -14,7 +14,7 @@ import { mergeBashToolResultItems } from './entry-extract'
 import { buildRounds } from './rounds'
 import { buildHeaderSummary } from './header-summary'
 import { ContinuationGroup, RoundGroup, EntryCardWithImages } from './RoundGroups'
-import { isTokenCountEvent, isEnvironmentContextEntry, isSessionMetaEntry } from './entry-classify'
+import { isTokenCountEvent, isEnvironmentContextEntry, isSessionMetaEntry, isTurnDurationSystemEntry } from './entry-classify'
 
 const JSONL_INITIAL_WINDOW_SIZE = 200
 
@@ -70,7 +70,7 @@ export function JsonlView({
   const headerTitle = title === undefined ? 'JSONL' : title
   const visibleItems = useMemo(
     () => mergeBashToolResultItems(recent, windowOffset).filter(
-      (item) => !isTokenCountEvent(item.entry) && !isEnvironmentContextEntry(item.entry) && !isSessionMetaEntry(item.entry),
+      (item) => !isTokenCountEvent(item.entry) && !isEnvironmentContextEntry(item.entry) && !isSessionMetaEntry(item.entry) && !isTurnDurationSystemEntry(item.entry),
     ),
     [recent, windowOffset],
   )
