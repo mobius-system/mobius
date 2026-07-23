@@ -1110,22 +1110,10 @@ function resolveParentAndProjectOverlaps(
   const centerProject = dominantProjectCluster(projectClusters)
   const creatorByProjectId = new Map<string, CreatorCluster>()
   creatorClusters.forEach((creator) => creator.projects.forEach((project) => creatorByProjectId.set(project.id, creator)))
-  const centerCreator = dominantCreatorCluster(creatorClusters)
   const separateProjects = (a: ProjectCluster | undefined, b: ProjectCluster | undefined, sep: Point) => {
     if (!a || !b) return
     const creatorA = creatorByProjectId.get(a.id)
     const creatorB = creatorByProjectId.get(b.id)
-    if (mode === 'creator' && creatorA && creatorB && creatorA.id !== creatorB.id) {
-      if (creatorA.id === centerCreator?.id) {
-        translateCreatorCluster(creatorB, sep.x * 2, sep.y * 2)
-      } else if (creatorB.id === centerCreator?.id) {
-        translateCreatorCluster(creatorA, -sep.x * 2, -sep.y * 2)
-      } else {
-        translateCreatorCluster(creatorA, -sep.x, -sep.y)
-        translateCreatorCluster(creatorB, sep.x, sep.y)
-      }
-      return
-    }
     const localCenter = mode === 'creator' && creatorA?.id === creatorB?.id
       ? dominantProjectCluster(creatorA?.projects || [])
       : centerProject
@@ -1153,6 +1141,7 @@ function resolveParentAndProjectOverlaps(
           translateParentCluster(a, -sep.x, -sep.y)
           translateParentCluster(b, sep.x, sep.y)
         } else {
+          if (mode === 'creator') continue
           const pa = projectById.get(a.projectId)
           const pb = projectById.get(b.projectId)
           separateProjects(pa, pb, sep)
@@ -1169,6 +1158,7 @@ function resolveParentAndProjectOverlaps(
       const a = projectClusters[i]
       for (let j = i + 1; j < projectClusters.length; j += 1) {
         const b = projectClusters[j]
+        if (mode === 'creator' && a.creatorId !== b.creatorId) continue
         const sep = separateCircles(a.cx, a.cy, a.radius, b.cx, b.cy, b.radius, PROJECT_COLLISION_GAP)
         if (!sep) continue
         moved = true
