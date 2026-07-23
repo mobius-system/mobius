@@ -646,7 +646,10 @@ function reconcileClusterModel(previous: ClusterModel, desired: ClusterModel): C
     const spawn = previousProject
       ? { x: previousProject.anchorX, y: previousProject.anchorY, cx: previousProject.cx, cy: previousProject.cy }
       : (() => {
-          const point = projectSpawnPoint(desiredProject, previous.projectClusters)
+          const spawnPool = desired.mode === 'creator'
+            ? previous.projectClusters.filter((project) => project.creatorId === desiredProject.creatorId)
+            : previous.projectClusters
+          const point = projectSpawnPoint(desiredProject, spawnPool)
           return { x: point.x, y: point.y, cx: point.x, cy: point.y }
         })()
     const cluster: ProjectCluster = {
