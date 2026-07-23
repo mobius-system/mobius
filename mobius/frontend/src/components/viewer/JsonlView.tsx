@@ -7,7 +7,7 @@
  *  - 对话轮次分组 (buildRounds),
  *  - 把 preItem / round / continuation 三类 block 喂给虚拟列表 (VirtualizedBlockList).
  */
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { VirtualizedBlockList } from '../jsonl-virtual-list'
 import type { AnyEntry, JsonlViewItem, JsonlRenderBlock } from './types'
 import { mergeBashToolResultItems } from './entry-extract'
@@ -41,6 +41,41 @@ function JsonlInitialSkeleton() {
   )
 }
 
+// 与 renderBlocks 里 round block 的 key 公式严格一致 (跳转按 data-block-key 查 DOM 必须同口径).
+function roundKeyOf(round: any): string {
+  const first = round?.items?.[0]
+  return `round:${first?.entry?.uuid || first?.lineNo || round?.roundNum}`
+}
+
+// 给定搜索命中的 (uuid, timestamp), 在已渲染的 rounds 里定位它所属的那一轮.
+// 1) uuid 精确: 跨所有 round 的所有 item 找 entry.uuid / entry.id (命中可能在轮中非首条).
+// 2) timestamp 区间兜底: 命中条目可能被 hideMinor 过滤 (如 thinking), 此时取 opener.ts <= 命中 ts 的最后一轮.
+// 找不到返回 null (调用方据此触发 "加载全部" 再试, 或放弃).
+function findRoundForMatch(rounds: any[], uuid: string | null | undefined, ts: string | null | undefined): any | null {
+  if (uuid) {
+    for (const r of rounds) {
+      for (const it of r?.items || []) {
+        const e = it?.entry
+        if (e?.uuid === uuid || e?.id === uuid) return r
+      }
+    }
+  }
+  if (ts) {
+    const mt = Date.parse(ts)
+    if (Number.isFinite(mt)) {
+      let best: any = null
+      for (const r of rounds) {
+        const opener = r?.items?.[0]?.entry
+        const ot = Date.parse(opener?.timestamp || opener?.created_at || '')
+        if (Number.isFinite(ot) && ot <= mt) best = r
+        else if (Number.isFinite(ot) && ot > mt) break // rounds 时序递增
+      }
+      return best
+    }
+  }
+  return null
+}
+
 export function JsonlView({
   entries,
   title,
@@ -50,6 +85,10 @@ export function JsonlView({
   onLoadMore,
   loadingMore,
   showMeta = true,
+  scrollToEntryUuid,
+  scrollToMatchTs,
+  onScrollResolved,
+  onScrollUnresolved,
 }: {
   entries: AnyEntry[]
   title?: string
@@ -63,6 +102,12 @@ export function JsonlView({
   loadingMore?: boolean
   // false 时 jsonl 卡片标题里不再显示 "#序号" 和 "MM-DD HH:MM:SS" 时间戳前缀.
   showMeta?: boolean
+  // 搜索结果跳转: 把命中条目的 uuid / timestamp 传进来, 解析到所属轮次后滚动到该轮卡片.
+  // 命中条目可能不在当前尾部窗口 (旧消息) → onScrollUnresolved 触发上层 "加载全部" 后再解析.
+  scrollToEntryUuid?: string | null
+  scrollToMatchTs?: string | null
+  onScrollResolved?: () => void
+  onScrollUnresolved?: () => void
 }) {
   const [showAll, setShowAll] = useState(false)
   // 点 "加载全部" 后置 true: 把所有轮次组 / 上文续接组强制展开 (尊重用户已手动折叠的组).
@@ -103,14 +148,45 @@ export function JsonlView({
   // 点击 header "末轮" 摘要 -> 跳转到最后一个 RoundGroup. scrollToKey 必须与 renderBlocks 里
   // round block 的 key 公式完全一致, 列表才能按 data-block-key 查到目标.
   const headerRef = useRef<HTMLDivElement>(null)
-  const [scrollTarget, setScrollTarget] = useState<{ key: string; offset: number } | null>(null)
+  // 末轮按钮触发的跳转 (内部).
+  const [internalTarget, setInternalTarget] = useState<{ key: string; offset: number } | null>(null)
   const jumpToLastRound = () => {
     if (rounds.length === 0) return
     const lastRound = rounds[rounds.length - 1]
-    const firstItem = lastRound.items[0]
-    const key = `round:${firstItem?.entry?.uuid || firstItem?.lineNo || lastRound.roundNum}`
-    setScrollTarget({ key, offset: headerRef.current?.offsetHeight ?? 0 })
+    setInternalTarget({ key: roundKeyOf(lastRound), offset: headerRef.current?.offsetHeight ?? 0 })
   }
+
+  // 搜索结果跳转 (外部): 把 scrollToEntryUuid/scrollToMatchTs 解析成具体 round 的 key.
+  // 命中条目不在当前已渲染 rounds (旧消息被尾部窗口截断, 或被 hideMinor 过滤且无 ts 兜底) 时,
+  // 若还有远端未加载条目 (hasRemoteMore), 调 onScrollUnresolved 让上层 "加载全部" 后再解析.
+  const [extTarget, setExtTarget] = useState<{ key: string; offset: number } | null>(null)
+  const extActive = !!(scrollToEntryUuid || scrollToMatchTs)
+  const onResolvedRef = useRef(onScrollResolved)
+  onResolvedRef.current = onScrollResolved
+  const onUnresolvedRef = useRef(onScrollUnresolved)
+  onUnresolvedRef.current = onScrollUnresolved
+  const unresolvedFiredRef = useRef(false)
+  useEffect(() => {
+    if (!extActive) { setExtTarget(null); unresolvedFiredRef.current = false; return }
+    const round = findRoundForMatch(rounds, scrollToEntryUuid ?? null, scrollToMatchTs ?? null)
+    if (round) {
+      setExtTarget({ key: roundKeyOf(round), offset: headerRef.current?.offsetHeight ?? 0 })
+    } else {
+      setExtTarget(null)
+      if (hasRemoteMore && !unresolvedFiredRef.current) {
+        // 命中条目不在已加载范围 → 触发 "加载全部" 再解析 (只触发一次).
+        unresolvedFiredRef.current = true
+        onUnresolvedRef.current?.()
+      } else if (!hasRemoteMore) {
+        // 已无远端可加载仍找不到 (uuid/ts 都对不上) → 放弃, 清掉 target 恢复默认行为.
+        onResolvedRef.current?.()
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extActive, scrollToEntryUuid, scrollToMatchTs, rounds, hasRemoteMore])
+
+  // 外部跳转优先; 内部末轮跳转作 fallback. 两者都为 null 时不滚.
+  const activeTarget = extTarget ?? internalTarget
 
   const renderBlocks = useMemo<JsonlRenderBlock[]>(() => {
     const blocks: JsonlRenderBlock[] = []
@@ -230,9 +306,14 @@ export function JsonlView({
       <VirtualizedBlockList
         blocks={renderBlocks}
         renderBlock={renderBlock}
-        scrollToKey={scrollTarget?.key ?? null}
-        scrollOffset={scrollTarget?.offset ?? 0}
-        onScrollToKeyDone={() => setScrollTarget(null)}
+        scrollToKey={activeTarget?.key ?? null}
+        scrollOffset={activeTarget?.offset ?? 0}
+        onScrollToKeyDone={() => {
+          // 到位 (或超时兜底) 后清除当前活跃跳转. 外部跳转还要通知上层清 URL 参数.
+          if (extTarget) onResolvedRef.current?.()
+          setExtTarget(null)
+          setInternalTarget(null)
+        }}
       />
     </div>
   )

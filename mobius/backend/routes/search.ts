@@ -121,6 +121,9 @@ interface Fragment {
   role: string;
   snippet: string;
   timestamp: string | null;
+  // 命中条目标识: 用于前端点击跳转到该条目所属的轮次卡片.
+  // claude 用 entry.uuid; codex response_item 无 uuid 时用 entry.id; 都没有则 null(前端走 ts 区间兜底).
+  uuid: string | null;
 }
 
 const fsp = fs.promises;
@@ -143,8 +146,38 @@ async function readJsonlTailOrFull(p: string): Promise<string | null> {
   } catch { return null; }
 }
 
+// 匹配器: 把 "大小写敏感 / 全字匹配" 两种维度统一成一个 findIndex(text)->idx 接口.
+// - 子串 (默认): 大小写不敏感走 toLowerCase, 敏感走原样 indexOf.
+// - 全字: 用 lookbehind/lookahead 锚定词边界 (\w = [A-Za-z0-9_], CJK 视为边界), exec().index 即命中起点.
+// matchLen 恒等于 q.length (全字命中的就是 q 本身), 供 windowAround 取窗口.
+interface Matcher { matchLen: number; findIndex: (text: string) => number; }
+function buildMatcher(q: string, caseSensitive: boolean, wholeWord: boolean): Matcher {
+  const matchLen = q.length;
+  if (wholeWord) {
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`(?<![\\w])${escaped}(?![\\w])`, caseSensitive ? 'g' : 'gi');
+    return {
+      matchLen,
+      findIndex: (text: string) => { re.lastIndex = 0; const m = re.exec(text || ''); return m ? m.index : -1; },
+    };
+  }
+  if (caseSensitive) {
+    return { matchLen, findIndex: (text: string) => (text || '').indexOf(q) };
+  }
+  const ql = q.toLowerCase();
+  return { matchLen, findIndex: (text: string) => (text || '').toLowerCase().indexOf(ql) };
+}
+
+function entryUuidOf(entry: any): string | null {
+  const u = entry?.uuid;
+  if (typeof u === 'string' && u) return u;
+  const id = entry?.id;
+  if (typeof id === 'string' && id) return id;
+  return null;
+}
+
 // 扫单个 session 的 primary + mobius sidecar, 收集 ≤ maxFragments 条命中片段.
-async function scanSession(sessionId: string, model: any, qLower: string, qlen: number, maxFragments: number): Promise<Fragment[]> {
+async function scanSession(sessionId: string, model: any, matcher: Matcher, maxFragments: number): Promise<Fragment[]> {
   const backendName = modelRegistry.backendNameForSessionModel(model);
   const backend = agents.get(backendName);
   const primaryPath = typeof backend?._resolveJsonlPath === 'function' ? backend._resolveJsonlPath(sessionId) : null;
@@ -161,28 +194,47 @@ async function scanSession(sessionId: string, model: any, qLower: string, qlen: 
     if (frags.length >= maxFragments) break;
     const text = await readJsonlTailOrFull(p);
     if (!text) continue;
-    // 整文件一次小写预判: 绝大多数文件不命中关键词, 一次 indexOf 跳过, 避免逐行小写化的开销.
-    if (text.toLowerCase().indexOf(qLower) < 0) continue;
+    // 整文件一次预判: 绝大多数文件不命中关键词, 一次匹配跳过, 避免逐行 parse 的开销.
+    // matcher.findIndex 对子串是 indexOf、对全字是 regex, 与逐行/提取后的判定同一口径, 不会漏判.
+    if (matcher.findIndex(text) < 0) continue;
     const lines = text.split('\n');
     for (const line of lines) {
       if (frags.length >= maxFragments) break;
       if (!line) continue;
-      // 廉价: 原始行小写子串先判命中, 不命中跳过 (不 parse).
-      if (line.toLowerCase().indexOf(qLower) < 0) continue;
+      // 廉价: 原始行先判命中, 不命中跳过 (不 parse).
+      if (matcher.findIndex(line) < 0) continue;
       let entry: any;
       try { entry = JSON.parse(line); } catch { continue; }
       const ext = extractTextFromEntry(entry);
       if (!ext) continue;
-      const mIdx = ext.text.toLowerCase().indexOf(qLower);
+      const mIdx = matcher.findIndex(ext.text);
       if (mIdx < 0) continue;
-      const snippet = windowAround(ext.text, mIdx, qlen);
+      const snippet = windowAround(ext.text, mIdx, matcher.matchLen);
       const key = ext.role + '|' + snippet.slice(0, 60);
       if (seen.has(key)) continue;
       seen.add(key);
-      frags.push({ role: ext.role, snippet, timestamp: ext.timestamp });
+      frags.push({ role: ext.role, snippet, timestamp: ext.timestamp, uuid: entryUuidOf(entry) });
     }
   }
   return frags;
+}
+
+// ---- SSE 流式输出 ----
+// 结果随扫描完成逐条下发 (event: start → 多个 result → done), 避免用户等到 4s 预算结束才看到首批.
+// 与 sessions.ts 的 writeSse 同构: data 行把 payload 内的换行转成 "\ndata: " 以符合 SSE 多行 data 规范.
+function sseDataLine(payload: any): string {
+  return JSON.stringify(payload).replace(/\r?\n/g, '\ndata: ');
+}
+async function writeSse(res: express.Response, event: string, payload: any): Promise<boolean> {
+  if (res.writableEnded || res.destroyed) return false;
+  const frame = `event: ${event}\ndata: ${sseDataLine(payload)}\n\n`;
+  if (res.write(frame)) return true;
+  await new Promise<void>((resolve) => {
+    const done = () => { res.off('drain', done); res.off('close', done); resolve(); };
+    res.once('drain', done);
+    res.once('close', done);
+  });
+  return !(res.writableEnded || res.destroyed);
 }
 
 router.get('/', auth, async (req: express.Request, res: express.Response) => {
@@ -196,7 +248,14 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
     res.status(400).json({ error: '关键词过长' });
     return;
   }
-  const qLower = q.toLowerCase();
+  // 匹配选项: case=1 大小写敏感, word=1 全字匹配 (\w 词边界, CJK 视为边界).
+  const truthy = (v: any) => /^(1|true|yes)$/i.test(String(v || ''));
+  const caseSensitive = truthy(req.query.case);
+  const wholeWord = truthy(req.query.word);
+  const matcher = buildMatcher(q, caseSensitive, wholeWord);
+  // stream=1: 结果随扫描完成逐条以 SSE 下发 (前端增量渲染, 避免长等待). 默认仍返回单次 JSON.
+  const stream = truthy(req.query.stream);
+
   const projectId = String(req.query.project_id || '').trim() || null;
   const maxCandidates = clampInt(req.query.candidates, DEFAULT_CANDIDATES, 1, MAX_CANDIDATES);
   const limit = clampInt(req.query.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
@@ -247,10 +306,73 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
     if (canReadSession(user, row)) readable.push(row);
   }
 
+  // 组装单个 session 结果 (流式 / 批量共用).
+  const buildResult = (row: any, frags: Fragment[]) => ({
+    session_id: row.session_id,
+    session_name: row.name,
+    project_id: row.project_id,
+    project_name: row.project_name || '',
+    issue_id: row.scope_type === 'issue' ? row.issue_id : null,
+    issue_title: row.scope_type === 'issue' ? (row.issue_title || '') : null,
+    research_id: row.scope_type === 'research' ? row.research_id : null,
+    research_title: row.scope_type === 'research' ? (row.research_title || '') : null,
+    scope_type: row.scope_type,
+    last_active: row.last_active,
+    model: row.model,
+    fragments: frags,
+  });
+
   // 有界并发扫描 JSONL (重叠文件 I/O; JS 单线程, nextIdx/scannedCount 自增在 await 之间同步执行, 无竞态).
-  const fragsByIndex = new Map<number, Fragment[]>();
   let nextIdx = 0;
   let budgetStopped = false;
+
+  if (stream) {
+    // SSE: start → (result)* → done. 找到即发, 前端增量渲染; 客户端断开则停.
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // 禁用 nginx 缓冲, 帧立即下发
+    if (typeof (res as any).flushHeaders === 'function') (res as any).flushHeaders();
+    if (req.socket) req.socket.setTimeout(0);
+    let alive = true;
+    req.on('close', () => { alive = false; });
+    const writeFrame = async (event: string, payload: any) => { if (!alive) return; await writeSse(res, event, payload); };
+
+    await writeFrame('start', { query: q, range: rangeKey, candidate_sessions: readable.length });
+
+    let streamed = 0;
+    const worker = async () => {
+      while (!budgetStopped && alive) {
+        const myIdx = nextIdx++;
+        if (myIdx >= readable.length) return;
+        if (streamed >= limit) return; // 已达结果上限, 停止扫描
+        if (Date.now() - start > BUDGET_MS) { truncatedByBudget = true; budgetStopped = true; return; }
+        const row = readable[myIdx];
+        let ff: Fragment[];
+        try { ff = await scanSession(row.session_id, row.model, matcher, maxFragments); }
+        catch { ff = []; }
+        scannedCount++;
+        if (ff.length > 0 && streamed < limit && alive) {
+          streamed++;
+          await writeFrame('result', buildResult(row, ff));
+        }
+      }
+    };
+    const workerCount = Math.min(SCAN_CONCURRENCY, readable.length);
+    if (workerCount > 0) await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+    await writeFrame('done', {
+      truncated: truncatedByBudget,
+      scanned_sessions: scannedCount,
+      candidate_sessions: readable.length,
+      total: streamed,
+    });
+    res.end();
+    return;
+  }
+
+  // 非 stream: 批量扫描后一次返回 JSON (旧调用方兼容).
+  const fragsByIndex = new Map<number, Fragment[]>();
   const worker = async () => {
     while (!budgetStopped) {
       const myIdx = nextIdx++;
@@ -259,7 +381,7 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
       const row = readable[myIdx];
       let ff: Fragment[];
       try {
-        ff = await scanSession(row.session_id, row.model, qLower, q.length, maxFragments);
+        ff = await scanSession(row.session_id, row.model, matcher, maxFragments);
       } catch {
         ff = [];
       }
@@ -275,21 +397,7 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
   for (let i = 0; i < readable.length; i++) {
     const frags = fragsByIndex.get(i);
     if (!frags || frags.length === 0) continue;
-    const row = readable[i];
-    results.push({
-      session_id: row.session_id,
-      session_name: row.name,
-      project_id: row.project_id,
-      project_name: row.project_name || '',
-      issue_id: row.scope_type === 'issue' ? row.issue_id : null,
-      issue_title: row.scope_type === 'issue' ? (row.issue_title || '') : null,
-      research_id: row.scope_type === 'research' ? row.research_id : null,
-      research_title: row.scope_type === 'research' ? (row.research_title || '') : null,
-      scope_type: row.scope_type,
-      last_active: row.last_active,
-      model: row.model,
-      fragments: frags,
-    });
+    results.push(buildResult(readable[i], frags));
     if (results.length >= limit) break;
   }
 

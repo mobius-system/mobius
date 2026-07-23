@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ScrollText, ExternalLink, Network, Hash } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
@@ -1414,6 +1414,23 @@ export function ChatArea({ layout = 'default', onNewSession }: {
 } = {}) {
   const { currentSession, currentTask, currentIssue, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
   const navigate = useNavigate()
+  // 搜索结果跳转: URL 带 ?match=<uuid>&ts=<iso> 时, 把命中条目交给 JsonlView 滚到所属卡片.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const matchUuid = searchParams.get('match')
+  const matchTs = searchParams.get('ts')
+  const hasMatchTarget = !!(matchUuid || matchTs)
+  const matchTargetActiveRef = useRef(hasMatchTarget)
+  matchTargetActiveRef.current = hasMatchTarget
+  // 跳转到位后清掉 URL 里的 match/ts (replace, 不留历史), 避免刷新/切会话重复触发.
+  const onMatchScrollResolved = useCallback(() => {
+    setSearchParams((prev) => {
+      if (!prev.get('match') && !prev.get('ts')) return prev
+      const next = new URLSearchParams(prev)
+      next.delete('match')
+      next.delete('ts')
+      return next
+    }, { replace: true })
+  }, [setSearchParams])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [inputExpanded, setInputExpanded] = useState(false)
   const [inputMenuOpen, setInputMenuOpen] = useState(false)
@@ -2633,6 +2650,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   // 用 instant scroll (而非 smooth) + RAF: smooth 期间会持续触发 onScroll, 中间帧 distFromBottom>200
   // 会误把 userScrolledUp 翻成 true, 导致下一次 entry 抵达时不再自动滚.
   useEffect(() => {
+    // 搜索结果跳转进行中时不抢滚条, 让 JsonlView 的 scrollToKey 把视图钉到命中卡片.
+    if (matchTargetActiveRef.current) return
     if (userScrolledUp) {
       setHasNewMessages(true)
     } else {
@@ -3194,6 +3213,10 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           onLoadAllJsonl={handleLoadAllJsonl}
           onScrollPositionChange={handleJsonlScrollPositionChange}
           onJumpToBottom={jumpToJsonlBottom}
+          scrollToEntryUuid={matchUuid}
+          scrollToMatchTs={matchTs}
+          onMatchScrollResolved={onMatchScrollResolved}
+          onMatchScrollUnresolved={handleLoadAllJsonl}
         />
 
         {/* 右 32%: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽 (见 index.css .mobius-chat-input). */}

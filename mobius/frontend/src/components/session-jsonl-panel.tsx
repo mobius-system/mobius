@@ -22,6 +22,11 @@ type SessionJsonlPanelProps = {
   onLoadAllJsonl: () => void
   onScrollPositionChange: (userScrolledUp: boolean) => void
   onJumpToBottom: () => void
+  // 搜索结果跳转: 命中条目 uuid / timestamp, JsonlView 解析到所属轮次卡片后滚动.
+  scrollToEntryUuid?: string | null
+  scrollToMatchTs?: string | null
+  onMatchScrollResolved?: () => void
+  onMatchScrollUnresolved?: () => void
 }
 
 function SessionJsonlPanelInner({
@@ -44,6 +49,10 @@ function SessionJsonlPanelInner({
   onLoadAllJsonl,
   onScrollPositionChange,
   onJumpToBottom,
+  scrollToEntryUuid,
+  scrollToMatchTs,
+  onMatchScrollResolved,
+  onMatchScrollUnresolved,
 }: SessionJsonlPanelProps) {
   const effectiveTotal = jsonlTotal > loadedJsonlCount
     ? jsonlTotal - (loadedJsonlCount - visibleJsonl.length)
@@ -71,6 +80,10 @@ function SessionJsonlPanelInner({
               onLoadMore={onLoadAllJsonl}
               loadingMore={jsonlLoadingMore}
               showMeta={showJsonlMeta}
+              scrollToEntryUuid={scrollToEntryUuid}
+              scrollToMatchTs={scrollToMatchTs}
+              onScrollResolved={onMatchScrollResolved}
+              onScrollUnresolved={onMatchScrollUnresolved}
             />
             {backendAlive && backendWorking && (
               <JsonlLiveTailCard
