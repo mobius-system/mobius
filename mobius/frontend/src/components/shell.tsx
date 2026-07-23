@@ -578,7 +578,7 @@ function RecentSessionsPanel({
 
   return (
     <div
-      className="absolute left-0 top-10 z-50 flex max-h-[min(68vh,520px)] w-[360px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-lg p-1.5 shadow-xl"
+      className="absolute left-0 top-10 z-50 flex max-h-[calc(100vh-90px)] min-h-[240px] w-[360px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-lg p-1.5 shadow-xl"
       style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
       onClick={event => event.stopPropagation()}
     >
@@ -623,7 +623,7 @@ function RecentSessionsPanel({
           ))}
         </div>
       )}
-      <div className="overflow-y-auto py-1">
+      <div className="flex-1 min-h-0 overflow-y-auto py-1">
         {loading ? (
           <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
         ) : error ? (
