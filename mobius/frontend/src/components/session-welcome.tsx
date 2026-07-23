@@ -305,15 +305,6 @@ interface SelectionSnapshotResponse {
   legacy?: boolean
 }
 
-function formatSnapshotTime(iso?: string | null) {
-  if (!iso) return ''
-  try {
-    const d = new Date(iso)
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-  } catch { return iso }
-}
-
 export function SessionSkillMemoryEditor({
   sessionId,
 }: {
@@ -322,9 +313,6 @@ export function SessionSkillMemoryEditor({
   const [memories, setMemories] = useState<EditorItem[]>([])
   const [skills, setSkills] = useState<EditorItem[]>([])
   const [totals, setTotals] = useState({ skills: 0, memories: 0 })
-  const [snapshotAt, setSnapshotAt] = useState<string | null>(null)
-  const [source, setSource] = useState<string>('created')
-  const [legacy, setLegacy] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   // 按钮三态: idle / sending / done. key = `${kind}:${itemId}`
@@ -338,7 +326,6 @@ export function SessionSkillMemoryEditor({
       setMemories([])
       setSkills([])
       setTotals({ skills: 0, memories: 0 })
-      setSnapshotAt(null)
       setPreviewItem(null)
       setLoading(false)
       return () => { cancelled = true }
@@ -364,9 +351,6 @@ export function SessionSkillMemoryEditor({
           skills: snap.totals?.skills ?? skillItems.length,
           memories: snap.totals?.memories ?? memoryItems.length,
         })
-        setSnapshotAt(res.snapshot_at || null)
-        setSource(res.source || 'created')
-        setLegacy(!!res.legacy)
       })
       .catch((e: any) => {
         if (cancelled) return
@@ -544,40 +528,12 @@ export function SessionSkillMemoryEditor({
           </button>
         </div>
 
-        {/* 内联菜单: 直接占据 tab 下方剩余空间, 不再开弹窗. 无独立背景/边框/圆角, 无缝融入侧栏 */}
+        {/* 内联菜单: 直接占据 tab 下方剩余空间, 无独立背景/边框/圆角, 无缝融入侧栏 */}
         {activePanel && (
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div
-              className="flex items-center justify-between gap-2 border-b px-3 py-1.5"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              <div className="flex min-w-0 items-center gap-1.5">
-                {skillActive
-                  ? <Puzzle className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
-                  : <Brain className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />}
-                <span className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  {skillActive ? 'Skill' : 'Memory'}
-                </span>
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                  {skillActive ? `${enabledSkills}/${skillTotal} 启用` : `${enabledMemories}/${memoryTotal} 启用`}
-                </span>
-              </div>
-              {snapshotAt && (
-                <span
-                  className="truncate text-[10px]"
-                  style={{ color: 'var(--text-muted)' }}
-                  title={formatSnapshotTime(snapshotAt)}
-                >
-                  {formatSnapshotTime(snapshotAt)}
-                  {legacy ? ' · 兼容' : source === 'live' ? ' · 实时' : ''}
-                </span>
-              )}
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2">
-              {skillActive
-                ? renderList(skills, '暂无 Skill', 'skill')
-                : renderList(memories, '暂无 Memory', 'memory')}
-            </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            {skillActive
+              ? renderList(skills, '暂无 Skill', 'skill')
+              : renderList(memories, '暂无 Memory', 'memory')}
           </div>
         )}
       </div>
