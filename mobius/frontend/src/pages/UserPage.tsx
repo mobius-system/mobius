@@ -438,15 +438,6 @@ export default function UserPage() {
           data-tour="user-projects-sidebar"
           className="border-r flex flex-col"
           style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
-          <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-color)' }}>
-            <span className="text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-              所有项目 <span className="ml-1 text-[11px] font-medium">{visibleProjectCount}</span>
-            </span>
-            <button onClick={() => setShowNew(true)} title="新建项目" data-tour="user-sidebar-new-project"
-              className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-[var(--bg-hover)] text-blue-400 transition-colors">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            </button>
-          </div>
           <div className="px-3 py-2">
             <div className="relative">
               <svg className="w-3.5 h-3.5 absolute left-2.5 top-[9px]" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
