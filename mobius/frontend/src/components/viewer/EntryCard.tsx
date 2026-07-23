@@ -191,26 +191,19 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   // 正文是否实际挂载在 DOM. 展开: 立即挂载 (collapsed); 收起: 延迟到高度过渡结束再卸载.
   // (原生 <details> 收起会瞬间隐藏非 summary 子节点, 没法在其上做高度过渡, 故用 present 解耦挂载时机.)
   const [present, setPresent] = useState<boolean>(initialOpen)
-  // 正文是否展开到全高 (驱动 grid-template-rows: 1fr). 与 present 解耦:
-  //  - 展开: 先 present=true 挂载 (expanded=false ⇒ 0fr), paint 后再 expanded=true ⇒ 平滑长开.
+  // 正文是否展开到全高 (驱动 grid-template-rows: minmax(0,1fr)). 与 present 解耦:
+  //  - 展开: 先 present=true 挂载 (expanded=false ⇒ 0fr), 双 rAF 后 expanded=true ⇒ 平滑长开.
   //  - 收起: expanded=false ⇒ 平滑收起 (1fr→0fr), 过渡结束再 present=false 卸载.
   // 初始默认展开的卡片 present=expanded=true, 首屏直接 1fr 无过渡 —— 满足"仅人类操作播放动画".
-  // 用 grid 0fr↔1fr (而非 height/max-height): inner overflow:hidden 让内容只布局一次再被裁剪,
-  // 高度过渡期间不触发内容重排/重绘 —— 避免超大卡片 (10 万字符) 动画时的卡顿.
+  // 用 grid minmax(0,0fr)↔minmax(0,1fr): inner overflow:hidden 让内容只布局一次再被裁剪,
+  // 高度过渡期间不触发内容重排/重绘 —— 避免超大卡片动画时的卡顿.
   const [expanded, setExpanded] = useState<boolean>(initialOpen)
-  // present 由 false→true (用户展开挂载了 collapsed 正文) 时, 在 0fr 帧"绘制之后"再 expanded=true,
-  // 才能确保 grid 0fr→1fr 过渡真正触发 —— React 18 并发模式下 rAF/setTimeout 时机不可靠,
-  // 可能 0fr 与 1fr 在同一次绘制前提交导致过渡失效 (表现为瞬间跳变). useEffect 在浏览器 paint
-  // 之后异步执行, 保证 0fr 先绘制、1fr 再切换. 初始挂载被 firstMountRef 拦截, 默认展开卡片首屏无过渡.
-  const firstMountRef = useRef(true)
+  // 收起过渡结束后的卸载计时器 + 触发 0fr→1fr 的 rAF 句柄; 卸载时清理.
   const leaveTimerRef = useRef<number | null>(null)
-  useEffect(() => {
-    if (firstMountRef.current) { firstMountRef.current = false; return }
-    if (present && !expanded) setExpanded(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [present])
+  const expandRafRef = useRef<number | null>(null)
   useEffect(() => () => {
     if (leaveTimerRef.current != null) clearTimeout(leaveTimerRef.current)
+    if (expandRafRef.current != null) cancelAnimationFrame(expandRafRef.current)
   }, [])
   // 精简/字段模式复制按钮反馈: 点击后短暂切换为 Check 图标再还原.
   const [copied, setCopied] = useState<boolean>(false)
@@ -277,11 +270,17 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
               leaveTimerRef.current = null
             }, 200)
           } else {
-            // 展开: 立即打开 <details> 并挂载正文 (expanded=false ⇒ 0fr); expanded=true 由上面的
-            // useEffect 在 0fr 绘制后置位, 触发 0fr→1fr 平滑过渡.
+            // 展开: 立即打开 <details> 并挂载正文 (expanded=false ⇒ 0fr). 用"双 rAF"在 0fr 帧
+            // 绘制之后再把 expanded 置 true (⇒ 1fr), 确保过渡真正触发 —— 单 rAF 或 useEffect 都可能
+            // 在重型内容同步挂载时把 0fr/1fr 提交挤在同一次绘制前, 导致过渡失效瞬间跳变.
             setOpen(true)
             setPresent(true)
             setExpanded(false)
+            const r1 = requestAnimationFrame(() => {
+              const r2 = requestAnimationFrame(() => { setExpanded(true); expandRafRef.current = null })
+              expandRafRef.current = r2
+            })
+            expandRafRef.current = r1
           }
         }}>
         {showMeta && typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}

@@ -3020,7 +3020,7 @@ export async function runFirstIssueTourForPath(pathname: string, options: { forc
 // 也可由 guide-help 路线卡片手动重温. seen 门禁走后端 /api/profile/scene-seen/:scene (跨设备).
 // =====================================================================
 
-export type SceneTourKind = 'admin-center' | 'research-page' | 'aimux'
+export type SceneTourKind = 'admin-center' | 'research-page' | 'session-page' | 'aimux'
 
 // 无状态场景引导分发器: 启动前清场 (避免与 demo 路线冲突), 然后跑对应场景路线.
 // onDone 在引导真正启动且销毁时 (用户看完或跳过) 调用, controller 据此标记 seen 门禁.
@@ -3032,6 +3032,7 @@ export async function startSceneTour(scene: SceneTourKind, onDone?: (finished: b
   const onDestroyed = () => { try { onDone?.(true) } catch {} }
   if (scene === 'admin-center') started = await runAdminCenterTour(onDestroyed)
   else if (scene === 'research-page') started = await runResearchPageTour(onDestroyed)
+  else if (scene === 'session-page') started = await runSessionPageTour(onDestroyed)
   else if (scene === 'aimux') started = await runAimuxTour(onDestroyed)
   if (!started) {
     // 未启动: 不绑定 seen (该场景路线尚未实现, 避免静默标记吃掉未来引导).
@@ -3329,6 +3330,66 @@ async function runResearchPageTour(onDestroyed?: () => void): Promise<boolean> {
       ),
       doneBtnText: '完成',
       side: 'right',
+      align: 'start',
+    },
+  })
+
+  return launchDriver(steps, onDestroyed)
+}
+
+// Session 会话页首触引导. 仅在 controller 检测到有 currentSession 时触发 (无 session 不讲).
+// 5 个常驻按钮 (布局/发送/Skill&Memory/Bash命令/可合作计算机) 全部常驻渲染, 无需切视图,
+// 故直接用 addStepIfPresent 顺序讲解 (无 admin/research 的链式 step). 文案短句, 中文优先.
+async function runSessionPageTour(onDestroyed?: () => void): Promise<boolean> {
+  await waitForElement('[data-tour="session-chat-send"]', 4200)
+
+  const steps: DriveStep[] = []
+  addStepIfPresent(steps, '[data-tour="top-layout-toggle"]', {
+    popover: {
+      title: '切换工作区布局',
+      description: '在三种不同的工作布局之间快速切换（日常、代码、文件）。',
+      nextBtnText: '看发送',
+      doneBtnText: '我了解了',
+      side: 'bottom',
+      align: 'end',
+    },
+  })
+  addStepIfPresent(steps, '[data-tour="session-chat-send"]', {
+    popover: {
+      title: '发送指令',
+      description: '把写好的指令发给智能体执行。',
+      nextBtnText: '看 Skill 与记忆',
+      doneBtnText: '我了解了',
+      side: 'top',
+      align: 'start',
+    },
+  })
+  addStepIfPresent(steps, '[data-tour="session-memory-toggle"]', {
+    popover: {
+      title: 'Skill 与记忆',
+      description: '这里显示当前会话启用的技能和记忆，智能体忘了时可临时追加给它。',
+      nextBtnText: '看会话命令',
+      doneBtnText: '我了解了',
+      side: 'top',
+      align: 'start',
+    },
+  })
+  addStepIfPresent(steps, '[data-tour="session-bash-commands"]', {
+    popover: {
+      title: '查看会话命令',
+      description: '回看智能体执行过的所有 Bash 命令与结果。',
+      nextBtnText: '看可合作计算机',
+      doneBtnText: '我了解了',
+      side: 'top',
+      align: 'start',
+    },
+  })
+  addStepIfPresent(steps, '[data-tour="session-cooperable-pc"]', {
+    popover: {
+      title: '声明可合作计算机',
+      description: '生成一条声明直接发给智能体，告诉它需要时可调用 SSH 服务器算力，或与任意笔记本电脑、工作站、嵌入式设备、云 GPU 服务器协同工作。',
+      doneBtnText: '完成',
+      side: 'top',
       align: 'start',
     },
   })

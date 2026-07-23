@@ -4870,10 +4870,12 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
    避免超大卡片 (10 万字符) 动画时逐帧重绘子树造成的卡顿. contain 进一步隔离绘制. */
 .jsonl-card-body-wrap {
   display: grid;
-  grid-template-rows: 0fr;
+  /* minmax(0, 0fr)↔minmax(0, 1fr): 必须用 minmax(0, …) 才能真正收到 0 (默认轨道最小值是
+     auto/min-content, 裸 0fr 收不下去, 且 0fr/1fr 不可插值会瞬间跳变). 这是 grid 手风琴的标准写法. */
+  grid-template-rows: minmax(0, 0fr);
   transition: grid-template-rows .18s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.jsonl-card-body-wrap--open { grid-template-rows: 1fr; }
+.jsonl-card-body-wrap--open { grid-template-rows: minmax(0, 1fr); }
 .jsonl-card-body-inner {
   /* overflow:hidden 让 0fr 时裁掉溢出行高的内容; 不加 contain, 避免给内部代码差异/绝对定位
      子元素引入新的包含块. */

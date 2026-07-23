@@ -326,8 +326,8 @@ function VersionIndicator() {
       <span className="text-[12px] tabular-nums truncate" style={{ color: 'var(--text-secondary)' }}>
         {version}
       </span> */}
-      <span className="text-[11px] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>up</span>
-      <span className="text-[12px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+      <span className="text-[11px] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>UP</span>
+      <span className="text-[11px] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>
         {uptime}
       </span>
     </TopNavActionElement>

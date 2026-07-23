@@ -35,7 +35,7 @@ router.post('/tour-first-login-seen', auth, (req: express.Request, res: express.
 });
 
 // 场景级首触引导: 当前登录用户是否已看过某场景引导 (按用户×场景维度持久化, 跨设备生效).
-// :scene 取值白名单: admin-center / research-page / self-cognition (后端校验, 非白名单视为未看过).
+// :scene 取值白名单: admin-center / research-page / session-page / self-cognition (后端校验, 非白名单视为未看过).
 // 用途: 首次进入管理中心 / Research 课题页 / self-cognition 工作台时, 前端据此判断是否自动触发讲解.
 router.get('/scene-seen/:scene', auth, (req: express.Request, res: express.Response) => {
   const user = (req as any).user as { id?: string } | undefined;

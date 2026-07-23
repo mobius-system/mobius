@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowRight, BookOpen, CheckCircle2, ChevronDown, CircleQuestionMark, Download, PlayCircle, RefreshCw, Settings2, Sparkles, X, type LucideIcon } from 'lucide-react'
+import { ArrowRight, BookOpen, CheckCircle2, ChevronDown, CircleQuestionMark, Download, MessageSquare, PlayCircle, RefreshCw, Settings2, Sparkles, X, type LucideIcon } from 'lucide-react'
 import { api, useStore } from '../store'
 import { createBirthdayDemoState, readBirthdayDemoState } from '../services/birthday-demo'
 import { createProjectImportDemoState } from '../services/project-import-demo'
@@ -30,7 +30,7 @@ import {
 import { MobiusLogo } from './mobius-logo'
 
 type GuideDemoKind = 'birthday' | 'logo-review' | 'project-import' | 'context-setup' | 'self-evolve'
-type GuideSceneKind = 'scene-admin' | 'scene-research' | 'scene-aimux'
+type GuideSceneKind = 'scene-admin' | 'scene-research' | 'scene-session' | 'scene-aimux'
 type GuideRouteKind = 'intro' | GuideDemoKind | GuideSceneKind
 
 export const SELF_EVOLVE_DEMO_TIMESTAMP_TEXT = '自迭代演示时间：2026-06-13 02:21:36 UTC'
@@ -169,6 +169,14 @@ const GUIDE_ROUTES: Array<{
     description: '再次认识研究课题页的协作黑板、研究图谱和智能体团队，回顾多智能体协作。',
     action: '重温研究系统',
     icon: BookOpen,
+  },
+  {
+    kind: 'scene-session',
+    title: '重温会话页',
+    subtitle: '重新讲解会话页常用按钮',
+    description: '再次熟悉会话页的工作区布局切换、发送、Skill与记忆、会话命令和声明可合作计算机等常用按钮。',
+    action: '重温会话页',
+    icon: MessageSquare,
   },
   {
     kind: 'scene-aimux',
@@ -506,11 +514,13 @@ export function GuideHelpModal({ firstLogin = false, onClose }: GuideHelpModalPr
         window.setTimeout(() => startSelfEvolveDemoTour(patch), location.pathname === targetPath ? 80 : 260)
         return
       }
-      if (kind === 'scene-admin' || kind === 'scene-research' || kind === 'scene-aimux') {
-        const scene = kind === 'scene-admin' ? 'admin-center' : (kind === 'scene-aimux' ? 'aimux' : 'research-page')
+      if (kind === 'scene-admin' || kind === 'scene-research' || kind === 'scene-session' || kind === 'scene-aimux') {
+        const scene = kind === 'scene-admin'
+          ? 'admin-center'
+          : (kind === 'scene-aimux' ? 'aimux' : (kind === 'scene-session' ? 'session-page' : 'research-page'))
         onClose({ rememberNoAuto: true, started: true })
         // 派发场景引导请求; controller 监听后按 force 模式跳过 seen 检查直接启动 (不标记 seen).
-        // admin-center 由 controller 先打开 overlay 再启动; research-page 直接启动 (用户应在 research 页).
+        // admin-center 由 controller 先打开 overlay 再启动; research-page/session-page 直接启动 (用户应在对应页).
         window.setTimeout(() => {
           window.dispatchEvent(new CustomEvent('imac:scene-tour-request', { detail: { scene, force: true } }))
         }, 120)

@@ -71,6 +71,7 @@ function isUserHomePath(pathname: string, userId: string) {
 export function TourController() {
   const location = useLocation()
   const { user } = useStore()
+  const currentSession = useStore(s => s.currentSession)
   const [showFirstLoginGuide, setShowFirstLoginGuide] = useState(false)
   const [firstLoginOpenKey, setFirstLoginOpenKey] = useState('')
 
@@ -213,6 +214,12 @@ export function TourController() {
     if (researchMatch) armScene('research-page')
     else if (sceneMarkedSeenRef.current === 'research-page') sceneMarkedSeenRef.current = null
 
+    // Session 会话页路由触发 (/u/:user/p/:project/i/:issue). 仅在有 currentSession 时讲解,
+    // 未选 session 不弹 (发送 / Bash / 可合作计算机 等按钮依赖 session).
+    const issueMatch = /\/i\/[^/]+/.test(location.pathname)
+    if (issueMatch && currentSession?.session_id) armScene('session-page')
+    else if (sceneMarkedSeenRef.current === 'session-page') sceneMarkedSeenRef.current = null
+
     // 手动重温 (guide-help 路线卡片): 跳过 seen 检查直接启动, 不标记 seen (用户主动重看).
     // admin-center 需先打开 overlay; research-page 直接启动 (用户应在 research 页点).
     const onSceneTourRequest = (event: Event) => {
@@ -232,7 +239,7 @@ export function TourController() {
       window.removeEventListener('imac:admin-overlay-opened', onAdminOpened)
       window.removeEventListener('imac:scene-tour-request', onSceneTourRequest)
     }
-  }, [location.pathname, user?.id])
+  }, [location.pathname, user?.id, currentSession?.session_id])
 
   return showFirstLoginGuide
     ? <GuideHelpModal firstLogin onClose={closeFirstLoginGuide} />

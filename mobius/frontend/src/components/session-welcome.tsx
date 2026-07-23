@@ -469,7 +469,6 @@ export function SessionSkillMemoryEditor({
                 aria-label={`浏览 ${it.name} 的快照正文`}
               >
                 <Eye className="h-3 w-3" strokeWidth={1.9} />
-                <span>浏览</span>
               </button>
               <button
                 type="button"
@@ -519,6 +518,7 @@ export function SessionSkillMemoryEditor({
             type="button"
             onClick={() => setActivePanel(prev => (prev === 'memory' ? null : 'memory'))}
             aria-pressed={memActive}
+            data-tour="session-memory-toggle"
             className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${memActive ? 'border-cyan-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
             style={{ color: memActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
             disabled={loading}

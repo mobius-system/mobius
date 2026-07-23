@@ -117,13 +117,13 @@ const DEFAULTS: any = Object.freeze({
   // 管理员在本文件清掉某用户条目后, 该用户下次登录会重新看到首登引导.
   userFirstLoginSeen: {},
   // 场景级首触引导已看标记 (per-user × per-scene 嵌套字典). 与 userFirstLoginSeen 并行,
-  // 不影响首登引导. scene 取自 SCENE_SEEN_WHITELIST (admin-center/research-page/self-cognition).
+  // 不影响首登引导. scene 取自 SCENE_SEEN_WHITELIST (admin-center/research-page/session-page/self-cognition).
   // 结构: { [userId]: { [scene]: true } }. 清掉某用户某 scene 条目后, 该用户下次进入该场景重新触发引导.
   userSceneSeen: {},
 })
 
 // 场景级首触引导白名单 (防任意 scene 写入).
-const SCENE_SEEN_WHITELIST = ['admin-center', 'research-page', 'self-cognition'] as const
+const SCENE_SEEN_WHITELIST = ['admin-center', 'research-page', 'session-page', 'self-cognition'] as const
 function normalizeSceneForSeen(scene: any): string | null {
   const s = typeof scene === 'string' ? scene : ''
   return (SCENE_SEEN_WHITELIST as readonly string[]).includes(s) ? s : null

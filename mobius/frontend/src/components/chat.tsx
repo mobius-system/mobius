@@ -3454,6 +3454,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                   <AdvancedInteractionBtn
                     onClick={() => setBashCommandsOpen(true)}
                     disabled={!sessionId}
+                    data-tour="session-bash-commands"
                     label="查看运行命令"
                     tooltip="查看当前会话运行的所有Bash命令"
                     accent="emerald"
@@ -3499,6 +3500,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                   />
                   <AdvancedInteractionBtn
                     onClick={() => setCooperablePcOpen(true)}
+                    data-tour="session-cooperable-pc"
                     disabled={!currentSession?.session_id}
                     label="可合作计算机"
                     tooltip="声明可合作计算机 (勾选 aimux remote, 生成声明直接发给当前 agent, 不写 Memory)"
