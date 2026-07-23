@@ -3439,10 +3439,10 @@ export function ChatArea({ layout = 'default', onNewSession }: {
             </div>
           ) : (
             <div className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0">
-              {/* 超级会话按钮组: 3×3 子网格按功能分组, 行间加细分隔线; 视觉上均衡无孤行. */}
+              {/* 超级会话按钮组: 2×4 等分子网格 (奇数 9 个 = 8 入网格 + 1 主操作整行) + 行间细线 + 末尾独立主按钮. */}
               <div className="flex flex-col gap-1.5">
-                {/* Row 1: 会话回溯 (历史/回顾) */}
-                <div className="grid grid-cols-3 items-stretch gap-2">
+                {/* Row 1: 4 buttons (历史/工具) */}
+                <div className="grid grid-cols-4 items-stretch gap-2">
                   <AdvancedInteractionBtn
                     onClick={() => setFileChangesOpen(true)}
                     disabled={!sessionId}
@@ -3467,11 +3467,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     accent="blue"
                     icon={<History className="h-4 w-4" strokeWidth={1.9} />}
                   />
-                </div>
-                {/* Row separator */}
-                <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
-                {/* Row 2: 操作工具 */}
-                <div className="grid grid-cols-3 items-stretch gap-2">
                   <ProjectPortEntryButton
                     projectId={currentProjectId}
                     subPath={currentVscodeSubPath}
@@ -3479,6 +3474,11 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     triggerVariant="advanced"
                     onRequestRunProject={sendRunProjectPortPrompt}
                   />
+                </div>
+                {/* Row separator */}
+                <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
+                {/* Row 2: 4 buttons (工具/知识) */}
+                <div className="grid grid-cols-4 items-stretch gap-2">
                   <AdvancedInteractionBtn
                     onClick={() => setTerminalChoiceOpen(true)}
                     disabled={!currentSession?.session_id}
@@ -3495,11 +3495,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     accent="amber"
                     icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
                   />
-                </div>
-                {/* Row separator */}
-                <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
-                {/* Row 3: 知识与控制 */}
-                <div className="grid grid-cols-3 items-stretch gap-2">
                   <AdvancedInteractionBtn
                     onClick={() => setKnowledgeEditorOpen(true)}
                     disabled={!currentProjectId || !currentIssueId}
@@ -3518,16 +3513,19 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                       ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.9} />
                       : <Archive className="h-4 w-4" strokeWidth={1.9} />}
                   />
-                  <AdvancedInteractionBtn
-                    onClick={() => setContinueModalOpen(true)}
-                    disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
-                    label="修改模型并继续"
-                    tooltip="修改模型并继续"
-                    accent="violet"
-                    icon={<Replace className="h-4 w-4" strokeWidth={1.9} />}
-                  />
                 </div>
               </div>
+              {/* 独立主操作: 修改模型并继续 (全宽, 带文字标签, 与上方图标网格视觉区分) */}
+              <button
+                type="button"
+                onClick={() => setContinueModalOpen(true)}
+                disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
+                title="修改模型并继续"
+                className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border border-violet-500/20"
+              >
+                <Replace className="h-3.5 w-3.5" strokeWidth={2} />
+                <span>修改模型并继续</span>
+              </button>
                 <SessionSkillMemoryEditor
                   sessionId={currentSession?.session_id || sessionId}
                 />

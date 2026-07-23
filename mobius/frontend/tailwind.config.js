@@ -16,7 +16,7 @@ export default {
         tool: { bash: '#10B981', edit: '#8B5CF6', read: '#6366F1', web: '#F59E0B', agent: '#EC4899' },
       },
       fontFamily: {
-        sans: ['Inter', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
+        sans: ['Inter', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
         mono: ['JetBrains Mono', 'Cascadia Code', 'Fira Code', 'monospace'],
       },
     },

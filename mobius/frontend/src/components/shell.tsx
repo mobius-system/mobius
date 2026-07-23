@@ -10,7 +10,7 @@ import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, History, Menu, MessageSquare, Moon, Palette, Plus, Search, Sliders, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, History, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { pollRecursive } from '../services/polling'
@@ -493,11 +493,13 @@ function projectChipStyle(active: boolean): React.CSSProperties {
 function RecentSessionsPanel({
   open,
   userId,
+  userParam,
   activeSessionId,
   onPick,
 }: {
   open: boolean
   userId?: string
+  userParam?: string
   activeSessionId?: string
   onPick: () => void
 }) {
@@ -578,9 +580,21 @@ function RecentSessionsPanel({
       style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
       onClick={event => event.stopPropagation()}
     >
-      <div className="flex items-center gap-2 px-2.5 py-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
-        <History className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />
-        <span className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>近期活跃会话</span>
+      <div className="flex items-center justify-between gap-2 px-2.5 py-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
+        <div className="flex min-w-0 items-center gap-2">
+          <History className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />
+          <span className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>近期活跃会话</span>
+        </div>
+        <LinklessRouteButton
+          to={`/u/${userParam}/mobius_overview_cluster`}
+          onClick={onPick}
+          title="系统可视化 · 查看全局会话集群图谱"
+          className="inline-flex flex-shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium leading-none transition-colors hover:bg-[var(--bg-hover)]"
+          style={{ color: 'var(--text-secondary)' }}
+        >
+          <Network className="h-3.5 w-3.5" />
+          <span>系统可视化</span>
+        </LinklessRouteButton>
       </div>
       {projects.length > 1 && (
         <div className="flex flex-wrap gap-1 px-2 py-1.5" style={{ borderBottom: '1px solid var(--border-color)' }}>
@@ -972,6 +986,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               <RecentSessionsPanel
                 open={showRecentSessions}
                 userId={user?.id}
+                userParam={userParam}
                 activeSessionId={activeSessionId}
                 onPick={() => setShowRecentSessions(false)}
               />
