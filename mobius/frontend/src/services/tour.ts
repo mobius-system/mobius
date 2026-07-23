@@ -588,18 +588,29 @@ function addImmediateActionStepIfPresent(
   })
 }
 
-// 强制点击步: 隐藏 popover 的"下一步"按钮, 用户必须点击高亮元素本身才前进.
-// 在 capture 阶段监听元素 click (先于按钮自身 onClick 执行), 按钮原有功能仍真实触发;
-// 点击后可选关闭其打开的浮层 (closeSelector, 如 Bash 命令弹窗遮罩, 避免遮挡下一步) 再前进.
-// done=true 用于最后一步: 点击后销毁引导 (而非 moveNext). 其余步 moveNext 到下一步.
+// 强制点击步: 隐藏 popover 的"下一步"按钮, 用户必须点击高亮元素才前进.
+// 实现要点: driver.js 的 SVG stage 对位于滚动容器 (overflow-y-auto) 内的元素会拦截原生点击
+// (elementFromPoint 命中 svg path), 导致点元素反而触发 driver 的 overlay-close (引导被销毁).
+// 故不监听元素 click, 改在 document capture 阶段按点击坐标 hit-test 高亮元素 boundingRect:
+//   - 落在 popover 内 → 放行 (让 close/prev 按钮正常工作)
+//   - 落在高亮元素 rect 内 → 前进 (moveNext / done 时 destroy)
+//   - 落在 overlay → 阻止 driver close, 引导保留 (强制用户点高亮处)
+// done=true 用于最后一步: 点击后销毁引导.
+let activeClickAdvanceHandler: ((e: MouseEvent) => void) | null = null
+function clearClickAdvanceHandler() {
+  if (activeClickAdvanceHandler) {
+    document.removeEventListener('click', activeClickAdvanceHandler, true)
+    activeClickAdvanceHandler = null
+  }
+}
+
 function addClickToAdvanceStep(
   steps: DriveStep[],
   selector: string,
   popover: { title: string; description: string; doneBtnText?: string; side?: any; align?: any },
-  opts?: { closeSelector?: string; done?: boolean },
+  opts?: { done?: boolean },
 ) {
   if (!has(selector)) return
-  const closeSelector = opts?.closeSelector
   const isDone = !!opts?.done
   steps.push({
     element: selector,
@@ -614,34 +625,40 @@ function addClickToAdvanceStep(
     onHighlightStarted: (element: Element | undefined, _activeStep: DriveStep | undefined, dOpts: { driver: Driver }) => {
       element?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' })
       window.requestAnimationFrame(() => { try { dOpts.driver.refresh() } catch {} })
-      const el = element as HTMLElement | undefined
-      if (!el || (el as any).__tourClickAdvanceBound) return
-      ;(el as any).__tourClickAdvanceBound = true
-      const handler = () => {
-        el.removeEventListener('click', handler, true)
+      clearClickAdvanceHandler()
+      const handler = (e: MouseEvent) => {
+        const target = e.target as Element | null
+        if (target?.closest?.('.driver-popover')) return // popover 内 (close/prev 按钮) 放行
+        const el = document.querySelector(selector) as HTMLElement | null
+        if (!el) return
+        const r = el.getBoundingClientRect()
+        const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+        // 命中与否都拦截: capture 阶段 stopImmediatePropagation 阻止 bubble 阶段的 driver overlay-close.
+        e.stopImmediatePropagation()
+        e.preventDefault()
+        if (!inside) return // 点 overlay: 仅阻止 close, 引导保留
+        clearClickAdvanceHandler()
         window.setTimeout(() => {
-          if (closeSelector) clickIfPresent(closeSelector)
-          window.setTimeout(() => {
-            try {
-              if (isDone) dOpts.driver.destroy()
-              else dOpts.driver.moveNext()
-            } catch {}
-          }, closeSelector ? 180 : 40)
+          try {
+            if (isDone) dOpts.driver.destroy()
+            else dOpts.driver.moveNext()
+          } catch {}
         }, 60)
       }
-      el.addEventListener('click', handler, true)
+      activeClickAdvanceHandler = handler
+      document.addEventListener('click', handler, true)
     },
   } as any)
 }
 
-function launchDriver(steps: DriveStep[], onDestroyed?: () => void) {
+function launchDriver(steps: DriveStep[], onDestroyed?: () => void, opts?: { disableOverlayClose?: boolean }) {
   if (!steps.length) return false
 
   let currentDriver: Driver | null = null
   currentDriver = driver({
     animate: true,
     smoothScroll: true,
-    allowClose: true,
+    allowClose: !opts?.disableOverlayClose,
     allowKeyboardControl: true,
     overlayColor: '#020617',
     overlayOpacity: 0.58,
@@ -663,6 +680,7 @@ function launchDriver(steps: DriveStep[], onDestroyed?: () => void) {
       preserveActiveOnDestroy = false
       if (!shouldPreserveActive) deactivateActiveDemoTour()
       if (activeDriver === currentDriver) activeDriver = null
+      clearClickAdvanceHandler()
       onDestroyed?.()
     },
   })
@@ -3418,7 +3436,7 @@ async function runSessionPageTour(onDestroyed?: () => void): Promise<boolean> {
     description: '回看智能体执行过的所有 Bash 命令与结果。\n点击此按钮继续。',
     side: 'top',
     align: 'start',
-  }, { closeSelector: '[data-tour="session-bash-overlay"]' })
+  })
   addClickToAdvanceStep(steps, '[data-tour="session-cooperable-pc"]', {
     title: '声明可合作计算机',
     description: '生成一条声明直接发给智能体，告诉它需要时可调用 SSH 服务器算力，或与任意笔记本电脑、工作站、嵌入式设备、云 GPU 服务器协同工作。\n点击此按钮完成引导。',
@@ -3427,5 +3445,5 @@ async function runSessionPageTour(onDestroyed?: () => void): Promise<boolean> {
     align: 'start',
   }, { done: true })
 
-  return launchDriver(steps, onDestroyed)
+  return launchDriver(steps, onDestroyed, { disableOverlayClose: true })
 }
