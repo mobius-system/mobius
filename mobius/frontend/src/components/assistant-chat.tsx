@@ -69,6 +69,8 @@ type PanelInteraction = {
   startWidth: number
   startHeight: number
   edges: { n: boolean; s: boolean; e: boolean; w: boolean }
+  // 拖拽/缩放过程中的最新矩形 (clamp 后), mouseup 时一次性 commit 进 panelStyle
+  lastRect?: { left: number; top: number; width: number; height: number }
 }
 
 type AssistantPanelSize = 'compact' | 'expanded' | 'fullscreen'
@@ -785,6 +787,28 @@ function clampPanelRect(left: number, top: number, width: number, height: number
 
 function assistantFabMinTop() {
   return isDesktopClient() ? 64 : ASSISTANT_FAB_EDGE_MARGIN
+}
+
+// 把面板定位矩形写进 DOM (left/top/width/right/bottom/height).
+// r 为空对象时清空这些 inline style, 让面板回退到 CSS 默认定位.
+// 拖拽/缩放期间直接走此函数写 DOM (零 React rerender ⇒ 不卡顿);
+// panelStyle 变化 (commit / panelSize 重置) 时由 useLayoutEffect 再同步一次.
+function applyPanelRectToEl(el: HTMLElement, r: { left: number; top: number; width: number; height: number } | Record<string, never>) {
+  if ('width' in r) {
+    el.style.left = `${r.left}px`
+    el.style.top = `${r.top}px`
+    el.style.width = `${r.width}px`
+    el.style.height = `${r.height}px`
+    el.style.right = 'auto'
+    el.style.bottom = 'auto'
+  } else {
+    el.style.left = ''
+    el.style.top = ''
+    el.style.width = ''
+    el.style.height = ''
+    el.style.right = ''
+    el.style.bottom = ''
+  }
 }
 
 function isDesktopClient() {
@@ -2902,6 +2926,13 @@ export function AssistantChat() {
     }
   }, [isPanelFullscreen])
 
+  // panelStyle (定位矩形) 同步进 DOM. 拖拽/缩放期间不调 setPanelStyle (避免每帧重渲染
+  // 整个助理面板子树 ⇒ 卡顿), 改由 onMove 直接写 DOM; mouseup 时一次性 commit 进 panelStyle,
+  // 此 effect 再同步一次 (冗余但无害). panelSize 变化重置为 {} 时清空 inline 定位, 回退 CSS.
+  useLayoutEffect(() => {
+    if (panelRef.current) applyPanelRectToEl(panelRef.current, panelStyle as { left: number; top: number; width: number; height: number } | Record<string, never>)
+  }, [panelStyle])
+
   useEffect(() => {
     const onMove = (event: globalThis.MouseEvent) => {
       const interaction = interactionRef.current
@@ -2910,39 +2941,45 @@ export function AssistantChat() {
       const dx = event.clientX - interaction.startX
       const dy = event.clientY - interaction.startY
 
+      let next: { left: number; top: number; width: number; height: number }
       if (interaction.type === 'drag') {
-        const next = clampPanelRect(
+        next = clampPanelRect(
           interaction.startLeft + dx,
           interaction.startTop + dy,
           interaction.startWidth,
           interaction.startHeight,
         )
-        setPanelStyle({ left: next.left, top: next.top, right: 'auto', bottom: 'auto', width: next.width, height: next.height })
-        return
+      } else {
+        const { edges } = interaction
+        let left = interaction.startLeft
+        let top = interaction.startTop
+        let width = interaction.startWidth
+        let height = interaction.startHeight
+
+        if (edges.e) width = interaction.startWidth + dx
+        if (edges.s) height = interaction.startHeight + dy
+        if (edges.w) {
+          left = interaction.startLeft + dx
+          width = interaction.startWidth - dx
+        }
+        if (edges.n) {
+          top = interaction.startTop + dy
+          height = interaction.startHeight - dy
+        }
+        next = clampPanelRect(left, top, width, height)
       }
 
-      const { edges } = interaction
-      let left = interaction.startLeft
-      let top = interaction.startTop
-      let width = interaction.startWidth
-      let height = interaction.startHeight
-
-      if (edges.e) width = interaction.startWidth + dx
-      if (edges.s) height = interaction.startHeight + dy
-      if (edges.w) {
-        left = interaction.startLeft + dx
-        width = interaction.startWidth - dx
-      }
-      if (edges.n) {
-        top = interaction.startTop + dy
-        height = interaction.startHeight - dy
-      }
-
-      const next = clampPanelRect(left, top, width, height)
-      setPanelStyle({ left: next.left, top: next.top, right: 'auto', bottom: 'auto', width: next.width, height: next.height })
+      // 直接写 DOM, 不进 React state ⇒ 拖拽/缩放期间零 rerender ⇒ 不卡顿
+      interaction.lastRect = next
+      if (panelRef.current) applyPanelRectToEl(panelRef.current, next)
     }
 
     const onUp = () => {
+      const interaction = interactionRef.current
+      // 收尾: 把最终矩形一次性 commit 进 React state (仅这一次 rerender), 供后续渲染沿用
+      if (interaction && interaction.lastRect) {
+        setPanelStyle({ left: interaction.lastRect.left, top: interaction.lastRect.top, right: 'auto', bottom: 'auto', width: interaction.lastRect.width, height: interaction.lastRect.height })
+      }
       interactionRef.current = null
     }
 
@@ -3666,7 +3703,8 @@ export function AssistantChat() {
           ref={panelRef}
           data-testid="assistant-panel"
           className={`assistant-panel fixed z-[60] rounded-2xl shadow-2xl overflow-hidden ${panelSizeClass}`}
-          style={panelStyle}
+          /* 定位矩形 (panelStyle) 不走 inline style: 改由 useLayoutEffect + 拖拽直接写 DOM,
+             避免 React rerender 用 stale 值覆盖拖拽中的实时位置, 也避免每帧重渲染面板子树 */
         >
           {!isPanelFullscreen ? (
             <>

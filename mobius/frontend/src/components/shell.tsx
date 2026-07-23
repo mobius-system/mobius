@@ -443,6 +443,8 @@ function recentSessionPath(userId: string | undefined, session: RecentSession) {
 // 近期会话本地缓存 (stale-while-revalidate): 打开下拉先秒显本地缓存, 后台静默刷新。
 // 缓存按用户隔离; TTL 内视为新鲜直接跳过网络; 写入的是已过滤排序后的列表。
 const RECENT_CACHE_TTL_MS = 60_000
+// 近期活跃会话下拉最多展示多少条 (与后端 GET /api/tasks/recent 的 limit 上限保持一致)。
+const RECENT_SESSION_LIMIT = 50
 function recentSessionsCacheKey(userId?: string) {
   return userId ? `mobius:recent-sessions:${userId}` : ''
 }
@@ -450,7 +452,7 @@ function normalizeRecent(arr: unknown): RecentSession[] {
   return (Array.isArray(arr) ? (arr as any[]) : [])
     .filter((s: any) => s?.session_id && s?.status !== 'archived')
     .sort((a: any, b: any) => new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime())
-    .slice(0, 12)
+    .slice(0, RECENT_SESSION_LIMIT)
 }
 function readRecentCache(userId?: string): { list: RecentSession[]; ts: number } | null {
   const key = recentSessionsCacheKey(userId)
@@ -552,7 +554,7 @@ function RecentSessionsPanel({
     }
 
     // 3) 后台静默刷新 (revalidate)
-    api('/api/tasks/recent?limit=12')
+    api(`/api/tasks/recent?limit=${RECENT_SESSION_LIMIT}`)
       .then((arr: any) => {
         if (cancelled) return
         const list = normalizeRecent(arr)

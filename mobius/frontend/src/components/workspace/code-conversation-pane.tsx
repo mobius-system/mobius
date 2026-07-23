@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText } from 'lucide-react'
 import { api } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
@@ -106,6 +106,12 @@ function loadCodeSkin(): CodeSkinKey {
   } catch { return 'dark' }
 }
 
+// 自动换行持久化: 默认关 (一行就是一行, 长行横向滚动), Alt+Z / 工具栏按钮切换.
+const CODE_WORD_WRAP_STORAGE_KEY = 'mobius:ui:code-editor-word-wrap'
+function loadCodeWordWrap(): boolean {
+  try { return localStorage.getItem(CODE_WORD_WRAP_STORAGE_KEY) === '1' } catch { return false }
+}
+
 export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: CodeConversationPaneProps) {
   const desktop = getDesktopBridge()
   const isDesktop = !!desktop?.isDesktop
@@ -119,6 +125,15 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     setSkin(prev => {
       const next = prev === 'dark' ? 'light' : 'dark'
       try { localStorage.setItem(CODE_SKIN_STORAGE_KEY, next) } catch { /* 静默 */ }
+      return next
+    })
+  }, [])
+  // ★ 自动换行: 默认关 (一行就是一行), Alt+Z 或工具栏按钮切换, 自带持久化 (仅 CodeMirror 代码编辑器生效).
+  const [wordWrap, setWordWrap] = useState<boolean>(() => loadCodeWordWrap())
+  const toggleWordWrap = useCallback(() => {
+    setWordWrap(prev => {
+      const next = !prev
+      try { localStorage.setItem(CODE_WORD_WRAP_STORAGE_KEY, next ? '1' : '0') } catch { /* 静默 */ }
       return next
     })
   }, [])
@@ -878,6 +893,15 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
                   {mdPreview ? '源码' : '富文本'}
                 </button>
               )}
+              {/* ★ 自动换行开关: 仅代码编辑器 (CodeMirror) 生效, WYSIWYG 富文本模式不显示. Alt+Z 也可切换. */}
+              {fileData && !fileData.binary && !fileData.truncated && !(mdFile && mdPreview) && (
+                <button type="button" onClick={toggleWordWrap}
+                  title={wordWrap ? '自动换行: 开 (Alt+Z 切换)' : '自动换行: 关 (Alt+Z 切换)'}
+                  className={`inline-flex h-6 w-6 items-center justify-center rounded transition-colors ${cc.hover}`}
+                  style={{ color: wordWrap ? cc.accent : cc.muted }}>
+                  <WrapText className="w-3.5 h-3.5" />
+                </button>
+              )}
               {/* ★ 代码区独立明暗切换 (不随全局主题) */}
               <button type="button" onClick={toggleSkin} title={skin === 'dark' ? '切换为浅色代码区' : '切换为深色代码区'}
                 className={`inline-flex h-6 w-6 items-center justify-center rounded transition-colors ${cc.hover}`}
@@ -944,6 +968,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
                   value={doc}
                   skin={skin}
                   onChange={onChange}
+                  wrap={wordWrap}
+                  onToggleWrap={toggleWordWrap}
                 />
               </Suspense>
             )

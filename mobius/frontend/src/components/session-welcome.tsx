@@ -509,7 +509,6 @@ export function SessionSkillMemoryEditor({
             aria-pressed={skillActive}
             className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${skillActive ? 'border-blue-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
             style={{ color: skillActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
-            disabled={loading}
           >
             <Puzzle className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
             <span className="btn-label">Skill ({enabledSkills}/{skillTotal} 启用)</span>
@@ -521,7 +520,6 @@ export function SessionSkillMemoryEditor({
             data-tour="session-memory-toggle"
             className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${memActive ? 'border-cyan-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
             style={{ color: memActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
-            disabled={loading}
           >
             <Brain className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
             <span className="btn-label">Memory ({enabledMemories}/{memoryTotal} 启用)</span>

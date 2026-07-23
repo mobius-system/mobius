@@ -65,6 +65,9 @@ export function JsonlView({
   showMeta?: boolean
 }) {
   const [showAll, setShowAll] = useState(false)
+  // 点 "加载全部" 后置 true: 把所有轮次组 / 上文续接组强制展开 (尊重用户已手动折叠的组).
+  // 同时把 showAll 一并打开, 让加载到的头部条目也进入视窗, 真正 "全部可见且展开".
+  const [forceExpandAll, setForceExpandAll] = useState(false)
   const recent = useMemo(() => entries.slice(-(showAll ? entries.length : JSONL_INITIAL_WINDOW_SIZE)), [entries, showAll])
   const windowOffset = entries.length - recent.length
   const headerTitle = title === undefined ? 'JSONL' : title
@@ -135,7 +138,7 @@ export function JsonlView({
 
   const renderBlock = (block: JsonlRenderBlock) => {
     if (block.kind === 'continuation') {
-      return <ContinuationGroup items={block.items} onlyGroup={onlyGroup} showMeta={showMeta} />
+      return <ContinuationGroup items={block.items} onlyGroup={onlyGroup} forceExpandAll={forceExpandAll} showMeta={showMeta} />
     }
     if (block.kind === 'preItem') {
       const { entry, lineNo, bashResults, readResults } = block.item
@@ -155,6 +158,7 @@ export function JsonlView({
         isLast={block.index === rounds.length - 1}
         isSecondLast={block.index === rounds.length - 2}
         onlyGroup={onlyGroup}
+        forceExpandAll={forceExpandAll}
         showMeta={showMeta}
       />
     )
@@ -194,7 +198,13 @@ export function JsonlView({
         {/* {hasOmittedHead && <span className="text-[var(--text-muted)] text-[11px]">· 已显示尾部</span>} */}
         {hasRemoteMore && !!onLoadMore && (
           <button
-            onClick={() => { if (!loadingMore) onLoadMore() }}
+            onClick={() => {
+              if (loadingMore) return
+              onLoadMore()
+              // 加载全部后: 打开整窗 (showAll 让头部条目进入视窗) + 强制展开所有组, 一步 "全部可见且展开".
+              setShowAll(true)
+              setForceExpandAll(true)
+            }}
             disabled={!!loadingMore}
             className="text-[11px] px-2 py-0.5 rounded border border-[var(--border-color)] hover:bg-[var(--bg-hover)] text-[var(--text-muted)] disabled:opacity-50"
           >

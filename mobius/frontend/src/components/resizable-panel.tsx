@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import { useStore } from '../store'
@@ -98,13 +98,25 @@ export function ResizablePanel({
   const isMobile = useIsMobile()
   const mobileNavOpen = useStore(s => s.mobileNavOpen)
   const setMobileNavOpen = useStore(s => s.setMobileNavOpen)
+  const panelRef = useRef<HTMLElement>(null)
+  // 宽度走 imperative DOM, 不进 React inline style:
+  //  - 拖拽时直接写 style.width ⇒ 零 React rerender ⇒ 不卡顿 (旧实现每帧 setWidth
+  //    重渲染整个 children 子树, 重面板会爆帧)
+  //  - 任何 React rerender (父级轮询 tick 等) 也不会用 stale width 覆盖拖拽中的实时值,
+  //    因为 width 根本不在 React 控制的 inline style 里
   const dragStateRef = useRef<{
     startX: number
     startWidth: number
-    raf: number | null
+    currentWidth: number
     lastPersist: number
     pendingPersist: number | null
   } | null>(null)
+
+  // state 宽度 (mount / mouseup commit / 双击 / 切 storageKey) 同步进 DOM.
+  // useLayoutEffect 在 paint 前同步执行, 首屏无「无宽度」闪烁.
+  useLayoutEffect(() => {
+    if (panelRef.current) panelRef.current.style.width = `${width}px`
+  }, [width])
 
   // storageKey 变化时重新读取 (例如切换页面但仍想保留各自的偏好)
   useEffect(() => {
@@ -143,35 +155,36 @@ export function ResizablePanel({
     // side='left': 拖向右 (delta>0) 增宽; side='right': 拖向左 (delta<0) 增宽
     const candidate = side === 'left' ? drag.startWidth + delta : drag.startWidth - delta
     const next = clampWidth(candidate, minWidth, maxWidth)
-    if (drag.raf !== null) cancelAnimationFrame(drag.raf)
-    drag.raf = requestAnimationFrame(() => {
-      setWidth(next)
-      const now = Date.now()
-      if (now - drag.lastPersist > 100) {
-        persistWidth(next)
-        drag.lastPersist = now
-      } else if (drag.pendingPersist === null) {
-        drag.pendingPersist = window.setTimeout(() => {
-          persistWidth(next)
-          if (dragStateRef.current) dragStateRef.current.pendingPersist = null
-        }, 150) as unknown as number
-      }
-    })
+    drag.currentWidth = next
+    // 拖拽期间直接写 DOM, 不进 React state ⇒ 零 rerender ⇒ 不卡顿
+    if (panelRef.current) panelRef.current.style.width = `${next}px`
+    const now = Date.now()
+    if (now - drag.lastPersist > 100) {
+      persistWidth(next)
+      drag.lastPersist = now
+    } else if (drag.pendingPersist === null) {
+      drag.pendingPersist = window.setTimeout(() => {
+        const d = dragStateRef.current
+        if (d) {
+          persistWidth(d.currentWidth)
+          d.pendingPersist = null
+        }
+      }, 150) as unknown as number
+    }
   }, [minWidth, maxWidth, side, persistWidth])
 
   const handleMouseUp = useCallback(() => {
     const drag = dragStateRef.current
     if (!drag) return
-    if (drag.raf !== null) cancelAnimationFrame(drag.raf)
-    if (drag.pendingPersist !== null) {
-      clearTimeout(drag.pendingPersist)
-      // 收尾再 persist 一次, 保证最后的宽度落地
-      setWidth((w) => { persistWidth(w); return w })
-    }
+    if (drag.pendingPersist !== null) clearTimeout(drag.pendingPersist)
+    const final = drag.currentWidth
+    persistWidth(final)
     dragStateRef.current = null
     document.removeEventListener('mousemove', handleMouseMove)
     document.removeEventListener('mouseup', handleMouseUp)
     document.body.classList.remove('mobius-resizing')
+    // 收尾: 把最终宽度同步进 React state (仅这一次 rerender), 后续渲染沿用
+    setWidth(final)
   }, [handleMouseMove, persistWidth])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -180,7 +193,7 @@ export function ResizablePanel({
     dragStateRef.current = {
       startX: e.clientX,
       startWidth: width,
-      raf: null,
+      currentWidth: width,
       lastPersist: 0,
       pendingPersist: null,
     }
@@ -259,10 +272,11 @@ export function ResizablePanel({
   const handleClass = 'mobius-resizable-handle'
   return (
     <aside
+      ref={panelRef}
       data-tour={dataTour}
       className={['mobius-resizable', className || ''].filter(Boolean).join(' ')}
       style={{
-        width,
+        // width 不在此处: 由 panelRef + useLayoutEffect / 拖拽直接写 DOM 控制
         minWidth,
         maxWidth,
         flexShrink: 0,

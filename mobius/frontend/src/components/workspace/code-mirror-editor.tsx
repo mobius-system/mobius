@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
-import { EditorView, keymap } from '@codemirror/view'
+import { EditorView, keymap, type KeyBinding } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
 import type { Extension } from '@codemirror/state'
 import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
@@ -13,6 +13,10 @@ type CodeMirrorEditorProps = {
   value: string
   skin: CodeSkinKey
   onChange: (value: string) => void
+  /** 是否开启自动换行; 默认 false (一行就是一行, 长行横向滚动, 对齐 VS Code 默认 wordWrap=off). */
+  wrap?: boolean
+  /** Alt+Z / 工具栏按钮触发的切换回调. */
+  onToggleWrap?: () => void
 }
 
 const main_text_color_dark = '#c9c9c9'
@@ -71,7 +75,7 @@ const LANG_LOADERS: Record<string, () => Promise<Extension>> = {
   sql: () => import('@codemirror/lang-sql').then(m => m.sql()),
 }
 
-export function CodeMirrorEditor({ fileName, value, skin, onChange }: CodeMirrorEditorProps) {
+export function CodeMirrorEditor({ fileName, value, skin, onChange, wrap = false, onToggleWrap }: CodeMirrorEditorProps) {
   const [langExt, setLangExt] = useState<Extension | null>(null)
 
   useEffect(() => {
@@ -89,13 +93,18 @@ export function CodeMirrorEditor({ fileName, value, skin, onChange }: CodeMirror
 
   const theme: 'none' | typeof lightEditorTheme = skin === 'dark' ? 'none' : lightEditorTheme
   const extensions = useMemo(() => {
+    // Alt+Z 切换自动换行, 对齐 VS Code 的 toggleWordWrap. 默认关 (一行就是一行, 长行横向滚动).
+    const keybindings: KeyBinding[] = [indentWithTab]
+    if (onToggleWrap) {
+      keybindings.push({ key: 'Alt-z', preventDefault: true, run: () => { onToggleWrap(); return true } })
+    }
     const base = [
-      keymap.of([indentWithTab]),
-      EditorView.lineWrapping,
+      keymap.of(keybindings),
+      ...(wrap ? [EditorView.lineWrapping] : []),
       ...(langExt ? [langExt] : []),
     ]
     return skin === 'dark' ? [...base, darkSkinOverride, syntaxHighlighting(oneDarkHighlightStyle)] : base
-  }, [langExt, skin])
+  }, [langExt, skin, wrap, onToggleWrap])
 
   return (
     <CodeMirror

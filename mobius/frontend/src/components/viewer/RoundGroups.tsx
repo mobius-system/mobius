@@ -38,10 +38,10 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
   )
 }
 
-export function ContinuationGroup({ items, onlyGroup, showMeta = true }: { items: JsonlViewItem[]; onlyGroup: boolean; showMeta?: boolean }) {
-  // 只有一组时强制展开, 禁止折叠; 其它场景保留原默认折叠行为
-  const [open, setOpen] = useState(onlyGroup)
-  useEffect(() => { if (onlyGroup) setOpen(true) }, [onlyGroup])
+export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, showMeta = true }: { items: JsonlViewItem[]; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean }) {
+  // 只有一组时强制展开, 禁止折叠; forceExpandAll (点 "加载全部") 时也展开; 其它场景保留原默认折叠行为
+  const [open, setOpen] = useState(onlyGroup || forceExpandAll)
+  useEffect(() => { if (onlyGroup || forceExpandAll) setOpen(true) }, [onlyGroup, forceExpandAll])
   const firstSummary = items[0] ? buildHeaderSummary(items[0].entry).short : ''
 
   return (
@@ -87,21 +87,23 @@ export function ContinuationGroup({ items, onlyGroup, showMeta = true }: { items
   )
 }
 
-export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, showMeta = true }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; showMeta?: boolean }) {
-  // 追踪用户是否手动点击过折叠/展开. 一旦手动操作, 后续不再被 autoOpen 自动接管.
+export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, showMeta = true }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean }) {
+  // 追踪用户是否手动点击过折叠/展开. 一旦手动操作, 后续不再被 autoOpen/forceExpandAll 自动接管.
   // 实现"最新两轮自动展开, 除非人为折叠": 最新轮和上一轮默认展开, 更早的轮默认折叠;
   // 某轮升入最新两轮时自动展开, 跌出最新两轮时自动折叠; 用户手动操作过的轮尊重用户, 不再自动改.
   // (倒数第二轮保持展开, 让刚问完的上一轮不随新轮出现而被折叠掉.)
+  // forceExpandAll (点 "加载全部"): 把所有轮强制展开, 让 "加载全部" 后整段对话一次可见; 仍尊重用户手动折叠.
   const autoOpen = isLast || isSecondLast
   const userToggledRef = useRef(false)
-  const [open, setOpen] = useState(autoOpen || onlyGroup)
+  // 初始值含 forceExpandAll: 避免虚拟列表里新滚入的轮先以折叠态绘制再被 effect 掀开 (闪一下).
+  const [open, setOpen] = useState(forceExpandAll || autoOpen || onlyGroup)
 
-  // onlyGroup 时永远保持展开; 否则跟随 autoOpen 自动展开/折叠, 但用户手动操作过则尊重用户.
+  // onlyGroup 时永远保持展开; 否则跟随 forceExpandAll/autoOpen 自动展开/折叠, 但用户手动操作过则尊重用户.
   useEffect(() => {
     if (onlyGroup) { setOpen(true); return }
     if (userToggledRef.current) return
-    setOpen(autoOpen)
-  }, [autoOpen, onlyGroup])
+    setOpen(forceExpandAll || autoOpen)
+  }, [autoOpen, onlyGroup, forceExpandAll])
 
   const toggle = () => {
     userToggledRef.current = true
