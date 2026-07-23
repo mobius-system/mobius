@@ -192,18 +192,25 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   // (原生 <details> 收起会瞬间隐藏非 summary 子节点, 没法在其上做高度过渡, 故用 present 解耦挂载时机.)
   const [present, setPresent] = useState<boolean>(initialOpen)
   // 正文是否展开到全高 (驱动 grid-template-rows: 1fr). 与 present 解耦:
-  //  - 展开: 先 present=true 挂载 (expanded=false ⇒ 0fr), 下一帧 expanded=true ⇒ 平滑长开 (0fr→1fr).
+  //  - 展开: 先 present=true 挂载 (expanded=false ⇒ 0fr), paint 后再 expanded=true ⇒ 平滑长开.
   //  - 收起: expanded=false ⇒ 平滑收起 (1fr→0fr), 过渡结束再 present=false 卸载.
   // 初始默认展开的卡片 present=expanded=true, 首屏直接 1fr 无过渡 —— 满足"仅人类操作播放动画".
   // 用 grid 0fr↔1fr (而非 height/max-height): inner overflow:hidden 让内容只布局一次再被裁剪,
   // 高度过渡期间不触发内容重排/重绘 —— 避免超大卡片 (10 万字符) 动画时的卡顿.
   const [expanded, setExpanded] = useState<boolean>(initialOpen)
-  // 收起高度过渡结束后的卸载计时器 + 触发 0fr→1fr 的 rAF 句柄; 卸载时清理.
+  // present 由 false→true (用户展开挂载了 collapsed 正文) 时, 在 0fr 帧"绘制之后"再 expanded=true,
+  // 才能确保 grid 0fr→1fr 过渡真正触发 —— React 18 并发模式下 rAF/setTimeout 时机不可靠,
+  // 可能 0fr 与 1fr 在同一次绘制前提交导致过渡失效 (表现为瞬间跳变). useEffect 在浏览器 paint
+  // 之后异步执行, 保证 0fr 先绘制、1fr 再切换. 初始挂载被 firstMountRef 拦截, 默认展开卡片首屏无过渡.
+  const firstMountRef = useRef(true)
   const leaveTimerRef = useRef<number | null>(null)
-  const expandRafRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (firstMountRef.current) { firstMountRef.current = false; return }
+    if (present && !expanded) setExpanded(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [present])
   useEffect(() => () => {
     if (leaveTimerRef.current != null) clearTimeout(leaveTimerRef.current)
-    if (expandRafRef.current != null) cancelAnimationFrame(expandRafRef.current)
   }, [])
   // 精简/字段模式复制按钮反馈: 点击后短暂切换为 Check 图标再还原.
   const [copied, setCopied] = useState<boolean>(false)
@@ -261,26 +268,20 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
           // 因此动画只在人类操作时触发; 初始默认展开的卡片首屏 expanded=直接 true 不过渡.
           e.preventDefault()
           if (leaveTimerRef.current != null) { clearTimeout(leaveTimerRef.current); leaveTimerRef.current = null }
-          if (expandRafRef.current != null) { cancelAnimationFrame(expandRafRef.current); expandRafRef.current = null }
           if (open) {
-            // 收起: <details> 暂不关, 让正文高度从 1fr 平滑过渡回 0fr (CSS .15s); 过渡结束再 setOpen(false)+卸载.
+            // 收起: <details> 暂不关, 让正文高度从 1fr 平滑过渡回 0fr (CSS .18s); 过渡结束再 setOpen(false)+卸载.
             setExpanded(false)
             leaveTimerRef.current = window.setTimeout(() => {
               setOpen(false)
               setPresent(false)
               leaveTimerRef.current = null
-            }, 170)
+            }, 200)
           } else {
-            // 展开: 立即打开 <details> 并挂载正文 (expanded=false ⇒ 0fr), 双 rAF 后 expanded=true ⇒ 平滑长开.
-            // 双 rAF 确保浏览器先把 0fr 帧提交, 再过渡到 1fr, 否则可能不触发过渡.
+            // 展开: 立即打开 <details> 并挂载正文 (expanded=false ⇒ 0fr); expanded=true 由上面的
+            // useEffect 在 0fr 绘制后置位, 触发 0fr→1fr 平滑过渡.
             setOpen(true)
             setPresent(true)
             setExpanded(false)
-            const r1 = requestAnimationFrame(() => {
-              const r2 = requestAnimationFrame(() => { setExpanded(true); expandRafRef.current = null })
-              expandRafRef.current = r2
-            })
-            expandRafRef.current = r1
           }
         }}>
         {showMeta && typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}

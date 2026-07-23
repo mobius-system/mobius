@@ -4871,7 +4871,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .jsonl-card-body-wrap {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows .15s ease;
+  transition: grid-template-rows .18s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .jsonl-card-body-wrap--open { grid-template-rows: 1fr; }
 .jsonl-card-body-inner {
