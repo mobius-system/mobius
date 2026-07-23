@@ -516,7 +516,7 @@ export function SessionSkillMemoryEditor({
 
   return (
     <>
-      <div className="flex flex-col gap-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
         {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗 */}
         <div className="grid grid-cols-2 items-stretch gap-2">
           <button
@@ -552,7 +552,7 @@ export function SessionSkillMemoryEditor({
         {/* 内联菜单: 直接占据 tab 下方剩余空间, 不再开弹窗 */}
         {activePanel && (
           <div
-            className="flex flex-col overflow-hidden rounded-lg border"
+            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border"
             style={{ background: 'var(--bg-tertiary, rgba(255,255,255,0.02))', borderColor: 'var(--border-color)' }}
           >
             <div
@@ -581,7 +581,7 @@ export function SessionSkillMemoryEditor({
                 </span>
               )}
             </div>
-            <div className="max-h-[300px] min-h-0 overflow-y-auto p-2">
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {skillActive
                 ? renderList(skills, '暂无 Skill', 'skill')
                 : renderList(memories, '暂无 Memory', 'memory')}

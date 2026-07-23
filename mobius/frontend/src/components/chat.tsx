@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ScrollText, ExternalLink, Network } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
@@ -1412,6 +1413,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   onNewSession?: () => void
 } = {}) {
   const { currentSession, currentTask, currentIssue, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
+  const navigate = useNavigate()
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [inputExpanded, setInputExpanded] = useState(false)
   const [inputMenuOpen, setInputMenuOpen] = useState(false)
@@ -2822,12 +2824,16 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     }
     setCurrentSession(created)
     setCurrentTask(created as any)
+    // 用 react-router navigate 更新 ?session=: 必须让 IssuePage 的 URL 真理源 effect
+    // (依赖 useSearchParams 的 sessionParam) 感知到新会话. 旧实现用 window.history.pushState
+    // 改 URL, react-router 不感知 → sessionParam 仍是旧值 → sessions 变化触发该 effect 重跑时
+    // 用旧 sessionParam 把 setCurrentSession 覆盖回旧会话, 表现为"不跳转".
     try {
       const url = new URL(window.location.href)
       url.searchParams.set('session', created.session_id)
-      window.history.pushState({}, '', url)
+      navigate(url.pathname + url.search + url.hash)
     } catch {}
-  }, [currentIssueId, sessionsMap, setCurrentSession, setCurrentTask, setSessionsMap])
+  }, [currentIssueId, sessionsMap, setCurrentSession, setCurrentTask, setSessionsMap, navigate])
 
   // 由"开始执行?"弹窗的「立即执行!」按钮触发: 自动用 Session 元数据
   // (name / description) 拼成第一条消息发出去, 不需要用户再输入.
@@ -3447,9 +3453,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
               <PlanningEditor projectId={currentProjectId} sessionId={sessionId} />
             </div>
           ) : (
-            <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3 pt-0">
-              <div className="space-y-2">
-                <div className="grid grid-cols-4 items-stretch gap-2 md:grid-cols-8">
+            <div className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0">
+              <div className="grid grid-cols-4 items-stretch gap-2 md:grid-cols-8">
                   <AdvancedInteractionBtn
                     onClick={() => setFileChangesOpen(true)}
                     disabled={!sessionId}
@@ -3519,7 +3524,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                 <SessionSkillMemoryEditor
                   sessionId={currentSession?.session_id || sessionId}
                 />
-              </div>
             </div>
           )}
         </div>
