@@ -10,7 +10,7 @@
  *  - 展开后默认: 可代码 → 代码模式; 可精简 → 精简模式; 其它 → 字段模式 (递归 KeyNode).
  *  - 超大卡片保护: entry + 工具结果渲染字符总量超 10 万时截断后再渲染, 避免前端卡顿崩溃.
  */
-import { Suspense, lazy, memo, useMemo, useState } from 'react'
+import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Code2, ListChecks, AlignLeft, Braces, Image as ImageIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { BLACKBOARD_MARKER } from '../jsonl-round-helpers'
@@ -184,10 +184,21 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   // 卡片展开态受控于本地 state, 跨父组件重渲染 (实时轮询追加 entry) 保持不变.
   // 能精简的纯文本卡片默认展开, 代码化卡片默认折叠; patch_apply / error 保留默认展开,
   // 父组件 defaultExpanded 仍能强制展开其它卡片.
-  // 用户手动折叠 → onToggle 写回 state, 此后重渲染不再强制掀开.
-  const [open, setOpen] = useState<boolean>(
+  // 用户手动折叠 → handleSummaryClick 写回 state, 此后重渲染不再强制掀开.
+  const initialOpen =
     isPatchApplyEvent || canPlan || (!canCode && (canCompact || canImage || type === 'error')) || !!defaultExpanded
-  )
+  const [open, setOpen] = useState<boolean>(initialOpen)
+  // 正文是否实际挂载在 DOM. 展开: 立即挂载; 收起: 延迟到淡出动画结束再卸载, 以便播放收起动画.
+  // (原生 <details> 收起会瞬间隐藏非 summary 子节点, 没法在其上做退出动画, 故用 present 解耦挂载时机.)
+  const [present, setPresent] = useState<boolean>(initialOpen)
+  // 正文入场/出场动画阶段. null = 无动画 —— 覆盖初始挂载: 默认展开的卡片首屏不播放入场动画,
+  // 只有用户手动点击 summary 才设 'enter'/'leave', 满足"仅人类操作播放动画"的要求.
+  const [phase, setPhase] = useState<'enter' | 'leave' | null>(null)
+  // 收起动画结束后的卸载计时器 (与 CSS .15s 动画对齐 + 小缓冲), 卸载时清掉避免对已卸载组件 setState.
+  const leaveTimerRef = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (leaveTimerRef.current != null) clearTimeout(leaveTimerRef.current)
+  }, [])
   // 精简/字段模式复制按钮反馈: 点击后短暂切换为 Check 图标再还原.
   const [copied, setCopied] = useState<boolean>(false)
   const tourTarget = jsonEntryTourTarget(entry)
@@ -234,9 +245,35 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
     <details
       data-tour={tourTarget}
       open={open}
-      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
       className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm card-enter ${theme.border} ${theme.bg}`}>
-      <summary className={`cursor-pointer px-3 py-1.5 flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
+      <summary
+        className={`cursor-pointer px-3 py-1.5 flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}
+        onClick={(e) => {
+          // preventDefault 阻止 <details> 原生切换 —— 原生收起会瞬间隐藏正文, 没法做退出动画.
+          // 改由本 handler 完全控制 open/present/phase, 展开/收起各播一段短暂动画.
+          // summary 的 Enter/Space 也会走到这里, 故键盘操作同样有动画. 只有本 handler 会改 phase,
+          // 因此动画只在人类操作时触发; 初始默认展开的卡片首屏 phase=null 不播放.
+          e.preventDefault()
+          if (leaveTimerRef.current != null) {
+            clearTimeout(leaveTimerRef.current)
+            leaveTimerRef.current = null
+          }
+          if (open) {
+            // 收起: <details> 暂不关, 让正文在仍可见时淡出 (CSS .15s); 结束后再 setOpen(false)+卸载.
+            setPhase('leave')
+            leaveTimerRef.current = window.setTimeout(() => {
+              setOpen(false)
+              setPresent(false)
+              setPhase(null)
+              leaveTimerRef.current = null
+            }, 160)
+          } else {
+            // 展开: 立即打开 <details> 并挂载正文, phase='enter' 播放入场动画.
+            setOpen(true)
+            setPresent(true)
+            setPhase('enter')
+          }
+        }}>
         {showMeta && typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
         {showMeta && ts && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
         <span className={`w-1.5 h-1.5 rounded-full ${theme.dot} flex-shrink-0`}></span>
@@ -325,8 +362,8 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
           )}
         </div>
       )}
-      {open && (
-        <div className="px-1 pb-1 pt-1">
+      {present && (
+        <div className={`px-1 pb-1 pt-1${phase === 'enter' ? ' jsonl-card-body--enter' : ''}${phase === 'leave' ? ' jsonl-card-body--leave' : ''}`}>
           {oversized && (
             <div className="mb-2 rounded border border-amber-500/30 bg-amber-500/[0.06] px-2 py-1 text-[11px] text-amber-200">
               ⚠ 该条目原始约 {totalChars.toLocaleString()} 字符, 超过 10 万字符渲染上限, 超出部分已截断以避免前端卡顿.

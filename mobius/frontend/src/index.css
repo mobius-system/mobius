@@ -4836,6 +4836,21 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   contain-intrinsic-size: auto 180px;
 }
 
+/* JsonlEntryCard 正文展开/收起动画: 仅在用户手动点击 summary 展开/收起时播放
+   (EntryCard 里 phase === 'enter' / 'leave' 才挂这两个 class; 初始默认展开的卡片首屏
+   phase 为 null, 不播放). 只动 opacity + transform, 不动 height, 避免触发虚拟列表的
+   ResizeObserver 持续重排. leave 用 forwards 让正文停在 opacity 0, 计时器卸载时不可见. */
+.jsonl-card-body--enter { animation: jsonl-card-body-in .15s ease-out; }
+.jsonl-card-body--leave { animation: jsonl-card-body-out .15s ease-out forwards; }
+@keyframes jsonl-card-body-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes jsonl-card-body-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(-6px); }
+}
+
 /* jsonl 卡片右上角图标按钮的共享基底 (复制 / 模式切换等共用同一套尺寸与样式). */
 .jsonl-icon-button {
   width: 1.25rem;
