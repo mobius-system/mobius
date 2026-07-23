@@ -5120,6 +5120,22 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .prose-chat p { margin: .4em 0; }
 .prose-chat pre { max-width: 100%; background: var(--code-bg); border: 1px solid var(--code-border); border-radius: .5rem; padding: .75rem 1rem; overflow-x: auto; margin: .6em 0; }
 .prose-chat pre code { display: block; white-space: pre; color: var(--code-text); }
+/* 代码块复制按钮: 外层 .prose-pre-wrap 托住按钮使其不随水平滚动滚走, 按钮默认半透明、悬停全显 */
+.prose-pre-wrap { position: relative; margin: .6em 0; }
+.prose-pre-wrap > pre { margin: 0; }
+.prose-code-copy-btn {
+  position: absolute; top: .4rem; right: .4rem; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.7rem; height: 1.7rem; padding: 0;
+  border-radius: .375rem;
+  border: 1px solid var(--code-border, var(--border-color-strong));
+  background: var(--bg-card-hover, rgba(255,255,255,.08));
+  color: var(--text-secondary);
+  cursor: pointer; opacity: .8;
+  transition: opacity .15s ease, background-color .15s ease, color .15s ease;
+}
+.prose-code-copy-btn:hover { opacity: 1; background: var(--bg-card-hover, rgba(255,255,255,.16)); color: var(--text-primary); }
+.prose-code-copy-btn:focus-visible { opacity: 1; outline: 2px solid var(--accent-color, #6366f1); outline-offset: 1px; }
 .prose-chat code { font-family: 'JetBrains Mono','Cascadia Code',monospace; font-size: .8rem; }
 .prose-chat :not(pre)>code { background: var(--prose-code-bg); padding: .15em .35em; border-radius: .25rem; color: var(--prose-code-color); }
 .prose-chat ul, .prose-chat ol { padding-left: 1.4em; margin: .4em 0; }

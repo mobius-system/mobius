@@ -4,7 +4,7 @@ import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, ComponentProps
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import remarkGfm from 'remark-gfm'
-import { AlertTriangle, Archive, BookOpen, ChevronsLeft, ChevronsRight, Eraser, ExternalLink, FilePlus2, Maximize2, Mic, Minimize2, RefreshCw, SendHorizontal, Settings, Square, Trash2, UserPlus, Volume2, VolumeX, X } from 'lucide-react'
+import { AlertTriangle, Archive, BookOpen, Check, ChevronsLeft, ChevronsRight, Copy, Eraser, ExternalLink, FilePlus2, Maximize2, Mic, Minimize2, RefreshCw, SendHorizontal, Settings, Square, Trash2, UserPlus, Volume2, VolumeX, X } from 'lucide-react'
 import { api, useStore } from '../store'
 import { AssistantPresetModal } from './assistant-preset-modal'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
@@ -270,13 +270,53 @@ function MarkdownAnchor({ href, children, node: _node, ...props }: ComponentProp
   )
 }
 
+// 代码块(```...```) 渲染器: 右上角叠一个复制按钮.
+// 外层包 position:relative 的 .prose-pre-wrap 托住按钮, 这样代码长行水平滚动时按钮不跟着滚走;
+// 复制内容取内层 pre 的 textContent(button 在 pre 外, 不含按钮自身文本), 兼容桌面端 clipboard 不可用时回退 execCommand.
+const CodePre = ({ children, node: _node, ...props }: ComponentPropsWithoutRef<'pre'> & { node?: unknown }) => {
+  const preRef = useRef<HTMLPreElement>(null)
+  const [copied, setCopied] = useState(false)
+  const handleCopy = useCallback(async () => {
+    const text = preRef.current?.textContent ?? ''
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      try { document.execCommand('copy') } catch { /* noop */ }
+      document.body.removeChild(ta)
+    }
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1500)
+  }, [])
+  return (
+    <div className="prose-pre-wrap">
+      <button
+        type="button"
+        className="prose-code-copy-btn"
+        onClick={handleCopy}
+        aria-label={copied ? '已复制' : '复制代码'}
+        title={copied ? '已复制' : '复制代码'}
+      >
+        {copied ? <Check className="h-3.5 w-3.5" strokeWidth={2} /> : <Copy className="h-3.5 w-3.5" strokeWidth={1.9} />}
+      </button>
+      <pre ref={preRef} {...props}>{children}</pre>
+    </div>
+  )
+}
+
 const AssistantMarkdown = memo(function AssistantMarkdown({ content }: { content: string }) {
   return (
     <div className="assistant-session-message__content prose-chat">
       <ReactMarkdown
         remarkPlugins={MARKDOWN_REMARK_PLUGINS as any}
         rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
-        components={{ a: MarkdownAnchor as any }}
+        components={{ a: MarkdownAnchor as any, pre: CodePre as any }}
       >
         {content}
       </ReactMarkdown>
