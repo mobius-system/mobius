@@ -116,9 +116,10 @@ export default function ResearchBlackboard({ researchId }: { researchId: string 
   useEffect(() => {
     if (!autoRefresh) return
     // 自递归轮询: 上一次返回(或超时放弃)后才排下一次, 10s 超时主动 abort, 卡顿时不堆积.
+    // 首次加载由挂载 effect (fetchBlackboard(false)) 负责, 这里 startImmediately:false 避免重复首请求.
     const stop = pollRecursive((signal) => {
       if (autoRefreshRef.current && !document.hidden) fetchBlackboard(true, signal)
-    }, REFRESH_INTERVAL_MS)
+    }, REFRESH_INTERVAL_MS, 10_000, { startImmediately: false })
     return () => stop()
   }, [autoRefresh, fetchBlackboard])
 

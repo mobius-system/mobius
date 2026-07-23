@@ -3714,8 +3714,8 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
   }, [])
 
   useEffect(() => {
-    refreshRemotes()
     // 自递归轮询: 上一次返回(或超时放弃)后才排下一次, 10s 超时主动 abort, 卡顿时不堆积.
+    // 首轮立即由 pollRecursive 发起, 无需再手动调一次.
     const stop = pollRecursive((signal) => refreshRemotes(signal), 3000)
     return () => stop()
   }, [refreshRemotes])
