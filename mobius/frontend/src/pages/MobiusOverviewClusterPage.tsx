@@ -767,7 +767,7 @@ function reconcileClusterModel(previous: ClusterModel, desired: ClusterModel): C
   }
 
   updateClusterShapes(parentClusters, projectClusters, creatorClusters)
-  resolveParentAndProjectOverlaps(parentClusters, projectClusters)
+  resolveParentAndProjectOverlaps(parentClusters, projectClusters, creatorClusters, desired.mode)
   if (desired.mode === 'creator') resolveCreatorClusterOverlaps(creatorClusters)
   return { mode: desired.mode, nodes, parentClusters, projectClusters, creatorClusters }
 }
@@ -1100,9 +1100,44 @@ function resolveSessionOverlaps(nodes: ClusterSession[]) {
   }
 }
 
-function resolveParentAndProjectOverlaps(parentClusters: ParentCluster[], projectClusters: ProjectCluster[]) {
+function resolveParentAndProjectOverlaps(
+  parentClusters: ParentCluster[],
+  projectClusters: ProjectCluster[],
+  creatorClusters: CreatorCluster[] = [],
+  mode: ClusterMode = 'project',
+) {
   const projectById = new Map(projectClusters.map((cluster) => [cluster.id, cluster]))
   const centerProject = dominantProjectCluster(projectClusters)
+  const creatorByProjectId = new Map<string, CreatorCluster>()
+  creatorClusters.forEach((creator) => creator.projects.forEach((project) => creatorByProjectId.set(project.id, creator)))
+  const centerCreator = dominantCreatorCluster(creatorClusters)
+  const separateProjects = (a: ProjectCluster | undefined, b: ProjectCluster | undefined, sep: Point) => {
+    if (!a || !b) return
+    const creatorA = creatorByProjectId.get(a.id)
+    const creatorB = creatorByProjectId.get(b.id)
+    if (mode === 'creator' && creatorA && creatorB && creatorA.id !== creatorB.id) {
+      if (creatorA.id === centerCreator?.id) {
+        translateCreatorCluster(creatorB, sep.x * 2, sep.y * 2)
+      } else if (creatorB.id === centerCreator?.id) {
+        translateCreatorCluster(creatorA, -sep.x * 2, -sep.y * 2)
+      } else {
+        translateCreatorCluster(creatorA, -sep.x, -sep.y)
+        translateCreatorCluster(creatorB, sep.x, sep.y)
+      }
+      return
+    }
+    const localCenter = mode === 'creator' && creatorA?.id === creatorB?.id
+      ? dominantProjectCluster(creatorA?.projects || [])
+      : centerProject
+    if (a.id === localCenter?.id) {
+      translateProjectCluster(b, sep.x * 2, sep.y * 2)
+    } else if (b.id === localCenter?.id) {
+      translateProjectCluster(a, -sep.x * 2, -sep.y * 2)
+    } else {
+      translateProjectCluster(a, -sep.x, -sep.y)
+      translateProjectCluster(b, sep.x, sep.y)
+    }
+  }
   updateClusterShapes(parentClusters, projectClusters)
 
   for (let iter = 0; iter < 10; iter += 1) {
@@ -1120,14 +1155,7 @@ function resolveParentAndProjectOverlaps(parentClusters: ParentCluster[], projec
         } else {
           const pa = projectById.get(a.projectId)
           const pb = projectById.get(b.projectId)
-          if (pa?.id === centerProject?.id) {
-            if (pb) translateProjectCluster(pb, sep.x * 2, sep.y * 2)
-          } else if (pb?.id === centerProject?.id) {
-            if (pa) translateProjectCluster(pa, -sep.x * 2, -sep.y * 2)
-          } else {
-            if (pa) translateProjectCluster(pa, -sep.x, -sep.y)
-            if (pb) translateProjectCluster(pb, sep.x, sep.y)
-          }
+          separateProjects(pa, pb, sep)
         }
       }
     }
@@ -1144,14 +1172,7 @@ function resolveParentAndProjectOverlaps(parentClusters: ParentCluster[], projec
         const sep = separateCircles(a.cx, a.cy, a.radius, b.cx, b.cy, b.radius, PROJECT_COLLISION_GAP)
         if (!sep) continue
         moved = true
-        if (a.id === centerProject?.id) {
-          translateProjectCluster(b, sep.x * 2, sep.y * 2)
-        } else if (b.id === centerProject?.id) {
-          translateProjectCluster(a, -sep.x * 2, -sep.y * 2)
-        } else {
-          translateProjectCluster(a, -sep.x, -sep.y)
-          translateProjectCluster(b, sep.x, sep.y)
-        }
+        separateProjects(a, b, sep)
       }
     }
     updateClusterShapes(parentClusters, projectClusters)
@@ -1359,7 +1380,7 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
   constrainSessionsToParents(parentClusters)
   resolveSessionOverlaps(nodes)
   updateClusterShapes(parentClusters, projectClusters, creatorClusters)
-  resolveParentAndProjectOverlaps(parentClusters, projectClusters)
+  resolveParentAndProjectOverlaps(parentClusters, projectClusters, creatorClusters, mode)
   if (mode === 'creator') resolveCreatorClusterOverlaps(creatorClusters)
   constrainSessionsToParents(parentClusters)
   resolveSessionOverlaps(nodes)
@@ -1376,7 +1397,7 @@ function tickProjectGatherOnly(parentClusters: ParentCluster[], projectClusters:
     attractProjectClusters(projectClusters, alpha)
   }
   updateClusterShapes(parentClusters, projectClusters, creatorClusters)
-  resolveParentAndProjectOverlaps(parentClusters, projectClusters)
+  resolveParentAndProjectOverlaps(parentClusters, projectClusters, creatorClusters, mode)
   if (mode === 'creator') resolveCreatorClusterOverlaps(creatorClusters)
   updateClusterShapes(parentClusters, projectClusters, creatorClusters)
 }
@@ -1758,7 +1779,7 @@ export default function MobiusOverviewClusterPage() {
   const modelRef = useRef<ClusterModel>({ mode: clusterMode, nodes: [], parentClusters: [], projectClusters: [], creatorClusters: [] })
   const selectedRef = useRef<Selection | null>(null)
   const didInitialFitRef = useRef(false)
-  const pendingAutoFitRef = useRef(false)
+  const pendingAutoFitRef = useRef(true)
   const settledAutoFitTimerRef = useRef<number | null>(null)
   const userViewportInteractedRef = useRef(false)
   const alphaRef = useRef(0.85)
@@ -2122,6 +2143,7 @@ export default function MobiusOverviewClusterPage() {
     const timer = window.setTimeout(() => {
       if (!pendingAutoFitRef.current) return
       pendingAutoFitRef.current = false
+      if (userViewportInteractedRef.current) return
       fitView(modelRef.current.nodes, 0.9, true)
       settledAutoFitTimerRef.current = window.setTimeout(() => {
         settledAutoFitTimerRef.current = null
