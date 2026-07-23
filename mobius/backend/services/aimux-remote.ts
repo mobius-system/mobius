@@ -96,10 +96,16 @@ function parseJsonOutput(result: any): any {
   catch { return null; }
 }
 
+// 把任意路径安全地嵌成 POSIX sh 单引号字面量 (单引号内一切都是字面, 只需转义单引号本身)
+function shSingleQuote(value: string): string {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 function remoteBrowseScript(targetPath: string): string {
+  // 注意: 不能用 `read -r TARGET` 从 stdin 读路径 —— dash 会把整段脚本缓冲, read 读不到内容,
+  // TARGET 退回 $HOME, 于是任何子目录点击都只会回到家目录 (子路径无法进入). 直接把路径嵌成字面量.
   return [
-    'IFS= read -r TARGET',
-    targetPath,
+    `TARGET=${shSingleQuote(targetPath)}`,
     'if [ -z "$TARGET" ]; then TARGET="$HOME"; fi',
     'if [ "$TARGET" = "~" ]; then TARGET="$HOME"; fi',
     'case "$TARGET" in "~/"*) TARGET="$HOME/${TARGET#~/}" ;; esac',
