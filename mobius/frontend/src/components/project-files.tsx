@@ -965,7 +965,10 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
   )
 }
 
-export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile, vscodeReady, selectedAbsPath, fileActionLabel, onContextMenu, onBlankContextMenu, renamingRelPath, renderRenameInput }: {
+// 文件树内部拖拽移动用的 dataTransfer MIME: 与 OS 文件拖拽 (ChatArea 的 'Files') 区分, 互不干扰.
+export const TREE_FILE_DND_MIME = 'application/x-mobius-tree-file'
+
+export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile, vscodeReady, selectedAbsPath, fileActionLabel, onContextMenu, onBlankContextMenu, renamingRelPath, renderRenameInput, onMoveEntry }: {
   relPath: string
   depth: number
   dirs: Record<string, DirState>
@@ -985,7 +988,48 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
   renamingRelPath?: string
   // v2 内联重命名: 输入框渲染器, 由宿主提供 (含提交/取消/loading)。
   renderRenameInput?: (target: FileTreeTarget) => ReactNode
+  // v2 拖拽移动: 拖动文件/目录到某目录时回调 (宿主执行 moveEntry + 刷新)。不传则节点不可拖拽。
+  onMoveEntry?: (source: FileTreeTarget, targetDir: string) => void
 }) {
+  const [dragOverRel, setDragOverRel] = useState<string | null>(null)
+  // ——— 拖拽移动 (仅 onMoveEntry 提供时启用; 自定义 MIME 与 OS 文件拖拽互不干扰) ———
+  const dndEnabled = !!onMoveEntry
+  const hasTreeFileDrag = (e: React.DragEvent) => !!e.dataTransfer && e.dataTransfer.types.includes(TREE_FILE_DND_MIME)
+  const onEntryDragStart = (e: React.DragEvent, entry: Entry, childPath: string) => {
+    if (!onMoveEntry) return
+    e.dataTransfer.setData(TREE_FILE_DND_MIME, JSON.stringify({ entry, relPath: childPath, parentRelPath: relPath }))
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  const onDirDragOver = (e: React.DragEvent, childPath: string) => {
+    if (!onMoveEntry || !hasTreeFileDrag(e)) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragOverRel !== childPath) setDragOverRel(childPath)
+  }
+  const onDirDrop = (e: React.DragEvent, childPath: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (dragOverRel !== null) setDragOverRel(null)
+    if (!onMoveEntry) return
+    const raw = e.dataTransfer.getData(TREE_FILE_DND_MIME)
+    if (!raw) return
+    try { onMoveEntry(JSON.parse(raw) as FileTreeTarget, childPath) } catch { /* 损坏的 payload, 忽略 */ }
+  }
+  const onLevelDragOver = (e: React.DragEvent) => {
+    if (!onMoveEntry || !hasTreeFileDrag(e)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+  const onLevelDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (dragOverRel !== null) setDragOverRel(null)
+    if (!onMoveEntry) return
+    const raw = e.dataTransfer.getData(TREE_FILE_DND_MIME)
+    if (!raw) return
+    try { onMoveEntry(JSON.parse(raw) as FileTreeTarget, relPath) } catch { /* 损坏的 payload, 忽略 */ }
+  }
   const state = dirs[relPath]
   if (!state) return null
   if (state.loading) return <div className="text-[11px] py-1 pl-4" style={{ color: 'var(--text-muted)' }}>加载中...</div>
@@ -997,6 +1041,8 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
         className="text-[11px] py-1 pl-4"
         style={{ color: 'var(--text-muted)' }}
         onContextMenu={onBlankContextMenu ? (event) => onBlankContextMenu(event, relPath) : undefined}
+        onDragOver={onLevelDragOver}
+        onDrop={onLevelDrop}
       >
         (空目录)
       </div>
@@ -1012,7 +1058,7 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
       }
     : undefined
   return (
-    <div>
+    <div onDragOver={onLevelDragOver} onDrop={onLevelDrop}>
       {entries.map(entry => {
         const childPath = relPath === '/' ? `/${entry.name}` : `${relPath}/${entry.name}`
         const isOpen = expanded.has(childPath)
@@ -1036,10 +1082,15 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
               ) : (
                 <button
                   data-tour={fileTourTarget(entry.name)}
+                  draggable={dndEnabled}
+                  onDragStart={(e) => onEntryDragStart(e, entry, childPath)}
+                  onDragOver={(e) => onDirDragOver(e, childPath)}
+                  onDragLeave={() => { if (dragOverRel === childPath) setDragOverRel(null) }}
+                  onDrop={(e) => onDirDrop(e, childPath)}
                   onClick={() => onToggleDir(childPath)}
                   onContextMenu={ctxHandler(entry, childPath)}
-                  className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--bg-card-hover)] transition-colors text-[12px]"
-                  style={{ paddingLeft: `${depth * 16 + 8}px`, color: 'var(--text-primary)' }}>
+                  className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[12px] ${dragOverRel === childPath ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
+                  style={{ paddingLeft: `${depth * 16 + 8}px`, color: 'var(--text-primary)', background: dragOverRel === childPath ? 'color-mix(in srgb, var(--accent-primary) 20%, transparent)' : undefined, outline: dragOverRel === childPath ? '1px solid color-mix(in srgb, var(--accent-primary) 55%, transparent)' : undefined, outlineOffset: '-1px' }}>
                   <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
@@ -1062,6 +1113,7 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
                   onBlankContextMenu={onBlankContextMenu}
                   renamingRelPath={renamingRelPath}
                   renderRenameInput={renderRenameInput}
+                  onMoveEntry={onMoveEntry}
                 />
               )}
             </div>
@@ -1085,6 +1137,8 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
           <button
             key={childPath}
             data-tour={fileTourTarget(entry.name)}
+            draggable={dndEnabled}
+            onDragStart={(e) => onEntryDragStart(e, entry, childPath)}
             onClick={() => vscodeReady && onOpenFile(entry)}
             onContextMenu={ctxHandler(entry, childPath)}
             disabled={!vscodeReady}

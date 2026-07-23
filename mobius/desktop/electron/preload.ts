@@ -74,6 +74,7 @@ const mobiusDesktop = {
   downloadProjectLocalFile: (projectId: string, path: string) => ipcRenderer.invoke("project:download-local-file", projectId, path),
   copyProjectLocalEntry: (projectId: string, sourcePath: string, targetDir: string) => ipcRenderer.invoke("project:copy-local-entry", projectId, sourcePath, targetDir),
   renameProjectLocalEntry: (projectId: string, path: string, newName: string) => ipcRenderer.invoke("project:rename-local-entry", projectId, path, newName),
+  moveProjectLocalEntry: (projectId: string, sourcePath: string, targetDir: string) => ipcRenderer.invoke("project:move-local-entry", projectId, sourcePath, targetDir),
   // 前端切主题后上报: 透明背景 + 当前主题文字色作窗口按钮图标色 (Win/Linux overlay 用)
   setTitleBarOverlay: (opts: { color?: string; symbolColor?: string; height?: number }) =>
     ipcRenderer.invoke("desktop:set-title-bar-overlay", opts),

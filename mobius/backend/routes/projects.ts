@@ -2834,6 +2834,69 @@ router.post('/:id/files/copy', auth, async (req: express.Request, res: express.R
   }
 });
 
+// POST /:id/files/move { sourcePath, targetDir } - 在项目目录内移动文件/目录到另一目录.
+// 跨目录 fs.rename 即移动 (同卷原子). 拒绝移动到自身/子目录; 同名 CONFLICT; 已在目标目录则空操作.
+router.post('/:id/files/move', auth, async (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  if (!ensureProjectWritable(res, project)) return;
+  const src = resolveProjectPath(project.bind_path, req.body?.sourcePath);
+  if ('error' in src) return res.status(400).json({ error: src.error, code: 'OUTSIDE_ROOT' });
+  const tgt = resolveProjectPath(project.bind_path, req.body?.targetDir);
+  if ('error' in tgt) return res.status(400).json({ error: tgt.error, code: 'OUTSIDE_ROOT' });
+  const { absPath: srcAbs, relPath: srcRel, root } = src;
+  const { absPath: tgtAbs, relPath: tgtRel } = tgt;
+  if (srcAbs === root) return res.status(400).json({ error: '不能移动项目根目录', code: 'INVALID_NAME' });
+  try {
+    let srcLst: fs.Stats;
+    try {
+      srcLst = await fs.promises.lstat(srcAbs);
+    } catch {
+      return res.status(404).json({ error: '源文件不存在', code: 'NOT_FOUND' });
+    }
+    if (srcLst.isSymbolicLink()) return res.status(400).json({ error: '不支持操作符号链接', code: 'SYMLINK_UNSUPPORTED' });
+    let tgtLst: fs.Stats;
+    try {
+      tgtLst = await fs.promises.lstat(tgtAbs);
+    } catch {
+      return res.status(404).json({ error: '目标目录不存在', code: 'NOT_FOUND' });
+    }
+    if (tgtLst.isSymbolicLink()) return res.status(400).json({ error: '不支持操作符号链接', code: 'SYMLINK_UNSUPPORTED' });
+    if (!tgtLst.isDirectory()) return res.status(400).json({ error: '目标必须是目录', code: 'INVALID_NAME' });
+    await assertNoSymlink(root, srcAbs);
+    await assertNoSymlink(root, tgtAbs);
+    try {
+      await fs.promises.access(tgtAbs, fs.constants.W_OK);
+    } catch {
+      return res.status(403).json({ error: '目标目录只读或无写权限', code: 'READ_ONLY' });
+    }
+    // 拒绝把目录移动到自身或其子目录.
+    if (srcLst.isDirectory() && isDirEqualOrChild(srcAbs, tgtAbs)) {
+      return res.status(400).json({ error: '不能将目录移动到自身或其子目录', code: 'CONFLICT' });
+    }
+    const baseName = path.basename(srcAbs);
+    const dstAbs = path.join(tgtAbs, baseName);
+    if (dstAbs !== root && !dstAbs.startsWith(root + path.sep)) {
+      return res.status(400).json({ error: '新路径越出项目根目录', code: 'OUTSIDE_ROOT' });
+    }
+    // 已在目标目录 (源父目录 === 目标): 空操作, 视为成功 (与复制语义对齐, 避免误报).
+    if (path.dirname(srcAbs) === tgtAbs) {
+      const cur = '/' + path.relative(root, srcAbs).replace(/\\/g, '/');
+      return res.json({ oldPath: srcRel, path: cur, name: baseName, moved: false });
+    }
+    // 同名冲突: 不静默覆盖.
+    try {
+      await fs.promises.lstat(dstAbs);
+      return res.status(409).json({ error: '目标目录已存在同名文件或目录，请先重命名', code: 'CONFLICT' });
+    } catch { /* 目标不存在, 继续 */ }
+    await fs.promises.rename(srcAbs, dstAbs);
+    const newPath = (tgtRel === '/' ? '' : tgtRel) + '/' + baseName;
+    res.json({ oldPath: srcRel, path: newPath, name: baseName, moved: true });
+  } catch (e) {
+    sendFileOpError(res, e);
+  }
+});
+
 // POST /:id/files/mkdir { parentPath, name } - 在项目目录内创建单个新目录。
 router.post('/:id/files/mkdir', auth, async (req: express.Request, res: express.Response) => {
   const project = loadReadableProject(req, res, String(req.params.id));

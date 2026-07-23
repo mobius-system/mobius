@@ -5928,3 +5928,24 @@ body.mobius-resizing .mobius-resizable-handle {
   height: 12px;
   color: var(--text-muted);
 }
+
+/* ===================================================================== */
+/* 代码对话 Markdown WYSIWYG 编辑器 (.cc-wysiwyg)                         */
+/* 复用全局 .prose-chat 排版; 这里只补 Tiptap/ProseMirror 编辑态特有的:    */
+/* 去除聚焦描边 / GFM 任务列表 / 行内代码与代码块等宽字体.                  */
+/* ===================================================================== */
+.cc-wysiwyg { box-sizing: border-box; }
+.cc-wysiwyg .ProseMirror { outline: none; min-height: 100%; }
+.cc-wysiwyg .ProseMirror:focus { outline: none; }
+.cc-wysiwyg .ProseMirror > *:first-child { margin-top: 0; }
+.cc-wysiwyg .ProseMirror code { font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace); }
+.cc-wysiwyg .ProseMirror pre { font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace); }
+.cc-wysiwyg .ProseMirror a { color: var(--accent-primary, #2563eb); text-decoration: underline; }
+/* GFM 任务列表 (Tiptap TaskList): checkbox + 内容, 与普通列表样式区分 */
+.cc-wysiwyg ul[data-type="taskList"] { list-style: none; padding: 0; margin: .4em 0; }
+.cc-wysiwyg ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: .5rem; margin: .2em 0; }
+.cc-wysiwyg ul[data-type="taskList"] li > label { flex-shrink: 0; margin: 0; display: inline-flex; align-items: center; height: 1.5em; }
+.cc-wysiwyg ul[data-type="taskList"] li > div { flex: 1 1 auto; min-width: 0; }
+.cc-wysiwyg ul[data-type="taskList"] li > div > p { margin: 0; }
+.cc-wysiwyg ul[data-type="taskList"] input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent-primary, #2563eb); cursor: pointer; }
+.cc-wysiwyg ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--text-muted); opacity: .7; }

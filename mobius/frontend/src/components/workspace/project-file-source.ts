@@ -7,6 +7,7 @@ import { FileOperationError, type FileOperationErrorCode, type FileSourceKind } 
 export type FileListResult = { entries: Entry[] }
 export type FileCopyResult = { path: string; type: 'file' | 'dir' }
 export type FileRenameResult = { oldPath: string; path: string; name: string }
+export type FileMoveResult = { oldPath: string; path: string; name: string }
 export type FileCreateKind = 'file' | 'dir'
 export type FileCreateResult = { path: string; type: FileCreateKind; name: string }
 
@@ -18,6 +19,7 @@ export interface ProjectFileSource {
   downloadFile(relPath: string): Promise<void>
   copyEntry(sourcePath: string, targetDir: string): Promise<FileCopyResult>
   renameEntry(relPath: string, newName: string): Promise<FileRenameResult>
+  moveEntry(sourcePath: string, targetDir: string): Promise<FileMoveResult>
   createEntry(parentPath: string, name: string, kind: FileCreateKind): Promise<FileCreateResult>
 }
 
@@ -90,6 +92,15 @@ export class HubProjectFileSource implements ProjectFileSource {
     await throwIfFileOpError(res)
     return await res.json()
   }
+  async moveEntry(sourcePath: string, targetDir: string): Promise<FileMoveResult> {
+    const res = await fetch(`/api/projects/${this.projectId}/files/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
+      body: JSON.stringify({ sourcePath, targetDir }),
+    })
+    await throwIfFileOpError(res)
+    return await res.json()
+  }
   async createEntry(parentPath: string, name: string, kind: FileCreateKind): Promise<FileCreateResult> {
     const endpoint = kind === 'dir' ? 'mkdir' : 'create'
     const res = await fetch(`/api/projects/${this.projectId}/files/${endpoint}`, {
@@ -120,6 +131,7 @@ export type DesktopFileBridge = {
   downloadProjectLocalFile(projectId: string, path: string): Promise<LocalFileOpResult>
   copyProjectLocalEntry(projectId: string, sourcePath: string, targetDir: string): Promise<LocalFileOpResult>
   renameProjectLocalEntry(projectId: string, path: string, newName: string): Promise<LocalFileOpResult>
+  moveProjectLocalEntry(projectId: string, sourcePath: string, targetDir: string): Promise<LocalFileOpResult>
 }
 
 // Electron 本机数据源。所有路径由主进程重新校验; 这里只把 { ok, error, code } 归一成异常。
@@ -149,6 +161,11 @@ export class LocalProjectFileSource implements ProjectFileSource {
     const r = await this.bridge.renameProjectLocalEntry(this.projectId, relPath, newName)
     this.unwrap(r, '重命名失败')
     return { oldPath: r.oldPath || relPath, path: r.path || relPath, name: r.name || newName }
+  }
+  async moveEntry(sourcePath: string, targetDir: string): Promise<FileMoveResult> {
+    const r = await this.bridge.moveProjectLocalEntry(this.projectId, sourcePath, targetDir)
+    this.unwrap(r, '移动失败')
+    return { oldPath: r.oldPath || sourcePath, path: r.path || sourcePath, name: r.name || '' }
   }
   async createEntry(_parentPath: string, _name: string, _kind: FileCreateKind): Promise<FileCreateResult> {
     throw new FileOperationError('READ_ONLY', '本机文件创建暂未接入桌面端')

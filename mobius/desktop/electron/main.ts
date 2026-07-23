@@ -1156,6 +1156,65 @@ ipcMain.handle("project:rename-local-entry", async (_e, projectId: string, rawPa
   }
 });
 
+// 本机移动: 源/目标 resolve + lstat + 中间目录符号链接校验; 拒绝目录移到自身/子目录;
+// 已在目标目录空操作; 同名 CONFLICT; 跨目录 fs.rename 即移动 (同卷原子)。
+ipcMain.handle("project:move-local-entry", async (_e, projectId: string, sourcePath: string, targetDir: string) => {
+  const src = resolveLocalProjectPath(projectId, sourcePath);
+  if ("error" in src) return { ok: false, error: src.error, code: "OUTSIDE_ROOT" };
+  const tgt = resolveLocalProjectPath(projectId, targetDir);
+  if ("error" in tgt) return { ok: false, error: tgt.error, code: "OUTSIDE_ROOT" };
+  const { absPath: srcAbs, relPath: srcRel, root } = src;
+  const { absPath: tgtAbs, relPath: tgtRel } = tgt;
+  if (srcAbs === root) return { ok: false, error: "不能移动项目根目录", code: "INVALID_NAME" };
+  try {
+    let srcLst: fs.Stats;
+    try {
+      srcLst = await fs.promises.lstat(srcAbs);
+    } catch {
+      return { ok: false, error: "源文件不存在", code: "NOT_FOUND" };
+    }
+    if (srcLst.isSymbolicLink()) return { ok: false, error: "不支持操作符号链接", code: "SYMLINK_UNSUPPORTED" };
+    let tgtLst: fs.Stats;
+    try {
+      tgtLst = await fs.promises.lstat(tgtAbs);
+    } catch {
+      return { ok: false, error: "目标目录不存在", code: "NOT_FOUND" };
+    }
+    if (tgtLst.isSymbolicLink()) return { ok: false, error: "不支持操作符号链接", code: "SYMLINK_UNSUPPORTED" };
+    if (!tgtLst.isDirectory()) return { ok: false, error: "目标必须是目录", code: "INVALID_NAME" };
+    await assertNoSymlink(root, srcAbs);
+    await assertNoSymlink(root, tgtAbs);
+    try {
+      await fs.promises.access(tgtAbs, fs.constants.W_OK);
+    } catch {
+      return { ok: false, error: "目标目录只读或无写权限", code: "READ_ONLY" };
+    }
+    if (srcLst.isDirectory() && isDirEqualOrChild(srcAbs, tgtAbs)) {
+      return { ok: false, error: "不能将目录移动到自身或其子目录", code: "CONFLICT" };
+    }
+    const baseName = basename(srcAbs);
+    const dstAbs = join(tgtAbs, baseName);
+    if (dstAbs !== root && !dstAbs.startsWith(root + sep)) {
+      return { ok: false, error: "新路径越出项目根目录", code: "OUTSIDE_ROOT" };
+    }
+    if (dirname(srcAbs) === tgtAbs) {
+      const cur = "/" + relative(root, srcAbs).replace(/\\/g, "/");
+      return { ok: true, oldPath: srcRel, path: cur, name: baseName };
+    }
+    try {
+      await fs.promises.lstat(dstAbs);
+      return { ok: false, error: "目标目录已存在同名文件或目录", code: "CONFLICT" };
+    } catch {
+      /* 目标不存在, 继续 */
+    }
+    await fs.promises.rename(srcAbs, dstAbs);
+    const newPath = (tgtRel === "/" ? "" : tgtRel) + "/" + baseName;
+    return { ok: true, oldPath: srcRel, path: newPath, name: baseName };
+  } catch (e) {
+    return localFileOpError(e);
+  }
+});
+
 // ——— 生命周期 ———
 // 单实例锁：避免重复启动多个进程（每个都会反连注册同一节点，造成 4 个进程 / 节点冲突）
 const gotLock = app.requestSingleInstanceLock();

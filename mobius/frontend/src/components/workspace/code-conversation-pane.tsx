@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff } from 'lucide-react'
 import { api } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
@@ -16,9 +16,11 @@ import {
   errorCodeToMessage,
   isNameValidClient,
   migrateExpandedPaths,
+  dirnameRel,
 } from './file-tree-ops'
 import { copyTextToClipboard } from '../../utils/clipboard'
 import type { CodeSkinKey } from './code-mirror-editor'
+import { MarkdownWysiwygEditor } from './markdown-wysiwyg-editor'
 
 const LazyCodeMirrorEditor = lazy(() => import('./code-mirror-editor').then(module => ({ default: module.CodeMirrorEditor })))
 
@@ -139,6 +141,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveOk, setSaveOk] = useState(false)
+  // ★ Markdown 编辑模式 (仅 .md 文件): 源码编辑 (CodeMirror) <-> 富文本 WYSIWYG 编辑; 切换文件时复位为源码.
+  const [mdPreview, setMdPreview] = useState(false)
 
   // ----- 右键菜单 / 文件操作状态 (设计文档 §9) -----
   // writable: 数据源是否可写 (hub 用 bind_path_writable; local 默认 true, 写权限由主进程 W_OK 兜底)。
@@ -150,6 +154,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const [creating, setCreating] = useState<{ kind: FileCreateKind; parentPath: string; name: string; submitting?: boolean; error?: string } | null>(null)
   // 正在粘贴的目录集合, 同一目录禁止并发粘贴 (设计文档 §15)。
   const [pastingDirs, setPastingDirs] = useState<Set<string>>(new Set())
+  // 正在移动的源条目集合, 同一源禁止并发移动 (设计同 pastingDirs)。
+  const [movingRels, setMovingRels] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<{ text: string; kind: 'info' | 'error' } | null>(null)
   const toastTimerRef = useRef<number | null>(null)
 
@@ -268,6 +274,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     setDoc('')
     setSaveError('')
     setSaveOk(false)
+    setMdPreview(false)
     try {
       const root = source === 'local' ? localBindPath : bindPath
       const rel = relPathUnderBind(entry.abs_path, root)
@@ -543,6 +550,85 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     }
   }
 
+  // 移动成功后同步状态: 刷新新旧父目录; 目录迁移 expanded/dirs 缓存; 当前编辑文件若在被移动
+  // 子树内, 用 root + newRel 计算新绝对路径 (跨目录移动, 不同于 rename 的同父目录假设)。
+  async function applyMove(target: FileTreeTarget, res: { path: string; name: string }) {
+    const oldRel = target.relPath
+    const newRel = res.path
+    const isDir = target.entry.type === 'dir'
+    const oldParent = target.parentRelPath
+    const newParent = dirnameRel(newRel)
+    await refreshDir(oldParent)
+    if (newParent !== oldParent) await refreshDir(newParent)
+    setExpanded(prev => new Set([...Array.from(prev), newParent]))
+    if (isDir) {
+      setExpanded(prev => migrateExpandedPaths(prev, oldRel, newRel))
+      setDirs(prev => {
+        const next: Record<string, DirState> = {}
+        for (const [k, v] of Object.entries(prev)) {
+          if (k === oldRel) next[newRel] = v
+          else if (k.startsWith(oldRel + '/')) next[newRel + k.slice(oldRel.length)] = v
+          else next[k] = v
+        }
+        return next
+      })
+    }
+    if (selected) {
+      const oldAbs = target.entry.abs_path
+      const under = selected.abs_path === oldAbs
+        || selected.abs_path.startsWith(oldAbs + '/')
+        || selected.abs_path.startsWith(oldAbs + '\\')
+      if (under) {
+        const root = (source === 'local' ? localBindPath : bindPath).replace(/\/+$/, '')
+        const newNodeAbs = root + newRel
+        const suffix = selected.abs_path.slice(oldAbs.length).replace(/\\/g, '/')
+        const newSelAbs = newNodeAbs + suffix
+        const isSelf = suffix === '' || suffix === '/'
+        setSelected(s => (s ? { ...s, name: isSelf ? res.name : s.name, abs_path: newSelAbs } : s))
+        setFileData(fd => {
+          if (!fd) return fd
+          const underRel = fd.path === oldRel || fd.path.startsWith(oldRel + '/')
+          const newFdRel = underRel ? (fd.path === oldRel ? newRel : newRel + fd.path.slice(oldRel.length)) : fd.path
+          return { ...fd, name: isSelf ? res.name : fd.name, path: newFdRel, abs_path: newSelAbs }
+        })
+      }
+    }
+  }
+
+  // 拖拽移动: 客户端前置校验 -> 必要时先保存当前编辑文件 -> fileSource.moveEntry -> applyMove。
+  async function onMoveEntry(source0: FileTreeTarget, targetDir: string) {
+    if (!source0) return
+    const srcRel = source0.relPath
+    const srcName = source0.entry.name
+    // 不能移动到自身/子目录; 已在目标目录则视为无操作 (与服务端语义一致)。
+    if (source0.entry.type === 'dir' && (targetDir === srcRel || targetDir.startsWith(srcRel + '/'))) {
+      showToast('不能移动到自身或其子目录', 'error'); return
+    }
+    if (dirnameRel(srcRel) === targetDir) { showToast(`「${srcName}」已在该目录中`); return }
+    if (movingRels.has(srcRel)) return
+    // 移动当前编辑文件或其祖先目录前, 若有未保存改动先保存 (路径将变化, 避免写回旧路径)。
+    if (dirty && selected) {
+      const oldAbs = source0.entry.abs_path
+      const under = selected.abs_path === oldAbs || selected.abs_path.startsWith(oldAbs + '/') || selected.abs_path.startsWith(oldAbs + '\\')
+      if (under) {
+        const saved = await save()
+        if (!saved) { showToast('保存未完成，已取消移动', 'error'); return }
+      }
+    }
+    setMovingRels(prev => new Set(prev).add(srcRel))
+    try {
+      const res = await fileSource.moveEntry(srcRel, targetDir)
+      await applyMove(source0, res)
+      showToast(`已移动「${srcName}」`)
+    } catch (e) {
+      const { code, msg } = opErrorMessage(e)
+      if (code !== 'CANCELLED') showToast(msg, 'error')
+      if (code === 'NOT_FOUND') { await refreshDir(source0.parentRelPath); if (targetDir !== source0.parentRelPath) await refreshDir(targetDir) }
+    } finally {
+      setMovingRels(prev => { const n = new Set(prev); n.delete(srcRel); return n })
+    }
+  }
+
   // 内联重命名渲染器 (传给 FileTreeLevel)。
   const renderRenameInput = (target: FileTreeTarget) => (
     <InlineRenameInput
@@ -615,6 +701,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
   const filesDefaultWidth = Math.max(180, Math.min(320, Math.floor(vw * 0.18)))
   const activeRootPath = source === 'local' ? localBindPath : bindPath
+  // 是否为可预览的 Markdown 文件 (非二进制/未截断) — 控制右上角预览切换按钮的显示.
+  const mdFile = !!selected && /\.(md|markdown)$/i.test(selected.name) && !!fileData && !fileData.binary && !fileData.truncated
 
   return (
     <div className="contents">
@@ -749,6 +837,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
               onBlankContextMenu={(e, relPath) => openTreeContextMenu(e, null, relPath)}
               renamingRelPath={rename?.target.relPath}
               renderRenameInput={renderRenameInput}
+              onMoveEntry={onMoveEntry}
             />
           )}
         </div>
@@ -777,6 +866,16 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
                   style={{ color: dirty ? cc.accent : cc.muted }}>
                   {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
                   保存
+                </button>
+              )}
+              {/* ★ Markdown 编辑模式切换: 源码编辑 <-> 富文本(WYSIWYG)编辑 (仅 .md 文件, 右上角) */}
+              {mdFile && (
+                <button type="button" onClick={() => setMdPreview(v => !v)}
+                  title={mdPreview ? '切换为源码编辑' : '切换为 Markdown 富文本编辑'}
+                  className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[11px] transition-colors ${cc.hover}`}
+                  style={{ color: mdPreview ? cc.accent : cc.muted }}>
+                  {mdPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  {mdPreview ? '源码' : '富文本'}
                 </button>
               )}
               {/* ★ 代码区独立明暗切换 (不随全局主题) */}
@@ -829,21 +928,25 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
               <div className="text-[11px]">如需编辑请在 VSCode 中打开</div>
             </div>
           ) : fileData ? (
-            <Suspense
-              fallback={(
-                <div className="flex h-full flex-col items-center justify-center gap-2" style={{ color: cc.muted }}>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <div className="text-[12px]">代码编辑器按需加载中…</div>
-                </div>
-              )}
-            >
-              <LazyCodeMirrorEditor
-                fileName={selected?.name || ''}
-                value={doc}
-                skin={skin}
-                onChange={onChange}
-              />
-            </Suspense>
+            mdFile && mdPreview ? (
+              <MarkdownWysiwygEditor value={doc} skin={skin} onChange={onChange} />
+            ) : (
+              <Suspense
+                fallback={(
+                  <div className="flex h-full flex-col items-center justify-center gap-2" style={{ color: cc.muted }}>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <div className="text-[12px]">代码编辑器按需加载中…</div>
+                  </div>
+                )}
+              >
+                <LazyCodeMirrorEditor
+                  fileName={selected?.name || ''}
+                  value={doc}
+                  skin={skin}
+                  onChange={onChange}
+                />
+              </Suspense>
+            )
           ) : null}
         </div>
       </div>
@@ -965,7 +1068,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
 // 注意: 过滤只覆盖已加载进 dirs 的目录 (懒加载, 未展开过的目录不参与),
 // 避免递归拉全树打爆大仓库; 用户先展开感兴趣的目录再过滤.
 // =====================================================================
-function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedAbsPath, filter, onContextMenu, onBlankContextMenu, renamingRelPath, renderRenameInput }: {
+function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedAbsPath, filter, onContextMenu, onBlankContextMenu, renamingRelPath, renderRenameInput, onMoveEntry }: {
   dirs: Record<string, DirState>
   expanded: Set<string>
   onToggleDir: (relPath: string) => void
@@ -976,6 +1079,7 @@ function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedA
   onBlankContextMenu?: (event: React.MouseEvent, relPath: string) => void
   renamingRelPath?: string
   renderRenameInput?: (target: FileTreeTarget) => React.ReactNode
+  onMoveEntry?: (source: FileTreeTarget, targetDir: string) => void
 }) {
   const q = filter.trim().toLowerCase()
   if (!q) {
@@ -994,6 +1098,7 @@ function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedA
         onBlankContextMenu={onBlankContextMenu}
         renamingRelPath={renamingRelPath}
         renderRenameInput={renderRenameInput}
+        onMoveEntry={onMoveEntry}
       />
     )
   }
