@@ -35,7 +35,7 @@ export default function IssuePage() {
   const [search, setSearch] = useSearchParams()
   const { projects, setProjects, setCurrentProject, setCurrentIssue,
           issuesMap, setIssuesMap, sessionsMap, setSessionsMap, currentSession, setCurrentSession, setCurrentTask,
-          workspaceLayoutMode } = useStore()
+          workspaceLayoutMode, applySessionWorkspaceLayout } = useStore()
   const userParam = params.user || ''
   const projectId = params.project || ''
   const issueId = params.issue || ''
@@ -160,6 +160,12 @@ export default function IssuePage() {
     })
     return () => { cancelled = true }
   }, [sessionParam, sessions, sessionsLoaded])
+
+  // 布局按会话独立: 切换到某会话时恢复它保存的布局模式, 未保存过或回到概览(无会话)则回落默认.
+  // 只依赖 session_id, 不随会话其它字段(如 agent_status 周期刷新)重跑, 也不覆盖用户手动切换.
+  useEffect(() => {
+    applySessionWorkspaceLayout(currentSession?.session_id || null)
+  }, [currentSession?.session_id])
 
   // 刷新 sessions 列表. 合并而非直接覆盖: 当前会话的 agent_status 由 ChatArea 2s 轮询
   // 实时维护 (并写回 DB), 这里保留本地值, 避免周期刷新用 DB 滞后值覆盖 -> 当前会话小圆点

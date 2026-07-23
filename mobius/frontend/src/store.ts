@@ -19,17 +19,40 @@ function loadAssistantBubbleEnabled() {
 //   'session'           - 现有会话监督布局 (左 Issue/sessions 侧栏 + 右 ChatArea)
 //   'editor-chat'       - 代码对话 v1: 左 code-server iframe 编辑器 + 右 Session 对话
 //   'code-conversation' - 代码对话 v2: 左原生文件浏览器 + 中代码浏览 + 右 Session 对话
-// 属于用户全局偏好, 持久化到 localStorage; 非法值一律回落 'session'.
-const WORKSPACE_LAYOUT_STORAGE_KEY = 'mobius:ui:workspace-layout'
+// 布局按「会话」独立保存: 每个 session 记住自己的布局模式, 切换会话时恢复对应模式,
+// 从未设置过的会话回落默认 'session'. 持久化到 localStorage 的一张 {sessionId: mode} 映射表.
+// 非法值一律回落 'session'.
+const WORKSPACE_LAYOUT_BY_SESSION_KEY = 'mobius:ui:workspace-layout-by-session'
+const WORKSPACE_LAYOUT_DEFAULT: WorkspaceLayoutMode = 'session'
 export type WorkspaceLayoutMode = 'session' | 'editor-chat' | 'code-conversation'
 const WORKSPACE_LAYOUT_MODES: WorkspaceLayoutMode[] = ['session', 'editor-chat', 'code-conversation']
-function loadWorkspaceLayoutMode(): WorkspaceLayoutMode {
+function normalizeLayoutMode(v: unknown): WorkspaceLayoutMode {
+  return (WORKSPACE_LAYOUT_MODES as string[]).includes((v as string) || '') ? (v as WorkspaceLayoutMode) : WORKSPACE_LAYOUT_DEFAULT
+}
+function loadLayoutMap(): Record<string, WorkspaceLayoutMode> {
   try {
-    const v = localStorage.getItem(WORKSPACE_LAYOUT_STORAGE_KEY)
-    return (WORKSPACE_LAYOUT_MODES as string[]).includes(v || '') ? (v as WorkspaceLayoutMode) : 'session'
+    const raw = localStorage.getItem(WORKSPACE_LAYOUT_BY_SESSION_KEY)
+    if (!raw) return {}
+    const obj = JSON.parse(raw)
+    return obj && typeof obj === 'object' ? (obj as Record<string, WorkspaceLayoutMode>) : {}
   } catch {
-    return 'session'
+    return {}
   }
+}
+// 读取某会话已保存的布局; 无会话或未保存过 -> 默认 'session'.
+function loadSessionLayoutMode(sessionId: string | null | undefined): WorkspaceLayoutMode {
+  if (!sessionId) return WORKSPACE_LAYOUT_DEFAULT
+  return normalizeLayoutMode(loadLayoutMap()[sessionId])
+}
+// 把某会话的布局写回映射表 (default 视为清除, 保持表精简).
+function saveSessionLayoutMode(sessionId: string | null | undefined, mode: WorkspaceLayoutMode) {
+  if (!sessionId) return
+  try {
+    const map = loadLayoutMap()
+    if (mode === WORKSPACE_LAYOUT_DEFAULT) delete map[sessionId]
+    else map[sessionId] = mode
+    localStorage.setItem(WORKSPACE_LAYOUT_BY_SESSION_KEY, JSON.stringify(map))
+  } catch { /* localStorage 不可用时静默 */ }
 }
 
 // Branding: 由 index.html 头部同步阻塞 script 注入到 window.__BRANDING__,
@@ -300,7 +323,7 @@ interface AppState {
   // 移动端断点(px): 由当前页面设置 (内容密集页可调大, 如 ProjectPage=1024);
   // TopNav 汉堡按钮的显隐与 ResizablePanel 抽屉态都读它, 保证两者始终同步.
   mobileNavBreakpoint: number
-  // 工作区布局模式 (session | editor-chat). 用户全局偏好, 持久化.
+  // 工作区布局模式 (session | editor-chat | code-conversation). 按会话独立保存.
   workspaceLayoutMode: WorkspaceLayoutMode
   // Actions
   setAuth: (token: string, user: User) => void
@@ -313,6 +336,8 @@ interface AppState {
   setMobileNavBreakpoint: (px: number) => void
   setWorkspaceLayoutMode: (mode: WorkspaceLayoutMode) => void
   toggleWorkspaceLayoutMode: () => void
+  // 切换到某会话时调用: 恢复该会话保存的布局, 未保存过则回落默认 (不写回).
+  applySessionWorkspaceLayout: (sessionId: string | null | undefined) => void
   setIssues: (issues: Issue[]) => void
   setIssuesMap: (projectId: string, issues: Issue[]) => void
   setCurrentIssue: (issue: Issue | null) => void
@@ -373,7 +398,8 @@ export const useStore = create<AppState>((set) => ({
   branding: loadInitialBranding(),
   mobileNavOpen: false,
   mobileNavBreakpoint: 900,
-  workspaceLayoutMode: loadWorkspaceLayoutMode(),
+  // 启动默认值; 进入会话后由 applySessionWorkspaceLayout 按会话校正.
+  workspaceLayoutMode: WORKSPACE_LAYOUT_DEFAULT,
   setAuth: (token, user) => {
     localStorage.setItem('cc-token', token)
     set({ token, user, authChecking: false })
@@ -389,16 +415,21 @@ export const useStore = create<AppState>((set) => ({
   setMobileNavOpen: (open) => set({ mobileNavOpen: !!open }),
   setMobileNavBreakpoint: (px) => set({ mobileNavBreakpoint: Number.isFinite(px) && px > 0 ? Math.round(px) : 900 }),
   setWorkspaceLayoutMode: (mode) => {
-    const next: WorkspaceLayoutMode = (WORKSPACE_LAYOUT_MODES as string[]).includes(mode) ? mode : 'session'
-    try { localStorage.setItem(WORKSPACE_LAYOUT_STORAGE_KEY, next) } catch { /* localStorage 不可用时静默 */ }
+    const next = normalizeLayoutMode(mode)
+    // 写回当前会话的布局记忆 (无当前会话则不持久化, 仅改内存态).
+    saveSessionLayoutMode(useStore.getState().currentSession?.session_id, next)
     set({ workspaceLayoutMode: next })
   },
   toggleWorkspaceLayoutMode: () => set((s) => {
     // 兼容旧调用: 仅在 session <-> editor-chat 间切换 (不引入 v2, v2 走弹窗显式选择).
     const next: WorkspaceLayoutMode = s.workspaceLayoutMode === 'editor-chat' ? 'session' : 'editor-chat'
-    try { localStorage.setItem(WORKSPACE_LAYOUT_STORAGE_KEY, next) } catch { /* localStorage 不可用时静默 */ }
+    saveSessionLayoutMode(useStore.getState().currentSession?.session_id, next)
     return { workspaceLayoutMode: next }
   }),
+  applySessionWorkspaceLayout: (sessionId) => {
+    const next = loadSessionLayoutMode(sessionId)
+    set((s) => (s.workspaceLayoutMode === next ? s : { workspaceLayoutMode: next }))
+  },
   setIssues: (issues) => set({ issues }),
   setIssuesMap: (projectId, issues) => set((s) => ({ issuesMap: { ...s.issuesMap, [projectId]: issues } })),
   setCurrentIssue: (issue) => set({ currentIssue: issue }),
