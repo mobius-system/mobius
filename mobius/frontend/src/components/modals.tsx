@@ -3750,7 +3750,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-[560px] max-w-[92vw] max-h-[85vh] overflow-y-auto rounded-2xl p-6 shadow-2xl"
+      <div data-tour="aimux-guide-modal" className="relative w-[560px] max-w-[92vw] max-h-[85vh] overflow-y-auto rounded-2xl p-6 shadow-2xl"
         onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-start justify-between mb-3">
@@ -3761,6 +3761,10 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
           <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
+        </div>
+
+        <div className="text-[12px] mb-3 p-3 rounded-lg leading-relaxed" style={{ background: theme !== 'light' ? 'rgba(56,189,248,0.10)' : '#f0f7ff', color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
+          <span className="font-semibold">aimux 能为你做什么：</span>把任意一台电脑（Windows / Mac / Linux）连进莫比乌斯，让智能体在那台机器上运行命令、读写文件，甚至调度多台机器协同。你的桌面端已自动连上；下面是把<strong className="font-semibold">另一台</strong>电脑也接进来的步骤。
         </div>
 
         {renderSectionTitle('1. 在外部机器上安装 aimux (Python 3.10+)')}

@@ -30,7 +30,7 @@ import {
 import { MobiusLogo } from './mobius-logo'
 
 type GuideDemoKind = 'birthday' | 'logo-review' | 'project-import' | 'context-setup' | 'self-evolve'
-type GuideSceneKind = 'scene-admin' | 'scene-research'
+type GuideSceneKind = 'scene-admin' | 'scene-research' | 'scene-aimux'
 type GuideRouteKind = 'intro' | GuideDemoKind | GuideSceneKind
 
 export const SELF_EVOLVE_DEMO_TIMESTAMP_TEXT = '自迭代演示时间：2026-06-13 02:21:36 UTC'
@@ -169,6 +169,14 @@ const GUIDE_ROUTES: Array<{
     description: '再次认识研究课题页的协作黑板、研究图谱和智能体团队，回顾多智能体协作。',
     action: '重温研究系统',
     icon: BookOpen,
+  },
+  {
+    kind: 'scene-aimux',
+    title: '认识 aimux',
+    subtitle: '了解 aimux 连接与能做什么',
+    description: '讲清楚 aimux 是什么、连上为什么有用，以及连上后能让智能体在你电脑或别的机器上做哪些事（需桌面端）。',
+    action: '认识 aimux',
+    icon: ArrowRight,
   },
 ]
 
@@ -498,8 +506,8 @@ export function GuideHelpModal({ firstLogin = false, onClose }: GuideHelpModalPr
         window.setTimeout(() => startSelfEvolveDemoTour(patch), location.pathname === targetPath ? 80 : 260)
         return
       }
-      if (kind === 'scene-admin' || kind === 'scene-research') {
-        const scene = kind === 'scene-admin' ? 'admin-center' : 'research-page'
+      if (kind === 'scene-admin' || kind === 'scene-research' || kind === 'scene-aimux') {
+        const scene = kind === 'scene-admin' ? 'admin-center' : (kind === 'scene-aimux' ? 'aimux' : 'research-page')
         onClose({ rememberNoAuto: true, started: true })
         // 派发场景引导请求; controller 监听后按 force 模式跳过 seen 检查直接启动 (不标记 seen).
         // admin-center 由 controller 先打开 overlay 再启动; research-page 直接启动 (用户应在 research 页).

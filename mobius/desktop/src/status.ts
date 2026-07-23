@@ -109,4 +109,18 @@ toggleEl?.addEventListener("click", async () => {
   refresh();
 });
 
+// ===== 新手说明卡片：折叠参数词典 + 跳引导提示 =====
+const introToggle = document.getElementById("intro-toggle");
+const introGlossary = document.getElementById("intro-glossary");
+introToggle?.addEventListener("click", () => {
+  if (!introGlossary) return;
+  const willShow = introGlossary.hasAttribute("hidden");
+  if (willShow) introGlossary.removeAttribute("hidden"); else introGlossary.setAttribute("hidden", "");
+  introToggle.setAttribute("aria-expanded", willShow ? "true" : "false");
+  introToggle.textContent = willShow ? "收起说明" : "这些信息分别是什么意思？";
+});
+document.getElementById("intro-learn")?.addEventListener("click", () => {
+  toast("请回到主界面，点击右上角「?」问号，选择「认识 aimux」查看完整引导。");
+});
+
 refresh();

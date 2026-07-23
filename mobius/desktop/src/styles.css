@@ -100,3 +100,13 @@ body { margin: 0; background: #f5f5f7; }
 .switch[aria-checked="true"] { background: #34c759; }
 .switch[aria-checked="true"] .knob { left: 20px; }
 .switch:disabled { opacity: 0.5; cursor: default; }
+
+/* ===== aimux 状态面板：新手说明卡片 ===== */
+.intro-card h2 { margin-bottom: 8px; }
+.intro-card .intro-lead { margin: 0 0 10px; font-size: 13px; line-height: 1.6; color: #1d1d1f; }
+.intro-card #intro-toggle { font-size: 12px; }
+.intro-glossary { margin-top: 10px; }
+.intro-glossary dt { color: #8e8e93; }
+.intro-glossary dd { color: #1d1d1f; }
+.intro-learn { margin-top: 12px; padding: 8px 14px; border: 1px solid #0a84ff; border-radius: 8px; background: #fff; color: #0a84ff; font-size: 12px; cursor: pointer; transition: background 0.15s; }
+.intro-learn:hover { background: #f0f7ff; }

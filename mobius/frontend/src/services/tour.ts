@@ -3020,7 +3020,7 @@ export async function runFirstIssueTourForPath(pathname: string, options: { forc
 // 也可由 guide-help 路线卡片手动重温. seen 门禁走后端 /api/profile/scene-seen/:scene (跨设备).
 // =====================================================================
 
-export type SceneTourKind = 'admin-center' | 'research-page'
+export type SceneTourKind = 'admin-center' | 'research-page' | 'aimux'
 
 // 无状态场景引导分发器: 启动前清场 (避免与 demo 路线冲突), 然后跑对应场景路线.
 // onDone 在引导真正启动且销毁时 (用户看完或跳过) 调用, controller 据此标记 seen 门禁.
@@ -3032,11 +3032,63 @@ export async function startSceneTour(scene: SceneTourKind, onDone?: (finished: b
   const onDestroyed = () => { try { onDone?.(true) } catch {} }
   if (scene === 'admin-center') started = await runAdminCenterTour(onDestroyed)
   else if (scene === 'research-page') started = await runResearchPageTour(onDestroyed)
+  else if (scene === 'aimux') started = await runAimuxTour(onDestroyed)
   if (!started) {
     // 未启动: 不绑定 seen (该场景路线尚未实现, 避免静默标记吃掉未来引导).
     try { onDone?.(false) } catch {}
   }
   return started
+}
+
+// aimux 能力首触引导 (无状态纯讲解). 以顶栏 aimux 状态徽标 (data-tour="top-aimux-status") 为主轴,
+// 讲清 aimux 是什么 → 连上能做什么 (PC 任务模式 / 远程算力 / 端口转发) → 如何连接另一台电脑.
+// top-aimux-status 仅桌面端渲染; 非桌面端 (浏览器) 该锚点不存在, waitForElement 超时后 steps 为空,
+// launchDriver 返回 false, startSceneTour 据此不标记 seen (aimux 本就是桌面端特性, 浏览器端不启动合理).
+async function runAimuxTour(onDestroyed?: () => void): Promise<boolean> {
+  await waitForElement('[data-tour="top-aimux-status"]', 4200)
+
+  const steps: DriveStep[] = []
+  addStepIfPresent(steps, '[data-tour="top-aimux-status"]', {
+    popover: {
+      title: '什么是 aimux',
+      description: guideParagraphs(
+        '这个绿点就是 aimux,它是莫比乌斯与你电脑之间的反向连接通道。',
+        '桌面端登录后会自动连上——连上之后,智能体就能在你电脑上运行命令、修改代码、操作文件。'
+      ),
+      nextBtnText: '看它能做什么',
+      doneBtnText: '我了解了',
+      side: 'bottom',
+      align: 'end',
+    },
+  })
+  addStepIfPresent(steps, '[data-tour="top-aimux-status"]', {
+    popover: {
+      title: '连上 aimux 能做什么',
+      description: guideParagraphs(
+        '① 让智能体在你电脑上干活:新建会话时选「PC 任务模式」。',
+        '② 调度别的机器:用「远程算力」把其他 SSH 电脑也接进来一起干活。',
+        '③ 端口转发:把本机的服务暴露给服务器使用。'
+      ),
+      nextBtnText: '怎么连别的电脑',
+      doneBtnText: '我了解了',
+      side: 'bottom',
+      align: 'end',
+    },
+  })
+  addStepIfPresent(steps, '[data-tour="top-aimux-status"]', {
+    popover: {
+      title: '连接另一台电脑',
+      description: guideParagraphs(
+        '想让另一台电脑 (Windows / Mac / Linux) 也连进来,从右上角头像菜单打开「AIMUX 连接指引」。',
+        '那里有一条现成命令,复制到那台电脑执行即可,几秒后它就会出现在已连接列表里。'
+      ),
+      doneBtnText: '完成',
+      side: 'bottom',
+      align: 'end',
+    },
+  })
+
+  return launchDriver(steps, onDestroyed)
 }
 
 // 管理中心首触引导. 复用 tcrgsz 分镜文案 (每个 tab 一句中文).

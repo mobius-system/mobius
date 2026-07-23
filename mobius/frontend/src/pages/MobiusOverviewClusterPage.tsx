@@ -14,6 +14,7 @@ import {
   RotateCcw,
   Search,
   Sparkles,
+  UserRound,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
@@ -21,9 +22,10 @@ import { api, useStore } from '../store'
 import { TopNav, timeAgoPrecise } from '../components/shell'
 
 type TimeRangeKey = '24h' | '48h' | '72h' | '7d' | '30d'
+type ClusterMode = 'project' | 'creator'
 type ParentKind = 'issue' | 'research'
 type SessionKind = 'session' | 'research_agent'
-type SelectionKind = 'project' | ParentKind | SessionKind
+type SelectionKind = 'creator' | 'project' | ParentKind | SessionKind
 
 type ProjectGraphData = {
   issues: any[]
@@ -33,9 +35,11 @@ type ProjectGraphData = {
 }
 
 type ClusterModel = {
+  mode: ClusterMode
   nodes: ClusterSession[]
   parentClusters: ParentCluster[]
   projectClusters: ProjectCluster[]
+  creatorClusters: CreatorCluster[]
 }
 
 type ClusterSession = {
@@ -47,6 +51,7 @@ type ClusterSession = {
   activeAt?: string
   projectId: string
   projectName: string
+  creatorId: string
   parentId: string
   parentKind: ParentKind
   parentTitle: string
@@ -67,6 +72,7 @@ type ParentCluster = {
   title: string
   projectId: string
   projectName: string
+  creatorId: string
   source: any
   sessions: ClusterSession[]
   activeMs: number
@@ -85,6 +91,8 @@ type ProjectCluster = {
   id: string
   title: string
   source: any
+  creatorId: string
+  creatorName: string
   parents: ParentCluster[]
   sessions: ClusterSession[]
   activeMs: number
@@ -97,6 +105,20 @@ type ProjectCluster = {
   anchorY: number
 }
 
+type CreatorCluster = {
+  id: string
+  title: string
+  source: any
+  projects: ProjectCluster[]
+  sessions: ClusterSession[]
+  activeMs: number
+  cx: number
+  cy: number
+  radius: number
+  color: string
+  shape: ClusterShape
+}
+
 type ClusterShape =
   | { type: 'circle'; cx: number; cy: number; r: number }
   | { type: 'capsule'; x1: number; y1: number; x2: number; y2: number; r: number }
@@ -105,11 +127,13 @@ type ClusterShape =
 type Point = { x: number; y: number }
 
 type Selection =
+  | { kind: 'creator'; id: string; title: string; source: any; cluster: CreatorCluster }
   | { kind: 'project'; id: string; title: string; source: any; cluster: ProjectCluster }
   | { kind: ParentKind; id: string; title: string; source: any; cluster: ParentCluster }
   | { kind: SessionKind; id: string; title: string; source: any; session: ClusterSession }
 
 type HitTarget =
+  | { kind: 'creator'; cluster: CreatorCluster }
   | { kind: 'project'; cluster: ProjectCluster }
   | { kind: ParentKind; cluster: ParentCluster }
   | { kind: SessionKind; session: ClusterSession }
@@ -122,8 +146,8 @@ function isParentSelection(selection: Selection): selection is { kind: ParentKin
   return selection.kind === 'issue' || selection.kind === 'research'
 }
 
-function isClusterSelection(selection: Selection): selection is { kind: 'project'; id: string; title: string; source: any; cluster: ProjectCluster } | { kind: ParentKind; id: string; title: string; source: any; cluster: ParentCluster } {
-  return selection.kind === 'project' || selection.kind === 'issue' || selection.kind === 'research'
+function isClusterSelection(selection: Selection): selection is { kind: 'creator'; id: string; title: string; source: any; cluster: CreatorCluster } | { kind: 'project'; id: string; title: string; source: any; cluster: ProjectCluster } | { kind: ParentKind; id: string; title: string; source: any; cluster: ParentCluster } {
+  return selection.kind === 'creator' || selection.kind === 'project' || selection.kind === 'issue' || selection.kind === 'research'
 }
 
 function isSessionHit(hit: HitTarget): hit is { kind: SessionKind; session: ClusterSession } {
@@ -157,6 +181,8 @@ const PROJECT_GATHER_MIN_ALPHA = 0.24
 const PROJECT_GATHER_STRENGTH = 0.075
 const PROJECT_GATHER_MAX_STEP = 28
 const PROJECT_GATHER_STOP_EXCESS = 2
+const CREATOR_TARGET_GAP = 44
+const CREATOR_COLLISION_GAP = 28
 const CLUSTER_RADIUS_GROW_LERP = 0.42
 const CLUSTER_RADIUS_SHRINK_LERP = 0.2
 const EXISTING_PARENT_ANCHOR_REPACK_LERP = 0.28
@@ -216,6 +242,18 @@ function projectColor(projectId: string) {
   return PROJECT_COLORS[hashValue(projectId) % PROJECT_COLORS.length]
 }
 
+function creatorColor(creatorId: string) {
+  return PROJECT_COLORS[hashValue(`creator:${creatorId}`) % PROJECT_COLORS.length]
+}
+
+function projectCreatorId(project: any) {
+  return String(project?.created_by || 'unknown')
+}
+
+function projectCreatorName(project: any) {
+  return String(project?.created_by_name || project?.created_by || '未知创建者')
+}
+
 function rgba(hex: string, alpha: number) {
   const clean = hex.replace('#', '')
   const n = parseInt(clean.length === 3 ? clean.split('').map((ch) => ch + ch).join('') : clean, 16)
@@ -255,6 +293,8 @@ function projectMatchesSearch(project: any, query: string) {
   return String(project?.name || '').toLowerCase().includes(q)
     || String(project?.description || '').toLowerCase().includes(q)
     || String(project?.id || '').toLowerCase().includes(q)
+    || String(project?.created_by || '').toLowerCase().includes(q)
+    || String(project?.created_by_name || '').toLowerCase().includes(q)
 }
 
 function parentTitle(parent: any) {
@@ -271,6 +311,7 @@ function isResearchAgent(session: any) {
 
 function selectionKindLabel(selection: Selection | null) {
   if (!selection) return ''
+  if (selection.kind === 'creator') return 'Creator'
   if (selection.kind === 'project') return 'Project'
   if (selection.kind === 'issue') return 'Issue'
   if (selection.kind === 'research') return 'Research'
@@ -280,11 +321,15 @@ function selectionKindLabel(selection: Selection | null) {
 
 function getSelectionPath(userParam: string, selection: Selection | null) {
   if (!selection || !userParam) return ''
-  if (selection.kind === 'project') return `/u/${encodeURIComponent(userParam)}/p/${encodeURIComponent(selection.id)}`
+  if (selection.kind === 'creator') return `/u/${encodeURIComponent(selection.id)}`
+  if (selection.kind === 'project') return `/u/${encodeURIComponent(selection.cluster.creatorId || userParam)}/p/${encodeURIComponent(selection.id)}`
   const projectId = isSessionSelection(selection)
     ? selection.session.projectId
     : selection.cluster.projectId
-  const base = `/u/${encodeURIComponent(userParam)}/p/${encodeURIComponent(projectId)}`
+  const creatorId = isSessionSelection(selection)
+    ? selection.session.creatorId
+    : selection.cluster.creatorId
+  const base = `/u/${encodeURIComponent(creatorId || userParam)}/p/${encodeURIComponent(projectId)}`
   if (selection.kind === 'issue') return `${base}/i/${encodeURIComponent(selection.id)}`
   if (selection.kind === 'research') return `${base}/r/${encodeURIComponent(selection.id)}`
   if (isSessionSelection(selection)) {
@@ -321,6 +366,20 @@ function projectAnchor(index: number) {
   return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius }
 }
 
+function creatorAnchor(index: number) {
+  if (index === 0) return { x: 0, y: 0 }
+  const angle = index * 2.399963
+  const radius = 520 + Math.sqrt(index) * 300
+  return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius }
+}
+
+function projectAnchorWithinCreator(creator: Point, index: number, count: number) {
+  if (count <= 1) return creator
+  const angle = index * 2.399963
+  const ring = 210 + Math.sqrt(index) * 150
+  return { x: creator.x + Math.cos(angle) * ring, y: creator.y + Math.sin(angle) * ring }
+}
+
 function parentAnchor(project: { x: number; y: number }, index: number, count: number) {
   if (count <= 1) return { x: project.x, y: project.y }
   const angle = index * 2.399963
@@ -328,10 +387,11 @@ function parentAnchor(project: { x: number; y: number }, index: number, count: n
   return { x: project.x + Math.cos(angle) * ring, y: project.y + Math.sin(angle) * ring }
 }
 
-function buildClusterModel(projects: any[], dataByProject: Record<string, ProjectGraphData>, cutoffMs: number): ClusterModel {
+function buildClusterModel(projects: any[], dataByProject: Record<string, ProjectGraphData>, cutoffMs: number, mode: ClusterMode): ClusterModel {
   const nodes: ClusterSession[] = []
   const parentClusters: ParentCluster[] = []
   const projectClusters: ProjectCluster[] = []
+  const creatorClusters: CreatorCluster[] = []
   const orderedProjects = sortByRecent(projects)
   const filteredByProject = new Map<string, ProjectGraphData>()
   const layoutOrder = orderedProjects
@@ -344,12 +404,39 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
     })
     .filter((entry) => entry.sessionCount > 0)
     .sort((a, b) => b.sessionCount - a.sessionCount || b.activeMs - a.activeMs)
-  const layoutIndexByProject = new Map(layoutOrder.map((entry, index) => [entry.project.id, index]))
+  const projectAnchorById = new Map<string, Point>()
+  if (mode === 'project') {
+    layoutOrder.forEach((entry, index) => projectAnchorById.set(entry.project.id, projectAnchor(index)))
+  } else {
+    const entriesByCreator = new Map<string, typeof layoutOrder>()
+    layoutOrder.forEach((entry) => {
+      const creatorId = projectCreatorId(entry.project)
+      const entries = entriesByCreator.get(creatorId) || []
+      entries.push(entry)
+      entriesByCreator.set(creatorId, entries)
+    })
+    const creatorGroups = [...entriesByCreator.entries()]
+      .map(([creatorId, entries]) => ({
+        creatorId,
+        entries,
+        sessionCount: entries.reduce((sum, entry) => sum + entry.sessionCount, 0),
+        activeMs: Math.max(...entries.map((entry) => entry.activeMs)),
+      }))
+      .sort((a, b) => b.sessionCount - a.sessionCount || b.activeMs - a.activeMs)
+    creatorGroups.forEach((group, creatorIndex) => {
+      const anchor = creatorAnchor(creatorIndex)
+      group.entries.forEach((entry, projectIndex) => {
+        projectAnchorById.set(entry.project.id, projectAnchorWithinCreator(anchor, projectIndex, group.entries.length))
+      })
+    })
+  }
 
   orderedProjects.forEach((project: any, projectIndex: number) => {
     const filtered = filteredByProject.get(project.id) || EMPTY_GRAPH_DATA
-    const pAnchor = projectAnchor(layoutIndexByProject.get(project.id) ?? projectIndex)
+    const pAnchor = projectAnchorById.get(project.id) || projectAnchor(projectIndex)
     const color = projectColor(project.id)
+    const creatorId = projectCreatorId(project)
+    const creatorName = projectCreatorName(project)
     const parents = [
       ...sortByRecent(filtered.issues).map((item) => ({ kind: 'issue' as const, item, sessions: filtered.sessionsByIssue[item.id] || [] })),
       ...sortByRecent(filtered.researches).map((item) => ({ kind: 'research' as const, item, sessions: filtered.sessionsByResearch[item.id] || [] })),
@@ -374,6 +461,7 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
           activeAt: activeTimeValue(session),
           projectId: project.id,
           projectName: project.name || project.id,
+          creatorId,
           parentId: parent.item.id,
           parentKind: parent.kind,
           parentTitle: parentTitle(parent.item),
@@ -397,6 +485,7 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
           title: parentTitle(parent.item),
           projectId: project.id,
           projectName: project.name || project.id,
+          creatorId,
           source: parent.item,
           sessions: parentSessions,
           activeMs: Math.max(...parentSessions.map((session) => session.activeMs)),
@@ -418,6 +507,8 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
         id: project.id,
         title: project.name || project.id,
         source: project,
+        creatorId,
+        creatorName,
         parents: projectParents,
         sessions: projectSessions,
         activeMs: Math.max(...projectSessions.map((session) => session.activeMs)),
@@ -432,7 +523,36 @@ function buildClusterModel(projects: any[], dataByProject: Record<string, Projec
     }
   })
 
-  return { nodes, parentClusters, projectClusters }
+  if (mode === 'creator') {
+    const projectsByCreator = new Map<string, ProjectCluster[]>()
+    projectClusters.forEach((project) => {
+      const grouped = projectsByCreator.get(project.creatorId) || []
+      grouped.push(project)
+      projectsByCreator.set(project.creatorId, grouped)
+    })
+    projectsByCreator.forEach((creatorProjects, creatorId) => {
+      const sessions = creatorProjects.flatMap((project) => project.sessions)
+      const title = creatorProjects[0]?.creatorName || creatorId
+      const cx = creatorProjects.reduce((sum, project) => sum + project.cx, 0) / Math.max(1, creatorProjects.length)
+      const cy = creatorProjects.reduce((sum, project) => sum + project.cy, 0) / Math.max(1, creatorProjects.length)
+      creatorClusters.push({
+        id: creatorId,
+        title,
+        source: { id: creatorId, display_name: title },
+        projects: creatorProjects,
+        sessions,
+        activeMs: Math.max(...sessions.map((session) => session.activeMs)),
+        cx,
+        cy,
+        radius: 150,
+        color: creatorColor(creatorId),
+        shape: { type: 'circle', cx, cy, r: 150 },
+      })
+    })
+  }
+
+  updateClusterShapes(parentClusters, projectClusters, creatorClusters)
+  return { mode, nodes, parentClusters, projectClusters, creatorClusters }
 }
 
 function parentClusterKey(cluster: Pick<ParentCluster, 'projectId' | 'kind' | 'id'>) {
@@ -481,6 +601,10 @@ function projectSpawnPoint(project: ProjectCluster, previousProjects: ProjectClu
 
 function remapSelection(selection: Selection | null, model: ClusterModel): Selection | null {
   if (!selection) return null
+  if (selection.kind === 'creator') {
+    const cluster = model.creatorClusters.find((item) => item.id === selection.id)
+    return cluster ? { kind: 'creator', id: cluster.id, title: cluster.title, source: cluster.source, cluster } : null
+  }
   if (selection.kind === 'project') {
     const cluster = model.projectClusters.find((item) => item.id === selection.id)
     return cluster ? { kind: 'project', id: cluster.id, title: cluster.title, source: cluster.source, cluster } : null
@@ -501,8 +625,8 @@ function remapSelection(selection: Selection | null, model: ClusterModel): Selec
 }
 
 function reconcileClusterModel(previous: ClusterModel, desired: ClusterModel): ClusterModel {
-  if (!previous.nodes.length && !previous.parentClusters.length && !previous.projectClusters.length) {
-    updateClusterShapes(desired.parentClusters, desired.projectClusters)
+  if (previous.mode !== desired.mode || (!previous.nodes.length && !previous.parentClusters.length && !previous.projectClusters.length)) {
+    updateClusterShapes(desired.parentClusters, desired.projectClusters, desired.creatorClusters)
     return desired
   }
 
@@ -515,6 +639,7 @@ function reconcileClusterModel(previous: ClusterModel, desired: ClusterModel): C
   const projectClusters: ProjectCluster[] = []
   const parentClusters: ParentCluster[] = []
   const nodes: ClusterSession[] = []
+  const creatorClusters: CreatorCluster[] = []
 
   desired.projectClusters.forEach((desiredProject) => {
     const previousProject = previousProjectById.get(desiredProject.id)
@@ -621,9 +746,30 @@ function reconcileClusterModel(previous: ClusterModel, desired: ClusterModel): C
     project.sessions.push(node)
   })
 
-  updateClusterShapes(parentClusters, projectClusters)
+  if (desired.mode === 'creator') {
+    const previousCreatorById = new Map(previous.creatorClusters.map((cluster) => [cluster.id, cluster]))
+    desired.creatorClusters.forEach((desiredCreator) => {
+      const creatorProjects = desiredCreator.projects
+        .map((project) => projectById.get(project.id))
+        .filter((project): project is ProjectCluster => !!project)
+      if (creatorProjects.length === 0) return
+      const previousCreator = previousCreatorById.get(desiredCreator.id)
+      creatorClusters.push({
+        ...desiredCreator,
+        projects: creatorProjects,
+        sessions: creatorProjects.flatMap((project) => project.sessions),
+        cx: previousCreator?.cx ?? desiredCreator.cx,
+        cy: previousCreator?.cy ?? desiredCreator.cy,
+        radius: previousCreator?.radius ?? desiredCreator.radius,
+        shape: previousCreator?.shape ?? desiredCreator.shape,
+      })
+    })
+  }
+
+  updateClusterShapes(parentClusters, projectClusters, creatorClusters)
   resolveParentAndProjectOverlaps(parentClusters, projectClusters)
-  return { nodes, parentClusters, projectClusters }
+  if (desired.mode === 'creator') resolveCreatorClusterOverlaps(creatorClusters)
+  return { mode: desired.mode, nodes, parentClusters, projectClusters, creatorClusters }
 }
 
 function axialToPoint(q: number, r: number, spacing: number): Point {
@@ -821,9 +967,33 @@ function updateProjectBubble(cluster: ProjectCluster) {
   cluster.shape = { type: 'circle', cx, cy, r: cluster.radius }
 }
 
-function updateClusterShapes(parentClusters: ParentCluster[], projectClusters: ProjectCluster[]) {
+function updateCreatorBubble(cluster: CreatorCluster) {
+  if (!cluster.projects.length) return
+  let weight = 0
+  let cx = 0
+  let cy = 0
+  cluster.projects.forEach((project) => {
+    const w = Math.max(1, Math.sqrt(project.sessions.length))
+    weight += w
+    cx += project.cx * w
+    cy += project.cy * w
+  })
+  cx /= Math.max(1, weight)
+  cy /= Math.max(1, weight)
+  const targetRadius = Math.max(
+    138,
+    ...cluster.projects.map((project) => Math.hypot(project.cx - cx, project.cy - cy) + project.radius + 52),
+  )
+  cluster.cx = cx
+  cluster.cy = cy
+  cluster.radius = smoothValue(cluster.radius, targetRadius)
+  cluster.shape = { type: 'circle', cx, cy, r: cluster.radius }
+}
+
+function updateClusterShapes(parentClusters: ParentCluster[], projectClusters: ProjectCluster[], creatorClusters: CreatorCluster[] = []) {
   parentClusters.forEach(updateParentBubble)
   projectClusters.forEach(updateProjectBubble)
+  creatorClusters.forEach(updateCreatorBubble)
 }
 
 function translateParentCluster(cluster: ParentCluster, dx: number, dy: number) {
@@ -853,6 +1023,16 @@ function translateProjectCluster(cluster: ProjectCluster, dx: number, dy: number
     cluster.shape.cy += dy
   }
   cluster.parents.forEach((parent) => translateParentCluster(parent, dx, dy))
+}
+
+function translateCreatorCluster(cluster: CreatorCluster, dx: number, dy: number) {
+  cluster.projects.forEach((project) => translateProjectCluster(project, dx, dy))
+  cluster.cx += dx
+  cluster.cy += dy
+  if (cluster.shape.type === 'circle') {
+    cluster.shape.cx += dx
+    cluster.shape.cy += dy
+  }
 }
 
 function separateCircles(
@@ -979,6 +1159,42 @@ function resolveParentAndProjectOverlaps(parentClusters: ParentCluster[], projec
   }
 }
 
+function dominantCreatorCluster(creatorClusters: CreatorCluster[]) {
+  return creatorClusters.reduce<CreatorCluster | null>((best, cluster) => {
+    if (!best) return cluster
+    const countDiff = cluster.sessions.length - best.sessions.length
+    if (countDiff !== 0) return countDiff > 0 ? cluster : best
+    return cluster.activeMs > best.activeMs ? cluster : best
+  }, null)
+}
+
+function resolveCreatorClusterOverlaps(creatorClusters: CreatorCluster[]) {
+  const centerCreator = dominantCreatorCluster(creatorClusters)
+  creatorClusters.forEach(updateCreatorBubble)
+  for (let iter = 0; iter < 8; iter += 1) {
+    let moved = false
+    for (let i = 0; i < creatorClusters.length; i += 1) {
+      const a = creatorClusters[i]
+      for (let j = i + 1; j < creatorClusters.length; j += 1) {
+        const b = creatorClusters[j]
+        const sep = separateCircles(a.cx, a.cy, a.radius, b.cx, b.cy, b.radius, CREATOR_COLLISION_GAP)
+        if (!sep) continue
+        moved = true
+        if (a.id === centerCreator?.id) {
+          translateCreatorCluster(b, sep.x * 2, sep.y * 2)
+        } else if (b.id === centerCreator?.id) {
+          translateCreatorCluster(a, -sep.x * 2, -sep.y * 2)
+        } else {
+          translateCreatorCluster(a, -sep.x, -sep.y)
+          translateCreatorCluster(b, sep.x, sep.y)
+        }
+      }
+    }
+    creatorClusters.forEach(updateCreatorBubble)
+    if (!moved) break
+  }
+}
+
 function dominantProjectCluster(projectClusters: ProjectCluster[]) {
   return projectClusters.reduce<ProjectCluster | null>((best, cluster) => {
     if (!best) return cluster
@@ -1000,13 +1216,28 @@ function projectGatherExcess(projectClusters: ProjectCluster[]) {
   }, 0)
 }
 
-function attractProjectClusters(projectClusters: ProjectCluster[], alpha: number) {
+function creatorGatherExcess(creatorClusters: CreatorCluster[]) {
+  if (creatorClusters.length === 0) return 0
+  let maxExcess = creatorClusters.reduce((maxValue, creator) => Math.max(maxValue, projectGatherExcess(creator.projects)), 0)
+  if (creatorClusters.length <= 1) return maxExcess
+  const centerCreator = dominantCreatorCluster(creatorClusters)
+  if (!centerCreator) return maxExcess
+  creatorClusters.forEach((cluster) => {
+    if (cluster.id === centerCreator.id) return
+    const dist = Math.hypot(cluster.cx - centerCreator.cx, cluster.cy - centerCreator.cy)
+    const targetDist = centerCreator.radius + cluster.radius + CREATOR_TARGET_GAP
+    maxExcess = Math.max(maxExcess, dist - targetDist)
+  })
+  return maxExcess
+}
+
+function attractProjectClusters(projectClusters: ProjectCluster[], alpha: number, anchorToOrigin = true) {
   if (projectClusters.length <= 1) return
   const centerProject = dominantProjectCluster(projectClusters)
   if (!centerProject) return
   const gatherAlpha = Math.max(alpha, PROJECT_GATHER_MIN_ALPHA)
   const centerOffset = Math.hypot(centerProject.cx, centerProject.cy)
-  if (centerOffset > 0.5) {
+  if (anchorToOrigin && centerOffset > 0.5) {
     const pull = Math.min(9, centerOffset * DOMINANT_PROJECT_ANCHOR_PULL) * gatherAlpha
     translateProjectCluster(centerProject, (-centerProject.cx / centerOffset) * pull, (-centerProject.cy / centerOffset) * pull)
   }
@@ -1025,7 +1256,31 @@ function attractProjectClusters(projectClusters: ProjectCluster[], alpha: number
   })
 }
 
-function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], projectClusters: ProjectCluster[], alpha: number) {
+function attractCreatorClusters(creatorClusters: CreatorCluster[], alpha: number) {
+  if (creatorClusters.length <= 1) return
+  const centerCreator = dominantCreatorCluster(creatorClusters)
+  if (!centerCreator) return
+  const gatherAlpha = Math.max(alpha, PROJECT_GATHER_MIN_ALPHA)
+  const centerOffset = Math.hypot(centerCreator.cx, centerCreator.cy)
+  if (centerOffset > 0.5) {
+    const pull = Math.min(9, centerOffset * DOMINANT_PROJECT_ANCHOR_PULL) * gatherAlpha
+    translateCreatorCluster(centerCreator, (-centerCreator.cx / centerOffset) * pull, (-centerCreator.cy / centerOffset) * pull)
+  }
+  const centerX = centerCreator.cx
+  const centerY = centerCreator.cy
+  creatorClusters.forEach((cluster) => {
+    if (cluster.id === centerCreator.id) return
+    const dx = centerX - cluster.cx
+    const dy = centerY - cluster.cy
+    const dist = Math.hypot(dx, dy)
+    const restDistance = centerCreator.radius + cluster.radius + CREATOR_TARGET_GAP
+    if (dist <= restDistance) return
+    const pull = Math.min(PROJECT_GATHER_MAX_STEP, (dist - restDistance) * PROJECT_GATHER_STRENGTH) * gatherAlpha
+    translateCreatorCluster(cluster, (dx / dist) * pull, (dy / dist) * pull)
+  })
+}
+
+function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], projectClusters: ProjectCluster[], creatorClusters: CreatorCluster[], mode: ClusterMode, alpha: number) {
   const parentById = new Map(parentClusters.map((cluster) => [cluster.id, cluster]))
   const projectById = new Map(projectClusters.map((cluster) => [cluster.id, cluster]))
   const n = nodes.length
@@ -1092,24 +1347,38 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
     node.y += node.vy
   })
 
-  updateClusterShapes(parentClusters, projectClusters)
-  attractProjectClusters(projectClusters, alpha)
-  updateClusterShapes(parentClusters, projectClusters)
+  updateClusterShapes(parentClusters, projectClusters, creatorClusters)
+  if (mode === 'creator') {
+    creatorClusters.forEach((creator) => attractProjectClusters(creator.projects, alpha, false))
+    creatorClusters.forEach(updateCreatorBubble)
+    attractCreatorClusters(creatorClusters, alpha)
+  } else {
+    attractProjectClusters(projectClusters, alpha)
+  }
+  updateClusterShapes(parentClusters, projectClusters, creatorClusters)
   constrainSessionsToParents(parentClusters)
   resolveSessionOverlaps(nodes)
-  updateClusterShapes(parentClusters, projectClusters)
+  updateClusterShapes(parentClusters, projectClusters, creatorClusters)
   resolveParentAndProjectOverlaps(parentClusters, projectClusters)
+  if (mode === 'creator') resolveCreatorClusterOverlaps(creatorClusters)
   constrainSessionsToParents(parentClusters)
   resolveSessionOverlaps(nodes)
-  updateClusterShapes(parentClusters, projectClusters)
+  updateClusterShapes(parentClusters, projectClusters, creatorClusters)
 }
 
-function tickProjectGatherOnly(parentClusters: ParentCluster[], projectClusters: ProjectCluster[], alpha: number) {
-  updateClusterShapes(parentClusters, projectClusters)
-  attractProjectClusters(projectClusters, alpha)
-  updateClusterShapes(parentClusters, projectClusters)
+function tickProjectGatherOnly(parentClusters: ParentCluster[], projectClusters: ProjectCluster[], creatorClusters: CreatorCluster[], mode: ClusterMode, alpha: number) {
+  updateClusterShapes(parentClusters, projectClusters, creatorClusters)
+  if (mode === 'creator') {
+    creatorClusters.forEach((creator) => attractProjectClusters(creator.projects, alpha, false))
+    creatorClusters.forEach(updateCreatorBubble)
+    attractCreatorClusters(creatorClusters, alpha)
+  } else {
+    attractProjectClusters(projectClusters, alpha)
+  }
+  updateClusterShapes(parentClusters, projectClusters, creatorClusters)
   resolveParentAndProjectOverlaps(parentClusters, projectClusters)
-  updateClusterShapes(parentClusters, projectClusters)
+  if (mode === 'creator') resolveCreatorClusterOverlaps(creatorClusters)
+  updateClusterShapes(parentClusters, projectClusters, creatorClusters)
 }
 
 function drawShape(ctx: CanvasRenderingContext2D, shape: ClusterShape) {
@@ -1311,7 +1580,7 @@ function textEllipsis(ctx: CanvasRenderingContext2D, text: string, maxWidth: num
   return `${next}...`
 }
 
-function worldBounds(nodes: ClusterSession[]) {
+function worldBounds(nodes: ClusterSession[], creatorClusters: CreatorCluster[] = []) {
   if (!nodes.length) return { minX: -300, minY: -220, maxX: 300, maxY: 220 }
   let minX = Infinity
   let minY = Infinity
@@ -1322,6 +1591,12 @@ function worldBounds(nodes: ClusterSession[]) {
     minY = Math.min(minY, node.y - 120)
     maxX = Math.max(maxX, node.x + 120)
     maxY = Math.max(maxY, node.y + 120)
+  })
+  creatorClusters.forEach((cluster) => {
+    minX = Math.min(minX, cluster.cx - cluster.radius - 24)
+    minY = Math.min(minY, cluster.cy - cluster.radius - 36)
+    maxX = Math.max(maxX, cluster.cx + cluster.radius + 24)
+    maxY = Math.max(maxY, cluster.cy + cluster.radius + 24)
   })
   return { minX, minY, maxX, maxY }
 }
@@ -1339,18 +1614,14 @@ function InfoRow({ label, value }: { label: string; value: any }) {
 function DetailDrawer({ selection, userParam, onClose }: { selection: Selection | null; userParam: string; onClose: () => void }) {
   const navigate = useNavigate()
   const path = getSelectionPath(userParam, selection)
-  const color = selection?.kind === 'project'
+  const color = selection && isClusterSelection(selection)
     ? selection.cluster.color
-    : selection && isParentSelection(selection)
-      ? selection.cluster.color
-      : selection
-        ? sessionColor(selection.session)
-        : 'var(--accent-primary)'
-  const recentSessions = selection?.kind === 'project'
+    : selection
+      ? sessionColor(selection.session)
+      : 'var(--accent-primary)'
+  const recentSessions = selection && isClusterSelection(selection)
     ? sortByRecent(selection.cluster.sessions, (session) => session.activeMs).slice(0, 12)
-    : selection && isParentSelection(selection)
-      ? sortByRecent(selection.cluster.sessions, (session) => session.activeMs).slice(0, 12)
-      : []
+    : []
 
   return (
     <aside
@@ -1362,7 +1633,7 @@ function DetailDrawer({ selection, userParam, onClose }: { selection: Selection 
         <div className="flex h-full flex-col">
           <div className="flex items-start gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg" style={{ color, background: rgba(color, 0.14) }}>
-              {selection.kind === 'project' ? <GitBranch className="h-4 w-4" /> : selection.kind === 'issue' ? <CircleDot className="h-4 w-4" /> : selection.kind === 'research' ? <FlaskConical className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+              {selection.kind === 'creator' ? <UserRound className="h-4 w-4" /> : selection.kind === 'project' ? <GitBranch className="h-4 w-4" /> : selection.kind === 'issue' ? <CircleDot className="h-4 w-4" /> : selection.kind === 'research' ? <FlaskConical className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
@@ -1388,10 +1659,11 @@ function DetailDrawer({ selection, userParam, onClose }: { selection: Selection 
                 {selection.source.description || selection.source.summary}
               </div>
             )}
-            <InfoRow label="状态" value={statusLabel(selection.source?.agent_status || selection.source?.status)} />
+            {selection.kind !== 'creator' && <InfoRow label="状态" value={statusLabel(selection.source?.agent_status || selection.source?.status)} />}
             <InfoRow label="ID" value={selection.id} />
-            <InfoRow label="活跃" value={timeAgoPrecise(activeTimeValue(selection.source) || (selection.kind === 'project' ? selection.cluster.activeMs : isParentSelection(selection) ? selection.cluster.activeMs : selection.session.activeAt))} />
-            {selection.kind !== 'project' && <InfoRow label="Project" value={isSessionSelection(selection) ? selection.session.projectName : selection.cluster.projectName} />}
+            <InfoRow label="活跃" value={timeAgoPrecise(activeTimeValue(selection.source) || (isClusterSelection(selection) ? selection.cluster.activeMs : selection.session.activeAt))} />
+            {(isParentSelection(selection) || isSessionSelection(selection)) && <InfoRow label="Project" value={isSessionSelection(selection) ? selection.session.projectName : selection.cluster.projectName} />}
+            {selection.kind === 'project' && <InfoRow label="创建者" value={selection.cluster.creatorName} />}
             {isSessionSelection(selection) && (
               <>
                 <InfoRow label="归属" value={`${selection.session.parentKind === 'research' ? 'Research' : 'Issue'} · ${selection.session.parentTitle}`} />
@@ -1403,7 +1675,13 @@ function DetailDrawer({ selection, userParam, onClose }: { selection: Selection 
                 <InfoRow label="成本" value={`$${Number(selection.source?.total_cost_usd || 0).toFixed(4)}`} />
               </>
             )}
-            {(selection.kind === 'project' || isParentSelection(selection)) && (
+            {selection.kind === 'creator' && (
+              <>
+                <InfoRow label="项目" value={selection.cluster.projects.length} />
+                <InfoRow label="活跃主题" value={selection.cluster.projects.reduce((sum, project) => sum + project.parents.length, 0)} />
+              </>
+            )}
+            {isClusterSelection(selection) && (
               <>
                 <InfoRow label="活跃会话" value={selection.cluster.sessions.length} />
                 {selection.kind === 'project' && <InfoRow label="活跃主题" value={selection.cluster.parents.length} />}
@@ -1420,7 +1698,7 @@ function DetailDrawer({ selection, userParam, onClose }: { selection: Selection 
                         <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: sessionColor(session) }} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{session.title}</span>
-                          <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{session.parentTitle} · {timeAgoPrecise(session.activeAt || '')}</span>
+                          <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{selection.kind === 'creator' ? `${session.projectName} · ` : ''}{session.parentTitle} · {timeAgoPrecise(session.activeAt || '')}</span>
                         </span>
                       </button>
                     ))}
@@ -1460,6 +1738,13 @@ export default function MobiusOverviewClusterPage() {
     setCurrentTask,
   } = useStore()
   const [query, setQuery] = useState('')
+  const [clusterMode, setClusterMode] = useState<ClusterMode>(() => {
+    try {
+      return localStorage.getItem('mobius:overview-cluster-mode') === 'creator' ? 'creator' : 'project'
+    } catch {
+      return 'project'
+    }
+  })
   const [timeRange, setTimeRange] = useState<TimeRangeKey>('24h')
   const [graphDataByProject, setGraphDataByProject] = useState<Record<string, ProjectGraphData>>({})
   const [loadingIds, setLoadingIds] = useState<Set<string>>(() => new Set())
@@ -1470,7 +1755,7 @@ export default function MobiusOverviewClusterPage() {
   const [paused, setPaused] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
-  const modelRef = useRef<ClusterModel>({ nodes: [], parentClusters: [], projectClusters: [] })
+  const modelRef = useRef<ClusterModel>({ mode: clusterMode, nodes: [], parentClusters: [], projectClusters: [], creatorClusters: [] })
   const selectedRef = useRef<Selection | null>(null)
   const didInitialFitRef = useRef(false)
   const pendingAutoFitRef = useRef(false)
@@ -1574,7 +1859,7 @@ export default function MobiusOverviewClusterPage() {
     return () => { cancelled = true }
   }, [candidateProjects, graphDataByProject, loadProjectGraph])
 
-  const model = useMemo(() => buildClusterModel(candidateProjects, graphDataByProject, cutoffMs), [candidateProjects, graphDataByProject, cutoffMs])
+  const model = useMemo(() => buildClusterModel(candidateProjects, graphDataByProject, cutoffMs, clusterMode), [candidateProjects, graphDataByProject, cutoffMs, clusterMode])
   const activeProjectIds = useMemo(() => new Set(model.projectClusters.map((project) => project.id)), [model.projectClusters])
   const visibleProjects = useMemo(
     () => candidateProjects.filter((project: any) => activeProjectIds.has(project.id) || loadingIds.has(project.id) || !graphDataByProject[project.id]),
@@ -1585,6 +1870,17 @@ export default function MobiusOverviewClusterPage() {
     () => candidateProjects.reduce((count: number, project: any) => count + (graphDataByProject[project.id] ? 0 : 1), 0),
     [candidateProjects, graphDataByProject],
   )
+  const visibleCreatorGroups = useMemo(() => {
+    const groups = new Map<string, { id: string; title: string; projects: any[]; activeMs: number }>()
+    visibleProjects.forEach((project: any) => {
+      const id = projectCreatorId(project)
+      const group = groups.get(id) || { id, title: projectCreatorName(project), projects: [], activeMs: 0 }
+      group.projects.push(project)
+      group.activeMs = Math.max(group.activeMs, activeTimeMs(project))
+      groups.set(id, group)
+    })
+    return [...groups.values()].sort((a, b) => b.projects.length - a.projects.length || b.activeMs - a.activeMs)
+  }, [visibleProjects])
 
   const worldFromClientPoint = useCallback((clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect()
@@ -1600,7 +1896,7 @@ export default function MobiusOverviewClusterPage() {
   const worldFromEvent = useCallback((event: PointerEvent<HTMLCanvasElement>) => worldFromClientPoint(event.clientX, event.clientY), [worldFromClientPoint])
 
   const hitTest = useCallback((world: Point): HitTarget | null => {
-    const { nodes, parentClusters: parents, projectClusters } = modelRef.current
+    const { nodes, parentClusters: parents, projectClusters, creatorClusters } = modelRef.current
     let bestNode: ClusterSession | null = null
     let bestDist = Infinity
     const hitRadius = Math.max(9, 11 / zoomRef.current)
@@ -1620,11 +1916,16 @@ export default function MobiusOverviewClusterPage() {
       const cluster = projectClusters[i]
       if (pointInShape(world, cluster.shape)) return { kind: 'project', cluster }
     }
+    for (let i = creatorClusters.length - 1; i >= 0; i -= 1) {
+      const cluster = creatorClusters[i]
+      if (pointInShape(world, cluster.shape)) return { kind: 'creator', cluster }
+    }
     return null
   }, [])
 
   const selectionFromHit = useCallback((hit: HitTarget | null): Selection | null => {
     if (!hit) return null
+    if (hit.kind === 'creator') return { kind: 'creator', id: hit.cluster.id, title: hit.cluster.title, source: hit.cluster.source, cluster: hit.cluster }
     if (hit.kind === 'project') return { kind: 'project', id: hit.cluster.id, title: hit.cluster.title, source: hit.cluster.source, cluster: hit.cluster }
     if (hit.kind === 'issue' || hit.kind === 'research') return { kind: hit.kind, id: hit.cluster.id, title: hit.cluster.title, source: hit.cluster.source, cluster: hit.cluster }
     if (!isSessionHit(hit)) return null
@@ -1637,13 +1938,24 @@ export default function MobiusOverviewClusterPage() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const { width, height, dpr } = sizeRef.current
-    const { nodes, parentClusters: parents, projectClusters } = modelRef.current
+    const { nodes, parentClusters: parents, projectClusters, creatorClusters, mode } = modelRef.current
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, width, height)
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#0f172a'
     ctx.fillRect(0, 0, width, height)
     ctx.translate(offsetRef.current.x, offsetRef.current.y)
     ctx.scale(zoomRef.current, zoomRef.current)
+
+    if (mode === 'creator') {
+      creatorClusters.forEach((cluster) => {
+        drawShape(ctx, cluster.shape)
+        ctx.fillStyle = rgba(cluster.color, 0.075)
+        ctx.fill()
+        ctx.lineWidth = 1.05 / zoomRef.current
+        ctx.strokeStyle = rgba(cluster.color, 0.32)
+        ctx.stroke()
+      })
+    }
 
     projectClusters.forEach((cluster) => {
       drawShape(ctx, cluster.shape)
@@ -1664,6 +1976,19 @@ export default function MobiusOverviewClusterPage() {
     })
 
     if (zoomRef.current > 0.35) {
+      if (mode === 'creator') {
+        creatorClusters.forEach((cluster) => {
+          drawClusterLabel(
+            ctx,
+            cluster.title,
+            cluster.cx,
+            cluster.cy - cluster.radius + 24,
+            Math.max(90, cluster.radius * 1.1),
+            cluster.color,
+            '700 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          )
+        })
+      }
       projectClusters.forEach((cluster) => {
         if (cluster.radius < 64) return
         drawClusterLabel(
@@ -1747,7 +2072,7 @@ export default function MobiusOverviewClusterPage() {
     const canvas = canvasRef.current
     if (!canvas) return
     const { width, height } = sizeRef.current
-    const bounds = worldBounds(nodes)
+    const bounds = worldBounds(nodes, modelRef.current.creatorClusters)
     const bw = Math.max(1, bounds.maxX - bounds.minX)
     const bh = Math.max(1, bounds.maxY - bounds.minY)
     const nextZoom = clampZoom(Math.min(maxZoom, width / bw, height / bh) * 0.86)
@@ -1838,24 +2163,31 @@ export default function MobiusOverviewClusterPage() {
 
   useEffect(() => {
     const step = () => {
-      const gatherExcess = projectGatherExcess(modelRef.current.projectClusters)
+      const currentModel = modelRef.current
+      const gatherExcess = currentModel.mode === 'creator'
+        ? creatorGatherExcess(currentModel.creatorClusters)
+        : projectGatherExcess(currentModel.projectClusters)
       const needsProjectGather = gatherExcess > PROJECT_GATHER_STOP_EXCESS
       if (!pausedRef.current && alphaRef.current > 0.018) {
         tickLayout(
-          modelRef.current.nodes,
-          modelRef.current.parentClusters,
-          modelRef.current.projectClusters,
+          currentModel.nodes,
+          currentModel.parentClusters,
+          currentModel.projectClusters,
+          currentModel.creatorClusters,
+          currentModel.mode,
           needsProjectGather ? Math.max(alphaRef.current, PROJECT_GATHER_MIN_ALPHA) : alphaRef.current,
         )
         alphaRef.current *= 0.986
       } else if (!pausedRef.current && needsProjectGather) {
         tickProjectGatherOnly(
-          modelRef.current.parentClusters,
-          modelRef.current.projectClusters,
+          currentModel.parentClusters,
+          currentModel.projectClusters,
+          currentModel.creatorClusters,
+          currentModel.mode,
           PROJECT_GATHER_MIN_ALPHA,
         )
       } else {
-        updateClusterShapes(modelRef.current.parentClusters, modelRef.current.projectClusters)
+        updateClusterShapes(currentModel.parentClusters, currentModel.projectClusters, currentModel.creatorClusters)
       }
       draw()
       frameRef.current = requestAnimationFrame(step)
@@ -1900,6 +2232,18 @@ export default function MobiusOverviewClusterPage() {
     userViewportInteractedRef.current = false
     pendingAutoFitRef.current = true
     setTimeRange(value)
+  }
+
+  const handleClusterModeChange = (value: ClusterMode) => {
+    if (value === clusterMode) return
+    if (settledAutoFitTimerRef.current != null) window.clearTimeout(settledAutoFitTimerRef.current)
+    settledAutoFitTimerRef.current = null
+    userViewportInteractedRef.current = false
+    pendingAutoFitRef.current = true
+    setSelected(null)
+    setHoverLabel(null)
+    setClusterMode(value)
+    try { localStorage.setItem('mobius:overview-cluster-mode', value) } catch {}
   }
 
   useEffect(() => {
@@ -1961,6 +2305,8 @@ export default function MobiusOverviewClusterPage() {
     const sy = rect ? event.clientY - rect.top : 0
     if (hit.kind === 'project') {
       setHoverLabel({ x: sx, y: sy, title: hit.cluster.title, meta: `${hit.cluster.parents.length} 个主题 · ${hit.cluster.sessions.length} 个会话` })
+    } else if (hit.kind === 'creator') {
+      setHoverLabel({ x: sx, y: sy, title: hit.cluster.title, meta: `${hit.cluster.projects.length} 个项目 · ${hit.cluster.sessions.length} 个会话` })
     } else if (hit.kind === 'issue' || hit.kind === 'research') {
       setHoverLabel({ x: sx, y: sy, title: hit.cluster.title, meta: `${hit.kind === 'research' ? 'Research' : 'Issue'} · ${hit.cluster.sessions.length} 个会话` })
     } else if (isSessionHit(hit)) {
@@ -1974,6 +2320,7 @@ export default function MobiusOverviewClusterPage() {
     if (!drag.moved) {
       const selection = selectionFromHit(drag.hit || hitTest(worldFromEvent(event)))
       setSelected(selection)
+      if (selection?.kind === 'creator') setCurrentProject(null)
       if (selection?.kind === 'project') setCurrentProject(selection.source)
       if (selection?.kind === 'issue') setCurrentIssue(selection.source)
       if (selection?.kind === 'research') setCurrentResearch(selection.source)
@@ -1988,6 +2335,14 @@ export default function MobiusOverviewClusterPage() {
     const cluster = modelRef.current.projectClusters.find((item) => item.id === projectId)
     if (!cluster) return
     setSelected({ kind: 'project', id: cluster.id, title: cluster.title, source: cluster.source, cluster })
+  }
+
+  const focusCreator = (creatorId: string) => {
+    cancelViewportAnimation()
+    const cluster = modelRef.current.creatorClusters.find((item) => item.id === creatorId)
+    if (!cluster) return
+    setCurrentProject(null)
+    setSelected({ kind: 'creator', id: cluster.id, title: cluster.title, source: cluster.source, cluster })
   }
 
   const reheat = () => {
@@ -2005,7 +2360,7 @@ export default function MobiusOverviewClusterPage() {
               <Sparkles className="h-4 w-4" style={{ color: 'var(--accent-primary)' }} />
               <div className="text-[13px] font-semibold">Cluster Overview</div>
               <div className="ml-auto rounded-md px-1.5 py-0.5 text-[10px]" style={{ color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
-                {visibleProjects.length}
+                {clusterMode === 'creator' ? visibleCreatorGroups.length : visibleProjects.length}
               </div>
             </div>
             <div className="relative mt-3">
@@ -2015,13 +2370,60 @@ export default function MobiusOverviewClusterPage() {
                 onChange={(event) => handleQueryChange(event.target.value)}
                 className="h-8 w-full rounded-md border bg-transparent pl-8 pr-2 text-[12px] outline-none transition-colors focus:border-[var(--accent-primary)]"
                 style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                placeholder="搜索 Project"
+                placeholder="搜索 Project / 创建者"
               />
+            </div>
+            <div className="mt-3 grid grid-cols-2 rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              {([
+                { key: 'project' as const, label: '项目聚集', icon: GitBranch },
+                { key: 'creator' as const, label: '创建者聚集', icon: UserRound },
+              ]).map((option) => {
+                const active = clusterMode === option.key
+                const Icon = option.icon
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    data-cluster-mode={option.key}
+                    onClick={() => handleClusterModeChange(option.key)}
+                    className="flex h-7 items-center justify-center gap-1.5 rounded text-[11px] font-medium transition-colors"
+                    style={{ color: active ? '#fff' : 'var(--text-secondary)', background: active ? 'var(--accent-primary)' : 'transparent' }}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {option.label}
+                  </button>
+                )
+              })}
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {visibleProjects.length === 0 ? (
-              <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>没有匹配项目</div>
+              <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>没有匹配项目或创建者</div>
+            ) : clusterMode === 'creator' ? (
+              visibleCreatorGroups.map((creator) => {
+                const cluster = model.creatorClusters.find((item) => item.id === creator.id)
+                return (
+                  <button
+                    key={creator.id}
+                    type="button"
+                    onClick={() => focusCreator(creator.id)}
+                    title={creator.title}
+                    className="mb-1 flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{ background: selected?.kind === 'creator' && selected.id === creator.id ? 'var(--bg-active)' : undefined }}
+                  >
+                    <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full" style={{ color: creatorColor(creator.id), background: rgba(creatorColor(creator.id), 0.14) }}>
+                      <UserRound className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>{creator.title}</span>
+                      <span className="mt-0.5 flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        <span>{creator.projects.length} Projects</span>
+                        <span>{cluster ? compactCount(cluster.sessions.length) : '加载中'} Sessions</span>
+                      </span>
+                    </span>
+                  </button>
+                )
+              })
             ) : (
               visibleProjects.map((project: any) => {
                 const cluster = model.projectClusters.find((item) => item.id === project.id)
@@ -2055,8 +2457,9 @@ export default function MobiusOverviewClusterPage() {
               <MousePointer2 className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[14px] font-semibold">Mobius 点阵会话地图</div>
+              <div className="truncate text-[14px] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
               <div className="mt-0.5 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {clusterMode === 'creator' && <span>{model.creatorClusters.length} Creators</span>}
                 <span>{model.projectClusters.length} Projects</span>
                 <span>{model.parentClusters.length} Issues / Research</span>
                 <span>{model.nodes.length} Sessions / Agents</span>

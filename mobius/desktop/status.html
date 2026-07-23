@@ -20,6 +20,21 @@
         <div id="detail" class="detail">—</div>
       </header>
 
+      <section class="card intro-card">
+        <h2>aimux 是什么</h2>
+        <p class="intro-lead">aimux 是莫比乌斯与你这台电脑之间的反向连接通道。连上之后，智能体可以在你电脑上运行命令、修改代码、操作文件，也能调度多台机器一起干活。桌面端登录后会自动连上，通常无需手动操作。</p>
+        <button id="intro-toggle" class="link" type="button" aria-expanded="false">这些信息分别是什么意思？</button>
+        <dl id="intro-glossary" class="kv intro-glossary" hidden>
+          <dt>identifier</dt><dd>这台电脑在 mobius 里的名字（自动生成，用于辨识）。</dd>
+          <dt>服务器</dt><dd>它当前连上的 mobius 中枢地址。</dd>
+          <dt>aimux 版本 / venv 路径 / 内置 Python</dt><dd>aimux 程序自身的运行环境，正常情况下无需关心。</dd>
+          <dt>允许 aimux 反向连接</dt><dd>下面的开关。关掉后智能体就不能再用这台电脑干活了；桌面端登录、工作台等其他功能不受影响。</dd>
+          <dt>本机环境</dt><dd>智能体调度任务时会参考的硬件信息（系统 / CPU / 内存等）。</dd>
+          <dt>最近日志</dt><dd>连接过程的运行记录，出现问题时用来排查。</dd>
+        </dl>
+        <button id="intro-learn" class="intro-learn" type="button">了解 aimux 还能做什么 ›</button>
+      </section>
+
       <section class="card">
         <label class="toggle-row">
           <div class="toggle-text">
