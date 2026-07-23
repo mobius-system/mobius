@@ -3534,6 +3534,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     icon={<Replace className="h-4 w-4" strokeWidth={1.9} />}
                   />
                 </div>
+                {/* Row separator (below Row 2, 与 Row 1/2 之间的细线对称) */}
+                <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
               </div>
                 <SessionSkillMemoryEditor
                   sessionId={currentSession?.session_id || sessionId}
