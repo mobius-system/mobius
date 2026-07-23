@@ -68,6 +68,7 @@ import {
 import {
   readJobFlagState,
   safeRemoveRunningFlag,
+  safeWriteRunningFlag,
 } from '../utils/session-flags';
 // @ts-ignore — service 仍是 .js
 import { DEFAULT_WINDOW_HOURS, statsSince, statsSinceMinutes } from '../services/agent-prompt-events';
@@ -1624,23 +1625,37 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
       }));
     const startContent = [name, description].map((part) => String(part || '').trim()).filter(Boolean).join('\n\n');
     if (startContent) {
+      // 预写 running.flag: agent spawn 完成前, /status 读 flag(路径 = path.resolve(project.bind_path),
+      // 与本处一致) 判定 job_accomplished —— flag 缺失会被误判"已完成". 这里先占位让新会话维持
+      // 非完成态; runSessionMessage 内部 dispatch 后会再写一次(幂等), 早期失败由下方 catch 补清.
+      let startFlagRoot: string | null = null;
       try {
-        await runSessionMessage({
-          user,
-          sessionId,
-          content: startContent,
-          inputText: startContent,
-          hasInputText: true,
-          requestId: `continue-${sourceSession.session_id}-${Date.now()}` as any,
-          source: 'http.session.continue_with_model',
-          logger: console,
-        } as any);
-      } catch (e) {
-        const err = e as any;
-        console.warn(`[sessions] auto start continued session failed (${sessionId}): ${(e as Error).message}`);
-        res.status(err.status || 500).json({ error: err.message || '启动新 Session 失败', category: err.category || undefined });
-        return;
+        const startProject = Projects.findById(issue.project_id) as any;
+        startFlagRoot = startProject?.bind_path ? path.resolve(startProject.bind_path) : null;
+      } catch {}
+      if (startFlagRoot) {
+        try { safeWriteRunningFlag(startFlagRoot, sessionId, { backend: 'continue-with-model' }, 'sessions/continue'); } catch {}
       }
+      // fire-and-forget: 不阻塞 HTTP 响应. session 已写库 + transfer bundle 已生成 + 旧会话已关闭,
+      // 立即返回让前端跳转进新会话; agent 在后台 spawn 启动并自动发首条消息(name+description),
+      // 前端通过 SSE 看 agent 实时输出即"进度". 启动失败不再阻塞用户几十秒, 改由 runSessionMessage
+      // 内部写 failed.flag + system 消息反馈到会话页(dispatch 失败自清 flag; 早期失败由 catch 补清).
+      runSessionMessage({
+        user,
+        sessionId,
+        content: startContent,
+        inputText: startContent,
+        hasInputText: true,
+        requestId: `continue-${sourceSession.session_id}-${Date.now()}` as any,
+        source: 'http.session.continue_with_model',
+        logger: console,
+      } as any).catch((e) => {
+        console.warn(`[sessions] auto start continued session failed (${sessionId}): ${(e as Error).message}`);
+        // 早期失败(workspace 不可用 / model 被移除) runSessionMessage 内部未清 flag, 补清预写的 running.flag.
+        if (startFlagRoot) {
+          try { safeRemoveRunningFlag(startFlagRoot, sessionId, 'sessions/continue-cleanup'); } catch {}
+        }
+      });
     }
   }
   recordAdminAuditIfCrossUser(user, 'create_session', 'issue', issue.id, issue.created_by);

@@ -2623,6 +2623,20 @@ export function NewSessionModal({
         background: 'var(--modal-bg)',
         border: '1px solid var(--border-color)',
       }}>
+        {loading && (
+          <div
+            className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 rounded-2xl"
+            style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}
+          >
+            <Loader2 className="h-9 w-9 animate-spin" style={{ color: '#60a5fa' }} strokeWidth={1.8} />
+            <div className="text-[14px] font-medium" style={{ color: '#f1f5f9' }}>
+              {isPresetMode ? '正在保存预设，请稍候…' : '正在创建会话，请稍候…'}
+            </div>
+            {!isPresetMode && continueFromSessionId && (
+              <div className="text-[11px]" style={{ color: '#cbd5e1' }}>正在生成转接记录并启动新会话，完成后自动进入</div>
+            )}
+          </div>
+        )}
         <div className="flex items-center justify-between gap-3 mb-4">
           <h3 className="text-[15px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
             {modalTitle || (isPresetMode ? '会话预设菜单' : `新建 ${displayEntityLabel}`)} · {step === 1 ? '第 1 步 / 共 2 步' : '第 2 步 / 共 2 步'}
