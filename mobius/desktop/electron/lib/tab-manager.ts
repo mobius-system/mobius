@@ -13,6 +13,13 @@ import { type BrowserWindow, WebContentsView, type WebContents, type WebPreferen
 import { getLastTabs, setLastTabs } from "./desktop-settings";
 import { installWebContentsShortcuts } from "./web-contents-shortcuts";
 
+// macOS: titleBarStyle:"hiddenInset" 保留原生交通灯 + 顶部一块原生拖拽条(约 28pt)。
+// 子 WebContentsView 若从 y=0 全高铺满客户区会盖住这条原生拖拽条 → mac 窗口拖不动。
+// 故 mac 上把 view 起点下移 MAC_TITLEBAR_H、高度减去它, 让出原生拖拽条。
+// Win/Linux 用 titleBarStyle:"hidden"(无原生拖拽区, 靠前端 IPC 模拟拖窗), 仍 y=0 全高。
+const isMac = process.platform === "darwin";
+const MAC_TITLEBAR_H = 28;
+
 export interface TabInfo {
   id: string;
   url: string; // pathname+search+hash（持久化 / 前端显示用，不含 origin）
@@ -93,12 +100,16 @@ export class TabManager {
     return this.activeId;
   }
 
-  /** 内容区 bounds = 窗口客户区。tab 栏前端 fixed 浮层不占布局 → view 铺满。 */
+  /** 内容区 bounds = 窗口客户区。tab 栏前端 fixed 浮层不占布局 → view 铺满。
+   *  mac 让出顶部 MAC_TITLEBAR_H 给原生拖拽条(见文件头注释); Win/Linux 全高。 */
   private contentBounds(): { x: number; y: number; width: number; height: number } {
     const win = this.opts.window();
-    if (!win || win.isDestroyed()) return { x: 0, y: 0, width: 1280, height: 800 };
+    if (!win || win.isDestroyed()) {
+      return { x: 0, y: 0, width: 1280, height: 800 };
+    }
     const b = win.getContentBounds();
-    return { x: 0, y: 0, width: b.width, height: b.height };
+    const yOffset = isMac ? MAC_TITLEBAR_H : 0;
+    return { x: 0, y: yOffset, width: b.width, height: b.height - yOffset };
   }
 
   /** 窗口 resize 时重布局所有 view（含隐藏的，确保下次显示位置正确）。 */
