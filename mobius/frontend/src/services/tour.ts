@@ -654,6 +654,12 @@ function addClickToAdvanceStep(
 function launchDriver(steps: DriveStep[], onDestroyed?: () => void, opts?: { disableOverlayClose?: boolean }) {
   if (!steps.length) return false
 
+  // disableOverlayClose (allowClose:false) 时, driver.js 会连带把 X 关闭按钮从 showButtons 里剔除 →
+  // closeButton.display='none'. 这会让引导失去退出入口: 强制点击步一旦高亮元素缺失/不可点,
+  // 用户只能反复点"上一步"而死循环 (用户报的"只有上一步, 没有下一步, 进行不下去").
+  // 这里在每次 popover 渲染后强制把关闭按钮显示回来, 保证引导恒定有退出备选项.
+  // 该回调对所有走 launchDriver 的引导通用 (web 与桌面端共享前端, 桌面端同样受益, 不影响其他引导).
+  const forceCloseButton = !!opts?.disableOverlayClose
   let currentDriver: Driver | null = null
   currentDriver = driver({
     animate: true,
@@ -671,6 +677,11 @@ function launchDriver(steps: DriveStep[], onDestroyed?: () => void, opts?: { dis
     nextBtnText: '下一步',
     prevBtnText: '上一步',
     doneBtnText: '完成',
+    onPopoverRender: (popover: any) => {
+      if (forceCloseButton && popover?.closeButton) {
+        popover.closeButton.style.display = 'block'
+      }
+    },
     onCloseClick: (_element, _step, opts) => {
       deactivateActiveDemoTour()
       opts.driver.destroy()
@@ -3411,7 +3422,7 @@ async function runSessionPageTour(onDestroyed?: () => void): Promise<boolean> {
   const steps: DriveStep[] = []
   addClickToAdvanceStep(steps, '[data-tour="top-layout-toggle"]', {
     title: '切换工作区布局',
-    description: '在三种不同的工作布局之间快速切换（日常、代码、文件）。\n点击此按钮继续。',
+    description: '在三种不同的工作布局之间快速切换（日常、代码、文件）。\n点击高亮按钮继续；找不到时也可点“下一步”跳过。',
     side: 'bottom',
     align: 'end',
   })
@@ -3427,19 +3438,19 @@ async function runSessionPageTour(onDestroyed?: () => void): Promise<boolean> {
   })
   addClickToAdvanceStep(steps, '[data-tour="session-memory-toggle"]', {
     title: 'Skill 与记忆',
-    description: '这里显示当前会话启用的技能和记忆，智能体忘了时可临时追加给它。\n点击此按钮继续。',
+    description: '这里显示当前会话启用的技能和记忆，智能体忘了时可临时追加给它。\n点击高亮按钮继续；找不到时也可点“下一步”跳过。',
     side: 'top',
     align: 'start',
   })
   addClickToAdvanceStep(steps, '[data-tour="session-bash-commands"]', {
     title: '查看会话命令',
-    description: '回看智能体执行过的所有 Bash 命令与结果。\n点击此按钮继续。',
+    description: '回看智能体执行过的所有 Bash 命令与结果。\n点击高亮按钮继续；找不到时也可点“下一步”跳过。',
     side: 'top',
     align: 'start',
   })
   addClickToAdvanceStep(steps, '[data-tour="session-cooperable-pc"]', {
     title: '声明可合作计算机',
-    description: '生成一条声明直接发给智能体，告诉它需要时可调用 SSH 服务器算力，或与任意笔记本电脑、工作站、嵌入式设备、云 GPU 服务器协同工作。\n点击此按钮完成引导。',
+    description: '生成一条声明直接发给智能体，告诉它需要时可调用 SSH 服务器算力，或与任意笔记本电脑、工作站、嵌入式设备、云 GPU 服务器协同工作。\n点击高亮按钮完成；或点“完成”结束引导。',
     doneBtnText: '完成',
     side: 'top',
     align: 'start',

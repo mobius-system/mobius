@@ -1447,9 +1447,12 @@ button {
   background: var(--bg-card-hover);
   border: 1px solid var(--input-border);
 }
-/* 强制点击步 (runSessionPageTour): 隐藏"下一步"按钮, 用户必须点击高亮元素本身才前进. */
+/* 强制点击步 (runSessionPageTour): 主操作仍是点击高亮元素本身前进,
+   但"下一步"必须保留可见作为兜底 —— 当高亮元素条件渲染缺失/不可点时,
+   用户仍能点"下一步"(末步为"完成")前进, 不致"只有上一步"而死循环卡死.
+   仅弱化其视觉权重, 让高亮元素仍是主引导. */
 .driver-popover.imac-driver-click-advance .driver-popover-next-btn {
-  display: none !important;
+  opacity: 0.78;
 }
 .driver-popover.imac-driver-popover .driver-popover-footer button:hover,
 .driver-popover.imac-driver-popover .driver-popover-footer button:focus {
