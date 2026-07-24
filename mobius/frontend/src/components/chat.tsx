@@ -1519,6 +1519,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [hideMinorJsonl, setHideMinorJsonl] = useState(true)
   // 默认隐藏 jsonl 卡片标题里的"序号 + 时间"前缀; 开启后才显示 #序号 和 MM-DD HH:MM:SS.
   const [showJsonlMeta, setShowJsonlMeta] = useState(false)
+  // Cursor 式工具调用展示: 工具卡显示状态图标 (⏳/✅/❌) + 连续探索类自动聚合为 "已探索 N 个工具". 默认开启.
+  const [cursorStyleTools, setCursorStyleTools] = useState(true)
   const sessionId = currentSession?.session_id || currentTask?.task_id || ''
   const currentProjectId = (currentIssue as any)?.project_id || (currentSession as any)?.project_id || (currentTask as any)?.project_id || ''
   const currentIssueId = (currentSession as any)?.issue_id || (currentIssue as any)?.id || ''
@@ -3209,6 +3211,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           jsonlInitialLoading={jsonlInitialLoading}
           jsonlLoadingMore={jsonlLoadingMore}
           showJsonlMeta={showJsonlMeta}
+          cursorStyleTools={cursorStyleTools}
           backendAlive={backendAlive}
           backendWorking={backendWorking}
           backendPid={backendPid}
@@ -3505,6 +3508,16 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     aria-pressed={showJsonlMeta}
                     className={showJsonlMeta ? 'bg-blue-500/15' : ''}
                     icon={<Hash className="h-4 w-4" strokeWidth={1.9} />}
+                  />
+                  <AdvancedInteractionBtn
+                    onClick={() => setCursorStyleTools(v => !v)}
+                    disabled={jsonlEntries.length === 0}
+                    label={cursorStyleTools ? '工具状态: 开' : '工具状态: 关'}
+                    tooltip={cursorStyleTools ? '已开启 Cursor 式工具展示（状态图标 + 探索类聚合）。点击关闭恢复原始展示' : '开启 Cursor 式工具调用展示：工具卡显示状态图标 ⏳/✅/❌，连续只读/搜索类自动聚合为「已探索 N 个工具」，失败的工具块默认展开'}
+                    accent="blue"
+                    aria-pressed={cursorStyleTools}
+                    className={cursorStyleTools ? 'bg-blue-500/15' : ''}
+                    icon={<Wrench className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <ProjectPortEntryButton
                     projectId={currentProjectId}

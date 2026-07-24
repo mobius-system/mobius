@@ -11,7 +11,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { Search } from 'lucide-react'
 import type { AnyEntry, BashToolResult, JsonlViewItem, Round, RoundItem } from './types'
 import type { ResolvedCallMap } from './tool-status'
-import { groupExploreItems } from './explore-group'
+import { groupExploreItems, type ExploreRenderItem } from './explore-group'
 import { entryDisplayImages, entryUserAttachmentImages } from './entry-extract'
 import { buildHeaderSummary } from './header-summary'
 import { JsonEntryCard } from './EntryCard'
@@ -133,7 +133,7 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
   )
 }
 
-export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, showMeta = true, resolvedMap }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null }) {
+export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, showMeta = true, resolvedMap, cursorStyleTools = true }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; cursorStyleTools?: boolean }) {
   // 追踪用户是否手动点击过折叠/展开. 一旦手动操作, 后续不再被 autoOpen/forceExpandAll 自动接管.
   // 实现"最新两轮自动展开, 除非人为折叠": 最新轮和上一轮默认展开, 更早的轮默认折叠;
   // 某轮升入最新两轮时自动展开, 跌出最新两轮时自动折叠; 用户手动操作过的轮尊重用户, 不再自动改.
@@ -159,6 +159,10 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
   const userItem = round.items[0]
   const agentCount = round.items.length - 1
   const userSummary = userItem ? buildHeaderSummary(userItem.entry).short : ''
+  // 探索类聚合: 连续只读/搜索调用合并为 "已探索 N 个工具"; cursorStyleTools 关闭时退化为逐条单卡 (回退原始展示).
+  const renderSeq: ExploreRenderItem[] = cursorStyleTools
+    ? groupExploreItems(round.items, resolvedMap)
+    : round.items.map((item) => ({ kind: 'single' as const, item }))
 
   return (
     <div className="mb-1">
@@ -189,7 +193,7 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
 
       {open && (
         <div className="mt-2 jsonl-thread">
-          {groupExploreItems(round.items, resolvedMap).map((ri, idx) => {
+          {renderSeq.map((ri, idx) => {
             if (ri.kind === 'explore') {
               return (
                 <div key={`explore-${idx}-${ri.items[0]?.lineNo ?? ''}`} className="flex items-start gap-1.5">

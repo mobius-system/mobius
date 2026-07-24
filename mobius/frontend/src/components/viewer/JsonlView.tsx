@@ -86,6 +86,7 @@ export function JsonlView({
   onLoadMore,
   loadingMore,
   showMeta = true,
+  cursorStyleTools = true,
   scrollToEntryUuid,
   scrollToMatchTs,
   onScrollResolved,
@@ -103,6 +104,8 @@ export function JsonlView({
   loadingMore?: boolean
   // false 时 jsonl 卡片标题里不再显示 "#序号" 和 "MM-DD HH:MM:SS" 时间戳前缀.
   showMeta?: boolean
+  // Cursor 式工具调用展示开关: true 时工具卡显示状态图标 + 连续探索类聚合; false 回退原始展示.
+  cursorStyleTools?: boolean
   // 搜索结果跳转: 把命中条目的 uuid / timestamp 传进来, 解析到所属轮次后滚动到该轮卡片.
   // 命中条目可能不在当前尾部窗口 (旧消息) → onScrollUnresolved 触发上层 "加载全部" 后再解析.
   scrollToEntryUuid?: string | null
@@ -118,7 +121,8 @@ export function JsonlView({
   const windowOffset = entries.length - recent.length
   // 工具调用状态集合: 哪些 tool_use_id 已有结果落地 (供卡片推导 running/success/error).
   // 基于原始 recent 窗口扫描 (含被 merge/过滤隐藏的纯 tool_result entry), 引用随 recent 稳定.
-  const resolvedMap = useMemo(() => collectResolvedCallIds(recent), [recent])
+  // cursorStyleTools 关闭时不构建 (传 null → 卡片无状态图标, 回退原始展示).
+  const resolvedMap = useMemo(() => cursorStyleTools ? collectResolvedCallIds(recent) : null, [recent, cursorStyleTools])
   const headerTitle = title === undefined ? 'JSONL' : title
   const visibleItems = useMemo(
     () => mergeBashToolResultItems(recent, windowOffset).filter(
@@ -246,6 +250,7 @@ export function JsonlView({
         forceExpandAll={forceExpandAll}
         showMeta={showMeta}
         resolvedMap={resolvedMap}
+        cursorStyleTools={cursorStyleTools}
       />
     )
   }
