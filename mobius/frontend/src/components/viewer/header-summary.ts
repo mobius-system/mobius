@@ -255,6 +255,7 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
   if (t === 'assistant' && Array.isArray(msg?.content)) {
     const parts: string[] = []
     const bashPartIndices: number[] = []
+    let hasThinking = false
     for (const item of msg.content) {
       if (item.type === 'text') parts.push(String(item.text || ''))
       else if (item.type === 'tool_use') {
@@ -287,7 +288,10 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
         const inputStr = item.input ? JSON.stringify(item.input) : ''
         parts.push(`${item.name}${inputStr ? ` ${inputStr}` : ''}`)
       }
-      else if (item.type === 'thinking') parts.push(String(item.thinking || ''))
+      else if (item.type === 'thinking') {
+        hasThinking = true
+        parts.push(String(item.thinking || ''))
+      }
     }
     // 同一条 entry 含多个 Bash tool_use 时, 把每条单条摘要折成一条合并摘要
     // "Bash · N calls · <第一条预览>"; 其他 text/thinking 块保留. 单条 Bash 走原摘要.
@@ -302,7 +306,14 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
       filtered.push(bashSummary)
       return clip(filtered.join('\n\n'), HEADER_SHORT_LIMIT)
     }
-    return clip(parts.join('\n\n'), HEADER_SHORT_LIMIT)
+    const joined = parts.join('\n\n')
+    // assistant 卡片只含 thinking 块且思考正文为空 (如 deepseek 等加密/未输出思考的模型) 时,
+    // 摘要会是空串 → header 只剩类型徽章, 看不出这张卡是什么. 兜底标注 "思考内容被隐藏".
+    // 含实际 text/tool_use 的卡片 joined 非空, 不受影响.
+    if (hasThinking && !joined.trim()) {
+      return clip('思考内容被隐藏', HEADER_SHORT_LIMIT)
+    }
+    return clip(joined, HEADER_SHORT_LIMIT)
   }
   if (t === 'attachment') {
     // Claude Code task_reminder (计划模式): 走统一计划摘要 "计划 · X/N · 进行中: 步骤".
