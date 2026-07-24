@@ -183,11 +183,13 @@ export function TourController() {
     // demo 路线进行中时不弹场景引导, 避免双引导打架.
     if (readActiveGuidedDemo()?.state.active) return
 
+    const armCancels: Array<() => void> = []
     const armScene = (scene: SceneTourKind) => {
       // 防同场景重复触发 (lastRunKey 不覆盖场景引导, 用本地 ref).
       if (sceneMarkedSeenRef.current === scene) return
       sceneMarkedSeenRef.current = scene
       let cancelled = false
+      armCancels.push(() => { cancelled = true })
       void api(`/api/profile/scene-seen/${scene}`)
         .then((data: any) => {
           if (cancelled) return
@@ -195,15 +197,18 @@ export function TourController() {
           // 延迟让目标场景 DOM 渲染稳定再启动引导.
           window.setTimeout(() => {
             if (cancelled) return
-            void startSceneTour(scene, (finished) => {
-              if (finished) {
+            // ★ 引导一旦成功启动, 立刻按 用户×场景 标记 seen —— 不等销毁.
+            // 旧实现等 tour 销毁才 POST seen: 用户中途切走/引导被替换/页面卸载时 onDone 易漏触发,
+            // seen 未落库 → 下次进同页面又弹 (用户报的"经常进入页面就触发"). 改成启动即标记,
+            // 首次进入后恒不再自动触发. started=false (元素未就绪没弹成) 时不标记, 下次仍可重试.
+            void startSceneTour(scene).then((started: boolean) => {
+              if (started && !cancelled) {
                 void api(`/api/profile/scene-seen/${scene}`, { method: 'POST' }).catch(() => {})
               }
             })
           }, 360)
         })
         .catch(() => {})
-      return () => { cancelled = true }
     }
 
     const onAdminOpened = () => armScene('admin-center')
@@ -236,6 +241,9 @@ export function TourController() {
     window.addEventListener('imac:scene-tour-request', onSceneTourRequest)
 
     return () => {
+      // 离开本场景: 取消所有尚未启动的 pending 引导 (GET/360ms 延时未到的不再弹),
+      // 避免用户已切走却还在新页面弹出引导.
+      armCancels.forEach(fn => { try { fn() } catch {} })
       window.removeEventListener('imac:admin-overlay-opened', onAdminOpened)
       window.removeEventListener('imac:scene-tour-request', onSceneTourRequest)
     }

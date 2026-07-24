@@ -3176,7 +3176,12 @@ function clickSwitchThenMoveNext(opts: { driver: Driver }, toggleSelector: strin
   clickIfPresent(toggleSelector)
   const started = Date.now()
   const poll = () => {
-    if (Date.now() - started > 3200) return // 超时放弃, 避免永久卡住
+    if (Date.now() - started > 3200) {
+      // 超时: 目标 section 迟迟没挂载. 直接前进跳过, 不让用户停在"切到这里看"步无法继续
+      // (该步的"下一步"已被 onNextClick 消费, 不主动 moveNext 会变成软卡死). 桌面端/web 通用.
+      try { opts.driver.moveNext() } catch {}
+      return
+    }
     if (document.querySelector(sectionSelector)) {
       try { opts.driver.refresh() } catch {}
       window.setTimeout(() => { try { opts.driver.moveNext() } catch {} }, 40)
