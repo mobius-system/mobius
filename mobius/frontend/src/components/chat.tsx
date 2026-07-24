@@ -1752,8 +1752,13 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const currentVscodeSubPath = (currentIssue as any)?.use_worktree && !backendWorktreeIgnored
     ? ((currentIssue as any)?.worktree_branch || (currentIssue as any)?.id)
     : null
-  const jsonlEmptyLoadingText = jsonlEntries.length === 0 && derivedStatus === 'pending'
-    ? (backendAlive ? '智能体进程已创建，联络中' : '正在创建智能体进程，请稍等')
+  // 空会话占位文案: pending(刚发消息等创建进程) / running(agent 在跑等首条输出) 时给 loading 文案,
+  // 由 JsonlView 配 spinner 显示; idle/waiting(终态空, 不会有数据自动到来) 时留空,
+  // 让 JsonlView 走静态"暂无对话内容"而非永久 spinner 误导用户"稍等就有".
+  const jsonlEmptyLoadingText = jsonlEntries.length === 0
+    ? (derivedStatus === 'pending'
+        ? (backendAlive ? '智能体进程已创建，联络中' : '正在创建智能体进程，请稍等')
+        : derivedStatus === 'running' ? '智能体工作中，等待输出…' : '')
     : ''
   const hiddenBackendFailureAt = sessionId ? hiddenBackendFailureBefore[sessionId] : 0
   const backendFailureHiddenByKey = !!(sessionId && backendFailureKey && dismissedBackendFailureKeys[sessionId] === backendFailureKey)

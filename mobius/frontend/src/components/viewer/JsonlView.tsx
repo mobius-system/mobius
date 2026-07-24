@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { VirtualizedBlockList } from '../jsonl-virtual-list'
 import type { AnyEntry, JsonlViewItem, JsonlRenderBlock } from './types'
 import { mergeBashToolResultItems } from './entry-extract'
+import { collectResolvedCallIds } from './tool-status'
 import { buildRounds } from './rounds'
 import { buildHeaderSummary } from './header-summary'
 import { ContinuationGroup, RoundGroup, EntryCardWithImages } from './RoundGroups'
@@ -115,6 +116,9 @@ export function JsonlView({
   const [forceExpandAll, setForceExpandAll] = useState(false)
   const recent = useMemo(() => entries.slice(-(showAll ? entries.length : JSONL_INITIAL_WINDOW_SIZE)), [entries, showAll])
   const windowOffset = entries.length - recent.length
+  // 工具调用状态集合: 哪些 tool_use_id 已有结果落地 (供卡片推导 running/success/error).
+  // 基于原始 recent 窗口扫描 (含被 merge/过滤隐藏的纯 tool_result entry), 引用随 recent 稳定.
+  const resolvedMap = useMemo(() => collectResolvedCallIds(recent), [recent])
   const headerTitle = title === undefined ? 'JSONL' : title
   const visibleItems = useMemo(
     () => mergeBashToolResultItems(recent, windowOffset).filter(
@@ -218,7 +222,7 @@ export function JsonlView({
 
   const renderBlock = (block: JsonlRenderBlock) => {
     if (block.kind === 'continuation') {
-      return <ContinuationGroup items={block.items} onlyGroup={onlyGroup} forceExpandAll={forceExpandAll} showMeta={showMeta} />
+      return <ContinuationGroup items={block.items} onlyGroup={onlyGroup} forceExpandAll={forceExpandAll} showMeta={showMeta} resolvedMap={resolvedMap} />
     }
     if (block.kind === 'preItem') {
       const { entry, lineNo, bashResults, readResults } = block.item
@@ -229,6 +233,7 @@ export function JsonlView({
           bashResults={bashResults}
           readResults={readResults}
           showMeta={showMeta}
+          resolvedMap={resolvedMap}
         />
       )
     }
@@ -240,6 +245,7 @@ export function JsonlView({
         onlyGroup={onlyGroup}
         forceExpandAll={forceExpandAll}
         showMeta={showMeta}
+        resolvedMap={resolvedMap}
       />
     )
   }
@@ -259,13 +265,11 @@ export function JsonlView({
         </div>
       )
     }
+    // 终态空 (加载完毕且非 pending/running): 不再用带 spinner 的"请稍等"承诺一个不会到来的"稍等就有数据",
+    // 改静态空提示. pending/running 的等待态由上层 emptyLoadingText 覆盖 (spinner 文案).
     return (
-      <div className="flex items-center gap-2 text-[12px] text-[var(--text-muted)] italic px-3 py-4" aria-live="polite" role="status">
-        <span className="relative inline-flex h-3.5 w-3.5 flex-shrink-0 not-italic" aria-hidden="true">
-          <span className="absolute inset-0 rounded-full border-2 border-[var(--text-muted)] opacity-20" />
-          <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-[var(--text-muted)] animate-spin" />
-        </span>
-        <span>暂无数据，请稍等</span>
+      <div className="text-[12px] text-center py-8 text-[var(--text-muted)]" aria-live="polite" role="status">
+        暂无对话内容
       </div>
     )
   }

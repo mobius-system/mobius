@@ -10,8 +10,8 @@
  *  - 展开后默认: 可代码 → 代码模式; 可精简 → 精简模式; 其它 → 字段模式 (递归 KeyNode).
  *  - 超大卡片保护: entry + 工具结果渲染字符总量超 10 万时截断后再渲染, 避免前端卡顿崩溃.
  */
-import { Suspense, lazy, memo, useMemo, useState } from 'react'
-import { Code2, ListChecks, AlignLeft, Braces, Image as ImageIcon } from 'lucide-react'
+import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react'
+import { Code2, ListChecks, AlignLeft, Braces, Image as ImageIcon, Check, Loader2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { BLACKBOARD_MARKER } from '../jsonl-round-helpers'
 import {
@@ -54,6 +54,8 @@ import {
   jsonEntryTourTarget,
 } from './entry-classify'
 import { buildHeaderSummary } from './header-summary'
+import { deriveToolCallStatus, TOOL_STATUS_META } from './tool-status'
+import type { ResolvedCallMap, ToolStatus } from './tool-status'
 import { estimateRenderChars, estimateToolResultsChars, clampNodeForRender, clampToolResults } from './oversized'
 import { KeyNode } from './KeyNode'
 import { JsonEntryCodeDiff } from './CodeDiff'
@@ -87,16 +89,38 @@ const MODE_ICON: Record<CardMode, LucideIcon> = {
   field: Braces,         // 字段模式: 按 key 递归展开原始 JSON
 }
 
+// 工具调用状态 (running/success/error) → lucide 图标. 与 PlanCard 的 STATUS_META 同款范式.
+const TOOL_STATUS_ICON: Record<ToolStatus, typeof Check> = {
+  running: Loader2,
+  success: Check,
+  error: X,
+}
+
+// 头部状态图标: 替换工具卡上的装饰彩点, 用图标直观表达工具执行状态 (Cursor 式).
+function ToolStatusIcon({ status }: { status: ToolStatus }) {
+  const meta = TOOL_STATUS_META[status]
+  const Icon = TOOL_STATUS_ICON[status]
+  return (
+    <Icon
+      className={`h-3 w-3 flex-shrink-0 ${meta.iconClass}${meta.spin ? ' animate-spin' : ''}`}
+      strokeWidth={2.4}
+      aria-label={meta.label}
+      role="img"
+    />
+  )
+}
+
 /**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
-function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, bashResults = [], readResults = [] }: {
+function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, bashResults = [], readResults = [], resolvedMap }: {
   entry: AnyEntry
   lineNo?: number
   defaultExpanded?: boolean
   showMeta?: boolean
   bashResults?: BashToolResult[]
   readResults?: BashToolResult[]
+  resolvedMap?: ResolvedCallMap | null
 }) {
   const type = entry?.type || 'unknown'
   // 超大卡片保护: entry + 工具结果的渲染字符总量超过 10 万时, 用截断版渲染, 避免前端卡顿崩溃.
@@ -185,12 +209,20 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   // 能精简的纯文本卡片默认展开, 代码化卡片默认折叠; patch_apply / error 保留默认展开,
   // 父组件 defaultExpanded 仍能强制展开其它卡片.
   // 用户手动折叠 → onToggle 写回 state, 此后重渲染不再强制掀开.
+  const tourTarget = jsonEntryTourTarget(entry)
+  // 工具调用状态: 由 "该 tool_use 的结果是否已落地" 推导 (running = 已发起未回结果).
+  const toolStatus = deriveToolCallStatus(entry, resolvedMap)
+  // 用户是否手动点过折叠/展开: 一旦手动操作, 失败自动展开就不再强制掀开 (尊重用户).
+  const userToggledRef = useRef(false)
   const [open, setOpen] = useState<boolean>(
     isPatchApplyEvent || canPlan || (!canCode && (canCompact || canImage || type === 'error')) || !!defaultExpanded
   )
+  // 失败的工具块默认展开 (Cursor 式: 错误不能因折叠被藏起). 仅在变 error 时展开一次, 不覆盖用户手动折叠.
+  useEffect(() => {
+    if (toolStatus === 'error' && !userToggledRef.current) setOpen(true)
+  }, [toolStatus])
   // 精简/字段模式复制按钮反馈: 点击后短暂切换为 Check 图标再还原.
   const [copied, setCopied] = useState<boolean>(false)
-  const tourTarget = jsonEntryTourTarget(entry)
 
   // 默认折叠 (第一张 user 卡片除外). summary 可选中: select-text 显式覆盖某些浏览器/OS 默认禁选.
   //
@@ -234,12 +266,16 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
     <details
       data-tour={tourTarget}
       open={open}
-      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+      onToggle={(e) => { userToggledRef.current = true; setOpen((e.currentTarget as HTMLDetailsElement).open) }}
       className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm card-enter ${theme.border} ${theme.bg}`}>
       <summary className={`cursor-pointer px-3 py-1.5 flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
         {showMeta && typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
         {showMeta && ts && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
-        <span className={`w-1.5 h-1.5 rounded-full ${theme.dot} flex-shrink-0`}></span>
+        {toolStatus ? (
+          <ToolStatusIcon status={toolStatus} />
+        ) : (
+          <span className={`w-1.5 h-1.5 rounded-full ${theme.dot} flex-shrink-0`}></span>
+        )}
         <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>
         {canCode && (
           <span
@@ -368,5 +404,5 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
 
 export const JsonEntryCard = memo(
   JsonEntryCardInner,
-  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.bashResults === next.bashResults && prev.readResults === next.readResults,
+  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.bashResults === next.bashResults && prev.readResults === next.readResults && prev.resolvedMap === next.resolvedMap,
 )

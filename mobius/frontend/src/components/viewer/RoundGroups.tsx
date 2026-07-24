@@ -8,19 +8,23 @@
  *    更早的轮在跌出最新两轮时自动折叠, 用户手动操作过的轮尊重用户.
  */
 import { Fragment, useEffect, useRef, useState } from 'react'
-import type { AnyEntry, BashToolResult, JsonlViewItem, Round } from './types'
+import { Search } from 'lucide-react'
+import type { AnyEntry, BashToolResult, JsonlViewItem, Round, RoundItem } from './types'
+import type { ResolvedCallMap } from './tool-status'
+import { groupExploreItems } from './explore-group'
 import { entryDisplayImages, entryUserAttachmentImages } from './entry-extract'
 import { buildHeaderSummary } from './header-summary'
 import { JsonEntryCard } from './EntryCard'
 import { DisplayImagesCard } from './DisplayImages'
 
-export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], defaultExpanded = false, showMeta = true }: {
+export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], defaultExpanded = false, showMeta = true, resolvedMap }: {
   entry: AnyEntry
   lineNo: number
   bashResults?: BashToolResult[]
   readResults?: BashToolResult[]
   defaultExpanded?: boolean
   showMeta?: boolean
+  resolvedMap?: ResolvedCallMap | null
 }) {
   const displayImages = entryDisplayImages(entry)
   const attachmentImages = entryUserAttachmentImages(entry)
@@ -32,13 +36,55 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
       : 'display_images'
   return (
     <>
-      <JsonEntryCard entry={entry} lineNo={lineNo} defaultExpanded={defaultExpanded} showMeta={showMeta} bashResults={bashResults} readResults={readResults} />
+      <JsonEntryCard entry={entry} lineNo={lineNo} defaultExpanded={defaultExpanded} showMeta={showMeta} bashResults={bashResults} readResults={readResults} resolvedMap={resolvedMap} />
       {imgs.length > 0 && <DisplayImagesCard images={imgs} lineNo={lineNo} sourceLabel={sourceLabel} />}
     </>
   )
 }
 
-export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, showMeta = true }: { items: JsonlViewItem[]; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean }) {
+// 探索类工具聚合容器: 把连续的只读/搜索调用折叠成 "已探索 N 个工具" 一行 (Cursor 式).
+// 含失败调用时默认展开并标红, 摘要行带错误标记 (折叠也不能藏起错误); 展开后逐条渲染子卡片.
+export function ExploreGroupCard({ items, hasError, showMeta = true, resolvedMap }: {
+  items: RoundItem[]
+  hasError: boolean
+  showMeta?: boolean
+  resolvedMap?: ResolvedCallMap | null
+}) {
+  const [open, setOpen] = useState(hasError)
+  return (
+    <details
+      open={open}
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+      className="jsonl-entry-card relative mb-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.04] shadow-sm"
+    >
+      <summary className="cursor-pointer px-3 py-1.5 flex items-center gap-2 text-[12px] select-text">
+        <Search className={`h-3 w-3 flex-shrink-0 ${hasError ? 'text-red-400' : 'text-sky-400'}`} strokeWidth={2.2} aria-hidden="true" />
+        <span className={`font-mono font-semibold flex-shrink-0 ${hasError ? 'text-red-300' : 'text-sky-300'}`}>探索</span>
+        <span className="text-[11px] text-[var(--text-muted)] truncate flex-1">
+          已聚合 {items.length} 个只读 / 搜索工具调用{hasError ? ' · 含失败' : ''}
+        </span>
+        <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 font-mono">{open ? '▲' : '▼'}</span>
+      </summary>
+      {open && (
+        <div className="mt-1 flex flex-col gap-1 px-1 pb-1">
+          {items.map((item) => (
+            <EntryCardWithImages
+              key={(item.entry?.uuid || '') + '#' + item.lineNo}
+              entry={item.entry}
+              lineNo={item.lineNo}
+              bashResults={item.bashResults}
+              readResults={item.readResults}
+              showMeta={showMeta}
+              resolvedMap={resolvedMap}
+            />
+          ))}
+        </div>
+      )}
+    </details>
+  )
+}
+
+export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, showMeta = true, resolvedMap }: { items: JsonlViewItem[]; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null }) {
   // 只有一组时强制展开, 禁止折叠; forceExpandAll (点 "加载全部") 时也展开; 其它场景保留原默认折叠行为
   const [open, setOpen] = useState(onlyGroup || forceExpandAll)
   useEffect(() => { if (onlyGroup || forceExpandAll) setOpen(true) }, [onlyGroup, forceExpandAll])
@@ -77,7 +123,7 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
                 ...
               </span>
               <div className="flex-1 min-w-0">
-                <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} />
+                <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} resolvedMap={resolvedMap} />
               </div>
             </div>
           ))}
@@ -87,7 +133,7 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
   )
 }
 
-export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, showMeta = true }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean }) {
+export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, showMeta = true, resolvedMap }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null }) {
   // 追踪用户是否手动点击过折叠/展开. 一旦手动操作, 后续不再被 autoOpen/forceExpandAll 自动接管.
   // 实现"最新两轮自动展开, 除非人为折叠": 最新轮和上一轮默认展开, 更早的轮默认折叠;
   // 某轮升入最新两轮时自动展开, 跌出最新两轮时自动折叠; 用户手动操作过的轮尊重用户, 不再自动改.
@@ -143,9 +189,19 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
 
       {open && (
         <div className="mt-2 jsonl-thread">
-          {round.items.map((item, idx) => {
+          {groupExploreItems(round.items, resolvedMap).map((ri, idx) => {
+            if (ri.kind === 'explore') {
+              return (
+                <div key={`explore-${idx}-${ri.items[0]?.lineNo ?? ''}`} className="flex items-start gap-1.5">
+                  <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">·</span>
+                  <div className="flex-1 min-w-0">
+                    <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} resolvedMap={resolvedMap} />
+                  </div>
+                </div>
+              )
+            }
+            const item = ri.item
             const isUserItem = item.relIdx === 0
-            const isLastEntry = isLast && idx === round.items.length - 1
             return (
               <Fragment key={(item.entry?.uuid || '') + '#' + item.lineNo}>
                 <div className="flex items-start gap-1.5">
@@ -160,6 +216,7 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
                       bashResults={item.bashResults}
                       readResults={item.readResults}
                       showMeta={showMeta}
+                      resolvedMap={resolvedMap}
                     />
                   </div>
                 </div>
