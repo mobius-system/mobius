@@ -4,6 +4,7 @@ import path from 'path';
 import { auth, authOrQuery } from '../middleware/auth';
 import { Sessions } from '../repositories/sessions';
 import { Conversations } from '../repositories/conversations';
+import { isAssistantSession } from '../services/assistant-session';
 import { Issues } from '../repositories/issues';
 import { Messages } from '../repositories/messages';
 // @ts-ignore — bridge instance 仍是 .js
@@ -535,8 +536,10 @@ router.delete('/:id', auth, async (req: express.Request, res: express.Response) 
     }));
 
   Sessions.permanentDelete(sid);
-  // 清理: 该 session 作为 agent 成员所在的群, 移除其成员记录(避免群里残留"幽灵"分身被 @ 后无响应)。
-  try { Conversations.removeAgentMembers(sid); } catch {}
+  // 仅分身(web: 前缀)清理群成员; 主小莫(assistant-question: 前缀)不清理——交给方案A(@ 时回退到当前主小莫)。
+  if (!isAssistantSession(session)) {
+    try { Conversations.removeAgentMembers(sid); } catch {}
+  }
   const noticeMessage = noticeResult ? '已由 HR 在 Blackboard 写入该 Research Agent 已离开团队。' : null;
   res.json({
     ok: true,
@@ -570,7 +573,9 @@ router.delete('/:id/permanent', auth, async (req: express.Request, res: express.
       terminated: closed.terminated,
     }));
   Sessions.permanentDelete(id);
-  try { Conversations.removeAgentMembers(id); } catch {}
+  if (!isAssistantSession(session)) {
+    try { Conversations.removeAgentMembers(id); } catch {}
+  }
   const noticeMessage = noticeResult ? '已由 HR 在 Blackboard 写入该 Research Agent 已离开团队。' : null;
   res.json({
     ok: true,
