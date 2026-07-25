@@ -37,14 +37,26 @@ function candidateLines(locationResult) {
   return locationResult?.unavailable || '尚未得到后端候选；请使用下方检索命令定位。'
 }
 
-export function buildAgentPrompt(snapshot, locationResult = null) {
+function requirementText(requirement) {
+  return String(requirement || '').trim() || '请用户在这里输入改进要求'
+}
+
+export function replacePromptRequirement(prompt, requirement) {
+  const marker = '\n\n先在源代码中定位'
+  const markerIndex = String(prompt || '').indexOf(marker)
+  if (markerIndex < 0) return prompt
+  return `请修改以下界面元素，修改要求如下：\n“${requirementText(requirement)}”${String(prompt).slice(markerIndex)}`
+}
+
+export function buildAgentPrompt(snapshot, locationResult = null, requirement = '') {
   const attrs = snapshot.element.attributes
   const style = snapshot.element.style
   const hints = routeHints(snapshot.page)
   const commands = searchCommands(snapshot)
   const ancestry = snapshot.element.ancestry.map((item, index) => `${'  '.repeat(index)}${index ? '> ' : ''}${item}`).join('\n')
 
-  return `请修改 Mobius 中我通过“设计师之眼”选中的界面元素。
+  return `请修改以下界面元素，修改要求如下：
+“${requirementText(requirement)}”
 
 先在源代码中定位该元素，不要仅根据截图或视觉位置猜测。定位后先确认对应文件、组件或渲染函数，再实施用户提出的具体改动。不要修改 node_modules、dist、release 或构建产物。
 

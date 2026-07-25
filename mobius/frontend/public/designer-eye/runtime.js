@@ -1,6 +1,12 @@
 import { createElementSnapshot, elementBelowPoint, resolveSelection, targetRect } from './dom.js'
 import { locateSource } from './locator-client.js'
-import { buildAgentPrompt } from './prompt.js'
+import { buildAgentPrompt, replacePromptRequirement } from './prompt.js'
+import {
+  createAndStartSelfIteration,
+  loadIssueContext,
+  loadProjectIssues,
+  loadSelfIterationBootstrap,
+} from './self-iteration-client.js'
 
 const ROOT_ATTRIBUTE = 'data-mobius-designer-eye-root'
 const HOTKEY_LABEL = /Mac|iPhone|iPad/i.test(navigator.platform || '') ? '⌘ + ⇧ + E' : 'Ctrl + Shift + E'
@@ -19,7 +25,7 @@ const SHELL_HTML = `
     }
     * { box-sizing: border-box; }
     [hidden] { display: none !important; }
-    button, textarea { font: inherit; }
+    button, input, select, textarea { font: inherit; }
     .shield {
       position: fixed;
       inset: 0;
@@ -115,7 +121,7 @@ const SHELL_HTML = `
       -webkit-backdrop-filter: blur(4px);
     }
     .modal {
-      width: min(880px, 100%);
+      width: min(1040px, 100%);
       max-height: 100%;
       display: flex;
       flex-direction: column;
@@ -150,6 +156,7 @@ const SHELL_HTML = `
       cursor: pointer;
     }
     .icon-button:hover { color: #f8fafc; background: rgba(148, 163, 184, .14); }
+    .modal-content { min-height: 0; overflow-y: auto; }
     .summary {
       display: grid;
       grid-template-columns: minmax(0, 1.25fr) minmax(260px, .75fr);
@@ -188,6 +195,102 @@ const SHELL_HTML = `
       background: rgba(109, 40, 217, .13);
       font-size: 11px;
     }
+    .iteration-form {
+      display: flex;
+      flex-direction: column;
+      gap: 11px;
+      padding: 12px 20px 0;
+    }
+    .requirement {
+      width: 100%;
+      min-height: 72px;
+      resize: vertical;
+      border: 1px solid rgba(148, 163, 184, .22);
+      border-radius: 10px;
+      outline: none;
+      padding: 10px 12px;
+      color: #f8fafc;
+      background: rgba(2, 6, 23, .84);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .requirement:focus, .select:focus { border-color: rgba(139, 92, 246, .85); box-shadow: 0 0 0 3px rgba(124, 58, 237, .13); }
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .config-grid-secondary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .field { min-width: 0; }
+    .field-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 5px;
+      color: #cbd5e1;
+      font-size: 11px;
+      font-weight: 650;
+    }
+    .field-hint { color: #64748b; font-size: 9px; font-weight: 500; }
+    .select, .picker-summary {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid rgba(148, 163, 184, .22);
+      border-radius: 8px;
+      color: #e2e8f0;
+      background: #111c31;
+      font-size: 11px;
+    }
+    .select { padding: 0 9px; outline: none; }
+    .select:disabled { cursor: wait; opacity: .55; }
+    .multi-picker { position: relative; }
+    .multi-picker > summary { list-style: none; }
+    .multi-picker > summary::-webkit-details-marker { display: none; }
+    .picker-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .picker-summary::after { content: '⌄'; color: #94a3b8; font-size: 12px; }
+    .multi-picker[open] .picker-summary::after { content: '⌃'; }
+    .picker-menu {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 5px);
+      z-index: 8;
+      max-height: 250px;
+      overflow-y: auto;
+      padding: 6px;
+      border: 1px solid rgba(148, 163, 184, .28);
+      border-radius: 10px;
+      background: #111827;
+      box-shadow: 0 18px 46px rgba(2, 6, 23, .65);
+    }
+    .picker-item {
+      display: grid;
+      grid-template-columns: 16px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      padding: 7px 8px;
+      border-radius: 7px;
+      cursor: pointer;
+    }
+    .picker-item:hover { background: rgba(99, 102, 241, .13); }
+    .picker-item input { margin: 2px 0 0; accent-color: #8b5cf6; }
+    .picker-item-name { display: block; overflow: hidden; color: #e5e7eb; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .picker-item-desc { display: block; margin-top: 2px; overflow: hidden; color: #64748b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .form-status {
+      min-height: 16px;
+      color: #94a3b8;
+      font-size: 10px;
+    }
+    .form-status[data-error="true"] { color: #fda4af; }
     .prompt-wrap {
       min-height: 0;
       display: flex;
@@ -199,7 +302,7 @@ const SHELL_HTML = `
     .prompt-label { color: #cbd5e1; font-size: 12px; font-weight: 650; }
     .prompt {
       width: 100%;
-      min-height: 260px;
+      min-height: 210px;
       flex: 1;
       resize: none;
       border: 1px solid rgba(148, 163, 184, .22);
@@ -236,8 +339,34 @@ const SHELL_HTML = `
       font-weight: 650;
     }
     .button:hover { color: #fff; border-color: rgba(167, 139, 250, .5); background: rgba(51, 65, 85, .86); }
+    .button:disabled { cursor: wait; opacity: .55; }
     .button-primary { border-color: #7c3aed; color: #fff; background: #7c3aed; }
     .button-primary:hover { border-color: #8b5cf6; background: #8b5cf6; }
+    .button-start { border-color: #059669; color: #fff; background: #059669; }
+    .button-start:hover { border-color: #10b981; background: #10b981; }
+    .confirm-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      pointer-events: auto;
+      background: rgba(2, 6, 23, .74);
+      backdrop-filter: blur(6px);
+    }
+    .confirm-card {
+      width: min(460px, 100%);
+      padding: 20px;
+      border: 1px solid rgba(52, 211, 153, .3);
+      border-radius: 14px;
+      background: #0f172a;
+      box-shadow: 0 28px 90px rgba(2, 6, 23, .7);
+    }
+    .confirm-title { margin: 0; color: #ecfdf5; font-size: 16px; font-weight: 720; }
+    .confirm-copy { margin: 8px 0 16px; color: #94a3b8; font-size: 12px; line-height: 1.6; }
+    .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
     .toast {
       position: fixed;
       left: 50%;
@@ -257,6 +386,7 @@ const SHELL_HTML = `
       .toolbar { bottom: 22px; }
       .modal-layer { padding: 24px 12px; }
       .summary { grid-template-columns: 1fr; }
+      .config-grid, .config-grid-secondary { grid-template-columns: 1fr; }
       .modal-footer { align-items: stretch; flex-direction: column; }
       .actions { justify-content: stretch; }
       .actions .button { flex: 1; }
@@ -279,6 +409,7 @@ const SHELL_HTML = `
         </div>
         <button type="button" class="icon-button" data-eye="close" aria-label="关闭并重新选择" title="关闭并重新选择">✕</button>
       </header>
+      <div class="modal-content">
       <div class="summary">
         <div class="summary-card">
           <div class="summary-label">选中元素</div>
@@ -290,9 +421,47 @@ const SHELL_HTML = `
         </div>
       </div>
       <div class="locator-status" data-eye="locator-status">正在定位源码候选…</div>
+      <div class="iteration-form">
+        <div class="field">
+          <label class="field-label" for="designer-eye-requirement">修改要求 <span class="field-hint">会实时写入下方提示词</span></label>
+          <textarea class="requirement" id="designer-eye-requirement" data-eye="requirement" placeholder="请在这里输入改进要求，例如：减小按钮高度，并让主次操作层级更清晰。"></textarea>
+        </div>
+        <div class="config-grid">
+          <div class="field">
+            <label class="field-label" for="designer-eye-project">Mobius 项目</label>
+            <select class="select" id="designer-eye-project" data-eye="project"><option value="">正在加载自进化项目…</option></select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="designer-eye-issue">Mobius Issue</label>
+            <select class="select" id="designer-eye-issue" data-eye="issue"><option value="">请先选择项目</option></select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="designer-eye-model">模型</label>
+            <select class="select" id="designer-eye-model" data-eye="model"><option value="">正在加载模型…</option></select>
+          </div>
+        </div>
+        <div class="config-grid config-grid-secondary">
+          <div class="field">
+            <div class="field-label">Skill <span class="field-hint">取消勾选 = 不注入</span></div>
+            <details class="multi-picker" data-eye="skill-picker">
+              <summary class="picker-summary"><span>Skill</span><span data-eye="skill-count">选择 Issue 后加载</span></summary>
+              <div class="picker-menu" data-eye="skill-menu"></div>
+            </details>
+          </div>
+          <div class="field">
+            <div class="field-label">Memory <span class="field-hint">取消勾选 = 不注入</span></div>
+            <details class="multi-picker" data-eye="memory-picker">
+              <summary class="picker-summary"><span>Memory</span><span data-eye="memory-count">选择 Issue 后加载</span></summary>
+              <div class="picker-menu" data-eye="memory-menu"></div>
+            </details>
+          </div>
+        </div>
+        <div class="form-status" data-eye="form-status">正在准备自进化会话选项…</div>
+      </div>
       <div class="prompt-wrap">
         <label class="prompt-label" for="designer-eye-prompt">Agent 提示词（可编辑）</label>
         <textarea class="prompt" id="designer-eye-prompt" data-eye="prompt" spellcheck="false"></textarea>
+      </div>
       </div>
       <footer class="modal-footer">
         <div class="footer-note">不会上传页面截图、输入框值或凭据；复制前可继续编辑。</div>
@@ -300,8 +469,19 @@ const SHELL_HTML = `
           <button type="button" class="button" data-eye="exit">退出模式</button>
           <button type="button" class="button" data-eye="reselect">重新选择</button>
           <button type="button" class="button button-primary" data-eye="copy">复制提示词</button>
+          <button type="button" class="button button-start" data-eye="start">启动自进化</button>
         </div>
       </footer>
+    </section>
+  </div>
+  <div class="confirm-layer" data-eye="confirm-layer" hidden>
+    <section class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="designer-eye-confirm-title">
+      <h3 class="confirm-title" id="designer-eye-confirm-title">自进化会话已创建并启动</h3>
+      <p class="confirm-copy" data-eye="confirm-copy">Agent 已开始处理。是否现在进入该会话查看进度？</p>
+      <div class="confirm-actions">
+        <button type="button" class="button" data-eye="stay">留在当前页面</button>
+        <button type="button" class="button button-start" data-eye="go-session">进入新会话</button>
+      </div>
     </section>
   </div>
   <div class="toast" data-eye="toast" hidden></div>
@@ -352,9 +532,32 @@ export class DesignerEyeRuntime {
     this.selectedElement = null
     this.pointerDownElement = null
     this.snapshot = null
+    this.locationResult = null
     this.generatedPrompt = ''
     this.raf = 0
     this.toastTimer = 0
+    this.bootstrapPromise = null
+    this.startingSelfIteration = false
+    this.lastCreatedSession = null
+    this.selfIteration = {
+      loaded: false,
+      projects: [],
+      issues: [],
+      models: [],
+      skills: [],
+      memories: [],
+      selectedSkillIds: new Set(),
+      selectedMemoryIds: new Set(),
+      projectId: '',
+      issueId: '',
+      model: '',
+      modelTouched: false,
+      globalDefaultModel: '',
+      userId: '',
+      route: { projectId: '', issueId: '' },
+      issueRequestVersion: 0,
+      contextRequestVersion: 0,
+    }
 
     this.onGlobalKeyDown = this.onGlobalKeyDown.bind(this)
     this.onPointerMove = this.onPointerMove.bind(this)
@@ -390,7 +593,21 @@ export class DesignerEyeRuntime {
       elementSummary: this.shadow.querySelector('[data-eye="element-summary"]'),
       pageSummary: this.shadow.querySelector('[data-eye="page-summary"]'),
       locatorStatus: this.shadow.querySelector('[data-eye="locator-status"]'),
+      requirement: this.shadow.querySelector('[data-eye="requirement"]'),
+      project: this.shadow.querySelector('[data-eye="project"]'),
+      issue: this.shadow.querySelector('[data-eye="issue"]'),
+      model: this.shadow.querySelector('[data-eye="model"]'),
+      skillPicker: this.shadow.querySelector('[data-eye="skill-picker"]'),
+      memoryPicker: this.shadow.querySelector('[data-eye="memory-picker"]'),
+      skillMenu: this.shadow.querySelector('[data-eye="skill-menu"]'),
+      memoryMenu: this.shadow.querySelector('[data-eye="memory-menu"]'),
+      skillCount: this.shadow.querySelector('[data-eye="skill-count"]'),
+      memoryCount: this.shadow.querySelector('[data-eye="memory-count"]'),
+      formStatus: this.shadow.querySelector('[data-eye="form-status"]'),
       prompt: this.shadow.querySelector('[data-eye="prompt"]'),
+      start: this.shadow.querySelector('[data-eye="start"]'),
+      confirmLayer: this.shadow.querySelector('[data-eye="confirm-layer"]'),
+      confirmCopy: this.shadow.querySelector('[data-eye="confirm-copy"]'),
       toast: this.shadow.querySelector('[data-eye="toast"]'),
     }
     this.elements.toolbarKey.textContent = HOTKEY_LABEL
@@ -408,6 +625,31 @@ export class DesignerEyeRuntime {
     this.shadow.querySelector('[data-eye="close"]').addEventListener('click', () => this.resumeSelection())
     this.shadow.querySelector('[data-eye="reselect"]').addEventListener('click', () => this.resumeSelection())
     this.shadow.querySelector('[data-eye="exit"]').addEventListener('click', () => this.deactivate())
+    this.elements.requirement.addEventListener('input', () => this.refreshGeneratedPrompt(true))
+    this.elements.project.addEventListener('change', () => {
+      this.selfIteration.projectId = this.elements.project.value
+      this.selfIteration.issueId = ''
+      this.selfIteration.modelTouched = false
+      this.selfIteration.model = this.resolveModelDefault()
+      this.loadIssuesForProject(this.selfIteration.projectId)
+    })
+    this.elements.issue.addEventListener('change', () => {
+      this.selfIteration.issueId = this.elements.issue.value
+      this.selfIteration.modelTouched = false
+      this.loadContextForIssue(this.selfIteration.issueId)
+    })
+    this.elements.model.addEventListener('change', () => {
+      this.selfIteration.model = this.elements.model.value
+      this.selfIteration.modelTouched = true
+    })
+    this.elements.start.addEventListener('click', () => this.startSelfIteration())
+    this.shadow.querySelector('[data-eye="stay"]').addEventListener('click', () => {
+      this.elements.confirmLayer.hidden = true
+      this.showToast('自进化会话已在后台运行')
+    })
+    this.shadow.querySelector('[data-eye="go-session"]').addEventListener('click', () => {
+      if (this.lastCreatedSession?.detailUrl) window.location.assign(this.lastCreatedSession.detailUrl)
+    })
     this.shadow.querySelector('[data-eye="copy"]').addEventListener('click', async () => {
       try {
         await copyText(this.elements.prompt.value)
@@ -456,10 +698,13 @@ export class DesignerEyeRuntime {
     this.selectedElement = null
     this.pointerDownElement = null
     this.snapshot = null
+    this.locationResult = null
+    this.lastCreatedSession = null
     cancelAnimationFrame(this.raf)
     this.elements.shield.hidden = true
     this.elements.toolbar.hidden = true
     this.elements.modalLayer.hidden = true
+    this.elements.confirmLayer.hidden = true
     this.elements.outline.hidden = true
     this.host.setAttribute('aria-hidden', 'true')
     document.documentElement.removeAttribute('data-designer-eye-active')
@@ -548,6 +793,275 @@ export class DesignerEyeRuntime {
     if (this.active && this.selectedElement?.isConnected) this.drawOutline(this.selectedElement)
   }
 
+  setFormStatus(message, error = false) {
+    this.elements.formStatus.textContent = message || ''
+    this.elements.formStatus.dataset.error = error ? 'true' : 'false'
+  }
+
+  setSelectOptions(select, options, { placeholder = '', value = '', disabled = false } = {}) {
+    select.replaceChildren()
+    if (placeholder) {
+      const item = document.createElement('option')
+      item.value = ''
+      item.textContent = placeholder
+      select.appendChild(item)
+    }
+    for (const option of options) {
+      const item = document.createElement('option')
+      item.value = String(option.value)
+      item.textContent = String(option.label)
+      select.appendChild(item)
+    }
+    select.disabled = disabled
+    select.value = options.some(option => String(option.value) === String(value)) ? String(value) : ''
+  }
+
+  selectedProject() {
+    return this.selfIteration.projects.find(project => String(project.id) === String(this.selfIteration.projectId)) || null
+  }
+
+  selectedIssue() {
+    return this.selfIteration.issues.find(issue => String(issue.id) === String(this.selfIteration.issueId)) || null
+  }
+
+  resolveModelDefault(scopeModel = '') {
+    const project = this.selectedProject()
+    const candidates = [scopeModel, project?.default_model, this.selfIteration.globalDefaultModel, 'codex', this.selfIteration.models[0]?.key]
+    return String(candidates.find(key => key && this.selfIteration.models.some(model => model.key === key)) || '')
+  }
+
+  renderSelects() {
+    this.setSelectOptions(this.elements.project, this.selfIteration.projects.map(project => ({
+      value: project.id,
+      label: project.name,
+    })), {
+      placeholder: this.selfIteration.projects.length ? '— 选择 Mobius 自进化项目 —' : '未找到 Mobius 自进化项目',
+      value: this.selfIteration.projectId,
+      disabled: !this.selfIteration.loaded,
+    })
+    this.setSelectOptions(this.elements.issue, this.selfIteration.issues.map(issue => ({
+      value: issue.id,
+      label: issue.title,
+    })), {
+      placeholder: this.selfIteration.projectId ? (this.selfIteration.issues.length ? '— 选择 Mobius Issue —' : '该项目暂无开放 Issue') : '请先选择项目',
+      value: this.selfIteration.issueId,
+      disabled: !this.selfIteration.projectId,
+    })
+    this.setSelectOptions(this.elements.model, this.selfIteration.models.map(model => ({
+      value: model.key,
+      label: model.sub ? `${model.title} · ${model.sub}` : model.title,
+    })), {
+      placeholder: this.selfIteration.models.length ? '— 选择模型 —' : '暂无可用模型',
+      value: this.selfIteration.model,
+      disabled: !this.selfIteration.models.length,
+    })
+  }
+
+  renderPicker(kind) {
+    const isSkill = kind === 'skill'
+    const items = isSkill ? this.selfIteration.skills : this.selfIteration.memories
+    const selected = isSkill ? this.selfIteration.selectedSkillIds : this.selfIteration.selectedMemoryIds
+    const menu = isSkill ? this.elements.skillMenu : this.elements.memoryMenu
+    const count = isSkill ? this.elements.skillCount : this.elements.memoryCount
+    menu.replaceChildren()
+    count.textContent = `${selected.size}/${items.length} 已启用`
+    if (!items.length) {
+      const empty = document.createElement('div')
+      empty.className = 'picker-item-desc'
+      empty.style.padding = '12px 8px'
+      empty.textContent = this.selfIteration.issueId ? `无可用 ${isSkill ? 'Skill' : 'Memory'}` : '选择 Issue 后加载'
+      menu.appendChild(empty)
+      return
+    }
+    for (const item of items) {
+      const locked = isSkill && item.id === 'builtin:mobius-self-iter'
+      const label = document.createElement('label')
+      label.className = 'picker-item'
+      const checkbox = document.createElement('input')
+      checkbox.type = 'checkbox'
+      checkbox.checked = selected.has(item.id) || locked
+      checkbox.disabled = locked
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) selected.add(item.id)
+        else selected.delete(item.id)
+        count.textContent = `${selected.size}/${items.length} 已启用`
+      })
+      const copy = document.createElement('span')
+      const name = document.createElement('span')
+      name.className = 'picker-item-name'
+      name.textContent = locked ? `${item.name} · 自进化必选` : item.name
+      const description = document.createElement('span')
+      description.className = 'picker-item-desc'
+      description.textContent = item.description || `${item.scope} ${isSkill ? 'Skill' : 'Memory'}`
+      copy.append(name, description)
+      label.append(checkbox, copy)
+      menu.appendChild(label)
+    }
+  }
+
+  clearContextOptions() {
+    this.selfIteration.skills = []
+    this.selfIteration.memories = []
+    this.selfIteration.selectedSkillIds = new Set()
+    this.selfIteration.selectedMemoryIds = new Set()
+    this.renderPicker('skill')
+    this.renderPicker('memory')
+  }
+
+  async ensureSelfIterationOptions() {
+    if (this.selfIteration.loaded) {
+      this.renderSelects()
+      this.renderPicker('skill')
+      this.renderPicker('memory')
+      return
+    }
+    if (this.bootstrapPromise) return this.bootstrapPromise
+    this.setFormStatus('正在加载 Mobius 自进化项目、模型和上下文选项…')
+    this.bootstrapPromise = loadSelfIterationBootstrap().then(async bootstrap => {
+      this.selfIteration.loaded = true
+      this.selfIteration.projects = bootstrap.projects
+      this.selfIteration.models = bootstrap.models
+      this.selfIteration.globalDefaultModel = bootstrap.globalDefaultModel
+      this.selfIteration.userId = bootstrap.userId
+      this.selfIteration.route = bootstrap.route
+      const currentProjectValid = bootstrap.projects.some(project => String(project.id) === String(this.selfIteration.projectId))
+      const routeProjectValid = bootstrap.projects.some(project => String(project.id) === String(bootstrap.route.projectId))
+      this.selfIteration.projectId = currentProjectValid
+        ? this.selfIteration.projectId
+        : (routeProjectValid ? bootstrap.route.projectId : String(bootstrap.projects[0]?.id || ''))
+      this.selfIteration.model = this.resolveModelDefault()
+      this.renderSelects()
+      if (!this.selfIteration.projects.length) {
+        this.setFormStatus('未找到可用的 Mobius 自进化项目。', true)
+        return
+      }
+      await this.loadIssuesForProject(this.selfIteration.projectId, bootstrap.route.issueId)
+    }).catch(error => {
+      this.setFormStatus(error?.message || '自进化会话选项加载失败', true)
+      throw error
+    }).finally(() => { this.bootstrapPromise = null })
+    return this.bootstrapPromise
+  }
+
+  async loadIssuesForProject(projectId, preferredIssueId = '') {
+    const version = ++this.selfIteration.issueRequestVersion
+    ++this.selfIteration.contextRequestVersion
+    this.selfIteration.issues = []
+    this.selfIteration.issueId = ''
+    this.clearContextOptions()
+    this.renderSelects()
+    if (!projectId) {
+      this.setFormStatus('请选择 Mobius 自进化项目。')
+      return
+    }
+    this.setFormStatus('正在加载项目下的开放 Issue…')
+    try {
+      const issues = await loadProjectIssues(projectId)
+      if (version !== this.selfIteration.issueRequestVersion) return
+      this.selfIteration.issues = issues
+      const previousValid = issues.some(issue => String(issue.id) === String(preferredIssueId))
+      this.selfIteration.issueId = previousValid ? String(preferredIssueId) : String(issues[0]?.id || '')
+      this.selfIteration.model = this.resolveModelDefault()
+      this.renderSelects()
+      if (!this.selfIteration.issueId) {
+        this.setFormStatus('该自进化项目暂无开放 Issue。', true)
+        return
+      }
+      await this.loadContextForIssue(this.selfIteration.issueId)
+    } catch (error) {
+      if (version !== this.selfIteration.issueRequestVersion) return
+      this.setFormStatus(error?.message || 'Issue 加载失败', true)
+    }
+  }
+
+  async loadContextForIssue(issueId) {
+    const version = ++this.selfIteration.contextRequestVersion
+    this.clearContextOptions()
+    this.renderSelects()
+    if (!issueId) {
+      this.setFormStatus('请选择 Mobius Issue。')
+      return
+    }
+    this.setFormStatus('正在加载模型默认值、Skill 和 Memory…')
+    try {
+      const context = await loadIssueContext(issueId, this.elements.prompt.value)
+      if (version !== this.selfIteration.contextRequestVersion) return
+      this.selfIteration.skills = context.skills
+      this.selfIteration.memories = context.memories
+      const excludedSkills = new Set(context.defaults?.excluded_skill_ids || [])
+      const excludedMemories = new Set(context.defaults?.excluded_memory_ids || [])
+      this.selfIteration.selectedSkillIds = new Set(context.skills.filter(item => !excludedSkills.has(item.id)).map(item => item.id))
+      this.selfIteration.selectedMemoryIds = new Set(context.memories.filter(item => !excludedMemories.has(item.id)).map(item => item.id))
+      if (context.skills.some(item => item.id === 'builtin:mobius-self-iter')) {
+        this.selfIteration.selectedSkillIds.add('builtin:mobius-self-iter')
+      }
+      if (!this.selfIteration.modelTouched) this.selfIteration.model = this.resolveModelDefault(context.defaults?.model)
+      this.renderSelects()
+      this.renderPicker('skill')
+      this.renderPicker('memory')
+      this.setFormStatus(`已就绪：${context.skills.length} 个 Skill，${context.memories.length} 个 Memory。`)
+    } catch (error) {
+      if (version !== this.selfIteration.contextRequestVersion) return
+      this.setFormStatus(error?.message || 'Skill / Memory 加载失败', true)
+    }
+  }
+
+  refreshGeneratedPrompt(updateRequirementInDirtyPrompt = false) {
+    if (!this.snapshot) return
+    const previousGenerated = this.generatedPrompt
+    const nextGenerated = buildAgentPrompt(this.snapshot, this.locationResult, this.elements.requirement.value)
+    if (this.elements.prompt.value === previousGenerated) {
+      this.elements.prompt.value = nextGenerated
+    } else if (updateRequirementInDirtyPrompt) {
+      this.elements.prompt.value = replacePromptRequirement(this.elements.prompt.value, this.elements.requirement.value)
+    }
+    this.generatedPrompt = nextGenerated
+  }
+
+  async startSelfIteration() {
+    if (this.startingSelfIteration) return
+    const requirement = this.elements.requirement.value.trim()
+    if (!requirement) {
+      this.setFormStatus('请先输入具体的界面改进要求。', true)
+      this.elements.requirement.focus()
+      return
+    }
+    const project = this.selectedProject()
+    const issue = this.selectedIssue()
+    if (!project) { this.setFormStatus('请选择 Mobius 自进化项目。', true); return }
+    if (!issue) { this.setFormStatus('请选择 Mobius Issue。', true); return }
+    if (!this.selfIteration.model) { this.setFormStatus('请选择模型。', true); return }
+
+    this.startingSelfIteration = true
+    this.elements.start.disabled = true
+    this.elements.start.textContent = '正在创建并启动…'
+    this.setFormStatus('正在创建 Session，并向 Agent 发送首条任务消息…')
+    try {
+      const result = await createAndStartSelfIteration({
+        project,
+        issue,
+        model: this.selfIteration.model,
+        prompt: this.elements.prompt.value,
+        skills: this.selfIteration.skills,
+        memories: this.selfIteration.memories,
+        selectedSkillIds: this.selfIteration.selectedSkillIds,
+        selectedMemoryIds: this.selfIteration.selectedMemoryIds,
+        userId: this.selfIteration.userId,
+      })
+      this.lastCreatedSession = result
+      this.elements.confirmCopy.textContent = `会话“${result.name}”已开始运行。是否现在进入该会话查看进度？`
+      this.elements.confirmLayer.hidden = false
+      this.setFormStatus('自进化会话已创建并启动。')
+    } catch (error) {
+      this.setFormStatus(error?.message || '创建或启动自进化会话失败', true)
+      this.showToast(error?.message || '启动自进化失败', true)
+    } finally {
+      this.startingSelfIteration = false
+      this.elements.start.disabled = false
+      this.elements.start.textContent = '启动自进化'
+    }
+  }
+
   openSelection(selection) {
     this.selectedElement = selection.semantic
     this.snapshot = createElementSnapshot(selection)
@@ -558,16 +1072,21 @@ export class DesignerEyeRuntime {
     this.elements.elementSummary.textContent = `${this.snapshot.element.selector || this.snapshot.element.tag} · ${this.snapshot.element.style.rect.width}×${this.snapshot.element.style.rect.height}`
     this.elements.pageSummary.textContent = this.snapshot.page.path
     this.elements.locatorStatus.textContent = '正在定位源码候选…'
-    this.generatedPrompt = buildAgentPrompt(this.snapshot)
+    this.elements.requirement.value = ''
+    this.locationResult = null
+    this.generatedPrompt = buildAgentPrompt(this.snapshot, null, '')
     this.elements.prompt.value = this.generatedPrompt
+    this.elements.confirmLayer.hidden = true
+    this.lastCreatedSession = null
+    this.ensureSelfIterationOptions().catch(() => {})
     window.addEventListener('scroll', this.refreshSelectedOutline, true)
     window.addEventListener('resize', this.refreshSelectedOutline)
 
-    locateSource(this.snapshot).then(result => {
-      if (!this.modalOpen || !this.snapshot) return
-      const previousGenerated = this.generatedPrompt
-      this.generatedPrompt = buildAgentPrompt(this.snapshot, result)
-      if (this.elements.prompt.value === previousGenerated) this.elements.prompt.value = this.generatedPrompt
+    const snapshot = this.snapshot
+    locateSource(snapshot).then(result => {
+      if (!this.modalOpen || this.snapshot !== snapshot) return
+      this.locationResult = result
+      this.refreshGeneratedPrompt(false)
       if (result.candidates?.length) {
         const first = result.candidates[0]
         this.elements.locatorStatus.textContent = `已找到 ${result.candidates.length} 个候选；最高匹配 ${first.file}:${first.line}`
@@ -583,6 +1102,7 @@ export class DesignerEyeRuntime {
     if (!this.active) return
     this.modalOpen = false
     this.elements.modalLayer.hidden = true
+    this.elements.confirmLayer.hidden = true
     this.elements.shield.hidden = false
     window.removeEventListener('scroll', this.refreshSelectedOutline, true)
     window.removeEventListener('resize', this.refreshSelectedOutline)
