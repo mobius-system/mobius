@@ -13,10 +13,13 @@
  * 安全: terminal = 任意命令执行, 必须 JWT 鉴权 + session 归属校验, 无 token 一律 socket.destroy().
  * 参考实现: backend/routes/code-server-proxy.ts 的 verifyJwt / handleUpgrade 模式.
  *
- * 消息协议:
- *   BE → FE: pty 输出原样 ws.send(string) (text frame), 前端 terminal.write(string).
- *   FE → BE: JSON 信封 {type:'input',data:string} | {type:'resize',cols,rows}.
- *     (xterm onData 给的是 JS 字符串, 含 ANSI/转义序列, JSON 字符串可无损往返.)
+ * 消息协议 (双向均 JSON 信封):
+ *   BE → FE: {type:'data',data:string} (pty 输出) | {type:'pong'} (心跳回复).
+ *   FE → BE: {type:'input',data:string} | {type:'resize',cols,rows} | {type:'ping'}.
+ *   心跳保活: 前端每 25s 发 ping, 后端立即回 pong; 后端 75s 收不到任何前端消息即判僵尸连接主动关闭.
+ *     (生产经 nginx 反代, 默认 proxy_read_timeout 60s 会单方面掐断空闲 WS → "终端频繁断开";
+ *      应用层心跳让链路持续有数据流穿越反代. BE→FE 也用信封而非裸 text, 是为了让 pong 帧与
+ *      终端文本无歧义区分 —— 否则用户在终端里输出一行恰好等于 pong 标记的文本会被前端误吞.)
  */
 import jwt from 'jsonwebtoken';
 // @ts-ignore — ws 是 CommonJS, 无 TS 类型
@@ -143,6 +146,17 @@ export function handleUpgrade(req: any, socket: any, head: Buffer): void {
 
     console.log(`[web-terminal] open user=${user.id} sid=${sid} mode=${mode} cwd=${cwd} pid=${term.pid}`);
 
+    // 心跳保活探测: 前端每 25s 发 {type:'ping'}, 后端立即回 pong; 75s 收不到任何前端消息即判僵尸连接主动关闭.
+    // 任意前端消息(含 ping/input/resize)都会刷新 lastSeen.
+    let lastSeen = Date.now();
+    const probe = setInterval(() => {
+      if (ws.readyState !== ws.OPEN) return;
+      if (Date.now() - lastSeen > 75_000) {
+        console.log(`[web-terminal] heartbeat timeout (75s no client msg), closing user=${user.id} sid=${sid} pid=${term.pid}`);
+        try { ws.close(4000, 'heartbeat timeout'); } catch { /* ignore */ }
+      }
+    }, 15_000);
+
     if (mode === 'agent') {
       const target = agentTmuxTarget(session);
       const attachCommand = target
@@ -153,10 +167,10 @@ export function handleUpgrade(req: any, socket: any, head: Buffer): void {
       }, 200);
     }
 
-    // pty 输出 → 浏览器
+    // pty 输出 → 浏览器 (JSON 信封 {type:'data'}, 与 {type:'pong'} 心跳帧区分, 避免心跳帧与终端文本歧义)
     term.onData((chunk: string) => {
       if (ws.readyState === ws.OPEN) {
-        try { ws.send(chunk); } catch { /* ignore */ }
+        try { ws.send(JSON.stringify({ type: 'data', data: chunk })); } catch { /* ignore */ }
       }
     });
     // 进程退出 → 关 ws
@@ -164,13 +178,18 @@ export function handleUpgrade(req: any, socket: any, head: Buffer): void {
       try { ws.close(1000); } catch { /* ignore */ }
     });
 
-    // 浏览器 → pty (JSON 信封: input / resize)
+    // 浏览器 → pty (JSON 信封: input / resize / ping). 任意消息都刷新心跳 lastSeen.
     ws.on('message', (raw: Buffer | string) => {
+      lastSeen = Date.now();
       let msg: any;
       try {
         msg = JSON.parse(typeof raw === 'string' ? raw : raw.toString());
       } catch {
         return; // 非 JSON 直接忽略, 不当作输入, 避免误注入
+      }
+      if (msg.type === 'ping') {
+        try { ws.send(JSON.stringify({ type: 'pong' })); } catch { /* ignore */ }
+        return;
       }
       if (msg.type === 'input' && typeof msg.data === 'string') {
         try { term.write(msg.data); } catch { /* ignore */ }
@@ -181,8 +200,9 @@ export function handleUpgrade(req: any, socket: any, head: Buffer): void {
       }
     });
 
-    // ws 关闭/出错 → 杀 pty, 防泄漏
+    // ws 关闭/出错 → 停心跳探测 + 杀 pty, 防泄漏
     const cleanup = () => {
+      clearInterval(probe);
       try { term.kill(); } catch { /* ignore */ }
     };
     ws.on('close', () => {

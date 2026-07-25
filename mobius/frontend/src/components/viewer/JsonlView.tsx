@@ -16,6 +16,7 @@ import { buildRounds } from './rounds'
 import { buildHeaderSummary } from './header-summary'
 import { ContinuationGroup, RoundGroup, EntryCardWithImages } from './RoundGroups'
 import { isHiddenJsonlNoiseEntry } from './entry-classify'
+import { computeCollapsedByForgottenFlag } from './fold-rules'
 
 const JSONL_INITIAL_WINDOW_SIZE = 200
 
@@ -131,6 +132,10 @@ export function JsonlView({
     [recent, windowOffset],
   )
   const { preItems, rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
+  // forgotten-flag 收尾折叠规则: 含 "running.flag" 且往前 8 个条目有 forgotten-flag 用户卡的卡片,
+  // 默认折叠 (agent 被 forgotten-flag-scanner 系统提醒触发的机械删 flag 收尾链路, 对浏览对话价值低).
+  // 在 visibleItems (已合并/已过滤) 序列上扫描, 命中的 lineNo 集合透传给各卡片渲染入口.
+  const collapseLineNos = useMemo(() => computeCollapsedByForgottenFlag(visibleItems), [visibleItems])
   // 总数显示: 优先用后端给的 total (服务器侧 count, 比前端 entries.length 准)
   const displayTotal = typeof total === 'number' && total > entries.length ? total : entries.length
   const hasRemoteMore = typeof total === 'number' && total > entries.length
@@ -226,7 +231,7 @@ export function JsonlView({
 
   const renderBlock = (block: JsonlRenderBlock) => {
     if (block.kind === 'continuation') {
-      return <ContinuationGroup items={block.items} onlyGroup={onlyGroup} forceExpandAll={forceExpandAll} showMeta={showMeta} resolvedMap={resolvedMap} />
+      return <ContinuationGroup items={block.items} onlyGroup={onlyGroup} forceExpandAll={forceExpandAll} showMeta={showMeta} resolvedMap={resolvedMap} collapseLineNos={collapseLineNos} />
     }
     if (block.kind === 'preItem') {
       const { entry, lineNo, bashResults, readResults } = block.item
@@ -238,6 +243,7 @@ export function JsonlView({
           readResults={readResults}
           showMeta={showMeta}
           resolvedMap={resolvedMap}
+          defaultCollapsed={collapseLineNos.has(lineNo)}
         />
       )
     }
@@ -251,6 +257,7 @@ export function JsonlView({
         showMeta={showMeta}
         resolvedMap={resolvedMap}
         cursorStyleTools={cursorStyleTools}
+        collapseLineNos={collapseLineNos}
       />
     )
   }

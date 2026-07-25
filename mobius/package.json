@@ -13,6 +13,7 @@
     "test:assistant-tts-cache": "node --require tsx/cjs tests/assistant-tts-cache.js",
     "test:code-server-workspace": "node --require tsx/cjs tests/code-server-workspace.js",
     "test:native-file-menu": "node --require tsx/cjs tests/native-file-menu.js",
+    "test:designer-eye-locator": "node --require tsx/cjs tests/designer-eye-locator.js",
     "test:file-tree-menu-logic": "node --require tsx/cjs tests/file-tree-menu-logic.js",
     "test:session-transfer": "node --require tsx/cjs tests/session-transfer.js",
     "test:agent-tmux-server": "node tests/agent-tmux-server.js",

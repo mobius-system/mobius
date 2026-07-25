@@ -8,6 +8,7 @@
  *   120s+   红  长时间没输出, 建议终止重试
  */
 import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { formatDuration } from './utils'
 
 export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo }: { lastTimestamp: string | null | undefined; pid: number | null | undefined; realTimeInfo?: string | null }) {
@@ -39,12 +40,14 @@ export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo }: { lastTi
     : silenceSec < 120 ? 'warn'
     : 'stale'
   const theme =
-    sev === 'normal' ? { border: 'border-emerald-500/15', bg: 'bg-emerald-500/[0.05]', dot: 'bg-emerald-400', text: 'text-emerald-300' }
-    : sev === 'warn'   ? { border: 'border-amber-500/15',   bg: 'bg-amber-500/[0.05]',   dot: 'bg-amber-400',   text: 'text-amber-300' }
-    :                    { border: 'border-red-500/20',     bg: 'bg-red-500/[0.06]',     dot: 'bg-red-400',     text: 'text-red-300' }
+    sev === 'normal' ? { border: 'border-emerald-500/15', bg: 'bg-emerald-500/[0.05]', dot: 'bg-emerald-400', text: 'text-emerald-300', accent: '#34d399' }
+    : sev === 'warn'   ? { border: 'border-amber-500/15',   bg: 'bg-amber-500/[0.05]',   dot: 'bg-amber-400',   text: 'text-amber-300',   accent: '#fbbf24' }
+    :                    { border: 'border-red-500/20',     bg: 'bg-red-500/[0.06]',     dot: 'bg-red-400',     text: 'text-red-300',     accent: '#f87171' }
 
   return (
-    <div className={`mb-2 rounded-lg border card-enter ${theme.border} ${theme.bg} px-3 py-2 flex items-center gap-2 text-[12px]`}>
+    <div
+      className={`mb-2 rounded-lg border card-enter jsonl-live-sweep ${theme.border} ${theme.bg} px-3 py-2 flex items-center gap-2 text-[12px]`}
+      style={{ ['--live-accent' as string]: theme.accent } as CSSProperties}>
       <span className="relative inline-flex w-2 h-2 flex-shrink-0">
         <span className={`absolute inset-0 rounded-full ${theme.dot} animate-ping opacity-75`} />
         <span className={`relative inline-flex rounded-full w-2 h-2 ${theme.dot}`} />

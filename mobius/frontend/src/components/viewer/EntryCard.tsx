@@ -23,6 +23,7 @@ import {
   READ_TOOL_THEME,
   CONTEXT_COMPACTED_THEME,
   ASSISTANT_END_TURN_THEME,
+  THINKING_ONLY_THEME,
   COMPACT_DONE_THEME,
   GOAL_SET_THEME,
   LOCAL_COMMAND_THEME,
@@ -47,6 +48,7 @@ import {
   isEditToolUse,
   isContextCompactedEvent,
   isAssistantEndTurnEntry,
+  isThinkingOnlyAssistantEntry,
   isAssistantResponseGoldKeyword,
   isCompactDoneEntry,
   isGoalSetEntry,
@@ -113,10 +115,14 @@ function ToolStatusIcon({ status }: { status: ToolStatus }) {
 /**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
-function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, bashResults = [], readResults = [], resolvedMap }: {
+function JsonEntryCardInner({ entry, lineNo, defaultExpanded, defaultCollapsed = false, showMeta = true, bashResults = [], readResults = [], resolvedMap }: {
   entry: AnyEntry
   lineNo?: number
   defaultExpanded?: boolean
+  // forgotten-flag 上下文折叠: 命中的卡片 (agent 被 forgotten-flag 系统提醒触发的机械删 flag
+  // 收尾卡) 默认折叠, 覆盖下方 isPatchApplyEvent/canPlan/默认展开/defaultExpanded 等展开条件.
+  // 用户仍可手动展开 (onToggle 写回本地 state, userToggledRef 阻止后续自动掀开).
+  defaultCollapsed?: boolean
   showMeta?: boolean
   bashResults?: BashToolResult[]
   readResults?: BashToolResult[]
@@ -171,9 +177,10 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   const isPatchApplyEvent = entry?.type === 'event_msg' && String(entry?.payload?.type || '').startsWith('patch_apply')
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
-  // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > user /goal 设置信号 (gold) > user 其他本地命令产物 (gold) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
+  // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > user /goal 设置信号 (gold) > user 其他本地命令产物 (gold) > assistant 只含 thinking 思考卡 (purple) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
   // start.py 必须排在 Bash 之前: 它本身也是 Bash, 但语义更具体, 不能被 cyan 普通主题盖掉.
   // compact / goal-set 必须排在 local-cmd 之前: 它们都是 local-command-stdout 的特例, 文案/标签更具体.
+  // thinking-only 必须排在 end_turn 之前: 只含思考块的卡片, "这是思考卡"比"这是结束态"更能说明卡片性质.
   const theme = isBlackboard
     ? BLACKBOARD_THEME
     : isCompactDoneEntry(entry)
@@ -182,6 +189,8 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
     ? GOAL_SET_THEME
     : isLocalCommandEntry(entry)
     ? LOCAL_COMMAND_THEME
+    : isThinkingOnlyAssistantEntry(entry)
+    ? THINKING_ONLY_THEME
     : isAssistantEndTurnEntry(entry)
     ? ASSISTANT_END_TURN_THEME
     : isAssistantResponseGoldKeyword(entry)
@@ -209,18 +218,23 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
   // 能精简的纯文本卡片默认展开, 代码化卡片默认折叠; patch_apply / error 保留默认展开,
   // 父组件 defaultExpanded 仍能强制展开其它卡片.
   // 用户手动折叠 → onToggle 写回 state, 此后重渲染不再强制掀开.
+  // defaultCollapsed (forgotten-flag 上下文折叠) 命中时强制初始折叠, 覆盖以上所有展开条件.
   const tourTarget = jsonEntryTourTarget(entry)
   // 工具调用状态: 由 "该 tool_use 的结果是否已落地" 推导 (running = 已发起未回结果).
   const toolStatus = deriveToolCallStatus(entry, resolvedMap)
   // 用户是否手动点过折叠/展开: 一旦手动操作, 失败自动展开就不再强制掀开 (尊重用户).
   const userToggledRef = useRef(false)
   const [open, setOpen] = useState<boolean>(
-    isPatchApplyEvent || canPlan || (!canCode && (canCompact || canImage || type === 'error')) || !!defaultExpanded
+    defaultCollapsed
+      ? false
+      : (isPatchApplyEvent || canPlan || (!canCode && (canCompact || canImage || type === 'error')) || !!defaultExpanded)
   )
   // 失败的工具块默认展开 (Cursor 式: 错误不能因折叠被藏起). 仅在变 error 时展开一次, 不覆盖用户手动折叠.
+  // defaultCollapsed 卡片也尊重用户的显式折叠意图 (forgotten-flag 收尾卡几乎不会 error; 真若 error 仍不掀开,
+  // 因用户已明确要求这类卡折叠, 且可手动展开查看).
   useEffect(() => {
-    if (toolStatus === 'error' && !userToggledRef.current) setOpen(true)
-  }, [toolStatus])
+    if (toolStatus === 'error' && !userToggledRef.current && !defaultCollapsed) setOpen(true)
+  }, [toolStatus, defaultCollapsed])
   // 精简/字段模式复制按钮反馈: 点击后短暂切换为 Check 图标再还原.
   const [copied, setCopied] = useState<boolean>(false)
 
@@ -404,5 +418,5 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, b
 
 export const JsonEntryCard = memo(
   JsonEntryCardInner,
-  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.bashResults === next.bashResults && prev.readResults === next.readResults && prev.resolvedMap === next.resolvedMap,
+  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.bashResults === next.bashResults && prev.readResults === next.readResults && prev.resolvedMap === next.resolvedMap && prev.defaultCollapsed === next.defaultCollapsed && prev.defaultExpanded === next.defaultExpanded,
 )

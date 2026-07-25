@@ -649,11 +649,13 @@ function createWindow() {
     show: false,
     backgroundColor: "#ffffff",
     title: "Mobius Desktop",
-    // Windows/Linux: 隐藏原生标题栏 + titleBarOverlay 叠原生窗口按钮 (VSCode 风),
-    // 让远程 mobius 顶栏充当标题栏; macOS: hiddenInset 已是 VSCode 风 (交通灯内嵌), 保持。
-    titleBarStyle: isMac ? "hiddenInset" : "hidden",
+    // 统一走“无原生标题栏”框架，让远程 mobius 顶栏充当标题栏。
+    //   Win/Linux: titleBarStyle:"hidden" 隐藏原生标题栏 (保留原生 resize 边)。
+    //   macOS: 改 frame:false 彻底移除原生框架 (含交通灯 + 原生拖拽条), 完全采用 Win 渲染方式
+    //          (前端自绘 WindowControls + window:* IPC 拖窗), 隐藏 macOS 特征。
+    ...(isMac ? { frame: false } : { titleBarStyle: "hidden" }),
     // 不用 titleBarOverlay: 此环境 (未签名 exe + 高 DPI 缩放) 下原生窗口按钮符号不渲染 (只剩背景色块)。
-    // 改由前端自绘窗口按钮 (WindowControls) + window:* IPC 控制, 主题自适应可靠。macOS 用系统交通灯。
+    // 改由前端自绘窗口按钮 (WindowControls) + window:* IPC 控制, 主题自适应可靠。三平台统一自绘。
     // 隐藏菜单条 (Windows/Linux 按 Alt 唤出, macOS 系统菜单栏不受影响); 快捷键与功能全保留。
     autoHideMenuBar: true,
     webPreferences: {

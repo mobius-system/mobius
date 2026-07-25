@@ -6,6 +6,13 @@ mobius/frontend/node_modules
 # Build outputs
 dist/
 build/
+# 例外: mobius/desktop/build/ 是桌面端构建期资源 (应用图标 icon.png/icon.ico +
+# macOS entitlements.mac.plist), 干净 checkout 必须能拿到, 否则 CI/正式构建缺图标。
+# git 规则: 父目录被忽略时无法直接反忽略其下文件, 必须先反忽略目录再反忽略文件。
+!mobius/desktop/build/
+!mobius/desktop/build/icon.png
+!mobius/desktop/build/icon.ico
+!mobius/desktop/build/entitlements.mac.plist
 .gradle/
 .next/
 _next/
@@ -56,6 +63,7 @@ logs/
 mobius/public/index.html
 mobius/public/assets
 mobius/public/fonts
+mobius/public/designer-eye/
 mobius/server_tmp_version.js
 mobius/.build/other-versions/
 outputs/
@@ -114,6 +122,7 @@ docs/*
 !docs/tutorial
 !docs/index.md
 !docs/index.en.md
+!docs/macOS桌面客户端签名与分发修复方案.md
 
 # mkdocs 本地构建产物 + 文档 venv
 site/

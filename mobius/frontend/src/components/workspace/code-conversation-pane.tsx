@@ -1,3 +1,5 @@
+// Mobius文件浏览器
+
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText } from 'lucide-react'
 import { api } from '../../store'

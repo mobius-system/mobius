@@ -29,16 +29,25 @@ mac:
   target:
     - dmg
     - zip
+  # ⚠ 正式 macOS 包【必须】用 Developer ID Application 签名 + Apple 公证。严禁在此设 identity: null
+  #   (那会显式跳过签名, 产出无法在用户机打开的包 —— 这是历史 mac 包坏掉的根因)。
   # identity 不设置：electron-builder 自动选 keychain 里 "Developer ID Application" 证书签名。
-  # （identity: null 会显式跳过签名；手动指定证书名须去掉 "Developer ID Application:" 前缀。）
+  #   签名证书: CI 须 export CSC_LINK (.p12 base64) + CSC_KEY_PASSWORD, eb 会自动导入临时 keychain。
+  #   手动指定证书名须去掉 "Developer ID Application:" 前缀。
   hardenedRuntime: true
   gatekeeperAssess: false
-  # 公证：构建前须 export APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID。
-  # electron-builder 调 notarytool 提交 Apple，通过后自动 staple 到 dmg，用户可双击直接打开。
+  # 公证: electron-builder 24.13.3 + @electron/notarize 2.2.1 经实测读以下 env (二选一, 不混用):
+  #   方案 A (App 专用密码): APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD  (teamId 取自下方 notarize.teamId)
+  #   方案 B (App Store Connect API Key, 推荐): APPLE_API_KEY (.p8 路径) + APPLE_API_KEY_ID + APPLE_API_ISSUER
+  # ⚠ 任一套凭据缺失时 eb 会【静默跳过】公证 (不报错, exit 0) —— 故 CI 必须 verify-mac-build.sh 独立校验,
+  #   不能只信构建日志 (见 .github/workflows/desktop-release.yml + scripts/verify-mac-build.sh)。
   notarize:
     teamId: 6FMVHL6RLY
-  # entitlements：Electron 需 allow-jit/allow-unsigned-executable-memory；
-  # disable-library-validation 让内置 python-build-standalone 的动态库可加载（公证必需）。
+  # entitlements: 见 build/entitlements.mac.plist。
+  #   - allow-jit / allow-unsigned-executable-memory: Electron (V8) 必需。
+  #   - disable-library-validation: 内置 python-build-standalone 加载自带 .dylib/.so 必需 (公证必需)。
+  #   - allow-dyld-environment-variables: 待运行时确认 aimux/python-build-standalone 是否依赖 DYLD_*;
+  #     python-build-standalone 用相对 @rpath, 通常不需要 —— 首次 mac 真机验收后若无依赖应删除 (收窄权限)。
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
 nsis:

@@ -958,6 +958,43 @@ button {
   z-index: 1;
 }
 
+/* ===== JSONL 实时尾部卡 (LIVE): 光线流动 (仿 mobius-current-version-commit sweep) =====
+   外层卡片挂 .jsonl-live-sweep, 通过内联 --live-accent 注入当前严重度强调色
+   (normal=emerald / warn=amber / stale=red), 一道高光从左掠过到右循环. */
+@keyframes jsonl-live-sweep {
+  0%   { transform: translateX(-145%); opacity: 0; }
+  18%  { opacity: 1; }
+  58%  { opacity: 1; }
+  100% { transform: translateX(145%); opacity: 0; }
+}
+
+.jsonl-live-sweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.jsonl-live-sweep::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  background:
+    linear-gradient(108deg,
+      transparent 0%,
+      transparent 34%,
+      color-mix(in srgb, var(--live-accent, #34d399) 28%, transparent) 42%,
+      rgba(255, 255, 255, .30) 50%,
+      color-mix(in srgb, var(--live-accent, #34d399) 38%, transparent) 58%,
+      transparent 68%,
+      transparent 100%);
+  animation: jsonl-live-sweep 2.8s ease-in-out infinite;
+}
+
+.jsonl-live-sweep > * {
+  position: relative;
+  z-index: 1;
+}
+
 /* ===== 引导中心叙事开场 ===== */
 .guide-prelude-shell {
   position: relative;

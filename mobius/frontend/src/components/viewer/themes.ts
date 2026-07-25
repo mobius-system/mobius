@@ -11,7 +11,7 @@ export type CardTheme = { dot: string; border: string; bg: string; text: string;
 // label 全部 ≤2 汉字 (用户审查确认: 2026-07-23), 数据 type 名仍保持英文以便 JSONL 协议稳定.
 export const TYPE_THEME: Record<string, CardTheme> = {
   user:                   { dot: 'bg-slate-400',  border: 'border-slate-500/15', bg: 'bg-slate-500/[0.04]',  text: 'text-slate-300',  label: '用户' },
-  assistant:              { dot: 'bg-blue-400',   border: 'border-blue-500/15',  bg: 'bg-blue-500/[0.04]',   text: 'text-blue-300',   label: '助手' },
+  assistant:              { dot: 'bg-blue-400',   border: 'border-blue-500/15',  bg: 'bg-blue-500/[0.04]',   text: 'text-blue-300',   label: '智能体' },
   attachment:             { dot: 'bg-purple-400', border: 'border-purple-500/15',bg: 'bg-purple-500/[0.04]', text: 'text-purple-300', label: '附件' },
   system:                 { dot: 'bg-amber-400',  border: 'border-amber-500/15', bg: 'bg-amber-500/[0.04]',  text: 'text-amber-300',  label: '系统' },
   'queue-operation':      { dot: 'bg-zinc-500',   border: 'border-zinc-600/15',  bg: 'bg-zinc-700/[0.04]',   text: 'text-zinc-400',   label: '队列' },
@@ -52,6 +52,12 @@ export const CONTEXT_COMPACTED_THEME: CardTheme = { ...START_PY_THEME, label: '�
 // 特例: Claude assistant 最终结束消息. 复用 system/turn_duration 的 amber gold 主题,
 // 让 stop_reason:"end_turn" 的卡片在长列表中和轮次耗时卡片一样容易扫到.
 export const ASSISTANT_END_TURN_THEME: CardTheme = { ...TYPE_THEME.system, label: '结束' }
+
+// 特例: assistant 消息 message.content 只含 thinking 块 (无 text/tool_use) 的卡片.
+// 这类卡片的实质内容是模型思考过程而非助手回复, 标"助手"会误导; 复用 purple (与
+// 附件/思考同属"内部元数据"语义), 蓝色助手 → 紫色思考 视觉上也有清晰区分. 覆盖有内容
+// 的思考块与空思考块 (空思考块摘要仍兜底"思考内容被隐藏", 但类型徽章也统一标"思考").
+export const THINKING_ONLY_THEME: CardTheme = { ...TYPE_THEME.attachment, label: '思考' }
 
 // 特例: user 消息里的 Claude Code compact 完成信号
 // (content 被 <local-command-stdout> ... </local-command-stdout> 包裹, 正文以 "Compacted" 开头).
