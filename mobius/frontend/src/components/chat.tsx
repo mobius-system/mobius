@@ -3535,12 +3535,9 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                 </div>
                 {/* Row separator */}
                 <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
-                {/* Row 2: 5 buttons (工具 + 知识 + 控制). 用 12 列 + 每按钮 col-span-2 + 首项 col-start-2,
-                    5 个按钮落第 2~11 列, 左右各空 1 列对称 padding;
-                    每个按钮宽 = Row1 单按钮宽 (col-span-2 的列宽 = (W-11g)/12*2+g = (W-5g)/6), 大小与间距与 Row1 完全一致, 整体居中. */}
-                <div className="grid grid-cols-12 items-stretch gap-2">
+                {/* Row 2 与 Row 1 共用同一套五列网格，保证每个按钮的列起点、列宽和左右边界严格对齐。 */}
+                <div className="grid grid-cols-5 items-stretch gap-2">
                   <AdvancedInteractionBtn
-                    className="col-span-2 col-start-2"
                     onClick={() => setTerminalChoiceOpen(true)}
                     disabled={!currentSession?.session_id}
                     label="打开终端"
@@ -3549,7 +3546,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
-                    className="col-span-2"
                     onClick={() => setCooperablePcOpen(true)}
                     data-tour="session-cooperable-pc"
                     disabled={!currentSession?.session_id}
@@ -3559,7 +3555,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
-                    className="col-span-2"
                     onClick={() => setKnowledgeEditorOpen(true)}
                     disabled={!currentProjectId || !currentIssueId}
                     label="查看当前知识"
@@ -3568,7 +3563,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
-                    className="col-span-2"
                     onClick={sendProjectKnowledgePrompt}
                     disabled={jsonlEntries.length === 0 || !currentProjectId || connectionStatus !== 'connected' || projectKnowledgeSending}
                     label="项目知识沉淀到记忆"
@@ -3579,7 +3573,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                       : <Archive className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
-                    className="col-span-2"
                     onClick={() => setContinueModalOpen(true)}
                     disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
                     label="修改模型并继续"
