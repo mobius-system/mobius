@@ -7,6 +7,7 @@ import { runSessionMessage } from '../services/session-message-runner';
 import { pushToUser as pushToUserExt } from '../services/extension-push';
 import { Sessions } from '../repositories/sessions';
 import { Users } from '../repositories/users';
+import { assistantSessionKeyLike } from '../services/assistant-session';
 import { db } from '../../db';
 import fs from 'fs';
 import agents from '../agents';
@@ -181,6 +182,17 @@ router.delete('/:id/members/:memberType/:memberId', auth, (req: express.Request,
 });
 
 // 标准帧: event: <name>\ndata: <json>\n\n
+// 找该 owner 当前(最近活跃)的主小莫 session: 主小莫被重建后旧 session 已删, 群成员记录里仍是旧 id,
+// @ 时 findById 落空, 用此回退到 owner 当前的主小莫, 让 @ 仍能触发回复。
+function findOwnerCurrentAssistantSession(ownerId: string): any {
+  return db.prepare(`
+    SELECT * FROM sessions_v2
+    WHERE user_id = ? AND session_key LIKE ? AND status = 'active'
+    ORDER BY last_active DESC, created_at DESC
+    LIMIT 1
+  `).get(ownerId, assistantSessionKeyLike(ownerId)) as any;
+}
+
 // P3: 群内 @agent 触发. 用 agent owner 身份 runSessionMessage(跨用户授权 = 该 agent 在群成员表里).
 async function triggerAgentMentions(params: {
   conversationId: string;
@@ -201,7 +213,11 @@ async function triggerAgentMentions(params: {
     const ownerUser = Users.findAuthById(ownerId);
     if (!ownerUser) continue;
     // 用临时分身执行(不污染主小莫 1对1 历史). 分身复用主小莫的 issue/project/model 配置.
-    const agentSess = Sessions.findById(agentSessionId) as any;
+    let agentSess = Sessions.findById(agentSessionId) as any;
+    if (!agentSess) {
+      // 旧 session 已失效(主小莫被重建等): 回退到该 owner 当前的主小莫 session, 让 @ 仍能触发。
+      agentSess = findOwnerCurrentAssistantSession(ownerId);
+    }
     if (!agentSess) continue;
     const cloneId = `gm${randomUUID().slice(0, 8)}`;
     const taskPrompt = `（群聊「${params.conversationName}」中 ${params.senderName} @你，请处理并给出简洁结果）\n${params.rawContent}`;
