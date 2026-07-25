@@ -8,9 +8,9 @@ function authHeaders(json = false) {
   }
 }
 
-async function api(path, options = {}) {
+async function api(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const timer = timeoutMs > 0 ? window.setTimeout(() => controller.abort(), timeoutMs) : 0
   try {
     const response = await fetch(path, {
       credentials: 'include',
@@ -29,7 +29,7 @@ async function api(path, options = {}) {
     if (error?.name === 'AbortError') throw new Error('请求超时，请稍后重试')
     throw error
   } finally {
-    window.clearTimeout(timer)
+    if (timer) window.clearTimeout(timer)
   }
 }
 
@@ -155,19 +155,27 @@ export async function createAndStartSelfIteration({
   if (!sessionId) throw new Error('会话已创建，但服务端未返回 Session ID')
 
   const startContent = [name, prompt].filter(Boolean).join('\n\n')
-  await api(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
-    method: 'POST',
-    body: JSON.stringify({
-      content: startContent,
-      input_text: startContent,
-      request_id: `designer-eye-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    }),
-  })
-
   const owner = userId || currentRouteIds().userId
   const detailUrl = owner
     ? `/u/${encodeURIComponent(owner)}/p/${encodeURIComponent(project.id)}/i/${encodeURIComponent(issue.id)}?session=${encodeURIComponent(sessionId)}`
     : ''
+  try {
+    // Agent 冷启动包含 tmux/TUI 拉起与首轮上下文准备，明显慢于普通 CRUD。
+    // 不能沿用 12 秒短超时，否则浏览器会误报失败，而后端仍继续把 Session 启动成功。
+    await api(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: startContent,
+        input_text: startContent,
+        request_id: `designer-eye-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      }),
+    }, 120_000)
+  } catch (error) {
+    // Session 已落库后绝不能再展示成笼统的“创建失败”，否则用户重试会生成重复 Session。
+    error.createdSession = { sessionId, name, detailUrl }
+    throw error
+  }
+
   return { sessionId, name, detailUrl }
 }
 

@@ -3486,10 +3486,10 @@ export function ChatArea({ layout = 'default', onNewSession }: {
             </div>
           ) : (
             <div className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0">
-              {/* 高级会话按钮组: 恒定 2 行 (Row1=6 cols, Row2=5 cols), 行间细线分组. 各行按钮数与列数严格匹配, 杜绝孤行/换行撑出第 3 行. */}
+              {/* 高级会话按钮组: 恒定 2 行 (Row1=5 cols, Row2=5 cols), 行间细线分组. 各行按钮数与列数严格匹配, 杜绝孤行/换行撑出第 3 行. */}
               <div className="flex flex-col gap-1.5">
-                {/* Row 1: 6 buttons (会话回溯 + 时间序号 + 工具状态 + 项目端口) — 6 buttons 必须占 6 cols 避免第 6 个换行成孤行 */}
-                <div className="grid grid-cols-6 items-stretch gap-2">
+                {/* Row 1: 5 buttons (文件修改 + 运行命令 + 输入回放 + 时间序号 + 项目端口) */}
+                <div className="grid grid-cols-5 items-stretch gap-2">
                   <AdvancedInteractionBtn
                     onClick={() => setFileChangesOpen(true)}
                     disabled={!sessionId}
@@ -3524,16 +3524,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     aria-pressed={showJsonlMeta}
                     className={showJsonlMeta ? 'bg-blue-500/15' : ''}
                     icon={<Hash className="h-4 w-4" strokeWidth={1.9} />}
-                  />
-                  <AdvancedInteractionBtn
-                    onClick={() => setCursorStyleTools(v => !v)}
-                    disabled={jsonlEntries.length === 0}
-                    label={cursorStyleTools ? '工具状态: 开' : '工具状态: 关'}
-                    tooltip={cursorStyleTools ? '已开启 Cursor 式工具展示（状态图标 + 探索类聚合）。点击关闭恢复原始展示' : '开启 Cursor 式工具调用展示：工具卡显示状态图标 ⏳/✅/❌，连续只读/搜索类自动聚合为「已探索 N 个工具」，失败的工具块默认展开'}
-                    accent="blue"
-                    aria-pressed={cursorStyleTools}
-                    className={cursorStyleTools ? 'bg-blue-500/15' : ''}
-                    icon={<Wrench className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <ProjectPortEntryButton
                     projectId={currentProjectId}

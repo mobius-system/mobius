@@ -476,7 +476,7 @@ const SHELL_HTML = `
   </div>
   <div class="confirm-layer" data-eye="confirm-layer" hidden>
     <section class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="designer-eye-confirm-title">
-      <h3 class="confirm-title" id="designer-eye-confirm-title">自进化会话已创建并启动</h3>
+      <h3 class="confirm-title" id="designer-eye-confirm-title" data-eye="confirm-title">自进化会话已创建并启动</h3>
       <p class="confirm-copy" data-eye="confirm-copy">Agent 已开始处理。是否现在进入该会话查看进度？</p>
       <div class="confirm-actions">
         <button type="button" class="button" data-eye="stay">留在当前页面</button>
@@ -607,6 +607,7 @@ export class DesignerEyeRuntime {
       prompt: this.shadow.querySelector('[data-eye="prompt"]'),
       start: this.shadow.querySelector('[data-eye="start"]'),
       confirmLayer: this.shadow.querySelector('[data-eye="confirm-layer"]'),
+      confirmTitle: this.shadow.querySelector('[data-eye="confirm-title"]'),
       confirmCopy: this.shadow.querySelector('[data-eye="confirm-copy"]'),
       toast: this.shadow.querySelector('[data-eye="toast"]'),
     }
@@ -1049,12 +1050,21 @@ export class DesignerEyeRuntime {
         userId: this.selfIteration.userId,
       })
       this.lastCreatedSession = result
+      this.elements.confirmTitle.textContent = '自进化会话已创建并启动'
       this.elements.confirmCopy.textContent = `会话“${result.name}”已开始运行。是否现在进入该会话查看进度？`
       this.elements.confirmLayer.hidden = false
       this.setFormStatus('自进化会话已创建并启动。')
     } catch (error) {
-      this.setFormStatus(error?.message || '创建或启动自进化会话失败', true)
-      this.showToast(error?.message || '启动自进化失败', true)
+      if (error?.createdSession) {
+        this.lastCreatedSession = error.createdSession
+        this.elements.confirmTitle.textContent = '自进化会话已创建'
+        this.elements.confirmCopy.textContent = `会话“${error.createdSession.name}”已创建，但启动确认未及时返回。为避免重复创建，建议进入该会话查看实际运行状态。`
+        this.elements.confirmLayer.hidden = false
+        this.setFormStatus('会话已创建；启动确认未及时返回，请进入会话查看。')
+      } else {
+        this.setFormStatus(error?.message || '创建或启动自进化会话失败', true)
+        this.showToast(error?.message || '启动自进化失败', true)
+      }
     } finally {
       this.startingSelfIteration = false
       this.elements.start.disabled = false
