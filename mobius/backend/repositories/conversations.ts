@@ -234,6 +234,13 @@ const Conversations = {
     ).run(conversationId, type, memberId).changes;
   },
 
+  // 删除某 agent session 时, 把它从所有群的成员表里清掉(避免群里残留"幽灵"分身被 @ 后无响应)。
+  removeAgentMembers(sessionId: string): number {
+    return db.prepare(
+      "DELETE FROM conversation_members WHERE member_type = 'agent' AND member_id = ?",
+    ).run(sessionId).changes;
+  },
+
   // 解散/删除整个会话: 群主"删除聊天"时调用. 手动级联删 members+messages(无 FK CASCADE).
   deleteConversation(conversationId: string): void {
     db.prepare('DELETE FROM conversation_messages WHERE conversation_id = ?').run(conversationId);
