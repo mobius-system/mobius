@@ -799,7 +799,11 @@ function desktopTabBarInjection(): string {
 }
 
 function injectDesktopHostBar(html: string, title: string): string {
-  const injection = desktopHostBarInjection(title) + desktopTabBarInjection();
+  // 拓展是独立 HTML 文档，不经过 Mobius React App。设计师之眼与桌面宿主栏一样
+  // 必须在服务 index.html 时统一注入，才能覆盖纯静态、Vite/React 和首次编译 loading 页。
+  // type=module 天然去重；designer-eye/index.js 内部另有 window 单例保护。
+  const designerEyeInjection = '<script type="module" src="/designer-eye/index.js"></script>';
+  const injection = designerEyeInjection + desktopHostBarInjection(title) + desktopTabBarInjection();
   if (/<head([^>]*)>/i.test(html)) {
     return html.replace(/<head([^>]*)>/i, `<head$1>\n${injection}`);
   }

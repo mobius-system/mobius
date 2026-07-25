@@ -967,7 +967,7 @@ export function ProjectSettingsPanel({
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <input value={editBindPath} readOnly disabled={!canManageProject} placeholder="未绑定（限家目录下）"
                       onClick={() => { if (canManageProject) onOpenPathPicker() }}
-                      className="h-9 w-full px-3 rounded-lg text-[13px] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60 truncate"
+                      className="h-9 flex-1 max-w-[50%] min-w-0 px-3 rounded-lg text-[13px] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60 truncate"
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     <button type="button" onClick={onOpenPathPicker} disabled={!canManageProject}
                       className="h-9 flex-shrink-0 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">

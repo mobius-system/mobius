@@ -1358,7 +1358,7 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
         <AgentStatusDot agentStatus={session.agent_status} />
       </div>
       <div className="flex-1 min-w-0 overflow-hidden">
-        <div className="text-[11px] font-medium leading-[13px] line-clamp-2 break-all" style={{ color: nameMuted ? textMuted : textPrimary }}>{session.name}</div>
+        <div className="text-[11px] font-medium leading-[13px] truncate" title={session.name} style={{ color: nameMuted ? textMuted : textPrimary }}>{session.name}</div>
         <div className="text-[10px] leading-[12px] mt-0.5 truncate" style={{ color: textMuted }}>{session.message_count} 消息 · {timeAgo(session.last_active)}</div>
       </div>
       <div className="relative h-6 w-[88px] flex-shrink-0 overflow-hidden">
@@ -2076,6 +2076,13 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const endRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  // IME 合成状态守卫: macOS 系统拼音输入法打字母时(合成进行中)按回车, 本意是确认候选字/上屏
+  // 字母, 不应触发发送. Chromium on macOS 合成中的 keydown(Enter) 其 isComposing===true,
+  // 但原代码 onKeyDown 没检查 isComposing, 直接 preventDefault+send() 抢在 IME 前面发送了
+  // (Mac 中招). Windows IME 合成期 keydown 的 key 是 "Process"≠"Enter", 被 e.key!=='Enter'
+  // 侥幸挡掉(Windows 不中招). 自维护 composingRef 独立于浏览器对 isComposing 的时序处理,
+  // 与事件自带 isComposing / keyCode 229 三重守卫, 合成中按回车交给 IME 处理(字上屏, 不发送).
+  const composingRef = useRef(false)
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const [hasNewMessages, setHasNewMessages] = useState(false)
   const [replyTo, setReplyTo] = useState<any>(null)
@@ -3310,12 +3317,21 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                 </div>
               )}
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+                onCompositionStart={() => { composingRef.current = true }}
+                onCompositionEnd={() => { composingRef.current = false }}
                 onKeyDown={e => {
                   if (e.key === 'ArrowUp' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
                     handleInputArrowUp(e)
                     return
                   }
                   if (e.key !== 'Enter') return
+                  // IME 合成守卫(三重): 合成中按回车交给 IME 处理(字上屏), 不发送.
+                  // composingRef 自维护合成态; isComposing/keyCode 229 兼容浏览器原生标记.
+                  const nativeEvent = e.nativeEvent as KeyboardEvent
+                  if (composingRef.current || (e as any).isComposing || nativeEvent.isComposing ||
+                      nativeEvent.keyCode === 229) {
+                    return
+                  }
                   if (e.shiftKey) return
                   if (e.altKey) {
                     e.preventDefault()
@@ -3470,10 +3486,10 @@ export function ChatArea({ layout = 'default', onNewSession }: {
             </div>
           ) : (
             <div className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0">
-              {/* 超级会话按钮组: 2 行, 第一行 4 第二行 5, 行间细线分组. 9 个按钮全部进网格, 无独立主按钮. */}
+              {/* 高级会话按钮组: 恒定 2 行 (Row1=6 cols, Row2=5 cols), 行间细线分组. 各行按钮数与列数严格匹配, 杜绝孤行/换行撑出第 3 行. */}
               <div className="flex flex-col gap-1.5">
-                {/* Row 1: 5 buttons (会话回溯 + 时间序号 + 项目端口) */}
-                <div className="grid grid-cols-5 items-stretch gap-2">
+                {/* Row 1: 6 buttons (会话回溯 + 时间序号 + 工具状态 + 项目端口) — 6 buttons 必须占 6 cols 避免第 6 个换行成孤行 */}
+                <div className="grid grid-cols-6 items-stretch gap-2">
                   <AdvancedInteractionBtn
                     onClick={() => setFileChangesOpen(true)}
                     disabled={!sessionId}
@@ -3529,9 +3545,12 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                 </div>
                 {/* Row separator */}
                 <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
-                {/* Row 2: 5 buttons (工具 + 知识 + 控制) */}
-                <div className="grid grid-cols-5 items-stretch gap-2">
+                {/* Row 2: 5 buttons (工具 + 知识 + 控制). 用 12 列 + 每按钮 col-span-2 + 首项 col-start-2,
+                    5 个按钮落第 2~11 列, 左右各空 1 列对称 padding;
+                    每个按钮宽 = Row1 单按钮宽 (col-span-2 的列宽 = (W-11g)/12*2+g = (W-5g)/6), 大小与间距与 Row1 完全一致, 整体居中. */}
+                <div className="grid grid-cols-12 items-stretch gap-2">
                   <AdvancedInteractionBtn
+                    className="col-span-2 col-start-2"
                     onClick={() => setTerminalChoiceOpen(true)}
                     disabled={!currentSession?.session_id}
                     label="打开终端"
@@ -3540,6 +3559,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
+                    className="col-span-2"
                     onClick={() => setCooperablePcOpen(true)}
                     data-tour="session-cooperable-pc"
                     disabled={!currentSession?.session_id}
@@ -3549,6 +3569,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
+                    className="col-span-2"
                     onClick={() => setKnowledgeEditorOpen(true)}
                     disabled={!currentProjectId || !currentIssueId}
                     label="查看当前知识"
@@ -3557,6 +3578,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
+                    className="col-span-2"
                     onClick={sendProjectKnowledgePrompt}
                     disabled={jsonlEntries.length === 0 || !currentProjectId || connectionStatus !== 'connected' || projectKnowledgeSending}
                     label="项目知识沉淀到记忆"
@@ -3567,6 +3589,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                       : <Archive className="h-4 w-4" strokeWidth={1.9} />}
                   />
                   <AdvancedInteractionBtn
+                    className="col-span-2"
                     onClick={() => setContinueModalOpen(true)}
                     disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
                     label="修改模型并继续"

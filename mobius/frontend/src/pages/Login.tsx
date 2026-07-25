@@ -3,6 +3,19 @@ import { useStore, api } from '../store'
 import { MobiusLogo } from '../components/mobius-logo'
 import { THEME_NAMES } from '../theme'
 
+function readSafeNextPath() {
+  const raw = new URLSearchParams(window.location.search).get('next') || ''
+  if (!raw) return ''
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) return ''
+  try {
+    const url = new URL(raw, window.location.origin)
+    if (url.origin !== window.location.origin) return ''
+    return `${url.pathname}${url.search}${url.hash}`
+  } catch {
+    return ''
+  }
+}
+
 export default function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -45,6 +58,8 @@ export default function Login() {
         body: JSON.stringify(body),
       })
       setAuth(r.token, r.user)
+      const nextPath = readSafeNextPath()
+      if (nextPath) window.location.assign(nextPath)
     } catch (e) {
       const message = e instanceof Error ? e.message : ''
       setErr(message || (passwordRequired ? '账户名或密码错误' : '账户名错误'))

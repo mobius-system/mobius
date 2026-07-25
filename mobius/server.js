@@ -93,6 +93,7 @@ const assistantRoutes = require('./backend/routes/assistant');
 // 用户个人维度偏好 (首登引导已看标记等), 普通 auth, 非 admin.
 const profileRoutes = require('./backend/routes/profile');
 const adminRoutes = require('./backend/routes/admin');
+const designerEyeRoutes = require('./backend/routes/designer-eye/router');
 const extRoutes = require('./backend/routes/ext');
 const aimuxRoutes = require('./backend/routes/aimux');
 const aimuxBridgeProxy = require('./backend/routes/aimux-bridge-proxy');
@@ -124,6 +125,7 @@ app.use('/api/sessions', sessionsRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/skills', skillsRoutes);
 app.use('/api/memories', memoryJsonParser, memoriesRoutes);
+app.use('/api/admin/designer-eye', designerEyeRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/aimux', aimuxRoutes);
 // /api/token_stream → 本机 token-proxy (数字雨 token 环形缓冲, SSE live tail).
@@ -224,7 +226,9 @@ function setStaticCacheHeaders(res, filePath) {
   const rel = path.relative(PUBLIC_DIR, filePath).split(path.sep).join('/');
   if (rel.startsWith('assets/')) {
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-  } else if (rel === 'index.html') {
+  } else if (rel === 'index.html' || rel.startsWith('designer-eye/')) {
+    // 设计师之眼是独立、非哈希 ES module；主站和所有拓展都引用固定 URL。
+    // 每次重验可避免自迭代部署后旧 tab 在 1h 内继续使用过期模块。
     res.setHeader('Cache-Control', 'no-cache');
   } else {
     res.setHeader('Cache-Control', 'public, max-age=3600');
@@ -238,31 +242,32 @@ app.use(express.static(PUBLIC_DIR, {
 }));
 
 // ===== 桌面客户端分发 =====
-// build.py --build-electron 把三平台 zip 产到 mobius/desktop-builds/。故意不放 public:
-// vite emptyOutDir:true 每次前端构建会清空 mobius/public, 放那里会被删。这里独立挂一条
-// 静态路由, 同源供 "下载桌面客户端" 菜单 (/desktop-builds/<file>) 分发。
+// build.py --build-electron 把产物产到 mobius/desktop-builds/, 并写 manifest.json。
+// 故意不放 public: vite emptyOutDir:true 每次前端构建会清空 mobius/public。
+// 用自建中间件而非裸 express.static: 未命中直接 404 (不回退到 SPA index.html),
+// 且 zip/dmg 给正确 Content-Type + nosniff, manifest.json no-cache (见方案 §2.6/§A3)。
 const DESKTOP_BUILDS_DIR = path.join(__dirname, 'desktop-builds');
-app.use('/desktop-builds', express.static(DESKTOP_BUILDS_DIR, {
-  etag: true,
-  lastModified: true,
-  setHeaders: (res) => res.setHeader('Cache-Control', 'public, max-age=3600'),
-}));
+const { createBuildsRouter: createDesktopBuildsRouter } = require('./backend/middleware/builds-static');
+app.use('/desktop-builds', createDesktopBuildsRouter(DESKTOP_BUILDS_DIR));
 
 // ===== 移动客户端分发 =====
 // build.py --build-mobile 从 momo-mobile 项目 (d78c6e39) 拷 arm64 / armeabi-v7a APK 到
-// mobius/mobile-builds/。同样独立挂一条静态路由 (不放 public, 原因同 desktop),
-// 同源供 "下载移动端 App" 菜单 (/mobile-builds/<file>) 分发。
+// mobius/mobile-builds/。同样用自建中间件 (未命中 404, 正确 Content-Type)。
 const MOBILE_BUILDS_DIR = path.join(__dirname, 'mobile-builds');
-app.use('/mobile-builds', express.static(MOBILE_BUILDS_DIR, {
-  etag: true,
-  lastModified: true,
-  setHeaders: (res) => res.setHeader('Cache-Control', 'public, max-age=3600'),
-}));
+const { createBuildsRouter: createMobileBuildsRouter } = require('./backend/middleware/builds-static');
+app.use('/mobile-builds', createMobileBuildsRouter(MOBILE_BUILDS_DIR));
 
 app.get('*', (req, res, next) => {
   const p = req.path || '';
   if (p.startsWith('/api') || p.startsWith('/code-server') || p.startsWith('/extension')) {
     return next();
+  }
+  // 下载分发前缀: 中间件已对未命中返回 404; 这里再显式排除, 双保险避免 SPA 把它当路由回退到 index.html。
+  if (p.startsWith('/desktop-builds') || p.startsWith('/mobile-builds')) {
+    res.status(404);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return res.send('404 Not Found\n');
   }
   if (!fs.existsSync(PUBLIC_INDEX)) return next();
   // SPA 路由回退到 index.html, 同样 no-cache 以便拿到新部署 (ETag 不变则 304).

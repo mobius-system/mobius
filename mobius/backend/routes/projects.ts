@@ -2627,7 +2627,7 @@ router.get('/:id/files', auth, (req: express.Request, res: express.Response) => 
   if (!fs.existsSync(absPath) || !fs.statSync(absPath).isDirectory()) return res.status(404).json({ error: 'Not found' });
   try {
     const entries = fs.readdirSync(absPath, { withFileTypes: true })
-      .filter((e: fs.Dirent) => !e.name.startsWith('.') && e.name !== 'node_modules')
+      .filter((e: fs.Dirent) => e.name !== 'node_modules' && e.name !== '.git')
       .map((e: fs.Dirent) => {
         const full = path.join(absPath, e.name);
         let stat: fs.Stats;

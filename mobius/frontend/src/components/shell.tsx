@@ -20,11 +20,10 @@ import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
-// isDesktop 来自 window.mobiusDesktop (preload 注入); 平台用 navigator.platform 判:
-// mac 交通灯在左 → 顶栏左让位; win/linux 窗口按钮在右 → 操作区右让位。Web 端 IS_DESKTOP=false, 零影响。
+// isDesktop 来自 window.mobiusDesktop (preload 注入)。三平台 (Win/Linux/mac) 统一: 顶栏右侧渲染
+// 自绘窗口按钮 (mac 已改 frame:false 无原生交通灯), 操作区右让位。Web 端 IS_DESKTOP=false, 零影响。
 const DESKTOP_BRIDGE = typeof window !== 'undefined' ? (window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop : undefined
 const IS_DESKTOP = !!DESKTOP_BRIDGE?.isDesktop
-const IS_MAC_PLATFORM = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
 
 const GithubIcon = createLucideIcon('github', [
   ['path', { d: 'M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22', key: 'github' }],
@@ -716,16 +715,23 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const isMobile = useIsMobile()
   // 桌面端窗口拖拽: 整条顶栏空白区作拖拽热区 (pointerdown 命中交互元素则放行, 否则启动 IPC 拖窗)。
   const topnavDrag = useDesktopWindowDrag()
-  // 点中 button/a/input 等交互元素时放行 (照搬 assistant-chat 的 closest 分层), 不抢点击、不拖窗。
+  // 点中交互元素时放行, 不抢点击、不拖窗。用 composedPath 跨 shadow DOM 检查:
+  // 否则 Web Component (mobius-desktop-page-actions) 内的按钮在 light DOM 里 event.target 会被重定向到 host,
+  // closest('button') 匹配不到, 整条顶栏拖拽会误启动 + setPointerCapture 吞掉点击 (mac 启用拖拽后的回归)。
+  const isPointerOnInteractive = (event: { target: EventTarget | null; nativeEvent: Event }): boolean => {
+    const sel = 'button, a, input, select, textarea, [role="button"], [role="menuitem"], mobius-desktop-page-actions'
+    if ((event.target as Element | null)?.closest?.(sel)) return true
+    return event.nativeEvent.composedPath().some((el) => el instanceof Element && !!el.matches?.(sel))
+  }
   const onTopNavPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!topnavDrag.enabled) return
-    if ((event.target as Element | null)?.closest?.('button, a, input, select, textarea, [role="button"], [role="menuitem"]')) return
+    if (isPointerOnInteractive(event)) return
     topnavDrag.startDrag(event)
   }
-  // 双击非交互空白区切换最大化 (双击按钮不触发, 避免 + / 搜索 / 帮助 等被双击误最大化)。
+  // 双击非交互空白区切换最大化 (双击按钮/页面操作菜单不触发, 避免 + / 搜索 / 帮助 等被双击误最大化)。
   const onTopNavDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!topnavDrag.enabled) return
-    if ((event.target as Element | null)?.closest?.('button, a, input, select, textarea, [role="button"], [role="menuitem"]')) return
+    if (isPointerOnInteractive(event)) return
     topnavDrag.toggleMaximize()
   }
   const params = useParams()
@@ -1385,8 +1391,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               </div>
             )}
           </div>
-          {/* 桌面端自绘窗口控制按钮 (Win/Linux; macOS 用系统交通灯) */}
-          {IS_DESKTOP && !IS_MAC_PLATFORM && <WindowControls />}
+          {/* 桌面端自绘窗口控制按钮 (三平台统一自绘; macOS 已改 frame:false 无原生交通灯) */}
+          {IS_DESKTOP && <WindowControls />}
         </div>
       </div>
 

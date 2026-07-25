@@ -1,7 +1,8 @@
 // 桌面端自绘窗口控制按钮 (最小化 / 最大化-还原 / 关闭)。
-// 仅 Windows/Linux 渲染: 这些平台用 titleBarStyle:hidden 隐藏了原生标题栏,
+// 三平台 (Windows/Linux/macOS) 统一渲染: 都隐藏了原生标题栏
+// (Win/Linux 用 titleBarStyle:"hidden", macOS 用 frame:false 彻底移除含交通灯),
 // 而 titleBarOverlay 的原生按钮符号在本环境 (未签名 exe + 高 DPI) 不渲染 (只剩背景色块), 故前端自绘。
-// macOS 用系统交通灯 (titleBarStyle:hiddenInset), 此组件由 shell 的 IS_MAC_PLATFORM 判断不挂载。
+// macOS 此前用系统交通灯 (hiddenInset), 现统一改 Win 方式 (frame:false + 前端自绘), 隐藏 macOS 特征。
 // 主题自适应: 图标色 var(--text-primary), hover 用 var(--bg-hover), 关闭键 hover 红 (#e81123)。
 import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from 'react'
@@ -25,16 +26,12 @@ function getBridge(): Bridge | undefined {
   return typeof window !== 'undefined' ? (window as { mobiusDesktop?: Bridge }).mobiusDesktop : undefined
 }
 
-function isMacPlatform() {
-  return typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
-}
-
 // 桌面端窗口拖拽 (pointer 事件 → IPC window:start-drag/end-drag), 抽成 hook 供
 // DesktopDragHandle 与 shell TopNav 根容器复用, 保证整条顶栏拖拽行为一致。
-// 仅 Win/Linux 桌面端 enabled; web 与 macOS 不启用 (mac 用系统交通灯)。
+// 三平台桌面端统一 enabled (mac 已改 frame:false 走 IPC 拖窗); web 端不启用。
 export function useDesktopWindowDrag() {
   const md = getBridge()
-  const enabled = !!md?.isDesktop && !isMacPlatform() && typeof md.windowStartDrag === 'function'
+  const enabled = !!md?.isDesktop && typeof md.windowStartDrag === 'function'
 
   const endDrag = useCallback(() => {
     md?.windowEndDrag?.().catch(() => {})
@@ -146,14 +143,13 @@ export function WindowControls({ thickMinimize = false }: { thickMinimize?: bool
 
 // 全屏独立页 (如 /welcome 欢迎向导) 的极简桌面顶栏: 唯一拖拽区 + 自绘窗口按钮。
 // 这些页面不走 shell 的 TopNav (拖拽区 + WindowControls 都挂在 TopNav 上), 此处补齐 ——
-// 否则 Win/Linux 上窗口拖不动、也没有最小化/关闭按钮 (用户报: 欢迎页没关闭按钮、无法拖动)。
-// web 端 / macOS 整体不渲染 (macOS 用系统交通灯 hiddenInset, 顶栏原生区域仍可拖; web 无窗口概念)。
+// 否则桌面端窗口拖不动、也没有最小化/关闭按钮 (用户报: 欢迎页没关闭按钮、无法拖动)。
+// web 端不渲染 (无窗口概念); 三平台桌面端统一渲染 (mac 亦走自绘按钮 + IPC 拖窗)。
 // px-5 对齐 shell TopNav, 让 WindowControls 的 marginRight:-14 把关闭键贴到距右边缘 ~6px (与主界面一致)。
 export function DesktopTitleBar() {
   const md = getBridge()
   const isDesktop = !!md?.isDesktop
-  const isMac = isMacPlatform()
-  if (!isDesktop || isMac) return null
+  if (!isDesktop) return null
   return (
     <div className="pointer-events-none fixed left-0 right-0 top-0 z-50 flex h-12 items-stretch px-5">
       {/* 唯一拖拽区: 独立空白 spacer, 无交互子元素 → drag 区不会吞按钮点击 (与 shell TopNav 同策略) */}

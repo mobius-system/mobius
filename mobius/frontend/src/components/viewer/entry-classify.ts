@@ -111,6 +111,17 @@ export function isAssistantEndTurnEntry(entry: AnyEntry): boolean {
   return entry?.type === 'assistant' && entry?.message?.stop_reason === 'end_turn'
 }
 
+// 该 entry 是否为 "只含 thinking 块的 assistant 消息": message.content 数组非空,
+// 且每一项都是 thinking 块 (无 text / tool_use 等其它类型). 这类卡片的实质是模型思考过程
+// 而非助手回复, 类型徽章应标"思考"而非"助手". 空内容 (content=[] 或非数组) 不命中,
+// 退回普通 assistant 蓝, 避免把异常/残缺卡片也改色.
+export function isThinkingOnlyAssistantEntry(entry: AnyEntry): boolean {
+  if (entry?.type !== 'assistant') return false
+  const c = entry?.message?.content
+  if (!Array.isArray(c) || c.length === 0) return false
+  return c.every((b: any) => b?.type === 'thinking')
+}
+
 export function assistantResponseText(content: any): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''

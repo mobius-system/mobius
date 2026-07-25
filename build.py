@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 #
-#   python3 build.py --build-electron
+#   python3 build.py --build-electron              # 官方构建 (mac 须 Darwin; 见下)
+#   python3 build.py --build-electron --targets win-x64
+#   python3 build.py --build-electron --targets mac-arm64 --dev-adhoc   # 本地开发包 (不发布)
 #
+# 桌面端构建配置的唯一完整来源 = mobius/desktop/electron-builder.yml。
+# 本脚本不再维护重复的 EB_BASE_CONFIG: 官方构建直接 prep resources/python 后调用
+# `electron-builder --<plat> --<arch>` (不传 --config, 由 electron-builder 自动读 yml)。
+#
+# 正式 macOS 包必须在 macOS (Darwin) 主机上构建 —— codesign/notarytool/stapler/dmg 工具
+# 只在 macOS 上可用。非 Darwin 主机请求正式 mac 构建会立即失败 (不再产出"看似成功"的未签名包)。
+# 没有 Apple 证书的本地开发用 --dev-unsigned / --dev-adhoc: 产物带 -dev 后缀且绝不入 /desktop-builds/。
 #
 from __future__ import annotations
 
@@ -9,6 +18,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -20,6 +30,7 @@ DESKTOP_DIR = REPO_ROOT / "mobius" / "desktop"
 SERVE_DIR = REPO_ROOT / "mobius" / "desktop-builds"
 MODALS_TSX = REPO_ROOT / "mobius" / "frontend" / "src" / "components" / "modals.tsx"
 START_PY = REPO_ROOT / "start.py"
+DESKTOP_MANIFEST_PY = REPO_ROOT / "scripts" / "desktop_manifest.py"
 TMP_DIR = Path("/tmp")
 
 # ===== Mobius Mobile (Android) =====
@@ -35,22 +46,18 @@ MOBILE_ABIS: dict[str, str] = {
 }
 
 # (artifactName = ${productName}-${version}-${os}-${arch})。
+# electron-builder 的 ${os} token: mac→"mac", win→"win"。
 TARGETS: dict[str, dict[str, str]] = {
     "win-x64": {"plat": "win", "arch": "x64", "os": "win", "farch": "x64"},
     "mac-arm64": {"plat": "mac", "arch": "arm64", "os": "mac", "farch": "arm64"},
     "mac-x64": {"plat": "mac", "arch": "x64", "os": "mac", "farch": "x64"},
 }
 
-EB_BASE_CONFIG: dict = {
-    "appId": "com.agentmatrix.mobius.desktop",
-    "productName": "Mobius Desktop",
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
-    "files": ["out/**/*", "package.json"],
-    "extraMetadata": {"main": "out/main/index.js"},
-    "asar": True,
-    "win": {"target": ["zip"], "signAndEditExecutable": False},
-    "mac": {"target": ["zip"], "identity": None},
-    "nsis": {"oneClick": False, "allowToChangeInstallationDirectory": True},
+# 每个 target 的官方产物格式 (与 electron-builder.yml 的 mac.target/win.target 对齐)。
+OFFICIAL_FORMATS: dict[str, list[str]] = {
+    "win-x64": ["zip"],
+    "mac-arm64": ["dmg", "zip"],
+    "mac-x64": ["dmg", "zip"],
 }
 
 
@@ -85,91 +92,139 @@ def fetch_python(key: str) -> None:
     run([npx_bin("tsx"), "scripts/fetch-python.ts", key], cwd=DESKTOP_DIR)
 
 
-def write_arch_config(key: str) -> Path:
-    cfg = json.loads(json.dumps(EB_BASE_CONFIG))  # deep copy
-    cfg["directories"] = {"output": f"release/{key}"}
-    cfg["extraResources"] = [
-        {"from": f"resources/python-{key}", "to": "python", "filter": ["**/*"]},
-        {"from": "build/icon.png", "to": "icon.png"},
-    ]
-    cfg_path = TMP_DIR / f"mobius-eb-{key}.json"
-    cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+def prep_python(key: str) -> None:
+    """把 resources/python-<key> 拷成 canonical resources/python (electron-builder.yml 的 extraResources 认这个)。
+
+    官方构建一次只构一个 target, 故不存在多 arch 共享 resources/python 的竞争 (见方案 §3.3)。
+    """
+    src = DESKTOP_DIR / "resources" / f"python-{key}"
+    if not src.exists():
+        sys.exit(f"[build] missing {src}; make sure fetch-python {key} succeeded first")
+    dst = DESKTOP_DIR / "resources" / "python"
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst)
+    print(f"    prep resources/python <- resources/python-{key}")
+
+
+def produced_path(version: str, key: str, ext: str, out_subdir: str = "") -> Path:
+    """electron-builder 产物路径。${productName}="Mobius Desktop", ${os}=mac/win。"""
+    t = TARGETS[key]
+    base = DESKTOP_DIR / "release"
+    if out_subdir:
+        base = base / out_subdir
+    return base / f"Mobius Desktop-{version}-{t['os']}-{t['farch']}.{ext}"
+
+
+def published_name(version: str, key: str, ext: str) -> str:
+    """下发到 /desktop-builds/ 的 kebab-case 文件名 (与下载菜单约定 + manifest 一致)。"""
+    t = TARGETS[key]
+    return f"mobius-desktop-{version}-{t['os']}-{t['farch']}.{ext}"
+
+
+def official_eb_cmd(key: str) -> list[str]:
+    """官方构建: 不传 --config, electron-builder 自动读 electron-builder.yml (唯一配置源)。"""
+    t = TARGETS[key]
+    return [npx_bin("electron-builder"), f"--{t['plat']}", f"--{t['arch']}"]
+
+
+def assert_mac_official_host(key: str) -> None:
+    """正式 macOS 包必须在 Darwin 上构建。Linux/Windows 无 codesign/notarytool/dmg 工具。"""
+    if key.startswith("mac-") and platform.system() != "Darwin":
+        sys.exit(
+            f"[build] 正式 macOS 包必须在 macOS 主机构建 (当前 {platform.system()})。\n"
+            f"        方案: 1) 在 macOS 上跑本命令;  2) 走 CI (push tag desktop-v<V> 或 workflow_dispatch);\n"
+            f"              3) 仅本地测试用 --dev-unsigned / --dev-adhoc (产物不入 /desktop-builds/)。\n"
+            f"        不再在非 macOS 主机产出'看似成功'的未签名 mac 包。"
+        )
+
+
+def write_dev_config(key: str, mode: str) -> Path:
+    """本地开发包配置: extends electron-builder.yml, 只覆盖签名/输出/后缀。
+
+    mode: "unsigned" (完全不签名) | "adhoc" (afterPack 套 ad-hoc 签名, Apple Silicon 可启动)。
+    产物带 -dev-<mode> 后缀, 输出到 release/dev-<mode>-<key>/, 绝不复制到 /desktop-builds/。
+    extends 经实测 (electron-builder 24.13.3) 会正确加载 desktop/electron-builder.yml 作 parent。
+    """
+    override: dict = {
+        "extends": "./electron-builder.yml",
+        "directories": {"output": f"release/dev-{mode}-{key}"},
+        "artifactName": f"${{productName}}-${{version}}-${{os}}-${{arch}}-dev-{mode}.${{ext}}",
+        "mac": {
+            "target": ["zip"],          # dev 不出 dmg (免 dmg-license + 不依赖签名)
+            "identity": None,           # 跳过 Developer ID 签名 (正式包严禁这么做)
+            "notarize": False,          # dev 不公证
+            "hardenedRuntime": False,   # 无签名时无意义
+        },
+    }
+    if mode == "adhoc":
+        # afterPack 套 ad-hoc 签名 (见 scripts/after-pack-adhoc.js)
+        override["afterPack"] = "./scripts/after-pack-adhoc.js"
+    cfg_path = TMP_DIR / f"mobius-eb-dev-{mode}-{key}.json"
+    cfg_path.write_text(json.dumps(override, indent=2), encoding="utf-8")
     return cfg_path
 
 
-def produced_zip_name(version: str, key: str) -> str:
-    # artifactName = ${productName}-${version}-${os}-${arch}.${ext}, productName="Mobius Desktop"。
-    t = TARGETS[key]
-    return f"Mobius Desktop-{version}-{t['os']}-{t['farch']}.zip"
-
-
-def published_zip_name(version: str, key: str) -> str:
-    t = TARGETS[key]
-    return f"mobius-desktop-{version}-{t['os']}-{t['farch']}.zip"
-
-
-def eb_cmd(key: str, cfg_path: Path) -> list[str]:
+def dev_eb_cmd(key: str, cfg_path: Path) -> list[str]:
     t = TARGETS[key]
     return [npx_bin("electron-builder"), f"--{t['plat']}", f"--{t['arch']}", "--config", str(cfg_path)]
 
 
-def publish(key: str, version: str) -> Path:
-    produced = DESKTOP_DIR / "release" / key / produced_zip_name(version, key)
-    if not produced.exists():
-        sys.exit(
-            f"[build] expected artifact does not exist: {produced}\n"
-            f"        check release/{key}/ for the actual filename, or /tmp/mobius-eb-{key}.log for errors"
-        )
+def build_one_official(key: str, version: str, skip_fetch_python: bool) -> None:
+    assert_mac_official_host(key)
+    print(f"  --- [official] {key} (reads electron-builder.yml, no --config) ---")
+    if not skip_fetch_python:
+        fetch_python(key)
+    prep_python(key)
+    cfg = official_eb_cmd(key)
+    with open(TMP_DIR / f"mobius-eb-{key}.log", "w", encoding="utf-8") as logf:
+        logf.write(f"$ {' '.join(cfg)}\n\n")
+        logf.flush()
+        r = subprocess.run(cfg, cwd=str(DESKTOP_DIR), stdout=logf, stderr=subprocess.STDOUT)
+    if r.returncode != 0:
+        sys.exit(f"[build] {key} failed (rc={r.returncode}); log: {TMP_DIR}/mobius-eb-{key}.log")
+    publish_files(key, version, OFFICIAL_FORMATS[key])
+
+
+def build_one_dev(key: str, version: str, mode: str, skip_fetch_python: bool) -> None:
+    if not key.startswith("mac-"):
+        sys.exit(f"[build] --dev-{mode} 仅用于 mac 目标 (win 本就免签名); 收到 {key}")
+    print(f"  --- [dev-{mode}] {key} (不发布, 产物带 -dev-{mode} 后缀) ---")
+    if not skip_fetch_python:
+        fetch_python(key)
+    prep_python(key)
+    cfg_path = write_dev_config(key, mode)
+    cfg = dev_eb_cmd(key, cfg_path)
+    log = TMP_DIR / f"mobius-eb-dev-{mode}-{key}.log"
+    with open(log, "w", encoding="utf-8") as logf:
+        logf.write(f"$ {' '.join(cfg)}\n\n")
+        logf.flush()
+        r = subprocess.run(cfg, cwd=str(DESKTOP_DIR), stdout=logf, stderr=subprocess.STDOUT)
+    if r.returncode != 0:
+        sys.exit(f"[build] dev-{mode} {key} failed (rc={r.returncode}); log: {log}")
+    produced = produced_path(version, key, "zip", out_subdir=f"dev-{mode}-{key}")
+    print(f"    ✓ dev 产物 (未发布): {produced}  ({produced.stat().st_size / (1024*1024):.1f} MB)")
+    print(f"    ⚠ 本地开发包, 未用 Developer ID 签名/公证, 不可分发; 不写入 /desktop-builds/ 或 manifest")
+
+
+def publish_files(key: str, version: str, formats: list[str]) -> None:
+    """把官方产物改名拷到 /desktop-builds/ (kebab-case, 与下载菜单+manifest 约定一致)。"""
     SERVE_DIR.mkdir(parents=True, exist_ok=True)
-    dest = SERVE_DIR / published_zip_name(version, key)
-    shutil.copy2(produced, dest)
-    return dest
-
-
-def build_targets(targets: list[str], version: str, parallel: bool) -> None:
-    plans: list[tuple[str, Path, Path]] = []
-    for key in targets:
-        if not (DESKTOP_DIR / "resources" / f"python-{key}").exists():
-            sys.exit(f"[build] missing resources/python-{key}; make sure fetch-python {key} succeeded first")
-        plans.append((key, write_arch_config(key), TMP_DIR / f"mobius-eb-{key}.log"))
-
-    if parallel and len(plans) > 1:
-        print(f"=== [2] electron-builder x {len(plans)} parallel (independent config/output per arch) ===")
-        procs: list[tuple[str, subprocess.Popen, object, Path]] = []
-        for key, cfg, log in plans:
-            logf = open(log, "w", encoding="utf-8")
-            cmd = eb_cmd(key, cfg)
-            logf.write(f"$ {' '.join(cmd)}\n\n")
-            logf.flush()
-            p = subprocess.Popen(cmd, cwd=str(DESKTOP_DIR), stdout=logf, stderr=subprocess.STDOUT)
-            procs.append((key, p, logf, log))
-            print(f"  [launch] {key} (pid {p.pid})")
-        rcs: dict[str, int] = {}
-        for key, p, logf, log in procs:
-            rc = p.wait()
-            logf.close()
-            rcs[key] = rc
-            print(f"  [{'✓' if rc == 0 else '✗'}] {key} done (rc={rc})  log: {log}")
-        failed = [k for k, rc in rcs.items() if rc != 0]
-        if failed:
-            sys.exit(f"[build] parallel build failed for arch: {failed}; check {TMP_DIR}/mobius-eb-*.log")
-    else:
-        mode = "sequential" if not parallel else "sequential (single arch)"
-        print(f"=== [2] electron-builder {mode} build ({len(plans)} target(s)) ===")
-        for key, cfg, log in plans:
-            print(f"  --- {key} ---")
-            with open(log, "w", encoding="utf-8") as logf:
-                cmd = eb_cmd(key, cfg)
-                logf.write(f"$ {' '.join(cmd)}\n\n")
-                logf.flush()
-                r = subprocess.run(cmd, cwd=str(DESKTOP_DIR), stdout=logf, stderr=subprocess.STDOUT)
-            if r.returncode != 0:
-                sys.exit(f"[build] {key} failed (rc={r.returncode}); log: {log}")
-
-    print(f"=== [3] publish to {SERVE_DIR} ===")
-    for key, _, _ in plans:
-        dest = publish(key, version)
+    for ext in formats:
+        produced = produced_path(version, key, ext)
+        if not produced.exists():
+            sys.exit(
+                f"[build] 预期产物不存在: {produced}\n"
+                f"        检查 release/ 实际内容, 或 {TMP_DIR}/mobius-eb-{key}.log 排错"
+            )
+        dest = SERVE_DIR / published_name(version, key, ext)
+        shutil.copy2(produced, dest)
         print(f"    ✓ {dest.name}  ({dest.stat().st_size / (1024 * 1024):.1f} MB)")
+
+
+def regenerate_manifest() -> None:
+    """构建发布后重写 /desktop-builds/manifest.json (只登记当前版本, 旧版留作回滚不进清单)。"""
+    run([sys.executable, str(DESKTOP_MANIFEST_PY), "generate", "--dir", str(SERVE_DIR)], cwd=REPO_ROOT)
 
 
 def current_menu_version() -> str | None:
@@ -179,15 +234,18 @@ def current_menu_version() -> str | None:
 
 
 def sync_menu(version: str, skip: bool) -> None:
+    """桌面下载页已改为运行时读 /desktop-builds/manifest.json (见 modals.tsx DesktopDownloadModal),
+    故不再有 DESKTOP_VERSION 常量 —— 本函数对桌面自动 no-op (current_menu_version 返回 None 即跳过)。
+    移动端仍用硬编码 MOBILE_VERSION, 由 sync_mobile_menu 单独处理。"""
     cur = current_menu_version()
     if skip:
         print(f"=== [sync-menu] skip (--skip-menu-sync); current menu DESKTOP_VERSION={cur} ===")
         return
+    if cur is None:
+        print(f"=== [sync-menu] 桌面下载页改为读 manifest.json, 无 DESKTOP_VERSION 常量, 跳过 ===")
+        return
     if cur == version:
         print(f"=== [sync-menu] menu DESKTOP_VERSION is already {version}; no frontend rebuild needed ===")
-        return
-    if cur is None:
-        print(f"[sync-menu] did not find DESKTOP_VERSION in {MODALS_TSX}; skipping sync")
         return
     print(f"=== [sync-menu] DESKTOP_VERSION {cur} -> {version}, update modals.tsx + rebuild frontend ===")
     text = MODALS_TSX.read_text(encoding="utf-8")
@@ -211,20 +269,33 @@ def parse_targets(raw: str) -> list[str]:
 def build_electron(args: argparse.Namespace) -> int:
     version = args.version or read_desktop_version()
     targets = parse_targets(args.targets)
-    mode = "parallel" if (args.parallel and len(targets) > 1) else "sequential"
-    print(f"=== Mobius Desktop one-shot build | version {version} | targets {targets} | {mode} ===")
+    dev_mode = "unsigned" if args.dev_unsigned else ("adhoc" if args.dev_adhoc else None)
+    if dev_mode:
+        # dev 模式一次一个 target, 不并行, 不发布, 不写 manifest
+        print(f"=== Mobius Desktop DEV build (--dev-{dev_mode}) | version {version} | targets {targets} ===")
+        ensure_node_modules()
+        build_renderer_once()
+        for key in targets:
+            build_one_dev(key, version, dev_mode, args.skip_fetch_python)
+        print(f"\n=== dev 产物在 {DESKTOP_DIR}/release/dev-{dev_mode}-*/ (未发布, 仅本地测试) ===")
+        return 0
+
+    print(f"=== Mobius Desktop OFFICIAL build | version {version} | targets {targets} ===")
+    # 任何构建动作前先校验宿主: 正式 mac 包必须在 Darwin 上, 否则立即失败 (不白跑 renderer 构建)。
+    for key in targets:
+        assert_mac_official_host(key)
     ensure_node_modules()
     build_renderer_once()
-    if not args.skip_fetch_python:
-        for key in targets:
-            fetch_python(key)
     SERVE_DIR.mkdir(parents=True, exist_ok=True)
-    build_targets(targets, version, args.parallel)
-    print(f"\n=== artifacts published to {SERVE_DIR} ===")
-    for p in sorted(SERVE_DIR.glob("mobius-desktop-*.zip")):
-        print(f"    {p.name}  ({p.stat().st_size / (1024 * 1024):.1f} MB)")
+    for key in targets:
+        build_one_official(key, version, args.skip_fetch_python)
+    regenerate_manifest()
     sync_menu(version, args.skip_menu_sync)
-    print(f"\n=== done. Download menu distribution path: /desktop-builds/ (served as same-origin static files by server.js) ===")
+    print(f"\n=== artifacts published to {SERVE_DIR} ===")
+    for p in sorted(SERVE_DIR.glob(f"mobius-desktop-{version}-*")):
+        print(f"    {p.name}  ({p.stat().st_size / (1024 * 1024):.1f} MB)")
+    print(f"\n=== manifest: {SERVE_DIR / 'manifest.json'} ===")
+    print(f"=== 下载页运行时读 /desktop-builds/manifest.json (server.js 同源静态分发) ===")
     return 0
 
 
@@ -375,19 +446,24 @@ def build_mobile(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="One-shot artifact build. Supports --build-electron (Mobius Desktop, three platforms) "
+        description="One-shot artifact build. Supports --build-electron (Mobius Desktop) "
         "and --build-mobile (Mobius Mobile Android, arm64 + armeabi-v7a, sourced from momo-mobile)."
     )
-    parser.add_argument("--build-electron", action="store_true", help="build Mobius Desktop (win/mac-arm/mac-x64)")
+    parser.add_argument("--build-electron", action="store_true", help="build Mobius Desktop (win/mac-arm/mac-x64). 官方 mac 须在 macOS 上构建。")
     parser.add_argument("--build-mobile", action="store_true", help="build Mobius Mobile (Android arm64 + armeabi-v7a APK, sourced from momo-mobile)")
     parser.add_argument("--version", metavar="V", help="override version (electron: mobius/desktop/package.json; mobile: momo-mobile androidApp versionName)")
     parser.add_argument("--targets", default="win-x64,mac-arm64,mac-x64", help="[electron] comma-separated target subset (defaults to all three)")
     parser.add_argument("--skip-fetch-python", action="store_true", help="[electron] reuse existing resources/python-* (default fetch is idempotent)")
     parser.add_argument("--skip-menu-sync", action="store_true", help="do not sync download menu version/size/sha256 (default syncs into modals.tsx)")
     parser.add_argument(
-        "--sequential",
+        "--dev-unsigned",
         action="store_true",
-        help="[electron] sequential build (default builds three arch targets in parallel; use when memory is tight or debugging)",
+        help="[electron][本地开发] mac 免签名 dev 包 (产物带 -dev-unsigned, 不发布; 仅 mac 目标)",
+    )
+    parser.add_argument(
+        "--dev-adhoc",
+        action="store_true",
+        help="[electron][本地开发] mac ad-hoc 签名 dev 包 (Apple Silicon 可启动; 产物带 -dev-adhoc, 不发布; 仅 mac 目标)",
     )
     parser.add_argument(
         "--mobile-src",
@@ -400,11 +476,12 @@ def main() -> int:
         help="[mobile] do not run gradle if per-ABI APKs are missing; just copy existing ones",
     )
     args = parser.parse_args()
-    args.parallel = not args.sequential
 
     if not args.build_electron and not args.build_mobile:
         parser.print_help()
         return 0
+    if args.dev_unsigned and args.dev_adhoc:
+        sys.exit("[build] --dev-unsigned 与 --dev-adhoc 互斥, 二选一")
     if args.build_mobile:
         return build_mobile(args)
     return build_electron(args)

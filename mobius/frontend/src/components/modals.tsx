@@ -3415,16 +3415,52 @@ export function TurnTree({ sessionId, onClose, onRefresh }: { sessionId: string;
 }
 
 // =====================================================================
-// 下载桌面客户端 — 提供 Mobius Desktop (Fork B 薄壳) 三平台下载链接
+// 下载桌面客户端 — 下载清单从服务器 /desktop-builds/manifest.json 运行时拉取。
 //   - 内置 python + 自动装 aimux 反连, 把本机注册为可调度节点
-//   - 产物在服务器 /desktop-builds/ 下, 经同源静态托管提供
+//   - manifest 由 build.py / scripts/desktop_manifest.py 从构建产物生成, 含 version/size/sha256
+//   - 不再在前端硬编码版本号: manifest 是单一可信源, 缺失/损坏 → 「暂不可用」不发下载
 // =====================================================================
-const DESKTOP_VERSION = '0.0.18'
-const DESKTOP_BUILDS: Array<{ label: string; sub: string; file: string }> = [
-  { label: 'Windows', sub: 'x64 · Intel / AMD 64位', file: `mobius-desktop-${DESKTOP_VERSION}-win-x64.zip` },
-  { label: 'macOS', sub: 'Apple Silicon · M1/M2/M3/M4', file: `mobius-desktop-${DESKTOP_VERSION}-mac-arm64.zip` },
-  { label: 'macOS', sub: 'Intel · x64 · ZIP 压缩包', file: `mobius-desktop-${DESKTOP_VERSION}-mac-x64.zip` },
-]
+interface DesktopManifestBuild { platform: string; arch: string; format: string; file: string; size: number; sha256: string }
+interface DesktopManifest { version: string; generatedAt?: string; builds: DesktopManifestBuild[] }
+
+// 把 manifest.builds 按 (platform,arch) 聚合成展示行: mac 默认 DMG, ZIP 作备用链接; win 用 ZIP。
+interface DesktopDownloadRow {
+  key: string
+  label: string
+  sub: string
+  primary: DesktopManifestBuild
+  alt?: DesktopManifestBuild
+}
+
+const DESKTOP_ROW_LABELS: Record<string, { label: string; sub: string }> = {
+  'mac-arm64': { label: 'macOS', sub: 'Apple Silicon · M1/M2/M3/M4' },
+  'mac-x64': { label: 'macOS', sub: 'Intel · x64' },
+  'win-x64': { label: 'Windows', sub: 'x64 · Intel / AMD 64 位' },
+}
+
+function manifestToRows(manifest: DesktopManifest): DesktopDownloadRow[] {
+  const byKey = new Map<string, DesktopManifestBuild[]>()
+  for (const b of manifest.builds) {
+    const k = `${b.platform}-${b.arch}`
+    if (!byKey.has(k)) byKey.set(k, [])
+    byKey.get(k)!.push(b)
+  }
+  const rows: DesktopDownloadRow[] = []
+  for (const [k, list] of byKey) {
+    const meta = DESKTOP_ROW_LABELS[k] || { label: k, sub: '' }
+    const dmg = list.find(b => b.format === 'dmg')
+    const zip = list.find(b => b.format === 'zip')
+    const primary = dmg || zip || list[0]
+    const alt = dmg && zip ? zip : undefined
+    rows.push({ key: k, label: meta.label, sub: `${meta.sub} · ${primary.format.toUpperCase()}`, primary, alt })
+  }
+  const order = ['mac-arm64', 'mac-x64', 'win-x64']
+  rows.sort((a, b) => {
+    const ia = order.indexOf(a.key), ib = order.indexOf(b.key)
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+  })
+  return rows
+}
 
 // 移动端构建清单 — 镜像桌面 DESKTOP_BUILDS。
 // size / sha256 由 build.py --build-mobile 从 momo-mobile 拷 APK 后自动回填
@@ -3461,8 +3497,64 @@ function formatBytes(n: number): string {
   return mb >= 100 ? `${mb.toFixed(0)} MB` : `${mb.toFixed(1)} MB`
 }
 
+function DesktopDownloadRowItem({ row, theme }: { row: DesktopDownloadRow; theme: string }) {
+  const subMuted = theme !== 'light' ? '#94a3b8' : '#64748b'
+  return (
+    <div className="px-4 py-3 rounded-xl" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+          </svg>
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{row.label}</div>
+            <div className="text-[11px] truncate" style={{ color: subMuted }}>
+              {row.sub}{row.primary.size ? ` · ${formatBytes(row.primary.size)}` : ''} · SHA256 {row.primary.sha256.slice(0, 8)}…
+            </div>
+          </div>
+        </div>
+        <a href={`/desktop-builds/${row.primary.file}`} download title={`SHA256: ${row.primary.sha256}`}
+          className="text-[12px] px-3 py-1 rounded-lg font-medium shrink-0" style={{ background: '#0a84ff', color: '#fff' }}>
+          下载 {row.primary.format.toUpperCase()}
+        </a>
+      </div>
+      {row.alt && (
+        <div className="mt-2 pl-8 text-[11px]" style={{ color: subMuted }}>
+          或下载 <a href={`/desktop-builds/${row.alt.file}`} download className="underline" style={{ color: '#0a84ff' }}>ZIP 压缩包</a>
+          {row.alt.size ? ` (${formatBytes(row.alt.size)})` : ''}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
   const { theme } = useStore()
+  const [manifest, setManifest] = useState<DesktopManifest | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 8000)
+    fetch('/desktop-builds/manifest.json', { signal: ctrl.signal, cache: 'no-cache' })
+      .then(async r => {
+        if (r.status === 404) throw new Error('manifest 不存在 (尚未发布任何桌面客户端版本)')
+        if (!r.ok) throw new Error(`服务器返回 ${r.status}`)
+        return r.json() as Promise<DesktopManifest>
+      })
+      .then(m => {
+        if (!m || typeof m.version !== 'string' || !Array.isArray(m.builds) || !m.builds.length) {
+          throw new Error('manifest 格式不完整')
+        }
+        setManifest(m)
+      })
+      .catch(e => setError(e?.name === 'AbortError' ? '获取版本信息超时，请稍后再试' : (e?.message || '无法获取版本信息')))
+      .finally(() => clearTimeout(timer))
+    return () => { clearTimeout(timer); ctrl.abort() }
+  }, [])
+
+  const rows = manifest ? manifestToRows(manifest) : []
+  const muted = theme !== 'light' ? '#6b7280' : '#94a3b8'
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -3472,35 +3564,30 @@ export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-start justify-between mb-3">
           <div>
             <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>下载桌面客户端</h3>
-            <div className="text-[11px] mt-0.5" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
-              Mobius Desktop v{DESKTOP_VERSION} · 登录后自动把本机注册为可调度节点 (aimux 反连)
+            <div className="text-[11px] mt-0.5" style={{ color: muted }}>
+              {manifest ? `Mobius Desktop v${manifest.version} · 登录后自动把本机注册为可调度节点 (aimux 反连)` : '正在获取最新版本信息…'}
             </div>
           </div>
           <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
         </div>
 
         <div className="space-y-2 mt-4">
-          {DESKTOP_BUILDS.map(b => (
-            <a key={b.file} href={`/desktop-builds/${b.file}`} download
-              className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
-              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
-              <div className="flex items-center gap-3">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
-                </svg>
-                <div>
-                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
-                  <div className="text-[11px]" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>{b.sub}</div>
-                </div>
-              </div>
-              <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: '#0a84ff', color: '#fff' }}>下载</span>
-            </a>
-          ))}
+          {error ? (
+            <div className="px-4 py-6 rounded-xl text-center" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>桌面客户端暂不可用</div>
+              <div className="text-[11px] mt-1" style={{ color: muted }}>{error}</div>
+              <div className="text-[11px] mt-1" style={{ color: muted }}>请稍后再试，或联系管理员检查 /desktop-builds/manifest.json</div>
+            </div>
+          ) : rows.length ? (
+            rows.map(r => <DesktopDownloadRowItem key={r.key} row={r} theme={theme} />)
+          ) : (
+            <div className="px-4 py-6 rounded-xl text-center text-[12px]" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', color: muted }}>加载中…</div>
+          )}
         </div>
 
-        <div className="text-[11px] mt-4 space-y-1" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
+        <div className="text-[11px] mt-4 space-y-1" style={{ color: muted }}>
           <div>· 首次启动会自动在本机创建 Python 虚拟环境并安装 aimux (需联网, 约 30-90 秒)</div>
-          <div>· macOS 包未签名, 首次打开需右键 → 打开</div>
+          <div>· macOS 默认提供 DMG 安装镜像 (ZIP 为备用)；不确定芯片型号可点左上角  →「关于本机」查看</div>
           <div>· 登录后桌面端会以 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>desktop-&lt;主机名&gt;</code> 注册到 AIMUX 节点列表</div>
         </div>
       </div>

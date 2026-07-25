@@ -167,7 +167,7 @@ router.get('/files', auth, (req: express.Request, res: express.Response) => {
   }
   try {
     const entries = fs.readdirSync(absPath, { withFileTypes: true })
-      .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules')
+      .filter(e => e.name !== 'node_modules' && e.name !== '.git')
       .map(e => {
         const stat = fs.statSync(path.join(absPath, e.name));
         return {
