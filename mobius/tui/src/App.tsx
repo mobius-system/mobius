@@ -17,6 +17,7 @@ import { LoginScreen } from './components/Login.js'
 import { PrepScreen, type ReadyState } from './components/PrepScreen.js'
 import { ChatScreen } from './components/Chat.js'
 import { ResumePicker } from './components/ResumePicker.js'
+import { startAimuxConnection, stopAimuxConnection, type AimuxStatus } from './aimux.js'
 
 type Route = 'boot' | 'login' | 'prep' | 'chat' | 'resume'
 
@@ -30,6 +31,20 @@ export function App() {
   const [chatKey, setChatKey] = useState(0)
   const [resumeSessionId, setResumeSessionId] = useState<string | null>(null)
 
+  function bootAimux(rec: LoginRecord): void {
+    // AIMUX installation/connection is deliberately backgrounded: the TUI can
+    // continue into project preparation while a first-time pip install runs.
+    void startAimuxConnection({
+      server: rec.server,
+      token: rec.token,
+      onStatus: (status: AimuxStatus) => {
+        if (status.detail) setBootMsg(status.detail)
+      },
+    }).catch((e: any) => setBootMsg(`AIMUX 启动失败: ${e?.message ?? String(e)}`))
+  }
+
+  useEffect(() => () => { void stopAimuxConnection() }, [])
+
   // ── bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => { (async () => {
     const rec = await loadLogin()
@@ -41,6 +56,7 @@ export function App() {
       const me = await getMe(rec.server, rec.token)
       setUserId(me.id)
       setClient(c); setRoute('prep')
+      bootAimux(rec)
     } catch {
       // token expired — try to re-login with stored creds
       if (rec.password) {
@@ -52,6 +68,7 @@ export function App() {
           setUserId(r.user.id)
           setClient(new MobiusClient(rec.server, r.token))
           setRoute('prep')
+          bootAimux(updated)
           return
         } catch { /* fall through to login */ }
       }
@@ -64,6 +81,7 @@ export function App() {
     setUserId(rec.user.id)
     setClient(new MobiusClient(rec.server, rec.token))
     setRoute('prep')
+    bootAimux(rec)
   }
 
   function onPrepReady(st: ReadyState) {
@@ -88,7 +106,7 @@ export function App() {
   }
 
   function onQuit() {
-    process.exit(0)
+    void stopAimuxConnection().finally(() => process.exit(0))
   }
 
   // ── render ─────────────────────────────────────────────────────────────────

@@ -43,6 +43,22 @@ Defaults target `https://cloud-17.agent-matrix.com` (user `fuqingxu`,
 passwordless). On success the token is saved and the next launch auto-logs in
 (validated via `/api/auth/me`; re-login on expiry).
 
+After a successful login the TUI also starts its local AIMUX reverse connection
+in the background. The first run creates `~/.mobius/aimux-venv` and installs
+the `aimux` Python package, then runs:
+
+```text
+aimux reverse connect <server>/aimux_bridge --identifier tui-<hostname> --token <jwt> --replace
+```
+
+Python 3.10+ is discovered from `MOBIUS_TUI_PYTHON`, `python3`/`python` (or
+Windows `py`). If none is available and `uv` is installed, the TUI runs
+`uv python install 3.11` for a user-local interpreter. Set
+`MOBIUS_TUI_DISABLE_AIMUX=1` to opt out, for example on a machine that should
+only use the web API. A failed child is retried automatically after five
+seconds; AIMUX installation or connection failures do not prevent the chat
+client from opening.
+
 ## Flow
 
 1. **Login** — server / username / password → `POST /api/auth/login` → save
