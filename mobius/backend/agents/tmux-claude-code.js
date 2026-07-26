@@ -200,10 +200,6 @@ function findClaudeRealTimeInfo(paneText) {
 // 不锚 spinner 字符 (✻ 随帧变), 大小写不敏感, [1-9]\d* 排除 N=0 (结束态不再显示此行).
 const CLAUDE_BG_AGENTS_WAITING_RE = /Waiting\s+for\s+[1-9]\d*\s+background\s+agents?\s+to\s+finish/i
 
-// 临时诊断: 只对这些 session 在 isWorking 返回 false 时打印判定依据(fc7d48d1 = claude-code 通道,
-// 用户反馈间歇误判 not working). 拿到日志后删除. 别的 session 零开销.
-const CLAUDE_ISWORKING_TRACE_SESSIONS = new Set(['fc7d48d1', 'e780df8a'])
-
 // claude TUI "危险操作权限框". 即便 --dangerously-skip-permissions / 底栏 "bypass permissions on",
 // claude 仍会对"作用在工作目录或其祖先上的危险操作"(典型: rm -rf <cwd 子树>) 弹一次性确认框:
 //   Dangerous rm operation on working directory or its ancestor: /home/.../verify-overflow
@@ -446,42 +442,32 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   isWorking(sessionId) {
-    const trace = CLAUDE_ISWORKING_TRACE_SESSIONS.has(sessionId)
-    const _false = (reason) => {
-      if (trace) log(`[isWorking:${sessionId}] FALSE reason=${reason}`)
-      return false
-    }
-    if (!this.isAlive(sessionId)) return _false('not-alive')
+    if (!this.isAlive(sessionId)) return false
     const entry = this.runtime.get(sessionId)
-    if (!entry?.jsonlPath) return _false('no-jsonlPath')
+    if (!entry?.jsonlPath) return false
     let lines
-    let statSize = 0
     try {
-      if (!fs.existsSync(entry.jsonlPath)) return _false('jsonl-missing')
+      if (!fs.existsSync(entry.jsonlPath)) return false
       const stat = fs.statSync(entry.jsonlPath)
-      statSize = stat.size
-      if (stat.size === 0) return _false('empty-jsonl')
+      if (stat.size === 0) return false
       const len = Math.min(stat.size, CLAUDE_WORKING_TAIL_BYTES)
       const buf = Buffer.alloc(len)
       const fd = fs.openSync(entry.jsonlPath, 'r')
       try { fs.readSync(fd, buf, 0, len, stat.size - len) } finally { fs.closeSync(fd) }
       lines = buf.toString('utf8').split('\n').filter(Boolean)
-    } catch (e) { return _false(`read-error ${e?.message}`) }
+    } catch { return false }
 
     // 反向扫描: 白名单逻辑 — 只有 user / assistant / system+特定 subtype 决定状态,
     // 其他 type (attachment / last-prompt / custom-title / agent-name / permission-mode /
     // file-history-snapshot / queue-operation / 以及 TUI 或 gateway 未来新增的任何元数据)
     // 一律跳过. 这样新增元数据 type 不会再破坏判断.
-    const tailTypes = trace ? lines.slice(-8).map((l) => { try { const e = JSON.parse(l); return e.type + (e.subtype ? `/${e.subtype}` : (e.message?.stop_reason ? `·sr=${e.message.stop_reason}` : '')) } catch { return '?' } }).join(',') : ''
     for (let i = lines.length - 1; i >= 0; i--) {
       let e
       try { e = JSON.parse(lines[i]) } catch { continue }
       if (e.type === 'assistant') {
         // stop_reason 缺失 / 'tool_use' → 还在跑; end_turn / max_tokens / stop_sequence → 收工
         const sr = e.message?.stop_reason
-        const working = !sr || sr === 'tool_use'
-        if (!working) return _false(`assistant-end stop_reason=${sr} @${lines.length - i}fromTail size=${statSize} tailTypes=[${tailTypes}]`)
-        return working
+        return !sr || sr === 'tool_use'
       }
       if (e.type === 'user') return true
       if (e.type === 'system') {
@@ -494,9 +480,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // JSONL 看似收工 (尾部最近的白名单记录是 end_turn 收尾的 assistant), 但 TUI 可能在
     // 等待 background agents —— 该等待态 JSONL 表达不了, 兜底看 pane 是否有
     // "Waiting for N background agents to finish". 命中则仍视为工作中, 避免误判待命 / 误回收.
-    const paneHit = CLAUDE_BG_AGENTS_WAITING_RE.test(capturePaneTail(sessionId))
-    if (!paneHit) return _false(`no-working-marker-in-tail size=${statSize} tailTypes=[${tailTypes}] paneWaitingScan=miss`)
-    return paneHit
+    return CLAUDE_BG_AGENTS_WAITING_RE.test(capturePaneTail(sessionId))
   }
 
   // 任务是否结束: session 启动时落 running.flag, agent 收工 (成功/失败) 自删.
