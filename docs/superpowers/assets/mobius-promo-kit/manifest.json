@@ -60,8 +60,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-self-evolution-dark.svg",
-      "png": "02-capabilities/png/capabilitie-self-evolution-dark.png"
+      "svg": "02-capabilities/svg/capability-self-evolution-dark.svg",
+      "png": "02-capabilities/png/capability-self-evolution-dark.png"
     },
     {
       "category": "capabilities",
@@ -70,8 +70,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-self-evolution-light.svg",
-      "png": "02-capabilities/png/capabilitie-self-evolution-light.png"
+      "svg": "02-capabilities/svg/capability-self-evolution-light.svg",
+      "png": "02-capabilities/png/capability-self-evolution-light.png"
     },
     {
       "category": "capabilities",
@@ -80,8 +80,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-self-evolution-active-dark.svg",
-      "png": "02-capabilities/png/capabilitie-self-evolution-active-dark.png"
+      "svg": "02-capabilities/svg/capability-self-evolution-active-dark.svg",
+      "png": "02-capabilities/png/capability-self-evolution-active-dark.png"
     },
     {
       "category": "capabilities",
@@ -90,8 +90,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-self-evolution-active-light.svg",
-      "png": "02-capabilities/png/capabilitie-self-evolution-active-light.png"
+      "svg": "02-capabilities/svg/capability-self-evolution-active-light.svg",
+      "png": "02-capabilities/png/capability-self-evolution-active-light.png"
     },
     {
       "category": "capabilities",
@@ -100,8 +100,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-xiaomo-dark.svg",
-      "png": "02-capabilities/png/capabilitie-xiaomo-dark.png"
+      "svg": "02-capabilities/svg/capability-xiaomo-dark.svg",
+      "png": "02-capabilities/png/capability-xiaomo-dark.png"
     },
     {
       "category": "capabilities",
@@ -110,8 +110,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-xiaomo-light.svg",
-      "png": "02-capabilities/png/capabilitie-xiaomo-light.png"
+      "svg": "02-capabilities/svg/capability-xiaomo-light.svg",
+      "png": "02-capabilities/png/capability-xiaomo-light.png"
     },
     {
       "category": "capabilities",
@@ -120,8 +120,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-xiaomo-active-dark.svg",
-      "png": "02-capabilities/png/capabilitie-xiaomo-active-dark.png"
+      "svg": "02-capabilities/svg/capability-xiaomo-active-dark.svg",
+      "png": "02-capabilities/png/capability-xiaomo-active-dark.png"
     },
     {
       "category": "capabilities",
@@ -130,8 +130,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-xiaomo-active-light.svg",
-      "png": "02-capabilities/png/capabilitie-xiaomo-active-light.png"
+      "svg": "02-capabilities/svg/capability-xiaomo-active-light.svg",
+      "png": "02-capabilities/png/capability-xiaomo-active-light.png"
     },
     {
       "category": "capabilities",
@@ -140,8 +140,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-team-development-dark.svg",
-      "png": "02-capabilities/png/capabilitie-team-development-dark.png"
+      "svg": "02-capabilities/svg/capability-team-development-dark.svg",
+      "png": "02-capabilities/png/capability-team-development-dark.png"
     },
     {
       "category": "capabilities",
@@ -150,8 +150,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-team-development-light.svg",
-      "png": "02-capabilities/png/capabilitie-team-development-light.png"
+      "svg": "02-capabilities/svg/capability-team-development-light.svg",
+      "png": "02-capabilities/png/capability-team-development-light.png"
     },
     {
       "category": "capabilities",
@@ -160,8 +160,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-team-development-active-dark.svg",
-      "png": "02-capabilities/png/capabilitie-team-development-active-dark.png"
+      "svg": "02-capabilities/svg/capability-team-development-active-dark.svg",
+      "png": "02-capabilities/png/capability-team-development-active-dark.png"
     },
     {
       "category": "capabilities",
@@ -170,8 +170,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-team-development-active-light.svg",
-      "png": "02-capabilities/png/capabilitie-team-development-active-light.png"
+      "svg": "02-capabilities/svg/capability-team-development-active-light.svg",
+      "png": "02-capabilities/png/capability-team-development-active-light.png"
     },
     {
       "category": "capabilities",
@@ -180,8 +180,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-multi-agent-dark.svg",
-      "png": "02-capabilities/png/capabilitie-multi-agent-dark.png"
+      "svg": "02-capabilities/svg/capability-multi-agent-dark.svg",
+      "png": "02-capabilities/png/capability-multi-agent-dark.png"
     },
     {
       "category": "capabilities",
@@ -190,8 +190,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-multi-agent-light.svg",
-      "png": "02-capabilities/png/capabilitie-multi-agent-light.png"
+      "svg": "02-capabilities/svg/capability-multi-agent-light.svg",
+      "png": "02-capabilities/png/capability-multi-agent-light.png"
     },
     {
       "category": "capabilities",
@@ -200,8 +200,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-multi-agent-active-dark.svg",
-      "png": "02-capabilities/png/capabilitie-multi-agent-active-dark.png"
+      "svg": "02-capabilities/svg/capability-multi-agent-active-dark.svg",
+      "png": "02-capabilities/png/capability-multi-agent-active-dark.png"
     },
     {
       "category": "capabilities",
@@ -210,8 +210,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-multi-agent-active-light.svg",
-      "png": "02-capabilities/png/capabilitie-multi-agent-active-light.png"
+      "svg": "02-capabilities/svg/capability-multi-agent-active-light.svg",
+      "png": "02-capabilities/png/capability-multi-agent-active-light.png"
     },
     {
       "category": "capabilities",
@@ -220,8 +220,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-multi-device-dark.svg",
-      "png": "02-capabilities/png/capabilitie-multi-device-dark.png"
+      "svg": "02-capabilities/svg/capability-multi-device-dark.svg",
+      "png": "02-capabilities/png/capability-multi-device-dark.png"
     },
     {
       "category": "capabilities",
@@ -230,8 +230,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-multi-device-light.svg",
-      "png": "02-capabilities/png/capabilitie-multi-device-light.png"
+      "svg": "02-capabilities/svg/capability-multi-device-light.svg",
+      "png": "02-capabilities/png/capability-multi-device-light.png"
     },
     {
       "category": "capabilities",
@@ -240,8 +240,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-multi-device-active-dark.svg",
-      "png": "02-capabilities/png/capabilitie-multi-device-active-dark.png"
+      "svg": "02-capabilities/svg/capability-multi-device-active-dark.svg",
+      "png": "02-capabilities/png/capability-multi-device-active-dark.png"
     },
     {
       "category": "capabilities",
@@ -250,8 +250,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-multi-device-active-light.svg",
-      "png": "02-capabilities/png/capabilitie-multi-device-active-light.png"
+      "svg": "02-capabilities/svg/capability-multi-device-active-light.svg",
+      "png": "02-capabilities/png/capability-multi-device-active-light.png"
     },
     {
       "category": "capabilities",
@@ -260,8 +260,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-resource-routing-dark.svg",
-      "png": "02-capabilities/png/capabilitie-resource-routing-dark.png"
+      "svg": "02-capabilities/svg/capability-resource-routing-dark.svg",
+      "png": "02-capabilities/png/capability-resource-routing-dark.png"
     },
     {
       "category": "capabilities",
@@ -270,8 +270,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-resource-routing-light.svg",
-      "png": "02-capabilities/png/capabilitie-resource-routing-light.png"
+      "svg": "02-capabilities/svg/capability-resource-routing-light.svg",
+      "png": "02-capabilities/png/capability-resource-routing-light.png"
     },
     {
       "category": "capabilities",
@@ -280,8 +280,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-resource-routing-active-dark.svg",
-      "png": "02-capabilities/png/capabilitie-resource-routing-active-dark.png"
+      "svg": "02-capabilities/svg/capability-resource-routing-active-dark.svg",
+      "png": "02-capabilities/png/capability-resource-routing-active-dark.png"
     },
     {
       "category": "capabilities",
@@ -290,8 +290,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-resource-routing-active-light.svg",
-      "png": "02-capabilities/png/capabilitie-resource-routing-active-light.png"
+      "svg": "02-capabilities/svg/capability-resource-routing-active-light.svg",
+      "png": "02-capabilities/png/capability-resource-routing-active-light.png"
     },
     {
       "category": "capabilities",
@@ -300,8 +300,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-extension-incubation-dark.svg",
-      "png": "02-capabilities/png/capabilitie-extension-incubation-dark.png"
+      "svg": "02-capabilities/svg/capability-extension-incubation-dark.svg",
+      "png": "02-capabilities/png/capability-extension-incubation-dark.png"
     },
     {
       "category": "capabilities",
@@ -310,8 +310,8 @@
       "state": "default",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-extension-incubation-light.svg",
-      "png": "02-capabilities/png/capabilitie-extension-incubation-light.png"
+      "svg": "02-capabilities/svg/capability-extension-incubation-light.svg",
+      "png": "02-capabilities/png/capability-extension-incubation-light.png"
     },
     {
       "category": "capabilities",
@@ -320,8 +320,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-extension-incubation-active-dark.svg",
-      "png": "02-capabilities/png/capabilitie-extension-incubation-active-dark.png"
+      "svg": "02-capabilities/svg/capability-extension-incubation-active-dark.svg",
+      "png": "02-capabilities/png/capability-extension-incubation-active-dark.png"
     },
     {
       "category": "capabilities",
@@ -330,8 +330,8 @@
       "state": "active",
       "width": 1024,
       "height": 1024,
-      "svg": "02-capabilities/svg/capabilitie-extension-incubation-active-light.svg",
-      "png": "02-capabilities/png/capabilitie-extension-incubation-active-light.png"
+      "svg": "02-capabilities/svg/capability-extension-incubation-active-light.svg",
+      "png": "02-capabilities/png/capability-extension-incubation-active-light.png"
     },
     {
       "category": "people",

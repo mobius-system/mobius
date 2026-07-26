@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 96 96" role="img" aria-label="capabilitie-self-evolution-active-light">
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 96 96" role="img" aria-label="capability-multi-agent-active-light">
 
     <defs>
       <linearGradient id="brand-gradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#22D3EE"/><stop offset="20%" stop-color="#7DD3FC"/><stop offset="40%" stop-color="#8B5CF6"/><stop offset="60%" stop-color="#A78BFA"/><stop offset="80%" stop-color="#EC4899"/><stop offset="100%" stop-color="#F472B6"/></linearGradient>
@@ -19,9 +19,8 @@
       </filter>
     </defs>
 <g id="icon-structure"><g id="capability-symbol">
-          <path d="M15 48 C23 28 36 29 48 48 C60 67 73 68 81 48 C73 28 60 29 48 48 C36 67 23 68 15 48" fill="none" stroke="url(#brand-gradient)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="1"/>
-          <rect x="59" y="14" width="22" height="16" rx="4" fill="none" stroke="#8090AA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.78"/>
-          <path d="M65 22h10M70 17v10" fill="none" stroke="#8090AA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.78"/>
-          <circle cx="80" cy="32" r="4" fill="url(#brand-gradient)"/>
-        </g></g><g id="energy-trail" opacity="1" filter="url(#soft-glow)"><path d="M21 42 C31 25 45 39 52 51 C62 68 76 62 80 48" fill="none" stroke="url(#brand-gradient)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity="1"/></g>
+          <path d="M48 37 l12 7 v14 l-12 7 l-12-7V44z" fill="none" stroke="url(#brand-gradient)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="1"/><path d="M48 9 l7 4 v8 l-7 4 l-7-4 v-8z" fill="none" stroke="url(#brand-gradient)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="1"/><path d="M19 61 l7 4 v8 l-7 4 l-7-4 v-8z" fill="none" stroke="url(#brand-gradient)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="1"/><path d="M77 61 l7 4 v8 l-7 4 l-7-4 v-8z" fill="none" stroke="url(#brand-gradient)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="1"/>
+          <path d="M48 37V25M38 59L26 65M58 59l12 6" fill="none" stroke="#8090AA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.78"/>
+          <circle cx="48" cy="51" r="4" fill="url(#brand-gradient)"/>
+        </g></g><g id="energy-trail" opacity="1" filter="url(#soft-glow)"><path d="M48 52V25M48 52L25 65M48 52l23 13" fill="none" stroke="url(#brand-gradient)" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round" opacity="1"/></g>
 </svg>

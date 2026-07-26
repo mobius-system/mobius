@@ -91,6 +91,10 @@ class InventoryTests(unittest.TestCase):
     def test_inventory_validator_accepts_the_production_matrix(self) -> None:
         self.assertEqual(validate_inventory(build_inventory()), [])
 
+    def test_capability_slug_uses_the_correct_singular_prefix(self) -> None:
+        capability = next(item for item in build_inventory() if item.category == "capabilities")
+        self.assertTrue(capability.slug.startswith("capability-"), capability.slug)
+
 
 class SvgContractTests(unittest.TestCase):
     def test_every_asset_renders_parseable_transparent_svg(self) -> None:

@@ -43,7 +43,8 @@ class AssetSpec:
 
     @property
     def slug(self) -> str:
-        parts = [self.category.rstrip("s"), self.name]
+        prefix = "capability" if self.category == "capabilities" else self.category.rstrip("s")
+        parts = [prefix, self.name]
         if self.state not in {"default", "master"}:
             parts.append(self.state)
         if self.theme != "universal":
