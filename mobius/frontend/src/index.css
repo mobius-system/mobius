@@ -34,6 +34,54 @@
   src: url('/fonts/noto-sans-sc-700.woff2') format('woff2');
 }
 
+/* ===== 本地西文字体: Inter + JetBrains Mono (self-hosted, 彻底移除 fonts.googleapis.com 依赖) =====
+   latin 子集, 与 tailwind.config.js 的 font-sans('Inter')/font-mono('JetBrains Mono') 配对。
+   原先 index.html 里 <link> 拉 fonts.googleapis.com 的 CSS, 内网/无外网环境加载失败且违反"禁止连接 Google Fonts"红线;
+   现改为本地自托管, 与上方 Noto Sans SC 同机制, 浏览器按字符回退: 拉丁字符走 Inter/JetBrains Mono, 中文走 Noto Sans SC。
+   字体文件在 frontend/public/fonts/, 构建后由 Vite 原样拷到根 /fonts/ 提供服务。 */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/inter-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/inter-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/inter-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/inter-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-500.woff2') format('woff2');
+}
+
 /* ===== 桌面端标题栏拖拽区 =====
    Windows/Linux Electron 不再使用 -webkit-app-region: drag; 标题栏空白区通过 IPC 手动拖窗。
    app-region 会进入原生命中测试, 容易和浮动层/可拖控件抢事件。这里保留 no-drag 保险,
