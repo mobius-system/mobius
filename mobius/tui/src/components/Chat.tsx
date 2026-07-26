@@ -15,6 +15,8 @@ import { renderMarkdownLines } from '../markdown.js'
 import { viewsForEntry, toolLabel, type EntryView } from '../lib/entry-view.js'
 import type { ReadyState } from './PrepScreen.js'
 import type { AnyEntry } from '../types.js'
+import type { AimuxStatus } from '../aimux.js'
+import { AimuxStatusLine } from './AimuxStatus.js'
 
 interface ChatProps {
   client: MobiusClient
@@ -24,6 +26,7 @@ interface ChatProps {
   onClear: () => void
   onResume: () => void
   onQuit: () => void
+  aimuxStatus?: AimuxStatus
 }
 
 interface TerminalSize {
@@ -34,7 +37,7 @@ interface TerminalSize {
 
 const VERSION = '0.2.1'
 const WELCOME_ROWS = 12
-const CHROME_ROWS = 10
+const CHROME_ROWS = 11
 
 const SLASH_COMMANDS = [
   { cmd: '/clear', desc: '清空当前对话，开启新会话' },
@@ -43,7 +46,7 @@ const SLASH_COMMANDS = [
   { cmd: '/quit', desc: '退出 TUI' },
 ]
 
-export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit }: ChatProps) {
+export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, aimuxStatus }: ChatProps) {
   const chat = useChat({ client, ready, resumeSessionId })
   const [showHelp, setShowHelp] = useState(false)
   const terminal = useTerminalSize()
@@ -122,6 +125,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
         sessionId={chat.sessionId}
         columns={terminal.columns}
         webUrl={buildWebUrl(client.server, webUserId, ready, chat.sessionId)}
+        aimuxStatus={aimuxStatus}
       />
     </Box>
   )
@@ -409,11 +413,12 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
   )
 }
 
-function StatusArea({ ready, sessionId, columns, webUrl }: {
+function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus }: {
   ready: ReadyState
   sessionId: string | null
   columns: number
   webUrl: string
+  aimuxStatus?: AimuxStatus
 }) {
   const model = ready.prefs.model ?? 'default'
   const language = ready.prefs.language === 'en' ? 'English' : '中文'
@@ -436,6 +441,7 @@ function StatusArea({ ready, sessionId, columns, webUrl }: {
         <Text dimColor>web · </Text>
         <Text color="cyan" underline>{clickableUrl(webUrl)}</Text>
       </Text>
+      {aimuxStatus ? <AimuxStatusLine status={aimuxStatus} compact /> : null}
     </Box>
   )
 }

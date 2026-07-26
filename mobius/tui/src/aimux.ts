@@ -12,7 +12,14 @@ import path from 'node:path'
 import { mobiusHome } from './config.js'
 
 export type AimuxState = 'starting' | 'connected' | 'failed' | 'stopped' | 'disabled'
-export interface AimuxStatus { state: AimuxState; detail?: string; identifier?: string }
+export type AimuxPhase = 'idle' | 'python' | 'venv' | 'install' | 'connecting' | 'heartbeat' | 'retrying' | 'connected'
+export interface AimuxStatus {
+  state: AimuxState
+  phase?: AimuxPhase
+  detail?: string
+  identifier?: string
+  attempt?: number
+}
 export interface InstallProgress { phase: 'python' | 'venv' | 'install' | 'ready'; detail?: string }
 
 const AIMUX_PACKAGE = 'aimux'
@@ -91,42 +98,166 @@ function defaultIdentifier(): string {
   return `tui-${host || 'pc'}`
 }
 
-class AimuxSupervisor {
+export async function probeAimuxBridgeConnection(
+  server: string,
+  token: string,
+  identifier: string,
+  timeoutMs = 4_000,
+): Promise<boolean> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(
+      `${server.replace(/\/$/, '')}/aimux_bridge/api/remotes/${encodeURIComponent(identifier)}/connection`,
+      { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal },
+    )
+    if (!response.ok) return false
+    const data: any = await response.json().catch(() => ({}))
+    return data?.identifier === identifier && data?.event_stream_connected === true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+interface SupervisorOptions {
+  server: string
+  token: string
+  identifier: string
+  onStatus: (s: AimuxStatus) => void
+  heartbeatIntervalMs?: number
+  heartbeatFailureThreshold?: number
+  retryBaseMs?: number
+  probeConnection?: () => Promise<boolean>
+  spawnProcess?: () => ChildProcess
+}
+
+export class AimuxSupervisor {
   private child: ChildProcess | null = null
   private stopping = false
   private retry: ReturnType<typeof setTimeout> | null = null
-  private opts: { server: string; token: string; identifier: string; onStatus: (s: AimuxStatus) => void }
-  constructor(opts: AimuxSupervisor['opts']) { this.opts = opts }
+  private heartbeatTimer: ReturnType<typeof setTimeout> | null = null
+  private heartbeatEpoch = 0
+  private heartbeatFailures = 0
+  private reconnectAttempt = 0
+  private bridgeConnected = false
+  private opts: SupervisorOptions
+  constructor(opts: SupervisorOptions) { this.opts = opts }
   start() { this.stopping = false; this.spawnChild() }
   private spawnChild() {
     const { server, token, identifier, onStatus } = this.opts
-    onStatus({ state: 'starting', detail: '正在连接 Mobius aimux bridge…', identifier })
-    const child = spawn(aimuxExe(), ['reverse', 'connect', `${server.replace(/\/$/, '')}/aimux_bridge`, '--identifier', identifier, '--token', token, '--replace'], { windowsHide: true })
+    onStatus({ state: 'starting', phase: 'connecting', detail: '正在连接 Mobius AIMUX bridge…', identifier, attempt: this.reconnectAttempt })
+    const child = this.opts.spawnProcess?.() ?? spawn(
+      aimuxExe(),
+      ['reverse', 'connect', `${server.replace(/\/$/, '')}/aimux_bridge`, '--identifier', identifier, '--token', token, '--replace'],
+      { windowsHide: true },
+    )
     this.child = child
+    this.startHeartbeat()
     const classify = (buf: Buffer) => {
       const text = buf.toString('utf8')
-      if (/connected|registered|event stream|heartbeat|sse/i.test(text)) onStatus({ state: 'connected', detail: text.trim().slice(-160), identifier })
-      else if (/connection (refused|reset|closed|error)|failed to connect|unauthorized|forbidden|token.*invalid/i.test(text)) onStatus({ state: 'failed', detail: text.trim().slice(-200), identifier })
+      if (!this.bridgeConnected && /connected|registered|event stream|heartbeat|sse/i.test(text)) {
+        onStatus({ state: 'starting', phase: 'heartbeat', detail: 'AIMUX 已启动，等待 bridge 心跳确认…', identifier })
+      } else if (/connection (refused|reset|closed|error)|failed to connect|unauthorized|forbidden|token.*invalid/i.test(text)) {
+        onStatus({ state: 'failed', phase: 'heartbeat', detail: text.trim().slice(-200), identifier })
+      }
     }
     child.stdout?.on('data', classify); child.stderr?.on('data', classify)
-    child.on('error', e => onStatus({ state: 'failed', detail: `aimux 启动失败: ${e.message}`, identifier }))
+    child.on('error', e => onStatus({ state: 'failed', phase: 'retrying', detail: `AIMUX 启动失败: ${e.message}`, identifier }))
     child.on('exit', code => {
       if (this.child !== child) return
       this.child = null
-      if (this.stopping) { onStatus({ state: 'stopped', identifier }); return }
-      onStatus({ state: 'failed', detail: `aimux 退出 code=${code}，5 秒后重试`, identifier })
-      this.retry = setTimeout(() => { if (!this.stopping) this.spawnChild() }, 5000)
+      this.stopHeartbeat()
+      if (this.stopping) { onStatus({ state: 'stopped', phase: 'idle', detail: 'AIMUX 已停止', identifier }); return }
+      this.scheduleReconnect(`AIMUX 进程退出（code=${code}）`)
     })
   }
+
+  private startHeartbeat() {
+    this.stopHeartbeat()
+    this.heartbeatFailures = 0
+    this.bridgeConnected = false
+    const epoch = ++this.heartbeatEpoch
+    void this.checkHeartbeat(epoch)
+  }
+
+  private stopHeartbeat() {
+    this.heartbeatEpoch += 1
+    if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer)
+    this.heartbeatTimer = null
+  }
+
+  private async checkHeartbeat(epoch: number): Promise<void> {
+    const connected = await (this.opts.probeConnection?.() ?? probeAimuxBridgeConnection(this.opts.server, this.opts.token, this.opts.identifier))
+    if (this.stopping || epoch !== this.heartbeatEpoch || !this.child) return
+
+    const threshold = this.opts.heartbeatFailureThreshold ?? 3
+    if (connected) {
+      this.heartbeatFailures = 0
+      this.reconnectAttempt = 0
+      this.bridgeConnected = true
+      this.opts.onStatus({
+        state: 'connected', phase: 'connected',
+        detail: `心跳正常 · ${this.opts.identifier}`,
+        identifier: this.opts.identifier,
+      })
+    } else {
+      this.heartbeatFailures += 1
+      if (this.heartbeatFailures >= threshold) {
+        this.bridgeConnected = false
+        await this.restartAfterDisconnect(`bridge 心跳连续 ${this.heartbeatFailures} 次未响应`)
+        return
+      }
+      this.opts.onStatus({
+        state: 'starting', phase: 'heartbeat',
+        detail: `等待 bridge 心跳确认（${this.heartbeatFailures}/${threshold}）…`,
+        identifier: this.opts.identifier,
+      })
+    }
+    const interval = this.opts.heartbeatIntervalMs ?? 5_000
+    this.heartbeatTimer = setTimeout(() => void this.checkHeartbeat(epoch), interval)
+  }
+
+  private async restartAfterDisconnect(reason: string) {
+    this.stopHeartbeat()
+    await this.killChild()
+    if (!this.stopping) this.scheduleReconnect(reason)
+  }
+
+  private scheduleReconnect(reason: string) {
+    if (this.stopping || this.retry) return
+    this.reconnectAttempt += 1
+    const base = this.opts.retryBaseMs ?? 1_000
+    const delay = Math.min(15_000, base * (2 ** Math.min(this.reconnectAttempt - 1, 4)))
+    const seconds = Math.max(1, Math.ceil(delay / 1_000))
+    this.opts.onStatus({
+      state: 'failed', phase: 'retrying',
+      detail: `${reason}，${seconds} 秒后进行第 ${this.reconnectAttempt} 次重连…`,
+      identifier: this.opts.identifier,
+      attempt: this.reconnectAttempt,
+    })
+    this.retry = setTimeout(() => {
+      this.retry = null
+      if (!this.stopping) this.spawnChild()
+    }, delay)
+  }
+
+  private async killChild() {
+    const child = this.child
+    this.child = null
+    if (!child?.pid) return
+    if (WIN) await run('taskkill', ['/PID', String(child.pid), '/T', '/F'])
+    else try { child.kill('SIGTERM') } catch { /* ignore */ }
+  }
+
   async stop() {
     this.stopping = true
     if (this.retry) clearTimeout(this.retry)
-    const child = this.child; this.child = null
-    if (child?.pid) {
-      if (WIN) await run('taskkill', ['/PID', String(child.pid), '/T', '/F'])
-      else try { child.kill('SIGTERM') } catch { /* ignore */ }
-    }
-    this.opts.onStatus({ state: 'stopped', identifier: this.opts.identifier })
+    this.retry = null
+    this.stopHeartbeat()
+    await this.killChild()
+    this.opts.onStatus({ state: 'stopped', phase: 'idle', detail: 'AIMUX 已停止', identifier: this.opts.identifier })
   }
 }
 
@@ -134,14 +265,23 @@ let supervisor: AimuxSupervisor | null = null
 let installing: Promise<void> | null = null
 
 export async function startAimuxConnection(opts: { server: string; token: string; onStatus?: (s: AimuxStatus) => void }): Promise<void> {
-  // Tests and explicitly opted-out users should not spawn a network worker.
-  if (process.env.MOBIUS_TUI_DISABLE_AIMUX === '1' || process.env.NODE_ENV === 'test' || /^https?:\/\/mock(?:\.local)?(?::\d+)?$/i.test(opts.server)) return
   const onStatus = opts.onStatus ?? (() => {})
+  // Tests and explicitly opted-out users should not spawn a network worker.
+  if (process.env.MOBIUS_TUI_DISABLE_AIMUX === '1') {
+    onStatus({ state: 'disabled', phase: 'idle', detail: 'AIMUX 自动连接已关闭' }); return
+  }
+  if (process.env.NODE_ENV === 'test' || /^https?:\/\/mock(?:\.local)?(?::\d+)?$/i.test(opts.server)) {
+    onStatus({ state: 'disabled', phase: 'idle', detail: 'AIMUX 测试连接已跳过' }); return
+  }
   if (supervisor || installing) return
   installing = (async () => {
-    onStatus({ state: 'starting', detail: '准备 AIMUX（首次启动会安装 Python 和 aimux）…' })
-    const ready = await ensureAimux(p => onStatus({ state: 'starting', detail: p.detail || (p.phase === 'ready' ? 'aimux 已就绪' : p.phase) }))
-    if (!ready.ok) { onStatus({ state: 'failed', detail: ready.error }); return }
+    onStatus({ state: 'starting', phase: 'python', detail: '检查 Python 与 AIMUX 运行环境…' })
+    const ready = await ensureAimux(p => onStatus({
+      state: 'starting',
+      phase: p.phase === 'ready' ? 'connecting' : p.phase,
+      detail: p.detail || (p.phase === 'ready' ? 'AIMUX 已就绪，准备连接…' : p.phase),
+    }))
+    if (!ready.ok) { onStatus({ state: 'failed', phase: 'idle', detail: ready.error }); return }
     supervisor = new AimuxSupervisor({ server: opts.server, token: opts.token, identifier: defaultIdentifier(), onStatus })
     supervisor.start()
   })().finally(() => { installing = null })

@@ -16,6 +16,7 @@
     "test:ui": "tsx tests/ui.test.tsx",
     "test:flow": "tsx tests/flow.test.tsx",
     "test:resume": "tsx tests/resume.test.tsx",
+    "test:aimux": "tsx tests/aimux.test.tsx",
     "test": "npm run typecheck && npm run test:ui && npm run test:integration"
   },
   "dependencies": {

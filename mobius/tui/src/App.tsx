@@ -18,6 +18,7 @@ import { PrepScreen, type ReadyState } from './components/PrepScreen.js'
 import { ChatScreen } from './components/Chat.js'
 import { ResumePicker } from './components/ResumePicker.js'
 import { startAimuxConnection, stopAimuxConnection, type AimuxStatus } from './aimux.js'
+import { AimuxStatusLine } from './components/AimuxStatus.js'
 
 type Route = 'boot' | 'login' | 'prep' | 'chat' | 'resume'
 
@@ -30,6 +31,11 @@ export function App() {
   const [ready, setReady] = useState<ReadyState | null>(null)
   const [chatKey, setChatKey] = useState(0)
   const [resumeSessionId, setResumeSessionId] = useState<string | null>(null)
+  const [aimuxStatus, setAimuxStatus] = useState<AimuxStatus>({
+    state: process.env.MOBIUS_TUI_DISABLE_AIMUX === '1' ? 'disabled' : 'stopped',
+    phase: 'idle',
+    detail: process.env.MOBIUS_TUI_DISABLE_AIMUX === '1' ? 'AIMUX 自动连接已关闭' : '登录后自动连接',
+  })
 
   function bootAimux(rec: LoginRecord): void {
     // AIMUX installation/connection is deliberately backgrounded: the TUI can
@@ -38,6 +44,7 @@ export function App() {
       server: rec.server,
       token: rec.token,
       onStatus: (status: AimuxStatus) => {
+        setAimuxStatus(status)
         if (status.detail) setBootMsg(status.detail)
       },
     }).catch((e: any) => setBootMsg(`AIMUX 启动失败: ${e?.message ?? String(e)}`))
@@ -117,10 +124,10 @@ export function App() {
     return <LoginScreen onSuccess={onLoginSuccess} />
   }
   if (route === 'prep' || !ready) {
-    return <PrepScreen client={client} onReady={onPrepReady} />
+    return <Box flexDirection="column"><AimuxStatusLine status={aimuxStatus} /><PrepScreen client={client} onReady={onPrepReady} /></Box>
   }
   if (route === 'resume') {
-    return <ResumePicker client={client} project={ready.project} onPick={onResumed} onBack={() => setRoute('chat')} />
+    return <Box flexDirection="column"><AimuxStatusLine status={aimuxStatus} /><ResumePicker client={client} project={ready.project} onPick={onResumed} onBack={() => setRoute('chat')} /></Box>
   }
   return (
     <ChatScreen
@@ -132,6 +139,7 @@ export function App() {
       onClear={onClear}
       onResume={onResume}
       onQuit={onQuit}
+      aimuxStatus={aimuxStatus}
     />
   )
 }

@@ -55,9 +55,18 @@ Python 3.10+ is discovered from `MOBIUS_TUI_PYTHON`, `python3`/`python` (or
 Windows `py`). If none is available and `uv` is installed, the TUI runs
 `uv python install 3.11` for a user-local interpreter. Set
 `MOBIUS_TUI_DISABLE_AIMUX=1` to opt out, for example on a machine that should
-only use the web API. A failed child is retried automatically after five
-seconds; AIMUX installation or connection failures do not prevent the chat
-client from opening.
+only use the web API. A failed child is retried automatically with exponential
+backoff; AIMUX installation or connection failures do not prevent the chat
+client from opening. Python discovery, virtual-environment creation, pip
+download progress, bridge heartbeat state, and reconnect attempts remain
+visible in the TUI status area while the rest of the client stays usable.
+
+Once started, a background heartbeat checks
+`/aimux_bridge/api/remotes/<identifier>/connection` every five seconds with the
+current Mobius JWT. Three consecutive failed checks terminate the stale AIMUX
+child and reconnect with 1/2/4/8/15-second capped exponential backoff. A
+successful bridge heartbeat resets the backoff and changes the status indicator
+to green.
 
 ## Flow
 
