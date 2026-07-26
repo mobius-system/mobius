@@ -66,9 +66,9 @@ const CODEX_ERROR_SCAN_TAIL_LINES = 50
 // → 间歇性误判 not working. 提到 60s 覆盖绝大多数思考间隙, 又不会让收工 session 误显 working
 // (收工走 task_complete 早返回, 不经此分支).
 const CODEX_WORKING_FRESH_MS = 60000
-// 临时诊断: 只对这个 session 在 isWorking 返回 false 时打印判定依据, 定位"间歇误判 not working"
+// 临时诊断: 只对这些 session 在 isWorking 返回 false 时打印判定依据, 定位"间歇误判 not working"
 // 的真正 false 路径(freshness+窗口修复后用户仍反馈无效). 拿到日志后删除. 别的 session 零开销.
-const CODEX_ISWORKING_TRACE_SESSION = 'e780df8a'
+const CODEX_ISWORKING_TRACE_SESSIONS = new Set(['e780df8a', 'fc7d48d1'])
 
 // realTimeInfo: 识别 Codex TUI 当前的状态行 (status_indicator_widget.rs 渲染).
 // 行形态: "[•◦] <header> (<elapsed> • esc to interrupt)[ · <inline_message>]"
@@ -580,7 +580,7 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   isWorking(sessionId) {
-    const trace = sessionId === CODEX_ISWORKING_TRACE_SESSION
+    const trace = CODEX_ISWORKING_TRACE_SESSIONS.has(sessionId)
     // 1. alive? (走 tmux list-windows 缓存)
     const windows = listWindowsRowsCached()
     const alive = windows.some((cols) => cols[0] === sessionId)
