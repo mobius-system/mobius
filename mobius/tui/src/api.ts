@@ -13,6 +13,7 @@ import type {
   Project,
   Session,
   SessionModelOption,
+  SessionRuntimeStatus,
   Skill,
   User,
 } from './types.js'
@@ -150,6 +151,11 @@ export class MobiusClient {
 
   async stopSession(sessionId: string): Promise<void> {
     await this.request(`/api/sessions/${sessionId}/stop`, { method: 'POST', body: '{}' })
+  }
+
+  /** The backend source of truth for the live agent process and work state. */
+  async sessionStatus(sessionId: string, signal?: AbortSignal): Promise<SessionRuntimeStatus> {
+    return this.request<SessionRuntimeStatus>(`/api/sessions/${encodeURIComponent(sessionId)}/status`, { signal })
   }
 
   // ── preference lookups ────────────────────────────────────────────────────

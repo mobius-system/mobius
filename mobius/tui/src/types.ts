@@ -111,6 +111,26 @@ export interface Session {
   user_display_name?: string
 }
 
+/**
+ * Live execution state returned by GET /api/sessions/:id/status.
+ * This endpoint, rather than the persisted Session.agent_status field or an
+ * SSE typing event, is the backend's source of truth for whether an agent is
+ * currently doing work.
+ */
+export interface SessionRuntimeStatus {
+  session_id: string
+  alive: boolean
+  working: boolean
+  job_accomplished?: boolean
+  failed?: boolean
+  failed_reason?: string | null
+  failed_at?: string | null
+  pid?: number | null
+  agent_backend?: string
+  real_time_info?: string
+  model_available?: boolean
+}
+
 // ── Preferences lookups ──────────────────────────────────────────────────────
 export interface SessionModelOption {
   key: string

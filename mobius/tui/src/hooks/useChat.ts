@@ -6,7 +6,7 @@
  *     submitted message, using the saved preferences;
  *   - open the SSE stream (GET /api/sessions/:id/events?token=) and append
  *     `jsonl_entry` payloads to the transcript as they arrive;
- *   - mirror the agent's busy state from the `typing` event.
+ *   - keep the agent's busy state synchronized with the runtime status API.
  * `/clear` remounts the hook (fresh session next time); `/resume` injects a
  * pre-existing sessionId so the stream replays its history.
  */
@@ -45,7 +45,16 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const sseRef = useRef<SseConnection | null>(null)
-  const idCounter = useRef(0)
+  const pollNowRef = useRef<(() => void) | null>(null)
+  const typingRef = useRef(false)
+  const sendingRef = useRef(false)
+  const workingHintUntilRef = useRef(0)
+  const statusEpochRef = useRef(0)
+
+  const updateTyping = useCallback((active: boolean) => {
+    typingRef.current = active
+    setTyping(active)
+  }, [])
 
   const appendEntries = useCallback((newOnes: AnyEntry[]) => {
     if (!newOnes.length) return
@@ -73,12 +82,24 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
         appendEntries([entry])
         setPendingUser(null)
       },
-      onTyping: (active) => setTyping(active),
+      onTyping: (active) => {
+        // SSE is a low-latency hint, not the source of truth. A `true` event
+        // lights the indicator immediately; either edge requests a fresh
+        // runtime status so missed/replayed events cannot leave stale UI.
+        statusEpochRef.current += 1
+        if (active) {
+          workingHintUntilRef.current = Date.now() + 1_500
+          updateTyping(true)
+        } else {
+          workingHintUntilRef.current = 0
+        }
+        pollNowRef.current?.()
+      },
       onError: (msg) => setError(msg),
     })
     sseRef.current = conn
     conn.start()
-  }, [client.server, client.token, appendEntries, setHistory])
+  }, [client.server, client.token, appendEntries, setHistory, updateTyping])
 
   // Connect immediately when a resume session is provided, or after we create one.
   useEffect(() => {
@@ -87,6 +108,98 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
   }, [sessionId, connect])
 
   useEffect(() => () => { sseRef.current?.close() }, [])
+
+  // ── Runtime status synchronization ──────────────────────────────────────
+  // GET /api/sessions/:id/status is the only authoritative execution state.
+  // Poll recursively after each request completes so a slow network cannot
+  // accumulate overlapping requests. SSE merely asks this loop to run sooner.
+  useEffect(() => {
+    if (!sessionId) return
+
+    let stopped = false
+    let inFlight = false
+    let rerunImmediately = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let controller: AbortController | null = null
+    let poll: () => Promise<void>
+
+    const schedule = (delayMs: number) => {
+      if (stopped) return
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => { void poll() }, delayMs)
+    }
+
+    const requestNow = () => {
+      if (stopped) return
+      if (inFlight) {
+        rerunImmediately = true
+        return
+      }
+      schedule(0)
+    }
+
+    poll = async () => {
+      if (stopped || inFlight) return
+      inFlight = true
+      timer = null
+      const epoch = statusEpochRef.current
+      controller = new AbortController()
+      const timeout = setTimeout(() => controller?.abort(), 10_000)
+      let nextDelay = 5_000
+
+      try {
+        const status = await client.sessionStatus(sessionId, controller.signal)
+        if (stopped || epoch !== statusEpochRef.current) return
+
+        if (status.alive && status.working) {
+          workingHintUntilRef.current = 0
+          updateTyping(true)
+          nextDelay = 2_000
+        } else {
+          const hintRemaining = workingHintUntilRef.current - Date.now()
+          if (hintRemaining > 0 || sendingRef.current) {
+            // Session creation and message dispatch can briefly precede the
+            // worker becoming observable. Preserve instant feedback while
+            // retrying quickly, with a bounded grace period.
+            updateTyping(true)
+            nextDelay = Math.max(100, Math.min(500, hintRemaining || 500))
+          } else {
+            updateTyping(false)
+            nextDelay = status.alive ? 5_000 : 15_000
+          }
+        }
+      } catch (e: any) {
+        // A status timeout or transient transport error must not disturb the
+        // transcript or make Working flicker. The next recursive poll retries.
+        if (process.env.MOBIUS_TUI_DEBUG && e?.name !== 'AbortError') {
+          console.error('[status-poll]', e?.message ?? e)
+        }
+        nextDelay = typingRef.current ? 2_000 : 5_000
+      } finally {
+        clearTimeout(timeout)
+        controller = null
+        inFlight = false
+        if (!stopped) {
+          if (rerunImmediately) {
+            rerunImmediately = false
+            schedule(0)
+          } else {
+            schedule(nextDelay)
+          }
+        }
+      }
+    }
+
+    pollNowRef.current = requestNow
+    requestNow()
+
+    return () => {
+      stopped = true
+      pollNowRef.current = null
+      if (timer) clearTimeout(timer)
+      controller?.abort()
+    }
+  }, [client, sessionId, updateTyping])
 
   const ensureSession = useCallback(async (): Promise<string> => {
     if (sessionId) return sessionId
@@ -111,6 +224,10 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
     if (!body || sending) return
     setError(null)
     setPendingUser(body)
+    statusEpochRef.current += 1
+    workingHintUntilRef.current = Date.now() + 2_000
+    sendingRef.current = true
+    updateTyping(true)
     setSending(true)
     try {
       const sid = await ensureSession()
@@ -119,20 +236,29 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
       if (process.env.MOBIUS_TUI_DEBUG) console.error('[send-post]', sid, 'sse=', !!sseRef.current, 'closed=', sseRef.current?.isClosed())
       const reqId = `tui-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       await client.sendMessage(sid, body, reqId)
+      pollNowRef.current?.()
     } catch (e: any) {
       const msg = e instanceof ApiError ? e.message : `发送失败: ${e?.message ?? e}`
       setError(msg)
       setPendingUser(null)
+      workingHintUntilRef.current = 0
+      updateTyping(false)
     } finally {
+      sendingRef.current = false
       setSending(false)
+      pollNowRef.current?.()
     }
-  }, [sending, ensureSession, client])
+  }, [sending, ensureSession, client, updateTyping])
 
   const stop = useCallback(async () => {
     if (!sessionId) return
+    statusEpochRef.current += 1
+    workingHintUntilRef.current = 0
+    sendingRef.current = false
+    updateTyping(false)
     try { await client.stopSession(sessionId) } catch { /* ignore */ }
-    setTyping(false)
-  }, [sessionId, client])
+    pollNowRef.current?.()
+  }, [sessionId, client, updateTyping])
 
   return { entries, pendingUser, typing, sending, error, sessionId, send, stop }
 }
