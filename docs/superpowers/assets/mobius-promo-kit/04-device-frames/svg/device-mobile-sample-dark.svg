@@ -21,5 +21,5 @@
 
       <g id="icon-structure"><g id="device-screen"><rect x="6" y="4" width="78" height="152" rx="14" fill="#11122A" stroke="#E6EEFF" stroke-width="3"/><path d="M34 13h22M39 147h12" fill="none" stroke="#E6EEFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="1"/><rect x="14" y="31" width="62" height="14" rx="4" fill="#64748B" opacity="0.3"/><path d="M18 55h41M18 64h52M18 73h34M18 91h47M18 100h39M18 122h52" fill="none" stroke="#64748B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.78"/><circle cx="67" cy="56" r="4" fill="url(#brand-gradient)"/></g></g>
       <g id="energy-trail" opacity="0"><path d="M12 88 C48 102 112 102 148 82" fill="none" stroke="url(#brand-gradient)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity="1"/></g>
-    
+
 </svg>

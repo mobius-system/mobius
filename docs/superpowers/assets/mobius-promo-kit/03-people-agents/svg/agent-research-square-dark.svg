@@ -21,5 +21,5 @@
 
       <g id="icon-structure"><g id="agent-core"><rect x="10" y="10" width="76" height="76" rx="19" fill="#11122A" stroke="#E6EEFF" stroke-width="3"/><circle cx="42" cy="43" r="15" fill="none" stroke="#E6EEFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="1"/><path d="M53 54l15 15M38 34h8M42 30v8M35 49h14" fill="none" stroke="#E6EEFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="1"/></g></g>
       <g id="energy-trail" opacity="0"><path d="M20 76 C38 88 65 87 78 70" fill="none" stroke="url(#brand-gradient)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="1"/></g>
-    
+
 </svg>

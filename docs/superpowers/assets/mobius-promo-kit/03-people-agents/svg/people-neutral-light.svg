@@ -25,10 +25,10 @@
           <path d="M24 84 C27 69 35 63 48 63 C61 63 69 69 72 84" fill="#8090AA" opacity="0.82"/>
           <circle cx="48" cy="49" r="20" fill="#8090AA"/>
           <path d="M28 43 C31 25 64 25 68 43" fill="#8090AA" opacity="0.96"/>
-          
+
           <path d="M17 63 A38 38 0 0 1 29 21" fill="none" stroke="url(#brand-gradient)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>
         </g>
       </g>
       <g id="energy-trail" opacity="0"><circle cx="18" cy="62" r="3" fill="#22D3EE"/></g>
-    
+
 </svg>

@@ -226,12 +226,13 @@ def _defs() -> str:
 
 def _svg_document(spec: AssetSpec, body: str) -> str:
     width, height = _view_box(spec)
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
+    document = f"""<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="{spec.width}" height="{spec.height}" viewBox="0 0 {width} {height}" role="img" aria-label="{spec.slug}">
 {_defs()}
 {body}
 </svg>
 """
+    return "\n".join(line.rstrip() for line in document.splitlines()) + "\n"
 
 
 def _energy_group(spec: AssetSpec, content: str) -> str:

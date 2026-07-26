@@ -20,7 +20,7 @@ from asset_system import (  # noqa: E402
     render_svg,
     validate_inventory,
 )
-from generate_assets import generate_all  # noqa: E402
+from generate_assets import _select_board_records, build_preview_boards, generate_all  # noqa: E402
 
 
 class InventoryTests(unittest.TestCase):
@@ -107,6 +107,10 @@ class SvgContractTests(unittest.TestCase):
                 self.assertNotIn("background", root.attrib)
                 self.assertNotIn('id="background"', svg)
                 self.assertIn('id="icon-structure"', svg)
+                self.assertFalse(
+                    any(line != line.rstrip() for line in svg.splitlines()),
+                    f"trailing whitespace in {spec.slug}",
+                )
 
     def test_active_assets_define_brand_gradient_and_energy_layer(self) -> None:
         active_assets = [item for item in build_inventory() if item.state == "active"]
@@ -166,6 +170,38 @@ class ExportTests(unittest.TestCase):
             top_folders,
             {"01-logo", "02-capabilities", "03-people-agents", "04-device-frames", "05-compute-resources"},
         )
+
+    def test_preview_boards_are_4k_images_in_both_themes(self) -> None:
+        subset = [item for item in build_inventory() if item.category == "capabilities"][:8]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_root = Path(tmp)
+            records = generate_all(output_root, inventory=subset)
+            boards = build_preview_boards(output_root, records)
+            self.assertGreaterEqual(len(boards), 2)
+            self.assertTrue(any("dark" in path.name for path in boards))
+            self.assertTrue(any("light" in path.name for path in boards))
+            for path in boards:
+                with Image.open(path) as image:
+                    self.assertEqual(image.size, (3840, 2160))
+                    self.assertIn(image.mode, {"RGB", "RGBA"})
+
+    def test_overview_uses_theme_compatible_logo_samples(self) -> None:
+        records = [
+            {
+                "category": item.category,
+                "name": item.name,
+                "theme": item.theme,
+                "state": item.state,
+            }
+            for item in build_inventory()
+        ]
+        categories = ("logo", "capabilities", "people", "agents")
+        dark_names = {record["name"] for record in _select_board_records(records, categories, "dark")}
+        light_names = {record["name"] for record in _select_board_records(records, categories, "light")}
+        self.assertNotIn("monochrome-ink", dark_names)
+        self.assertNotIn("monochrome-white", light_names)
+        self.assertIn("textured-color", dark_names)
+        self.assertIn("textured-color", light_names)
 
 
 if __name__ == "__main__":
