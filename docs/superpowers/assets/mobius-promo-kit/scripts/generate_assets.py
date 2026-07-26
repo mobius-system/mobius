@@ -5,6 +5,7 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
+from xml.etree import ElementTree
 
 import cairosvg
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -245,10 +246,98 @@ def build_preview_boards(
     return paths
 
 
+def check_assets(
+    output_root: Path = KIT_ROOT,
+    *,
+    inventory: list[AssetSpec] | None = None,
+) -> list[str]:
+    selected = list(build_inventory() if inventory is None else inventory)
+    errors = validate_inventory(selected)
+    expected_files: set[Path] = set()
+    expected_records: list[dict[str, object]] = []
+
+    for spec in selected:
+        svg_path, png_path = output_paths(output_root, spec)
+        expected_files.update({svg_path, png_path})
+        expected_records.append(manifest_record(output_root, spec, svg_path, png_path))
+        if not svg_path.is_file():
+            errors.append(f"missing SVG: {svg_path.relative_to(output_root)}")
+        else:
+            try:
+                root = ElementTree.parse(svg_path).getroot()
+                if root.tag != "{http://www.w3.org/2000/svg}svg":
+                    errors.append(f"invalid SVG root: {svg_path.relative_to(output_root)}")
+                if "viewBox" not in root.attrib:
+                    errors.append(f"missing SVG viewBox: {svg_path.relative_to(output_root)}")
+                if 'id="icon-structure"' not in svg_path.read_text(encoding="utf-8"):
+                    errors.append(f"missing SVG semantic layer: {svg_path.relative_to(output_root)}")
+            except (ElementTree.ParseError, OSError) as exc:
+                errors.append(f"invalid SVG: {svg_path.relative_to(output_root)} ({exc})")
+
+        if not png_path.is_file():
+            errors.append(f"missing PNG: {png_path.relative_to(output_root)}")
+        else:
+            try:
+                with Image.open(png_path) as image:
+                    if image.size != (spec.width, spec.height):
+                        errors.append(
+                            f"wrong PNG dimensions: {png_path.relative_to(output_root)} "
+                            f"({image.width}x{image.height}, expected {spec.width}x{spec.height})"
+                        )
+                    if image.mode != "RGBA":
+                        errors.append(f"PNG lacks RGBA mode: {png_path.relative_to(output_root)} ({image.mode})")
+                    else:
+                        alpha_min, alpha_max = image.getchannel("A").getextrema()
+                        if alpha_min != 0 or alpha_max == 0:
+                            errors.append(
+                                f"PNG alpha is not transparent artwork: {png_path.relative_to(output_root)} "
+                                f"({alpha_min}, {alpha_max})"
+                            )
+            except OSError as exc:
+                errors.append(f"invalid PNG: {png_path.relative_to(output_root)} ({exc})")
+
+    manifest_path = output_root / "manifest.json"
+    if not manifest_path.is_file():
+        errors.append("missing manifest.json")
+    else:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("asset_count") != len(selected):
+                errors.append(
+                    f'manifest asset_count mismatch: {manifest.get("asset_count")} != {len(selected)}'
+                )
+            if manifest.get("assets") != expected_records:
+                errors.append("manifest asset records do not match the generated inventory")
+        except (json.JSONDecodeError, OSError) as exc:
+            errors.append(f"invalid manifest.json ({exc})")
+
+    actual_files: set[Path] = set()
+    for folder in set(CATEGORY_FOLDERS.values()):
+        category_root = output_root / folder
+        if not category_root.is_dir():
+            continue
+        actual_files.update(category_root.glob("svg/*.svg"))
+        actual_files.update(category_root.glob("png/*.png"))
+    for path in sorted(actual_files - expected_files):
+        errors.append(f"stale generated file: {path.relative_to(output_root)}")
+
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate the Mobius promotional asset kit.")
     parser.add_argument("--output", type=Path, default=KIT_ROOT)
+    parser.add_argument("--check", action="store_true", help="Validate existing outputs without rewriting them.")
     args = parser.parse_args()
+    if args.check:
+        errors = check_assets(args.output)
+        if errors:
+            print("Asset validation failed:", file=sys.stderr)
+            for error in errors:
+                print(f"- {error}", file=sys.stderr)
+            return 1
+        print(f"Validated {len(build_inventory())} assets: SVG, PNG, alpha, dimensions, manifest, stale files OK")
+        return 0
     records = generate_all(args.output)
     boards = build_preview_boards(args.output, records)
     counts = Counter(record["category"] for record in records)

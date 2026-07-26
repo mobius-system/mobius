@@ -20,7 +20,12 @@ from asset_system import (  # noqa: E402
     render_svg,
     validate_inventory,
 )
-from generate_assets import _select_board_records, build_preview_boards, generate_all  # noqa: E402
+from generate_assets import (  # noqa: E402
+    _select_board_records,
+    build_preview_boards,
+    check_assets,
+    generate_all,
+)
 
 
 class InventoryTests(unittest.TestCase):
@@ -202,6 +207,21 @@ class ExportTests(unittest.TestCase):
         self.assertNotIn("monochrome-white", light_names)
         self.assertIn("textured-color", dark_names)
         self.assertIn("textured-color", light_names)
+
+    def test_asset_checker_detects_missing_and_stale_files(self) -> None:
+        subset = [item for item in build_inventory() if item.category == "resources"][:2]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_root = Path(tmp)
+            records = generate_all(output_root, inventory=subset)
+            self.assertEqual(check_assets(output_root, inventory=subset), [])
+
+            missing_png = output_root / str(records[0]["png"])
+            missing_png.unlink()
+            stale_svg = output_root / "05-compute-resources" / "svg" / "stale.svg"
+            stale_svg.write_text("<svg xmlns=\"http://www.w3.org/2000/svg\"/>", encoding="utf-8")
+            errors = check_assets(output_root, inventory=subset)
+            self.assertTrue(any("missing PNG" in error for error in errors), errors)
+            self.assertTrue(any("stale generated file" in error for error in errors), errors)
 
 
 if __name__ == "__main__":
