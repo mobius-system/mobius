@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from xml.etree import ElementTree
 from pathlib import Path
 
 
@@ -12,6 +13,7 @@ from asset_system import (  # noqa: E402
     BRAND_COLORS,
     THEMES,
     build_inventory,
+    render_svg,
     validate_inventory,
 )
 
@@ -83,6 +85,46 @@ class InventoryTests(unittest.TestCase):
 
     def test_inventory_validator_accepts_the_production_matrix(self) -> None:
         self.assertEqual(validate_inventory(build_inventory()), [])
+
+
+class SvgContractTests(unittest.TestCase):
+    def test_every_asset_renders_parseable_transparent_svg(self) -> None:
+        for spec in build_inventory():
+            with self.subTest(asset=spec.slug):
+                svg = render_svg(spec)
+                root = ElementTree.fromstring(svg)
+                self.assertEqual(root.tag, "{http://www.w3.org/2000/svg}svg")
+                self.assertIn("viewBox", root.attrib)
+                self.assertNotIn("background", root.attrib)
+                self.assertNotIn('id="background"', svg)
+                self.assertIn('id="icon-structure"', svg)
+
+    def test_active_assets_define_brand_gradient_and_energy_layer(self) -> None:
+        active_assets = [item for item in build_inventory() if item.state == "active"]
+        self.assertTrue(active_assets)
+        for spec in active_assets:
+            with self.subTest(asset=spec.slug):
+                svg = render_svg(spec)
+                self.assertIn('id="brand-gradient"', svg)
+                self.assertIn('id="energy-trail"', svg)
+
+    def test_category_specific_semantic_layers_are_present(self) -> None:
+        expected = {
+            "logo": "mobius-ribbon",
+            "capabilities": "capability-symbol",
+            "people": "portrait",
+            "agents": "agent-core",
+            "states": "state-indicator",
+            "devices": "device-screen",
+            "resources": "resource-symbol",
+            "relations": "relation-path",
+        }
+        examples = {}
+        for item in build_inventory():
+            examples.setdefault(item.category, item)
+        for category, layer_id in expected.items():
+            with self.subTest(category=category):
+                self.assertIn(f'id="{layer_id}"', render_svg(examples[category]))
 
 
 if __name__ == "__main__":
