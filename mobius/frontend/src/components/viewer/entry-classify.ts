@@ -69,6 +69,13 @@ export function isSessionMetaEntry(entry: AnyEntry): boolean {
   return entry?.type === 'session_meta'
 }
 
+// codex 每轮开始注入的 turn_context: payload 含 turn_id/cwd/model/effort/sandbox_policy/
+// collaboration_mode 等本轮上下文元数据 (collaboration_mode.settings.developer_instructions 里
+// 还嵌着整段系统提示词, 展开噪声很大). 对浏览对话内容无价值, 与 session_meta 同级整卡过滤隐藏.
+export function isTurnContextEntry(entry: AnyEntry): boolean {
+  return entry?.type === 'turn_context'
+}
+
 // Claude Code 每轮结束注入的 system 卡片 (subtype:"turn_duration"): 仅记录本轮耗时/消息数等
 // 统计元数据 (durationMs/messageCount), 对浏览对话内容无价值, 与 token_count/environment_context/
 // session_meta 同级整卡过滤隐藏. 只命中 turn_duration 子类型, 不影响其它可能有用 system 子类型.
@@ -96,11 +103,13 @@ export function isAgentListingDeltaAttachment(entry: AnyEntry): boolean {
 //   - turn_duration       : Claude Code 每轮结束注入的 system 耗时/消息数统计
 //   - skill_listing       : Claude Code 注入的可用 Skill 清单 (巨量 skill 描述文本)
 //   - agent_listing_delta : Claude Code 注入的可用 subagent 清单
+//   - turn_context        : codex 每轮注入的本轮上下文元数据 (含 developer_instructions 系统提示词)
 export function isHiddenJsonlNoiseEntry(entry: AnyEntry): boolean {
   return (
     isTokenCountEvent(entry) ||
     isEnvironmentContextEntry(entry) ||
     isSessionMetaEntry(entry) ||
+    isTurnContextEntry(entry) ||
     isTurnDurationSystemEntry(entry) ||
     isSkillListingAttachment(entry) ||
     isAgentListingDeltaAttachment(entry)
