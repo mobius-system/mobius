@@ -158,3 +158,4 @@ mobius/desktop-builds/
 mobius/public/mobile-builds/
 mobius/mobile-builds/
 mobius/frontend/public/mobile-builds/
+.worktrees/

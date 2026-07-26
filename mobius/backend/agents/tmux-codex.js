@@ -57,9 +57,15 @@ const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 const CODEX_ERROR_SCAN_TAIL_LINES = 50
 // rollout 文件"新鲜度"窗口: _readWorkingFromJsonl 在尾部找不到明确标记(多为密集流式
 // agent_message/token_count, 或后端重启后 entry.working 失效) 时, 若文件在此窗口内被写过,
-// 判定 codex 仍在产出 → working. 选 20s: 大于前端最长轮询间隔(待命态 5s)数倍, 又小于
-// 典型 turn 间隙, 避免 turn 结束后误判仍 working (task_complete 作为末行会先命中返回 false).
-const CODEX_WORKING_FRESH_MS = 20000
+// 判定 codex 仍在产出 → working.
+// 为什么可以放宽到 60s (旧值 20s): 此分支只在"尾部窗口内完全无标记"时触达, 而 task_complete
+// 总是 turn 的末行 → 一个真正收工的 session 其 task_complete 必在尾部窗口内、会先命中并返回
+// false, 根本走不到这里. 所以本 freshness 只覆盖"turn 进行中但暂时没写文件"的间隙(codex 长思考 /
+// 等慢 LLM / 跑长命令期间 rollout 可能数十秒无写入). 20s 太短: 这类间隙常超 20s, 一旦过期就回落
+// entry.working, 而后端重启后 entry.working=false (watcher 从末尾起读、错过本 turn 的 task_started)
+// → 间歇性误判 not working. 提到 60s 覆盖绝大多数思考间隙, 又不会让收工 session 误显 working
+// (收工走 task_complete 早返回, 不经此分支).
+const CODEX_WORKING_FRESH_MS = 60000
 
 // realTimeInfo: 识别 Codex TUI 当前的状态行 (status_indicator_widget.rs 渲染).
 // 行形态: "[•◦] <header> (<elapsed> • esc to interrupt)[ · <inline_message>]"
@@ -585,7 +591,11 @@ class TmuxCodexBackend extends AgentBackend {
     try {
       stat = fs.statSync(jsonlPath)
       if (stat.size === 0) return null
-      const len = Math.min(stat.size, 64 * 1024)
+      // 128KB: 远大于单条 rollout 记录(巨型 function_call_output / 长 agent_message 可达数十 KB),
+      // 让本 turn 的 task_started 不易被密集流式事件挤出窗口. 不必更大: 扫描遇首个标记即停,
+      // 大窗口只在"无标记"的罕见分支多解析几行; 且 freshness 已兜底无标记情形. (claude-code 用
+      // 256KB 是因其单条上下文注入记录更大; codex 128KB 经 944 份真实 rollout 验证足够.)
+      const len = Math.min(stat.size, 128 * 1024)
       const buf = Buffer.alloc(len)
       const fd = fs.openSync(jsonlPath, 'r')
       try { fs.readSync(fd, buf, 0, len, stat.size - len) } finally { fs.closeSync(fd) }
