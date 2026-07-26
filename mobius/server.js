@@ -338,13 +338,21 @@ server.listen(PORT, () => {
 });
 
 // 优雅退出
+let shuttingDown = false
 function shutdown(sig) {
-  console.log(`[v2] received ${sig}, shutting down...`);
+  if (shuttingDown) return // reload/双信号防重入
+  shuttingDown = true
+  console.log(`[v2] received ${sig}, shutting down...`)
+  // 立即拒新连接 + 强制断开所有在途连接(13 个 SSE + web-terminal WS 等长连接), 让 server.close
+  // 回调毫秒级触发、老 worker 秒退. 否则长连接让 server.close 永不回调、老 worker 卡着不退,
+  // cluster reload 时会被 PM2 丢跟踪 → 幽灵 worker(仍持 listen socket 用旧代码接客, 间歇"修了不生效").
+  try { server.closeAllConnections() } catch { /* 老版 Node 无此方法时回落到下面的硬退兜底 */ }
   server.close(() => {
-    console.log('[v2] closed.');
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 5000);
+    console.log('[v2] closed.')
+    process.exit(0)
+  })
+  // 硬退兜底, 必须小于 ecosystem kill_timeout(8000ms): 保证老 worker 在 PM2 丢跟踪前一定退出.
+  setTimeout(() => process.exit(1), 3000)
 }
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
