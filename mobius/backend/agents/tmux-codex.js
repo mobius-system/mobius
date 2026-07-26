@@ -66,6 +66,9 @@ const CODEX_ERROR_SCAN_TAIL_LINES = 50
 // → 间歇性误判 not working. 提到 60s 覆盖绝大多数思考间隙, 又不会让收工 session 误显 working
 // (收工走 task_complete 早返回, 不经此分支).
 const CODEX_WORKING_FRESH_MS = 60000
+// 临时诊断: 只对这个 session 在 isWorking 返回 false 时打印判定依据, 定位"间歇误判 not working"
+// 的真正 false 路径(freshness+窗口修复后用户仍反馈无效). 拿到日志后删除. 别的 session 零开销.
+const CODEX_ISWORKING_TRACE_SESSION = 'e780df8a'
 
 // realTimeInfo: 识别 Codex TUI 当前的状态行 (status_indicator_widget.rs 渲染).
 // 行形态: "[•◦] <header> (<elapsed> • esc to interrupt)[ · <inline_message>]"
@@ -577,47 +580,91 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   isWorking(sessionId) {
-    if (!this.isAlive(sessionId)) return false
+    const trace = sessionId === CODEX_ISWORKING_TRACE_SESSION
+    // 1. alive? (走 tmux list-windows 缓存)
+    const windows = listWindowsRowsCached()
+    const alive = windows.some((cols) => cols[0] === sessionId)
+    if (!alive) {
+      if (trace) log(`[isWorking:${sessionId}] FALSE reason=not-alive tmuxWindows=[${windows.map((c) => c[0]).join(',')}]`)
+      return false
+    }
     const entry = this.runtime.get(sessionId)
+    // 2. 纯内存态 (会话刚建、rollout 尚未落盘)
     if (entry?.working && !entry?.jsonlPath) return true
-    const fromJsonl = this._readWorkingFromJsonl(entry?.jsonlPath)
-    return fromJsonl == null ? !!entry?.working : fromJsonl
+    // 3. rollout jsonl 尾部标记扫描
+    const detail = trace ? {} : null
+    const fromJsonl = this._readWorkingFromJsonl(entry?.jsonlPath, detail)
+    let result, why
+    if (fromJsonl === true) {
+      result = true
+      why = `jsonl-marker-working(${detail?.hit})`
+    } else if (fromJsonl === false) {
+      result = false
+      why = `jsonl-marker-idle(${detail?.hit})`
+    } else {
+      // null: 窗口内无标记 → freshness 兜底; 仍无果则回落 entry.working
+      result = !!entry?.working
+      why = `no-marker-in-window hit=${detail?.hit} mtimeAgeMs=${detail?.mtimeAgeMs} fresh=${detail?.fresh} winBytes=${detail?.winBytes}/${detail?.size} tailTypes=[${detail?.tailTypes}] -> fallback entry.working=${!!entry?.working}`
+    }
+    if (trace && !result) {
+      log(`[isWorking:${sessionId}] FALSE reason=${why} jsonl=${entry?.jsonlPath} entry.working=${!!entry?.working}`)
+    }
+    return result
   }
 
-  _readWorkingFromJsonl(jsonlPath) {
-    if (!jsonlPath || !fs.existsSync(jsonlPath)) return null
+  _readWorkingFromJsonl(jsonlPath, detail = null) {
+    if (!jsonlPath || !fs.existsSync(jsonlPath)) {
+      if (detail) detail.hit = 'no-jsonl'
+      return null
+    }
     let stat
     let lines
     try {
       stat = fs.statSync(jsonlPath)
-      if (stat.size === 0) return null
+      if (detail) {
+        detail.size = stat.size
+        detail.mtimeAgeMs = Date.now() - stat.mtimeMs
+        detail.fresh = detail.mtimeAgeMs < CODEX_WORKING_FRESH_MS
+      }
+      if (stat.size === 0) {
+        if (detail) detail.hit = 'empty-file'
+        return null
+      }
       // 128KB: 远大于单条 rollout 记录(巨型 function_call_output / 长 agent_message 可达数十 KB),
       // 让本 turn 的 task_started 不易被密集流式事件挤出窗口. 不必更大: 扫描遇首个标记即停,
-      // 大窗口只在"无标记"的罕见分支多解析几行; 且 freshness 已兜底无标记情形. (claude-code 用
-      // 256KB 是因其单条上下文注入记录更大; codex 128KB 经 944 份真实 rollout 验证足够.)
+      // 大窗口只在"无标记"的罕见分支多解析几行; 且 freshness 已兜底无标记情形.
       const len = Math.min(stat.size, 128 * 1024)
+      if (detail) detail.winBytes = len
       const buf = Buffer.alloc(len)
       const fd = fs.openSync(jsonlPath, 'r')
       try { fs.readSync(fd, buf, 0, len, stat.size - len) } finally { fs.closeSync(fd) }
       lines = buf.toString('utf8').split('\n').filter(Boolean)
-    } catch { return null }
-
+    } catch {
+      if (detail) detail.hit = 'read-error'
+      return null
+    }
+    if (detail) {
+      detail.tailTypes = lines.slice(-8)
+        .map((l) => { try { const e = JSON.parse(l); return `${e.type}/${(e.payload || {}).type}` } catch { return '?' } })
+        .join(',')
+    }
     for (let i = lines.length - 1; i >= 0; i--) {
       let e
       try { e = JSON.parse(lines[i]) } catch { continue }
-      if (isCodexTaskComplete(e)) return false
-      if (isCodexTaskStart(e)) return true
+      const fromTail = lines.length - i
+      if (isCodexTaskComplete(e)) { if (detail) detail.hit = `task_complete @${fromTail}fromTail`; return false }
+      if (isCodexTaskStart(e)) { if (detail) detail.hit = `task_start @${fromTail}fromTail`; return true }
       if (e.type === 'response_item') {
         const pt = e.payload?.type
-        if (['function_call', 'function_call_output', 'reasoning', 'message', 'custom_tool_call', 'custom_tool_call_output'].includes(pt)) return true
+        if (['function_call', 'function_call_output', 'reasoning', 'message', 'custom_tool_call', 'custom_tool_call_output'].includes(pt)) { if (detail) detail.hit = `response_item/${pt} @${fromTail}fromTail`; return true }
       }
-      if (e.type === 'turn_context') return true
+      if (e.type === 'turn_context') { if (detail) detail.hit = `turn_context @${fromTail}fromTail`; return true }
     }
-    // 尾部 64KB 内无明确标记: 多为密集流式 agent_message/token_count 把标记挤出窗口,
+    // 尾部窗口内无明确标记: 多为密集流式 agent_message/token_count 把标记挤出窗口,
     // 或后端重启后 entry.working 失效. 此时若 rollout 仍在被写 (mtime 很新) 说明 codex
-    // 正在产出 → 视为 working, 避免卡片在流、状态却卡"待命". 文件冷 (turn 已结束未再写)
-    // 才回落 entry.working (isWorking 内处理).
-    if (stat && Date.now() - stat.mtimeMs < CODEX_WORKING_FRESH_MS) return true
+    // 正在产出 → 视为 working; 文件冷才回落 entry.working (isWorking 内处理).
+    if (stat && Date.now() - stat.mtimeMs < CODEX_WORKING_FRESH_MS) { if (detail) detail.hit = 'no-marker+fresh'; return true }
+    if (detail) detail.hit = 'no-marker+stale'
     return null
   }
 
