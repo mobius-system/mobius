@@ -59,6 +59,9 @@ function mockFetch(url: string, init?: RequestInit): Response {
     }, 200)
     return json({ ok: true, session_id: SID, turn_number: 1 })
   }
+  if (url.endsWith(`/api/sessions/${SID}/status`)) {
+    return json({ session_id: SID, alive: true, working: false })
+  }
   // issues
   if (url.includes('/api/projects/') && url.includes('/issues') && method === 'POST') return json({ id: IID, project_id: PID, title: '命令行任务' })  // create issue
   if (url.includes('/api/projects/') && url.includes('/issues') && method === 'GET') return json([{ id: IID, project_id: PID, title: '命令行任务' }]) // list issues

@@ -109,6 +109,7 @@ async function testChat() {
     issue: { id: 'i1', project_id: 'p1', title: '测试任务' },
     prefs: { model: 'codex', language: 'zh', excluded_skill_ids: [], excluded_memory_ids: [] },
   }
+  let runtimeWorking = false
   installMock((url, init) => {
     if (url.includes('/events')) {
       const stream = new RS({
@@ -126,6 +127,9 @@ async function testChat() {
       }, 250)
       return jsonResponse({ ok: true, session_id: 's1', turn_number: 1 })
     }
+    if (url.endsWith('/api/sessions/s1/status')) {
+      return jsonResponse({ session_id: 's1', alive: true, working: runtimeWorking })
+    }
     if (url.includes('/sessions') && init?.method === 'POST') return jsonResponse({ session_id: 's1' })
     return jsonResponse({ error: 'no mock' }, 404)
   })
@@ -140,7 +144,13 @@ async function testChat() {
     ok(initialFrame.includes('Tip:') && initialFrame.includes('输入问题或 / 命令'), 'welcome tip and bottom composer are visible together')
     ok(initialFrame.includes('http://mock.local/u/test-user/p/p1/i/i1'), 'web issue URL is always visible before session creation')
     stdin.write('你好'); await delay(30)
-    stdin.write('\r'); await delay(900)   // createSession → connect → POST → emit
+    stdin.write('\r'); await delay(80)
+    ok((lastFrame() ?? '').includes('Working ('), 'Working appears immediately after submit, before the first SSE typing event')
+    runtimeWorking = true
+    await delay(820)   // createSession → connect → POST → emit
+    runtimeWorking = false
+    emit('typing', { active: false })
+    await delay(100)
     const frame = lastFrame() ?? ''
     unmount()
     ok(frame.includes('你好'), 'transcript shows the user message')
@@ -149,14 +159,68 @@ async function testChat() {
     ok(!frame.includes('[typescript]') && !frame.includes('```'), 'code block omits language badge and fence characters')
     ok(frame.includes('测试项目') && frame.includes('测试任务'), `persistent status shows project and task`)
     ok(frame.includes('http://mock.local/u/test-user/p/p1/i/i1?session=s1'), 'web URL follows the newly created session')
+    ok(!frame.includes('Working ('), 'authoritative idle status clears Working after completion')
   } finally { restoreFetch() }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TEST 3 — Markdown follows Codex's borderless, foreground-only code style
+// TEST 3 — resumed sessions restore and stop their live Working state
+// ════════════════════════════════════════════════════════════════════════════
+async function testResumedWorkingStatus() {
+  console.log('\n[UI 3] Resumed session Working status')
+  sseController = null
+  let runtimeWorking = true
+  let stopped = false
+  const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
+  const ready: ReadyState = {
+    project: { id: 'p1', name: '测试项目' },
+    issue: { id: 'i1', project_id: 'p1', title: '测试任务' },
+    prefs: { model: 'codex', language: 'zh', excluded_skill_ids: [], excluded_memory_ids: [] },
+  }
+  installMock((url, init) => {
+    if (url.includes('/events')) {
+      return new Response(new RS({
+        start(c: any) { sseController = c; c.enqueue(enc.encode('event: subscribed\ndata: {"event":"subscribed","session":{}}\n\n')) },
+      }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }
+    if (url.endsWith('/api/sessions/s1/status')) {
+      return jsonResponse({ session_id: 's1', alive: true, working: runtimeWorking })
+    }
+    if (url.endsWith('/api/sessions/s1/stop') && init?.method === 'POST') {
+      runtimeWorking = false
+      stopped = true
+      return jsonResponse({ ok: true })
+    }
+    return jsonResponse({ error: 'no mock' }, 404)
+  })
+  try {
+    const { stdin, lastFrame, unmount } = render(
+      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />
+    )
+    await delay(120)
+    ok((lastFrame() ?? '').includes('Working ('), 'resuming an already-running session restores Working without a new typing event')
+
+    runtimeWorking = false
+    emit('typing', { active: false })
+    await delay(120)
+    ok(!(lastFrame() ?? '').includes('Working ('), 'SSE completion requests an immediate authoritative status refresh')
+
+    runtimeWorking = true
+    emit('typing', { active: true })
+    await delay(30)
+    ok((lastFrame() ?? '').includes('Working ('), 'SSE start lights Working without waiting for the next scheduled poll')
+    stdin.write('\x1b')
+    await delay(120)
+    ok(stopped && !(lastFrame() ?? '').includes('Working ('), 'Esc stops the active session and clears Working immediately')
+    unmount()
+  } finally { restoreFetch() }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 4 — Markdown follows Codex's borderless, foreground-only code style
 // ════════════════════════════════════════════════════════════════════════════
 function testMarkdownCodeRendering() {
-  console.log('\n[UI 3] Markdown code rendering')
+  console.log('\n[UI 4] Markdown code rendering')
   const stripAnsi = (value: string) => value.replace(/\x1B\[[0-9;]*m/g, '')
   const rendered = renderMarkdownLines('说明 `answer`：\n\n```typescript title=demo\nconst answer = 42\n```\n\n完成。')
   const plain = rendered.map(line => stripAnsi(line.text)).join('\n')
@@ -169,10 +233,10 @@ function testMarkdownCodeRendering() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TEST 4 — Prep screen renders the project picker when cwd is unbound
+// TEST 5 — Prep screen renders the project picker when cwd is unbound
 // ════════════════════════════════════════════════════════════════════════════
 async function testPrepRender() {
-  console.log('\n[UI 4] Prep screen project picker')
+  console.log('\n[UI 5] Prep screen project picker')
   const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
   installMock((url) => {
     if (url.includes('/api/projects') && !url.includes('/issues') && !url.includes('/skills') && !url.includes('/memories')) {
@@ -195,6 +259,7 @@ async function testPrepRender() {
 async function main() {
   await testLogin()
   await testChat()
+  await testResumedWorkingStatus()
   testMarkdownCodeRendering()
   await testPrepRender()
   // cleanup temp home
