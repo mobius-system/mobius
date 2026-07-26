@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 96 96" role="img" aria-label="resource-foundation-model-active-dark">
+
+    <defs>
+      <linearGradient id="brand-gradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#22D3EE"/><stop offset="20%" stop-color="#7DD3FC"/><stop offset="40%" stop-color="#8B5CF6"/><stop offset="60%" stop-color="#A78BFA"/><stop offset="80%" stop-color="#EC4899"/><stop offset="100%" stop-color="#F472B6"/></linearGradient>
+      <radialGradient id="brand-glass" cx="38%" cy="28%" r="78%">
+        <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.72"/>
+        <stop offset="28%" stop-color="#7DD3FC" stop-opacity="0.42"/>
+        <stop offset="66%" stop-color="#8B5CF6" stop-opacity="0.28"/>
+        <stop offset="100%" stop-color="#EC4899" stop-opacity="0.12"/>
+      </radialGradient>
+      <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="2.2" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="wide-glow" x="-80%" y="-80%" width="260%" height="260%">
+        <feGaussianBlur stdDeviation="5" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+<g id="icon-structure"><g id="resource-symbol"><rect x="24" y="24" width="48" height="48" rx="10" fill="none" stroke="url(#brand-gradient)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="1"/><path d="M34 43c8-13 20-13 28 0M34 53c8 13 20 13 28 0M38 48h20" fill="none" stroke="#64748B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.78"/><path d="M31 18v6M42 18v6M54 18v6M65 18v6M31 72v6M42 72v6M54 72v6M65 72v6" fill="none" stroke="#64748B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.78"/></g></g><g id="energy-trail" opacity="1" filter="url(#soft-glow)"><path d="M21 75 C33 86 68 86 78 70" fill="none" stroke="url(#brand-gradient)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity="1"/><circle cx="78" cy="70" r="3" fill="#FDE68A"/></g>
+</svg>

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import unittest
 from xml.etree import ElementTree
 from pathlib import Path
+
+from PIL import Image
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -16,6 +20,7 @@ from asset_system import (  # noqa: E402
     render_svg,
     validate_inventory,
 )
+from generate_assets import generate_all  # noqa: E402
 
 
 class InventoryTests(unittest.TestCase):
@@ -125,6 +130,38 @@ class SvgContractTests(unittest.TestCase):
         for category, layer_id in expected.items():
             with self.subTest(category=category):
                 self.assertIn(f'id="{layer_id}"', render_svg(examples[category]))
+
+
+class ExportTests(unittest.TestCase):
+    def test_generate_all_writes_svg_png_and_consistent_manifest(self) -> None:
+        subset = [item for item in build_inventory() if item.category == "capabilities"][:3]
+        with tempfile.TemporaryDirectory() as tmp:
+            output_root = Path(tmp)
+            records = generate_all(output_root, inventory=subset)
+            self.assertEqual(len(records), len(subset))
+            manifest = json.loads((output_root / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(records, manifest["assets"])
+            for record, spec in zip(records, subset, strict=True):
+                svg_path = output_root / record["svg"]
+                png_path = output_root / record["png"]
+                self.assertTrue(svg_path.is_file())
+                self.assertTrue(png_path.is_file())
+                with Image.open(png_path) as image:
+                    self.assertEqual(image.size, (spec.width, spec.height))
+                    self.assertEqual(image.mode, "RGBA")
+
+    def test_export_paths_are_grouped_by_public_category(self) -> None:
+        subset = [
+            next(item for item in build_inventory() if item.category == category)
+            for category in ("logo", "capabilities", "people", "devices", "resources")
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            records = generate_all(Path(tmp), inventory=subset)
+        top_folders = {Path(record["svg"]).parts[0] for record in records}
+        self.assertEqual(
+            top_folders,
+            {"01-logo", "02-capabilities", "03-people-agents", "04-device-frames", "05-compute-resources"},
+        )
 
 
 if __name__ == "__main__":

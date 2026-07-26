@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 96 96" role="img" aria-label="agent-spark-hex-light">
+
+    <defs>
+      <linearGradient id="brand-gradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#22D3EE"/><stop offset="20%" stop-color="#7DD3FC"/><stop offset="40%" stop-color="#8B5CF6"/><stop offset="60%" stop-color="#A78BFA"/><stop offset="80%" stop-color="#EC4899"/><stop offset="100%" stop-color="#F472B6"/></linearGradient>
+      <radialGradient id="brand-glass" cx="38%" cy="28%" r="78%">
+        <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.72"/>
+        <stop offset="28%" stop-color="#7DD3FC" stop-opacity="0.42"/>
+        <stop offset="66%" stop-color="#8B5CF6" stop-opacity="0.28"/>
+        <stop offset="100%" stop-color="#EC4899" stop-opacity="0.12"/>
+      </radialGradient>
+      <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="2.2" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="wide-glow" x="-80%" y="-80%" width="260%" height="260%">
+        <feGaussianBlur stdDeviation="5" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+
+      <g id="icon-structure"><g id="agent-core"><path d="M48 8 L80 27 V69 L48 88 L16 69 V27 Z" fill="#FFFFFF" stroke="#17213A" stroke-width="3"/><path d="M48 24 L53 41 L69 31 L58 47 L75 52 L57 55 L63 73 L50 60 L39 75 L42 56 L23 53 L41 47 L30 31 L45 41 Z" fill="none" stroke="#17213A" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" opacity="1"/></g></g>
+      <g id="energy-trail" opacity="0"><path d="M20 76 C38 88 65 87 78 70" fill="none" stroke="url(#brand-gradient)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="1"/></g>
+    
+</svg>
