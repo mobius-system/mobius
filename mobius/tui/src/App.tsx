@@ -124,7 +124,7 @@ export function App() {
     return <LoginScreen onSuccess={onLoginSuccess} />
   }
   if (route === 'prep' || !ready) {
-    return <Box flexDirection="column"><AimuxStatusLine status={aimuxStatus} /><PrepScreen client={client} onReady={onPrepReady} /></Box>
+    return <Box flexDirection="column"><AimuxStatusLine status={aimuxStatus} /><PrepScreen client={client} onReady={onPrepReady} onQuit={onQuit} /></Box>
   }
   if (route === 'resume') {
     return <Box flexDirection="column"><AimuxStatusLine status={aimuxStatus} /><ResumePicker client={client} project={ready.project} onPick={onResumed} onBack={() => setRoute('chat')} /></Box>

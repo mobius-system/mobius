@@ -5741,7 +5741,7 @@ body.mobius-resizing .mobius-resizable-handle {
 }
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input--with-actions .advanced-session-actions--compact {
   order: -1;
-  align-self: flex-end;
+  align-self: stretch;
 }
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input > div:first-child {
   padding: 0 !important;

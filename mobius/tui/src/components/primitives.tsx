@@ -3,7 +3,7 @@
  * Select (single-choice list + multi-choice with checkboxes), and a Spinner.
  */
 import React, { useEffect, useRef, useState } from 'react'
-import { Box, Text, useInput } from 'ink'
+import { Box, Text, useInput, useStdout } from 'ink'
 
 // ─── TextInput ───────────────────────────────────────────────────────────────
 export interface TextInputProps {
@@ -137,6 +137,7 @@ export interface SelectProps {
   onBack?: () => void
   focused?: boolean
   title?: string
+  maxVisible?: number // cap rendered rows so long lists never overflow the terminal
 }
 
 export function Select(props: SelectProps) {
@@ -144,6 +145,7 @@ export function Select(props: SelectProps) {
   const [active, setActive] = useState(0)
   const items = props.items
   const selectedSet = new Set<string>(mode === 'multi' ? (props.selected as string[]) ?? [] : [])
+  const { stdout } = useStdout()
 
   useEffect(() => { setActive(a => Math.min(a, Math.max(0, items.length - 1))) }, [items.length])
 
@@ -160,12 +162,31 @@ export function Select(props: SelectProps) {
     if (key.escape) { props.onBack?.(); return }
   }, { isActive: props.focused !== false })
 
+  // viewport: keep the active item on screen. Without this a long list renders
+  // every row and pushes the lower items (and the rest of the UI) past the
+  // terminal bottom. We render a sliding window around `active` plus a
+  // "↑/↓ 还有 N 项" hint for the hidden tails.
+  const total = items.length
+  const rows = stdout?.rows ?? 24
+  const maxVisible = props.maxVisible ?? Math.max(3, rows - 8)
+  let start = 0
+  if (total > maxVisible) {
+    const half = Math.floor(maxVisible / 2)
+    start = Math.max(0, active - half)
+    start = Math.min(start, total - maxVisible)
+  }
+  const end = Math.min(total, start + maxVisible)
+  const hiddenAbove = start
+  const hiddenBelow = total - end
+
   return (
     <Box flexDirection="column">
       {props.title ? <Text color="cyan" bold>{props.title}</Text> : null}
       {items.length === 0 ? <Text color="gray">（无项目）</Text> : null}
-      {items.map((it, i) => {
-        const isActive = i === active
+      {hiddenAbove > 0 ? <Text color="gray">  ↑ 还有 {hiddenAbove} 项</Text> : null}
+      {items.slice(start, end).map((it, i) => {
+        const realIdx = start + i
+        const isActive = realIdx === active
         const checked = mode === 'multi' ? selectedSet.has(it.value) : false
         const marker = mode === 'multi' ? (checked ? '☑' : '☐') : isActive ? '❯' : ' '
         return (
@@ -182,6 +203,7 @@ export function Select(props: SelectProps) {
           </Box>
         )
       })}
+      {hiddenBelow > 0 ? <Text color="gray">  ↓ 还有 {hiddenBelow} 项</Text> : null}
     </Box>
   )
 }

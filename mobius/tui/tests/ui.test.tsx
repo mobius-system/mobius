@@ -18,6 +18,7 @@ import { render } from 'ink-testing-library'
 import { ChatScreen } from '../src/components/Chat.js'
 import { LoginScreen } from '../src/components/Login.js'
 import { PrepScreen } from '../src/components/PrepScreen.js'
+import { Select } from '../src/components/primitives.js'
 import { MobiusClient } from '../src/api.js'
 import { renderMarkdownLines } from '../src/markdown.js'
 import type { ReadyState } from '../src/components/PrepScreen.js'
@@ -270,12 +271,60 @@ async function testPrepRender() {
   } finally { restoreFetch() }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 6 — Select viewport: a long list must not overflow the terminal
+// ════════════════════════════════════════════════════════════════════════════
+async function testSelectViewport() {
+  console.log('\n[UI 6] Select viewport truncation')
+  const items = Array.from({ length: 12 }, (_, i) => ({ label: `项目${i}`, value: `v${i}` }))
+  const { lastFrame, stdin } = render(<Select items={items} maxVisible={3} />)
+  await delay(20)
+  let frame = lastFrame() ?? ''
+  ok(frame.includes('项目0') && frame.includes('项目2'), 'top window: first 3 visible')
+  ok(!frame.includes('项目3'), 'top window: item past the window hidden')
+  ok(frame.includes('↓ 还有 9 项'), 'top window: hidden-below hint')
+  ok(!frame.includes('↑ 还有'), 'top window: no hidden-above hint')
+  // walk active into the middle of the list
+  for (let i = 0; i < 5; i++) { stdin.write('\x1b[B'); await delay(10) }
+  frame = lastFrame() ?? ''
+  ok(frame.includes('项目5'), 'middle: active item kept visible')
+  ok(frame.includes('↑ 还有') && frame.includes('↓ 还有'), 'middle: both tail hints shown')
+  ok(!frame.includes('项目0') && !frame.includes('项目11'), 'middle: far items hidden')
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 7 — Project picker: Esc exits the app via onQuit
+// ════════════════════════════════════════════════════════════════════════════
+async function testProjectPickerEscQuit() {
+  console.log('\n[UI 7] Project picker Esc → onQuit')
+  const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
+  installMock((url) => {
+    if (url.includes('/api/projects') && !url.includes('/issues') && !url.includes('/skills') && !url.includes('/memories')) {
+      return jsonResponse([{ id: 'p1', name: '已有项目A' }, { id: 'p2', name: '已有项目B' }])
+    }
+    if (url.includes('/issues')) return jsonResponse([])
+    return jsonResponse({ error: 'no mock' }, 404)
+  })
+  let quitCalled = false
+  try {
+    const { lastFrame, stdin, unmount } = render(<PrepScreen client={client} onReady={() => {}} onQuit={() => { quitCalled = true }} />)
+    await delay(120)
+    ok((lastFrame() ?? '').includes('Esc 退出'), 'esc-to-quit hint shown')
+    stdin.write('\x1b')
+    await delay(30)
+    unmount()
+    ok(quitCalled, 'Esc on the list triggered onQuit')
+  } finally { restoreFetch() }
+}
+
 async function main() {
   await testLogin()
   await testChat()
   await testResumedWorkingStatus()
   testMarkdownCodeRendering()
   await testPrepRender()
+  await testSelectViewport()
+  await testProjectPickerEscQuit()
   // cleanup temp home
   try { fs.rmSync(TMP_HOME, { recursive: true, force: true }) } catch { /* ignore */ }
   console.log(`\n==== UI RESULT: ${pass} passed, ${fail} failed ====\n`)

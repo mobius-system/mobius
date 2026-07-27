@@ -29,9 +29,10 @@ export interface ReadyState {
   prefs: IssuePreference
 }
 
-export function PrepScreen({ client, onReady }: {
+export function PrepScreen({ client, onReady, onQuit }: {
   client: MobiusClient
   onReady: (st: ReadyState) => void
+  onQuit?: () => void
 }) {
   const [phase, setPhase] = useState<'loading' | 'project' | 'pref' | 'done'>('loading')
   const [projects, setProjects] = useState<Project[]>([])
@@ -179,7 +180,7 @@ export function PrepScreen({ client, onReady }: {
   if (phase === 'project') {
     return <ProjectPicker
       cwd={thisCwd} projects={projects} statusMsg={statusMsg}
-      onPick={pickProject} onCreate={createProject} />
+      onPick={pickProject} onCreate={createProject} onQuit={onQuit} />
   }
   if (phase === 'done') {
     return <Box paddingX={2}><Text color="green">准备就绪，进入对话…</Text></Box>
@@ -225,12 +226,13 @@ function flattenDesc(s?: string): string {
 }
 
 // ── Project picker ───────────────────────────────────────────────────────────
-function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate }: {
+function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate, onQuit }: {
   cwd: string
   projects: Project[]
   statusMsg: string
   onPick: (p: Project) => void
   onCreate: (name: string, description: string) => void
+  onQuit?: () => void
 }) {
   const [mode, setMode] = useState<'list' | 'create'>('list')
   const [name, setName] = useState('')
@@ -245,10 +247,10 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate }: {
         <Box marginTop={1} flexDirection="column">
           <Text color={field === 'name' ? 'cyan' : 'gray'}>项目名称{field === 'name' ? ' ←' : ''}</Text>
           <TextInput value={name} onChange={setName} focused={field === 'name'} placeholder="未命名项目"
-            onSubmit={() => setField('desc')} />
+            onSubmit={() => setField('desc')} onEscape={() => setMode('list')} />
           <Box marginTop={1}><Text color={field === 'desc' ? 'cyan' : 'gray'}>描述（可空）{field === 'desc' ? ' ←' : ''}</Text></Box>
           <TextInput value={desc} onChange={setDesc} focused={field === 'desc'} placeholder=""
-            onSubmit={() => onCreate(name, desc)} onTab={() => setField(field === 'name' ? 'desc' : 'name')} />
+            onSubmit={() => onCreate(name, desc)} onTab={() => setField(field === 'name' ? 'desc' : 'name')} onEscape={() => setMode('list')} />
         </Box>
         {statusMsg ? <Text color="yellow">{statusMsg}</Text> : null}
         <Text color="gray">回车提交 · Esc 返回</Text>
@@ -268,9 +270,10 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate }: {
       <Text bold color="cyan">选择当前路径的绑定项目</Text>
       <Text color="gray">{cwd}</Text>
       <Box marginTop={1}>
-        <Select items={items} onSelect={v => v === '__create__' ? setMode('create') : onPick(projects.find(p => p.id === v)!)} />
+        <Select items={items} onBack={onQuit} onSelect={v => v === '__create__' ? setMode('create') : onPick(projects.find(p => p.id === v)!)} />
       </Box>
       {statusMsg ? <Text color="yellow">{statusMsg}</Text> : null}
+      <Text color="gray">↑↓ 选择 · 回车确认 · Esc 退出</Text>
     </Box>
   )
 }
