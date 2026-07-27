@@ -15,12 +15,13 @@ process.env.MOBIUS_TUI_HOME = TMP_HOME
 
 import React from 'react'
 import { render } from 'ink-testing-library'
-import { ChatScreen } from '../src/components/Chat.js'
+import { ChatScreen, shimmerText } from '../src/components/Chat.js'
 import { LoginScreen } from '../src/components/Login.js'
 import { PrepScreen } from '../src/components/PrepScreen.js'
 import { Select, TextInput } from '../src/components/primitives.js'
 import { MobiusClient } from '../src/api.js'
 import { renderMarkdownLines } from '../src/markdown.js'
+import { viewsForEntry } from '../src/lib/entry-view.js'
 import type { ReadyState } from '../src/components/PrepScreen.js'
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
@@ -258,16 +259,25 @@ async function testPrepRender() {
     return jsonResponse({ error: 'no mock' }, 404)
   })
   try {
-    const { lastFrame, unmount } = render(<PrepScreen client={client} onReady={() => {}} />)
+    const { lastFrame, stdin, unmount } = render(<PrepScreen client={client} onReady={() => {}} />)
     await delay(120)
     const frame = lastFrame() ?? ''
-    unmount()
     ok(frame.includes('选择当前路径的绑定项目'), 'project picker title shown')
     ok(frame.includes('已有项目A') && frame.includes('已有项目B'), 'existing projects listed')
     ok(frame.includes('创建新项目'), 'create-new option present')
     // multi-line description must be flattened onto one line with ⏎ in place of \n
     ok(frame.includes('已有项目A — 第一行 ⏎ 第二行'), 'multi-line description flattened to a single line')
     ok(frame.includes('已有项目B — 单行描述'), 'single-line description kept as-is')
+    ok(!frame.includes('加载项目列表…'), 'completed project load does not leave a stale loading message')
+
+    stdin.write('\r')
+    await delay(30)
+    const createFrame = lastFrame() ?? ''
+    ok(createFrame.includes('创建新项目（绑定到当前路径）'), 'project creation form opens')
+    ok(/项目名称 ←\n\s+未命名项目/.test(createFrame), 'cursor is rendered on the active project-name input')
+    ok(!createFrame.includes('描述（可空）'), 'project description input is hidden')
+    ok(createFrame.includes('回车创建 · Esc 返回'), 'project name submits directly with Enter')
+    unmount()
   } finally { restoreFetch() }
 }
 
@@ -336,6 +346,41 @@ async function testTextInputBackspace() {
   unmount()
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 9 — Working text uses a moving multi-level brightness wave
+// ════════════════════════════════════════════════════════════════════════════
+function testWorkingShimmer() {
+  console.log('\n[UI 9] Working brightness animation')
+  function colorsAt(frame: number): string[] {
+    return shimmerText('Working', frame).map(node => (
+      React.isValidElement<{ color?: string }>(node) ? (node.props.color ?? '') : ''
+    ))
+  }
+  const frame0 = colorsAt(0)
+  const frame1 = colorsAt(1)
+  ok(new Set(frame0).size >= 4, 'Working text uses several brightness levels instead of one dim color')
+  ok(frame0[0] === '#ffffff' && frame1[1] === '#ffffff', 'brightest point advances across the text between frames')
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 10 — reasoning / thinking entries are rendered, not skipped
+// ════════════════════════════════════════════════════════════════════════════
+function testReasoningViews() {
+  console.log('\n[UI 10] reasoning/thinking entries rendered')
+  // Codex encrypted reasoning → fixed label (matches web viewer)
+  const enc = viewsForEntry({ type: 'response_item', payload: { type: 'reasoning', encrypted_content: 'blob' } } as any)
+  ok(enc.length === 1 && enc[0].kind === 'reasoning' && (enc[0] as any).text.includes('闭源'), 'encrypted reasoning → label')
+  // Codex reasoning with summary text
+  const sum = viewsForEntry({ type: 'response_item', payload: { type: 'reasoning', summary: [{ type: 'summary_text', text: '先读文件再改' }] } } as any)
+  ok(sum.length === 1 && sum[0].kind === 'reasoning' && (sum[0] as any).text === '先读文件再改', 'reasoning summary shown')
+  // Claude thinking with body
+  const th = viewsForEntry({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'thinking', thinking: '我在想...' }] } } as any)
+  ok(th.length === 1 && th[0].kind === 'reasoning' && (th[0] as any).text === '我在想...', 'claude thinking body shown')
+  // Claude encrypted/empty thinking → hidden label
+  const empty = viewsForEntry({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'thinking', thinking: '' }] } } as any)
+  ok(empty.length === 1 && empty[0].kind === 'reasoning' && (empty[0] as any).text === '思考内容被隐藏', 'empty thinking → hidden label')
+}
+
 async function main() {
   await testLogin()
   await testChat()
@@ -345,6 +390,8 @@ async function main() {
   await testSelectViewport()
   await testProjectPickerEscQuit()
   await testTextInputBackspace()
+  testWorkingShimmer()
+  testReasoningViews()
   // cleanup temp home
   try { fs.rmSync(TMP_HOME, { recursive: true, force: true }) } catch { /* ignore */ }
   console.log(`\n==== UI RESULT: ${pass} passed, ${fail} failed ====\n`)

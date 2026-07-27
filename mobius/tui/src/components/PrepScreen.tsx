@@ -61,6 +61,7 @@ export function PrepScreen({ client, onReady, onQuit }: {
       const p = list.find(x => x.id === boundId) ?? { id: boundId, name: boundId } as Project
       await enterProject(p, list)
     } else {
+      setStatusMsg('')
       setPhase('project')
     }
   })().catch(e => setStatusMsg(`初始化失败: ${e?.message ?? e}`)) }, [])
@@ -236,8 +237,6 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate, onQuit }: {
 }) {
   const [mode, setMode] = useState<'list' | 'create'>('list')
   const [name, setName] = useState('')
-  const [desc, setDesc] = useState('')
-  const [field, setField] = useState<'name' | 'desc'>('name')
 
   if (mode === 'create') {
     return (
@@ -245,15 +244,12 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate, onQuit }: {
         <Text bold color="cyan">创建新项目（绑定到当前路径）</Text>
         <Text color="gray">{cwd}</Text>
         <Box marginTop={1} flexDirection="column">
-          <Text color={field === 'name' ? 'cyan' : 'gray'}>项目名称{field === 'name' ? ' ←' : ''}</Text>
-          <TextInput value={name} onChange={setName} focused={field === 'name'} placeholder="未命名项目"
-            onSubmit={() => setField('desc')} onEscape={() => setMode('list')} />
-          <Box marginTop={1}><Text color={field === 'desc' ? 'cyan' : 'gray'}>描述（可空）{field === 'desc' ? ' ←' : ''}</Text></Box>
-          <TextInput value={desc} onChange={setDesc} focused={field === 'desc'} placeholder=""
-            onSubmit={() => onCreate(name, desc)} onTab={() => setField(field === 'name' ? 'desc' : 'name')} onEscape={() => setMode('list')} />
+          <Text color="cyan">项目名称 ←</Text>
+          <TextInput value={name} onChange={setName} focused placeholder="未命名项目"
+            onSubmit={() => onCreate(name, '')} onEscape={() => setMode('list')} />
         </Box>
         {statusMsg ? <Text color="yellow">{statusMsg}</Text> : null}
-        <Text color="gray">回车提交 · Esc 返回</Text>
+        <Text color="gray">回车创建 · Esc 返回</Text>
       </Box>
     )
   }

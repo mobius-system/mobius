@@ -16,6 +16,7 @@ export type EntryView =
   | { kind: 'skip' }
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }
+  | { kind: 'reasoning'; text: string }
   | { kind: 'tool_call'; toolName: string; summary: string }
   | { kind: 'tool_result'; summary: string; isError: boolean }
   | { kind: 'system'; text: string }
@@ -161,6 +162,17 @@ const TOOL_LABEL: Record<string, string> = {
   TodoWrite: '更新计划', update_plan: '更新计划',
 }
 
+// Mirrors the web viewer (header-summary.ts): encrypted reasoning gets a fixed
+// label; otherwise show the summary text if any.
+const ENCRYPTED_REASONING_LABEL = 'Reasoning (闭源模型的推理过程被加密，无法解码)'
+
+function reasoningSummaryText(p: any): string {
+  const s = p?.summary
+  if (Array.isArray(s)) return s.map((x: any) => (typeof x === 'string' ? x : (x?.text ?? ''))).filter(Boolean).join('\n')
+  if (typeof s === 'string') return s
+  return ''
+}
+
 /** Project one entry into zero or more renderable views. */
 export function viewsForEntry(entry: AnyEntry): EntryView[] {
   if (!entry || typeof entry !== 'object') return [{ kind: 'skip' }]
@@ -176,6 +188,8 @@ export function viewsForEntry(entry: AnyEntry): EntryView[] {
     }
     const out: EntryView[] = []
     const textParts: string[] = []
+    const thinkingParts: string[] = []
+    let hasThinking = false
     for (const b of content) {
       if (!b) continue
       if (b.type === 'text' || b.type === 'output_text') {
@@ -183,10 +197,15 @@ export function viewsForEntry(entry: AnyEntry): EntryView[] {
       } else if (b.type === 'tool_use') {
         if (textParts.length) { out.push({ kind: 'assistant', text: textParts.join('\n') }); textParts.length = 0 }
         out.push({ kind: 'tool_call', toolName: b.name, summary: summarizeToolInput(b.name, b.input) })
+      } else if (b.type === 'thinking') {
+        // model reasoning — shown like the web viewer (encrypted/empty thinking → fallback label)
+        hasThinking = true
+        if (typeof b.thinking === 'string' && b.thinking) thinkingParts.push(b.thinking)
       }
-      // 'thinking' blocks are skipped (reduce noise)
     }
     if (textParts.length) out.push({ kind: 'assistant', text: textParts.join('\n') })
+    if (thinkingParts.length) out.push({ kind: 'reasoning', text: thinkingParts.join('\n').trim() })
+    else if (hasThinking) out.push({ kind: 'reasoning', text: '思考内容被隐藏' })
     return out.length ? out : [{ kind: 'skip' }]
   }
 
@@ -223,7 +242,13 @@ export function viewsForEntry(entry: AnyEntry): EntryView[] {
       if (!text) return [{ kind: 'skip' }]
       return [{ kind: p.role === 'user' ? 'user' : 'assistant', text }]
     }
-    if (p.type === 'reasoning') return [{ kind: 'skip' }] // thinking — skipped
+    if (p.type === 'reasoning') {
+      const enc = p.encrypted_content
+      const text = typeof enc === 'string' && enc.length > 0
+        ? ENCRYPTED_REASONING_LABEL
+        : (reasoningSummaryText(p) || 'reasoning')
+      return [{ kind: 'reasoning', text }]
+    }
     if (p.type === 'function_call') {
       let name = p.name || 'tool'
       let input: any = p.arguments

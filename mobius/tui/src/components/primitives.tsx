@@ -22,6 +22,7 @@ export interface TextInputProps {
 
 export function TextInput(props: TextInputProps) {
   const { value, onChange } = props
+  const focused = props.focused !== false
   const [cursor, setCursor] = useState(value.length)
   const lastValueRef = useRef(value)
 
@@ -74,7 +75,7 @@ export function TextInput(props: TextInputProps) {
     if (key.ctrl || key.meta) return
     if (!input) return
     edit(value.slice(0, cursor) + input + value.slice(cursor), cursor + input.length)
-  }, { isActive: props.focused !== false })
+  }, { isActive: focused })
 
   const c = Math.min(cursor, value.length)
   const display = props.mask ? '•'.repeat(value.length) : value
@@ -92,7 +93,20 @@ export function TextInput(props: TextInputProps) {
     return (
       <Box>
         {props.prompt ? <Text color="cyan">{props.prompt} </Text> : null}
+        {focused ? <Text backgroundColor="white" color="black"> </Text> : null}
         <Text color="gray">{props.placeholder}</Text>
+      </Box>
+    )
+  }
+
+  // Keep inactive inputs visible without drawing a fake cursor. Previously
+  // every TextInput painted a white block even when its useInput hook was
+  // inactive, so multi-field forms appeared focused in two places at once.
+  if (!focused) {
+    return (
+      <Box>
+        {props.prompt ? <Text color="cyan">{props.prompt} </Text> : null}
+        <Text>{display || ' '}</Text>
       </Box>
     )
   }
