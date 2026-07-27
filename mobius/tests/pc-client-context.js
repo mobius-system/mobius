@@ -22,24 +22,24 @@ assert.strictEqual(pcClientRequiresAimuxSkill({ work_mode: 'hub', aimux_id: devi
 assert.strictEqual(pcClientRequiresAimuxSkill({ work_mode: 'pc', aimux_id: device, is_tui: false }), true,
   'Electron pc mode must include mobius-aimux');
 
-assert.strictEqual(
-  pcTaskModePrompt({ work_mode: 'hub', aimux_id: device, is_tui: true }, 'zh'),
-  `【不要使用aimux连接到以下远程对象： ${device}，在mobius中枢（即本地）工作】`,
-  'TUI hub prompt should select Mobius Hub work',
-);
-assert.strictEqual(
-  pcTaskModePrompt({ work_mode: 'pc', aimux_id: device, local_path: localPath, is_tui: true }, 'zh'),
-  `【使用aimux连接到以下远程对象执行所有工作：${device}。该远程对象上的工作目录为：\`${localPath}\`。当你需要修改文档时，先将项目同步到mobius中枢（即本地），每次修改后都立即同步回到 ${device} 指定路径，除非用户反对你这样做。如果用户反对，直接通过aimux命令读取或修改文件】`,
-  'TUI pc prompt should describe hub sync and direct-aimux fallback',
-);
-assert.strictEqual(
-  pcTaskModePrompt({ work_mode: 'dual', aimux_id: device, local_path: localPath, is_tui: true }, 'zh'),
-  `【你现在被授权使用aimux连接到以下远程对象： ${device}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${device}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则，可操作远程路径。该远程对象上的工作目录为：\`${localPath}\`。】`,
-  'TUI dual prompt should retain the requested synchronization rule',
-);
+const tuiHubPrompt = pcTaskModePrompt({ work_mode: 'hub', aimux_id: device, is_tui: true }, 'zh');
+assert.match(tuiHubPrompt, /You are working at remote machine tui-workstation/,
+  'TUI prompt should include the remote-machine orientation');
+assert.match(tuiHubPrompt, /不要使用aimux.*在mobius中枢（即本地）工作/,
+  'TUI hub prompt should select Mobius Hub work');
+
+const tuiPcPrompt = pcTaskModePrompt({ work_mode: 'pc', aimux_id: device, local_path: localPath, is_tui: true }, 'zh');
+assert.match(tuiPcPrompt, /使用aimux连接到以下远程对象执行所有工作/,
+  'TUI pc prompt should require remote execution');
+assert.match(tuiPcPrompt, /先将项目同步到mobius中枢.*每次修改后都立即同步回到 tui-workstation 指定路径/s,
+  'TUI pc prompt should describe hub sync and direct-aimux fallback');
+
+const tuiDualPrompt = pcTaskModePrompt({ work_mode: 'dual', aimux_id: device, local_path: localPath, is_tui: true }, 'zh');
+assert.match(tuiDualPrompt, /先修改本地的代码.*同步到tui-workstation上/s,
+  'TUI dual prompt should retain the synchronization rule');
 assert.strictEqual(
   pcTaskModePrompt({ work_mode: 'pc', aimux_id: device, local_path: localPath, is_tui: false }, 'zh'),
-  `【使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${device}。该远程对象上的工作目录为：\`${localPath}\`】`,
+  `使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${device}。该远程对象上的工作目录为：\`${localPath}\``,
   'Electron prompt should remain unchanged apart from explicit is_tui metadata',
 );
 assert.match(

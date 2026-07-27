@@ -40,43 +40,47 @@ export function pcTaskModePrompt(raw: unknown, language: ContextLanguage): strin
 
   const remotePath = pathClause(meta, language);
 
+  // TUI client
+  const tuiPrompt = `You are working at remote machine ${aimuxId}${remotePath}. When I say 'here', I mean remote path [${remotePath}] at ${aimuxId}. When I say 'local', I mean ${aimuxId}`;
+  let modePrompt = ``;
   if (meta.is_tui === true) {
     if (language === 'en') {
       if (mode === 'hub') {
-        return `【Do not use aimux to connect to the following remote object: ${aimuxId}. Work in the Mobius Hub (that is, locally).】`;
+        modePrompt = `Do not use aimux to connect to the following remote object: ${aimuxId}. Work in the Mobius Hub (that is, locally).`;
+      } else if (mode === 'pc') {
+        modePrompt = `Use aimux to connect to the following remote object to carry out all work: ${aimuxId}${remotePath}. When you need to modify documents, first sync the project to the Mobius Hub (that is, locally), then immediately sync every change back to the path specified by ${aimuxId}, unless the user objects. If the user objects, read or modify files directly through aimux commands.`;
+      } else {
+        modePrompt = `You are authorized to use aimux to connect to the following remote object: ${aimuxId}. When you need to modify code, first modify the local code, then sync all the code to ${aimuxId}, unless the user objects. When the user asks you to run code, follow the same rule. Remote path you are allowed to operate is: ${remotePath}.`;
       }
-      if (mode === 'pc') {
-        return `【Use aimux to connect to the following remote object to carry out all work: ${aimuxId}${remotePath}. When you need to modify documents, first sync the project to the Mobius Hub (that is, locally), then immediately sync every change back to the path specified by ${aimuxId}, unless the user objects. If the user objects, read or modify files directly through aimux commands.】`;
+    } else {
+      if (mode === 'hub') {
+        modePrompt = `不要使用aimux连接到以下远程对象： ${aimuxId}，在mobius中枢（即本地）工作`;
+      } else if (mode === 'pc') {
+        modePrompt = `使用aimux连接到以下远程对象执行所有工作：${aimuxId}${remotePath}。当你需要修改文档时，先将项目同步到mobius中枢（即本地），每次修改后都立即同步回到 ${aimuxId} 指定路径，除非用户反对你这样做。如果用户反对，直接通过aimux命令读取或修改文件`;
+      } else {
+        modePrompt = `你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则，可操作远程路径${remotePath}。`;
       }
-      return `【You are authorized to use aimux to connect to the following remote object: ${aimuxId}. When you need to modify code, first modify the local code, then sync all the code to ${aimuxId}, unless the user objects. When the user asks you to run code, follow the same rule. Remote path you are allowed to operate is: ${remotePath}.】`;
     }
-
-    if (mode === 'hub') {
-      return `【不要使用aimux连接到以下远程对象： ${aimuxId}，在mobius中枢（即本地）工作】`;
-    }
-    if (mode === 'pc') {
-      return `【使用aimux连接到以下远程对象执行所有工作：${aimuxId}${remotePath}。当你需要修改文档时，先将项目同步到mobius中枢（即本地），每次修改后都立即同步回到 ${aimuxId} 指定路径，除非用户反对你这样做。如果用户反对，直接通过aimux命令读取或修改文件】`;
-    }
-    return `【你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则，可操作远程路径${remotePath}。】`;
+    return `${tuiPrompt}\n${modePrompt}`;
   }
 
 
   // PC mobius (electron desktop)
   if (language === 'en') {
     if (mode === 'hub') {
-      return `【Do not use aimux to connect to the following remote object: ${aimuxId}】`;
+      return `Do not use aimux to connect to the following remote object: ${aimuxId}`;
     }
     if (mode === 'pc') {
-      return `【Use aimux to connect to the following remote object to carry out all work, and try to avoid modifying local code: ${aimuxId}${remotePath}】`;
+      return `Use aimux to connect to the following remote object to carry out all work, and try to avoid modifying local code: ${aimuxId}${remotePath}`;
     }
-    return `【You are authorized to use aimux to connect to the following remote object: ${aimuxId}. When you need to modify code, first modify the local code, then sync all the code to ${aimuxId}, unless the user objects. When the user asks you to run code, follow the same rule. Remote path you are allowed to operate is: ${remotePath}.】`;
+    return `You are authorized to use aimux to connect to the following remote object: ${aimuxId}. When you need to modify code, first modify the local code, then sync all the code to ${aimuxId}, unless the user objects. When the user asks you to run code, follow the same rule. Remote path you are allowed to operate is: ${remotePath}.`;
+  } else {
+    if (mode === 'hub') {
+      return `不要使用aimux连接到以下远程对象： ${aimuxId}`;
+    }
+    if (mode === 'pc') {
+      return `使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${aimuxId}${remotePath}`;
+    }
+    return `你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则，可操作远程路径${remotePath}。`;
   }
-
-  if (mode === 'hub') {
-    return `【不要使用aimux连接到以下远程对象： ${aimuxId}】`;
-  }
-  if (mode === 'pc') {
-    return `【使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${aimuxId}${remotePath}】`;
-  }
-  return `【你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则，可操作远程路径${remotePath}。】`;
 }

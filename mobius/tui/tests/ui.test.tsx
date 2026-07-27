@@ -166,7 +166,7 @@ async function testChat() {
     ok(frame.includes('http://mock.local/u/test-user/p/p1/i/i1?session=s1'), 'web URL follows the newly created session')
     ok(!frame.includes('Working ('), 'authoritative idle status clears Working after completion')
     ok(createdSessionBody?.pc_client_metadata?.is_tui === true, 'session metadata identifies the TUI client')
-    ok(createdSessionBody?.pc_client_metadata?.work_mode === 'dual', 'TUI sessions default to dual work mode')
+    ok(createdSessionBody?.pc_client_metadata?.work_mode === 'pc', 'TUI sessions always default to pc work mode')
     ok(/^tui-/.test(createdSessionBody?.pc_client_metadata?.aimux_id || ''), 'session metadata uses the TUI AIMUX identifier')
     ok(createdSessionBody?.pc_client_metadata?.local_path === process.cwd(), 'session metadata includes the TUI current directory')
   } finally { restoreFetch() }

@@ -213,7 +213,7 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
       excluded_skill_ids: prefs.excluded_skill_ids,
       excluded_memory_ids: prefs.excluded_memory_ids,
       pc_client_metadata: {
-        work_mode: 'dual',
+        work_mode: 'pc',
         aimux_id: tuiAimuxIdentifier(),
         local_path: process.cwd(),
         is_tui: true,
