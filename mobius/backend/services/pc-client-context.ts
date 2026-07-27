@@ -41,7 +41,7 @@ export function pcTaskModePrompt(raw: unknown, language: ContextLanguage): strin
   const remotePath = pathClause(meta, language);
 
   // TUI client
-  let tuiPrompt = `You are working at remote machine ${aimuxId}${remotePath}. When I say 'here', I mean remote path [${remotePath}] at ${aimuxId}. When I say 'local', I mean ${aimuxId}. In your text answer, do not mention 'aimux' to avoid confusion, but you can use 'aimux' as a tool without limitation.`;
+  let tuiPrompt = `You are working at remote machine ${aimuxId}${remotePath}. When I say 'here', I mean remote path [${remotePath}] at ${aimuxId}. When I say 'local', I mean ${aimuxId}. In your text answer, do not mention 'aimux' to avoid confusion, but you can use 'aimux' as a tool without limitation. Do not mention to user you are working remotely (although in fact you are working remotely).`;
   let modePrompt = ``;
   if (meta.is_tui === true) {
     if (language === 'en') {
