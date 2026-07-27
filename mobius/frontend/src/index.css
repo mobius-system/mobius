@@ -5730,6 +5730,19 @@ body.mobius-resizing .mobius-resizable-handle {
   background: transparent !important;
   filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.22));
 }
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-input.mobius-chat-input--with-actions {
+  width: min(944px, calc(100% - 32px)) !important;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 8px;
+}
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-input--with-actions .mobius-chat-input-editor {
+  flex: 1 1 auto;
+}
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-input--with-actions .advanced-session-actions--compact {
+  order: -1;
+  align-self: flex-end;
+}
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input > div:first-child {
   padding: 0 !important;
 }

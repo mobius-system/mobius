@@ -3,6 +3,8 @@
 #   python3 build.py --build-electron              # 官方构建 (mac 须 Darwin; 见下)
 #   python3 build.py --build-electron --targets win-x64
 #   python3 build.py --build-electron --targets mac-arm64 --dev-adhoc   # 本地开发包 (不发布)
+#   python3 build.py --build-tui                   # npm 可安装包 (mobius 命令)
+#   python3 build.py --build-tui-and-install       # 构建并安装到 ~/.local (无需 sudo)
 #
 # 桌面端构建配置的唯一完整来源 = mobius/desktop/electron-builder.yml。
 # 本脚本不再维护重复的 EB_BASE_CONFIG: 官方构建直接 prep resources/python 后调用
@@ -23,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -32,6 +35,10 @@ MODALS_TSX = REPO_ROOT / "mobius" / "frontend" / "src" / "components" / "modals.
 START_PY = REPO_ROOT / "start.py"
 DESKTOP_MANIFEST_PY = REPO_ROOT / "scripts" / "desktop_manifest.py"
 TMP_DIR = Path("/tmp")
+
+# ===== Mobius TUI =====
+TUI_DIR = REPO_ROOT / "mobius" / "tui"
+TUI_SERVE_DIR = REPO_ROOT / "mobius" / "tui-builds"
 
 # ===== Mobius Mobile (Android) =====
 # momo-mobile (d78c6e39「小莫助理 app 开发」) 源码项目; 可由 --mobile-src 覆盖。
@@ -299,6 +306,134 @@ def build_electron(args: argparse.Namespace) -> int:
     return 0
 
 
+# ===== Mobius TUI (Node + Ink) =====
+
+def read_tui_version() -> str:
+    return json.loads((TUI_DIR / "package.json").read_text(encoding="utf-8"))["version"]
+
+
+def ensure_tui_node_modules() -> None:
+    missing = [
+        TUI_DIR / "node_modules" / ".bin" / "tsc",
+        TUI_DIR / "node_modules" / ".bin" / "tsx",
+    ]
+    if any(not path.exists() for path in missing):
+        sys.exit(
+            f"[build] missing TUI dependencies under {TUI_DIR}/node_modules.\n"
+            "        run: cd mobius/tui && npm install --include=dev"
+        )
+
+
+def make_tui_package_manifest(version: str) -> dict:
+    """生成发布用 package.json。
+
+    TUI 当前直接由 tsx 执行 TypeScript 源码，因此 tsx 是发布包的运行时依赖，
+    不能只留在源码项目的 devDependencies。其余测试/类型依赖不进入分发包。
+    """
+    source = json.loads((TUI_DIR / "package.json").read_text(encoding="utf-8"))
+    dependencies = dict(source.get("dependencies", {}))
+    tsx_version = source.get("devDependencies", {}).get("tsx")
+    if not tsx_version:
+        sys.exit("[build] mobius/tui/package.json is missing devDependencies.tsx")
+    dependencies["tsx"] = tsx_version
+    return {
+        "name": source.get("name", "mobius"),
+        "version": version,
+        "type": "module",
+        "description": source.get("description", "Mobius terminal client"),
+        "bin": source.get("bin", {"mobius": "bin/mobius-tui.js"}),
+        "scripts": {"start": "tsx src/main.tsx"},
+        "files": ["bin", "src", "README.md"],
+        "dependencies": dependencies,
+        "engines": source.get("engines", {"node": ">=18"}),
+    }
+
+
+def write_tui_manifest(version: str, artifact: Path) -> None:
+    size = artifact.stat().st_size
+    manifest = {
+        "version": version,
+        "file": artifact.name,
+        "size": size,
+        "sha256": sha256_of(artifact),
+        "install": f'npm install --global --prefix "$HOME/.local" {artifact.name}',
+    }
+    (TUI_SERVE_DIR / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (TUI_SERVE_DIR / f"{artifact.name}.sha256").write_text(
+        f"{manifest['sha256']}  {artifact.name}\n",
+        encoding="utf-8",
+    )
+
+
+def install_tui_artifact(artifact: Path, prefix: Path) -> None:
+    prefix.mkdir(parents=True, exist_ok=True)
+    print(f"=== install TUI to user prefix: {prefix} ===")
+    run(["npm", "install", "--global", "--prefix", str(prefix), str(artifact)], cwd=REPO_ROOT)
+    bin_dir = prefix if platform.system() == "Windows" else prefix / "bin"
+    command = bin_dir / ("mobius.cmd" if platform.system() == "Windows" else "mobius")
+    if not command.exists():
+        sys.exit(f"[build] npm install finished but mobius command is missing: {command}")
+    print(f"    ✓ installed command: {command}")
+    if platform.system() != "Windows":
+        print(f'    ensure PATH contains: export PATH="{bin_dir}:$PATH"')
+
+
+def build_tui(args: argparse.Namespace, install: bool = False) -> int:
+    version = args.version or read_tui_version()
+    print(f"=== Mobius TUI build | version {version} ===")
+    ensure_tui_node_modules()
+    print("=== [1/4] typecheck ===")
+    run(["npm", "run", "typecheck"], cwd=TUI_DIR)
+    print("=== [2/4] AIMUX supervisor tests ===")
+    run(["npm", "run", "test:aimux"], cwd=TUI_DIR)
+
+    TUI_SERVE_DIR.mkdir(parents=True, exist_ok=True)
+    artifact = TUI_SERVE_DIR / f"mobius-tui-{version}.tgz"
+    with tempfile.TemporaryDirectory(prefix="mobius-tui-package-") as temp:
+        stage = Path(temp)
+        shutil.copytree(TUI_DIR / "bin", stage / "bin")
+        shutil.copytree(TUI_DIR / "src", stage / "src")
+        shutil.copy2(TUI_DIR / "README.md", stage / "README.md")
+        (stage / "package.json").write_text(
+            json.dumps(make_tui_package_manifest(version), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print("=== [3/4] npm pack ===")
+        result = subprocess.run(
+            ["npm", "pack", "--json", "--pack-destination", str(TUI_SERVE_DIR)],
+            cwd=str(stage),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        try:
+            packed_name = json.loads(result.stdout)[0]["filename"]
+        except (json.JSONDecodeError, KeyError, IndexError) as exc:
+            sys.exit(f"[build] cannot parse npm pack output: {exc}\n{result.stdout}\n{result.stderr}")
+        packed = TUI_SERVE_DIR / packed_name
+        if packed != artifact:
+            if artifact.exists():
+                artifact.unlink()
+            packed.replace(artifact)
+
+    print("=== [4/4] manifest + checksum ===")
+    write_tui_manifest(version, artifact)
+    digest = sha256_of(artifact)
+    print(f"    ✓ {artifact}  ({artifact.stat().st_size / (1024 * 1024):.2f} MB)")
+    print(f"    ✓ sha256={digest}")
+    print("\n=== user-level install (no sudo, avoids /usr/local EACCES) ===")
+    print(f'    npm install --global --prefix "$HOME/.local" "{artifact}"')
+    print('    export PATH="$HOME/.local/bin:$PATH"')
+    print("    mobius")
+    if install:
+        install_tui_artifact(artifact, Path(args.tui_install_prefix).expanduser().resolve())
+    return 0
+
+
 # ===== Mobius Mobile (Android) =====
 
 def read_mobile_version(mobile_src: Path) -> str:
@@ -447,11 +582,18 @@ def build_mobile(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="One-shot artifact build. Supports --build-electron (Mobius Desktop) "
-        "and --build-mobile (Mobius Mobile Android, arm64 + armeabi-v7a, sourced from momo-mobile)."
+        "--build-mobile (Mobius Mobile Android), --build-tui (installable npm package), "
+        "and --build-tui-and-install (build + user-level install)."
     )
     parser.add_argument("--build-electron", action="store_true", help="build Mobius Desktop (win/mac-arm/mac-x64). 官方 mac 须在 macOS 上构建。")
     parser.add_argument("--build-mobile", action="store_true", help="build Mobius Mobile (Android arm64 + armeabi-v7a APK, sourced from momo-mobile)")
-    parser.add_argument("--version", metavar="V", help="override version (electron: mobius/desktop/package.json; mobile: momo-mobile androidApp versionName)")
+    parser.add_argument("--build-tui", action="store_true", help="build Mobius TUI as an installable npm .tgz (provides the global `mobius` command)")
+    parser.add_argument(
+        "--build-tui-and-install",
+        action="store_true",
+        help="build Mobius TUI and install the `mobius` command to a user-writable npm prefix (default ~/.local)",
+    )
+    parser.add_argument("--version", metavar="V", help="override version (electron/tui: package.json; mobile: momo-mobile androidApp versionName)")
     parser.add_argument("--targets", default="win-x64,mac-arm64,mac-x64", help="[electron] comma-separated target subset (defaults to all three)")
     parser.add_argument("--skip-fetch-python", action="store_true", help="[electron] reuse existing resources/python-* (default fetch is idempotent)")
     parser.add_argument("--skip-menu-sync", action="store_true", help="do not sync download menu version/size/sha256 (default syncs into modals.tsx)")
@@ -475,15 +617,27 @@ def main() -> int:
         action="store_true",
         help="[mobile] do not run gradle if per-ABI APKs are missing; just copy existing ones",
     )
+    parser.add_argument(
+        "--tui-install-prefix",
+        default=str(Path.home() / ".local"),
+        help="[tui install] user-writable npm prefix (default: ~/.local; avoids /usr/local EACCES)",
+    )
     args = parser.parse_args()
 
-    if not args.build_electron and not args.build_mobile:
+    selected_builds = [args.build_electron, args.build_mobile, args.build_tui, args.build_tui_and_install]
+    if not any(selected_builds):
         parser.print_help()
         return 0
+    if sum(bool(selected) for selected in selected_builds) > 1:
+        sys.exit("[build] --build-electron / --build-mobile / --build-tui / --build-tui-and-install are mutually exclusive")
     if args.dev_unsigned and args.dev_adhoc:
         sys.exit("[build] --dev-unsigned 与 --dev-adhoc 互斥, 二选一")
     if args.build_mobile:
         return build_mobile(args)
+    if args.build_tui:
+        return build_tui(args)
+    if args.build_tui_and_install:
+        return build_tui(args, install=True)
     return build_electron(args)
 
 
