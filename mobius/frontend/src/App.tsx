@@ -12,6 +12,7 @@ import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services
 const Login = lazyWithRetry(() => import('./pages/Login'))
 const Welcome = lazyWithRetry(() => import('./pages/Welcome'))
 const UserPage = lazyWithRetry(() => import('./pages/UserPage'))
+const EasyModePage = lazyWithRetry(() => import('./pages/EasyModePage'))
 const MobiusOverviewPage = lazyWithRetry(() => import('./pages/MobiusOverviewPage'))
 const MobiusOverviewClusterPage = lazyWithRetry(() => import('./pages/MobiusOverviewClusterPage'))
 const ProjectPage = lazyWithRetry(() => import('./pages/ProjectPage'))
@@ -198,6 +199,32 @@ function RootRedirect() {
   return <Navigate to={`/u/${user.id}`} replace />
 }
 
+function cookieValue(name: string) {
+  if (typeof document === 'undefined') return null
+  const prefix = `${encodeURIComponent(name)}=`
+  for (const part of document.cookie.split(';')) {
+    const cookie = part.trim()
+    if (!cookie.startsWith(prefix)) continue
+    try {
+      return decodeURIComponent(cookie.slice(prefix.length))
+    } catch {
+      return cookie.slice(prefix.length)
+    }
+  }
+  return null
+}
+
+// 简易模式只接管用户主页和 Issue 会话页。项目页、Research 页、管理页等保持原路由，
+// /easy_mode 自身也不参与判断，避免重定向循环。
+function easyModeHomeForPath(pathname: string) {
+  if (cookieValue('layout_mode') !== 'easy_mode') return null
+  const userHome = pathname.match(/^\/u\/([^/]+)\/?$/)
+  if (userHome) return `/u/${userHome[1]}/easy_mode`
+  const issuePage = pathname.match(/^\/u\/([^/]+)\/p\/[^/]+\/i\/[^/]+\/?$/)
+  if (issuePage) return `/u/${issuePage[1]}/easy_mode`
+  return null
+}
+
 function AuthenticatedApp() {
   const { user, assistantBubbleEnabled } = useStore()
   const location = useLocation()
@@ -209,6 +236,8 @@ function AuthenticatedApp() {
   if (location.pathname === '/' || location.pathname === '') {
     return <Navigate to={`/u/${user.id}`} replace />
   }
+  const easyModeHome = easyModeHomeForPath(location.pathname)
+  if (easyModeHome) return <Navigate to={easyModeHome} replace />
   return (
     <>
       <StaleChunkErrorBoundary>
@@ -217,6 +246,7 @@ function AuthenticatedApp() {
             <Route path="/" element={<RootRedirect />} />
             <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
             <Route path="/u/:user" element={<UserPage />} />
+            <Route path="/u/:user/easy_mode" element={<EasyModePage />} />
             <Route path="/u/:user/mobius_overview" element={<MobiusOverviewPage />} />
             <Route path="/u/:user/mobius_overview_cluster" element={<MobiusOverviewClusterPage />} />
             <Route path="/u/:user/p/:project" element={<ProjectPage />} />

@@ -28,6 +28,7 @@ type SessionJsonlPanelProps = {
   scrollToMatchTs?: string | null
   onMatchScrollResolved?: () => void
   onMatchScrollUnresolved?: () => void
+  easyMode?: boolean
 }
 
 function SessionJsonlPanelInner({
@@ -55,6 +56,7 @@ function SessionJsonlPanelInner({
   scrollToMatchTs,
   onMatchScrollResolved,
   onMatchScrollUnresolved,
+  easyMode = false,
 }: SessionJsonlPanelProps) {
   const effectiveTotal = jsonlTotal > loadedJsonlCount
     ? jsonlTotal - (loadedJsonlCount - visibleJsonl.length)
@@ -71,7 +73,7 @@ function SessionJsonlPanelInner({
           onScrollPositionChange(distFromBottom > 200)
         }}
       >
-        <div className="px-5 py-5">
+        <div className="px-5 py-5" style={easyMode ? { paddingBottom: 176 } : undefined}>
           <VSCodeOpenProvider projectId={currentProjectId}>
             <JsonlView
               entries={visibleJsonl}

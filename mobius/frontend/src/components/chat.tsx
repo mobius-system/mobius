@@ -1409,7 +1409,7 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
 // 用于「代码对话」模式的窄右栏. 仅切换 .mobius-chat-body 上的修饰类 (见 index.css),
 // 不触碰任何 SSE / 草稿 / Stop / Send / Agent 状态逻辑. 向后兼容 (默认 default).
 export function ChatArea({ layout = 'default', onNewSession }: {
-  layout?: 'default' | 'stacked'
+  layout?: 'default' | 'stacked' | 'easy'
   onNewSession?: () => void
 } = {}) {
   const { currentSession, currentTask, currentIssue, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
@@ -3050,8 +3050,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           onAnnounce={(body) => { handleAnnouncePc(body); setCooperablePcOpen(false) }}
         />
       )}
-      {/* 顶栏（会话标题 + 单一状态 chip + Stop + VSCode + 溢出菜单） */}
-      <div data-tour="session-chat-header" className="h-9 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+      {/* 简易模式把会话上下文收进左侧近期会话列表，右侧仅保留 JSONL 和输入。 */}
+      {layout !== 'easy' && <div data-tour="session-chat-header" className="h-9 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="min-w-0 flex items-center gap-2">
             <SessionTitle name={currentSession?.name || currentTask?.name} theme={theme} />
@@ -3150,7 +3150,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
             canStop={!!sessionId}
           />
         </div>
-      </div>
+      </div>}
 
       {stopFeedbackActive && (
         <div className="pointer-events-none fixed left-1/2 top-16 z-[80] -translate-x-1/2">
@@ -3205,7 +3205,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
 
       {/* body: 横向分 68% JsonlView + 32% (输入 + skill/memory 编辑). 窄屏改纵向堆叠 (见 index.css .mobius-chat-body).
           layout='stacked' 时附加 mobius-chat-body--stacked, 与视口无关地强制纵向堆叠 (代码对话模式). */}
-      <div className={`mobius-chat-body flex-1 flex min-h-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}`}>
+      <div className={`mobius-chat-body flex-1 flex min-h-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}>
         {/* 左 68%: JSONL 视图 */}
         <SessionJsonlPanel
           currentProjectId={currentProjectId}
@@ -3232,6 +3232,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           scrollToMatchTs={matchTs}
           onMatchScrollResolved={onMatchScrollResolved}
           onMatchScrollUnresolved={handleLoadAllJsonl}
+          easyMode={layout === 'easy'}
         />
 
         {/* 右 32%: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽 (见 index.css .mobius-chat-input). */}
