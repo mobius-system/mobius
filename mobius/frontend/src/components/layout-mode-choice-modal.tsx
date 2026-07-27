@@ -47,7 +47,7 @@ export function LayoutModeChoiceModal({ onChoose }: LayoutModeChoiceModalProps) 
             type="button"
             onClick={() => choose('easy_mode')}
             data-testid="choose-easy-mode"
-            className="group min-w-0 overflow-hidden rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
+            className="group min-w-0 overflow-hidden whitespace-normal rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
             style={{ borderColor: 'color-mix(in srgb, var(--accent-primary) 45%, var(--border-color))' }}
           >
             <span className="mb-3 grid h-9 w-9 place-items-center rounded-lg" style={{ background: 'color-mix(in srgb, var(--accent-primary) 15%, transparent)', color: 'var(--accent-primary)' }}>
@@ -65,7 +65,7 @@ export function LayoutModeChoiceModal({ onChoose }: LayoutModeChoiceModalProps) 
             type="button"
             onClick={() => choose('normal_mode')}
             data-testid="choose-normal-mode"
-            className="group min-w-0 overflow-hidden rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
+            className="group min-w-0 overflow-hidden whitespace-normal rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
             style={{ borderColor: 'var(--border-color-strong)' }}
           >
             <span className="mb-3 grid h-9 w-9 place-items-center rounded-lg" style={{ background: 'var(--bg-hover)', color: 'var(--text-secondary)' }}>
