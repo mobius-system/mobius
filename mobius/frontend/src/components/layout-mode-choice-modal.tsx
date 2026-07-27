@@ -54,8 +54,10 @@ export function LayoutModeChoiceModal({ onChoose }: LayoutModeChoiceModalProps) 
               <Sparkles className="h-4.5 w-4.5" />
             </span>
             <strong className="block text-[14px]">简易模式</strong>
-            <span className="mt-1 block text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>
-              聚焦近期会话、执行过程和最终回复，界面更简洁。
+            <span className="mt-2 grid gap-1 text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>
+              <span><b style={{ color: 'var(--text-secondary)' }}>优势：</b>降低认知负荷，布局与传统 Agent 对话界面更相似。</span>
+              <span><b style={{ color: 'var(--text-secondary)' }}>适合：</b>专注处理一到两个项目。</span>
+              <span><b style={{ color: 'var(--text-secondary)' }}>取舍：</b>项目层级和智能体群体管理入口更精简。</span>
             </span>
           </button>
 
@@ -70,8 +72,10 @@ export function LayoutModeChoiceModal({ onChoose }: LayoutModeChoiceModalProps) 
               <Columns2 className="h-4.5 w-4.5" />
             </span>
             <strong className="block text-[14px]">常规模式</strong>
-            <span className="mt-1 block text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>
-              保留项目、任务、原始 JSONL 和完整会话工具。
+            <span className="mt-2 grid gap-1 text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>
+              <span><b style={{ color: 'var(--text-secondary)' }}>优势：</b>高效快捷、层次化管理，可快速调整智能体群体技能和记忆，并详细查看思考与工具使用。</span>
+              <span><b style={{ color: 'var(--text-secondary)' }}>适合：</b>并行推进多个项目。</span>
+              <span><b style={{ color: 'var(--text-secondary)' }}>取舍：</b>功能和信息密度更高，需要熟悉更多界面区域。</span>
             </span>
           </button>
         </div>
