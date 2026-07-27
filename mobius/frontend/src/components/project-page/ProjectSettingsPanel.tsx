@@ -1107,9 +1107,6 @@ export function ProjectSettingsPanel({
                     </option>
                   )}
                 </select>
-                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                  选择「未指定」时，新建执行会话沿用系统全局默认模型；选择具体模型后，该项目下新建执行会话的模型下拉会初始套用它，用户仍可在创建时手动改。已存在的执行会话和 Research Agent 团队的模型不受影响。
-                </p>
               </div>
             </SettingsCard>
           )}
