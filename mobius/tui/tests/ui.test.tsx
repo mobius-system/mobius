@@ -393,10 +393,57 @@ function testReasoningViews() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TEST 11 — SSE "terminated" is silent (server/proxy dropped the stream)
+// TEST 11 — current Codex custom tool calls show their nested shell command
+// ════════════════════════════════════════════════════════════════════════════
+function testCustomToolCallViews() {
+  console.log('\n[UI 11] custom_tool_call commands rendered')
+  const call = viewsForEntry({
+    type: 'response_item',
+    payload: {
+      type: 'custom_tool_call',
+      name: 'exec',
+      call_id: 'call_1',
+      input: 'const r = await tools.exec_command({\n  cmd: "rg -n \\\"needle\\\" mobius/tui/src",\n  workdir: "/repo"\n});\ntext(r.output);',
+    },
+  } as any)
+  ok(call.length === 1 && call[0].kind === 'tool_call', 'custom tool call is not skipped')
+  ok(call[0].kind === 'tool_call' && call[0].toolName === 'exec_command', 'nested exec_command tool name extracted')
+  ok(call[0].kind === 'tool_call' && call[0].summary.includes('rg -n "needle" mobius/tui/src'), 'nested shell command shown')
+
+  const singleQuoted = viewsForEntry({
+    type: 'response_item',
+    payload: { type: 'custom_tool_call', name: 'exec', input: "await tools.exec_command({ cmd: 'npm run typecheck', workdir: '/repo' })" },
+  } as any)
+  ok(singleQuoted[0].kind === 'tool_call' && singleQuoted[0].summary === 'npm run typecheck', 'JavaScript single-quoted command parsed')
+
+  const parallelWrapped = viewsForEntry({
+    type: 'response_item',
+    payload: { type: 'custom_tool_call', name: 'exec', input: 'const all = await Promise.all([tools.exec_command({"cmd":"npm run test:ui"})])' },
+  } as any)
+  ok(parallelWrapped[0].kind === 'tool_call' && parallelWrapped[0].toolName === 'exec_command' && parallelWrapped[0].summary === 'npm run test:ui', 'transport helper before tools.exec_command is ignored')
+
+  const output = viewsForEntry({
+    type: 'response_item',
+    payload: {
+      type: 'custom_tool_call_output',
+      call_id: 'call_1',
+      output: [{ type: 'input_text', text: 'Script completed\nWall time 0.2 seconds' }],
+    },
+  } as any)
+  ok(output.length === 1 && output[0].kind === 'tool_result' && output[0].summary.includes('Script completed'), 'custom tool output is not skipped')
+
+  const legacy = viewsForEntry({
+    type: 'response_item',
+    payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"git status --short"}' },
+  } as any)
+  ok(legacy[0].kind === 'tool_call' && legacy[0].summary === 'git status --short', 'legacy function_call command remains supported')
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 12 — SSE "terminated" is silent (server/proxy dropped the stream)
 // ════════════════════════════════════════════════════════════════════════════
 async function testSseTerminatedSilent() {
-  console.log('\n[UI 11] SSE "terminated" is silent, not an error')
+  console.log('\n[UI 12] SSE "terminated" is silent, not an error')
   let errorMsg: string | null = null
   let opened = false, closed = false
   installMock(async () => ({
@@ -417,10 +464,10 @@ async function testSseTerminatedSilent() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TEST 12 — SSE reconnect replays missed entries (no silent freeze)
+// TEST 13 — SSE reconnect replays missed entries (no silent freeze)
 // ════════════════════════════════════════════════════════════════════════════
 async function testChatSseReconnects() {
-  console.log('\n[UI 12] SSE reconnect replays missed entries')
+  console.log('\n[UI 13] SSE reconnect replays missed entries')
   const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
   const ready: ReadyState = {
     project: { id: 'p1', name: '测试项目' },
@@ -477,10 +524,10 @@ async function testChatSseReconnects() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TEST 13 — message dispatch retries a transient 502
+// TEST 14 — message dispatch retries a transient 502
 // ════════════════════════════════════════════════════════════════════════════
 async function testSendRetries502() {
-  console.log('\n[UI 13] message dispatch retries transient 502')
+  console.log('\n[UI 14] message dispatch retries transient 502')
   const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
   const ready: ReadyState = {
     project: { id: 'p1', name: 'p' },
@@ -526,6 +573,7 @@ async function main() {
   await testTextInputBackspace()
   testWorkingShimmer()
   testReasoningViews()
+  testCustomToolCallViews()
   await testSseTerminatedSilent()
   await testChatSseReconnects()
   await testSendRetries502()
