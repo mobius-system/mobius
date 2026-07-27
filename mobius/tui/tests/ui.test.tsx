@@ -31,6 +31,14 @@ function ok(c: boolean, msg: string) {
   if (c) { pass++; console.log(`  ✓ ${msg}`) } else { fail++; console.error(`  ✗ ${msg}`) }
 }
 
+async function waitFor(lastFrame: () => string | undefined, needle: string, timeoutMs = 4000): Promise<boolean> {
+  for (let i = 0; i < Math.ceil(timeoutMs / 50); i++) {
+    if ((lastFrame() ?? '').includes(needle)) return true
+    await delay(50)
+  }
+  return false
+}
+
 // ── shared mock state for the fake SSE controller ─────────────────────────────
 // Node 18 exposes ReadableStream as a global at runtime; use globalThis + loose typing.
 const RS: any = (globalThis as any).ReadableStream
@@ -459,11 +467,11 @@ async function testChatSseReconnects() {
     stdin.write('hi')
     await delay(30)
     stdin.write('\r')
-    await delay(1500) // drop at ~30ms + reconnect backoff ~500ms + replay
+    const replayed = await waitFor(lastFrame, '第二条', 4000)
     const out = lastFrame() ?? ''
     unmount()
     ok(out.includes('第一条'), 'pre-drop entry shown')
-    ok(out.includes('第二条'), 'reconnect replayed the missed entry')
+    ok(replayed, 'reconnect replayed the missed entry')
     ok(sseCall >= 2, 'SSE was reconnected after the drop')
   } finally { restoreFetch() }
 }
