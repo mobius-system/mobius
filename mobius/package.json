@@ -14,6 +14,7 @@
     "test:code-server-workspace": "node --require tsx/cjs tests/code-server-workspace.js",
     "test:native-file-menu": "node --require tsx/cjs tests/native-file-menu.js",
     "test:designer-eye-locator": "node --require tsx/cjs tests/designer-eye-locator.js",
+    "test:designer-eye-extension-loader": "node --require tsx/cjs tests/designer-eye-extension-loader.js",
     "test:designer-eye-prompt": "node frontend/tests/designer-eye-prompt.test.js",
     "test:file-tree-menu-logic": "node --require tsx/cjs tests/file-tree-menu-logic.js",
     "test:session-transfer": "node --require tsx/cjs tests/session-transfer.js",

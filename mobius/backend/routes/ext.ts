@@ -29,6 +29,7 @@ import { invokeHandler } from '../services/extension-invoker';
 import * as buildPipeline from '../services/extension-build-pipeline';
 // @ts-ignore — service 仍是 .js
 import { runSessionMessage } from '../services/session-message-runner';
+import { buildDesignerEyeLoaderInjection } from '../services/designer-eye-loader';
 
 // ===== meta router =====
 const metaRouter = express.Router();
@@ -801,8 +802,9 @@ function desktopTabBarInjection(): string {
 function injectDesktopHostBar(html: string, title: string): string {
   // 拓展是独立 HTML 文档，不经过 Mobius React App。设计师之眼与桌面宿主栏一样
   // 必须在服务 index.html 时统一注入，才能覆盖纯静态、Vite/React 和首次编译 loading 页。
-  // type=module 天然去重；designer-eye/index.js 内部另有 window 单例保护。
-  const designerEyeInjection = '<script type="module" src="/designer-eye/index.js"></script>';
+  // 使用 defer 经典加载器，确保页面自带 import map 已解析后再启动 Designer Eye 模块图。
+  // designer-eye/index.js 内部另有 window 单例保护。
+  const designerEyeInjection = buildDesignerEyeLoaderInjection();
   const injection = designerEyeInjection + desktopHostBarInjection(title) + desktopTabBarInjection();
   if (/<head([^>]*)>/i.test(html)) {
     return html.replace(/<head([^>]*)>/i, `<head$1>\n${injection}`);
