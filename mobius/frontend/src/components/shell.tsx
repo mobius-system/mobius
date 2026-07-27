@@ -1130,6 +1130,16 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
             {/* {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>} */}
           </TopNavActionElement>
+          {/* 系统可视化入口 — 固定在搜索按钮右侧，沿用当前用户路由上下文。 */}
+          <TopNavActionElement
+            type="button"
+            onClick={() => navigate(`/u/${userParam}/mobius_overview_cluster`)}
+            title="系统可视化"
+            aria-label="前往系统可视化"
+            data-tour="top-overview-cluster"
+          >
+            <Network className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+          </TopNavActionElement>
           <TopNavActionElement
             type="button"
             onClick={() => setShowGuideHelp(true)}
