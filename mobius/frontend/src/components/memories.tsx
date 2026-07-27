@@ -560,6 +560,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const [info, setInfo] = useState('')
+  const [announceRequirement, setAnnounceRequirement] = useState('')
   const [busyName, setBusyName] = useState<string | null>(null)
   const [testInfo, setTestInfo] = useState<Record<string, string>>({})
   const [hardwareInfo, setHardwareInfo] = useState<Record<string, string>>({})
@@ -624,6 +625,14 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
 
   const updateRemotePath = (name: string, path: string) => {
     setRemotePaths(prev => ({ ...prev, [name]: path }))
+  }
+
+  // 声明模式中可把 remote Host ID 直接附到用户的具体要求末尾，避免手动抄写。
+  const appendRemoteIdToRequirement = (name: string) => {
+    setAnnounceRequirement(prev => {
+      const separator = !prev || /\s$/.test(prev) ? '' : '\n'
+      return `${prev}${separator}${name}`
+    })
   }
 
   const testRemote = async (name: string) => {
@@ -716,7 +725,9 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
     if (selectedRemotes.length === 0) { setErr('请至少勾选一台 remote'); return }
     setErr('')
     const header = '【用户声明：以下计算机可与当前会话的 agent 合作。当任务需要远程算力或需要与这些机器交互时，agent 可通过 aimux 连接并使用它们（参考下方 aimux 使用说明）。】\n\n'
-    onAnnounce?.(`${header}${bodyPreview}`)
+    const requirement = announceRequirement.trim()
+    const requirementSection = requirement ? `【具体要求】\n${requirement}\n\n` : ''
+    onAnnounce?.(`${header}${requirementSection}${bodyPreview}`)
     onClose()
   }
 
@@ -784,6 +795,16 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                         </span>
                         {typeof r.rtt_ms === 'number' && (
                           <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.rtt_ms}ms</span>
+                        )}
+                        {isAnnounce && (
+                          <button type="button" onClick={() => appendRemoteIdToRequirement(r.name)} disabled={saving}
+                            data-tour="remote-compute-append-id"
+                            title={`将机器 ID ${r.name} 追加到具体要求末尾`}
+                            aria-label={`将机器 ID ${r.name} 追加到具体要求末尾`}
+                            className="h-6 px-1.5 text-[10px] rounded border transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-40"
+                            style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                            添加 ID
+                          </button>
                         )}
                       </div>
                       <div className="text-[11px] mt-1 truncate font-mono" style={{ color: 'var(--text-secondary)' }}>
@@ -897,6 +918,24 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                   : <>将同步唯一的项目 Memory：<span className="font-medium" style={{ color: 'var(--text-primary)' }}>Aimux 远程算力清单</span>；旧同名清单会自动移除。</>
                 }
               </div>
+              {isAnnounce && (
+                <div>
+                  <label htmlFor="remote-compute-announce-requirement" className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>
+                    具体要求（可选）
+                  </label>
+                  <textarea id="remote-compute-announce-requirement" value={announceRequirement}
+                    onChange={e => setAnnounceRequirement(e.target.value)}
+                    data-tour="remote-compute-announce-requirement"
+                    placeholder="例如：请优先在这台机器上执行构建。可点击每台机器旁的“添加 ID”引用它。"
+                    disabled={saving}
+                    rows={3}
+                    className="w-full resize-y min-h-[72px] px-3 py-2 rounded-lg text-[12px] leading-relaxed focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                  <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    点击机器旁的“添加 ID”会将该机器的 aimux Host ID 追加到这里。
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>{isAnnounce ? '发送内容预览' : 'Memory 文本预览'}</label>
                 <pre data-tour="remote-compute-memory-preview" className="text-[11px] leading-relaxed whitespace-pre-wrap font-mono p-3 rounded-lg border min-h-[220px] max-h-[320px] overflow-auto"
