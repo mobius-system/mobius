@@ -60,8 +60,18 @@ export class SseConnection {
       // flush any trailing frame
       if (buffer.trim()) this.handleFrame(buffer)
     } catch (e: any) {
-      if (e?.name === 'AbortError') { /* intentional close */ }
-      else this.handlers.onError?.(`SSE 读取错误: ${e?.message ?? String(e)}`)
+      // AbortError = we closed it ourselves; "terminated" / socket-closed codes =
+      // the server (or a reverse proxy's idle timeout) dropped the stream mid-read.
+      // Both are expected for a long-lived SSE connection, not user-facing errors —
+      // the recursive status poll in useChat remains the source of truth, so we
+      // stay silent instead of flashing a misleading "SSE 读取错误: terminated".
+      const msg = e?.message ?? String(e)
+      const expectedClose =
+        e?.name === 'AbortError' ||
+        msg === 'terminated' ||
+        e?.code === 'UND_ERR_SOCKET' || e?.code === 'UND_ERR_CLOSED' ||
+        e?.code === 'ECONNRESET' || e?.code === 'EPIPE'
+      if (!expectedClose) this.handlers.onError?.(`SSE 读取错误: ${msg}`)
     } finally {
       this.closed = true
       this.handlers.onClose?.()
