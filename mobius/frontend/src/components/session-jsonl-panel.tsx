@@ -1,6 +1,8 @@
-import { memo, type RefObject } from 'react'
+import { lazy, memo, Suspense, type RefObject } from 'react'
 import { JsonlLiveTailCard, JsonlView } from './jsonl-view'
 import { VSCodeOpenProvider } from './jsonl-vscode-link'
+
+const EasyJsonlView = lazy(() => import('./easy-jsonl/EasyJsonlView'))
 
 type SessionJsonlPanelProps = {
   currentProjectId: string
@@ -28,7 +30,7 @@ type SessionJsonlPanelProps = {
   scrollToMatchTs?: string | null
   onMatchScrollResolved?: () => void
   onMatchScrollUnresolved?: () => void
-  easyMode?: boolean
+  variant?: 'standard' | 'easy'
 }
 
 function SessionJsonlPanelInner({
@@ -56,7 +58,7 @@ function SessionJsonlPanelInner({
   scrollToMatchTs,
   onMatchScrollResolved,
   onMatchScrollUnresolved,
-  easyMode = false,
+  variant = 'standard',
 }: SessionJsonlPanelProps) {
   const effectiveTotal = jsonlTotal > loadedJsonlCount
     ? jsonlTotal - (loadedJsonlCount - visibleJsonl.length)
@@ -73,24 +75,43 @@ function SessionJsonlPanelInner({
           onScrollPositionChange(distFromBottom > 200)
         }}
       >
-        <div className="px-5 py-5" style={easyMode ? { paddingBottom: 176 } : undefined}>
+        <div className="px-5 py-5" style={variant === 'easy' ? { paddingBottom: 176 } : undefined}>
           <VSCodeOpenProvider projectId={currentProjectId}>
-            <JsonlView
-              entries={visibleJsonl}
-              title=""
-              emptyLoadingText={jsonlEmptyLoadingText}
-              initialLoading={jsonlInitialLoading}
-              total={effectiveTotal}
-              onLoadMore={onLoadAllJsonl}
-              loadingMore={jsonlLoadingMore}
-              showMeta={showJsonlMeta}
-              cursorStyleTools={cursorStyleTools}
-              scrollToEntryUuid={scrollToEntryUuid}
-              scrollToMatchTs={scrollToMatchTs}
-              onScrollResolved={onMatchScrollResolved}
-              onScrollUnresolved={onMatchScrollUnresolved}
-            />
-            {backendAlive && backendWorking && (
+            {variant === 'easy' ? (
+              <Suspense fallback={<div className="py-10 text-center text-[12px] text-[var(--text-muted)]">正在整理简易对话...</div>}>
+                <EasyJsonlView
+                  entries={visibleJsonl}
+                  emptyLoadingText={jsonlEmptyLoadingText}
+                  initialLoading={jsonlInitialLoading}
+                  total={effectiveTotal}
+                  onLoadMore={onLoadAllJsonl}
+                  loadingMore={jsonlLoadingMore}
+                  working={!!(backendAlive && backendWorking)}
+                  liveText={realTimeInfo}
+                  scrollToEntryUuid={scrollToEntryUuid}
+                  scrollToMatchTs={scrollToMatchTs}
+                  onScrollResolved={onMatchScrollResolved}
+                  onScrollUnresolved={onMatchScrollUnresolved}
+                />
+              </Suspense>
+            ) : (
+              <JsonlView
+                entries={visibleJsonl}
+                title=""
+                emptyLoadingText={jsonlEmptyLoadingText}
+                initialLoading={jsonlInitialLoading}
+                total={effectiveTotal}
+                onLoadMore={onLoadAllJsonl}
+                loadingMore={jsonlLoadingMore}
+                showMeta={showJsonlMeta}
+                cursorStyleTools={cursorStyleTools}
+                scrollToEntryUuid={scrollToEntryUuid}
+                scrollToMatchTs={scrollToMatchTs}
+                onScrollResolved={onMatchScrollResolved}
+                onScrollUnresolved={onMatchScrollUnresolved}
+              />
+            )}
+            {variant === 'standard' && backendAlive && backendWorking && (
               <JsonlLiveTailCard
                 lastTimestamp={lastTimestamp}
                 pid={backendPid}

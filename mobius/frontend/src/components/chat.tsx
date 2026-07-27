@@ -6,7 +6,7 @@ import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, A
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
-import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor } from './session-welcome'
+import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal } from './session-welcome'
 import { NewSessionModal } from './modals'
 import { OpenInVSCodeButton } from './project-files'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
@@ -1497,6 +1497,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false)
   const [continueModalOpen, setContinueModalOpen] = useState(false)
   const [cooperablePcOpen, setCooperablePcOpen] = useState(false)
+  const [skillMemoryModal, setSkillMemoryModal] = useState<null | 'skill' | 'memory'>(null)
   // 会话内 Web 终端弹窗 (issue session / research agent 共用 ChatArea, 一处入口覆盖两类会话).
   const [terminalChoiceOpen, setTerminalChoiceOpen] = useState(false)
   const [terminalOpen, setTerminalOpen] = useState(false)
@@ -2992,6 +2993,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
       onOpenKnowledge={() => setKnowledgeEditorOpen(true)}
       onSendProjectKnowledge={sendProjectKnowledgePrompt}
       onContinueWithModel={() => setContinueModalOpen(true)}
+      onOpenSkill={() => setSkillMemoryModal('skill')}
+      onOpenMemory={() => setSkillMemoryModal('memory')}
     />
   )
 
@@ -3065,6 +3068,13 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           projectId={currentProjectId}
           issueId={currentIssueId}
           onClose={() => setKnowledgeEditorOpen(false)}
+        />
+      )}
+      {layout === 'easy' && skillMemoryModal && (
+        <SessionSkillMemoryModal
+          sessionId={currentSession?.session_id || sessionId}
+          initialPanel={skillMemoryModal}
+          onClose={() => setSkillMemoryModal(null)}
         />
       )}
       {/* 声明可合作计算机: 勾选 aimux remote → 生成声明文本作为消息发给当前会话 agent (不写 Memory) */}
@@ -3258,7 +3268,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           scrollToMatchTs={matchTs}
           onMatchScrollResolved={onMatchScrollResolved}
           onMatchScrollUnresolved={handleLoadAllJsonl}
-          easyMode={layout === 'easy'}
+          variant={layout === 'easy' ? 'easy' : 'standard'}
         />
 
         {/* 右 32%: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽 (见 index.css .mobius-chat-input). */}

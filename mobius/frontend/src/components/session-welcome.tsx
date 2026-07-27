@@ -307,8 +307,10 @@ interface SelectionSnapshotResponse {
 
 export function SessionSkillMemoryEditor({
   sessionId,
+  initialPanel = null,
 }: {
   sessionId?: string
+  initialPanel?: null | 'skill' | 'memory'
 }) {
   const [memories, setMemories] = useState<EditorItem[]>([])
   const [skills, setSkills] = useState<EditorItem[]>([])
@@ -317,7 +319,7 @@ export function SessionSkillMemoryEditor({
   const [loading, setLoading] = useState(true)
   // 按钮三态: idle / sending / done. key = `${kind}:${itemId}`
   const [emphasizeState, setEmphasizeState] = useState<Record<string, 'idle' | 'sending' | 'done'>>({})
-  const [activePanel, setActivePanel] = useState<null | 'skill' | 'memory'>(null)
+  const [activePanel, setActivePanel] = useState<null | 'skill' | 'memory'>(initialPanel)
   const [previewItem, setPreviewItem] = useState<null | { kind: 'skill' | 'memory'; item: EditorItem }>(null)
 
   useEffect(() => {
@@ -592,6 +594,60 @@ export function SessionSkillMemoryEditor({
         </div>
       )}
     </>
+  )
+}
+
+export function SessionSkillMemoryModal({
+  sessionId,
+  initialPanel,
+  onClose,
+}: {
+  sessionId?: string
+  initialPanel: 'skill' | 'memory'
+  onClose: () => void
+}) {
+  const title = initialPanel === 'skill' ? '当前会话 Skill' : '当前会话 Memory'
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        aria-label="关闭 Skill / Memory 弹窗"
+        onClick={onClose}
+      />
+      <div
+        className="relative flex h-[min(680px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl shadow-2xl"
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
+        onClick={event => event.stopPropagation()}
+      >
+        <header className="flex items-center justify-between gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex min-w-0 items-center gap-2">
+            {initialPanel === 'skill'
+              ? <Puzzle className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
+              : <Brain className="h-4 w-4 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />}
+            <h3 className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
+            style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+            aria-label="关闭 Skill / Memory 弹窗"
+            title="关闭"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+        <div className="flex min-h-0 flex-1 flex-col p-3">
+          <SessionSkillMemoryEditor
+            key={initialPanel}
+            sessionId={sessionId}
+            initialPanel={initialPanel}
+          />
+        </div>
+      </div>
+    </div>
   )
 }
 

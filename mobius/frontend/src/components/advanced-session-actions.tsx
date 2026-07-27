@@ -1,4 +1,4 @@
-import { Archive, BookOpen, FileDiff, Hash, History, Loader2, Network, Replace, ScrollText, Terminal } from 'lucide-react'
+import { Archive, BookOpen, Brain, FileDiff, Hash, History, Loader2, Network, Puzzle, Replace, ScrollText, Terminal } from 'lucide-react'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { ProjectPortEntryButton } from './project-files'
 
@@ -23,6 +23,8 @@ type AdvancedSessionActionsProps = {
   onOpenKnowledge: () => void
   onSendProjectKnowledge: () => void | Promise<void>
   onContinueWithModel: () => void
+  onOpenSkill: () => void
+  onOpenMemory: () => void
 }
 
 /**
@@ -52,6 +54,8 @@ export function AdvancedSessionActions({
   onOpenKnowledge,
   onSendProjectKnowledge,
   onContinueWithModel,
+  onOpenSkill,
+  onOpenMemory,
 }: AdvancedSessionActionsProps) {
   const compact = variant === 'compact'
   const hasSession = !!sessionId
@@ -161,6 +165,39 @@ export function AdvancedSessionActions({
       </div>
 
       <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
+
+      {compact && (
+        <div className="grid grid-cols-2 items-stretch gap-2">
+          <AdvancedInteractionBtn
+            onClick={onOpenSkill}
+            disabled={!hasSession}
+            label="Skill"
+            tooltip="查看当前会话 Skill"
+            accent="blue"
+            iconClassName="h-4 w-auto gap-1.5"
+            icon={(
+              <>
+                <Puzzle className="h-4 w-4" strokeWidth={1.9} />
+                <span className="text-[11px] font-medium leading-none">Skill</span>
+              </>
+            )}
+          />
+          <AdvancedInteractionBtn
+            onClick={onOpenMemory}
+            disabled={!hasSession}
+            label="Memory"
+            tooltip="查看当前会话 Memory"
+            accent="cyan"
+            iconClassName="h-4 w-auto gap-1.5"
+            icon={(
+              <>
+                <Brain className="h-4 w-4" strokeWidth={1.9} />
+                <span className="text-[11px] font-medium leading-none">Memory</span>
+              </>
+            )}
+          />
+        </div>
+      )}
     </div>
   )
 }
