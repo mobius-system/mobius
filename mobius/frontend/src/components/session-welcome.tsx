@@ -440,15 +440,6 @@ export function SessionSkillMemoryEditor({
                         }}>
                         {scopeStyle.label}
                       </span>
-                      {!enabled && (
-                        <span className="text-[9px] px-1 py-px rounded flex-shrink-0 border" style={{
-                          color: 'var(--text-muted)',
-                          borderColor: 'var(--border-color)',
-                          background: 'rgba(255,255,255,0.02)',
-                        }}>
-                          未启用
-                        </span>
-                      )}
                     </div>
                     {it.description && (
                       <div className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{it.description}</div>
