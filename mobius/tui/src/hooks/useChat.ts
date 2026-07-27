@@ -38,6 +38,27 @@ export interface ChatController {
 let ID = 0
 function nextId(): number { ID += 1; return ID }
 
+// Retry transient gateway/transport errors so a brief 502/503/504 (a reverse-
+// proxy blip, a backend worker recycling after a deploy, a transient upstream
+// failure) doesn't immediately fail a message dispatch. 4xx errors are not
+// retried — repeating them won't change the outcome. The caller passes one
+// fixed reqId so the backend can de-duplicate across attempts.
+async function sendWithRetry(fn: () => Promise<unknown>, maxAttempts = 3): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fn()
+      return
+    } catch (e: any) {
+      const status = e?.status
+      const transient =
+        status === 502 || status === 503 || status === 504 ||
+        status === 0 || e?.name === 'TypeError' // fetch-level network failure
+      if (!transient || attempt >= maxAttempts - 1) throw e
+      await new Promise(r => setTimeout(r, 500 * 2 ** attempt))
+    }
+  }
+}
+
 export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatController {
   const [sessionId, setSessionId] = useState<string | null>(resumeSessionId ?? null)
   const [entries, setEntries] = useState<AnyEntry[]>([])
@@ -272,7 +293,7 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
       if (!sseRef.current) await new Promise(r => setTimeout(r, 200))
       if (process.env.MOBIUS_TUI_DEBUG) console.error('[send-post]', sid, 'sse=', !!sseRef.current, 'closed=', sseRef.current?.isClosed())
       const reqId = `tui-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      await client.sendMessage(sid, body, reqId)
+      await sendWithRetry(() => client.sendMessage(sid, body, reqId))
       pollNowRef.current?.()
     } catch (e: any) {
       const msg = e instanceof ApiError ? e.message : `发送失败: ${e?.message ?? e}`

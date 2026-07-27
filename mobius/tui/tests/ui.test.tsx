@@ -476,6 +476,45 @@ async function testChatSseReconnects() {
   } finally { restoreFetch() }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 13 — message dispatch retries a transient 502
+// ════════════════════════════════════════════════════════════════════════════
+async function testSendRetries502() {
+  console.log('\n[UI 13] message dispatch retries transient 502')
+  const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
+  const ready: ReadyState = {
+    project: { id: 'p1', name: 'p' },
+    issue: { id: 'i1', project_id: 'p1', title: 't' },
+    prefs: { model: 'codex', language: 'zh', excluded_skill_ids: [], excluded_memory_ids: [] },
+  }
+  let msgCall = 0
+  installMock((url, init) => {
+    if (url.includes('/events')) {
+      return new Response(new RS({ start(c: any) { c.enqueue(enc.encode('event: subscribed\ndata: {"event":"subscribed","session":{}}\n\n')) } }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }
+    if (url.endsWith('/messages') && init?.method === 'POST') {
+      msgCall++
+      if (msgCall === 1) return jsonResponse({ error: 'bad gateway' }, 502) // transient
+      return jsonResponse({ ok: true, session_id: 's1', turn_number: 1 }) // retry succeeds
+    }
+    if (url.endsWith('/api/sessions/s1/status')) return jsonResponse({ session_id: 's1', alive: true, working: false })
+    if (url.includes('/sessions') && init?.method === 'POST') return jsonResponse({ session_id: 's1' })
+    return jsonResponse({ error: 'no mock' }, 404)
+  })
+  try {
+    const { stdin, lastFrame, unmount } = render(
+      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />,
+    )
+    await delay(40)
+    stdin.write('hi'); await delay(30); stdin.write('\r')
+    await delay(3000) // first 502 (~0ms) + backoff ~500ms + retry succeeds
+    const out = lastFrame() ?? ''
+    unmount()
+    ok(msgCall >= 2, 'message dispatch was retried after a 502')
+    ok(!out.includes('HTTP 502'), 'transient 502 absorbed, not surfaced as a hard error')
+  } finally { restoreFetch() }
+}
+
 async function main() {
   await testLogin()
   await testChat()
@@ -489,6 +528,7 @@ async function main() {
   testReasoningViews()
   await testSseTerminatedSilent()
   await testChatSseReconnects()
+  await testSendRetries502()
   // cleanup temp home
   try { fs.rmSync(TMP_HOME, { recursive: true, force: true }) } catch { /* ignore */ }
   console.log(`\n==== UI RESULT: ${pass} passed, ${fail} failed ====\n`)

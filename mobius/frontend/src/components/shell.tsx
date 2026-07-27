@@ -10,7 +10,7 @@ import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, History, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, History, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { pollRecursive } from '../services/polling'
@@ -1138,7 +1138,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             aria-label="前往系统可视化"
             data-tour="top-overview-cluster"
           >
-            <Network className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+            <Sparkles className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
           </TopNavActionElement>
           <TopNavActionElement
             type="button"
