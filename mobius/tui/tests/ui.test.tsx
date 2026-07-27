@@ -110,6 +110,7 @@ async function testChat() {
     prefs: { model: 'codex', language: 'zh', excluded_skill_ids: [], excluded_memory_ids: [] },
   }
   let runtimeWorking = false
+  let createdSessionBody: any = null
   installMock((url, init) => {
     if (url.includes('/events')) {
       const stream = new RS({
@@ -130,7 +131,10 @@ async function testChat() {
     if (url.endsWith('/api/sessions/s1/status')) {
       return jsonResponse({ session_id: 's1', alive: true, working: runtimeWorking })
     }
-    if (url.includes('/sessions') && init?.method === 'POST') return jsonResponse({ session_id: 's1' })
+    if (url.includes('/sessions') && init?.method === 'POST') {
+      createdSessionBody = JSON.parse(String(init.body || '{}'))
+      return jsonResponse({ session_id: 's1' })
+    }
     return jsonResponse({ error: 'no mock' }, 404)
   })
   try {
@@ -160,6 +164,10 @@ async function testChat() {
     ok(frame.includes('测试项目') && frame.includes('测试任务'), `persistent status shows project and task`)
     ok(frame.includes('http://mock.local/u/test-user/p/p1/i/i1?session=s1'), 'web URL follows the newly created session')
     ok(!frame.includes('Working ('), 'authoritative idle status clears Working after completion')
+    ok(createdSessionBody?.pc_client_metadata?.is_tui === true, 'session metadata identifies the TUI client')
+    ok(createdSessionBody?.pc_client_metadata?.work_mode === 'dual', 'TUI sessions default to dual work mode')
+    ok(/^tui-/.test(createdSessionBody?.pc_client_metadata?.aimux_id || ''), 'session metadata uses the TUI AIMUX identifier')
+    ok(createdSessionBody?.pc_client_metadata?.local_path === process.cwd(), 'session metadata includes the TUI current directory')
   } finally { restoreFetch() }
 }
 

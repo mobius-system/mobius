@@ -20,6 +20,7 @@ import { filterReadableContextItems } from './access-control';
 import { isAssistantSession } from './assistant-session';
 import { readIssueKnowledgeShape } from './project-knowledge';
 import { BUILTIN_MEMORIES } from './builtin-memories';
+import { pcClientRequiresAimuxSkill, pcTaskModePrompt } from './pc-client-context';
 
 const ISSUE_STATUS_LABELS: Record<string, string> = { active: '开放', in_progress: '进行中', completed: '已解决', open: '开放' };
 const RESEARCH_STATUS_LABELS: Record<string, string> = { active: '开放', completed: '已完成' };
@@ -323,27 +324,7 @@ function zh_add_completion_flag_info(lines: string[], session: any, project: any
 
 function zh_add_pc_task_mode_info(lines: string[], session: any): void {
   if (!session) return;
-  let meta: any = null;
-  try {
-    meta = typeof session.pc_client_metadata === 'string'
-      ? JSON.parse(session.pc_client_metadata)
-      : session.pc_client_metadata;
-  } catch { return; }
-  const mode = meta?.work_mode;
-  const aimuxId = meta?.aimux_id;
-  if (!mode || !aimuxId) return;
-  // PC 端工作目录: 桌面端 PcTaskModeSection 绑定的本机 project 路径. 未绑定/空则不追加;
-  // hub 模式不连 PC, 路径无意义也不追加. web 端 local_path 恒空 → 不追加, 行为不变.
-  const localPath = typeof meta?.local_path === 'string' ? meta.local_path.trim() : '';
-  const pathClause = localPath && mode !== 'hub' ? `。该远程对象上的工作目录为：\`${localPath}\`` : '';
-  let prompt = '';
-  if (mode === 'hub') {
-    prompt = `【不要使用aimux连接到以下远程对象： ${aimuxId}】`;
-  } else if (mode === 'pc') {
-    prompt = `【使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${aimuxId}${pathClause}】`;
-  } else if (mode === 'dual') {
-    prompt = `【你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则，可操作远程路径${pathClause}。】`;
-  }
+  const prompt = pcTaskModePrompt(session.pc_client_metadata, 'zh');
   if (!prompt) return;
   lines.push('\n## PC 任务模式\n');
   lines.push(prompt + '\n');
@@ -573,32 +554,11 @@ function buildRandomEmojiPrefix(): string {
   return `${picked.join('')}\n`;
 }
 
-// PC task mode prompt injection (desktop sessions only, when session.pc_client_metadata is non-null;
-// web sessions are null → early return, web behavior unchanged).
-// pc_client_metadata is stored in the DB as a JSON string {work_mode, aimux_id, local_path?}.
+// PC task mode prompt injection (Electron/TUI sessions only, when
+// session.pc_client_metadata is non-null; web sessions return early).
 function en_add_pc_task_mode_info(lines: string[], session: any): void {
   if (!session) return;
-  let meta: any = null;
-  try {
-    meta = typeof session.pc_client_metadata === 'string'
-      ? JSON.parse(session.pc_client_metadata)
-      : session.pc_client_metadata;
-  } catch { return; }
-  const mode = meta?.work_mode;
-  const aimuxId = meta?.aimux_id;
-  if (!mode || !aimuxId) return;
-  // PC working directory: the local project path bound in the desktop PcTaskModeSection. Skip if unbound/empty;
-  // hub mode never connects to the PC, so the path is irrelevant and also skipped. Web sessions have empty local_path → skipped, behavior unchanged.
-  const localPath = typeof meta?.local_path === 'string' ? meta.local_path.trim() : '';
-  const pathClause = localPath && mode !== 'hub' ? `. The working directory on that remote object is: \`${localPath}\`` : '';
-  let prompt = '';
-  if (mode === 'hub') {
-    prompt = `【Do not use aimux to connect to the following remote object: ${aimuxId}】`;
-  } else if (mode === 'pc') {
-    prompt = `【Use aimux to connect to the following remote object to carry out all work, and try to avoid modifying local code: ${aimuxId}${pathClause}】`;
-  } else if (mode === 'dual') {
-    prompt = `【You are authorized to use aimux to connect to the following remote object: ${aimuxId}. When you need to modify code, first modify the local code, then sync all the code to ${aimuxId}, unless the user objects. When the user asks you to run code, follow the same rule. Remote path you are allowed to operate is: ${pathClause}.】`;
-  }
+  const prompt = pcTaskModePrompt(session.pc_client_metadata, 'en');
   if (!prompt) return;
   lines.push('\n## PC Task Mode\n');
   lines.push(prompt + '\n');
@@ -894,17 +854,8 @@ const PLANNING_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-planner';
 // 自迭代项目 (project.is_self_develop, 即 bind_path === APP_DIR) 的所有 Session
 // 强制必选 mobius-self-iter skill, 保证 agent 知道"先 commit 再 python3 start.py"的自迭代协议.
 const SELF_ITER_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-self-iter';
-// Electron PC/dual 任务模式需要 aimux 操作远程对象, 后端必须与前端"必选"标签同源强制注入.
+// Electron pc/dual 与全部 TUI 任务都需要 mobius-aimux, 后端强制注入.
 const PC_TASK_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-aimux';
-
-function pcTaskModeRequiresAimux(meta: any): boolean {
-  let parsed = meta;
-  if (typeof parsed === 'string') {
-    try { parsed = JSON.parse(parsed); } catch { parsed = null; }
-  }
-  const mode = parsed && typeof parsed === 'object' ? parsed.work_mode : null;
-  return mode === 'pc' || mode === 'dual';
-}
 
 function forcedIssueSkillIds(issue: any, project: any): Set<string> {
   const ids = new Set<string>();
@@ -930,7 +881,7 @@ function gatherIssueSources(user: any, issue: any, sessionExclusions: any): any 
   const project = projectId ? Projects.findById(projectId) : null;
   const userWhitelist = getProjectUserContextWhitelist(projectId, user);
   const forcedSkillSet = forcedIssueSkillIds(issue, project);
-  if (pcTaskModeRequiresAimux(sessionExclusions?.pc_client_metadata)) {
+  if (pcClientRequiresAimuxSkill(sessionExclusions?.pc_client_metadata)) {
     forcedSkillSet.add(PC_TASK_REQUIRED_BUILTIN_SKILL_ID);
   }
 
@@ -1007,7 +958,7 @@ function gatherResearchSources(user: any, research: any, sessionExclusions: any)
   const project = projectId ? Projects.findById(projectId) : null;
   const userWhitelist = getProjectUserContextWhitelist(projectId, user);
   const forcedSkillSet = forcedResearchSkillIds(project);
-  if (pcTaskModeRequiresAimux(sessionExclusions?.pc_client_metadata)) {
+  if (pcClientRequiresAimuxSkill(sessionExclusions?.pc_client_metadata)) {
     forcedSkillSet.add(PC_TASK_REQUIRED_BUILTIN_SKILL_ID);
   }
   const exSkillSet = new Set(sessionExclusions && Array.isArray(sessionExclusions.skills) ? sessionExclusions.skills : []);

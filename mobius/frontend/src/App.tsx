@@ -199,25 +199,19 @@ function RootRedirect() {
   return <Navigate to={`/u/${user.id}`} replace />
 }
 
-function cookieValue(name: string) {
-  if (typeof document === 'undefined') return null
-  const prefix = `${encodeURIComponent(name)}=`
-  for (const part of document.cookie.split(';')) {
-    const cookie = part.trim()
-    if (!cookie.startsWith(prefix)) continue
-    try {
-      return decodeURIComponent(cookie.slice(prefix.length))
-    } catch {
-      return cookie.slice(prefix.length)
-    }
+function localStorageValue(name: string) {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage.getItem(name)
+  } catch {
+    return null
   }
-  return null
 }
 
 // 简易模式只接管用户主页和 Issue 会话页。项目页、Research 页、管理页等保持原路由，
 // /easy_mode 自身也不参与判断，避免重定向循环。
 function easyModeHomeForPath(pathname: string) {
-  if (cookieValue('layout_mode') !== 'easy_mode') return null
+  if (localStorageValue('layout_mode') !== 'easy_mode') return null
   const userHome = pathname.match(/^\/u\/([^/]+)\/?$/)
   if (userHome) return `/u/${userHome[1]}/easy_mode`
   const issuePage = pathname.match(/^\/u\/([^/]+)\/p\/[^/]+\/i\/[^/]+\/?$/)

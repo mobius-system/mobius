@@ -87,6 +87,9 @@ to green.
    - The first submitted message lazily creates a session
      (`POST /api/issues/:iid/sessions`) with the saved preferences, opens the
      SSE stream (`GET /api/sessions/:id/events?token=`), and posts the message.
+     The session carries `pc_client_metadata` with `is_tui: true`, the local
+     AIMUX identifier and current directory; TUI sessions default to dual mode
+     and always include the `mobius-aimux` Skill.
    - `jsonl_entry` events append to the transcript as they arrive; the view keeps
      recent output inside the current terminal height instead of mixing permanent
      `<Static>` rows with dynamic UI.

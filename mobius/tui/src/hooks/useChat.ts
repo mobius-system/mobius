@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { MobiusClient, ApiError } from '../api.js'
 import { SseConnection } from '../sse.js'
 import { updateIssuePreference } from '../config.js'
+import { tuiAimuxIdentifier } from '../aimux.js'
 import type { AnyEntry } from '../types.js'
 import type { ReadyState } from '../components/PrepScreen.js'
 
@@ -211,6 +212,12 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
       language: prefs.language,
       excluded_skill_ids: prefs.excluded_skill_ids,
       excluded_memory_ids: prefs.excluded_memory_ids,
+      pc_client_metadata: {
+        work_mode: 'dual',
+        aimux_id: tuiAimuxIdentifier(),
+        local_path: process.cwd(),
+        is_tui: true,
+      },
     })
     const sid = s.session_id
     setSessionId(sid)

@@ -93,7 +93,7 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Pr
   onProgress?.({ phase: 'ready' }); return { ok: true }
 }
 
-function defaultIdentifier(): string {
+export function tuiAimuxIdentifier(): string {
   const host = os.hostname().toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32)
   return `tui-${host || 'pc'}`
 }
@@ -282,7 +282,7 @@ export async function startAimuxConnection(opts: { server: string; token: string
       detail: p.detail || (p.phase === 'ready' ? 'AIMUX 已就绪，准备连接…' : p.phase),
     }))
     if (!ready.ok) { onStatus({ state: 'failed', phase: 'idle', detail: ready.error }); return }
-    supervisor = new AimuxSupervisor({ server: opts.server, token: opts.token, identifier: defaultIdentifier(), onStatus })
+    supervisor = new AimuxSupervisor({ server: opts.server, token: opts.token, identifier: tuiAimuxIdentifier(), onStatus })
     supervisor.start()
   })().finally(() => { installing = null })
   await installing

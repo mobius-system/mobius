@@ -10,6 +10,7 @@ import type {
   Issue,
   LoginResponse,
   Memory,
+  PcClientMetadata,
   Project,
   Session,
   SessionModelOption,
@@ -138,6 +139,7 @@ export class MobiusClient {
     excluded_skill_ids?: string[]
     excluded_memory_ids?: string[]
     continue_from_session_id?: string
+    pc_client_metadata?: PcClientMetadata
   }): Promise<Session> {
     return this.request<Session>(`/api/issues/${issueId}/sessions`, { method: 'POST', body: JSON.stringify(body) })
   }
