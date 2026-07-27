@@ -47,6 +47,7 @@
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   gap: 12px;
+  max-height: 500px;
   padding: 15px 17px;
   border: 1px solid color-mix(in srgb, var(--easy-accent) 26%, var(--border-color));
   border-radius: 17px;
@@ -67,7 +68,7 @@
 .easy-jsonl-prompt__meta strong { font-size: 11px; letter-spacing: .03em; color: var(--easy-accent); }
 .easy-jsonl-prompt__meta time { font-size: 10px; color: var(--easy-muted); }
 .easy-jsonl-prompt p {
-  max-height: 500px;
+  max-height: 440px;
   margin: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
