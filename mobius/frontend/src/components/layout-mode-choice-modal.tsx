@@ -20,7 +20,7 @@ export function LayoutModeChoiceModal({ onChoose }: LayoutModeChoiceModalProps) 
 
   return (
     <div
-      className="fixed inset-0 z-[1000] grid place-items-center bg-black/55 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
       data-testid="layout-mode-choice"
     >
       <div
