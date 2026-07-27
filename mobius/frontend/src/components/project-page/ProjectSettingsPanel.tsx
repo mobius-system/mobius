@@ -967,10 +967,10 @@ export function ProjectSettingsPanel({
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <input value={editBindPath} readOnly disabled={!canManageProject} placeholder="未绑定（限家目录下）"
                       onClick={() => { if (canManageProject) onOpenPathPicker() }}
-                      className="h-9 flex-1 max-w-[50%] min-w-0 px-3 rounded-lg text-[13px] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60 truncate"
+                      className="h-7 flex-1 max-w-[50%] min-w-0 px-3 rounded-lg text-[12px] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60 truncate"
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     <button type="button" onClick={onOpenPathPicker} disabled={!canManageProject}
-                      className="h-9 flex-shrink-0 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="h-7 flex-shrink-0 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
                       <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
                       <span>选择路径</span>
                     </button>
@@ -980,7 +980,7 @@ export function ProjectSettingsPanel({
                         projectId={project.id}
                         mode="direct"
                         showWorktreeOption={false}
-                        className="h-9 flex-shrink-0 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap"
+                        className="h-7 flex-shrink-0 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap"
                       />
                     )}
                     {editBindPath && (
@@ -993,9 +993,9 @@ export function ProjectSettingsPanel({
                           setBindPathCopied(false)
                         }
                       }} title={bindPathCopied ? '已复制' : '复制路径'} aria-label={bindPathCopied ? '已复制' : '复制路径'}
-                        className={`h-9 w-9 flex-shrink-0 rounded-lg text-[12px] bg-[var(--bg-card-hover)] ${bindPathCopied ? 'text-emerald-400' : 'hover:bg-blue-500/10 hover:text-blue-400'} transition-colors border flex items-center justify-center`}
+                        className={`h-7 w-9 flex-shrink-0 rounded-lg text-[12px] bg-[var(--bg-card-hover)] ${bindPathCopied ? 'text-emerald-400' : 'hover:bg-blue-500/10 hover:text-blue-400'} transition-colors border flex items-center justify-center`}
                         style={{ color: bindPathCopied ? undefined : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
-                        {bindPathCopied ? <span className="text-[11px] font-medium">已复制</span> : <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />}
+                        {bindPathCopied ? <span className="font-medium">已复制</span> : <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />}
                       </button>
                     )}
                     {importDemoActiveForProject && uploadSampleDownloadUrl && (
@@ -1107,9 +1107,6 @@ export function ProjectSettingsPanel({
                     </option>
                   )}
                 </select>
-                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                  选择「未指定」时，新建执行会话沿用系统全局默认模型；选择具体模型后，该项目下新建执行会话的模型下拉会初始套用它，用户仍可在创建时手动改。已存在的执行会话和 Research Agent 团队的模型不受影响。
-                </p>
               </div>
             </SettingsCard>
           )}

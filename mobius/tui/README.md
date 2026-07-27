@@ -87,6 +87,9 @@ to green.
    - The first submitted message lazily creates a session
      (`POST /api/issues/:iid/sessions`) with the saved preferences, opens the
      SSE stream (`GET /api/sessions/:id/events?token=`), and posts the message.
+     The session carries `pc_client_metadata` with `is_tui: true`, the local
+     AIMUX identifier and current directory; TUI sessions always default to PC mode
+     and always include the `mobius-aimux` Skill.
    - `jsonl_entry` events append to the transcript as they arrive; the view keeps
      recent output inside the current terminal height instead of mixing permanent
      `<Static>` rows with dynamic UI.
@@ -124,3 +127,48 @@ npm run test:ui            # mocked fetch + fake SSE, no network
 MOBIUS_TUI_WAIT_MS=90000 npm run test:integration   # real backend (cloud-17)
 npm test                   # all three
 ```
+
+## Build an installable package
+
+From the repository root:
+
+```bash
+python3 build.py --build-tui
+```
+
+To build and immediately install the global command into the current user's
+`~/.local` prefix:
+
+```bash
+python3 build.py --build-tui-and-install
+```
+
+For CI or a custom location:
+
+```bash
+python3 build.py --build-tui-and-install --tui-install-prefix /custom/writable/prefix
+```
+
+The command runs the TUI typecheck and AIMUX regression tests, then writes an
+installable npm package plus checksum metadata to `mobius/tui-builds/`:
+
+```text
+mobius-tui-<version>.tgz
+mobius-tui-<version>.tgz.sha256
+manifest.json
+```
+
+Install it without `sudo` and without writing to `/usr/local`:
+
+```bash
+npm install --global --prefix "$HOME/.local" \
+  /path/to/mobius/tui-builds/mobius-tui-<version>.tgz
+export PATH="$HOME/.local/bin:$PATH"
+mobius
+```
+
+If the PATH export is not already in the shell profile, add it to `~/.bashrc`
+once. Using the explicit user prefix avoids the `EACCES ... /usr/local/lib/node_modules/mobius`
+error produced by a root-owned npm global prefix. The built package promotes
+`tsx` to a runtime dependency, so a production/global install can execute the
+TypeScript entry point without retaining the source checkout's devDependencies.

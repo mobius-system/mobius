@@ -234,7 +234,7 @@ interface Session {
   created_at: string
   last_active: string
   // PC client 创建标记 (仅桌面端建 session 时附带); 后端返回为 JSON 字符串, null = web 端建。
-  pc_client_metadata?: { work_mode?: string; aimux_id?: string; local_path?: string } | string | null
+  pc_client_metadata?: { work_mode?: string; aimux_id?: string; local_path?: string; is_tui?: boolean } | string | null
   // joined fields
   issue_title?: string
   project_name?: string

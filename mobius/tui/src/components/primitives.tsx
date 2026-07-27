@@ -3,7 +3,7 @@
  * Select (single-choice list + multi-choice with checkboxes), and a Spinner.
  */
 import React, { useEffect, useRef, useState } from 'react'
-import { Box, Text, useInput } from 'ink'
+import { Box, Text, useInput, useStdout } from 'ink'
 
 // ─── TextInput ───────────────────────────────────────────────────────────────
 export interface TextInputProps {
@@ -22,6 +22,7 @@ export interface TextInputProps {
 
 export function TextInput(props: TextInputProps) {
   const { value, onChange } = props
+  const focused = props.focused !== false
   const [cursor, setCursor] = useState(value.length)
   const lastValueRef = useRef(value)
 
@@ -47,7 +48,10 @@ export function TextInput(props: TextInputProps) {
     if (key.downArrow) { props.onArrowDown?.(); return }
     if (key.escape) { props.onEscape?.(); return }
     if (key.tab) { props.onTab?.(); return }
-    if (key.backspace || (key.ctrl && input === 'h')) {
+    // Ink labels the \x7f that virtually every terminal's Backspace key emits
+    // as `key.delete` (see its parse-keypress.js TODO). Treat either signal as
+    // a backward delete — otherwise Backspace at the end of the input is a no-op.
+    if (key.backspace || key.delete || (key.ctrl && input === 'h')) {
       if (cursor > 0) {
         // delete word on Ctrl+W
         if (key.ctrl && input === 'w') {
@@ -61,7 +65,6 @@ export function TextInput(props: TextInputProps) {
       }
       return
     }
-    if (key.delete) { if (cursor < value.length) edit(value.slice(0, cursor) + value.slice(cursor + 1), cursor); return }
     if (key.leftArrow) { setCursor(c => Math.max(0, c - 1)); return }
     if (key.rightArrow) { setCursor(c => Math.min(value.length, c + 1)); return }
     if (key.ctrl && input === 'a') { setCursor(0); return }
@@ -72,7 +75,7 @@ export function TextInput(props: TextInputProps) {
     if (key.ctrl || key.meta) return
     if (!input) return
     edit(value.slice(0, cursor) + input + value.slice(cursor), cursor + input.length)
-  }, { isActive: props.focused !== false })
+  }, { isActive: focused })
 
   const c = Math.min(cursor, value.length)
   const display = props.mask ? '•'.repeat(value.length) : value
@@ -90,7 +93,20 @@ export function TextInput(props: TextInputProps) {
     return (
       <Box>
         {props.prompt ? <Text color="cyan">{props.prompt} </Text> : null}
+        {focused ? <Text backgroundColor="white" color="black"> </Text> : null}
         <Text color="gray">{props.placeholder}</Text>
+      </Box>
+    )
+  }
+
+  // Keep inactive inputs visible without drawing a fake cursor. Previously
+  // every TextInput painted a white block even when its useInput hook was
+  // inactive, so multi-field forms appeared focused in two places at once.
+  if (!focused) {
+    return (
+      <Box>
+        {props.prompt ? <Text color="cyan">{props.prompt} </Text> : null}
+        <Text>{display || ' '}</Text>
       </Box>
     )
   }
@@ -137,6 +153,7 @@ export interface SelectProps {
   onBack?: () => void
   focused?: boolean
   title?: string
+  maxVisible?: number // cap rendered rows so long lists never overflow the terminal
 }
 
 export function Select(props: SelectProps) {
@@ -144,6 +161,7 @@ export function Select(props: SelectProps) {
   const [active, setActive] = useState(0)
   const items = props.items
   const selectedSet = new Set<string>(mode === 'multi' ? (props.selected as string[]) ?? [] : [])
+  const { stdout } = useStdout()
 
   useEffect(() => { setActive(a => Math.min(a, Math.max(0, items.length - 1))) }, [items.length])
 
@@ -160,12 +178,31 @@ export function Select(props: SelectProps) {
     if (key.escape) { props.onBack?.(); return }
   }, { isActive: props.focused !== false })
 
+  // viewport: keep the active item on screen. Without this a long list renders
+  // every row and pushes the lower items (and the rest of the UI) past the
+  // terminal bottom. We render a sliding window around `active` plus a
+  // "↑/↓ 还有 N 项" hint for the hidden tails.
+  const total = items.length
+  const rows = stdout?.rows ?? 24
+  const maxVisible = props.maxVisible ?? Math.max(3, rows - 8)
+  let start = 0
+  if (total > maxVisible) {
+    const half = Math.floor(maxVisible / 2)
+    start = Math.max(0, active - half)
+    start = Math.min(start, total - maxVisible)
+  }
+  const end = Math.min(total, start + maxVisible)
+  const hiddenAbove = start
+  const hiddenBelow = total - end
+
   return (
     <Box flexDirection="column">
       {props.title ? <Text color="cyan" bold>{props.title}</Text> : null}
       {items.length === 0 ? <Text color="gray">（无项目）</Text> : null}
-      {items.map((it, i) => {
-        const isActive = i === active
+      {hiddenAbove > 0 ? <Text color="gray">  ↑ 还有 {hiddenAbove} 项</Text> : null}
+      {items.slice(start, end).map((it, i) => {
+        const realIdx = start + i
+        const isActive = realIdx === active
         const checked = mode === 'multi' ? selectedSet.has(it.value) : false
         const marker = mode === 'multi' ? (checked ? '☑' : '☐') : isActive ? '❯' : ' '
         return (
@@ -174,13 +211,15 @@ export function Select(props: SelectProps) {
               color={isActive ? 'black' : undefined}
               backgroundColor={isActive ? 'cyan' : undefined}
               bold={isActive}
+              wrap="truncate-end"
             >
               {marker} {it.label}
             </Text>
-            {isActive && it.desc ? <Text color="gray">    {it.desc}</Text> : null}
+            {isActive && it.desc ? <Text color="gray" wrap="truncate-end">    {it.desc}</Text> : null}
           </Box>
         )
       })}
+      {hiddenBelow > 0 ? <Text color="gray">  ↓ 还有 {hiddenBelow} 项</Text> : null}
     </Box>
   )
 }

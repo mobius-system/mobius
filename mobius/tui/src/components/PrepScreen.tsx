@@ -29,9 +29,10 @@ export interface ReadyState {
   prefs: IssuePreference
 }
 
-export function PrepScreen({ client, onReady }: {
+export function PrepScreen({ client, onReady, onQuit }: {
   client: MobiusClient
   onReady: (st: ReadyState) => void
+  onQuit?: () => void
 }) {
   const [phase, setPhase] = useState<'loading' | 'project' | 'pref' | 'done'>('loading')
   const [projects, setProjects] = useState<Project[]>([])
@@ -60,6 +61,7 @@ export function PrepScreen({ client, onReady }: {
       const p = list.find(x => x.id === boundId) ?? { id: boundId, name: boundId } as Project
       await enterProject(p, list)
     } else {
+      setStatusMsg('')
       setPhase('project')
     }
   })().catch(e => setStatusMsg(`初始化失败: ${e?.message ?? e}`)) }, [])
@@ -179,7 +181,7 @@ export function PrepScreen({ client, onReady }: {
   if (phase === 'project') {
     return <ProjectPicker
       cwd={thisCwd} projects={projects} statusMsg={statusMsg}
-      onPick={pickProject} onCreate={createProject} />
+      onPick={pickProject} onCreate={createProject} onQuit={onQuit} />
   }
   if (phase === 'done') {
     return <Box paddingX={2}><Text color="green">准备就绪，进入对话…</Text></Box>
@@ -218,18 +220,23 @@ function toItems(arr: { id: string; name: string; description?: string }[]): Sel
   return arr.map(s => ({ label: s.name, value: s.id, desc: s.description }))
 }
 
+// 把可能含换行的描述压成单行：换行 → 可见符号 ⏎，避免列表项跨行。
+function flattenDesc(s?: string): string {
+  if (!s) return ''
+  return s.replace(/\s*\n\s*/g, ' ⏎ ').replace(/[ \t]+/g, ' ').trim()
+}
+
 // ── Project picker ───────────────────────────────────────────────────────────
-function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate }: {
+function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate, onQuit }: {
   cwd: string
   projects: Project[]
   statusMsg: string
   onPick: (p: Project) => void
   onCreate: (name: string, description: string) => void
+  onQuit?: () => void
 }) {
   const [mode, setMode] = useState<'list' | 'create'>('list')
   const [name, setName] = useState('')
-  const [desc, setDesc] = useState('')
-  const [field, setField] = useState<'name' | 'desc'>('name')
 
   if (mode === 'create') {
     return (
@@ -237,31 +244,32 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate }: {
         <Text bold color="cyan">创建新项目（绑定到当前路径）</Text>
         <Text color="gray">{cwd}</Text>
         <Box marginTop={1} flexDirection="column">
-          <Text color={field === 'name' ? 'cyan' : 'gray'}>项目名称{field === 'name' ? ' ←' : ''}</Text>
-          <TextInput value={name} onChange={setName} focused={field === 'name'} placeholder="未命名项目"
-            onSubmit={() => setField('desc')} />
-          <Box marginTop={1}><Text color={field === 'desc' ? 'cyan' : 'gray'}>描述（可空）{field === 'desc' ? ' ←' : ''}</Text></Box>
-          <TextInput value={desc} onChange={setDesc} focused={field === 'desc'} placeholder=""
-            onSubmit={() => onCreate(name, desc)} onTab={() => setField(field === 'name' ? 'desc' : 'name')} />
+          <Text color="cyan">项目名称 ←</Text>
+          <TextInput value={name} onChange={setName} focused placeholder="未命名项目"
+            onSubmit={() => onCreate(name, '')} onEscape={() => setMode('list')} />
         </Box>
         {statusMsg ? <Text color="yellow">{statusMsg}</Text> : null}
-        <Text color="gray">回车提交 · Esc 返回</Text>
+        <Text color="gray">回车创建 · Esc 返回</Text>
       </Box>
     )
   }
 
   const items: SelectItem[] = [
     { label: '➕ 创建新项目', value: '__create__', desc: '绑定到当前路径' },
-    ...projects.map(p => ({ label: p.name + (p.description ? ` — ${p.description}` : ''), value: p.id })),
+    ...projects.map(p => {
+      const desc = flattenDesc(p.description)
+      return { label: desc ? `${p.name} — ${desc}` : p.name, value: p.id }
+    }),
   ]
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
       <Text bold color="cyan">选择当前路径的绑定项目</Text>
       <Text color="gray">{cwd}</Text>
       <Box marginTop={1}>
-        <Select items={items} onSelect={v => v === '__create__' ? setMode('create') : onPick(projects.find(p => p.id === v)!)} />
+        <Select items={items} onBack={onQuit} onSelect={v => v === '__create__' ? setMode('create') : onPick(projects.find(p => p.id === v)!)} />
       </Box>
       {statusMsg ? <Text color="yellow">{statusMsg}</Text> : null}
+      <Text color="gray">↑↓ 选择 · 回车确认 · Esc 退出</Text>
     </Box>
   )
 }

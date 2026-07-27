@@ -53,6 +53,25 @@ function roundKeyOf(round: any): string {
 // 1) uuid 精确: 跨所有 round 的所有 item 找 entry.uuid / entry.id (命中可能在轮中非首条).
 // 2) timestamp 区间兜底: 命中条目可能被 hideMinor 过滤 (如 thinking), 此时取 opener.ts <= 命中 ts 的最后一轮.
 // 找不到返回 null (调用方据此触发 "加载全部" 再试, 或放弃).
+function findItemForMatch(items: JsonlViewItem[], uuid: string | null | undefined, ts: string | null | undefined): JsonlViewItem | null {
+  if (uuid) {
+    const found = items.find((it) => it?.entry?.uuid === uuid || it?.entry?.id === uuid)
+    if (found) return found
+  }
+  if (ts) {
+    const exact = items.find((it) => {
+      const value = it?.entry?.timestamp || it?.entry?.created_at
+      return value === ts
+    })
+    if (exact) return exact
+    const targetTime = Date.parse(ts)
+    if (Number.isFinite(targetTime)) {
+      return items.find((it) => Date.parse(it?.entry?.timestamp || it?.entry?.created_at || '') === targetTime) || null
+    }
+  }
+  return null
+}
+
 function findRoundForMatch(rounds: any[], uuid: string | null | undefined, ts: string | null | undefined): any | null {
   if (uuid) {
     for (const r of rounds) {
@@ -76,6 +95,11 @@ function findRoundForMatch(rounds: any[], uuid: string | null | undefined, ts: s
     }
   }
   return null
+}
+
+function preItemKeyOf(item: JsonlViewItem): string {
+  const entry = item.entry
+  return `pre:${entry?.uuid || entry?.id || entry?.timestamp || item.lineNo}`
 }
 
 export function JsonlView({
@@ -173,6 +197,8 @@ export function JsonlView({
   // 命中条目不在当前已渲染 rounds (旧消息被尾部窗口截断, 或被 hideMinor 过滤且无 ts 兜底) 时,
   // 若还有远端未加载条目 (hasRemoteMore), 调 onScrollUnresolved 让上层 "加载全部" 后再解析.
   const [extTarget, setExtTarget] = useState<{ key: string; offset: number } | null>(null)
+  // 轮次定位之外的精确目标：供卡片展开、Explore 组展开和二次滚动使用。
+  const [extFocusLineNo, setExtFocusLineNo] = useState<number | null>(null)
   const extActive = !!(scrollToEntryUuid || scrollToMatchTs)
   const onResolvedRef = useRef(onScrollResolved)
   onResolvedRef.current = onScrollResolved
@@ -180,27 +206,45 @@ export function JsonlView({
   onUnresolvedRef.current = onScrollUnresolved
   const unresolvedFiredRef = useRef(false)
   useEffect(() => {
-    if (!extActive) { setExtTarget(null); unresolvedFiredRef.current = false; return }
+    if (!extActive) { setExtTarget(null); setExtFocusLineNo(null); unresolvedFiredRef.current = false; return }
     // 首屏历史还在加载 (entries 空 / initialLoading) 时既不放弃也不触发 loadAll:
     // 此时 hasRemoteMore 因 total 未知而为 false, 直接判 "找不到" 会误清 target, 让跳转失效.
     if (initialLoading || entries.length === 0) { setExtTarget(null); return }
-    const round = findRoundForMatch(rounds, scrollToEntryUuid ?? null, scrollToMatchTs ?? null)
-    if (round) {
-      setExtTarget({ key: roundKeyOf(round), offset: headerRef.current?.offsetHeight ?? 0 })
-    } else if (hasRemoteMore) {
-      // 命中条目不在已加载尾部窗口 → 触发 "加载全部" 再解析 (只触发一次).
+    const matchItem = findItemForMatch(visibleItems, scrollToEntryUuid ?? null, scrollToMatchTs ?? null)
+    if (matchItem) {
+      const round = rounds.find((candidate) => candidate?.items?.some((it: JsonlViewItem) => it.lineNo === matchItem.lineNo))
+      const isPreItem = preItems.some((item) => item.lineNo === matchItem.lineNo)
+      // 尾部窗口里的“上文续接”并没有单独渲染每张卡片；先展开全部，才能精确定位并展开。
+      if (isPreItem && hasOmittedHead && !showAll) {
+        setExtTarget(null)
+        setExtFocusLineNo(null)
+        setShowAll(true)
+        return
+      }
+      setExtFocusLineNo(matchItem.lineNo)
+      setExtTarget({ key: round ? roundKeyOf(round) : preItemKeyOf(matchItem), offset: headerRef.current?.offsetHeight ?? 0 })
+    } else if (hasRemoteMore || (hasOmittedHead && !showAll)) {
+      // 命中尚未进入当前窗口：先显出完整历史；若远端还有头部，再触发一次真正的全量加载。
       setExtTarget(null)
-      if (!unresolvedFiredRef.current) {
+      setExtFocusLineNo(null)
+      if (!showAll) setShowAll(true)
+      if (hasRemoteMore && !unresolvedFiredRef.current) {
         unresolvedFiredRef.current = true
         onUnresolvedRef.current?.()
       }
     } else {
-      // 已加载完毕且无远端剩余仍找不到 (uuid/ts 都对不上) → 放弃, 清 target 恢复默认.
-      setExtTarget(null)
-      onResolvedRef.current?.()
+      // uuid 缺失时保留时间区间兜底，至少可进入正确轮次；有 uuid 的正常搜索结果不会走这里。
+      const fallbackRound = findRoundForMatch(rounds, null, scrollToMatchTs ?? null)
+      setExtFocusLineNo(null)
+      if (fallbackRound) {
+        setExtTarget({ key: roundKeyOf(fallbackRound), offset: headerRef.current?.offsetHeight ?? 0 })
+      } else {
+        setExtTarget(null)
+        onResolvedRef.current?.()
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [extActive, scrollToEntryUuid, scrollToMatchTs, rounds, hasRemoteMore, initialLoading, entries.length])
+  }, [extActive, scrollToEntryUuid, scrollToMatchTs, visibleItems, preItems, rounds, hasRemoteMore, hasOmittedHead, showAll, initialLoading, entries.length])
 
   // 外部跳转优先; 内部末轮跳转作 fallback. 两者都为 null 时不滚.
   const activeTarget = extTarget ?? internalTarget
@@ -231,7 +275,7 @@ export function JsonlView({
 
   const renderBlock = (block: JsonlRenderBlock) => {
     if (block.kind === 'continuation') {
-      return <ContinuationGroup items={block.items} onlyGroup={onlyGroup} forceExpandAll={forceExpandAll} showMeta={showMeta} resolvedMap={resolvedMap} collapseLineNos={collapseLineNos} />
+      return <ContinuationGroup items={block.items} onlyGroup={onlyGroup} forceExpandAll={forceExpandAll} showMeta={showMeta} resolvedMap={resolvedMap} collapseLineNos={collapseLineNos} focusLineNo={extFocusLineNo} />
     }
     if (block.kind === 'preItem') {
       const { entry, lineNo, bashResults, readResults } = block.item
@@ -243,6 +287,7 @@ export function JsonlView({
           readResults={readResults}
           showMeta={showMeta}
           resolvedMap={resolvedMap}
+          defaultExpanded={lineNo === extFocusLineNo}
           defaultCollapsed={collapseLineNos.has(lineNo)}
         />
       )
@@ -254,10 +299,12 @@ export function JsonlView({
         isSecondLast={block.index === rounds.length - 2}
         onlyGroup={onlyGroup}
         forceExpandAll={forceExpandAll}
+        forceOpen={block.key === extTarget?.key && extFocusLineNo !== null}
         showMeta={showMeta}
         resolvedMap={resolvedMap}
         cursorStyleTools={cursorStyleTools}
         collapseLineNos={collapseLineNos}
+        focusLineNo={extFocusLineNo}
       />
     )
   }
@@ -327,10 +374,20 @@ export function JsonlView({
         blocks={renderBlocks}
         renderBlock={renderBlock}
         scrollToKey={activeTarget?.key ?? null}
+        scrollToEntryLineNo={extFocusLineNo}
         scrollOffset={activeTarget?.offset ?? 0}
         onScrollToKeyDone={() => {
+          // 搜索有精确条目目标时，不能仅因“轮次已到位”就清参数：目标卡片可能还在随轮次/
+          // Explore 组展开而挂载，必须等 onScrollToEntryDone 真的滚到卡片后再结束。
+          if (extTarget && extFocusLineNo !== null) return
           // 到位 (或超时兜底) 后清除当前活跃跳转. 外部跳转还要通知上层清 URL 参数.
           if (extTarget) onResolvedRef.current?.()
+          setExtTarget(null)
+          setInternalTarget(null)
+        }}
+        onScrollToEntryDone={() => {
+          if (!extTarget || extFocusLineNo === null) return
+          onResolvedRef.current?.()
           setExtTarget(null)
           setInternalTarget(null)
         }}

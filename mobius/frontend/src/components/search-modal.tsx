@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import {
   Search, X, ChevronRight, Folder, CircleDot, FlaskConical,
-  MessagesSquare, Loader2, AlertCircle, FileSearch,
+  MessagesSquare, Loader2, AlertCircle, FileSearch, ArrowUpRight, Copy,
 } from 'lucide-react'
 
 type Fragment = { role: string; snippet: string; timestamp: string | null; uuid?: string | null }
@@ -29,6 +29,8 @@ type SearchResult = {
   model: string
   fragments: Fragment[]
 }
+
+type SelectedSearchFragment = { result: SearchResult; fragment: Fragment }
 
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
   user: { label: '用户', color: '#60a5fa', bg: 'rgba(59,130,246,0.15)' },
@@ -116,6 +118,9 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
   // 匹配选项: caseSensitive 区分大小写, wholeWord 全字匹配 (与后端 /api/search 的 case/word 参数同口径).
   const [caseSensitive, setCaseSensitive] = useState(false)
   const [wholeWord, setWholeWord] = useState(false)
+  // 搜索结果先打开命中预览，用户确认后才离开当前搜索弹窗进入会话。
+  // 这既让上下文可复制，也避免点击整张结果卡时误跳到非预期片段。
+  const [selectedFragment, setSelectedFragment] = useState<SelectedSearchFragment | null>(null)
   // 最新匹配选项的 ref: Enter 键 / 流式回调里读到最新值, 避免闭包陈旧.
   const optsRef = useRef({ caseSensitive, wholeWord, range })
   optsRef.current = { caseSensitive, wholeWord, range }
@@ -216,7 +221,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, caseSensitive, wholeWord])
 
-  // 点结果卡 → 进入该 Session 并跳到首个命中片段所属的卡片.
+  // 次级预览确认后 → 进入该 Session 并跳到指定命中片段所属的卡片.
   // 优先用片段 uuid (claude entry.uuid / codex entry.id), 缺失则用 timestamp 区间兜底 (见 JsonlView).
   const openSession = (r: SearchResult, frag?: Fragment) => {
     const first = frag || r.fragments[0]
@@ -231,6 +236,11 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
     }
     onNavigate(url)
     onClose()
+  }
+
+  const openFragmentPreview = (r: SearchResult, frag?: Fragment) => {
+    const target = frag || r.fragments[0]
+    if (target) setSelectedFragment({ result: r, fragment: target })
   }
 
   return (
@@ -324,7 +334,8 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
                 const isResearch = r.scope_type === 'research'
                 const ScopeIcon = isResearch ? FlaskConical : CircleDot
                 return (
-                  <button key={r.session_id} type="button" onClick={() => openSession(r)}
+                  <button key={r.session_id} type="button" onClick={() => openFragmentPreview(r)}
+                    data-search-result={r.session_id}
                     className="w-full text-left px-4 py-2.5 transition-colors hover:bg-[var(--bg-card-hover)] border-b"
                     style={{ borderColor: 'var(--border-color)' }}>
                     {/* 面包屑: 项目 › Issue/Research › Session */}
@@ -345,15 +356,16 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
                       </span>
                       <span className="ml-auto pl-2 flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{relativeTime(r.last_active)}</span>
                     </div>
-                    {/* 命中片段: 点单个片段跳到该片段所属卡片 (stopPropagation 避免触发卡片首片段跳转). */}
+                    {/* 命中片段: 先打开上下文预览；stopPropagation 避免改选成结果卡的首片段. */}
                     <div className="space-y-1">
                       {r.fragments.map((f, i) => {
                         const rm = roleMeta(f.role)
                         return (
                           <div
                             key={i}
-                            onClick={(e) => { e.stopPropagation(); openSession(r, f) }}
-                            title="点击跳转到此片段"
+                            onClick={(e) => { e.stopPropagation(); openFragmentPreview(r, f) }}
+                            data-search-fragment={`${r.session_id}:${i}`}
+                            title="查看命中上下文"
                             className="flex items-start gap-2 rounded -mx-1 px-1 py-0.5 cursor-pointer hover:bg-[var(--bg-hover)]"
                           >
                             <span className="flex-shrink-0 text-[9px] px-1.5 py-0.5 rounded mt-0.5" style={{ color: rm.color, background: rm.bg }}>{rm.label}</span>
@@ -384,6 +396,96 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
             {meta?.truncated && <span style={{ color: '#f59e0b' }}>部分结果 (已达时间上限, 可缩小时间范围或换词)</span>}
           </div>
         )}
+      </div>
+
+      {selectedFragment && (
+        <SearchFragmentPreviewModal
+          result={selectedFragment.result}
+          fragment={selectedFragment.fragment}
+          query={q}
+          caseSensitive={caseSensitive}
+          wholeWord={wholeWord}
+          dark={dark}
+          onBack={() => setSelectedFragment(null)}
+          onViewInSession={() => openSession(selectedFragment.result, selectedFragment.fragment)}
+        />
+      )}
+    </div>
+  )
+}
+
+// 搜索二级弹窗：服务于“先看上下文、再确认跳转”的流程。
+// 文本不是 button/input，也不加 user-select:none，因此浏览器原生支持框选并复制其中任意一段。
+function SearchFragmentPreviewModal({
+  result,
+  fragment,
+  query,
+  caseSensitive,
+  wholeWord,
+  dark,
+  onBack,
+  onViewInSession,
+}: {
+  result: SearchResult
+  fragment: Fragment
+  query: string
+  caseSensitive: boolean
+  wholeWord: boolean
+  dark: boolean
+  onBack: () => void
+  onViewInSession: () => void
+}) {
+  const isResearch = result.scope_type === 'research'
+  const ScopeIcon = isResearch ? FlaskConical : CircleDot
+  const rm = roleMeta(fragment.role)
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="搜索命中预览" data-search-fragment-preview>
+      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={onBack} />
+      <div
+        className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl shadow-2xl"
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxHeight: 'min(620px, calc(100vh - 32px))' }}
+      >
+        <div className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="min-w-0">
+            <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>
+              <FileSearch className="h-4 w-4 flex-shrink-0 text-blue-400" />
+              <span>命中片段预览</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <span className="truncate max-w-[150px]">{result.project_name || '(未命名项目)'}</span>
+              <ChevronRight className="h-3 w-3 flex-shrink-0" />
+              <ScopeIcon className="h-3 w-3 flex-shrink-0" style={{ color: isResearch ? '#10b981' : '#60a5fa' }} />
+              <span className="truncate max-w-[180px]">{isResearch ? (result.research_title || '(研究)') : (result.issue_title || '(任务)')}</span>
+              <ChevronRight className="h-3 w-3 flex-shrink-0" />
+              <span className="truncate max-w-[220px]">{result.session_name || '(未命名会话)'}</span>
+            </div>
+          </div>
+          <button type="button" onClick={onBack} title="返回搜索结果" aria-label="返回搜索结果" className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 overflow-y-auto px-5 py-4">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-[10px] rounded px-1.5 py-0.5" style={{ color: rm.color, background: rm.bg }}>{rm.label}</span>
+            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>命中位置前后的上下文 · 可直接框选复制</span>
+          </div>
+          <div className="select-text whitespace-pre-wrap break-words rounded-xl border px-4 py-3 text-[13px] leading-7" style={{ color: dark ? '#e2e8f0' : '#1e293b', borderColor: 'var(--border-color)', background: dark ? 'rgba(15,23,42,0.35)' : 'rgba(248,250,252,0.75)' }}>
+            <Highlight text={fragment.snippet} query={query} caseSensitive={caseSensitive} wholeWord={wholeWord} />
+          </div>
+          <div className="mt-2 flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            <Copy className="h-3 w-3" />
+            <span>选择文字后可使用系统复制快捷键。</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
+          <button type="button" onClick={onBack} className="rounded-lg px-3 py-1.5 text-[12px] hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-secondary)' }}>返回搜索结果</button>
+          <button type="button" onClick={onViewInSession} data-search-view-session className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-3 py-1.5 text-[12px] font-medium text-white shadow-sm transition-colors hover:bg-blue-400">
+            <span>在会话中查看</span>
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   )

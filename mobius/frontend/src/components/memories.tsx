@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Activity, CheckCircle2, Cpu, FolderInput, FolderOpen, Lock, Pencil, Plus, RefreshCw, SendHorizontal, Server, Trash2, Upload } from 'lucide-react'
+import { Activity, CheckCircle2, ChevronDown, Cpu, FolderInput, FolderOpen, Lock, Pencil, Plus, RefreshCw, SendHorizontal, Server, Trash2, Upload } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { ContextAccessModal } from './context-access'
 import { MoveScopeModal } from './modals'
@@ -372,8 +372,11 @@ type AddRemoteForm = {
   timeout: string
 }
 
+type CollapsibleRemoteStatus = 'auth-required' | 'unreachable'
+
 function statusStyle(status: string) {
-  if (status === 'reachable') return { color: '#22c55e', background: 'rgba(34,197,94,0.10)', borderColor: 'rgba(34,197,94,0.25)' }
+  if (status === 'connected') return { color: '#22c55e', background: 'rgba(34,197,94,0.10)', borderColor: 'rgba(34,197,94,0.25)' }
+  if (status === 'reachable') return { color: '#60a5fa', background: 'rgba(96,165,250,0.10)', borderColor: 'rgba(96,165,250,0.25)' }
   if (status === 'auth-required') return { color: '#f59e0b', background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.25)' }
   if (status === 'unreachable') return { color: '#f87171', background: 'rgba(248,113,113,0.10)', borderColor: 'rgba(248,113,113,0.25)' }
   return { color: 'var(--text-muted)', background: 'rgba(148,163,184,0.10)', borderColor: 'rgba(148,163,184,0.25)' }
@@ -560,6 +563,10 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const [info, setInfo] = useState('')
+  const [announceRequirement, setAnnounceRequirement] = useState('')
+  const [collapsedRemoteStatuses, setCollapsedRemoteStatuses] = useState<Set<CollapsibleRemoteStatus>>(
+    () => new Set<CollapsibleRemoteStatus>(['auth-required', 'unreachable']),
+  )
   const [busyName, setBusyName] = useState<string | null>(null)
   const [testInfo, setTestInfo] = useState<Record<string, string>>({})
   const [hardwareInfo, setHardwareInfo] = useState<Record<string, string>>({})
@@ -594,6 +601,14 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
     [remotes, selected],
   )
   const allSelected = remotes.length > 0 && remotes.every(r => selected.has(r.name))
+  const directlyVisibleRemotes = useMemo(
+    () => remotes.filter(r => r.status !== 'auth-required' && r.status !== 'unreachable'),
+    [remotes],
+  )
+  const collapsedRemoteGroups = useMemo(() => [
+    { status: 'auth-required' as const, label: '需要认证的机器', remotes: remotes.filter(r => r.status === 'auth-required') },
+    { status: 'unreachable' as const, label: '不可达的机器', remotes: remotes.filter(r => r.status === 'unreachable') },
+  ].filter(group => group.remotes.length > 0), [remotes])
   const bodyPreview = useMemo(
     () => buildRemoteComputeMemoryBody(selectedRemotes, hardwareInfo, remotePaths),
     [selectedRemotes, hardwareInfo, remotePaths],
@@ -624,6 +639,23 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
 
   const updateRemotePath = (name: string, path: string) => {
     setRemotePaths(prev => ({ ...prev, [name]: path }))
+  }
+
+  const toggleRemoteStatusGroup = (status: CollapsibleRemoteStatus) => {
+    setCollapsedRemoteStatuses(prev => {
+      const next = new Set(prev)
+      if (next.has(status)) next.delete(status)
+      else next.add(status)
+      return next
+    })
+  }
+
+  // 声明模式中可把 remote Host ID 直接附到用户的具体要求末尾，避免手动抄写。
+  const appendRemoteIdToRequirement = (name: string) => {
+    setAnnounceRequirement(prev => {
+      const separator = !prev || /\s$/.test(prev) ? '' : '\n'
+      return `${prev}${separator}${name}`
+    })
   }
 
   const testRemote = async (name: string) => {
@@ -716,9 +748,97 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
     if (selectedRemotes.length === 0) { setErr('请至少勾选一台 remote'); return }
     setErr('')
     const header = '【用户声明：以下计算机可与当前会话的 agent 合作。当任务需要远程算力或需要与这些机器交互时，agent 可通过 aimux 连接并使用它们（参考下方 aimux 使用说明）。】\n\n'
-    onAnnounce?.(`${header}${bodyPreview}`)
+    const requirement = announceRequirement.trim()
+    const requirementSection = requirement ? `【具体要求】\n${requirement}\n\n` : ''
+    onAnnounce?.(`${header}${requirementSection}${bodyPreview}`)
     onClose()
   }
+
+  const renderRemoteRow = (r: AimuxRemote) => (
+    <div key={r.name} data-tour="remote-compute-row" className="p-3 rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
+      style={{ borderColor: selected.has(r.name) ? 'rgba(34,211,238,0.35)' : 'var(--input-border)', background: selected.has(r.name) ? 'rgba(34,211,238,0.06)' : 'var(--bg-card)' }}>
+      <div className="flex items-start gap-3">
+        <input type="checkbox" checked={selected.has(r.name)}
+          onChange={() => toggleRemote(r.name)}
+          className="mt-1 w-4 h-4 accent-cyan-500 cursor-pointer" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[13px] font-medium font-mono" style={{ color: 'var(--text-primary)' }}>{r.name}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap" style={statusStyle(r.status)}>
+              {r.status || 'unknown'}
+            </span>
+            {typeof r.rtt_ms === 'number' && (
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.rtt_ms}ms</span>
+            )}
+            {isAnnounce && (
+              <button type="button" onClick={() => appendRemoteIdToRequirement(r.name)} disabled={saving}
+                data-tour="remote-compute-append-id"
+                title={`将机器 ID ${r.name} 追加到具体要求末尾`}
+                aria-label={`将机器 ID ${r.name} 追加到具体要求末尾`}
+                className="h-6 px-1.5 text-[10px] rounded border transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-40"
+                style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                添加 ID
+              </button>
+            )}
+          </div>
+          <div className="text-[11px] mt-1 truncate font-mono" style={{ color: 'var(--text-secondary)' }}>
+            {r.user || '-'}@{r.hostname || r.name}:{r.port || 22}
+          </div>
+          {(testInfo[r.name] || hardwareInfo[r.name]) && (
+            <div className="text-[11px] mt-2 space-y-1" style={{ color: 'var(--text-muted)' }}>
+              {testInfo[r.name] && <div>测试: {testInfo[r.name]}</div>}
+              {hardwareInfo[r.name] && <div>硬件: {hardwareInfo[r.name]}</div>}
+            </div>
+          )}
+          {selected.has(r.name) && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <input value={remotePaths[r.name] || ''}
+                onChange={e => updateRemotePath(r.name, e.target.value)}
+                data-tour="remote-compute-path-input"
+                placeholder="远程路径, 例: /workspace/project"
+                disabled={saving}
+                className="min-w-[220px] flex-1 h-7 px-2 rounded text-[11px] font-mono focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              <button type="button"
+                onClick={() => setPathPicker({ remote: r, path: remotePaths[r.name] || '~' })}
+                disabled={saving || r.status !== 'reachable'}
+                title={r.status === 'reachable' ? '浏览远端真实路径' : 'remote 状态不是 reachable, 无法浏览'}
+                className="h-7 px-2 text-[10.5px] rounded border transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                <FolderOpen className="w-3 h-3" strokeWidth={1.8} />
+                浏览
+              </button>
+              {['~', '/workspace', '/root', '/home'].map(p => (
+                <button key={p} type="button" onClick={() => updateRemotePath(r.name, p)} disabled={saving}
+                  className="h-7 px-2 text-[10.5px] rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
+                  style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button onClick={() => testRemote(r.name)} disabled={!!busyName || saving}
+            data-tour="remote-compute-test"
+            title="aimux remote test"
+            className="h-7 px-2 text-[11px] rounded border hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-40 inline-flex items-center gap-1"
+            style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+            <Activity className="w-3 h-3" strokeWidth={1.8} />
+            {busyName === `test:${r.name}` ? '测试中...' : '测试'}
+          </button>
+          <button onClick={() => probeHardware(r.name)} disabled={!!busyName || saving}
+            data-tour="remote-compute-hardware"
+            title="aimux remote hardware"
+            className="h-7 px-2 text-[11px] rounded border hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-40 inline-flex items-center gap-1"
+            style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+            <Cpu className="w-3 h-3" strokeWidth={1.8} />
+            {busyName === `hardware:${r.name}` ? '探测中...' : '硬件'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -769,81 +889,29 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                 <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
               ) : remotes.length === 0 ? (
                 <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>暂无 aimux remote</div>
-              ) : remotes.map(r => (
-                <div key={r.name} data-tour="remote-compute-row" className="p-3 rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
-                  style={{ borderColor: selected.has(r.name) ? 'rgba(34,211,238,0.35)' : 'var(--input-border)', background: selected.has(r.name) ? 'rgba(34,211,238,0.06)' : 'var(--bg-card)' }}>
-                  <div className="flex items-start gap-3">
-                    <input type="checkbox" checked={selected.has(r.name)}
-                      onChange={() => toggleRemote(r.name)}
-                      className="mt-1 w-4 h-4 accent-cyan-500 cursor-pointer" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[13px] font-medium font-mono" style={{ color: 'var(--text-primary)' }}>{r.name}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap" style={statusStyle(r.status)}>
-                          {r.status || 'unknown'}
-                        </span>
-                        {typeof r.rtt_ms === 'number' && (
-                          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.rtt_ms}ms</span>
-                        )}
+              ) : (
+                <>
+                  {directlyVisibleRemotes.map(renderRemoteRow)}
+                  {collapsedRemoteGroups.map(group => {
+                    const collapsed = collapsedRemoteStatuses.has(group.status)
+                    return (
+                      <div key={group.status} data-tour={`remote-compute-status-group-${group.status}`} className="rounded-lg border overflow-hidden"
+                        style={{ borderColor: 'var(--input-border)', background: 'var(--bg-card)' }}>
+                        <button type="button" onClick={() => toggleRemoteStatusGroup(group.status)}
+                          aria-expanded={!collapsed}
+                          className="w-full min-h-9 px-3 flex items-center gap-2 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
+                          style={{ color: 'var(--text-muted)' }}>
+                          <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform ${collapsed ? '-rotate-90' : ''}`} strokeWidth={1.8} />
+                          <span className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{group.label}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded border" style={statusStyle(group.status)}>{group.remotes.length}</span>
+                          <span className="ml-auto text-[10px]">{collapsed ? '展开' : '收起'}</span>
+                        </button>
+                        {!collapsed && <div className="p-2 pt-0 space-y-2">{group.remotes.map(renderRemoteRow)}</div>}
                       </div>
-                      <div className="text-[11px] mt-1 truncate font-mono" style={{ color: 'var(--text-secondary)' }}>
-                        {r.user || '-'}@{r.hostname || r.name}:{r.port || 22}
-                      </div>
-                      {(testInfo[r.name] || hardwareInfo[r.name]) && (
-                        <div className="text-[11px] mt-2 space-y-1" style={{ color: 'var(--text-muted)' }}>
-                          {testInfo[r.name] && <div>测试: {testInfo[r.name]}</div>}
-                          {hardwareInfo[r.name] && <div>硬件: {hardwareInfo[r.name]}</div>}
-                        </div>
-                      )}
-                      {selected.has(r.name) && (
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <input value={remotePaths[r.name] || ''}
-                            onChange={e => updateRemotePath(r.name, e.target.value)}
-                            data-tour="remote-compute-path-input"
-                            placeholder="远程路径, 例: /workspace/project"
-                            disabled={saving}
-                            className="min-w-[220px] flex-1 h-7 px-2 rounded text-[11px] font-mono focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
-                            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-                          <button type="button"
-                            onClick={() => setPathPicker({ remote: r, path: remotePaths[r.name] || '~' })}
-                            disabled={saving || r.status !== 'reachable'}
-                            title={r.status === 'reachable' ? '浏览远端真实路径' : 'remote 状态不是 reachable, 无法浏览'}
-                            className="h-7 px-2 text-[10.5px] rounded border transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                            style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
-                            <FolderOpen className="w-3 h-3" strokeWidth={1.8} />
-                            浏览
-                          </button>
-                          {['~', '/workspace', '/root', '/home'].map(p => (
-                            <button key={p} type="button" onClick={() => updateRemotePath(r.name, p)} disabled={saving}
-                              className="h-7 px-2 text-[10.5px] rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
-                              style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
-                              {p}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button onClick={() => testRemote(r.name)} disabled={!!busyName || saving}
-                        data-tour="remote-compute-test"
-                        title="aimux remote test"
-                        className="h-7 px-2 text-[11px] rounded border hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-40 inline-flex items-center gap-1"
-                        style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
-                        <Activity className="w-3 h-3" strokeWidth={1.8} />
-                        {busyName === `test:${r.name}` ? '测试中...' : '测试'}
-                      </button>
-                      <button onClick={() => probeHardware(r.name)} disabled={!!busyName || saving}
-                        data-tour="remote-compute-hardware"
-                        title="aimux remote hardware"
-                        className="h-7 px-2 text-[11px] rounded border hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-40 inline-flex items-center gap-1"
-                        style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
-                        <Cpu className="w-3 h-3" strokeWidth={1.8} />
-                        {busyName === `hardware:${r.name}` ? '探测中...' : '硬件'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                    )
+                  })}
+                </>
+              )}
             </div>
           </div>
 
@@ -893,10 +961,28 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
             <div className="flex-1 min-h-0 p-5 space-y-3 overflow-auto">
               <div className="text-[11px] rounded border px-3 py-2" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
                 {isAnnounce
-                  ? <>点击确认后，以下内容将作为一条消息发送给当前会话的 agent，<span className="font-medium" style={{ color: 'var(--text-primary)' }}>不会写入 Memory</span>。</>
+                  ? <>点击确认后，以下内容将作为一条消息发送给当前会话的智能体。</>
                   : <>将同步唯一的项目 Memory：<span className="font-medium" style={{ color: 'var(--text-primary)' }}>Aimux 远程算力清单</span>；旧同名清单会自动移除。</>
                 }
               </div>
+              {isAnnounce && (
+                <div>
+                  <label htmlFor="remote-compute-announce-requirement" className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>
+                    具体要求（可选）
+                  </label>
+                  <textarea id="remote-compute-announce-requirement" value={announceRequirement}
+                    onChange={e => setAnnounceRequirement(e.target.value)}
+                    data-tour="remote-compute-announce-requirement"
+                    placeholder="例如：请优先在这台机器上执行构建。可点击每台机器旁的“添加 ID”引用它。"
+                    disabled={saving}
+                    rows={3}
+                    className="w-full resize-y min-h-[72px] px-3 py-2 rounded-lg text-[12px] leading-relaxed focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                  <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    点击机器旁的“添加 ID”会将该机器的 aimux Host ID 追加到这里。
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>{isAnnounce ? '发送内容预览' : 'Memory 文本预览'}</label>
                 <pre data-tour="remote-compute-memory-preview" className="text-[11px] leading-relaxed whitespace-pre-wrap font-mono p-3 rounded-lg border min-h-[220px] max-h-[320px] overflow-auto"

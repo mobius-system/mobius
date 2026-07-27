@@ -104,8 +104,7 @@ async function main() {
     stdin.write('\r'); await delay(120)
     ok(await waitFor(lastFrame, '项目名称'), 'project create wizard opened')
     stdin.write('测试项目PTY'); await delay(120)
-    stdin.write('\r'); await delay(120)                              // → desc field
-    stdin.write('\r'); await delay(300)                             // submit desc (empty)
+    stdin.write('\r'); await delay(300)                             // submit project name
     snap('1-prep-project-created', lastFrame() ?? '')
 
     // ── prep: issue picker (no issues → create) ──────────────────────────────

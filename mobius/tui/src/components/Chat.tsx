@@ -233,6 +233,8 @@ function ViewLine({ view }: { view: EntryView }) {
           {'  └ '}{view.summary || '(无输出)'}
         </Text>
       )
+    case 'reasoning':
+      return <Text dimColor color="magenta">  ◇ {view.text}</Text>
     case 'system':
       return <Text dimColor color="yellow">  {view.text}</Text>
     case 'error':
@@ -250,18 +252,35 @@ function UserLine({ text }: { text: string }) {
 }
 
 function WorkingIndicator() {
-  const [secs, setSecs] = useState(0)
+  const startedAt = useRef(Date.now())
+  const [animationFrame, setAnimationFrame] = useState(0)
   useEffect(() => {
-    const startedAt = Date.now()
-    const id = setInterval(() => setSecs(Math.floor((Date.now() - startedAt) / 1000)), 500)
+    const id = setInterval(() => setAnimationFrame(frame => frame + 1), 80)
     return () => clearInterval(id)
   }, [])
+  const secs = Math.floor((Date.now() - startedAt.current) / 1000)
   const elapsed = secs >= 60 ? `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, '0')}s` : `${secs}s`
+  const label = `• Working (${elapsed} · esc to interrupt)`
   return (
     <Box marginTop={1}>
-      <Text dimColor>• Working ({elapsed} · esc to interrupt)</Text>
+      <Text>{shimmerText(label, animationFrame)}</Text>
     </Box>
   )
+}
+
+// A soft highlight travels through the status text, matching the moving
+// brightness cue used by Codex while keeping the elapsed time readable.
+const SHIMMER_SHADES = ['#ffffff', '#d0d0d0', '#ababab', '#8c8c8c', '#747474', '#666666']
+
+export function shimmerText(label: string, frame: number): React.ReactNode[] {
+  const chars = Array.from(label)
+  const head = chars.length > 0 ? frame % chars.length : 0
+  return chars.map((char, index) => {
+    const directDistance = Math.abs(index - head)
+    const distance = Math.min(directDistance, chars.length - directDistance)
+    const shade = SHIMMER_SHADES[Math.min(distance, SHIMMER_SHADES.length - 1)]
+    return <Text key={`${index}-${char}`} color={shade}>{char}</Text>
+  })
 }
 
 function HelpBlock({ commands }: { commands: { cmd: string; desc: string }[] }) {
@@ -331,12 +350,10 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
       return
     }
     if (key.ctrl && input === 'c') { typing ? void onStop() : onQuit(); return }
-    if (key.backspace) {
+    // Ink reports the terminal Backspace key (\x7f) as `key.delete`; handle both
+    // as a backward delete so Backspace works at the end of the input.
+    if (key.backspace || key.delete) {
       if (cursor > 0) edit(value.slice(0, cursor - 1) + value.slice(cursor), cursor - 1)
-      return
-    }
-    if (key.delete) {
-      if (cursor < value.length) edit(value.slice(0, cursor) + value.slice(cursor + 1), cursor)
       return
     }
     if (key.leftArrow) { setCursor(current => Math.max(0, current - 1)); return }

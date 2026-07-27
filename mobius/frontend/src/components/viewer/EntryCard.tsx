@@ -99,16 +99,20 @@ const TOOL_STATUS_ICON: Record<ToolStatus, typeof Check> = {
 }
 
 // 头部状态图标: 替换工具卡上的装饰彩点, 用图标直观表达工具执行状态 (Cursor 式).
+// 外层状态槽始终固定为 14px。普通卡的圆点与工具的对钩/加载/错误图标共用该槽，
+// 这样不同状态不会改变后方类型标签和摘要的横向起点。
 function ToolStatusIcon({ status }: { status: ToolStatus }) {
   const meta = TOOL_STATUS_META[status]
   const Icon = TOOL_STATUS_ICON[status]
   return (
-    <Icon
-      className={`h-3 w-3 flex-shrink-0 ${meta.iconClass}${meta.spin ? ' animate-spin' : ''}`}
-      strokeWidth={2.4}
-      aria-label={meta.label}
-      role="img"
-    />
+    <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
+      <Icon
+        className={`h-3 w-3 ${meta.iconClass}${meta.spin ? ' animate-spin' : ''}`}
+        strokeWidth={2.4}
+        aria-label={meta.label}
+        role="img"
+      />
+    </span>
   )
 }
 
@@ -218,17 +222,23 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, defaultCollapsed =
   // 能精简的纯文本卡片默认展开, 代码化卡片默认折叠; patch_apply / error 保留默认展开,
   // 父组件 defaultExpanded 仍能强制展开其它卡片.
   // 用户手动折叠 → onToggle 写回 state, 此后重渲染不再强制掀开.
-  // defaultCollapsed (forgotten-flag 上下文折叠) 命中时强制初始折叠, 覆盖以上所有展开条件.
+  // defaultCollapsed (forgotten-flag 上下文折叠) 命中时强制初始折叠, 覆盖以上所有展开条件;
+  // 搜索定位的 defaultExpanded 是用户显式的查看动作，优先级更高，必须能展开命中卡片。
   const tourTarget = jsonEntryTourTarget(entry)
   // 工具调用状态: 由 "该 tool_use 的结果是否已落地" 推导 (running = 已发起未回结果).
   const toolStatus = deriveToolCallStatus(entry, resolvedMap)
   // 用户是否手动点过折叠/展开: 一旦手动操作, 失败自动展开就不再强制掀开 (尊重用户).
   const userToggledRef = useRef(false)
   const [open, setOpen] = useState<boolean>(
-    defaultCollapsed
+    defaultCollapsed && !defaultExpanded
       ? false
       : (isPatchApplyEvent || canPlan || (!canCode && (canCompact || canImage || type === 'error')) || !!defaultExpanded)
   )
+  // 搜索目标通常在“轮次先展开、卡片后挂载”的下一次渲染才拿到 defaultExpanded。
+  // 因此除了初始值外，也要响应 prop 变为 true，确保命中卡片真正展开。
+  useEffect(() => {
+    if (defaultExpanded) setOpen(true)
+  }, [defaultExpanded])
   // 失败的工具块默认展开 (Cursor 式: 错误不能因折叠被藏起). 仅在变 error 时展开一次, 不覆盖用户手动折叠.
   // defaultCollapsed 卡片也尊重用户的显式折叠意图 (forgotten-flag 收尾卡几乎不会 error; 真若 error 仍不掀开,
   // 因用户已明确要求这类卡折叠, 且可手动展开查看).
@@ -279,6 +289,8 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, defaultCollapsed =
   return (
     <details
       data-tour={tourTarget}
+      data-jsonl-line-no={lineNo}
+      data-jsonl-entry-id={entry?.uuid || entry?.id || undefined}
       open={open}
       onToggle={(e) => { userToggledRef.current = true; setOpen((e.currentTarget as HTMLDetailsElement).open) }}
       className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm card-enter ${theme.border} ${theme.bg}`}>
@@ -288,7 +300,9 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, defaultCollapsed =
         {toolStatus ? (
           <ToolStatusIcon status={toolStatus} />
         ) : (
-          <span className={`w-1.5 h-1.5 rounded-full ${theme.dot} flex-shrink-0`}></span>
+          <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
+            <span className={`h-1.5 w-1.5 rounded-full ${theme.dot}`}></span>
+          </span>
         )}
         <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>
         {canCode && (

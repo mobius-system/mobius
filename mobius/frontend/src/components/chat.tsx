@@ -2,13 +2,13 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
-import { Bot, BookOpen, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ScrollText, ExternalLink, Network, Hash } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
-import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor } from './session-welcome'
+import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal } from './session-welcome'
 import { NewSessionModal } from './modals'
-import { OpenInVSCodeButton, ProjectPortEntryButton } from './project-files'
+import { OpenInVSCodeButton } from './project-files'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
 import { useVisibleJsonl } from './session-jsonl-filter'
@@ -23,6 +23,7 @@ import { PlanningEditor } from './planning-editor'
 import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { RemoteComputeMemoryModal } from './memories'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
+import { AdvancedSessionActions } from './advanced-session-actions'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { extensionAppUrlForProject } from '../services/extension-entry'
 import { isFireAndForgetSession } from '../services/session-start-policy'
@@ -1409,7 +1410,7 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
 // 用于「代码对话」模式的窄右栏. 仅切换 .mobius-chat-body 上的修饰类 (见 index.css),
 // 不触碰任何 SSE / 草稿 / Stop / Send / Agent 状态逻辑. 向后兼容 (默认 default).
 export function ChatArea({ layout = 'default', onNewSession }: {
-  layout?: 'default' | 'stacked'
+  layout?: 'default' | 'stacked' | 'easy'
   onNewSession?: () => void
 } = {}) {
   const { currentSession, currentTask, currentIssue, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
@@ -1496,6 +1497,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false)
   const [continueModalOpen, setContinueModalOpen] = useState(false)
   const [cooperablePcOpen, setCooperablePcOpen] = useState(false)
+  const [skillMemoryModal, setSkillMemoryModal] = useState<null | 'skill' | 'memory'>(null)
   // 会话内 Web 终端弹窗 (issue session / research agent 共用 ChatArea, 一处入口覆盖两类会话).
   const [terminalChoiceOpen, setTerminalChoiceOpen] = useState(false)
   const [terminalOpen, setTerminalOpen] = useState(false)
@@ -2969,6 +2971,33 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     </div>
   )
 
+  const renderAdvancedSessionActions = (variant: 'default' | 'compact') => (
+    <AdvancedSessionActions
+      variant={variant}
+      sessionId={currentSession?.session_id || sessionId}
+      projectId={currentProjectId}
+      issueId={currentIssueId}
+      researchId={(currentSession as any)?.research_id}
+      vscodeSubPath={currentVscodeSubPath}
+      jsonlEntryCount={jsonlEntries.length}
+      showJsonlMeta={showJsonlMeta}
+      connectionReady={connectionStatus === 'connected'}
+      projectKnowledgeSending={projectKnowledgeSending}
+      onOpenFileChanges={() => setFileChangesOpen(true)}
+      onOpenBashCommands={() => setBashCommandsOpen(true)}
+      onOpenInputReplay={() => setInputReplayOpen(true)}
+      onToggleJsonlMeta={() => setShowJsonlMeta(value => !value)}
+      onRequestRunProject={sendRunProjectPortPrompt}
+      onOpenTerminal={() => setTerminalChoiceOpen(true)}
+      onOpenCooperablePc={() => setCooperablePcOpen(true)}
+      onOpenKnowledge={() => setKnowledgeEditorOpen(true)}
+      onSendProjectKnowledge={sendProjectKnowledgePrompt}
+      onContinueWithModel={() => setContinueModalOpen(true)}
+      onOpenSkill={() => setSkillMemoryModal('skill')}
+      onOpenMemory={() => setSkillMemoryModal('memory')}
+    />
+  )
+
   return (
     <div className="flex-1 flex flex-col h-full min-w-0" style={{ background: 'var(--bg-secondary)' }}>
       {attachmentImagePreview && (
@@ -3041,6 +3070,13 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           onClose={() => setKnowledgeEditorOpen(false)}
         />
       )}
+      {layout === 'easy' && skillMemoryModal && (
+        <SessionSkillMemoryModal
+          sessionId={currentSession?.session_id || sessionId}
+          initialPanel={skillMemoryModal}
+          onClose={() => setSkillMemoryModal(null)}
+        />
+      )}
       {/* 声明可合作计算机: 勾选 aimux remote → 生成声明文本作为消息发给当前会话 agent (不写 Memory) */}
       {cooperablePcOpen && (
         <RemoteComputeMemoryModal
@@ -3050,8 +3086,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           onAnnounce={(body) => { handleAnnouncePc(body); setCooperablePcOpen(false) }}
         />
       )}
-      {/* 顶栏（会话标题 + 单一状态 chip + Stop + VSCode + 溢出菜单） */}
-      <div data-tour="session-chat-header" className="h-9 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+      {/* 简易模式把会话上下文收进左侧近期会话列表，右侧仅保留 JSONL 和输入。 */}
+      {layout !== 'easy' && <div data-tour="session-chat-header" className="h-9 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="min-w-0 flex items-center gap-2">
             <SessionTitle name={currentSession?.name || currentTask?.name} theme={theme} />
@@ -3150,7 +3186,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
             canStop={!!sessionId}
           />
         </div>
-      </div>
+      </div>}
 
       {stopFeedbackActive && (
         <div className="pointer-events-none fixed left-1/2 top-16 z-[80] -translate-x-1/2">
@@ -3205,7 +3241,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
 
       {/* body: 横向分 68% JsonlView + 32% (输入 + skill/memory 编辑). 窄屏改纵向堆叠 (见 index.css .mobius-chat-body).
           layout='stacked' 时附加 mobius-chat-body--stacked, 与视口无关地强制纵向堆叠 (代码对话模式). */}
-      <div className={`mobius-chat-body flex-1 flex min-h-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}`}>
+      <div className={`mobius-chat-body flex-1 flex min-h-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}>
         {/* 左 68%: JSONL 视图 */}
         <SessionJsonlPanel
           currentProjectId={currentProjectId}
@@ -3232,12 +3268,13 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           scrollToMatchTs={matchTs}
           onMatchScrollResolved={onMatchScrollResolved}
           onMatchScrollUnresolved={handleLoadAllJsonl}
+          variant={layout === 'easy' ? 'easy' : 'standard'}
         />
 
         {/* 右 32%: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽 (见 index.css .mobius-chat-input). */}
-        <div className="mobius-chat-input flex flex-col border-l flex-shrink-0" style={{ width: '32%', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+        <div className={`mobius-chat-input flex flex-col border-l flex-shrink-0${layout === 'easy' && !isPlanningSession ? ' mobius-chat-input--with-actions' : ''}`} style={{ width: '32%', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
           {/* 输入区 */}
-          <div className="p-3 flex-shrink-0">
+          <div className="mobius-chat-input-editor min-w-0 flex-shrink-0 p-3">
             <div>
           {replyTo && (
             <div className="flex items-center gap-2 mb-2 px-4 py-2 bg-blue-500/5 border border-blue-500/15 rounded-xl">
@@ -3479,116 +3516,23 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           </div>
         </div>
       </div>
-          {/* 下方操作区: 普通会话展示快捷按钮 + Skill/Memory 快照; 规划模式展示项目知识编辑器. */}
-          {isPlanningSession && currentProjectId ? (
+          {/* 简易模式把同一组高级会话操作紧凑放到输入框左侧。 */}
+          {layout === 'easy' && !isPlanningSession && renderAdvancedSessionActions('compact')}
+
+          {/* 标准/堆叠布局的下方操作区: 普通会话展示快捷按钮 + Skill/Memory 快照;
+              规划模式展示项目知识编辑器。简易模式不重复挂载隐藏侧区，避免端口按钮重复请求。 */}
+          {layout !== 'easy' && (isPlanningSession && currentProjectId ? (
             <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3">
               <PlanningEditor projectId={currentProjectId} sessionId={sessionId} />
             </div>
           ) : (
             <div className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0">
-              {/* 高级会话按钮组: 恒定 2 行 (Row1=5 cols, Row2=5 cols), 行间细线分组. 各行按钮数与列数严格匹配, 杜绝孤行/换行撑出第 3 行. */}
-              <div className="flex flex-col gap-1.5">
-                {/* Row 1: 5 buttons (文件修改 + 运行命令 + 输入回放 + 时间序号 + 项目端口) */}
-                <div className="grid grid-cols-5 items-stretch gap-2">
-                  <AdvancedInteractionBtn
-                    onClick={() => setFileChangesOpen(true)}
-                    disabled={!sessionId}
-                    label="查看文件修改"
-                    tooltip="查看当前会话所有文件修改"
-                    accent="blue"
-                    icon={<FileDiff className="h-4 w-4" strokeWidth={1.9} />}
-                  />
-                  <AdvancedInteractionBtn
-                    onClick={() => setBashCommandsOpen(true)}
-                    disabled={!sessionId}
-                    data-tour="session-bash-commands"
-                    label="查看运行命令"
-                    tooltip="查看当前会话运行的所有Bash命令"
-                    accent="emerald"
-                    icon={<ScrollText className="h-4 w-4" strokeWidth={1.9} />}
-                  />
-                  <AdvancedInteractionBtn
-                    onClick={() => setInputReplayOpen(true)}
-                    disabled={!sessionId}
-                    label="回放输入"
-                    tooltip="回放输入"
-                    accent="blue"
-                    icon={<History className="h-4 w-4" strokeWidth={1.9} />}
-                  />
-                  <AdvancedInteractionBtn
-                    onClick={() => setShowJsonlMeta(v => !v)}
-                    disabled={jsonlEntries.length === 0}
-                    label={showJsonlMeta ? '隐藏时间与序号' : '显示时间与序号'}
-                    tooltip={showJsonlMeta ? '隐藏 JSONL 卡片标题里的序号与时间前缀' : '在 JSONL 卡片标题里显示 #序号 与 MM-DD HH:MM:SS 时间前缀'}
-                    accent="blue"
-                    aria-pressed={showJsonlMeta}
-                    className={showJsonlMeta ? 'bg-blue-500/15' : ''}
-                    icon={<Hash className="h-4 w-4" strokeWidth={1.9} />}
-                  />
-                  <ProjectPortEntryButton
-                    projectId={currentProjectId}
-                    subPath={currentVscodeSubPath}
-                    label="进入项目端口"
-                    triggerVariant="advanced"
-                    onRequestRunProject={sendRunProjectPortPrompt}
-                  />
-                </div>
-                {/* Row separator */}
-                <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
-                {/* Row 2 与 Row 1 共用同一套五列网格，保证每个按钮的列起点、列宽和左右边界严格对齐。 */}
-                <div className="grid grid-cols-5 items-stretch gap-2">
-                  <AdvancedInteractionBtn
-                    onClick={() => setTerminalChoiceOpen(true)}
-                    disabled={!currentSession?.session_id}
-                    label="打开终端"
-                    tooltip="打开当前会话终端"
-                    accent="emerald"
-                    icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
-                  />
-                  <AdvancedInteractionBtn
-                    onClick={() => setCooperablePcOpen(true)}
-                    data-tour="session-cooperable-pc"
-                    disabled={!currentSession?.session_id}
-                    label="可合作计算机"
-                    tooltip="声明可合作计算机 (勾选 aimux remote, 生成声明直接发给当前 agent, 不写 Memory)"
-                    accent="amber"
-                    icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
-                  />
-                  <AdvancedInteractionBtn
-                    onClick={() => setKnowledgeEditorOpen(true)}
-                    disabled={!currentProjectId || !currentIssueId}
-                    label="查看当前知识"
-                    tooltip="查看当前知识 (项目知识 / 本任务知识)"
-                    accent="cyan"
-                    icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
-                  />
-                  <AdvancedInteractionBtn
-                    onClick={sendProjectKnowledgePrompt}
-                    disabled={jsonlEntries.length === 0 || !currentProjectId || connectionStatus !== 'connected' || projectKnowledgeSending}
-                    label="项目知识沉淀到记忆"
-                    tooltip={projectKnowledgeSending ? '正在发送项目知识沉淀指令...' : '请智能体整理并更新项目级与任务级可复用知识'}
-                    accent="violet"
-                    icon={projectKnowledgeSending
-                      ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.9} />
-                      : <Archive className="h-4 w-4" strokeWidth={1.9} />}
-                  />
-                  <AdvancedInteractionBtn
-                    onClick={() => setContinueModalOpen(true)}
-                    disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
-                    label="修改模型并继续"
-                    tooltip="修改模型并继续"
-                    accent="violet"
-                    icon={<Replace className="h-4 w-4" strokeWidth={1.9} />}
-                  />
-                </div>
-                {/* Row separator (below Row 2, 与 Row 1/2 之间的细线对称) */}
-                <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
-              </div>
+              {renderAdvancedSessionActions('default')}
                 <SessionSkillMemoryEditor
                   sessionId={currentSession?.session_id || sessionId}
                 />
             </div>
-          )}
+          ))}
         </div>
       </div>
 

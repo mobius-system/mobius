@@ -81,6 +81,13 @@ export interface Issue {
 }
 
 // ── Sessions ─────────────────────────────────────────────────────────────────
+export interface PcClientMetadata {
+  work_mode: 'hub' | 'pc' | 'dual'
+  aimux_id: string
+  local_path?: string
+  is_tui: boolean
+}
+
 // NOTE: the identifier field is `session_id`, not `id`.
 export interface Session {
   session_id: string
@@ -105,7 +112,7 @@ export interface Session {
   raw_entry_count?: number
   created_at?: string
   last_active?: string
-  pc_client_metadata?: Record<string, unknown>
+  pc_client_metadata?: PcClientMetadata | string | null
   issue_title?: string
   project_name?: string
   user_display_name?: string

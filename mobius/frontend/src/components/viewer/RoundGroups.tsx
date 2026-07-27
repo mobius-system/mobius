@@ -46,14 +46,18 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
 
 // 探索类工具聚合容器: 把连续的只读/搜索调用折叠成 "已探索 N 个工具" 一行 (Cursor 式).
 // 含失败调用时默认展开并标红, 摘要行带错误标记 (折叠也不能藏起错误); 展开后逐条渲染子卡片.
-export function ExploreGroupCard({ items, hasError, showMeta = true, resolvedMap, collapseLineNos }: {
+export function ExploreGroupCard({ items, hasError, showMeta = true, resolvedMap, collapseLineNos, focusLineNo }: {
   items: RoundItem[]
   hasError: boolean
   showMeta?: boolean
   resolvedMap?: ResolvedCallMap | null
   collapseLineNos?: Set<number>
+  // 搜索命中卡可能被聚合在“探索”组内；组本身也必须打开，子卡才有机会展开/滚到。
+  focusLineNo?: number | null
 }) {
-  const [open, setOpen] = useState(hasError)
+  const containsFocus = typeof focusLineNo === 'number' && items.some(item => item.lineNo === focusLineNo)
+  const [open, setOpen] = useState(hasError || containsFocus)
+  useEffect(() => { if (containsFocus) setOpen(true) }, [containsFocus])
   return (
     <details
       open={open}
@@ -79,6 +83,7 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, resolvedMap
               readResults={item.readResults}
               showMeta={showMeta}
               resolvedMap={resolvedMap}
+              defaultExpanded={item.lineNo === focusLineNo}
               defaultCollapsed={collapseLineNos?.has(item.lineNo)}
             />
           ))}
@@ -88,10 +93,11 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, resolvedMap
   )
 }
 
-export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, showMeta = true, resolvedMap, collapseLineNos }: { items: JsonlViewItem[]; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; collapseLineNos?: Set<number> }) {
+export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, showMeta = true, resolvedMap, collapseLineNos, focusLineNo }: { items: JsonlViewItem[]; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; collapseLineNos?: Set<number>; focusLineNo?: number | null }) {
   // 只有一组时强制展开, 禁止折叠; forceExpandAll (点 "加载全部") 时也展开; 其它场景保留原默认折叠行为
-  const [open, setOpen] = useState(onlyGroup || forceExpandAll)
-  useEffect(() => { if (onlyGroup || forceExpandAll) setOpen(true) }, [onlyGroup, forceExpandAll])
+  const containsFocus = typeof focusLineNo === 'number' && items.some(item => item.lineNo === focusLineNo)
+  const [open, setOpen] = useState(onlyGroup || forceExpandAll || containsFocus)
+  useEffect(() => { if (onlyGroup || forceExpandAll || containsFocus) setOpen(true) }, [onlyGroup, forceExpandAll, containsFocus])
   const firstSummary = items[0] ? buildHeaderSummary(items[0].entry).short : ''
 
   return (
@@ -127,7 +133,7 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
                 ...
               </span>
               <div className="flex-1 min-w-0">
-                <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} resolvedMap={resolvedMap} defaultCollapsed={collapseLineNos?.has(lineNo)} />
+                <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} resolvedMap={resolvedMap} defaultExpanded={lineNo === focusLineNo} defaultCollapsed={collapseLineNos?.has(lineNo)} />
               </div>
             </div>
           ))}
@@ -137,7 +143,7 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
   )
 }
 
-export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, showMeta = true, resolvedMap, cursorStyleTools = true, collapseLineNos }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; cursorStyleTools?: boolean; collapseLineNos?: Set<number> }) {
+export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, forceOpen = false, showMeta = true, resolvedMap, cursorStyleTools = true, collapseLineNos, focusLineNo }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; forceOpen?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; cursorStyleTools?: boolean; collapseLineNos?: Set<number>; focusLineNo?: number | null }) {
   // 追踪用户是否手动点击过折叠/展开. 一旦手动操作, 后续不再被 autoOpen/forceExpandAll 自动接管.
   // 实现"最新两轮自动展开, 除非人为折叠": 最新轮和上一轮默认展开, 更早的轮默认折叠;
   // 某轮升入最新两轮时自动展开, 跌出最新两轮时自动折叠; 用户手动操作过的轮尊重用户, 不再自动改.
@@ -146,14 +152,14 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
   const autoOpen = isLast || isSecondLast
   const userToggledRef = useRef(false)
   // 初始值含 forceExpandAll: 避免虚拟列表里新滚入的轮先以折叠态绘制再被 effect 掀开 (闪一下).
-  const [open, setOpen] = useState(forceExpandAll || autoOpen || onlyGroup)
+  const [open, setOpen] = useState(forceExpandAll || forceOpen || autoOpen || onlyGroup)
 
   // onlyGroup 时永远保持展开; 否则跟随 forceExpandAll/autoOpen 自动展开/折叠, 但用户手动操作过则尊重用户.
   useEffect(() => {
-    if (onlyGroup) { setOpen(true); return }
+    if (onlyGroup || forceOpen) { setOpen(true); return }
     if (userToggledRef.current) return
     setOpen(forceExpandAll || autoOpen)
-  }, [autoOpen, onlyGroup, forceExpandAll])
+  }, [autoOpen, onlyGroup, forceExpandAll, forceOpen])
 
   const toggle = () => {
     userToggledRef.current = true
@@ -204,7 +210,7 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
                 <div key={`explore-${idx}-${ri.items[0]?.lineNo ?? ''}`} className="flex items-start gap-1.5">
                   <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">·</span>
                   <div className="flex-1 min-w-0">
-                    <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} resolvedMap={resolvedMap} collapseLineNos={collapseLineNos} />
+                    <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} resolvedMap={resolvedMap} collapseLineNos={collapseLineNos} focusLineNo={focusLineNo} />
                   </div>
                 </div>
               )
@@ -227,6 +233,7 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
                       readResults={item.readResults}
                       showMeta={showMeta}
                       resolvedMap={resolvedMap}
+                      defaultExpanded={item.lineNo === focusLineNo}
                       defaultCollapsed={collapseLineNos?.has(item.lineNo)}
                     />
                   </div>

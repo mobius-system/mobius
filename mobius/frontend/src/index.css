@@ -5707,6 +5707,56 @@ body.mobius-resizing .mobius-resizable-handle {
   display: none !important;
 }
 
+/* 简易模式: JSONL 占满右侧，输入框悬浮在底部中央。会话标题、状态与高级操作由
+   EasyModePage 左侧近期会话栏承载；这里不复制 ChatArea 的数据/SSE/发送逻辑。 */
+.mobius-chat-body.mobius-chat-body--easy {
+  position: relative;
+  flex-direction: column;
+}
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-history {
+  width: 100% !important;
+  flex: 1 1 0%;
+  min-height: 0;
+}
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-input {
+  position: absolute;
+  z-index: 20;
+  bottom: 16px;
+  left: 50%;
+  width: min(760px, calc(100% - 32px)) !important;
+  min-height: 0;
+  transform: translateX(-50%);
+  border: 0 !important;
+  background: transparent !important;
+  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.22));
+}
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-input.mobius-chat-input--with-actions {
+  width: min(944px, calc(100% - 32px)) !important;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 8px;
+}
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-input--with-actions .mobius-chat-input-editor {
+  flex: 1 1 auto;
+}
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-input--with-actions .advanced-session-actions--compact {
+  order: -1;
+  align-self: stretch;
+}
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-input > div:first-child {
+  padding: 0 !important;
+}
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-input-side {
+  display: none !important;
+}
+
+@media (max-width: 640px) {
+  .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input {
+    bottom: 8px;
+    width: calc(100% - 16px) !important;
+  }
+}
+
 /* =====================================================================
    全局「+」新建菜单 (.global-create-modal) — 窄屏移动端基本适配
    CreateModalShell 已用 flex-col + max-h + overflow-y-auto; 这里补窄屏细节.

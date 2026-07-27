@@ -16,6 +16,7 @@ interface PcClientMeta {
   work_mode?: string
   aimux_id?: string
   local_path?: string
+  is_tui?: boolean
 }
 
 /** pc_client_metadata 在 DB 是 JSON 字符串, 详情端点返回字符串, 列表端点补列后也是字符串。 */

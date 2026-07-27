@@ -685,7 +685,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
         name, description: finalDesc, model, language,
         excluded_skill_ids: excludedSkillIds, excluded_memory_ids: Array.from(excludedMemories),
         // PC 任务模式 (仅桌面端): workMode 非空才附 pc_client_metadata; web 端恒 null → body 完全不变.
-        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined } } : {}),
+        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false } } : {}),
       }) })
       if (s?.error) { window.clearInterval(timer); setSubmitting(false); setErr(s.error); return }
       // 等进度条走完

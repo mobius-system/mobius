@@ -84,8 +84,8 @@ interface InsertArgs {
   selection_snapshot?: unknown;
   model?: string;
   language?: SessionLanguage;
-  // PC 任务模式 (仅桌面端): { work_mode, aimux_id }; web 端 null/缺省.
-  pc_client_metadata?: { work_mode: string; aimux_id: string } | null;
+  // PC 任务模式 (Electron/TUI): web 端 null/缺省.
+  pc_client_metadata?: { work_mode: string; aimux_id: string; local_path?: string; is_tui?: boolean } | null;
 }
 
 // Session list endpoints feed cards/sidebars. Keep heavy snapshots out of these
