@@ -42,31 +42,26 @@ function requirementText(requirement) {
 }
 
 export function replacePromptRequirement(prompt, requirement) {
+  const source = String(prompt || '')
+  const updated = source.replace(
+    /^(请修改以下 .*修改要求如下：\n)“[^”]*”/,
+    (_match, prefix) => `${prefix}“${requirementText(requirement)}”`,
+  )
+  if (updated !== source) return updated
   const marker = '\n\n先在源代码中定位'
-  const markerIndex = String(prompt || '').indexOf(marker)
+  const markerIndex = source.indexOf(marker)
   if (markerIndex < 0) return prompt
-  return `请修改以下界面元素，修改要求如下：\n“${requirementText(requirement)}”${String(prompt).slice(markerIndex)}`
+  return `请修改以下界面元素，修改要求如下：\n“${requirementText(requirement)}”${source.slice(markerIndex)}`
 }
 
-export function buildAgentPrompt(snapshot, locationResult = null, requirement = '') {
+function elementPrompt(snapshot, locationResult, index) {
   const attrs = snapshot.element.attributes
   const style = snapshot.element.style
   const hints = routeHints(snapshot.page)
   const commands = searchCommands(snapshot)
   const ancestry = snapshot.element.ancestry.map((item, index) => `${'  '.repeat(index)}${index ? '> ' : ''}${item}`).join('\n')
 
-  return `请修改以下界面元素，修改要求如下：
-“${requirementText(requirement)}”
-
-先在源代码中定位该元素，不要仅根据截图或视觉位置猜测。定位后先确认对应文件、组件或渲染函数，再实施用户提出的具体改动。不要修改 node_modules、dist、release 或构建产物。
-
-【页面上下文】
-- 页面标题：${snapshot.page.title || '（无）'}
-- URL 路径：${snapshot.page.path}
-- 页面类型：${snapshot.page.scope === 'extension' ? `Mobius 拓展（${snapshot.page.extensionName}）` : 'Mobius 主前端'}
-- 推荐代码范围：${hints.join('；')}
-
-【选中元素】
+  return `【元素${index + 1}】
 - 语义元素：${snapshot.element.tag}
 - 精确命中节点：${snapshot.element.exactTag}
 - 稳定选择器：${snapshot.element.selector || '（未生成）'}
@@ -97,6 +92,29 @@ ${snapshot.element.html}
 - 字体：${style.fontSize} / ${style.fontWeight} / line-height ${style.lineHeight}
 - 颜色：text ${style.color}；background ${style.backgroundColor}；border ${style.borderColor}
 - 圆角与间距：border-radius ${style.borderRadius}；padding ${style.padding}；gap ${style.gap}
+`
+}
 
-请优先使用 data-design-id、data-tour、ARIA、可见文字和祖先上下文确认源码。如果候选有多个，请结合当前路由逐一排除，并说明最终确认依据。`
+export function buildAgentPrompt(snapshotOrSnapshots, locationResultOrResults = null, requirement = '') {
+  const snapshots = Array.isArray(snapshotOrSnapshots) ? snapshotOrSnapshots.filter(Boolean) : [snapshotOrSnapshots].filter(Boolean)
+  if (!snapshots.length) return ''
+  const locationResults = Array.isArray(locationResultOrResults) ? locationResultOrResults : [locationResultOrResults]
+  const page = snapshots[0].page
+  const hints = routeHints(page)
+  const elements = snapshots.map((snapshot, index) => elementPrompt(snapshot, locationResults[index] || null, index)).join('\n')
+
+  return `请修改以下 ${snapshots.length} 个界面元素，修改要求如下：
+“${requirementText(requirement)}”
+
+先在源代码中分别定位元素1、元素2等目标，不要仅根据截图或视觉位置猜测。定位后先确认每个元素对应的文件、组件或渲染函数，再实施用户提出的具体改动。不要修改 node_modules、dist、release 或构建产物。
+
+【页面上下文】
+- 页面标题：${page.title || '（无）'}
+- URL 路径：${page.path}
+- 页面类型：${page.scope === 'extension' ? `Mobius 拓展（${page.extensionName}）` : 'Mobius 主前端'}
+- 推荐代码范围：${hints.join('；')}
+
+${elements}
+
+请按元素1、元素2……的顺序逐一定位和修改。优先使用 data-design-id、data-tour、ARIA、可见文字和祖先上下文确认源码。如果候选有多个，请结合当前路由逐一排除，并说明每个元素的最终确认依据。`
 }

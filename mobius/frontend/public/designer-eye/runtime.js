@@ -65,6 +65,12 @@ const SHELL_HTML = `
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .outline-selected {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, .09);
+      box-shadow: 0 0 0 1px rgba(255,255,255,.72), 0 0 0 4px rgba(16, 185, 129, .16);
+    }
+    .outline-selected .outline-label { background: #047857; }
     .toolbar {
       position: fixed;
       left: 50%;
@@ -179,14 +185,44 @@ const SHELL_HTML = `
       text-transform: uppercase;
     }
     .summary-value {
-      overflow: hidden;
       color: #e2e8f0;
       font-family: "JetBrains Mono", ui-monospace, monospace;
       font-size: 11px;
       line-height: 17px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
+    .selection-list {
+      display: flex;
+      max-height: 106px;
+      flex-direction: column;
+      gap: 5px;
+      overflow-y: auto;
+    }
+    .selection-row {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 7px;
+      align-items: center;
+      padding: 4px 6px;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, .62);
+    }
+    .selection-index { color: #6ee7b7; font-weight: 750; }
+    .selection-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .selection-remove {
+      width: 22px;
+      height: 22px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      border-radius: 5px;
+      color: #94a3b8;
+      background: transparent;
+      cursor: pointer;
+    }
+    .selection-remove:hover { color: #fda4af; background: rgba(244, 63, 94, .12); }
+    .page-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .locator-status {
       margin: 10px 20px 0;
       padding: 8px 11px;
@@ -394,10 +430,11 @@ const SHELL_HTML = `
     }
   </style>
   <div class="shield" data-eye="shield" hidden></div>
+  <div data-eye="selection-outlines"></div>
   <div class="outline" data-eye="outline" hidden><div class="outline-label" data-eye="outline-label"></div></div>
   <div class="toolbar" data-eye="toolbar" hidden>
     <span class="toolbar-dot"></span>
-    <span class="toolbar-copy">设计师之眼已开启 · 点击选择元素 · Alt/Option 精确选择 · Esc 退出</span>
+    <span class="toolbar-copy" data-eye="toolbar-copy">设计师之眼已开启 · 点击选择元素 · Alt/Option 精确选择 · Esc 退出</span>
     <span class="toolbar-key"></span>
   </div>
   <div class="modal-layer" data-eye="modal-layer" hidden>
@@ -405,19 +442,19 @@ const SHELL_HTML = `
       <header class="modal-header">
         <div>
           <h2 class="modal-title" id="designer-eye-title">设计师之眼</h2>
-          <div class="modal-subtitle">已阻止原元素交互，并生成可交给 Agent 的源码定位提示词</div>
+          <div class="modal-subtitle" data-eye="modal-subtitle">已阻止原元素交互，并生成可交给 Agent 的源码定位提示词</div>
         </div>
-        <button type="button" class="icon-button" data-eye="close" aria-label="关闭并重新选择" title="关闭并重新选择">✕</button>
+        <button type="button" class="icon-button" data-eye="close" aria-label="继续添加元素" title="继续添加元素">✕</button>
       </header>
       <div class="modal-content">
       <div class="summary">
         <div class="summary-card">
-          <div class="summary-label">选中元素</div>
-          <div class="summary-value" data-eye="element-summary"></div>
+          <div class="summary-label">已选元素（按点击顺序）</div>
+          <div class="summary-value selection-list" data-eye="element-summary"></div>
         </div>
         <div class="summary-card">
           <div class="summary-label">页面</div>
-          <div class="summary-value" data-eye="page-summary"></div>
+          <div class="summary-value page-value" data-eye="page-summary"></div>
         </div>
       </div>
       <div class="locator-status" data-eye="locator-status">正在定位源码候选…</div>
@@ -467,7 +504,8 @@ const SHELL_HTML = `
         <div class="footer-note">不会上传页面截图、输入框值或凭据；复制前可继续编辑。</div>
         <div class="actions">
           <button type="button" class="button" data-eye="exit">退出模式</button>
-          <button type="button" class="button" data-eye="reselect">重新选择</button>
+          <button type="button" class="button" data-eye="clear-reselect">清空重选</button>
+          <button type="button" class="button" data-eye="continue">继续添加元素</button>
           <button type="button" class="button button-primary" data-eye="copy">复制提示词</button>
           <button type="button" class="button button-start" data-eye="start">启动自进化</button>
         </div>
@@ -530,9 +568,8 @@ export class DesignerEyeRuntime {
     this.shadow = null
     this.hoveredElement = null
     this.selectedElement = null
+    this.selections = []
     this.pointerDownElement = null
-    this.snapshot = null
-    this.locationResult = null
     this.generatedPrompt = ''
     this.raf = 0
     this.toastTimer = 0
@@ -585,11 +622,14 @@ export class DesignerEyeRuntime {
 
     this.elements = {
       shield: this.shadow.querySelector('[data-eye="shield"]'),
+      selectionOutlines: this.shadow.querySelector('[data-eye="selection-outlines"]'),
       outline: this.shadow.querySelector('[data-eye="outline"]'),
       outlineLabel: this.shadow.querySelector('[data-eye="outline-label"]'),
       toolbar: this.shadow.querySelector('[data-eye="toolbar"]'),
+      toolbarCopy: this.shadow.querySelector('[data-eye="toolbar-copy"]'),
       toolbarKey: this.shadow.querySelector('.toolbar-key'),
       modalLayer: this.shadow.querySelector('[data-eye="modal-layer"]'),
+      modalSubtitle: this.shadow.querySelector('[data-eye="modal-subtitle"]'),
       elementSummary: this.shadow.querySelector('[data-eye="element-summary"]'),
       pageSummary: this.shadow.querySelector('[data-eye="page-summary"]'),
       locatorStatus: this.shadow.querySelector('[data-eye="locator-status"]'),
@@ -624,7 +664,8 @@ export class DesignerEyeRuntime {
     this.elements.shield.addEventListener('wheel', this.onWheel, { passive: false })
 
     this.shadow.querySelector('[data-eye="close"]').addEventListener('click', () => this.resumeSelection())
-    this.shadow.querySelector('[data-eye="reselect"]').addEventListener('click', () => this.resumeSelection())
+    this.shadow.querySelector('[data-eye="continue"]').addEventListener('click', () => this.resumeSelection())
+    this.shadow.querySelector('[data-eye="clear-reselect"]').addEventListener('click', () => this.clearSelectionsAndResume())
     this.shadow.querySelector('[data-eye="exit"]').addEventListener('click', () => this.deactivate())
     this.elements.requirement.addEventListener('input', () => this.refreshGeneratedPrompt(true))
     this.elements.project.addEventListener('change', () => {
@@ -688,6 +729,9 @@ export class DesignerEyeRuntime {
     this.elements.outline.hidden = true
     this.hoveredElement = null
     this.selectedElement = null
+    this.selections = []
+    this.renderSelectedOutlines()
+    this.updateToolbar()
     document.documentElement.setAttribute('data-designer-eye-active', '')
   }
 
@@ -697,9 +741,8 @@ export class DesignerEyeRuntime {
     this.modalOpen = false
     this.hoveredElement = null
     this.selectedElement = null
+    this.selections = []
     this.pointerDownElement = null
-    this.snapshot = null
-    this.locationResult = null
     this.lastCreatedSession = null
     cancelAnimationFrame(this.raf)
     this.elements.shield.hidden = true
@@ -707,6 +750,7 @@ export class DesignerEyeRuntime {
     this.elements.modalLayer.hidden = true
     this.elements.confirmLayer.hidden = true
     this.elements.outline.hidden = true
+    this.renderSelectedOutlines()
     this.host.setAttribute('aria-hidden', 'true')
     document.documentElement.removeAttribute('data-designer-eye-active')
     window.removeEventListener('scroll', this.refreshSelectedOutline, true)
@@ -791,7 +835,95 @@ export class DesignerEyeRuntime {
   }
 
   refreshSelectedOutline() {
-    if (this.active && this.selectedElement?.isConnected) this.drawOutline(this.selectedElement)
+    if (!this.active) return
+    this.renderSelectedOutlines()
+    if (this.modalOpen && this.selectedElement?.isConnected) this.drawOutline(this.selectedElement)
+  }
+
+  updateToolbar() {
+    if (!this.elements?.toolbarCopy) return
+    const count = this.selections.length
+    this.elements.toolbarCopy.textContent = count
+      ? `已选择 ${count} 个元素 · 点击继续添加 · Alt/Option 精确选择 · Esc ${this.modalOpen ? '继续选择' : '退出'}`
+      : '设计师之眼已开启 · 点击选择元素 · Alt/Option 精确选择 · Esc 退出'
+  }
+
+  renderSelectedOutlines() {
+    if (!this.elements?.selectionOutlines) return
+    this.elements.selectionOutlines.replaceChildren()
+    for (const [index, entry] of this.selections.entries()) {
+      if (!entry.element?.isConnected) continue
+      const rect = targetRect(entry.element)
+      const outline = document.createElement('div')
+      outline.className = 'outline outline-selected'
+      outline.style.left = `${Math.round(rect.left)}px`
+      outline.style.top = `${Math.round(rect.top)}px`
+      outline.style.width = `${Math.max(4, Math.round(rect.width))}px`
+      outline.style.height = `${Math.max(4, Math.round(rect.height))}px`
+      const label = document.createElement('div')
+      label.className = 'outline-label'
+      label.textContent = `元素${index + 1}`
+      outline.appendChild(label)
+      this.elements.selectionOutlines.appendChild(outline)
+    }
+  }
+
+  renderSelectionSummary() {
+    this.elements.elementSummary.replaceChildren()
+    for (const [index, entry] of this.selections.entries()) {
+      const row = document.createElement('div')
+      row.className = 'selection-row'
+      const number = document.createElement('span')
+      number.className = 'selection-index'
+      number.textContent = `元素${index + 1}`
+      const name = document.createElement('span')
+      name.className = 'selection-name'
+      name.textContent = `${entry.snapshot.element.selector || entry.snapshot.element.tag} · ${entry.snapshot.element.style.rect.width}×${entry.snapshot.element.style.rect.height}`
+      name.title = name.textContent
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.className = 'selection-remove'
+      remove.textContent = '✕'
+      remove.title = `移除元素${index + 1}`
+      remove.setAttribute('aria-label', `移除元素${index + 1}`)
+      remove.addEventListener('click', () => this.removeSelection(entry))
+      row.append(number, name, remove)
+      this.elements.elementSummary.appendChild(row)
+    }
+    this.elements.modalSubtitle.textContent = `已按点击顺序选择 ${this.selections.length} 个元素；可继续添加或移除后重新编号`
+  }
+
+  updateLocatorStatus() {
+    if (!this.selections.length) {
+      this.elements.locatorStatus.textContent = '尚未选择元素。'
+      return
+    }
+    const locating = this.selections.filter(entry => entry.locating).length
+    if (locating) {
+      this.elements.locatorStatus.textContent = `正在定位源码候选…（剩余 ${locating}/${this.selections.length} 个元素）`
+      return
+    }
+    const candidateCount = this.selections.reduce((total, entry) => total + (entry.locationResult?.candidates?.length || 0), 0)
+    const unavailableCount = this.selections.filter(entry => !entry.locationResult?.candidates?.length).length
+    this.elements.locatorStatus.textContent = candidateCount
+      ? `已为 ${this.selections.length} 个元素找到 ${candidateCount} 个源码候选${unavailableCount ? `；${unavailableCount} 个元素使用本地 DOM 线索` : ''}`
+      : '未找到直接候选，提示词已为每个元素包含本地检索线索。'
+  }
+
+  removeSelection(entry) {
+    const index = this.selections.indexOf(entry)
+    if (index < 0) return
+    this.selections.splice(index, 1)
+    this.selectedElement = this.selections.at(-1)?.element || null
+    if (!this.selections.length) {
+      this.clearSelectionsAndResume()
+      return
+    }
+    this.renderSelectionSummary()
+    this.renderSelectedOutlines()
+    this.updateLocatorStatus()
+    this.updateToolbar()
+    this.refreshGeneratedPrompt(false, true)
   }
 
   setFormStatus(message, error = false) {
@@ -1007,11 +1139,15 @@ export class DesignerEyeRuntime {
     }
   }
 
-  refreshGeneratedPrompt(updateRequirementInDirtyPrompt = false) {
-    if (!this.snapshot) return
+  refreshGeneratedPrompt(updateRequirementInDirtyPrompt = false, force = false) {
+    if (!this.selections.length) return
     const previousGenerated = this.generatedPrompt
-    const nextGenerated = buildAgentPrompt(this.snapshot, this.locationResult, this.elements.requirement.value)
-    if (this.elements.prompt.value === previousGenerated) {
+    const nextGenerated = buildAgentPrompt(
+      this.selections.map(entry => entry.snapshot),
+      this.selections.map(entry => entry.locationResult),
+      this.elements.requirement.value,
+    )
+    if (force || this.elements.prompt.value === previousGenerated) {
       this.elements.prompt.value = nextGenerated
     } else if (updateRequirementInDirtyPrompt) {
       this.elements.prompt.value = replacePromptRequirement(this.elements.prompt.value, this.elements.requirement.value)
@@ -1073,38 +1209,58 @@ export class DesignerEyeRuntime {
   }
 
   openSelection(selection) {
+    const existingIndex = this.selections.findIndex(entry => entry.element === selection.semantic)
+    if (existingIndex >= 0) {
+      this.selectedElement = selection.semantic
+      this.modalOpen = true
+      this.drawOutline(selection.semantic, selection.exact)
+      this.elements.shield.hidden = true
+      this.elements.modalLayer.hidden = false
+      this.renderSelectionSummary()
+      this.updateToolbar()
+      this.showToast(`该元素已是元素${existingIndex + 1}`)
+      return
+    }
+
+    const firstSelection = this.selections.length === 0
+    const entry = {
+      element: selection.semantic,
+      exact: selection.exact,
+      snapshot: createElementSnapshot(selection),
+      locationResult: null,
+      locating: true,
+    }
+    this.selections.push(entry)
     this.selectedElement = selection.semantic
-    this.snapshot = createElementSnapshot(selection)
     this.modalOpen = true
     this.drawOutline(selection.semantic, selection.exact)
     this.elements.shield.hidden = true
     this.elements.modalLayer.hidden = false
-    this.elements.elementSummary.textContent = `${this.snapshot.element.selector || this.snapshot.element.tag} · ${this.snapshot.element.style.rect.width}×${this.snapshot.element.style.rect.height}`
-    this.elements.pageSummary.textContent = this.snapshot.page.path
-    this.elements.locatorStatus.textContent = '正在定位源码候选…'
-    this.elements.requirement.value = ''
-    this.locationResult = null
-    this.generatedPrompt = buildAgentPrompt(this.snapshot, null, '')
-    this.elements.prompt.value = this.generatedPrompt
+    this.renderSelectionSummary()
+    this.renderSelectedOutlines()
+    this.elements.pageSummary.textContent = entry.snapshot.page.path
+    if (firstSelection) this.elements.requirement.value = ''
+    this.updateLocatorStatus()
+    this.refreshGeneratedPrompt(false, true)
+    this.updateToolbar()
     this.elements.confirmLayer.hidden = true
     this.lastCreatedSession = null
     this.ensureSelfIterationOptions().catch(() => {})
     window.addEventListener('scroll', this.refreshSelectedOutline, true)
     window.addEventListener('resize', this.refreshSelectedOutline)
 
-    const snapshot = this.snapshot
-    locateSource(snapshot).then(result => {
-      if (!this.modalOpen || this.snapshot !== snapshot) return
-      this.locationResult = result
+    locateSource(entry.snapshot).then(result => {
+      if (!this.selections.includes(entry)) return
+      entry.locationResult = result
+      entry.locating = false
       this.refreshGeneratedPrompt(false)
-      if (result.candidates?.length) {
-        const first = result.candidates[0]
-        this.elements.locatorStatus.textContent = `已找到 ${result.candidates.length} 个候选；最高匹配 ${first.file}:${first.line}`
-      } else {
-        this.elements.locatorStatus.textContent = result.unavailable || '未找到直接候选，提示词已包含本地检索线索。'
-      }
+      this.updateLocatorStatus()
     }).catch(() => {
-      if (this.modalOpen) this.elements.locatorStatus.textContent = '源码定位暂不可用，提示词已包含本地检索线索。'
+      if (!this.selections.includes(entry)) return
+      entry.locationResult = { candidates: [], unavailable: '源码定位暂不可用，已使用本地 DOM 指纹生成提示词。' }
+      entry.locating = false
+      this.refreshGeneratedPrompt(false)
+      this.updateLocatorStatus()
     })
   }
 
@@ -1114,9 +1270,24 @@ export class DesignerEyeRuntime {
     this.elements.modalLayer.hidden = true
     this.elements.confirmLayer.hidden = true
     this.elements.shield.hidden = false
+    this.elements.outline.hidden = true
+    this.renderSelectedOutlines()
+    this.updateToolbar()
     window.removeEventListener('scroll', this.refreshSelectedOutline, true)
     window.removeEventListener('resize', this.refreshSelectedOutline)
-    if (!this.selectedElement?.isConnected) this.elements.outline.hidden = true
+  }
+
+  clearSelectionsAndResume() {
+    this.selections = []
+    this.selectedElement = null
+    this.generatedPrompt = ''
+    if (this.elements) {
+      this.elements.requirement.value = ''
+      this.elements.prompt.value = ''
+      this.renderSelectedOutlines()
+      this.updateToolbar()
+    }
+    this.resumeSelection()
   }
 
   showToast(message, error = false) {

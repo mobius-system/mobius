@@ -70,8 +70,10 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
   overscanPx = DEFAULT_OVERSCAN_PX,
   estimatedHeight = DEFAULT_ESTIMATED_HEIGHT,
   scrollToKey,
+  scrollToEntryLineNo,
   scrollOffset = 0,
   onScrollToKeyDone,
+  onScrollToEntryDone,
 }: {
   blocks: TBlock[]
   renderBlock: (block: TBlock) => ReactNode
@@ -81,8 +83,12 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
   // 跳转到指定 block (按 block.key 匹配). 设置后, 列表滚动让该 block 顶部贴在
   // scrollOffset (通常是 sticky header 高度) 之下; 到位后调 onScrollToKeyDone 清除.
   scrollToKey?: string | null
+  // block 到位后进一步定位其中的具体卡片。搜索命中可以在同一轮的任意条目中。
+  scrollToEntryLineNo?: number | null
   scrollOffset?: number
   onScrollToKeyDone?: () => void
+  // 具体条目已实际挂载并完成精确滚动时触发。搜索定位以此为完成点，不能只按轮次到位计时。
+  onScrollToEntryDone?: () => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   // scrollToKey 的滚动用 root: 两条渲染路径 (虚拟/非虚拟) 都挂这个 ref, 使跳转逻辑统一.
@@ -95,6 +101,8 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
   // onScrollToKeyDone 存进 ref, 避免 scrollToKey effect 把它列入依赖导致每次渲染重跑.
   const onScrollToKeyDoneRef = useRef(onScrollToKeyDone)
   onScrollToKeyDoneRef.current = onScrollToKeyDone
+  const onScrollToEntryDoneRef = useRef(onScrollToEntryDone)
+  onScrollToEntryDoneRef.current = onScrollToEntryDone
 
   useEffect(() => {
     const root = rootRef.current
@@ -208,6 +216,25 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollToKey, contentVersion, heightVersion, scrollOffset, blocks, layout])
+
+  // 轮次展开、Explore 聚合展开或懒内容渲染后，ResizeObserver 会 bump contentVersion。
+  // 首次尚未挂载具体卡片时先等待；元素出现后再精确滚动，避免只落在轮次开头。
+  useEffect(() => {
+    if (typeof scrollToEntryLineNo !== 'number') return
+    const root = scrollRootRef.current
+    if (!root) return
+    const node = root.querySelector<HTMLElement>(`[data-jsonl-line-no="${scrollToEntryLineNo}"]`)
+    if (!node) return
+    // 这里用浏览器原生的 scrollIntoView，而不是复用 block 顶部的手工坐标：具体卡片可能
+    // 位于嵌套的 Round/Explore 容器内，原生实现会逐层选择正确的可滚动祖先。
+    let doneTimer: ReturnType<typeof setTimeout> | null = null
+    const raf = requestAnimationFrame(() => {
+      node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' })
+      // 留一帧给浏览器提交滚动位置，再通知上层清 URL 定位参数。
+      doneTimer = setTimeout(() => onScrollToEntryDoneRef.current?.(), 0)
+    })
+    return () => { cancelAnimationFrame(raf); if (doneTimer) clearTimeout(doneTimer) }
+  }, [scrollToEntryLineNo, contentVersion, heightVersion, scrollOffset])
 
   // 内容稳定 800ms 后视为到位, 清掉 scrollToKey 停止自校正. 每次 contentVersion/heightVersion 变都重置计时.
   useEffect(() => {
