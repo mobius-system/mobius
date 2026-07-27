@@ -47,14 +47,14 @@ export function LayoutModeChoiceModal({ onChoose }: LayoutModeChoiceModalProps) 
             type="button"
             onClick={() => choose('easy_mode')}
             data-testid="choose-easy-mode"
-            className="group rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
+            className="group min-w-0 overflow-hidden rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
             style={{ borderColor: 'color-mix(in srgb, var(--accent-primary) 45%, var(--border-color))' }}
           >
             <span className="mb-3 grid h-9 w-9 place-items-center rounded-lg" style={{ background: 'color-mix(in srgb, var(--accent-primary) 15%, transparent)', color: 'var(--accent-primary)' }}>
               <Sparkles className="h-4.5 w-4.5" />
             </span>
             <strong className="block text-[14px]">简易模式</strong>
-            <span className="mt-2 grid gap-1 text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>
+            <span className="mt-2 grid min-w-0 gap-1 break-words text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>
               <span><b style={{ color: 'var(--text-secondary)' }}>优势：</b>降低认知负荷，布局与传统 Agent 对话界面更相似。</span>
               <span><b style={{ color: 'var(--text-secondary)' }}>适合：</b>专注处理一到两个项目。</span>
               <span><b style={{ color: 'var(--text-secondary)' }}>取舍：</b>项目层级和智能体群体管理入口更精简。</span>
@@ -65,14 +65,14 @@ export function LayoutModeChoiceModal({ onChoose }: LayoutModeChoiceModalProps) 
             type="button"
             onClick={() => choose('normal_mode')}
             data-testid="choose-normal-mode"
-            className="group rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
+            className="group min-w-0 overflow-hidden rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
             style={{ borderColor: 'var(--border-color-strong)' }}
           >
             <span className="mb-3 grid h-9 w-9 place-items-center rounded-lg" style={{ background: 'var(--bg-hover)', color: 'var(--text-secondary)' }}>
               <Columns2 className="h-4.5 w-4.5" />
             </span>
             <strong className="block text-[14px]">常规模式</strong>
-            <span className="mt-2 grid gap-1 text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>
+            <span className="mt-2 grid min-w-0 gap-1 break-words text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>
               <span><b style={{ color: 'var(--text-secondary)' }}>优势：</b>高效快捷、层次化管理，可快速调整智能体群体技能和记忆，并详细查看思考与工具使用。</span>
               <span><b style={{ color: 'var(--text-secondary)' }}>适合：</b>并行推进多个项目。</span>
               <span><b style={{ color: 'var(--text-secondary)' }}>取舍：</b>功能和信息密度更高，需要熟悉更多界面区域。</span>
