@@ -218,6 +218,12 @@ function toItems(arr: { id: string; name: string; description?: string }[]): Sel
   return arr.map(s => ({ label: s.name, value: s.id, desc: s.description }))
 }
 
+// 把可能含换行的描述压成单行：换行 → 可见符号 ⏎，避免列表项跨行。
+function flattenDesc(s?: string): string {
+  if (!s) return ''
+  return s.replace(/\s*\n\s*/g, ' ⏎ ').replace(/[ \t]+/g, ' ').trim()
+}
+
 // ── Project picker ───────────────────────────────────────────────────────────
 function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate }: {
   cwd: string
@@ -252,7 +258,10 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate }: {
 
   const items: SelectItem[] = [
     { label: '➕ 创建新项目', value: '__create__', desc: '绑定到当前路径' },
-    ...projects.map(p => ({ label: p.name + (p.description ? ` — ${p.description}` : ''), value: p.id })),
+    ...projects.map(p => {
+      const desc = flattenDesc(p.description)
+      return { label: desc ? `${p.name} — ${desc}` : p.name, value: p.id }
+    }),
   ]
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>

@@ -240,7 +240,10 @@ async function testPrepRender() {
   const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
   installMock((url) => {
     if (url.includes('/api/projects') && !url.includes('/issues') && !url.includes('/skills') && !url.includes('/memories')) {
-      return jsonResponse([{ id: 'p1', name: '已有项目A' }, { id: 'p2', name: '已有项目B' }])
+      return jsonResponse([
+        { id: 'p1', name: '已有项目A', description: '第一行\n第二行' },
+        { id: 'p2', name: '已有项目B', description: '单行描述' },
+      ])
     }
     if (url.includes('/issues')) return jsonResponse([])
     return jsonResponse({ error: 'no mock' }, 404)
@@ -253,6 +256,9 @@ async function testPrepRender() {
     ok(frame.includes('选择当前路径的绑定项目'), 'project picker title shown')
     ok(frame.includes('已有项目A') && frame.includes('已有项目B'), 'existing projects listed')
     ok(frame.includes('创建新项目'), 'create-new option present')
+    // multi-line description must be flattened onto one line with ⏎ in place of \n
+    ok(frame.includes('已有项目A — 第一行 ⏎ 第二行'), 'multi-line description flattened to a single line')
+    ok(frame.includes('已有项目B — 单行描述'), 'single-line description kept as-is')
   } finally { restoreFetch() }
 }
 

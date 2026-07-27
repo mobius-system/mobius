@@ -174,10 +174,11 @@ export function Select(props: SelectProps) {
               color={isActive ? 'black' : undefined}
               backgroundColor={isActive ? 'cyan' : undefined}
               bold={isActive}
+              wrap="truncate-end"
             >
               {marker} {it.label}
             </Text>
-            {isActive && it.desc ? <Text color="gray">    {it.desc}</Text> : null}
+            {isActive && it.desc ? <Text color="gray" wrap="truncate-end">    {it.desc}</Text> : null}
           </Box>
         )
       })}
