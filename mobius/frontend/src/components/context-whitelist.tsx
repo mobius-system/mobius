@@ -283,7 +283,7 @@ export function ProjectUserContextWhitelist({ projectId }: { projectId: string }
               className="h-8 px-3 rounded-lg text-[12px] border hover:bg-[var(--bg-card-hover)] transition-colors disabled:opacity-40"
               style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>恢复默认</button>
             <button type="button" onClick={save} disabled={saving || !dirty}
-              className="h-8 px-3 rounded-lg text-[12px] btn-primary transition-colors disabled:opacity-40">
+              className="h-7 px-2.5 rounded-md text-[11px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
               {saving ? '保存中...' : '保存白名单'}
             </button>
           </div>
