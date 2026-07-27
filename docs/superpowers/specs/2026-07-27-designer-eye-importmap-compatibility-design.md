@@ -26,7 +26,7 @@
 
 ### 方案 C：注入延迟执行的经典外部加载器（采用）
 
-在 `<head>` 开头注入 `<script defer src="/designer-eye/loader.js"></script>`。加载器是经典脚本，解析时不会触发模块图；`defer` 保证它在 HTML 和 import map 解析后执行，再通过相对路径 `import('./index.js')` 启动设计师之眼。
+在 `<head>` 开头注入 `<script defer src="/extension/_sdk/designer-eye/loader.js"></script>`。加载器是经典脚本，解析时不会触发模块图；`defer` 保证它在 HTML 和 import map 解析后执行，再通过相对路径 `import('./index.js')` 启动设计师之眼。资源统一走已经稳定对外的 `/extension/_sdk/` 路由，避免公网代理拒绝新的根路径前缀。
 
 该方案不依赖拓展 HTML 的具体排列，加载器可单独缓存、单独返回 200，并能用小型回归测试约束“经典 + defer + 动态导入”的契约。
 
@@ -34,7 +34,8 @@
 
 - 新增 `mobius/frontend/public/designer-eye/loader.js`：只负责动态导入 `index.js` 并记录加载失败。
 - 新增 `mobius/backend/services/designer-eye-loader.ts`：只生成稳定的经典延迟加载标签。
-- 修改 `mobius/backend/routes/ext.ts`：复用生成函数，不改宿主栏和标签栏实现。
+- 修改 `mobius/backend/routes/ext.ts`：复用生成函数并公开只读的 Designer Eye SDK 静态目录，不改宿主栏和标签栏实现。
+- 修改 `mobius/frontend/index.html`：主前端也统一使用 Designer Eye SDK 静态路径。
 - 新增 `mobius/tests/designer-eye-extension-loader.js`：验证生成标签不再是 module、必须带 defer，并验证加载器动态导入入口。
 - 修改 `mobius/package.json`：增加单项回归测试命令。
 
@@ -49,4 +50,4 @@
 3. Mobius 前端构建通过，构建输出包含 `public/designer-eye/loader.js`。
 4. 浏览器验证宣传页无 import map/`three` 错误，canvas 数量从 2 恢复为 7，滚动揭示为 7/7。
 5. 浏览器验证 `window.__MOBIUS_DESIGNER_EYE__` 已安装。
-6. 部署后 `/designer-eye/loader.js` 与 `/designer-eye/index.js` 均返回 HTTP 200 和 JavaScript MIME。
+6. 部署后 `/extension/_sdk/designer-eye/loader.js` 与 `/extension/_sdk/designer-eye/index.js` 均返回 HTTP 200 和 JavaScript MIME。

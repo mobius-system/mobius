@@ -20,6 +20,7 @@ import { auth, adminAuth, authOrQuery } from '../middleware/auth';
 import {
   EXTENSION_HANDLER_MAX_PAYLOAD_BYTES,
   EXTENSION_INVOKE_RATE_PER_SEC,
+  PUBLIC_DIR,
 } from '../config';
 // @ts-ignore — service 仍是 .js
 import * as registry from '../services/extension-registry';
@@ -479,12 +480,23 @@ staticRouter.get('/_sdk/ext.js', (_req: express.Request, res: express.Response) 
 });
 
 const DESKTOP_PAGE_ACTIONS_FILE = path.join(__dirname, '..', 'assets', 'desktop-page-actions.js');
+const DESIGNER_EYE_PUBLIC_DIR = path.join(PUBLIC_DIR, 'designer-eye');
 
 staticRouter.get('/_sdk/desktop-page-actions.js', (_req: express.Request, res: express.Response) => {
   res.set('content-type', 'application/javascript; charset=utf-8');
   res.set('cache-control', 'public, max-age=300');
   res.sendFile(DESKTOP_PAGE_ACTIONS_FILE);
 });
+
+staticRouter.use('/_sdk/designer-eye', express.static(DESIGNER_EYE_PUBLIC_DIR, {
+  etag: true,
+  lastModified: true,
+  fallthrough: false,
+  setHeaders: (res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+  },
+}));
 
 // /extension/<name>/        → loading 或 index.html (注入 window.__EXT_NAME__)
 // /extension/<name>/<asset> → dist/<asset> (mime 白名单)

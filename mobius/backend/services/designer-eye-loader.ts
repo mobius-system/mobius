@@ -1,3 +1,3 @@
 export function buildDesignerEyeLoaderInjection(): string {
-  return '<script defer src="/designer-eye/loader.js"></script>';
+  return '<script defer src="/extension/_sdk/designer-eye/loader.js"></script>';
 }

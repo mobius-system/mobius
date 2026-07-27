@@ -24,11 +24,12 @@
 - Create: `mobius/backend/services/designer-eye-loader.ts`
 - Create: `mobius/frontend/public/designer-eye/loader.js`
 - Modify: `mobius/backend/routes/ext.ts:801`
+- Modify: `mobius/frontend/index.html:40`
 - Modify: `mobius/package.json:9`
 
 **Interfaces:**
 - Produces: `buildDesignerEyeLoaderInjection(): string`
-- Consumes: browser endpoint `/designer-eye/loader.js`, which dynamically imports `./index.js`
+- Consumes: browser endpoint `/extension/_sdk/designer-eye/loader.js`, which dynamically imports `./index.js`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -40,7 +41,7 @@ const { buildDesignerEyeLoaderInjection } = require('../backend/services/designe
 
 const injection = buildDesignerEyeLoaderInjection();
 assert(!/type=["']module["']/i.test(injection));
-assert(/<script\s+defer\s+src=["']\/designer-eye\/loader\.js["']><\/script>/i.test(injection));
+assert(/<script\s+defer\s+src=["']\/extension\/_sdk\/designer-eye\/loader\.js["']><\/script>/i.test(injection));
 
 const loader = fs.readFileSync(path.join(__dirname, '../frontend/public/designer-eye/loader.js'), 'utf8');
 assert(loader.includes("import('./index.js')"));
@@ -57,7 +58,7 @@ Expected: FAIL because `backend/services/designer-eye-loader` does not exist.
 
 ```ts
 export function buildDesignerEyeLoaderInjection(): string {
-  return '<script defer src="/designer-eye/loader.js"></script>';
+  return '<script defer src="/extension/_sdk/designer-eye/loader.js"></script>';
 }
 ```
 
@@ -106,4 +107,4 @@ git commit -m "Delay Designer Eye module loading (延迟设计师之眼模块加
 python3 start.py
 ```
 
-Verify `/designer-eye/loader.js` and `/designer-eye/index.js` return HTTP 200, then rerun the publication Playwright assertions against the deployed page.
+Verify `/extension/_sdk/designer-eye/loader.js` and `/extension/_sdk/designer-eye/index.js` return HTTP 200, then rerun the publication Playwright assertions against the deployed page.
