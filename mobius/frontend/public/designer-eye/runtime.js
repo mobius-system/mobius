@@ -733,6 +733,8 @@ export class DesignerEyeRuntime {
     this.renderSelectedOutlines()
     this.updateToolbar()
     document.documentElement.setAttribute('data-designer-eye-active', '')
+    window.addEventListener('scroll', this.refreshSelectedOutline, true)
+    window.addEventListener('resize', this.refreshSelectedOutline)
   }
 
   deactivate() {
@@ -837,7 +839,8 @@ export class DesignerEyeRuntime {
   refreshSelectedOutline() {
     if (!this.active) return
     this.renderSelectedOutlines()
-    if (this.modalOpen && this.selectedElement?.isConnected) this.drawOutline(this.selectedElement)
+    const outlineTarget = this.modalOpen ? this.selectedElement : this.hoveredElement
+    if (outlineTarget?.isConnected) this.drawOutline(outlineTarget)
   }
 
   updateToolbar() {
@@ -1273,8 +1276,6 @@ export class DesignerEyeRuntime {
     this.elements.outline.hidden = true
     this.renderSelectedOutlines()
     this.updateToolbar()
-    window.removeEventListener('scroll', this.refreshSelectedOutline, true)
-    window.removeEventListener('resize', this.refreshSelectedOutline)
   }
 
   clearSelectionsAndResume() {
