@@ -47,7 +47,10 @@ export function TextInput(props: TextInputProps) {
     if (key.downArrow) { props.onArrowDown?.(); return }
     if (key.escape) { props.onEscape?.(); return }
     if (key.tab) { props.onTab?.(); return }
-    if (key.backspace || (key.ctrl && input === 'h')) {
+    // Ink labels the \x7f that virtually every terminal's Backspace key emits
+    // as `key.delete` (see its parse-keypress.js TODO). Treat either signal as
+    // a backward delete — otherwise Backspace at the end of the input is a no-op.
+    if (key.backspace || key.delete || (key.ctrl && input === 'h')) {
       if (cursor > 0) {
         // delete word on Ctrl+W
         if (key.ctrl && input === 'w') {
@@ -61,7 +64,6 @@ export function TextInput(props: TextInputProps) {
       }
       return
     }
-    if (key.delete) { if (cursor < value.length) edit(value.slice(0, cursor) + value.slice(cursor + 1), cursor); return }
     if (key.leftArrow) { setCursor(c => Math.max(0, c - 1)); return }
     if (key.rightArrow) { setCursor(c => Math.min(value.length, c + 1)); return }
     if (key.ctrl && input === 'a') { setCursor(0); return }

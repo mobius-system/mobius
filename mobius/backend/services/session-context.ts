@@ -326,7 +326,7 @@ function zh_add_pc_task_mode_info(lines: string[], session: any): void {
   if (!session) return;
   const prompt = pcTaskModePrompt(session.pc_client_metadata, 'zh');
   if (!prompt) return;
-  lines.push('\n## PC 任务模式\n');
+  lines.push('\n## PC/Terminal 任务模式\n');
   lines.push(prompt + '\n');
 }
 
@@ -560,7 +560,7 @@ function en_add_pc_task_mode_info(lines: string[], session: any): void {
   if (!session) return;
   const prompt = pcTaskModePrompt(session.pc_client_metadata, 'en');
   if (!prompt) return;
-  lines.push('\n## PC Task Mode\n');
+  lines.push('\n## PC/Terminal Task Mode\n');
   lines.push(prompt + '\n');
 }
 

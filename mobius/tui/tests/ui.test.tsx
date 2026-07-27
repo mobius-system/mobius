@@ -18,7 +18,7 @@ import { render } from 'ink-testing-library'
 import { ChatScreen } from '../src/components/Chat.js'
 import { LoginScreen } from '../src/components/Login.js'
 import { PrepScreen } from '../src/components/PrepScreen.js'
-import { Select } from '../src/components/primitives.js'
+import { Select, TextInput } from '../src/components/primitives.js'
 import { MobiusClient } from '../src/api.js'
 import { renderMarkdownLines } from '../src/markdown.js'
 import type { ReadyState } from '../src/components/PrepScreen.js'
@@ -317,6 +317,25 @@ async function testProjectPickerEscQuit() {
   } finally { restoreFetch() }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 8 — TextInput: terminal Backspace (0x7f) deletes at the end of the input
+// ════════════════════════════════════════════════════════════════════════════
+async function testTextInputBackspace() {
+  console.log('\n[UI 8] TextInput Backspace deletes trailing char')
+  function Harness() {
+    const [v, setV] = React.useState('abc')
+    return <TextInput value={v} onChange={setV} focused />
+  }
+  const { stdin, lastFrame, unmount } = render(<Harness />)
+  await delay(20)
+  ok((lastFrame() ?? '').includes('abc'), 'initial value rendered')
+  stdin.write(String.fromCharCode(127)) // 0x7f — what virtually every terminal's Backspace key emits
+  await delay(20)
+  const after = lastFrame() ?? ''
+  ok(after.includes('ab') && !after.includes('abc'), 'Backspace (0x7f) deleted the trailing char')
+  unmount()
+}
+
 async function main() {
   await testLogin()
   await testChat()
@@ -325,6 +344,7 @@ async function main() {
   await testPrepRender()
   await testSelectViewport()
   await testProjectPickerEscQuit()
+  await testTextInputBackspace()
   // cleanup temp home
   try { fs.rmSync(TMP_HOME, { recursive: true, force: true }) } catch { /* ignore */ }
   console.log(`\n==== UI RESULT: ${pass} passed, ${fail} failed ====\n`)

@@ -331,12 +331,10 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
       return
     }
     if (key.ctrl && input === 'c') { typing ? void onStop() : onQuit(); return }
-    if (key.backspace) {
+    // Ink reports the terminal Backspace key (\x7f) as `key.delete`; handle both
+    // as a backward delete so Backspace works at the end of the input.
+    if (key.backspace || key.delete) {
       if (cursor > 0) edit(value.slice(0, cursor - 1) + value.slice(cursor), cursor - 1)
-      return
-    }
-    if (key.delete) {
-      if (cursor < value.length) edit(value.slice(0, cursor) + value.slice(cursor + 1), cursor)
       return
     }
     if (key.leftArrow) { setCursor(current => Math.max(0, current - 1)); return }
