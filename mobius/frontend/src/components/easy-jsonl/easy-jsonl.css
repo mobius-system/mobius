@@ -66,7 +66,17 @@
 .easy-jsonl-prompt__meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
 .easy-jsonl-prompt__meta strong { font-size: 11px; letter-spacing: .03em; color: var(--easy-accent); }
 .easy-jsonl-prompt__meta time { font-size: 10px; color: var(--easy-muted); }
-.easy-jsonl-prompt p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.65; }
+.easy-jsonl-prompt p {
+  max-height: 500px;
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.65;
+}
 
 .easy-jsonl-rail { position: relative; margin: 16px 0 17px 25px; padding-left: 28px; }
 .easy-jsonl-rail::before { content: ''; position: absolute; left: 8px; top: 10px; bottom: 12px; width: 1px; background: var(--easy-line); }

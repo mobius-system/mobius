@@ -22,6 +22,7 @@ import { Select, TextInput } from '../src/components/primitives.js'
 import { MobiusClient } from '../src/api.js'
 import { renderMarkdownLines } from '../src/markdown.js'
 import { viewsForEntry } from '../src/lib/entry-view.js'
+import { SseConnection } from '../src/sse.js'
 import type { ReadyState } from '../src/components/PrepScreen.js'
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
@@ -383,6 +384,90 @@ function testReasoningViews() {
   ok(empty.length === 1 && empty[0].kind === 'reasoning' && (empty[0] as any).text === '思考内容被隐藏', 'empty thinking → hidden label')
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 11 — SSE "terminated" is silent (server/proxy dropped the stream)
+// ════════════════════════════════════════════════════════════════════════════
+async function testSseTerminatedSilent() {
+  console.log('\n[UI 11] SSE "terminated" is silent, not an error')
+  let errorMsg: string | null = null
+  let opened = false, closed = false
+  installMock(async () => ({
+    ok: true, status: 200,
+    body: { getReader: () => ({ read: async () => { throw new Error('terminated') } }) },
+  }) as any)
+  try {
+    const conn = new SseConnection('http://mock/events', {
+      onOpen: () => { opened = true },
+      onError: (m) => { errorMsg = m },
+      onClose: () => { closed = true },
+    })
+    await conn.start()
+    ok(opened, 'SSE opened before the drop')
+    ok(errorMsg === null, '"terminated" did not raise a user-facing error')
+    ok(closed, 'onClose fired so the hook can reconnect')
+  } finally { restoreFetch() }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 12 — SSE reconnect replays missed entries (no silent freeze)
+// ════════════════════════════════════════════════════════════════════════════
+async function testChatSseReconnects() {
+  console.log('\n[UI 12] SSE reconnect replays missed entries')
+  const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
+  const ready: ReadyState = {
+    project: { id: 'p1', name: '测试项目' },
+    issue: { id: 'i1', project_id: 'p1', title: '测试任务' },
+    prefs: { model: 'codex', language: 'zh', excluded_skill_ids: [], excluded_memory_ids: [] },
+  }
+  const frame = (event: string, payload: Record<string, unknown>) =>
+    `event: ${event}\ndata: ${JSON.stringify({ event, ...payload })}\n\n`
+  const assistantText = (text: string) => ({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } })
+  let sseCall = 0
+  installMock((url, init) => {
+    if (url.includes('/events')) {
+      sseCall++
+      if (sseCall === 1) {
+        // first connection: one entry, then the stream drops ("terminated")
+        return new Response(new RS({
+          start(c: any) {
+            c.enqueue(enc.encode(frame('subscribed', { session: {} })))
+            c.enqueue(enc.encode(frame('jsonl_entry', { session_id: 's1', entry: assistantText('第一条') })))
+            setTimeout(() => { try { c.error(new Error('terminated')) } catch { /* already closed */ } }, 30)
+          },
+        }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      }
+      // reconnect: server replays history including a NEW second entry
+      return new Response(new RS({
+        start(c: any) {
+          c.enqueue(enc.encode(frame('subscribed', { session: {} })))
+          c.enqueue(enc.encode(frame('jsonl_history', { entries: [assistantText('第一条'), assistantText('第二条')], done: true })))
+        },
+      }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }
+    if (url.endsWith('/messages') && init?.method === 'POST') return jsonResponse({ ok: true, session_id: 's1', turn_number: 1 })
+    if (url.endsWith('/api/sessions/s1/status')) return jsonResponse({ session_id: 's1', alive: true, working: false })
+    if (url.includes('/sessions') && init?.method === 'POST') return jsonResponse({ session_id: 's1' })
+    return jsonResponse({ error: 'no mock' }, 404)
+  })
+  try {
+    const { stdin, lastFrame, unmount } = render(
+      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />,
+    )
+    await delay(40)
+    // Ink's test stdin treats one chunk as one keypress. Send text and Enter as
+    // separate chunks, matching a real terminal and the main chat test above.
+    stdin.write('hi')
+    await delay(30)
+    stdin.write('\r')
+    await delay(1500) // drop at ~30ms + reconnect backoff ~500ms + replay
+    const out = lastFrame() ?? ''
+    unmount()
+    ok(out.includes('第一条'), 'pre-drop entry shown')
+    ok(out.includes('第二条'), 'reconnect replayed the missed entry')
+    ok(sseCall >= 2, 'SSE was reconnected after the drop')
+  } finally { restoreFetch() }
+}
+
 async function main() {
   await testLogin()
   await testChat()
@@ -394,6 +479,8 @@ async function main() {
   await testTextInputBackspace()
   testWorkingShimmer()
   testReasoningViews()
+  await testSseTerminatedSilent()
+  await testChatSseReconnects()
   // cleanup temp home
   try { fs.rmSync(TMP_HOME, { recursive: true, force: true }) } catch { /* ignore */ }
   console.log(`\n==== UI RESULT: ${pass} passed, ${fail} failed ====\n`)
