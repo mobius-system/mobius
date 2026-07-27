@@ -99,16 +99,20 @@ const TOOL_STATUS_ICON: Record<ToolStatus, typeof Check> = {
 }
 
 // 头部状态图标: 替换工具卡上的装饰彩点, 用图标直观表达工具执行状态 (Cursor 式).
+// 外层状态槽始终固定为 14px。普通卡的圆点与工具的对钩/加载/错误图标共用该槽，
+// 这样不同状态不会改变后方类型标签和摘要的横向起点。
 function ToolStatusIcon({ status }: { status: ToolStatus }) {
   const meta = TOOL_STATUS_META[status]
   const Icon = TOOL_STATUS_ICON[status]
   return (
-    <Icon
-      className={`h-3 w-3 flex-shrink-0 ${meta.iconClass}${meta.spin ? ' animate-spin' : ''}`}
-      strokeWidth={2.4}
-      aria-label={meta.label}
-      role="img"
-    />
+    <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
+      <Icon
+        className={`h-3 w-3 ${meta.iconClass}${meta.spin ? ' animate-spin' : ''}`}
+        strokeWidth={2.4}
+        aria-label={meta.label}
+        role="img"
+      />
+    </span>
   )
 }
 
@@ -296,7 +300,9 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, defaultCollapsed =
         {toolStatus ? (
           <ToolStatusIcon status={toolStatus} />
         ) : (
-          <span className={`w-1.5 h-1.5 rounded-full ${theme.dot} flex-shrink-0`}></span>
+          <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
+            <span className={`h-1.5 w-1.5 rounded-full ${theme.dot}`}></span>
+          </span>
         )}
         <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>
         {canCode && (
