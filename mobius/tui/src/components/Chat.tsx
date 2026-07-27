@@ -274,9 +274,10 @@ const SHIMMER_SHADES = ['#ffffff', '#d0d0d0', '#ababab', '#8c8c8c', '#747474', '
 
 export function shimmerText(label: string, frame: number): React.ReactNode[] {
   const chars = Array.from(label)
-  const head = frame % (chars.length + SHIMMER_SHADES.length)
+  const head = chars.length > 0 ? frame % chars.length : 0
   return chars.map((char, index) => {
-    const distance = Math.abs(index - head)
+    const directDistance = Math.abs(index - head)
+    const distance = Math.min(directDistance, chars.length - directDistance)
     const shade = SHIMMER_SHADES[Math.min(distance, SHIMMER_SHADES.length - 1)]
     return <Text key={`${index}-${char}`} color={shade}>{char}</Text>
   })

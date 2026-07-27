@@ -358,8 +358,10 @@ function testWorkingShimmer() {
   }
   const frame0 = colorsAt(0)
   const frame1 = colorsAt(1)
+  const wrapped = colorsAt('Working'.length)
   ok(new Set(frame0).size >= 4, 'Working text uses several brightness levels instead of one dim color')
   ok(frame0[0] === '#ffffff' && frame1[1] === '#ffffff', 'brightest point advances across the text between frames')
+  ok(wrapped[0] === '#ffffff', 'brightness wave wraps continuously to the start of the text')
 }
 
 // ════════════════════════════════════════════════════════════════════════════
