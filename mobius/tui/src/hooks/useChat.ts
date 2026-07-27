@@ -51,6 +51,15 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
   const sendingRef = useRef(false)
   const workingHintUntilRef = useRef(0)
   const statusEpochRef = useRef(0)
+  // SSE auto-reconnect state. A reverse proxy's idle timeout (or a server
+  // restart) drops the stream mid-session; without reconnect the TUI stops
+  // receiving new jsonl entries even though the web client keeps updating.
+  // On reconnect the server replays jsonl_history, so no entries are lost.
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectAttemptRef = useRef(0)
+  const aliveRef = useRef(true)
+  const stoppedRef = useRef(false)
+  const doConnectRef = useRef<(sid: string) => void>(() => {})
 
   const updateTyping = useCallback((active: boolean) => {
     typingRef.current = active
@@ -73,6 +82,7 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
   const connect = useCallback((sid: string) => {
     if (process.env.MOBIUS_TUI_DEBUG) console.error('[connect]', sid)
     sseRef.current?.close()
+    if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null }
     const url = `${client.server}/api/sessions/${encodeURIComponent(sid)}/events?token=${encodeURIComponent(client.token)}`
     const conn = new SseConnection(url, {
       onHistoryEntries: (es, _done) => {
@@ -83,6 +93,7 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
         appendEntries([entry])
         setPendingUser(null)
       },
+      onSubscribed: () => { reconnectAttemptRef.current = 0 },
       onTyping: (active) => {
         // SSE is a low-latency hint, not the source of truth. A `true` event
         // lights the indicator immediately; either edge requests a fresh
@@ -97,10 +108,24 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
         pollNowRef.current?.()
       },
       onError: (msg) => setError(msg),
+      onClose: () => {
+        // Reconnect with exponential backoff as long as the session is still
+        // alive; stop once it ends (alive=false) or after a few failed tries.
+        if (stoppedRef.current || !aliveRef.current) return
+        const attempt = reconnectAttemptRef.current
+        if (attempt >= 6) return
+        const delay = Math.min(15_000, 500 * 2 ** attempt)
+        reconnectAttemptRef.current = attempt + 1
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null
+          if (!stoppedRef.current) doConnectRef.current(sid)
+        }, delay)
+      },
     })
     sseRef.current = conn
     conn.start()
   }, [client.server, client.token, appendEntries, setHistory, updateTyping])
+  doConnectRef.current = connect
 
   // Connect immediately when a resume session is provided, or after we create one.
   useEffect(() => {
@@ -108,7 +133,11 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
     return () => { /* keep connection across re-renders; closed on unmount */ }
   }, [sessionId, connect])
 
-  useEffect(() => () => { sseRef.current?.close() }, [])
+  useEffect(() => () => {
+    stoppedRef.current = true
+    sseRef.current?.close()
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+  }, [])
 
   // ── Runtime status synchronization ──────────────────────────────────────
   // GET /api/sessions/:id/status is the only authoritative execution state.
@@ -151,6 +180,7 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
       try {
         const status = await client.sessionStatus(sessionId, controller.signal)
         if (stopped || epoch !== statusEpochRef.current) return
+        aliveRef.current = !!status.alive
 
         if (status.alive && status.working) {
           workingHintUntilRef.current = 0
