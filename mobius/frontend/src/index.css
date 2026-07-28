@@ -82,6 +82,24 @@
   src: url('/fonts/jetbrains-mono-500.woff2') format('woff2');
 }
 
+/* JSONL fenced code uses terminal-cell metrics: Latin/box drawing = 1 cell (600),
+   CJK wide glyphs = 2 cells (1200). Keeping both local avoids platform-dependent
+   fallback widths that break ASCII/Unicode diagrams containing Chinese labels. */
+@font-face {
+  font-family: 'Mobius Code Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/mobius-code-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Mobius CJK Code';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/mobius-cjk-code-400.woff2') format('woff2');
+}
+
 /* ===== 桌面端标题栏拖拽区 =====
    Windows/Linux Electron 不再使用 -webkit-app-region: drag; 标题栏空白区通过 IPC 手动拖窗。
    app-region 会进入原生命中测试, 容易和浮动层/可拖控件抢事件。这里保留 no-drag 保险,
@@ -5325,7 +5343,15 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .jsonl-compact-md p { margin: .25rem 0; white-space: pre-wrap; }
 .jsonl-compact-md pre { margin: .45rem 0; padding: .6rem .7rem; border-radius: .375rem; border: 1px solid var(--code-border); background: var(--code-bg); overflow: auto; max-height: 28rem; }
 .jsonl-compact-md code { font-family: 'JetBrains Mono','Cascadia Code','Fira Code','Noto Sans SC',monospace; font-size: .95em; }
-.jsonl-compact-md pre code { display: block; white-space: pre; color: var(--code-text); }
+.jsonl-compact-md pre code {
+  display: block;
+  white-space: pre;
+  color: var(--code-text);
+  font-family: 'Mobius Code Mono', 'Mobius CJK Code', monospace;
+  font-kerning: none;
+  font-variant-ligatures: none;
+  font-feature-settings: 'liga' 0, 'calt' 0;
+}
 .jsonl-compact-md :not(pre) > code { background: var(--prose-code-bg); color: var(--prose-code-color); padding: .1em .32em; border-radius: .25rem; }
 .jsonl-compact-md ul, .jsonl-compact-md ol { padding-left: 1.25rem; margin: .35rem 0; }
 .jsonl-compact-md ul { list-style: disc outside; }
