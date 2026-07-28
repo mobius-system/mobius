@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { MobiusClient, ApiError } from '../api.js'
 import { SseConnection } from '../sse.js'
 import { updateIssuePreference } from '../config.js'
-import { tuiAimuxIdentifier } from '../aimux.js'
+import { tuiAimuxIdentifier, probeAimuxBridgeConnection } from '../aimux.js'
 import type { AnyEntry } from '../types.js'
 import type { ReadyState } from '../components/PrepScreen.js'
 
@@ -256,6 +256,15 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
   const ensureSession = useCallback(async (): Promise<string> => {
     if (sessionId) return sessionId
     const { project, issue, prefs } = ready
+    // 创建会话前确认 aimux reverse connect 已注册到服务器 bridge, 否则 codex 启动时
+    // 注入的 MCP server (aimux mcp serve --remote <id>) 会因 remote 不存在而退出.
+    // 不阻塞创建: 超时则继续 (aimux mcp serve 自身会兜底校验并报错给 codex).
+    const aimuxId = tuiAimuxIdentifier()
+    const probeDeadline = Date.now() + 8000
+    while (Date.now() < probeDeadline) {
+      try { if (await probeAimuxBridgeConnection(client.server, client.token, aimuxId)) break } catch {}
+      await new Promise(r => setTimeout(r, 500))
+    }
     const name = `TUI ${new Date().toISOString().slice(5, 16).replace('T', ' ')}`
     const s = await client.createSession(issue.id, {
       name,

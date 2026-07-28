@@ -25,7 +25,7 @@ export function AimuxStatusLine({ status, compact = false }: { status: AimuxStat
 }
 
 function stateLabel(state: AimuxStatus['state']): string {
-  if (state === 'connected') return '已连接'
+  if (state === 'connected') return '已连接 · 远程 MCP 工具就绪'
   if (state === 'starting') return '连接中…'
   if (state === 'failed') return '连接失败'
   if (state === 'disabled') return '已关闭'
