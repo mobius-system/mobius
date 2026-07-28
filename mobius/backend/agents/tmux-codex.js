@@ -1167,6 +1167,10 @@ class TmuxCodexBackend extends AgentBackend {
     // codex `-c key=value` 按 TOML 解析 value, args 用 inline array.
     if (aimuxRemoteName) {
       const aimuxBinPath = resolveAimuxBin()
+      // enable_mcp_apps 是 codex 加载 mcp_servers 的特性开关 (profile 默认 false,
+      // 端到端实测: 不开则 mcp_servers 不加载, MCP 工具不可用). 同时抑制 under-development 警告.
+      codexArgs.push('-c', 'features.enable_mcp_apps=true')
+      codexArgs.push('-c', 'suppress_unstable_features_warning=true')
       codexArgs.push('-c', `mcp_servers.aimux.command=${aimuxBinPath}`)
       codexArgs.push('-c', `mcp_servers.aimux.args=["mcp","serve","--remote","${aimuxRemoteName}"]`)
     }
