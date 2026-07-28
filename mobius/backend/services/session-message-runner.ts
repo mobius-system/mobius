@@ -9,6 +9,7 @@ import { syncSkillsToWorkspace } from './session-skills-sync';
 import { formatBackendSendFailure } from './session-errors';
 import { transferReferencePrompt } from './session-transfer';
 import { canOperateSession } from './access-control';
+import { aimuxRemoteNameFromMeta } from './pc-client-context';
 import {
   normalizeSessionAttachments,
   sessionContentWithAttachments,
@@ -214,6 +215,7 @@ async function runSessionMessage({
       displayName: sess.name,
       agentSessionId: sess.claude_session_id || undefined,
       mobiusJsonl,
+      aimuxRemoteName: aimuxRemoteNameFromMeta(sess?.pc_client_metadata),
     };
     if (urgent) {
       // 加急: 中断当前推理/输出再投递. pauseCurrentAndResumeFromSession 带 prompt =
