@@ -104,6 +104,12 @@ type Palette = {
 const CHIEF_COLOR = 0x10b981
 const ASSISTANT_COLOR = 0x3b82f6
 const LOCKED_COLOR = 0x94a3b8
+// SpriteMaterial 关闭 sizeAttenuation 后，scale 表示相对视口高度的屏幕空间尺寸。
+// 统一使用同一尺寸，并在挂到缩放过的 avatar group 时抵消父级缩放，确保远近、选中与否都不改变卡片大小。
+const AGENT_LABEL_SCREEN_SCALE = { width: 0.23, height: 0.085 }
+const ADD_LABEL_SCREEN_SCALE = { width: 0.2, height: 0.05 }
+const LABEL_TEXTURE_SCALE = 2
+const LABEL_FONT_FAMILY = '"Noto Sans SC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
 
 function paletteForTheme(theme: SceneProps['theme']): Palette {
   if (theme === 'light') {
@@ -354,15 +360,18 @@ function makeStageTexture(theme: SceneProps['theme']) {
 }
 
 function makeLabelTexture(agent: ResearchTeamSceneAgent, selected: boolean, theme: SceneProps['theme']) {
+  const logicalWidth = 512
+  const logicalHeight = 188
   const canvas = document.createElement('canvas')
-  canvas.width = 512
-  canvas.height = 188
+  canvas.width = logicalWidth * LABEL_TEXTURE_SCALE
+  canvas.height = logicalHeight * LABEL_TEXTURE_SCALE
   const ctx = canvas.getContext('2d')!
+  ctx.scale(LABEL_TEXTURE_SCALE, LABEL_TEXTURE_SCALE)
   const palette = paletteForTheme(theme)
   const isChief = agent.role === 'chief_researcher'
   const accent = selected ? '#38bdf8' : isChief ? '#10b981' : '#3b82f6'
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.clearRect(0, 0, logicalWidth, logicalHeight)
   ctx.shadowColor = theme === 'light' ? 'rgba(15,23,42,0.16)' : 'rgba(0,0,0,0.42)'
   ctx.shadowBlur = 16
   ctx.shadowOffsetY = 8
@@ -377,27 +386,27 @@ function makeLabelTexture(agent: ResearchTeamSceneAgent, selected: boolean, them
   ctx.fillStyle = accent
   roundRect(ctx, 36, 34, 54, 28, 14)
   ctx.fill()
-  ctx.font = '700 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+  ctx.font = `700 16px ${LABEL_FONT_FAMILY}`
   ctx.fillStyle = '#ffffff'
   ctx.textAlign = 'center'
   ctx.fillText(isChief ? 'C' : 'A', 63, 54)
   ctx.textAlign = 'left'
 
-  ctx.font = '700 31px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+  ctx.font = `700 31px ${LABEL_FONT_FAMILY}`
   ctx.fillStyle = palette.labelText
   ctx.fillText(truncateText(agent.name || '未命名 Agent', 18), 104, 58)
 
-  ctx.font = '500 21px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+  ctx.font = `500 21px ${LABEL_FONT_FAMILY}`
   ctx.fillStyle = palette.labelMuted
   ctx.fillText(`${roleLabel(agent.role)} · ${truncateText(agent.modelLabel || '默认模型', 18)}`, 38, 98)
 
-  ctx.font = '500 20px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+  ctx.font = `500 20px ${LABEL_FONT_FAMILY}`
   ctx.fillStyle = palette.labelSkill
   ctx.fillText(truncateText(agent.mainSkillName || '完全自定义', 28), 38, 130)
 
   const status = agent.locked ? '已创建 · 锁定' : agent.status || ''
   if (status) {
-    ctx.font = '700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    ctx.font = `700 18px ${LABEL_FONT_FAMILY}`
     ctx.fillStyle = status.includes('失败') ? '#ef4444' : selected ? '#38bdf8' : '#10b981'
     ctx.fillText(truncateText(status, 18), 38, 156)
   }
@@ -409,14 +418,17 @@ function makeLabelTexture(agent: ResearchTeamSceneAgent, selected: boolean, them
 }
 
 function makeAddLabelTexture(theme: SceneProps['theme']) {
+  const logicalWidth = 512
+  const logicalHeight = 128
   const canvas = document.createElement('canvas')
-  canvas.width = 512
-  canvas.height = 128
+  canvas.width = logicalWidth * LABEL_TEXTURE_SCALE
+  canvas.height = logicalHeight * LABEL_TEXTURE_SCALE
   const ctx = canvas.getContext('2d')!
+  ctx.scale(LABEL_TEXTURE_SCALE, LABEL_TEXTURE_SCALE)
   const palette = paletteForTheme(theme)
   const accent = '#10b981'
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.clearRect(0, 0, logicalWidth, logicalHeight)
   ctx.shadowColor = theme === 'light' ? 'rgba(15,23,42,0.16)' : 'rgba(0,0,0,0.42)'
   ctx.shadowBlur = 16
   ctx.shadowOffsetY = 8
@@ -430,10 +442,10 @@ function makeAddLabelTexture(theme: SceneProps['theme']) {
   ctx.stroke()
   ctx.setLineDash([])
 
-  ctx.font = '700 30px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+  ctx.font = `700 30px ${LABEL_FONT_FAMILY}`
   ctx.fillStyle = accent
   ctx.textAlign = 'center'
-  ctx.fillText('＋  添加 Agent', canvas.width / 2, 76)
+  ctx.fillText('＋  添加 Agent', logicalWidth / 2, 76)
   ctx.textAlign = 'left'
 
   const texture = new CanvasTexture(canvas)
@@ -1599,16 +1611,21 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
       const color = agent.role === 'chief_researcher' ? CHIEF_COLOR : ASSISTANT_COLOR
       const { group, clickable, animate } = makeAgentAvatar(agent, agent.locked ? LOCKED_COLOR : color, selected, theme, avatarKind, index * 0.7)
       const depthScale = clamp(1.02 + (position.z - target.center.z) * 0.035, 0.9, 1.14)
+      const avatarScale = (selected ? 1.06 : 1) * depthScale
       group.position.copy(position)
-      group.scale.setScalar((selected ? 1.06 : 1) * depthScale)
+      group.scale.setScalar(avatarScale)
 
       const texture = makeLabelTexture(agent, selected, theme)
       const sprite = new Sprite(new SpriteMaterial({
-        map: texture, transparent: true, depthTest: false, depthWrite: false,
+        map: texture, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false,
       }))
       sprite.renderOrder = 4
       sprite.position.set(0, 2.25, 0.08)
-      sprite.scale.set(selected ? 2.85 : 2.62, selected ? 1.05 : 0.96, 1)
+      sprite.scale.set(
+        AGENT_LABEL_SCREEN_SCALE.width / avatarScale,
+        AGENT_LABEL_SCREEN_SCALE.height / avatarScale,
+        1,
+      )
       group.add(sprite)
 
       pieceRoot.add(group)
@@ -1625,12 +1642,16 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
 
       const texture = makeAddLabelTexture(theme)
       const sprite = new Sprite(new SpriteMaterial({
-        map: texture, transparent: true, depthTest: false, depthWrite: false,
+        map: texture, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false,
       }))
       sprite.renderOrder = 4
       // 浮窗下移贴近可点击的十字(原 y=2.05 离十字 y≈0.78 过远, 点到浮窗文字会落空), 并让浮窗本身也参与点击
       sprite.position.set(0, 1.45, 0.08)
-      sprite.scale.set(2.0, 0.5, 1)
+      sprite.scale.set(
+        ADD_LABEL_SCREEN_SCALE.width / depthScale,
+        ADD_LABEL_SCREEN_SCALE.height / depthScale,
+        1,
+      )
       sprite.userData.addNode = true
       group.add(sprite)
 

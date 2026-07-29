@@ -757,10 +757,9 @@ export function ResearchAgentTeamModal({
                 </div>
                 <button type="button" onClick={addAssistant} disabled={submitting || agents.length >= MAX_TEAM_SIZE}
                   title={agents.length >= MAX_TEAM_SIZE ? '已达团队上限' : '添加 Agent'}
-                  className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 text-[12px] font-medium transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 mb-2.5 text-[12px] font-medium transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                   style={{ borderColor: 'rgba(16,185,129,0.55)', background: isDark ? 'rgba(16,185,129,0.18)' : 'rgba(16,185,129,0.95)', color: isDark ? '#34d399' : '#ffffff' }}>
                   <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
-                  添加
                 </button>
               </div>
 
