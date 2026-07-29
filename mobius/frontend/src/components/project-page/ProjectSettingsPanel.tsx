@@ -5,7 +5,7 @@ import { ToggleSwitch } from '../toggle-switch'
 import { MemoriesManager } from '../memories'
 import { OpenInVSCodeButton } from '../project-files'
 import { SkillsManager } from '../skills'
-import { UserPicker } from '../user-picker'
+import { ProjectAllowlistField } from '../project-allowlist-field'
 import { timeAgo } from '../shell'
 import { api, useStore } from '../../store'
 import { ProjectCardThemePicker } from '../project-card-theme-picker'
@@ -1348,28 +1348,12 @@ export function ProjectSettingsPanel({
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-3">
-                <div>
-                  <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>
-                    添加用户
-                    {editVisibility !== 'allowlist' && (
-                      <span className="ml-1.5" style={{ color: 'var(--text-muted)' }}>
-                        （仅在「指定用户」可见性下生效）
-                      </span>
-                    )}
-                  </label>
-                  <UserPicker
-                    selectedIds={editAllowUserIds}
-                    onChange={setEditAllowUserIds}
-                    disabled={!canManageProject}
-                    placeholder={editVisibility === 'allowlist' ? '输入用户名或 ID 添加...' : '先把可见性切到「指定用户」再添加'}
-                    emptyHint={editVisibility === 'allowlist' ? '还没有添加任何允许用户' : '可见性非 allowlist，允许名单暂不生效'}
-                  />
-                  {editAllowUserIds.length > 0 && (
-                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                      在「指定用户」可见性下，只有项目创建者、管理员和这里列出的用户可见。
-                    </p>
-                  )}
-                </div>
+                <ProjectAllowlistField
+                  visibility={editVisibility}
+                  selectedIds={editAllowUserIds}
+                  onChange={setEditAllowUserIds}
+                  disabled={!canManageProject}
+                />
               </div>
             </SettingsCard>
           )}

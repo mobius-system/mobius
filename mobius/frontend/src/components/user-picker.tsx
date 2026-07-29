@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { api } from '../store'
+import { computeUserPickerPlacement, type UserPickerPlacement } from './user-picker-position'
 
 type UserOption = {
   id: string
@@ -52,6 +54,15 @@ export function UserPicker({
   const [highlight, setHighlight] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const anchorRef = useRef<HTMLDivElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const [placement, setPlacement] = useState<UserPickerPlacement>({
+    direction: 'down',
+    left: 8,
+    top: 8,
+    width: 240,
+    maxHeight: 224,
+  })
 
   const uniqueSelected = useMemo(
     () => Array.from(new Set((selectedIds || []).filter(Boolean))),
@@ -85,18 +96,14 @@ export function UserPicker({
     return () => { alive = false }
   }, [uniqueSelected.join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 自动补全: 输入时拉取候选.
+  // 自动补全: 输入时拉取候选; 空输入聚焦时加载首批候选.
   useEffect(() => {
+    if (!open) return
     const q = query.trim()
-    if (!q) {
-      setOptions([])
-      setLoading(false)
-      return
-    }
     let alive = true
     setLoading(true)
     setErr('')
-    const timer = window.setTimeout(() => {
+    const load = () => {
       api(`${searchPath}?q=${encodeURIComponent(q)}`)
         .then((rows: any) => {
           if (!alive) return
@@ -105,15 +112,43 @@ export function UserPicker({
         })
         .catch((e: any) => { if (alive) { setErr(e?.message || '搜索失败'); setOptions([]) } })
         .finally(() => { if (alive) setLoading(false) })
-    }, 180)
+    }
+    if (!q) {
+      load()
+      return () => { alive = false }
+    }
+    const timer = window.setTimeout(load, 180)
     return () => { alive = false; window.clearTimeout(timer) }
-  }, [query, searchPath])
+  }, [query, searchPath, open])
+
+  // 顶层浮层定位: 不受设置卡片、弹窗、抽屉的 overflow 规则裁剪.
+  useEffect(() => {
+    if (!open) return
+    const update = () => {
+      const anchor = anchorRef.current
+      if (!anchor) return
+      const rect = anchor.getBoundingClientRect()
+      setPlacement(computeUserPickerPlacement(
+        { top: rect.top, bottom: rect.bottom, left: rect.left, width: rect.width },
+        { width: window.innerWidth, height: window.innerHeight },
+        menuRef.current?.offsetHeight || 224,
+      ))
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [open, options.length, loading])
 
   // 外部点击关闭候选列表.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!rootRef.current) return
-      if (!rootRef.current.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (!rootRef.current.contains(target) && !menuRef.current?.contains(target)) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -171,6 +206,7 @@ export function UserPicker({
   return (
     <div ref={rootRef} className="relative">
       <div
+        ref={anchorRef}
         className={`flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-lg ${disabled ? 'opacity-60' : ''}`}
         style={{
           background: 'var(--input-bg)',
@@ -218,10 +254,20 @@ export function UserPicker({
         />
       </div>
 
-      {open && (query.trim() || loading) && (
+      {open && createPortal(
         <div
-          className="absolute z-30 mt-1 w-full max-h-56 overflow-auto rounded-lg border shadow-xl"
-          style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)' }}
+          ref={menuRef}
+          role="listbox"
+          className="fixed overflow-auto rounded-lg border shadow-xl"
+          style={{
+            left: placement.left,
+            top: placement.top,
+            width: placement.width,
+            maxHeight: placement.maxHeight,
+            background: 'var(--modal-bg)',
+            borderColor: 'var(--border-color)',
+            zIndex: 10050,
+          }}
         >
           {loading && (
             <div className="px-3 py-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>搜索中...</div>
@@ -256,7 +302,8 @@ export function UserPicker({
               </button>
             )
           })}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

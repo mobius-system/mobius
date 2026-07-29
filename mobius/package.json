@@ -19,6 +19,7 @@
     "test:pc-client-context": "node --require tsx/cjs tests/pc-client-context.js",
     "test:file-tree-menu-logic": "node --require tsx/cjs tests/file-tree-menu-logic.js",
     "test:session-transfer": "node --require tsx/cjs tests/session-transfer.js",
+    "test:project-user-picker": "node --require tsx/cjs tests/project-user-picker.js",
     "test:agent-tmux-server": "node tests/agent-tmux-server.js",
     "test:claude-realtime-info": "node --require tsx/cjs tests/claude-realtime-info.js",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",

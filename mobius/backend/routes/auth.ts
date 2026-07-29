@@ -72,7 +72,14 @@ router.get('/user-search', auth, (req: express.Request, res: express.Response) =
   }
   const q = String(req.query.q || '').trim();
   if (!q) {
-    res.json([]);
+    const rows = db.prepare(`
+      SELECT id, display_name, role
+      FROM users
+      WHERE (deleted_at IS NULL OR deleted_at = '')
+      ORDER BY display_name COLLATE NOCASE ASC, id COLLATE NOCASE ASC
+      LIMIT 12
+    `).all();
+    res.json(rows);
     return;
   }
   const like = `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;

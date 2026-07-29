@@ -22,6 +22,7 @@
  *   isJobGoalAccomplished(sessionId) → boolean
  *   isFailed(sessionId) → boolean
  *   getRecentError(sessionId) → false | { message, rawLine, capturedAt }
+ *   getPendingRequests(sessionId) → Array<{ content, enqueuedAt }>
  */
 const fs = require('fs')
 const path = require('path')
@@ -236,6 +237,14 @@ class AgentBackend {
   //   - 空 "" 同样要进缓存 (空结果 5s 内也复用, 不重复 capture).
   // 基类默认 "" (codex 等暂不实现的 backend 直接继承空实现).
   realTimeInfo(_sessionId) { return '' }
+
+  // 待处理(已入队、尚未被消费)的用户请求.
+  // 返回数组, 每项 { content, enqueuedAt }, 顺序 = 入队先后; 空数组 = 无排队中的请求.
+  // 状态查询 (同 isWorking/isAlive, 不上锁).
+  //   - tmux-claude-code: 扫 session JSONL 的 queue-operation/enqueue, 减去已被消费
+  //     (后续出现 type:user 或 attachment.type:queued_command 携带同内容) 的 (见其实现).
+  //   - tmux-codex: codex 不在 rollout JSONL 暴露排队事件 → 恒空 (显式 override).
+  getPendingRequests(_sessionId) { return [] }
 }
 
 module.exports = { AgentBackend }

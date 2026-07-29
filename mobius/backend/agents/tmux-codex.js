@@ -676,6 +676,10 @@ class TmuxCodexBackend extends AgentBackend {
     return value
   }
 
+  // codex 不在 rollout JSONL 暴露排队事件 (其排队/中断多为 TUI 内部态, 不落盘成
+  // queue-operation), 故待处理请求恒空. claude-code 才有原生 queue-operation 通道.
+  getPendingRequests(_sessionId) { return [] }
+
   // 扫 Codex TUI 屏幕找最近一条 ErrorEvent.
   // 信号设计 (参考 codex tui/src/history_cell/notices.rs:184):
   //   - 主信号: ■ (U+25A0) — 所有 ErrorEvent 渲染前缀, 几乎只有错误用

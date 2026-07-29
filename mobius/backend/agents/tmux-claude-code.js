@@ -372,6 +372,52 @@ function pickInitialContextGreeting() {
 })()
 
 // ── Backend ────────────────────────────────────────────
+// ── getPendingRequests 辅助: 解析 Claude Code 内存队列的"已入队未消费"请求 ──────
+// 指南 (issue_knowledge/d1600424): enqueue=入队; 同一请求后续以 type:user (空闲时直接
+// 消费) 或 attachment.type:queued_command (忙时中途注入) 出现 = 已消费, 不再 pending.
+// dequeue/remove 不带 content, 不能作"已送达"ACK, 故不据此判定.
+
+// 归一化请求文本: 折叠连续空白 + 去首尾空白, 消除 TUI 写盘时的换行/缩进差异.
+function normalizeRequestText(value) {
+  if (typeof value !== 'string') return ''
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+// 从"消费型"条目抽出请求文本签名; 非消费条目返回 ''.
+//   type:user                  → message.content (string 或 text 块数组)
+//   attachment:queued_command  → attachment.content / text / command
+function consumedRequestSignature(entry) {
+  if (!entry || typeof entry !== 'object') return ''
+  if (entry.type === 'user') {
+    const c = entry.message?.content
+    if (typeof c === 'string') return normalizeRequestText(c)
+    if (Array.isArray(c)) {
+      const text = c
+        .filter((b) => b && typeof b === 'object' && b.type === 'text')
+        .map((b) => b.text || '')
+        .join('\n')
+      return normalizeRequestText(text)
+    }
+    return ''
+  }
+  if (entry.type === 'attachment' && entry.attachment?.type === 'queued_command') {
+    const a = entry.attachment
+    return normalizeRequestText(a.content || a.text || a.command || '')
+  }
+  return ''
+}
+
+// 同一请求判定: 全文签名相等, 或一方完整包含另一方 (容忍 agent 包裹层).
+// 故意用"全文包含"而非"前缀指纹" —— 多个 mobius prompt 共享相同开场白前缀,
+// 用前缀会把不同任务误配成同一个.
+function isSameQueuedRequest(sigA, sigB) {
+  if (!sigA || !sigB) return false
+  if (sigA === sigB) return true
+  if (sigA.length >= 40 && sigB.includes(sigA)) return true
+  if (sigB.length >= 40 && sigA.includes(sigB)) return true
+  return false
+}
+
 class TmuxClaudeCodeBackend extends AgentBackend {
   constructor() {
     super({ name: 'tmux-claude-code', runtimeFile: RUNTIME_FILE, archiveFile: ARCHIVE_FILE })
@@ -481,6 +527,49 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 等待 background agents —— 该等待态 JSONL 表达不了, 兜底看 pane 是否有
     // "Waiting for N background agents to finish". 命中则仍视为工作中, 避免误判待命 / 误回收.
     return CLAUDE_BG_AGENTS_WAITING_RE.test(capturePaneTail(sessionId))
+  }
+
+  // 待处理请求: Claude Code 内存队列里"已 enqueue 但尚未被消费"的 prompt.
+  // 只读原生 session JSONL 尾部 (与 isWorking 同源; mobius 装饰条目在 sidecar
+  // .mobius.jsonl 文件, 不在此, 故 content 匹配不会被发送时刻的镜像条目污染).
+  // 返回 [{ content, enqueuedAt }], 顺序 = 入队先后; 空 = 无排队中的请求.
+  getPendingRequests(sessionId) {
+    const jsonlPath = this._resolveJsonlPath(sessionId)
+    if (!jsonlPath) return []
+    let lines
+    try {
+      if (!fs.existsSync(jsonlPath)) return []
+      const stat = fs.statSync(jsonlPath)
+      if (stat.size === 0) return []
+      const len = Math.min(stat.size, CLAUDE_WORKING_TAIL_BYTES)
+      const buf = Buffer.alloc(len)
+      const fd = fs.openSync(jsonlPath, 'r')
+      try { fs.readSync(fd, buf, 0, len, stat.size - len) } finally { fs.closeSync(fd) }
+      lines = buf.toString('utf8').split('\n').filter(Boolean)
+    } catch { return [] }
+
+    const pending = [] // { content, enqueuedAt, sig }
+    for (const line of lines) {
+      let e
+      try { e = JSON.parse(line) } catch { continue }
+      if (!e || typeof e !== 'object') continue
+
+      if (e.type === 'queue-operation' && e.operation === 'enqueue') {
+        const content = typeof e.content === 'string' ? e.content : null
+        if (!content) continue
+        pending.push({ content, enqueuedAt: e.timestamp || null, sig: normalizeRequestText(content) })
+        continue
+      }
+
+      // 消费信号: 命中某 pending enqueue → 移出 (一次消费只消一条, 处理同文重复入队).
+      const sig = consumedRequestSignature(e)
+      if (sig) {
+        for (let i = pending.length - 1; i >= 0; i--) {
+          if (isSameQueuedRequest(pending[i].sig, sig)) { pending.splice(i, 1); break }
+        }
+      }
+    }
+    return pending.map(({ content, enqueuedAt }) => ({ content, enqueuedAt }))
   }
 
   // 任务是否结束: session 启动时落 running.flag, agent 收工 (成功/失败) 自删.

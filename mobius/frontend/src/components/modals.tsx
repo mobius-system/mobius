@@ -26,6 +26,7 @@ import { LOGO_REVIEW_PROJECT_ID, readLogoReviewDemoState } from '../services/log
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ProjectCardThemePicker } from './project-card-theme-picker'
+import { ProjectAllowlistField } from './project-allowlist-field'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
@@ -807,6 +808,9 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
   const [visibility, setVisibility] = useState<ProjectVisibility>(
     project.visibility === 'team' || project.visibility === 'public' || project.visibility === 'allowlist' ? project.visibility : 'private'
   )
+  const [allowUserIds, setAllowUserIds] = useState<string[]>(
+    Array.isArray(project.access?.allow_user_ids) ? [...project.access.allow_user_ids] : []
+  )
   // v3 写权限: 读权限打开的项目默认 false; 用户在设置里打开 can_post_issue / can_run_session 后,
   // 同组 (team) 或任意读者 (public) 才能创建任务单 / 触发 Session.
   const [canPostIssue, setCanPostIssue] = useState<boolean>(!!project.can_post_issue)
@@ -861,6 +865,7 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
         name,
         description: desc,
         visibility,
+        allow_user_ids: allowUserIds,
         can_post_issue: canPostIssue,
         can_run_session: canRunSession,
         cardBorderTheme,
@@ -945,6 +950,13 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
               {PROJECT_VISIBILITY_OPTIONS.find(option => option.value === visibility)?.description}
             </p>
+            <div className="mt-3">
+              <ProjectAllowlistField
+                visibility={visibility}
+                selectedIds={allowUserIds}
+                onChange={setAllowUserIds}
+              />
+            </div>
             <div className="mt-2 space-y-1.5">
               <ToggleSwitch
                 checked={canPostIssue}
