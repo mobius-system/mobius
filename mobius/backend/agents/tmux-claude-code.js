@@ -423,6 +423,19 @@ function isSameQueuedRequest(sigA, sigB) {
   return false
 }
 
+// Resolve the aimux binary to spawn as a stdio MCP server (for TUI sessions that
+// opted into add_remote_aimux_mcp). Mirrors tmux-codex.js + aimux-remote.ts
+// AIMUX_BIN_CANDIDATES (kept inline to avoid crossing the .js/.ts boundary).
+function resolveAimuxBin() {
+  const candidates = [
+    process.env.AIMUX_BIN,
+    path.join(os.homedir(), '.local', 'bin', 'aimux'),
+    path.join(__dirname, '..', '..', '.venv-aimux', 'bin', 'aimux'),
+  ]
+  for (const c of candidates) { if (c && fs.existsSync(c)) return c }
+  return 'aimux'
+}
+
 class TmuxClaudeCodeBackend extends AgentBackend {
   constructor() {
     super({ name: 'tmux-claude-code', runtimeFile: RUNTIME_FILE, archiveFile: ARCHIVE_FILE })
@@ -751,7 +764,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // ── 内部实现 ──────────────────────────────────────────
-  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false }) {
+  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, aimuxRemoteName }) {
     if (!sessionId || !cwd) throw new Error('createNewSession 需要 sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession 需要 initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd 不存在: ${cwd}`)
@@ -759,7 +772,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // tmux 模式特点: window 可跨后端重启存活. 已有活窗口 → 复用 (跟原 hub.startSession
     // idempotent 一致). 这跟 stream-json 那版"严格新建"语义不同, 是有意为之.
     if (!windowExists(sessionId)) {
-      await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy })
+      await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy, aimuxRemoteName })
     } else {
       // 窗口在但 runtime entry 可能不在 (后端首次 reload) — 兜底建一个
       if (!this.runtime.has(sessionId) && agentSessionId) {
@@ -793,7 +806,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // 宽松版 — 没活进程就按 opts 自动 spawn (chat 不区分首发/续发, 统一走这里).
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusJsonl = null }) {
+  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusJsonl = null, aimuxRemoteName }) {
     if (!sessionId) throw new Error('需要 sessionId')
     if (!prompt) throw new Error('需要 prompt')
 
@@ -816,6 +829,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         forceNoProxy: finalForceNoProxy,
         displayName: displayName || persisted?.displayName,
         agentSessionId: finalAgentSid,
+        aimuxRemoteName,
       })
     }
     this._appendMobiusPromptEntry(sessionId, mobiusJsonl)
@@ -909,7 +923,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
   // ── tmux 操作底层 ─────────────────────────────────────
   // 启动一个新的 Claude Code tmux 窗口，并把运行态登记到内存和持久化存储。
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy = false }) {
+  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy = false, aimuxRemoteName }) {
     // 确保承载 agent 窗口的 tmux hub session 已经存在。
     ensureHub()
     // 运行标记默认写在 cwd 下；调用方传 flagRoot 时优先使用仓库根等稳定路径。
@@ -954,6 +968,18 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     ]
     // 如果调用方指定模型，就追加 --model 参数并做 shell 转义。
     if (model) claudeArgs.push(`--model ${shellQuote(model)}`)
+    // TUI 会话 (add_remote_aimux_mcp): 注入 aimux stdio MCP server, 让 claude 经
+    // remote_* 工具 (remote_exec_command/write_stdin/apply_patch/view_image/ping)
+    // 操作远程工作站. claude 用 --mcp-config <json-file> (顶层 mcpServers, stdio 默认),
+    // additive (不叠 --strict-mcp-config). per-session 文件因 --remote 各会话不同.
+    if (aimuxRemoteName) {
+      const aimuxBinPath = resolveAimuxBin()
+      const mcpConfigPath = path.join(os.tmpdir(), `mobius-aimux-mcp-${sessionId}-${crypto.randomUUID().slice(0, 8)}.json`)
+      fs.writeFileSync(mcpConfigPath, JSON.stringify({
+        mcpServers: { aimux: { command: aimuxBinPath, args: ['mcp', 'serve', '--remote', aimuxRemoteName] } },
+      }))
+      claudeArgs.push(`--mcp-config ${shellQuote(mcpConfigPath)}`)
+    }
     // settings 参数优先使用调用方指定文件，否则使用默认 Mobius Claude settings。
     const settingsArg = finalSettingsPath
       ? `--settings ${shellQuote(finalSettingsPath)}`

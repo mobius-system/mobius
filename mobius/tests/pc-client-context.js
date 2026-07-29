@@ -4,6 +4,7 @@ const {
   parsePcClientMetadata,
   pcClientRequiresAimuxSkill,
   pcTaskModePrompt,
+  aimuxRemoteNameFromMeta,
 } = require('../backend/services/pc-client-context');
 
 const device = 'tui-workstation';
@@ -25,12 +26,12 @@ assert.strictEqual(pcClientRequiresAimuxSkill({ work_mode: 'pc', aimux_id: devic
 const tuiHubPrompt = pcTaskModePrompt({ work_mode: 'hub', aimux_id: device, is_tui: true }, 'zh');
 assert.match(tuiHubPrompt, /You are working at remote machine tui-workstation/,
   'TUI prompt should include the remote-machine orientation');
-assert.match(tuiHubPrompt, /不要使用aimux.*在mobius中枢（即本地）工作/,
+assert.match(tuiHubPrompt, /不要使用 remote_\* 工具操作.*在mobius中枢（即本地）工作/,
   'TUI hub prompt should select Mobius Hub work');
 
 const tuiPcPrompt = pcTaskModePrompt({ work_mode: 'pc', aimux_id: device, local_path: localPath, is_tui: true }, 'zh');
-assert.match(tuiPcPrompt, /使用aimux连接到以下远程对象执行所有工作/,
-  'TUI pc prompt should require remote execution');
+assert.match(tuiPcPrompt, /通过 remote_\* 工具在以下远程对象上执行所有工作/,
+  'TUI pc prompt should require remote execution via remote_* tools');
 assert.match(tuiPcPrompt, /先将项目同步到mobius中枢.*每次修改后都立即同步回到 tui-workstation 指定路径/s,
   'TUI pc prompt should describe hub sync and direct-aimux fallback');
 
@@ -49,5 +50,27 @@ assert.match(
 );
 assert.strictEqual(pcTaskModePrompt({ work_mode: 'invalid', aimux_id: device, is_tui: true }, 'zh'), '',
   'invalid work modes should not produce a prompt');
+
+// aimuxRemoteNameFromMeta gate: requires is_tui === true AND add_remote_aimux_mcp === true AND aimux_id.
+assert.strictEqual(
+  aimuxRemoteNameFromMeta({ work_mode: 'pc', aimux_id: device, is_tui: true, add_remote_aimux_mcp: true }),
+  device,
+  'TUI session opted into add_remote_aimux_mcp should resolve the remote name',
+);
+assert.strictEqual(
+  aimuxRemoteNameFromMeta({ work_mode: 'pc', aimux_id: device, is_tui: true }),
+  undefined,
+  'TUI session WITHOUT add_remote_aimux_mcp must NOT get MCP injected (opt-in gate)',
+);
+assert.strictEqual(
+  aimuxRemoteNameFromMeta({ work_mode: 'pc', aimux_id: device, is_tui: false, add_remote_aimux_mcp: true }),
+  undefined,
+  'non-TUI sessions must not get MCP even with the flag',
+);
+assert.strictEqual(
+  aimuxRemoteNameFromMeta({ work_mode: 'pc', is_tui: true, add_remote_aimux_mcp: true }),
+  undefined,
+  'missing aimux_id must not resolve a remote name',
+);
 
 console.log('pc client context tests passed');
