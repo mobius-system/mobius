@@ -27,6 +27,7 @@ import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ProjectCardThemePicker } from './project-card-theme-picker'
 import { ProjectMemberInvite, type MemberInput } from './project-member-invite'
+import { ProjectTeamPanel } from './project-page/ProjectTeamPanel'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
@@ -963,9 +964,10 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
               {PROJECT_VISIBILITY_OPTIONS.find(option => option.value === visibility)?.description}
             </p>
-            <p className="mt-3 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
-              项目成员与角色请在项目页「项目组」标签页统一管理。
-            </p>
+            <div className="mt-3 rounded-lg border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+              <div className="text-[11px] mb-2" style={{ color: 'var(--text-muted)' }}>项目成员</div>
+              <ProjectTeamPanel projectId={project.id} canManage={project.can_manage} actorRole={project.project_role || null} />
+            </div>
             <div className="mt-2 space-y-1.5">
               <ToggleSwitch
                 checked={canPostIssue}
