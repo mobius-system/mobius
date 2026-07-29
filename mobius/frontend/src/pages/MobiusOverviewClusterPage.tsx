@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
+  ArrowLeft,
   ArrowUpRight,
   CircleDot,
   FlaskConical,
   GitBranch,
   LocateFixed,
   MessageSquare,
-  MousePointer2,
   PanelRightClose,
   Pause,
   Play,
@@ -1751,6 +1751,12 @@ export default function MobiusOverviewClusterPage() {
     setCurrentSession,
     setCurrentTask,
   } = useStore()
+  const navigate = useNavigate()
+  // 全屏工具页的出口: 优先回到真正的"上一界面", 直接进入/刷新时兜底回用户主页。
+  const goBack = useCallback(() => {
+    if (window.history.length > 1) navigate(-1)
+    else navigate(`/u/${encodeURIComponent(userParam)}`)
+  }, [navigate, userParam])
   const [query, setQuery] = useState('')
   const [clusterMode, setClusterMode] = useState<ClusterMode>(() => {
     try {
@@ -1806,6 +1812,20 @@ export default function MobiusOverviewClusterPage() {
     setCurrentSession(null)
     setCurrentTask(null)
   }, [setCurrentProject, setCurrentIssue, setCurrentResearch, setCurrentSession, setCurrentTask])
+
+  // 聚焦型工具页通用约定: Esc 退出。分层处理 —— 详情抽屉打开时先关抽屉, 否则返回上一页。
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (selectedRef.current) {
+        setSelected(null)
+        return
+      }
+      goBack()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [goBack])
 
   useEffect(() => {
     api('/api/projects?all=true')
@@ -2468,9 +2488,17 @@ export default function MobiusOverviewClusterPage() {
 
         <main className="relative min-w-0 flex-1 overflow-hidden">
           <div className="absolute inset-x-0 top-0 z-10 flex h-[58px] items-center gap-3 border-b px-5" style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--bg-primary) 92%, transparent)' }}>
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ color: 'var(--accent-primary)', background: 'var(--bg-hover)' }}>
-              <MousePointer2 className="h-4 w-4" />
-            </div>
+            <button
+              type="button"
+              onClick={goBack}
+              title="返回上一页 (Esc)"
+              aria-label="返回上一页"
+              className="group flex h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border pl-2.5 pr-3 text-[12px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+              style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
+            >
+              <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" style={{ color: 'var(--accent-primary)' }} />
+              返回
+            </button>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[14px] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
               <div className="mt-0.5 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
