@@ -5429,6 +5429,27 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .mobius-resizable-handle:active {
   background: rgba(59, 130, 246, .45);
 }
+.mobius-resizable-handle.mobius-resizable-handle--limit {
+  background: rgba(59, 130, 246, .58) !important;
+  box-shadow:
+    0 0 0 1px rgba(147, 197, 253, .2),
+    0 0 4px 1px rgba(59, 130, 246, .18);
+  animation: mobius-resize-limit-pulse .34s ease-out 2 alternate;
+}
+@keyframes mobius-resize-limit-pulse {
+  from {
+    opacity: .72;
+    box-shadow:
+      0 0 0 1px rgba(147, 197, 253, .12),
+      0 0 2px rgba(59, 130, 246, .1);
+  }
+  to {
+    opacity: 1;
+    box-shadow:
+      0 0 0 1px rgba(147, 197, 253, .24),
+      0 0 4px 1px rgba(59, 130, 246, .2);
+  }
+}
 body.mobius-resizing {
   cursor: col-resize !important;
   user-select: none !important;

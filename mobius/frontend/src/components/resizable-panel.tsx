@@ -99,6 +99,7 @@ export function ResizablePanel({
   const mobileNavOpen = useStore(s => s.mobileNavOpen)
   const setMobileNavOpen = useStore(s => s.setMobileNavOpen)
   const panelRef = useRef<HTMLElement>(null)
+  const handleRef = useRef<HTMLDivElement>(null)
   // 宽度走 imperative DOM, 不进 React inline style:
   //  - 拖拽时直接写 style.width ⇒ 零 React rerender ⇒ 不卡顿 (旧实现每帧 setWidth
   //    重渲染整个 children 子树, 重面板会爆帧)
@@ -156,6 +157,10 @@ export function ResizablePanel({
     const candidate = side === 'left' ? drag.startWidth + delta : drag.startWidth - delta
     const next = clampWidth(candidate, minWidth, maxWidth)
     drag.currentWidth = next
+    handleRef.current?.classList.toggle(
+      'mobius-resizable-handle--limit',
+      candidate <= minWidth || candidate >= maxWidth,
+    )
     // 拖拽期间直接写 DOM, 不进 React state ⇒ 零 rerender ⇒ 不卡顿
     if (panelRef.current) panelRef.current.style.width = `${next}px`
     const now = Date.now()
@@ -183,13 +188,28 @@ export function ResizablePanel({
     document.removeEventListener('mousemove', handleMouseMove)
     document.removeEventListener('mouseup', handleMouseUp)
     document.body.classList.remove('mobius-resizing')
+    handleRef.current?.classList.remove('mobius-resizable-handle--limit')
     // 收尾: 把最终宽度同步进 React state (仅这一次 rerender), 后续渲染沿用
     setWidth(final)
   }, [handleMouseMove, persistWidth])
 
+  const handleDoubleClick = useCallback(() => {
+    handleRef.current?.classList.remove('mobius-resizable-handle--limit')
+    setWidth(defaultWidth)
+    persistWidth(defaultWidth)
+  }, [defaultWidth, persistWidth])
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return
+    // 第一次按下会开启 body.mobius-resizing 并禁用命中测试；用第二次 mousedown
+    // 的 detail 保证双击复位不被该全局保护样式吞掉。
+    if (e.detail >= 2) {
+      e.preventDefault()
+      handleDoubleClick()
+      return
+    }
     e.preventDefault()
+    handleRef.current?.classList.remove('mobius-resizable-handle--limit')
     dragStateRef.current = {
       startX: e.clientX,
       startWidth: width,
@@ -200,12 +220,7 @@ export function ResizablePanel({
     document.body.classList.add('mobius-resizing')
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
-  }, [width, handleMouseMove, handleMouseUp])
-
-  const handleDoubleClick = useCallback(() => {
-    setWidth(defaultWidth)
-    persistWidth(defaultWidth)
-  }, [defaultWidth, persistWidth])
+  }, [width, handleMouseMove, handleMouseUp, handleDoubleClick])
 
   // 卸载时清理 (避免拖到一半组件被卸载残留监听器)
   useEffect(() => {
@@ -214,6 +229,7 @@ export function ResizablePanel({
         document.removeEventListener('mousemove', handleMouseMove)
         document.removeEventListener('mouseup', handleMouseUp)
         document.body.classList.remove('mobius-resizing')
+        handleRef.current?.classList.remove('mobius-resizable-handle--limit')
       }
     }
   }, [handleMouseMove, handleMouseUp])
@@ -286,6 +302,7 @@ export function ResizablePanel({
     >
       {children}
       <div
+        ref={handleRef}
         className={handleClass}
         style={handleStyle}
         onMouseDown={handleMouseDown}

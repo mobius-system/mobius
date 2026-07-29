@@ -66,6 +66,14 @@ function clampChatInputWidth(value: number, bodyWidth: number) {
   return Math.round(Math.max(CHAT_INPUT_MIN_WIDTH, Math.min(dynamicMax, value)))
 }
 
+function isChatInputWidthLimit(value: number, bodyWidth: number) {
+  const dynamicMax = Math.max(
+    CHAT_INPUT_MIN_WIDTH,
+    Math.min(CHAT_INPUT_MAX_WIDTH, bodyWidth - CHAT_HISTORY_MIN_WIDTH),
+  )
+  return value <= CHAT_INPUT_MIN_WIDTH || value >= dynamicMax
+}
+
 function sessionModelLabel(model?: string | null, explicitLabel?: string | null) {
   if (explicitLabel) return explicitLabel
   if (!model) return ''
@@ -1473,6 +1481,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLDivElement>(null)
+  const chatSplitHandleRef = useRef<HTMLDivElement>(null)
   const [chatInputRatio, setChatInputRatio] = useState(readChatInputRatio)
   const chatSplitDragRef = useRef<{
     startX: number
@@ -1505,12 +1514,14 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     event.preventDefault()
     const bodyWidth = body.getBoundingClientRect().width
     // 右栏手柄向左拖时右栏增宽，向右拖时右栏缩窄。
-    const nextWidth = clampChatInputWidth(
-      drag.startWidth + drag.startX - event.clientX,
-      bodyWidth,
-    )
+    const candidateWidth = drag.startWidth + drag.startX - event.clientX
+    const nextWidth = clampChatInputWidth(candidateWidth, bodyWidth)
     drag.currentWidth = nextWidth
     input.style.width = `${nextWidth}px`
+    chatSplitHandleRef.current?.classList.toggle(
+      'mobius-resizable-handle--limit',
+      isChatInputWidthLimit(candidateWidth, bodyWidth),
+    )
   }, [])
 
   const handleChatSplitMouseUp = useCallback(() => {
@@ -1526,6 +1537,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     document.removeEventListener('mousemove', handleChatSplitMouseMove)
     document.removeEventListener('mouseup', handleChatSplitMouseUp)
     document.body.classList.remove('mobius-resizing')
+    chatSplitHandleRef.current?.classList.remove('mobius-resizable-handle--limit')
     setChatInputRatio(ratio)
     persistChatInputRatio(ratio)
   }, [handleChatSplitMouseMove, persistChatInputRatio])
@@ -1533,6 +1545,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const resetChatInputWidth = useCallback(() => {
     const input = chatInputRef.current
     if (input) input.style.width = `${CHAT_INPUT_DEFAULT_RATIO * 100}%`
+    chatSplitHandleRef.current?.classList.remove('mobius-resizable-handle--limit')
     setChatInputRatio(CHAT_INPUT_DEFAULT_RATIO)
     persistChatInputRatio(CHAT_INPUT_DEFAULT_RATIO)
   }, [persistChatInputRatio])
@@ -1549,6 +1562,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     const input = chatInputRef.current
     if (!input) return
     event.preventDefault()
+    chatSplitHandleRef.current?.classList.remove('mobius-resizable-handle--limit')
     chatSplitDragRef.current = {
       startX: event.clientX,
       startWidth: input.getBoundingClientRect().width,
@@ -1565,6 +1579,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
       document.removeEventListener('mousemove', handleChatSplitMouseMove)
       document.removeEventListener('mouseup', handleChatSplitMouseUp)
       document.body.classList.remove('mobius-resizing')
+      chatSplitHandleRef.current?.classList.remove('mobius-resizable-handle--limit')
       chatSplitDragRef.current = null
     }
   }, [handleChatSplitMouseMove, handleChatSplitMouseUp])
@@ -3214,14 +3229,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
       {layout !== 'easy' && <div data-tour="session-chat-header" className="h-9 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="min-w-0 flex items-center gap-2">
-            <SessionTitle name={currentSession?.name || currentTask?.name} theme={theme} />
-            {/* {currentModelLabel && (
-              <span className="text-[10px] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"
-                title={`模型: ${currentModelLabel}`}
-                style={{ color: 'var(--text-muted)', background: 'var(--bg-card-hover)' }}>
-                {currentModelLabel}
-              </span>
-            )} */}
             <SessionStatusChip
               connected={connectionStatus === 'connected'}
               failed={backendJobFailed === true}
@@ -3230,6 +3237,14 @@ export function ChatArea({ layout = 'default', onNewSession }: {
               waiting={!!(backendAlive && !backendWorking)}
               done={backendJobDone === true && !backendAlive}
             />
+            <SessionTitle name={currentSession?.name || currentTask?.name} theme={theme} />
+            {/* {currentModelLabel && (
+              <span className="text-[10px] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"
+                title={`模型: ${currentModelLabel}`}
+                style={{ color: 'var(--text-muted)', background: 'var(--bg-card-hover)' }}>
+                {currentModelLabel}
+              </span>
+            )} */}
             <AimuxLinkIndicator
               session={currentSession ?? currentTask}
               sessionId={sessionId}
@@ -3400,6 +3415,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
         <div ref={chatInputRef} className={`mobius-chat-input relative flex flex-shrink-0 flex-col border-l${layout === 'easy' && !isPlanningSession ? ' mobius-chat-input--with-actions' : ''}`} style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
           {layout === 'default' && (
             <div
+              ref={chatSplitHandleRef}
               className="mobius-resizable-handle mobius-chat-split-handle"
               data-design-id="chat-input-resize-handle"
               data-testid="chat-input-resize-handle"

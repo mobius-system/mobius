@@ -3,7 +3,7 @@ type MobiusLogoProps = {
   className?: string
 }
 
-export function MobiusLogo({ size = 32, className = '' }: MobiusLogoProps) {
+export function MobiusLogo({ size = 25, className = '' }: MobiusLogoProps) {
   const width = Math.round(size * 1.62)
 
   return (
