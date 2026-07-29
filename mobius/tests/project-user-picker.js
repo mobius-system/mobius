@@ -8,6 +8,7 @@ const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
 const picker = read('frontend/src/components/user-picker.tsx');
 const modal = read('frontend/src/components/modals.tsx');
 const panel = read('frontend/src/components/project-page/ProjectSettingsPanel.tsx');
+const globalCreate = read('frontend/src/components/global-create.tsx');
 const auth = read('backend/routes/auth.ts');
 
 assert(picker.includes("from 'react-dom'"), 'UserPicker should render suggestions through a portal');
@@ -15,6 +16,8 @@ assert(picker.includes('computeUserPickerPlacement'), 'UserPicker should use sha
 assert(modal.includes('<ProjectAllowlistField'), 'ProjectSettingsModal should render the shared allowlist field');
 assert(modal.includes('allow_user_ids: allowUserIds'), 'ProjectSettingsModal should persist allow_user_ids');
 assert(panel.includes('<ProjectAllowlistField'), 'ProjectSettingsPanel should render the shared allowlist field');
+assert(globalCreate.includes('<ProjectAllowlistField'), 'CreateProjectForm should render the shared allowlist field');
+assert(globalCreate.includes('allow_user_ids: allowUserIds'), 'CreateProjectForm should persist allow_user_ids');
 assert(
   !auth.includes("if (!q) {\n    res.json([]);"),
   'empty user search should return bounded initial options',

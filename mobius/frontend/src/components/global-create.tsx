@@ -20,6 +20,7 @@ import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ErrBanner, PathPickerModal, PcTaskModeSection, formatDefaultSessionName } from './modals'
 import { ToggleSwitch } from './toggle-switch'
+import { ProjectAllowlistField } from './project-allowlist-field'
 import { SessionModelPicker } from './session-model-picker'
 import { ExpandableTextarea } from './expandable-textarea'
 import { type Attachment, newAttId, formatFileSize, uploadAttachmentFile, appendAttachmentsToDesc } from './attachments'
@@ -712,6 +713,9 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   const [researchEnabled, setResearchEnabled] = useState(projectKind === 'research' || !!d.researchEnabled)
   const [defaultUseWorktree, setDefaultUseWorktree] = useState(!!d.defaultUseWorktree)
   const [visibility, setVisibility] = useState<Visibility>(d.visibility || 'private')
+  const [allowUserIds, setAllowUserIds] = useState<string[]>(
+    Array.isArray(d.allowUserIds) ? d.allowUserIds.filter(Boolean) : []
+  )
   const [extensionName, setExtensionName] = useState(d.extensionName || '')
   // 读者写权限 (对齐 NewProjectModal): owner/admin 永远可写, 此开关只对"非 owner 读者"生效. 默认 false (安全默认).
   const [canPostIssue, setCanPostIssue] = useState(!!d.canPostIssue)
@@ -734,8 +738,8 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   }
 
   useEffect(() => {
-    draftSave(DRAFT_KEY, { projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, extensionName, canPostIssue, canRunSession }, { minChars: 0 })
-  }, [projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, extensionName, canPostIssue, canRunSession])
+    draftSave(DRAFT_KEY, { projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, allowUserIds, extensionName, canPostIssue, canRunSession }, { minChars: 0 })
+  }, [projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, allowUserIds, extensionName, canPostIssue, canRunSession])
 
   // 自动随机路径未填则补上 (extension 不需要 bindPath)
   useEffect(() => {
@@ -761,7 +765,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
     } else if (!bindPath.trim()) { setErr('请选择项目绑定路径'); return }
     setLoading(true); setErr('')
     try {
-      const body: any = { name, description: desc, visibility }
+      const body: any = { name, description: desc, visibility, allow_user_ids: allowUserIds }
       if (projectKind === 'extension') {
         body.kind = 'extension'
         body.extensionName = extensionName.trim()
@@ -803,6 +807,13 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             })}
           </div>
           <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{visibilityOption.desc}</p>
+        </div>
+        <div className="mt-4">
+          <ProjectAllowlistField
+            visibility={visibility}
+            selectedIds={allowUserIds}
+            onChange={setAllowUserIds}
+          />
         </div>
         {/* 读者写权限: owner/admin 永远可写, 此开关仅对非 owner 读者生效 (private 永远只允许 owner). */}
         <div className="mt-4 space-y-2">
