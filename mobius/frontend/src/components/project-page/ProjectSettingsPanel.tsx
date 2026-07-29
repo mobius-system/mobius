@@ -5,7 +5,6 @@ import { ToggleSwitch } from '../toggle-switch'
 import { MemoriesManager } from '../memories'
 import { OpenInVSCodeButton } from '../project-files'
 import { SkillsManager } from '../skills'
-import { ProjectAllowlistField } from '../project-allowlist-field'
 import { timeAgo } from '../shell'
 import { api, useStore } from '../../store'
 import { ProjectCardThemePicker } from '../project-card-theme-picker'
@@ -523,7 +522,6 @@ export function ProjectSettingsPanel({
     editDefaultUseWorktree,
     editResearchEnabled,
     editVisibility,
-    editAllowUserIds,
     editCanPostIssue,
     editCanRunSession,
     editDefaultModel,
@@ -545,7 +543,6 @@ export function ProjectSettingsPanel({
     setEditDefaultUseWorktree,
     setEditResearchEnabled,
     setEditVisibility,
-    setEditAllowUserIds,
     setEditCanPostIssue,
     setEditCanRunSession,
     setEditDefaultModel,
@@ -1348,18 +1345,13 @@ export function ProjectSettingsPanel({
                     </div>
                   </div>
                   <p className="mt-1.5 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
-                    仅影响非项目所有者；项目设为「仅自己」时不生效。
+                    仅影响非项目所有者；项目设为「私有」时不生效。
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-3">
-                <ProjectAllowlistField
-                  visibility={editVisibility}
-                  selectedIds={editAllowUserIds}
-                  onChange={setEditAllowUserIds}
-                  disabled={!canManageProject}
-                />
-              </div>
+              <p className="text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
+                项目可见性现为「私有 / 公开」；项目成员与角色请在顶部「项目组」标签页统一管理。
+              </p>
             </SettingsCard>
           )}
 

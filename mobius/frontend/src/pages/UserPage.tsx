@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, MoreHorizontal, Star } from 'lucide-react'
+import { Eye, EyeOff, MoreHorizontal, Settings, Star } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
 import { usePagination, PaginationControls } from '../components/pagination'
@@ -45,9 +45,8 @@ function sortProjectsForDisplay(items: any[]) {
 }
 
 function projectVisibilityLabel(value: any) {
-  if (value === 'team') return '同组'
   if (value === 'public') return '公开'
-  return '仅自己'
+  return '私有'
 }
 
 function matchesProjectFilters(project: any, filters: ProjectFilterKey[], userId: string) {
@@ -693,6 +692,12 @@ export default function UserPage() {
                               style={{ color: p.starred ? '#fbbf24' : 'var(--text-muted)' }}>
                               <Star className="w-4 h-4" fill={p.starred ? 'currentColor' : 'none'} strokeWidth={1.8} />
                             </button>
+                            {p.can_manage && (
+                              <button onClick={() => setEditingProject(p)} title="项目设置"
+                                className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-[var(--bg-hover)] transition-all" style={{ color: 'var(--text-muted)' }}>
+                                <Settings className="w-3.5 h-3.5" strokeWidth={1.8} />
+                              </button>
+                            )}
                             {userParam === user?.id && (
                               <div className="relative">
                                 <button
@@ -709,6 +714,17 @@ export default function UserPage() {
                                     style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)' }}
                                     onClick={(e) => e.stopPropagation()}
                                   >
+                                    {p.can_manage && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingProject(p); setOpenProjectMenuId(null) }}
+                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
+                                        style={{ color: 'var(--text-primary)' }}
+                                      >
+                                        <Settings className="h-3.5 w-3.5" />
+                                        项目设置
+                                      </button>
+                                    )}
                                     {p.kind !== 'extension' ? (
                                       <button
                                         type="button"

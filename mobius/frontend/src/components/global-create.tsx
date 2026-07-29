@@ -1001,7 +1001,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
   const effectiveDesc = descTouched ? desc : title
   const issueVisibilityOptions = ISSUE_VISIBILITY_OPTIONS.filter(opt => allowedVisibilities.includes(opt.value))
   const visibilityOption = issueVisibilityOptions.find(opt => opt.value === visibility) || ISSUE_VISIBILITY_OPTIONS[0]
-  const parentVisibilityLabel = parentVisibility === 'private' ? '仅自己' : parentVisibility === 'team' ? '同组' : parentVisibility === 'public' ? '公开' : '指定用户'
+  const parentVisibilityLabel = parentVisibility === 'public' ? '公开' : '私有'
 
   const submit = async () => {
     if (!projectId) { setErr('请选择目标项目'); return }

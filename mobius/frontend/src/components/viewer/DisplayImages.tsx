@@ -197,7 +197,7 @@ export function DisplayImagesCard({ images, lineNo, sourceLabel = 'display_image
         open={open}
         onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
         className={`mb-2 rounded-lg border card-enter ${theme.border} ${theme.bg}`}>
-        <summary className="cursor-pointer px-3 pt-1.5 tb-0.5 flex items-center gap-2 text-[12px] select-text">
+        <summary className={`cursor-pointer px-3 pt-1.5 ${open ? 'tb-0.5' : 'tb-1.5'} flex items-center gap-2 text-[12px] select-text`}>
           {typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">↳#{lineNo}</span>}
           <span className={`w-1.5 h-1.5 rounded-full ${theme.dot} flex-shrink-0`}></span>
           <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>

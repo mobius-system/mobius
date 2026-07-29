@@ -26,7 +26,6 @@ import { LOGO_REVIEW_PROJECT_ID, readLogoReviewDemoState } from '../services/log
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ProjectCardThemePicker } from './project-card-theme-picker'
-import { ProjectAllowlistField } from './project-allowlist-field'
 import { ProjectMemberInvite, type MemberInput } from './project-member-invite'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
@@ -822,7 +821,7 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
   const [visibility, setVisibility] = useState<ProjectVisibility>(
     project.visibility === 'team' || project.visibility === 'public' || project.visibility === 'allowlist' ? project.visibility : 'private'
   )
-  const [allowUserIds, setAllowUserIds] = useState<string[]>(
+  const [allowUserIds] = useState<string[]>(
     Array.isArray(project.access?.allow_user_ids) ? [...project.access.allow_user_ids] : []
   )
   // v3 写权限: 读权限打开的项目默认 false; 用户在设置里打开 can_post_issue / can_run_session 后,
@@ -964,13 +963,9 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
               {PROJECT_VISIBILITY_OPTIONS.find(option => option.value === visibility)?.description}
             </p>
-            <div className="mt-3">
-              <ProjectAllowlistField
-                visibility={visibility}
-                selectedIds={allowUserIds}
-                onChange={setAllowUserIds}
-              />
-            </div>
+            <p className="mt-3 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
+              项目成员与角色请在项目页「项目组」标签页统一管理。
+            </p>
             <div className="mt-2 space-y-1.5">
               <ToggleSwitch
                 checked={canPostIssue}
@@ -1328,7 +1323,7 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
   const effectiveDesc = descTouched ? desc : title
   const issueVisibilityOptions = ISSUE_VISIBILITY_OPTIONS.filter(opt => allowedVisibilities.includes(opt.value))
   const visibilityOption = issueVisibilityOptions.find(opt => opt.value === visibility) || ISSUE_VISIBILITY_OPTIONS[0]
-  const parentVisibilityLabel = parentVisibility === 'private' ? '仅自己' : parentVisibility === 'team' ? '同组' : parentVisibility === 'public' ? '公开' : '指定用户'
+  const parentVisibilityLabel = parentVisibility === 'public' ? '公开' : '私有'
 
   useEffect(() => {
     if (!isGuidedDemo) draftSave(DRAFT_KEY, { title, desc: descTouched ? desc : '', descTouched, useWorktree, createFirstSession, branch, visibility, isPlanning })
@@ -3894,7 +3889,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="text-[12px] mb-3 p-3 rounded-lg leading-relaxed" style={{ background: theme !== 'light' ? 'rgba(56,189,248,0.10)' : '#f0f7ff', color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
-          <span className="font-semibold">aimux 能为你做什么：</span>把任意一台电脑（Windows / Mac / Linux）连进莫比乌斯，让智能体在那台机器上运行命令、读写文件，甚至调度多台机器协同。你的桌面端已自动连上；下面是把<strong className="font-semibold">另一台</strong>电脑也接进来的步骤。
+          <span className="font-semibold">aimux 能为你做什么：</span>把任意一台电脑（Windows / Mac / Linux）连进莫比乌斯，让智能体在那台机器上运行命令、读写文件，甚至调度多台机器协同。下面是把<strong className="font-semibold">另一台</strong>计算机也接进来的步骤。
         </div>
 
         {renderSectionTitle('1. 在外部机器上安装 aimux (Python 3.10+)')}

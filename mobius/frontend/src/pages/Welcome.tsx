@@ -34,6 +34,7 @@ import { ErrBanner, PathPickerModal, PcTaskModeSection } from '../components/mod
 import { ToggleSwitch } from '../components/toggle-switch'
 import { ExpandableTextarea } from '../components/expandable-textarea'
 import { SessionModelPicker } from '../components/session-model-picker'
+import { ProjectMemberInvite, type MemberInput } from '../components/project-member-invite'
 import {
   DescriptionWithAttachments, SkillMemoryPicker, LanguageSelect, useAsyncList,
   type PickItem, type SessionLanguage,
@@ -70,12 +71,10 @@ function getDesktopBridge(): DesktopBridge | undefined {
 }
 
 // --- 可见性选项 (对齐 global-create.tsx) ---
-type Visibility = 'private' | 'team' | 'public' | 'allowlist'
+type Visibility = 'private' | 'public'
 const VISIBILITY_OPTIONS: { value: Visibility; label: string; desc: string }[] = [
-  { value: 'private', label: '仅自己', desc: '仅创建者可见' },
-  { value: 'team', label: '同组', desc: '同一用户组可见' },
+  { value: 'private', label: '私有', desc: '仅项目成员可见' },
   { value: 'public', label: '公开', desc: '所有登录用户可见' },
-  { value: 'allowlist', label: '指定用户', desc: '仅指定用户/组可见' },
 ]
 
 // --- 随机绑定路径 (中枢 agent 工作目录, 对齐 global-create.tsx) ---
@@ -364,6 +363,7 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, onBack, onIntoSess
   const [bindPath, setBindPath] = useState(() => randomBindPath(user?.work_dir))
   const [bindPathManual, setBindPathManual] = useState(false)
   const [visibility, setVisibility] = useState<Visibility>('private')
+  const [inviteMembers, setInviteMembers] = useState<MemberInput[]>([])
   const [researchEnabled, setResearchEnabled] = useState(false)
   const [defaultUseWorktree, setDefaultUseWorktree] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -412,6 +412,7 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, onBack, onIntoSess
         bindPath, bindPathManual,
         defaultUseWorktree: researchEnabled ? false : defaultUseWorktree,
         researchEnabled, can_post_issue: false, can_run_session: false,
+        members: inviteMembers.filter(m => m.user_id && m.user_id !== user?.id),
       }
       const p = await api('/api/projects', { method: 'POST', body: JSON.stringify(body) })
       if (p?.error) { setErr(p.error); return }
@@ -533,6 +534,13 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, onBack, onIntoSess
                       })}
                     </div>
                     <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{visibilityOption.desc}</p>
+                  </div>
+                  <div className="mt-1">
+                    <ProjectMemberInvite
+                      value={inviteMembers}
+                      onChange={setInviteMembers}
+                      currentUserId={user?.id}
+                    />
                   </div>
                   <ToggleSwitch checked={researchEnabled}
                     onChange={enabled => { setResearchEnabled(enabled); if (enabled) setDefaultUseWorktree(false) }}
