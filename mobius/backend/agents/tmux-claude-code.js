@@ -170,6 +170,11 @@ let _listWindowsCache = null // { ts: number, rows: string[][] }
 // 条目看到最近的 user/assistant 标记, 读取代价可忽略 (纯文件读, 无 tmux 子进程).
 const CLAUDE_WORKING_TAIL_BYTES = 256 * 1024
 
+// getPendingRequests 反向扫描的最多条目数: pending 请求必在 jsonl 尾部, 只看最近 N 条即可,
+// 不遍历整段 tail. 反向扫描对截断天然安全 (消费必在 enqueue 之后 = 反向更早, 窗口内 enqueue
+// 的消费必已见过 → 不会误判 pending); 截断只会漏掉被埋极深的旧 pending (best-effort).
+const MAX_PENDING_SCAN_ENTRIES = 20
+
 // realTimeInfo: 识别 claude TUI 当前的状态行. 核心锚 = 以 elapsed 开头的括号组 "(<elapsed> · ...)".
 // elapsed 格式: Ns | Mm Ss | Hh Mm Ss. 覆盖两种形态:
 //   ① "(6m 36s · ↓ 20.0k tokens · thinking more)"  — 带 token 流量
@@ -530,13 +535,19 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // 待处理请求: Claude Code 内存队列里"已 enqueue 但尚未被消费"的 prompt.
-  // 只读原生 session JSONL 尾部 (与 isWorking 同源; mobius 装饰条目在 sidecar
-  // .mobius.jsonl 文件, 不在此, 故 content 匹配不会被发送时刻的镜像条目污染).
+  //
+  // 性能 (大文件不慢): 只读尾部 CLAUDE_WORKING_TAIL_BYTES 字节 (与文件总大小无关,
+  // 100MB 的 jsonl 也只读 256KB), 且只解析其中最近 MAX_PENDING_SCAN_ENTRIES 条 —— 不
+  // 遍历整段 tail. pending 请求必在尾部, 故从尾部**反向**扫:
+  //   反向遇到"消费型"条目(user/queued_command)先记下签名; 遇到 enqueue 若未被其后
+  //   (= 反向已扫过) 的消费命中 → 仍在队列里. 反向扫描对截断天然安全: 消费必在 enqueue
+  //   之后(反向更早), 故窗口内 enqueue 的消费必已在窗口内见过, 绝不会把已消费的误判成 pending.
+  // mobius 装饰条目在 sidecar .mobius.jsonl, 不在此原生文件 → content 匹配无发送镜像污染.
   // 返回 [{ content, enqueuedAt }], 顺序 = 入队先后; 空 = 无排队中的请求.
   getPendingRequests(sessionId) {
     const jsonlPath = this._resolveJsonlPath(sessionId)
     if (!jsonlPath) return []
-    let lines
+    let tailLines
     try {
       if (!fs.existsSync(jsonlPath)) return []
       const stat = fs.statSync(jsonlPath)
@@ -545,31 +556,31 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       const buf = Buffer.alloc(len)
       const fd = fs.openSync(jsonlPath, 'r')
       try { fs.readSync(fd, buf, 0, len, stat.size - len) } finally { fs.closeSync(fd) }
-      lines = buf.toString('utf8').split('\n').filter(Boolean)
+      tailLines = buf.toString('utf8').split('\n').filter(Boolean)
     } catch { return [] }
 
-    const pending = [] // { content, enqueuedAt, sig }
-    for (const line of lines) {
+    const recent = tailLines.slice(-MAX_PENDING_SCAN_ENTRIES)
+    const consumedSigs = []
+    const pending = []
+    for (let i = recent.length - 1; i >= 0; i--) {
       let e
-      try { e = JSON.parse(line) } catch { continue }
+      try { e = JSON.parse(recent[i]) } catch { continue }
       if (!e || typeof e !== 'object') continue
+
+      const consumedSig = consumedRequestSignature(e)
+      if (consumedSig) { consumedSigs.push(consumedSig); continue }
 
       if (e.type === 'queue-operation' && e.operation === 'enqueue') {
         const content = typeof e.content === 'string' ? e.content : null
         if (!content) continue
-        pending.push({ content, enqueuedAt: e.timestamp || null, sig: normalizeRequestText(content) })
-        continue
-      }
-
-      // 消费信号: 命中某 pending enqueue → 移出 (一次消费只消一条, 处理同文重复入队).
-      const sig = consumedRequestSignature(e)
-      if (sig) {
-        for (let i = pending.length - 1; i >= 0; i--) {
-          if (isSameQueuedRequest(pending[i].sig, sig)) { pending.splice(i, 1); break }
+        const sig = normalizeRequestText(content)
+        if (!consumedSigs.some((cs) => isSameQueuedRequest(sig, cs))) {
+          pending.push({ content, enqueuedAt: e.timestamp || null })
         }
       }
     }
-    return pending.map(({ content, enqueuedAt }) => ({ content, enqueuedAt }))
+    pending.reverse() // 反向收集 → 翻回入队先后 (最旧 pending 在前)
+    return pending
   }
 
   // 任务是否结束: session 启动时落 running.flag, agent 收工 (成功/失败) 自删.
