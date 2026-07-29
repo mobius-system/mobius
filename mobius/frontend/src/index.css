@@ -5810,6 +5810,15 @@ body.mobius-resizing .mobius-resizable-handle {
   background: transparent !important;
   filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.22));
 }
+/* 编辑器圆角框本身承担不透明底 + 毛玻璃，避免悬浮输入框透出背后滚动的 JSONL 内容
+   (参考 ChatGPT 悬浮输入: 纯不透明背景 + 边框 + 阴影的清晰浮层)。
+   外层 .mobius-chat-input 保持透明仅承载居中定位; 不透明 + blur 下放到此框。
+   内联 background 是 var(--input-bg)(alpha≈0.03 近乎透明), 须 !important 覆盖。 */
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-input [data-tour="session-chat-input"] {
+  background: color-mix(in srgb, var(--bg-secondary) 88%, transparent) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input.mobius-chat-input--with-actions {
   width: min(944px, calc(100% - 32px)) !important;
   flex-direction: row;
