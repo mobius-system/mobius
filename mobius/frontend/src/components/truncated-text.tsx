@@ -78,7 +78,7 @@ export function TruncatedText({
             setExpanded(true)
           }}
           className="text-[10px] hover:text-blue-300 transition-colors"
-          style={{ color: '#60a5fa' }}
+          style={{ color: 'var(--text-muted)' }}
         >
           {detailLabel}
         </button>

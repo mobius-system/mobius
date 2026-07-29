@@ -1530,8 +1530,22 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     persistChatInputRatio(ratio)
   }, [handleChatSplitMouseMove, persistChatInputRatio])
 
+  const resetChatInputWidth = useCallback(() => {
+    const input = chatInputRef.current
+    if (input) input.style.width = `${CHAT_INPUT_DEFAULT_RATIO * 100}%`
+    setChatInputRatio(CHAT_INPUT_DEFAULT_RATIO)
+    persistChatInputRatio(CHAT_INPUT_DEFAULT_RATIO)
+  }, [persistChatInputRatio])
+
   const handleChatSplitMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0 || layout !== 'default') return
+    // body.mobius-resizing 会在第一次按下后暂时禁用命中测试，部分浏览器因此不会再派发
+    // dblclick；第二次 mousedown 的 detail 更早且稳定，用它保证双击复位一定生效。
+    if (event.detail >= 2) {
+      event.preventDefault()
+      resetChatInputWidth()
+      return
+    }
     const input = chatInputRef.current
     if (!input) return
     event.preventDefault()
@@ -1543,14 +1557,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     document.body.classList.add('mobius-resizing')
     document.addEventListener('mousemove', handleChatSplitMouseMove)
     document.addEventListener('mouseup', handleChatSplitMouseUp)
-  }, [handleChatSplitMouseMove, handleChatSplitMouseUp, layout])
-
-  const resetChatInputWidth = useCallback(() => {
-    const input = chatInputRef.current
-    if (input) input.style.width = `${CHAT_INPUT_DEFAULT_RATIO * 100}%`
-    setChatInputRatio(CHAT_INPUT_DEFAULT_RATIO)
-    persistChatInputRatio(CHAT_INPUT_DEFAULT_RATIO)
-  }, [persistChatInputRatio])
+  }, [handleChatSplitMouseMove, handleChatSplitMouseUp, layout, resetChatInputWidth])
 
   useEffect(() => {
     return () => {
