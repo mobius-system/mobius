@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Check, CircleDot, FlaskConical, History, MessageSquare } from 'lucide-react'
 import { useStore, api } from '../store'
+import { useLayoutMode } from '../services/layout-mode'
 import { ChatArea } from '../components/chat'
 import { ResizablePanel } from '../components/resizable-panel'
 import { Loading, TopNav, timeAgoPrecise } from '../components/shell'
@@ -65,6 +66,8 @@ export default function EasyModePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedProject, setSelectedProject] = useState<string | null>(null)
+  const navigate = useNavigate()
+  const layoutMode = useLayoutMode()
   const sessionParam = search.get('session') || ''
 
   const projectOptions = useMemo(() => {
@@ -94,6 +97,16 @@ export default function EasyModePage() {
   const visibleSessions = effectiveProject
     ? sessions.filter(session => session.project_id === effectiveProject)
     : sessions
+
+  // 闭环修补：全局布局模式被切到非简易时（典型场景——另一个标签页切到了常规模式，
+  // 或已选常规模式的用户直接落到 easy_mode 路径），本页不再适用，主动让位回用户主页，
+  // 保持视图与全局模式一致。跨标签的 storage 事件只更新状态、不触发路由跳转，
+  // 故必须由本页跟随离开，否则会停在「常规模式下显示简易页」的不一致态，刷新也不恢复。
+  useEffect(() => {
+    if (layoutMode && layoutMode !== 'easy_mode') {
+      navigate(`/u/${params.user}`, { replace: true })
+    }
+  }, [layoutMode, params.user, navigate])
 
   useEffect(() => {
     let cancelled = false
