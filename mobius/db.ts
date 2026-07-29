@@ -142,6 +142,33 @@ function migrateEmployeeAndProjectMemberships() {
 }
 migrateEmployeeAndProjectMemberships();
 
+// ===== allowlist 可见性 → 项目成员 (私有/公开两档简化) =====
+// 项目可见性从 4 档(仅自己/同组/公开/指定用户) 简化为 2 档(私有/公开).
+// 原"指定用户(allowlist)"可见的项目: 把名单内用户迁移为项目成员(访客 viewer, 只读),
+// 项目本身转为"私有"——成员(含这些访客 + 创建者) 才能看到. 不丢失任何已授权的读取关系.
+// team(同组) 项目当前为 0, 无需处理; 若将来出现, normalizeProjectVisibility 会回落为 private.
+function migrateAllowlistToMembership() {
+  try {
+    const migrate = db.transaction(() => {
+      db.exec(`
+        INSERT OR IGNORE INTO project_memberships (project_id, user_id, role, created_by)
+        SELECT r.resource_id, r.subject_id, 'viewer', NULL
+        FROM resource_acl_entries r
+        JOIN projects p ON p.id = r.resource_id
+        JOIN users u ON u.id = r.subject_id
+        WHERE r.resource_type = 'project' AND r.effect = 'allow' AND r.subject_type = 'user';
+      `);
+      db.exec(`
+        UPDATE projects SET visibility = 'private' WHERE visibility = 'allowlist';
+      `);
+    });
+    migrate();
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️  allowlist→membership 迁移失败:', (e as Error).message);
+  }
+}
+migrateAllowlistToMembership();
+
 // ===== researches: 与 issues 并列的项目级研究对象 =====
 db.exec(`
   CREATE TABLE IF NOT EXISTS researches (

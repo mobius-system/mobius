@@ -50,10 +50,8 @@ import { pollRecursive } from '../services/polling'
 type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist'
 type IssueVisibility = 'inherit' | ProjectVisibility
 const PROJECT_VISIBILITY_OPTIONS: Array<{ value: ProjectVisibility; label: string; description: string }> = [
-  { value: 'private', label: '仅自己', description: '只有项目创建者和管理员可见、可建任务单。' },
-  { value: 'team', label: '同组', description: '同一群组的用户可见，并可创建任务单和执行会话。' },
-  { value: 'public', label: '公开', description: '所有登录用户可见，可创建任务单、执行会话并打开文件。' },
-  { value: 'allowlist', label: '指定用户', description: '只有项目创建者、管理员和允许名单中的用户可见。' },
+  { value: 'private', label: '私有', description: '只有项目成员（含创建者与项目管理员）能看到本项目。' },
+  { value: 'public', label: '公开', description: '所有登录用户都能看到本项目；仅项目成员可写。' },
 ]
 const ISSUE_VISIBILITY_OPTIONS: Array<{ value: IssueVisibility; label: string; description: string }> = [
   { value: 'inherit', label: '继承项目', description: '跟随所属项目的可见性。' },

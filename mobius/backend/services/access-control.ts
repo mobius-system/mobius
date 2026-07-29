@@ -5,7 +5,9 @@ import { ProjectMemberships } from '../repositories/project-memberships';
 
 const RESOURCE_TYPES = new Set(['project', 'issue', 'research', 'session', 'skill', 'memory']);
 const VISIBILITIES = new Set(['inherit', 'private', 'team', 'public', 'allowlist']);
-const PROJECT_VISIBILITIES = new Set(['private', 'team', 'public', 'allowlist']);
+// 项目可见性简化为 2 档: 私有(仅项目成员可见) / 公开(全员可读).
+// 原 team/allowlist 由成员机制取代 (allowlist 用户已迁移为 viewer 成员).
+const PROJECT_VISIBILITIES = new Set(['private', 'public']);
 const FIXED_LOGO_REVIEW_PROJECT_ID = '9986bdc3';
 const FIXED_LOGO_REVIEW_SESSION_NAME = '迭代 Three.js 光点标志空间';
 

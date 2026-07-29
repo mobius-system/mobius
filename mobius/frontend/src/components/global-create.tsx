@@ -38,10 +38,8 @@ export type CreateKind = 'project' | 'issue' | 'session' | 'research'
 
 type Visibility = 'private' | 'team' | 'public' | 'allowlist'
 const VISIBILITY_OPTIONS: { value: Visibility; label: string; desc: string }[] = [
-  { value: 'private', label: '仅自己', desc: '仅创建者可见' },
-  { value: 'team', label: '同组', desc: '同一用户组可见' },
+  { value: 'private', label: '私有', desc: '仅项目成员可见' },
   { value: 'public', label: '公开', desc: '所有登录用户可见' },
-  { value: 'allowlist', label: '指定用户', desc: '仅指定用户/组可见' },
 ]
 
 // Issue 可见性: inherit 跟随项目, 其余档位不能比父项目更宽 (反向放大禁止)
