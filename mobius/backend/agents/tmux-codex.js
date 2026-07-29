@@ -94,6 +94,17 @@ const CODEX_STATUS_LINE_RE = /\(\d+(?:s|m\s+\d{2}s|h\s+\d{2}m\s+\d{2}s)\s*•\s*
 const REALTIME_INFO_TTL_MS = 5 * 1000
 const _realTimeInfoCache = new Map() // sessionId → { ts: number, value: string }
 
+// getPendingRequests: codex 把"忙时提交的输入"缓存在 TUI 的 InputQueueState
+// (queued_user_messages / pending_steers, 见 tui/src/chatwidget/input_flow.rs
+// queue_user_message_with_options —— 忙时只入本地队列、不立即提交 core), 并在 bottom_pane
+// 渲染成预览块 (源码 tui/src/bottom_pane/pending_input_preview.rs). 三种头部 + 每条以
+// "  ↳ "(↳=U+21B3) 起行:
+//   • Queued follow-up inputs                       (普通排队消息)
+//   • Messages to be submitted after next tool call (pending steer)
+//   • Messages to be submitted at end of turn       (pending steer)
+const CODEX_PENDING_HEADER_RE = /Queued follow-up|Messages to be submitted/
+const CODEX_PENDING_ITEM_RE = /^\s*↳\s+(.*)$/
+
 // /stop 强杀托底用: 抓 pane 最新文本 (绕过 5s 缓存, 反映 C-c 后真实状态), 判断 codex TUI
 // 是否仍在跑 turn. busy 锚点 = CODEX_STATUS_LINE_RE ("(<elapsed> • esc to interrupt)" 等).
 // 命中 → C-c×3 未生效, 仍在工作; 不命中/失败 → 已回 idle 态, C-c 生效.
@@ -676,15 +687,33 @@ class TmuxCodexBackend extends AgentBackend {
     return value
   }
 
-  // codex 的待处理请求无法从 rollout JSONL 探测 → 恒空 (源码实证, codex 0.144.6):
-  // 忙时提交走 steer_input (session/mod.rs:~3876), 把输入只缓冲进内存 turn_state.pending_input
-  // (input_queue.rs), 不写 rollout; 直到运行中的 turn 把它 drain 时才经 record_pending_input
-  // (hook_runtime.rs:539) → record_user_prompt_and_emit_turn_item (session/mod.rs:3829) 落盘 +
-  // 发 user_message 事件 (调用点 turn.rs:498 / tasks/mod.rs:615 都在 turn 循环里 = 消费时刻).
-  // 即: 未消费的 steer 输入只在内存里, JSONL 根本看不到 —— 这与 claude-code 不同:
-  // claude-code 在提交当下就把 queue-operation/enqueue 写进 JSONL, 故"已入队未消费"的能从文件读到.
-  // (真要拿 codex 的 pending steer 输入, 只能走 app-server 协议查内存态, 非 JSONL 路径.)
-  getPendingRequests(_sessionId) { return [] }
+  // 待处理请求: codex 忙时提交的输入不进 rollout JSONL, 而是缓存在 TUI 的 InputQueueState
+  // 并在 bottom_pane 渲染成预览块 (源码见上方 CODEX_PENDING_HEADER_RE 注释). 故截 tmux pane
+  // 解析"预览块"即可 —— 与 getRecentError/realTimeInfo 同源(都截 TUI 屏).
+  // 与 claude-code 的差异:claude-code 读 JSONL 的 queue-operation/enqueue(完整 content+timestamp);
+  // codex 只能拿到**截断预览**且**无时间戳**(TUI 不暴露)→ enqueuedAt 恒 null. 仅 alive 时扫, 失败静默 [].
+  // capture-pane -J 拼接折行, 故一条多行 pending 仍是一行 ↳. 见到首个头部后收集所有 ↳ 行.
+  getPendingRequests(sessionId) {
+    if (!this.isAlive(sessionId)) return []
+    let text = ''
+    try {
+      // -S -30: 预览块在 bottom_pane(状态行之上), 比 realTimeInfo(-15) 多取几行确保抓到头部.
+      const cap = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-J', '-S', '-30'])
+      if (cap.status === 0 && cap.stdout) text = cap.stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    } catch { return [] }
+    if (!text) return []
+    const pending = []
+    let inBlock = false
+    for (const raw of text.split('\n')) {
+      const line = raw.replace(/\r$/, '')
+      if (CODEX_PENDING_HEADER_RE.test(line)) { inBlock = true; continue }
+      if (!inBlock) continue
+      const m = line.match(CODEX_PENDING_ITEM_RE)
+      if (m) pending.push({ content: m[1].trim(), enqueuedAt: null })
+      // 其它行 (折行续行 / "press esc" / "edit last queued" / 空行) 忽略, 保持 inBlock 直到 capture 结束.
+    }
+    return pending
+  }
 
   // 扫 Codex TUI 屏幕找最近一条错误/警告通知, 转交前端.
   // 信号设计 (源码实证 codex-rs/tui/src/history_cell/notices.rs, openai/codex):
