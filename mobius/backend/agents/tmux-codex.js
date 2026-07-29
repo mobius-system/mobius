@@ -676,8 +676,14 @@ class TmuxCodexBackend extends AgentBackend {
     return value
   }
 
-  // codex 不在 rollout JSONL 暴露排队事件 (其排队/中断多为 TUI 内部态, 不落盘成
-  // queue-operation), 故待处理请求恒空. claude-code 才有原生 queue-operation 通道.
+  // codex 的待处理请求无法从 rollout JSONL 探测 → 恒空 (源码实证, codex 0.144.6):
+  // 忙时提交走 steer_input (session/mod.rs:~3876), 把输入只缓冲进内存 turn_state.pending_input
+  // (input_queue.rs), 不写 rollout; 直到运行中的 turn 把它 drain 时才经 record_pending_input
+  // (hook_runtime.rs:539) → record_user_prompt_and_emit_turn_item (session/mod.rs:3829) 落盘 +
+  // 发 user_message 事件 (调用点 turn.rs:498 / tasks/mod.rs:615 都在 turn 循环里 = 消费时刻).
+  // 即: 未消费的 steer 输入只在内存里, JSONL 根本看不到 —— 这与 claude-code 不同:
+  // claude-code 在提交当下就把 queue-operation/enqueue 写进 JSONL, 故"已入队未消费"的能从文件读到.
+  // (真要拿 codex 的 pending steer 输入, 只能走 app-server 协议查内存态, 非 JSONL 路径.)
   getPendingRequests(_sessionId) { return [] }
 
   // 扫 Codex TUI 屏幕找最近一条 ErrorEvent.
