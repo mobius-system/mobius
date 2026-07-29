@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import bcrypt from 'bcryptjs';
+// @ts-ignore — multer 没有 TS 类型声明
+import multer from 'multer';
+import { extractArchiveFile, removeIfExists, detectArchiveKind } from '../services/context-import-utils';
 import { v4 as uuid } from 'uuid';
 import { db } from '../../db';
 import { auth } from '../middleware/auth';
@@ -66,6 +69,7 @@ import modelRegistry from '../services/model-registry';
 import {
   APP_DIR,
   BACKEND_WORKER_LOG_DIR,
+  UPLOAD_DIR,
   ENABLE_PASSWORD_LOGIN,
   MOBIUS_SSH_FORWARD_USER,
   MOBIUS_SSH_PORT,
@@ -83,6 +87,8 @@ import {
 } from '../config';
 
 const router = express.Router();
+// 上传 ZIP 导入: 放宽到 200MB (解压后另有 inspectExtractedTree 的 1GB/5w 文件配额兜底).
+const importZipUpload = multer({ dest: UPLOAD_DIR, limits: { fileSize: 200 * 1024 * 1024 } });
 const MAIN_PROJECT_PORT_REL = path.join(HIDDEN_FOLDER_NAME, 'port_forward', 'main_project_port.txt');
 
 // 统一取当前用户 (auth 中间件已塞到 req.user)
@@ -2894,6 +2900,81 @@ function ensureProjectWritable(res: express.Response, project: { bind_path?: str
   }
   return true;
 }
+
+// =====================================================================
+// 上传 ZIP 导入项目代码 (git clone 之外的兜底导入方式, 仅 Web 端前端暴露入口).
+// 解压复用 extractArchiveFile (内含 zip-slip 校验 + 拒符号链接 + 解压后配额);
+// 智能扁平化后合并进 bind_path (同名覆盖), 非 git 仓库自动 git init 接回能力栈.
+// =====================================================================
+
+// 智能扁平化: 解压根下若仅一个目录条目 (无散落文件), 以该目录为源; 否则以解压根为源.
+// 解决 zip 常见 "套一层根目录" (如 myproject/src/...) 的问题.
+function pickFlattenedSource(root: string): string {
+  let entries: fs.Dirent[] = [];
+  try { entries = fs.readdirSync(root, { withFileTypes: true }); }
+  catch { return root; }
+  if (entries.length === 1 && entries[0].isDirectory()) {
+    return path.join(root, entries[0].name);
+  }
+  return root;
+}
+
+// 把 src 合并复制进 dest (同名覆盖), 跳过 skipNames 中的顶层条目 (如 .mobius/.imac 元数据).
+// 双保险再跳过符号链接. 返回写入文件数.
+function mergeCopyDir(src: string, dest: string, skipNames: Set<string>): number {
+  let count = 0;
+  const walk = (s: string, d: string) => {
+    fs.mkdirSync(d, { recursive: true });
+    for (const entry of fs.readdirSync(s, { withFileTypes: true })) {
+      if (skipNames.has(entry.name)) continue;
+      const sChild = path.join(s, entry.name);
+      const dChild = path.join(d, entry.name);
+      const stat = fs.lstatSync(sChild);
+      if (stat.isSymbolicLink()) continue;
+      if (stat.isDirectory()) walk(sChild, dChild);
+      else if (stat.isFile()) { fs.copyFileSync(sChild, dChild); count += 1; }
+    }
+  };
+  walk(src, dest);
+  return count;
+}
+
+// bind_path 非 git 仓库时初始化 git, 接回 mobius 的 commit/worktree 能力.
+function ensureGitInitIfNeeded(bindPath: string): void {
+  if (hasGitMarker(bindPath)) return;
+  try { runGit(bindPath, ['init']); } catch { /* git init 失败不阻塞导入 */ }
+}
+
+// POST /:id/import-zip — multipart 上传 zip/tar, 解压导入到项目 bind_path.
+router.post('/:id/import-zip', auth, importZipUpload.single('file'), (req: express.Request, res: express.Response) => {
+  const project = loadManageableProject(req, res, String(req.params.id));
+  if (!project) return;
+  if (!ensureProjectWritable(res, project)) return;
+  const file = (req as any).file as { path: string; originalname: string; size: number } | undefined;
+  if (!file) { res.status(400).json({ error: '未收到文件' }); return; }
+
+  // multer dest 模式保存的临时文件无原始扩展名, 用 originalname 判断压缩类型.
+  const kind = detectArchiveKind(file.originalname);
+  if (!kind) {
+    removeIfExists(file.path);
+    res.status(400).json({ error: '只支持 .zip / .tar / .tar.gz / .tgz 压缩包' });
+    return;
+  }
+  const tempZip = file.path;
+  const tempRoot = fs.mkdtempSync(path.join(UPLOAD_DIR, 'mobius-import-'));
+  try {
+    extractArchiveFile(tempZip, tempRoot, { kind });
+    const source = pickFlattenedSource(tempRoot);
+    const fileCount = mergeCopyDir(source, project.bind_path, new Set([HIDDEN_FOLDER_NAME]));
+    ensureGitInitIfNeeded(project.bind_path);
+    res.json({ ok: true, fileCount, bind_path: project.bind_path });
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || '导入失败' });
+  } finally {
+    removeIfExists(tempZip);
+    removeIfExists(tempRoot);
+  }
+});
 
 // GET /:id/file/download?path=<rel> - 流式下载单个文件 (设计文档 §8.1, §14.3)。
 // 只读, 不要求写权限; 拒绝符号链接与目录; 客户端断开时销毁 stream。

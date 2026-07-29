@@ -63,7 +63,8 @@ function isMultipartPath(req) {
     || p === '/api/assistant/transcribe'
     || p === '/api/voice/upload'
     || p.startsWith('/api/upload/')
-    || p.startsWith('/api/files/upload');
+    || p.startsWith('/api/files/upload')
+    || (p.startsWith('/api/projects/') && p.endsWith('/import-zip'));
 }
 app.use((req, res, next) => {
   if (isMemoryApiPath(req) || isAimuxBridgePath(req) || isMultipartPath(req)) return next();

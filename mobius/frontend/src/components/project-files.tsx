@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, type ReactNode } from 'react'
-import { Cable, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorUp, Play, RefreshCw } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { Cable, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorUp, Play, RefreshCw, Upload } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 
@@ -672,6 +672,61 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
   )
 }
 
+// 仅 Web 端: 桌面端走 "绑定本机目录", 不暴露上传 ZIP 入口.
+function isWebClient(): boolean {
+  return typeof window !== 'undefined' && !(window as any).mobiusDesktop?.isDesktop
+}
+
+// 上传 ZIP/TAR 压缩包, 解压导入到项目 bind_path. 目录非空时二次确认避免误覆盖.
+function UploadZipButton({ projectId, onImported, rootHasFiles }: {
+  projectId: string
+  onImported: () => void | Promise<void>
+  rootHasFiles: boolean
+}) {
+  const [busy, setBusy] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const handleFile = async (file: File) => {
+    if (busy) return
+    if (rootHasFiles && !window.confirm('项目目录已有文件, 上传将覆盖同名文件。是否继续?')) return
+    setBusy(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file, file.name)
+      const r = await api(`/api/projects/${projectId}/import-zip`, { method: 'POST', body: fd }) as any
+      await onImported()
+      window.alert(`导入完成, 共 ${r?.fileCount ?? '?'} 个文件`)
+    } catch (e: any) {
+      window.alert('导入失败: ' + (e?.message || '未知错误'))
+    } finally {
+      setBusy(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".zip,.tar,.tar.gz,.tgz,.tar.bz2,.tar.xz"
+        className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
+      />
+      <button
+        type="button"
+        onClick={() => !busy && inputRef.current?.click()}
+        disabled={busy}
+        title="上传 ZIP 压缩包导入项目代码 (仅 Web 端)"
+        className="h-7 px-3 text-[11px] rounded bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 border border-blue-500/20 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+      >
+        {busy
+          ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.8} />
+          : <Upload className="w-3.5 h-3.5" strokeWidth={1.8} />}
+        {busy ? '导入中' : '上传 ZIP'}
+      </button>
+    </>
+  )
+}
+
 export function ProjectFilesCard({ projectId }: { projectId: string }) {
   const [bindPath, setBindPath] = useState('')
   const [vscodeWorkspacePath, setVscodeWorkspacePath] = useState('')
@@ -820,6 +875,13 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
             </svg>
             在 VSCode 中打开
           </button>
+        )}
+        {isWebClient() && (
+          <UploadZipButton
+            projectId={projectId}
+            onImported={refreshTree}
+            rootHasFiles={(dirs['/']?.entries?.length ?? 0) > 0}
+          />
         )}
       </div>
 
