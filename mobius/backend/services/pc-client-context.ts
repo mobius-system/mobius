@@ -5,7 +5,18 @@ export interface PcClientMetadata {
   work_mode?: PcWorkMode;
   aimux_id?: string;
   local_path?: string;
-  /** true = Mobius TUI; false = Electron desktop client. */
+  /**
+   * Client-type marker, only present on PC task-mode sessions.
+   *   true  = Mobius TUI (the TUI client always writes this with work_mode:'pc').
+   *   false = Electron desktop client with PC task mode active.
+   * NOTE on the 3-way contract: web sessions — and Electron desktop *without*
+   * PC task mode — carry NO pc_client_metadata at all, so this field is ABSENT
+   * (the DB column is null), NOT `false`. Therefore `is_tui === false` reliably
+   * means "Electron + PC mode", and you MUST NOT treat `!is_tui` /
+   * `is_tui === false` as "web": web is identified by a null pc_client_metadata,
+   * not by a falsy is_tui. All consumers branch on `is_tui === true` (positive)
+   * and let absence fall through the null-meta early-return.
+   */
   is_tui?: boolean;
 }
 

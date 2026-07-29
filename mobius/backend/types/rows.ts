@@ -216,7 +216,7 @@ export interface SessionRawRow {
   original_project_id: string | null;
   deleted_at: string | null;
   completed_at: string | null;
-  /** PC 任务模式元数据 (JSON 字符串 {work_mode, aimux_id, local_path?, is_tui?}); Electron/TUI session 非空 */
+  /** PC 任务模式元数据 (JSON 字符串 {work_mode, aimux_id, local_path?, is_tui?}); 仅桌面端开启 PC 任务模式或 TUI 时非空, web 端及桌面端未开 PC 任务模式时恒 null (is_tui 随之缺失, 非 false) */
   pc_client_metadata: string | null;
 }
 
