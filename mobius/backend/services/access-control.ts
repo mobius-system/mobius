@@ -1,6 +1,7 @@
 import { db } from '../../db';
 import { parseSkillId } from './skills-fs';
 import { parseMemoryId } from './memories-fs';
+import { ProjectMemberships } from '../repositories/project-memberships';
 
 const RESOURCE_TYPES = new Set(['project', 'issue', 'research', 'session', 'skill', 'memory']);
 const VISIBILITIES = new Set(['inherit', 'private', 'team', 'public', 'allowlist']);
@@ -231,6 +232,8 @@ function allowedByVisibility(user: any, { resourceType, resourceId, ownerId, vis
 function canReadProject(user: any, projectOrId: any): boolean {
   const project = projectById(projectOrId);
   if (!project || !user?.id) return false;
+  // 项目成员 (任意角色) 可读本项目, 先于可见性判定.
+  if (ProjectMemberships.roleFor(project.id, user.id)) return true;
   const visibility = normalizeProjectVisibility(project.visibility, 'private');
   return allowedByVisibility(user, {
     resourceType: 'project',
@@ -243,7 +246,11 @@ function canReadProject(user: any, projectOrId: any): boolean {
 
 function canManageProject(user: any, projectOrId: any): boolean {
   const project = projectById(projectOrId);
-  return !!(project && user?.id && (user.role === 'admin' || project.created_by === user.id));
+  if (!project || !user?.id) return false;
+  if (user.role === 'admin' || project.created_by === user.id) return true;
+  // 项目负责人 / 项目管理员可管理团队与项目设置.
+  const role = ProjectMemberships.roleFor(project.id, user.id);
+  return role === 'owner' || role === 'manager';
 }
 
 function canCreateIssue(user: any, projectOrId: any): boolean {
@@ -254,6 +261,12 @@ function projectAllowsReaderWrite(user: any, projectOrId: any, flagColumn: strin
   const project = projectById(projectOrId);
   if (!project || !user?.id) return false;
   if (user.role === 'admin' || project.created_by === user.id) return true;
+  // 项目成员的写权限按角色: owner/manager 直接放行; member 跟随项目开关; viewer 只读.
+  const role = ProjectMemberships.roleFor(project.id, user.id);
+  if (role === 'owner' || role === 'manager') return true;
+  if (role === 'viewer') return false;
+  if (role === 'member') return !!project[flagColumn];
+  // 非成员: 走原有可见性 + 开关逻辑.
   if (!canReadProject(user, project)) return false;
   if (!project[flagColumn]) return false;
   const visibility = normalizeProjectVisibility(project.visibility, 'private');

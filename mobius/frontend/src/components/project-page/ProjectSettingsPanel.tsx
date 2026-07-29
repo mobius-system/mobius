@@ -19,6 +19,7 @@ import { ProjectArchitecturePanel } from './ProjectArchitecturePanel'
 import { ProjectAssistantPresetPanel } from './ProjectAssistantPresetPanel'
 import { ProjectPackagePanel } from './ProjectPackagePanel'
 import { ProjectTodosPanel } from './ProjectTodosPanel'
+import { ProjectTeamPanel } from './ProjectTeamPanel'
 import { ProjectOverflowTabs, type OverflowTab } from './ProjectOverflowTabs'
 import { ExpandableTextarea } from '../expandable-textarea'
 import type { GitRepoDraft } from './types'
@@ -85,7 +86,7 @@ type ProjectSettingsPanelProps = {
   onArchitectureSessionCreated: (issue: any, session: any) => void
 }
 
-type SettingsPane = 'settings' | 'versions' | 'architecture' | 'todos' | 'package' | 'assistant'
+type SettingsPane = 'settings' | 'versions' | 'architecture' | 'todos' | 'members' | 'package' | 'assistant'
 
 const PROJECT_VISIBILITY_OPTIONS: Array<{ value: 'private' | 'team' | 'public' | 'allowlist'; label: string; description: string }> = [
   { value: 'private', label: '仅自己', description: '只有项目创建者和管理员可见、可建任务单。' },
@@ -563,7 +564,7 @@ export function ProjectSettingsPanel({
   const PaneKey = `mobius:project:pane:${project?.id || ''}`
   const paneInit = (): SettingsPane => {
     const v = typeof localStorage !== 'undefined' ? localStorage.getItem(PaneKey) : null
-    return v && (['settings','versions','architecture','todos','package','assistant'] as const).includes(v as SettingsPane) ? v as SettingsPane : 'settings'
+    return v && (['settings','versions','architecture','todos','members','package','assistant'] as const).includes(v as SettingsPane) ? v as SettingsPane : 'settings'
   }
   const [activePane, setActivePane] = useState<SettingsPane>(paneInit)
   useEffect(() => { try { localStorage.setItem(PaneKey, activePane) } catch {} }, [PaneKey, activePane])
@@ -856,6 +857,8 @@ export function ProjectSettingsPanel({
       { key: 'todos', label: '项目待办', active: activePane === 'todos' },
       { key: 'package', label: '打包下载', active: activePane === 'package' },
     ]
+    // 普通项目才显示"项目组" tab (紧跟"项目设置"); 拓展项目不暴露团队协作.
+    if (project.kind !== 'extension') arr.splice(1, 0, { key: 'members', label: '项目组', active: activePane === 'members' })
     if (assistantProject) arr.push({ key: 'assistant', label: '小莫预设', active: activePane === 'assistant' })
     return arr
   }, [activePane, gitTrackingAvailable, gitTrackingTitle, assistantProject])
@@ -901,6 +904,10 @@ export function ProjectSettingsPanel({
         ) : activePane === 'todos' ? (
           <div className="p-3 w-full">
             <ProjectTodosPanel projectId={project.id} canManage={canManageProject} />
+          </div>
+        ) : activePane === 'members' ? (
+          <div className="p-3 w-full">
+            <ProjectTeamPanel projectId={project.id} canManage={canManageProject} actorRole={project.project_role || null} />
           </div>
         ) : activePane === 'package' ? (
           <div className="p-3 w-full">

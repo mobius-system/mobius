@@ -15,6 +15,10 @@ const ROLE_LABEL: Record<string, string> = {
   user: '用户',
 }
 
+// 下拉候选框的期望高度 (px). 对应旧版非 portal 时的 max-h-56 (224px);
+// 超出则内部滚动, 不足则自适应收缩. 见下方定位 effect 的注释.
+const DESIRED_MENU_HEIGHT = 224
+
 function labelFor(user: UserOption | undefined) {
   if (!user) return ''
   return user.display_name && user.display_name !== user.id
@@ -122,6 +126,10 @@ export function UserPicker({
   }, [query, searchPath, open])
 
   // 顶层浮层定位: 不受设置卡片、弹窗、抽屉的 overflow 规则裁剪.
+  // 注意: 期望菜单高度用常量 (DESIRED_MENU_HEIGHT), 不能读 menuRef.offsetHeight ——
+  // menuRef 就是下拉框自身, 其 offsetHeight 受自身 maxHeight 夹取, 会形成
+  // "maxHeight 依赖 offsetHeight、offsetHeight 又被 maxHeight 夹小" 的自反馈,
+  // 首次 loading 态高度只有一行 (~36px) 后就再也涨不起来 → 下拉只显示 1 条 ("显示不全").
   useEffect(() => {
     if (!open) return
     const update = () => {
@@ -131,7 +139,7 @@ export function UserPicker({
       setPlacement(computeUserPickerPlacement(
         { top: rect.top, bottom: rect.bottom, left: rect.left, width: rect.width },
         { width: window.innerWidth, height: window.innerHeight },
-        menuRef.current?.offsetHeight || 224,
+        DESIRED_MENU_HEIGHT,
       ))
     }
     update()

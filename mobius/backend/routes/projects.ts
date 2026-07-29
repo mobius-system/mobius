@@ -4,8 +4,10 @@ import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import bcrypt from 'bcryptjs';
 import { v4 as uuid } from 'uuid';
+import { db } from '../../db';
 import { auth } from '../middleware/auth';
 import { Projects } from '../repositories/projects';
+import { ProjectMemberships, PROJECT_ROLE_LABELS } from '../repositories/project-memberships';
 import { ProjectTodos } from '../repositories/project-todos';
 import { Issues } from '../repositories/issues';
 import { Researches } from '../repositories/researches';
@@ -455,6 +457,8 @@ function normalizeProjectCardBorderTheme(raw: unknown): string {
 function shapeProjectForUser(project: any, user: any, opts: { mutedIds?: Set<string> } = {}): any {
   if (!project) return project;
   const canCreate = canCreateIssue(user, project);
+  // 当前用户在该项目的成员角色 (非成员为 null), 供前端区分"项目组成员"与"可见性读者".
+  const membershipRole = user?.id ? ProjectMemberships.roleFor(project.id, user.id) : null;
   const muted = opts.mutedIds
     ? opts.mutedIds.has(project.id)
     : (user?.id ? UserProjectView.isMuted(user.id, project.id) : false);
@@ -467,6 +471,8 @@ function shapeProjectForUser(project: any, user: any, opts: { mutedIds?: Set<str
     visibility: normalizeProjectVisibility(project.visibility, 'private'),
     access: projectAccessPayload(project.id),
     can_manage: canManageProject(user, project),
+    project_role: membershipRole,
+    is_project_member: !!membershipRole,
     can_create_issue: canCreate,
     can_create_session: projectAllowsReaderWrite(user, project, 'can_run_session'),
     can_create_research: canCreate && !!project.research_enabled,
@@ -1840,6 +1846,11 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
   const visibility = normalizeProjectVisibility(req.body?.visibility, 'private');
   const canPostIssue = boolFromBody(req.body || {}, 'can_post_issue', 'canPostIssue', false);
   const canRunSession = boolFromBody(req.body || {}, 'can_run_session', 'canRunSession', false);
+  // 创建时一并加入的首批项目组成员 (member 角色); 仅普通/Research 项目生效, 排除创建者本人.
+  const rawMemberIds = req.body?.member_user_ids ?? req.body?.memberUserIds;
+  const memberUserIds = Array.isArray(rawMemberIds)
+    ? Array.from(new Set((rawMemberIds as any[]).map((x: any) => String(x || '').trim()).filter(Boolean)))
+    : [];
 
   // ── 莫比乌斯拓展项目 ──────────────────────────────────────────────────────
   if (kind === 'extension') {
@@ -1904,21 +1915,26 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
   // 莫比乌斯自身源码仓由 PM2 单进程托管, agent 必须直接在主 checkout 上改再用 `python3 start.py`
   // 部署; worktree 会切到独立工作副本导致部署拿不到改动.
   if (resolvedPath && APP_DIR && path.resolve(resolvedPath) === path.resolve(APP_DIR)) defWt = false;
-  Projects.insert({
-    id: projectId,
-    name,
-    description,
-    createdBy: user.id,
-    bindPath: resolvedPath,
-    bindPathManual: !!bindPathManual,
-    gitRepos: repos as any,
-    defaultUseWorktree: defWt,
-    researchEnabled: nextResearchEnabled,
-    visibility: visibility as any,
-    canPostIssue,
-    canRunSession,
-    defaultModel: normalizedDefaultModel,
-  });
+  try {
+    Projects.insert({
+      id: projectId,
+      name,
+      description,
+      createdBy: user.id,
+      bindPath: resolvedPath,
+      bindPathManual: !!bindPathManual,
+      gitRepos: repos as any,
+      defaultUseWorktree: defWt,
+      researchEnabled: nextResearchEnabled,
+      visibility: visibility as any,
+      canPostIssue,
+      canRunSession,
+      defaultModel: normalizedDefaultModel,
+      memberUserIds,
+    });
+  } catch (e) {
+    return res.status(400).json({ error: (e as Error).message || '创建项目失败' });
+  }
   setProjectAccess(projectId, { ...projectAccessBody(req.body), visibility });
   const project = Projects.findById(projectId, user.id);
   const guidedKind = typeof guidedDemoKind === 'string' ? guidedDemoKind.trim() : '';
@@ -1936,6 +1952,125 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
     }
   }
   res.json({ ...shapeProjectForUser(project, user), guided_demo_assets: guidedDemoAssets });
+});
+
+// ===== 项目组成员管理 (project membership) =====
+// 与"项目可见性 / allowlist"是两个层次: 成员是协作层 (有角色, 可读可写可管理),
+// 可见性是共享层 (只读). 写操作统一要求 owner/manager (canManage); reader 仅能 GET 列表.
+const ACTIVE_USER_SQL_FOR_QUERY = "(deleted_at IS NULL OR deleted_at = '')";
+
+router.get('/:id/members', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
+  if (!project || !canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+  const dbRole = ProjectMemberships.roleFor(id, user.id);
+  const actorRole = dbRole || (project.created_by === user.id ? 'owner' : null);
+  res.json({
+    members: ProjectMemberships.list(id),
+    counts: ProjectMemberships.counts(id),
+    can_manage: ProjectMemberships.canManage(id, user),
+    actor_role: actorRole,
+    role_labels: PROJECT_ROLE_LABELS,
+  });
+});
+
+// 项目团队管理者可搜的候选员工; 只返回 id/display_name/groups/already_member,
+// 绝不暴露 password/work_dir/preference/管理员字段.
+router.get('/:id/member-candidates', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
+  if (!project || !canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+  if (!ProjectMemberships.canManage(id, user)) return res.status(403).json({ error: '需要项目管理权限' });
+  const q = String(req.query.q || '').trim();
+  const like = '%' + q.replace(/[%_\\]/g, (m) => '\\' + m) + '%';
+  const memberIds = new Set(ProjectMemberships.list(id).map((m) => m.user_id));
+  const rows = db.prepare(
+    `SELECT id, display_name FROM users
+     WHERE ${ACTIVE_USER_SQL_FOR_QUERY}
+       AND (id LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\')
+     ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, display_name COLLATE NOCASE ASC
+     LIMIT 30`
+  ).all(like, like, q) as Array<{ id: string; display_name: string }>;
+  const candidates = rows.map((r) => ({
+    id: r.id,
+    display_name: r.display_name || r.id,
+    groups: Users.listGroupMemberships(r.id).map((g) => ({
+      id: g.group_id,
+      name: g.group_name,
+      is_primary: !!g.is_primary,
+    })),
+    already_member: memberIds.has(r.id),
+  }));
+  res.json({ candidates });
+});
+
+router.post('/:id/members', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
+  if (!project) return res.status(404).json({ error: '未找到' });
+  if (!ProjectMemberships.canManage(id, user)) return res.status(403).json({ error: '需要项目管理权限' });
+  const rawIds = req.body?.user_ids ?? req.body?.userIds;
+  const userIds = Array.isArray(rawIds) ? rawIds : [];
+  const role = String(req.body?.role || 'member').trim() || 'member';
+  // manager 不能添加 owner —— 只有项目负责人/系统管理员可以.
+  const actorRole = ProjectMemberships.roleFor(id, user.id);
+  if (role === 'owner' && actorRole !== 'owner' && user.role !== 'admin') {
+    return res.status(403).json({ error: '只有项目负责人可以添加负责人' });
+  }
+  try {
+    const result = ProjectMemberships.addMany({ projectId: id, userIds, role, actorId: user.id });
+    res.json({ ...result, members: ProjectMemberships.list(id), counts: ProjectMemberships.counts(id) });
+  } catch (e) {
+    const err = e as { status?: number; message?: string };
+    res.status(err.status || 400).json({ error: err.message || '添加成员失败' });
+  }
+});
+
+router.patch('/:id/members/:userId', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const userId = String(req.params.userId);
+  const project = Projects.findById(id);
+  if (!project) return res.status(404).json({ error: '未找到' });
+  if (!ProjectMemberships.canManage(id, user)) return res.status(403).json({ error: '需要项目管理权限' });
+  const role = String(req.body?.role || '').trim();
+  const actorRole = ProjectMemberships.roleFor(id, user.id);
+  const target = ProjectMemberships.roleFor(id, userId);
+  // manager 不能改 owner 的角色, 也不能把人提为 owner.
+  if (actorRole !== 'owner' && user.role !== 'admin' && (target === 'owner' || role === 'owner')) {
+    return res.status(403).json({ error: '只有项目负责人可以调整负责人角色' });
+  }
+  try {
+    const result = ProjectMemberships.updateRole({ projectId: id, userId, role, actorId: user.id });
+    res.json({ ...result, members: ProjectMemberships.list(id), counts: ProjectMemberships.counts(id) });
+  } catch (e) {
+    const err = e as { status?: number; message?: string };
+    res.status(err.status || 400).json({ error: err.message || '修改角色失败' });
+  }
+});
+
+router.delete('/:id/members/:userId', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const userId = String(req.params.userId);
+  const project = Projects.findById(id);
+  if (!project) return res.status(404).json({ error: '未找到' });
+  if (!ProjectMemberships.canManage(id, user)) return res.status(403).json({ error: '需要项目管理权限' });
+  const actorRole = ProjectMemberships.roleFor(id, user.id);
+  const target = ProjectMemberships.roleFor(id, userId);
+  if (actorRole !== 'owner' && user.role !== 'admin' && target === 'owner') {
+    return res.status(403).json({ error: '只有项目负责人可以移除负责人' });
+  }
+  try {
+    ProjectMemberships.remove({ projectId: id, userId });
+    res.json({ ok: true, members: ProjectMemberships.list(id), counts: ProjectMemberships.counts(id) });
+  } catch (e) {
+    const err = e as { status?: number; message?: string };
+    res.status(err.status || 400).json({ error: err.message || '移除成员失败' });
+  }
 });
 
 router.delete('/:id', auth, (req: express.Request, res: express.Response) => {

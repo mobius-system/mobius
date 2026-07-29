@@ -21,6 +21,7 @@
     "test:session-transfer": "node --require tsx/cjs tests/session-transfer.js",
     "test:project-user-picker": "node --require tsx/cjs tests/project-user-picker.js",
     "test:user-group-memberships": "node --require tsx/cjs tests/user-group-memberships.js",
+    "test:project-memberships": "node --require tsx/cjs tests/project-memberships.js",
     "test:agent-tmux-server": "node tests/agent-tmux-server.js",
     "test:claude-realtime-info": "node --require tsx/cjs tests/claude-realtime-info.js",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",

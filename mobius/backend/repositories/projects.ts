@@ -16,6 +16,7 @@ import {
   FORGOTTEN_FLAG_PATIENCE_MAX,
 } from '../config';
 import type { AimuxRemoteInventoryEntry, ProjectRow, ProjectRawRow } from '../types/rows';
+import { ProjectMemberships } from './project-memberships';
 
 type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist';
 const CARD_BORDER_THEME_IDS = new Set([
@@ -190,6 +191,8 @@ interface InsertArgs {
   canPostIssue?: boolean;
   canRunSession?: boolean;
   defaultModel?: string | null;
+  // 创建项目时一同写入的首批成员 (member 角色); 任一非法会令整个创建事务回滚.
+  memberUserIds?: string[];
 }
 
 interface UpsertExtensionArgs {
@@ -259,12 +262,31 @@ const Projects = {
     `).all() as ProjectRawRowWithExtras[]).map(hydrate);
   },
 
-  insert: ({ id, name, description, createdBy, bindPath, bindPathManual, gitRepos, defaultUseWorktree, researchEnabled, visibility, canPostIssue, canRunSession, defaultModel }: InsertArgs) => db.prepare(
-    'INSERT INTO projects (id, name, description, created_by, bind_path, bind_path_manual, git_repos, default_use_worktree, research_enabled, visibility, can_post_issue, can_run_session, default_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, name, description || '', createdBy, bindPath || '', bindPathManual ? 1 : 0,
-    JSON.stringify(gitRepos || []), defaultUseWorktree ? 1 : 0, researchEnabled ? 1 : 0, visibility || 'private',
-    canPostIssue ? 1 : 0, canRunSession ? 1 : 0,
-    (typeof defaultModel === 'string' && defaultModel.trim()) ? defaultModel.trim() : null),
+  // 创建项目 = 单事务: 写项目行 + 创建者 owner 关系 + 首批成员 (member).
+  // 任一首批成员非法 → addMany 抛错 → 整个事务回滚, 不会留下"没有项目组的半成品项目".
+  insert: ({ id, name, description, createdBy, bindPath, bindPathManual, gitRepos, defaultUseWorktree, researchEnabled, visibility, canPostIssue, canRunSession, defaultModel, memberUserIds }: InsertArgs) => {
+    const insertProject = db.prepare(
+      'INSERT INTO projects (id, name, description, created_by, bind_path, bind_path_manual, git_repos, default_use_worktree, research_enabled, visibility, can_post_issue, can_run_session, default_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    const tx = db.transaction(() => {
+      insertProject.run(id, name, description || '', createdBy, bindPath || '', bindPathManual ? 1 : 0,
+        JSON.stringify(gitRepos || []), defaultUseWorktree ? 1 : 0, researchEnabled ? 1 : 0, visibility || 'private',
+        canPostIssue ? 1 : 0, canRunSession ? 1 : 0,
+        (typeof defaultModel === 'string' && defaultModel.trim()) ? defaultModel.trim() : null);
+      // 创建者自动成为项目负责人 (owner).
+      ProjectMemberships.ensureOwner(id, createdBy, createdBy);
+      // 创建时选的首批成员 (排除创建者本人, 他已是 owner), 全部以 member 角色加入.
+      if (Array.isArray(memberUserIds) && memberUserIds.length) {
+        const initial = Array.from(new Set(
+          memberUserIds.map((u) => String(u || '').trim()).filter((u) => u && u !== createdBy)
+        ));
+        if (initial.length) {
+          ProjectMemberships.addMany({ projectId: id, userIds: initial, role: 'member', actorId: createdBy });
+        }
+      }
+    });
+    return tx();
+  },
 
   // ===== 拓展项目专用 =====
   // 注意: kind='extension' 行的 bind_path/default_use_worktree/research_enabled 由 registry 锁定,
