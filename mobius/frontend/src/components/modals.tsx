@@ -3881,17 +3881,17 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
         onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-start justify-between mb-3">
-          <div>
+          {/* <div>
             <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>AIMUX 连接指引</h3>
             <div className="text-[11px] mt-0.5" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
               把您的计算机 (Windows/Mac/Linux) 连接到 Mobius 中枢，然后允许智能体联合您的计算机一起执行任务。
             </div>
-          </div>
+          </div> */}
           <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
         </div>
 
         <div className="text-[12px] mb-3 p-3 rounded-lg leading-relaxed" style={{ background: theme !== 'light' ? 'rgba(56,189,248,0.10)' : '#f0f7ff', color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
-          <span className="font-semibold">AIMUX 是什么：</span>AIMUX 是莫比乌斯系统的触手：它可以把任意计算机（Windows / Mac / Linux）接入莫比乌斯，甚至调度多台机器协同。下面是把<strong className="font-semibold">另一台</strong>计算机也接进来的步骤。
+          <span className="font-semibold">AIMUX 是什么：</span>AIMUX 是莫比乌斯系统的触手：它负责把任意计算机（Windows / Mac / Linux）接入莫比乌斯中枢，甚至调度多台机器协同。
         </div>
 
         {renderSectionTitle('1. 在外部机器上安装 aimux (Python 3.10+)')}

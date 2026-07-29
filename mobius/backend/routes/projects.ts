@@ -2013,7 +2013,8 @@ router.get('/:id/member-candidates', auth, (req: express.Request, res: express.R
     })),
     already_member: memberIds.has(r.id),
   }));
-  res.json({ candidates });
+  // 返回数组: UserPicker 期望 searchPath 返回数组 (非 {candidates} 对象), 否则判定为空.
+  res.json(candidates);
 });
 
 router.post('/:id/members', auth, (req: express.Request, res: express.Response) => {
