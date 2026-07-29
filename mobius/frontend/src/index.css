@@ -1670,10 +1670,10 @@ button {
 .assistant-fab::before {
   content: "";
   position: absolute;
-  inset: -9px;
+  inset: -7.2px;
   border-radius: inherit;
   background: conic-gradient(from 30deg, rgba(45, 212, 191, .28), rgba(129, 140, 248, .34), rgba(251, 113, 133, .18), rgba(250, 204, 21, .22), rgba(45, 212, 191, .28));
-  filter: blur(14px);
+  filter: blur(11.2px);
   opacity: .58;
   pointer-events: none;
   animation: mo-halo-turn 16s linear infinite;
@@ -1699,12 +1699,12 @@ button {
 }
 .assistant-fab--speaking::before {
   opacity: .95;
-  filter: blur(12px) saturate(1.36);
+  filter: blur(9.6px) saturate(1.36);
   animation: mo-halo-turn 3.4s linear infinite, assistant-fab-speaking-glow .92s ease-in-out infinite;
 }
 .assistant-fab__speaking-waves {
   position: absolute;
-  inset: -18px;
+  inset: -14.4px;
   z-index: 1;
   border-radius: inherit;
   pointer-events: none;
@@ -1728,7 +1728,7 @@ button {
 }
 .assistant-fab__hold-ring {
   position: absolute;
-  inset: -7px;
+  inset: -5.6px;
   z-index: 4;
   border-radius: inherit;
   border: 2px solid rgba(125, 211, 252, .18);
@@ -1739,12 +1739,12 @@ button {
 }
 .assistant-fab__voice-badge {
   position: absolute;
-  right: -4px;
-  bottom: -4px;
+  right: -3.2px;
+  bottom: -3.2px;
   z-index: 5;
   display: flex;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
@@ -1813,8 +1813,8 @@ button {
   position: absolute;
   z-index: 3;
   display: flex;
-  width: 24px;
-  height: 24px;
+  width: 19.2px;
+  height: 19.2px;
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
@@ -4766,9 +4766,9 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   animation: mo-life-float 10.5s ease-in-out infinite;
 }
 .mo-avatar--lg {
-  width: 46px;
-  height: 46px;
-  font-size: 46px;
+  width: 36.8px;
+  height: 36.8px;
+  font-size: 36.8px;
 }
 .mo-avatar--sm {
   width: 26px;

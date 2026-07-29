@@ -37,7 +37,7 @@ const HISTORY_LIMIT = 80
 const ASSISTANT_CLEAR_STORAGE_PREFIX = 'assistant-clear-cutoffs'
 const ASSISTANT_FAB_VOICE_HOLD_MS = 1500
 // 小莫 FAB 可拖动 + 吸附到视口角落
-const ASSISTANT_FAB_SIZE = 56 // w-14 h-14
+const ASSISTANT_FAB_SIZE = 44.8 // 56px × 80%; keep drag/snap geometry aligned with the rendered FAB
 const ASSISTANT_FAB_EDGE_MARGIN = 20 // 与视口边缘留白 (1.25rem)
 const ASSISTANT_FAB_DRAG_THRESHOLD = 6 // 超过该位移视为拖动而非点击
 const ASSISTANT_FAB_POS_STORAGE_KEY = 'mobius-assistant-fab-pos'
@@ -3640,7 +3640,7 @@ export function AssistantChat() {
           ? `${ASSISTANT_NAME}正在说话`
           : (open ? `收起${ASSISTANT_NAME}` : `打开${ASSISTANT_NAME}`)
   const fabClassName = [
-    'assistant-fab fixed z-[60] w-14 h-14 rounded-full flex items-center justify-center',
+    'assistant-fab fixed z-[60] w-[44.8px] h-[44.8px] rounded-full flex items-center justify-center',
     // 有自定义位置时用 inline left/top, 否则回落到默认右下角
     fabPos ? '' : 'bottom-5 right-5',
     // 拖动进行中关掉过渡 (跟随指针不拖尾), 释放后恢复过渡以平滑吸附
@@ -3680,15 +3680,15 @@ export function AssistantChat() {
         {fabVoiceRecording || fabVoiceTranscribing ? (
           <span className="assistant-fab__voice-badge" aria-hidden="true">
             {fabVoiceTranscribing ? (
-              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              <RefreshCw className="h-3 w-3 animate-spin" />
             ) : (
-              <Mic className="h-3.5 w-3.5" />
+              <Mic className="h-3 w-3" />
             )}
           </span>
         ) : null}
         {open ? (
           <span className="assistant-fab__close">
-            <X className="h-4 w-4" strokeWidth={2.2} />
+            <X className="h-3 w-3" strokeWidth={2.2} />
           </span>
         ) : null}
         {!open && unreadCompletion > 0 ? (

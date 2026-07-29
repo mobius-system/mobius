@@ -237,7 +237,7 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
           </button>
         </div>
       </div>
-      <p className="text-[12px] mb-4" style={{ color: 'var(--text-muted)' }}>{desc}</p>
+      {/* <p className="text-[12px] mb-4" style={{ color: 'var(--text-muted)' }}>{desc}</p> */}
       {fileImportInfo && (
         <pre className="text-[11px] text-amber-400 mb-3 whitespace-pre-wrap break-all max-h-24 overflow-auto">{fileImportInfo}</pre>
       )}
