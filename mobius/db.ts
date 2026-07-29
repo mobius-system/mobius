@@ -88,6 +88,60 @@ function migrateUserGroups() {
 }
 migrateUserGroups();
 
+// ===== 员工多群组 + 项目组成员关系 =====
+// 保留 users.group_id 作为主群组兼容投影；真实多群组关系写入关联表。
+function migrateEmployeeAndProjectMemberships() {
+  try {
+    const migrate = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS user_group_memberships (
+          user_id TEXT NOT NULL,
+          group_id TEXT NOT NULL,
+          is_primary INTEGER NOT NULL DEFAULT 0,
+          created_by TEXT,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          PRIMARY KEY (user_id, group_id),
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_group_memberships_group
+          ON user_group_memberships(group_id, user_id);
+        CREATE TABLE IF NOT EXISTS project_memberships (
+          project_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          role TEXT NOT NULL CHECK(role IN ('owner','manager','member','viewer')),
+          created_by TEXT,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          PRIMARY KEY (project_id, user_id),
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_project_memberships_user
+          ON project_memberships(user_id, project_id);
+      `);
+      db.exec(`
+        INSERT OR IGNORE INTO user_group_memberships (user_id, group_id, is_primary, created_by)
+        SELECT u.id,
+               CASE WHEN g.id IS NULL THEN 'default' ELSE u.group_id END,
+               1,
+               u.id
+        FROM users u
+        LEFT JOIN user_groups g ON g.id = u.group_id;
+
+        INSERT OR IGNORE INTO project_memberships (project_id, user_id, role, created_by)
+        SELECT p.id, p.created_by, 'owner', p.created_by
+        FROM projects p
+        JOIN users u ON u.id = p.created_by;
+      `);
+    });
+    migrate();
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️  membership 迁移失败:', (e as Error).message);
+  }
+}
+migrateEmployeeAndProjectMemberships();
+
 // ===== researches: 与 issues 并列的项目级研究对象 =====
 db.exec(`
   CREATE TABLE IF NOT EXISTS researches (

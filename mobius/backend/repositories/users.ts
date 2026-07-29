@@ -70,6 +70,15 @@ interface GroupRow extends UserGroupRawRow {
   user_count?: number;
 }
 
+interface UserGroupMembershipRow {
+  user_id: string;
+  group_id: string;
+  group_name: string;
+  group_description: string;
+  is_primary: number;
+  created_at: string;
+}
+
 function ensureDefaultGroup(): GroupRow {
   ensureDefaultGroupStmt.run(DEFAULT_GROUP_ID, DEFAULT_GROUP_NAME, '未指定群组的员工默认归属');
   db.prepare(`
@@ -79,6 +88,62 @@ function ensureDefaultGroup(): GroupRow {
   `).run(DEFAULT_GROUP_ID);
   return db.prepare('SELECT * FROM user_groups WHERE id = ?').get(DEFAULT_GROUP_ID) as GroupRow;
 }
+
+function ensureUserMembership(userId: string): void {
+  ensureDefaultGroup();
+  const existing = db.prepare('SELECT 1 FROM user_group_memberships WHERE user_id = ? LIMIT 1').get(userId);
+  if (existing) return;
+  const row = db.prepare(`
+    SELECT u.id, CASE WHEN g.id IS NULL THEN ? ELSE u.group_id END AS group_id
+    FROM users u
+    LEFT JOIN user_groups g ON g.id = u.group_id
+    WHERE u.id = ?
+  `).get(DEFAULT_GROUP_ID, userId) as { id: string; group_id: string } | undefined;
+  if (!row) return;
+  db.prepare(`
+    INSERT OR IGNORE INTO user_group_memberships (user_id, group_id, is_primary, created_by)
+    VALUES (?, ?, 1, ?)
+  `).run(userId, row.group_id || DEFAULT_GROUP_ID, userId);
+}
+
+function listGroupMemberships(userId: unknown): UserGroupMembershipRow[] {
+  const id = String(userId || '').trim();
+  if (!id) return [];
+  ensureUserMembership(id);
+  return db.prepare(`
+    SELECT ugm.user_id, ugm.group_id, g.name AS group_name,
+           g.description AS group_description, ugm.is_primary, ugm.created_at
+    FROM user_group_memberships ugm
+    JOIN user_groups g ON g.id = ugm.group_id
+    WHERE ugm.user_id = ?
+    ORDER BY ugm.is_primary DESC, g.name COLLATE NOCASE ASC, g.id ASC
+  `).all(id) as UserGroupMembershipRow[];
+}
+
+const replaceGroupsTx = db.transaction((userId: unknown, rawGroupIds: unknown, actorId?: unknown) => {
+  ensureDefaultGroup();
+  const id = String(userId || '').trim();
+  const user = db.prepare(`SELECT id FROM users WHERE id = ? AND ${ACTIVE_USER_SQL}`).get(id);
+  if (!user) throw repoError('员工账号不存在或已删除', 404);
+  const input = Array.isArray(rawGroupIds) ? rawGroupIds : [];
+  const groupIds = Array.from(new Set(input.map((value) => String(value || '').trim()).filter(Boolean)));
+  if (!groupIds.length) groupIds.push(DEFAULT_GROUP_ID);
+  const found = db.prepare(`SELECT id FROM user_groups WHERE id IN (${groupIds.map(() => '?').join(',')})`).all(...groupIds) as Array<{ id: string }>;
+  if (found.length !== groupIds.length) throw repoError('群组不存在', 404);
+  db.prepare('DELETE FROM user_group_memberships WHERE user_id = ?').run(id);
+  const insert = db.prepare(`
+    INSERT INTO user_group_memberships (user_id, group_id, is_primary, created_by)
+    VALUES (?, ?, ?, ?)
+  `);
+  groupIds.forEach((groupId, index) => insert.run(id, groupId, index === 0 ? 1 : 0, String(actorId || '') || null));
+  db.prepare(`UPDATE users SET group_id = ? WHERE id = ? AND ${ACTIVE_USER_SQL}`).run(groupIds[0], id);
+  return {
+    user_id: id,
+    primary_group_id: groupIds[0],
+    group_ids: groupIds,
+    groups: listGroupMemberships(id),
+  };
+});
 
 function shapeGroup(row: (UserGroupRawRow & { active_user_count?: number; user_count?: number }) | null | undefined): GroupRow | null {
   if (!row) return null;
@@ -365,6 +430,8 @@ const Users = {
       ORDER BY CASE WHEN g.id = ? THEN 0 ELSE 1 END, g.name COLLATE NOCASE ASC
     `).all(DEFAULT_GROUP_ID) as Array<UserGroupRawRow & { active_user_count: number; user_count: number }>).map(shapeGroup);
   },
+  listGroupMemberships,
+  replaceGroups: (userId: unknown, groupIds: unknown, actorId?: unknown) => replaceGroupsTx(userId, groupIds, actorId),
   createGroup: (params: CreateGroupArgs) => createGroupTx(params || {}),
   updateGroup: (id: unknown, params: UpdateGroupArgs) => updateGroupTx(id, params || {}),
   deleteGroup: (id: unknown) => deleteGroupTx(id),

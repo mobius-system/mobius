@@ -21,6 +21,25 @@ export interface UserGroupRawRow {
   updated_at: string;
 }
 
+export interface UserGroupMembershipRawRow {
+  user_id: string;
+  group_id: string;
+  is_primary: number;
+  created_by: string | null;
+  created_at: string;
+}
+
+export type ProjectMembershipRole = 'owner' | 'manager' | 'member' | 'viewer';
+
+export interface ProjectMembershipRawRow {
+  project_id: string;
+  user_id: string;
+  role: ProjectMembershipRole;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface UserRawRow {
   id: string;
   display_name: string;
