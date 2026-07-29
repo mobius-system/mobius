@@ -900,6 +900,10 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
         body.bindPath = bindPath
         body.bindPathManual = bindPathManual
       }
+      // 拓展项目: name/路径/可见性/写权限/worktree/research 由 manifest 锁定, 后端会 400; 提交前删掉.
+      if (project.kind === 'extension') {
+        ['name','description','visibility','allow_user_ids','can_post_issue','can_run_session','defaultUseWorktree','researchEnabled','bindPath','bindPathManual'].forEach((k) => { delete body[k]; });
+      }
       const updated = await api(`/api/projects/${project.id}`, {
         method: 'PATCH',
         body: JSON.stringify(body),
@@ -3891,7 +3895,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="text-[12px] mb-3 p-3 rounded-lg leading-relaxed" style={{ background: theme !== 'light' ? 'rgba(56,189,248,0.10)' : '#f0f7ff', color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
-          <span className="font-semibold">AIMUX 是什么：</span>AIMUX 是莫比乌斯系统的触手：它负责把任意计算机（Windows / Mac / Linux）接入莫比乌斯中枢，甚至调度多台机器协同。
+          <span className="font-semibold">AIMUX 是什么：</span>AIMUX 是莫比乌斯系统的触手：它负责把任意计算机（Windows / Mac / Linux）接入莫比乌斯中枢，形成协作网络，对于<strong>缺SSH/SSH不可达</strong>的桌面笔记本、工作站、嵌入式设备、网络受限设备。
         </div>
 
         {renderSectionTitle('1. 在外部机器上安装 aimux (Python 3.10+)')}
