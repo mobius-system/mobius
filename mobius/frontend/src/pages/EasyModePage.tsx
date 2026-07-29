@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Check, CircleDot, FlaskConical, History, MessageSquare } from 'lucide-react'
+import { Check, ChevronDown, CircleDot, FlaskConical, FolderOpen, History, MessageSquare, Plus, Search as SearchIcon } from 'lucide-react'
 import { useStore, api } from '../store'
 import { useLayoutMode } from '../services/layout-mode'
 import { ChatArea } from '../components/chat'
+import { GlobalCreateRoot, type CreateKind } from '../components/global-create'
 import { ResizablePanel } from '../components/resizable-panel'
 import { Loading, TopNav, timeAgoPrecise } from '../components/shell'
 
@@ -66,6 +67,9 @@ export default function EasyModePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedProject, setSelectedProject] = useState<string | null>(null)
+  const [projectFilterOpen, setProjectFilterOpen] = useState(false)
+  const [projectFilterQuery, setProjectFilterQuery] = useState('')
+  const [createKind, setCreateKind] = useState<CreateKind | null>(null)
   const navigate = useNavigate()
   const layoutMode = useLayoutMode()
   const sessionParam = search.get('session') || ''
@@ -94,9 +98,34 @@ export default function EasyModePage() {
   const effectiveProject = selectedProject && projectOptions.some(project => project.id === selectedProject)
     ? selectedProject
     : null
+  const selectedProjectOption = effectiveProject
+    ? projectOptions.find(project => project.id === effectiveProject) || null
+    : null
+  const filteredProjectOptions = useMemo(() => {
+    const q = projectFilterQuery.trim().toLowerCase()
+    if (!q) return projectOptions
+    return projectOptions.filter(project => (
+      project.name.toLowerCase().includes(q) || project.id.toLowerCase().includes(q)
+    ))
+  }, [projectOptions, projectFilterQuery])
   const visibleSessions = effectiveProject
     ? sessions.filter(session => session.project_id === effectiveProject)
     : sessions
+  const createDefaultProjectId = effectiveProject || (currentSession as RecentSession | null)?.project_id || undefined
+  const createDefaultIssueId = (
+    createDefaultProjectId &&
+    (currentSession as RecentSession | null)?.project_id === createDefaultProjectId &&
+    (currentSession as RecentSession | null)?.scope_type !== 'research'
+  )
+    ? (currentSession as RecentSession | null)?.issue_id || undefined
+    : undefined
+
+  useEffect(() => {
+    if (!projectFilterOpen) return
+    const close = () => setProjectFilterOpen(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [projectFilterOpen])
 
   // 闭环修补：全局布局模式被切到非简易时（典型场景——另一个标签页切到了常规模式，
   // 或已选常规模式的用户直接落到 easy_mode 路径），本页不再适用，主动让位回用户主页，
@@ -181,6 +210,12 @@ export default function EasyModePage() {
     setSearch(next)
   }
 
+  const selectProjectFilter = (projectId: string | null) => {
+    setSelectedProject(projectId)
+    setProjectFilterOpen(false)
+    setProjectFilterQuery('')
+  }
+
   return (
     <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)' }} data-page="easy-mode">
       <TopNav />
@@ -204,37 +239,104 @@ export default function EasyModePage() {
                 </span>
               )}
             </div>
-            <p className="mt-1 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
-              跨项目显示最近活跃的会话
-            </p>
-          </div>
 
-          {projectOptions.length > 1 && (
-            <div className="flex flex-wrap gap-1 border-b px-3 py-2" style={{ borderColor: 'var(--border-color)' }} data-testid="easy-project-filter">
+            <div className="mt-2 flex min-w-0 items-center gap-2">
+              {projectOptions.length > 1 && (
+                <div className="relative min-w-0 flex-1" data-testid="easy-project-filter">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setProjectFilterOpen(value => !value)
+                    }}
+                    aria-haspopup="menu"
+                    aria-expanded={projectFilterOpen}
+                    className="flex h-8 w-full min-w-0 items-center gap-1.5 rounded-md border px-2 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]"
+                    style={projectChipStyle(!!effectiveProject)}
+                    title={selectedProjectOption?.name || '全部项目'}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{selectedProjectOption?.name || '全部项目'}</span>
+                    <span className="flex-shrink-0 text-[10px] opacity-70">
+                      {effectiveProject ? visibleSessions.length : `${projectOptions.length}项`}
+                    </span>
+                    <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${projectFilterOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {projectFilterOpen && (
+                    <div
+                      role="menu"
+                      className="absolute left-0 right-0 top-9 z-50 rounded-lg p-1.5 shadow-xl"
+                      style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
+                      onClick={event => event.stopPropagation()}
+                    >
+                      {projectOptions.length > 7 && (
+                        <label className="mb-1 flex h-7 items-center gap-1.5 rounded-md border px-2" style={{ borderColor: 'var(--border-color)', background: 'var(--input-bg)' }}>
+                          <SearchIcon className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                          <input
+                            value={projectFilterQuery}
+                            onChange={event => setProjectFilterQuery(event.target.value)}
+                            placeholder="搜索项目"
+                            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[11px] outline-none"
+                            style={{ color: 'var(--text-primary)' }}
+                            autoFocus
+                          />
+                        </label>
+                      )}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => selectProjectFilter(null)}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]"
+                        style={{ color: 'var(--text-primary)', background: effectiveProject === null ? 'var(--bg-active)' : undefined }}
+                      >
+                        <span className="min-w-0 flex-1 truncate">全部项目</span>
+                        <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{sessions.length}</span>
+                        {effectiveProject === null && <Check className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />}
+                      </button>
+                      <div className="mt-1 max-h-[232px] overflow-y-auto">
+                        {filteredProjectOptions.length === 0 ? (
+                          <div className="px-2 py-4 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>没有匹配项目</div>
+                        ) : filteredProjectOptions.map(project => (
+                          <button
+                            key={project.id}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => selectProjectFilter(project.id)}
+                            title={project.name}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]"
+                            style={{ color: 'var(--text-primary)', background: effectiveProject === project.id ? 'var(--bg-active)' : undefined }}
+                          >
+                            <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{project.count}</span>
+                            {effectiveProject === project.id && <Check className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <button
                 type="button"
-                onClick={() => setSelectedProject(null)}
-                className="rounded-md px-2 py-1 text-[11px] leading-none transition-colors"
-                style={projectChipStyle(effectiveProject === null)}
+                onClick={() => setCreateKind('session')}
+                data-testid="easy-new-session"
+                className="inline-flex h-8 flex-shrink-0 items-center justify-center gap-1.5 rounded-md border px-2.5 text-[11px] font-semibold transition-colors hover:bg-[var(--bg-hover)]"
+                style={{
+                  borderColor: 'color-mix(in srgb, var(--accent-primary) 42%, var(--border-color))',
+                  color: 'var(--accent-primary)',
+                  background: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)',
+                }}
+                title="新建会话"
               >
-                全部
+                <Plus className="h-3.5 w-3.5" />
+                <span>新会话</span>
               </button>
-              {projectOptions.map(project => (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => setSelectedProject(project.id)}
-                  title={project.name}
-                  className="inline-flex max-w-[180px] items-center gap-1 rounded-md px-2 py-1 text-[11px] leading-none transition-colors"
-                  style={projectChipStyle(effectiveProject === project.id)}
-                  data-project-id={project.id}
-                >
-                  <span className="truncate">{project.name}</span>
-                  <span className="opacity-70">{project.count}</span>
-                </button>
-              ))}
             </div>
-          )}
+
+            <p className="mt-1.5 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+              {effectiveProject ? `仅显示 ${selectedProjectOption?.name || effectiveProject} 的近期会话` : '跨项目显示最近活跃的会话'}
+            </p>
+          </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-2" data-testid="easy-recent-sessions">
             {loading ? (
@@ -310,6 +412,14 @@ export default function EasyModePage() {
           </main>
         )}
       </div>
+      {createKind && (
+        <GlobalCreateRoot
+          kind={createKind}
+          ctx={{ projectId: createDefaultProjectId, issueId: createDefaultIssueId }}
+          onClose={() => setCreateKind(null)}
+          onNavigate={navigate}
+        />
+      )}
     </div>
   )
 }

@@ -233,7 +233,7 @@ function AuthenticatedApp() {
     )
   }
   if (modeTarget && layoutMode === 'easy_mode') {
-    return <Navigate to={`/u/${modeTarget.user}/easy_mode`} replace />
+    return <Navigate to={`/u/${modeTarget.user}/easy_mode${location.search}${location.hash}`} replace />
   }
   return (
     <>
