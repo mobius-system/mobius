@@ -686,15 +686,17 @@ class TmuxCodexBackend extends AgentBackend {
   // (真要拿 codex 的 pending steer 输入, 只能走 app-server 协议查内存态, 非 JSONL 路径.)
   getPendingRequests(_sessionId) { return [] }
 
-  // 扫 Codex TUI 屏幕找最近一条 ErrorEvent.
-  // 信号设计 (参考 codex tui/src/history_cell/notices.rs:184):
-  //   - 主信号: ■ (U+25A0) — 所有 ErrorEvent 渲染前缀, 几乎只有错误用
-  //   - 辅信号: 任一红色 ANSI 序列 — 排除 ■ 的非错误用法
-  // 红色 ANSI 三种形式都得覆盖 (colored crate 视 terminfo 选不同 SGR):
-  //   - \x1b[31m / \x1b[1;31m           — 基础 16 色红 / 粗体红 (dumb terminal 走这条)
-  //   - \x1b[38;5;1m                     — 256 色调色板 index 1 红 (tmux 实测走这条)
-  //   - \x1b[38;2;255;G;Bm               — truecolor 红 (R 满 G/B 任意)
-  // 单靠颜色不可靠 (警告用黄、系统消息用灰也带 ANSI), 必须 ■ + 红色 双匹配.
+  // 扫 Codex TUI 屏幕找最近一条错误/警告通知, 转交前端.
+  // 信号设计 (源码实证 codex-rs/tui/src/history_cell/notices.rs, openai/codex):
+  //   - ■ (U+25A0) 行首 → new_error_event, 致命错误 (源码标红, 如 403 余额不足 / image banned)
+  //   - ⚠ (U+26A0) 行首 → new_warning_event(黄)/DeprecationNotice(红粗), 警告类 (如 model at capacity)
+  //   其余字形不扫: • info(dim) / ✨ update(青) / ⓘ safety(青) 都不是错误.
+  // 判定 = 剥 ANSI 后"行首是 ■ 或 ⚠", 不依赖颜色. 原因 (这是关键的"颜色问题"修复):
+  //   ① 警告类用 ⚠ 不是 ■, 旧"必须含 ■"直接漏掉所有警告;
+  //   ② 实测新版 codex 的 ⚠ 通知 (Selected model is at capacity...) 可完全不带 ANSI 颜色
+  //      (hexdump 确认行首 e2 9a a0 后无任何 \x1b), 旧"必须命中红色 ANSI"也漏;
+  //   ③ 依赖具体红色码本身就脆弱 (colored crate 视 terminfo 选 31/38;5;1/38;2;255, 跨版本/终端不一).
+  //   ■/⚠ 这两个字形 codex 只用于通知渲染, 行首出现即通知, 假阳性极低 (agent 正文不会以裸 ■/⚠ 起行).
   // 坑: Codex TUI 用 alt screen, 进程退出时内容会被销毁; 因此仅在 isAlive 时扫,
   //     历史 session 拿不到. 调用方需要时应另开后台 capture 循环落盘.
   getRecentError(sessionId) {
@@ -702,20 +704,18 @@ class TmuxCodexBackend extends AgentBackend {
     // -p stdout; -e 保留 ANSI; -S -N 只抓尾部 N 行 (避免全量 scrollback 扫描); -J 拼接折行避免错误被切行.
     const cap = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-e', '-S', `-${CODEX_ERROR_SCAN_TAIL_LINES}`, '-J'])
     if (cap.status !== 0) return null
-    const RED_RE = /\x1b\[(?:[0-9;]*;)?(?:31|38;5;1|38;2;255;[0-9]+;[0-9]+)m/
     const ANSI_RE = /\x1b\[[0-9;]*m/g
     const lines = String(cap.stdout || '').split('\n')
-    // 反向找最后一条命中 (最近的错误优先).
+    // 反向找最后一条命中 (最近的通知优先).
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i]
-      if (!line.includes('■')) continue
-      if (!RED_RE.test(line)) continue
-      const cleaned = line.replace(ANSI_RE, '').trim()
-      const idx = cleaned.indexOf('■')
-      return {
-        message: idx >= 0 ? cleaned.slice(idx).trim() : cleaned,
-        rawLine: line,
-        capturedAt: new Date().toISOString(),
+      const cleaned = line.replace(ANSI_RE, '').trimStart()
+      if (cleaned.startsWith('■') || cleaned.startsWith('⚠')) {
+        return {
+          message: cleaned.trim(),
+          rawLine: line,
+          capturedAt: new Date().toISOString(),
+        }
       }
     }
     return null
