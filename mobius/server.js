@@ -111,6 +111,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/tasks', tasksRoutes);
 app.use('/api/messages', messagesRoutes);
 app.use('/api/projects', projectsRoutes);
+app.use('/api/user-groups', require('./backend/routes/user-groups'));
 app.use('/api/projects/:projectId/issues', issuesUnderProject);
 app.use('/api/projects/:projectId/researches', researchesUnderProject);
 app.use('/api/projects/:projectId/skills', skillsUnderProject);

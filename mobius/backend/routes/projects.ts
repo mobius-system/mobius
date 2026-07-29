@@ -1846,10 +1846,19 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
   const visibility = normalizeProjectVisibility(req.body?.visibility, 'private');
   const canPostIssue = boolFromBody(req.body || {}, 'can_post_issue', 'canPostIssue', false);
   const canRunSession = boolFromBody(req.body || {}, 'can_run_session', 'canRunSession', false);
-  // 创建时一并加入的首批项目组成员 (member 角色); 仅普通/Research 项目生效, 排除创建者本人.
+  // 创建时一并加入的首批项目组成员; 支持 members (带角色, 优先) 或 member_user_ids (全 member). 排除创建者本人.
+  const rawMembers = req.body?.members;
+  const members = Array.isArray(rawMembers)
+    ? (rawMembers as any[])
+        .map((m: any) => ({
+          user_id: String(m?.user_id ?? m?.userId ?? '').trim(),
+          role: String(m?.role || 'member').trim() || 'member',
+        }))
+        .filter((m: { user_id: string; role: string }) => m.user_id && m.user_id !== user.id)
+    : null;
   const rawMemberIds = req.body?.member_user_ids ?? req.body?.memberUserIds;
-  const memberUserIds = Array.isArray(rawMemberIds)
-    ? Array.from(new Set((rawMemberIds as any[]).map((x: any) => String(x || '').trim()).filter(Boolean)))
+  const memberUserIds = !members && Array.isArray(rawMemberIds)
+    ? Array.from(new Set((rawMemberIds as any[]).map((x: any) => String(x || '').trim()).filter((u: string) => u && u !== user.id)))
     : [];
 
   // ── 莫比乌斯拓展项目 ──────────────────────────────────────────────────────
@@ -1931,6 +1940,7 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
       canRunSession,
       defaultModel: normalizedDefaultModel,
       memberUserIds,
+      members: members || undefined,
     });
   } catch (e) {
     return res.status(400).json({ error: (e as Error).message || '创建项目失败' });

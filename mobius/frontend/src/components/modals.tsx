@@ -27,7 +27,7 @@ import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ProjectCardThemePicker } from './project-card-theme-picker'
 import { ProjectAllowlistField } from './project-allowlist-field'
-import { ProjectMembersField } from './project-members-field'
+import { ProjectMemberInvite, type MemberInput } from './project-member-invite'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
@@ -371,8 +371,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
     extensionName?: string
     canPostIssue?: boolean
     canRunSession?: boolean
-    allowUserIds?: string[]
-    memberUserIds?: string[]
+    inviteMembers?: MemberInput[]
   }>(DRAFT_KEY)
   const guidedDemo = readActiveGuidedDemo()
   const guidedDemoState = guidedDemo?.state
@@ -396,11 +395,8 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
       ? initialDraft.visibility
       : 'private'
   )
-  const [allowUserIds, setAllowUserIds] = useState<string[]>(
-    Array.isArray(initialDraft?.allowUserIds) ? initialDraft.allowUserIds.filter(Boolean) : []
-  )
-  const [memberUserIds, setMemberUserIds] = useState<string[]>(
-    Array.isArray(initialDraft?.memberUserIds) ? initialDraft.memberUserIds.filter(Boolean) : []
+  const [inviteMembers, setInviteMembers] = useState<MemberInput[]>(
+    Array.isArray(initialDraft?.inviteMembers) ? initialDraft.inviteMembers.filter((m) => m && m.user_id) : []
   )
   const [pickerOpen, setPickerOpen] = useState(false)
   const [permissionOpen, setPermissionOpen] = useState(false)
@@ -435,11 +431,11 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
     if (isGuidedDemo) return
     const hasDraftContent = !!(name.trim() || desc.trim() || extensionName.trim() || (bindPath.trim() && bindPathSource === 'custom'))
     if (hasDraftContent) {
-      draftSave(DRAFT_KEY, { name, desc, bindPath, bindPathManual, defaultUseWorktree, researchEnabled, visibility, allowUserIds, memberUserIds, projectKind, extensionName, canPostIssue, canRunSession }, { minChars: 0 })
+      draftSave(DRAFT_KEY, { name, desc, bindPath, bindPathManual, defaultUseWorktree, researchEnabled, visibility, inviteMembers, projectKind, extensionName, canPostIssue, canRunSession }, { minChars: 0 })
     } else {
       draftClear(DRAFT_KEY)
     }
-  }, [isGuidedDemo, name, desc, bindPath, bindPathSource, bindPathManual, defaultUseWorktree, researchEnabled, visibility, allowUserIds, memberUserIds, projectKind, extensionName, canPostIssue, canRunSession])
+  }, [isGuidedDemo, name, desc, bindPath, bindPathSource, bindPathManual, defaultUseWorktree, researchEnabled, visibility, inviteMembers, projectKind, extensionName, canPostIssue, canRunSession])
 
   const refreshRandomBindPath = () => {
     let next = randomProjectBindPath(user?.work_dir)
@@ -486,7 +482,6 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
         name,
         description: desc,
         visibility,
-        allow_user_ids: allowUserIds,
         guidedDemoKind: isGuidedDemo ? guidedDemo?.kind : undefined,
       }
       if (projectKind === 'extension') {
@@ -499,8 +494,8 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
         body.bindPathManual = bindPathManual
         body.defaultUseWorktree = effectiveWt
         body.researchEnabled = projectKind === 'research' ? true : researchEnabled
-        // 首批项目组成员 (排除创建者本人, 他自动成为项目负责人).
-        body.member_user_ids = memberUserIds.filter(id => id && id !== user?.id)
+        // 首批项目组成员 (带角色; 排除创建者本人, 他自动成为项目负责人).
+        body.members = inviteMembers.filter(m => m.user_id && m.user_id !== user?.id)
       }
       const p = await api('/api/projects', {
         method: 'POST',
@@ -596,18 +591,12 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
         <h4 className="text-[15px] font-semibold mb-1" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改项目权限</h4>
         <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到项目，以及读者是否可以创建任务单或启动执行会话。</p>
         {visibilityControl}
-        <div className="mt-3">
-          <ProjectAllowlistField
-            visibility={visibility}
-            selectedIds={allowUserIds}
-            onChange={setAllowUserIds}
-          />
-        </div>
         {projectKind !== 'extension' && (
           <div className="mt-3">
-            <ProjectMembersField
-              selectedIds={memberUserIds}
-              onChange={setMemberUserIds}
+            <ProjectMemberInvite
+              value={inviteMembers}
+              onChange={setInviteMembers}
+              currentUserId={user?.id}
             />
           </div>
         )}

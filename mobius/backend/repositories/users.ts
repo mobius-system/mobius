@@ -120,6 +120,20 @@ function listGroupMemberships(userId: unknown): UserGroupMembershipRow[] {
   `).all(id) as UserGroupMembershipRow[];
 }
 
+// 列某员工群组下的当前启用成员 (id + 昵称). 用于"按群组批量加入项目": 选群组→展开成员.
+// 只返回安全字段, 不含密码/工作目录/偏好.
+function listGroupMembers(groupId: unknown): Array<{ id: string; display_name: string }> {
+  const gid = String(groupId || '').trim();
+  if (!gid) return [];
+  return db.prepare(`
+    SELECT u.id, u.display_name
+    FROM user_group_memberships ugm
+    JOIN users u ON u.id = ugm.user_id
+    WHERE ugm.group_id = ? AND ${ACTIVE_USER_SQL}
+    ORDER BY u.display_name COLLATE NOCASE ASC
+  `).all(gid) as Array<{ id: string; display_name: string }>;
+}
+
 const replaceGroupsTx = db.transaction((userId: unknown, rawGroupIds: unknown, actorId?: unknown) => {
   ensureDefaultGroup();
   const id = String(userId || '').trim();
@@ -431,6 +445,7 @@ const Users = {
     `).all(DEFAULT_GROUP_ID) as Array<UserGroupRawRow & { active_user_count: number; user_count: number }>).map(shapeGroup);
   },
   listGroupMemberships,
+  listGroupMembers,
   replaceGroups: (userId: unknown, groupIds: unknown, actorId?: unknown) => replaceGroupsTx(userId, groupIds, actorId),
   createGroup: (params: CreateGroupArgs) => createGroupTx(params || {}),
   updateGroup: (id: unknown, params: UpdateGroupArgs) => updateGroupTx(id, params || {}),

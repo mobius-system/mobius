@@ -193,6 +193,8 @@ interface InsertArgs {
   defaultModel?: string | null;
   // 创建项目时一同写入的首批成员 (member 角色); 任一非法会令整个创建事务回滚.
   memberUserIds?: string[];
+  // 带角色的首批成员 (优先于 memberUserIds); 每人可指定 viewer/member/manager.
+  members?: Array<{ user_id: string; role: string }>;
 }
 
 interface UpsertExtensionArgs {
@@ -264,7 +266,7 @@ const Projects = {
 
   // 创建项目 = 单事务: 写项目行 + 创建者 owner 关系 + 首批成员 (member).
   // 任一首批成员非法 → addMany 抛错 → 整个事务回滚, 不会留下"没有项目组的半成品项目".
-  insert: ({ id, name, description, createdBy, bindPath, bindPathManual, gitRepos, defaultUseWorktree, researchEnabled, visibility, canPostIssue, canRunSession, defaultModel, memberUserIds }: InsertArgs) => {
+  insert: ({ id, name, description, createdBy, bindPath, bindPathManual, gitRepos, defaultUseWorktree, researchEnabled, visibility, canPostIssue, canRunSession, defaultModel, memberUserIds, members }: InsertArgs) => {
     const insertProject = db.prepare(
       'INSERT INTO projects (id, name, description, created_by, bind_path, bind_path_manual, git_repos, default_use_worktree, research_enabled, visibility, can_post_issue, can_run_session, default_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
@@ -275,14 +277,21 @@ const Projects = {
         (typeof defaultModel === 'string' && defaultModel.trim()) ? defaultModel.trim() : null);
       // 创建者自动成为项目负责人 (owner).
       ProjectMemberships.ensureOwner(id, createdBy, createdBy);
-      // 创建时选的首批成员 (排除创建者本人, 他已是 owner), 全部以 member 角色加入.
-      if (Array.isArray(memberUserIds) && memberUserIds.length) {
-        const initial = Array.from(new Set(
-          memberUserIds.map((u) => String(u || '').trim()).filter((u) => u && u !== createdBy)
-        ));
-        if (initial.length) {
-          ProjectMemberships.addMany({ projectId: id, userIds: initial, role: 'member', actorId: createdBy });
-        }
+      // 首批成员: 优先用带角色的 members, 否则回落到 memberUserIds (全 member). 排除创建者本人.
+      const rawInitial = Array.isArray(members) && members.length
+        ? members.map((m) => ({ user_id: String((m && m.user_id) || '').trim(), role: String((m && m.role) || 'member').trim() || 'member' }))
+        : (Array.isArray(memberUserIds) ? memberUserIds.map((u) => ({ user_id: String(u || '').trim(), role: 'member' })) : []);
+      // 同一用户只保留首次出现的角色.
+      const seen = new Set<string>();
+      const byRole = new Map<string, string[]>();
+      for (const m of rawInitial) {
+        if (!m.user_id || m.user_id === createdBy || seen.has(m.user_id)) continue;
+        seen.add(m.user_id);
+        if (!byRole.has(m.role)) byRole.set(m.role, []);
+        byRole.get(m.role)!.push(m.user_id);
+      }
+      for (const [role, userIds] of byRole) {
+        ProjectMemberships.addMany({ projectId: id, userIds, role, actorId: createdBy });
       }
     });
     return tx();

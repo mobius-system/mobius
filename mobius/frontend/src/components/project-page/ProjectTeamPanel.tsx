@@ -46,6 +46,9 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
   const [err, setErr] = useState('')
   const [pendingIds, setPendingIds] = useState<string[]>([])
   const [adding, setAdding] = useState(false)
+  const [addRole, setAddRole] = useState<Role>('member')
+  const [groups, setGroups] = useState<Array<{ id: string; name: string; active_user_count: number }>>([])
+  const [groupOpen, setGroupOpen] = useState(false)
   const [busyId, setBusyId] = useState('')
 
   useEffect(() => {
@@ -74,12 +77,43 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
     try {
       const data = await api(`/api/projects/${projectId}/members`, {
         method: 'POST',
-        body: JSON.stringify({ user_ids: pendingIds, role: 'member' }),
+        body: JSON.stringify({ user_ids: pendingIds, role: addRole }),
       })
       applyResult(data)
       setPendingIds([])
     } catch (e: any) {
       setErr(e?.message || '添加成员失败')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const toggleGroups = async () => {
+    if (groups.length) { setGroupOpen((o) => !o); return }
+    try {
+      const list = await api('/api/user-groups')
+      setGroups(Array.isArray(list) ? list : [])
+      setGroupOpen(true)
+    } catch (e: any) {
+      setErr(e?.message || '读取群组失败')
+    }
+  }
+
+  const addGroup = async (groupId: string) => {
+    setGroupOpen(false)
+    if (!groupId) return
+    setAdding(true); setErr('')
+    try {
+      const data: any = await api(`/api/user-groups/${groupId}/members`)
+      const ids = (Array.isArray(data?.members) ? data.members : []).map((m: any) => m.id).filter(Boolean)
+      if (!ids.length) { setErr('该群组当前没有启用成员'); return }
+      const res = await api(`/api/projects/${projectId}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ user_ids: ids, role: addRole }),
+      })
+      applyResult(res)
+    } catch (e: any) {
+      setErr(e?.message || '按群组加入失败')
     } finally {
       setAdding(false)
     }
@@ -130,20 +164,55 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
       {canManage && (
         <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
           <div className="text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>添加项目组成员</div>
-          <UserPicker
-            selectedIds={pendingIds}
-            onChange={setPendingIds}
-            searchPath={`/api/projects/${projectId}/member-candidates`}
-            placeholder="搜索员工账号或昵称..."
-            emptyHint="输入账号或昵称搜索启用员工"
-          />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <div className="flex-1 min-w-0">
+              <UserPicker
+                selectedIds={pendingIds}
+                onChange={setPendingIds}
+                searchPath={`/api/projects/${projectId}/member-candidates`}
+                placeholder="搜索员工账号或昵称..."
+                emptyHint="输入账号或昵称搜索启用员工"
+              />
+            </div>
+            <select value={addRole} onChange={(e) => setAddRole(e.target.value as Role)} disabled={adding}
+              className="h-9 px-2 rounded-lg text-[12px] border flex-shrink-0"
+              style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
+              <option value="member">开发者</option>
+              <option value="manager">项目管理员</option>
+              <option value="viewer">访客</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
             <button type="button" onClick={addMembers} disabled={!pendingIds.length || adding}
               className="h-8 px-3 rounded-lg text-[12px] btn-primary transition-colors disabled:opacity-50">
               {adding ? '添加中...' : '加入项目组'}
             </button>
+            <div className="relative">
+              <button type="button" onClick={toggleGroups} disabled={adding}
+                className="h-8 px-3 rounded-lg text-[12px] border transition-colors"
+                style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)', background: 'var(--modal-bg)' }}>
+                + 按群组加入
+              </button>
+              {groupOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setGroupOpen(false)} />
+                  <div className="absolute z-50 mt-1 w-64 max-h-60 overflow-auto rounded-lg border shadow-lg"
+                    style={{ background: 'var(--modal-bg)', borderColor: 'var(--input-border)' }}>
+                    {groups.length === 0 ? (
+                      <div className="px-3 py-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无群组</div>
+                    ) : groups.map((g) => (
+                      <button key={g.id} type="button" onClick={() => addGroup(g.id)}
+                        className="block w-full text-left px-3 py-2 text-[12px] hover:bg-[var(--bg-card-hover)] transition-colors"
+                        style={{ color: 'var(--text-secondary)' }}>
+                        {g.name} <span style={{ color: 'var(--text-muted)' }}>· {g.active_user_count} 位启用成员</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             {pendingIds.length > 0 && (
-              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>已选 {pendingIds.length} 人（以「项目成员」加入）</span>
+              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>已选 {pendingIds.length} 人</span>
             )}
           </div>
         </div>

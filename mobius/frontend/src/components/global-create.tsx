@@ -20,8 +20,7 @@ import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ErrBanner, PathPickerModal, PcTaskModeSection, formatDefaultSessionName } from './modals'
 import { ToggleSwitch } from './toggle-switch'
-import { ProjectAllowlistField } from './project-allowlist-field'
-import { ProjectMembersField } from './project-members-field'
+import { ProjectMemberInvite, type MemberInput } from './project-member-invite'
 import { SessionModelPicker } from './session-model-picker'
 import { ExpandableTextarea } from './expandable-textarea'
 import { type Attachment, newAttId, formatFileSize, uploadAttachmentFile, appendAttachmentsToDesc } from './attachments'
@@ -714,11 +713,8 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   const [researchEnabled, setResearchEnabled] = useState(projectKind === 'research' || !!d.researchEnabled)
   const [defaultUseWorktree, setDefaultUseWorktree] = useState(!!d.defaultUseWorktree)
   const [visibility, setVisibility] = useState<Visibility>(d.visibility || 'private')
-  const [allowUserIds, setAllowUserIds] = useState<string[]>(
-    Array.isArray(d.allowUserIds) ? d.allowUserIds.filter(Boolean) : []
-  )
-  const [memberUserIds, setMemberUserIds] = useState<string[]>(
-    Array.isArray(d.memberUserIds) ? d.memberUserIds.filter(Boolean) : []
+  const [inviteMembers, setInviteMembers] = useState<MemberInput[]>(
+    Array.isArray(d.inviteMembers) ? d.inviteMembers.filter((m: any) => m && m.user_id) : []
   )
   const [extensionName, setExtensionName] = useState(d.extensionName || '')
   // 读者写权限 (对齐 NewProjectModal): owner/admin 永远可写, 此开关只对"非 owner 读者"生效. 默认 false (安全默认).
@@ -742,8 +738,8 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   }
 
   useEffect(() => {
-    draftSave(DRAFT_KEY, { projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, allowUserIds, memberUserIds, extensionName, canPostIssue, canRunSession }, { minChars: 0 })
-  }, [projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, allowUserIds, memberUserIds, extensionName, canPostIssue, canRunSession])
+    draftSave(DRAFT_KEY, { projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, inviteMembers, extensionName, canPostIssue, canRunSession }, { minChars: 0 })
+  }, [projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, inviteMembers, extensionName, canPostIssue, canRunSession])
 
   // 自动随机路径未填则补上 (extension 不需要 bindPath)
   useEffect(() => {
@@ -769,7 +765,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
     } else if (!bindPath.trim()) { setErr('请选择项目绑定路径'); return }
     setLoading(true); setErr('')
     try {
-      const body: any = { name, description: desc, visibility, allow_user_ids: allowUserIds }
+      const body: any = { name, description: desc, visibility }
       if (projectKind === 'extension') {
         body.kind = 'extension'
         body.extensionName = extensionName.trim()
@@ -780,8 +776,8 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
         body.researchEnabled = projectKind === 'research' ? true : researchEnabled
         body.can_post_issue = canPostIssue
         body.can_run_session = canRunSession
-        // 首批项目组成员 (排除创建者本人, 他自动成为项目负责人).
-        body.member_user_ids = memberUserIds.filter(id => id && id !== user?.id)
+        // 首批项目组成员 (带角色; 排除创建者本人, 他自动成为项目负责人).
+        body.members = inviteMembers.filter((m: MemberInput) => m.user_id && m.user_id !== user?.id)
       }
       const p = await api('/api/projects', { method: 'POST', body: JSON.stringify(body) })
       if (p?.error) { setErr(p.error); return }
@@ -814,18 +810,12 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
           </div>
           <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{visibilityOption.desc}</p>
         </div>
-        <div className="mt-4">
-          <ProjectAllowlistField
-            visibility={visibility}
-            selectedIds={allowUserIds}
-            onChange={setAllowUserIds}
-          />
-        </div>
         {projectKind !== 'extension' && (
           <div className="mt-4">
-            <ProjectMembersField
-              selectedIds={memberUserIds}
-              onChange={setMemberUserIds}
+            <ProjectMemberInvite
+              value={inviteMembers}
+              onChange={setInviteMembers}
+              currentUserId={user?.id}
             />
           </div>
         )}
