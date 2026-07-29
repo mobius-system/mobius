@@ -3889,7 +3889,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="text-[12px] mb-3 p-3 rounded-lg leading-relaxed" style={{ background: theme !== 'light' ? 'rgba(56,189,248,0.10)' : '#f0f7ff', color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
-          <span className="font-semibold">aimux 能为你做什么：</span>把任意一台电脑（Windows / Mac / Linux）连进莫比乌斯，让智能体在那台机器上运行命令、读写文件，甚至调度多台机器协同。下面是把<strong className="font-semibold">另一台</strong>计算机也接进来的步骤。
+          <span className="font-semibold">AIMUX 是什么：</span>AIMUX 是莫比乌斯系统的触手：它可以把任意计算机（Windows / Mac / Linux）接入莫比乌斯，甚至调度多台机器协同。下面是把<strong className="font-semibold">另一台</strong>计算机也接进来的步骤。
         </div>
 
         {renderSectionTitle('1. 在外部机器上安装 aimux (Python 3.10+)')}
