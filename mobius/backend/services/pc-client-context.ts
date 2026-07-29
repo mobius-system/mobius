@@ -18,6 +18,12 @@ export interface PcClientMetadata {
    * and let absence fall through the null-meta early-return.
    */
   is_tui?: boolean;
+  /**
+   * Explicit opt-in for the aimux remote_* MCP toolset. The Mobius TUI sets this
+   * to true alongside is_tui. aimuxRemoteNameFromMeta gates MCP injection on
+   * this flag (not is_tui alone), so the feature is opt-in per session.
+   */
+  add_remote_aimux_mcp?: boolean;
 }
 
 export function parsePcClientMetadata(raw: unknown): PcClientMetadata | null {
@@ -29,13 +35,19 @@ export function parsePcClientMetadata(raw: unknown): PcClientMetadata | null {
 }
 
 /**
- * For Mobius TUI sessions (is_tui === true) bound to an aimux remote, return
- * that remote name (aimux_id); otherwise undefined. Used to gate per-session
- * MCP injection when spawning codex.
+ * For Mobius TUI sessions that opted into the aimux remote_* MCP toolset
+ * (is_tui === true AND add_remote_aimux_mcp === true) and are bound to an
+ * aimux remote, return that remote name (aimux_id); otherwise undefined.
+ * Used to gate per-session MCP injection when spawning codex / claude-code.
  */
 export function aimuxRemoteNameFromMeta(raw: unknown): string | undefined {
   const meta = parsePcClientMetadata(raw);
-  if (meta?.is_tui === true && typeof meta.aimux_id === 'string' && meta.aimux_id.trim()) {
+  if (
+    meta?.is_tui === true &&
+    meta?.add_remote_aimux_mcp === true &&
+    typeof meta.aimux_id === 'string' &&
+    meta.aimux_id.trim()
+  ) {
     return meta.aimux_id.trim();
   }
   return undefined;
@@ -65,24 +77,24 @@ export function pcTaskModePrompt(raw: unknown, language: ContextLanguage): strin
   const remotePath = pathClause(meta, language);
 
   // TUI client
-  let tuiPrompt = `You are working at remote machine ${aimuxId}${remotePath}. When I say 'here', I mean remote path [${remotePath}] at ${aimuxId}. When I say 'local', I mean ${aimuxId}. In your text answer, do not mention 'aimux' to avoid confusion, but you can use 'aimux' as a tool without limitation. Do not mention to user you are working remotely (although in fact you are working remotely).`;
+  let tuiPrompt = `You are working at remote machine ${aimuxId}${remotePath}. When I say 'here', I mean remote path [${remotePath}] at ${aimuxId}. When I say 'local', I mean ${aimuxId}. You operate this remote computer through the remote_* tools (remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping); these tools act directly on ${aimuxId} — the computer whose hostname is encoded in that identifier. In your text answer, do not mention 'aimux' or reveal that you are working remotely (although in fact you are working remotely).`;
   let modePrompt = ``;
   if (meta.is_tui === true) {
     if (language === 'en') {
       if (mode === 'hub') {
-        modePrompt = `Do not use aimux to connect to the following remote object: ${aimuxId}. Work in the Mobius Hub (that is, locally).`;
+        modePrompt = `Do not use the remote_* tools to operate the following remote object: ${aimuxId}. Work in the Mobius Hub (that is, locally).`;
       } else if (mode === 'pc') {
-        modePrompt = `Use aimux to connect to the following remote object to carry out all work: ${aimuxId}${remotePath}. When you need to modify documents, first sync the project to the Mobius Hub (that is, locally), then immediately sync every change back to the path specified by ${aimuxId}, unless the user objects. If the user objects, read or modify files directly through aimux commands.`;
+        modePrompt = `Carry out all work on the following remote object via the remote_* tools: ${aimuxId}${remotePath}. When you need to modify documents, first sync the project to the Mobius Hub (that is, locally), then immediately sync every change back to the path specified by ${aimuxId}, unless the user objects. If the user objects, read or modify files directly through the remote_* tools.`;
       } else {
-        modePrompt = `You are authorized to use aimux to connect to the following remote object: ${aimuxId}. When you need to modify code, first modify the local code, then sync all the code to ${aimuxId}, unless the user objects. When the user asks you to run code, follow the same rule. Remote path you are allowed to operate is: ${remotePath}.`;
+        modePrompt = `You are authorized to operate the following remote object via the remote_* tools: ${aimuxId}. When you need to modify code, first modify the local code, then sync all the code to ${aimuxId}, unless the user objects. When the user asks you to run code, follow the same rule. Remote path you are allowed to operate is: ${remotePath}.`;
       }
     } else {
       if (mode === 'hub') {
-        modePrompt = `不要使用aimux连接到以下远程对象： ${aimuxId}，在mobius中枢（即本地）工作`;
+        modePrompt = `不要使用 remote_* 工具操作以下远程对象： ${aimuxId}，在mobius中枢（即本地）工作`;
       } else if (mode === 'pc') {
-        modePrompt = `使用aimux连接到以下远程对象执行所有工作：${aimuxId}${remotePath}。当你需要修改文档时，先将项目同步到mobius中枢（即本地），每次修改后都立即同步回到 ${aimuxId} 指定路径，除非用户反对你这样做。如果用户反对，直接通过aimux命令读取或修改文件`;
+        modePrompt = `通过 remote_* 工具在以下远程对象上执行所有工作：${aimuxId}${remotePath}。当你需要修改文档时，先将项目同步到mobius中枢（即本地），每次修改后都立即同步回到 ${aimuxId} 指定路径，除非用户反对你这样做。如果用户反对，直接通过 remote_* 工具读取或修改文件`;
       } else {
-        modePrompt = `你现在被授权使用aimux连接到以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则，可操作远程路径${remotePath}。`;
+        modePrompt = `你现在被授权通过 remote_* 工具操作以下远程对象： ${aimuxId}，当你需要修改代码时，先修改本地的代码，然后把代码都要同步到${aimuxId}上，除非用户反对你这样做。当用户需要你运行代码时，遵循一样的规则，可操作远程路径${remotePath}。`;
       }
     }
     return `${tuiPrompt}\n${modePrompt}`;

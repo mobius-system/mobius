@@ -86,6 +86,7 @@ export interface PcClientMetadata {
   aimux_id: string
   local_path?: string
   is_tui: boolean
+  add_remote_aimux_mcp?: boolean
 }
 
 // NOTE: the identifier field is `session_id`, not `id`.

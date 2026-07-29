@@ -277,6 +277,7 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
         aimux_id: tuiAimuxIdentifier(),
         local_path: process.cwd(),
         is_tui: true,
+        add_remote_aimux_mcp: true,
       },
     })
     const sid = s.session_id

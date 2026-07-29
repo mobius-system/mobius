@@ -10,7 +10,7 @@ import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Check, ChevronDown, CircleDot, CircleQuestionMark, Columns2, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { pollRecursive } from '../services/polling'
@@ -18,7 +18,7 @@ import { useIsMobile } from './resizable-panel'
 import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
-import { setLayoutMode, useLayoutMode } from '../services/layout-mode'
+import { setLayoutMode, useLayoutMode, type LayoutMode } from '../services/layout-mode'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入)。三平台 (Win/Linux/mac) 统一: 顶栏右侧渲染
@@ -689,6 +689,14 @@ function RecentSessionsPanel({
 // 包含：Mobius logo、面包屑（user/project/issue）、搜索、主题切换、用户菜单
 // 管理员通过弹层（覆盖右侧主区域）
 // =====================================================================
+
+// 使用模式二选一 (常规 / 简易) — 用户菜单里的全局布局模式切换入口。
+// 两模式均渲染 TopNav, 故此处在两方向下都可达, 解决"埋在主题菜单里切不了"的问题。
+const LAYOUT_MODE_OPTIONS: Array<{ mode: LayoutMode; label: string; desc: string; icon: typeof Columns2 }> = [
+  { mode: 'normal_mode', label: '常规模式', desc: '多项目并行 · 完整功能', icon: Columns2 },
+  { mode: 'easy_mode', label: '简易模式', desc: '专注会话 · 精简界面', icon: LayoutPanelTop },
+]
+
 export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const {
     user,
@@ -739,7 +747,16 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const layoutMode = useLayoutMode()
-  const easyModeEnabled = layoutMode === 'easy_mode'
+  // 切换全局布局模式并落到对应路由: 简易模式进 /easy_mode; 切回常规且当前在简易页则回用户主页。
+  const switchLayoutMode = (mode: LayoutMode) => {
+    setLayoutMode(mode)
+    setShowUserMenu(false)
+    if (mode === 'easy_mode') {
+      navigate(`/u/${userParam}/easy_mode`)
+    } else if (/^\/u\/[^/]+\/easy_mode\/?$/.test(location.pathname)) {
+      navigate(`/u/${userParam}`)
+    }
+  }
   const [showChangePw, setShowChangePw] = useState(false)
   const [showAimuxGuide, setShowAimuxGuide] = useState(false)
   const [showDesktopDownload, setShowDesktopDownload] = useState(false)
@@ -1287,50 +1304,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                     />
                   </span>
                 </button>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-label="简易模式"
-                  aria-checked={easyModeEnabled}
-                  data-testid="easy-mode-switch"
-                  onClick={() => {
-                    const nextEnabled = !easyModeEnabled
-                    setLayoutMode(nextEnabled ? 'easy_mode' : 'normal_mode')
-                    setShowThemeMenu(false)
-                    if (nextEnabled) {
-                      navigate(`/u/${userParam}/easy_mode`)
-                    } else if (/^\/u\/[^/]+\/easy_mode\/?$/.test(location.pathname)) {
-                      navigate(`/u/${userParam}`)
-                    }
-                  }}
-                  className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  <LayoutPanelTop className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[12px] font-semibold leading-4">简易模式</span>
-                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
-                      精简会话界面 · {easyModeEnabled ? '已开启' : '已关闭'}
-                    </span>
-                  </span>
-                  <span
-                    className="relative h-5 w-9 shrink-0 rounded-full border transition-colors"
-                    style={{
-                      background: easyModeEnabled ? 'color-mix(in srgb, var(--accent-primary) 28%, transparent)' : 'var(--input-bg)',
-                      borderColor: easyModeEnabled ? 'color-mix(in srgb, var(--accent-primary) 46%, var(--border-color))' : 'var(--border-color-strong)',
-                    }}
-                  >
-                    <span
-                      className="absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-transform"
-                      style={{
-                        left: 2,
-                        background: easyModeEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
-                        transform: easyModeEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
-                        boxShadow: easyModeEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
-                      }}
-                    />
-                  </span>
-                </button>
                 {customThemes.length > 0 && (
                   <>
                     <div className="my-1.5 border-t" style={{ borderColor: 'var(--border-color)' }} />
@@ -1400,6 +1373,30 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               <div className="absolute right-0 top-9 z-50 rounded-lg shadow-xl py-1 min-w-[180px]"
                 style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
                 onClick={e => e.stopPropagation()}>
+                {/* 使用模式 — 全局布局模式二选一 (常规/简易), 替代原埋在主题菜单里的开关, 两方向均可切 */}
+                <div className="px-3 pt-1.5 pb-1 text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>使用模式</div>
+                {LAYOUT_MODE_OPTIONS.map(opt => {
+                  const Icon = opt.icon
+                  const active = (layoutMode || 'normal_mode') === opt.mode
+                  return (
+                    <button
+                      key={opt.mode}
+                      type="button"
+                      onClick={() => switchLayoutMode(opt.mode)}
+                      title={active ? '当前模式' : `切换到${opt.label}`}
+                      className="w-full px-3 py-1.5 text-left hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors"
+                      style={{ color: 'var(--text-primary)', background: active ? 'var(--bg-active)' : undefined }}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: active ? 'var(--accent-primary)' : 'var(--text-muted)' }} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[12px] font-medium leading-4">{opt.label}</span>
+                        <span className="block truncate text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>{opt.desc}</span>
+                      </span>
+                      {active && <Check className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />}
+                    </button>
+                  )
+                })}
+                <div className="border-t my-0.5" style={{ borderColor: 'var(--border-color)' }} />
                 {user?.role === 'admin' && (
                   <button onClick={() => { setShowUserMenu(false); window.openAdminOverlay?.() }}
                     className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"

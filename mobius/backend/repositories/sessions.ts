@@ -85,7 +85,7 @@ interface InsertArgs {
   model?: string;
   language?: SessionLanguage;
   // PC 任务模式 (Electron/TUI): web 端 null/缺省.
-  pc_client_metadata?: { work_mode: string; aimux_id: string; local_path?: string; is_tui?: boolean } | null;
+  pc_client_metadata?: { work_mode: string; aimux_id: string; local_path?: string; is_tui?: boolean; add_remote_aimux_mcp?: boolean } | null;
 }
 
 // Session list endpoints feed cards/sidebars. Keep heavy snapshots out of these

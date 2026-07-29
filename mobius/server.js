@@ -308,6 +308,13 @@ server.listen(PORT, () => {
   console.log(`[mobius] MOBIUS Mobius listening on http://0.0.0.0:${PORT}`);
   console.log(`[mobius] health: http://0.0.0.0:${PORT}/api/v2/health`);
   console.log(`[mobius] backend: tmux agents (socket=${AGENT_TMUX_SOCKET}, window-per-session) + jsonl-watcher`);
+  // 启动即确保 agent 专用 tmux server (tmux -L mobius-agent) 存在: 不存在则创建,
+  // 并固定 default-terminal=tmux-256color, 使所有 detached agent pane 的 $TERM 一致.
+  try {
+    require('./backend/agents/tmux-operation-log').ensureAgentTmuxServer();
+  } catch (e) {
+    console.warn(`[mobius] tmux agent server 启动初始化失败 (socket=${AGENT_TMUX_SOCKET}, 将在首次使用时重试):`, e.message);
+  }
   // 拓展系统启动 diff: 扫描 mobius/extension/<name>/extension.json, 与 projects(kind=extension) 同步.
   try {
     const r = extensionRegistry.reload();
