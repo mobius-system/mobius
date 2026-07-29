@@ -11,6 +11,7 @@
 ## Global Constraints
 
 - Every enabled employee may create a normal project; the creator becomes its first `owner` in the same transaction.
+- Normal-project creation accepts optional initial `member_user_ids`; selected enabled employees become `member` roles in the same transaction.
 - Only system administrators manage long-lived employee groups and their memberships.
 - Project `owner` and `manager` roles manage dynamic project members; system administrators retain global override.
 - A project must always retain at least one active `owner`.
@@ -38,6 +39,8 @@
 - Modify `mobius/frontend/src/components/panels.tsx`: change employee administration from one group select to multi-group selection.
 - Create `mobius/frontend/src/components/project-page/ProjectTeamPanel.tsx`: isolate project-team loading and mutations from the already-large settings panel.
 - Modify `mobius/frontend/src/components/project-page/ProjectSettingsPanel.tsx`: render the project-team panel and use project-role permissions.
+- Modify `mobius/frontend/src/components/modals.tsx`: select initial project-team members in the normal/research project creation flow.
+- Modify `mobius/frontend/src/components/global-create.tsx`: provide the same initial-member selection in the global quick-create flow.
 - Modify `mobius/frontend/src/store.ts`: type group arrays and project role fields returned by the APIs.
 - Create `mobius/tests/user-group-memberships.js`: cover migration and repository behavior.
 - Create `mobius/tests/project-memberships.js`: cover roles, access-control integration, and last-owner rules.
@@ -336,6 +339,7 @@ git commit -m "Add project team roles to access control"
 
 **Interfaces:**
 - `Projects.insert()` atomically creates the project and owner membership.
+- `Projects.insert()` consumes optional `memberUserIds` and atomically creates initial `member` rows after validating enabled employees.
 - `GET /api/projects/:id/members` returns `{ members, can_manage, actor_role }`.
 - `GET /api/projects/:id/member-candidates?q=` returns safe enabled-employee identity and group summaries to project-team managers.
 - `POST /api/projects/:id/members` accepts `{ user_ids, role }`.
@@ -343,9 +347,9 @@ git commit -m "Add project team roles to access control"
 - `PATCH /api/projects/:id/members/:userId` accepts `{ role }`.
 - `DELETE /api/projects/:id/members/:userId` removes a member.
 
-- [ ] **Step 1: Add failing atomic-create and route-contract tests**
+- [ ] **Step 1: Add failing atomic-create, initial-member, and route-contract tests**
 
-Extend `tests/project-memberships.js` to assert `Projects.insert()` creates an owner row and that failed membership insertion rolls back project creation. Add source-level route contract checks for all five endpoints and their management guard.
+Extend `tests/project-memberships.js` to assert `Projects.insert()` creates an owner row, adds deduplicated `memberUserIds` as `member`, ignores the creator if repeated in `memberUserIds`, and rolls back project creation when any selected employee is missing or disabled. Add source-level route contract checks for all member endpoints and their management guard.
 
 - [ ] **Step 2: Run the test and verify failure**
 
@@ -355,7 +359,7 @@ Expected: FAIL because project insertion is not transactional and routes are abs
 
 - [ ] **Step 3: Make normal project insertion atomic**
 
-Wrap existing `Projects.insert` SQL and `ProjectMemberships.ensureOwner(id, createdBy)` in a `db.transaction`. Extension project upsert remains administrator-only and does not expose a normal project team unless explicitly migrated later.
+Wrap existing `Projects.insert` SQL, `ProjectMemberships.ensureOwner(id, createdBy)`, and `ProjectMemberships.addMany({ projectId: id, userIds: memberUserIds, role: 'member', actorId: createdBy })` in a `db.transaction`. Validate every initial member before inserting the project so a bad selection cannot leave a half-created project. Extension project upsert remains administrator-only and does not expose a normal project team.
 
 - [ ] **Step 4: Add member routes with a shared guard**
 
@@ -396,6 +400,8 @@ git commit -m "Expose project team management APIs"
 **Files:**
 - Modify: `mobius/frontend/src/components/panels.tsx`
 - Modify: `mobius/frontend/src/store.ts`
+- Modify: `mobius/frontend/src/components/modals.tsx`
+- Modify: `mobius/frontend/src/components/global-create.tsx`
 
 **Interfaces:**
 - Admin employee rows consume `group_ids` and `groups` while falling back to legacy `group_id`.
@@ -465,10 +471,11 @@ git commit -m "Add multi-group employee administration"
 - Loads `GET /api/projects/:id/members`.
 - Mutates through the four project member write endpoints.
 - Employee/group search consumes `GET /api/projects/:id/member-candidates?q=` so non-admin project owners never receive password, work-directory, preference, or administrator-only account fields.
+- `NewProjectModal` and `CreateProjectForm` consume the safe `/api/auth/user-search` identity endpoint and submit `member_user_ids` for normal/research projects.
 
 - [ ] **Step 1: Add a failing source contract test**
 
-Assert that `ProjectSettingsPanel.tsx` imports and renders `ProjectTeamPanel`, and that the component source references the members list/add/update/delete endpoints. Run `npm run test:project-memberships` and expect failure.
+Assert that `ProjectSettingsPanel.tsx` imports and renders `ProjectTeamPanel`, that the component source references the members list/add/update/delete endpoints, and that both `NewProjectModal` and `CreateProjectForm` render a “项目组成员” picker and submit `member_user_ids`. Run `npm run test:project-memberships` and expect failure.
 
 - [ ] **Step 2: Connect the safe project-member candidates API**
 
@@ -489,19 +496,29 @@ const PROJECT_ROLE_LABELS = {
 }
 ```
 
-- [ ] **Step 4: Implement group snapshot selection**
+- [ ] **Step 4: Add initial members to project creation**
+
+In both `NewProjectModal` and `CreateProjectForm`, add `memberUserIds` to draft state for normal/research projects. Render a `UserPicker` section labeled “项目组成员（可选）” below the project permission summary, explain that the creator is automatically the project负责人, and send:
+
+```ts
+body.member_user_ids = memberUserIds.filter(id => id !== user?.id)
+```
+
+Do not render this control for extension projects. Preserve selected members when reopening the creation draft and clear them after successful creation.
+
+- [ ] **Step 5: Implement group snapshot selection**
 
 Selecting an employee group loads current enabled members, shows a confirmation checklist, and submits only checked IDs to `/members/from-group`. Do not silently add future group members.
 
-- [ ] **Step 5: Implement permission-aware actions and error recovery**
+- [ ] **Step 6: Implement permission-aware actions and error recovery**
 
 Hide management controls for members/viewers, show the system-administrator override notice when applicable, disable only the active mutation, refresh after successful mutations, and preserve the current list with an inline error if refresh fails.
 
-- [ ] **Step 6: Render the panel in project settings**
+- [ ] **Step 7: Render the panel in project settings**
 
 Place it before the existing “权限设置” card because membership is the primary collaboration model and visibility/allow-list is the secondary sharing model. Update copy under visibility settings to distinguish project members from public/allow-list readers.
 
-- [ ] **Step 7: Run build and focused tests**
+- [ ] **Step 8: Run build and focused tests**
 
 Run:
 
@@ -515,10 +532,10 @@ npm run build
 
 Expected: all commands exit 0.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add mobius/frontend/src/components/project-page/ProjectTeamPanel.tsx mobius/frontend/src/components/project-page/ProjectSettingsPanel.tsx mobius/frontend/src/store.ts mobius/tests/project-memberships.js
+git add mobius/frontend/src/components/project-page/ProjectTeamPanel.tsx mobius/frontend/src/components/project-page/ProjectSettingsPanel.tsx mobius/frontend/src/components/modals.tsx mobius/frontend/src/components/global-create.tsx mobius/frontend/src/store.ts mobius/tests/project-memberships.js
 git commit -m "Add project team management interface"
 ```
 
