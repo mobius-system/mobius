@@ -3900,6 +3900,12 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
           <span className="font-semibold">AIMUX 是什么：</span>AIMUX 是莫比乌斯系统的触手：它负责把任意计算机（Windows / Mac / Linux）接入莫比乌斯中枢，形成协作网络，从而完成复杂跨设备任务。AIMUX专门针对 <strong>缺SSH/SSH不可达</strong> 的桌面笔记本、工作站、嵌入式设备、网络受限设备设计。
         </div>
 
+        {typeof window !== 'undefined' && (window as any).mobiusDesktop?.isDesktop && (
+          <div className="text-[12px] mb-3 p-3 rounded-lg leading-relaxed" style={{ background: theme !== 'light' ? 'rgba(16,185,129,0.10)' : '#f0fdf4', color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
+            您正在使用桌面客户端，<strong>已自动连接</strong>，无需手动连接。当您需要连接更多<strong>其他</strong>计算机时，可在<strong>其他</strong>设备上运行下面的命令。
+          </div>
+        )}
+
         {renderSectionTitle('1. 在外部机器上安装 aimux (Python 3.10+)')}
         {renderCodeBlock('install', installCmd)}
 
