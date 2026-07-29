@@ -65,7 +65,7 @@ function SessionJsonlPanelInner({
     : undefined
 
   return (
-    <div data-tour="session-jsonl-view" className="mobius-chat-history flex flex-col min-w-0" style={{ width: '68%' }}>
+    <div data-tour="session-jsonl-view" className="mobius-chat-history flex min-w-0 flex-1 flex-col">
       <div
         className="flex-1 overflow-y-auto relative"
         ref={chatContainerRef}

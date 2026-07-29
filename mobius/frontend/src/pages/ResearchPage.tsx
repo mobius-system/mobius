@@ -244,7 +244,7 @@ export default function ResearchPage() {
                 </button>
                 {project && (
                   <Link to={`/u/${userParam}/p/${projectId}`}
-                    className="text-[11px] hover:text-blue-400 transition-colors" style={{ color: 'var(--text-muted)' }}>
+                    className="text-[11px] hover:text-blue-400 transition-colors truncate" style={{ color: 'var(--text-muted)' }}>
                     ← {project.name}
                   </Link>
                 )}

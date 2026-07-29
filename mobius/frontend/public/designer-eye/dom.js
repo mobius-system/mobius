@@ -223,8 +223,7 @@ function collectSignals(element, ancestryElements) {
   return Array.from(unique.values()).slice(0, 18)
 }
 
-function semanticOwnerOf(exact, forceExact = false) {
-  if (forceExact) return exact
+function semanticOwnerOf(exact) {
   let current = exact
   // 图标组件常有 path/circle → svg → span → wrapper → button 等多层结构。
   // 对所有命中节点统一向上寻找语义宿主，避免只列举部分 SVG 标签而漏掉 circle/polyline。
@@ -239,10 +238,12 @@ export function elementBelowPoint(x, y, designerHost) {
   return stack.find(element => element !== designerHost && !designerHost.contains(element) && element !== document.documentElement && element !== document.body) || null
 }
 
-export function resolveSelection(exact, forceExact = false) {
+export function resolveSelection(exact, preferSemanticOwner = false) {
   return {
     exact,
-    semantic: semanticOwnerOf(exact, forceExact),
+    // 默认尊重鼠标下最具体的可视元素，才能直接选择 h1/p/span 等非交互内容。
+    // 需要把图标、文字提升为外层按钮或带 data-tour 的组件时，再按 Alt/Option。
+    semantic: preferSemanticOwner ? semanticOwnerOf(exact) : exact,
   }
 }
 

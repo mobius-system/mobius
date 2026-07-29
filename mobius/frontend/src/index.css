@@ -5672,14 +5672,34 @@ body.mobius-resizing .mobius-resizable-handle {
 }
 
 /* ======================================================================
-   Chat 会话页 body: 桌面端横向 68/32 分栏 (左 JSONL 历史 + 右输入/skill-memory).
+   Chat 会话页 body: 桌面端横向可调分栏 (左 JSONL 历史 + 右输入/skill-memory)，
+   默认 68/32；右栏宽度由 ChatArea 直接写 DOM 并持久化比例。
    窄屏 (≤768px) 下 32% 输入列约 ~120px, 根本放不下 3×40px 按钮 + textarea +
    4 个快捷操作, 输入框无法使用. 改纵向堆叠 (思路同 .mobius-stack-lg):
    - 历史在上, 整宽, 内部滚动, 占据多数高度;
    - 输入列在下, 整宽, 左竖向边框改顶横向边框; 输入区 flex-shrink-0 始终完整可见,
      skill/memory (flex-1 overflow-y-auto) 吃剩余空间并自滚动 → 输入框不会被裁切.
-   仅 ≤768px 生效, 桌面端保持 68/32 横向不动 (!important 用以覆盖 inline width).
+   仅 ≤900px 生效，桌面端保留可拖拽分栏。
    ====================================================================== */
+.mobius-chat-body:not(.mobius-chat-body--stacked):not(.mobius-chat-body--easy) .mobius-chat-history {
+  width: auto;
+  min-width: 360px;
+  flex: 1 1 0%;
+}
+.mobius-chat-body:not(.mobius-chat-body--stacked):not(.mobius-chat-body--easy) .mobius-chat-input {
+  width: 32%;
+  min-width: 320px;
+  max-width: 720px;
+}
+.mobius-chat-split-handle {
+  position: absolute;
+  z-index: 15;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: col-resize;
+}
 @media (max-width: 900px) {
   .mobius-chat-body {
     flex-direction: column;
@@ -5687,10 +5707,13 @@ body.mobius-resizing .mobius-resizable-handle {
   .mobius-chat-history {
     width: 100% !important;
     flex: 1 1 0%;
+    min-width: 0 !important;
     min-height: 0;
   }
   .mobius-chat-input {
     width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
     /* 窄屏只保留输入框贴底: 不再 flex-grow, 仅占输入区自然高度,
        让 .mobius-chat-history (jsonl) 独占上方剩余空间. */
     flex: 0 0 auto;
@@ -5703,6 +5726,9 @@ body.mobius-resizing .mobius-resizable-handle {
      (textarea + 发送按钮) 贴在最下面, jsonl 展示框留在上面. 桌面端不受影响. */
   .mobius-chat-input-actions,
   .mobius-chat-input-side {
+    display: none !important;
+  }
+  .mobius-chat-split-handle {
     display: none !important;
   }
 }
@@ -5719,10 +5745,13 @@ body.mobius-resizing .mobius-resizable-handle {
 .mobius-chat-body.mobius-chat-body--stacked .mobius-chat-history {
   width: 100% !important;
   flex: 1 1 0%;
+  min-width: 0 !important;
   min-height: 0;
 }
 .mobius-chat-body.mobius-chat-body--stacked .mobius-chat-input {
   width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
   flex: 0 0 auto;
   min-height: 0;
   border-left: 0 !important;
@@ -5730,6 +5759,10 @@ body.mobius-resizing .mobius-resizable-handle {
 }
 .mobius-chat-body.mobius-chat-body--stacked .mobius-chat-input-actions,
 .mobius-chat-body.mobius-chat-body--stacked .mobius-chat-input-side {
+  display: none !important;
+}
+.mobius-chat-body.mobius-chat-body--stacked .mobius-chat-split-handle,
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-split-handle {
   display: none !important;
 }
 

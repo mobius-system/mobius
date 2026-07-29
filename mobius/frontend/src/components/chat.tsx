@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
@@ -38,6 +38,33 @@ import {
 } from '../services/assistant-voice'
 
 const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
+const CHAT_INPUT_SPLIT_STORAGE_KEY = 'mobius:ui:split:chat-input'
+const CHAT_INPUT_DEFAULT_RATIO = 0.32
+const CHAT_INPUT_MIN_WIDTH = 320
+const CHAT_INPUT_MAX_WIDTH = 720
+const CHAT_HISTORY_MIN_WIDTH = 360
+
+function clampChatInputRatio(value: number) {
+  if (!Number.isFinite(value)) return CHAT_INPUT_DEFAULT_RATIO
+  return Math.max(0.2, Math.min(0.6, value))
+}
+
+function readChatInputRatio() {
+  try {
+    const stored = Number(localStorage.getItem(CHAT_INPUT_SPLIT_STORAGE_KEY))
+    return stored > 0 ? clampChatInputRatio(stored) : CHAT_INPUT_DEFAULT_RATIO
+  } catch {
+    return CHAT_INPUT_DEFAULT_RATIO
+  }
+}
+
+function clampChatInputWidth(value: number, bodyWidth: number) {
+  const dynamicMax = Math.max(
+    CHAT_INPUT_MIN_WIDTH,
+    Math.min(CHAT_INPUT_MAX_WIDTH, bodyWidth - CHAT_HISTORY_MIN_WIDTH),
+  )
+  return Math.round(Math.max(CHAT_INPUT_MIN_WIDTH, Math.min(dynamicMax, value)))
+}
 
 function sessionModelLabel(model?: string | null, explicitLabel?: string | null) {
   if (explicitLabel) return explicitLabel
@@ -1444,6 +1471,96 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const inputMenuRef = useRef<HTMLDivElement | null>(null)
   const inputMenuButtonRef = useRef<HTMLButtonElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const chatBodyRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLDivElement>(null)
+  const [chatInputRatio, setChatInputRatio] = useState(readChatInputRatio)
+  const chatSplitDragRef = useRef<{
+    startX: number
+    startWidth: number
+    currentWidth: number
+  } | null>(null)
+
+  // 右栏宽度不放进 React inline style：拖动时直接写 DOM，避免每个 mousemove
+  // 都重渲染 JSONL 与输入区两棵重子树；松手时才提交一次 state 并持久化比例。
+  useLayoutEffect(() => {
+    const input = chatInputRef.current
+    if (!input) return
+    if (layout === 'default') input.style.width = `${chatInputRatio * 100}%`
+    else input.style.removeProperty('width')
+  }, [chatInputRatio, layout])
+
+  const persistChatInputRatio = useCallback((ratio: number) => {
+    try {
+      localStorage.setItem(CHAT_INPUT_SPLIT_STORAGE_KEY, String(ratio))
+    } catch {
+      /* localStorage 不可用时保留本次页面内调整 */
+    }
+  }, [])
+
+  const handleChatSplitMouseMove = useCallback((event: MouseEvent) => {
+    const drag = chatSplitDragRef.current
+    const body = chatBodyRef.current
+    const input = chatInputRef.current
+    if (!drag || !body || !input) return
+    event.preventDefault()
+    const bodyWidth = body.getBoundingClientRect().width
+    // 右栏手柄向左拖时右栏增宽，向右拖时右栏缩窄。
+    const nextWidth = clampChatInputWidth(
+      drag.startWidth + drag.startX - event.clientX,
+      bodyWidth,
+    )
+    drag.currentWidth = nextWidth
+    input.style.width = `${nextWidth}px`
+  }, [])
+
+  const handleChatSplitMouseUp = useCallback(() => {
+    const drag = chatSplitDragRef.current
+    const body = chatBodyRef.current
+    const input = chatInputRef.current
+    if (!drag || !body || !input) return
+    const bodyWidth = body.getBoundingClientRect().width
+    const ratio = clampChatInputRatio(drag.currentWidth / bodyWidth)
+    // 先直接恢复为比例宽度；即便比例与旧 state 恰好相同，也不会残留 px 宽度。
+    input.style.width = `${ratio * 100}%`
+    chatSplitDragRef.current = null
+    document.removeEventListener('mousemove', handleChatSplitMouseMove)
+    document.removeEventListener('mouseup', handleChatSplitMouseUp)
+    document.body.classList.remove('mobius-resizing')
+    setChatInputRatio(ratio)
+    persistChatInputRatio(ratio)
+  }, [handleChatSplitMouseMove, persistChatInputRatio])
+
+  const handleChatSplitMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || layout !== 'default') return
+    const input = chatInputRef.current
+    if (!input) return
+    event.preventDefault()
+    chatSplitDragRef.current = {
+      startX: event.clientX,
+      startWidth: input.getBoundingClientRect().width,
+      currentWidth: input.getBoundingClientRect().width,
+    }
+    document.body.classList.add('mobius-resizing')
+    document.addEventListener('mousemove', handleChatSplitMouseMove)
+    document.addEventListener('mouseup', handleChatSplitMouseUp)
+  }, [handleChatSplitMouseMove, handleChatSplitMouseUp, layout])
+
+  const resetChatInputWidth = useCallback(() => {
+    const input = chatInputRef.current
+    if (input) input.style.width = `${CHAT_INPUT_DEFAULT_RATIO * 100}%`
+    setChatInputRatio(CHAT_INPUT_DEFAULT_RATIO)
+    persistChatInputRatio(CHAT_INPUT_DEFAULT_RATIO)
+  }, [persistChatInputRatio])
+
+  useEffect(() => {
+    return () => {
+      if (!chatSplitDragRef.current) return
+      document.removeEventListener('mousemove', handleChatSplitMouseMove)
+      document.removeEventListener('mouseup', handleChatSplitMouseUp)
+      document.body.classList.remove('mobius-resizing')
+      chatSplitDragRef.current = null
+    }
+  }, [handleChatSplitMouseMove, handleChatSplitMouseUp])
   // 当组件卸载时回收所有 image preview ObjectURL, 防止内存泄漏.
   useEffect(() => {
     return () => {
@@ -3239,10 +3356,11 @@ export function ChatArea({ layout = 'default', onNewSession }: {
         </div>
       )}
 
-      {/* body: 横向分 68% JsonlView + 32% (输入 + skill/memory 编辑). 窄屏改纵向堆叠 (见 index.css .mobius-chat-body).
+      {/* body: 默认横向分栏，JsonlView 与输入/skill-memory 之间可拖拽调宽；初始 68/32。
+          窄屏改纵向堆叠 (见 index.css .mobius-chat-body).
           layout='stacked' 时附加 mobius-chat-body--stacked, 与视口无关地强制纵向堆叠 (代码对话模式). */}
-      <div className={`mobius-chat-body flex-1 flex min-h-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}>
-        {/* 左 68%: JSONL 视图 */}
+      <div ref={chatBodyRef} className={`mobius-chat-body flex-1 flex min-h-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}>
+        {/* 左侧: JSONL 视图，自动占满右栏之外的剩余宽度。 */}
         <SessionJsonlPanel
           currentProjectId={currentProjectId}
           chatContainerRef={chatContainerRef}
@@ -3271,8 +3389,18 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           variant={layout === 'easy' ? 'easy' : 'standard'}
         />
 
-        {/* 右 32%: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽 (见 index.css .mobius-chat-input). */}
-        <div className={`mobius-chat-input flex flex-col border-l flex-shrink-0${layout === 'easy' && !isPlanningSession ? ' mobius-chat-input--with-actions' : ''}`} style={{ width: '32%', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+        {/* 右侧: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽。 */}
+        <div ref={chatInputRef} className={`mobius-chat-input relative flex flex-shrink-0 flex-col border-l${layout === 'easy' && !isPlanningSession ? ' mobius-chat-input--with-actions' : ''}`} style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+          {layout === 'default' && (
+            <div
+              className="mobius-resizable-handle mobius-chat-split-handle"
+              data-design-id="chat-input-resize-handle"
+              data-testid="chat-input-resize-handle"
+              onMouseDown={handleChatSplitMouseDown}
+              onDoubleClick={resetChatInputWidth}
+              title="拖拽调整宽度 · 双击恢复默认"
+            />
+          )}
           {/* 输入区 */}
           <div className="mobius-chat-input-editor min-w-0 flex-shrink-0 p-3">
             <div>

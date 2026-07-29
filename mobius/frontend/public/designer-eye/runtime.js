@@ -434,7 +434,7 @@ const SHELL_HTML = `
   <div class="outline" data-eye="outline" hidden><div class="outline-label" data-eye="outline-label"></div></div>
   <div class="toolbar" data-eye="toolbar" hidden>
     <span class="toolbar-dot"></span>
-    <span class="toolbar-copy" data-eye="toolbar-copy">设计师之眼已开启 · 点击选择元素 · Alt/Option 精确选择 · Esc 退出</span>
+    <span class="toolbar-copy" data-eye="toolbar-copy">设计师之眼已开启 · 点击选择元素 · Alt/Option 选择交互宿主 · Esc 退出</span>
     <span class="toolbar-key"></span>
   </div>
   <div class="modal-layer" data-eye="modal-layer" hidden>
@@ -847,8 +847,8 @@ export class DesignerEyeRuntime {
     if (!this.elements?.toolbarCopy) return
     const count = this.selections.length
     this.elements.toolbarCopy.textContent = count
-      ? `已选择 ${count} 个元素 · 点击继续添加 · Alt/Option 精确选择 · Esc ${this.modalOpen ? '继续选择' : '退出'}`
-      : '设计师之眼已开启 · 点击选择元素 · Alt/Option 精确选择 · Esc 退出'
+      ? `已选择 ${count} 个元素 · 点击继续添加 · Alt/Option 选择交互宿主 · Esc ${this.modalOpen ? '继续选择' : '退出'}`
+      : '设计师之眼已开启 · 点击选择元素 · Alt/Option 选择交互宿主 · Esc 退出'
   }
 
   renderSelectedOutlines() {

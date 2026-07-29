@@ -216,7 +216,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-[180px] flex-[1_1_180px]">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1">
-                    <span className="min-w-32 max-w-full flex-[1_1_8rem] text-[13px] font-medium leading-5 break-words" style={{ color: 'var(--text-primary)' }}>{m.name}</span>
+                    <span className="min-w-32 max-w-full flex-[1_1_8rem] text-[13px] font-medium leading-5 break-words truncate" style={{ color: 'var(--text-primary)' }}>{m.name}</span>
                     {typeof m.body_length === 'number' && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>
                         {m.body_length} 字符

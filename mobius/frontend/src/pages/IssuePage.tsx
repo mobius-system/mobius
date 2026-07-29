@@ -327,7 +327,7 @@ export default function IssuePage() {
                 {project && (
                   <Link to={`/u/${userParam}/p/${projectId}`}
                     data-tour="project-back-link"
-                    className="text-[11px] hover:text-blue-400 transition-colors" style={{ color: 'var(--text-muted)' }}>
+                    className="text-[11px] hover:text-blue-400 transition-colors truncate" style={{ color: 'var(--text-muted)' }}>
                     ← {project.name}
                   </Link>
                 )}

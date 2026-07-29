@@ -79,7 +79,7 @@ export function ProjectSidebar({
           const isCompleted = iss.status === 'completed'
           return (
             <Link key={iss.id} to={`/u/${userParam}/p/${projectId}/i/${iss.id}`}
-              className="group flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer mb-0.5 transition-all hover:bg-[var(--bg-card-hover)]">
+              className="group flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer mb-0.5 transition-all hover:bg-[var(--bg-card-hover)]">
               <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleStar(iss) }}
                 title={iss.starred ? '取消收藏' : '收藏'}
                 className={`flex-shrink-0 -ml-1 p-1 bg-transparent border-none cursor-pointer rounded-md hover:bg-[var(--bg-hover)] ${iss.starred ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
