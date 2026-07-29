@@ -393,10 +393,57 @@ function testReasoningViews() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TEST 11 — SSE "terminated" is silent (server/proxy dropped the stream)
+// TEST 11 — current Codex custom tool calls show their nested shell command
+// ════════════════════════════════════════════════════════════════════════════
+function testCustomToolCallViews() {
+  console.log('\n[UI 11] custom_tool_call commands rendered')
+  const call = viewsForEntry({
+    type: 'response_item',
+    payload: {
+      type: 'custom_tool_call',
+      name: 'exec',
+      call_id: 'call_1',
+      input: 'const r = await tools.exec_command({\n  cmd: "rg -n \\\"needle\\\" mobius/tui/src",\n  workdir: "/repo"\n});\ntext(r.output);',
+    },
+  } as any)
+  ok(call.length === 1 && call[0].kind === 'tool_call', 'custom tool call is not skipped')
+  ok(call[0].kind === 'tool_call' && call[0].toolName === 'exec_command', 'nested exec_command tool name extracted')
+  ok(call[0].kind === 'tool_call' && call[0].summary.includes('rg -n "needle" mobius/tui/src'), 'nested shell command shown')
+
+  const singleQuoted = viewsForEntry({
+    type: 'response_item',
+    payload: { type: 'custom_tool_call', name: 'exec', input: "await tools.exec_command({ cmd: 'npm run typecheck', workdir: '/repo' })" },
+  } as any)
+  ok(singleQuoted[0].kind === 'tool_call' && singleQuoted[0].summary === 'npm run typecheck', 'JavaScript single-quoted command parsed')
+
+  const parallelWrapped = viewsForEntry({
+    type: 'response_item',
+    payload: { type: 'custom_tool_call', name: 'exec', input: 'const all = await Promise.all([tools.exec_command({"cmd":"npm run test:ui"})])' },
+  } as any)
+  ok(parallelWrapped[0].kind === 'tool_call' && parallelWrapped[0].toolName === 'exec_command' && parallelWrapped[0].summary === 'npm run test:ui', 'transport helper before tools.exec_command is ignored')
+
+  const output = viewsForEntry({
+    type: 'response_item',
+    payload: {
+      type: 'custom_tool_call_output',
+      call_id: 'call_1',
+      output: [{ type: 'input_text', text: 'Script completed\nWall time 0.2 seconds' }],
+    },
+  } as any)
+  ok(output.length === 1 && output[0].kind === 'tool_result' && output[0].summary.includes('Script completed'), 'custom tool output is not skipped')
+
+  const legacy = viewsForEntry({
+    type: 'response_item',
+    payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"git status --short"}' },
+  } as any)
+  ok(legacy[0].kind === 'tool_call' && legacy[0].summary === 'git status --short', 'legacy function_call command remains supported')
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 12 — SSE "terminated" is silent (server/proxy dropped the stream)
 // ════════════════════════════════════════════════════════════════════════════
 async function testSseTerminatedSilent() {
-  console.log('\n[UI 11] SSE "terminated" is silent, not an error')
+  console.log('\n[UI 12] SSE "terminated" is silent, not an error')
   let errorMsg: string | null = null
   let opened = false, closed = false
   installMock(async () => ({
@@ -417,10 +464,10 @@ async function testSseTerminatedSilent() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TEST 12 — SSE reconnect replays missed entries (no silent freeze)
+// TEST 13 — SSE reconnect replays missed entries (no silent freeze)
 // ════════════════════════════════════════════════════════════════════════════
 async function testChatSseReconnects() {
-  console.log('\n[UI 12] SSE reconnect replays missed entries')
+  console.log('\n[UI 13] SSE reconnect replays missed entries')
   const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
   const ready: ReadyState = {
     project: { id: 'p1', name: '测试项目' },
@@ -476,6 +523,45 @@ async function testChatSseReconnects() {
   } finally { restoreFetch() }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 14 — message dispatch retries a transient 502
+// ════════════════════════════════════════════════════════════════════════════
+async function testSendRetries502() {
+  console.log('\n[UI 14] message dispatch retries transient 502')
+  const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
+  const ready: ReadyState = {
+    project: { id: 'p1', name: 'p' },
+    issue: { id: 'i1', project_id: 'p1', title: 't' },
+    prefs: { model: 'codex', language: 'zh', excluded_skill_ids: [], excluded_memory_ids: [] },
+  }
+  let msgCall = 0
+  installMock((url, init) => {
+    if (url.includes('/events')) {
+      return new Response(new RS({ start(c: any) { c.enqueue(enc.encode('event: subscribed\ndata: {"event":"subscribed","session":{}}\n\n')) } }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }
+    if (url.endsWith('/messages') && init?.method === 'POST') {
+      msgCall++
+      if (msgCall === 1) return jsonResponse({ error: 'bad gateway' }, 502) // transient
+      return jsonResponse({ ok: true, session_id: 's1', turn_number: 1 }) // retry succeeds
+    }
+    if (url.endsWith('/api/sessions/s1/status')) return jsonResponse({ session_id: 's1', alive: true, working: false })
+    if (url.includes('/sessions') && init?.method === 'POST') return jsonResponse({ session_id: 's1' })
+    return jsonResponse({ error: 'no mock' }, 404)
+  })
+  try {
+    const { stdin, lastFrame, unmount } = render(
+      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />,
+    )
+    await delay(40)
+    stdin.write('hi'); await delay(30); stdin.write('\r')
+    await delay(3000) // first 502 (~0ms) + backoff ~500ms + retry succeeds
+    const out = lastFrame() ?? ''
+    unmount()
+    ok(msgCall >= 2, 'message dispatch was retried after a 502')
+    ok(!out.includes('HTTP 502'), 'transient 502 absorbed, not surfaced as a hard error')
+  } finally { restoreFetch() }
+}
+
 async function main() {
   await testLogin()
   await testChat()
@@ -487,8 +573,10 @@ async function main() {
   await testTextInputBackspace()
   testWorkingShimmer()
   testReasoningViews()
+  testCustomToolCallViews()
   await testSseTerminatedSilent()
   await testChatSseReconnects()
+  await testSendRetries502()
   // cleanup temp home
   try { fs.rmSync(TMP_HOME, { recursive: true, force: true }) } catch { /* ignore */ }
   console.log(`\n==== UI RESULT: ${pass} passed, ${fail} failed ====\n`)

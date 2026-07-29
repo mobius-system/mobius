@@ -17,6 +17,19 @@ export function parsePcClientMetadata(raw: unknown): PcClientMetadata | null {
   return parsed && typeof parsed === 'object' ? parsed as PcClientMetadata : null;
 }
 
+/**
+ * For Mobius TUI sessions (is_tui === true) bound to an aimux remote, return
+ * that remote name (aimux_id); otherwise undefined. Used to gate per-session
+ * MCP injection when spawning codex.
+ */
+export function aimuxRemoteNameFromMeta(raw: unknown): string | undefined {
+  const meta = parsePcClientMetadata(raw);
+  if (meta?.is_tui === true && typeof meta.aimux_id === 'string' && meta.aimux_id.trim()) {
+    return meta.aimux_id.trim();
+  }
+  return undefined;
+}
+
 /** TUI always needs the operating guide; Electron needs it only in pc/dual mode. */
 export function pcClientRequiresAimuxSkill(raw: unknown): boolean {
   const meta = parsePcClientMetadata(raw);

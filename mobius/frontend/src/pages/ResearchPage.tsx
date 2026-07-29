@@ -291,12 +291,12 @@ export default function ResearchPage() {
 
           <div className="px-4 py-2.5 flex items-center justify-between border-b" style={{ borderColor: 'var(--border-color)' }}>
             <button onClick={goToOverview}
-              className="text-[13px] font-semibold hover:text-emerald-400 transition-colors"
+              className="text-[13px] font-semibold hover:text-emerald-400 transition-colors min-w-0 truncate"
               style={{ color: 'var(--text-muted)' }}>
               Research Agents ({sessions.length})
             </button>
             <button onClick={openCreateChoice} title="新建研究智能体" data-tour="research-new-agent"
-              className="h-6 px-2 flex items-center gap-1 rounded-md hover:bg-emerald-500/15 text-emerald-400 transition-colors text-[11px]">
+              className="h-6 px-2 flex items-center gap-1 rounded-md hover:bg-emerald-500/15 text-emerald-400 transition-colors text-[11px] shrink-0">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
               新Agent
             </button>

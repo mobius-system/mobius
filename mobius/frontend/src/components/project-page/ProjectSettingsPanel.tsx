@@ -928,7 +928,7 @@ export function ProjectSettingsPanel({
             onHardResetVersion={hardResetVersion}
           />
         ) : (
-        <div className="p-3 space-y-4">
+        <div className="w-full min-w-0 p-3 space-y-4">
           {!canManageProject && (
             <div className="rounded-lg border px-3 py-2 text-[12px] leading-5"
               style={{ borderColor: 'rgba(59,130,246,0.28)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-secondary)' }}>

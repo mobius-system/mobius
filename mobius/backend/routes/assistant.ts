@@ -25,6 +25,7 @@ import {
   stripContextItemBodies,
   wrapUserMessage,
 } from '../services/session-context';
+import { aimuxRemoteNameFromMeta } from '../services/pc-client-context';
 // @ts-ignore — service 仍是 .js
 import { syncSkillsToWorkspace } from '../services/session-skills-sync';
 // @ts-ignore — service 仍是 .js
@@ -1220,6 +1221,7 @@ async function startAssistantSession(req: express.Request, session: any, questio
       displayName: session.name,
       agentSessionId: session.claude_session_id || undefined,
       mobiusJsonl,
+      aimuxRemoteName: aimuxRemoteNameFromMeta(session?.pc_client_metadata),
     });
 
     const runtimeInfo = backend.listSessions().find((item: any) => item.sessionId === session.session_id);

@@ -8,6 +8,8 @@ import { applyCustomThemeToRoot, loadActiveCustomThemeId, loadCustomThemes } fro
 import { pollRecursive } from './services/polling'
 import { DesktopTitleBar } from './components/window-controls'
 import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services/handle-stale-chunk'
+import { useLayoutMode } from './services/layout-mode'
+import { LayoutModeChoiceModal } from './components/layout-mode-choice-modal'
 
 const Login = lazyWithRetry(() => import('./pages/Login'))
 const Welcome = lazyWithRetry(() => import('./pages/Welcome'))
@@ -199,29 +201,20 @@ function RootRedirect() {
   return <Navigate to={`/u/${user.id}`} replace />
 }
 
-function localStorageValue(name: string) {
-  if (typeof window === 'undefined') return null
-  try {
-    return window.localStorage.getItem(name)
-  } catch {
-    return null
-  }
-}
-
 // 简易模式只接管用户主页和 Issue 会话页。项目页、Research 页、管理页等保持原路由，
 // /easy_mode 自身也不参与判断，避免重定向循环。
-function easyModeHomeForPath(pathname: string) {
-  if (localStorageValue('layout_mode') !== 'easy_mode') return null
+function layoutModeTargetPath(pathname: string) {
   const userHome = pathname.match(/^\/u\/([^/]+)\/?$/)
-  if (userHome) return `/u/${userHome[1]}/easy_mode`
+  if (userHome) return { user: userHome[1] }
   const issuePage = pathname.match(/^\/u\/([^/]+)\/p\/[^/]+\/i\/[^/]+\/?$/)
-  if (issuePage) return `/u/${issuePage[1]}/easy_mode`
+  if (issuePage) return { user: issuePage[1] }
   return null
 }
 
 function AuthenticatedApp() {
   const { user, assistantBubbleEnabled } = useStore()
   const location = useLocation()
+  const layoutMode = useLayoutMode()
 
   useEffect(() => startTextRedactionRuntime(), [])
 
@@ -230,8 +223,18 @@ function AuthenticatedApp() {
   if (location.pathname === '/' || location.pathname === '') {
     return <Navigate to={`/u/${user.id}`} replace />
   }
-  const easyModeHome = easyModeHomeForPath(location.pathname)
-  if (easyModeHome) return <Navigate to={easyModeHome} replace />
+  const modeTarget = layoutModeTargetPath(location.pathname)
+  if (modeTarget && !layoutMode) {
+    return (
+      <>
+        <RouteFallback />
+        <LayoutModeChoiceModal />
+      </>
+    )
+  }
+  if (modeTarget && layoutMode === 'easy_mode') {
+    return <Navigate to={`/u/${modeTarget.user}/easy_mode`} replace />
+  }
   return (
     <>
       <StaleChunkErrorBoundary>

@@ -10,7 +10,7 @@ import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, History, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { pollRecursive } from '../services/polling'
@@ -18,6 +18,7 @@ import { useIsMobile } from './resizable-panel'
 import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
+import { setLayoutMode, useLayoutMode } from '../services/layout-mode'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入)。三平台 (Win/Linux/mac) 统一: 顶栏右侧渲染
@@ -737,6 +738,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const params = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const layoutMode = useLayoutMode()
+  const easyModeEnabled = layoutMode === 'easy_mode'
   const [showChangePw, setShowChangePw] = useState(false)
   const [showAimuxGuide, setShowAimuxGuide] = useState(false)
   const [showDesktopDownload, setShowDesktopDownload] = useState(false)
@@ -1130,6 +1133,16 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
             {/* {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>} */}
           </TopNavActionElement>
+          {/* 系统可视化入口 — 固定在搜索按钮右侧，沿用当前用户路由上下文。 */}
+          <TopNavActionElement
+            type="button"
+            onClick={() => navigate(`/u/${userParam}/mobius_overview_cluster`)}
+            title="系统可视化"
+            aria-label="前往系统可视化"
+            data-tour="top-overview-cluster"
+          >
+            <Sparkles className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+          </TopNavActionElement>
           <TopNavActionElement
             type="button"
             onClick={() => setShowGuideHelp(true)}
@@ -1270,6 +1283,50 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                         background: assistantBubbleEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
                         transform: assistantBubbleEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
                         boxShadow: assistantBubbleEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
+                      }}
+                    />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="简易模式"
+                  aria-checked={easyModeEnabled}
+                  data-testid="easy-mode-switch"
+                  onClick={() => {
+                    const nextEnabled = !easyModeEnabled
+                    setLayoutMode(nextEnabled ? 'easy_mode' : 'normal_mode')
+                    setShowThemeMenu(false)
+                    if (nextEnabled) {
+                      navigate(`/u/${userParam}/easy_mode`)
+                    } else if (/^\/u\/[^/]+\/easy_mode\/?$/.test(location.pathname)) {
+                      navigate(`/u/${userParam}`)
+                    }
+                  }}
+                  className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  <LayoutPanelTop className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12px] font-semibold leading-4">简易模式</span>
+                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                      精简会话界面 · {easyModeEnabled ? '已开启' : '已关闭'}
+                    </span>
+                  </span>
+                  <span
+                    className="relative h-5 w-9 shrink-0 rounded-full border transition-colors"
+                    style={{
+                      background: easyModeEnabled ? 'color-mix(in srgb, var(--accent-primary) 28%, transparent)' : 'var(--input-bg)',
+                      borderColor: easyModeEnabled ? 'color-mix(in srgb, var(--accent-primary) 46%, var(--border-color))' : 'var(--border-color-strong)',
+                    }}
+                  >
+                    <span
+                      className="absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-transform"
+                      style={{
+                        left: 2,
+                        background: easyModeEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
+                        transform: easyModeEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
+                        boxShadow: easyModeEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
                       }}
                     />
                   </span>

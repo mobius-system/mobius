@@ -7,8 +7,8 @@
  * entry-extract.ts (diff/plan machinery) is far heavier than a chat TUI needs,
  * so instead we project each entry into a small EntryView union that the
  * Transcript renders — handling BOTH the Claude SDK entry shape (type:
- * 'user'|'assistant'|'system', message.content[]) and the Codex SDK shape
- * (type: 'response_item', payload.type: message|function_call|function_call_output).
+ * 'user'|'assistant'|'system', message.content[]) and both Codex SDK shapes
+ * (function_call/function_call_output and custom_tool_call/custom_tool_call_output).
  */
 import type { AnyEntry } from '../types.js'
 
@@ -90,7 +90,12 @@ export function summarizeToolInput(name: string, input: any): string {
   switch (name) {
     case 'Bash':
     case 'shell':
-      return cmd(input.command)
+    case 'bash':
+    case 'exec':
+    case 'exec_command':
+    case 'shell_command':
+    case 'run_terminal_cmd':
+      return cmd(input.cmd ?? input.command ?? input.script)
     case 'Read':
     case 'read_file':
       return input.file_path ?? input.path ?? ''
@@ -150,10 +155,12 @@ function extractToolResult(content: any): { text: string; isError: boolean } {
 }
 
 const TOOL_LABEL: Record<string, string> = {
-  Bash: '运行命令', shell: '运行命令',
+  Bash: '运行命令', bash: '运行命令', shell: '运行命令', exec: '运行命令',
+  exec_command: '运行命令', shell_command: '运行命令', run_terminal_cmd: '运行命令',
+  write_stdin: '输入命令',
   Read: '读取文件', read_file: '读取文件',
   Write: '写入文件', write_file: '写入文件', create_file: '创建文件',
-  Edit: '编辑文件', StrReplace: '编辑文件', edit_file: '编辑文件',
+  Edit: '编辑文件', StrReplace: '编辑文件', edit_file: '编辑文件', apply_patch: '编辑文件',
   Glob: '搜索文件', list_files: '列出文件',
   Grep: '搜索内容', grep: '搜索内容', search_file_content: '搜索内容',
   Task: '子任务', launch_subagent: '子任务',
@@ -171,6 +178,66 @@ function reasoningSummaryText(p: any): string {
   if (Array.isArray(s)) return s.map((x: any) => (typeof x === 'string' ? x : (x?.text ?? ''))).filter(Boolean).join('\n')
   if (typeof s === 'string') return s
   return ''
+}
+
+/**
+ * Newer Codex versions wrap tool calls in a custom `exec` transport. Its
+ * payload.input is JavaScript such as:
+ *
+ *   const r = await tools.exec_command({ cmd: "rg -n ...", workdir: "/repo" })
+ *
+ * Extract the nested tool name and its object argument so the TUI can render
+ * the same command summary as the web viewer. JSON is the common case; the
+ * small quoted-field fallback also handles JavaScript object keys and strings.
+ */
+function parseCustomToolCall(raw: any): { name: string; input: Record<string, any> } | null {
+  if (typeof raw !== 'string') return null
+  // Prefer the first tools.<name>(...) invocation. A custom wrapper may call
+  // Promise.all(...) or another helper before it, which is transport code and
+  // must not become the displayed tool name.
+  const call = /tools\.([A-Za-z_$][\w$]*)\s*\(/g.exec(raw)
+    || /\b(exec_command|write_stdin|apply_patch)\s*\(/g.exec(raw)
+  if (!call) return null
+  const objectStart = raw.indexOf('{', call.index + call[0].length)
+  if (objectStart < 0) return { name: call[1], input: {} }
+
+  let quote = ''
+  let escaped = false
+  let depth = 0
+  let objectEnd = -1
+  for (let index = objectStart; index < raw.length; index++) {
+    const ch = raw[index]
+    if (quote) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === quote) quote = ''
+      continue
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue }
+    if (ch === '{') depth++
+    else if (ch === '}' && --depth === 0) { objectEnd = index; break }
+  }
+  if (objectEnd < 0) return { name: call[1], input: {} }
+
+  const source = raw.slice(objectStart, objectEnd + 1)
+  try {
+    const parsed = JSON.parse(source)
+    if (parsed && typeof parsed === 'object') return { name: call[1], input: parsed }
+  } catch { /* JavaScript object syntax falls through to quoted-field parsing. */ }
+
+  const input: Record<string, any> = {}
+  const patterns = [
+    /(?:^|[,{])\s*(cmd|command|script|workdir|cwd|path|file_path|query|pattern)\s*:\s*"((?:\\.|[^"\\])*)"/g,
+    /(?:^|[,{])\s*(cmd|command|script|workdir|cwd|path|file_path|query|pattern)\s*:\s*'((?:\\.|[^'\\])*)'/g,
+  ]
+  for (const pattern of patterns) {
+    let field: RegExpExecArray | null
+    while ((field = pattern.exec(source))) {
+      try { input[field[1]] = JSON.parse(`"${field[2].replace(/"/g, '\\"')}"`) }
+      catch { input[field[1]] = field[2].replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t').replace(/\\([\\"'])/g, '$1') }
+    }
+  }
+  return { name: call[1], input }
 }
 
 /** Project one entry into zero or more renderable views. */
@@ -255,7 +322,15 @@ export function viewsForEntry(entry: AnyEntry): EntryView[] {
       if (typeof input === 'string') { try { input = JSON.parse(input) } catch { /* keep string */ } }
       return [{ kind: 'tool_call', toolName: name, summary: summarizeToolInput(name, input) }]
     }
-    if (p.type === 'function_call_output') {
+    if (p.type === 'custom_tool_call') {
+      const nested = parseCustomToolCall(p.input)
+      const name = nested?.name || p.name || 'tool'
+      const input = nested?.input
+        || (p.input && typeof p.input === 'object' ? p.input : null)
+        || (typeof p.input === 'string' && ['exec', 'exec_command', 'shell', 'bash'].includes(name) ? { command: p.input } : {})
+      return [{ kind: 'tool_call', toolName: name, summary: summarizeToolInput(name, input) }]
+    }
+    if (p.type === 'function_call_output' || p.type === 'custom_tool_call_output') {
       const { text } = extractToolResult({ content: p.output, is_error: false })
       return [{ kind: 'tool_result', summary: truncate(text, 160), isError: false }]
     }

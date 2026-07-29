@@ -15,6 +15,19 @@ const path = require('path')
 const fs = require('fs')
 const os = require('os')
 
+// Resolve the aimux binary to spawn as a stdio MCP server (for TUI sessions).
+// Mirrors backend/services/aimux-remote.ts AIMUX_BIN_CANDIDATES (kept inline to
+// avoid crossing the .js/.ts boundary from this CommonJS backend).
+function resolveAimuxBin() {
+  const candidates = [
+    process.env.AIMUX_BIN,
+    path.join(os.homedir(), '.local', 'bin', 'aimux'),
+    path.join(__dirname, '..', '..', '.venv-aimux', 'bin', 'aimux'),
+  ]
+  for (const c of candidates) { if (c && fs.existsSync(c)) return c }
+  return 'aimux'
+}
+
 const { AgentBackend } = require('./base')
 const {
   appendMobiusPromptEntry,
@@ -776,7 +789,7 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, initialPrompt, agentSessionId }) {
+  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, initialPrompt, agentSessionId, aimuxRemoteName }) {
     if (!sessionId || !cwd) throw new Error('createNewSession requires sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession requires initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd does not exist: ${cwd}`)
@@ -784,7 +797,7 @@ class TmuxCodexBackend extends AgentBackend {
     let spawnInfo = null
     let allowUpdatedThreadFallback = false
     if (!windowExists(sessionId)) {
-      spawnInfo = await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId })
+      spawnInfo = await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName })
     } else {
       await this._ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
       allowUpdatedThreadFallback = true
@@ -821,7 +834,7 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, mobiusJsonl = null }) {
+  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, mobiusJsonl = null, aimuxRemoteName }) {
     if (!sessionId) throw new Error('sessionId required')
     if (!prompt) throw new Error('prompt required')
 
@@ -848,6 +861,7 @@ class TmuxCodexBackend extends AgentBackend {
         codexSecretValue,
         displayName: displayName || persisted?.displayName,
         agentSessionId: finalAgentSid,
+        aimuxRemoteName,
       })
       cwd = finalCwd
       flagRoot = flagRoot || persisted?.flagRoot || finalCwd
@@ -1089,7 +1103,7 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   // 启动一个新的 Codex tmux 窗口，并返回用于后续绑定 rollout 的启动信息。
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId }) {
+  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName }) {
     // 确保承载 agent 窗口的 tmux hub session 已经存在。
     ensureHub()
     // 记录启动时间，后续会写入 runtime 和持久化状态。
@@ -1148,6 +1162,18 @@ class TmuxCodexBackend extends AgentBackend {
     // 并在 tmux 命令中 export TOML env_key 对应的秘钥环境变量.
     // 组装 Codex CLI 参数：模型、工作目录以及自动审批/沙箱绕过参数。
     const codexArgs = ['-m', finalModel, '-C', cwd, '--dangerously-bypass-approvals-and-sandbox']
+    // TUI 会话 (is_tui + aimux_id): 注入 aimux stdio MCP server, 让 codex 经 MCP
+    // 工具 (remote_execute/read_file/write_file/ping/apply_patch) 操作远程工作站.
+    // codex `-c key=value` 按 TOML 解析 value, args 用 inline array.
+    if (aimuxRemoteName) {
+      const aimuxBinPath = resolveAimuxBin()
+      // enable_mcp_apps 是 codex 加载 mcp_servers 的特性开关 (profile 默认 false,
+      // 端到端实测: 不开则 mcp_servers 不加载, MCP 工具不可用). 同时抑制 under-development 警告.
+      codexArgs.push('-c', 'features.enable_mcp_apps=true')
+      codexArgs.push('-c', 'suppress_unstable_features_warning=true')
+      codexArgs.push('-c', `mcp_servers.aimux.command=${aimuxBinPath}`)
+      codexArgs.push('-c', `mcp_servers.aimux.args=["mcp","serve","--remote","${aimuxRemoteName}"]`)
+    }
     // resume 模式下把 thread id 追加给 codex resume 子命令。
     if (useResume) codexArgs.push(agentSessionId)
     // Codex 新会话不需要子命令，resume 模式需要 "resume " 前缀。

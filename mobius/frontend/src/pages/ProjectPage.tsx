@@ -358,6 +358,8 @@ export default function ProjectPage() {
   const researchEnabledDirty = !!project && editResearchEnabled !== !!project.research_enabled
   const visibilityDirty = !!project && editVisibility !== savedVisibility
   const allowUserIdsDirty = !!project && !stringArraysEqual(editAllowUserIdList, savedAllowUserIds)
+  const canPostIssueDirty = !!project && editCanPostIssue !== !!project.can_post_issue
+  const canRunSessionDirty = !!project && editCanRunSession !== !!project.can_run_session
   const forgottenFlagMessageDirty = !!project && !forgottenFlagMessageMatches(project, editForgottenFlagMessage)
   const savedDefaultModel = typeof project?.default_model === 'string' ? project.default_model : ''
   const defaultModelDirty = !!project && editDefaultModel !== savedDefaultModel
@@ -405,7 +407,9 @@ export default function ProjectPage() {
     defaultUseWorktreeDirty ||
     researchEnabledDirty ||
     visibilityDirty ||
-    allowUserIdsDirty
+    allowUserIdsDirty ||
+    canPostIssueDirty ||
+    canRunSessionDirty
   )
   const metaDirty = !!project && (
     normalProjectSettingsDirty ||
@@ -490,6 +494,8 @@ export default function ProjectPage() {
     editResearchEnabled,
     editVisibility,
     editAllowUserIdList,
+    editCanPostIssue,
+    editCanRunSession,
     editForgottenFlagMessage,
     editForgottenFlagIssueInit,
     editForgottenFlagIssueBackoff,
@@ -507,6 +513,8 @@ export default function ProjectPage() {
     researchEnabledDirty,
     visibilityDirty,
     allowUserIdsDirty,
+    canPostIssueDirty,
+    canRunSessionDirty,
     forgottenFlagMessageDirty,
     issuePolicyDirty,
     researchPolicyDirty,

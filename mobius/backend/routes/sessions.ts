@@ -1087,11 +1087,19 @@ router.get('/:id/status', auth, (req: express.Request, res: express.Response) =>
     ? String((backend as any).realTimeInfo(id) || '')
     : '';
 
-  // 错误扫描: agent 进程在但当前不在 turn 中 (isWorking=false), 且 .mobius.jsonl
-  // 末条不是 error (去重) 时, 调 backend.getRecentError 扫 TUI 屏幕.
-  // 命中则追加一条 type:'error' 到 .mobius.jsonl, 前端经 SSE 自然收到并以红色卡片渲染.
-  // tmux-claude-code 的 getRecentError 恒 null, 整段自动跳过.
-  if (alive && !working) {
+  // 错误扫描: agent 进程在, 且 .mobius.jsonl 末条不是 error (去重) 时, 调
+  // backend.getRecentError 扫 TUI 屏幕. 命中则追加一条 type:'error' 到 .mobius.jsonl,
+  // 前端经 SSE 自然收到并以红色卡片渲染. tmux-claude-code 的 getRecentError 恒 null, 整段自动跳过.
+  //
+  // 不再 gate on !working: codex 撞致命上游错误 (403 余额不足 / image generation is banned /
+  // 预扣费额度失败 等) 时往往不会干净 emit task_complete (turn 卡住, 或 emit turn_aborted), 于是
+  // isWorking 据 rollout 尾部的 task_started/message 一直判 working=true — 旧逻辑下 "!working" 门
+  // 永不打开, 错误永远扫不到, 前端看不到红色卡片. getRecentError 的 ■(U+25A0)+红色 ANSI 双匹配仅
+  // 命中 codex 的 ErrorEvent (警告用黄/系统消息用灰, 不会误中), 故 working 中扫也安全; 去重
+  // (.mobius.jsonl 末条非 error) 保证同一屏错误不会因 2s 轮询反复落条刷屏.
+  // 注意: 只放宽本处 error_scan 的门, 不动 isWorking 本身 — cleaner/forgotten-flag-scanner 等仍依赖
+  // 它原语义判断 "是否在干活", 改 isWorking 会误杀卡在错误上的 session.
+  if (alive) {
     try {
       const jsonlPath = backend._lookupPersistedJsonlPath(id);
       if (jsonlPath && readLastMobiusEntryType(jsonlPath) !== 'error') {
