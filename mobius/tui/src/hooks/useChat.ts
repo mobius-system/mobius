@@ -15,6 +15,7 @@ import { MobiusClient, ApiError } from '../api.js'
 import { SseConnection } from '../sse.js'
 import { updateIssuePreference } from '../config.js'
 import { tuiAimuxIdentifier, probeAimuxBridgeConnection } from '../aimux.js'
+import { viewsForEntry } from '../lib/entry-view.js'
 import type { AnyEntry } from '../types.js'
 import type { ReadyState } from '../components/PrepScreen.js'
 
@@ -37,6 +38,33 @@ export interface ChatController {
 
 let ID = 0
 function nextId(): number { ID += 1; return ID }
+
+/**
+ * Does this entry represent the user's just-submitted message? Used to retire the
+ * optimistic `pendingUser` placeholder once the real entry is observed — including
+ * via a reconnect's history replay (the live `jsonl_entry` path already clears it).
+ *
+ * Mobius may prepend injected context (project/issue framing) to a user turn, so we
+ * match the typed text as a suffix of the entry's normalized text rather than
+ * requiring exact equality; a verbatim entry still matches because it ends with the
+ * typed text.
+ */
+function entryMatchesPendingUser(entry: AnyEntry, pendingText: string): boolean {
+  if (!pendingText) return false
+  const want = pendingText.replace(/\s+/g, ' ').trim()
+  if (!want) return false
+  for (const view of viewsForEntry(entry)) {
+    if (view.kind !== 'user') continue
+    const got = view.text.replace(/\s+/g, ' ').trim()
+    if (got === want || got.endsWith(want)) return true
+  }
+  return false
+}
+
+/** Stable identity for de-duplication. Every Mobius jsonl entry carries a uuid. */
+function entryKey(entry: AnyEntry): string | null {
+  return typeof entry?.uuid === 'string' ? entry.uuid : null
+}
 
 // Retry transient gateway/transport errors so a brief 502/503/504 (a reverse-
 // proxy blip, a backend worker recycling after a deploy, a transient upstream
@@ -90,13 +118,30 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
   const appendEntries = useCallback((newOnes: AnyEntry[]) => {
     if (!newOnes.length) return
     setEntries(prev => {
-      const stamped = newOnes.map(e => ({ ...e, __id: e.__id ?? nextId() }))
-      return [...prev, ...stamped]
+      // De-duplicate by uuid so a live jsonl_entry that also appears in a
+      // reconnect's history replay is never shown twice.
+      const seen = new Set<string>()
+      for (const e of prev) { const k = entryKey(e); if (k) seen.add(k) }
+      const stamped: AnyEntry[] = []
+      for (const e of newOnes) {
+        const k = entryKey(e)
+        if (k && seen.has(k)) continue
+        if (k) seen.add(k)
+        stamped.push({ ...e, __id: e.__id ?? nextId() })
+      }
+      return stamped.length ? [...prev, ...stamped] : prev
     })
   }, [])
 
   const setHistory = useCallback((list: AnyEntry[]) => {
-    setEntries(list.map(e => ({ ...e, __id: e.__id ?? nextId() })))
+    const seen = new Set<string>()
+    const out: AnyEntry[] = []
+    for (const e of list) {
+      const k = entryKey(e)
+      if (k) { if (seen.has(k)) continue; seen.add(k) }
+      out.push({ ...e, __id: e.__id ?? nextId() })
+    }
+    setEntries(out)
   }, [])
 
   // ── SSE connection ────────────────────────────────────────────────────────
@@ -108,6 +153,14 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
     const conn = new SseConnection(url, {
       onHistoryEntries: (es, _done) => {
         if (es.length) setHistory(es)
+        // A reconnect replays the session tail. If our optimistic placeholder is
+        // now backed by its real entry, retire it so the user's input isn't shown
+        // twice (once as the entry, once as the placeholder). The live jsonl_entry
+        // path already clears pendingUser, but a dropped SSE stream (reverse-proxy
+        // idle timeout) can deliver the message only via this history replay — and
+        // if the whole turn finished while disconnected, no live entry ever comes
+        // to clear it, leaving the duplication on screen until the next send.
+        setPendingUser(prev => (prev !== null && es.some(e => entryMatchesPendingUser(e, prev)) ? null : prev))
       },
       onEntry: (entry) => {
         if (process.env.MOBIUS_TUI_DEBUG) console.error('[onEntry]', entry?.type, (entry?.message?.content?.[0]?.text ?? '').slice(0, 40))
@@ -289,7 +342,10 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
 
   const send = useCallback(async (text: string) => {
     const body = text.trim()
-    if (!body || sending) return
+    // Guard on the ref (synchronous truth) as well as the state so a stale
+    // closure can't dispatch the same message twice (two distinct reqIds → two
+    // user entries on the server).
+    if (!body || sending || sendingRef.current) return
     setError(null)
     setPendingUser(body)
     statusEpochRef.current += 1
