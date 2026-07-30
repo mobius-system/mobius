@@ -64,7 +64,7 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, resolvedMap
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
       className="jsonl-entry-card relative mb-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.04] shadow-sm"
     >
-      <summary className={`cursor-pointer px-3 pt-1.5 ${open ? 'tb-0.5' : 'tb-1.5'} flex items-center gap-2 text-[12px] select-text`}>
+      <summary className={`cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[12px] select-text`}>
         <Search className={`h-3 w-3 flex-shrink-0 ${hasError ? 'text-red-400' : 'text-sky-400'}`} strokeWidth={2.2} aria-hidden="true" />
         <span className={`font-mono font-semibold flex-shrink-0 ${hasError ? 'text-red-300' : 'text-sky-300'}`}>探索</span>
         <span className="text-[11px] text-[var(--text-muted)] truncate flex-1">
