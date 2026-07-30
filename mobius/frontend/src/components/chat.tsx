@@ -39,6 +39,8 @@ import {
 
 const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
 const CHAT_INPUT_SPLIT_STORAGE_KEY = 'mobius:ui:split:chat-input'
+// 回车自动加急开关持久化 key: '1'=开启, 其他=关闭.
+const AUTO_URGENT_ENTER_STORAGE_KEY = 'mobius:ui:auto-urgent-enter'
 const CHAT_INPUT_DEFAULT_RATIO = 0.32
 const CHAT_INPUT_MIN_WIDTH = 320
 const CHAT_INPUT_MAX_WIDTH = 720
@@ -1099,6 +1101,7 @@ function HeaderActionButton({
 function ChatHeaderOverflowMenu({
   jsonlCount, minorCount, hideMinor, onToggleHideMinor, onOpenRaw,
   showJsonlMeta, onToggleShowJsonlMeta,
+  autoUrgentOnEnter, onToggleAutoUrgentOnEnter,
   onStop, canStop,
 }: {
   jsonlCount: number
@@ -1108,6 +1111,8 @@ function ChatHeaderOverflowMenu({
   onOpenRaw: () => void
   showJsonlMeta: boolean
   onToggleShowJsonlMeta: () => void
+  autoUrgentOnEnter: boolean
+  onToggleAutoUrgentOnEnter: () => void
   onStop: () => void
   canStop: boolean
 }) {
@@ -1153,6 +1158,11 @@ function ChatHeaderOverflowMenu({
             onClick={() => { setOpen(false); onToggleHideMinor() }}>
             <span>{hideMinor ? '显示次要条目' : '隐藏次要条目'}</span>
             {minorCount > 0 && <span className="text-[10px] text-[var(--text-muted)]">{minorCount}</span>}
+          </button>
+          <button className={itemClass}
+            onClick={() => { setOpen(false); onToggleAutoUrgentOnEnter() }}>
+            <span>{autoUrgentOnEnter ? '关闭回车自动加急' : '启动回车自动加急'}</span>
+            {autoUrgentOnEnter && <span className="text-[10px]" style={{ color: '#fbbf24' }}>已开启</span>}
           </button>
           <button className={itemClass} disabled={jsonlCount === 0}
             onClick={() => { setOpen(false); onToggleShowJsonlMeta() }}>
@@ -1662,6 +1672,17 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [showJsonlMeta, setShowJsonlMeta] = useState(false)
   // Cursor 式工具调用展示: 工具卡显示状态图标 (⏳/✅/❌) + 连续探索类自动聚合为 "已探索 N 个工具". 默认开启.
   const [cursorStyleTools, setCursorStyleTools] = useState(true)
+  // 回车自动加急: 开启后, 输入框按 Enter 发送时自动带 urgent=true (打断当前输出并立即发送). 持久化到 localStorage.
+  const [autoUrgentOnEnter, setAutoUrgentOnEnter] = useState<boolean>(() => {
+    try { return localStorage.getItem(AUTO_URGENT_ENTER_STORAGE_KEY) === '1' } catch { return false }
+  })
+  const toggleAutoUrgentOnEnter = useCallback(() => {
+    setAutoUrgentOnEnter(prev => {
+      const next = !prev
+      try { localStorage.setItem(AUTO_URGENT_ENTER_STORAGE_KEY, next ? '1' : '0') } catch { /* localStorage 不可用时仅本次生效 */ }
+      return next
+    })
+  }, [])
   const sessionId = currentSession?.session_id || currentTask?.task_id || ''
   const currentProjectId = (currentIssue as any)?.project_id || (currentSession as any)?.project_id || (currentTask as any)?.project_id || ''
   const currentIssueId = (currentSession as any)?.issue_id || (currentIssue as any)?.id || ''
@@ -3321,6 +3342,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
             onOpenRaw={() => setShowRaw(true)}
             showJsonlMeta={showJsonlMeta}
             onToggleShowJsonlMeta={() => setShowJsonlMeta(v => !v)}
+            autoUrgentOnEnter={autoUrgentOnEnter}
+            onToggleAutoUrgentOnEnter={toggleAutoUrgentOnEnter}
             onStop={handleStopSession}
             canStop={!!sessionId}
           />
@@ -3532,7 +3555,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                     return
                   }
                   e.preventDefault()
-                  send()
+                  send(autoUrgentOnEnter)
                 }}
                 placeholder={inputPlaceholder}
                 className="w-full bg-transparent resize-none border-0 px-0 pt-0 pb-1 text-[14px] leading-[1.55] placeholder:!text-[var(--placeholder-color)] focus:outline-none overflow-y-auto"
