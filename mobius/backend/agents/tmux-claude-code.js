@@ -206,14 +206,16 @@ function findClaudeRealTimeInfo(paneText) {
 const CLAUDE_BG_AGENTS_WAITING_RE = /Waiting\s+for\s+[1-9]\d*\s+background\s+agents?\s+to\s+finish/i
 
 // claude TUI "危险操作权限框". 即便 --dangerously-skip-permissions / 底栏 "bypass permissions on",
-// claude 仍会对"作用在工作目录或其祖先上的危险操作"(典型: rm -rf <cwd 子树>) 弹一次性确认框:
+// claude 仍会对某些危险操作弹一次性确认框. 已知至少有两种说明文本:
 //   Dangerous rm operation on working directory or its ancestor: /home/.../verify-overflow
+//   Dangerous rm operation on possibly-empty variable path: "$BASE/$f"
 //   Do you want to proceed?   1. Yes   ❯ 2. No   Esc to cancel · Tab to amend · ctrl+e to explain
 // 此时 agent 卡在权限框等输入, TUI 不再推进 → session 表面"待命/卡死". realTimeInfo 检测到此框
 // → 抽 danger_warning 整行 → fire-and-forget 自愈 (Esc 取消 → 等 5s → resume 提示 agent 跳过/
-// 换温和命令), 不阻塞 /status 轮询. "Dangerous <kind> operation on working directory or its
-// ancestor: <path>" 整行 (非贪婪到行尾, kind 可能是 rm/git/curl 等单字).
-const CLAUDE_DANGER_OPERATION_RE = /Dangerous\s+\S[^\n]*?operation\s+on\s+working\s+directory\s+or\s+its\s+ancestor:[^\n]*/i
+// 换温和命令), 不阻塞 /status 轮询. 匹配 "Dangerous <kind> operation on <reason>: <target>"
+// 整行; reason 不限定具体文案, 以兼容 Claude 新增的安全检查类型. 后续仍要求 proceed + Esc
+// 两个对话框特征同屏, 因此不会只凭普通输出中的 Dangerous 文本触发自愈.
+const CLAUDE_DANGER_OPERATION_RE = /Dangerous\s+\S[^\n]*?operation\s+on\s+[^:\n]+:[^\n]*/i
 // 自愈节流: 单 session 同时只跑一个自愈; 同一 warning 文本冷却期内不重复触发 (防 Esc 没干净 +
 // pane 5s 缓存残留导致 realTimeInfo 反复命中, 把 agent 轰成复读机).
 const DANGER_HEAL_COOLDOWN_MS = 30 * 1000
@@ -255,7 +257,7 @@ function claudePaneStillBusy(sessionId) {
 }
 
 // 检测 claude TUI 是否正卡在"危险操作权限框". 返回 { pending, warning }.
-// warning = "Dangerous <kind> operation on working directory or its ancestor: <path>" 整行.
+// warning = "Dangerous <kind> operation on <reason>: <target>" 整行.
 // 必须同时命中 danger 行 + "Do you want to proceed?" + "Esc to cancel" 三个特征才算"正卡在框上"
 // (三者同屏出现是权限框的强信号, 避免历史日志/输出里残留的 danger 文本误判).
 function detectDangerPermission(text) {
@@ -1211,4 +1213,5 @@ module.exports = {
   runningFlagPathOf,
   failedFlagPathOf,
   findClaudeRealTimeInfo,
+  detectDangerPermission,
 }
