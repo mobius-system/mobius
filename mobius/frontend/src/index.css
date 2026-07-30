@@ -5831,6 +5831,11 @@ body.mobius-resizing .mobius-resizable-handle {
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input--with-actions .advanced-session-actions--compact {
   order: -1;
   align-self: stretch;
+  /* 与编辑器圆角框一致的不透明底 + 毛玻璃: easy 模式外层被强制 transparent,
+     左侧工具框失去衬托会透出背后 JSONL, 须自担不透明底 (Skill/Memory 等文字才清晰)。 */
+  background: color-mix(in srgb, var(--bg-secondary) 88%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input > div:first-child {
   padding: 0 !important;
