@@ -11,7 +11,8 @@ const STATE_FILE = 'leaderboard.json';
 const MAX_SCORE = 1_000_000_000;
 const MAX_KILLS = 100_000;
 const MAX_DURATION = 3_600;
-const MAX_ROWS = 100;
+const MAX_ROWS_PER_THEME = 100;
+const VALID_THEMES = new Set(['zombie', 'deadline', 'immunity']);
 
 async function readRows(file) {
   try {
@@ -36,9 +37,15 @@ function finiteInt(value, min, max) {
   return integer >= min && integer <= max ? integer : null;
 }
 
+function normalizeTheme(value) {
+  if (value === undefined || value === null || value === '') return 'zombie';
+  return typeof value === 'string' && VALID_THEMES.has(value) ? value : null;
+}
+
 function publicRow(row, rank) {
   return {
     rank,
+    theme: normalizeTheme(row.theme) || 'zombie',
     username: row.username,
     display_name: row.display_name || row.username,
     score: row.score,
@@ -59,6 +66,7 @@ module.exports = async function toyToyToyHandler({
 }) {
   const payload = ext_main_payload && typeof ext_main_payload === 'object' ? ext_main_payload : {};
   const action = payload.action;
+  const theme = normalizeTheme(payload.theme);
   const stateFile = path.join(ext_data_dir, STATE_FILE);
 
   if (action === 'whoami') {
@@ -66,18 +74,23 @@ module.exports = async function toyToyToyHandler({
   }
 
   if (action === 'get_leaderboard' || action === 'get_profile') {
+    if (!theme) return { ok: false, error: 'invalid theme' };
     const rows = await readRows(stateFile);
-    rows.sort((a, b) => b.score - a.score || a.ts - b.ts);
-    const leaderboard = rows.slice(0, 10).map((row, index) => publicRow(row, index + 1));
-    const ownIndex = rows.findIndex((row) => row.username === username);
+    const themeRows = rows
+      .filter((row) => (normalizeTheme(row.theme) || 'zombie') === theme)
+      .sort((a, b) => b.score - a.score || a.ts - b.ts);
+    const leaderboard = themeRows.slice(0, 10).map((row, index) => publicRow(row, index + 1));
+    const ownIndex = themeRows.findIndex((row) => row.username === username);
     return {
       ok: true,
+      theme,
       leaderboard,
-      profile: ownIndex >= 0 ? publicRow(rows[ownIndex], ownIndex + 1) : null,
+      profile: ownIndex >= 0 ? publicRow(themeRows[ownIndex], ownIndex + 1) : null,
     };
   }
 
   if (action === 'submit_run') {
+    if (!theme) return { ok: false, error: 'invalid theme' };
     const score = finiteInt(payload.score, 0, MAX_SCORE);
     const kills = finiteInt(payload.kills, 0, MAX_KILLS);
     const duration = finiteInt(payload.duration, 0, MAX_DURATION);
@@ -86,10 +99,11 @@ module.exports = async function toyToyToyHandler({
     }
 
     const rows = await readRows(stateFile);
-    const existing = rows.find((row) => row.username === username);
+    const existing = rows.find((row) => row.username === username && (normalizeTheme(row.theme) || 'zombie') === theme);
     const now = Date.now();
     const result = {
       username,
+      theme,
       display_name: String(display_name || username).slice(0, 80),
       score,
       kills,
@@ -117,18 +131,24 @@ module.exports = async function toyToyToyHandler({
       rows.push(result);
     }
 
-    rows.sort((a, b) => b.score - a.score || a.ts - b.ts);
-    const trimmed = rows.slice(0, MAX_ROWS);
+    const trimmed = [...VALID_THEMES].flatMap((themeName) => rows
+      .filter((row) => (normalizeTheme(row.theme) || 'zombie') === themeName)
+      .sort((a, b) => b.score - a.score || a.ts - b.ts)
+      .slice(0, MAX_ROWS_PER_THEME));
     await writeRows(stateFile, trimmed);
-    const ownIndex = trimmed.findIndex((row) => row.username === username);
-    const leaderboard = trimmed.slice(0, 10).map((row, index) => publicRow(row, index + 1));
+    const themeRows = trimmed
+      .filter((row) => (normalizeTheme(row.theme) || 'zombie') === theme)
+      .sort((a, b) => b.score - a.score || a.ts - b.ts);
+    const ownIndex = themeRows.findIndex((row) => row.username === username);
+    const leaderboard = themeRows.slice(0, 10).map((row, index) => publicRow(row, index + 1));
 
     if (logger && logger.info) {
-      logger.info('submit_run', { username, score, kills, victory: result.victory, isBest });
+      logger.info('submit_run', { username, theme, score, kills, victory: result.victory, isBest });
     }
 
     return {
       ok: true,
+      theme,
       is_best: isBest,
       rank: ownIndex >= 0 ? ownIndex + 1 : null,
       leaderboard,

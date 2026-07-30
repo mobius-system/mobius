@@ -7,22 +7,239 @@ const WORLD = Object.freeze({
   spawnZ: -13.5,
   baseZ: 10.3,
   lanes: [-6, 0, 6],
-  roundDuration: 75,
-  bossAt: 55,
   maxEnemies: 700,
   maxProjectiles: 260,
+});
+
+const THEMES = Object.freeze({
+  zombie: {
+    id: 'zombie',
+    order: '01',
+    title: '尸潮防线',
+    english: 'HORDE OVERDRIVE',
+    eyebrow: '把广告里玩不到的游戏真的做出来',
+    description: '炮台会自动开火。切换火力焦点、选择夸张升级，或者用直播导演台手动制造尸潮高潮。',
+    features: ['自动开火', '三选一升级', '动态救场', '尸王演出'],
+    startButton: '开始守城',
+    startButtonHint: '点击后尸潮立即来袭',
+    startHint: 'A / S / D 切换战线 · P 暂停 · 空格触发超载',
+    brandKicker: 'AD FANTASY LAB / 01',
+    leaderboardKicker: 'TOP SURVIVORS',
+    leaderboardTitle: '尸潮最高战绩',
+    baseLabel: '基地完整度',
+    laneControlLabel: '火力焦点',
+    lanes: ['左路', '中路', '右路'],
+    laneHint: '点击战场或按 A / S / D 切换；焦点路射速更快',
+    weaponLabels: ['火力', '射速', '尸爆', '连锁', '冰冻'],
+    upgradeEyebrow: '火力模块已就绪',
+    upgradeTitle: '选择一项夸张升级',
+    resumeLabel: '继续屠杀',
+    roundDuration: 75,
+    bossAt: 55,
+    firstUpgradeAt: 10,
+    upgradeInterval: 12,
+    spawnMultiplier: 1,
+    hpMultiplier: 1,
+    speedMultiplier: 1,
+    bossHpMultiplier: 1,
+    bossSpeed: 0.42,
+    geometry: 'zombie',
+    palette: {
+      bg: 0x07111f, fog: 0x07111f, ground: 0x102638,
+      wall: 0x274e61, wallEmissive: 0x0d2d34, core: 0x4fffd2,
+      accent: '#4fffd2', secondary: '#8fff65', yellow: '#ffd84f', projectile: 0xffe36d,
+      enemies: { normal: 0x83f26e, runner: 0xffa943, tank: 0xb47cff, elite: 0xff668a, boss: 0xff4f5d },
+    },
+    director: {
+      frenzyIcon: '☣', frenzyLabel: '十倍尸潮', frenzyDescription: '8 秒高密度送爽怪',
+      overdriveIcon: '⚡', overdriveLabel: '火力超载', overdriveDescription: '10 秒射速与伤害暴涨',
+      bossIcon: '♛', bossLabel: '尸王立即登场', bossDescription: '不用等到最后',
+      frenzyToast: '十倍尸潮已启动：密度拉满，但敌人会稍微变脆',
+      frenzyBanner: 'TENFOLD HORDE',
+      overdriveToast: '火力超载：伤害与射速暴涨 10 秒',
+      overdriveBanner: 'FIREPOWER OVERDRIVE',
+      bailoutToast: '防线濒危：隐藏救场协议自动触发',
+      bailoutBanner: 'LAST STAND PROTOCOL',
+      bossToast: '警告：巨型尸王突破封锁线',
+      manualBossToast: '直播导演指令：尸王提前入场',
+      bossBanner: 'OMEGA BOSS INBOUND',
+    },
+    bossName: '巨型尸王 · OMEGA',
+    openingToast: '尸潮已接近：炮台自动开火，切换战线可以集中火力',
+    victoryTitle: '防线守住了',
+    victoryDescription: '广告里的那一局，这次真的打完了。你可以直接重开，或者继续用导演台折腾下一局。',
+    defeatTitle: '城墙被吃光了',
+    defeatDescription: '这局不是骗氪点，按一下就能原地再来。下一局会重新洗升级选项。',
+    victoryBanner: 'OMEGA ELIMINATED',
+    victoryToast: '巨型尸王已击杀：正在统计这场离谱战绩',
+    upgrades: {
+      damage: ['口径膨胀', '所有子弹伤害继续暴涨，普通尸群更快蒸发'],
+      rate: ['射速失控', '三座炮台射击间隔缩短，火力焦点路收益更高'],
+      blast: ['尸爆协议', '子弹命中产生范围爆炸，等级越高波及范围越大'],
+      chain: ['连锁闪电', '命中有概率跳向附近敌人，形成可见的闪电链'],
+      frost: ['绝对零度', '命中有概率冻结敌人两秒，减慢整片尸潮'],
+      multi: ['同步齐射', '每座炮台同时锁定更多目标，子弹数量肉眼可见地增加'],
+      crit: ['暴击算法', '提高暴击概率与倍率，让伤害数字更不讲道理'],
+      repair: ['防线焊死', '立即修复基地，并获得一段短暂火力加成'],
+    },
+  },
+  deadline: {
+    id: 'deadline',
+    order: '02',
+    title: '程序员保卫 DDL',
+    english: 'SHIP IT OR DIE',
+    eyebrow: '今晚不修完这些 Bug，谁都别想下班',
+    description: 'Bug、临时需求和线上事故正在冲击服务器。前端、后端、生产三条战线自动修复，你负责分配算力和咖啡。',
+    features: ['自动修 Bug', '多线程升级', '紧急回滚', '甲方 Boss'],
+    startButton: '开始上线',
+    startButtonHint: '点击后立即进入救火模式',
+    startHint: 'A 前端 / S 后端 / D 生产 · P 暂停 · 空格咖啡续命',
+    brandKicker: 'AD FANTASY LAB / 02',
+    leaderboardKicker: 'TOP ENGINEERS',
+    leaderboardTitle: '上线最高战绩',
+    baseLabel: '服务器稳定度',
+    laneControlLabel: '算力焦点',
+    lanes: ['前端', '后端', '生产'],
+    laneHint: '点击战场或按 A / S / D 分配算力；焦点服务修复更快',
+    weaponLabels: ['修复', '编译', '异常', '调用链', '冻结'],
+    upgradeEyebrow: '新的补丁已经通过 Review',
+    upgradeTitle: '选择一项上线前热修',
+    resumeLabel: '继续救火',
+    roundDuration: 70,
+    bossAt: 50,
+    firstUpgradeAt: 9,
+    upgradeInterval: 11,
+    spawnMultiplier: 1.18,
+    hpMultiplier: 0.82,
+    speedMultiplier: 1.1,
+    bossHpMultiplier: 0.92,
+    bossSpeed: 0.47,
+    geometry: 'deadline',
+    palette: {
+      bg: 0x071022, fog: 0x071022, ground: 0x101d39,
+      wall: 0x263d73, wallEmissive: 0x0b2861, core: 0x62a8ff,
+      accent: '#62a8ff', secondary: '#45f0d0', yellow: '#ffca5c', projectile: 0x88d9ff,
+      enemies: { normal: 0xff5c6c, runner: 0xffc857, tank: 0x7c83ff, elite: 0xd66bff, boss: 0xff3d81 },
+    },
+    director: {
+      frenzyIcon: '⚠', frenzyLabel: '需求井喷', frenzyDescription: '8 秒临时需求疯狂涌入',
+      overdriveIcon: '☕', overdriveLabel: '咖啡续命', overdriveDescription: '10 秒编译与修复速度暴涨',
+      bossIcon: '☎', bossLabel: '甲方立即来电', bossDescription: '提前触发最终需求',
+      frenzyToast: '群聊里突然多了 99+ 条新需求：需求井喷已启动',
+      frenzyBanner: 'SCOPE CREEP ×10',
+      overdriveToast: '咖啡因超频：编译与热修速度暴涨 10 秒',
+      overdriveBanner: 'CAFFEINE OVERCLOCK',
+      bailoutToast: '生产环境濒危：自动执行紧急回滚与咖啡续命',
+      bailoutBanner: 'EMERGENCY ROLLBACK',
+      bossToast: '警告：上线前临时改需求正在冲击生产环境',
+      manualBossToast: '直播导演指令：甲方提前来电',
+      bossBanner: 'CLIENT CALL INBOUND',
+    },
+    bossName: '上线前临时改需求 · FINAL',
+    openingToast: 'DDL 已经变红：三条服务自动修 Bug，切换算力焦点可以加速修复',
+    victoryTitle: '居然准时上线了',
+    victoryDescription: '所有 Bug 被压进了发布包，临时需求也被当场打回。现在可以再模拟一次更离谱的上线夜。',
+    defeatTitle: '生产环境炸了',
+    defeatDescription: '服务器没有永久损坏。点击重来，下一次可以更早使用紧急回滚和咖啡续命。',
+    victoryBanner: 'SHIPMENT SUCCESS',
+    victoryToast: '临时改需求已被拒绝：正在生成上线战报',
+    upgrades: {
+      damage: ['代码热修', '每次修复能够消灭更多 Bug，严重异常也会快速掉血'],
+      rate: ['咖啡因超频', '缩短编译与部署间隔，焦点服务获得额外线程'],
+      blast: ['异常连锁', '修掉一个异常时顺便清理附近同类堆栈'],
+      chain: ['调用链追踪', '沿调用关系跳转并修复附近 Bug'],
+      frost: ['冻结需求', '临时冻结需求流入，为生产环境争取时间'],
+      multi: ['多线程处理', '三个团队同时锁定更多问题并行修复'],
+      crit: ['一次过编译', '提高无警告通过概率，出现夸张的绿色通过数字'],
+      repair: ['紧急回滚', '恢复服务器稳定度，并获得短暂咖啡因加成'],
+    },
+  },
+  immunity: {
+    id: 'immunity',
+    order: '03',
+    title: '免疫系统大战病毒',
+    english: 'IMMUNE OVERLOAD',
+    eyebrow: '把人体内部拍成一场完全不讲医学道理的爽战',
+    description: '病毒群正在侵入肺部、血液和神经系统。免疫节点会自动释放抗体，你负责集中免疫反应并选择突变能力。',
+    features: ['抗体自动追踪', '免疫突变', '组织再生', '病原体 Boss'],
+    startButton: '启动免疫反应',
+    startButtonHint: '点击后抗体立即释放',
+    startHint: 'A 肺部 / S 血液 / D 神经 · P 暂停 · 空格抗体风暴',
+    brandKicker: 'AD FANTASY LAB / 03',
+    leaderboardKicker: 'TOP IMMUNE SYSTEMS',
+    leaderboardTitle: '免疫最高战绩',
+    baseLabel: '器官活性',
+    laneControlLabel: '免疫焦点',
+    lanes: ['肺部', '血液', '神经'],
+    laneHint: '点击战场或按 A / S / D 集中免疫反应；焦点区域抗体释放更快',
+    weaponLabels: ['抗体', '反应', '吞噬', '扩散', '抑制'],
+    upgradeEyebrow: '免疫细胞完成了一次快速突变',
+    upgradeTitle: '选择一种免疫进化',
+    resumeLabel: '继续免疫反应',
+    roundDuration: 80,
+    bossAt: 58,
+    firstUpgradeAt: 10,
+    upgradeInterval: 13,
+    spawnMultiplier: 0.9,
+    hpMultiplier: 1.25,
+    speedMultiplier: 0.92,
+    bossHpMultiplier: 1.15,
+    bossSpeed: 0.38,
+    geometry: 'immunity',
+    palette: {
+      bg: 0x170b20, fog: 0x170b20, ground: 0x27152f,
+      wall: 0x642b56, wallEmissive: 0x4a1537, core: 0xff6fb7,
+      accent: '#ff6fb7', secondary: '#79ffd0', yellow: '#ffe26f', projectile: 0xffb3dc,
+      enemies: { normal: 0x9b6dff, runner: 0xff557f, tank: 0x44d6c0, elite: 0xffb04a, boss: 0xff326d },
+    },
+    director: {
+      frenzyIcon: '◉', frenzyLabel: '病毒突变', frenzyDescription: '8 秒复制速度疯狂上升',
+      overdriveIcon: '✺', overdriveLabel: '抗体风暴', overdriveDescription: '10 秒免疫输出全面暴涨',
+      bossIcon: '☠', bossLabel: '超级病原体入侵', bossDescription: '提前触发最终感染',
+      frenzyToast: '病毒发生快速突变：复制速度与密度正在上升',
+      frenzyBanner: 'VIRAL MUTATION ×10',
+      overdriveToast: '抗体风暴：免疫节点输出暴涨 10 秒',
+      overdriveBanner: 'ANTIBODY STORM',
+      bailoutToast: '器官活性濒危：组织再生与抗体风暴自动启动',
+      bailoutBanner: 'IMMUNE EMERGENCY',
+      bossToast: '警告：超级变异病原体突破免疫屏障',
+      manualBossToast: '直播导演指令：超级病原体提前入侵',
+      bossBanner: 'SUPER PATHOGEN INBOUND',
+    },
+    bossName: '超级变异病原体 · X-99',
+    openingToast: '感染已经开始：免疫节点自动释放抗体，切换区域可以集中反应',
+    victoryTitle: '免疫系统赢了',
+    victoryDescription: '超级病原体被抗体风暴吞没，器官活性恢复。下一局可以主动触发更猛烈的病毒突变。',
+    defeatTitle: '感染失控了',
+    defeatDescription: '这只是一次模拟感染。重新开始后可以更早进化抗体扩散和组织再生。',
+    victoryBanner: 'PATHOGEN NEUTRALIZED',
+    victoryToast: '超级病原体已被中和：正在生成免疫战报',
+    upgrades: {
+      damage: ['抗体浓度', '提高单次免疫伤害，更快中和高强度病毒'],
+      rate: ['免疫反应加速', '缩短抗体释放间隔，焦点器官反应更加剧烈'],
+      blast: ['细胞吞噬', '病毒受击后触发吞噬范围，波及附近病原体'],
+      chain: ['抗体扩散', '抗体沿感染区域连续跳转，清理成片病毒'],
+      frost: ['低温抑制', '降低病毒活性并减缓感染推进速度'],
+      multi: ['克隆抗体', '免疫节点一次释放更多抗体并锁定多个病毒'],
+      crit: ['精准识别', '提高抗原识别概率，触发更高倍率的免疫暴击'],
+      repair: ['组织再生', '恢复器官活性，并获得短暂免疫风暴'],
+    },
+  },
 });
 
 const els = {
   shell: document.getElementById('gameShell'),
   stage: document.getElementById('stage'),
   fxCanvas: document.getElementById('fxCanvas'),
+  brandKicker: document.getElementById('brandKicker'),
+  brandTitle: document.getElementById('brandTitle'),
   score: document.getElementById('scoreValue'),
   kills: document.getElementById('killsValue'),
   combo: document.getElementById('comboValue'),
   time: document.getElementById('timeValue'),
   baseHpText: document.getElementById('baseHpText'),
   baseHpFill: document.getElementById('baseHpFill'),
+  baseStatusLabel: document.getElementById('baseStatusLabel'),
   bossHud: document.getElementById('bossHud'),
   bossName: document.getElementById('bossName'),
   bossHpText: document.getElementById('bossHpText'),
@@ -32,12 +249,29 @@ const els = {
   directorPanel: document.querySelector('.director-panel'),
   directorToggle: document.getElementById('directorToggle'),
   frenzyBtn: document.getElementById('frenzyBtn'),
+  frenzyIcon: document.getElementById('frenzyIcon'),
+  frenzyLabel: document.getElementById('frenzyLabel'),
+  frenzyDescription: document.getElementById('frenzyDescription'),
   overdriveBtn: document.getElementById('overdriveBtn'),
+  overdriveIcon: document.getElementById('overdriveIcon'),
+  overdriveLabel: document.getElementById('overdriveLabel'),
+  overdriveDescription: document.getElementById('overdriveDescription'),
   bossBtn: document.getElementById('bossBtn'),
+  bossIcon: document.getElementById('bossIcon'),
+  bossButtonLabel: document.getElementById('bossButtonLabel'),
+  bossButtonDescription: document.getElementById('bossButtonDescription'),
   speedRange: document.getElementById('speedRange'),
   speedLabel: document.getElementById('speedLabel'),
   autoPickInput: document.getElementById('autoPickInput'),
   laneButtons: [...document.querySelectorAll('.lane-button')],
+  laneControlLabel: document.getElementById('laneControlLabel'),
+  laneLabels: [0, 1, 2].map((index) => document.getElementById(`laneLabel${index}`)),
+  laneHint: document.getElementById('laneHint'),
+  damageChipLabel: document.getElementById('damageChipLabel'),
+  rateChipLabel: document.getElementById('rateChipLabel'),
+  blastChipLabel: document.getElementById('blastChipLabel'),
+  chainChipLabel: document.getElementById('chainChipLabel'),
+  frostChipLabel: document.getElementById('frostChipLabel'),
   damageLevel: document.getElementById('damageLevel'),
   rateLevel: document.getElementById('rateLevel'),
   blastLevel: document.getElementById('blastLevel'),
@@ -46,14 +280,28 @@ const els = {
   toast: document.getElementById('toast'),
   overdriveBanner: document.getElementById('overdriveBanner'),
   startOverlay: document.getElementById('startOverlay'),
+  startEyebrow: document.getElementById('startEyebrow'),
+  startTitle: document.getElementById('startTitle'),
+  startEnglish: document.getElementById('startEnglish'),
+  startDescription: document.getElementById('startDescription'),
+  featureRow: document.getElementById('featureRow'),
+  themeButtons: [...document.querySelectorAll('.theme-card')],
   startBtn: document.getElementById('startBtn'),
+  startButtonLabel: document.getElementById('startButtonLabel'),
+  startButtonHint: document.getElementById('startButtonHint'),
+  startHint: document.getElementById('startHint'),
   leaderboardList: document.getElementById('leaderboardList'),
+  leaderboardKicker: document.getElementById('leaderboardKicker'),
+  leaderboardTitle: document.getElementById('leaderboardTitle'),
   identity: document.getElementById('identityValue'),
   upgradeOverlay: document.getElementById('upgradeOverlay'),
+  upgradeEyebrow: document.getElementById('upgradeEyebrow'),
+  upgradeTitle: document.getElementById('upgradeTitle'),
   upgradeCountdown: document.getElementById('upgradeCountdown'),
   upgradeOptions: document.getElementById('upgradeOptions'),
   pauseOverlay: document.getElementById('pauseOverlay'),
   resumeBtn: document.getElementById('resumeBtn'),
+  resumeButtonLabel: document.getElementById('resumeButtonLabel'),
   restartBtn: document.getElementById('restartBtn'),
   resultOverlay: document.getElementById('resultOverlay'),
   resultEyebrow: document.getElementById('resultEyebrow'),
@@ -72,6 +320,7 @@ const fxCtx = els.fxCanvas.getContext('2d');
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const lerp = (a, b, t) => a + (b - a) * t;
 const formatScore = (value) => Math.max(0, Math.round(value)).toLocaleString('zh-CN');
+const cssHex = (value) => `#${Number(value).toString(16).padStart(6, '0')}`;
 
 function mulberry32(seed) {
   let value = seed >>> 0;
@@ -169,10 +418,8 @@ scene.add(baseLight);
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
 
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(WORLD.width + 1, WORLD.depth + 2),
-  new THREE.MeshStandardMaterial({ color: 0x102638, roughness: 0.82, metalness: 0.16 }),
-);
+const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x102638, roughness: 0.82, metalness: 0.16 });
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(WORLD.width + 1, WORLD.depth + 2), groundMaterial);
 ground.rotation.x = -Math.PI / 2;
 ground.position.set(0, -0.11, 0);
 worldGroup.add(ground);
@@ -234,10 +481,14 @@ for (let i = -9; i <= 9; i += 2) {
   baseGroup.add(light);
 }
 
-const core = new THREE.Mesh(
-  new THREE.CylinderGeometry(1.35, 1.8, 2.3, 8),
-  new THREE.MeshStandardMaterial({ color: 0x193e55, metalness: 0.7, roughness: 0.25, emissive: 0x4fffd2, emissiveIntensity: 0.55 }),
-);
+const coreMaterial = new THREE.MeshStandardMaterial({
+  color: 0x193e55,
+  metalness: 0.7,
+  roughness: 0.25,
+  emissive: 0x4fffd2,
+  emissiveIntensity: 0.55,
+});
+const core = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.8, 2.3, 8), coreMaterial);
 core.position.set(0, 1.2, 13.1);
 baseGroup.add(core);
 
@@ -254,33 +505,45 @@ for (let lane = 0; lane < WORLD.lanes.length; lane += 1) {
 
   const pivot = new THREE.Group();
   pivot.position.y = 0.9;
-  const housing = new THREE.Mesh(
-    new THREE.BoxGeometry(0.9, 0.58, 0.9),
-    new THREE.MeshStandardMaterial({ color: 0x4fffd2, metalness: 0.48, roughness: 0.25, emissive: 0x164f4a, emissiveIntensity: 0.7 }),
-  );
+  const housingMaterial = new THREE.MeshStandardMaterial({
+    color: 0x4fffd2,
+    metalness: 0.48,
+    roughness: 0.25,
+    emissive: 0x164f4a,
+    emissiveIntensity: 0.7,
+  });
+  const housing = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.58, 0.9), housingMaterial);
   pivot.add(housing);
-  const barrel = new THREE.Mesh(
-    new THREE.BoxGeometry(0.2, 0.2, 1.85),
-    new THREE.MeshStandardMaterial({ color: 0xd7f8f2, metalness: 0.84, roughness: 0.16, emissive: 0x4fffd2, emissiveIntensity: 0.35 }),
-  );
+  const barrelMaterial = new THREE.MeshStandardMaterial({
+    color: 0xd7f8f2,
+    metalness: 0.84,
+    roughness: 0.16,
+    emissive: 0x4fffd2,
+    emissiveIntensity: 0.35,
+  });
+  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 1.85), barrelMaterial);
   barrel.position.z = -1.18;
   pivot.add(barrel);
   turret.add(pivot);
-  turretGroups.push({ group: turret, pivot, targetRotation: 0, recoil: 0 });
+  turretGroups.push({ group: turret, pivot, housingMaterial, barrelMaterial, targetRotation: 0, recoil: 0 });
   baseGroup.add(turret);
 }
 
-const enemyGeometry = new THREE.DodecahedronGeometry(0.67, 0);
+const enemyGeometries = {
+  zombie: new THREE.DodecahedronGeometry(0.67, 0),
+  deadline: new THREE.BoxGeometry(1.05, 1.05, 1.05, 1, 1, 1),
+  immunity: new THREE.IcosahedronGeometry(0.7, 1),
+};
 const enemyVisuals = {
-  normal: { color: 0x83f26e },
-  runner: { color: 0xffa943 },
-  tank: { color: 0xb47cff },
-  elite: { color: 0xff668a },
-  boss: { color: 0xff4f5d },
+  normal: { color: THEMES.zombie.palette.enemies.normal },
+  runner: { color: THEMES.zombie.palette.enemies.runner },
+  tank: { color: THEMES.zombie.palette.enemies.tank },
+  elite: { color: THEMES.zombie.palette.enemies.elite },
+  boss: { color: THEMES.zombie.palette.enemies.boss },
 };
 for (const visual of Object.values(enemyVisuals)) {
   visual.mesh = new THREE.InstancedMesh(
-    enemyGeometry,
+    enemyGeometries.zombie,
     new THREE.MeshBasicMaterial({ color: visual.color, fog: true, toneMapped: false }),
     WORLD.maxEnemies,
   );
@@ -308,6 +571,7 @@ const lightningItems = [];
 
 const state = {
   mode: 'menu',
+  themeId: THEMES[localStorage.getItem('toy-toy-toy-theme')] ? localStorage.getItem('toy-toy-toy-theme') : 'zombie',
   seed: 0,
   random: Math.random,
   elapsed: 0,
@@ -394,6 +658,86 @@ const upgrades = [
   },
 ];
 
+function currentTheme() {
+  return THEMES[state.themeId] || THEMES.zombie;
+}
+
+function upgradePresentation(upgrade) {
+  const copy = currentTheme().upgrades[upgrade.id];
+  return {
+    title: copy?.[0] || upgrade.title,
+    description: copy?.[1] || upgrade.describe(),
+  };
+}
+
+function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {}) {
+  const theme = THEMES[themeId];
+  if (!theme) return;
+  state.themeId = themeId;
+  if (persist) localStorage.setItem('toy-toy-toy-theme', themeId);
+
+  document.title = `广告爽游实验室 · ${theme.title}`;
+  document.documentElement.style.setProperty('--mint', theme.palette.accent);
+  document.documentElement.style.setProperty('--lime', theme.palette.secondary);
+  document.documentElement.style.setProperty('--yellow', theme.palette.yellow);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', `#${theme.palette.bg.toString(16).padStart(6, '0')}`);
+
+  els.brandKicker.textContent = theme.brandKicker;
+  els.brandTitle.textContent = theme.title;
+  els.startEyebrow.textContent = theme.eyebrow;
+  els.startTitle.textContent = theme.title;
+  els.startEnglish.textContent = theme.english;
+  els.startDescription.textContent = theme.description;
+  els.featureRow.innerHTML = theme.features.map((feature) => `<span>${feature}</span>`).join('');
+  els.startButtonLabel.textContent = theme.startButton;
+  els.startButtonHint.textContent = theme.startButtonHint;
+  els.startHint.textContent = theme.startHint;
+  els.leaderboardKicker.textContent = theme.leaderboardKicker;
+  els.leaderboardTitle.textContent = theme.leaderboardTitle;
+  els.baseStatusLabel.textContent = theme.baseLabel;
+  els.laneControlLabel.textContent = theme.laneControlLabel;
+  theme.lanes.forEach((label, index) => { els.laneLabels[index].textContent = label; });
+  els.laneHint.textContent = theme.laneHint;
+  [els.damageChipLabel, els.rateChipLabel, els.blastChipLabel, els.chainChipLabel, els.frostChipLabel]
+    .forEach((element, index) => { element.textContent = theme.weaponLabels[index]; });
+  els.upgradeEyebrow.textContent = theme.upgradeEyebrow;
+  els.upgradeTitle.textContent = theme.upgradeTitle;
+  els.resumeButtonLabel.textContent = theme.resumeLabel;
+  els.frenzyIcon.textContent = theme.director.frenzyIcon;
+  els.frenzyLabel.textContent = theme.director.frenzyLabel;
+  els.frenzyDescription.textContent = theme.director.frenzyDescription;
+  els.overdriveIcon.textContent = theme.director.overdriveIcon;
+  els.overdriveLabel.textContent = theme.director.overdriveLabel;
+  els.overdriveDescription.textContent = theme.director.overdriveDescription;
+  els.bossIcon.textContent = theme.director.bossIcon;
+  els.bossButtonLabel.textContent = theme.director.bossLabel;
+  els.bossButtonDescription.textContent = theme.director.bossDescription;
+  els.themeButtons.forEach((button) => button.classList.toggle('active', button.dataset.theme === themeId));
+
+  scene.background.setHex(theme.palette.bg);
+  scene.fog.color.setHex(theme.palette.fog);
+  groundMaterial.color.setHex(theme.palette.ground);
+  wallMaterial.color.setHex(theme.palette.wall);
+  wallMaterial.emissive.setHex(theme.palette.wallEmissive);
+  coreMaterial.emissive.setHex(theme.palette.core);
+  coreMaterial.color.setHex(theme.palette.wall);
+  baseLight.color.setHex(theme.palette.core);
+  projectileMaterial.color.setHex(theme.palette.projectile);
+  for (const [type, visual] of Object.entries(enemyVisuals)) {
+    visual.color = theme.palette.enemies[type];
+    visual.mesh.material.color.setHex(visual.color);
+    visual.mesh.geometry = enemyGeometries[theme.geometry];
+  }
+  turretGroups.forEach(({ housingMaterial, barrelMaterial }) => {
+    housingMaterial.color.setHex(theme.palette.core);
+    housingMaterial.emissive.setHex(theme.palette.core);
+    barrelMaterial.emissive.setHex(theme.palette.core);
+  });
+
+  els.time.textContent = String(theme.roundDuration);
+  if (refreshLeaderboard) loadLeaderboard();
+}
+
 function randomBetween(min, max) {
   return min + (max - min) * state.random();
 }
@@ -453,6 +797,7 @@ function clearWorldState() {
 }
 
 function resetGame() {
+  const theme = currentTheme();
   clearWorldState();
   state.seed = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
   state.random = mulberry32(state.seed);
@@ -466,7 +811,7 @@ function resetGame() {
   state.focusLane = 1;
   state.fireAcc = [0, 0, 0];
   state.spawnAcc = 0;
-  state.nextUpgradeAt = 10;
+  state.nextUpgradeAt = theme.firstUpgradeAt;
   state.upgradeDeadline = 0;
   state.currentUpgrades = [];
   state.frenzyUntil = 0;
@@ -479,15 +824,18 @@ function resetGame() {
   state.shake = 0;
   state.flash = 0;
   state.levels = { damage: 1, rate: 1, blast: 0, chain: 0, frost: 0, multi: 0, crit: 0 };
-  wallMaterial.color.setHex(0x274e61);
-  wallMaterial.emissive.setHex(0x0d2d34);
-  baseLight.color.setHex(0x4fffd2);
+  wallMaterial.color.setHex(theme.palette.wall);
+  wallMaterial.emissive.setHex(theme.palette.wallEmissive);
+  coreMaterial.emissive.setHex(theme.palette.core);
+  baseLight.color.setHex(theme.palette.core);
   baseLight.intensity = 18;
+  els.bossHud.classList.add('hidden');
   selectLane(1);
   updateHud(true);
 }
 
 function startGame() {
+  const theme = currentTheme();
   ensureAudio();
   resetGame();
   state.mode = 'playing';
@@ -496,7 +844,7 @@ function startGame() {
   setOverlay(els.resultOverlay, false);
   setOverlay(els.pauseOverlay, false);
   setOverlay(els.upgradeOverlay, false);
-  showToast('尸潮已接近：炮台自动开火，切换战线可以集中火力');
+  showToast(theme.openingToast);
   for (let i = 0; i < 10; i += 1) spawnEnemy(i < 2 ? 'runner' : 'normal');
 }
 
@@ -525,8 +873,9 @@ function togglePause(forceResume = false) {
 }
 
 function spawnEnemy(forceType = null) {
+  const theme = currentTheme();
   if (enemies.filter((enemy) => enemy.active).length >= WORLD.maxEnemies) return null;
-  const progress = clamp(state.elapsed / WORLD.roundDuration, 0, 1);
+  const progress = clamp(state.elapsed / theme.roundDuration, 0, 1);
   let type = forceType;
   if (!type) {
     const roll = state.random();
@@ -537,7 +886,7 @@ function spawnEnemy(forceType = null) {
   }
 
   const lane = type === 'boss' ? 1 : Math.floor(state.random() * 3);
-  const baseHp = 20 + state.elapsed * 0.72;
+  const baseHp = (20 + state.elapsed * 0.72) * theme.hpMultiplier;
   const enemy = {
     active: true,
     id: `${state.seed}-${state.elapsed}-${enemies.length}`,
@@ -548,7 +897,7 @@ function spawnEnemy(forceType = null) {
     z: WORLD.spawnZ - randomBetween(0, 2.2),
     hp: baseHp,
     maxHp: baseHp,
-    speed: 1.28 + progress * 1.05,
+    speed: (1.28 + progress * 1.05) * theme.speedMultiplier,
     scale: 1,
     score: 11,
     baseDamage: 5,
@@ -580,15 +929,15 @@ function spawnEnemy(forceType = null) {
   } else if (type === 'boss') {
     enemy.x = 0;
     enemy.z = WORLD.spawnZ - 1.5;
-    enemy.hp = 1750 + state.elapsed * 14;
+    enemy.hp = (1750 + state.elapsed * 14) * theme.bossHpMultiplier;
     enemy.maxHp = enemy.hp;
-    enemy.speed = 0.42;
+    enemy.speed = theme.bossSpeed;
     enemy.scale = 3.2;
     enemy.score = 5000;
     enemy.baseDamage = 100;
     state.bossSpawned = true;
     state.bossAlive = true;
-    els.bossName.textContent = '巨型尸王 · OMEGA';
+    els.bossName.textContent = theme.bossName;
     els.bossHud.classList.remove('hidden');
   }
 
@@ -597,31 +946,34 @@ function spawnEnemy(forceType = null) {
 }
 
 function summonBoss(manual = false) {
+  const theme = currentTheme();
   if (state.mode !== 'playing' || state.bossAlive || state.bossDefeated) return;
   state.bossSpawned = true;
   const boss = spawnEnemy('boss');
   if (!boss) return;
   state.shake = Math.max(state.shake, 0.85);
-  showToast(manual ? '直播导演指令：Boss 提前入场' : '警告：巨型尸王突破封锁线', 2600);
-  showOverdriveBanner('OMEGA BOSS INBOUND');
+  showToast(manual ? theme.director.manualBossToast : theme.director.bossToast, 2600);
+  showOverdriveBanner(theme.director.bossBanner);
   sfx.boss();
-  for (let i = 0; i < 18; i += 1) addFxParticle(boss.x, 1, boss.z, '#ff5f57', 1.1);
+  for (let i = 0; i < 18; i += 1) addFxParticle(boss.x, 1, boss.z, cssHex(theme.palette.enemies.boss), 1.1);
 }
 
 function triggerFrenzy() {
+  const theme = currentTheme();
   if (state.mode !== 'playing') return;
   state.frenzyUntil = Math.max(state.frenzyUntil, state.elapsed + 8);
-  showToast('十倍尸潮已启动：密度拉满，但敌人会稍微变脆');
-  showOverdriveBanner('TENFOLD HORDE');
+  showToast(theme.director.frenzyToast);
+  showOverdriveBanner(theme.director.frenzyBanner);
   state.shake = Math.max(state.shake, 0.42);
   for (let i = 0; i < 24; i += 1) spawnEnemy(i % 4 === 0 ? 'runner' : 'normal');
 }
 
 function triggerOverdrive(auto = false) {
+  const theme = currentTheme();
   if (state.mode !== 'playing') return;
   state.overdriveUntil = Math.max(state.overdriveUntil, state.elapsed + 10);
-  showToast(auto ? '防线濒危：隐藏救场协议自动触发' : '火力超载：伤害与射速暴涨 10 秒');
-  showOverdriveBanner(auto ? 'LAST STAND PROTOCOL' : 'FIREPOWER OVERDRIVE');
+  showToast(auto ? theme.director.bailoutToast : theme.director.overdriveToast);
+  showOverdriveBanner(auto ? theme.director.bailoutBanner : theme.director.overdriveBanner);
   state.shake = Math.max(state.shake, 0.36);
   sfx.overdrive();
 }
@@ -636,10 +988,11 @@ function livingEnemies() {
 }
 
 function updateSpawning(dt) {
-  const progress = clamp(state.elapsed / WORLD.roundDuration, 0, 1);
+  const theme = currentTheme();
+  const progress = clamp(state.elapsed / theme.roundDuration, 0, 1);
   const living = livingEnemies();
   const nearestZ = living.reduce((max, enemy) => Math.max(max, enemy.z), WORLD.spawnZ);
-  let spawnRate = 1.7 + progress * 5.5;
+  let spawnRate = (1.7 + progress * 5.5) * theme.spawnMultiplier;
   if (state.elapsed < state.frenzyUntil) spawnRate *= 4.8;
   if (living.length < 18 && nearestZ < 4) spawnRate *= 1.55;
   if (living.length > 360) spawnRate *= 0.42;
@@ -656,10 +1009,11 @@ function updateSpawning(dt) {
     }
   }
 
-  if (!state.bossSpawned && state.elapsed >= WORLD.bossAt) summonBoss(false);
+  if (!state.bossSpawned && state.elapsed >= theme.bossAt) summonBoss(false);
 }
 
 function updateEnemies(dt) {
+  const theme = currentTheme();
   for (const enemy of enemies) {
     if (!enemy.active) continue;
     const slowed = state.elapsed < enemy.slowUntil;
@@ -671,7 +1025,7 @@ function updateEnemies(dt) {
       enemy.active = false;
       state.baseHp = Math.max(0, state.baseHp - enemy.baseDamage);
       state.shake = Math.max(state.shake, enemy.type === 'boss' ? 1.8 : 0.28 + enemy.scale * 0.1);
-      addFxText(enemy.x, 1.2, WORLD.baseZ, `基地 -${enemy.baseDamage}%`, '#ff6b57', 1.15);
+      addFxText(enemy.x, 1.2, WORLD.baseZ, `${theme.baseLabel} -${enemy.baseDamage}%`, '#ff6b57', 1.15);
       addShockwave(enemy.x, WORLD.baseZ, '#ff5f57', enemy.type === 'boss' ? 3.4 : 1.2);
       for (let i = 0; i < 8; i += 1) addFxParticle(enemy.x, 0.7, WORLD.baseZ, '#ff6b57', 0.75);
       sfx.warning();
@@ -836,6 +1190,7 @@ function applyDamage(enemy, amount, options = {}) {
 }
 
 function killEnemy(enemy, critical = false) {
+  const theme = currentTheme();
   if (!enemy.active) return;
   enemy.active = false;
   state.kills += 1;
@@ -845,10 +1200,21 @@ function killEnemy(enemy, critical = false) {
   const comboBonus = 1 + Math.min(2.5, state.combo / 80);
   state.score += Math.round(enemy.score * comboBonus * (critical ? 1.18 : 1));
   state.shake = Math.max(state.shake, enemy.type === 'boss' ? 1.45 : 0.08 * enemy.scale);
-  addShockwave(enemy.x, enemy.z, enemy.type === 'boss' ? '#ff5f57' : '#7dff68', enemy.type === 'boss' ? 5.5 : 0.7 + enemy.scale * 0.4);
+  addShockwave(
+    enemy.x,
+    enemy.z,
+    enemy.type === 'boss' ? cssHex(theme.palette.enemies.boss) : theme.palette.secondary,
+    enemy.type === 'boss' ? 5.5 : 0.7 + enemy.scale * 0.4,
+  );
   const particles = enemy.type === 'boss' ? 55 : Math.min(14, 4 + Math.round(enemy.scale * 4));
   for (let i = 0; i < particles; i += 1) {
-    addFxParticle(enemy.x, enemy.scale * 0.7, enemy.z, enemy.type === 'boss' ? '#ff5f57' : '#8fff65', enemy.type === 'boss' ? 1.6 : 0.75);
+    addFxParticle(
+      enemy.x,
+      enemy.scale * 0.7,
+      enemy.z,
+      enemy.type === 'boss' ? cssHex(theme.palette.enemies.boss) : theme.palette.secondary,
+      enemy.type === 'boss' ? 1.6 : 0.75,
+    );
   }
 
   if (enemy.type === 'boss') {
@@ -856,8 +1222,8 @@ function killEnemy(enemy, critical = false) {
     state.bossDefeated = true;
     state.finishAt = state.elapsed + 1.8;
     els.bossHud.classList.add('hidden');
-    showOverdriveBanner('OMEGA ELIMINATED');
-    showToast('巨型尸王已击杀：正在统计这场离谱战绩', 2600);
+    showOverdriveBanner(theme.victoryBanner);
+    showToast(theme.victoryToast, 2600);
     sfx.victory();
   } else if (performance.now() - state.lastKillSoundAt > 105) {
     state.lastKillSoundAt = performance.now();
@@ -1011,6 +1377,7 @@ function showUpgrade() {
   state.upgradeDeadline = performance.now() + 7000;
   els.upgradeOptions.innerHTML = '';
   state.currentUpgrades.forEach((upgrade, index) => {
+    const presentation = upgradePresentation(upgrade);
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'upgrade-option';
@@ -1019,8 +1386,8 @@ function showUpgrade() {
     button.innerHTML = `
       <span class="upgrade-index">${index + 1}</span>
       <span class="upgrade-icon">${upgrade.icon}</span>
-      <b>${upgrade.title}</b>
-      <p>${upgrade.describe()}</p>
+      <b>${presentation.title}</b>
+      <p>${presentation.description}</p>
       <small>${currentLevel}</small>
     `;
     button.addEventListener('click', () => selectUpgrade(index));
@@ -1034,12 +1401,13 @@ function selectUpgrade(index) {
   if (state.mode !== 'upgrade') return;
   const upgrade = state.currentUpgrades[index];
   if (!upgrade) return;
+  const presentation = upgradePresentation(upgrade);
   upgrade.apply();
   state.mode = 'playing';
   state.lastTs = performance.now();
-  state.nextUpgradeAt += 12;
+  state.nextUpgradeAt += currentTheme().upgradeInterval;
   setOverlay(els.upgradeOverlay, false);
-  showToast(`${upgrade.icon} ${upgrade.title} 已安装：${upgrade.describe()}`);
+  showToast(`${upgrade.icon} ${presentation.title} 已安装：${presentation.description}`);
   updateHud(true);
 }
 
@@ -1055,6 +1423,7 @@ function updateUpgradeCountdown(now) {
 }
 
 function updateGame(dt) {
+  const theme = currentTheme();
   state.elapsed += dt;
   if (state.elapsed > state.comboUntil) state.combo = 1;
 
@@ -1068,18 +1437,17 @@ function updateGame(dt) {
 
   if (state.elapsed >= state.nextUpgradeAt && !state.bossDefeated) showUpgrade();
   if (state.bossDefeated && state.finishAt && state.elapsed >= state.finishAt) endGame(true);
-  if (state.elapsed >= WORLD.roundDuration && !state.bossSpawned) summonBoss(false);
+  if (state.elapsed >= theme.roundDuration && !state.bossSpawned) summonBoss(false);
 }
 
 function endGame(victory) {
+  const theme = currentTheme();
   if (!['playing', 'upgrade'].includes(state.mode)) return;
   state.mode = 'result';
   setOverlay(els.upgradeOverlay, false);
-  els.resultEyebrow.textContent = victory ? 'RUN COMPLETE / VICTORY' : 'DEFENSE COLLAPSED / RETRY';
-  els.resultTitle.textContent = victory ? '防线守住了' : '城墙被吃光了';
-  els.resultDescription.textContent = victory
-    ? '广告里的那一局，这次真的打完了。你可以直接重开，或者继续用导演台折腾下一局。'
-    : '这局不是骗氪点，按一下就能原地再来。下一局会重新洗升级选项。';
+  els.resultEyebrow.textContent = victory ? `RUN COMPLETE / ${theme.english}` : `SIMULATION FAILED / ${theme.english}`;
+  els.resultTitle.textContent = victory ? theme.victoryTitle : theme.defeatTitle;
+  els.resultDescription.textContent = victory ? theme.victoryDescription : theme.defeatDescription;
   els.finalScore.textContent = formatScore(state.score);
   els.finalKills.textContent = formatScore(state.kills);
   els.finalCombo.textContent = `×${state.maxCombo}`;
@@ -1122,13 +1490,14 @@ function renderEnemies() {
 }
 
 function updateHud(force = false) {
+  const theme = currentTheme();
   const now = performance.now();
   if (!force && now - state.lastUiAt < 90) return;
   state.lastUiAt = now;
   els.score.textContent = formatScore(state.score);
   els.kills.textContent = formatScore(state.kills);
   els.combo.textContent = `×${state.combo}`;
-  const remaining = Math.max(0, Math.ceil(WORLD.roundDuration - state.elapsed));
+  const remaining = Math.max(0, Math.ceil(theme.roundDuration - state.elapsed));
   els.time.textContent = remaining > 0 ? String(remaining) : state.bossAlive ? 'BOSS' : '0';
   els.baseHpText.textContent = `${Math.ceil(state.baseHp)}%`;
   els.baseHpFill.style.width = `${clamp(state.baseHp, 0, 100)}%`;
@@ -1142,8 +1511,8 @@ function updateHud(force = false) {
   els.overdriveBtn.disabled = state.mode !== 'playing';
   els.bossBtn.disabled = state.mode !== 'playing' || state.bossSpawned;
   baseLight.intensity = state.elapsed < state.overdriveUntil ? 34 : 18;
-  baseLight.color.setHex(state.elapsed < state.overdriveUntil ? 0xffd84f : state.baseHp < 30 ? 0xff5f57 : 0x4fffd2);
-  wallMaterial.emissive.setHex(state.baseHp < 30 ? 0x66141a : state.elapsed < state.overdriveUntil ? 0x5c4810 : 0x0d2d34);
+  baseLight.color.setHex(state.elapsed < state.overdriveUntil ? 0xffd84f : state.baseHp < 30 ? 0xff5f57 : theme.palette.core);
+  wallMaterial.emissive.setHex(state.baseHp < 30 ? 0x66141a : state.elapsed < state.overdriveUntil ? 0x5c4810 : theme.palette.wallEmissive);
 }
 
 function renderScene(dt) {
@@ -1199,23 +1568,26 @@ async function loadIdentity() {
 }
 
 async function loadLeaderboard() {
+  const requestedTheme = state.themeId;
   try {
-    const result = await extCall({ action: 'get_leaderboard' });
+    const result = await extCall({ action: 'get_leaderboard', theme: requestedTheme });
+    if (state.themeId !== requestedTheme) return;
     if (result?.ok) renderLeaderboard(result.leaderboard);
     else renderLeaderboard([]);
   } catch {
-    renderLeaderboard([]);
+    if (state.themeId === requestedTheme) renderLeaderboard([]);
   }
 }
 
 async function submitRun(victory) {
-  const localKey = 'toy-toy-toy-high-score';
+  const localKey = `toy-toy-toy-high-score-${state.themeId}`;
   const previousLocal = Number(localStorage.getItem(localKey) || 0);
   const localBest = state.score > previousLocal;
   if (localBest) localStorage.setItem(localKey, String(Math.round(state.score)));
   try {
     const result = await extCall({
       action: 'submit_run',
+      theme: state.themeId,
       score: Math.round(state.score),
       kills: state.kills,
       duration: Math.round(state.elapsed),
@@ -1233,6 +1605,11 @@ async function submitRun(victory) {
 }
 
 els.startBtn.addEventListener('click', startGame);
+els.themeButtons.forEach((button) => button.addEventListener('click', () => {
+  if (state.mode !== 'menu') return;
+  applyTheme(button.dataset.theme);
+  updateHud(true);
+}));
 els.againBtn.addEventListener('click', startGame);
 els.menuBtn.addEventListener('click', showMenu);
 els.pauseBtn.addEventListener('click', () => togglePause());
@@ -1305,6 +1682,7 @@ if (window.matchMedia('(max-width: 760px)').matches) {
 }
 
 resize();
+applyTheme(state.themeId, { persist: false, refreshLeaderboard: false });
 resetGame();
 Promise.allSettled([loadIdentity(), loadLeaderboard()]);
 requestAnimationFrame(frame);

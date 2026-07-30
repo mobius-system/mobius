@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#07111f">
-  <title>广告爽游实验室 · 尸潮防线</title>
+  <title>广告爽游实验室</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
   <script type="importmap">
@@ -17,15 +17,15 @@
 </head>
 <body>
   <main class="game-shell" id="gameShell">
-    <div id="stage" class="stage" aria-label="尸潮防线游戏区域"></div>
+    <div id="stage" class="stage" aria-label="广告爽游实验室游戏区域"></div>
     <canvas id="fxCanvas" class="fx-canvas"></canvas>
     <div class="vignette"></div>
     <div class="scanlines"></div>
 
     <header class="top-hud">
       <div class="brand-block">
-        <span class="brand-kicker">AD FANTASY LAB / 01</span>
-        <strong>尸潮防线</strong>
+        <span id="brandKicker" class="brand-kicker">AD FANTASY LAB / 01</span>
+        <strong id="brandTitle">尸潮防线</strong>
         <span class="live-pill"><i></i> LIVE BUILD</span>
       </div>
 
@@ -44,7 +44,7 @@
 
     <section class="base-status">
       <div class="base-status-row">
-        <span>基地完整度</span>
+        <span id="baseStatusLabel">基地完整度</span>
         <b id="baseHpText">100%</b>
       </div>
       <div class="base-hp-track"><i id="baseHpFill"></i></div>
@@ -65,16 +65,16 @@
       </div>
       <div class="director-body">
         <button id="frenzyBtn" class="director-button danger" type="button">
-          <span class="director-icon">☣</span>
-          <span><b>十倍尸潮</b><small>8 秒高密度送爽怪</small></span>
+          <span id="frenzyIcon" class="director-icon">☣</span>
+          <span><b id="frenzyLabel">十倍尸潮</b><small id="frenzyDescription">8 秒高密度送爽怪</small></span>
         </button>
         <button id="overdriveBtn" class="director-button energy" type="button">
-          <span class="director-icon">⚡</span>
-          <span><b>火力超载</b><small>10 秒射速与伤害暴涨</small></span>
+          <span id="overdriveIcon" class="director-icon">⚡</span>
+          <span><b id="overdriveLabel">火力超载</b><small id="overdriveDescription">10 秒射速与伤害暴涨</small></span>
         </button>
         <button id="bossBtn" class="director-button boss" type="button">
-          <span class="director-icon">♛</span>
-          <span><b>Boss 立即登场</b><small>不用等到最后</small></span>
+          <span id="bossIcon" class="director-icon">♛</span>
+          <span><b id="bossButtonLabel">Boss 立即登场</b><small id="bossButtonDescription">不用等到最后</small></span>
         </button>
 
         <div class="director-setting">
@@ -90,21 +90,21 @@
     </aside>
 
     <section class="lane-control" aria-label="火力焦点选择">
-      <span>火力焦点</span>
+      <span id="laneControlLabel">火力焦点</span>
       <div class="lane-buttons">
-        <button class="lane-button" data-lane="0" type="button"><kbd>A</kbd> 左路</button>
-        <button class="lane-button active" data-lane="1" type="button"><kbd>S</kbd> 中路</button>
-        <button class="lane-button" data-lane="2" type="button"><kbd>D</kbd> 右路</button>
+        <button class="lane-button" data-lane="0" type="button"><kbd>A</kbd> <span id="laneLabel0">左路</span></button>
+        <button class="lane-button active" data-lane="1" type="button"><kbd>S</kbd> <span id="laneLabel1">中路</span></button>
+        <button class="lane-button" data-lane="2" type="button"><kbd>D</kbd> <span id="laneLabel2">右路</span></button>
       </div>
-      <small>点击战场或按 A / S / D 切换；焦点路射速更快</small>
+      <small id="laneHint">点击战场或按 A / S / D 切换；焦点路射速更快</small>
     </section>
 
     <section class="weapon-rack" id="weaponRack">
-      <div class="weapon-chip"><span>▰</span><b>火力</b><em id="damageLevel">Lv.1</em></div>
-      <div class="weapon-chip"><span>»</span><b>射速</b><em id="rateLevel">Lv.1</em></div>
-      <div class="weapon-chip"><span>✦</span><b>爆炸</b><em id="blastLevel">Lv.0</em></div>
-      <div class="weapon-chip"><span>ϟ</span><b>连锁</b><em id="chainLevel">Lv.0</em></div>
-      <div class="weapon-chip"><span>❄</span><b>冰冻</b><em id="frostLevel">Lv.0</em></div>
+      <div class="weapon-chip"><span>▰</span><b id="damageChipLabel">火力</b><em id="damageLevel">Lv.1</em></div>
+      <div class="weapon-chip"><span>»</span><b id="rateChipLabel">射速</b><em id="rateLevel">Lv.1</em></div>
+      <div class="weapon-chip"><span>✦</span><b id="blastChipLabel">爆炸</b><em id="blastLevel">Lv.0</em></div>
+      <div class="weapon-chip"><span>ϟ</span><b id="chainChipLabel">连锁</b><em id="chainLevel">Lv.0</em></div>
+      <div class="weapon-chip"><span>❄</span><b id="frostChipLabel">冰冻</b><em id="frostLevel">Lv.0</em></div>
     </section>
 
     <div id="toast" class="toast" role="status"></div>
@@ -113,20 +113,33 @@
     <section id="startOverlay" class="overlay visible">
       <div class="start-card panel-card">
         <div class="start-copy">
-          <span class="eyebrow">把广告里玩不到的游戏真的做出来</span>
-          <h1>尸潮防线<br><em>HORDE OVERDRIVE</em></h1>
-          <p>炮台会自动开火。你只需要切换火力焦点、选择夸张升级，或者用直播导演台手动制造节目效果。</p>
-          <div class="feature-row">
+          <span id="startEyebrow" class="eyebrow">把广告里玩不到的游戏真的做出来</span>
+          <h1><span id="startTitle">尸潮防线</span><br><em id="startEnglish">HORDE OVERDRIVE</em></h1>
+          <p id="startDescription">炮台会自动开火。你只需要切换火力焦点、选择夸张升级，或者用直播导演台手动制造节目效果。</p>
+
+          <div id="themePicker" class="theme-picker" aria-label="选择游戏题材">
+            <button class="theme-card active" data-theme="zombie" type="button" style="--theme-card-color:#4fffd2">
+              <span>01</span><i>☣</i><b>尸潮防线</b><small>炮台割草 · 末日守城</small>
+            </button>
+            <button class="theme-card" data-theme="deadline" type="button" style="--theme-card-color:#62a8ff">
+              <span>02</span><i>⌘</i><b>程序员保卫 DDL</b><small>Bug 井喷 · 线上救火</small>
+            </button>
+            <button class="theme-card" data-theme="immunity" type="button" style="--theme-card-color:#ff6fb7">
+              <span>03</span><i>◎</i><b>免疫系统大战病毒</b><small>抗体扩散 · 病毒突变</small>
+            </button>
+          </div>
+
+          <div id="featureRow" class="feature-row">
             <span>自动开火</span><span>三选一升级</span><span>动态救场</span><span>Boss 演出</span>
           </div>
-          <button id="startBtn" class="primary-button" type="button"><span>开始这一局</span><small>点击后立即开火</small></button>
-          <p class="start-hint">A / S / D 切换战线 · P 暂停 · 空格触发超载</p>
+          <button id="startBtn" class="primary-button" type="button"><span id="startButtonLabel">开始这一局</span><small id="startButtonHint">点击后立即开火</small></button>
+          <p id="startHint" class="start-hint">A / S / D 切换战线 · P 暂停 · 空格触发超载</p>
         </div>
 
         <aside class="leaderboard-card">
           <div class="leaderboard-head">
-            <span>TOP SURVIVORS</span>
-            <strong>最高战绩</strong>
+            <span id="leaderboardKicker">TOP SURVIVORS</span>
+            <strong id="leaderboardTitle">最高战绩</strong>
           </div>
           <ol id="leaderboardList" class="leaderboard-list">
             <li class="empty">正在读取排行榜…</li>
@@ -138,8 +151,8 @@
 
     <section id="upgradeOverlay" class="overlay">
       <div class="upgrade-card panel-card">
-        <span class="eyebrow">火力模块已就绪</span>
-        <h2>选择一项夸张升级</h2>
+        <span id="upgradeEyebrow" class="eyebrow">火力模块已就绪</span>
+        <h2 id="upgradeTitle">选择一项夸张升级</h2>
         <p id="upgradeCountdown">自动选择倒计时 7 秒</p>
         <div id="upgradeOptions" class="upgrade-options"></div>
         <small class="keyboard-hint">也可以按数字键 1 / 2 / 3</small>
@@ -150,7 +163,7 @@
       <div class="pause-card panel-card compact-card">
         <span class="eyebrow">SIMULATION PAUSED</span>
         <h2>游戏已暂停</h2>
-        <button id="resumeBtn" class="primary-button" type="button"><span>继续屠杀</span></button>
+        <button id="resumeBtn" class="primary-button" type="button"><span id="resumeButtonLabel">继续屠杀</span></button>
         <button id="restartBtn" class="secondary-button" type="button">重新开始</button>
       </div>
     </section>

@@ -1,8 +1,8 @@
 {
   "name": "toy-toy-toy",
   "display_name": "广告爽游实验室",
-  "description": "把广告里玩不到的爽游真的做出来：自动开火、尸潮割草、三选一升级与直播导演台。",
-  "version": "0.2.0",
+  "description": "三题材广告爽游实验室：尸潮防线、程序员保卫 DDL、免疫系统大战病毒。",
+  "version": "0.3.0",
   "icon": "favicon.svg",
   "project": {
     "sync": true

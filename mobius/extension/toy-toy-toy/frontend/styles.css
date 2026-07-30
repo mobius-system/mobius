@@ -545,6 +545,59 @@ button { color: inherit; }
 .start-copy h1 em { color: transparent; -webkit-text-stroke: 1px rgba(143, 255, 101, 0.75); font-size: 0.43em; font-style: normal; letter-spacing: 0.07em; }
 .start-copy > p { max-width: 660px; margin: 20px 0; color: #aac0cd; font-size: 14px; line-height: 1.75; }
 
+.theme-picker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.theme-card {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto auto;
+  gap: 2px 8px;
+  padding: 11px 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  text-align: left;
+  transition: 0.18s ease;
+}
+
+.theme-card::after {
+  content: "";
+  position: absolute;
+  right: -32px;
+  bottom: -42px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: var(--theme-card-color);
+  filter: blur(28px);
+  opacity: 0.08;
+  transition: opacity 0.18s ease;
+}
+
+.theme-card:hover,
+.theme-card.active {
+  border-color: var(--theme-card-color);
+  background: color-mix(in srgb, var(--theme-card-color) 8%, rgba(255, 255, 255, 0.025));
+  transform: translateY(-2px);
+}
+
+.theme-card.active { box-shadow: inset 0 0 20px color-mix(in srgb, var(--theme-card-color) 8%, transparent); }
+.theme-card:hover::after,
+.theme-card.active::after { opacity: 0.2; }
+.theme-card > span { grid-column: 1 / -1; color: #668294; font-size: 8px; font-weight: 900; letter-spacing: 0.12em; }
+.theme-card i { grid-row: 2 / 4; align-self: center; color: var(--theme-card-color); font-size: 23px; font-style: normal; text-shadow: 0 0 14px var(--theme-card-color); }
+.theme-card b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.theme-card small { overflow: hidden; color: var(--dim); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+
 .feature-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
 .feature-row span { padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: #b9ceda; background: rgba(255, 255, 255, 0.03); font-size: 9px; font-weight: 800; }
 
@@ -679,6 +732,12 @@ button { color: inherit; }
   .start-card { grid-template-columns: 1fr; }
   .start-copy { padding: 30px 25px; }
   .start-copy h1 { font-size: clamp(42px, 13vw, 66px); }
+  .theme-picker { gap: 5px; }
+  .theme-card { grid-template-columns: 1fr; padding: 9px 7px; text-align: center; }
+  .theme-card > span { display: none; }
+  .theme-card i { grid-row: auto; font-size: 21px; }
+  .theme-card b { font-size: 9px; }
+  .theme-card small { display: none; }
   .leaderboard-card { display: none; }
   .upgrade-options { grid-template-columns: 1fr; }
   .upgrade-option { min-height: 120px; display: grid; grid-template-columns: 28px 42px 1fr; grid-template-rows: auto auto; gap: 3px 10px; padding: 13px; }
