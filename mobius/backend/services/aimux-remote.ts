@@ -16,6 +16,9 @@ const AIMUX_BIN_CANDIDATES = [
   path.join(__dirname, '..', '..', '.venv-aimux', 'bin', 'aimux'),
 ];
 const MAX_BUFFER = 1024 * 1024;
+const REMOTE_FILE_READ_MAX_BYTES = Math.floor(1.5 * 1024 * 1024);
+const REMOTE_FILE_WRITE_MAX_BYTES = 5 * 1024 * 1024;
+const REMOTE_FILE_OUTPUT_MAX_BYTES = 3 * 1024 * 1024;
 
 function aimuxBin(): string {
   for (const candidate of AIMUX_BIN_CANDIDATES) {
@@ -99,6 +102,223 @@ function parseJsonOutput(result: any): any {
 // 把任意路径安全地嵌成 POSIX sh 单引号字面量 (单引号内一切都是字面, 只需转义单引号本身)
 function shSingleQuote(value: string): string {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function normalizeRemoteRelativePath(value: any): string {
+  const raw = typeof value === 'string' ? value.trim().replace(/\\/g, '/') : '/';
+  const withRoot = raw.startsWith('/') ? raw : `/${raw}`;
+  const parts = withRoot.split('/').filter(Boolean);
+  if (parts.some((part) => part === '.' || part === '..')) {
+    throw new Error('远程文件路径不能包含 . 或 ..');
+  }
+  if (withRoot.length > 2000 || /[\r\n\0]/.test(withRoot)) {
+    throw new Error('远程文件路径格式非法');
+  }
+  return parts.length ? `/${parts.join('/')}` : '/';
+}
+
+function remoteRootPrelude(rootPath: any, relPath: any): string[] {
+  const root = cleanRemotePath(rootPath);
+  const rel = normalizeRemoteRelativePath(relPath);
+  return [
+    `ROOT_INPUT=${shSingleQuote(root)}`,
+    'if [ -z "$ROOT_INPUT" ] || [ "$ROOT_INPUT" = "~" ]; then ROOT_INPUT="$HOME"; fi',
+    'case "$ROOT_INPUT" in "~/"*) ROOT_INPUT="$HOME/${ROOT_INPUT#~/}" ;; esac',
+    'ROOT=$(cd "$ROOT_INPUT" 2>/dev/null && pwd -P)',
+    'if [ -z "$ROOT" ]; then printf "ERR\\tremote_root_unavailable\\n"; exit 3; fi',
+    `REL=${shSingleQuote(rel)}`,
+    'if [ "$REL" = "/" ]; then TARGET="$ROOT"; else TARGET="${ROOT%/}/${REL#/}"; fi',
+  ];
+}
+
+function decodeBase64Field(value: string): string {
+  try { return Buffer.from(value || '', 'base64').toString('utf8'); }
+  catch { return ''; }
+}
+
+type SshScriptResult = { stdout: string; stderr: string; code: number | null };
+
+function runRemoteShellScript(
+  name: any,
+  script: string,
+  { timeout = '12s', maxBuffer = MAX_BUFFER }: { timeout?: any; maxBuffer?: number } = {},
+): Promise<SshScriptResult> {
+  const remoteName = cleanRemoteName(name);
+  const timeoutValue = cleanTimeout(timeout, '12s');
+  const timeoutMs = Math.max(3000, timeoutToMs(timeoutValue) + 2000);
+  const sshTimeout = timeoutToSshSeconds(timeoutValue);
+
+  return new Promise((resolve, reject) => {
+    const child = spawn('ssh', [
+      '-o', 'BatchMode=yes',
+      '-o', `ConnectTimeout=${sshTimeout}`,
+      remoteName,
+      'sh',
+      '-s',
+    ], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      reject(new Error(`访问远程文件超时 (${timeoutValue})`));
+    }, timeoutMs);
+
+    const append = (current: string, chunk: any, label: string): string => {
+      const next = current + chunk.toString('utf8');
+      if (Buffer.byteLength(next, 'utf8') > maxBuffer) {
+        child.kill('SIGTERM');
+        throw new Error(`${label}超过大小限制`);
+      }
+      return next;
+    };
+    child.stdout.on('data', (chunk) => {
+      try { stdout = append(stdout, chunk, '远程文件响应'); }
+      catch (e) { if (!settled) { settled = true; clearTimeout(timer); reject(e); } }
+    });
+    child.stderr.on('data', (chunk) => {
+      try { stderr = append(stderr, chunk, '远程错误响应'); }
+      catch (e) { if (!settled) { settled = true; clearTimeout(timer); reject(e); } }
+    });
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ stdout, stderr, code });
+    });
+    child.stdin.end(script);
+  });
+}
+
+function remoteScriptError(result: SshScriptResult, fallback: string): Error | null {
+  const errorLine = result.stdout.split(/\r?\n/).find((line) => line.startsWith('ERR\t'));
+  if (result.code === 0 && !errorLine) return null;
+  const detail = errorLine?.split('\t').slice(1).join(': ') || result.stderr.trim() || `ssh 退出码 ${result.code}`;
+  return new Error(`${fallback}: ${detail}`);
+}
+
+async function listRemoteFiles(name: any, rootPath: any, relPath: any): Promise<any> {
+  const script = [
+    ...remoteRootPrelude(rootPath, relPath),
+    'if [ ! -d "$TARGET" ]; then printf "ERR\\tnot_directory\\n"; exit 3; fi',
+    'REAL=$(cd "$TARGET" 2>/dev/null && pwd -P)',
+    'case "$REAL" in "$ROOT"|"$ROOT"/*) ;; *) printf "ERR\\toutside_root\\n"; exit 3 ;; esac',
+    'printf "ROOT\\t%s\\n" "$(printf %s "$ROOT" | base64 | tr -d \'\\n\')"',
+    'printf "PATH\\t%s\\n" "$(printf %s "$REAL" | base64 | tr -d \'\\n\')"',
+    'for p in "$REAL"/* "$REAL"/.[!.]* "$REAL"/..?*; do',
+    '  [ -e "$p" ] || [ -L "$p" ] || continue',
+    '  [ -L "$p" ] && continue',
+    '  name=${p##*/}',
+    '  [ "$name" = "." ] && continue',
+    '  [ "$name" = ".." ] && continue',
+    '  if [ -d "$p" ]; then kind=dir; size=;',
+    '  elif [ -f "$p" ]; then kind=file; size=$(wc -c < "$p" 2>/dev/null | tr -d \' \');',
+    '  else continue; fi',
+    '  name64=$(printf %s "$name" | base64 | tr -d \'\\n\')',
+    '  path64=$(printf %s "$p" | base64 | tr -d \'\\n\')',
+    '  printf "ITEM\\t%s\\t%s\\t%s\\t%s\\n" "$kind" "$size" "$name64" "$path64"',
+    'done',
+  ].join('\n');
+  const result = await runRemoteShellScript(name, script, { timeout: '12s', maxBuffer: REMOTE_FILE_OUTPUT_MAX_BYTES });
+  const error = remoteScriptError(result, '加载远程文件失败');
+  if (error) throw error;
+  let resolvedRoot = '';
+  let resolvedPath = '';
+  const entries: any[] = [];
+  for (const line of result.stdout.split(/\r?\n/)) {
+    const parts = line.split('\t');
+    if (parts[0] === 'ROOT') resolvedRoot = decodeBase64Field(parts[1]);
+    if (parts[0] === 'PATH') resolvedPath = decodeBase64Field(parts[1]);
+    if (parts[0] === 'ITEM' && parts.length >= 5) {
+      const kind = parts[1] === 'dir' ? 'dir' : 'file';
+      entries.push({
+        name: decodeBase64Field(parts[3]),
+        type: kind,
+        size: kind === 'file' ? Number(parts[2] || 0) : null,
+        modified: '',
+        abs_path: decodeBase64Field(parts[4]),
+      });
+    }
+  }
+  entries.sort((a, b) => a.type !== b.type ? (a.type === 'dir' ? -1 : 1) : a.name.localeCompare(b.name));
+  return { remote: cleanRemoteName(name), root_path: resolvedRoot, path: resolvedPath, entries };
+}
+
+async function readRemoteFile(name: any, rootPath: any, relPath: any): Promise<any> {
+  const script = [
+    ...remoteRootPrelude(rootPath, relPath),
+    'if [ -L "$TARGET" ]; then printf "ERR\\tsymlink_unsupported\\n"; exit 3; fi',
+    'if [ ! -f "$TARGET" ]; then printf "ERR\\tnot_file\\n"; exit 3; fi',
+    'PARENT=$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd -P)',
+    'case "$PARENT" in "$ROOT"|"$ROOT"/*) ;; *) printf "ERR\\toutside_root\\n"; exit 3 ;; esac',
+    'SIZE=$(wc -c < "$TARGET" 2>/dev/null | tr -d \' \')',
+    'printf "ROOT\\t%s\\n" "$(printf %s "$ROOT" | base64 | tr -d \'\\n\')"',
+    'printf "PATH\\t%s\\n" "$(printf %s "$TARGET" | base64 | tr -d \'\\n\')"',
+    'printf "SIZE\\t%s\\n" "$SIZE"',
+    `dd if="$TARGET" bs=${REMOTE_FILE_READ_MAX_BYTES} count=1 2>/dev/null | base64 | tr -d '\\n'`,
+    'printf "\\n"',
+  ].join('\n');
+  const result = await runRemoteShellScript(name, script, { timeout: '15s', maxBuffer: REMOTE_FILE_OUTPUT_MAX_BYTES });
+  const error = remoteScriptError(result, '读取远程文件失败');
+  if (error) throw error;
+  const lines = result.stdout.split(/\r?\n/);
+  const resolvedRoot = decodeBase64Field(lines.find((line) => line.startsWith('ROOT\t'))?.slice(5) || '');
+  const absPath = decodeBase64Field(lines.find((line) => line.startsWith('PATH\t'))?.slice(5) || '');
+  const size = Number(lines.find((line) => line.startsWith('SIZE\t'))?.slice(5) || 0);
+  const contentLine = lines.find((line) => line && !/^(ROOT|PATH|SIZE)\t/.test(line)) || '';
+  const buffer = Buffer.from(contentLine, 'base64');
+  const binary = buffer.indexOf(0) !== -1;
+  return {
+    remote: cleanRemoteName(name),
+    root_path: resolvedRoot,
+    path: normalizeRemoteRelativePath(relPath),
+    name: absPath.split('/').pop() || '',
+    abs_path: absPath,
+    size,
+    content: binary ? '' : buffer.toString('utf8'),
+    truncated: size > REMOTE_FILE_READ_MAX_BYTES,
+    binary,
+  };
+}
+
+async function writeRemoteFile(name: any, rootPath: any, relPath: any, content: any): Promise<any> {
+  if (typeof content !== 'string') throw new Error('content 必须是字符串');
+  const size = Buffer.byteLength(content, 'utf8');
+  if (size > REMOTE_FILE_WRITE_MAX_BYTES) {
+    throw new Error(`远程文件过大 (${size} 字节)，超过 ${REMOTE_FILE_WRITE_MAX_BYTES} 上限`);
+  }
+  const encoded = Buffer.from(content, 'utf8').toString('base64');
+  const script = [
+    ...remoteRootPrelude(rootPath, relPath),
+    'if [ -L "$TARGET" ]; then printf "ERR\\tsymlink_unsupported\\n"; exit 3; fi',
+    'if [ ! -f "$TARGET" ]; then printf "ERR\\tnot_file\\n"; exit 3; fi',
+    'PARENT=$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd -P)',
+    'case "$PARENT" in "$ROOT"|"$ROOT"/*) ;; *) printf "ERR\\toutside_root\\n"; exit 3 ;; esac',
+    'if [ ! -w "$TARGET" ]; then printf "ERR\\tread_only\\n"; exit 3; fi',
+    `printf %s ${shSingleQuote(encoded)} | base64 -d > "$TARGET"`,
+    'printf "PATH\\t%s\\n" "$(printf %s "$TARGET" | base64 | tr -d \'\\n\')"',
+  ].join('\n');
+  const result = await runRemoteShellScript(name, script, { timeout: '20s', maxBuffer: MAX_BUFFER });
+  const error = remoteScriptError(result, '保存远程文件失败');
+  if (error) throw error;
+  const absPath = decodeBase64Field(result.stdout.split(/\r?\n/).find((line) => line.startsWith('PATH\t'))?.slice(5) || '');
+  return {
+    remote: cleanRemoteName(name),
+    path: normalizeRemoteRelativePath(relPath),
+    name: absPath.split('/').pop() || '',
+    abs_path: absPath,
+    size,
+    saved: true,
+  };
 }
 
 function remoteBrowseScript(targetPath: string): string {
@@ -301,5 +521,8 @@ export {
   testRemote,
   hardwareRemote,
   browseRemotePath,
+  listRemoteFiles,
+  readRemoteFile,
+  writeRemoteFile,
   addRemote,
 };
