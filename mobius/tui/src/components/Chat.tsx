@@ -78,7 +78,11 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     () => fitTranscript(chat.entries, transcriptRows, terminal.columns),
     [chat.entries, transcriptRows, terminal.columns],
   )
-  const showWelcome = fitted.estimatedRows + WELCOME_ROWS <= transcriptRows
+  // Welcome card is for fresh / short sessions only. Once the conversation is
+  // long enough that fitTranscript hides older entries, switch to the compact
+  // header + full transcript — otherwise the 12-row welcome card crowds out the
+  // recent messages and the chat area reads as blank after "已隐藏较早的…".
+  const showWelcome = fitted.hiddenCount === 0 && fitted.estimatedRows + WELCOME_ROWS <= transcriptRows
 
   return (
     <Box
