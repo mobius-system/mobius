@@ -1,0 +1,10 @@
+{
+  "name": "toy-toy-toy",
+  "display_name": "广告爽游实验室",
+  "description": "把广告里玩不到的爽游真的做出来：自动开火、尸潮割草、三选一升级与直播导演台。",
+  "version": "0.2.0",
+  "icon": "favicon.svg",
+  "project": {
+    "sync": true
+  }
+}
