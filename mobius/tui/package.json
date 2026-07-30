@@ -1,7 +1,6 @@
 {
-  "name": "mobius",
+  "name": "@mobius-os/mobius",
   "version": "0.2.1",
-  "private": true,
   "type": "module",
   "description": "Mobius terminal client. Reuses Mobius frontend TypeScript types and jsonl entry shapes.",
   "bin": {
@@ -35,5 +34,8 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
