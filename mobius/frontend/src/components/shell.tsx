@@ -966,8 +966,12 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             <Menu className="h-5 w-5" strokeWidth={2} />
           </button>
         )}
-        {/* Logo + 面包屑 */}
-        <div className="mobius-topnav-crumb flex items-center gap-2 min-w-0 flex-shrink-0">
+        {/* Logo + 面包屑。
+            注意: 面包屑容器故意可缩放 + overflow-hidden (非 flex-shrink-0): 顶栏拥挤时
+            面包屑先让步 (标题 truncate), 保护右侧操作按钮 (含工作区布局切换) 不被挤出屏幕。
+            操作区 (.mobius-topnav-actions) 反过来是 flex-shrink-0, 永不缩进。两者配合 =
+            再长的任务/研究标题也不会让顶栏按钮莫名消失。 */}
+        <div className="mobius-topnav-crumb flex items-center gap-2 min-w-0 overflow-hidden">
           <div className="relative flex-shrink-0">
             <button
               type="button"
@@ -1011,7 +1015,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           {projectParam && (
             <>
               <span className="mobius-topnav-sep-post text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
-              <div className="mobius-topnav-projectcrumb relative flex min-w-0 flex-shrink-0 items-center">
+              <div className="mobius-topnav-projectcrumb relative flex min-w-0 items-center">
                 <LinklessRouteButton to={`/u/${userParam}/p/${projectParam}`}
                   className="text-[13px] hover:text-blue-400 truncate"
                   style={{ color: 'var(--text-secondary)', maxWidth: 180 }}
@@ -1045,7 +1049,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           {issueParam && (
             <>
               <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
-              <div className="relative flex min-w-0 flex-shrink-0 items-center">
+              <div className="relative flex min-w-0 items-center">
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); toggleSwitcher('issue') }}
@@ -1074,7 +1078,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           {researchParam && (
             <>
               <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
-              <div className="relative flex min-w-0 flex-shrink-0 items-center">
+              <div className="relative flex min-w-0 items-center">
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); toggleSwitcher('research') }}
@@ -1106,7 +1110,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         <div className="flex-1 self-stretch" aria-hidden style={{ cursor: topnavDrag.enabled ? 'grab' : undefined }} />
 
         {/* 右侧操作 */}
-        <div className="mobius-topnav-actions flex min-w-0 flex-shrink items-center gap-1.5 xl:gap-2">
+        <div className="mobius-topnav-actions flex min-w-0 flex-shrink-0 items-center gap-1.5 xl:gap-2">
           {rightExtra}
           {/* 桌面端 aimux 反向连接状态徽标 — 仅 Electron 检测到时渲染（搜索按钮左侧） */}
           <AimuxStatusBadge />
