@@ -17,6 +17,7 @@ import { LoginScreen } from './components/Login.js'
 import { PrepScreen, type ReadyState } from './components/PrepScreen.js'
 import { ChatScreen } from './components/Chat.js'
 import { ResumePicker } from './components/ResumePicker.js'
+import { Screen } from './components/Screen.js'
 import { startAimuxConnection, stopAimuxConnection, type AimuxStatus } from './aimux.js'
 import { AimuxStatusLine } from './components/AimuxStatus.js'
 
@@ -117,29 +118,36 @@ export function App() {
   }
 
   // ── render ─────────────────────────────────────────────────────────────────
+  // The chat screen already pins itself to the terminal height, so render it
+  // bare — a <Screen> wrapper would clip its transcript in short terminals and
+  // in the non-TTY test harness. Every other route (login, the project/issue/
+  // session pickers) renders inside <Screen> so each frame is pinned to the
+  // terminal height and transitions stay free of stale-frame residue. See
+  // components/Screen.tsx.
+  if (route === 'chat' && ready && client) {
+    return (
+      <ChatScreen
+        key={chatKey}
+        client={client}
+        ready={ready}
+        webUserId={ready.project.created_by || userId || ready.issue.created_by || ''}
+        resumeSessionId={resumeSessionId}
+        onClear={onClear}
+        onResume={onResume}
+        onQuit={onQuit}
+        aimuxStatus={aimuxStatus}
+      />
+    )
+  }
+  let node: React.ReactNode
   if (route === 'boot') {
-    return <Box paddingX={2} paddingY={1}><Text color="cyan">{bootMsg}</Text></Box>
+    node = <Box paddingX={2} paddingY={1}><Text color="cyan">{bootMsg}</Text></Box>
+  } else if (route === 'login' || !client) {
+    node = <LoginScreen onSuccess={onLoginSuccess} />
+  } else if (route === 'resume' && ready) {
+    node = <Box flexDirection="column"><AimuxStatusLine status={aimuxStatus} compact /><ResumePicker client={client} project={ready.project} onPick={onResumed} onBack={() => setRoute('chat')} /></Box>
+  } else {
+    node = <Box flexDirection="column"><AimuxStatusLine status={aimuxStatus} compact /><PrepScreen client={client} onReady={onPrepReady} onQuit={onQuit} /></Box>
   }
-  if (route === 'login' || !client) {
-    return <LoginScreen onSuccess={onLoginSuccess} />
-  }
-  if (route === 'prep' || !ready) {
-    return <Box flexDirection="column"><AimuxStatusLine status={aimuxStatus} /><PrepScreen client={client} onReady={onPrepReady} onQuit={onQuit} /></Box>
-  }
-  if (route === 'resume') {
-    return <Box flexDirection="column"><AimuxStatusLine status={aimuxStatus} /><ResumePicker client={client} project={ready.project} onPick={onResumed} onBack={() => setRoute('chat')} /></Box>
-  }
-  return (
-    <ChatScreen
-      key={chatKey}
-      client={client}
-      ready={ready}
-      webUserId={ready.project.created_by || userId || ready.issue.created_by || ''}
-      resumeSessionId={resumeSessionId}
-      onClear={onClear}
-      onResume={onResume}
-      onQuit={onQuit}
-      aimuxStatus={aimuxStatus}
-    />
-  )
+  return <Screen>{node}</Screen>
 }

@@ -1,9 +1,10 @@
 // Mobius文件浏览器
 
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Network } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Network, Plus } from 'lucide-react'
 import { api } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
+import { RemoteComputeMemoryModal } from '../memories'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
 import { FileTreeContextMenu, type ContextMenuItem } from './file-tree-context-menu'
 import { InlineRenameInput } from './inline-rename-input'
@@ -142,6 +143,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const [remoteSources, setRemoteSources] = useState<ProjectRemoteFileSource[]>([])
   const [remoteSourcesLoaded, setRemoteSourcesLoaded] = useState(false)
   const [remoteSourcesError, setRemoteSourcesError] = useState('')
+  const [remoteSourcesVersion, setRemoteSourcesVersion] = useState(0)
+  const [remoteAddOpen, setRemoteAddOpen] = useState(false)
   const [remoteName, setRemoteName] = useState(() => loadRemoteMachine(projectId))
 
   // ★ 代码区明暗: 独立于全局主题, 自带持久化.
@@ -239,7 +242,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
         setRemoteSourcesLoaded(true)
       })
     return () => { cancelled = true }
-  }, [projectId])
+  }, [projectId, remoteSourcesVersion])
 
   const loadDir = useCallback(async (relPath: string) => {
     setDirs(prev => ({ ...prev, [relPath]: { ...prev[relPath], loading: true, error: undefined } }))
@@ -912,14 +915,14 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
               </button>
             </div>
             {source === 'remote' && (
-              <div className="mt-1.5">
+              <div className="mt-1.5 flex items-center gap-1.5">
                 <select
                   value={remoteName}
                   onChange={event => chooseRemoteMachine(event.target.value)}
                   disabled={!remoteSourcesLoaded || remoteSources.length === 0}
                   aria-label="远程机器"
                   data-tour="workspace-remote-machine-select"
-                  className="h-7 w-full min-w-0 rounded-md border px-2 text-[11px] focus:outline-none disabled:cursor-not-allowed disabled:opacity-55"
+                  className="h-7 min-w-0 flex-1 rounded-md border px-2 text-[11px] focus:outline-none disabled:cursor-not-allowed disabled:opacity-55"
                   style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
                 >
                   {remoteSources.length === 0 && <option value="">未注册远程机器</option>}
@@ -929,6 +932,17 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  onClick={() => setRemoteAddOpen(true)}
+                  title="打开项目设置 · 添加远程算力"
+                  aria-label="打开项目设置 · 添加远程算力"
+                  data-tour="workspace-remote-machine-add"
+                  className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-card-hover)]"
+                  style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
+                >
+                  <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />
+                </button>
               </div>
             )}
             <div className="mt-1.5 flex items-center gap-1.5">
@@ -1236,6 +1250,16 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
         >
           {toast.text}
         </div>
+      )}
+
+      {/* 添加远程算力: 复用项目设置 Memory 的添加远程算力弹窗 (memory 模式), 保存后刷新本下拉 */}
+      {remoteAddOpen && (
+        <RemoteComputeMemoryModal
+          baseUrl={`/api/projects/${projectId}/memories`}
+          mode="memory"
+          onClose={() => setRemoteAddOpen(false)}
+          onSaved={() => setRemoteSourcesVersion(v => v + 1)}
+        />
       )}
     </div>
   )

@@ -180,11 +180,14 @@ export function Select(props: SelectProps) {
 
   // viewport: keep the active item on screen. Without this a long list renders
   // every row and pushes the lower items (and the rest of the UI) past the
-  // terminal bottom. We render a sliding window around `active` plus a
-  // "↑/↓ 还有 N 项" hint for the hidden tails.
+  // terminal bottom, which scrolls Ink's frame and leaves on-screen residue.
+  // We render a sliding window around `active` plus a "↑/↓ 还有 N 项" hint for
+  // the hidden tails. Reserve generously (13): the window items plus the two
+  // scroll hints, the active item's desc line, the AIMUX status line, and the
+  // picker's own header/footer/padding must all fit within `rows`.
   const total = items.length
   const rows = stdout?.rows ?? 24
-  const maxVisible = props.maxVisible ?? Math.max(3, rows - 8)
+  const maxVisible = props.maxVisible ?? Math.max(3, rows - 13)
   let start = 0
   if (total > maxVisible) {
     const half = Math.floor(maxVisible / 2)

@@ -35,7 +35,7 @@ interface TerminalSize {
   isTty: boolean
 }
 
-const VERSION = '0.2.4'
+const VERSION = '0.2.5'
 const WELCOME_ROWS = 12
 const CHROME_ROWS = 11
 
