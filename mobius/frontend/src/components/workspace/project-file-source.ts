@@ -171,3 +171,20 @@ export class LocalProjectFileSource implements ProjectFileSource {
     throw new FileOperationError('READ_ONLY', '本机文件创建暂未接入桌面端')
   }
 }
+
+// 远程代码文件的读取/保存由 CodeConversationPane 直接走 project-scoped aimux API。
+// 树级复制、移动、重命名和下载尚未开放，显式抛 READ_ONLY，避免误落到中枢 REST。
+export class RemoteProjectFileSource implements ProjectFileSource {
+  readonly kind = 'remote' as const
+  readonly writable = false
+  constructor(readonly projectId: string, readonly rootPath: string, readonly remoteName: string) {}
+  private unsupported(): never {
+    throw new FileOperationError('READ_ONLY', '远程文件当前支持浏览与编辑，暂不支持此树级操作')
+  }
+  async listDir(_relPath: string): Promise<FileListResult> { return this.unsupported() }
+  async downloadFile(_relPath: string): Promise<void> { return this.unsupported() }
+  async copyEntry(_sourcePath: string, _targetDir: string): Promise<FileCopyResult> { return this.unsupported() }
+  async renameEntry(_relPath: string, _newName: string): Promise<FileRenameResult> { return this.unsupported() }
+  async moveEntry(_sourcePath: string, _targetDir: string): Promise<FileMoveResult> { return this.unsupported() }
+  async createEntry(_parentPath: string, _name: string, _kind: FileCreateKind): Promise<FileCreateResult> { return this.unsupported() }
+}

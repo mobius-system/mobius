@@ -40,6 +40,7 @@ import {
   contentTypeFor,
 } from '../services/project-file-ops';
 import { resolveProjectPath } from '../services/project-path';
+import * as aimuxRemote from '../services/aimux-remote';
 // @ts-ignore — service 仍是 .js
 import {
   canReadProject,
@@ -2806,6 +2807,66 @@ router.get('/:id/files', auth, (req: express.Request, res: express.Response) => 
     });
   } catch {
     res.status(500).json({ error: 'Read failed' });
+  }
+});
+
+function projectRemoteFileSource(project: any, rawName: unknown): any | null {
+  const name = typeof rawName === 'string' ? rawName.trim() : '';
+  if (!name) return null;
+  const inventory = Array.isArray(project?.aimux_remote_inventory) ? project.aimux_remote_inventory : [];
+  return inventory.find((entry: any) => entry?.name === name) || null;
+}
+
+// 当前 Project 已注册的远程算力文件源。只暴露项目清单内的机器，不返回全局 aimux remote。
+router.get('/:id/remote-file-sources', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  const inventory = Array.isArray(project.aimux_remote_inventory) ? project.aimux_remote_inventory : [];
+  res.json({
+    remotes: inventory.map((entry: any) => ({
+      name: String(entry.name || ''),
+      status: String(entry.status || ''),
+      remote_path: String(entry.remote_path || ''),
+      hostname: String(entry.hostname || ''),
+      hardware: String(entry.hardware || ''),
+    })).filter((entry: any) => entry.name),
+  });
+});
+
+// 远程文件统一走 aimux file：普通 SSH remote 与 reverse bridge remote 自动分派。
+router.get('/:id/remote-files', auth, async (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  const remote = projectRemoteFileSource(project, req.query.remote);
+  if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
+  try {
+    res.json(await aimuxRemote.listRemoteFiles(remote.name, remote.remote_path, req.query.path || '/'));
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || '加载远程文件失败' });
+  }
+});
+
+router.get('/:id/remote-file', auth, async (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  const remote = projectRemoteFileSource(project, req.query.remote);
+  if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
+  try {
+    res.json(await aimuxRemote.readRemoteFile(remote.name, remote.remote_path, req.query.path || '/'));
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || '读取远程文件失败' });
+  }
+});
+
+router.post('/:id/remote-file', auth, async (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  const remote = projectRemoteFileSource(project, req.body?.remote);
+  if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
+  try {
+    res.json(await aimuxRemote.writeRemoteFile(remote.name, remote.remote_path, req.body?.path || '/', req.body?.content));
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || '保存远程文件失败' });
   }
 });
 

@@ -1,13 +1,13 @@
 // Mobius文件浏览器
 
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Network } from 'lucide-react'
 import { api } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
 import { FileTreeContextMenu, type ContextMenuItem } from './file-tree-context-menu'
 import { InlineRenameInput } from './inline-rename-input'
-import { HubProjectFileSource, LocalProjectFileSource, type ProjectFileSource, type DesktopFileBridge, type FileCreateKind } from './project-file-source'
+import { HubProjectFileSource, LocalProjectFileSource, RemoteProjectFileSource, type ProjectFileSource, type DesktopFileBridge, type FileCreateKind } from './project-file-source'
 import {
   type FileTreeTarget,
   type FileClipboardItem,
@@ -48,7 +48,15 @@ type CodeConversationPaneProps = {
   vscodeWebUrl?: string
 }
 
-type FileSource = 'hub' | 'local'
+type FileSource = 'hub' | 'local' | 'remote'
+
+type ProjectRemoteFileSource = {
+  name: string
+  status: string
+  remote_path: string
+  hostname?: string
+  hardware?: string
+}
 
 type DesktopBridge = {
   isDesktop?: boolean
@@ -74,13 +82,24 @@ function fileSourceStorageKey(projectId: string) {
   return `mobius:ui:cc-file-source:${projectId}`
 }
 
+function remoteMachineStorageKey(projectId: string) {
+  return `mobius:ui:cc-remote-machine:${projectId}`
+}
+
 function loadFileSource(projectId: string): FileSource {
-  if (!getDesktopBridge()?.isDesktop) return 'hub'
   try {
-    return localStorage.getItem(fileSourceStorageKey(projectId)) === 'local' ? 'local' : 'hub'
+    const saved = localStorage.getItem(fileSourceStorageKey(projectId))
+    if (saved === 'remote') return 'remote'
+    if (saved === 'local' && getDesktopBridge()?.isDesktop) return 'local'
+    return 'hub'
   } catch {
     return 'hub'
   }
+}
+
+function loadRemoteMachine(projectId: string): string {
+  try { return localStorage.getItem(remoteMachineStorageKey(projectId)) || '' }
+  catch { return '' }
 }
 
 type FileContent = {
@@ -120,6 +139,10 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const [source, setSourceState] = useState<FileSource>(() => loadFileSource(projectId))
   const [localBindPath, setLocalBindPath] = useState('')
   const [localPathBusy, setLocalPathBusy] = useState(false)
+  const [remoteSources, setRemoteSources] = useState<ProjectRemoteFileSource[]>([])
+  const [remoteSourcesLoaded, setRemoteSourcesLoaded] = useState(false)
+  const [remoteSourcesError, setRemoteSourcesError] = useState('')
+  const [remoteName, setRemoteName] = useState(() => loadRemoteMachine(projectId))
 
   // ★ 代码区明暗: 独立于全局主题, 自带持久化.
   const [skin, setSkin] = useState<CodeSkinKey>(() => loadCodeSkin())
@@ -176,20 +199,62 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const [toast, setToast] = useState<{ text: string; kind: 'info' | 'error' } | null>(null)
   const toastTimerRef = useRef<number | null>(null)
 
+  const selectedRemote = useMemo(
+    () => remoteSources.find(remote => remote.name === remoteName) || null,
+    [remoteName, remoteSources],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    setRemoteSourcesLoaded(false)
+    setRemoteSourcesError('')
+    api(`/api/projects/${projectId}/remote-file-sources`)
+      .then((data: any) => {
+        if (cancelled) return
+        const rows = Array.isArray(data?.remotes) ? data.remotes.filter((row: any) => row?.name) : []
+        setRemoteSources(rows)
+        setRemoteName(current => {
+          const stored = loadRemoteMachine(projectId)
+          const next = rows.some((row: ProjectRemoteFileSource) => row.name === current)
+            ? current
+            : (rows.some((row: ProjectRemoteFileSource) => row.name === stored) ? stored : (rows[0]?.name || ''))
+          try {
+            if (next) localStorage.setItem(remoteMachineStorageKey(projectId), next)
+            else localStorage.removeItem(remoteMachineStorageKey(projectId))
+          } catch { /* 静默 */ }
+          return next
+        })
+        setRemoteSourcesLoaded(true)
+      })
+      .catch((e: any) => {
+        if (cancelled) return
+        setRemoteSources([])
+        setRemoteSourcesError(e?.message || '读取项目远程算力失败')
+        setRemoteSourcesLoaded(true)
+      })
+    return () => { cancelled = true }
+  }, [projectId])
+
   const loadDir = useCallback(async (relPath: string) => {
     setDirs(prev => ({ ...prev, [relPath]: { ...prev[relPath], loading: true, error: undefined } }))
     try {
       const data = source === 'local'
         ? await desktop?.listProjectLocalFiles?.(projectId, relPath)
-        : await api(`/api/projects/${projectId}/files?path=${encodeURIComponent(relPath)}`)
-      if (source === 'local' && !data?.ok) throw new Error(data?.error || '加载本机文件失败')
+        : source === 'remote'
+          ? await api(`/api/projects/${projectId}/remote-files?remote=${encodeURIComponent(remoteName)}&path=${encodeURIComponent(relPath)}`)
+          : await api(`/api/projects/${projectId}/files?path=${encodeURIComponent(relPath)}`)
+      if (source === 'local' && !data?.ok) throw new Error(data?.error || '加载本地文件失败')
       if (relPath === '/') {
         setRootLoaded(true)
         if (source === 'local') {
           setLocalBindPath(data?.bind_path || '')
-          // 本机数据源默认可写 (主进程 IPC 用 W_OK 兜底真实权限)。
+          // 本地数据源默认可写 (主进程 IPC 用 W_OK 兜底真实权限)。
           setWritable(!!data?.bind_path)
-          if (!data?.bind_path) setRootError('未绑定本机工作路径')
+          if (!data?.bind_path) setRootError('未绑定本地工作路径')
+        } else if (source === 'remote') {
+          // 远程文件正文可通过 aimux 保存；树级复制/移动/重命名暂不开放。
+          setWritable(false)
+          if (!remoteName) setRootError('当前项目未注册远程算力')
         } else {
           // 中枢: 用后端返回的 bind_path_writable 决定粘贴/重命名是否可用。
           setWritable(!!data?.bind_path_writable)
@@ -201,7 +266,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
       setDirs(prev => ({ ...prev, [relPath]: { loading: false, error: e?.message || '加载失败' } }))
       if (relPath === '/') { setRootLoaded(true); setRootError(e?.message || '加载失败') }
     }
-  }, [desktop, projectId, source])
+  }, [desktop, projectId, remoteName, source])
 
   useEffect(() => {
     let cancelled = false
@@ -225,6 +290,15 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   }, [])
 
   useEffect(() => {
+    if (source === 'remote' && !remoteSourcesLoaded) return
+    if (source === 'remote' && (!remoteName || remoteSourcesError)) {
+      setDirs({})
+      setExpanded(new Set(['/']))
+      setRootLoaded(true)
+      setRootError(remoteSourcesError || '当前项目未注册远程算力')
+      clearEditorState()
+      return
+    }
     setDirs({})
     setExpanded(new Set(['/']))
     setRootLoaded(false)
@@ -232,7 +306,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     setFilter('')
     clearEditorState()
     loadDir('/')
-  }, [loadDir, clearEditorState])
+  }, [loadDir, clearEditorState, remoteName, remoteSourcesError, remoteSourcesLoaded, source])
 
   const toggleDir = (relPath: string) => {
     setExpanded(prev => {
@@ -253,6 +327,15 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     try { localStorage.setItem(fileSourceStorageKey(projectId), next) } catch { /* 静默 */ }
   }, [dirty, isDesktop, projectId, selected, source])
 
+  const chooseRemoteMachine = useCallback((next: string) => {
+    if (!next || next === remoteName) return
+    if (dirty && selected) {
+      if (!window.confirm(`「${selected.name}」有未保存的修改，切换远程机器将丢弃。确定切换？`)) return
+    }
+    setRemoteName(next)
+    try { localStorage.setItem(remoteMachineStorageKey(projectId), next) } catch { /* 静默 */ }
+  }, [dirty, projectId, remoteName, selected])
+
   const chooseLocalPath = useCallback(async () => {
     if (!desktop?.pickDirectory || !desktop.confirmProjectPath) return
     const picked = await desktop.pickDirectory()
@@ -261,7 +344,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     setRootError('')
     try {
       const result = await desktop.confirmProjectPath(projectId, picked)
-      if (!result?.ok) throw new Error(result?.error || '绑定本机路径失败')
+      if (!result?.ok) throw new Error(result?.error || '绑定本地路径失败')
       setLocalBindPath(picked)
       if (source === 'local') {
         setDirs({})
@@ -271,7 +354,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
         loadDir('/')
       }
     } catch (e: any) {
-      setRootError(e?.message || '绑定本机路径失败')
+      setRootError(e?.message || '绑定本地路径失败')
     } finally {
       setLocalPathBusy(false)
     }
@@ -294,11 +377,13 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     setMdPreview(false)
     try {
       const root = source === 'local' ? localBindPath : bindPath
-      const rel = relPathUnderBind(entry.abs_path, root)
+      const rel = source === 'remote' ? (entry.rel_path || '/') : relPathUnderBind(entry.abs_path, root)
       const data = source === 'local'
         ? await desktop?.readProjectLocalFile?.(projectId, rel)
-        : await api(`/api/projects/${projectId}/file?path=${encodeURIComponent(rel)}`)
-      if (source === 'local' && !data?.ok) throw new Error(data?.error || '读取本机文件失败')
+        : source === 'remote'
+          ? await api(`/api/projects/${projectId}/remote-file?remote=${encodeURIComponent(remoteName)}&path=${encodeURIComponent(rel)}`)
+          : await api(`/api/projects/${projectId}/file?path=${encodeURIComponent(rel)}`)
+      if (source === 'local' && !data?.ok) throw new Error(data?.error || '读取本地文件失败')
       setFileData(data as FileContent)
       setDoc((data as FileContent).content || '')
     } catch (e: any) {
@@ -306,7 +391,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     } finally {
       setFileLoading(false)
     }
-  }, [desktop, projectId, bindPath, localBindPath, source, dirty, selected])
+  }, [desktop, projectId, bindPath, localBindPath, remoteName, source, dirty, selected])
 
   // 保存: 写回磁盘, 复位 dirty. 返回是否保存成功 (供重命名前确认使用)。
   const save = useCallback(async (): Promise<boolean> => {
@@ -316,10 +401,15 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     setSaveOk(false)
     try {
       const root = source === 'local' ? localBindPath : bindPath
-      const rel = relPathUnderBind(selected.abs_path, root)
+      const rel = source === 'remote' ? (selected.rel_path || fileData.path || '/') : relPathUnderBind(selected.abs_path, root)
       if (source === 'local') {
         const result = await desktop?.writeProjectLocalFile?.(projectId, rel, doc)
-        if (!result?.ok) throw new Error(result?.error || '保存本机文件失败')
+        if (!result?.ok) throw new Error(result?.error || '保存本地文件失败')
+      } else if (source === 'remote') {
+        await api(`/api/projects/${projectId}/remote-file`, {
+          method: 'POST',
+          body: JSON.stringify({ remote: remoteName, path: rel, content: doc }),
+        })
       } else {
         await api(`/api/projects/${projectId}/file`, {
           method: 'POST',
@@ -337,7 +427,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     } finally {
       setSaving(false)
     }
-  }, [desktop, selected, fileData, dirty, saving, projectId, bindPath, localBindPath, source, doc])
+  }, [desktop, selected, fileData, dirty, saving, projectId, bindPath, localBindPath, remoteName, source, doc])
 
   // Ctrl/Cmd+S 拦截: 触发保存, 阻止浏览器默认另存对话框.
   useEffect(() => {
@@ -374,12 +464,13 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
 
   // ===== 右键菜单数据源 (统一 hub REST / local IPC, 设计文档 §10) =====
   const fileSource = useMemo<ProjectFileSource>(() => {
-    const root = source === 'local' ? localBindPath : bindPath
+    const root = source === 'local' ? localBindPath : (source === 'remote' ? (selectedRemote?.remote_path || '.') : bindPath)
     if (source === 'local' && desktop && desktop.copyProjectLocalEntry && desktop.downloadProjectLocalFile && desktop.renameProjectLocalEntry) {
       return new LocalProjectFileSource(projectId, root, writable, desktop as DesktopFileBridge)
     }
+    if (source === 'remote') return new RemoteProjectFileSource(projectId, root, remoteName)
     return new HubProjectFileSource(projectId, root, writable)
-  }, [source, localBindPath, bindPath, writable, projectId, desktop])
+  }, [source, localBindPath, selectedRemote, bindPath, writable, projectId, desktop, remoteName])
 
   const showToast = useCallback((text: string, kind: 'info' | 'error' = 'info') => {
     setToast({ text, kind })
@@ -425,7 +516,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
 
   async function onCopyAbs(target: FileTreeTarget) {
     const ok = await copyTextToClipboard(target.entry.abs_path)
-    const label = source === 'local' ? '本机' : '中枢'
+    const label = source === 'local' ? '本地' : (source === 'remote' ? '远程' : '中枢')
     showToast(ok ? `已复制${label}绝对路径` : '浏览器未允许访问剪贴板，请手动复制', ok ? 'info' : 'error')
   }
   function onCopy(target: FileTreeTarget) {
@@ -661,7 +752,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   function buildMenuItems(target: FileTreeTarget | null, blankDirRelPath?: string): ContextMenuItem[] {
     const iconCls = 'w-3.5 h-3.5 flex-shrink-0'
     const createDisabled = !writable || source !== 'hub'
-    const createDisabledReason = !writable ? '只读数据源' : (source !== 'hub' ? '本机文件创建暂未接入桌面端' : undefined)
+    const createDisabledReason = source === 'remote'
+      ? '远程文件当前仅支持浏览与编辑'
+      : (!writable ? '只读数据源' : (source !== 'hub' ? '本地文件创建暂未接入桌面端' : undefined))
     const createItems: ContextMenuItem[] = [
       { type: 'item', key: 'createFile', label: '新建文件', icon: <FilePlus2 className={iconCls} />,
         disabled: createDisabled, disabledReason: createDisabledReason,
@@ -690,7 +783,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
       ...createItems,
       { type: 'separator' },
       { type: 'item', key: 'download', label: '下载', icon: <Download className={iconCls} />,
-        disabled: type === 'dir', disabledReason: type === 'dir' ? '目录打包下载将在后续版本支持' : undefined,
+        disabled: type === 'dir' || source === 'remote',
+        disabledReason: source === 'remote' ? '远程文件下载暂未开放' : (type === 'dir' ? '目录打包下载将在后续版本支持' : undefined),
         onRun: () => onDownload(target) },
       { type: 'separator' },
       { type: 'item', key: 'copy', label: '复制', icon: <Copy className={iconCls} />, onRun: () => onCopy(target) },
@@ -702,7 +796,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
       { type: 'item', key: 'copyAbs', label: '复制绝对路径', icon: <FolderTree className={iconCls} />, onRun: () => onCopyAbs(target) },
       { type: 'separator' },
       { type: 'item', key: 'rename', label: '重命名', icon: <Pencil className={iconCls} />,
-        disabled: !writable, disabledReason: !writable ? '只读数据源' : undefined,
+        disabled: !writable, disabledReason: source === 'remote' ? '远程文件当前仅支持浏览与编辑' : (!writable ? '只读数据源' : undefined),
         onRun: () => onStartRename(target) },
     ]
   }
@@ -717,7 +811,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   // 文件浏览器默认宽度 ≈ 视口 18%, 留够空间给代码编辑 + 对话.
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
   const filesDefaultWidth = Math.max(180, Math.min(320, Math.floor(vw * 0.18)))
-  const activeRootPath = source === 'local' ? localBindPath : bindPath
+  const activeRootPath = source === 'local'
+    ? localBindPath
+    : (source === 'remote' ? (selectedRemote?.remote_path || '默认登录目录') : bindPath)
   // 是否为可预览的 Markdown 文件 (非二进制/未截断) — 控制右上角预览切换按钮的显示.
   const mdFile = !!selected && /\.(md|markdown)$/i.test(selected.name) && !!fileData && !fileData.binary && !fileData.truncated
 
@@ -735,13 +831,13 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
         <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: 'var(--border-color)' }}>
           <FileCode2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
           <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }} title={activeRootPath}>
-            {source === 'local' ? '本机文件' : '中枢文件'}
+            {source === 'local' ? '本地文件' : (source === 'remote' ? `远程文件${remoteName ? ` · ${remoteName}` : ''}` : '中枢文件')}
           </span>
           <div className="flex-1" />
           <button
             type="button"
             onClick={refreshTree}
-            disabled={!rootLoaded}
+            disabled={!rootLoaded || (source === 'remote' && !remoteName)}
             title="刷新文件列表"
             aria-label="刷新文件列表"
             className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-45"
@@ -750,9 +846,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
             <RefreshCw className={`h-3.5 w-3.5 ${dirs['/']?.loading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
           </button>
         </div>
-        {isDesktop && (
-          <div className="flex-shrink-0 border-b px-2 py-1.5" style={{ borderColor: 'var(--border-color)' }}>
-            <div className="grid grid-cols-2 gap-1">
+        <div className="flex-shrink-0 border-b px-2 py-1.5" style={{ borderColor: 'var(--border-color)' }} data-tour="workspace-file-source-tabs">
+            <div className={`grid gap-1 ${isDesktop ? 'grid-cols-3' : 'grid-cols-2'}`}>
               <button
                 type="button"
                 onClick={() => chooseSource('hub')}
@@ -767,24 +862,61 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
                 <Server className="h-3.5 w-3.5 flex-shrink-0" />
                 <span className="truncate">中枢</span>
               </button>
+              {isDesktop && (
+                <button
+                  type="button"
+                  onClick={() => chooseSource('local')}
+                  className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors"
+                  style={{
+                    borderColor: source === 'local' ? 'var(--accent-primary)' : 'var(--input-border)',
+                    background: source === 'local' ? 'color-mix(in srgb, var(--accent-primary) 14%, transparent)' : 'var(--input-bg)',
+                    color: source === 'local' ? 'var(--text-primary)' : 'var(--text-muted)',
+                  }}
+                  title="浏览这台电脑绑定的本地工作路径"
+                >
+                  <Laptop className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="truncate">本地</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => chooseSource('local')}
+                onClick={() => chooseSource('remote')}
                 className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors"
                 style={{
-                  borderColor: source === 'local' ? 'var(--accent-primary)' : 'var(--input-border)',
-                  background: source === 'local' ? 'color-mix(in srgb, var(--accent-primary) 14%, transparent)' : 'var(--input-bg)',
-                  color: source === 'local' ? 'var(--text-primary)' : 'var(--text-muted)',
+                  borderColor: source === 'remote' ? 'var(--accent-primary)' : 'var(--input-border)',
+                  background: source === 'remote' ? 'color-mix(in srgb, var(--accent-primary) 14%, transparent)' : 'var(--input-bg)',
+                  color: source === 'remote' ? 'var(--text-primary)' : 'var(--text-muted)',
                 }}
-                title="浏览这台电脑绑定的本机工作路径"
+                title="浏览当前项目已注册远程算力的文件"
+                data-tour="workspace-file-source-remote"
               >
-                <Laptop className="h-3.5 w-3.5 flex-shrink-0" />
-                <span className="truncate">本机</span>
+                <Network className="h-3.5 w-3.5 flex-shrink-0" />
+                <span className="truncate">远程</span>
               </button>
             </div>
+            {source === 'remote' && (
+              <div className="mt-1.5">
+                <select
+                  value={remoteName}
+                  onChange={event => chooseRemoteMachine(event.target.value)}
+                  disabled={!remoteSourcesLoaded || remoteSources.length === 0}
+                  aria-label="远程机器"
+                  data-tour="workspace-remote-machine-select"
+                  className="h-7 w-full min-w-0 rounded-md border px-2 text-[11px] focus:outline-none disabled:cursor-not-allowed disabled:opacity-55"
+                  style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
+                >
+                  {remoteSources.length === 0 && <option value="">未注册远程机器</option>}
+                  {remoteSources.map(remote => (
+                    <option key={remote.name} value={remote.name}>
+                      {remote.name}{remote.status ? ` · ${remote.status}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="mt-1.5 flex items-center gap-1.5">
               <div className="min-w-0 flex-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }} title={activeRootPath || undefined}>
-                {activeRootPath || (source === 'local' ? '未绑定本机工作路径' : '未绑定项目路径')}
+                {activeRootPath || (source === 'local' ? '未绑定本地工作路径' : (source === 'remote' ? '未配置远程工作路径' : '未绑定项目路径'))}
               </div>
               {source === 'local' && (
                 <button
@@ -793,7 +925,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
                   disabled={localPathBusy}
                   className="inline-flex h-6 flex-shrink-0 items-center gap-1 rounded-md border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
                   style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
-                  title={localBindPath ? '更改本机绑定路径' : '选择本机绑定路径'}
+                  title={localBindPath ? '更改本地绑定路径' : '选择本地绑定路径'}
                 >
                   {localPathBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderOpen className="h-3 w-3" />}
                   {localBindPath ? '更改' : '选择'}
@@ -801,7 +933,6 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
               )}
             </div>
           </div>
-        )}
         {/* 文件名搜索过滤 (仅覆盖已展开加载过的目录) */}
         <div className="flex-shrink-0 border-b px-2 py-1.5" style={{ borderColor: 'var(--border-color)' }}>
           <div className="relative">
@@ -838,7 +969,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
                   style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
                 >
                   {localPathBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderOpen className="h-3.5 w-3.5" />}
-                  选择本机路径
+                  选择本地路径
                 </button>
               )}
             </div>
@@ -854,7 +985,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
               onBlankContextMenu={(e, relPath) => openTreeContextMenu(e, null, relPath)}
               renamingRelPath={rename?.target.relPath}
               renderRenameInput={renderRenameInput}
-              onMoveEntry={onMoveEntry}
+              onMoveEntry={writable ? onMoveEntry : undefined}
             />
           )}
         </div>

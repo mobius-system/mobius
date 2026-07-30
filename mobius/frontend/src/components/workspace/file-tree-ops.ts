@@ -4,7 +4,7 @@ import type { Entry, FileTreeTarget } from '../project-files'
 
 export type { FileTreeTarget }
 
-export type FileSourceKind = 'hub' | 'local'
+export type FileSourceKind = 'hub' | 'local' | 'remote'
 
 // 统一错误码: REST 与 Electron IPC 共用, 菜单层只据此选择文案, 不解析字符串。
 export type FileOperationErrorCode =

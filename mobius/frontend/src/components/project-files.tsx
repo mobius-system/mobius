@@ -14,6 +14,8 @@ type Entry = {
   size: number | null
   modified: string
   abs_path: string
+  /** 远程文件源使用：相对该 Project 注册 remote_path 的稳定路径。 */
+  rel_path?: string
 }
 
 export type { Entry }
