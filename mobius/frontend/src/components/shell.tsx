@@ -967,11 +967,14 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           </button>
         )}
         {/* Logo + 面包屑。
-            注意: 面包屑容器故意可缩放 + overflow-hidden (非 flex-shrink-0): 顶栏拥挤时
-            面包屑先让步 (标题 truncate), 保护右侧操作按钮 (含工作区布局切换) 不被挤出屏幕。
-            操作区 (.mobius-topnav-actions) 反过来是 flex-shrink-0, 永不缩进。两者配合 =
-            再长的任务/研究标题也不会让顶栏按钮莫名消失。 */}
-        <div className="mobius-topnav-crumb flex items-center gap-2 min-w-0 overflow-hidden">
+            注意: 面包屑容器故意可缩放 (非 flex-shrink-0): 顶栏拥挤时面包屑先让步, 保护右侧
+            操作按钮 (含工作区布局切换) 不被挤出屏幕。操作区 (.mobius-topnav-actions) 反过来是
+            flex-shrink-0, 永不缩进。两者配合 = 再长的任务/研究标题也不会让顶栏按钮莫名消失。
+            ⚠️ 切勿在此容器加 overflow-hidden! 品牌 logo (RecentSessionsPanel) / 项目 / 任务 /
+            研究 (NavSwitcherPanel) 四个下拉都是 absolute 定位的子元素, 祖先 overflow-hidden 会把
+            下拉面板整块裁掉 → 点 logo / 切换项目 / 切换任务"没反应" (按钮像点不动)。
+            顶栏拥挤时的横向省略由各面包屑文本自带 truncate + 外层 min-w-0 负责, 不需要容器级裁剪。 */}
+        <div className="mobius-topnav-crumb flex items-center gap-2 min-w-0">
           <div className="relative flex-shrink-0">
             <button
               type="button"
