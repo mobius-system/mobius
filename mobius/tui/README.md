@@ -24,7 +24,7 @@ mobius/tui/
       Chat.tsx            viewport-aware transcript + welcome card + composer/status
       ResumePicker.tsx    /resume — 32 most-recent project sessions
   tests/
-    integration.test.ts   real backend end-to-end (cloud-17)
+    integration.test.ts   real backend end-to-end (your server)
     ui.test.tsx           ink-testing-library + mocked fetch/SSE
   bin/mobius-tui.js       launcher
 ```
@@ -39,8 +39,8 @@ npm start --silent             # suppress npm's script banner
 ```
 
 On first launch there is no `~/.mobius/login.json`, so the login screen appears.
-Defaults target `https://cloud-17.agent-matrix.com` (user `fuqingxu`,
-passwordless). On success the token is saved and the next launch auto-logs in
+Enter your Mobius server URL and username (most servers are passwordless).
+On success the token is saved and the next launch auto-logs in
 (validated via `/api/auth/me`; re-login on expiry).
 
 After a successful login the TUI also starts its local AIMUX reverse connection
@@ -124,7 +124,7 @@ and the noise predicates from `frontend/src/components/viewer/entry-classify.ts`
 ```bash
 npm run typecheck
 npm run test:ui            # mocked fetch + fake SSE, no network
-MOBIUS_TUI_WAIT_MS=90000 npm run test:integration   # real backend (cloud-17)
+MOBIUS_TUI_WAIT_MS=90000 npm run test:integration   # real backend (your server)
 npm test                   # all three
 ```
 

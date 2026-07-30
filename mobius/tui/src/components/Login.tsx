@@ -13,7 +13,7 @@ import { TextInput } from './primitives.js'
 import { getAuthConfig, login, ApiError } from '../api.js'
 import { saveLogin, type LoginRecord } from '../config.js'
 
-const DEFAULT_SERVER = 'https://cloud-17.agent-matrix.com'
+const DEFAULT_SERVER = ''
 
 export function LoginScreen({ onSuccess, onError }: {
   onSuccess: (rec: LoginRecord) => void
@@ -28,10 +28,12 @@ export function LoginScreen({ onSuccess, onError }: {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!server.trim()) { setPwdRequired(null); return }
     getAuthConfig(server).then(c => setPwdRequired(!!c.password_required)).catch(() => setPwdRequired(false))
   }, [server])
 
   async function submit() {
+    if (!server.trim()) { setError('请输入服务地址'); setFocus(0); return }
     if (!username.trim()) { setError('请输入用户名'); setFocus(1); return }
     setBusy(true); setError(null)
     try {
@@ -49,8 +51,8 @@ export function LoginScreen({ onSuccess, onError }: {
   }
 
   const fields = [
-    { label: '服务地址', value: server, set: setServer, placeholder: DEFAULT_SERVER, mask: false },
-    { label: '用户名', value: username, set: setUsername, placeholder: 'fuqingxu', mask: false },
+    { label: '服务地址', value: server, set: setServer, placeholder: 'https://your-mobius-server.example.com', mask: false },
+    { label: '用户名', value: username, set: setUsername, placeholder: 'your-username', mask: false },
     { label: '密码', value: password, set: setPassword, placeholder: pwdRequired === false ? '（此服务器免密，留空即可）' : '••••', mask: true },
   ]
 

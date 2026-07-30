@@ -1,6 +1,6 @@
 {
   "name": "@mobius-os/mobius",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "description": "Mobius terminal client. Reuses Mobius frontend TypeScript types and jsonl entry shapes.",
   "bin": {
