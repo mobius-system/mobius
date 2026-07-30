@@ -169,6 +169,12 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const [rootLoaded, setRootLoaded] = useState(false)
   const [rootError, setRootError] = useState('')
   const [filter, setFilter] = useState('')
+  const [showFileFilter, setShowFileFilter] = useState(false)
+
+  const toggleFileFilter = useCallback(() => {
+    if (showFileFilter) setFilter('')
+    setShowFileFilter(visible => !visible)
+  }, [showFileFilter])
 
   // ----- 代码浏览/编辑状态 -----
   const [selected, setSelected] = useState<Entry | null>(null)
@@ -836,6 +842,17 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
           <div className="flex-1" />
           <button
             type="button"
+            onClick={toggleFileFilter}
+            title={showFileFilter ? '隐藏文件名过滤' : '过滤文件名'}
+            aria-label={showFileFilter ? '隐藏文件名过滤' : '过滤文件名'}
+            aria-pressed={showFileFilter}
+            className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--bg-card-hover)]"
+            style={{ color: showFileFilter ? 'var(--accent-primary)' : 'var(--text-muted)' }}
+          >
+            <Search className="h-3.5 w-3.5" strokeWidth={1.8} />
+          </button>
+          <button
+            type="button"
             onClick={refreshTree}
             disabled={!rootLoaded || (source === 'remote' && !remoteName)}
             title="刷新文件列表"
@@ -934,23 +951,26 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
             </div>
           </div>
         {/* 文件名搜索过滤 (仅覆盖已展开加载过的目录) */}
-        <div className="flex-shrink-0 border-b px-2 py-1.5" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-            <input
-              value={filter}
-              onChange={e => setFilter(e.target.value)}
-              placeholder="过滤文件名…"
-              className="h-7 w-full rounded-md border pl-7 pr-6 text-[12px] focus:outline-none"
-              style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
-            />
-            {filter && (
-              <button type="button" onClick={() => setFilter('')} className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
-                <X className="h-3 w-3" />
-              </button>
-            )}
+        {showFileFilter && (
+          <div className="flex-shrink-0 border-b px-2 py-1.5" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+              <input
+                autoFocus
+                value={filter}
+                onChange={e => setFilter(e.target.value)}
+                placeholder="过滤文件名…"
+                className="h-7 w-full rounded-md border pl-7 pr-6 text-[12px] focus:outline-none"
+                style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
+              />
+              {filter && (
+                <button type="button" onClick={() => setFilter('')} className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
         <div
           className="flex-1 overflow-y-auto px-1.5 py-1.5"
           onContextMenu={(e) => openTreeContextMenu(e, null)}

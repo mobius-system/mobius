@@ -798,7 +798,7 @@ export default function UserPage() {
                       {/* 描述 + 元数据 */}
                       <div className="px-4 py-2.5">
                         {p.description ? (
-                          <p className="text-[12px] line-clamp-2 mb-2" style={{ color: 'var(--text-secondary)' }}>{p.description}</p>
+                          <p className="text-[12px] truncate mb-2" style={{ color: 'var(--text-secondary)' }} title={p.description}>{p.description}</p>
                         ) : (
                           <p className="text-[12px] italic mb-2" style={{ color: 'var(--text-muted)' }}>无描述</p>
                         )}
