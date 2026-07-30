@@ -1123,7 +1123,9 @@ function ChatHeaderOverflowMenu({
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [open])
-  const itemClass = "w-full px-3 py-2 text-left text-[12px] hover:bg-[var(--bg-card-hover)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-between gap-3"
+  // 统一到顶栏「新建」下拉风格 (global-create): py-1.5 / hover var(--bg-hover) / gap-2.
+  // 保留 justify-between — 本菜单项含右侧计数徽标需两端对齐.
+  const itemClass = "w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center justify-between gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
   return (
     <div className="relative">
       <HeaderActionButton
@@ -1136,11 +1138,10 @@ function ChatHeaderOverflowMenu({
       {open && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="absolute right-0 top-9 z-50 min-w-[220px] rounded-xl border overflow-hidden"
+          className="absolute right-0 top-9 z-50 min-w-[200px] rounded-lg shadow-xl py-1"
           style={{
-            background: 'var(--modal-bg)',
-            borderColor: 'var(--border-color)',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            background: 'var(--menu-bg)',
+            border: '1px solid var(--border-color)',
             color: 'var(--text-primary)',
           }}>
           {/* 移动端: 顶栏终止按钮已隐藏, 终止收纳进此菜单 (md:hidden = 仅移动端显示) */}
@@ -3586,29 +3587,29 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                   <div
                     ref={inputMenuRef}
                     role="menu"
-                    className="absolute bottom-11 left-0 z-30 min-w-44 overflow-hidden rounded-xl border p-1 shadow-xl backdrop-blur-sm"
+                    className="absolute bottom-11 left-0 z-30 min-w-[200px] rounded-lg shadow-xl py-1"
                     style={{
-                      background: theme !== 'light' ? 'rgba(15, 23, 42, 0.96)' : 'rgba(255, 255, 255, 0.98)',
-                      borderColor: theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.10)',
+                      background: 'var(--menu-bg)',
+                      border: '1px solid var(--border-color)',
                     }}
                   >
                     <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); openFilePicker() }}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                      className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                       style={{ color: 'var(--text-primary)' }}>
-                      <Paperclip className="h-3.5 w-3.5" strokeWidth={2} />
+                      <Paperclip className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
                       <span>上传文件</span>
                     </button>
                     <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); setCompactConfirmOpen(true) }}
                       disabled={!sessionId}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                       style={{ color: 'var(--text-primary)' }}>
-                      <Archive className="h-3.5 w-3.5" strokeWidth={2} />
+                      <Archive className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
                       <span>压缩上文</span>
                     </button>
                     <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); toggleInputExpanded() }}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                      className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                       style={{ color: 'var(--text-primary)' }}>
-                      {inputExpanded ? <Minimize2 className="h-3.5 w-3.5" strokeWidth={2} /> : <Maximize2 className="h-3.5 w-3.5" strokeWidth={2} />}
+                      {inputExpanded ? <Minimize2 className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} /> : <Maximize2 className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />}
                       <span>{inputExpanded ? '收起大输入' : '展开大输入'}</span>
                     </button>
                   </div>
