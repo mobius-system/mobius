@@ -1180,13 +1180,13 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 event.stopPropagation()
                 setShowThemeMenu(v => !v)
               }}
-              title={`当前主题: ${headerLabel}。Alt+点击切换下一个主题`}
-              aria-label="选择主题"
+              title={`外观与界面：主题色 / 简易·常规模式（当前 ${headerLabel}）。Alt+点击切换下一个主题色`}
+              aria-label="外观与界面设置"
               aria-expanded={showThemeMenu}
               className="max-w-[128px] min-w-0 justify-center"
             >
               {headerIconKey === 'light' ? <Sun className="w-3.5 h-3.5 shrink-0" strokeWidth={2} /> : headerIconKey === 'dark' ? <Moon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} /> : <Sliders className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />}
-              <span className="mobius-topnav-theme-label min-w-0 max-w-[80px] truncate text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>{headerLabel}</span>
+              <span className="mobius-topnav-theme-label min-w-0 max-w-[80px] truncate text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>外观</span>
             </TopNavActionElement>
             {showThemeMenu && (
               <div
