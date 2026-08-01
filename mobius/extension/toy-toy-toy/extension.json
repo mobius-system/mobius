@@ -1,8 +1,8 @@
 {
   "name": "toy-toy-toy",
   "display_name": "广告爽游实验室",
-  "description": "三题材广告爽游实验室：尸潮防线、程序员保卫 DDL、免疫系统大战病毒。",
-  "version": "0.3.0",
+  "description": "双题材广告爽游实验室：恐怖尸潮割草与搞笑办公室 DDL 保卫战。",
+  "version": "0.4.0",
   "icon": "favicon.svg",
   "project": {
     "sync": true

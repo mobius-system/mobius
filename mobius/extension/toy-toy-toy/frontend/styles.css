@@ -547,7 +547,7 @@ button { color: inherit; }
 
 .theme-picker {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin: 0 0 18px;
 }
@@ -597,6 +597,43 @@ button { color: inherit; }
 .theme-card i { grid-row: 2 / 4; align-self: center; color: var(--theme-card-color); font-size: 23px; font-style: normal; text-shadow: 0 0 14px var(--theme-card-color); }
 .theme-card b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .theme-card small { overflow: hidden; color: var(--dim); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+
+.enemy-roster {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin: -3px 0 14px;
+}
+
+.enemy-roster-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-height: 48px;
+  padding: 3px 5px;
+  border: 1px solid rgba(146, 189, 213, 0.13);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.enemy-roster-item i {
+  width: 36px;
+  height: 46px;
+  display: block;
+  background-repeat: no-repeat;
+  background-size: 500% 100%;
+  filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.55));
+}
+
+.enemy-roster-item span {
+  min-width: 0;
+  color: #b9ceda;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.25;
+}
 
 .feature-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
 .feature-row span { padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: #b9ceda; background: rgba(255, 255, 255, 0.03); font-size: 9px; font-weight: 800; }
@@ -738,6 +775,7 @@ button { color: inherit; }
   .theme-card i { grid-row: auto; font-size: 21px; }
   .theme-card b { font-size: 9px; }
   .theme-card small { display: none; }
+  .enemy-roster { display: none; }
   .leaderboard-card { display: none; }
   .upgrade-options { grid-template-columns: 1fr; }
   .upgrade-option { min-height: 120px; display: grid; grid-template-columns: 28px 42px 1fr; grid-template-rows: auto auto; gap: 3px 10px; padding: 13px; }

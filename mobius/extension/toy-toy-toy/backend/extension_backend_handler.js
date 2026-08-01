@@ -12,7 +12,7 @@ const MAX_SCORE = 1_000_000_000;
 const MAX_KILLS = 100_000;
 const MAX_DURATION = 3_600;
 const MAX_ROWS_PER_THEME = 100;
-const VALID_THEMES = new Set(['zombie', 'deadline', 'immunity']);
+const VALID_THEMES = new Set(['zombie', 'deadline']);
 
 async function readRows(file) {
   try {
@@ -77,7 +77,7 @@ module.exports = async function toyToyToyHandler({
     if (!theme) return { ok: false, error: 'invalid theme' };
     const rows = await readRows(stateFile);
     const themeRows = rows
-      .filter((row) => (normalizeTheme(row.theme) || 'zombie') === theme)
+      .filter((row) => normalizeTheme(row.theme) === theme)
       .sort((a, b) => b.score - a.score || a.ts - b.ts);
     const leaderboard = themeRows.slice(0, 10).map((row, index) => publicRow(row, index + 1));
     const ownIndex = themeRows.findIndex((row) => row.username === username);
@@ -99,7 +99,7 @@ module.exports = async function toyToyToyHandler({
     }
 
     const rows = await readRows(stateFile);
-    const existing = rows.find((row) => row.username === username && (normalizeTheme(row.theme) || 'zombie') === theme);
+    const existing = rows.find((row) => row.username === username && normalizeTheme(row.theme) === theme);
     const now = Date.now();
     const result = {
       username,
@@ -132,12 +132,12 @@ module.exports = async function toyToyToyHandler({
     }
 
     const trimmed = [...VALID_THEMES].flatMap((themeName) => rows
-      .filter((row) => (normalizeTheme(row.theme) || 'zombie') === themeName)
+      .filter((row) => normalizeTheme(row.theme) === themeName)
       .sort((a, b) => b.score - a.score || a.ts - b.ts)
       .slice(0, MAX_ROWS_PER_THEME));
     await writeRows(stateFile, trimmed);
     const themeRows = trimmed
-      .filter((row) => (normalizeTheme(row.theme) || 'zombie') === theme)
+      .filter((row) => normalizeTheme(row.theme) === theme)
       .sort((a, b) => b.score - a.score || a.ts - b.ts);
     const ownIndex = themeRows.findIndex((row) => row.username === username);
     const leaderboard = themeRows.slice(0, 10).map((row, index) => publicRow(row, index + 1));

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#07111f">
   <title>广告爽游实验室</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=0.4.0">
   <script type="importmap">
   {
     "imports": {
@@ -124,10 +124,9 @@
             <button class="theme-card" data-theme="deadline" type="button" style="--theme-card-color:#62a8ff">
               <span>02</span><i>⌘</i><b>程序员保卫 DDL</b><small>Bug 井喷 · 线上救火</small>
             </button>
-            <button class="theme-card" data-theme="immunity" type="button" style="--theme-card-color:#ff6fb7">
-              <span>03</span><i>◎</i><b>免疫系统大战病毒</b><small>抗体扩散 · 病毒突变</small>
-            </button>
           </div>
+
+          <div id="enemyRoster" class="enemy-roster" aria-label="敌人角色阵容"></div>
 
           <div id="featureRow" class="feature-row">
             <span>自动开火</span><span>三选一升级</span><span>动态救场</span><span>Boss 演出</span>
@@ -188,6 +187,6 @@
     </section>
   </main>
 
-  <script type="module" src="./main.js"></script>
+  <script type="module" src="./main.js?v=0.4.0"></script>
 </body>
 </html>

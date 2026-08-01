@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="360" viewBox="0 0 1400 360">
+  <defs>
+    <linearGradient id="skin" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b8cf84"/><stop offset=".55" stop-color="#6f8757"/><stop offset="1" stop-color="#394934"/></linearGradient>
+    <linearGradient id="rot" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#8da563"/><stop offset="1" stop-color="#405035"/></linearGradient>
+    <linearGradient id="blood" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ff5b62"/><stop offset="1" stop-color="#6e1425"/></linearGradient>
+    <linearGradient id="boss" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#71865e"/><stop offset=".5" stop-color="#354238"/><stop offset="1" stop-color="#121c1b"/></linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="7" stdDeviation="6" flood-color="#000" flood-opacity=".72"/></filter>
+    <filter id="redglow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+
+  <!-- 01 腐烂行尸：歪头、破风衣、外露肋骨 -->
+  <g transform="translate(140 18)" stroke="#101719" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" filter="url(#shadow)">
+    <path d="M-47 191-71 306h39l15-76 12 76h39L24 190z" fill="#2b3340"/>
+    <path d="M-58 121-86 207l31 12 22-51 5 67h69l4-69 20 49 31-15-31-83-44-20z" fill="#586470"/>
+    <path d="M-42 151 3 168l41-17-8 69-65 2z" fill="#263746" stroke="#2f181c"/>
+    <path d="M-24 157c8 7 17 10 27 10l-10 45M9 166l8 45" fill="none" stroke="#d8c4a1" stroke-width="5"/>
+    <path d="M-47 126-79 186M49 126l48 55" fill="none" stroke="url(#skin)" stroke-width="23"/>
+    <path d="M-83 184c-6 10-3 22 8 27 10 3 17-2 19-10" fill="url(#skin)"/>
+    <path d="M91 179c12 4 17 16 10 26-7 7-17 6-23-1" fill="url(#skin)"/>
+    <path d="M-38 53c3-30 24-47 54-42 30 5 42 31 32 60l-12 44-56-6-25-31z" fill="url(#skin)"/>
+    <path d="M-42 47c8-34 52-49 80-21-17-5-34 1-45 16z" fill="#18201d"/>
+    <path d="M-28 60 2 55M17 58l23 7" fill="none" stroke="#20272a" stroke-width="9"/>
+    <ellipse cx="-12" cy="66" rx="6" ry="8" fill="#ffda53" stroke="none" filter="url(#redglow)"/><ellipse cx="28" cy="71" rx="6" ry="8" fill="#ffda53" stroke="none" filter="url(#redglow)"/>
+    <path d="m-14 86 42 4-8 22-28-3z" fill="#250e13"/><path d="m-6 89 8 2-1 10m12-9 8 1-3 11" fill="none" stroke="#e9dfc8" stroke-width="5"/>
+    <path d="M38 44c20 6 26 22 16 37l-9-8" fill="url(#blood)"/>
+    <path d="M-39 130-8 151M46 126 18 153" fill="none" stroke="#aab4b7" stroke-width="3"/>
+  </g>
+
+  <!-- 02 狂奔者：瘦长、撕裂连帽衫、冲刺姿势 -->
+  <g transform="translate(420 16) rotate(-4 0 170)" stroke="#11161a" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" filter="url(#shadow)">
+    <path d="M-14 205-72 300h38l52-67 12 72h39l-9-105z" fill="#34363c"/>
+    <path d="M-47 110-71 197l50 25 59-13 3-99-40-19z" fill="#c45b2e"/>
+    <path d="M-44 127-103 178l18 27 66-36M40 123l82 46-15 30-73-30" fill="none" stroke="url(#rot)" stroke-width="20"/>
+    <path d="m-103 178-12 18 25 22 15-21m194-29 14 17-22 27-18-16" fill="url(#skin)"/>
+    <path d="M-35 48c3-30 25-43 51-37 27 7 38 32 28 59l-8 37-56-4-21-30z" fill="url(#skin)"/>
+    <path d="M-37 42C-16 2 30 2 49 40 26 27 2 33-14 47z" fill="#331d19"/>
+    <path d="m-22 58 22-5m14 5 22 6" fill="none" stroke="#241b1c" stroke-width="8"/>
+    <circle cx="-9" cy="64" r="6" fill="#ff8b37" stroke="none" filter="url(#redglow)"/><circle cx="27" cy="69" r="6" fill="#ff8b37" stroke="none" filter="url(#redglow)"/>
+    <path d="m-13 81 47 7-16 25-27-8z" fill="#240d13"/><path d="m-3 85 10 2m11 2 9 1" stroke="#f5e5ce" stroke-width="6"/>
+    <path d="M-41 111 2 139l39-29M-2 139l8 70" fill="none" stroke="#f59b45" stroke-width="5"/>
+    <path d="m47 179 26 7" stroke="#ff5d5d" stroke-width="6"/>
+  </g>
+
+  <!-- 03 肉盾：肥胖屠夫、围裙、铁链 -->
+  <g transform="translate(700 12)" stroke="#101719" stroke-width="8" stroke-linejoin="round" stroke-linecap="round" filter="url(#shadow)">
+    <path d="M-62 215-75 312h47l25-67 20 67h49l-10-104z" fill="#303236"/>
+    <path d="M-77 104c-51 63-48 143 3 160 48 15 129 12 154-23 19-37 2-104-45-139z" fill="url(#skin)"/>
+    <path d="M-55 134-87 244c41 24 91 29 139 6L35 132 1 151z" fill="#9b8c70"/>
+    <path d="M-35 143 4 236M31 141 4 236" fill="none" stroke="#4b4038" stroke-width="7"/>
+    <path d="M-69 123-111 210M69 127l47 77" fill="none" stroke="url(#rot)" stroke-width="30"/>
+    <path d="m-111 207-5 27 31 8 12-24m188-17 11 26-30 14-14-22" fill="url(#skin)"/>
+    <path d="M-56 50c2-35 28-53 61-48 34 5 51 32 43 67l-9 48-67-3-35-30z" fill="url(#skin)"/>
+    <path d="M-56 47C-37 13 23-6 48 43L9 30-18 46z" fill="#201f1c"/>
+    <path d="m-35 60 27-3m18 4 26 5" stroke="#232420" stroke-width="10"/>
+    <ellipse cx="-20" cy="69" rx="7" ry="6" fill="#ffdb4d" stroke="none"/><ellipse cx="24" cy="72" rx="7" ry="6" fill="#ffdb4d" stroke="none"/>
+    <path d="m-29 90 59 3-12 26-36-2z" fill="#321016"/><path d="m-12 94 8 1m12 0 8 1" stroke="#eee0c8" stroke-width="7"/>
+    <path d="M-74 180c38 22 97 26 151 1" fill="none" stroke="#5b4a3c" stroke-width="8" stroke-dasharray="10 12"/>
+    <path d="M-48 189c30 18 65 19 99 2" fill="none" stroke="#c0b39a" stroke-width="5"/>
+    <path d="m39 146 27 12-18 29-20-17z" fill="url(#blood)"/>
+  </g>
+
+  <!-- 04 变异精英：裂口、防化残片、骨刺双臂 -->
+  <g transform="translate(980 12)" stroke="#0c1518" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" filter="url(#shadow)">
+    <path d="M-42 205-66 311h42l27-74 20 74h45L54 202z" fill="#202e35"/>
+    <path d="M-60 106-68 213l71 34 69-37-15-109-48-22z" fill="#655477"/>
+    <path d="M-48 112-103 178l25 28 56-51M60 111l66 49-18 31-72-32" fill="none" stroke="#61715b" stroke-width="25"/>
+    <path d="m-93 172-30-25 12 39-28 8 44 18 21-18m185-39 27-30-6 42 31 3-39 24-22-12" fill="#d1d8b0"/>
+    <path d="M-40 42c7-30 30-43 59-35 28 8 40 37 28 65l-15 39-60-8-19-34z" fill="url(#rot)"/>
+    <path d="M-39 35c25-31 66-23 87 7-25-8-41-5-56 6z" fill="#20281f"/>
+    <path d="m-28 61 24-6m15 7 24 8" stroke="#202124" stroke-width="9"/>
+    <circle cx="-13" cy="68" r="7" fill="#d276ff" stroke="none" filter="url(#redglow)"/><circle cx="25" cy="74" r="7" fill="#d276ff" stroke="none" filter="url(#redglow)"/>
+    <path d="m-21 89 56 4-25 24-31-11z" fill="#32102f"/><path d="M5 91v20" stroke="#f1e7d2" stroke-width="5"/>
+    <path d="M-48 118 4 159l53-51M4 158v70" fill="none" stroke="#d7be48" stroke-width="6"/>
+    <path d="M-28 184c21 12 43 12 65 0" fill="none" stroke="#ba65db" stroke-width="8" filter="url(#redglow)"/>
+  </g>
+
+  <!-- 05 尸王：巨型轮廓、骨冠、发光胸腔 -->
+  <g transform="translate(1260 2)" stroke="#091113" stroke-width="9" stroke-linejoin="round" stroke-linecap="round" filter="url(#shadow)">
+    <path d="M-68 216-78 330h48l30-78 27 78h50L65 210z" fill="#1c2526"/>
+    <path d="M-92 107c-39 60-31 135-1 155 47 32 138 26 178-12 21-34 11-102-23-143L5 78z" fill="url(#boss)"/>
+    <path d="M-73 120-129 199l31 26 56-58M73 119l59 77-30 29-55-59" fill="none" stroke="url(#boss)" stroke-width="38"/>
+    <path d="m-126 194-17 29 34 23 22-26m217-27 18 28-34 25-23-25" fill="#536650"/>
+    <path d="M-56 44c8-35 34-52 68-43 34 9 49 40 37 75l-12 45-72-5-30-42z" fill="url(#boss)"/>
+    <path d="m-49 35-34-28 12 45m30-39-8-50 31 45M27 10 45-36l10 57M50 33 86 4 55 54" fill="#c6c9a2"/>
+    <path d="m-40 64 27-8m20 8 29 7" stroke="#161719" stroke-width="12"/>
+    <circle cx="-24" cy="72" r="8" fill="#ff3f52" stroke="none" filter="url(#redglow)"/><circle cx="24" cy="77" r="8" fill="#ff3f52" stroke="none" filter="url(#redglow)"/>
+    <path d="m-31 94 67 4-22 29-40-7z" fill="#23080e"/><path d="m-13 97 10 1m13 1 11 1" stroke="#f3dec2" stroke-width="8"/>
+    <path d="M-55 141c18 3 28 15 34 32 7-16 15-27 27-31 14 6 23 19 28 35 7-19 18-30 35-34" fill="none" stroke="#ff4d60" stroke-width="9" filter="url(#redglow)"/>
+    <path d="M-63 202c43 18 87 19 132 1" fill="none" stroke="#6f2432" stroke-width="10"/>
+    <path d="m-104 149-21-31m128-26 2-34m101 92 22-30" stroke="#c6c9a2" stroke-width="13"/>
+  </g>
+</svg>

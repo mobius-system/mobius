@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="360" viewBox="0 0 1400 360">
+  <defs>
+    <linearGradient id="skin2" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffd8be"/><stop offset="1" stop-color="#d89170"/></linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#5cbcff"/><stop offset="1" stop-color="#334a9c"/></linearGradient>
+    <linearGradient id="suit" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#56647f"/><stop offset="1" stop-color="#20283b"/></linearGradient>
+    <linearGradient id="red2" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ff6d72"/><stop offset="1" stop-color="#b32745"/></linearGradient>
+    <filter id="shadow2" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="7" stdDeviation="6" flood-color="#000" flood-opacity=".68"/></filter>
+    <filter id="glow2" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+
+  <!-- 01 开发同事：连帽衫、咖啡、疲惫但淡定 -->
+  <g transform="translate(140 16)" stroke="#121829" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" filter="url(#shadow2)">
+    <path d="M-48 205-65 318h40l28-79 21 79h42L54 203z" fill="#25364a"/>
+    <path d="M-58 112-69 220l72 32 68-35-18-108L3 83z" fill="url(#blue)"/>
+    <path d="M-40 117 3 155l43-43M3 155v76" fill="none" stroke="#a8dcff" stroke-width="5"/>
+    <path d="M-53 127-91 211l26 16 45-68M58 126l38 67" fill="none" stroke="#5279c8" stroke-width="24"/>
+    <path d="M77 180h38l-4 51H82z" fill="#ffcc63"/><path d="M115 190c21-4 21 27 1 26" fill="none" stroke="#ffcc63" stroke-width="8"/>
+    <path d="M-41 49c2-32 25-50 55-45 30 5 45 31 36 62l-9 42-60-3-29-31z" fill="url(#skin2)"/>
+    <path d="M-43 43C-25 3 27-7 51 36 28 26 4 31-12 49z" fill="#1c2940"/>
+    <path d="m-29 60 24-4m15 4 25 6" stroke="#24253b" stroke-width="8"/>
+    <path d="M-24 66h25v19h-25zm34 0h25v19H10M1 75h9" fill="#9de9ff" fill-opacity=".45"/>
+    <circle cx="-11" cy="75" r="4" fill="#20233a" stroke="none"/><circle cx="23" cy="75" r="4" fill="#20233a" stroke="none"/>
+    <path d="M-8 95c14 8 27 7 38-1" fill="none" stroke="#963f46" stroke-width="5"/>
+    <path d="m-68 212 66-17 72 19-71 37z" fill="#263348"/><path d="m-38 214 39-10 39 10-40 13z" fill="#62d9ff" stroke-width="4"/>
+  </g>
+
+  <!-- 02 实习生：抱电脑狂奔、工牌乱飞 -->
+  <g transform="translate(420 15) rotate(-4 0 180)" stroke="#121829" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" filter="url(#shadow2)">
+    <path d="M-9 213-77 305h42l56-63 22 69h43L55 206z" fill="#33435d"/>
+    <path d="M-52 112-58 215l61 28 63-33-17-102L4 85z" fill="#63caa8"/>
+    <path d="M-48 130-106 187l20 26 66-46M55 128l76 53-17 28-72-33" fill="none" stroke="#f4bf9f" stroke-width="21"/>
+    <path d="m-107 186-15 23 28 17 15-20m208-26 15 21-26 22-16-20" fill="url(#skin2)"/>
+    <path d="M-41 49c2-31 25-49 54-45 29 4 45 30 37 60l-9 42-58-2-31-30z" fill="url(#skin2)"/>
+    <path d="M-42 40C-20 3 30-3 51 38 23 27 0 34-15 48z" fill="#2e2031"/>
+    <circle cx="-13" cy="72" r="5" fill="#252035" stroke="none"/><circle cx="24" cy="73" r="5" fill="#252035" stroke="none"/>
+    <path d="m-25 61 23-5m14 5 24 7" stroke="#4e2530" stroke-width="7"/>
+    <path d="m-7 91 33 2-12 17z" fill="#7c2b43"/>
+    <path d="m-42 148 47 27 46-30" fill="none" stroke="#dff9ef" stroke-width="5"/>
+    <path d="m-79 162 72 2 19 56-78 2z" fill="#30394c"/><path d="m-59 173 40 1 9 28-42 1z" fill="#73cfff" stroke-width="4"/>
+    <path d="M8 112 33 212" fill="none" stroke="#ffdc65" stroke-width="5"/><rect x="20" y="152" width="31" height="42" rx="5" fill="#ffe37a"/><circle cx="35" cy="165" r="6" fill="#ff736f" stroke="none"/>
+    <path d="m104 116 15-24m15 46 23-9m-51 41 25 7" stroke="#ff6b72" stroke-width="8" filter="url(#glow2)"/>
+  </g>
+
+  <!-- 03 产品经理：需求卷轴、荧光笔、职业微笑 -->
+  <g transform="translate(700 12)" stroke="#13172a" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" filter="url(#shadow2)">
+    <path d="M-47 211-59 319h42l18-73 22 73h43L51 207z" fill="#25324a"/>
+    <path d="M-57 112-66 218l68 32 69-34-17-110L3 80z" fill="#d44f87"/>
+    <path d="M-29 108 2 160l31-54" fill="#fff2f8"/><path d="M2 159v72" stroke="#ffd5e6" stroke-width="5"/>
+    <path d="M-51 126-91 199M57 124l44 69" fill="none" stroke="#d58f75" stroke-width="22"/>
+    <path d="M-106 188h73v104h-73z" fill="#f5f0df"/><path d="M-93 210h45m-45 18h38m-38 18h47m-47 18h29" stroke="#6d7b99" stroke-width="5"/>
+    <path d="m-89 193 12-18 16 13" fill="#f5f0df"/>
+    <path d="M92 185 118 153" stroke="#ffdd45" stroke-width="12"/><path d="m117 154 10-18" stroke="#ff7080" stroke-width="12"/>
+    <path d="M-41 47c4-31 27-47 56-41 29 6 43 32 33 62l-12 40-58-6-27-31z" fill="url(#skin2)"/>
+    <path d="M-41 42C-16 4 28 2 50 39 25 24 3 29-13 49z" fill="#61364c"/>
+    <path d="m-27 61 23-4m15 5 24 7" stroke="#5b263d" stroke-width="8"/>
+    <circle cx="-12" cy="72" r="5" fill="#30223d" stroke="none"/><circle cx="24" cy="74" r="5" fill="#30223d" stroke="none"/>
+    <path d="M-6 92c16 12 31 11 42-2" fill="none" stroke="#a5445e" stroke-width="6"/>
+    <path d="M45 41c15 1 27 11 31 24" fill="none" stroke="#ff78aa" stroke-width="9"/>
+  </g>
+
+  <!-- 04 暴躁 Leader：卷袖、指人、红色感叹号 -->
+  <g transform="translate(980 18) scale(.9)" stroke="#101526" stroke-width="8" stroke-linejoin="round" stroke-linecap="round" filter="url(#shadow2)">
+    <path d="M-48 214-63 324h44l21-74 25 74h45L55 208z" fill="#242b40"/>
+    <path d="M-62 111-69 219l73 35 75-38-20-112L4 79z" fill="url(#suit)"/>
+    <path d="M-20 106 4 160l27-56 15 17-11 112H-25l-10-111z" fill="#eff5ff"/>
+    <path d="m3 160 13 20-13 39-14-39z" fill="#ff5d69"/>
+    <path d="M-57 132-107 207l28 19 59-62M65 127l56 35" fill="none" stroke="#dc9576" stroke-width="24"/>
+    <path d="m119 161 36-34" stroke="#e3a084" stroke-width="22"/><path d="m141 141 20-25m-8 16 15 12" stroke="#e3a084" stroke-width="12"/>
+    <path d="M-43 47c2-32 25-49 56-45 32 5 48 32 39 64l-10 43-63-4-29-33z" fill="url(#skin2)"/>
+    <path d="M-44 39C-23 2 31-8 53 38 25 24 1 31-15 49z" fill="#22263a"/>
+    <path d="m-31 59 27 2m14 2 28 6" stroke="#391e29" stroke-width="11"/>
+    <path d="M-27 66H2v20h-29zm38 2h29v20H11M2 76l9 1" fill="#a7d7ff" fill-opacity=".42"/>
+    <circle cx="-12" cy="76" r="4" fill="#2a2030" stroke="none"/><circle cx="26" cy="78" r="4" fill="#2a2030" stroke="none"/>
+    <path d="m-11 101 43-2" stroke="#8d3342" stroke-width="7"/>
+    <path d="M100 46 113-7l15 54-12 60z" fill="url(#red2)" filter="url(#glow2)"/><circle cx="113" cy="123" r="11" fill="#ff5d69" stroke="none" filter="url(#glow2)"/>
+    <path d="m-92 214 43-27" stroke="#fff" stroke-width="5" opacity=".35"/>
+  </g>
+
+  <!-- 05 甲方/老板：超大西装、电话、倒计时时钟 -->
+  <g transform="translate(1260 15) scale(.9)" stroke="#0e1324" stroke-width="9" stroke-linejoin="round" stroke-linecap="round" filter="url(#shadow2)">
+    <path d="M-65 221-74 334h49l26-80 30 80h50L66 214z" fill="#171d2c"/>
+    <path d="M-87 108c-30 53-25 133 5 154 43 30 130 27 166-10 22-35 10-105-22-146L4 78z" fill="#1e2740"/>
+    <path d="M-25 103 4 172l33-70 22 22-6 116H-47l-4-116z" fill="#f4f6ff"/>
+    <path d="m4 171 17 24-16 49-18-49z" fill="url(#red2)"/>
+    <path d="M-72 125-126 204l32 25 59-61M74 122l63 72" fill="none" stroke="#d98f70" stroke-width="32"/>
+    <path d="M111 153c12-22 33-26 47-11l-22 61-35-14z" fill="#23283c"/><path d="m119 158 25 32" stroke="#71dcff" stroke-width="6"/>
+    <path d="M-55 43c6-34 33-51 66-43 34 8 51 39 39 72l-15 45-68-5-30-40z" fill="url(#skin2)"/>
+    <path d="M-51 40C-29 0 30-5 54 39 29 22 4 29-14 48z" fill="#12182a"/>
+    <path d="m-38 62 30-7m17 8 30 8" stroke="#2b1c2b" stroke-width="11"/>
+    <circle cx="-22" cy="73" r="6" fill="#2e2130" stroke="none"/><circle cx="25" cy="78" r="6" fill="#2e2130" stroke="none"/>
+    <path d="M-17 99c18-12 37-10 51 4" fill="none" stroke="#8d3643" stroke-width="7"/>
+    <circle cx="-105" cy="119" r="38" fill="#fff5df"/><path d="M-105 93v26l19 12" fill="none" stroke="#ff5d69" stroke-width="7"/><path d="M-105 78v10m0 63v10m-42-42h10m64 0h10" stroke="#49607d" stroke-width="6"/>
+    <path d="M63 157c-32 21-72 24-115 2" fill="none" stroke="#727f9f" stroke-width="7"/>
+    <path d="m74 203 29-17 17 31-35 16z" fill="#ffcf5e"/><path d="m88 205 18 10" stroke="#fff2bd" stroke-width="5"/>
+  </g>
+</svg>

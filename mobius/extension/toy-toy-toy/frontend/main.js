@@ -18,8 +18,9 @@ const THEMES = Object.freeze({
     title: '尸潮防线',
     english: 'HORDE OVERDRIVE',
     eyebrow: '把广告里玩不到的游戏真的做出来',
-    description: '炮台会自动开火。切换火力焦点、选择夸张升级，或者用直播导演台手动制造尸潮高潮。',
-    features: ['自动开火', '三选一升级', '动态救场', '尸王演出'],
+    description: '腐烂行尸、狂奔者、屠夫肉盾和变异体会一起压境。炮台自动开火，你只管切换战线，把尸潮轰成烟花。',
+    features: ['五类真实尸群', '自动开火', '三选一升级', '尸王演出'],
+    roster: ['腐烂行尸', '狂奔者', '屠夫肉盾', '变异精英', '巨型尸王'],
     startButton: '开始守城',
     startButtonHint: '点击后尸潮立即来袭',
     startHint: 'A / S / D 切换战线 · P 暂停 · 空格触发超载',
@@ -43,7 +44,6 @@ const THEMES = Object.freeze({
     speedMultiplier: 1,
     bossHpMultiplier: 1,
     bossSpeed: 0.42,
-    geometry: 'zombie',
     palette: {
       bg: 0x07111f, fog: 0x07111f, ground: 0x102638,
       wall: 0x274e61, wallEmissive: 0x0d2d34, core: 0x4fffd2,
@@ -89,8 +89,9 @@ const THEMES = Object.freeze({
     title: '程序员保卫 DDL',
     english: 'SHIP IT OR DIE',
     eyebrow: '今晚不修完这些 Bug，谁都别想下班',
-    description: 'Bug、临时需求和线上事故正在冲击服务器。前端、后端、生产三条战线自动修复，你负责分配算力和咖啡。',
-    features: ['自动修 Bug', '多线程升级', '紧急回滚', '甲方 Boss'],
+    description: '实习生抱着电脑狂奔，产品经理举着需求文档，暴躁 Leader 和甲方老板正冲向服务器。你负责分配算力和咖啡。',
+    features: ['五类办公室同事', '自动修 Bug', '紧急回滚', '甲方 Boss'],
+    roster: ['开发同事', '狂奔实习生', '产品经理', '暴躁 Leader', '甲方老板'],
     startButton: '开始上线',
     startButtonHint: '点击后立即进入救火模式',
     startHint: 'A 前端 / S 后端 / D 生产 · P 暂停 · 空格咖啡续命',
@@ -114,7 +115,6 @@ const THEMES = Object.freeze({
     speedMultiplier: 1.1,
     bossHpMultiplier: 0.92,
     bossSpeed: 0.47,
-    geometry: 'deadline',
     palette: {
       bg: 0x071022, fog: 0x071022, ground: 0x101d39,
       wall: 0x263d73, wallEmissive: 0x0b2861, core: 0x62a8ff,
@@ -152,77 +152,6 @@ const THEMES = Object.freeze({
       multi: ['多线程处理', '三个团队同时锁定更多问题并行修复'],
       crit: ['一次过编译', '提高无警告通过概率，出现夸张的绿色通过数字'],
       repair: ['紧急回滚', '恢复服务器稳定度，并获得短暂咖啡因加成'],
-    },
-  },
-  immunity: {
-    id: 'immunity',
-    order: '03',
-    title: '免疫系统大战病毒',
-    english: 'IMMUNE OVERLOAD',
-    eyebrow: '把人体内部拍成一场完全不讲医学道理的爽战',
-    description: '病毒群正在侵入肺部、血液和神经系统。免疫节点会自动释放抗体，你负责集中免疫反应并选择突变能力。',
-    features: ['抗体自动追踪', '免疫突变', '组织再生', '病原体 Boss'],
-    startButton: '启动免疫反应',
-    startButtonHint: '点击后抗体立即释放',
-    startHint: 'A 肺部 / S 血液 / D 神经 · P 暂停 · 空格抗体风暴',
-    brandKicker: 'AD FANTASY LAB / 03',
-    leaderboardKicker: 'TOP IMMUNE SYSTEMS',
-    leaderboardTitle: '免疫最高战绩',
-    baseLabel: '器官活性',
-    laneControlLabel: '免疫焦点',
-    lanes: ['肺部', '血液', '神经'],
-    laneHint: '点击战场或按 A / S / D 集中免疫反应；焦点区域抗体释放更快',
-    weaponLabels: ['抗体', '反应', '吞噬', '扩散', '抑制'],
-    upgradeEyebrow: '免疫细胞完成了一次快速突变',
-    upgradeTitle: '选择一种免疫进化',
-    resumeLabel: '继续免疫反应',
-    roundDuration: 80,
-    bossAt: 58,
-    firstUpgradeAt: 10,
-    upgradeInterval: 13,
-    spawnMultiplier: 0.9,
-    hpMultiplier: 1.25,
-    speedMultiplier: 0.92,
-    bossHpMultiplier: 1.15,
-    bossSpeed: 0.38,
-    geometry: 'immunity',
-    palette: {
-      bg: 0x170b20, fog: 0x170b20, ground: 0x27152f,
-      wall: 0x642b56, wallEmissive: 0x4a1537, core: 0xff6fb7,
-      accent: '#ff6fb7', secondary: '#79ffd0', yellow: '#ffe26f', projectile: 0xffb3dc,
-      enemies: { normal: 0x9b6dff, runner: 0xff557f, tank: 0x44d6c0, elite: 0xffb04a, boss: 0xff326d },
-    },
-    director: {
-      frenzyIcon: '◉', frenzyLabel: '病毒突变', frenzyDescription: '8 秒复制速度疯狂上升',
-      overdriveIcon: '✺', overdriveLabel: '抗体风暴', overdriveDescription: '10 秒免疫输出全面暴涨',
-      bossIcon: '☠', bossLabel: '超级病原体入侵', bossDescription: '提前触发最终感染',
-      frenzyToast: '病毒发生快速突变：复制速度与密度正在上升',
-      frenzyBanner: 'VIRAL MUTATION ×10',
-      overdriveToast: '抗体风暴：免疫节点输出暴涨 10 秒',
-      overdriveBanner: 'ANTIBODY STORM',
-      bailoutToast: '器官活性濒危：组织再生与抗体风暴自动启动',
-      bailoutBanner: 'IMMUNE EMERGENCY',
-      bossToast: '警告：超级变异病原体突破免疫屏障',
-      manualBossToast: '直播导演指令：超级病原体提前入侵',
-      bossBanner: 'SUPER PATHOGEN INBOUND',
-    },
-    bossName: '超级变异病原体 · X-99',
-    openingToast: '感染已经开始：免疫节点自动释放抗体，切换区域可以集中反应',
-    victoryTitle: '免疫系统赢了',
-    victoryDescription: '超级病原体被抗体风暴吞没，器官活性恢复。下一局可以主动触发更猛烈的病毒突变。',
-    defeatTitle: '感染失控了',
-    defeatDescription: '这只是一次模拟感染。重新开始后可以更早进化抗体扩散和组织再生。',
-    victoryBanner: 'PATHOGEN NEUTRALIZED',
-    victoryToast: '超级病原体已被中和：正在生成免疫战报',
-    upgrades: {
-      damage: ['抗体浓度', '提高单次免疫伤害，更快中和高强度病毒'],
-      rate: ['免疫反应加速', '缩短抗体释放间隔，焦点器官反应更加剧烈'],
-      blast: ['细胞吞噬', '病毒受击后触发吞噬范围，波及附近病原体'],
-      chain: ['抗体扩散', '抗体沿感染区域连续跳转，清理成片病毒'],
-      frost: ['低温抑制', '降低病毒活性并减缓感染推进速度'],
-      multi: ['克隆抗体', '免疫节点一次释放更多抗体并锁定多个病毒'],
-      crit: ['精准识别', '提高抗原识别概率，触发更高倍率的免疫暴击'],
-      repair: ['组织再生', '恢复器官活性，并获得短暂免疫风暴'],
     },
   },
 });
@@ -284,6 +213,7 @@ const els = {
   startTitle: document.getElementById('startTitle'),
   startEnglish: document.getElementById('startEnglish'),
   startDescription: document.getElementById('startDescription'),
+  enemyRoster: document.getElementById('enemyRoster'),
   featureRow: document.getElementById('featureRow'),
   themeButtons: [...document.querySelectorAll('.theme-card')],
   startBtn: document.getElementById('startBtn'),
@@ -529,29 +459,68 @@ for (let lane = 0; lane < WORLD.lanes.length; lane += 1) {
   baseGroup.add(turret);
 }
 
-const enemyGeometries = {
-  zombie: new THREE.DodecahedronGeometry(0.67, 0),
-  deadline: new THREE.BoxGeometry(1.05, 1.05, 1.05, 1, 1, 1),
-  immunity: new THREE.IcosahedronGeometry(0.7, 1),
-};
+const ENEMY_TYPES = ['normal', 'runner', 'tank', 'elite', 'boss'];
+const ENEMY_ATLAS_FRAMES = Object.freeze({ normal: 0, runner: 1, tank: 2, elite: 3, boss: 4 });
+const textureLoader = new THREE.TextureLoader();
+const enemyPlaneGeometry = new THREE.PlaneGeometry(1.95, 2.55);
+enemyPlaneGeometry.translate(0, 1.275, 0);
+
+function createEnemyMaterial(themeId, type) {
+  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.4.0`);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.repeat.set(0.2, 1);
+  texture.offset.set(ENEMY_ATLAS_FRAMES[type] * 0.2, 0);
+  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return new THREE.MeshBasicMaterial({
+    map: texture,
+    color: 0xffffff,
+    transparent: true,
+    alphaTest: 0.08,
+    depthWrite: true,
+    fog: true,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+}
+
 const enemyVisuals = {
-  normal: { color: THEMES.zombie.palette.enemies.normal },
-  runner: { color: THEMES.zombie.palette.enemies.runner },
-  tank: { color: THEMES.zombie.palette.enemies.tank },
-  elite: { color: THEMES.zombie.palette.enemies.elite },
-  boss: { color: THEMES.zombie.palette.enemies.boss },
+  normal: { shadow: 0.72 },
+  runner: { shadow: 0.58 },
+  tank: { shadow: 0.9 },
+  elite: { shadow: 0.92 },
+  boss: { shadow: 1.08 },
 };
-for (const visual of Object.values(enemyVisuals)) {
+for (const [type, visual] of Object.entries(enemyVisuals)) {
+  visual.materials = {
+    zombie: createEnemyMaterial('zombie', type),
+    deadline: createEnemyMaterial('deadline', type),
+  };
   visual.mesh = new THREE.InstancedMesh(
-    enemyGeometries.zombie,
-    new THREE.MeshBasicMaterial({ color: visual.color, fog: true, toneMapped: false }),
+    enemyPlaneGeometry,
+    visual.materials.zombie,
     WORLD.maxEnemies,
   );
   visual.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  visual.mesh.setColorAt(0, new THREE.Color(0xffffff));
+  visual.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
   visual.mesh.frustumCulled = false;
   visual.mesh.count = 0;
   worldGroup.add(visual.mesh);
 }
+
+const enemyShadowGeometry = new THREE.CircleGeometry(0.72, 20);
+enemyShadowGeometry.rotateX(-Math.PI / 2);
+const enemyShadowMesh = new THREE.InstancedMesh(
+  enemyShadowGeometry,
+  new THREE.MeshBasicMaterial({ color: 0x010407, transparent: true, opacity: 0.46, depthWrite: false, fog: true }),
+  WORLD.maxEnemies,
+);
+enemyShadowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+enemyShadowMesh.frustumCulled = false;
+enemyShadowMesh.count = 0;
+worldGroup.add(enemyShadowMesh);
 
 const projectileGeometry = new THREE.SphereGeometry(0.13, 8, 6);
 const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xffe36d, toneMapped: false });
@@ -564,6 +533,8 @@ for (let i = 0; i < WORLD.maxProjectiles; i += 1) {
 }
 
 const matrixDummy = new THREE.Object3D();
+const shadowDummy = new THREE.Object3D();
+const enemyTint = new THREE.Color();
 const enemies = [];
 const shockwaves = [];
 const fxItems = [];
@@ -688,6 +659,12 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   els.startTitle.textContent = theme.title;
   els.startEnglish.textContent = theme.english;
   els.startDescription.textContent = theme.description;
+  els.enemyRoster.innerHTML = theme.roster.map((name, index) => `
+    <div class="enemy-roster-item">
+      <i style="background-image:url('./assets/characters/${theme.id}-atlas.svg?v=0.4.0');background-position:${index * 25}% center"></i>
+      <span>${name}</span>
+    </div>
+  `).join('');
   els.featureRow.innerHTML = theme.features.map((feature) => `<span>${feature}</span>`).join('');
   els.startButtonLabel.textContent = theme.startButton;
   els.startButtonHint.textContent = theme.startButtonHint;
@@ -723,10 +700,8 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   coreMaterial.color.setHex(theme.palette.wall);
   baseLight.color.setHex(theme.palette.core);
   projectileMaterial.color.setHex(theme.palette.projectile);
-  for (const [type, visual] of Object.entries(enemyVisuals)) {
-    visual.color = theme.palette.enemies[type];
-    visual.mesh.material.color.setHex(visual.color);
-    visual.mesh.geometry = enemyGeometries[theme.geometry];
+  for (const visual of Object.values(enemyVisuals)) {
+    visual.mesh.material = visual.materials[theme.id];
   }
   turretGroups.forEach(({ housingMaterial, barrelMaterial }) => {
     housingMaterial.color.setHex(theme.palette.core);
@@ -784,6 +759,7 @@ function resize() {
 function clearWorldState() {
   enemies.length = 0;
   Object.values(enemyVisuals).forEach((visual) => { visual.mesh.count = 0; });
+  enemyShadowMesh.count = 0;
   projectilePool.forEach((projectile) => {
     projectile.active = false;
     projectile.mesh.visible = false;
@@ -902,6 +878,7 @@ function spawnEnemy(forceType = null) {
     score: 11,
     baseDamage: 5,
     slowUntil: 0,
+    hitUntil: 0,
     wobble: randomBetween(0, Math.PI * 2),
   };
 
@@ -1151,6 +1128,7 @@ function applyDamage(enemy, amount, options = {}) {
   }
 
   enemy.hp -= damage;
+  enemy.hitUntil = Math.max(enemy.hitUntil, state.elapsed + (critical ? 0.15 : 0.085));
   addFxText(enemy.x, 0.8 * enemy.scale, enemy.z, `${critical ? '暴击 ' : ''}${Math.round(damage)}`, critical ? '#ffd84f' : '#e9fff9', critical ? 1.2 : 0.78, critical ? 17 : 12);
   for (let i = 0; i < (critical ? 5 : 2); i += 1) addFxParticle(enemy.x, 0.7, enemy.z, critical ? '#ffd84f' : '#4fffd2', critical ? 0.85 : 0.5);
   state.shake = Math.max(state.shake, critical ? 0.16 : 0.04);
@@ -1459,6 +1437,7 @@ function endGame(victory) {
 
 function renderEnemies() {
   const counts = { normal: 0, runner: 0, tank: 0, elite: 0, boss: 0 };
+  let shadowCount = 0;
   let boss = null;
   for (const enemy of enemies) {
     if (!enemy.active) continue;
@@ -1466,21 +1445,34 @@ function renderEnemies() {
     const index = counts[enemy.type] || 0;
     if (index >= WORLD.maxEnemies) continue;
     const slowed = state.elapsed < enemy.slowUntil;
-    matrixDummy.position.set(enemy.x, enemy.y + Math.sin(enemy.wobble * 1.7) * 0.08, enemy.z);
-    const squash = 1 + Math.sin(enemy.wobble * 2.2) * 0.06;
+    const hit = state.elapsed < enemy.hitUntil;
+    const stride = Math.sin(enemy.wobble * 2.15);
+    matrixDummy.position.set(enemy.x, 0.025 + Math.abs(stride) * 0.045, enemy.z);
+    const squash = 1 + stride * (enemy.type === 'runner' ? 0.085 : 0.045);
     const frozenScale = slowed ? 0.94 : 1;
-    matrixDummy.scale.set(enemy.scale * squash * frozenScale, enemy.scale / squash, enemy.scale * squash * frozenScale);
-    matrixDummy.rotation.set(enemy.wobble * 0.06, enemy.wobble * 0.18, 0);
+    matrixDummy.scale.set(enemy.scale * squash * frozenScale, enemy.scale / squash, enemy.scale);
+    matrixDummy.rotation.set(-0.72, 0, stride * (enemy.type === 'runner' ? 0.105 : 0.055));
     matrixDummy.updateMatrix();
     visual.mesh.setMatrixAt(index, matrixDummy.matrix);
+    enemyTint.setHex(hit ? 0xff6d78 : slowed ? 0x79d9ff : 0xffffff);
+    visual.mesh.setColorAt(index, enemyTint);
+
+    shadowDummy.position.set(enemy.x, -0.065, enemy.z + 0.34 * enemy.scale);
+    shadowDummy.rotation.set(0, 0, 0);
+    shadowDummy.scale.set(enemy.scale * visual.shadow * (hit ? 1.12 : 1), 1, enemy.scale * visual.shadow * 0.7);
+    shadowDummy.updateMatrix();
+    enemyShadowMesh.setMatrixAt(shadowCount, shadowDummy.matrix);
+    shadowCount += 1;
     if (enemy.type === 'boss') boss = enemy;
     counts[enemy.type] = index + 1;
   }
   for (const [type, visual] of Object.entries(enemyVisuals)) {
     visual.mesh.count = counts[type] || 0;
     visual.mesh.instanceMatrix.needsUpdate = true;
-    if (type !== 'boss') visual.mesh.material.color.setHex(visual.color);
+    if (visual.mesh.instanceColor) visual.mesh.instanceColor.needsUpdate = true;
   }
+  enemyShadowMesh.count = shadowCount;
+  enemyShadowMesh.instanceMatrix.needsUpdate = true;
 
   if (boss?.active) {
     const ratio = clamp(boss.hp / boss.maxHp, 0, 1);
