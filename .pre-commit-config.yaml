@@ -48,6 +48,24 @@ repos:
         pass_filenames: false
         files: ^README\.zh\.md$
 
+  # 根目录清洁: 禁止在仓库根目录新增散落文件 (既有合法根文件仍可修改, 新增文件须放入子目录)
+  - repo: local
+    hooks:
+      - id: keep-root-clean
+        name: 根目录文件检查 (禁止新增散落根文件)
+        entry: bash -c '
+          added=$(git diff --cached --name-only --diff-filter=A);
+          if [ -n "$added" ]; then
+            root_new=$(echo "$added" | grep -v "/" || true);
+            if [ -n "$root_new" ]; then
+              echo "❌ 禁止在仓库根目录新增文件, 请放入子目录 (mobius/、docs/、scripts/ 等) 以保持根目录整洁:" >&2;
+              echo "$root_new" | sed "s/^/    /" >&2;
+              exit 1;
+            fi;
+          fi'
+        language: system
+        pass_filenames: false
+
   # TS / JS 语言检查 (本地 hook, 无需联网)
   - repo: local
     hooks:
