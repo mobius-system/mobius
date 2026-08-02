@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#07111f">
   <title>广告爽游实验室</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css?v=0.4.0">
+  <link rel="stylesheet" href="./styles.css?v=0.10.0">
   <script type="importmap">
   {
     "imports": {
@@ -30,6 +30,7 @@
       </div>
 
       <div class="metric-strip">
+        <div class="metric"><span>关卡</span><b id="levelValue">01/10</b></div>
         <div class="metric"><span>得分</span><b id="scoreValue">0</b></div>
         <div class="metric"><span>击杀</span><b id="killsValue">0</b></div>
         <div class="metric"><span>连击</span><b id="comboValue">×1</b></div>
@@ -55,6 +56,15 @@
       <div class="boss-track"><i id="bossHpFill"></i></div>
     </section>
 
+    <section class="bonus-hud" aria-label="永久加成">
+      <span>本局永久加成</span>
+      <div><b>火力</b><em id="bonusDamageValue">×1.00</em></div>
+      <div><b>射速</b><em id="bonusRateValue">×1.00</em></div>
+      <div><b id="cannonMetricLabel">炮台</b><em id="cannonCountValue">1 / 8</em></div>
+      <div><b id="shardMetricLabel">碎片</b><em id="cannonShardValue">0 / 2</em></div>
+      <strong id="bonusCountValue">选择 ×0</strong>
+    </section>
+
     <aside class="director-panel">
       <div class="director-head">
         <div>
@@ -66,11 +76,11 @@
       <div class="director-body">
         <button id="frenzyBtn" class="director-button danger" type="button">
           <span id="frenzyIcon" class="director-icon">☣</span>
-          <span><b id="frenzyLabel">十倍尸潮</b><small id="frenzyDescription">8 秒高密度送爽怪</small></span>
+          <span><b id="frenzyLabel">十倍尸潮</b><small id="frenzyDescription">8 秒敌潮 ×10，敌人变脆</small></span>
         </button>
         <button id="overdriveBtn" class="director-button energy" type="button">
           <span id="overdriveIcon" class="director-icon">⚡</span>
-          <span><b id="overdriveLabel">火力超载</b><small id="overdriveDescription">10 秒射速与伤害暴涨</small></span>
+          <span><b id="overdriveLabel">火力超载</b><small id="overdriveDescription">10 秒伤害 ×2.45、射速 ×2.4</small></span>
         </button>
         <button id="bossBtn" class="director-button boss" type="button">
           <span id="bossIcon" class="director-icon">♛</span>
@@ -96,7 +106,7 @@
         <button class="lane-button active" data-lane="1" type="button"><kbd>S</kbd> <span id="laneLabel1">中路</span></button>
         <button class="lane-button" data-lane="2" type="button"><kbd>D</kbd> <span id="laneLabel2">右路</span></button>
       </div>
-      <small id="laneHint">点击战场或按 A / S / D 切换；焦点路射速更快</small>
+      <small id="laneHint">一次只能攻击当前一路；A / D 左右移动</small>
     </section>
 
     <section class="weapon-rack" id="weaponRack">
@@ -119,12 +129,25 @@
 
           <div id="themePicker" class="theme-picker" aria-label="选择游戏题材">
             <button class="theme-card active" data-theme="zombie" type="button" style="--theme-card-color:#4fffd2">
-              <span>01</span><i>☣</i><b>尸潮防线</b><small>炮台割草 · 末日守城</small>
+              <span>01</span><i>☣</i><b>尸潮防线</b><small>10 关尸城 · 指数尸王</small>
             </button>
             <button class="theme-card" data-theme="deadline" type="button" style="--theme-card-color:#62a8ff">
-              <span>02</span><i>⌘</i><b>程序员保卫 DDL</b><small>Bug 井喷 · 线上救火</small>
+              <span>02</span><i>⌘</i><b>程序员保卫 DDL</b><small>10 关上线 · 指数甲方</small>
             </button>
           </div>
+
+          <section class="level-picker-wrap" aria-label="选择关卡">
+            <div class="level-picker-head">
+              <span>选择关卡</span>
+              <b id="levelTitle">第 1 关 · 封锁线外缘</b>
+              <small id="levelDescription">基础尸群，熟悉三路火力和算术门。</small>
+            </div>
+            <div id="levelPicker" class="level-picker"></div>
+            <div class="level-danger-row">
+              <span id="levelEnemyHint">小怪 3 种 · 精英 1 种</span>
+              <strong id="levelBossHint">Boss 生命 ×1.0</strong>
+            </div>
+          </section>
 
           <div id="enemyRoster" class="enemy-roster" aria-label="敌人角色阵容"></div>
 
@@ -180,13 +203,13 @@
         </div>
         <div id="newBestBadge" class="new-best hidden">NEW BEST</div>
         <div class="result-actions">
-          <button id="againBtn" class="primary-button" type="button"><span>再来一局</span></button>
+          <button id="againBtn" class="primary-button" type="button"><span id="againButtonLabel">再来一局</span></button>
           <button id="menuBtn" class="secondary-button" type="button">返回标题</button>
         </div>
       </div>
     </section>
   </main>
 
-  <script type="module" src="./main.js?v=0.4.0"></script>
+  <script type="module" src="./main.js?v=0.10.0"></script>
 </body>
 </html>

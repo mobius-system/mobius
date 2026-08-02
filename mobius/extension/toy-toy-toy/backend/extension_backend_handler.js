@@ -50,6 +50,7 @@ function publicRow(row, rank) {
     display_name: row.display_name || row.username,
     score: row.score,
     kills: row.kills,
+    level: finiteInt(row.level, 1, 10) || 1,
     victory: Boolean(row.victory),
     runs: row.runs || 1,
     ts: row.ts,
@@ -94,7 +95,8 @@ module.exports = async function toyToyToyHandler({
     const score = finiteInt(payload.score, 0, MAX_SCORE);
     const kills = finiteInt(payload.kills, 0, MAX_KILLS);
     const duration = finiteInt(payload.duration, 0, MAX_DURATION);
-    if (score === null || kills === null || duration === null) {
+    const level = finiteInt(payload.level === undefined ? 1 : payload.level, 1, 10);
+    if (score === null || kills === null || duration === null || level === null) {
       return { ok: false, error: 'invalid run result' };
     }
 
@@ -108,6 +110,7 @@ module.exports = async function toyToyToyHandler({
       score,
       kills,
       duration,
+      level,
       victory: payload.victory === true,
       runs: (existing && finiteInt(existing.runs, 1, 1_000_000)) || 0,
       ts: now,
@@ -123,6 +126,7 @@ module.exports = async function toyToyToyHandler({
         existing.runs = result.runs;
         existing.last_score = score;
         existing.last_kills = kills;
+        existing.last_level = level;
         existing.last_victory = result.victory;
         existing.last_ts = now;
         existing.display_name = result.display_name;

@@ -1,0 +1,9 @@
+{
+  "name": "wechat-article",
+  "display_name": "公众号图文生成",
+  "description": "面向微信公众号的图文稿生成工具：用户给主题/大纲/要点，后端组装正文+封面图+摘要等字段，导出适合公众号编辑器粘贴的结构化稿子。",
+  "version": "0.4.2",
+  "project": {
+    "sync": true
+  }
+}

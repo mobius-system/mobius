@@ -8,13 +8,16 @@ import { ChatArea, SessionRow, isSessionNameMuted } from '../components/chat'
 import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
-import { ResizablePanel } from '../components/resizable-panel'
+import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
 import { usePagination, PaginationControls } from '../components/pagination'
 import ResearchGraph from '../components/research-graph'
 import ResearchBlackboard from '../components/research-blackboard'
+import { useEditorAvailability } from '../components/workspace/use-editor-availability'
 
 const ResearchAgentTeamModal = lazy(() => import('../components/research-agent-team-modal')
   .then(mod => ({ default: mod.ResearchAgentTeamModal })))
+const EditorPane = lazy(() => import('../components/workspace/editor-pane').then(mod => ({ default: mod.EditorPane })))
+const CodeConversationPane = lazy(() => import('../components/workspace/code-conversation-pane').then(mod => ({ default: mod.CodeConversationPane })))
 
 // sidebar Research Agent 列表每页 16, 超过即分页.
 const SESSION_SIDEBAR_PAGE_SIZE = 16
@@ -23,11 +26,40 @@ export default function ResearchPage() {
   const params = useParams()
   const [search, setSearch] = useSearchParams()
   const { projects, setProjects, setCurrentProject, setCurrentIssue, setCurrentResearch,
-          sessionsMap, setSessionsMap, currentSession, setCurrentSession, setCurrentTask } = useStore()
+          sessionsMap, setSessionsMap, currentSession, setCurrentSession, setCurrentTask,
+          workspaceLayoutMode, applySessionWorkspaceLayout } = useStore()
   const userParam = params.user || ''
   const projectId = params.project || ''
   const researchId = params.research || ''
   const sessionParam = search.get('session') || ''
+  const currentView = search.get('view')
+  const showGraph = currentView === 'graph'
+  const showBlackboard = currentView === 'blackboard'
+
+  // Research Agent 与 Issue Session 共用同一套三种工作区布局。此前顶栏能写入
+  // workspaceLayoutMode，但 ResearchPage 从未消费该状态，因此三个菜单项点击后均无视觉变化。
+  const isMobile = useIsMobile()
+  const { bindPath: editorBindPath, vscodeWebUrl: editorVscodeUrl } = useEditorAvailability(projectId, !!currentSession)
+  const workspaceViewActive = !!currentSession && !showGraph && !showBlackboard
+  const editorAvailable = workspaceViewActive && !!editorBindPath && !!editorVscodeUrl
+  const useEditorChat = workspaceLayoutMode === 'editor-chat' && editorAvailable && !isMobile
+  const codeConversationAvailable = workspaceViewActive && !!editorBindPath && !isMobile
+  const useCodeConversation = workspaceLayoutMode === 'code-conversation' && codeConversationAvailable
+  const [editorMounted, setEditorMounted] = useState(false)
+  const [codeConversationMounted, setCodeConversationMounted] = useState(false)
+
+  useEffect(() => {
+    setEditorMounted(false)
+    setCodeConversationMounted(false)
+  }, [projectId])
+
+  useEffect(() => { if (useEditorChat) setEditorMounted(true) }, [useEditorChat])
+  useEffect(() => { if (useCodeConversation) setCodeConversationMounted(true) }, [useCodeConversation])
+
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280
+  const editorMinWidth = 480
+  const editorMaxWidth = Math.max(editorMinWidth + 240, viewportWidth - 360)
+  const editorDefaultWidth = Math.max(editorMinWidth, Math.min(editorMaxWidth, Math.floor(viewportWidth * 0.6)))
 
   const [researchState, setResearchState] = useState<any>(null)
   const [showCreateChoice, setShowCreateChoice] = useState(false)
@@ -105,6 +137,11 @@ export default function ResearchPage() {
     return () => { cancelled = true }
   }, [sessionParam, sessions, sessionsLoaded])
 
+  // 布局按 Research Agent 会话独立保存，切换 Agent 时恢复其上次选择。
+  useEffect(() => {
+    applySessionWorkspaceLayout(currentSession?.session_id || null)
+  }, [currentSession?.session_id])
+
   // 刷新 sessions 列表. 合并而非直接覆盖: 当前会话的 agent_status 由 ChatArea 2s 轮询
   // 实时维护 (并写回 DB), 这里保留本地值, 避免周期刷新用 DB 滞后值覆盖 -> 当前会话小圆点
   // 闪烁 (尤其点"终止"后的 3s 抑制窗内 DB 仍报 running). 其余会话取后端最新值.
@@ -151,10 +188,6 @@ export default function ResearchPage() {
     }
   }, [researchId, refreshSessions])
   const openCreateChoice = () => setShowCreateChoice(true)
-
-  const currentView = search.get('view')
-  const showGraph = currentView === 'graph'
-  const showBlackboard = currentView === 'blackboard'
 
   const goToSession = (sid: string) => {
     const next = new URLSearchParams(search)
@@ -222,6 +255,8 @@ export default function ResearchPage() {
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
       <TopNav />
       <div className="flex flex-1 min-h-0">
+        {/* 普通会话布局保留原 Research 侧栏；进入任一编辑布局时隐藏。 */}
+        <div className={(useEditorChat || useCodeConversation) ? 'hidden' : 'contents'}>
         <ResizablePanel
           storageKey="mobius:ui:sidebar:research"
           defaultWidth={288}
@@ -325,6 +360,52 @@ export default function ResearchPage() {
             onPageChange={sidebarPagination.goToPage}
           />
         </ResizablePanel>
+        </div>
+
+        {/* VSCode 编辑：首次进入后保活 iframe，切回普通模式只隐藏，避免重新连接。 */}
+        {editorMounted && !isMobile && (
+          <div className={useEditorChat ? 'contents' : 'hidden'}>
+            <ResizablePanel
+              storageKey={`mobius:ui:split:editor-chat:${projectId}`}
+              defaultWidth={editorDefaultWidth}
+              minWidth={editorMinWidth}
+              maxWidth={editorMaxWidth}
+              side="left"
+              className="border-r flex flex-col"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
+            >
+              <Suspense fallback={<ResearchWorkspaceLoading label="正在加载 VSCode 编辑器..." />}>
+                <EditorPane
+                  projectName={project?.name || projectId}
+                  bindPath={editorBindPath}
+                  vscodeWebUrl={editorVscodeUrl}
+                />
+              </Suspense>
+            </ResizablePanel>
+          </div>
+        )}
+
+        {/* 原生文件编辑器：保活文件树、当前文件和未保存编辑状态。 */}
+        {codeConversationMounted && !isMobile && (
+          <div className={useCodeConversation ? 'contents' : 'hidden'}>
+            <Suspense
+              fallback={
+                <div
+                  className="flex flex-1 items-center justify-center border-r"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
+                >
+                  <ResearchWorkspaceLoading label="正在加载原生文件编辑器..." />
+                </div>
+              }
+            >
+              <CodeConversationPane
+                projectId={projectId}
+                bindPath={editorBindPath}
+                vscodeWebUrl={editorVscodeUrl}
+              />
+            </Suspense>
+          </div>
+        )}
 
         {showGraph ? (
           <main className="flex-1 flex flex-col min-h-0" style={{ background: 'var(--bg-secondary)' }}>
@@ -357,7 +438,10 @@ export default function ResearchPage() {
             </div>
           </main>
         ) : currentSession ? (
-          <ChatArea />
+          <ChatArea
+            layout={(useEditorChat || useCodeConversation) ? 'stacked' : 'default'}
+            onNewSession={(useEditorChat || useCodeConversation) ? openCreateChoice : undefined}
+          />
         ) : sessionParam ? (
           <Loading text="正在加载研究智能体..." />
         ) : (
@@ -431,6 +515,15 @@ export default function ResearchPage() {
         onClose={() => setDeletingSession(null)}
         onDelete={handleDeleteSession}
       />}
+    </div>
+  )
+}
+
+function ResearchWorkspaceLoading({ label }: { label: string }) {
+  return (
+    <div className="flex h-full min-h-[160px] w-full flex-col items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
+      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+      <div className="text-[12px]">{label}</div>
     </div>
   )
 }

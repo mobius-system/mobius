@@ -12,7 +12,7 @@ import { bridge } from '../bridge/instance';
 import { db } from '../../db';
 // @ts-ignore — agents 仍是 .js
 import agents from '../agents';
-import { homeWorkDirFor } from '../config';
+import { homeWorkDirFor, ENABLE_PASSWORD_LOGIN } from '../config';
 // @ts-ignore — service 仍是 .js
 import adminSettings from '../services/admin-settings';
 // @ts-ignore — service 仍是 .js
@@ -140,7 +140,10 @@ function normalizeEmployeePayload(input: EmployeeInput | null | undefined): any 
   const src = input || {};
   const id = normalizeEmployeeId(src.id ?? src.username);
   const password = String(src.password || '');
-  if (password.length < 6) throw errorWithStatus('密码至少 6 位');
+  // 开启密码登录(ENABLE_PASSWORD_LOGIN=true)时密码必填且至少 6 位;
+  // 关闭密码登录(免密登录)时密码可选——不填则生成无密码账号, 但若填写仍要求≥6位以防弱密码.
+  if (ENABLE_PASSWORD_LOGIN && password.length < 6) throw errorWithStatus('密码至少 6 位');
+  if (!ENABLE_PASSWORD_LOGIN && password.length > 0 && password.length < 6) throw errorWithStatus('密码至少 6 位');
   const explicitWorkDir = normalizeEmployeeWorkDir(src.work_dir ?? src.workDir);
   const group = Users.resolveGroup({
     group_id: src.group_id ?? src.groupId,
@@ -541,6 +544,44 @@ router.delete('/user-groups/:id', adminAuth, (req: express.Request, res: express
   try {
     const result = Users.deleteGroup(req.params.id);
     res.json(result);
+  } catch (e) {
+    const err = e as RepoError;
+    res.status(err.status || 400).json({ error: err.message || String(e) });
+  }
+});
+
+// 群组项目可见性 (受限群组): 取某群组当前模式 + 白名单 + 全量项目候选(供管理员勾选).
+router.get('/user-groups/:id/project-visibility', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    const gid = String(req.params.id || '').trim();
+    const mode = Users.getGroupProjectVisibilityMode(gid);
+    const visible_project_ids = Users.listVisibleProjectIds(gid);
+    const candidates = (Projects.listAll() as any[])
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        kind: p.kind,
+        visibility: p.visibility,
+        created_by: p.created_by,
+        created_by_name: p.created_by_name,
+      }))
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN'));
+    res.json({ mode, visible_project_ids, candidates });
+  } catch (e) {
+    const err = e as RepoError;
+    res.status(err.status || 400).json({ error: err.message || String(e) });
+  }
+});
+
+// 群组项目可见性: 更新模式('default'|'restricted') + 可见项目白名单.
+router.put('/user-groups/:id/project-visibility', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    const body = req.body || {};
+    const result = Users.setGroupProjectVisibility(req.params.id, {
+      mode: body.mode,
+      visible_project_ids: body.visible_project_ids,
+    });
+    res.json({ ok: true, ...result });
   } catch (e) {
     const err = e as RepoError;
     res.status(err.status || 400).json({ error: err.message || String(e) });

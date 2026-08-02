@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS user_groups (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE COLLATE NOCASE,
   description TEXT NOT NULL DEFAULT '',
+  -- 项目可见性模式: 'default'(标准) | 'restricted'(受限, 仅自己建的/成员/白名单可见)
+  project_visibility_mode TEXT NOT NULL DEFAULT 'default',
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
@@ -48,6 +50,20 @@ CREATE TABLE IF NOT EXISTS user_group_memberships (
 );
 CREATE INDEX IF NOT EXISTS idx_user_group_memberships_group
   ON user_group_memberships(group_id, user_id);
+
+-- 受限群组显式授权可见的项目白名单 (group↔project).
+CREATE TABLE IF NOT EXISTS group_visible_projects (
+  group_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (group_id, project_id),
+  FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_group_visible_projects_group
+  ON group_visible_projects(group_id);
+CREATE INDEX IF NOT EXISTS idx_group_visible_projects_project
+  ON group_visible_projects(project_id);
 
 CREATE TABLE IF NOT EXISTS user_preferences (
   user_id TEXT PRIMARY KEY,

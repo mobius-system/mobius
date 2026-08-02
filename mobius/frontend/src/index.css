@@ -5532,29 +5532,36 @@ body.mobius-resizing .mobius-resizable-handle {
   /* 含可拖拽侧栏的布局行在窄屏下侧栏改走「抽屉」(见文件末尾 .mobius-drawer),
      抽屉通过 portal 固定定位脱离文档流, 因此主区自然拿到整屏宽度, 这里无需改方向. */
 
-  /* 顶栏: 允许换行以同时容纳面包屑与操作按钮, 并避让刘海/屏幕圆角. */
+  /* 顶栏保持单行：面包屑负责收缩省略，操作按钮始终留在同一行。
+     旧规则允许 topnav/actions flex-wrap，窄屏会把操作区整排推到第二行，
+     同时移动端用户名被隐藏后用户按钮只剩空热区。 */
   .mobius-topnav {
-    height: auto;
-    min-height: 3rem;
-    flex-wrap: wrap;
-    row-gap: .4rem;
-    padding-top: max(.5rem, env(safe-area-inset-top));
-    padding-bottom: .5rem;
+    height: calc(3rem + env(safe-area-inset-top));
+    min-height: calc(3rem + env(safe-area-inset-top));
+    flex-wrap: nowrap;
+    gap: .375rem;
+    row-gap: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: 0;
     padding-left: max(.75rem, env(safe-area-inset-left));
     padding-right: max(.75rem, env(safe-area-inset-right));
   }
-  /* 面包屑区: 窄屏横向滚动而非挤压操作按钮, 隐藏滚动条保持整洁. */
+  /* 面包屑吃掉操作区之外的剩余空间；内部文字各自 truncate。
+     保持 overflow:visible，避免再次裁掉品牌/项目/任务的 absolute 下拉面板。 */
   .mobius-topnav-crumb {
-    overflow-x: auto;
-    scrollbar-width: none;
+    flex: 1 1 0%;
+    overflow: visible;
     flex-wrap: nowrap;
   }
-  .mobius-topnav-crumb::-webkit-scrollbar {
+  /* 单行窄屏不需要中间 spacer；面包屑自身承担弹性空间。 */
+  .mobius-topnav-spacer {
     display: none;
   }
-  /* 操作按钮区: 允许换行, 优先贴右排列. */
+  /* 操作按钮固定单行贴右，禁止自身再换出第二排。 */
   .mobius-topnav-actions {
-    flex-wrap: wrap;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: .25rem;
     justify-content: flex-end;
   }
 
@@ -5586,6 +5593,23 @@ body.mobius-resizing .mobius-resizable-handle {
   /* 弹层卡片不再被固定 max-height 卡死, 滚动交给遮罩层统一处理. */
   [class~="fixed"][class~="inset-0"][class~="flex"][class~="items-center"][class~="justify-center"] > [class~="relative"] {
     max-height: none;
+  }
+}
+
+/* 极窄屏优先保留高频入口：新建、搜索、帮助、外观、用户菜单。
+   系统可视化与 GitHub 仍可从更宽视口访问，隐藏后给面包屑留下可读空间。 */
+@media (max-width: 560px) {
+  [data-tour="top-overview-cluster"],
+  .mobius-topnav-github {
+    display: none !important;
+  }
+  .mobius-topnav {
+    gap: .25rem;
+    padding-left: max(.5rem, env(safe-area-inset-left));
+    padding-right: max(.5rem, env(safe-area-inset-right));
+  }
+  .mobius-topnav-actions {
+    gap: .125rem;
   }
 }
 

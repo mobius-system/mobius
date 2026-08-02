@@ -72,7 +72,7 @@ repos:
       # JS 语法检查 (node --check) — 秒级, 拦截语法错误
       - id: node-check-js
         name: node --check (.js 语法)
-        entry: node --check
+        entry: scripts/check-js-syntax.sh
         language: system
         files: \.js$
         exclude: ^mobius/frontend/dist/|^mobius/frontend/.build/|^mobius/frontend/node_modules/|^mobius/extension/.*/frontend/dist/|^docs/|^\.trash/

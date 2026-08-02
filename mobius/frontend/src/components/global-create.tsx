@@ -28,13 +28,13 @@ import { TopNavActionElement } from './top-nav-action'
 import {
   Plus, ChevronDown, FolderPlus, CircleDot, MessagesSquare, FlaskConical,
   X, Eye, RefreshCw, Paperclip, Image as ImageIcon, Trash2,
-  CheckCircle2, ExternalLink, Lock, Ban, Search, Dices, FolderOpen, History, FileArchive, Upload,
+  CheckCircle2, ExternalLink, Lock, Ban, Search, Dices, FolderOpen, History, Upload,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------
 // 类型 & 常量
 // ---------------------------------------------------------------------
-export type CreateKind = 'project' | 'issue' | 'session' | 'research' | 'import-zip'
+export type CreateKind = 'project' | 'issue' | 'session' | 'research'
 
 type Visibility = 'private' | 'team' | 'public' | 'allowlist'
 const VISIBILITY_OPTIONS: { value: Visibility; label: string; desc: string }[] = [
@@ -53,7 +53,7 @@ const ISSUE_VISIBILITY_OPTIONS: { value: IssueVisibility; label: string; desc: s
 ]
 
 // 项目类型预设: 顶栏单页新建项目, 用下拉选择类型, 选定后下方字段联动
-type ProjectKind = 'default' | 'research' | 'extension'
+type ProjectKind = 'default' | 'research' | 'extension' | 'import-zip'
 const PROJECT_KIND_PRESETS: Array<{
   kind: ProjectKind
   label: string
@@ -77,6 +77,12 @@ const PROJECT_KIND_PRESETS: Array<{
     label: '拓展项目',
     desc: '有前端 + 后端的莫比乌斯拓展',
     note: '仅管理员可创建',
+  },
+  {
+    kind: 'import-zip',
+    label: '上传 ZIP 导入项目',
+    desc: '上传压缩包并创建新项目',
+    note: '自动解压并初始化 git',
   },
 ]
 
@@ -590,7 +596,7 @@ export function SkillMemoryPicker({
 // 创建成功 — 次级确认弹窗 (需求: 跳转详情 → 新开 Tab; 否 → 仅关闭)
 function CreateSuccessDialog({ kind, name, detailUrl, onClose }: { kind: CreateKind; name: string; detailUrl?: string; onClose: () => void }) {
   const isDark = useStore(s => s.theme) !== 'light'
-  const labelMap: Record<CreateKind, string> = { project: '项目', 'import-zip': '项目', issue: '任务', session: '会话', research: '研究智能体' }
+  const labelMap: Record<CreateKind, string> = { project: '项目', issue: '任务', session: '会话', research: '研究智能体' }
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center px-4">
       <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
@@ -694,7 +700,7 @@ function Footer({ loading, submitText, onClose, onSubmit, disabled }: { loading:
 }
 
 // =====================================================================
-// 表单 1: 创建 Project (单页 + 3 类项目类型横向卡片)
+// 表单 1: 创建 Project (单页 + 项目类型下拉，含 ZIP 导入入口)
 // =====================================================================
 export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void }) {
   const { theme, user } = useStore()
@@ -702,7 +708,11 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   const canCreateExtension = user?.role === 'admin'
   const DRAFT_KEY = 'gc:new-project'
   const d = draftLoad<any>(DRAFT_KEY) || {}
-  const initialKind: ProjectKind = (d.projectKind === 'research' || (d.projectKind === 'extension' && canCreateExtension)) ? d.projectKind : 'default'
+  const initialKind: ProjectKind = (
+    d.projectKind === 'research'
+    || d.projectKind === 'import-zip'
+    || (d.projectKind === 'extension' && canCreateExtension)
+  ) ? d.projectKind : 'default'
   const [projectKind, setProjectKind] = useState<ProjectKind>(initialKind)
   const [name, setName] = useState(d.name || '')
   const [desc, setDesc] = useState(d.desc || '')
@@ -722,6 +732,8 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   const [permissionOpen, setPermissionOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
+  const [archiveFile, setArchiveFile] = useState<File | null>(null)
+  const archiveInputRef = useRef<HTMLInputElement>(null)
 
   // 切换项目类型时联动 research / worktree / extensionName, 但不动 name/desc 等输入
   const chooseKind = (kind: ProjectKind) => {
@@ -739,9 +751,9 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
     draftSave(DRAFT_KEY, { projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, inviteMembers, extensionName, canPostIssue, canRunSession }, { minChars: 0 })
   }, [projectKind, name, desc, bindPath, bindPathManual, researchEnabled, defaultUseWorktree, visibility, inviteMembers, extensionName, canPostIssue, canRunSession])
 
-  // 自动随机路径未填则补上 (extension 不需要 bindPath)
+  // 自动随机路径未填则补上 (extension / ZIP 导入不使用普通绑定路径字段)
   useEffect(() => {
-    if (projectKind === 'extension') return
+    if (projectKind === 'extension' || projectKind === 'import-zip') return
     if (bindPath.trim() || !user?.work_dir) return
     setBindPath(randomProjectBindPath(user.work_dir))
     setBindPathManual(false)
@@ -755,6 +767,40 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   }
 
   const submit = async () => {
+    if (projectKind === 'import-zip') {
+      if (!archiveFile) { setErr('请选择一个压缩包文件'); return }
+      setLoading(true); setErr('')
+      try {
+        const finalName = name.trim() || archiveFile.name.replace(/\.(zip|tar\.gz|tgz|tar\.bz2|tar\.xz|tar|gz|bz2|xz)$/i, '').replace(/[._\s]+$/, '').trim() || '导入项目'
+        const generatedBindPath = randomProjectBindPath(user?.work_dir)
+        if (!generatedBindPath) { setErr('当前用户尚未配置工作目录'); return }
+        const p = await api('/api/projects', { method: 'POST', body: JSON.stringify({
+          name: finalName,
+          description: '',
+          visibility: 'private',
+          bindPath: generatedBindPath,
+          bindPathManual: false,
+          defaultUseWorktree: false,
+        }) })
+        if (p?.error) { setErr(p.error); return }
+        try {
+          const fd = new FormData()
+          fd.append('file', archiveFile, archiveFile.name)
+          await api(`/api/projects/${p.id}/import-zip`, { method: 'POST', body: fd })
+        } catch (e: any) {
+          setErr(`项目「${finalName}」已创建, 但代码导入失败: ${e?.message || '未知错误'}。可关闭后进入该项目, 用「项目文件」的「上传 ZIP」重传。`)
+          return
+        }
+        draftClear(DRAFT_KEY)
+        onDone({ ...p, name: finalName }, p?.created_by ? `/u/${p.created_by}/p/${p.id}` : undefined)
+      } catch (e: any) {
+        setErr(e?.message || '创建失败')
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
     if (!name.trim()) { setErr('请输入项目名称'); return }
     if (projectKind === 'extension') {
       if (!canCreateExtension) { setErr('只有管理员可以创建莫比乌斯拓展项目'); return }
@@ -842,8 +888,8 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   ) : null
 
   return (
-    <CreateModalShell title={projectKind === 'extension' ? '新建拓展项目' : projectKind === 'research' ? '新建研究项目' : '新建项目'} onClose={onClose} dark={dark} width={600}
-      footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} />}>
+    <CreateModalShell title={projectKind === 'extension' ? '新建拓展项目' : projectKind === 'research' ? '新建研究项目' : projectKind === 'import-zip' ? '上传 ZIP 导入项目' : '新建项目'} onClose={onClose} dark={dark} width={600}
+      footer={<Footer loading={loading} submitText={projectKind === 'import-zip' ? '上传并创建' : '创建'} onClose={onClose} onSubmit={submit} />}>
       {/* 项目类型: 下拉菜单, 选定后下方字段自动联动 */}
       <div>
         <SectionLabel hint="选定后下方字段自动联动">项目类型</SectionLabel>
@@ -862,6 +908,8 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
                 ? { text: '自动', color: '#10b981', bg: 'rgba(16,185,129,0.15)' }
                 : opt.kind === 'extension'
                 ? { text: '管理员', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' }
+                : opt.kind === 'import-zip'
+                ? { text: '导入', color: '#60a5fa', bg: 'rgba(59,130,246,0.15)' }
                 : undefined,
             }
           })}
@@ -869,10 +917,39 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
         <p className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>{PROJECT_KIND_PRESETS.find(p => p.kind === projectKind)?.desc}</p>
       </div>
       <div>
-        <SectionLabel>项目名称</SectionLabel>
-        <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="例如：强化学习最新进展调研" autoFocus dark={dark} />
+        <SectionLabel hint={projectKind === 'import-zip' ? '留空则用压缩包文件名' : undefined}>项目名称</SectionLabel>
+        <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder={projectKind === 'import-zip' ? '例如：my-project（可留空）' : '例如：强化学习最新进展调研'} autoFocus dark={dark} />
       </div>
-      {projectKind === 'extension' ? (
+      {projectKind === 'import-zip' ? (
+        <div>
+          <SectionLabel hint="支持 .zip / .tar / .tar.gz / .tgz">压缩包</SectionLabel>
+          <input
+            ref={archiveInputRef}
+            type="file"
+            accept=".zip,.tar,.tar.gz,.tgz,.tar.bz2,.tar.xz"
+            className="hidden"
+            onChange={e => { setArchiveFile(e.target.files?.[0] || null); setErr('') }}
+          />
+          <button type="button" onClick={() => archiveInputRef.current?.click()}
+            className="flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
+            style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
+            <Upload className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[12px] font-medium" style={{ color: archiveFile ? (dark ? '#cbd5e1' : '#334155') : 'var(--text-muted)' }}>
+                {archiveFile ? archiveFile.name : '点击选择压缩包文件'}
+              </span>
+              <span className="mt-0.5 block text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {archiveFile ? `${formatFileSize(archiveFile.size)} · 解压后将自动建项目并 git init` : '解压到新项目目录, 自动智能扁平化 + git init'}
+              </span>
+            </span>
+            {archiveFile && (
+              <span role="button" tabIndex={0}
+                onClick={e => { e.stopPropagation(); setArchiveFile(null); if (archiveInputRef.current) archiveInputRef.current.value = '' }}
+                className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>移除</span>
+            )}
+          </button>
+        </div>
+      ) : projectKind === 'extension' ? (
         <div>
           <SectionLabel hint="小写字母开头, 1-32 字符">拓展标识名</SectionLabel>
           <TextInput value={extensionName} onChange={v => { setExtensionName(v.toLowerCase().replace(/[^a-z0-9-]/g, '')); setErr('') }} placeholder="例如：my-awesome-ext" dark={dark} />
@@ -947,82 +1024,6 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
           onPick={(_abs, rel, manual) => { setBindPath(rel || _abs); setBindPathManual(!!manual); setPickerOpen(false) }} />
       )}
       {permissionSettingsModal}
-    </CreateModalShell>
-  )
-}
-
-// =====================================================================
-// 表单 1b: 上传 ZIP 导入项目 — 一步建项目 + 解压代码.
-// 服务"把本地项目直接传进来开发"的心智 (顶栏 [+] 菜单主入口). 复用 POST /api/projects 建项目 +
-// POST /api/projects/:id/import-zip 解压 (后者已含 zip-slip/符号链接/配额安全 + 智能扁平化 + 自动 git init).
-// 项目名留空则用压缩包文件名; 解压失败时项目已建, 提示用户进项目用「项目文件」的「上传 ZIP」重传.
-// =====================================================================
-export function ImportZipProjectForm({ onClose, onDone }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void }) {
-  const { theme, user } = useStore()
-  const dark = theme !== 'light'
-  const [name, setName] = useState('')
-  const [file, setFile] = useState<File | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [err, setErr] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const submit = async () => {
-    if (loading) return
-    if (!file) { setErr('请选择一个压缩包文件'); return }
-    setLoading(true); setErr('')
-    try {
-      const finalName = name.trim() || file.name.replace(/\.(zip|tar\.gz|tgz|tar\.bz2|tar\.xz|tar|gz|bz2|xz)$/i, '').replace(/[._\s]+$/, '').trim() || '导入项目'
-      const bindPath = randomProjectBindPath(user?.work_dir)
-      if (!bindPath) { setErr('当前用户尚未配置工作目录'); return }
-      // 1) 建项目
-      const p = await api('/api/projects', { method: 'POST', body: JSON.stringify({
-        name: finalName, description: '', visibility: 'private',
-        bindPath, bindPathManual: false, defaultUseWorktree: false,
-      }) })
-      if (p?.error) { setErr(p.error); return }
-      // 2) 解压导入 (失败则提示, 不跳转 — 项目已建, 用户可进项目用文件卡入口重传)
-      try {
-        const fd = new FormData(); fd.append('file', file, file.name)
-        await api(`/api/projects/${p.id}/import-zip`, { method: 'POST', body: fd })
-      } catch (e: any) {
-        setErr(`项目「${finalName}」已创建, 但代码导入失败: ${e?.message || '未知错误'}。可关闭后进入该项目, 用「项目文件」的「上传 ZIP」重传。`)
-        return
-      }
-      onDone({ ...p, name: finalName }, p?.created_by ? `/u/${p.created_by}/p/${p.id}` : undefined)
-    } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
-  }
-
-  return (
-    <CreateModalShell title="上传 ZIP 导入项目" onClose={onClose} dark={dark} width={520}
-      footer={<Footer loading={loading} submitText="上传并创建" onClose={onClose} onSubmit={submit} />}>
-      <div>
-        <SectionLabel hint="留空则用压缩包文件名">项目名称</SectionLabel>
-        <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="例如：my-project（可留空）" autoFocus dark={dark} />
-      </div>
-      <div>
-        <SectionLabel hint="支持 .zip / .tar / .tar.gz / .tgz">压缩包</SectionLabel>
-        <input ref={inputRef} type="file" accept=".zip,.tar,.tar.gz,.tgz,.tar.bz2,.tar.xz" className="hidden"
-          onChange={e => { setFile(e.target.files?.[0] || null); setErr('') }} />
-        <button type="button" onClick={() => inputRef.current?.click()}
-          className="flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
-          style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
-          <Upload className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[12px] font-medium" style={{ color: file ? (dark ? '#cbd5e1' : '#334155') : 'var(--text-muted)' }}>
-              {file ? file.name : '点击选择压缩包文件'}
-            </span>
-            <span className="mt-0.5 block text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              {file ? `${formatFileSize(file.size)} · 解压后将自动建项目并 git init` : '解压到新项目目录, 自动智能扁平化 + git init'}
-            </span>
-          </span>
-          {file && (
-            <span role="button" tabIndex={0}
-              onClick={e => { e.stopPropagation(); setFile(null); if (inputRef.current) inputRef.current.value = '' }}
-              className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>移除</span>
-          )}
-        </button>
-      </div>
-      {err && <ErrBanner>{err}</ErrBanner>}
     </CreateModalShell>
   )
 }
@@ -1835,7 +1836,6 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
 // =====================================================================
 const MENU_ITEMS: { kind: CreateKind; label: string; icon: any }[] = [
   { kind: 'project', label: '新建项目', icon: FolderPlus },
-  { kind: 'import-zip', label: '上传 ZIP 导入项目', icon: FileArchive },
   { kind: 'issue', label: '新建任务', icon: CircleDot },
   { kind: 'session', label: '新建快捷会话', icon: MessagesSquare },
   { kind: 'research', label: '新建研究智能体', icon: FlaskConical },
@@ -1923,7 +1923,6 @@ export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate }: {
   }
 
   if (kind === 'project') return <CreateProjectForm onClose={onClose} onDone={handleDone} />
-  if (kind === 'import-zip') return <ImportZipProjectForm onClose={onClose} onDone={handleDone} />
   if (kind === 'issue') return <CreateIssueForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />
   if (kind === 'session') return <CreateSessionForm onClose={onClose} onDone={handleDone} onNavigate={onNavigate} defaultProjectId={ctx.projectId} defaultIssueId={ctx.issueId} />
   if (kind === 'research') return <CreateResearchForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />

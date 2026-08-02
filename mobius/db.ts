@@ -142,6 +142,38 @@ function migrateEmployeeAndProjectMemberships() {
 }
 migrateEmployeeAndProjectMemberships();
 
+// ===== 群组项目可见性 (受限群组) =====
+// 管理员可把某群组(如"试用组")设为"受限": 该组成员默认只能看到 ①自己创建的项目
+// ②自己被加为项目成员的项目 ③管理员在此显式授权的项目; 其余(含公开项目)一律不可见.
+// project_visibility_mode: 'default'(标准, 不受限) | 'restricted'(受限).
+// group_visible_projects: 受限组显式授权可见的项目白名单 (group↔project).
+function migrateGroupProjectVisibility() {
+  try {
+    const cols = db.prepare('PRAGMA table_info(user_groups)').all().map((c: any) => c.name);
+    if (!cols.includes('project_visibility_mode')) {
+      db.exec(`ALTER TABLE user_groups ADD COLUMN project_visibility_mode TEXT NOT NULL DEFAULT 'default'`);
+      console.log('[mobius/db] migrate: user_groups.project_visibility_mode 已加');
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS group_visible_projects (
+        group_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        PRIMARY KEY (group_id, project_id),
+        FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_group_visible_projects_group
+        ON group_visible_projects(group_id);
+      CREATE INDEX IF NOT EXISTS idx_group_visible_projects_project
+        ON group_visible_projects(project_id);
+    `);
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️  group project visibility 迁移失败:', (e as Error).message);
+  }
+}
+migrateGroupProjectVisibility();
+
 // ===== allowlist 可见性 → 项目成员 (私有/公开两档简化) =====
 // 项目可见性从 4 档(仅自己/同组/公开/指定用户) 简化为 2 档(私有/公开).
 // 原"指定用户(allowlist)"可见的项目: 把名单内用户迁移为项目成员(访客 viewer, 只读),

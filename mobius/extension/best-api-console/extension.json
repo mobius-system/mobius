@@ -1,0 +1,8 @@
+{
+  "name": "best-api-console",
+  "display_name": "Best API 控制台",
+  "description": "Best API 中转服务管理控制台：渠道与上游 Key 状态、用量日志、计费、模型总览（类 new-api）。数据实时来自 best-api /admin/api。",
+  "version": "0.1.0",
+  "icon": "favicon.svg",
+  "project": { "sync": true }
+}

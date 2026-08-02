@@ -131,11 +131,13 @@ export function PrepScreen({ client, onReady, onQuit }: {
     setStep(next)
     if (!next) finish(iss, p)
   }
-  async function createIssue(name: string, useWt: boolean) {
+  async function createIssue(name: string) {
     if (!project) return
     setStatusMsg('创建任务…')
     try {
-      const iss = await client.createIssue(project.id, { title: name || '命令行任务', description: '由 TUI 创建', use_worktree: useWt })
+      // git worktree is disabled by default and not offered as a choice — TUI
+      // tasks always run in the bound working tree.
+      const iss = await client.createIssue(project.id, { title: name || '命令行任务', description: '由 TUI 创建', use_worktree: false })
       setIssues(await client.listIssues(project.id, 'active'))
       await pickIssue(iss)
     } catch (e: any) { setStatusMsg(`创建任务失败: ${e?.message ?? e}`) }
@@ -278,29 +280,21 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate, onQuit }: {
 function IssuePicker({ issues, onPick, onCreate }: {
   issues: Issue[]
   onPick: (i: Issue) => void
-  onCreate: (name: string, useWt: boolean) => void
+  onCreate: (name: string) => void
 }) {
-  const [mode, setMode] = useState<'list' | 'create-name' | 'create-wt'>('list')
+  const [mode, setMode] = useState<'list' | 'create-name'>('list')
   const [name, setName] = useState('')
 
   if (mode === 'create-name') {
+    // git worktree is disabled by default and the option is intentionally not
+    // offered — TUI-created tasks always run in the bound working tree.
     return (
       <Box flexDirection="column" paddingX={2}>
-        <Text bold color="cyan">创建新任务 · 第 1 步：名称</Text>
+        <Text bold color="cyan">创建新任务</Text>
+        <Text color="gray">输入任务名称（不使用 git worktree）</Text>
         <TextInput value={name} onChange={setName} focused placeholder="命令行任务"
-          onSubmit={() => setMode('create-wt')} />
-        <Text color="gray">回车继续 · Esc 返回</Text>
-      </Box>
-    )
-  }
-  if (mode === 'create-wt') {
-    return (
-      <Box flexDirection="column" paddingX={2}>
-        <Text bold color="cyan">创建新任务 · 第 2 步：是否使用 git worktree？</Text>
-        <Select
-          items={[{ label: '否（默认）', value: 'no' }, { label: '是', value: 'yes' }]}
-          onSelect={v => onCreate(name, v === 'yes')} />
-        <Text color="gray">回车确认 · Esc 返回</Text>
+          onSubmit={() => onCreate(name)} />
+        <Text color="gray">回车创建 · Esc 返回</Text>
       </Box>
     )
   }
