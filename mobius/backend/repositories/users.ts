@@ -68,6 +68,9 @@ function makeGroupId(): string {
 interface GroupRow extends UserGroupRawRow {
   active_user_count?: number;
   user_count?: number;
+  is_default?: boolean;
+  project_visibility_mode?: 'default' | 'restricted';
+  visible_project_ids?: string[];
 }
 
 interface UserGroupMembershipRow {
@@ -159,13 +162,16 @@ const replaceGroupsTx = db.transaction((userId: unknown, rawGroupIds: unknown, a
   };
 });
 
-function shapeGroup(row: (UserGroupRawRow & { active_user_count?: number; user_count?: number }) | null | undefined): GroupRow | null {
+function shapeGroup(row: (UserGroupRawRow & { active_user_count?: number; user_count?: number; visible_project_ids?: string | null }) | null | undefined): GroupRow | null {
   if (!row) return null;
+  const rawVisible = row.visible_project_ids;
   return {
     ...row,
     is_default: row.id === DEFAULT_GROUP_ID,
     active_user_count: Number(row.active_user_count || 0),
     user_count: Number(row.user_count || row.active_user_count || 0),
+    project_visibility_mode: row.project_visibility_mode === 'restricted' ? 'restricted' : 'default',
+    visible_project_ids: typeof rawVisible === 'string' && rawVisible ? rawVisible.split(',').filter(Boolean) : [],
   } as GroupRow;
 }
 
@@ -435,14 +441,51 @@ const Users = {
   listGroups: (): Array<GroupRow | null> => {
     ensureDefaultGroup();
     return (db.prepare(`
-      SELECT g.id, g.name, g.description, g.created_at, g.updated_at,
+      SELECT g.id, g.name, g.description, g.project_visibility_mode, g.created_at, g.updated_at,
              SUM(CASE WHEN u.id IS NOT NULL AND ${ACTIVE_USER_SQL.replaceAll('deleted_at', 'u.deleted_at')} THEN 1 ELSE 0 END) AS active_user_count,
-             COUNT(u.id) AS user_count
+             COUNT(u.id) AS user_count,
+             (SELECT GROUP_CONCAT(gvp.project_id, ',') FROM group_visible_projects gvp WHERE gvp.group_id = g.id) AS visible_project_ids
       FROM user_groups g
       LEFT JOIN users u ON u.group_id = g.id
       GROUP BY g.id
       ORDER BY CASE WHEN g.id = ? THEN 0 ELSE 1 END, g.name COLLATE NOCASE ASC
-    `).all(DEFAULT_GROUP_ID) as Array<UserGroupRawRow & { active_user_count: number; user_count: number }>).map(shapeGroup);
+    `).all(DEFAULT_GROUP_ID) as Array<UserGroupRawRow & { active_user_count: number; user_count: number; visible_project_ids?: string | null }>).map(shapeGroup);
+  },
+  getGroupProjectVisibilityMode: (groupId: unknown): 'default' | 'restricted' => {
+    const gid = String(groupId || '').trim();
+    if (!gid) return 'default';
+    const row = db.prepare('SELECT project_visibility_mode FROM user_groups WHERE id = ?').get(gid) as { project_visibility_mode?: string } | undefined;
+    return row?.project_visibility_mode === 'restricted' ? 'restricted' : 'default';
+  },
+  listVisibleProjectIds: (groupId: unknown): string[] => {
+    const gid = String(groupId || '').trim();
+    if (!gid) return [];
+    const rows = db.prepare('SELECT project_id FROM group_visible_projects WHERE group_id = ?').all(gid) as Array<{ project_id: string }>;
+    return rows.map((r) => r.project_id);
+  },
+  setGroupProjectVisibility: (groupId: unknown, params: { mode?: unknown; visible_project_ids?: unknown } = {}) => {
+    ensureDefaultGroup();
+    const gid = String(groupId || '').trim();
+    const existing = findGroupById(gid);
+    if (!existing) throw repoError('群组不存在', 404);
+    if (gid === DEFAULT_GROUP_ID) throw repoError('默认组不能设为受限');
+    const mode: 'default' | 'restricted' = params.mode === 'restricted' ? 'restricted' : 'default';
+    const rawIds = Array.isArray(params.visible_project_ids) ? params.visible_project_ids : [];
+    const projectIds = Array.from(new Set(rawIds.map((v) => String(v || '').trim()).filter(Boolean)));
+    if (projectIds.length) {
+      const found = db.prepare(`SELECT COUNT(*) AS c FROM projects WHERE id IN (${projectIds.map(() => '?').join(',')})`).get(...projectIds) as { c: number };
+      if (found.c !== projectIds.length) throw repoError('部分指定项目不存在', 400);
+    }
+    const tx = db.transaction(() => {
+      db.prepare(`UPDATE user_groups SET project_visibility_mode = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(mode, gid);
+      db.prepare('DELETE FROM group_visible_projects WHERE group_id = ?').run(gid);
+      if (projectIds.length) {
+        const ins = db.prepare('INSERT OR IGNORE INTO group_visible_projects (group_id, project_id) VALUES (?, ?)');
+        projectIds.forEach((pid) => ins.run(gid, pid));
+      }
+    });
+    tx();
+    return { group_id: gid, project_visibility_mode: mode, visible_project_ids: projectIds };
   },
   listGroupMemberships,
   listGroupMembers,

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#070b16">
+  <title>弹幕割草实验室</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css?v=0.1.0">
+</head>
+<body>
+  <main id="gameShell" class="game-shell">
+    <canvas id="gameCanvas" aria-label="弹幕割草实验室游戏战场"></canvas>
+    <div id="damageFlash" class="damage-flash"></div>
+    <div class="vignette"></div>
+    <div class="scanlines"></div>
+
+    <header class="top-hud">
+      <div class="brand">
+        <span>CHAOS SURVIVOR / 01</span>
+        <strong>弹幕割草实验室</strong>
+        <em><i></i> LIVE</em>
+      </div>
+      <div class="metrics">
+        <div><span>等级</span><b id="levelValue">1</b></div>
+        <div><span>击杀</span><b id="killsValue">0</b></div>
+        <div><span>连杀</span><b id="comboValue">×1</b></div>
+        <div><span>剩余</span><b id="timeValue">150</b></div>
+        <div><span>得分</span><b id="scoreValue">0</b></div>
+      </div>
+      <div class="hud-actions">
+        <button id="soundBtn" type="button">声音 ON</button>
+        <button id="pauseBtn" type="button">暂停</button>
+      </div>
+    </header>
+
+    <section class="status-bars">
+      <div class="bar-row hp-row"><span>生命</span><div><i id="hpFill"></i></div><b id="hpText">100 / 100</b></div>
+      <div class="bar-row xp-row"><span>进化</span><div><i id="xpFill"></i></div><b id="xpText">0 / 14</b></div>
+    </section>
+
+    <aside class="arsenal-panel">
+      <div class="panel-title"><span>ARSENAL</span><b>当前火力矩阵</b></div>
+      <div id="arsenalList" class="arsenal-list"></div>
+      <div class="combat-stats">
+        <span>伤害 <b id="damageStat">18</b></span>
+        <span>射速 <b id="rateStat">12.0/s</b></span>
+        <span>弹丸 <b id="shotStat">1</b></span>
+        <span>移速 <b id="speedStat">260</b></span>
+      </div>
+    </aside>
+
+    <aside id="directorPanel" class="director-panel">
+      <div class="panel-title director-title">
+        <span>STREAM DIRECTOR</span><b>爽度导演台</b>
+        <button id="directorToggle" type="button" aria-label="收起导演台">−</button>
+      </div>
+      <div class="director-body">
+        <button id="hordeBtn" class="director-button danger" type="button"><i>☣</i><span><b>八倍围城</b><small>7 秒生成 ×8，立即塞入 120 只</small></span></button>
+        <button id="overdriveBtn" class="director-button energy" type="button"><i>⚡</i><span><b>无限弹匣</b><small>10 秒射速 ×3、伤害 ×2</small></span></button>
+        <button id="eliteBtn" class="director-button elite" type="button"><i>♛</i><span><b>精英空投</b><small>召唤 8 只精英，必掉强化</small></span></button>
+        <button id="nukeBtn" class="director-button nuke" type="button"><i>✺</i><span><b>轨道清场</b><small>全屏轰炸，但不会伤害 Boss</small></span></button>
+        <label class="auto-row"><span><b>自动选升级</b><small>挂机观看模式</small></span><input id="autoPickInput" type="checkbox"><i></i></label>
+      </div>
+    </aside>
+
+    <section class="control-hint">
+      <span><kbd>WASD</kbd> 移动</span><span><kbd>鼠标</kbd> 八向瞄准</span><span><kbd>SHIFT</kbd> 冲刺</span><span><kbd>P</kbd> 暂停</span>
+    </section>
+
+    <div id="bossHud" class="boss-hud hidden">
+      <div><span id="bossName">吞城者 · OMEGA</span><b id="bossHpText">100%</b></div>
+      <section><i id="bossHpFill"></i></section>
+    </div>
+
+    <div id="toast" class="toast" role="status"></div>
+    <div id="banner" class="event-banner"></div>
+
+    <section id="startOverlay" class="overlay visible">
+      <div class="start-card panel-card">
+        <div class="start-copy">
+          <span class="eyebrow">另一个玩法，不守线，直接冲进怪堆里</span>
+          <h1>弹幕割草<br><em>CHAOS SURVIVOR</em></h1>
+          <p>角色可以满屏自由移动，枪口持续追随鼠标方向。怪物从四面八方包围，升级会把普通步枪逐渐叠成多重穿透、爆炸、闪电、导弹、无人机与环刃组成的移动军火库。</p>
+          <div class="feature-grid">
+            <div><b>900</b><span>同屏敌人上限</span></div>
+            <div><b>1600</b><span>弹丸轨迹上限</span></div>
+            <div><b>24</b><span>可叠加升级</span></div>
+            <div><b>150s</b><span>一局快速战役</span></div>
+          </div>
+          <div class="upgrade-preview">
+            <span>多重齐射</span><span>高爆弹头</span><span>连锁闪电</span><span>冰冻弹</span><span>无人机</span><span>旋转环刃</span><span>追踪导弹</span><span>弹射子弹</span>
+          </div>
+          <button id="startBtn" class="primary-button" type="button"><span>开始无双割草</span><small>WASD 移动 · 鼠标瞄准 · 自动开火</small></button>
+          <p class="start-hint">提示：鼠标停在哪里，角色就朝哪里持续射击；Shift 可以撞穿包围圈。</p>
+        </div>
+        <aside class="leaderboard-card">
+          <div class="leaderboard-head"><span>TOP SURVIVORS</span><b>最高战绩</b></div>
+          <ol id="leaderboardList" class="leaderboard-list"><li class="empty">正在读取排行榜…</li></ol>
+          <div class="identity-row">当前玩家 <b id="identityValue">访客</b></div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="upgradeOverlay" class="overlay">
+      <div class="upgrade-card panel-card">
+        <span class="eyebrow">LEVEL UP · 火力进化</span>
+        <h2>三选一，继续把屏幕塞满</h2>
+        <p id="upgradeCountdown">选择后立刻恢复战斗</p>
+        <div id="upgradeOptions" class="upgrade-options"></div>
+        <small>按数字键 1 / 2 / 3 也可以选择</small>
+      </div>
+    </section>
+
+    <section id="pauseOverlay" class="overlay">
+      <div class="compact-card panel-card">
+        <span class="eyebrow">SIMULATION PAUSED</span>
+        <h2>战场已暂停</h2>
+        <button id="resumeBtn" class="primary-button" type="button"><span>继续开火</span></button>
+        <button id="restartBtn" class="secondary-button" type="button">重新开始</button>
+      </div>
+    </section>
+
+    <section id="resultOverlay" class="overlay">
+      <div class="result-card panel-card">
+        <span id="resultEyebrow" class="eyebrow">RUN COMPLETE</span>
+        <h2 id="resultTitle">尸潮被打穿了</h2>
+        <p id="resultDescription">这次广告没有在最爽的时候切走。</p>
+        <div class="result-stats">
+          <div><span>最终得分</span><b id="finalScore">0</b></div>
+          <div><span>击杀数量</span><b id="finalKills">0</b></div>
+          <div><span>进化等级</span><b id="finalLevel">1</b></div>
+          <div><span>排行榜</span><b id="finalRank">—</b></div>
+        </div>
+        <div id="newBestBadge" class="new-best hidden">NEW BEST</div>
+        <div class="result-actions">
+          <button id="againBtn" class="primary-button" type="button"><span>再来一局</span></button>
+          <button id="menuBtn" class="secondary-button" type="button">返回标题</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="mobileControls" class="mobile-controls">
+      <div id="moveStick" class="stick move-stick"><i></i><span>移动</span></div>
+      <div id="aimStick" class="stick aim-stick"><i></i><span>瞄准</span></div>
+    </div>
+  </main>
+  <script type="module" src="./main.js?v=0.1.0"></script>
+</body>
+</html>

@@ -110,11 +110,9 @@ async function main() {
     // ── prep: issue picker (no issues → create) ──────────────────────────────
     ok(await waitFor(lastFrame, '创建新任务'), 'issue picker shown')
     stdin.write('\r'); await delay(120)                             // → create-name
-    ok(await waitFor(lastFrame, '第 1 步'), 'issue name wizard opened')
+    ok(await waitFor(lastFrame, '输入任务名称'), 'issue name wizard opened')
     stdin.write('命令行任务'); await delay(120)
-    stdin.write('\r'); await delay(120)                             // → worktree step
-    ok(await waitFor(lastFrame, '第 2 步'), 'issue worktree wizard opened')
-    stdin.write('\r'); await delay(300)                             // 否 (no worktree)
+    stdin.write('\r'); await delay(300)                             // create issue (worktree off) → model
 
     // ── prep: preferences ────────────────────────────────────────────────────
     ok(await waitFor(lastFrame, '选择模型'), 'model picker shown')

@@ -231,11 +231,43 @@ function allowedByVisibility(user: any, { resourceType, resourceId, ownerId, vis
   return false;
 }
 
+// 受限群组(如"试用组")的项目可见性上下文: 取用户主群组(group_id)的受限模式 + 白名单.
+// 结果挂到 user 对象上 —— readableProjectsForUser 用同一 user 过滤多个项目时只查一次库.
+function ensureGroupVisCtx(user: any): { restricted: boolean; whitelist: Set<string> } {
+  const ctx = { restricted: false, whitelist: new Set<string>() };
+  if (user?.id) {
+    const cached = (user as any).__groupVisCtx;
+    if (cached) return cached;
+    const gid = userGroupId(user);
+    if (gid) {
+      try {
+        const g = db.prepare('SELECT project_visibility_mode FROM user_groups WHERE id = ?').get(gid) as { project_visibility_mode?: string } | undefined;
+        if (g?.project_visibility_mode === 'restricted') {
+          ctx.restricted = true;
+          const rows = db.prepare('SELECT project_id FROM group_visible_projects WHERE group_id = ?').all(gid) as Array<{ project_id: string }>;
+          ctx.whitelist = new Set(rows.map((r) => r.project_id));
+        }
+      } catch {
+        // 查询失败(如迁移未完成缺表) 视为非受限, 不阻断可见性.
+      }
+    }
+    (user as any).__groupVisCtx = ctx;
+  }
+  return ctx;
+}
+
 function canReadProject(user: any, projectOrId: any): boolean {
   const project = projectById(projectOrId);
   if (!project || !user?.id) return false;
   // 项目成员 (任意角色) 可读本项目, 先于可见性判定.
   if (ProjectMemberships.roleFor(project.id, user.id)) return true;
+  // 受限群组: 非成员用户即使面对公开项目也只允许 ①自己创建的 ②群组白名单授权的, 其余拒绝.
+  const visCtx = ensureGroupVisCtx(user);
+  if (visCtx.restricted) {
+    if (project.created_by === user.id) return true;
+    if (visCtx.whitelist.has(project.id)) return true;
+    return false;
+  }
   const visibility = normalizeProjectVisibility(project.visibility, 'private');
   return allowedByVisibility(user, {
     resourceType: 'project',

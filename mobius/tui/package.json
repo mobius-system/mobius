@@ -1,6 +1,6 @@
 {
   "name": "@mobius-os/mobius",
-  "version": "0.2.5",
+  "version": "0.2.8",
   "type": "module",
   "description": "Mobius terminal client. Reuses Mobius frontend TypeScript types and jsonl entry shapes.",
   "bin": {
@@ -18,6 +18,7 @@
     "test:aimux": "tsx tests/aimux.test.tsx",
     "test:reconnect": "tsx tests/reconnect.test.tsx",
     "test:screen": "tsx tests/screen.test.tsx",
+    "test:scroll": "tsx tests/scroll.test.tsx",
     "test": "npm run typecheck && npm run test:ui && npm run test:integration"
   },
   "dependencies": {

@@ -10,7 +10,7 @@ import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { pollRecursive } from '../services/polling'
@@ -1110,7 +1110,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         </div>
 
         {/* 中间弹性填充 spacer (整条顶栏已统一挂拖拽, 此处仅占位; 不再单独挂 DesktopDragHandle 以免重复触发)。 */}
-        <div className="flex-1 self-stretch" aria-hidden style={{ cursor: topnavDrag.enabled ? 'grab' : undefined }} />
+        <div className="mobius-topnav-spacer flex-1 self-stretch" aria-hidden style={{ cursor: topnavDrag.enabled ? 'grab' : undefined }} />
 
         {/* 右侧操作 */}
         <div className="mobius-topnav-actions flex min-w-0 flex-shrink-0 items-center gap-1.5 xl:gap-2">
@@ -1166,6 +1166,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             rel="noopener noreferrer"
             title="GitHub"
             aria-label="GitHub"
+            className="mobius-topnav-github"
           >
             <GithubIcon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
           </TopNavActionElement>
@@ -1399,7 +1400,13 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           <div className="relative" data-tour="top-user-menu">
             <TopNavActionElement
               type="button"
+              iconOnly={isMobile}
+              title={user?.display_name ? `${user.display_name} · 用户菜单` : '用户菜单'}
+              aria-label="用户菜单"
+              aria-haspopup="menu"
+              aria-expanded={showUserMenu}
               onClick={(e: any) => { e.stopPropagation(); setShowUserMenu((s) => !s) }}>
+              {isMobile && <UserRound className="h-4 w-4" strokeWidth={2} />}
               {!isMobile && <span className="text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>{user?.display_name}</span>}
               {!isMobile && <svg className="w-3 h-3" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>}
             </TopNavActionElement>

@@ -29,6 +29,7 @@ import {
   Save,
   Server,
   Settings,
+  Shield,
   Sparkles,
   Terminal,
   Trash2,
@@ -282,6 +283,17 @@ type AdminUserGroup = {
   active_user_count?: number
   user_count?: number
   is_default?: boolean
+  project_visibility_mode?: 'default' | 'restricted'
+  visible_project_ids?: string[]
+}
+
+type VisCandidate = {
+  id: string
+  name: string
+  kind?: string
+  visibility?: string
+  created_by?: string
+  created_by_name?: string
 }
 
 type EmployeeFormState = {
@@ -354,6 +366,14 @@ function AdminUsersPanel() {
   const [creatingGroup, setCreatingGroup] = useState(false)
   const [savingGroupId, setSavingGroupId] = useState<string | null>(null)
   const [deletingGroupId, setDeletingGroupId] = useState<string | null>(null)
+  // 群组「项目可见性」编辑态: 一次只展开一个群组, 展开时按需加载候选项目.
+  const [visOpenId, setVisOpenId] = useState<string | null>(null)
+  const [visLoading, setVisLoading] = useState(false)
+  const [visSavingId, setVisSavingId] = useState<string | null>(null)
+  const [visMode, setVisMode] = useState<'default' | 'restricted'>('default')
+  const [visSelected, setVisSelected] = useState<string[]>([])
+  const [visCandidates, setVisCandidates] = useState<VisCandidate[]>([])
+  const [visQuery, setVisQuery] = useState('')
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -565,6 +585,47 @@ function AdminUsersPanel() {
     }
   }
 
+  const openGroupVis = async (group: AdminUserGroup) => {
+    if (visOpenId === group.id) { setVisOpenId(null); return }
+    setVisOpenId(group.id)
+    setVisLoading(true)
+    setVisQuery('')
+    setVisMode(group.project_visibility_mode === 'restricted' ? 'restricted' : 'default')
+    setVisSelected(Array.isArray(group.visible_project_ids) ? [...group.visible_project_ids] : [])
+    setVisCandidates([])
+    try {
+      const data = await api(`/api/admin/user-groups/${encodeURIComponent(group.id)}/project-visibility`)
+      setVisMode(data?.mode === 'restricted' ? 'restricted' : 'default')
+      setVisSelected(Array.isArray(data?.visible_project_ids) ? data.visible_project_ids : [])
+      setVisCandidates(Array.isArray(data?.candidates) ? data.candidates : [])
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setVisLoading(false)
+    }
+  }
+
+  const toggleVisProject = (pid: string) => {
+    setVisSelected((prev) => (prev.includes(pid) ? prev.filter((x) => x !== pid) : [...prev, pid]))
+  }
+
+  const saveGroupVis = async (group: AdminUserGroup) => {
+    setError(''); setNotice('')
+    setVisSavingId(group.id)
+    try {
+      await api(`/api/admin/user-groups/${encodeURIComponent(group.id)}/project-visibility`, {
+        method: 'PUT',
+        body: JSON.stringify({ mode: visMode, visible_project_ids: visSelected }),
+      })
+      await refresh(true)
+      setNotice(`已更新「${group.name}」的项目可见性：${visMode === 'restricted' ? '受限' : '标准'}`)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setVisSavingId(null)
+    }
+  }
+
   const updateEmployeeGroup = async (row: AdminUserRow, groupId: string) => {
     if (!groupId || groupId === row.group_id) return
     const nextGroup = groups.find((g) => g.id === groupId)
@@ -757,41 +818,113 @@ function AdminUsersPanel() {
             const draft = groupDrafts[g.id] ?? g.name
             const changed = draft.trim() !== g.name
             return (
-              <div key={g.id} className="flex items-center gap-2 rounded-lg border px-3 py-2" style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={draft}
-                      onChange={(e) => { setGroupDrafts((prev) => ({ ...prev, [g.id]: e.target.value })); setError(''); setNotice('') }}
-                      className="h-8 min-w-0 flex-1 rounded-md border px-2 text-[12px] outline-none focus:border-blue-500/50"
-                      style={fieldStyle}
-                    />
-                    {g.is_default && (
-                      <span className="flex-shrink-0 rounded-md border border-cyan-500/25 bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-400">默认</span>
+              <div key={g.id} className="rounded-lg border px-3 py-2" style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={draft}
+                        onChange={(e) => { setGroupDrafts((prev) => ({ ...prev, [g.id]: e.target.value })); setError(''); setNotice('') }}
+                        className="h-8 min-w-0 flex-1 rounded-md border px-2 text-[12px] outline-none focus:border-blue-500/50"
+                        style={fieldStyle}
+                      />
+                      {g.is_default && (
+                        <span className="flex-shrink-0 rounded-md border border-cyan-500/25 bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-400">默认</span>
+                      )}
+                      {!g.is_default && (
+                        <span className={`flex-shrink-0 rounded-md border px-2 py-0.5 text-[10px] ${g.project_visibility_mode === 'restricted' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-[var(--border-color)] text-[var(--text-muted)]'}`}>
+                          {g.project_visibility_mode === 'restricted' ? '项目受限' : '项目标准'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      启用员工 {activeCount} · 全部记录 {toCount(g.user_count)}
+                    </div>
+                  </div>
+                  {!g.is_default && (
+                    <button
+                      type="button"
+                      onClick={() => openGroupVis(g)}
+                      title="项目可见性"
+                      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-hover)] ${visOpenId === g.id ? 'border-amber-500/40 text-amber-400' : 'border-[var(--border-color)] text-[var(--text-secondary)]'}`}
+                    >
+                      <Shield className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => saveGroup(g)}
+                    disabled={saving || !changed}
+                    title="保存群组名称"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
+                  >
+                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteGroup(g)}
+                    disabled={deleting || !!g.is_default || activeCount > 0}
+                    title={g.is_default ? '默认组不能删除' : activeCount > 0 ? '只能删除空群组' : '删除空群组'}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-500/20 text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-35"
+                  >
+                    {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+                {!g.is_default && visOpenId === g.id && (
+                  <div className="mt-2 rounded-md border p-2.5" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                    {visLoading ? (
+                      <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> 加载中…
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>项目可见性</span>
+                          <div className="inline-flex overflow-hidden rounded-md border" style={{ borderColor: 'var(--border-color)' }}>
+                            <button type="button" onClick={() => setVisMode('default')}
+                              className={`h-7 px-2.5 text-[11px] ${visMode === 'default' ? 'bg-blue-500/15 text-blue-400' : 'text-[var(--text-muted)]'}`}>标准</button>
+                            <button type="button" onClick={() => setVisMode('restricted')}
+                              className={`h-7 px-2.5 text-[11px] ${visMode === 'restricted' ? 'bg-amber-500/15 text-amber-400' : 'text-[var(--text-muted)]'}`}>受限</button>
+                          </div>
+                          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                            {visMode === 'restricted' ? '仅可见：自己创建的 + 自己被加入成员的 + 下方指定项目' : '可见全部公开项目 + 自己的项目'}
+                          </span>
+                          <button type="button" onClick={() => saveGroupVis(g)} disabled={visSavingId === g.id}
+                            className="ml-auto inline-flex h-7 items-center gap-1 rounded-md bg-blue-500 px-2.5 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50">
+                            {visSavingId === g.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} 保存
+                          </button>
+                        </div>
+                        {visMode === 'restricted' && (
+                          <div className="mt-2">
+                            <input value={visQuery} onChange={(e) => setVisQuery(e.target.value)} placeholder="搜索要开放给本组的项目…"
+                              className="h-7 w-full rounded-md border px-2 text-[11px] outline-none focus:border-blue-500/50" style={fieldStyle} />
+                            <div className="mt-1.5 max-h-44 overflow-auto rounded-md border" style={{ borderColor: 'var(--border-color)' }}>
+                              {visCandidates
+                                .filter((c) => !visQuery.trim() || String(c.name || '').toLowerCase().includes(visQuery.toLowerCase()))
+                                .map((c) => {
+                                  const checked = visSelected.includes(c.id)
+                                  return (
+                                    <label key={c.id} className="flex cursor-pointer items-center gap-2 border-b px-2.5 py-1.5 last:border-b-0 hover:bg-[var(--bg-hover)]" style={{ borderColor: 'var(--border-color)' }}>
+                                      <input type="checkbox" checked={checked} onChange={() => toggleVisProject(c.id)} className="h-3.5 w-3.5" />
+                                      <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: 'var(--text-primary)' }}>{c.name || c.id}</span>
+                                      {c.kind === 'extension' && <span className="flex-shrink-0 text-[9px]" style={{ color: 'var(--text-muted)' }}>拓展</span>}
+                                      {c.created_by_name && <span className="flex-shrink-0 text-[9px]" style={{ color: 'var(--text-muted)' }}>{c.created_by_name}</span>}
+                                    </label>
+                                  )
+                                })}
+                              {visCandidates.filter((c) => !visQuery.trim() || String(c.name || '').toLowerCase().includes(visQuery.toLowerCase())).length === 0 && (
+                                <div className="px-2.5 py-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>没有匹配的项目</div>
+                              )}
+                            </div>
+                            {visSelected.length > 0 && (
+                              <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>已选 {visSelected.length} 个项目对「{g.name}」可见</div>
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
-                  <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    启用员工 {activeCount} · 全部记录 {toCount(g.user_count)}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => saveGroup(g)}
-                  disabled={saving || !changed}
-                  title="保存群组名称"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
-                >
-                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => deleteGroup(g)}
-                  disabled={deleting || !!g.is_default || activeCount > 0}
-                  title={g.is_default ? '默认组不能删除' : activeCount > 0 ? '只能删除空群组' : '删除空群组'}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-500/20 text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-35"
-                >
-                  {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                </button>
+                )}
               </div>
             )
           })}

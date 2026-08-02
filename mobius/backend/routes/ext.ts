@@ -164,7 +164,7 @@ metaRouter.get('/:name/user-asset/*', authOrQuery, (req: express.Request, res: e
     return;
   }
   const ext = path.extname(abs).toLowerCase();
-  const allowed = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mov', '.m4v', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.md', '.csv', '.rtf']);
+  const allowed = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mov', '.m4v', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.md', '.csv', '.rtf', '.zip']);
   if (!allowed.has(ext)) {
     res.status(403).send('mime not allowed');
     return;
@@ -175,6 +175,10 @@ metaRouter.get('/:name/user-asset/*', authOrQuery, (req: express.Request, res: e
     return;
   }
   res.set('content-type', mime);
+  if (ext === '.zip') {
+    const filename = path.basename(abs);
+    res.set('content-disposition', `attachment; filename="download.zip"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+  }
   streamAssetWithRange(req, res, abs, `user-asset/${rel}`, 'private, max-age=604800, immutable');
 });
 
@@ -532,6 +536,7 @@ const MIME: Record<string, string> = {
   '.md':   'text/markdown; charset=utf-8',
   '.csv':  'text/csv; charset=utf-8',
   '.rtf':  'application/rtf',
+  '.zip':  'application/zip',
 };
 
 function scriptJson(value: unknown): string {
