@@ -3624,6 +3624,102 @@ export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+// =====================================================================
+// 安装 Mobius 命令行终端 — Linux/macOS 走 npm，Windows 使用便携安装脚本。
+// Windows 脚本不要求预装 Node/管理员权限，并自动注册两个 Explorer 右键入口。
+// =====================================================================
+const TERMINAL_INSTALL_OPTIONS = [
+  {
+    id: 'linux',
+    label: 'Linux',
+    sub: '需要 Node.js 18+ 与 npm',
+    command: 'npm install -g @mobius-os/mobius@latest',
+    note: '安装完成后运行 mobius。若全局安装提示权限不足，可改用用户级 npm prefix。',
+  },
+  {
+    id: 'macos',
+    label: 'macOS',
+    sub: 'Apple Silicon / Intel · 需要 Node.js 18+ 与 npm',
+    command: 'npm install -g @mobius-os/mobius@latest',
+    note: '安装完成后打开终端运行 mobius。',
+  },
+  {
+    id: 'windows',
+    label: 'Windows',
+    sub: 'PowerShell 5.1+ · 无需 Node.js、无需管理员权限',
+    command: 'irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v9.ps1 | iex',
+    note: '安装后重新打开 PowerShell 并运行 mobius；同时添加文件夹和文件夹空白处的“在 Mobius 中打开”右键菜单。',
+  },
+] as const
+
+export function TerminalInstallModal({ onClose }: { onClose: () => void }) {
+  const { theme } = useStore()
+  const [copied, setCopied] = useState<string | null>(null)
+  const muted = theme !== 'light' ? '#94a3b8' : '#64748b'
+
+  const copyCommand = async (id: string, command: string) => {
+    try {
+      await navigator.clipboard.writeText(command)
+      setCopied(id)
+      setTimeout(() => setCopied(current => current === id ? null : current), 1500)
+    } catch {
+      setCopied(null)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-[600px] max-w-[92vw] max-h-[85vh] overflow-y-auto rounded-2xl p-6 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>安装 Mobius 命令行终端</h3>
+            <div className="text-[11px] mt-0.5" style={{ color: muted }}>
+              在本机终端直接创建任务、连接 AIMUX，并与 Mobius Web 共享项目和会话。
+            </div>
+          </div>
+          <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
+        </div>
+
+        <div className="space-y-3 mt-4">
+          {TERMINAL_INSTALL_OPTIONS.map(option => (
+            <section key={option.id} className="px-4 py-3 rounded-xl"
+              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div>
+                  <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{option.label}</div>
+                  <div className="text-[11px] mt-0.5" style={{ color: muted }}>{option.sub}</div>
+                </div>
+                {option.id === 'windows' && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full shrink-0" style={{ background: 'rgba(10,132,255,0.14)', color: '#0a84ff' }}>一键安装</span>
+                )}
+              </div>
+              <div className="relative">
+                <pre className="text-[12px] rounded-lg p-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all"
+                  style={{ background: theme !== 'light' ? '#0f172a' : '#f1f5f9', color: theme !== 'light' ? '#e2e8f0' : '#1e293b', border: '1px solid var(--border-color)' }}>
+                  {option.command}
+                </pre>
+                <button type="button" onClick={() => void copyCommand(option.id, option.command)}
+                  className="absolute top-1.5 right-1.5 px-2 h-7 rounded-md text-[11px] border transition-colors"
+                  style={{ background: 'var(--bg-card-hover)', borderColor: 'var(--border-color)', color: muted }}>
+                  {copied === option.id ? '已复制' : '复制'}
+                </button>
+              </div>
+              <div className="text-[11px] mt-2 leading-relaxed" style={{ color: muted }}>{option.note}</div>
+            </section>
+          ))}
+        </div>
+
+        <div className="text-[11px] mt-4 p-3 rounded-lg" style={{ background: theme !== 'light' ? 'rgba(56,189,248,0.08)' : '#f0f7ff', color: muted }}>
+          npm 包名：<code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>@mobius-os/mobius</code>。安装命令使用 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>latest</code> 标签，始终获取最新公开版本。
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function MobileDownloadModal({ onClose }: { onClose: () => void }) {
   const { theme } = useStore()
   return (
@@ -3823,7 +3919,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
   // 输入为空时回退到默认值, 避免生成 --identifier 空参数导致命令非法
   const effectiveIdentifier = identifier.trim() || defaultIdentifier
 
-  const installCmd = 'pip install --force-reinstall aimux==0.1.20'
+  const installCmd = 'pip install --force-reinstall aimux==0.1.21'
   const connectCmd = `aimux reverse connect ${baseUrl} --identifier ${effectiveIdentifier} --token ${userJwt}`
   // 步骤4 话术: 命名占位用第2步输入的 identifier (实时随输入更新); skill 路径用后端 branding 下发的
   // APP_DIR 绝对路径展开 (用户要求显示绝对路径, agent 无论 cwd 在哪都能直达内置 skill 源目录);
