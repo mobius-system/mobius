@@ -10,6 +10,9 @@ const CONFIG = Object.freeze({
   maxPickups: 420,
   cellSize: 76,
 });
+const COOLDOWN_KEYS = Object.freeze(['horde', 'overdrive', 'elite', 'nuke']);
+const MAX_SHOCKWAVES = 192;
+const MAX_BEAMS = 384;
 
 const ENEMY_TYPES = Object.freeze({
   grunt: { frame: 0, hp: 1, speed: 1, radius: 16, damage: 9, score: 11, xp: 1, color: '#85ef72' },
@@ -196,6 +199,71 @@ function formatCompact(value) {
   return Math.round(value).toString();
 }
 
+function compactInPlace(list, keep) {
+  let writeIndex = 0;
+  for (let readIndex = 0; readIndex < list.length; readIndex += 1) {
+    const item = list[readIndex];
+    if (!keep(item)) continue;
+    if (writeIndex !== readIndex) list[writeIndex] = item;
+    writeIndex += 1;
+  }
+  list.length = writeIndex;
+}
+
+class SpatialGrid {
+  constructor(cellSize) {
+    this.cellSize = cellSize;
+    this.cells = new Map();
+    this.activeKeys = [];
+  }
+
+  key(cellX, cellY) {
+    return (cellX << 16) ^ (cellY & 0xffff);
+  }
+
+  clear() {
+    for (const key of this.activeKeys) this.cells.get(key).length = 0;
+    this.activeKeys.length = 0;
+  }
+
+  rebuild(enemies) {
+    this.clear();
+    for (const enemy of enemies) {
+      if (enemy.dead) continue;
+      const cellX = Math.floor(enemy.x / this.cellSize);
+      const cellY = Math.floor(enemy.y / this.cellSize);
+      const key = this.key(cellX, cellY);
+      let cell = this.cells.get(key);
+      if (!cell) {
+        cell = [];
+        this.cells.set(key, cell);
+      }
+      if (cell.length === 0) this.activeKeys.push(key);
+      cell.push(enemy);
+    }
+  }
+
+  visit(x, y, radius, visitor) {
+    const range = Math.ceil(radius / this.cellSize);
+    const cellX = Math.floor(x / this.cellSize);
+    const cellY = Math.floor(y / this.cellSize);
+    for (let dx = -range; dx <= range; dx += 1) {
+      for (let dy = -range; dy <= range; dy += 1) {
+        const cell = this.cells.get(this.key(cellX + dx, cellY + dy));
+        if (!cell) continue;
+        for (const enemy of cell) {
+          if (visitor(enemy) === false) return false;
+        }
+      }
+    }
+    return true;
+  }
+}
+
+const enemyGrid = new SpatialGrid(CONFIG.cellSize);
+const projectileDrawBatches = new Map();
+const activeProjectileDrawBatches = [];
+
 function ensureAudio() {
   if (muted) return null;
   if (!audioCtx) {
@@ -311,6 +379,7 @@ function resetRun() {
     upgradeLevels: {}, enemies: [], bullets: [], hostileBullets: [], pickups: [], particles: [], shockwaves: [], beams: [], floaters: [],
   });
   nextEnemyId = 1;
+  enemyGrid.clear();
   state.player = { x: width * 0.5, y: height * 0.57, vx: 0, vy: 0, angle: -Math.PI / 2, radius: 16, dashTime: 0, dashCooldown: 0, dashX: 1, dashY: 0 };
   input.pointerX = state.player.x + 180;
   input.pointerY = state.player.y;
@@ -509,6 +578,7 @@ function burst(x, y, color, count = 16, speed = 150) {
 }
 
 function addShockwave(x, y, color, start = 5, end = 90, life = 0.45, widthValue = 4) {
+  if (state.shockwaves.length >= MAX_SHOCKWAVES) return;
   state.shockwaves.push({ x, y, color, radius: start, start, end, life, maxLife: life, width: widthValue });
 }
 
@@ -518,6 +588,7 @@ function addFloater(x, y, text, color = '#ffffff', size = 12, life = 0.65) {
 }
 
 function addBeam(x1, y1, x2, y2, color = '#c977ff', widthValue = 3, life = 0.14) {
+  if (state.beams.length >= MAX_BEAMS) return;
   state.beams.push({ x1, y1, x2, y2, color, width: widthValue, life, maxLife: life });
 }
 
@@ -577,18 +648,23 @@ function firePrimary(dt) {
   if (Math.random() < 0.22) tone(180 + Math.random() * 35, 0.025, 'square', 0.009, -35);
 }
 
-function nearestEnemy(x, y, maxDistance = Infinity, excludeIds = null) {
+function nearestEnemy(x, y, maxDistance = Infinity, excludeIds = null, grid = null) {
   let best = null;
   let bestDistance = maxDistance * maxDistance;
-  for (const enemy of state.enemies) {
-    if (enemy.dead || (excludeIds && excludeIds.includes(enemy.id))) continue;
+  const consider = (enemy) => {
+    if (enemy.dead || (excludeIds && excludeIds.includes(enemy.id))) return;
     const d2 = distanceSq(x, y, enemy.x, enemy.y);
     if (d2 < bestDistance) { bestDistance = d2; best = enemy; }
+  };
+  if (grid && Number.isFinite(maxDistance)) {
+    grid.visit(x, y, maxDistance, consider);
+  } else {
+    for (const enemy of state.enemies) consider(enemy);
   }
   return best;
 }
 
-function fireDrones(dt) {
+function fireDrones(dt, grid) {
   if (!state.drones) return;
   state.droneAccumulator += dt;
   const interval = Math.max(0.13, 0.56 - state.drones * 0.045);
@@ -598,7 +674,7 @@ function fireDrones(dt) {
     const angle = state.elapsed * 1.35 + index * Math.PI * 2 / state.drones;
     const x = state.player.x + Math.cos(angle) * (48 + state.drones * 2.5);
     const y = state.player.y + Math.sin(angle) * (48 + state.drones * 2.5);
-    const target = nearestEnemy(x, y, 440);
+    const target = nearestEnemy(x, y, 440, null, grid);
     if (!target) continue;
     const aim = Math.atan2(target.y - y, target.x - x);
     fireBullet(x, y, aim, { damage: state.damage * (0.42 + state.drones * 0.025), radius: 3.4, speed: state.bulletSpeed * 0.88, color: '#69b8ff', pierce: Math.floor(state.pierce / 2), explosive: 0, chain: 0, frost: 0, ricochet: 0, kind: 'drone' });
@@ -606,7 +682,7 @@ function fireDrones(dt) {
   }
 }
 
-function fireMissiles(dt) {
+function fireMissiles(dt, grid) {
   if (!state.missile) return;
   state.missileAccumulator += dt;
   const interval = Math.max(0.42, 2.2 - state.missile * 0.25);
@@ -614,7 +690,7 @@ function fireMissiles(dt) {
   state.missileAccumulator %= interval;
   const count = 1 + Math.floor((state.missile - 1) / 2);
   for (let index = 0; index < count; index += 1) {
-    const target = nearestEnemy(state.player.x, state.player.y, Infinity);
+    const target = nearestEnemy(state.player.x, state.player.y, Infinity, null, grid);
     if (!target) break;
     const angle = state.player.angle + (index - (count - 1) / 2) * 0.3;
     fireBullet(state.player.x, state.player.y, angle, { damage: state.damage * (3.8 + state.missile * 0.65), radius: 7, speed: 330, color: '#ff6f91', pierce: 0, explosive: 2 + state.missile, chain: 0, frost: 0, ricochet: 0, homing: 4.2, target, life: 3.2, kind: 'missile' });
@@ -633,34 +709,6 @@ function fireHostile(enemy) {
     state.hostileBullets.push({ x: enemy.x, y: enemy.y, px: enemy.x, py: enemy.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, radius: enemy.boss ? 7 : 5, damage: enemy.boss ? 14 : 7, life: enemy.boss ? 5.5 : 3.2, color: enemy.boss ? '#ff3d60' : '#df70ff' });
   }
   addShockwave(enemy.x, enemy.y, enemy.color, 5, enemy.radius * 1.4, 0.24, 2);
-}
-
-function buildSpatialGrid() {
-  const grid = new Map();
-  for (const enemy of state.enemies) {
-    if (enemy.dead) continue;
-    const cellX = Math.floor(enemy.x / CONFIG.cellSize);
-    const cellY = Math.floor(enemy.y / CONFIG.cellSize);
-    const key = `${cellX},${cellY}`;
-    let cell = grid.get(key);
-    if (!cell) { cell = []; grid.set(key, cell); }
-    cell.push(enemy);
-  }
-  return grid;
-}
-
-function nearbyFromGrid(grid, x, y, radius = CONFIG.cellSize) {
-  const result = [];
-  const range = Math.ceil(radius / CONFIG.cellSize);
-  const cellX = Math.floor(x / CONFIG.cellSize);
-  const cellY = Math.floor(y / CONFIG.cellSize);
-  for (let dx = -range; dx <= range; dx += 1) {
-    for (let dy = -range; dy <= range; dy += 1) {
-      const cell = grid.get(`${cellX + dx},${cellY + dy}`);
-      if (cell) result.push(...cell);
-    }
-  }
-  return result;
 }
 
 function damageEnemy(enemy, amount, options = {}) {
@@ -719,25 +767,24 @@ function killEnemy(enemy, options = {}) {
 function explode(x, y, radius, damage, color, grid, excludeId = null) {
   addShockwave(x, y, color, 6, radius, 0.32 + radius / 600, Math.max(3, radius / 24));
   burst(x, y, color, Math.min(36, Math.round(radius / 4)), radius * 1.7);
-  const targets = nearbyFromGrid(grid, x, y, radius);
   const radiusSq = radius * radius;
-  for (const target of targets) {
-    if (target.dead || target.id === excludeId || distanceSq(x, y, target.x, target.y) > radiusSq) continue;
+  grid.visit(x, y, radius, (target) => {
+    if (target.dead || target.id === excludeId || distanceSq(x, y, target.x, target.y) > radiusSq) return;
     damageEnemy(target, damage * (1 - Math.sqrt(distanceSq(x, y, target.x, target.y)) / radius * 0.45), { color, critical: false });
-  }
+  });
 }
 
 function chainLightning(source, count, damage, grid, excluded = []) {
   let current = source;
   const seen = [...excluded, source.id];
   for (let index = 0; index < count; index += 1) {
-    const candidates = nearbyFromGrid(grid, current.x, current.y, 185).filter((enemy) => !enemy.dead && !seen.includes(enemy.id));
     let target = null;
     let best = 185 * 185;
-    for (const enemy of candidates) {
+    grid.visit(current.x, current.y, 185, (enemy) => {
+      if (enemy.dead || seen.includes(enemy.id)) return;
       const d2 = distanceSq(current.x, current.y, enemy.x, enemy.y);
       if (d2 < best) { best = d2; target = enemy; }
-    }
+    });
     if (!target) break;
     addBeam(current.x, current.y, target.x, target.y, '#c977ff', 2.5 + count * 0.2, 0.17);
     damageEnemy(target, damage * Math.pow(0.76, index + 1), { color: '#d9a6ff', critical: false });
@@ -771,9 +818,9 @@ function updatePlayer(dt, grid) {
     player.vy = player.dashY * state.moveSpeed * 3.8;
     state.invulnerableUntil = Math.max(state.invulnerableUntil, state.elapsed + 0.08);
     addParticle(player.x, player.y, '#70fff1', rand(15, 70), rand(0.18, 0.35), rand(4, 9), player.angle + Math.PI + rand(-0.8, 0.8));
-    for (const enemy of nearbyFromGrid(grid, player.x, player.y, 42)) {
+    grid.visit(player.x, player.y, 42, (enemy) => {
       if (!enemy.dead && distanceSq(player.x, player.y, enemy.x, enemy.y) < Math.pow(player.radius + enemy.radius + 12, 2)) damageEnemy(enemy, state.damage * (4 + state.armor * 10), { color: '#70fff1', critical: false });
-    }
+    });
   } else {
     const response = 1 - Math.exp(-dt * 13);
     player.vx += (moveX * state.moveSpeed - player.vx) * response;
@@ -799,7 +846,7 @@ function startDash() {
   tone(260, 0.08, 'sawtooth', 0.035, 280);
 }
 
-function updateEnemies(dt, grid) {
+function updateEnemyMotion(dt) {
   const player = state.player;
   for (const enemy of state.enemies) {
     if (enemy.dead) continue;
@@ -839,20 +886,23 @@ function updateEnemies(dt, grid) {
     }
   }
 
-  if (state.orbit > 0) {
-    const count = state.orbit;
-    const orbitRadius = 64 + count * 4;
-    for (let index = 0; index < count; index += 1) {
-      const angle = state.elapsed * (2.4 + count * 0.08) + index * Math.PI * 2 / count;
-      const x = player.x + Math.cos(angle) * orbitRadius;
-      const y = player.y + Math.sin(angle) * orbitRadius;
-      for (const enemy of nearbyFromGrid(grid, x, y, 38)) {
-        if (enemy.dead || state.elapsed < enemy.orbitHitAt || distanceSq(x, y, enemy.x, enemy.y) > Math.pow(enemy.radius + 16, 2)) continue;
-        enemy.orbitHitAt = state.elapsed + 0.18;
-        damageEnemy(enemy, state.damage * (0.62 + state.orbit * 0.12), { color: '#aaff75', critical: false, frost: Math.floor(state.frost / 2) });
-        addBeam(x - Math.cos(angle) * 15, y - Math.sin(angle) * 15, x + Math.cos(angle) * 15, y + Math.sin(angle) * 15, '#aaff75', 3, 0.08);
-      }
-    }
+}
+
+function updateOrbit(grid) {
+  if (state.orbit <= 0) return;
+  const player = state.player;
+  const count = state.orbit;
+  const orbitRadius = 64 + count * 4;
+  for (let index = 0; index < count; index += 1) {
+    const angle = state.elapsed * (2.4 + count * 0.08) + index * Math.PI * 2 / count;
+    const x = player.x + Math.cos(angle) * orbitRadius;
+    const y = player.y + Math.sin(angle) * orbitRadius;
+    grid.visit(x, y, 38, (enemy) => {
+      if (enemy.dead || state.elapsed < enemy.orbitHitAt || distanceSq(x, y, enemy.x, enemy.y) > Math.pow(enemy.radius + 16, 2)) return;
+      enemy.orbitHitAt = state.elapsed + 0.18;
+      damageEnemy(enemy, state.damage * (0.62 + state.orbit * 0.12), { color: '#aaff75', critical: false, frost: Math.floor(state.frost / 2) });
+      addBeam(x - Math.cos(angle) * 15, y - Math.sin(angle) * 15, x + Math.cos(angle) * 15, y + Math.sin(angle) * 15, '#aaff75', 3, 0.08);
+    });
   }
 }
 
@@ -879,6 +929,7 @@ function hitPlayer(amount, sourceX, sourceY) {
 function updateBullets(dt, grid) {
   for (let index = state.bullets.length - 1; index >= 0; index -= 1) {
     const bullet = state.bullets[index];
+    if (bullet.dead) continue;
     bullet.life -= dt;
     if (bullet.homing && bullet.target && !bullet.target.dead) {
       const targetAngle = Math.atan2(bullet.target.y - bullet.y, bullet.target.x - bullet.x);
@@ -894,15 +945,17 @@ function updateBullets(dt, grid) {
     bullet.y += bullet.vy * dt;
     if (bullet.kind === 'missile' && Math.random() < 0.85) addParticle(bullet.x, bullet.y, '#ff8a68', rand(5, 28), rand(0.2, 0.45), rand(2, 5), bullet.angle + Math.PI + rand(-0.4, 0.4));
     if (bullet.life <= 0 || bullet.x < -120 || bullet.x > width + 120 || bullet.y < -120 || bullet.y > height + 120) {
-      state.bullets.splice(index, 1);
+      bullet.dead = true;
       continue;
     }
-    const candidates = nearbyFromGrid(grid, bullet.x, bullet.y, bullet.radius + 48);
     let hit = null;
-    for (const enemy of candidates) {
-      if (enemy.dead || bullet.hitIds.includes(enemy.id)) continue;
-      if (distanceSq(bullet.x, bullet.y, enemy.x, enemy.y) <= Math.pow(bullet.radius + enemy.radius * 0.72, 2)) { hit = enemy; break; }
-    }
+    grid.visit(bullet.x, bullet.y, bullet.radius + 48, (enemy) => {
+      if (enemy.dead || bullet.hitIds.includes(enemy.id)) return;
+      if (distanceSq(bullet.x, bullet.y, enemy.x, enemy.y) <= Math.pow(bullet.radius + enemy.radius * 0.72, 2)) {
+        hit = enemy;
+        return false;
+      }
+    });
     if (!hit) continue;
     bullet.hitIds.push(hit.id);
     const critical = Math.random() < state.critChance;
@@ -914,7 +967,7 @@ function updateBullets(dt, grid) {
     }
     if (bullet.chain > 0 && Math.random() < Math.min(0.86, 0.16 + bullet.chain * 0.11)) chainLightning(hit, Math.min(7, bullet.chain + 1), bullet.damage * 0.75, grid, bullet.hitIds);
     if (bullet.ricochet > 0 && Math.random() < Math.min(0.92, 0.25 + bullet.ricochet * 0.13)) {
-      const target = nearestEnemy(bullet.x, bullet.y, 280, bullet.hitIds);
+      const target = nearestEnemy(bullet.x, bullet.y, 280, bullet.hitIds, grid);
       if (target) {
         bullet.angle = Math.atan2(target.y - bullet.y, target.x - bullet.x);
         const speed = Math.hypot(bullet.vx, bullet.vy) * 0.94;
@@ -926,8 +979,9 @@ function updateBullets(dt, grid) {
       }
     }
     bullet.pierce -= 1;
-    if (bullet.pierce < 0) state.bullets.splice(index, 1);
+    if (bullet.pierce < 0) bullet.dead = true;
   }
+  compactInPlace(state.bullets, (bullet) => !bullet.dead);
 }
 
 function updateHostileBullets(dt) {
@@ -937,12 +991,13 @@ function updateHostileBullets(dt) {
     bullet.life -= dt;
     bullet.px = bullet.x; bullet.py = bullet.y;
     bullet.x += bullet.vx * dt; bullet.y += bullet.vy * dt;
-    if (bullet.life <= 0 || bullet.x < -50 || bullet.x > width + 50 || bullet.y < -50 || bullet.y > height + 50) { state.hostileBullets.splice(index, 1); continue; }
+    if (bullet.life <= 0 || bullet.x < -50 || bullet.x > width + 50 || bullet.y < -50 || bullet.y > height + 50) { bullet.dead = true; continue; }
     if (distanceSq(bullet.x, bullet.y, player.x, player.y) < Math.pow(bullet.radius + player.radius, 2)) {
       hitPlayer(bullet.damage, bullet.x - bullet.vx, bullet.y - bullet.vy);
-      state.hostileBullets.splice(index, 1);
+      bullet.dead = true;
     }
   }
+  compactInPlace(state.hostileBullets, (bullet) => !bullet.dead);
 }
 
 function updatePickups(dt) {
@@ -962,11 +1017,12 @@ function updatePickups(dt) {
     }
     if (distance < player.radius + pickup.radius + 8) {
       collectPickup(pickup);
-      state.pickups.splice(index, 1);
+      pickup.dead = true;
       continue;
     }
-    if (pickup.life <= 0) state.pickups.splice(index, 1);
+    if (pickup.life <= 0) pickup.dead = true;
   }
+  compactInPlace(state.pickups, (pickup) => !pickup.dead);
 }
 
 function collectPickup(pickup) {
@@ -1000,21 +1056,22 @@ function updateEffects(dt) {
     particle.vy += particle.gravity * dt;
     particle.x += particle.vx * dt; particle.y += particle.vy * dt;
     particle.vx *= Math.pow(0.12, dt); particle.vy *= Math.pow(0.12, dt);
-    if (particle.life <= 0) state.particles.splice(index, 1);
   }
+  compactInPlace(state.particles, (particle) => particle.life > 0);
   for (let index = state.shockwaves.length - 1; index >= 0; index -= 1) {
     const wave = state.shockwaves[index];
     wave.life -= dt;
     const progress = 1 - wave.life / wave.maxLife;
     wave.radius = wave.start + (wave.end - wave.start) * (1 - Math.pow(1 - progress, 2));
-    if (wave.life <= 0) state.shockwaves.splice(index, 1);
   }
-  for (let index = state.beams.length - 1; index >= 0; index -= 1) { state.beams[index].life -= dt; if (state.beams[index].life <= 0) state.beams.splice(index, 1); }
+  compactInPlace(state.shockwaves, (wave) => wave.life > 0);
+  for (let index = state.beams.length - 1; index >= 0; index -= 1) state.beams[index].life -= dt;
+  compactInPlace(state.beams, (beam) => beam.life > 0);
   for (let index = state.floaters.length - 1; index >= 0; index -= 1) {
     const floater = state.floaters[index];
     floater.life -= dt; floater.x += floater.vx * dt; floater.y += floater.vy * dt; floater.vy *= Math.pow(0.25, dt);
-    if (floater.life <= 0) state.floaters.splice(index, 1);
   }
+  compactInPlace(state.floaters, (floater) => floater.life > 0);
   state.shake *= Math.pow(0.035, dt);
   state.flash = Math.max(0, state.flash - dt * 3);
 }
@@ -1041,20 +1098,20 @@ function update(dt) {
   state.comboTimer -= dt;
   if (state.comboTimer <= 0 && state.combo > 0) state.combo = Math.max(0, state.combo - Math.ceil(dt * 30));
   if (state.regen > 0) state.hp = Math.min(state.maxHp, state.hp + state.regen * dt);
-  for (const key of Object.keys(state.cooldowns)) state.cooldowns[key] = Math.max(0, state.cooldowns[key] - dt);
-  const grid = buildSpatialGrid();
-  updatePlayer(dt, grid);
+  for (const key of COOLDOWN_KEYS) state.cooldowns[key] = Math.max(0, state.cooldowns[key] - dt);
+  updatePlayer(dt, enemyGrid);
   updateSpawner(dt);
   firePrimary(dt);
-  fireDrones(dt);
-  fireMissiles(dt);
-  updateEnemies(dt, grid);
-  const updatedGrid = buildSpatialGrid();
-  updateBullets(dt, updatedGrid);
+  fireDrones(dt, enemyGrid);
+  fireMissiles(dt, enemyGrid);
+  updateEnemyMotion(dt);
+  enemyGrid.rebuild(state.enemies);
+  updateOrbit(enemyGrid);
+  updateBullets(dt, enemyGrid);
   updateHostileBullets(dt);
   updatePickups(dt);
   updateEffects(dt);
-  state.enemies = state.enemies.filter((enemy) => !enemy.dead);
+  compactInPlace(state.enemies, (enemy) => !enemy.dead);
   state.uiAccumulator += dt;
   if (state.uiAccumulator > 0.08) { state.uiAccumulator = 0; syncHud(); }
   if (state.elapsed >= CONFIG.duration && !state.bossSpawned) spawnBoss();
@@ -1298,21 +1355,46 @@ function drawDronesAndOrbit() {
   }
 }
 
+function queueProjectileSegment(x1, y1, x2, y2, color, lineWidth) {
+  const roundedWidth = Math.round(lineWidth * 10) / 10;
+  const key = `${color}:${roundedWidth}`;
+  let batch = projectileDrawBatches.get(key);
+  if (!batch) {
+    batch = { color, lineWidth: roundedWidth, segments: [] };
+    projectileDrawBatches.set(key, batch);
+  }
+  if (batch.segments.length === 0) activeProjectileDrawBatches.push(batch);
+  batch.segments.push(x1, y1, x2, y2);
+}
+
 function drawProjectiles() {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = 'round';
+  activeProjectileDrawBatches.length = 0;
   for (const bullet of state.bullets) {
-    ctx.strokeStyle = bullet.color;
-    ctx.lineWidth = bullet.radius * (bullet.kind === 'missile' ? 1.2 : 1.55);
-    ctx.shadowColor = bullet.color;
-    ctx.shadowBlur = 0;
-    ctx.beginPath(); ctx.moveTo(bullet.px, bullet.py); ctx.lineTo(bullet.x, bullet.y); ctx.stroke();
-    if (bullet.kind === 'missile') { ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.radius * 0.75, 0, Math.PI * 2); ctx.fill(); }
+    queueProjectileSegment(bullet.px, bullet.py, bullet.x, bullet.y, bullet.color, bullet.radius * (bullet.kind === 'missile' ? 1.2 : 1.55));
   }
   for (const bullet of state.hostileBullets) {
-    ctx.strokeStyle = bullet.color; ctx.lineWidth = bullet.radius * 1.6; ctx.shadowColor = bullet.color; ctx.shadowBlur = 0;
-    ctx.beginPath(); ctx.moveTo(bullet.px, bullet.py); ctx.lineTo(bullet.x, bullet.y); ctx.stroke();
+    queueProjectileSegment(bullet.px, bullet.py, bullet.x, bullet.y, bullet.color, bullet.radius * 1.6);
+  }
+  for (const batch of activeProjectileDrawBatches) {
+    ctx.strokeStyle = batch.color;
+    ctx.lineWidth = batch.lineWidth;
+    ctx.beginPath();
+    for (let index = 0; index < batch.segments.length; index += 4) {
+      ctx.moveTo(batch.segments[index], batch.segments[index + 1]);
+      ctx.lineTo(batch.segments[index + 2], batch.segments[index + 3]);
+    }
+    ctx.stroke();
+    batch.segments.length = 0;
+  }
+  for (const bullet of state.bullets) {
+    if (bullet.kind !== 'missile') continue;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(bullet.x, bullet.y, bullet.radius * 0.75, 0, Math.PI * 2);
+    ctx.fill();
   }
   for (const beam of state.beams) {
     ctx.globalAlpha = clamp(beam.life / beam.maxLife, 0, 1);

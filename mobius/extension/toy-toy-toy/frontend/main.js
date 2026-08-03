@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { extCall } from '/extension/_sdk/ext.js';
+import { createToyVisualSystem } from './visual-system.js?v=0.12.0';
+import { createToyAudioSystem } from './audio-system.js?v=0.12.0';
 
 const WORLD = Object.freeze({
   width: 20,
@@ -365,146 +367,17 @@ function mulberry32(seed) {
   };
 }
 
-let audioContext = null;
-let audioNoiseBuffer = null;
 let muted = localStorage.getItem('toy-toy-toy-muted') === '1';
+const audioSystem = createToyAudioSystem({
+  getTheme: () => state.themeId,
+  getElapsed: () => state.elapsed,
+  muted,
+});
+const sfx = audioSystem.sfx;
 
 function ensureAudio() {
-  if (muted) return null;
-  if (!audioContext) {
-    try {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    } catch {
-      audioContext = null;
-    }
-  }
-  if (audioContext?.state === 'suspended') audioContext.resume().catch(() => {});
-  return audioContext;
+  return audioSystem.unlock();
 }
-
-function tone(frequency, duration = 0.08, type = 'square', gainValue = 0.035, delay = 0, endFrequency = frequency) {
-  const context = ensureAudio();
-  if (!context) return;
-  const start = context.currentTime + delay;
-  const oscillator = context.createOscillator();
-  const gain = context.createGain();
-  oscillator.type = type;
-  oscillator.frequency.setValueAtTime(frequency, start);
-  oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, endFrequency), start + duration);
-  gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.exponentialRampToValueAtTime(gainValue, start + Math.min(0.012, duration * 0.2));
-  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-  oscillator.connect(gain).connect(context.destination);
-  oscillator.start(start);
-  oscillator.stop(start + duration + 0.02);
-}
-
-function noiseBurst(duration = 0.05, gainValue = 0.018, cutoff = 900, delay = 0) {
-  const context = ensureAudio();
-  if (!context) return;
-  if (!audioNoiseBuffer || audioNoiseBuffer.sampleRate !== context.sampleRate) {
-    audioNoiseBuffer = context.createBuffer(1, context.sampleRate, context.sampleRate);
-    const data = audioNoiseBuffer.getChannelData(0);
-    for (let index = 0; index < data.length; index += 1) data[index] = Math.random() * 2 - 1;
-  }
-  const source = context.createBufferSource();
-  const filter = context.createBiquadFilter();
-  const gain = context.createGain();
-  const start = context.currentTime + delay;
-  source.buffer = audioNoiseBuffer;
-  filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(cutoff, start);
-  gain.gain.setValueAtTime(gainValue, start);
-  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-  source.connect(filter).connect(gain).connect(context.destination);
-  source.start(start, Math.random() * Math.max(0.01, 1 - duration), duration);
-  source.stop(start + duration + 0.01);
-}
-
-const sfx = {
-  shoot(power = 1) {
-    if (state.themeId === 'deadline') {
-      tone(680, 0.025, 'triangle', 0.009, 0, 410);
-      tone(1050, 0.018, 'square', 0.006, 0.014, 760);
-      noiseBurst(0.025, 0.006, 1800, 0.008);
-    } else {
-      tone(150 - Math.min(35, power * 8), 0.06, 'sawtooth', 0.012 + power * 0.002, 0, 72);
-      tone(420, 0.022, 'square', 0.007, 0.006, 210);
-      noiseBurst(0.045, 0.009 + power * 0.0015, 720);
-    }
-  },
-  impact({ critical = false, heavy = false, gate = false, variant = 'normal' } = {}) {
-    if (gate) {
-      tone(heavy ? 240 : 330, 0.07, 'square', heavy ? 0.026 : 0.014, 0, 120);
-      tone(heavy ? 760 : 580, 0.035, 'triangle', 0.01, 0.015, 260);
-      return;
-    }
-    if (state.themeId === 'deadline') {
-      tone(critical ? 980 : 560, critical ? 0.09 : 0.04, 'triangle', critical ? 0.03 : 0.009, 0, critical ? 1380 : 360);
-      if (heavy) noiseBurst(0.06, 0.015, 1600);
-    } else {
-      tone(critical ? 110 : heavy ? 86 : 120, critical ? 0.12 : 0.055, 'sawtooth', critical ? 0.034 : heavy ? 0.021 : 0.008, 0, 48);
-      if (heavy || critical) noiseBurst(0.075, critical ? 0.023 : 0.015, 640);
-    }
-    if (variant === 'chain') {
-      tone(420, 0.075, 'square', 0.014, 0, 1180);
-      tone(960, 0.05, 'triangle', 0.01, 0.025, 520);
-    } else if (variant === 'frost') {
-      tone(1420, 0.08, 'triangle', 0.013, 0, 760);
-      noiseBurst(0.04, 0.007, 2600);
-    } else if (variant === 'blast') {
-      tone(82, 0.12, 'sawtooth', 0.02, 0, 38);
-      noiseBurst(0.1, 0.018, 520);
-    }
-  },
-  kill({ elite = false, boss = false, critical = false, combo = 1 } = {}) {
-    if (boss) return;
-    const comboLift = Math.min(180, combo * 3);
-    if (state.themeId === 'deadline') {
-      tone(620 + comboLift, elite ? 0.13 : 0.055, 'triangle', elite ? 0.035 : 0.012, 0, 920 + comboLift);
-      if (elite || critical) tone(980, 0.1, 'square', 0.018, 0.045, 1480);
-    } else {
-      tone(elite ? 82 : 105, elite ? 0.16 : 0.07, 'sawtooth', elite ? 0.032 : 0.011, 0, 42);
-      if (elite || critical) noiseBurst(0.1, 0.022, 520);
-    }
-  },
-  lane() {
-    if (state.themeId === 'deadline') {
-      tone(360, 0.045, 'triangle', 0.018, 0, 620);
-      tone(720, 0.03, 'square', 0.009, 0.035, 520);
-    } else {
-      tone(120, 0.08, 'sawtooth', 0.018, 0, 210);
-      noiseBurst(0.08, 0.012, 480);
-    }
-  },
-  gateBreak() {
-    tone(180, 0.14, 'square', 0.04, 0, 720);
-    tone(520, 0.16, 'triangle', 0.035, 0.06, 1180);
-    noiseBurst(0.12, 0.023, 1200);
-  },
-  upgrade() {
-    tone(440, 0.09, 'triangle', 0.04);
-    tone(660, 0.1, 'triangle', 0.04, 0.09);
-    tone(990, 0.13, 'triangle', 0.05, 0.18);
-  },
-  warning() {
-    tone(140, 0.16, 'sawtooth', 0.05);
-    tone(110, 0.16, 'sawtooth', 0.05, 0.2);
-  },
-  overdrive() {
-    tone(220, 0.1, 'square', 0.05);
-    tone(440, 0.12, 'square', 0.05, 0.08);
-    tone(880, 0.16, 'square', 0.045, 0.17);
-  },
-  boss() {
-    tone(90, 0.45, 'sawtooth', 0.065);
-    tone(70, 0.55, 'sawtooth', 0.06, 0.32);
-    noiseBurst(0.34, 0.028, 420, 0.08);
-  },
-  victory() {
-    [523, 659, 784, 1047].forEach((frequency, index) => tone(frequency, 0.2, 'triangle', 0.05, index * 0.12));
-  },
-};
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
@@ -1109,7 +982,7 @@ const enemyPlaneGeometry = new THREE.PlaneGeometry(1.95, 2.55);
 enemyPlaneGeometry.translate(0, 1.275, 0);
 
 function createEnemyMaterial(themeId, type) {
-  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.10.0`);
+  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.12.0`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -1302,11 +1175,6 @@ const BONUS_CONFIG = Object.freeze({
   mystery: { color: 0xb37cff, hp: 145, speed: 1.05, score: 900, scale: 1.16 },
   barrier: { color: 0xff7a55, hp: 260, speed: 0.82, score: 1400, scale: 1.35 },
 });
-const shockwaves = [];
-const explosionGeometry = new THREE.IcosahedronGeometry(0.48, 1);
-const upgradeBeamGeometry = new THREE.CylinderGeometry(0.07, 0.2, 2.2, 14, 1, true);
-const explosionMeshes = [];
-const upgradeBeams = [];
 const fxItems = [];
 const lightningItems = [];
 const speechBubbles = [];
@@ -1397,6 +1265,18 @@ const state = {
     cannon: 1,
   },
 };
+
+// Threejs-Awesome-Graphics-Agent-Skills 视觉合约：主体几何、身份配件、环境、对象池 VFX 与后处理各有唯一所有者。
+const visualSystem = createToyVisualSystem({
+  renderer,
+  scene,
+  camera,
+  worldGroup,
+  wall,
+  core,
+  grid,
+  turretGroups,
+});
 
 const upgrades = [
   {
@@ -1685,7 +1565,7 @@ function renderLevelPicker() {
     const frame = ENEMY_ATLAS_FRAMES[role.visual] || 0;
     return `
       <div class="enemy-roster-item">
-        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.10.0');background-position:${frame * 25}% center"></i>
+        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.12.0');background-position:${frame * 25}% center"></i>
         <span>${role.name}</span>
       </div>
     `;
@@ -1716,6 +1596,8 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   if (!theme) return;
   state.themeId = themeId;
   if (persist) localStorage.setItem('toy-toy-toy-theme', themeId);
+  els.shell.dataset.theme = theme.id;
+  visualSystem.setTheme(theme.id);
 
   document.title = `广告爽游实验室 · ${theme.title}`;
   document.documentElement.style.setProperty('--mint', theme.palette.accent);
@@ -1820,7 +1702,6 @@ function showOverdriveBanner(text = 'FIREPOWER OVERDRIVE') {
 function resize() {
   const width = Math.max(1, els.stage.clientWidth);
   const height = Math.max(1, els.stage.clientHeight);
-  renderer.setSize(width, height, false);
   const viewHeight = 31;
   const aspect = width / height;
   camera.left = -(viewHeight * aspect) / 2;
@@ -1828,6 +1709,7 @@ function resize() {
   camera.top = viewHeight / 2;
   camera.bottom = -viewHeight / 2;
   camera.updateProjectionMatrix();
+  visualSystem.resize(width, height);
 
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   els.fxCanvas.width = Math.round(width * dpr);
@@ -1848,20 +1730,9 @@ function clearWorldState() {
     projectile.active = false;
     projectile.mesh.visible = false;
   });
-  shockwaves.splice(0).forEach((wave) => {
-    worldGroup.remove(wave.mesh);
-    wave.mesh.material.dispose();
-  });
-  explosionMeshes.splice(0).forEach((burst) => {
-    worldGroup.remove(burst.mesh);
-    burst.mesh.material.dispose();
-  });
-  upgradeBeams.splice(0).forEach((beam) => {
-    worldGroup.remove(beam.mesh);
-    beam.mesh.material.dispose();
-  });
   fxItems.length = 0;
   lightningItems.length = 0;
+  visualSystem.reset(state.seed);
 }
 
 function resetGame() {
@@ -1869,6 +1740,7 @@ function resetGame() {
   clearWorldState();
   state.seed = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
   state.random = mulberry32(state.seed);
+  visualSystem.reset(state.seed);
   state.elapsed = 0;
   state.score = 0;
   state.kills = 0;
@@ -2966,8 +2838,8 @@ function triggerTurretUpgradeEffect(effectId, label) {
     const slot = formationSlot(turretIndex, cannonCount);
     const x = WORLD.lanes[state.focusLane] + slot.x;
     const z = 10.2 + slot.z;
-    addUpgradeBeam(x, z, color);
     addShockwave(x, z, color, 2.1);
+    visualSystem.spawnUpgrade({ x, z, color });
     for (let particleIndex = 0; particleIndex < 12; particleIndex += 1) {
       addFxParticle(x, 0.7, z, color, 0.8, particleIndex % 3 === 0 ? 'shard' : 'particle');
     }
@@ -3278,22 +3150,7 @@ function killEnemy(enemy, critical = false) {
 }
 
 function addExplosionBurst(x, y, z, color, power = 1, style = 'energy') {
-  if (explosionMeshes.length < 42) {
-    const material = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.9,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      toneMapped: false,
-      wireframe: style === 'digital',
-    });
-    const mesh = new THREE.Mesh(explosionGeometry, material);
-    mesh.position.set(x, y, z);
-    mesh.rotation.set(randomBetween(0, Math.PI), randomBetween(0, Math.PI), randomBetween(0, Math.PI));
-    worldGroup.add(mesh);
-    explosionMeshes.push({ mesh, life: 0.46 + power * 0.08, maxLife: 0.46 + power * 0.08, power, style });
-  }
+  visualSystem.spawnImpact({ x, y, z, color, power, style });
   addShockwave(x, z, color, 0.9 + power * 0.9);
   if (power >= 1.15) addShockwave(x, z, '#ffffff', 0.45 + power * 0.45);
   const count = Math.min(28, 6 + Math.round(power * 8));
@@ -3303,23 +3160,6 @@ function addExplosionBurst(x, y, z, color, power = 1, style = 'energy') {
       : index % 3 === 0 ? 'shard' : 'particle';
     addFxParticle(x, y, z, index % 4 === 0 ? '#ffffff' : color, 0.55 + power * 0.36, shape);
   }
-}
-
-function addUpgradeBeam(x, z, color) {
-  if (upgradeBeams.length >= MAX_CANNONS * 2) return;
-  const material = new THREE.MeshBasicMaterial({
-    color,
-    transparent: true,
-    opacity: 0.22,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    toneMapped: false,
-  });
-  const mesh = new THREE.Mesh(upgradeBeamGeometry, material);
-  mesh.position.set(x, 2.05, z);
-  worldGroup.add(mesh);
-  upgradeBeams.push({ mesh, life: 0.82, maxLife: 0.82 });
 }
 
 function addProjectileImpact(projectile, target) {
@@ -3353,6 +3193,16 @@ function addDefeatEffect(enemy, critical = false) {
   const isBoss = enemy.type === 'boss';
   const isElite = ['elite', 'tank'].includes(enemy.type);
   const color = isBoss ? cssHex(theme.palette.enemies.boss) : theme.id === 'deadline' ? '#45f0d0' : theme.palette.secondary;
+  visualSystem.spawnDefeat({
+    x: enemy.x,
+    y: 0.72 * enemy.scale,
+    z: enemy.z,
+    color,
+    power: isBoss ? 2.8 : isElite ? 1.35 : 0.86,
+    style: theme.id === 'deadline' ? 'digital' : 'energy',
+    boss: isBoss,
+    elite: isElite,
+  });
   const style = theme.id === 'deadline' ? 'digital' : 'energy';
   const power = isBoss ? 3.2 : isElite ? 1.35 + enemy.scale * 0.18 : 0.72 + enemy.scale * 0.15;
   addExplosionBurst(enemy.x, Math.max(0.65, enemy.scale * 0.68), enemy.z, color, power, style);
@@ -3407,59 +3257,7 @@ function addDefeatEffect(enemy, critical = false) {
 }
 
 function addShockwave(x, z, color, maxScale = 1) {
-  if (shockwaves.length > 35) return;
-  const mesh = new THREE.Mesh(
-    new THREE.RingGeometry(0.25, 0.34, 24),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.82, side: THREE.DoubleSide, depthWrite: false }),
-  );
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.set(x, 0.03, z);
-  worldGroup.add(mesh);
-  shockwaves.push({ mesh, life: 0.42, maxLife: 0.42, maxScale });
-}
-
-function updateShockwaves(dt) {
-  for (let index = shockwaves.length - 1; index >= 0; index -= 1) {
-    const wave = shockwaves[index];
-    wave.life -= dt;
-    const progress = 1 - wave.life / wave.maxLife;
-    const scale = 0.3 + progress * wave.maxScale;
-    wave.mesh.scale.setScalar(scale);
-    wave.mesh.material.opacity = Math.max(0, (1 - progress) * 0.82);
-    if (wave.life <= 0) {
-      worldGroup.remove(wave.mesh);
-      wave.mesh.material.dispose();
-      shockwaves.splice(index, 1);
-    }
-  }
-  for (let index = explosionMeshes.length - 1; index >= 0; index -= 1) {
-    const burst = explosionMeshes[index];
-    burst.life -= dt;
-    const progress = 1 - burst.life / burst.maxLife;
-    const scale = (0.28 + Math.sin(Math.min(1, progress) * Math.PI) * (1.15 + burst.power * 0.55));
-    burst.mesh.scale.setScalar(scale);
-    burst.mesh.rotation.x += dt * 4.5;
-    burst.mesh.rotation.y += dt * 6.2;
-    burst.mesh.material.opacity = Math.max(0, (1 - progress) * (burst.style === 'digital' ? 0.7 : 0.92));
-    if (burst.life <= 0) {
-      worldGroup.remove(burst.mesh);
-      burst.mesh.material.dispose();
-      explosionMeshes.splice(index, 1);
-    }
-  }
-  for (let index = upgradeBeams.length - 1; index >= 0; index -= 1) {
-    const beam = upgradeBeams[index];
-    beam.life -= dt;
-    const progress = 1 - beam.life / beam.maxLife;
-    beam.mesh.scale.set(1 + progress * 0.65, 1, 1 + progress * 0.65);
-    beam.mesh.rotation.y += dt * 5;
-    beam.mesh.material.opacity = Math.max(0, Math.sin(progress * Math.PI) * 0.28);
-    if (beam.life <= 0) {
-      worldGroup.remove(beam.mesh);
-      beam.mesh.material.dispose();
-      upgradeBeams.splice(index, 1);
-    }
-  }
+  visualSystem.spawnShockwave({ x, z, color, maxScale });
 }
 
 function addFxText(x, y, z, text, color = '#ffffff', life = 0.8, size = 12) {
@@ -3743,7 +3541,6 @@ function updateGame(dt) {
   if (state.mode !== 'playing') return;
   updateTurrets(dt);
   updateProjectiles(dt);
-  updateShockwaves(dt);
   updateFx(dt);
 
   if (state.bossDefeated && state.finishAt && state.elapsed >= state.finishAt) endGame(true);
@@ -3907,7 +3704,16 @@ function renderScene(dt) {
     cameraHome.y + randomBetween(-shakeAmount * 0.35, shakeAmount * 0.35),
     cameraHome.z + randomBetween(-shakeAmount, shakeAmount),
   );
-  renderer.render(scene, camera);
+  visualSystem.update({
+    dt,
+    elapsed: state.elapsed,
+    enemies,
+    baseHp: state.baseHp,
+    levels: state.levels,
+    overdriveUntil: state.overdriveUntil,
+    seed: state.seed,
+  });
+  visualSystem.render();
   renderFx();
 }
 
@@ -3992,6 +3798,27 @@ async function submitRun(victory) {
 }
 
 window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
+  previewSound(name, options = {}) {
+    ensureAudio();
+    return audioSystem.previewSound(name, options);
+  },
+  setAudioMix({ master } = {}) {
+    if (Number.isFinite(Number(master))) return audioSystem.setMasterVolume(Number(master));
+    return audioSystem.snapshot().masterVolume;
+  },
+  setVisualMode(mode) {
+    return visualSystem.setMode(mode);
+  },
+  setQualityTier(tier) {
+    visualSystem.setQuality(tier);
+    resize();
+    return visualSystem.snapshot().qualityTier;
+  },
+  setCameraBookmark(name) {
+    const bookmark = visualSystem.setCameraBookmark(name);
+    cameraHome.copy(camera.position);
+    return bookmark;
+  },
   configureBuild(build = {}) {
     const levelKeys = ['damage', 'rate', 'blast', 'chain', 'frost', 'multi', 'crit', 'cannon'];
     levelKeys.forEach((key) => {
@@ -4031,8 +3858,9 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
   },
   snapshot() {
     const combat = currentCombatStats();
+    const cinematicVisuals = visualSystem.snapshot();
     return {
-      version: '0.10.0',
+      version: '0.12.0',
       mode: state.mode,
       lastVictory: state.lastVictory,
       theme: state.themeId,
@@ -4089,6 +3917,7 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
         targetCount: Math.min(MAX_CANNONS, state.levels.cannon) * (1 + Math.min(3, state.levels.multi)),
       },
       visuals: {
+        cinematic: cinematicVisuals,
         visibleCannons: turretGroups.filter((turret) => turret.group.visible && turret.cannonModel.visible).length,
         visibleWorkbenches: turretGroups.filter((turret) => turret.group.visible && turret.workbenchModel.visible).length,
         activeTickets: projectilePool.filter((projectile) => projectile.active && projectile.ticket.visible).length,
@@ -4110,21 +3939,23 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
         blastPods: turretGroups.reduce((sum, turret) => sum + turret.blastPods.filter((mesh) => mesh.visible).length, 0),
         chainAttachments: turretGroups.reduce((sum, turret) => sum + turret.chainCoils.filter((mesh) => mesh.visible).length, 0),
         frostAttachments: turretGroups.reduce((sum, turret) => sum + turret.frostFins.filter((mesh) => mesh.visible).length, 0),
-        explosions: explosionMeshes.length,
-        upgradeBeams: upgradeBeams.length,
+        explosions: cinematicVisuals.vfx.activeBursts,
+        shockwaves: cinematicVisuals.vfx.activeShockwaves,
+        upgradeBursts: cinematicVisuals.vfx.activeBursts,
         evolutionStages: turretGroups.filter((turret) => turret.group.visible).map((turret) => turret.evolutionStage),
         hitStopActive: performance.now() < state.hitStopUntil,
       },
       bonuses: { ...state.bonuses },
       levels: { ...state.levels },
       telemetry: { ...state.telemetry },
+      audio: audioSystem.snapshot(),
       controls: {
         autoPick: els.autoPickInput.checked,
         muted,
         frenzyDisabled: els.frenzyBtn.disabled,
         overdriveDisabled: els.overdriveBtn.disabled,
         bossDisabled: els.bossBtn.disabled,
-        audioState: audioContext?.state || (muted ? 'muted' : 'not-created'),
+        audioState: audioSystem.snapshot().contextState,
       },
     };
   },
@@ -4157,9 +3988,10 @@ els.soundBtn.addEventListener('click', () => {
   muted = !muted;
   localStorage.setItem('toy-toy-toy-muted', muted ? '1' : '0');
   els.soundBtn.textContent = muted ? '声音 OFF' : '声音 ON';
+  audioSystem.setMuted(muted);
   if (!muted) {
     ensureAudio();
-    tone(660, 0.09, 'triangle', 0.04);
+    sfx.soundOn();
   }
 });
 els.laneButtons.forEach((button) => button.addEventListener('click', () => selectLane(Number(button.dataset.lane))));
@@ -4191,6 +4023,9 @@ window.addEventListener('keydown', (event) => {
 });
 
 window.addEventListener('resize', resize);
+window.addEventListener('pagehide', (event) => {
+  if (!event.persisted) audioSystem.dispose();
+});
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && state.mode === 'playing') togglePause();
 });

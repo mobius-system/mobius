@@ -21,7 +21,7 @@ import { PrepScreen } from '../src/components/PrepScreen.js'
 import { Select, TextInput } from '../src/components/primitives.js'
 import { MobiusClient } from '../src/api.js'
 import { renderMarkdownLines } from '../src/markdown.js'
-import { viewsForEntry } from '../src/lib/entry-view.js'
+import { viewsForEntry, toolLabel } from '../src/lib/entry-view.js'
 import { SseConnection } from '../src/sse.js'
 import type { ReadyState } from '../src/components/PrepScreen.js'
 
@@ -160,7 +160,7 @@ async function testChat() {
     ok(initialFrame.includes('http://mock.local/u/test-user/p/p1/i/i1'), 'web issue URL is always visible before session creation')
     stdin.write('你好'); await delay(30)
     stdin.write('\r'); await delay(80)
-    ok((lastFrame() ?? '').includes('Working ('), 'Working appears immediately after submit, before the first SSE typing event')
+    ok((lastFrame() ?? '').includes('Initializing for the first query ('), 'first query shows Initializing instead of Working immediately after submit')
     runtimeWorking = true
     await delay(820)   // createSession → connect → POST → emit
     runtimeWorking = false
@@ -430,13 +430,49 @@ function testCustomToolCallViews() {
       output: [{ type: 'input_text', text: 'Script completed\nWall time 0.2 seconds' }],
     },
   } as any)
-  ok(output.length === 1 && output[0].kind === 'tool_result' && output[0].summary.includes('Script completed'), 'custom tool output is not skipped')
+  const o0 = output[0]
+  ok(output.length === 1 && o0.kind === 'tool_result' && o0.text.includes('Script completed'), 'custom tool output rendered as a tool_result line (accumulated mode)')
 
   const legacy = viewsForEntry({
     type: 'response_item',
     payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"git status --short"}' },
   } as any)
   ok(legacy[0].kind === 'tool_call' && legacy[0].summary === 'git status --short', 'legacy function_call command remains supported')
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 11b — claude-code MCP 工具渲染与 codex 对齐 (统一)
+// ════════════════════════════════════════════════════════════════════════════
+function testClaudeMcpUnified() {
+  console.log('\n[UI 11b] claude MCP tool name/summary/result unified with codex')
+  // ① 长名 mcp__aimux__remote_exec_command → 标签 "运行命令" (与 codex exec 一致)
+  ok(toolLabel('mcp__aimux__remote_exec_command') === '运行命令', 'mcp__aimux__remote_exec_command label maps to 运行命令 (same as codex exec)')
+  ok(toolLabel('mcp__aimux__send_files') === 'send_files', 'unknown MCP tool falls back to short name without mcp__server__ prefix')
+  ok(toolLabel('exec_command') === '运行命令', 'codex short name still maps (unchanged)')
+
+  // ② summary: MCP remote_exec_command 抽出 cmd, 与 codex exec_command 一致 (不带 "cmd:" 前缀)
+  const call = viewsForEntry({
+    type: 'assistant',
+    message: { content: [{ type: 'tool_use', id: 't1', name: 'mcp__aimux__remote_exec_command', input: { cmd: 'cat /etc/hosts' } }] },
+  } as any)
+  ok(call.length === 1 && call[0].kind === 'tool_call' && call[0].summary === 'cat /etc/hosts', 'MCP remote_exec_command summary is the bare cmd (unified with codex)')
+
+  // ③ 结果: aimux 返回的 JSON {"output":"...","exit_code":0} 解包成纯 output, 并清 OSC 标题 + AIMUX_EXIT 标记
+  const noisy = `line1\n${'\x1b]0;root@h: ~\x07'}line2\n__AIMUX_EXIT_deadbeef__:0`
+  const resultEntry = {
+    type: 'user',
+    message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: JSON.stringify({ output: noisy, exit_code: 0 }) }] },
+  }
+  const r = viewsForEntry(resultEntry as any)
+  ok(r.length === 1 && r[0].kind === 'tool_result', 'MCP JSON result rendered as tool_result')
+  ok(r[0].kind === 'tool_result' && r[0].text === 'line1\nline2', 'JSON output unwrapped + OSC title + AIMUX_EXIT marker stripped (clean, like codex)')
+
+  // ④ 守卫: 本身是 JSON 的文件内容 (无 output 字段) 不被误解包
+  const plain = viewsForEntry({
+    type: 'user',
+    message: { content: [{ type: 'tool_result', tool_use_id: 't2', content: '{"name":"config","version":1}' }] },
+  } as any)
+  ok(plain[0].kind === 'tool_result' && plain[0].text === '{"name":"config","version":1}', 'plain JSON file content is not unwrapped (no output field)')
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -574,6 +610,7 @@ async function main() {
   testWorkingShimmer()
   testReasoningViews()
   testCustomToolCallViews()
+  testClaudeMcpUnified()
   await testSseTerminatedSilent()
   await testChatSseReconnects()
   await testSendRetries502()

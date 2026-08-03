@@ -302,14 +302,25 @@ function resolveBindPath(rawPath: unknown, userWorkDir: unknown, options: Resolv
   return abs;
 }
 
-// 手动输入的绑定路径: 用户显式选择"不校验" —— 不检查是否存在 / 是否目录 /
-// 是否落在 work_dir 内, 把控制权完全交给用户. 仅做非空与(绝对路径)规范化.
+// 手动输入的绑定路径: 用户显式选择"不校验" —— 不检查是否目录 / 是否落在 work_dir 内,
+// 把控制权完全交给用户. 仅做非空与(绝对路径)规范化.
+// 合法的绝对路径若不存在则自动创建空目录 (符合"创建项目时路径不存在但合法则建空目录"):
+// 否则项目建好了但绑定路径缺失, 后续建会话会报"项目绑定路径不存在". 相对路径不自动创建
+// (会落在不可预测的 CWD 下), 保持原样返回.
 function resolveBindPathManual(rawPath: unknown): string {
   if (rawPath === undefined || rawPath === null || rawPath === '') throw new Error('绑定路径为必填项');
   if (typeof rawPath !== 'string') throw new Error('绑定路径格式错误');
   const p = rawPath.trim();
   if (!p) throw new Error('绑定路径为必填项');
-  return path.isAbsolute(p) ? path.resolve(p) : p;
+  const resolved = path.isAbsolute(p) ? path.resolve(p) : p;
+  if (path.isAbsolute(resolved) && !fs.existsSync(resolved)) {
+    try {
+      fs.mkdirSync(resolved, { recursive: true });
+    } catch (e) {
+      throw new Error(`创建绑定路径失败: ${(e as Error).message}`);
+    }
+  }
+  return resolved;
 }
 
 function removeDemoWorkspaceIfRequested(
@@ -1870,8 +1881,8 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
 
   // ── 莫比乌斯拓展项目 ──────────────────────────────────────────────────────
   if (kind === 'extension') {
-    if (user.role !== 'admin') {
-      return res.status(403).json({ error: '只有管理员可以创建莫比乌斯拓展项目' });
+    if (user.role !== 'admin' && user.role !== 'developer') {
+      return res.status(403).json({ error: '只有管理员或开发者可以创建莫比乌斯拓展项目' });
     }
     if (hasBoolField(req.body || {}, 'can_post_issue', 'canPostIssue')
       || hasBoolField(req.body || {}, 'can_run_session', 'canRunSession')) {
@@ -2365,7 +2376,7 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
     try {
       resolvedBindPath = bindPathManual
         ? resolveBindPathManual(bindPath)
-        : resolveBindPath(bindPath, user.work_dir);
+        : resolveBindPath(bindPath, user.work_dir, { createIfMissing: true });
       Projects.updateBindPath(id, resolvedBindPath, !!bindPathManual);
     } catch (e) {
       return res.status(400).json({ error: (e as Error).message });

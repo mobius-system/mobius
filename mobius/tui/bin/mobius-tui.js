@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const tsx = join(here, '..', 'node_modules', '.bin', 'tsx')
+const tsx = join(here, '..', 'node_modules', '.bin', process.platform === 'win32' ? 'tsx.cmd' : 'tsx')
 const entry = join(here, '..', 'src', 'main.tsx')
 
 const result = spawnSync(tsx, [entry], { stdio: 'inherit' })

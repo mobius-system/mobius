@@ -117,16 +117,45 @@ function ToolStatusIcon({ status }: { status: ToolStatus }) {
 }
 
 /**
+ * 单卡 open 的"系统期望值" — 所有展开/折叠条件合并到此一处判定, 优先级 (高 → 低):
+ *   ① forceOpen       搜索命中        — 用户显式查看, 压过一切 (即使用户曾手动折叠也掀开).
+ *   ② parentOrderedCollapse    forgotten-flag  — 默认折叠; 被 ① 压过, 但压过 ③④ (命中即折, 即使满足本地展开条件).
+ *   ③ 本地展开条件     patch_apply / 计划(canPlan) / 纯文本卡(可精简·可图片·error 类型, 且非代码卡).
+ *   ④ toolError       工具失败        — "折叠不藏错误"; 被 ② 抑制.
+ *   ⑤ 兜底            折叠.
+ * 这是"系统期望"的单向判定; 实际 open 还受用户手动 onToggle 锁定 (见下方 userToggledRef).
+ * 自动信号只"掀开"(ratchet, 不自动折回) — 折叠仅来自初值 ② 或用户手动.
+ */
+function resolveDesiredOpen(opts: {
+  forceOpen: boolean
+  parentOrderedCollapse: boolean
+  isPatchApply: boolean
+  canPlan: boolean
+  canCode: boolean
+  canCompact: boolean
+  canImage: boolean
+  isErrorType: boolean
+  toolError: boolean
+}): boolean {
+  if (opts.forceOpen) return true       // ① 搜索命中
+  if (opts.parentOrderedCollapse) return false   // ② forgotten-flag
+  // ③ 本地展开条件: patch_apply / 计划 / 纯文本卡(可精简·可图片·error 类型, 且非代码卡)
+  if (opts.isPatchApply || opts.canPlan || (!opts.canCode && (opts.canCompact || opts.canImage || opts.isErrorType))) return true
+  if (opts.toolError) return true       // ④ 工具失败
+  return false                          // ⑤ 兜底折叠
+}
+
+/**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
-function JsonEntryCardInner({ entry, lineNo, defaultExpanded, defaultCollapsed = false, showMeta = true, bashResults = [], readResults = [], resolvedMap }: {
+function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCollapse = false, showMeta = true, bashResults = [], readResults = [], resolvedMap }: {
   entry: AnyEntry
   lineNo?: number
-  defaultExpanded?: boolean
-  // forgotten-flag 上下文折叠: 命中的卡片 (agent 被 forgotten-flag 系统提醒触发的机械删 flag
-  // 收尾卡) 默认折叠, 覆盖下方 isPatchApplyEvent/canPlan/默认展开/defaultExpanded 等展开条件.
-  // 用户仍可手动展开 (onToggle 写回本地 state, userToggledRef 阻止后续自动掀开).
-  defaultCollapsed?: boolean
+  // forceOpen: 搜索命中该卡 — 用户显式查看, 优先级最高, 压过 parentOrderedCollapse 与用户曾手动折叠.
+  forceOpen?: boolean
+  // parentOrderedCollapse: forgotten-flag 收尾卡 (agent 被 forgotten-flag 系统提醒触发的机械删 flag 链路) —
+  // 默认折叠, 压过本地展开条件, 但被 forceOpen 压过. 用户仍可手动展开 (onToggle 写回 state, userToggledRef 阻止自动掀开).
+  parentOrderedCollapse?: boolean
   showMeta?: boolean
   bashResults?: BashToolResult[]
   readResults?: BashToolResult[]
@@ -219,32 +248,40 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, defaultCollapsed =
   const [mode, setMode] = useState<CardMode>(canPlan ? 'plan' : canCode ? 'code' : canImage ? 'image' : canCompact ? 'compact' : 'field')
 
   // 卡片展开态受控于本地 state, 跨父组件重渲染 (实时轮询追加 entry) 保持不变.
-  // 能精简的纯文本卡片默认展开, 代码化卡片默认折叠; patch_apply / error 保留默认展开,
-  // 父组件 defaultExpanded 仍能强制展开其它卡片.
-  // 用户手动折叠 → onToggle 写回 state, 此后重渲染不再强制掀开.
-  // defaultCollapsed (forgotten-flag 上下文折叠) 命中时强制初始折叠, 覆盖以上所有展开条件;
-  // 搜索定位的 defaultExpanded 是用户显式的查看动作，优先级更高，必须能展开命中卡片。
+  // 展开优先级集中在上方的 resolveDesiredOpen: forceOpen(搜索) > parentOrderedCollapse(forgotten-flag) >
+  // localExpand(本地展开条件) > toolError(工具失败) > 兜底折叠. 用户手动折叠 → onToggle 写回 state,
+  // 此后重渲染不再强制掀开 (forceOpen 除外 — 搜索是用户显式查看).
   const tourTarget = jsonEntryTourTarget(entry)
+
   // 工具调用状态: 由 "该 tool_use 的结果是否已落地" 推导 (running = 已发起未回结果).
   const toolStatus = deriveToolCallStatus(entry, resolvedMap)
-  // 用户是否手动点过折叠/展开: 一旦手动操作, 失败自动展开就不再强制掀开 (尊重用户).
+
+  // 系统期望 open — 所有展开/折叠条件集中在上方的 resolveDesiredOpen 判定.
+  const desiredOpen = resolveDesiredOpen({
+    forceOpen,
+    parentOrderedCollapse,
+    isPatchApply: isPatchApplyEvent,
+    canPlan,
+    canCode,
+    canCompact,
+    canImage,
+    isErrorType: type === 'error',
+    toolError: toolStatus === 'error',
+  })
+
+  // 用户是否手动点过折叠/展开: 一旦手动操作, 自动展开就不再强制掀开 (forceOpen 除外).
   const userToggledRef = useRef(false)
-  const [open, setOpen] = useState<boolean>(
-    defaultCollapsed && !defaultExpanded
-      ? false
-      : (isPatchApplyEvent || canPlan || (!canCode && (canCompact || canImage || type === 'error')) || !!defaultExpanded)
-  )
-  // 搜索目标通常在“轮次先展开、卡片后挂载”的下一次渲染才拿到 defaultExpanded。
-  // 因此除了初始值外，也要响应 prop 变为 true，确保命中卡片真正展开。
+  const [open, setOpen] = useState<boolean>(desiredOpen)
+
+  // 自动信号跟随 — ratchet (只掀开不折回; 折叠仅来自初值 parentOrderedCollapse 或用户手动) + 尊重用户手动:
+  //   · forceOpen (搜索): 即使用户曾手动折叠也强制掀开 (显式查看优先, 对齐"轮次先展开、卡片后挂载"的延迟挂载).
+  //   · 其它信号: 用户手动操作过则锁定不动.
   useEffect(() => {
-    if (defaultExpanded) setOpen(true)
-  }, [defaultExpanded])
-  // 失败的工具块默认展开 (Cursor 式: 错误不能因折叠被藏起). 仅在变 error 时展开一次, 不覆盖用户手动折叠.
-  // defaultCollapsed 卡片也尊重用户的显式折叠意图 (forgotten-flag 收尾卡几乎不会 error; 真若 error 仍不掀开,
-  // 因用户已明确要求这类卡折叠, 且可手动展开查看).
-  useEffect(() => {
-    if (toolStatus === 'error' && !userToggledRef.current && !defaultCollapsed) setOpen(true)
-  }, [toolStatus, defaultCollapsed])
+    if (forceOpen) { setOpen(true); return }
+    if (!userToggledRef.current && desiredOpen) setOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forceOpen, desiredOpen])
+
   // 精简/字段模式复制按钮反馈: 点击后短暂切换为 Check 图标再还原.
   const [copied, setCopied] = useState<boolean>(false)
 
@@ -258,6 +295,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, defaultCollapsed =
   // 字段模式也带复制按钮 (复制原始 JSON), 与精简模式的复制按钮对齐, 故 hasHeaderAction
   // 额外纳入 mode === 'field' —— 让只支持字段模式的小卡片也能露出复制入口.
   const hasHeaderAction = open && ((mode === 'compact') || (mode === 'field') || (mode === 'image') || (mode === 'plan') || canCompact || canCode || canImage || canPlan)
+
   // 模式切换图标按钮: 计算点击后将切换到的目标模式 + 悬停说明.
   // (原为文字按钮显示目标模式名, 现改为图标按钮, 文字说明收进 title.)
   const modeToggle = (canCompact || canCode || canImage || canPlan)
@@ -432,5 +470,5 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, defaultCollapsed =
 
 export const JsonEntryCard = memo(
   JsonEntryCardInner,
-  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.bashResults === next.bashResults && prev.readResults === next.readResults && prev.resolvedMap === next.resolvedMap && prev.defaultCollapsed === next.defaultCollapsed && prev.defaultExpanded === next.defaultExpanded,
+  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.bashResults === next.bashResults && prev.readResults === next.readResults && prev.resolvedMap === next.resolvedMap && prev.parentOrderedCollapse === next.parentOrderedCollapse && prev.forceOpen === next.forceOpen,
 )

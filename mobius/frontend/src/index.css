@@ -5733,7 +5733,7 @@ body.mobius-resizing .mobius-resizable-handle {
 }
 .mobius-chat-body:not(.mobius-chat-body--stacked):not(.mobius-chat-body--easy) .mobius-chat-input {
   width: 32%;
-  min-width: 320px;
+  min-width: 224px;
   max-width: 720px;
 }
 .mobius-chat-split-handle {

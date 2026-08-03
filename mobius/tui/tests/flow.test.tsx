@@ -111,6 +111,10 @@ async function main() {
     ok(await waitFor(lastFrame, '创建新任务'), 'issue picker shown')
     stdin.write('\r'); await delay(120)                             // → create-name
     ok(await waitFor(lastFrame, '输入任务名称'), 'issue name wizard opened')
+    stdin.write('\x1b'); await delay(120)                           // Esc → issue list
+    ok(await waitFor(lastFrame, '选择任务（Issue）'), 'Esc returns from issue name wizard to issue list')
+    stdin.write('\r'); await delay(120)                             // → create-name again
+    ok(await waitFor(lastFrame, '输入任务名称'), 'issue name wizard can be reopened after Esc')
     stdin.write('命令行任务'); await delay(120)
     stdin.write('\r'); await delay(300)                             // create issue (worktree off) → model
 

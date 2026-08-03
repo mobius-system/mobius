@@ -42,13 +42,14 @@ const CHAT_INPUT_SPLIT_STORAGE_KEY = 'mobius:ui:split:chat-input'
 // 回车自动加急开关持久化 key: '1'=开启, 其他=关闭.
 const AUTO_URGENT_ENTER_STORAGE_KEY = 'mobius:ui:auto-urgent-enter'
 const CHAT_INPUT_DEFAULT_RATIO = 0.32
-const CHAT_INPUT_MIN_WIDTH = 320
+const CHAT_INPUT_MIN_RATIO = 0.14
+const CHAT_INPUT_MIN_WIDTH = 224
 const CHAT_INPUT_MAX_WIDTH = 720
 const CHAT_HISTORY_MIN_WIDTH = 360
 
 function clampChatInputRatio(value: number) {
   if (!Number.isFinite(value)) return CHAT_INPUT_DEFAULT_RATIO
-  return Math.max(0.2, Math.min(0.6, value))
+  return Math.max(CHAT_INPUT_MIN_RATIO, Math.min(0.6, value))
 }
 
 function readChatInputRatio() {
@@ -1687,6 +1688,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const sessionId = currentSession?.session_id || currentTask?.task_id || ''
   const currentProjectId = (currentIssue as any)?.project_id || (currentSession as any)?.project_id || (currentTask as any)?.project_id || ''
   const currentIssueId = (currentSession as any)?.issue_id || (currentIssue as any)?.id || ''
+  const currentResearchId = (currentSession as any)?.research_id || (currentTask as any)?.research_id || ''
   // 规划模式: 当前 Issue 是 is_planning 时, 隐藏执行控件 + 嵌入规划编辑器.
   const isPlanningSession = !!(currentIssue as any)?.is_planning
   const projectForSession = currentProject?.id === currentProjectId
@@ -3152,6 +3154,15 @@ export function ChatArea({ layout = 'default', onNewSession }: {
       onOpenTerminal={() => setTerminalChoiceOpen(true)}
       onOpenCooperablePc={() => setCooperablePcOpen(true)}
       onOpenKnowledge={() => setKnowledgeEditorOpen(true)}
+      onOpenResearchGraph={currentResearchId ? () => {
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev)
+          next.set('view', 'graph')
+          next.delete('match')
+          next.delete('ts')
+          return next
+        }, { replace: false })
+      } : undefined}
       onSendProjectKnowledge={sendProjectKnowledgePrompt}
       onContinueWithModel={() => setContinueModalOpen(true)}
       onOpenSkill={() => setSkillMemoryModal('skill')}
@@ -3705,6 +3716,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
               {renderAdvancedSessionActions('default')}
                 <SessionSkillMemoryEditor
                   sessionId={currentSession?.session_id || sessionId}
+                  initialPanel="memory"
+                  persistActivePanel
                 />
             </div>
           ))}

@@ -10,7 +10,11 @@ process.env.CORE_DATA_PATH = tempRoot
 process.env.MODEL_ACCESS_PATH = path.join(tempRoot, 'model-access.json')
 process.on('exit', () => fs.rmSync(tempRoot, { recursive: true, force: true }))
 
-const { findClaudeRealTimeInfo, detectDangerPermission } = require('../backend/agents/tmux-claude-code')
+const {
+  findClaudeRealTimeInfo,
+  detectDangerPermission,
+  isCompactCompletionUserEvent,
+} = require('../backend/agents/tmux-claude-code')
 
 const regularStatus = '✻ Propagating… (7m 44s · ↓ 24.1k tokens)'
 const retryStatus = '✻ Unable to connect to API (ConnectionRefused) · Retrying in 25s · attempt 10/10'
@@ -46,5 +50,20 @@ assert.deepStrictEqual(
   detectDangerPermission(`${variablePathWarning}\nDo you want to proceed?`),
   { pending: false, warning: null },
 )
+
+assert.strictEqual(isCompactCompletionUserEvent({
+  type: 'user',
+  message: {
+    content: '<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>',
+  },
+}), true)
+assert.strictEqual(isCompactCompletionUserEvent({
+  type: 'user',
+  message: { content: '<command-name>/compact</command-name>' },
+}), false)
+assert.strictEqual(isCompactCompletionUserEvent({
+  type: 'user',
+  message: { content: 'Please compact this explanation.' },
+}), false)
 
 console.log('claude realtime info: ok')

@@ -293,7 +293,7 @@ function IssuePicker({ issues, onPick, onCreate }: {
         <Text bold color="cyan">创建新任务</Text>
         <Text color="gray">输入任务名称（不使用 git worktree）</Text>
         <TextInput value={name} onChange={setName} focused placeholder="命令行任务"
-          onSubmit={() => onCreate(name)} />
+          onSubmit={() => onCreate(name)} onEscape={() => setMode('list')} />
         <Text color="gray">回车创建 · Esc 返回</Text>
       </Box>
     )

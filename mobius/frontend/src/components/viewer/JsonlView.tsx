@@ -287,8 +287,8 @@ export function JsonlView({
           readResults={readResults}
           showMeta={showMeta}
           resolvedMap={resolvedMap}
-          defaultExpanded={lineNo === extFocusLineNo}
-          defaultCollapsed={collapseLineNos.has(lineNo)}
+          forceOpen={lineNo === extFocusLineNo}
+          parentOrderedCollapse={collapseLineNos.has(lineNo)}
         />
       )
     }
@@ -309,6 +309,8 @@ export function JsonlView({
     )
   }
 
+
+  // 空
   if (entries.length === 0) {
     if (initialLoading) return <JsonlInitialSkeleton />
     if (emptyLoadingText) {
@@ -333,6 +335,7 @@ export function JsonlView({
     )
   }
 
+  // 非空
   return (
     <div className="text-[12px]">
       <div ref={headerRef} className="flex items-center gap-2 px-1 py-1 sticky top-0 z-10 backdrop-blur-lg bg-[var(--bg-page)]/80">
@@ -377,8 +380,7 @@ export function JsonlView({
         scrollToEntryLineNo={extFocusLineNo}
         scrollOffset={activeTarget?.offset ?? 0}
         onScrollToKeyDone={() => {
-          // 搜索有精确条目目标时，不能仅因“轮次已到位”就清参数：目标卡片可能还在随轮次/
-          // Explore 组展开而挂载，必须等 onScrollToEntryDone 真的滚到卡片后再结束。
+          // 搜索有精确条目目标时，不能仅因“轮次已到位”就清参数：目标卡片可能还在随轮次/Explore 组展开而挂载，必须等 onScrollToEntryDone 真的滚到卡片后再结束。
           if (extTarget && extFocusLineNo !== null) return
           // 到位 (或超时兜底) 后清除当前活跃跳转. 外部跳转还要通知上层清 URL 参数.
           if (extTarget) onResolvedRef.current?.()

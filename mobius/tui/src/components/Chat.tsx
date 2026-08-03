@@ -8,15 +8,16 @@
  * activity, composer, and a persistent context status line.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Text, useInput, useStdout } from 'ink'
+import { Box, Static, Text, useInput, useStdout } from 'ink'
 import { useChat } from '../hooks/useChat.js'
 import { MobiusClient } from '../api.js'
 import { renderMarkdownLines } from '../markdown.js'
-import { viewsForEntry, toolLabel, type EntryView } from '../lib/entry-view.js'
+import { viewsForEntry, dedupeUserEntries, toolLabel, isAssistantOutput, type EntryView } from '../lib/entry-view.js'
 import type { ReadyState } from './PrepScreen.js'
 import type { AnyEntry } from '../types.js'
 import type { AimuxStatus } from '../aimux.js'
-import { AimuxStatusLine } from './AimuxStatus.js'
+import { AimuxStatusLine, aimuxStatusText } from './AimuxStatus.js'
+import { isEscapeKeypress } from './primitives.js'
 
 interface ChatProps {
   client: MobiusClient
@@ -35,8 +36,8 @@ interface TerminalSize {
   isTty: boolean
 }
 
-const VERSION = '0.2.8'
-const CHROME_ROWS = 11
+import { createRequire } from 'node:module'
+const VERSION = createRequire(import.meta.url)('../../package.json').version
 
 const SLASH_COMMANDS = [
   { cmd: '/clear', desc: '清空当前对话，开启新会话' },
@@ -48,7 +49,6 @@ const SLASH_COMMANDS = [
 export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, aimuxStatus }: ChatProps) {
   const chat = useChat({ client, ready, resumeSessionId })
   const [showHelp, setShowHelp] = useState(false)
-  const [scrollBack, setScrollBack] = useState(0)
   const [modelLabel, setModelLabel] = useState<string | null>(null)
   const terminal = useTerminalSize()
 
@@ -71,35 +71,27 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       return
     }
     setShowHelp(false)
-    setScrollBack(0)
     void chat.send(t)
   }, [chat, runSlash])
 
-  const transcriptRows = Math.max(5, terminal.rows - CHROME_ROWS)
-  const fitted = useMemo(
-    () => fitTranscript(chat.entries, transcriptRows, terminal.columns, scrollBack),
-    [chat.entries, transcriptRows, terminal.columns, scrollBack],
-  )
-  // Welcome card is for a truly fresh session only. Once there's any
-  // conversation (or an in-flight user message) it disappears, handing the
-  // compact header + bottom-anchored transcript the full height. Keeping it
-  // while chatting left recent messages stranded mid-screen with a blank gap
-  // above the composer.
-  const showWelcome = chat.entries.length === 0 && chat.pendingUser === null && scrollBack === 0
+  // Welcome card is for a truly fresh session only — once there's any
+  // conversation (or an in-flight message) it disappears. The transcript then
+  // streams into <Static> below and accumulates into the terminal scrollback
+  // (the terminal's own scrollback holds history; no in-app pager needed).
+  const showWelcome = chat.entries.length === 0 && chat.pendingUser === null
 
-  // In-app history pager. Ink redraws only the live frame, so the terminal's
-  // own scrollback holds no past turns — older entries are unreachable unless we
-  // page through them here. PageUp/PageDown move the viewport back/forward over
-  // the transcript. While reading history (scrollBack > 0) we keep the view
-  // pinned as new entries stream in; sending a message (onSubmit above) snaps
-  // back to the latest so the conversation auto-follows again.
-  const prevLenRef = useRef(chat.entries.length)
-  useEffect(() => {
-    const prev = prevLenRef.current
-    const cur = chat.entries.length
-    prevLenRef.current = cur
-    if (cur > prev && scrollBack > 0) setScrollBack(s => s + (cur - prev))
-  }, [chat.entries.length, scrollBack])
+  // First query of a fresh session triggers the full backend bootstrap (lazy
+  // session creation, worker spawn, context load) before any output streams.
+  // Label that phase "Initializing for the first query" instead of "Working"
+  // so it reads as startup rather than a stuck agent. Once the first assistant
+  // output is observed (or the session is a resumed one with prior history),
+  // the indicator falls back to the normal Working label for every turn.
+  const firstQueryInFlight = !resumeSessionId && !chat.entries.some(isAssistantOutput)
+
+  // 用户输入去重 (对齐 web viewer/rounds.ts buildRounds): codex 同一提问的 3 形态
+  // (type:user / response_item.message[user] / event_msg.user_message) 合并成 1 条,
+  // 避免在累积视图里把同一条提问显示多次.
+  const dedupedEntries = useMemo(() => dedupeUserEntries(chat.entries), [chat.entries])
 
   // Show the model's friendly label (e.g. "GPT-5.6-Sol") in the header/status
   // instead of its opaque key (e.g. "codex:mobiusdefaultaabb").
@@ -114,49 +106,29 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   }, [client, ready.prefs.model])
   const modelDisplay = modelLabel ?? ready.prefs.model ?? 'default'
 
-  useInput((_input, key) => {
-    // The composer ignores pageUp/pageDown, so binding them here can't clash
-    // with text entry, history navigation, or the slash-command popup.
-    const step = Math.max(1, fitted.entries.length)
-    if (key.pageUp) setScrollBack(s => Math.min(chat.entries.length, s + step))
-    else if (key.pageDown) setScrollBack(s => Math.max(0, s - step))
-  })
-
   return (
-    <Box
-      flexDirection="column"
-      width={terminal.isTty ? terminal.columns : undefined}
-      height={terminal.isTty ? Math.max(16, terminal.rows - 1) : undefined}
-      paddingX={1}
-      overflowY="hidden"
-    >
-      <Box flexDirection="column" flexGrow={1} overflowY="hidden">
-        {showWelcome
-          ? <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} modelDisplay={modelDisplay} />
-          : <CompactHeader ready={ready} sessionId={chat.sessionId} />}
+    <Box flexDirection="column" width={terminal.isTty ? terminal.columns : undefined} paddingX={1}>
+      {showWelcome ? (
+        <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} modelDisplay={modelDisplay} />
+      ) : null}
 
-        <Box flexGrow={1} flexDirection="column" justifyContent={showWelcome ? 'flex-start' : 'flex-end'} overflowY="hidden">
-          {fitted.hiddenOlder > 0 || scrollBack > 0
-            ? <Text dimColor>  ↑ {fitted.hiddenOlder > 0 ? `还有 ${fitted.hiddenOlder} 条较早记录 · PageUp 向上翻页` : '已到最早记录 · PageDown 向下翻页'}</Text>
-            : null}
-          {fitted.entries.map((entry, index) => (
-            <EntryBlock key={entry.__id ?? `entry-${index}`} entry={entry} />
-          ))}
-          {chat.pendingUser !== null ? <UserLine text={chat.pendingUser} /> : null}
-          {fitted.hiddenRecent > 0
-            ? <Text dimColor>  ↓ PageDown 向下翻页 · 较新 {fitted.hiddenRecent} 条</Text>
-            : null}
-        </Box>
+      {/* <Static> 累积输出: 每个 entry 永久打印进终端 scrollback, 不参与动态重绘.
+          新 entry 只追加打印, 历史靠终端自身滚动, 不再需要 in-app 翻页/视窗裁剪. */}
+      <Static items={dedupedEntries}>
+        {(entry, index) => (
+          <EntryAccum key={entry.__id ?? `e${index}`} entry={entry} columns={terminal.columns} />
+        )}
+      </Static>
 
-        {chat.entries.length === 0 && chat.pendingUser === null && !showHelp
-          ? <Box marginTop={1}><Text dimColor>输入问题开始协作，或输入 <Text color="cyan">/</Text> 查看命令。</Text></Box>
-          : null}
-
-        {showHelp ? <HelpBlock commands={SLASH_COMMANDS} /> : null}
-      </Box>
-
-      {chat.typing ? <WorkingIndicator /> : null}
+      {chat.pendingUser !== null ? <UserLine text={chat.pendingUser} /> : null}
+      {chat.typing ? <WorkingIndicator firstQuery={firstQueryInFlight} /> : null}
       {chat.error ? <Text color="red">⚠ {chat.error}</Text> : null}
+
+      {chat.entries.length === 0 && chat.pendingUser === null && !showHelp
+        ? <Box marginTop={1}><Text dimColor>输入问题开始协作，或输入 <Text color="cyan">/</Text> 查看命令。</Text></Box>
+        : null}
+
+      {showHelp ? <HelpBlock commands={SLASH_COMMANDS} /> : null}
 
       <Composer
         onSubmit={onSubmit}
@@ -230,25 +202,17 @@ function MetaRow({ label, value, hint, labelWidth }: { label: string; value: str
   )
 }
 
-function CompactHeader({ ready, sessionId }: { ready: ReadyState; sessionId: string | null }) {
-  return (
-    <Box justifyContent="space-between">
-      <Text bold><Text dimColor>{'>_ '}</Text>Mobius</Text>
-      <Text dimColor>{ready.project.name} › {ready.issue.title}{sessionId ? ` · ${sessionId.slice(0, 8)}` : ''}</Text>
-    </Box>
-  )
-}
-
-function EntryBlock({ entry }: { entry: AnyEntry }) {
+function EntryAccum({ entry, columns }: { entry: AnyEntry; columns: number }) {
   const views = viewsForEntry(entry)
   return (
     <Box flexDirection="column">
-      {views.map((view, index) => <ViewLine key={index} view={view} />)}
+      {views.map((view, index) => <ViewLine key={index} view={view} columns={columns} />)}
     </Box>
   )
 }
 
-function ViewLine({ view }: { view: EntryView }) {
+function ViewLine({ view, columns }: { view: EntryView; columns: number }) {
+  const width = Math.max(20, columns - 4)
   switch (view.kind) {
     case 'skip':
       return null
@@ -266,28 +230,122 @@ function ViewLine({ view }: { view: EntryView }) {
         </Box>
       )
     }
-    case 'tool_call':
+    case 'tool_call': {
+      // compact (≤2 行): 命令行 + 可选结果行 (已与 tool_result 合并).
+      const head = clampLines(`${toolLabel(view.toolName)} ${view.summary}`.trim(), width - 2, 1)[0]
       return (
-        <Text>
-          <Text color="cyan">• {toolLabel(view.toolName)}</Text>
-          {view.summary ? <Text dimColor>  {view.summary}</Text> : null}
-        </Text>
+        <Box marginTop={1} flexDirection="column">
+          <Text color="cyan">• {head}</Text>
+          {view.result ? (
+            <Text dimColor color={view.result.isError ? 'red' : undefined}>
+              {'  └ '}{clampLines(view.result.text, width - 4, 1)[0] || '(无输出)'}
+            </Text>
+          ) : null}
+        </Box>
       )
-    case 'tool_result':
+    }
+    case 'tool_result': {
+      // codex 式 head+ellipsis+tail (output_max_lines=5): tool 结果保留头尾,
+      // 中间省略行数; DIM 样式 + └/缩进前缀 (对齐 codex exec_cell/render.rs).
+      const lines = headTailLines(view.text, width - 4, 5)
       return (
-        <Text dimColor color={view.isError ? 'red' : undefined}>
-          {'  └ '}{view.summary || '(无输出)'}
-        </Text>
+        <Box flexDirection="column">
+          {lines.map((l, i) => (
+            <Text key={i} dimColor color={view.isError ? 'red' : undefined}>{i === 0 ? '  └ ' : '    '}{l}</Text>
+          ))}
+        </Box>
       )
-    case 'reasoning':
-      return <Text dimColor color="magenta">  ◇ {view.text}</Text>
+    }
+    case 'code_edit':
+      return <CodeEditView view={view} />
+    case 'write_file':
+      return <WriteFileView view={view} />
+    case 'reasoning': {
+      const lines = clampLines(view.text, width - 4, 2)
+      return (
+        <Box marginTop={1} flexDirection="column">
+          {lines.map((line, i) => (
+            <Text key={i} dimColor color="magenta">{i === 0 ? '  ◇ ' : '    '}{line}</Text>
+          ))}
+        </Box>
+      )
+    }
     case 'system':
-      return <Text dimColor color="yellow">  {view.text}</Text>
+      return <Text dimColor color="yellow">  {clampLines(view.text, width - 2, 2)[0]}</Text>
     case 'error':
-      return <Text color="red">⚠ {view.text}</Text>
+      return (
+        <Box marginTop={1} flexDirection="column">
+          {view.text.split('\n').map((line, i) => (
+            <Text key={i} color="red">{i === 0 ? '⚠ ' : '  '}{line}</Text>
+          ))}
+        </Box>
+      )
     default:
       return null
   }
+}
+
+// 代码修改 (Edit/StrReplace/apply_patch) — full: 完整展示 old(−)/new(+) 改动原文.
+function CodeEditView({ view }: { view: { filePath: string; oldString: string; newString: string } }) {
+  return (
+    <Box marginTop={1} flexDirection="column">
+      <Text color="magenta">✎ 编辑 {view.filePath || '(未指定文件)'}</Text>
+      {view.oldString ? view.oldString.split('\n').map((line, i) => (
+        <Text key={`o${i}`} color="red">{'  − '}{line}</Text>
+      )) : null}
+      {view.newString ? view.newString.split('\n').map((line, i) => (
+        <Text key={`n${i}`} color="green">{'  + '}{line}</Text>
+      )) : null}
+    </Box>
+  )
+}
+
+// 文件写入 (Write/create_file) — full: 完整展示写入内容原文.
+function WriteFileView({ view }: { view: { filePath: string; content: string } }) {
+  return (
+    <Box marginTop={1} flexDirection="column">
+      <Text color="magenta">✎ 写入 {view.filePath || '(未指定文件)'}</Text>
+      {view.content.split('\n').map((line, i) => (
+        <Text key={i} color="green">{'  + '}{line}</Text>
+      ))}
+    </Box>
+  )
+}
+
+// 把文本按宽度硬切成最多 maxLines 行 (超出则在末行加 …), 用于 compact 类的 ≤2 行硬约束.
+function clampLines(text: string, width: number, maxLines: number): string[] {
+  if (!text) return ['']
+  const paras = text.replace(/\r\n/g, '\n').split('\n')
+  const wrapped: string[] = []
+  for (const para of paras) {
+    if (para === '') { wrapped.push(''); continue }
+    for (let i = 0; i < para.length; i += width) wrapped.push(para.slice(i, i + width))
+  }
+  if (wrapped.length <= maxLines) return wrapped
+  const trimmed = wrapped.slice(0, maxLines)
+  const last = trimmed[maxLines - 1]
+  trimmed[maxLines - 1] = last.length >= width ? last.slice(0, width - 1) + '…' : last + '…'
+  return trimmed
+}
+
+// codex 式 head + ellipsis + tail 截断 (参考 codex-rs/tui/src/exec_cell/render.rs
+// 的 truncate_lines_middle): 保留输出头尾, 中间省略并报告省略行数. 长输出既能看
+// 到结论 (成功/失败常在尾), 又不刷屏. maxLines 含省略行 (如 5 = 头2 + 省1 + 尾2).
+function headTailLines(text: string, width: number, maxLines: number): string[] {
+  if (!text) return ['']
+  const paras = text.replace(/\r\n/g, '\n').split('\n')
+  const wrapped: string[] = []
+  for (const para of paras) {
+    if (para === '') { wrapped.push(''); continue }
+    for (let i = 0; i < para.length; i += width) wrapped.push(para.slice(i, i + width))
+  }
+  if (wrapped.length <= maxLines) return wrapped.slice(0, maxLines)
+  const budget = maxLines - 1 // 留 1 行给省略标记
+  const head = Math.max(1, Math.ceil(budget / 2))
+  const tail = Math.max(1, budget - head)
+  const omitted = wrapped.length - head - tail
+  if (omitted <= 0) return wrapped.slice(0, maxLines)
+  return [...wrapped.slice(0, head), `… +${omitted} 行`, ...wrapped.slice(wrapped.length - tail)]
 }
 
 function UserLine({ text }: { text: string }) {
@@ -297,7 +355,7 @@ function UserLine({ text }: { text: string }) {
   return <Box marginTop={1}><Text bold>{lines.join('\n')}</Text></Box>
 }
 
-function WorkingIndicator() {
+function WorkingIndicator({ firstQuery }: { firstQuery: boolean }) {
   const startedAt = useRef(Date.now())
   const [animationFrame, setAnimationFrame] = useState(0)
   useEffect(() => {
@@ -306,7 +364,9 @@ function WorkingIndicator() {
   }, [])
   const secs = Math.floor((Date.now() - startedAt.current) / 1000)
   const elapsed = secs >= 60 ? `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, '0')}s` : `${secs}s`
-  const label = `• Working (${elapsed} · esc to interrupt)`
+  const label = firstQuery
+    ? `• Initializing for the first query (${elapsed})`
+    : `• Working (${elapsed} · esc to interrupt)`
   return (
     <Box marginTop={1}>
       <Text>{shimmerText(label, animationFrame)}</Text>
@@ -374,7 +434,8 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
   }
 
   useInput((input, key) => {
-    if (typing && key.escape) { void onStop(); return }
+    const escape = isEscapeKeypress(input, key)
+    if (typing && escape) { void onStop(); return }
 
     if (popupOpen) {
       if (key.upArrow) { setPopupIdx(i => (i <= 0 ? filtered.length - 1 : i - 1)); return }
@@ -383,7 +444,7 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
         const pick = filtered[popupIdx >= 0 ? popupIdx : 0]
         if (pick) { edit(`${pick.cmd} `, pick.cmd.length + 1); setPopupDismissed(true); return }
       }
-      if (key.escape) { setPopupDismissed(true); return }
+      if (escape) { setPopupDismissed(true); return }
     }
 
     if (key.return) {
@@ -427,7 +488,7 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
     if (key.ctrl && input === 'u') { edit('', 0); return }
     if (key.ctrl && input === 'k') { edit(value.slice(0, cursor), cursor); return }
     if (key.ctrl && input === 'j') { edit(value.slice(0, cursor) + '\n' + value.slice(cursor), cursor + 1); return }
-    if (key.ctrl || key.meta || key.escape || !input) return
+    if (key.ctrl || key.meta || escape || !input) return
     edit(value.slice(0, cursor) + input + value.slice(cursor), cursor + input.length)
   })
 
@@ -501,14 +562,43 @@ function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus, modelDispl
         <Text dimColor>{left}</Text>
         {right ? <Text dimColor>{right}</Text> : null}
       </Box>
-      <Text>
-        <Text dimColor>web · </Text>
-        <Text color="cyan" underline>{clickableUrl(webUrl)}</Text>
-      </Text>
-      {aimuxStatus ? <AimuxStatusLine status={aimuxStatus} compact /> : null}
+      {/* Merged connectivity row: AIMUX status sits left, the clickable web URL
+          sits right and truncates to the remaining width (its OSC 8 link target
+          stays full so it stays clickable). This collapses the former separate
+          "web · url" and AIMUX rows into one, dropping the status area from
+          three rows to two. */}
+      <ConnectivityRow aimuxStatus={aimuxStatus} webUrl={webUrl} columns={columns} />
     </Box>
   )
 }
+
+// AIMUX status (left) ⟷ clickable web URL (right) on a single row.
+function ConnectivityRow({ aimuxStatus, webUrl, columns }: { aimuxStatus?: AimuxStatus; webUrl: string; columns: number }) {
+  const aimuxText = aimuxStatus ? aimuxStatusText(aimuxStatus, true) : ''
+  // icon (1) + leading space (1) + status text width
+  const aimuxWidth = aimuxText ? 2 + displayWidth(aimuxText) : 0
+  // No AIMUX status → web URL keeps the whole row (unchanged from before).
+  // Otherwise leave room for the AIMUX block + 'web · ' prefix + a safety gap
+  // (the gap also absorbs ambiguous-width chars like box-drawing in the detail).
+  const urlBudget = aimuxWidth
+    ? Math.max(8, columns - 2 - aimuxWidth - WEB_PREFIX.length - 6)
+    : undefined
+  const web = (
+    <Text>
+      <Text dimColor>{WEB_PREFIX}</Text>
+      <Text color="cyan" underline>{clickableUrl(webUrl, urlBudget)}</Text>
+    </Text>
+  )
+  if (!aimuxStatus) return <Box>{web}</Box>
+  return (
+    <Box justifyContent="space-between">
+      <AimuxStatusLine status={aimuxStatus} compact />
+      {web}
+    </Box>
+  )
+}
+
+const WEB_PREFIX = 'web · '
 
 function compactPath(path: string): string {
   const home = process.env.HOME
@@ -529,49 +619,44 @@ function buildWebUrl(server: string, webUserId: string, ready: ReadyState, sessi
   return sessionId ? `${base}?session=${encodeURIComponent(sessionId)}` : base
 }
 
-/** OSC 8 hyperlinks remain readable as plain URLs in terminals without support. */
-function clickableUrl(url: string): string {
-  if (process.env.MOBIUS_TUI_DISABLE_LINKS === '1') return url
-  return `\u001B]8;;${url}\u0007${url}\u001B]8;;\u0007`
+/** OSC 8 hyperlinks remain readable as plain URLs in terminals without support.
+ *  When maxLen is given, only the *visible* text is truncated (the OSC 8 link
+ *  target keeps the full URL, so it stays clickable on narrow terminals). */
+function clickableUrl(url: string, maxLen?: number): string {
+  const display = maxLen != null ? truncateDisplay(url, maxLen) : url
+  if (process.env.MOBIUS_TUI_DISABLE_LINKS === '1') return display
+  return `\u001B]8;;${url}\u0007${display}\u001B]8;;\u0007`
 }
 
-function wrappedRows(text: string, columns: number): number {
-  const width = Math.max(20, columns - 6)
-  return text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / width)), 0)
-}
-
-function entryRows(entry: AnyEntry, columns: number): number {
-  return viewsForEntry(entry).reduce((sum, view) => {
-    if (view.kind === 'skip') return sum
-    if (view.kind === 'tool_call') return sum + wrappedRows(`${toolLabel(view.toolName)} ${view.summary}`, columns)
-    if (view.kind === 'tool_result') return sum + wrappedRows(view.summary, columns)
-    return sum + wrappedRows(view.text, columns) + (view.kind === 'user' || view.kind === 'assistant' ? 1 : 0)
-  }, 0)
-}
-
-function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, scrollBack = 0): {
-  entries: AnyEntry[]
-  hiddenOlder: number
-  hiddenRecent: number
-  estimatedRows: number
-} {
-  // `scrollBack` = how many of the most-recent entries are paged out of view
-  // below the viewport (the user pressed PageUp). The visible window is then
-  // fit from the tail of what remains, backward, until the row budget is full.
-  const tail = Math.max(0, entries.length - scrollBack)
-  const avail = tail === 0 ? [] : entries.slice(0, tail)
-  let rows = 0
-  let first = avail.length
-  for (let index = avail.length - 1; index >= 0; index--) {
-    const nextRows = entryRows(avail[index], columns)
-    if (first < avail.length && rows + nextRows > rowBudget) break
-    rows += nextRows
-    first = index
+// Visible-column width (CJK / emoji / fullwidth count as 2; combining marks as
+// 0), used to size the AIMUX status block so the web URL truncates to exactly
+// the remaining width without overflowing the row.
+function displayWidth(str: string): number {
+  let w = 0
+  for (const ch of str) {
+    const code = ch.codePointAt(0) ?? 0
+    if (code >= 0x0300 && code <= 0x036F) continue // combining diacriticals: 0 cols
+    w += isWideCodepoint(code) ? 2 : 1
   }
-  return {
-    entries: avail.slice(first),
-    hiddenOlder: first,                       // entries older than the viewport
-    hiddenRecent: entries.length - tail,      // == scrollBack: entries newer than the viewport
-    estimatedRows: rows,
-  }
+  return w
 }
+
+function isWideCodepoint(code: number): boolean {
+  return (
+    (code >= 0x1100 && code <= 0x115F) || // Hangul Jamo
+    (code >= 0x2E80 && code <= 0x303E) || // CJK radicals / punctuation
+    (code >= 0x3041 && code <= 0x33FF) || // Hiragana / Katakana / CJK compat
+    (code >= 0x3400 && code <= 0x4DBF) || // CJK Unified Extension A
+    (code >= 0x4E00 && code <= 0x9FFF) || // CJK Unified Ideographs (心跳正常 …)
+    (code >= 0xA000 && code <= 0xA4CF) || // Yi
+    (code >= 0xAC00 && code <= 0xD7A3) || // Hangul syllables
+    (code >= 0xF900 && code <= 0xFAFF) || // CJK compatibility ideographs
+    (code >= 0xFE30 && code <= 0xFE4F) || // CJK compatibility forms
+    (code >= 0xFF00 && code <= 0xFF60) || // Fullwidth ASCII
+    (code >= 0xFFE0 && code <= 0xFFE6) || // Fullwidth signs
+    (code >= 0x1F300 && code <= 0x1FAFF)  // Emoji / symbols
+  )
+}
+
+// (fitTranscript / blockRows / wrappedRows 视窗裁剪 + in-app 翻页逻辑已移除:
+//  transcript 现由 <Static> 累积进终端 scrollback, 历史靠终端自身滚动.)

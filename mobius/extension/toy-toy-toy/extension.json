@@ -1,8 +1,8 @@
 {
   "name": "toy-toy-toy",
   "display_name": "广告爽游实验室",
-  "description": "双题材十关广告爽游：随队算术门、扩展角色编成与指数生命终局 Boss。",
-  "version": "0.10.0",
+  "description": "双题材十关电影化广告爽游：程序化角色配件、题材基地、进化主角与完整视听战斗反馈。",
+  "version": "0.12.0",
   "icon": "favicon.svg",
   "project": {
     "sync": true
