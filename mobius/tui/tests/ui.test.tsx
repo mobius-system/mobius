@@ -70,17 +70,17 @@ async function testLogin() {
   // (a) deterministic: exercise the real login() + saveLogin() code path.
   installMock((url) => {
     if (url.endsWith('/api/auth/config')) return jsonResponse({ password_required: false })
-    if (url.endsWith('/api/auth/login')) return jsonResponse({ token: 'mock-jwt-token', user: { id: 'fuqingxu', display_name: '付清旭', role: 'admin' } })
+    if (url.endsWith('/api/auth/login')) return jsonResponse({ token: 'mock-jwt-token', user: { id: 'tester', display_name: 'Test User', role: 'admin' } })
     return jsonResponse({ error: 'no mock' }, 404)
   })
   try {
     const { login } = await import('../src/api.js')
     const { saveLogin } = await import('../src/config.js')
-    const r = await login('http://mock.local', 'fuqingxu')
-    ok(r.token === 'mock-jwt-token' && r.user.id === 'fuqingxu', 'login() returns token + user')
-    await saveLogin({ server: 'http://mock.local', username: 'fuqingxu', token: r.token, user: r.user })
+    const r = await login('http://mock.local', 'tester')
+    ok(r.token === 'mock-jwt-token' && r.user.id === 'tester', 'login() returns token + user')
+    await saveLogin({ server: 'http://mock.local', username: 'tester', token: r.token, user: r.user })
     const saved = JSON.parse(fs.readFileSync(path.join(TMP_HOME, 'login.json'), 'utf8'))
-    ok(saved.token === 'mock-jwt-token' && saved.username === 'fuqingxu', 'login.json persisted to temp home')
+    ok(saved.token === 'mock-jwt-token' && saved.username === 'tester', 'login.json persisted to temp home')
   } finally { restoreFetch() }
 
   // (b) smoke: the form renders (keystroke-driven multi-field submit is flaky in
@@ -89,7 +89,7 @@ async function testLogin() {
   let captured: any = null
   installMock((url) => {
     if (url.endsWith('/api/auth/config')) return jsonResponse({ password_required: false })
-    if (url.endsWith('/api/auth/login')) return jsonResponse({ token: 'mock-jwt-token', user: { id: 'fuqingxu', display_name: '付清旭', role: 'admin' } })
+    if (url.endsWith('/api/auth/login')) return jsonResponse({ token: 'mock-jwt-token', user: { id: 'tester', display_name: 'Test User', role: 'admin' } })
     return jsonResponse({ error: 'no mock' }, 404)
   })
   try {
@@ -99,7 +99,7 @@ async function testLogin() {
     ok(frame.includes('登录') && frame.includes('用户名'), 'login form renders with fields')
     // best-effort keystroke submit; assert only if the harness lands the keys.
     stdin.write('\t'); await delay(120)
-    stdin.write('fuqingxu'); await delay(120)
+    stdin.write('tester'); await delay(120)
     stdin.write('\t'); await delay(120)
     stdin.write('\r')
     for (let i = 0; i < 50 && !captured; i++) await delay(25)

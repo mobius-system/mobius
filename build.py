@@ -327,15 +327,14 @@ def ensure_tui_node_modules() -> None:
 def make_tui_package_manifest(version: str) -> dict:
     """生成发布用 package.json。
 
-    TUI 当前直接由 tsx 执行 TypeScript 源码，因此 tsx 是发布包的运行时依赖，
-    不能只留在源码项目的 devDependencies。其余测试/类型依赖不进入分发包。
+    TUI 当前直接由 tsx 执行 TypeScript 源码，因此源码清单本身必须把 tsx
+    声明为运行时依赖，以保证直接 npm publish 与构建产物都能被正确安装。
+    其余测试/类型依赖不进入分发包。
     """
     source = json.loads((TUI_DIR / "package.json").read_text(encoding="utf-8"))
     dependencies = dict(source.get("dependencies", {}))
-    tsx_version = source.get("devDependencies", {}).get("tsx")
-    if not tsx_version:
-        sys.exit("[build] mobius/tui/package.json is missing devDependencies.tsx")
-    dependencies["tsx"] = tsx_version
+    if not dependencies.get("tsx"):
+        sys.exit("[build] mobius/tui/package.json is missing dependencies.tsx")
     return {
         "name": source.get("name", "mobius"),
         "version": version,
