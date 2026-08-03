@@ -89,6 +89,7 @@ async function pythonForAimux(onProgress?: (p: InstallProgress) => void): Promis
 // 系统 python（如被精简掉 ensurepip 的容器镜像）。aimux 全部依赖为纯 Python，
 // 故三平台可共用同一套打包产物，分别按 arch 发布到 CDN。
 const BUNDLE_VER = '2'
+const BUNDLE_AIMUX_VERSION = '0.1.21'
 const bundleDir = () => path.join(mobiusHome(), 'python-bundle')
 const bundlePython = () => WIN
   ? path.join(bundleDir(), 'python', 'python.exe')
@@ -119,8 +120,19 @@ export function bundleArch(): string | null {
 export const bundleBaseUrl = () => (process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL || 'https://serve.nutshellai.cn/publish/auto/mobius-tui').replace(/\/$/, '')
 export const bundleUrl = (arch: string) => `${bundleBaseUrl()}/mobius-python-${arch}-v${BUNDLE_VER}.zip`
 
+export function bundleHealthCheckCode(platform: NodeJS.Platform = process.platform): string {
+  const imports = platform === 'win32'
+    ? 'import aimux, aimux.bridge_client, win32_setctime'
+    : 'import aimux, aimux.bridge_client'
+  return `${imports}; assert aimux.__version__ == '${BUNDLE_AIMUX_VERSION}'`
+}
+
 function bundleReady(): boolean {
-  return existsSync(bundlePython()) && spawnSync(bundlePython(), ['-c', 'import aimux'], { stdio: 'ignore', windowsHide: true }).status === 0
+  return existsSync(bundlePython()) && spawnSync(
+    bundlePython(),
+    ['-c', bundleHealthCheckCode()],
+    { stdio: 'ignore', windowsHide: true },
+  ).status === 0
 }
 
 async function downloadBundle(arch: string, onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string; zipPath?: string }> {
