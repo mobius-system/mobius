@@ -88,11 +88,23 @@ async function pythonForAimux(onProgress?: (p: InstallProgress) => void): Promis
 // 解压到 ~/.mobius/python-bundle/ 后用 `<python> -m aimux` 运行，彻底绕开宿主机
 // 系统 python（如被精简掉 ensurepip 的容器镜像）。aimux 全部依赖为纯 Python，
 // 故三平台可共用同一套打包产物，分别按 arch 发布到 CDN。
-const BUNDLE_VER = '1'
+const BUNDLE_VER = '2'
 const bundleDir = () => path.join(mobiusHome(), 'python-bundle')
 const bundlePython = () => WIN
   ? path.join(bundleDir(), 'python', 'python.exe')
   : path.join(bundleDir(), 'python', 'bin', 'python3')
+
+/** Persistent child-process diagnostics. Never include the JWT in this file. */
+export const aimuxLogPath = () => path.join(mobiusHome(), 'aimux.log')
+
+function appendAimuxLog(write: { queue: Promise<void> }, text: string): void {
+  write.queue = write.queue
+    .then(async () => {
+      await fs.mkdir(mobiusHome(), { recursive: true })
+      await fs.appendFile(aimuxLogPath(), text, 'utf8')
+    })
+    .catch(() => {})
+}
 
 /** 当前平台对应的内置运行时包名；mac-arm64 走 mac-x64（Rosetta 2）。 */
 export function bundleArch(): string | null {
@@ -288,9 +300,13 @@ export class AimuxSupervisor {
     this.child = child
     this.startHeartbeat()
     let tail = ''   // 缓存 aimux 最近输出, 进程异常退出时带进状态行, 便于诊断(code=1 不再是黑盒)
+    const logWrite = { queue: Promise.resolve() }
+    appendAimuxLog(logWrite, `\n===== AIMUX start ${new Date().toISOString()} =====\n`)
+    appendAimuxLog(logWrite, `server=${server} identifier=${identifier} platform=${process.platform} arch=${process.arch}\n`)
     const classify = (buf: Buffer) => {
       const text = buf.toString('utf8')
       tail = (tail + text).slice(-4000)
+      appendAimuxLog(logWrite, text)
       if (!this.bridgeConnected && /connected|registered|event stream|heartbeat|sse/i.test(text)) {
         onStatus({ state: 'starting', phase: 'heartbeat', detail: 'AIMUX 已启动，等待 bridge 心跳确认…', identifier })
       } else if (/connection (refused|reset|closed|error)|failed to connect|unauthorized|forbidden|token.*invalid/i.test(text)) {
@@ -298,15 +314,19 @@ export class AimuxSupervisor {
       }
     }
     child.stdout?.on('data', classify); child.stderr?.on('data', classify)
-    child.on('error', e => onStatus({ state: 'failed', phase: 'retrying', detail: `AIMUX 启动失败: ${e.message}`, identifier }))
+    child.on('error', e => {
+      appendAimuxLog(logWrite, `\n[spawn error] ${e.stack || e.message}\n`)
+      onStatus({ state: 'failed', phase: 'retrying', detail: `AIMUX 启动失败: ${e.message} · 日志: ${aimuxLogPath()}`, identifier })
+    })
     child.on('exit', code => {
       if (this.child !== child) return
       this.child = null
       this.stopHeartbeat()
       if (this.stopping) { onStatus({ state: 'stopped', phase: 'idle', detail: 'AIMUX 已停止', identifier }); return }
+      appendAimuxLog(logWrite, `\n===== AIMUX exit code=${code} ${new Date().toISOString()} =====\n`)
       const reason = code !== 0 && tail.trim()
-        ? `AIMUX 进程退出（code=${code}）: ${tail.trim().split(/[\r\n]+/).filter(Boolean).slice(-3).join(' ⏎ ').slice(-200)}`
-        : `AIMUX 进程退出（code=${code}）`
+        ? `AIMUX 进程退出（code=${code}）: ${tail.trim().split(/[\r\n]+/).filter(Boolean).slice(-3).join(' ⏎ ').slice(-220)} · 日志: ${aimuxLogPath()}`
+        : `AIMUX 进程退出（code=${code}） · 日志: ${aimuxLogPath()}`
       this.scheduleReconnect(reason)
     })
   }
