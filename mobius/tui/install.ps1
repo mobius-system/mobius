@@ -9,7 +9,7 @@
   npm 安装和 mobius 启动均直接使用 node.exe/tsx；安装完成后同时注册两个
   Explorer 右键入口：“在 Mobius 中打开”（文件夹本身 + 文件夹空白处）。
 .EXAMPLE
-  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v13.ps1 | iex
+  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v14.ps1 | iex
 #>
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
@@ -106,7 +106,20 @@ try {
             Start-Sleep -Milliseconds 300
             return @{ TimedOut = $true; ExitCode = $null }
         }
-        return @{ TimedOut = $false; ExitCode = $proc.ExitCode }
+        # Windows PowerShell 5.1 may leave ExitCode unset after only calling
+        # WaitForExit(milliseconds), especially with redirected output. The
+        # parameterless wait flushes redirected streams and Refresh reloads
+        # the native process state before reading ExitCode.
+        $proc.WaitForExit()
+        $proc.Refresh()
+        $exitCode = $proc.ExitCode
+        if ($null -eq $exitCode) {
+            # Defensive PS 5.1 fallback: verify the requested package with npm
+            # instead of treating an empty ExitCode as an installation error.
+            & $nodeExe $npmCli ls "@mobius-os/mobius" --depth 0 --silent 2>&1 | Out-Null
+            $exitCode = $LASTEXITCODE
+        }
+        return @{ TimedOut = $false; ExitCode = $exitCode }
     }
 
     function Save-NpmAttemptLog([string]$label) {
@@ -225,7 +238,7 @@ Write-Host "右键文件夹或文件夹空白处，可选择: 在 Mobius 中打�
 try {
     Invoke-MobiusInstall
 } catch {
-    $errorLog = Join-Path $env:TEMP "mobius-install-v13-error.log"
+    $errorLog = Join-Path $env:TEMP "mobius-install-v14-error.log"
     $errorText = $_ | Format-List * -Force | Out-String
     $errorText | Set-Content -Path $errorLog -Encoding UTF8
     Write-Host ""
