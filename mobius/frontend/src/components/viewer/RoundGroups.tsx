@@ -17,14 +17,15 @@ import { buildHeaderSummary } from './header-summary'
 import { JsonEntryCard } from './EntryCard'
 import { DisplayImagesCard } from './DisplayImages'
 
-export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], defaultExpanded = false, defaultCollapsed = false, showMeta = true, resolvedMap }: {
+export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], forceOpen = false, parentOrderedCollapse = false, showMeta = true, resolvedMap }: {
   entry: AnyEntry
   lineNo: number
   bashResults?: BashToolResult[]
   readResults?: BashToolResult[]
-  defaultExpanded?: boolean
-  // forgotten-flag 上下文折叠: 命中的卡片默认折叠 (覆盖内部默认展开条件), 用户仍可手动展开.
-  defaultCollapsed?: boolean
+  // forceOpen: 搜索命中该卡, 透传给 JsonEntryCard 强制展开.
+  forceOpen?: boolean
+  // parentOrderedCollapse: forgotten-flag 收尾卡, 透传给 JsonEntryCard 默认折叠 (用户仍可手动展开).
+  parentOrderedCollapse?: boolean
   showMeta?: boolean
   resolvedMap?: ResolvedCallMap | null
 }) {
@@ -38,7 +39,7 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
       : 'display_images'
   return (
     <>
-      <JsonEntryCard entry={entry} lineNo={lineNo} defaultExpanded={defaultExpanded} defaultCollapsed={defaultCollapsed} showMeta={showMeta} bashResults={bashResults} readResults={readResults} resolvedMap={resolvedMap} />
+      <JsonEntryCard entry={entry} lineNo={lineNo} forceOpen={forceOpen} parentOrderedCollapse={parentOrderedCollapse} showMeta={showMeta} bashResults={bashResults} readResults={readResults} resolvedMap={resolvedMap} />
       {imgs.length > 0 && <DisplayImagesCard images={imgs} lineNo={lineNo} sourceLabel={sourceLabel} />}
     </>
   )
@@ -83,8 +84,8 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, resolvedMap
               readResults={item.readResults}
               showMeta={showMeta}
               resolvedMap={resolvedMap}
-              defaultExpanded={item.lineNo === focusLineNo}
-              defaultCollapsed={collapseLineNos?.has(item.lineNo)}
+              forceOpen={item.lineNo === focusLineNo}
+              parentOrderedCollapse={collapseLineNos?.has(item.lineNo)}
             />
           ))}
         </div>
@@ -133,7 +134,7 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
                 ...
               </span>
               <div className="flex-1 min-w-0">
-                <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} resolvedMap={resolvedMap} defaultExpanded={lineNo === focusLineNo} defaultCollapsed={collapseLineNos?.has(lineNo)} />
+                <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} resolvedMap={resolvedMap} forceOpen={lineNo === focusLineNo} parentOrderedCollapse={collapseLineNos?.has(lineNo)} />
               </div>
             </div>
           ))}
@@ -233,8 +234,8 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
                       readResults={item.readResults}
                       showMeta={showMeta}
                       resolvedMap={resolvedMap}
-                      defaultExpanded={item.lineNo === focusLineNo}
-                      defaultCollapsed={collapseLineNos?.has(item.lineNo)}
+                      forceOpen={item.lineNo === focusLineNo}
+                      parentOrderedCollapse={collapseLineNos?.has(item.lineNo)}
                     />
                   </div>
                 </div>

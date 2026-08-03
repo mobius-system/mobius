@@ -11,6 +11,34 @@ import {
 import type { UserRow, UserGroupRawRow } from '../types/rows';
 import type * as BetterSqlite3 from 'better-sqlite3';
 
+// migration: users.role 增加 developer 取值 (旧库 CHECK 仅允许 admin/user, 需重建表放宽约束; 幂等, 已迁移/新库自动跳过).
+(() => {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get() as { sql?: string } | undefined;
+  const oldSql = row?.sql || '';
+  if (!oldSql.includes("'admin','user'") || oldSql.includes('developer')) return;
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      db.exec(`CREATE TABLE users__role_migration (
+        id TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin','developer','user')),
+        work_dir TEXT NOT NULL,
+        group_id TEXT DEFAULT 'default',
+        deleted_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE SET NULL
+      )`);
+      db.exec('INSERT INTO users__role_migration (id, display_name, password_hash, role, work_dir, group_id, deleted_at, created_at) SELECT id, display_name, password_hash, role, work_dir, group_id, deleted_at, created_at FROM users');
+      db.exec('DROP TABLE users');
+      db.exec('ALTER TABLE users__role_migration RENAME TO users');
+    })();
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+})();
+
 const ACTIVE_USER_SQL = "(deleted_at IS NULL OR deleted_at = '')";
 const DEFAULT_GROUP_ID = 'default';
 const DEFAULT_GROUP_NAME = '默认组';
@@ -286,7 +314,7 @@ interface CreateUserParams {
   id: string;
   display_name: string;
   password_hash: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'developer' | 'user';
   work_dir: string;
   group_id?: string;
   [key: string]: any;
@@ -542,6 +570,8 @@ const Users = {
     WHERE id = ? AND ${ACTIVE_USER_SQL}
   `).run(id),
   updatePassword: (id: string, hash: string) => db.prepare(`UPDATE users SET password_hash = ? WHERE id = ? AND ${ACTIVE_USER_SQL}`).run(hash, id),
+  updateRole: (id: string, role: string) => db.prepare(`UPDATE users SET role = ? WHERE id = ? AND ${ACTIVE_USER_SQL}`).run(role, id),
+  updateDisplayName: (id: string, displayName: string) => db.prepare(`UPDATE users SET display_name = ? WHERE id = ? AND ${ACTIVE_USER_SQL}`).run(displayName, id),
   activeAdminCount: (): number => (db.prepare(`SELECT COUNT(*) as c FROM users WHERE role = 'admin' AND ${ACTIVE_USER_SQL}`).get() as { c: number }).c,
   countAll: (): number => (db.prepare(`SELECT COUNT(*) as c FROM users WHERE ${ACTIVE_USER_SQL}`).get() as { c: number }).c,
 };

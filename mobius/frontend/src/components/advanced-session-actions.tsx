@@ -21,6 +21,7 @@ type AdvancedSessionActionsProps = {
   onOpenTerminal: () => void
   onOpenCooperablePc: () => void
   onOpenKnowledge: () => void
+  onOpenResearchGraph?: () => void
   onSendProjectKnowledge: () => void | Promise<void>
   onContinueWithModel: () => void
   onOpenSkill: () => void
@@ -52,6 +53,7 @@ export function AdvancedSessionActions({
   onOpenTerminal,
   onOpenCooperablePc,
   onOpenKnowledge,
+  onOpenResearchGraph,
   onSendProjectKnowledge,
   onContinueWithModel,
   onOpenSkill,
@@ -136,14 +138,24 @@ export function AdvancedSessionActions({
           accent="amber"
           icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
         />
-        <AdvancedInteractionBtn
-          onClick={onOpenKnowledge}
-          disabled={!canOpenKnowledge}
-          label="查看当前知识"
-          tooltip="查看当前知识 (项目知识 / 本任务知识)"
-          accent="cyan"
-          icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
-        />
+        {researchId && onOpenResearchGraph ? (
+          <AdvancedInteractionBtn
+            onClick={onOpenResearchGraph}
+            label="Research Graph"
+            tooltip="跳转到 Research Graph"
+            accent="cyan"
+            icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
+          />
+        ) : (
+          <AdvancedInteractionBtn
+            onClick={onOpenKnowledge}
+            disabled={!canOpenKnowledge}
+            label="查看当前知识"
+            tooltip="查看当前知识 (项目知识 / 本任务知识)"
+            accent="cyan"
+            icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
+          />
+        )}
         <AdvancedInteractionBtn
           onClick={onSendProjectKnowledge}
           disabled={!canSendProjectKnowledge}

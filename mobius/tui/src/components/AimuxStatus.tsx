@@ -10,15 +10,21 @@ const STYLE: Record<AimuxStatus['state'], { icon: string; color: 'green' | 'yell
   disabled: { icon: '○', color: 'gray' },
 }
 
-export function AimuxStatusLine({ status, compact = false }: { status: AimuxStatus; compact?: boolean }) {
-  const style = STYLE[status.state]
+// Plain status text (without the leading icon/space), so callers can measure its
+// visible width and lay it out beside other status fragments on one row.
+export function aimuxStatusText(status: AimuxStatus, compact = false): string {
   const phase = status.phase && !['idle', 'connected'].includes(status.phase) ? ` · ${phaseLabel(status.phase)}` : ''
   const detail = status.detail || stateLabel(status.state)
+  return `AIMUX${phase} · ${compact ? compactDetail(detail) : detail}`
+}
+
+export function AimuxStatusLine({ status, compact = false }: { status: AimuxStatus; compact?: boolean }) {
+  const style = STYLE[status.state]
   return (
     <Box>
       <Text color={style.color}>{style.icon}</Text>
       <Text dimColor={status.state === 'disabled' || status.state === 'stopped'}>
-        {' '}AIMUX{phase} · {compact ? compactDetail(detail) : detail}
+        {' ' + aimuxStatusText(status, compact)}
       </Text>
     </Box>
   )

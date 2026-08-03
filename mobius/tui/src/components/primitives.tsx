@@ -5,6 +5,11 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Box, Text, useInput, useStdout } from 'ink'
 
+/** Windows Terminal/ConPTY may expose Esc as a named key, a raw byte, or Ctrl+[. */
+export function isEscapeKeypress(input: string, key: { escape?: boolean; ctrl?: boolean }): boolean {
+  return key.escape === true || input === '\x1b' || (key.ctrl === true && input === '[')
+}
+
 // ─── TextInput ───────────────────────────────────────────────────────────────
 export interface TextInputProps {
   value: string
@@ -46,7 +51,7 @@ export function TextInput(props: TextInputProps) {
     if (key.return) { props.onSubmit?.(); return }
     if (key.upArrow) { props.onArrowUp?.(); return }
     if (key.downArrow) { props.onArrowDown?.(); return }
-    if (key.escape) { props.onEscape?.(); return }
+    if (isEscapeKeypress(input, key)) { props.onEscape?.(); return }
     if (key.tab) { props.onTab?.(); return }
     // Ink labels the \x7f that virtually every terminal's Backspace key emits
     // as `key.delete` (see its parse-keypress.js TODO). Treat either signal as
@@ -175,7 +180,7 @@ export function Select(props: SelectProps) {
       if (key.return) { props.onConfirm?.(Array.from(selectedSet)); return }
       if (input === ' ') { props.onToggle?.(items[active].value); return }
     }
-    if (key.escape) { props.onBack?.(); return }
+    if (isEscapeKeypress(input, key)) { props.onBack?.(); return }
   }, { isActive: props.focused !== false })
 
   // viewport: keep the active item on screen. Without this a long list renders

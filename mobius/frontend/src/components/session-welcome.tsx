@@ -305,12 +305,43 @@ interface SelectionSnapshotResponse {
   legacy?: boolean
 }
 
+// =====================================================================
+// 非精简模式 Skill/Memory 标签展开状态持久化 (localStorage).
+// 用户主动关闭或切换 tab 后, 下次进入任意会话侧栏按记忆恢复, 而非每次回到默认.
+// 'closed' 表示用户主动收起两个 tab (区别于"从未设置"的缺失键 → 走 initialPanel 默认).
+// 仅在 persistActivePanel=true 时读写; 精简模式弹窗由用户点哪个按钮决定, 不持久化.
+// =====================================================================
+const ACTIVE_PANEL_STORAGE_KEY = 'mobius:skill-memory-active-panel'
+
+function readStoredActivePanel(): null | 'skill' | 'memory' | undefined {
+  if (typeof window === 'undefined') return undefined
+  try {
+    const value = window.localStorage.getItem(ACTIVE_PANEL_STORAGE_KEY)
+    if (value === 'skill' || value === 'memory') return value
+    if (value === 'closed') return null
+    return undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writeStoredActivePanel(panel: null | 'skill' | 'memory'): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(ACTIVE_PANEL_STORAGE_KEY, panel === null ? 'closed' : panel)
+  } catch {
+    /* 忽略隐私模式 / 配额满等写入失败 */
+  }
+}
+
 export function SessionSkillMemoryEditor({
   sessionId,
   initialPanel = null,
+  persistActivePanel = false,
 }: {
   sessionId?: string
   initialPanel?: null | 'skill' | 'memory'
+  persistActivePanel?: boolean
 }) {
   const [memories, setMemories] = useState<EditorItem[]>([])
   const [skills, setSkills] = useState<EditorItem[]>([])
@@ -319,7 +350,18 @@ export function SessionSkillMemoryEditor({
   const [loading, setLoading] = useState(true)
   // 按钮三态: idle / sending / done. key = `${kind}:${itemId}`
   const [emphasizeState, setEmphasizeState] = useState<Record<string, 'idle' | 'sending' | 'done'>>({})
-  const [activePanel, setActivePanel] = useState<null | 'skill' | 'memory'>(initialPanel)
+  const [activePanel, setActivePanel] = useState<null | 'skill' | 'memory'>(() => {
+    if (persistActivePanel) {
+      const stored = readStoredActivePanel()
+      if (stored !== undefined) return stored
+    }
+    return initialPanel
+  })
+  // 切换/收起 tab 时同步写回 localStorage (仅 persistActivePanel=true 的非精简侧栏).
+  const setActivePanelAndPersist = useCallback((next: null | 'skill' | 'memory') => {
+    setActivePanel(next)
+    if (persistActivePanel) writeStoredActivePanel(next)
+  }, [persistActivePanel])
   const [previewItem, setPreviewItem] = useState<null | { kind: 'skill' | 'memory'; item: EditorItem }>(null)
 
   useEffect(() => {
@@ -423,13 +465,13 @@ export function SessionSkillMemoryEditor({
               }}>
               <div className={`min-w-0 flex-1 ${enabled ? '' : 'opacity-65'}`}>
                 <div className="flex items-start gap-2">
-                  <input
+                  {/* <input
                     type="checkbox"
                     checked={enabled}
                     disabled
                     readOnly
                     className="mt-0.5 flex-shrink-0 accent-blue-500"
-                  />
+                  /> */}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="truncate" style={{ color: 'var(--text-primary)' }}>{it.name}</span>
@@ -498,7 +540,7 @@ export function SessionSkillMemoryEditor({
         <div className="grid grid-cols-2 items-stretch">
           <button
             type="button"
-            onClick={() => setActivePanel(prev => (prev === 'skill' ? null : 'skill'))}
+            onClick={() => setActivePanelAndPersist(activePanel === 'skill' ? null : 'skill')}
             aria-pressed={skillActive}
             className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${skillActive ? 'border-blue-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
             style={{ color: skillActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
@@ -508,7 +550,7 @@ export function SessionSkillMemoryEditor({
           </button>
           <button
             type="button"
-            onClick={() => setActivePanel(prev => (prev === 'memory' ? null : 'memory'))}
+            onClick={() => setActivePanelAndPersist(activePanel === 'memory' ? null : 'memory')}
             aria-pressed={memActive}
             data-tour="session-memory-toggle"
             className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${memActive ? 'border-cyan-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}

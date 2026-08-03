@@ -123,7 +123,7 @@ function zh_add_user_level_info(lines: string[], user: any): void {
   if (!user) return;
   lines.push('## 用户');
   lines.push(`- 姓名: ${user.display_name || user.id}`);
-  lines.push(`- 角色: ${user.role === 'admin' ? '管理员' : '成员'}`);
+  lines.push(`- 角色: ${user.role === 'admin' ? '管理员' : user.role === 'developer' ? '开发者' : '成员'}`);
   lines.push(`- 倾向语言: 中文`);
   lines.push('');
 }
@@ -342,7 +342,7 @@ function en_add_user_level_info(lines: string[], user: any): void {
   if (!user) return;
   lines.push('## User');
   lines.push(`- Name: ${user.display_name || user.id}`);
-  lines.push(`- Role: ${user.role === 'admin' ? 'Admin' : 'Member'}`);
+  lines.push(`- Role: ${user.role === 'admin' ? 'Admin' : user.role === 'developer' ? 'Developer' : 'Member'}`);
   lines.push(`- Language Preference: English`);
   lines.push('');
 }

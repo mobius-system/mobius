@@ -403,7 +403,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
   const initialKind = isGuidedDemo
     ? 'default'
     : (initialDraft?.projectKind === 'research' || initialDraft?.projectKind === 'extension' ? initialDraft.projectKind : 'default')
-  const canCreateExtensionProject = user?.role === 'admin'
+  const canCreateExtensionProject = user?.role === 'admin' || user?.role === 'developer'
   const initialProjectKind: NewProjectKind = canCreateExtensionProject || initialKind !== 'extension' ? initialKind : 'default'
   const initialDraftHasContent = !!(
     initialDraft?.name?.trim()
@@ -467,7 +467,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
   const submit = async () => {
     if (!name.trim()) { setErr('请输入项目名称'); return }
     if (projectKind === 'extension') {
-      if (!canCreateExtensionProject) { setErr('只有管理员可以创建莫比乌斯拓展项目'); return }
+      if (!canCreateExtensionProject) { setErr('只有管理员或开发者可以创建莫比乌斯拓展项目'); return }
       if (!extensionName.trim()) { setErr('请输入拓展标识名'); return }
       if (!/^[a-z][a-z0-9-]{0,31}$/.test(extensionName.trim())) { setErr('拓展标识名格式：以小写字母开头，可包含小写字母、数字和连字符，1-32字符'); return }
     } else {
@@ -633,7 +633,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
       kind: 'extension',
       label: '莫比乌斯拓展项目',
       description: '创建一个有漂亮前端+后端的拓展项目，满足您的任何需求。',
-      note: canCreateExtensionProject ? '能直接在本系统主页打开的特殊拓展项目，内嵌到本系统之中' : '仅管理员可创建',
+      note: canCreateExtensionProject ? '能直接在本系统主页打开的特殊拓展项目，内嵌到本系统之中' : '仅管理员或开发者可创建',
       icon: <Puzzle className="h-5 w-5" strokeWidth={1.8} />,
     },
   ]

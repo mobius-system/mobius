@@ -21,6 +21,7 @@ import {
   Loader2,
   MessageSquare,
   Package,
+  Pencil,
   Plus,
   Power,
   Puzzle,
@@ -264,7 +265,7 @@ type AdminUserStats = {
 type AdminUserRow = {
   id: string
   display_name: string
-  role: 'admin' | 'user' | string
+  role: 'admin' | 'developer' | 'user' | string
   work_dir?: string
   group_id?: string | null
   group_name?: string | null
@@ -300,7 +301,7 @@ type EmployeeFormState = {
   id: string
   display_name: string
   password: string
-  role: 'user' | 'admin'
+  role: 'user' | 'admin' | 'developer'
   group_id: string
   work_dir: string
 }
@@ -328,9 +329,9 @@ function parseBulkEmployees(text: string) {
         : line.split(/\s+/).map((p) => p.trim())
       const [id = '', password = '', ...rest] = parts
       const tail = rest.filter(Boolean)
-      let role: 'user' | 'admin' = 'user'
-      if (tail[0] === 'admin' || tail[0] === 'user') role = tail.shift() as 'user' | 'admin'
-      else if (tail[tail.length - 1] === 'admin' || tail[tail.length - 1] === 'user') role = tail.pop() as 'user' | 'admin'
+      let role: 'user' | 'admin' | 'developer' = 'user'
+      if (tail[0] === 'admin' || tail[0] === 'user' || tail[0] === 'developer') role = tail.shift() as 'user' | 'admin' | 'developer'
+      else if (tail[tail.length - 1] === 'admin' || tail[tail.length - 1] === 'user' || tail[tail.length - 1] === 'developer') role = tail.pop() as 'user' | 'admin' | 'developer'
       const workDir = tail.length && tail[tail.length - 1].startsWith('/') ? tail.pop() || '' : ''
       let groupName = ''
       const explicitGroupIndex = tail.findIndex((p) => p.startsWith('group=') || p.startsWith('群组='))
@@ -376,6 +377,9 @@ function AdminUsersPanel() {
   const [visQuery, setVisQuery] = useState('')
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [editingUser, setEditingUser] = useState<AdminUserRow | null>(null)
+  const [editForm, setEditForm] = useState<{ display_name: string; role: 'user' | 'developer' | 'admin'; work_dir: string; password: string }>({ display_name: '', role: 'user', work_dir: '', password: '' })
+  const [savingEdit, setSavingEdit] = useState(false)
 
   const refresh = async (quiet = false, signal?: AbortSignal) => {
     if (!quiet) setLoading(true)
@@ -666,6 +670,40 @@ function AdminUsersPanel() {
     }
   }
 
+  const openEdit = (u: AdminUserRow) => {
+    setError(''); setNotice('')
+    setEditForm({
+      display_name: u.display_name || '',
+      role: u.role === 'admin' ? 'admin' : u.role === 'developer' ? 'developer' : 'user',
+      work_dir: u.work_dir || '',
+      password: '',
+    })
+    setEditingUser(u)
+  }
+
+  const submitEdit = async () => {
+    if (!editingUser) return
+    setError(''); setNotice('')
+    setSavingEdit(true)
+    try {
+      const body: Record<string, unknown> = {
+        display_name: editForm.display_name.trim(),
+        role: editForm.role,
+        work_dir: editForm.work_dir.trim(),
+      }
+      if (editForm.password) body.password = editForm.password
+      await api(`/api/admin/users/${encodeURIComponent(editingUser.id)}`, { method: 'PATCH', body: JSON.stringify(body) })
+      const label = editingUser.display_name || editingUser.id
+      setEditingUser(null)
+      await refresh(true)
+      setNotice(`已更新员工 ${label}`)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <section className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-users">
@@ -728,7 +766,7 @@ function AdminUsersPanel() {
                 const width = row.sessionCount > 0
                   ? `${Math.min(100, Math.max(2, (row.sessionCount / maxCount) * 100))}%`
                   : '0%'
-                const accent = row.role === 'admin' ? '#f59e0b' : '#38bdf8'
+                const accent = row.role === 'admin' ? '#f59e0b' : row.role === 'developer' ? '#a78bfa' : '#38bdf8'
                 return (
                   <div key={row.id} className="grid grid-cols-[minmax(150px,220px)_1fr_88px] items-center gap-3">
                     <div className="min-w-0">
@@ -736,7 +774,7 @@ function AdminUsersPanel() {
                         {row.name}
                       </div>
                       <div className="truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                        {row.id} · {row.groupName} · {row.role === 'admin' ? '管理员' : '成员'}
+                        {row.id} · {row.groupName} · {row.role === 'admin' ? '管理员' : row.role === 'developer' ? '开发者' : '成员'}
                       </div>
                     </div>
                     <div
@@ -972,11 +1010,15 @@ function AdminUsersPanel() {
               />
               <select
                 value={form.role}
-                onChange={(e) => setForm((f) => ({ ...f, role: e.target.value === 'admin' ? 'admin' : 'user' }))}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setForm((f) => ({ ...f, role: v === 'admin' || v === 'developer' ? v : 'user' }))
+                }}
                 className="h-9 rounded-md border px-3 text-[12px] outline-none focus:border-blue-500/50"
                 style={fieldStyle}
               >
                 <option value="user">成员</option>
+                <option value="developer">开发者</option>
                 <option value="admin">管理员</option>
               </select>
               <select
@@ -1071,8 +1113,8 @@ function AdminUsersPanel() {
                       </div>
                     </td>
                     <td className="px-2 py-2">
-                      <span className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] ${u.role === 'admin' ? 'border-amber-500/25 bg-amber-500/10 text-amber-400' : 'border-cyan-500/25 bg-cyan-500/10 text-cyan-400'}`}>
-                        {u.role === 'admin' ? '管理员' : '成员'}
+                      <span className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] ${u.role === 'admin' ? 'border-amber-500/25 bg-amber-500/10 text-amber-400' : u.role === 'developer' ? 'border-violet-500/25 bg-violet-500/10 text-violet-400' : 'border-cyan-500/25 bg-cyan-500/10 text-cyan-400'}`}>
+                        {u.role === 'admin' ? '管理员' : u.role === 'developer' ? '开发者' : '成员'}
                       </span>
                     </td>
                     <td className="px-2 py-2 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
@@ -1088,16 +1130,27 @@ function AdminUsersPanel() {
                     </td>
                     <td className="px-2 py-2" style={{ color: 'var(--text-secondary)' }}>{formatAbsolute(u.created_at)}</td>
                     <td className="rounded-r-md px-2 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => deleteEmployee(u)}
-                        disabled={deleting}
-                        title="删除员工账号"
-                        className="inline-flex h-7 items-center gap-1 rounded-md border border-red-500/20 px-2 text-[11px] text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
-                      >
-                        {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                        删除
-                      </button>
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(u)}
+                          title="编辑员工"
+                          className="inline-flex h-7 items-center gap-1 rounded-md border border-blue-500/20 px-2 text-[11px] text-blue-400 transition-colors hover:bg-blue-500/10"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          编辑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteEmployee(u)}
+                          disabled={deleting}
+                          title="删除员工账号"
+                          className="inline-flex h-7 items-center gap-1 rounded-md border border-red-500/20 px-2 text-[11px] text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+                        >
+                          {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          删除
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -1106,6 +1159,43 @@ function AdminUsersPanel() {
           </table>
         </div>
       </section>
+      {editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { if (!savingEdit) setEditingUser(null) }} />
+          <div className="relative w-[460px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+            <h3 className="mb-4 text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>编辑员工 · {editingUser.display_name || editingUser.id}</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>显示名称</label>
+                <input value={editForm.display_name} onChange={(e) => setEditForm((f) => ({ ...f, display_name: e.target.value }))} className="h-9 w-full rounded-md border px-3 text-[12px] outline-none focus:border-blue-500/50" style={fieldStyle} />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>角色</label>
+                <select value={editForm.role} onChange={(e) => { const v = e.target.value; setEditForm((f) => ({ ...f, role: v === 'admin' || v === 'developer' ? v : 'user' })) }} className="h-9 w-full rounded-md border px-3 text-[12px] outline-none focus:border-blue-500/50" style={fieldStyle}>
+                  <option value="user">成员</option>
+                  <option value="developer">开发者</option>
+                  <option value="admin">管理员</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>工作目录（绝对路径，留空不改）</label>
+                <input value={editForm.work_dir} onChange={(e) => setEditForm((f) => ({ ...f, work_dir: e.target.value }))} placeholder={editingUser.work_dir || ''} className="h-9 w-full rounded-md border px-3 font-mono text-[11px] outline-none focus:border-blue-500/50" style={fieldStyle} />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>重置密码（至少 6 位，留空不改）</label>
+                <input type="password" value={editForm.password} onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))} placeholder="留空则不修改" className="h-9 w-full rounded-md border px-3 text-[12px] outline-none focus:border-blue-500/50" style={fieldStyle} />
+              </div>
+            </div>
+            {error && <div className="mt-3 text-[11px] text-red-400">{error}</div>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setEditingUser(null)} disabled={savingEdit} className="h-9 px-4 rounded-xl text-[13px] border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
+              <button type="button" onClick={submitEdit} disabled={savingEdit} className="inline-flex h-9 items-center gap-1.5 px-5 rounded-xl text-[13px] btn-primary transition-colors">
+                {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} 保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

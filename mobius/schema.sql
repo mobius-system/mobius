@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   display_name TEXT NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin','user')),
+  role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin','developer','user')),
   work_dir TEXT NOT NULL,
   group_id TEXT DEFAULT 'default',
   deleted_at TEXT,

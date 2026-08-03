@@ -170,6 +170,24 @@ let _listWindowsCache = null // { ts: number, rows: string[][] }
 // 条目看到最近的 user/assistant 标记, 读取代价可忽略 (纯文件读, 无 tmux 子进程).
 const CLAUDE_WORKING_TAIL_BYTES = 256 * 1024
 
+// Claude Code writes /compact as synthetic `type:user` records: a continuation
+// summary, the local command itself, and finally a local-command stdout record
+// such as `<local-command-stdout>Compacted ...</local-command-stdout>`.  The
+// latter is a completion marker, not a new user turn.  Keep this narrow so a
+// compact that is still in progress remains working until its completion
+// acknowledgement is written.
+function isCompactCompletionUserEvent(entry) {
+  if (!entry || entry.type !== 'user') return false
+  const content = entry.message?.content
+  const text = Array.isArray(content)
+    ? content
+      .filter((block) => block && typeof block === 'object' && block.type === 'text')
+      .map((block) => block.text || '')
+      .join('\n')
+    : content
+  return typeof text === 'string' && /<local-command-stdout>\s*Compacted\b/i.test(text)
+}
+
 // getPendingRequests 反向扫描的最多条目数: pending 请求必在 jsonl 尾部, 只看最近 N 条即可,
 // 不遍历整段 tail. 反向扫描对截断天然安全 (消费必在 enqueue 之后 = 反向更早, 窗口内 enqueue
 // 的消费必已见过 → 不会误判 pending); 截断只会漏掉被埋极深的旧 pending (best-effort).
@@ -535,7 +553,14 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         const sr = e.message?.stop_reason
         return !sr || sr === 'tool_use'
       }
-      if (e.type === 'user') return true
+      if (e.type === 'user') {
+        // `/compact` finishes with a synthetic local-command stdout record.
+        // Treat that record like an end_turn; otherwise an idle TUI is kept in
+        // `working` because the compact bookkeeping itself is encoded as user
+        // events and has no assistant stop_reason.
+        if (isCompactCompletionUserEvent(e)) return false
+        return true
+      }
       if (e.type === 'system') {
         const sub = e.subtype
         if (sub === 'init' || sub === 'hook_started' || sub === 'hook_response') return true
@@ -1214,4 +1239,5 @@ module.exports = {
   failedFlagPathOf,
   findClaudeRealTimeInfo,
   detectDangerPermission,
+  isCompactCompletionUserEvent,
 }

@@ -705,7 +705,7 @@ function Footer({ loading, submitText, onClose, onSubmit, disabled }: { loading:
 export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void }) {
   const { theme, user } = useStore()
   const dark = theme !== 'light'
-  const canCreateExtension = user?.role === 'admin'
+  const canCreateExtension = user?.role === 'admin' || user?.role === 'developer'
   const DRAFT_KEY = 'gc:new-project'
   const d = draftLoad<any>(DRAFT_KEY) || {}
   const initialKind: ProjectKind = (
@@ -803,7 +803,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
 
     if (!name.trim()) { setErr('请输入项目名称'); return }
     if (projectKind === 'extension') {
-      if (!canCreateExtension) { setErr('只有管理员可以创建莫比乌斯拓展项目'); return }
+      if (!canCreateExtension) { setErr('只有管理员或开发者可以创建莫比乌斯拓展项目'); return }
       if (!extensionName.trim()) { setErr('请输入拓展标识名'); return }
       if (!/^[a-z][a-z0-9-]{0,31}$/.test(extensionName.trim())) { setErr('拓展标识名: 小写字母开头, 含小写字母/数字/连字符, 1-32 字符'); return }
     } else if (!bindPath.trim()) { setErr('请选择项目绑定路径'); return }
@@ -902,12 +902,12 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             return {
               value: opt.kind,
               label: opt.label,
-              description: `${opt.desc} · ${disabled ? '仅管理员' : opt.note}`,
+              description: `${opt.desc} · ${disabled ? '仅管理员或开发者' : opt.note}`,
               disabled,
               badge: opt.kind === 'research'
                 ? { text: '自动', color: '#10b981', bg: 'rgba(16,185,129,0.15)' }
                 : opt.kind === 'extension'
-                ? { text: '管理员', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' }
+                ? { text: '需授权', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' }
                 : opt.kind === 'import-zip'
                 ? { text: '导入', color: '#60a5fa', bg: 'rgba(59,130,246,0.15)' }
                 : undefined,

@@ -45,7 +45,7 @@ export interface UserRawRow {
   id: string;
   display_name: string;
   password_hash: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'developer' | 'user';
   work_dir: string;
   group_id: string | null;
   deleted_at: string | null;

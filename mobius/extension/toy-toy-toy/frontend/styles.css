@@ -46,6 +46,42 @@ button { color: inherit; }
     linear-gradient(180deg, #0a1727 0%, #07111f 100%);
 }
 
+.game-shell::before,
+.game-shell::after {
+  content: "";
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.game-shell::before {
+  inset: 76px 12px 12px;
+  border: 1px solid color-mix(in srgb, var(--mint) 18%, transparent);
+  border-radius: 16px;
+  clip-path: polygon(0 0, 19% 0, 20.5% 2px, 79.5% 2px, 81% 0, 100% 0, 100% 100%, 82% 100%, 80.5% calc(100% - 2px), 19.5% calc(100% - 2px), 18% 100%, 0 100%);
+  box-shadow: inset 0 0 42px color-mix(in srgb, var(--mint) 5%, transparent);
+}
+
+.game-shell::after {
+  inset: 76px 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--mint) 22%, rgba(255,255,255,.82) 50%, var(--mint) 78%, transparent);
+  opacity: .42;
+  filter: drop-shadow(0 0 7px var(--mint));
+}
+
+.game-shell[data-theme="zombie"] {
+  background:
+    radial-gradient(circle at 50% 12%, rgba(41, 132, 114, 0.22), transparent 42%),
+    linear-gradient(180deg, #0a1921 0%, #061018 100%);
+}
+
+.game-shell[data-theme="deadline"] {
+  background:
+    radial-gradient(circle at 50% 10%, rgba(52, 105, 211, 0.24), transparent 45%),
+    linear-gradient(180deg, #0a1731 0%, #050b1d 100%);
+}
+
 .stage,
 .stage canvas,
 .fx-canvas,
@@ -89,7 +125,9 @@ button { color: inherit; }
   align-items: center;
   gap: 22px;
   padding: 13px 18px 12px;
-  background: linear-gradient(180deg, rgba(4, 12, 21, 0.94), rgba(4, 12, 21, 0.64) 72%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--mint) 7%, transparent), transparent 22% 78%, color-mix(in srgb, var(--mint) 7%, transparent)),
+    linear-gradient(180deg, rgba(4, 12, 21, 0.97), rgba(4, 12, 21, 0.72) 72%, transparent);
   pointer-events: none;
 }
 
@@ -147,7 +185,7 @@ button { color: inherit; }
   border-radius: 14px;
   overflow: hidden;
   background: rgba(3, 12, 21, 0.74);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.24), inset 0 -2px color-mix(in srgb, var(--mint) 16%, transparent);
   backdrop-filter: blur(12px);
 }
 
@@ -176,6 +214,13 @@ button { color: inherit; }
   font-variant-numeric: tabular-nums;
   text-shadow: 0 0 18px rgba(79, 255, 210, 0.24);
 }
+
+.game-shell[data-theme="deadline"] .metric b {
+  text-shadow: 0 0 18px rgba(98, 168, 255, 0.34);
+}
+
+.game-shell[data-theme="zombie"] .brand-block strong::before { content: "☣ "; color: var(--mint); }
+.game-shell[data-theme="deadline"] .brand-block strong::before { content: "⌘ "; color: var(--mint); }
 
 .metric:first-child b { color: var(--mint); font-size: 15px; letter-spacing: 0.04em; }
 .metric:nth-child(4) b { color: var(--yellow); }
@@ -521,6 +566,79 @@ button { color: inherit; }
 .weapon-chip > span { grid-row: 1 / 3; align-self: center; color: var(--yellow); font-size: 18px; }
 .weapon-chip b { font-size: 9px; }
 .weapon-chip em { color: var(--dim); font-size: 8px; font-style: normal; }
+
+.base-status,
+.boss-hud,
+.bonus-hud,
+.director-panel,
+.lane-control,
+.weapon-chip {
+  border-top-color: color-mix(in srgb, var(--mint) 42%, transparent);
+  background-image:
+    linear-gradient(135deg, color-mix(in srgb, var(--mint) 5%, transparent), transparent 42%),
+    repeating-linear-gradient(135deg, transparent 0 10px, rgba(255,255,255,.012) 10px 11px);
+}
+
+.base-status::before,
+.lane-control::before,
+.bonus-hud::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: -1px;
+  width: 52px;
+  height: 2px;
+  background: var(--mint);
+  box-shadow: 0 0 10px var(--mint);
+}
+
+.base-status { overflow: hidden; }
+
+.base-hp-track,
+.boss-track {
+  border: 1px solid rgba(255,255,255,.06);
+  box-shadow: inset 0 1px 5px rgba(0,0,0,.58);
+}
+
+.lane-button.active {
+  transform: translateY(-2px);
+  text-shadow: 0 0 10px var(--mint);
+}
+
+.lane-button.active kbd {
+  background: var(--mint);
+  color: #041017;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--mint) 64%, transparent);
+}
+
+.weapon-chip {
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 -2px color-mix(in srgb, var(--mint) 12%, transparent);
+}
+
+.weapon-chip::after {
+  content: "";
+  position: absolute;
+  inset: auto -18px -22px auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--mint);
+  filter: blur(19px);
+  opacity: .14;
+}
+
+.game-shell[data-theme="deadline"] .director-head {
+  background: linear-gradient(135deg, rgba(98, 168, 255, .12), transparent);
+}
+
+.game-shell[data-theme="zombie"] .director-head {
+  background: linear-gradient(135deg, rgba(79, 255, 210, .1), transparent);
+}
+
+.game-shell[data-theme="deadline"] .weapon-chip > span { color: #8bdcff; }
+.game-shell[data-theme="zombie"] .weapon-chip > span { filter: drop-shadow(0 0 7px rgba(255,216,79,.45)); }
 
 .toast {
   position: absolute;
@@ -903,7 +1021,6 @@ button { color: inherit; }
   .metric span { font-size: 7px; }
   .metric b { font-size: 15px; }
   .hud-actions { grid-column: 2; }
-  .hud-actions .icon-button:first-child { display: none; }
   .icon-button { min-width: 52px; padding-inline: 6px; }
   .boss-hud { top: 98px; width: 72vw; }
   .bonus-hud { top: 103px; left: 8px; width: 158px; padding: 7px; gap: 3px; }

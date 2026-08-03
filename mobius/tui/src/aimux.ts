@@ -6,9 +6,11 @@
  * currently authenticated Mobius server.  Nothing is started before login.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { promises as fs, existsSync } from 'node:fs'
+import { promises as fs, existsSync, createWriteStream } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { Readable } from 'node:stream'
+import extract from 'extract-zip'
 import { mobiusHome } from './config.js'
 
 export type AimuxState = 'starting' | 'connected' | 'failed' | 'stopped' | 'disabled'
@@ -21,6 +23,11 @@ export interface AimuxStatus {
   attempt?: number
 }
 export interface InstallProgress { phase: 'python' | 'venv' | 'install' | 'ready'; detail?: string }
+
+/** aimux 的调用方式：venv 直接执行，或用内置 python 跑 `-m aimux`（Plan B 兜底）。 */
+export type AimuxLauncher =
+  | { kind: 'exe'; path: string }
+  | { kind: 'module'; python: string }
 
 const AIMUX_PACKAGE = 'aimux'
 const WIN = process.platform === 'win32'
@@ -76,26 +83,151 @@ async function pythonForAimux(onProgress?: (p: InstallProgress) => void): Promis
   return findPython() ?? installPython(onProgress)
 }
 
-export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string }> {
-  if (existsSync(aimuxExe()) && existsSync(venvPython())) { onProgress?.({ phase: 'ready' }); return { ok: true } }
+// ── Plan B: 内置 python+aimux 运行时（本地 venv/pip 失败时的离线兜底）─────────
+// 一个 zip 内含完整的 python-build-standalone（自带 ensurepip+pip）+ 预装 aimux；
+// 解压到 ~/.mobius/python-bundle/ 后用 `<python> -m aimux` 运行，彻底绕开宿主机
+// 系统 python（如被精简掉 ensurepip 的容器镜像）。aimux 全部依赖为纯 Python，
+// 故三平台可共用同一套打包产物，分别按 arch 发布到 CDN。
+const BUNDLE_VER = '1'
+const bundleDir = () => path.join(mobiusHome(), 'python-bundle')
+const bundlePython = () => WIN
+  ? path.join(bundleDir(), 'python', 'python.exe')
+  : path.join(bundleDir(), 'python', 'bin', 'python3')
+
+/** 当前平台对应的内置运行时包名；mac-arm64 走 mac-x64（Rosetta 2）。 */
+export function bundleArch(): string | null {
+  const { platform, arch } = process
+  if (platform === 'linux' && arch === 'x64') return 'linux-x64'
+  if (platform === 'win32' && arch === 'x64') return 'win-x64'
+  if (platform === 'darwin' && (arch === 'x64' || arch === 'arm64')) return 'mac-x64'
+  return null
+}
+
+/** CDN 基址可用 MOBIUS_TUI_PYTHON_BUNDLE_URL 覆盖；文件名固定为 mobius-python-<arch>-v<N>.zip。 */
+export const bundleBaseUrl = () => (process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL || 'https://serve.nutshellai.cn/publish/auto/mobius-tui').replace(/\/$/, '')
+export const bundleUrl = (arch: string) => `${bundleBaseUrl()}/mobius-python-${arch}-v${BUNDLE_VER}.zip`
+
+function bundleReady(): boolean {
+  return existsSync(bundlePython()) && spawnSync(bundlePython(), ['-c', 'import aimux'], { stdio: 'ignore', windowsHide: true }).status === 0
+}
+
+async function downloadBundle(arch: string, onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string; zipPath?: string }> {
+  const url = bundleUrl(arch)
+  const zipPath = path.join(mobiusHome(), `python-bundle-v${BUNDLE_VER}.zip.tmp`)
+  await fs.mkdir(path.dirname(zipPath), { recursive: true })   // 首次安装 ~/.mobius 可能尚未创建
+  let res: Response
+  try { res = await fetch(url) } catch (e: any) { return { ok: false, error: `下载失败: ${e?.message ?? e}` } }
+  if (!res.ok) return { ok: false, error: `下载失败: HTTP ${res.status} (${url})` }
+  const total = Number(res.headers.get('content-length') || 0)
+  const ws = createWriteStream(zipPath)
+  let got = 0, last = 0
+  try {
+    const stream = Readable.fromWeb(res.body as any)
+    for await (const chunk of stream) {
+      ws.write(chunk as Buffer)
+      got += (chunk as Buffer).length
+      if (total && got - last > total * 0.03) { last = got; onProgress?.({ phase: 'install', detail: `下载内置运行时 ${Math.round((got / total) * 100)}%` }) }
+    }
+    if (!total && got) onProgress?.({ phase: 'install', detail: `下载内置运行时 ${(got / 1048576).toFixed(0)}MB` })
+    await new Promise<void>((resolve, reject) => { ws.end(() => resolve()); ws.on('error', reject) })
+  } catch (e: any) {
+    try { ws.destroy() } catch {}
+    try { await fs.unlink(zipPath) } catch {}
+    return { ok: false, error: `下载失败: ${e?.message ?? e}` }
+  }
+  return { ok: true, zipPath }
+}
+
+async function extractBundle(zipPath: string): Promise<{ ok: boolean; error?: string }> {
+  const staging = path.join(mobiusHome(), 'python-bundle.new')
+  const finalDir = bundleDir()
+  const stagingPython = WIN ? path.join(staging, 'python', 'python.exe') : path.join(staging, 'python', 'bin', 'python3')
+  await fs.rm(staging, { recursive: true, force: true }).catch(() => {})
+  await fs.mkdir(staging, { recursive: true })
+  try { await extract(zipPath, { dir: staging, defaultDirMode: 0o755, defaultFileMode: 0o644 }) }
+  catch (e: any) { await fs.rm(staging, { recursive: true, force: true }).catch(() => {}); return { ok: false, error: `解压失败: ${e?.message ?? e}` } }
+  if (!WIN) try { await fs.chmod(stagingPython, 0o755) } catch {}   // 保险：确保可执行位（extract-zip 通常已还原）
+  await fs.rm(finalDir, { recursive: true, force: true }).catch(() => {})
+  await fs.rename(staging, finalDir)
+  return { ok: true }
+}
+
+export async function ensureFromBundle(onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string; launcher?: AimuxLauncher }> {
+  if (bundleReady()) return { ok: true, launcher: { kind: 'module', python: bundlePython() } }
+  const arch = bundleArch()
+  if (!arch) return { ok: false, error: `当前平台无内置运行时 (platform=${process.platform} arch=${process.arch})` }
+  onProgress?.({ phase: 'install', detail: `下载内置运行时 (${arch})…` })
+  const dl = await downloadBundle(arch, onProgress)
+  if (!dl.ok || !dl.zipPath) return { ok: false, error: dl.error }
+  onProgress?.({ phase: 'install', detail: '解压内置运行时…' })
+  const ex = await extractBundle(dl.zipPath)
+  try { await fs.unlink(dl.zipPath) } catch {}
+  if (!ex.ok) return { ok: false, error: ex.error }
+  if (!bundleReady()) return { ok: false, error: '内置运行时解压后仍无法 import aimux' }
+  return { ok: true, launcher: { kind: 'module', python: bundlePython() } }
+}
+
+/** 按 launcher 把 aimux 参数变成实际 spawn。 */
+export function spawnLauncher(launcher: AimuxLauncher, args: string[]): ChildProcess {
+  return launcher.kind === 'exe'
+    ? spawn(launcher.path, args, { windowsHide: true })
+    : spawn(launcher.python, ['-m', 'aimux', ...args], { windowsHide: true })
+}
+
+/** test-only 导出: 暴露内部 downloadBundle 以便单测 mock fetch 验证流式下载+进度。 */
+export const downloadBundleForTest = downloadBundle
+
+export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string; launcher?: AimuxLauncher }> {
+  // Fast-path：venv 里已有 aimux 可执行 → 直接用。
+  if (existsSync(aimuxExe()) && existsSync(venvPython())) { onProgress?.({ phase: 'ready' }); return { ok: true, launcher: { kind: 'exe', path: aimuxExe() } } }
   const py = await pythonForAimux(onProgress)
-  if (!py) return { ok: false, error: '未找到 Python。请先安装 Python 3.10+（或安装 uv 后重试）。' }
-  onProgress?.({ phase: 'venv', detail: `创建 Python 虚拟环境（${py}）…` })
-  let r = await run(py, ['-m', 'venv', venvDir()])
-  if (r.code !== 0 && py === 'py') r = await run(py, ['-3', '-m', 'venv', venvDir()])
-  if (r.code !== 0) return { ok: false, error: `venv 创建失败: ${r.stderr || r.stdout}` }
-  onProgress?.({ phase: 'install', detail: `下载并安装 ${AIMUX_PACKAGE}…` })
-  r = await run(venvPython(), ['-m', 'pip', 'install', '--no-input', '--disable-pip-version-check', AIMUX_PACKAGE], line => {
-    if (/downloading|collecting|installing|using cached|%\s*\d|━|─/i.test(line)) onProgress?.({ phase: 'install', detail: line.slice(0, 120) })
-  })
-  if (r.code !== 0) return { ok: false, error: `pip install 失败: ${r.stderr || r.stdout}` }
-  if (!existsSync(aimuxExe())) return { ok: false, error: `aimux 可执行未生成: ${aimuxExe()}` }
-  onProgress?.({ phase: 'ready' }); return { ok: true }
+  let venvError = '未找到 Python。请先安装 Python 3.10+（或安装 uv 后重试）。'
+  if (py) {
+    onProgress?.({ phase: 'venv', detail: `创建 Python 虚拟环境（${py}）…` })
+    let r = await run(py, ['-m', 'venv', venvDir()])
+    if (r.code !== 0 && py === 'py') r = await run(py, ['-3', '-m', 'venv', venvDir()])
+    if (r.code === 0) {
+      onProgress?.({ phase: 'install', detail: `下载并安装 ${AIMUX_PACKAGE}…` })
+      r = await run(venvPython(), ['-m', 'pip', 'install', '--no-input', '--disable-pip-version-check', AIMUX_PACKAGE], line => {
+        if (/downloading|collecting|installing|using cached|%\s*\d|━|─/i.test(line)) onProgress?.({ phase: 'install', detail: line.slice(0, 120) })
+      })
+      if (r.code === 0 && existsSync(aimuxExe())) { onProgress?.({ phase: 'ready' }); return { ok: true, launcher: { kind: 'exe', path: aimuxExe() } } }
+      venvError = r.code === 0 ? `aimux 可执行未生成: ${aimuxExe()}` : `pip install 失败: ${r.stderr || r.stdout}`
+    } else {
+      venvError = `venv 创建失败: ${r.stderr || r.stdout}`
+    }
+  }
+  // ── Plan B 兜底：本地 python/venv 不可用 → 下载内置 python+aimux 运行时 ──
+  onProgress?.({ phase: 'install', detail: '本地 Python 不可用，改用内置运行时…' })
+  const bundle = await ensureFromBundle(onProgress)
+  if (bundle.ok && bundle.launcher) { onProgress?.({ phase: 'ready' }); return { ok: true, launcher: bundle.launcher } }
+  return { ok: false, error: `${venvError}；内置运行时也失败: ${bundle.error}` }
 }
 
 export function tuiAimuxIdentifier(): string {
   const host = os.hostname().toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32)
   return `tui-${host || 'pc'}`
+}
+
+/**
+ * Build the reverse-connect command in one place. The TUI can launch AIMUX
+ * through either a venv executable or bundled Python; both paths must request
+ * hidden Windows shells or every remote command flashes a console and steals
+ * keyboard focus from the TUI.
+ */
+export function reverseConnectArgs(
+  server: string,
+  identifier: string,
+  token: string,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  return [
+    'reverse', 'connect', `${server.replace(/\/$/, '')}/aimux_bridge`,
+    '--identifier', identifier,
+    '--token', token,
+    '--replace',
+    ...(platform === 'win32' ? ['--silent-shell'] : []),
+  ]
 }
 
 export async function probeAimuxBridgeConnection(
@@ -150,13 +282,15 @@ export class AimuxSupervisor {
     onStatus({ state: 'starting', phase: 'connecting', detail: '正在连接 Mobius AIMUX bridge…', identifier, attempt: this.reconnectAttempt })
     const child = this.opts.spawnProcess?.() ?? spawn(
       aimuxExe(),
-      ['reverse', 'connect', `${server.replace(/\/$/, '')}/aimux_bridge`, '--identifier', identifier, '--token', token, '--replace'],
+      reverseConnectArgs(server, identifier, token),
       { windowsHide: true },
     )
     this.child = child
     this.startHeartbeat()
+    let tail = ''   // 缓存 aimux 最近输出, 进程异常退出时带进状态行, 便于诊断(code=1 不再是黑盒)
     const classify = (buf: Buffer) => {
       const text = buf.toString('utf8')
+      tail = (tail + text).slice(-4000)
       if (!this.bridgeConnected && /connected|registered|event stream|heartbeat|sse/i.test(text)) {
         onStatus({ state: 'starting', phase: 'heartbeat', detail: 'AIMUX 已启动，等待 bridge 心跳确认…', identifier })
       } else if (/connection (refused|reset|closed|error)|failed to connect|unauthorized|forbidden|token.*invalid/i.test(text)) {
@@ -170,7 +304,10 @@ export class AimuxSupervisor {
       this.child = null
       this.stopHeartbeat()
       if (this.stopping) { onStatus({ state: 'stopped', phase: 'idle', detail: 'AIMUX 已停止', identifier }); return }
-      this.scheduleReconnect(`AIMUX 进程退出（code=${code}）`)
+      const reason = code !== 0 && tail.trim()
+        ? `AIMUX 进程退出（code=${code}）: ${tail.trim().split(/[\r\n]+/).filter(Boolean).slice(-3).join(' ⏎ ').slice(-200)}`
+        : `AIMUX 进程退出（code=${code}）`
+      this.scheduleReconnect(reason)
     })
   }
 
@@ -281,8 +418,13 @@ export async function startAimuxConnection(opts: { server: string; token: string
       phase: p.phase === 'ready' ? 'connecting' : p.phase,
       detail: p.detail || (p.phase === 'ready' ? 'AIMUX 已就绪，准备连接…' : p.phase),
     }))
-    if (!ready.ok) { onStatus({ state: 'failed', phase: 'idle', detail: ready.error }); return }
-    supervisor = new AimuxSupervisor({ server: opts.server, token: opts.token, identifier: tuiAimuxIdentifier(), onStatus })
+    if (!ready.ok || !ready.launcher) { onStatus({ state: 'failed', phase: 'idle', detail: ready.error }); return }
+    const identifier = tuiAimuxIdentifier()
+    const launcher = ready.launcher
+    supervisor = new AimuxSupervisor({
+      server: opts.server, token: opts.token, identifier, onStatus,
+      spawnProcess: () => spawnLauncher(launcher, reverseConnectArgs(opts.server, identifier, opts.token)),
+    })
     supervisor.start()
   })().finally(() => { installing = null })
   await installing
