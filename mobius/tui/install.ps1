@@ -72,6 +72,8 @@ if (Test-Path $oldNodeModules) {
 }
 Remove-Item $oldPackageJson -Force -ErrorAction SilentlyContinue
 $npmLog = Join-Path $MHOME "npm-install.log"
+$npmStdout = Join-Path $MHOME "npm-install.stdout.log"
+$npmStderr = Join-Path $MHOME "npm-install.stderr.log"
 $previousPath = $env:Path
 # npm lifecycle scripts use cmd.exe and resolve `node` from PATH.
 $env:Path = "$NODE_DIR;$env:Path"
@@ -90,16 +92,51 @@ try {
     $configExitCode = $LASTEXITCODE
     if ($configExitCode -ne 0) { throw "配置 esbuild 安装脚本授权失败 (退出码 $configExitCode)" }
 
+    function Invoke-NpmInstallAttempt([string]$registry, [int]$timeoutSeconds) {
+        Remove-Item $npmStdout, $npmStderr -Force -ErrorAction SilentlyContinue
+        # Start-Process is used instead of the call operator so a hung npm
+        # process can be terminated deterministically on Windows PowerShell 5.1.
+        $args = '"{0}" install "@mobius-os/mobius@latest" --registry "{1}" --loglevel warn' -f $npmCli, $registry
+        $proc = Start-Process -FilePath $nodeExe -ArgumentList $args -WorkingDirectory $GLOBAL_DIR `
+            -RedirectStandardOutput $npmStdout -RedirectStandardError $npmStderr -PassThru -WindowStyle Hidden
+        $completed = $proc.WaitForExit($timeoutSeconds * 1000)
+        if (-not $completed) {
+            Warn "npm 官方源安装超过 $timeoutSeconds 秒，正在终止并切换镜像源..."
+            & $env:ComSpec /d /s /c "taskkill /PID $($proc.Id) /T /F" 2>&1 | Out-Null
+            Start-Sleep -Milliseconds 300
+            return @{ TimedOut = $true; ExitCode = $null }
+        }
+        return @{ TimedOut = $false; ExitCode = $proc.ExitCode }
+    }
+
+    function Save-NpmAttemptLog([string]$label) {
+        Add-Content -Path $npmLog -Value "`n===== $label ====="
+        if (Test-Path $npmStdout) { Get-Content $npmStdout | Add-Content -Path $npmLog }
+        if (Test-Path $npmStderr) { Get-Content $npmStderr | Add-Content -Path $npmLog }
+    }
+
     Remove-Item $npmLog -Force -ErrorAction SilentlyContinue
-    & $nodeExe $npmCli install "@mobius-os/mobius@latest" `
-        --registry "https://registry.npmjs.org/" `
-        --loglevel "warn" 2>&1 | Tee-Object -FilePath $npmLog
-    $npmExitCode = $LASTEXITCODE
-    if ($npmExitCode -ne 0) {
-        Err "npm 安装失败 (退出码 $npmExitCode)"
+    $official = Invoke-NpmInstallAttempt "https://registry.npmjs.org/" 10
+    Save-NpmAttemptLog "official registry.npmjs.org"
+    $npmSucceeded = (-not $official.TimedOut -and $official.ExitCode -eq 0)
+    if (-not $npmSucceeded) {
+        if ($official.TimedOut) {
+            Warn "官方源超时，切换 npmmirror 镜像源重试..."
+        } else {
+            Warn "官方源安装失败 (退出码 $($official.ExitCode))，切换 npmmirror 镜像源重试..."
+        }
+        # A timed-out npm process can leave a partial tree behind; remove only
+        # the package tree and keep the user-level install directory intact.
+        if (Test-Path $oldNodeModules) { Remove-Item $oldNodeModules -Recurse -Force -ErrorAction SilentlyContinue }
+        $mirror = Invoke-NpmInstallAttempt "https://registry.npmmirror.com/" 120
+        Save-NpmAttemptLog "mirror registry.npmmirror.com"
+        $npmSucceeded = (-not $mirror.TimedOut -and $mirror.ExitCode -eq 0)
+    }
+    if (-not $npmSucceeded) {
+        Err "npm 安装失败"
         if (Test-Path $npmLog) {
             Write-Host "--- npm 最近日志: $npmLog ---" -ForegroundColor Yellow
-            Get-Content $npmLog -Tail 100
+            Get-Content $npmLog -Tail 120
             Write-Host "--- npm 日志结束 ---" -ForegroundColor Yellow
         }
         Fail "npm 安装失败，完整日志: $npmLog"
