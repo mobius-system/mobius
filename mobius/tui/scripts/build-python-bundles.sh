@@ -13,7 +13,9 @@ set -euo pipefail
 
 TAG=20241002
 PYVER=3.12.7
-BUNDLE_VER=1
+BUNDLE_VER=2
+AIMUX_VERSION=0.1.21
+PYPI_INDEX=https://pypi.org/simple
 WORK="${WORK:-/home/tianyi/python-bundles}"
 DIST="${DIST:-$WORK/dist}"
 mkdir -p "$WORK" "$DIST"
@@ -49,7 +51,13 @@ dl() { # dl <url> <out>
     curl -fL "$1" -o "$2"
   fi
 }
-pip() { command pip "$@"; }
+uv_install_python() {
+  if command -v uv >/dev/null 2>&1; then
+    uv pip install --python "$LINUX_PY" --index-url "$PYPI_INDEX" "$@"
+  else
+    "$LINUX_PY" -m pip install "$@"
+  fi
+}
 
 echo "== 1) 下载并解压 python-build-standalone =="
 for arch in linux-x64 win-x64 mac-x64; do
@@ -64,8 +72,8 @@ done
 
 LINUX_PY="$WORK/linux-x64/python/bin/python3"
 echo "== 2) linux-x64: 原生 pip install aimux =="
-USE_PROXY=1 $LINUX_PY -m pip install --quiet aimux colorama || \
-  $LINUX_PY -m pip install aimux colorama
+USE_PROXY=1 uv_install_python --quiet "aimux==$AIMUX_VERSION" colorama || \
+  uv_install_python "aimux==$AIMUX_VERSION" colorama
 echo "  验证: $($LINUX_PY -c 'import aimux, click, loguru, typer, rich; print("linux import ok", aimux.__name__)')"
 
 echo "== 3) win-x64 / mac-x64: 跨装纯 python aimux 到各自 site-packages =="
@@ -74,11 +82,11 @@ install_target() { # arch site_packages_dir [extra...]
   local arch=$1 sp=$2; shift 2
   echo "  [$arch] pip install --target $sp aimux $*"
   rm -rf "$sp"/* 2>/dev/null || true   # 重复构建时清旧
-  USE_PROXY=1 $LINUX_PY -m pip install --quiet --target "$sp" aimux "$@" || \
-    $LINUX_PY -m pip install --target "$sp" aimux "$@"
+  USE_PROXY=1 uv pip install --quiet --index-url "$PYPI_INDEX" --target "$sp" "aimux==$AIMUX_VERSION" "$@" || \
+    uv pip install --index-url "$PYPI_INDEX" --target "$sp" "aimux==$AIMUX_VERSION" "$@"
   echo "  [$arch] site-packages:"; ls "$sp" | head -20
 }
-install_target win-x64  "$WORK/win-x64/python/Lib/site-packages"            colorama
+install_target win-x64  "$WORK/win-x64/python/Lib/site-packages"            colorama win32-setctime
 install_target mac-x64  "$WORK/mac-x64/python/lib/python3.12/site-packages"
 
 echo "== 4) 瘦身 (删运行时用不到的 test/idle/tk/ensurepip wheel/缓存) 后打 zip =="

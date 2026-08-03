@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { render } from 'ink-testing-library'
 import { AimuxStatusLine } from '../src/components/AimuxStatus.js'
-import { AimuxSupervisor, probeAimuxBridgeConnection, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, downloadBundleForTest, reverseConnectArgs } from '../src/aimux.js'
+import { AimuxSupervisor, probeAimuxBridgeConnection, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, downloadBundleForTest, reverseConnectArgs, aimuxLogPath } from '../src/aimux.js'
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 let pass = 0, fail = 0
@@ -78,12 +78,42 @@ async function testBundleArchAndUrl() {
   const arch = bundleArch()
   ok(arch === 'linux-x64' || arch === 'win-x64' || arch === 'mac-x64', `bundleArch returns a supported arch on this host (${arch})`)
   const before = bundleUrl('linux-x64')
-  ok(before.includes('mobius-python-linux-x64-v') && before.endsWith('.zip'), 'bundleUrl follows the fixed filename pattern')
+  ok(before.includes('mobius-python-linux-x64-v2') && before.endsWith('.zip'), 'bundleUrl follows the fixed filename pattern')
   const saved = process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL
   process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL = 'https://example.test/cdn/'
   try {
-    ok(bundleUrl('win-x64') === 'https://example.test/cdn/mobius-python-win-x64-v1.zip', 'MOBIUS_TUI_PYTHON_BUNDLE_URL overrides the CDN base and trims trailing slash')
+    ok(bundleUrl('win-x64') === 'https://example.test/cdn/mobius-python-win-x64-v2.zip', 'MOBIUS_TUI_PYTHON_BUNDLE_URL overrides the CDN base and trims trailing slash')
   } finally { if (saved === undefined) delete process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL; else process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL = saved }
+}
+
+async function testPersistentProcessLog() {
+  console.log('\n[AIMUX 9] persistent process diagnostics')
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mobius-tui-aimux-log-'))
+  const savedHome = process.env.MOBIUS_TUI_HOME
+  process.env.MOBIUS_TUI_HOME = home
+  const statuses: string[] = []
+  let childRef: any
+  const supervisor = new AimuxSupervisor({
+    server: 'https://mobius.test', token: 'secret-token', identifier: 'tui-log',
+    retryBaseMs: 100_000,
+    probeConnection: async () => true,
+    spawnProcess: () => {
+      childRef = fakeChild(() => {})
+      return childRef
+    },
+    onStatus: status => statuses.push(status.detail || ''),
+  })
+  supervisor.start()
+  childRef.stderr.emit('data', Buffer.from('Traceback\n  File "site-packages/loguru/_ctime_functions.py", line 7\nImportError: win32_setctime missing\n'))
+  childRef.emit('exit', 1)
+  await delay(40)
+  const log = await fs.readFile(aimuxLogPath(), 'utf8')
+  ok(log.includes('win32_setctime missing') && log.includes('AIMUX exit code=1'), 'AIMUX stdout/stderr and exit code are persisted')
+  ok(log.includes('_ctime_functions.py') && !log.includes('secret-token'), 'diagnostic log keeps traceback context without JWT')
+  ok(statuses.some(s => s.includes('日志:') && s.includes('aimux.log')), 'failure status points to the persistent log path')
+  await supervisor.stop()
+  if (savedHome === undefined) delete process.env.MOBIUS_TUI_HOME; else process.env.MOBIUS_TUI_HOME = savedHome
+  await fs.rm(home, { recursive: true, force: true })
 }
 
 function captureStdout(child: ReturnType<typeof spawn>): Promise<string> {
@@ -162,6 +192,7 @@ async function main() {
   testReverseConnectArgs()
   await testEnsureFromBundleReady()
   await testDownloadBundleStream()
+  await testPersistentProcessLog()
   console.log(`\n==== AIMUX RESULT: ${pass} passed, ${fail} failed ====\n`)
   process.exit(fail === 0 ? 0 : 1)
 }
