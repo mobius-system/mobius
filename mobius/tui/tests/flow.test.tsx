@@ -44,8 +44,8 @@ function mockFetch(url: string, init?: RequestInit): Response {
   const method = init?.method ?? 'GET'
   // auth
   if (url.endsWith('/api/auth/config')) return json({ password_required: false })
-  if (url.endsWith('/api/auth/me')) return json({ id: 'fuqingxu', display_name: '付清旭', role: 'admin', work_dir: '/tmp' })
-  if (url.endsWith('/api/auth/login')) return json({ token: 'mock-jwt-token', user: { id: 'fuqingxu', display_name: '付清旭', role: 'admin' } })
+  if (url.endsWith('/api/auth/me')) return json({ id: 'tester', display_name: 'Test User', role: 'admin', work_dir: '/tmp' })
+  if (url.endsWith('/api/auth/login')) return json({ token: 'mock-jwt-token', user: { id: 'tester', display_name: 'Test User', role: 'admin' } })
   // sessions (must be checked before issues/projects — the session URL contains /issues too)
   if (url.includes('/sessions') && url.includes('/issues') && method === 'POST') return json({ session_id: SID })         // create session
   if (url.includes('/sessions') && url.includes('/issues') && method === 'GET') {                                            // list sessions (resume)
@@ -87,8 +87,8 @@ async function waitFor(lastFrame: () => string | undefined, needle: string, time
 async function main() {
   // Pre-seed login so App auto-logs in (login form itself is covered in ui.test).
   fs.writeFileSync(path.join(TMP_HOME, 'login.json'), JSON.stringify({
-    server: 'http://mock.local', username: 'fuqingxu', token: 'mock-jwt-token',
-    user: { id: 'fuqingxu', display_name: '付清旭', role: 'admin' },
+    server: 'http://mock.local', username: 'tester', token: 'mock-jwt-token',
+    user: { id: 'tester', display_name: 'Test User', role: 'admin' },
   }))
   const realFetch = globalThis.fetch
   globalThis.fetch = ((u: any, init?: any) => mockFetch(String(u), init)) as unknown as typeof fetch

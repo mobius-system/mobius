@@ -5,15 +5,16 @@
  *   createSession → sendMessage → open SSE → assert assistant entries stream in.
  *
  * Run:  npm run test:integration
- * Target: https://cloud-17.agent-matrix.com (user fuqingxu, passwordless).
+ * Target: a local Mobius backend by default; set MOBIUS_TUI_SERVER /
+ * MOBIUS_TUI_USER to point at a specific server.
  */
 import { login, getMe, MobiusClient, ApiError } from '../src/api.js'
 import { SseConnection } from '../src/sse.js'
 import { assistantEntryText, isHiddenNoise } from '../src/lib/entry-view.js'
 import type { AnyEntry } from '../src/types.js'
 
-const SERVER = process.env.MOBIUS_TUI_SERVER || 'https://cloud-17.agent-matrix.com'
-const USERNAME = process.env.MOBIUS_TUI_USER || 'fuqingxu'
+const SERVER = process.env.MOBIUS_TUI_SERVER || 'http://127.0.0.1:45616'
+const USERNAME = process.env.MOBIUS_TUI_USER || 'admin'
 const WAIT_MS = Number(process.env.MOBIUS_TUI_WAIT_MS || 90000)
 
 let pass = 0, fail = 0

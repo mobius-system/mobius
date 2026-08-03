@@ -169,6 +169,7 @@ mobius
 
 If the PATH export is not already in the shell profile, add it to `~/.bashrc`
 once. Using the explicit user prefix avoids the `EACCES ... /usr/local/lib/node_modules/mobius`
-error produced by a root-owned npm global prefix. The built package promotes
-`tsx` to a runtime dependency, so a production/global install can execute the
-TypeScript entry point without retaining the source checkout's devDependencies.
+error produced by a root-owned npm global prefix. The source and built package
+both declare `tsx` as a runtime dependency, so production/global installs can
+execute the TypeScript entry point without retaining the source checkout's
+devDependencies.

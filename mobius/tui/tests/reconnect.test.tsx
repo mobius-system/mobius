@@ -62,8 +62,8 @@ function mockFetch(url: string, init?: RequestInit): Response {
   }
   const method = init?.method ?? 'GET'
   if (url.endsWith('/api/auth/config')) return json({ password_required: false })
-  if (url.endsWith('/api/auth/me')) return json({ id: 'fuqingxu', display_name: '付清旭', role: 'admin', work_dir: '/tmp' })
-  if (url.endsWith('/api/auth/login')) return json({ token: 'mock-jwt-token', user: { id: 'fuqingxu', display_name: '付清旭', role: 'admin' } })
+  if (url.endsWith('/api/auth/me')) return json({ id: 'tester', display_name: 'Test User', role: 'admin', work_dir: '/tmp' })
+  if (url.endsWith('/api/auth/login')) return json({ token: 'mock-jwt-token', user: { id: 'tester', display_name: 'Test User', role: 'admin' } })
   // aimux bridge probe — satisfy it so ensureSession doesn't loop for 8s.
   if (url.includes('/aimux_bridge/api/remotes/') && url.includes('/connection')) {
     const m = url.match(/remotes\/([^/]+)\/connection/)
@@ -108,8 +108,8 @@ function countOccur(s: string, needle: string): number {
 
 async function main() {
   fs.writeFileSync(path.join(TMP_HOME, 'login.json'), JSON.stringify({
-    server: 'http://mock.local', username: 'fuqingxu', token: 'mock-jwt-token',
-    user: { id: 'fuqingxu', display_name: '付清旭', role: 'admin' },
+    server: 'http://mock.local', username: 'tester', token: 'mock-jwt-token',
+    user: { id: 'tester', display_name: 'Test User', role: 'admin' },
   }))
   const realFetch = globalThis.fetch
   globalThis.fetch = ((u: any, init?: any) => mockFetch(String(u), init)) as unknown as typeof fetch

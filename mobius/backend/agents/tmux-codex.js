@@ -105,6 +105,30 @@ const _realTimeInfoCache = new Map() // sessionId → { ts: number, value: strin
 const CODEX_PENDING_HEADER_RE = /Queued follow-up|Messages to be submitted/
 const CODEX_PENDING_ITEM_RE = /^\s*↳\s+(.*)$/
 
+// Codex renders a user-triggered interruption with the same black-square prefix used by
+// ErrorEvent notices. It is a normal control action, not an agent failure. Keep the match
+// anchored to the notice prefix so ordinary conversation text mentioning the phrase is not
+// suppressed.
+const CODEX_USER_INTERRUPT_NOTICE_RE = /^■\s*Conversation interrupted\b/i
+
+function findCodexRecentErrorInPane(paneText) {
+  const ANSI_RE = /\x1b\[[0-9;]*m/g
+  const lines = String(paneText || '').split('\n')
+  // Reverse scan so the newest Codex notice wins. If that newest notice is the normal
+  // user-interrupt banner, stop immediately instead of falling through to an older stale error.
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]
+    const cleaned = line.replace(ANSI_RE, '').trimStart()
+    if (!cleaned.startsWith('■') && !cleaned.startsWith('⚠')) continue
+    if (CODEX_USER_INTERRUPT_NOTICE_RE.test(cleaned)) return null
+    return {
+      message: cleaned.trim(),
+      rawLine: line,
+    }
+  }
+  return null
+}
+
 // /stop 强杀托底用: 抓 pane 最新文本 (绕过 5s 缓存, 反映 C-c 后真实状态), 判断 codex TUI
 // 是否仍在跑 turn. busy 锚点 = CODEX_STATUS_LINE_RE ("(<elapsed> • esc to interrupt)" 等).
 // 命中 → C-c×3 未生效, 仍在工作; 不命中/失败 → 已回 idle 态, C-c 生效.
@@ -726,6 +750,8 @@ class TmuxCodexBackend extends AgentBackend {
   //      (hexdump 确认行首 e2 9a a0 后无任何 \x1b), 旧"必须命中红色 ANSI"也漏;
   //   ③ 依赖具体红色码本身就脆弱 (colored crate 视 terminfo 选 31/38;5;1/38;2;255, 跨版本/终端不一).
   //   ■/⚠ 这两个字形 codex 只用于通知渲染, 行首出现即通知, 假阳性极低 (agent 正文不会以裸 ■/⚠ 起行).
+  // 特例: "■ Conversation interrupted ..." 是用户主动中断的正常提示, 不是错误;
+  //       且它是最新通知时直接返回 null, 避免继续向前捞出已过期错误.
   // 坑: Codex TUI 用 alt screen, 进程退出时内容会被销毁; 因此仅在 isAlive 时扫,
   //     历史 session 拿不到. 调用方需要时应另开后台 capture 循环落盘.
   getRecentError(sessionId) {
@@ -733,21 +759,8 @@ class TmuxCodexBackend extends AgentBackend {
     // -p stdout; -e 保留 ANSI; -S -N 只抓尾部 N 行 (避免全量 scrollback 扫描); -J 拼接折行避免错误被切行.
     const cap = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-e', '-S', `-${CODEX_ERROR_SCAN_TAIL_LINES}`, '-J'])
     if (cap.status !== 0) return null
-    const ANSI_RE = /\x1b\[[0-9;]*m/g
-    const lines = String(cap.stdout || '').split('\n')
-    // 反向找最后一条命中 (最近的通知优先).
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i]
-      const cleaned = line.replace(ANSI_RE, '').trimStart()
-      if (cleaned.startsWith('■') || cleaned.startsWith('⚠')) {
-        return {
-          message: cleaned.trim(),
-          rawLine: line,
-          capturedAt: new Date().toISOString(),
-        }
-      }
-    }
-    return null
+    const found = findCodexRecentErrorInPane(cap.stdout)
+    return found ? { ...found, capturedAt: new Date().toISOString() } : null
   }
 
   listSessions() {
@@ -1486,4 +1499,11 @@ class TmuxCodexBackend extends AgentBackend {
   }
 }
 
-module.exports = { TmuxCodexBackend, HUB, codexRolloutPathOf, runningFlagPathOf, failedFlagPathOf }
+module.exports = {
+  TmuxCodexBackend,
+  HUB,
+  codexRolloutPathOf,
+  runningFlagPathOf,
+  failedFlagPathOf,
+  findCodexRecentErrorInPane,
+}

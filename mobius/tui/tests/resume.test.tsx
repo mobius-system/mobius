@@ -27,7 +27,7 @@ function json(body: unknown, status = 200) {
 }
 function mockFetch(url: string, init?: RequestInit): Response {
   const method = init?.method ?? 'GET'
-  if (url.endsWith('/api/auth/me')) return json({ id: 'fuqingxu', display_name: 'x', role: 'admin' })
+  if (url.endsWith('/api/auth/me')) return json({ id: 'tester', display_name: 'x', role: 'admin' })
   if (url.includes('/api/projects') && method === 'GET' && !url.includes('issues')) return json([{ id: PID, name: '绑定项目' }])
   if (url.includes('/issues') && method === 'GET') return json([{ id: IID, project_id: PID, title: '已配置任务' }])
   if (url.includes('/sessions/model-options')) return json([{ key: 'codex', label: 'GPT', title: 'GPT', sub: '', backend: 'x' }])
@@ -37,7 +37,7 @@ function mockFetch(url: string, init?: RequestInit): Response {
 async function main() {
   // Pre-seed: token + cwd→project binding + issue with all prefs done.
   fs.writeFileSync(path.join(TMP_HOME, 'login.json'), JSON.stringify({
-    server: 'http://mock.local', username: 'fuqingxu', token: 'tok', user: { id: 'fuqingxu', display_name: 'x', role: 'admin' },
+    server: 'http://mock.local', username: 'tester', token: 'tok', user: { id: 'tester', display_name: 'x', role: 'admin' },
   }))
   fs.writeFileSync(path.join(TMP_HOME, 'dir2project.json'), JSON.stringify({ [CWD]: PID }))
   fs.writeFileSync(path.join(TMP_HOME, 'dir2project_preference.json'), JSON.stringify({
