@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 <#
 .SYNOPSIS
   Mobius TUI Windows 便携安装 (自带 portable Node, 无需 admin, 不依赖 npm.ps1)
@@ -9,7 +9,7 @@
   npm 安装和 mobius 启动均直接使用 node.exe/tsx；安装完成后同时注册两个
   Explorer 右键入口：“在 Mobius 中打开”（文件夹本身 + 文件夹空白处）。
 .EXAMPLE
-  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v12.ps1 | iex
+  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v13.ps1 | iex
 #>
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
@@ -225,7 +225,7 @@ Write-Host "右键文件夹或文件夹空白处，可选择: 在 Mobius 中打�
 try {
     Invoke-MobiusInstall
 } catch {
-    $errorLog = Join-Path $env:TEMP "mobius-install-v12-error.log"
+    $errorLog = Join-Path $env:TEMP "mobius-install-v13-error.log"
     $errorText = $_ | Format-List * -Force | Out-String
     $errorText | Set-Content -Path $errorLog -Encoding UTF8
     Write-Host ""

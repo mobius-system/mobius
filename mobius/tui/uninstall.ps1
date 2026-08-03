@@ -118,6 +118,7 @@ function Invoke-MobiusUninstall {
     Remove-Item (Join-Path $env:TEMP 'mobius-install-v10-error.log') -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $env:TEMP 'mobius-install-v11-error.log') -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $env:TEMP 'mobius-install-v12-error.log') -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $env:TEMP 'mobius-install-v13-error.log') -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $env:TEMP 'mobius-uninstall-v11-error.log') -Force -ErrorAction SilentlyContinue
     Ok '临时安装文件已清理。'
 
