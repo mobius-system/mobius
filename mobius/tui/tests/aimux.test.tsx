@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { render } from 'ink-testing-library'
 import { AimuxStatusLine } from '../src/components/AimuxStatus.js'
-import { AimuxSupervisor, probeAimuxBridgeConnection, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, downloadBundleForTest, reverseConnectArgs, aimuxLogPath } from '../src/aimux.js'
+import { AimuxSupervisor, probeAimuxBridgeConnection, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, downloadBundleForTest, reverseConnectArgs, aimuxLogPath, bundleHealthCheckCode } from '../src/aimux.js'
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 let pass = 0, fail = 0
@@ -141,6 +141,15 @@ function testReverseConnectArgs() {
   ok(win[2] === 'https://mobius.test/aimux_bridge', 'reverse connection normalizes the bridge URL')
 }
 
+function testBundleHealthCheck() {
+  console.log('\n[AIMUX 6b] bundle dependency health check')
+  const win = bundleHealthCheckCode('win32')
+  const linux = bundleHealthCheckCode('linux')
+  ok(win.includes('aimux.bridge_client') && win.includes('win32_setctime'), 'Windows bundle probe imports the real bridge path and its platform dependency')
+  ok(win.includes("aimux.__version__ == '0.1.21'"), 'bundle probe rejects stale AIMUX versions')
+  ok(!linux.includes('win32_setctime'), 'non-Windows bundle probe does not require the Windows-only package')
+}
+
 async function testEnsureFromBundleReady() {
   console.log('\n[AIMUX 7] Plan B ensureFromBundle fast-path (bundle already extracted)')
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mobius-tui-bundle-'))
@@ -190,6 +199,7 @@ async function main() {
   await testBundleArchAndUrl()
   await testSpawnLauncher()
   testReverseConnectArgs()
+  testBundleHealthCheck()
   await testEnsureFromBundleReady()
   await testDownloadBundleStream()
   await testPersistentProcessLog()
