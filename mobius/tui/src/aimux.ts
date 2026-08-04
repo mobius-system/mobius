@@ -107,6 +107,13 @@ function appendAimuxLog(write: { queue: Promise<void> }, text: string): void {
     .catch(() => {})
 }
 
+// 安装阶段(download/extract/verify)独享的日志队列 —— 与 supervisor 的分离，避免互相阻塞。
+// 关键: 原先安装阶段一行都不写 aimux.log，"卡在解压内置运行时"时日志完全空白 = 黑盒。
+// 现在每个子步骤(连接/首字节/字节增量/解压文件数/import 校验/退出码/耗时)都落盘带时间戳，
+// 下次卡住直接 tail ~/.mobius/aimux.log 就知道卡在第几秒、哪个环节、下了多少 MB。
+const installLogQueue = { queue: Promise.resolve() as Promise<void> }
+const logInstall = (text: string): void => appendAimuxLog(installLogQueue, text)
+
 /** 当前平台对应的内置运行时包名；mac-arm64 走 mac-x64（Rosetta 2）。 */
 export function bundleArch(): string | null {
   const { platform, arch } = process
@@ -139,55 +146,116 @@ async function downloadBundle(arch: string, onProgress?: (p: InstallProgress) =>
   const url = bundleUrl(arch)
   const zipPath = path.join(mobiusHome(), `python-bundle-v${BUNDLE_VER}.zip.tmp`)
   await fs.mkdir(path.dirname(zipPath), { recursive: true })   // 首次安装 ~/.mobius 可能尚未创建
+  const startedAt = Date.now()
+  logInstall(`\n===== bundle download start ${new Date().toISOString()} arch=${arch} =====\n  url=${url}\n`)
+  // fetch 无内置超时：受限网络（训练 pod 出网被掐 / 被透明代理劫持成慢速 chunked）下会永久挂起 → spinner 永转。
+  // 用一个可重置的 AbortController：连接/首字节给 CONNECT_MS，之后每收到一块重置为 STALL_MS，停滞即 abort 并给出可读原因。
+  const CONNECT_MS = 45_000, STALL_MS = 30_000
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let stallReason = ''
+  const arm = (ms: number, reason: string) => { if (timer) clearTimeout(timer); stallReason = reason; timer = setTimeout(() => controller.abort(), ms) }
+  arm(CONNECT_MS, `连接/首字节超时（${CONNECT_MS / 1000}s 未响应，可能出网被掐）`)
   let res: Response
-  try { res = await fetch(url) } catch (e: any) { return { ok: false, error: `下载失败: ${e?.message ?? e}` } }
-  if (!res.ok) return { ok: false, error: `下载失败: HTTP ${res.status} (${url})` }
+  try { res = await fetch(url, { signal: controller.signal }) }
+  catch (e: any) {
+    if (timer) clearTimeout(timer)
+    const msg = e?.name === 'AbortError' ? `下载失败: ${stallReason}` : `下载失败: ${e?.message ?? e}`
+    logInstall(`  fetch error: ${e?.name} ${e?.message ?? e} elapsed=${Date.now() - startedAt}ms\n`)
+    return { ok: false, error: msg }
+  }
+  if (!res.ok) { if (timer) clearTimeout(timer); logInstall(`  HTTP ${res.status} ${res.statusText}\n`); return { ok: false, error: `下载失败: HTTP ${res.status} (${url})` } }
   const total = Number(res.headers.get('content-length') || 0)
+  logInstall(`  200 OK content-length=${total || 'unknown (chunked)'}\n`)
   const ws = createWriteStream(zipPath)
   let got = 0, last = 0
   try {
     const stream = Readable.fromWeb(res.body as any)
     for await (const chunk of stream) {
+      arm(STALL_MS, `下载停滞超时（已下载 ${(got / 1048576).toFixed(0)}MB，${STALL_MS / 1000}s 无新增数据）`)
       ws.write(chunk as Buffer)
       got += (chunk as Buffer).length
-      if (total && got - last > total * 0.03) { last = got; onProgress?.({ phase: 'install', detail: `下载内置运行时 ${Math.round((got / total) * 100)}%` }) }
+      // 始终反馈进度：有 content-length 用百分比，否则按 3MB 增量报 MB（chunked 传输无 total 时也能动）。
+      if (total) { if (got - last > total * 0.03) { last = got; onProgress?.({ phase: 'install', detail: `下载内置运行时 ${Math.round((got / total) * 100)}%` }) } }
+      else if (got - last > 3 * 1048576) { last = got; onProgress?.({ phase: 'install', detail: `下载内置运行时 ${(got / 1048576).toFixed(0)}MB` }) }
     }
-    if (!total && got) onProgress?.({ phase: 'install', detail: `下载内置运行时 ${(got / 1048576).toFixed(0)}MB` })
+    onProgress?.({ phase: 'install', detail: total ? `下载内置运行时 100%` : `下载内置运行时 ${(got / 1048576).toFixed(0)}MB` })
     await new Promise<void>((resolve, reject) => { ws.end(() => resolve()); ws.on('error', reject) })
+    logInstall(`  done bytes=${got} (${(got / 1048576).toFixed(1)}MB) elapsed=${Date.now() - startedAt}ms avg=${Math.round(got / 1024 / Math.max(1, (Date.now() - startedAt) / 1000))}KB/s\n`)
   } catch (e: any) {
     try { ws.destroy() } catch {}
     try { await fs.unlink(zipPath) } catch {}
-    return { ok: false, error: `下载失败: ${e?.message ?? e}` }
-  }
+    const msg = e?.name === 'AbortError' ? `下载失败: ${stallReason}` : `下载失败: ${e?.message ?? e}`
+    logInstall(`  stream error: ${e?.name} ${e?.message ?? e} got=${got} (${(got / 1048576).toFixed(1)}MB) elapsed=${Date.now() - startedAt}ms\n`)
+    return { ok: false, error: msg }
+  } finally { if (timer) clearTimeout(timer) }
   return { ok: true, zipPath }
 }
 
-async function extractBundle(zipPath: string): Promise<{ ok: boolean; error?: string }> {
+async function extractBundle(zipPath: string, onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string }> {
   const staging = path.join(mobiusHome(), 'python-bundle.new')
   const finalDir = bundleDir()
   const stagingPython = WIN ? path.join(staging, 'python', 'python.exe') : path.join(staging, 'python', 'bin', 'python3')
   await fs.rm(staging, { recursive: true, force: true }).catch(() => {})
   await fs.mkdir(staging, { recursive: true })
-  try { await extract(zipPath, { dir: staging, defaultDirMode: 0o755, defaultFileMode: 0o644 }) }
-  catch (e: any) { await fs.rm(staging, { recursive: true, force: true }).catch(() => {}); return { ok: false, error: `解压失败: ${e?.message ?? e}` } }
+  logInstall(`  extract start → ${staging}\n`)
+  let entryCount = 0
+  const startedAt = Date.now()
+  // 解压几千个小文件在慢盘(网络 FS / CPFS)上可能耗时数十秒；用 onEntry 计数周期性反馈进度，
+  // 避免"解压内置运行时…"文案在漫长解压期间一动不动 = 看起来像死机。
+  try {
+    await extract(zipPath, {
+      dir: staging, defaultDirMode: 0o755, defaultFileMode: 0o644,
+      onEntry: () => { entryCount += 1; if (entryCount % 300 === 0) onProgress?.({ phase: 'install', detail: `解压内置运行时… ${entryCount} 个文件` }) },
+    })
+  } catch (e: any) { await fs.rm(staging, { recursive: true, force: true }).catch(() => {}); logInstall(`  extract error: ${e?.message ?? e} entries=${entryCount}\n`); return { ok: false, error: `解压失败: ${e?.message ?? e}` } }
+  logInstall(`  extract done entries=${entryCount} elapsed=${Date.now() - startedAt}ms\n`)
   if (!WIN) try { await fs.chmod(stagingPython, 0o755) } catch {}   // 保险：确保可执行位（extract-zip 通常已还原）
   await fs.rm(finalDir, { recursive: true, force: true }).catch(() => {})
   await fs.rename(staging, finalDir)
   return { ok: true }
 }
 
+/** 解压后校验内置 python 能 import aimux。用 spawn（非阻塞 spawnSync）避免冻结 Ink 渲染；
+ *  60s 上限强杀（首次 import 在慢盘上可能慢，但不会无限）；stderr(traceback) 落日志，让"解压完仍卡"可诊断。 */
+async function verifyBundle(onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string }> {
+  onProgress?.({ phase: 'install', detail: '校验内置运行时（首次 import aimux，可能耗时）…' })
+  const py = bundlePython()
+  logInstall(`  verify start: ${py} -c "import aimux…" (expect v${BUNDLE_AIMUX_VERSION})\n`)
+  const startedAt = Date.now()
+  return new Promise(resolve => {
+    let child: ChildProcess
+    try { child = spawn(py, ['-c', bundleHealthCheckCode()], { windowsHide: true }) }
+    catch (e: any) { resolve({ ok: false, error: `校验失败: ${e?.message ?? e}` }); return }
+    let stderr = ''
+    const timer = setTimeout(() => { try { child.kill('SIGKILL') } catch {}; resolve({ ok: false, error: `校验超时（60s 未完成 import aimux，疑似慢盘）· 日志: ${aimuxLogPath()}` }) }, 60_000)
+    child.stdout?.on('data', b => logInstall(`  verify stdout: ${b.toString('utf8').slice(-200)}`))
+    child.stderr?.on('data', b => { stderr += b.toString('utf8') })
+    child.on('error', e => { clearTimeout(timer); resolve({ ok: false, error: `校验失败: ${e.message}` }) })
+    child.on('close', code => {
+      clearTimeout(timer)
+      logInstall(`  verify exit code=${code} elapsed=${Date.now() - startedAt}ms stderr=${stderr.slice(-300) || '(empty)'}\n`)
+      if (code === 0) resolve({ ok: true })
+      else resolve({ ok: false, error: `内置运行时无法 import aimux (code=${code}) · 日志: ${aimuxLogPath()}` })
+    })
+  })
+}
+
 export async function ensureFromBundle(onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string; launcher?: AimuxLauncher }> {
-  if (bundleReady()) return { ok: true, launcher: { kind: 'module', python: bundlePython() } }
+  if (bundleReady()) { logInstall(`bundle fast-path: python-bundle already ready\n`); return { ok: true, launcher: { kind: 'module', python: bundlePython() } } }
   const arch = bundleArch()
   if (!arch) return { ok: false, error: `当前平台无内置运行时 (platform=${process.platform} arch=${process.arch})` }
+  logInstall(`bundle install begin: arch=${arch} platform=${process.platform} home=${mobiusHome()}\n`)
   onProgress?.({ phase: 'install', detail: `下载内置运行时 (${arch})…` })
   const dl = await downloadBundle(arch, onProgress)
   if (!dl.ok || !dl.zipPath) return { ok: false, error: dl.error }
   onProgress?.({ phase: 'install', detail: '解压内置运行时…' })
-  const ex = await extractBundle(dl.zipPath)
+  const ex = await extractBundle(dl.zipPath, onProgress)
   try { await fs.unlink(dl.zipPath) } catch {}
   if (!ex.ok) return { ok: false, error: ex.error }
-  if (!bundleReady()) return { ok: false, error: '内置运行时解压后仍无法 import aimux' }
+  const v = await verifyBundle(onProgress)
+  if (!v.ok) return { ok: false, error: v.error ?? '内置运行时解压后仍无法 import aimux' }
+  logInstall(`bundle install OK\n`)
   return { ok: true, launcher: { kind: 'module', python: bundlePython() } }
 }
 

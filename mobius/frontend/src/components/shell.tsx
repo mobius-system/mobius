@@ -18,7 +18,7 @@ import { useIsMobile } from './resizable-panel'
 import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
-import { setLayoutMode, useLayoutMode } from '../services/layout-mode'
+import { setLayoutMode, useLayoutMode, buildNormalModeTargetUrl } from '../services/layout-mode'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入)。三平台 (Win/Linux/mac) 统一: 顶栏右侧渲染
@@ -702,6 +702,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
     currentProject,
     currentIssue,
     currentResearch,
+    currentSession,
     projects,
     setProjects,
     issuesMap,
@@ -1309,7 +1310,18 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                     if (nextEnabled) {
                       navigate(`/u/${userParam}/easy_mode`)
                     } else if (/^\/u\/[^/]+\/easy_mode\/?$/.test(location.pathname)) {
-                      navigate(`/u/${userParam}`)
+                      // 关闭简易模式时, 优先回到当前会话在正常模式下的 Issue/Research 页
+                      // (保留 session 参数), 缺少上下文才回退到用户主页.
+                      navigate(
+                        buildNormalModeTargetUrl({
+                          user: userParam,
+                          projectId: currentSession?.project_id,
+                          issueId: currentSession?.issue_id,
+                          researchId: currentSession?.research_id,
+                          scopeType: currentSession?.scope_type,
+                          sessionId: currentSession?.session_id,
+                        }),
+                      )
                     }
                   }}
                   className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
