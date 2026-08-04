@@ -953,16 +953,12 @@ export function ProjectSettingsPanel({
                   </p>
                 </div>
               </div>
-              {/* 项目成员管理直接内嵌在此 (与主页「编辑项目」弹窗 modals.tsx 一致) ——
-                  用户要求权限设置卡能直接加 / 改 / 删成员. */}
-              <details className="rounded-lg border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
-                <summary className="text-[12px] cursor-pointer select-none font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  项目成员
-                </summary>
-                <div className="mt-3">
-                  <ProjectTeamPanel projectId={project.id} canManage={canManageProject} actorRole={project.project_role || null} />
-                </div>
-              </details>
+              {/* 项目成员管理 (照 Aone 权限页样式: 角色筛选 Tab + 表格 + 搜索) ——
+                  与主页「编辑项目」弹窗 modals.tsx 共用同一个 ProjectTeamPanel. */}
+              <div className="mt-4">
+                <div className="mb-2 text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>项目成员</div>
+                <ProjectTeamPanel projectId={project.id} canManage={canManageProject} actorRole={project.project_role || null} />
+              </div>
             </SettingsCard>
           </div>
         ) : activePane === 'package' ? (
