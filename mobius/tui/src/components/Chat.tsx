@@ -533,6 +533,15 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands }: Compose
     setCursor(next)
   }
 
+  useEffect(() => {
+    if (!stdout.isTTY) return
+    // Match Codex/crossterm: request explicit paste events so embedded Enters
+    // stay inside the textarea. The burst detector below remains the fallback
+    // for terminals and remote chains that ignore bracketed-paste mode.
+    stdout.write('\x1b[?2004h')
+    return () => { stdout.write('\x1b[?2004l') }
+  }, [stdout])
+
   useEffect(() => () => resetPasteBurst(), [])
 
   useInput((input, key) => {
