@@ -18,7 +18,7 @@ import { useIsMobile } from './resizable-panel'
 import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
-import { setLayoutMode, useLayoutMode, buildNormalModeTargetUrl } from '../services/layout-mode'
+import { setLayoutMode, useLayoutMode } from '../services/layout-mode'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入)。三平台 (Win/Linux/mac) 统一: 顶栏右侧渲染
@@ -1308,21 +1308,15 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                     setLayoutMode(nextEnabled ? 'easy_mode' : 'normal_mode')
                     setShowThemeMenu(false)
                     if (nextEnabled) {
-                      navigate(`/u/${userParam}/easy_mode`)
-                    } else if (/^\/u\/[^/]+\/easy_mode\/?$/.test(location.pathname)) {
-                      // 关闭简易模式时, 优先回到当前会话在正常模式下的 Issue/Research 页
-                      // (保留 session 参数), 缺少上下文才回退到用户主页.
-                      navigate(
-                        buildNormalModeTargetUrl({
-                          user: userParam,
-                          projectId: currentSession?.project_id,
-                          issueId: currentSession?.issue_id,
-                          researchId: currentSession?.research_id,
-                          scopeType: currentSession?.scope_type,
-                          sessionId: currentSession?.session_id,
-                        }),
-                      )
+                      // 标准页切到简易模式时携带当前会话的 ?session=, 让 EasyModePage 直接
+                      // 选中同一会话, 而不是丢回简易主页从最近会话里重新挑一条.
+                      const sid = currentSession?.session_id
+                      navigate(sid ? `/u/${userParam}/easy_mode?session=${encodeURIComponent(sid)}` : `/u/${userParam}/easy_mode`)
                     }
+                    // 关闭简易模式(简易→标准)时不在此导航: EasyModePage 的 layoutMode 同步 effect
+                    // 持有完整上下文(currentSession + 已加载 sessions + URL ?session), 由它构造目标
+                    // Issue/Research 页. 本 TopNav 闭包里的 currentSession 在会话刚进入未就绪时为 null,
+                    // 在这里直接构造 URL 会粗暴回到用户首页.
                   }}
                   className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
                   style={{ color: 'var(--text-primary)' }}

@@ -44,6 +44,11 @@ export function buildNormalModeTargetUrl(args: {
   if (projectId && researchId) {
     return `/u/${user}/p/${projectId}/r/${researchId}${search}`
   }
+  // 有项目上下文但拿不到具体 Issue/Research 时, 回到项目页而非用户首页,
+  // 至少把用户留在原项目范围内, 避免"切个模式就被踢回总首页"的断裂感.
+  if (projectId) {
+    return `/u/${user}/p/${projectId}`
+  }
   return `/u/${user}`
 }
 

@@ -133,20 +133,27 @@ export default function EasyModePage() {
   // 缺少上下文时才回退到用户主页。跨标签的 storage 事件只更新状态、不触发路由跳转，
   // 故必须由本页跟随离开，否则会停在「常规模式下显示简易页」的不一致态，刷新也不恢复。
   useEffect(() => {
-    if (layoutMode && layoutMode !== 'easy_mode') {
-      navigate(
-        buildNormalModeTargetUrl({
-          user: params.user,
-          projectId: currentSession?.project_id,
-          issueId: currentSession?.issue_id,
-          researchId: currentSession?.research_id,
-          scopeType: currentSession?.scope_type ?? null,
-          sessionId: currentSession?.session_id,
-        }),
-        { replace: true },
-      )
-    }
-  }, [layoutMode, params.user, navigate, currentSession])
+    if (!layoutMode || layoutMode === 'easy_mode') return
+    // sessions 尚未加载完时不要急于导航: 此时 currentSession 必为空, 直接构造 URL 会
+    // 回到用户首页. 等加载完, 用 currentSession → URL ?session 命中的会话 → sessions[0]
+    // 三级回退拿到上下文, 再导航到对应的 Issue/Research 页, 保证切回标准模式仍停在原会话.
+    if (loading) return
+    const ctx = currentSession
+      || (sessionParam ? sessions.find(session => session.session_id === sessionParam) : null)
+      || sessions[0]
+      || null
+    navigate(
+      buildNormalModeTargetUrl({
+        user: params.user,
+        projectId: ctx?.project_id,
+        issueId: ctx?.issue_id,
+        researchId: ctx?.research_id,
+        scopeType: ctx?.scope_type ?? null,
+        sessionId: ctx?.session_id || sessionParam || undefined,
+      }),
+      { replace: true },
+    )
+  }, [layoutMode, params.user, navigate, currentSession, sessions, sessionParam, loading])
 
   useEffect(() => {
     let cancelled = false
