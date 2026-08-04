@@ -847,14 +847,16 @@ export function ProjectSettingsPanel({
   const settingsTabs: OverflowTab[] = useMemo(() => {
     const arr: OverflowTab[] = [
       { key: 'settings', label: '项目设置', active: activePane === 'settings', dataTour: 'project-settings-tab' },
+    ]
+    // 项目成员设置紧跟「项目设置」之后、版本追踪之前 (普通项目; 拓展项目不暴露团队协作).
+    if (project.kind !== 'extension') arr.push({ key: 'members', label: '项目成员设置', active: activePane === 'members' })
+    arr.push(
       { key: 'versions', label: '版本追踪', active: activePane === 'versions', disabled: !gitTrackingAvailable, title: gitTrackingTitle },
       { key: 'architecture', label: '系统结构剖析', active: activePane === 'architecture' },
       { key: 'todos', label: '项目待办', active: activePane === 'todos' },
       { key: 'package', label: '打包下载', active: activePane === 'package' },
-    ]
-    // 普通项目才显示"权限设置" tab (排在最后); 拓展项目不暴露团队协作/权限.
+    )
     if (assistantProject) arr.push({ key: 'assistant', label: '小莫预设', active: activePane === 'assistant' })
-    if (project.kind !== 'extension') arr.push({ key: 'members', label: '项目成员设置', active: activePane === 'members' })
     return arr
   }, [activePane, gitTrackingAvailable, gitTrackingTitle, assistantProject, project.kind])
 
