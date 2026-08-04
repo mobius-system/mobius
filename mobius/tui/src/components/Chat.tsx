@@ -82,7 +82,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
 
   // First query of a fresh session triggers the full backend bootstrap (lazy
   // session creation, worker spawn, context load) before any output streams.
-  // Label that phase "Initializing for the first query" instead of "Working"
+  // Label that phase "第一个问题，正在初始化+全平台同步中，请稍候" instead of "Working"
   // so it reads as startup rather than a stuck agent. Once the first assistant
   // output is observed (or the session is a resumed one with prior history),
   // the indicator falls back to the normal Working label for every turn.
@@ -365,7 +365,7 @@ function WorkingIndicator({ firstQuery }: { firstQuery: boolean }) {
   const secs = Math.floor((Date.now() - startedAt.current) / 1000)
   const elapsed = secs >= 60 ? `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, '0')}s` : `${secs}s`
   const label = firstQuery
-    ? `• Initializing for the first query (${elapsed})`
+    ? `• 第一个问题，正在初始化+全平台同步中，请稍候 (${elapsed})`
     : `• Working (${elapsed} · esc to interrupt)`
   return (
     <Box marginTop={1}>
