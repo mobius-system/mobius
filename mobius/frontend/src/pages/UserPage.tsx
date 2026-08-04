@@ -780,11 +780,6 @@ export default function UserPage() {
                               Research
                             </span>
                           )}
-                          <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
-                            style={{ color: '#60a5fa', background: 'rgba(96,165,250,0.08)' }}
-                            title="项目可见性">
-                            {projectVisibilityLabel(p.visibility)}
-                          </span>
                           {p.kind === 'extension' && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
                               style={{ color: '#a78bfa', background: 'rgba(167,139,250,0.10)' }}

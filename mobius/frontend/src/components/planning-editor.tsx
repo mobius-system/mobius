@@ -352,6 +352,9 @@ function PlanningTextarea({
         onKeyDown={onKeyDown}
         onContextMenu={onContextMenu}
         readOnly={locked}
+        // 豁免文本脱敏整框模糊: project_knowledge.md 常含 PAT/密码等关键词, 命中后
+        // 整个文档会被 filter:blur(5px) 遮成不可读 (脱敏默认开启). 作者编辑面需要可读.
+        data-text-redaction-ignore="true"
         placeholder="在此编辑项目宏观规划…"
         className="w-full font-mono text-[12px] leading-relaxed p-3 rounded-lg resize-y"
         style={{

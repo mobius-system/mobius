@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen, Brain, Eye, Puzzle, Rocket, X } from 'lucide-react'
+import { BookOpen, Brain, Eye, Plus, Puzzle, Rocket, Upload, X } from 'lucide-react'
 import { api } from '../store'
 
 const AUTO_CONFIRM_SECONDS = 4
@@ -334,6 +334,209 @@ function writeStoredActivePanel(panel: null | 'skill' | 'memory'): void {
   }
 }
 
+// 文件名安全化: 非 [A-Za-z0-9._-] 替为 '-', 兜底 'item'.
+function safeFilenamePart(name: string): string {
+  const s = (name || '').trim().replace(/[^A-Za-z0-9._-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  return (s || 'item').slice(0, 64)
+}
+
+// 若 body 已以 YAML frontmatter 开头则原样返回, 否则补一行 `name: <name>` frontmatter.
+function ensureSkillFrontmatter(name: string, body: string): string {
+  const raw = body.replace(/\r\n/g, '\n')
+  if (/^\s*---\s*\n/.test(raw)) return raw
+  return `---\nname: ${name}\n---\n\n${raw}`
+}
+
+// =====================================================================
+// AddSkillMemoryBar — Skill/Memory 面板顶部的"快速添加"入口.
+// 收起态是一个 "+ 添加" 虚线按钮; 展开态是内联精简表单:
+//   - skill: ① 粘贴 SKILL.md (name + 正文, 可含 frontmatter) 或上传 .md/.zip
+//            ② 从 GitHub 装 (owner/repo -> 后端 npx skills add)
+//   - memory: 写一条 (name + 正文) 或上传 .md/.zip (memory 无 GitHub 分发概念)
+// 默认装到"用户级" (baseUrl 不带 projectId), 对当前用户所有任务可用.
+// 成功后调 onAdded() 触发外层重新拉取 selection-snapshot, 新条目立刻出现在下方列表,
+// 用户再点"追加/强调"即可注入当前会话 (对后续对话回合生效).
+// =====================================================================
+function AddSkillMemoryBar({ kind, onAdded }: { kind: 'skill' | 'memory'; onAdded: () => void }) {
+  const isSkill = kind === 'skill'
+  const baseUrl = isSkill ? '/api/skills' : '/api/memories'
+  const accent = isSkill ? '#60a5fa' : '#22d3ee'
+  const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState<'manual' | 'github'>('manual')
+  const [name, setName] = useState('')
+  const [body, setBody] = useState('')
+  const [ghName, setGhName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const reset = () => { setName(''); setBody(''); setGhName(''); setErr('') }
+
+  const submitManual = async () => {
+    const n = name.trim()
+    if (!n) { setErr('名称不能为空'); return }
+    if (isSkill && !body.trim()) { setErr('SKILL.md 正文不能为空'); return }
+    setErr(''); setBusy(true)
+    try {
+      if (isSkill) {
+        const content = ensureSkillFrontmatter(n, body)
+        await api(`${baseUrl}/import-file`, {
+          method: 'POST',
+          body: JSON.stringify({ name: n, content, filename: `${safeFilenamePart(n)}.md` }),
+        })
+      } else {
+        await api(baseUrl, { method: 'POST', body: JSON.stringify({ name: n, body }) })
+      }
+      reset(); setOpen(false); onAdded()
+    } catch (e: any) {
+      setErr(e?.message || '添加失败')
+    } finally { setBusy(false) }
+  }
+
+  const submitGithub = async () => {
+    const n = ghName.trim()
+    if (!n) { setErr('请输入 owner/repo (如 vercel-labs/agent-skills)'); return }
+    setErr(''); setBusy(true)
+    try {
+      await api(baseUrl, { method: 'POST', body: JSON.stringify({ name: n }) })
+      reset(); setOpen(false); onAdded()
+    } catch (e: any) {
+      setErr(e?.message || '安装失败 (若本机 GitHub 不通, 需先在 .env 配置 MOBIUS_SKILLS_PROXY)')
+    } finally { setBusy(false) }
+  }
+
+  const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setErr(''); setBusy(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      await api(`${baseUrl}/import-file`, { method: 'POST', body: fd })
+      reset(); setOpen(false); onAdded()
+    } catch (e: any) {
+      setErr(e?.message || '上传导入失败')
+    } finally { setBusy(false) }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        data-tour={isSkill ? 'session-skill-add' : 'session-memory-add'}
+        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)]"
+        style={{ borderColor: 'var(--border-color-strong)', color: accent }}
+      >
+        <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+        添加 {isSkill ? 'Skill' : 'Memory'}
+      </button>
+    )
+  }
+
+  return (
+    <div className="space-y-1.5 rounded-lg border p-2" style={{ borderColor: 'var(--border-color-strong)', background: 'rgba(255,255,255,0.02)' }}>
+      <div className="flex items-center gap-1">
+        {isSkill ? (
+          <>
+            <SegBtn active={mode === 'manual'} onClick={() => { setMode('manual'); setErr('') }} color={accent}>粘贴 / 上传</SegBtn>
+            <SegBtn active={mode === 'github'} onClick={() => { setMode('github'); setErr('') }} color={accent}>从 GitHub 装</SegBtn>
+          </>
+        ) : (
+          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>写一条 Memory 或上传文件</span>
+        )}
+        <button type="button" onClick={() => { reset(); setOpen(false) }} className="ml-auto text-[10px] hover:underline" style={{ color: 'var(--text-muted)' }}>收起</button>
+      </div>
+
+      {mode === 'github' && isSkill ? (
+        <>
+          <input
+            value={ghName}
+            onChange={e => setGhName(e.target.value)}
+            placeholder="owner/repo 或 owner/repo@skill-name"
+            className="w-full rounded border px-2 py-1 text-[11px] outline-none"
+            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+          />
+          <div className="text-[9.5px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+            后端执行 <code className="font-mono">npx skills add</code>, 从 GitHub 拉取并写为用户级 Skill.
+          </div>
+        </>
+      ) : (
+        <>
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder={isSkill ? 'Skill 名称 (如 my-skill)' : 'Memory 名称'}
+            className="w-full rounded border px-2 py-1 text-[11px] outline-none"
+            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+          />
+          <textarea
+            value={body}
+            onChange={e => setBody(e.target.value)}
+            rows={isSkill ? 4 : 3}
+            placeholder={isSkill ? 'SKILL.md 正文 (可含 --- frontmatter ---, 否则自动补 name)' : 'Memory 正文'}
+            data-text-redaction-ignore="true"
+            className="w-full resize-y rounded border px-2 py-1 font-mono text-[11px] outline-none"
+            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+          />
+          <input
+            ref={fileRef}
+            type="file"
+            className="hidden"
+            accept=".md,.markdown,.zip,.tar,.tar.gz,.tgz,.tbz,.tbz2,.tar.bz2,.txz,.tar.xz,application/zip,application/x-tar,application/gzip,text/markdown"
+            onChange={uploadFile}
+          />
+        </>
+      )}
+
+      {err && <div className="break-words text-[10px] text-red-400">{err}</div>}
+
+      <div className="flex items-center gap-1.5">
+        {mode === 'manual' && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => fileRef.current?.click()}
+            className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[10.5px] disabled:opacity-50"
+            style={{ borderColor: 'var(--border-color-strong)', color: 'var(--text-secondary)' }}
+          >
+            <Upload className="h-3 w-3" strokeWidth={1.9} /> 上传文件
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={mode === 'github' ? submitGithub : submitManual}
+          className="btn-primary ml-auto rounded px-3 py-1 text-[10.5px] disabled:opacity-60"
+        >
+          {busy ? '处理中...' : (mode === 'github' ? '安装' : '添加')}
+        </button>
+      </div>
+      <div className="text-[9px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+        作为用户级添加 (对你所有任务可用). 添加后在下方列表点「追加」即可注入当前会话, 对后续对话生效.
+      </div>
+    </div>
+  )
+}
+
+function SegBtn({ active, onClick, color, children }: { active: boolean; onClick: () => void; color: string; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded border px-2 py-0.5 text-[10.5px] transition-colors"
+      style={{
+        color: active ? '#fff' : 'var(--text-secondary)',
+        borderColor: active ? color : 'var(--border-color)',
+        background: active ? color : 'transparent',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
 export function SessionSkillMemoryEditor({
   sessionId,
   initialPanel = null,
@@ -363,6 +566,9 @@ export function SessionSkillMemoryEditor({
     if (persistActivePanel) writeStoredActivePanel(next)
   }, [persistActivePanel])
   const [previewItem, setPreviewItem] = useState<null | { kind: 'skill' | 'memory'; item: EditorItem }>(null)
+  // 添加 skill/memory 成功后自增 reloadKey, 触发 selection-snapshot 重新拉取, 新条目立即出现在下方列表.
+  const [reloadKey, setReloadKey] = useState(0)
+  const reload = useCallback(() => setReloadKey(k => k + 1), [])
 
   useEffect(() => {
     let cancelled = false
@@ -407,7 +613,7 @@ export function SessionSkillMemoryEditor({
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [sessionId])
+  }, [sessionId, reloadKey])
 
   const handleEmphasize = useCallback(async (kind: 'skill' | 'memory', itemId: string) => {
     if (!sessionId) return
@@ -563,10 +769,17 @@ export function SessionSkillMemoryEditor({
 
         {/* 内联菜单: 直接占据 tab 下方剩余空间, 无独立背景/边框/圆角, 无缝融入侧栏 */}
         {activePanel && (
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {skillActive
-              ? renderList(skills, '暂无 Skill', 'skill')
-              : renderList(memories, '暂无 Memory', 'memory')}
+          <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+            {/* 顶部"快速添加"入口: 放在顶部便于发现, 无需划到列表底部. 添加成功后 reload()
+                立即把新条目刷进下方列表, 用户可点"追加/强调"注入当前会话 (对后续对话生效). */}
+            <div className="px-1 pt-1">
+              <AddSkillMemoryBar kind={activePanel} onAdded={reload} />
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {skillActive
+                ? renderList(skills, '暂无 Skill', 'skill')
+                : renderList(memories, '暂无 Memory', 'memory')}
+            </div>
           </div>
         )}
       </div>

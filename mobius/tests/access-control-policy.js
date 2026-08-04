@@ -116,18 +116,19 @@ function verifyReadPolicy() {
   expectEqual('private project owner can read', access.canReadProject(user('owner'), 'p-private'), true)
   expectEqual('private project outsider cannot read', access.canReadProject(user('outsider', 'g2'), 'p-private'), false)
   expectEqual('private project allow user can read', access.canReadProject(user('allowed', 'g2'), 'p-private'), true)
-  expectEqual('team project same group can read', access.canReadProject(user('teammate'), 'p-team'), true)
-  expectEqual('team project other group cannot read', access.canReadProject(user('outsider', 'g2'), 'p-team'), false)
-  expectEqual('public project outsider can read', access.canReadProject(user('outsider', 'g2'), 'p-public'), true)
+  // 纯成员制: 非成员(无论同群组还是项目设为 public/team)一律不可读, 仅 admin/owner/成员/授权可见.
+  expectEqual('team project same-group non-member cannot read', access.canReadProject(user('teammate'), 'p-team'), false)
+  expectEqual('team project other-group non-member cannot read', access.canReadProject(user('outsider', 'g2'), 'p-team'), false)
+  expectEqual('public project outsider cannot read (pure membership)', access.canReadProject(user('outsider', 'g2'), 'p-public'), false)
   expectEqual('allowlist project allow user can read', access.canReadProject(user('allowed', 'g2'), 'p-allowlist'), true)
   expectEqual('allowlist project outsider cannot read', access.canReadProject(user('outsider', 'g2'), 'p-allowlist'), false)
 }
 
 function verifyIssueAndSessionPolicy() {
   expectEqual(
-    'public project inherited issue readable by outsider',
+    'public project inherited issue not readable by outsider (pure membership)',
     access.canReadIssue(user('outsider', 'g2'), 'i-public-inherit'),
-    true,
+    false,
   )
   expectEqual(
     'private issue in public project not readable by outsider',
@@ -141,16 +142,18 @@ function verifyIssueAndSessionPolicy() {
   )
   expectEqual('public project reader cannot create issue when can_post_issue is off', access.canCreateIssue(user('outsider', 'g2'), 'p-public'), false)
   run('UPDATE projects SET can_post_issue = 1 WHERE id = ?', 'p-public')
-  expectEqual('public project reader can create issue when can_post_issue is on', access.canCreateIssue(user('outsider', 'g2'), 'p-public'), true)
+  // 读者开关已退役: 非成员即使开关打开也不能建任务单 (纯成员制).
+  expectEqual('public project non-member cannot create issue even with toggle on', access.canCreateIssue(user('outsider', 'g2'), 'p-public'), false)
   run('UPDATE projects SET can_post_issue = 0 WHERE id = ?', 'p-public')
   expectEqual('private project outsider cannot create issue', access.canCreateIssue(user('outsider', 'g2'), 'p-private'), false)
   expectEqual('public project reader cannot create session when can_run_session is off', access.canCreateSessionForIssue(user('outsider', 'g2'), 'i-public-inherit'), false)
   run('UPDATE projects SET can_run_session = 1 WHERE id = ?', 'p-public')
-  expectEqual('public project reader can create session when can_run_session is on', access.canCreateSessionForIssue(user('outsider', 'g2'), 'i-public-inherit'), true)
+  expectEqual('public project non-member cannot create session even with toggle on', access.canCreateSessionForIssue(user('outsider', 'g2'), 'i-public-inherit'), false)
   run('UPDATE projects SET can_run_session = 0 WHERE id = ?', 'p-public')
   expectEqual('admin cannot widen issue visibility beyond private project', access.canSetIssueVisibilityWithinProject('p-private', 'public'), false)
-  expectEqual('team project can keep issue visibility at team', access.canSetIssueVisibilityWithinProject('p-team', 'team'), true)
-  expectEqual('allowlist project can use allowlist issue visibility', access.canSetIssueVisibilityWithinProject('p-allowlist', 'allowlist'), true)
+  // 项目可见性已收敛为 private/public (team/allowlist 退役): issue 不得设为 team/allowlist.
+  expectEqual('team issue visibility rejected (project visibility narrowed)', access.canSetIssueVisibilityWithinProject('p-team', 'team'), false)
+  expectEqual('allowlist issue visibility rejected (project visibility narrowed)', access.canSetIssueVisibilityWithinProject('p-allowlist', 'allowlist'), false)
 
   const ownSession = { session_id: 's-own', project_id: 'p-public', issue_id: 'i-public-inherit', user_id: 'outsider' }
   const othersSession = { session_id: 's-other', project_id: 'p-public', issue_id: 'i-public-inherit', user_id: 'teammate' }
@@ -166,7 +169,7 @@ function verifySkillMemoryPolicy() {
   expectEqual('public user skill is readable', access.canReadContextItem(user('outsider', 'g2'), 'skill', userSkill), true)
 
   const projectMemory = { id: 'project:contrib:p-public:mem-a', scope: 'project', owner_id: 'p-public', created_by: 'contrib' }
-  expectEqual('project memory inherits public project read access', access.canReadContextItem(user('outsider', 'g2'), 'memory', projectMemory), true)
+  expectEqual('project memory not readable by outsider (pure membership)', access.canReadContextItem(user('outsider', 'g2'), 'memory', projectMemory), false)
 
   // Desired safety boundary: project context affects later sessions and should not be writable by every reader.
   expectEqual(
