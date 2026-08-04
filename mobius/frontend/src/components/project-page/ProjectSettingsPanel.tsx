@@ -852,11 +852,11 @@ export function ProjectSettingsPanel({
       { key: 'todos', label: '项目待办', active: activePane === 'todos' },
       { key: 'package', label: '打包下载', active: activePane === 'package' },
     ]
-    // 普通项目才显示"项目组" tab (紧跟"项目设置"); 拓展项目不暴露团队协作.
-    if (project.kind !== 'extension') arr.splice(1, 0, { key: 'members', label: '项目组', active: activePane === 'members' })
+    // 普通项目才显示"权限设置" tab (排在最后); 拓展项目不暴露团队协作/权限.
     if (assistantProject) arr.push({ key: 'assistant', label: '小莫预设', active: activePane === 'assistant' })
+    if (project.kind !== 'extension') arr.push({ key: 'members', label: '权限设置', active: activePane === 'members' })
     return arr
-  }, [activePane, gitTrackingAvailable, gitTrackingTitle, assistantProject])
+  }, [activePane, gitTrackingAvailable, gitTrackingTitle, assistantProject, project.kind])
 
   const handleSelectPane = (key: string) => {
     setActivePane(key as SettingsPane)
@@ -901,8 +901,69 @@ export function ProjectSettingsPanel({
             <ProjectTodosPanel projectId={project.id} canManage={canManageProject} />
           </div>
         ) : activePane === 'members' ? (
-          <div className="p-3 w-full">
-            <ProjectTeamPanel projectId={project.id} canManage={canManageProject} actorRole={project.project_role || null} />
+          <div className="w-full min-w-0 p-3 space-y-4">
+            <SettingsCard title="权限设置">
+              <div>
+                <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>项目可见性</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {PROJECT_VISIBILITY_OPTIONS.map((option) => {
+                    const active = editVisibility === option.value
+                    return (
+                      <button key={option.value} type="button" disabled={!canManageProject} onClick={() => setEditVisibility(option.value)}
+                        title={option.description}
+                        className="h-8 rounded-lg border text-[12px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={active
+                          ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' }
+                          : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  {PROJECT_VISIBILITY_OPTIONS.find(option => option.value === editVisibility)?.description}
+                </p>
+                <div className="mt-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="min-w-0 rounded-lg border p-2" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+                      <div className="mb-1.5 text-[11px]" style={{ color: 'var(--text-secondary)' }}>创建任务单</div>
+                      <ToggleSwitch
+                        checked={editCanPostIssue}
+                        disabled={!canManageProject}
+                        onChange={setEditCanPostIssue}
+                        aria-label="允许读者创建任务单"
+                        title="允许非项目所有者创建任务单"
+                        className="inline-flex items-center"
+                      />
+                    </div>
+                    <div className="min-w-0 rounded-lg border p-2" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+                      <div className="mb-1.5 text-[11px]" style={{ color: 'var(--text-secondary)' }}>启动执行会话</div>
+                      <ToggleSwitch
+                        checked={editCanRunSession}
+                        disabled={!canManageProject}
+                        onChange={setEditCanRunSession}
+                        aria-label="允许读者启动执行会话"
+                        title="允许非项目所有者启动执行会话"
+                        className="inline-flex items-center"
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                    仅影响非项目所有者；项目设为「私有」时不生效。
+                  </p>
+                </div>
+              </div>
+              {/* 项目成员管理直接内嵌在此 (与主页「编辑项目」弹窗 modals.tsx 一致) ——
+                  用户要求权限设置卡能直接加 / 改 / 删成员. */}
+              <details className="rounded-lg border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+                <summary className="text-[12px] cursor-pointer select-none font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  项目成员
+                </summary>
+                <div className="mt-3">
+                  <ProjectTeamPanel projectId={project.id} canManage={canManageProject} actorRole={project.project_role || null} />
+                </div>
+              </details>
+            </SettingsCard>
           </div>
         ) : activePane === 'package' ? (
           <div className="p-3 w-full">
@@ -1110,71 +1171,6 @@ export function ProjectSettingsPanel({
                   )}
                 </select>
               </div>
-            </SettingsCard>
-          )}
-
-          {project.kind === 'extension' ? null : (
-            <SettingsCard title="权限设置">
-              <div>
-                <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>项目可见性</label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {PROJECT_VISIBILITY_OPTIONS.map((option) => {
-                    const active = editVisibility === option.value
-                    return (
-                      <button key={option.value} type="button" disabled={!canManageProject} onClick={() => setEditVisibility(option.value)}
-                        title={option.description}
-                        className="h-8 rounded-lg border text-[12px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={active
-                          ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' }
-                          : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-                        {option.label}
-                      </button>
-                    )
-                  })}
-                </div>
-                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                  {PROJECT_VISIBILITY_OPTIONS.find(option => option.value === editVisibility)?.description}
-                </p>
-                <div className="mt-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="min-w-0 rounded-lg border p-2" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
-                      <div className="mb-1.5 text-[11px]" style={{ color: 'var(--text-secondary)' }}>创建任务单</div>
-                      <ToggleSwitch
-                        checked={editCanPostIssue}
-                        disabled={!canManageProject}
-                        onChange={setEditCanPostIssue}
-                        aria-label="允许读者创建任务单"
-                        title="允许非项目所有者创建任务单"
-                        className="inline-flex items-center"
-                      />
-                    </div>
-                    <div className="min-w-0 rounded-lg border p-2" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
-                      <div className="mb-1.5 text-[11px]" style={{ color: 'var(--text-secondary)' }}>启动执行会话</div>
-                      <ToggleSwitch
-                        checked={editCanRunSession}
-                        disabled={!canManageProject}
-                        onChange={setEditCanRunSession}
-                        aria-label="允许读者启动执行会话"
-                        title="允许非项目所有者启动执行会话"
-                        className="inline-flex items-center"
-                      />
-                    </div>
-                  </div>
-                  <p className="mt-1.5 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
-                    仅影响非项目所有者；项目设为「私有」时不生效。
-                  </p>
-                </div>
-              </div>
-              {/* 项目成员管理直接内嵌在此 (与主页「编辑项目」弹窗 modals.tsx 一致) ——
-                  用户要求权限设置卡能直接加 / 改 / 删成员, 不再跳转到「项目组」tab. */}
-              <details className="rounded-lg border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
-                <summary className="text-[12px] cursor-pointer select-none font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  项目成员
-                </summary>
-                <div className="mt-3">
-                  <ProjectTeamPanel projectId={project.id} canManage={canManageProject} actorRole={project.project_role || null} />
-                </div>
-              </details>
             </SettingsCard>
           )}
 
