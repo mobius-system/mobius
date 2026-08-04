@@ -55,7 +55,9 @@ const Issues = {
   listForProject: (projectId: string, statusFilter: IssueStatus | undefined, userId?: string | null): IssueListRow[] => {
     if (userId) {
       let where = 'i.project_id = ?';
-      const params: Array<string> = [userId, projectId];
+      // session_count 按当前用户过滤(与简易模式口径一致, 不再含协作者).
+      // ? 绑定顺序按 SQL 文本出现先后: [0]=子查询 user_id, [1]=ius.user_id(starred), [2]=project_id, [3]=status?
+      const params: Array<string> = [userId, userId, projectId];
       if (statusFilter === 'active' || statusFilter === 'completed') {
         where += ' AND i.status = ?';
         params.push(statusFilter);
@@ -63,7 +65,7 @@ const Issues = {
       return db.prepare(`
         SELECT i.*, u.display_name as created_by_name,
           CASE WHEN ius.user_id IS NULL THEN 0 ELSE 1 END AS starred,
-          (SELECT COUNT(*) FROM sessions_v2 WHERE issue_id = i.id AND scope_type = 'issue' AND status = 'active') as session_count
+          (SELECT COUNT(*) FROM sessions_v2 WHERE issue_id = i.id AND scope_type = 'issue' AND status = 'active' AND user_id = ?) as session_count
         FROM issues i
         LEFT JOIN users u ON i.created_by = u.id
         LEFT JOIN issue_user_stars ius ON ius.issue_id = i.id AND ius.user_id = ?
