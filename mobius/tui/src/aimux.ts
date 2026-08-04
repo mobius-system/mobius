@@ -292,7 +292,7 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Pr
     }
   }
   // ── Plan B 兜底：本地 python/venv 不可用 → 下载内置 python+aimux 运行时 ──
-  logInstall(`  venv path failed (${(venvError || '').slice(0, 80)}) → falling back to bundle\n`)
+  logInstall(`  venv path failed (${venvError || ''}) → falling back to bundle\n`)
   onProgress?.({ phase: 'install', detail: '本地 Python 不可用，改用内置运行时…' })
   const bundle = await ensureFromBundle(onProgress)
   if (bundle.ok && bundle.launcher) { onProgress?.({ phase: 'ready' }); return { ok: true, launcher: bundle.launcher } }
