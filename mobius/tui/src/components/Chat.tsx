@@ -82,7 +82,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
 
   // First query of a fresh session triggers the full backend bootstrap (lazy
   // session creation, worker spawn, context load) before any output streams.
-  // Label that phase "Initializing for the first query" instead of "Working"
+  // Label that phase "第一个问题，正在初始化+全平台同步中，请稍候" instead of "Working"
   // so it reads as startup rather than a stuck agent. Once the first assistant
   // output is observed (or the session is a resumed one with prior history),
   // the indicator falls back to the normal Working label for every turn.
@@ -365,7 +365,7 @@ function WorkingIndicator({ firstQuery }: { firstQuery: boolean }) {
   const secs = Math.floor((Date.now() - startedAt.current) / 1000)
   const elapsed = secs >= 60 ? `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, '0')}s` : `${secs}s`
   const label = firstQuery
-    ? `• Initializing for the first query (${elapsed})`
+    ? `• 第一个问题，正在初始化+全平台同步中，请稍候 (${elapsed})`
     : `• Working (${elapsed} · esc to interrupt)`
   return (
     <Box marginTop={1}>
@@ -410,13 +410,25 @@ interface ComposerProps {
   commands: { cmd: string; desc: string }[]
 }
 
-function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps) {
+export function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps) {
   const [value, setValue] = useState('')
   const [cursor, setCursor] = useState(0)
   const [popupIdx, setPopupIdx] = useState(0)
   const [popupDismissed, setPopupDismissed] = useState(false)
   const historyRef = useRef<string[]>([])
   const [histIdx, setHistIdx] = useState<number | null>(null)
+  const valueRef = useRef(value)
+  const cursorRef = useRef(cursor)
+  const pasteRef = useRef<ComposerPasteState>({
+    bracketed: false,
+    bracketedBuffer: '',
+    burstActive: false,
+    consecutivePlain: 0,
+    lastChunkAt: 0,
+    lastChunkLength: 0,
+    timer: null,
+  })
+  const { stdout } = useStdout()
 
   const filtered = useMemo(() => {
     const match = /^(\w*)$/.exec(value.slice(1))
@@ -429,13 +441,141 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
   const popupOpen = !popupDismissed && value.startsWith('/') && filtered.length > 0 && value.trim() !== filtered[popupIdx]?.cmd
 
   function edit(next: string, nextCursor: number) {
+    valueRef.current = next
+    cursorRef.current = nextCursor
     setValue(next)
     setCursor(nextCursor)
   }
 
+  function insertText(text: string) {
+    if (!text) return
+    const current = valueRef.current
+    const at = clampCursor(current, cursorRef.current)
+    const normalized = normalizeComposerPaste(text)
+    edit(current.slice(0, at) + normalized + current.slice(at), at + normalized.length)
+  }
+
+  function schedulePasteBurstReset() {
+    const state = pasteRef.current
+    if (state.timer) clearTimeout(state.timer)
+    state.timer = setTimeout(() => {
+      state.burstActive = false
+      state.consecutivePlain = 0
+      state.lastChunkLength = 0
+      state.timer = null
+    }, pasteBurstWindowMs())
+  }
+
+  function resetPasteBurst() {
+    const state = pasteRef.current
+    if (state.timer) clearTimeout(state.timer)
+    state.bracketed = false
+    state.bracketedBuffer = ''
+    state.burstActive = false
+    state.consecutivePlain = 0
+    state.lastChunkAt = 0
+    state.lastChunkLength = 0
+    state.timer = null
+  }
+
+  function handleBracketedPasteInput(raw: string): boolean {
+    const state = pasteRef.current
+    const start = findPasteMarker(raw, '200')
+    const end = findPasteMarker(raw, '201')
+
+    if (!state.bracketed && start >= 0) {
+      const markerLength = pasteMarkerLength(raw, start, '200')
+      const payloadStart = start + markerLength
+      const endAfterStart = findPasteMarker(raw, '201', payloadStart)
+      if (endAfterStart >= 0) {
+        const endLength = pasteMarkerLength(raw, endAfterStart, '201')
+        insertText(raw.slice(payloadStart, endAfterStart) + raw.slice(endAfterStart + endLength))
+        resetPasteBurst()
+      } else {
+        state.bracketed = true
+        state.bracketedBuffer = raw.slice(payloadStart)
+      }
+      return true
+    }
+
+    if (!state.bracketed) return false
+    if (end >= 0) {
+      const endLength = pasteMarkerLength(raw, end, '201')
+      state.bracketedBuffer += raw.slice(0, end)
+      state.bracketedBuffer += raw.slice(end + endLength)
+      insertText(state.bracketedBuffer)
+      resetPasteBurst()
+    } else {
+      state.bracketedBuffer += raw
+    }
+    return true
+  }
+
+  function moveVertical(direction: -1 | 1) {
+    const current = valueRef.current
+    const at = clampCursor(current, cursorRef.current)
+    const lineStart = current.lastIndexOf('\n', Math.max(0, at - 1)) + 1
+    const column = at - lineStart
+    const lineEnd = current.indexOf('\n', at)
+    const currentEnd = lineEnd < 0 ? current.length : lineEnd
+    const targetStart = direction < 0
+      ? current.lastIndexOf('\n', Math.max(0, lineStart - 2)) + 1
+      : (currentEnd < current.length ? currentEnd + 1 : current.length)
+    if (direction < 0 && lineStart === 0) return
+    if (direction > 0 && currentEnd === current.length) return
+    const targetEndRel = current.indexOf('\n', targetStart)
+    const targetEnd = targetEndRel < 0 ? current.length : targetEndRel
+    edit(current, targetStart + Math.min(column, targetEnd - targetStart))
+  }
+
+  function moveCursor(next: number) {
+    cursorRef.current = next
+    setCursor(next)
+  }
+
+  useEffect(() => {
+    if (!stdout.isTTY) return
+    // Match Codex/crossterm: request explicit paste events so embedded Enters
+    // stay inside the textarea. The burst detector below remains the fallback
+    // for terminals and remote chains that ignore bracketed-paste mode.
+    stdout.write('\x1b[?2004h')
+    return () => { stdout.write('\x1b[?2004l') }
+  }, [stdout])
+
+  useEffect(() => () => resetPasteBurst(), [])
+
   useInput((input, key) => {
+    const now = Date.now()
     const escape = isEscapeKeypress(input, key)
     if (typing && escape) { void onStop(); return }
+
+    if (pasteRef.current.bracketed && key.return) {
+      pasteRef.current.bracketedBuffer += '\n'
+      return
+    }
+
+    // Ink 5 incorrectly marks a plain carriage-return as Shift because "\r" is
+    // unchanged by toUpperCase(). Detect enhanced-keyboard Shift+Enter from its
+    // raw sequence instead of trusting key.shift on an ordinary Enter event.
+    if (isEnhancedNewlineInput(input)) { insertText('\n'); return }
+
+    // Terminals that support bracketed paste wrap the payload in ESC[200~ / ESC[201~.
+    // Ink's parser strips a leading ESC, so accept both the raw and stripped marker forms.
+    if (handleBracketedPasteInput(input)) return
+
+    const current = valueRef.current
+    const at = clampCursor(current, cursorRef.current)
+
+    // A few terminals (notably ConPTY and some SSH/tmux combinations) do not expose
+    // bracketed paste. They deliver a paste as fast text chunks separated by Enter events.
+    // Track that short burst so those Enters become newlines instead of submitting each line.
+    if (!key.return && input && !key.ctrl && !key.meta && /[\r\n]/.test(input)) {
+      insertText(input)
+      pasteRef.current.burstActive = false
+      pasteRef.current.lastChunkAt = now
+      pasteRef.current.lastChunkLength = 0
+      return
+    }
 
     if (popupOpen) {
       if (key.upArrow) { setPopupIdx(i => (i <= 0 ? filtered.length - 1 : i - 1)); return }
@@ -448,9 +588,22 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
     }
 
     if (key.return) {
-      if (value.trim()) {
-        historyRef.current.push(value)
-        onSubmit(value)
+      const state = pasteRef.current
+      const inPasteBurst = state.burstActive || (
+        state.lastChunkLength > 1 && now - state.lastChunkAt <= pasteBurstWindowMs()
+      )
+      if (inPasteBurst && !key.ctrl && !key.meta) {
+        insertText('\n')
+        state.burstActive = true
+        state.lastChunkAt = now
+        state.lastChunkLength = 0
+        schedulePasteBurstReset()
+        return
+      }
+      const submitted = valueRef.current
+      if (submitted.trim()) {
+        historyRef.current.push(submitted)
+        onSubmit(submitted)
         edit('', 0)
         setHistIdx(null)
       }
@@ -459,14 +612,24 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
     if (key.ctrl && input === 'c') { typing ? void onStop() : onQuit(); return }
     // Ink reports the terminal Backspace key (\x7f) as `key.delete`; handle both
     // as a backward delete so Backspace works at the end of the input.
-    if (key.backspace || key.delete) {
-      if (cursor > 0) edit(value.slice(0, cursor - 1) + value.slice(cursor), cursor - 1)
+    if (key.backspace || key.delete || (key.ctrl && (input === 'h' || input === 'w'))) {
+      if (at > 0) {
+        if (key.ctrl && input === 'w') {
+          const before = current.slice(0, at)
+          const match = before.match(/\S+\s*$/)
+          const cut = match ? match[0].length : 0
+          edit(current.slice(0, at - cut) + current.slice(at), at - cut)
+        } else {
+          const previous = previousCursorBoundary(current, at)
+          edit(current.slice(0, previous) + current.slice(at), previous)
+        }
+      }
       return
     }
-    if (key.leftArrow) { setCursor(current => Math.max(0, current - 1)); return }
-    if (key.rightArrow) { setCursor(current => Math.min(value.length, current + 1)); return }
+    if (key.leftArrow) { moveCursor(previousCursorBoundary(current, at)); return }
+    if (key.rightArrow) { moveCursor(nextCursorBoundary(current, at)); return }
 
-    const onFirstLine = value.slice(0, cursor).indexOf('\n') === -1
+    const onFirstLine = current.slice(0, at).indexOf('\n') === -1
     if (key.upArrow && onFirstLine) {
       const history = historyRef.current
       if (history.length) {
@@ -476,6 +639,7 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
       }
       return
     }
+    if (key.upArrow) { moveVertical(-1); return }
     if (key.downArrow && histIdx !== null) {
       const history = historyRef.current
       const next = histIdx + 1
@@ -483,22 +647,32 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
       else { setHistIdx(next); edit(history[next], history[next].length) }
       return
     }
-    if (key.ctrl && input === 'a') { setCursor(0); return }
-    if (key.ctrl && input === 'e') { setCursor(value.length); return }
+    if (key.downArrow) { moveVertical(1); return }
+    if (key.ctrl && input === 'a') { moveCursor(0); return }
+    if (key.ctrl && input === 'e') { moveCursor(current.length); return }
     if (key.ctrl && input === 'u') { edit('', 0); return }
-    if (key.ctrl && input === 'k') { edit(value.slice(0, cursor), cursor); return }
-    if (key.ctrl && input === 'j') { edit(value.slice(0, cursor) + '\n' + value.slice(cursor), cursor + 1); return }
+    if (key.ctrl && input === 'k') { edit(current.slice(0, at), at); return }
+    if (key.ctrl && input === 'j') { insertText('\n'); return }
     if (key.ctrl || key.meta || escape || !input) return
-    edit(value.slice(0, cursor) + input + value.slice(cursor), cursor + input.length)
+
+    const chunkAt = pasteRef.current
+    const continuesBurst = chunkAt.lastChunkAt > 0 && now - chunkAt.lastChunkAt <= pasteBurstWindowMs()
+    chunkAt.consecutivePlain = continuesBurst ? chunkAt.consecutivePlain + 1 : 1
+    if (input.length > 1 || chunkAt.consecutivePlain >= 3) {
+      chunkAt.burstActive = true
+      schedulePasteBurstReset()
+    }
+    insertText(input)
+    chunkAt.lastChunkAt = now
+    chunkAt.lastChunkLength = input.length
   })
 
-  const lines = value.split('\n')
-  const lineIdx = value.slice(0, cursor).match(/\n/g)?.length ?? 0
-  const col = cursor - (value.slice(0, cursor).lastIndexOf('\n') + 1)
-  const currentLine = lines[lineIdx] ?? ''
-  const beforeCursor = currentLine.slice(0, col)
-  const atCursor = currentLine.slice(col, col + 1)
-  const afterCursor = currentLine.slice(col + 1)
+  const composerWidth = Math.max(12, (stdout.columns ?? 80) - 9)
+  const wrapped = wrapComposerLines(value, composerWidth)
+  const visualCursor = findComposerCursorLine(wrapped, clampCursor(value, cursor))
+  const maxRows = Math.max(3, Math.min(10, Math.floor((stdout.rows ?? 24) * 0.42)))
+  const firstVisible = Math.max(0, Math.min(visualCursor - maxRows + 1, visualCursor))
+  const visible = wrapped.slice(firstVisible, firstVisible + maxRows)
 
   return (
     <Box flexDirection="column" marginTop={1}>
@@ -515,26 +689,139 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
           ))}
         </Box>
       ) : null}
-      <Box>
-        <Text bold>{'› '}</Text>
-        <Text>
-          {lines.map((line, index) => {
-            if (index < lineIdx) return <Text key={index}>{line}{'\n'}</Text>
-            if (index === lineIdx) {
-              return (
-                <Text key={index}>
-                  {beforeCursor}<Text backgroundColor="white" color="black">{atCursor || ' '}</Text>{afterCursor}
-                  {index < lines.length - 1 ? '\n' : ''}
-                </Text>
-              )
-            }
-            return <Text key={index}>{'\n'}{line}</Text>
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={typing ? 'yellow' : 'gray'}
+        borderDimColor={!typing}
+        paddingX={1}
+      >
+        <Box flexDirection="column" height={Math.min(maxRows, wrapped.length)} overflow="hidden">
+          {visible.map((line, index) => {
+            const realIndex = firstVisible + index
+            const isCursorLine = realIndex === visualCursor
+            const c = isCursorLine ? clampCursor(value, cursor) - line.start : -1
+            const before = isCursorLine ? line.text.slice(0, Math.max(0, c)) : line.text
+            const atCursor = isCursorLine ? line.text.slice(Math.max(0, c), Math.max(0, c) + 1) : ''
+            const after = isCursorLine ? line.text.slice(Math.max(0, c) + 1) : ''
+            return (
+              <Text key={`${line.start}-${realIndex}`}>
+                {index === 0 ? <Text bold>{firstVisible > 0 ? '… ' : '› '}</Text> : <Text>{'  '}</Text>}
+                {isCursorLine
+                  ? <>{before}<Text backgroundColor="white" color="black">{atCursor || ' '}</Text>{after}</>
+                  : line.text}
+                {value === '' && index === 0 ? <Text dimColor> 输入问题或 / 命令</Text> : null}
+              </Text>
+            )
           })}
-          {value === '' ? <Text dimColor> 输入问题或 / 命令</Text> : null}
-        </Text>
+        </Box>
+        <Box justifyContent="space-between">
+          <Text dimColor>{(stdout.columns ?? 80) >= 58 ? 'Enter 发送 · Shift+Enter / Ctrl+J 换行' : 'Enter 发送 · Ctrl+J 换行'}</Text>
+          <Text dimColor>{wrapped.length > maxRows ? `${visualCursor + 1}/${wrapped.length} 行` : `${wrapped.length} 行`}</Text>
+        </Box>
       </Box>
     </Box>
   )
+}
+
+interface ComposerPasteState {
+  bracketed: boolean
+  bracketedBuffer: string
+  burstActive: boolean
+  consecutivePlain: number
+  lastChunkAt: number
+  lastChunkLength: number
+  timer: ReturnType<typeof setTimeout> | null
+}
+
+function pasteBurstWindowMs(): number {
+  return process.platform === 'win32' ? 60 : 20
+}
+
+function normalizeComposerPaste(text: string): string {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+}
+
+function isEnhancedNewlineInput(input: string): boolean {
+  return /^\[(?:13|27);2(?:u|~)$/.test(input) || input === '\x1b\r'
+}
+
+function findPasteMarker(input: string, code: '200' | '201', from = 0): number {
+  const raw = `\x1b[${code}~`
+  const stripped = `[${code}~`
+  const rawAt = input.indexOf(raw, from)
+  const strippedAt = input.indexOf(stripped, from)
+  if (rawAt < 0) return strippedAt
+  if (strippedAt < 0) return rawAt
+  return Math.min(rawAt, strippedAt)
+}
+
+function pasteMarkerLength(input: string, at: number, code: '200' | '201'): number {
+  return input.startsWith(`\x1b[${code}~`, at) ? 6 : 5
+}
+
+function clampCursor(text: string, cursor: number): number {
+  let at = Math.max(0, Math.min(text.length, cursor))
+  while (at > 0 && at < text.length && /[\uDC00-\uDFFF]/.test(text[at])) at--
+  return at
+}
+
+function previousCursorBoundary(text: string, cursor: number): number {
+  const at = clampCursor(text, cursor)
+  if (at <= 0) return 0
+  const code = text.charCodeAt(at - 1)
+  return at - (code >= 0xDC00 && code <= 0xDFFF ? 2 : 1)
+}
+
+function nextCursorBoundary(text: string, cursor: number): number {
+  const at = clampCursor(text, cursor)
+  if (at >= text.length) return text.length
+  const code = text.charCodeAt(at)
+  return at + (code >= 0xD800 && code <= 0xDBFF ? 2 : 1)
+}
+
+interface ComposerLine { text: string; start: number; end: number }
+
+function wrapComposerLines(text: string, width: number): ComposerLine[] {
+  if (!text) return [{ text: '', start: 0, end: 0 }]
+  const result: ComposerLine[] = []
+  let lineStart = 0
+  let lineText = ''
+  let lineWidth = 0
+  for (let i = 0; i < text.length;) {
+    const ch = text[i]
+    if (ch === '\n') {
+      result.push({ text: lineText, start: lineStart, end: i })
+      lineText = ''
+      lineWidth = 0
+      lineStart = i + 1
+      i++
+      continue
+    }
+    const next = nextCursorBoundary(text, i)
+    const piece = text.slice(i, next)
+    const pieceWidth = Math.max(1, displayWidth(piece))
+    if (lineText && lineWidth + pieceWidth > width) {
+      result.push({ text: lineText, start: lineStart, end: i })
+      lineText = ''
+      lineWidth = 0
+      lineStart = i
+    }
+    lineText += piece
+    lineWidth += pieceWidth
+    i = next
+  }
+  result.push({ text: lineText, start: lineStart, end: text.length })
+  return result
+}
+
+function findComposerCursorLine(lines: ComposerLine[], cursor: number): number {
+  const at = Math.max(0, cursor)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (at < line.end || (at === line.end && (i === lines.length - 1 || lines[i + 1].start > at))) return i
+  }
+  return Math.max(0, lines.length - 1)
 }
 
 function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus, modelDisplay }: {

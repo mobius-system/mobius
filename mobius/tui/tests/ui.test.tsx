@@ -15,7 +15,7 @@ process.env.MOBIUS_TUI_HOME = TMP_HOME
 
 import React from 'react'
 import { render } from 'ink-testing-library'
-import { ChatScreen, shimmerText } from '../src/components/Chat.js'
+import { ChatScreen, Composer, shimmerText } from '../src/components/Chat.js'
 import { LoginScreen } from '../src/components/Login.js'
 import { PrepScreen } from '../src/components/PrepScreen.js'
 import { Select, TextInput } from '../src/components/primitives.js'
@@ -58,7 +58,18 @@ let realFetch: FetchImpl
 
 function installMock(impl: (url: string, init?: RequestInit) => Response | Promise<Response>) {
   realFetch = globalThis.fetch
-  globalThis.fetch = ((url: any, init?: any) => impl(String(url), init)) as FetchImpl
+  globalThis.fetch = ((url: any, init?: any) => {
+    const requestUrl = String(url)
+    // Fresh TUI sessions probe the reverse AIMUX bridge before creating a
+    // session. Keep UI tests focused on their own mocked endpoint instead of
+    // waiting through the production 8-second bridge readiness grace period.
+    const marker = '/aimux_bridge/api/remotes/'
+    if (requestUrl.includes(marker) && requestUrl.endsWith('/connection')) {
+      const identifier = decodeURIComponent(requestUrl.slice(requestUrl.indexOf(marker) + marker.length, -'/connection'.length))
+      return jsonResponse({ identifier, event_stream_connected: true })
+    }
+    return impl(requestUrl, init)
+  }) as FetchImpl
 }
 function restoreFetch() { globalThis.fetch = realFetch }
 
@@ -154,13 +165,13 @@ async function testChat() {
     )
     await delay(40)
     const initialFrame = lastFrame() ?? ''
-    ok(initialFrame.includes('Mobius') && initialFrame.includes('(v0.2.1)') && !initialFrame.includes('Mobius TUI'), 'welcome card shows the Mobius product identity')
+    ok(initialFrame.includes('Mobius') && /\(v\d+\.\d+\.\d+\)/.test(initialFrame) && !initialFrame.includes('Mobius TUI'), 'welcome card shows the Mobius product identity')
     ok(initialFrame.includes('model:') && initialFrame.includes('project:') && initialFrame.includes('task:'), 'welcome card summarizes active context')
     ok(initialFrame.includes('Tip:') && initialFrame.includes('输入问题或 / 命令'), 'welcome tip and bottom composer are visible together')
     ok(initialFrame.includes('http://mock.local/u/test-user/p/p1/i/i1'), 'web issue URL is always visible before session creation')
     stdin.write('你好'); await delay(30)
     stdin.write('\r'); await delay(80)
-    ok((lastFrame() ?? '').includes('Initializing for the first query ('), 'first query shows Initializing instead of Working immediately after submit')
+    ok((lastFrame() ?? '').includes('第一个问题，正在初始化'), 'first query shows 第一个问题 instead of Working immediately after submit')
     runtimeWorking = true
     await delay(820)   // createSession → connect → POST → emit
     runtimeWorking = false
@@ -356,7 +367,56 @@ async function testTextInputBackspace() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TEST 9 — Working text uses a moving multi-level brightness wave
+// TEST 9 — Codex-style composer keeps multiline pastes intact and grows/shrinks
+// ════════════════════════════════════════════════════════════════════════════
+async function testComposerMultilinePaste() {
+  console.log('\n[UI 9] composer multiline paste + framed auto-height input')
+  const submitted: string[] = []
+  const { stdin, lastFrame, unmount } = render(
+    <Composer
+      onSubmit={(text) => submitted.push(text)}
+      onStop={() => {}}
+      onQuit={() => {}}
+      typing={false}
+      commands={[]}
+    />,
+  )
+  await delay(20)
+  const initial = lastFrame() ?? ''
+  ok(initial.includes('╭') && initial.includes('╰'), 'composer has a visible bordered input boundary')
+  ok(initial.includes('Enter 发送') && initial.includes('Ctrl+J 换行'), 'composer shows Codex-style submit/newline hints')
+
+  stdin.write('\x1b[200~第一行\r\n第二行\r第三行\x1b[201~')
+  await delay(20)
+  const bracketed = lastFrame() ?? ''
+  ok(bracketed.includes('第一行') && bracketed.includes('第二行') && bracketed.includes('第三行'), 'bracketed multiline paste preserves every line')
+  ok(bracketed.includes('3 行'), 'input grows to report all pasted lines')
+  ok(submitted.length === 0, 'newlines inside a bracketed paste do not submit partial messages')
+  stdin.write('\r')
+  await delay(20)
+  ok(submitted[0] === '第一行\n第二行\n第三行', 'one Enter submits the complete normalized bracketed paste')
+  ok((lastFrame() ?? '').includes('1 行'), 'composer shrinks back after submission')
+
+  // Simulate terminals that split clipboard input into text + Enter events instead
+  // of producing a bracketed paste event (common through ConPTY/SSH/tmux chains).
+  stdin.write('first sentence')
+  stdin.write('\r')
+  stdin.write('second sentence')
+  stdin.write('\r')
+  stdin.write('last sentence')
+  await delay(10)
+  const burst = lastFrame() ?? ''
+  ok(burst.includes('first sentence') && burst.includes('second sentence') && burst.includes('last sentence'), 'paste burst keeps all split text chunks')
+  ok(submitted.length === 1, 'paste-burst Enter events become newlines instead of partial submissions')
+  await delay(80)
+  stdin.write('\r')
+  await delay(20)
+  ok(submitted[1] === 'first sentence\nsecond sentence\nlast sentence', 'Enter after the burst submits the complete multiline text once')
+  unmount()
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 10 — Working text uses a moving multi-level brightness wave
 // ════════════════════════════════════════════════════════════════════════════
 function testWorkingShimmer() {
   console.log('\n[UI 9] Working brightness animation')
@@ -560,10 +620,78 @@ async function testChatSseReconnects() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TEST 14 — message dispatch retries a transient 502
+// TEST 14 — sending after an idle completed session reopens its closed SSE
+// ════════════════════════════════════════════════════════════════════════════
+async function testIdleCompletedSessionReopensSseOnSend() {
+  console.log('\n[UI 14] Idle completed session reopens SSE on the next send')
+  const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
+  const ready: ReadyState = {
+    project: { id: 'p1', name: '测试项目' },
+    issue: { id: 'i1', project_id: 'p1', title: '测试任务' },
+    prefs: { model: 'codex', language: 'zh', excluded_skill_ids: [], excluded_memory_ids: [] },
+  }
+  const frame = (event: string, payload: Record<string, unknown>) =>
+    `event: ${event}\ndata: ${JSON.stringify({ event, ...payload })}\n\n`
+  let sseCall = 0
+  let liveController: any = null
+  installMock((url, init) => {
+    if (url.includes('/events')) {
+      sseCall++
+      if (sseCall === 1) {
+        return new Response(new RS({
+          start(c: any) {
+            c.enqueue(enc.encode(frame('subscribed', { session: {} })))
+            // The worker is already complete (alive=false below). Later the
+            // proxy drops this idle stream, so onClose correctly does not retry.
+            setTimeout(() => { try { c.error(new Error('terminated')) } catch { /* closed */ } }, 40)
+          },
+        }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      }
+      return new Response(new RS({
+        start(c: any) {
+          liveController = c
+          c.enqueue(enc.encode(frame('subscribed', { session: {} })))
+        },
+      }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }
+    if (url.endsWith('/messages') && init?.method === 'POST') {
+      setTimeout(() => {
+        liveController?.enqueue(enc.encode(frame('jsonl_entry', {
+          session_id: 's1',
+          entry: { type: 'user', uuid: 'idle-user-1', message: { role: 'user', content: 'q' } },
+        })))
+        liveController?.enqueue(enc.encode(frame('jsonl_entry', {
+          session_id: 's1',
+          entry: { type: 'assistant', uuid: 'idle-assistant-1', message: { role: 'assistant', content: [{ type: 'text', text: 'TUI 已恢复接收' }] } },
+        })))
+      }, 30)
+      return jsonResponse({ ok: true, session_id: 's1', turn_number: 2 })
+    }
+    if (url.endsWith('/api/sessions/s1/status')) {
+      return jsonResponse({ session_id: 's1', alive: false, working: false })
+    }
+    return jsonResponse({ error: 'no mock' }, 404)
+  })
+  try {
+    const { stdin, lastFrame, unmount } = render(
+      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />,
+    )
+    await delay(180)
+    ok(sseCall === 1, 'completed idle session did not reconnect by itself')
+    stdin.write('q'); await delay(30); stdin.write('\r')
+    const received = await waitFor(lastFrame, 'TUI 已恢复接收', 3000)
+    const out = lastFrame() ?? ''
+    unmount()
+    ok(sseCall >= 2, 'sending reopened the closed SSE stream')
+    ok(received && out.includes('q'), 'the new user turn and assistant reply are visible in TUI')
+  } finally { restoreFetch() }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 15 — message dispatch retries a transient 502
 // ════════════════════════════════════════════════════════════════════════════
 async function testSendRetries502() {
-  console.log('\n[UI 14] message dispatch retries transient 502')
+  console.log('\n[UI 15] message dispatch retries transient 502')
   const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
   const ready: ReadyState = {
     project: { id: 'p1', name: 'p' },
@@ -607,12 +735,14 @@ async function main() {
   await testSelectViewport()
   await testProjectPickerEscQuit()
   await testTextInputBackspace()
+  await testComposerMultilinePaste()
   testWorkingShimmer()
   testReasoningViews()
   testCustomToolCallViews()
   testClaudeMcpUnified()
   await testSseTerminatedSilent()
   await testChatSseReconnects()
+  await testIdleCompletedSessionReopensSseOnSend()
   await testSendRetries502()
   // cleanup temp home
   try { fs.rmSync(TMP_HOME, { recursive: true, force: true }) } catch { /* ignore */ }

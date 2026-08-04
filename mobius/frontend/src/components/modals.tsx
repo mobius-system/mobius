@@ -587,8 +587,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
         onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <h4 className="text-[15px] font-semibold mb-1" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改项目权限</h4>
-        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到项目，以及读者是否可以创建任务单或启动执行会话。</p>
-        {visibilityControl}
+        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>添加项目成员（谁能看到 / 使用本项目，由成员列表决定）。</p>
         {projectKind !== 'extension' && (
           <div className="mt-3">
             <ProjectMemberInvite
@@ -948,49 +947,12 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
               </button>
             </div>
           </div>
-          <div>
-            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>项目可见性</label>
-            <div className="grid grid-cols-2 gap-1.5">
-              {PROJECT_VISIBILITY_OPTIONS.map((option) => {
-                const active = visibility === option.value
-                return (
-                  <button key={option.value} type="button" onClick={() => { setVisibility(option.value); setErr('') }}
-                    title={option.description}
-                    className="h-8 rounded-lg border text-[12px] transition-colors"
-                    style={active
-                      ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' }
-                      : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-                    {option.label}
-                  </button>
-                )
-              })}
+          <details className="rounded-lg border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+            <summary className="text-[11px] cursor-pointer select-none" style={{ color: 'var(--text-muted)' }}>项目成员</summary>
+            <div className="mt-2">
+              <ProjectTeamPanel projectId={project.id} canManage={project.can_manage} actorRole={project.project_role || null} />
             </div>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-              {PROJECT_VISIBILITY_OPTIONS.find(option => option.value === visibility)?.description}
-            </p>
-            <details className="mt-3 rounded-lg border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
-              <summary className="text-[11px] cursor-pointer select-none" style={{ color: 'var(--text-muted)' }}>项目成员</summary>
-              <div className="mt-2">
-                <ProjectTeamPanel projectId={project.id} canManage={project.can_manage} actorRole={project.project_role || null} />
-              </div>
-            </details>
-            <div className="mt-2 space-y-1.5">
-              <ToggleSwitch
-                checked={canPostIssue}
-                onChange={v => { setCanPostIssue(v); setErr('') }}
-                className="flex items-center gap-3 text-[12px]"
-                style={{ color: 'var(--text-secondary)' }}>
-                读者可创建任务单 (private 永远只允许 owner, 不受此开关影响)
-              </ToggleSwitch>
-              <ToggleSwitch
-                checked={canRunSession}
-                onChange={v => { setCanRunSession(v); setErr('') }}
-                className="flex items-center gap-3 text-[12px]"
-                style={{ color: 'var(--text-secondary)' }}>
-                读者可启动执行会话 (同上, private 永远只允许 owner)
-              </ToggleSwitch>
-            </div>
-          </div>
+          </details>
           <div>
             <ToggleSwitch
               checked={!researchEnabled && defaultUseWorktree}

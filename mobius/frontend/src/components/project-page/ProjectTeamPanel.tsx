@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../store'
 import { UserPicker } from '../user-picker'
 
@@ -39,14 +39,34 @@ const ROLE_BADGE_STYLE: Record<Role, React.CSSProperties> = {
   viewer: { background: 'rgba(148,163,184,0.10)', color: 'var(--text-muted)', borderColor: 'var(--input-border)' },
 }
 
+// 顶部角色筛选 Tab: 全部 + 4 角色 (照 Aone 权限页左侧分类, 因 mobius 此处已是 Tab 内, 降级成顶部一行).
+const FILTER_TABS: Array<{ key: 'all' | Role; label: string }> = [
+  { key: 'all', label: '全部' },
+  { key: 'owner', label: '负责人' },
+  { key: 'manager', label: '管理员' },
+  { key: 'member', label: '成员' },
+  { key: 'viewer', label: '访客' },
+]
+
+function formatDate(value?: string): string {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTeamPanelProps) {
   const [members, setMembers] = useState<Member[]>([])
   const [counts, setCounts] = useState<Record<string, number>>({ owner: 0, manager: 0, member: 0, viewer: 0 })
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
+  const [filterRole, setFilterRole] = useState<'all' | Role>('all')
+  const [search, setSearch] = useState('')
   const [pendingIds, setPendingIds] = useState<string[]>([])
   const [adding, setAdding] = useState(false)
   const [addRole, setAddRole] = useState<Role>('member')
+  const [showAdd, setShowAdd] = useState(false)
   const [groups, setGroups] = useState<Array<{ id: string; name: string; active_user_count: number }>>([])
   const [groupOpen, setGroupOpen] = useState(false)
   const [busyId, setBusyId] = useState('')
@@ -81,6 +101,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
       })
       applyResult(data)
       setPendingIds([])
+      setShowAdd(false)
     } catch (e: any) {
       setErr(e?.message || '添加成员失败')
     } finally {
@@ -112,6 +133,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
         body: JSON.stringify({ user_ids: ids, role: addRole }),
       })
       applyResult(res)
+      setShowAdd(false)
     } catch (e: any) {
       setErr(e?.message || '按群组加入失败')
     } finally {
@@ -149,21 +171,65 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
   // 能否操作"负责人"行: 仅当前用户是项目负责人或管理员 (admin 的 actorRole 为 null 但 canManage=true).
   const canTouchOwner = canManage && (actorRole === 'owner' || !actorRole)
 
+  const filteredMembers = useMemo(() => {
+    let list = members
+    if (filterRole !== 'all') list = list.filter((m) => m.role === filterRole)
+    const q = search.trim().toLowerCase()
+    if (q) {
+      list = list.filter((m) =>
+        (m.display_name || '').toLowerCase().includes(q) ||
+        (m.user_id || '').toLowerCase().includes(q),
+      )
+    }
+    return list
+  }, [members, filterRole, search])
+
+  const countFor = (key: 'all' | Role): number => (key === 'all' ? members.length : counts[key] || 0)
+
+  const thStyle: React.CSSProperties = {
+    color: 'var(--text-muted)', fontWeight: 500, textAlign: 'left', padding: '8px 10px', fontSize: 11,
+  }
+  const tdStyle: React.CSSProperties = { padding: '10px', verticalAlign: 'middle' }
+
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 text-[12px]">
-        <span style={{ color: 'var(--text-secondary)' }}>项目组：</span>
-        {(['owner', 'manager', 'member', 'viewer'] as Role[]).map((r) => (
-          <span key={r} className="px-2 py-0.5 rounded-full border text-[11px]"
-            style={ROLE_BADGE_STYLE[r]}>
-            {ROLE_LABELS[r]} · {counts[r] || 0}
-          </span>
-        ))}
+      {/* 顶部角色筛选 Tab (全部 / 负责人 / 管理员 / 成员 / 访客 · 计数, 可点选筛选) */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {FILTER_TABS.map((tab) => {
+          const active = filterRole === tab.key
+          return (
+            <button key={tab.key} type="button" onClick={() => setFilterRole(tab.key)}
+              className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[11px] border transition-colors"
+              style={active
+                ? { background: 'rgba(59,130,246,0.16)', borderColor: 'rgba(59,130,246,0.40)', color: '#60a5fa' }
+                : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+              {tab.label}
+              <span style={{ opacity: 0.7 }}>{countFor(tab.key)}</span>
+            </button>
+          )
+        })}
       </div>
 
-      {canManage && (
+      {/* 工具栏: 搜索 + 添加成员 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="搜索成员姓名或账号..."
+          className="h-8 flex-1 min-w-[180px] rounded-md border px-3 text-[12px] outline-none focus:border-blue-500/50"
+          style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
+        />
+        {canManage && (
+          <button type="button" onClick={() => setShowAdd((s) => !s)}
+            className="h-8 px-3 rounded-md text-[12px] btn-primary transition-colors">
+            {showAdd ? '收起添加' : '+ 添加成员'}
+          </button>
+        )}
+      </div>
+
+      {/* 添加成员区 (折叠) */}
+      {canManage && showAdd && (
         <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
-          <div className="text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>添加项目组成员</div>
           <div className="flex items-center gap-1.5">
             <div className="flex-1 min-w-0">
               <UserPicker
@@ -177,9 +243,9 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
             <select value={addRole} onChange={(e) => setAddRole(e.target.value as Role)} disabled={adding}
               className="h-9 px-2 rounded-lg text-[12px] border flex-shrink-0"
               style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
-              <option value="member">开发者</option>
+              <option value="member">项目成员</option>
               <option value="manager">项目管理员</option>
-              <option value="viewer">访客</option>
+              <option value="viewer">项目访客</option>
             </select>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -224,55 +290,78 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
         </div>
       )}
 
+      {/* 成员表格: 成员 / 角色 / 加入时间 / 操作 */}
       {loading ? (
-        <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
-      ) : members.length === 0 ? (
-        <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>暂无项目组成员</div>
+        <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+      ) : filteredMembers.length === 0 ? (
+        <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>
+          {members.length === 0 ? '暂无项目组成员' : '没有匹配的成员'}
+        </div>
       ) : (
-        <div className="rounded-lg border divide-y" style={{ borderColor: 'var(--input-border)' }}>
-          {members.map((m) => {
-            const isOwner = m.role === 'owner'
-            const canEditThis = canManage && (!isOwner || canTouchOwner)
-            return (
-              <div key={m.user_id} className="flex items-center gap-3 px-3 py-2.5" style={{ borderColor: 'var(--input-border)' }}>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{m.display_name}</span>
-                    {!m.is_active && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(148,163,184,0.16)', color: 'var(--text-muted)' }}>已停用</span>
-                    )}
-                    <span className="px-1.5 py-0.5 rounded border text-[10px]" style={ROLE_BADGE_STYLE[m.role]}>{ROLE_LABELS[m.role]}</span>
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[11px] flex-wrap" style={{ color: 'var(--text-muted)' }}>
-                    <span className="font-mono">{m.user_id}</span>
-                    {m.groups.length > 0 && m.groups.map((g) => (
-                      <span key={g.id} className="px-1.5 py-0 rounded border" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-                        {g.name}{g.is_primary ? ' · 主' : ''}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                {canEditThis ? (
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <select
-                      value={m.role}
-                      disabled={busyId === m.user_id}
-                      onChange={(e) => changeRole(m.user_id, e.target.value as Role)}
-                      className="h-7 px-1.5 rounded-md text-[11px] border"
-                      style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
-                    >
-                      {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                    </select>
-                    <button type="button" onClick={() => removeMember(m.user_id)} disabled={busyId === m.user_id}
-                      className="h-7 px-2 rounded-md text-[11px] border transition-colors"
-                      style={{ borderColor: 'rgba(248,113,113,0.32)', color: '#f87171', background: 'rgba(248,113,113,0.06)' }}>
-                      移除
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            )
-          })}
+        <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--input-border)' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-[12px]">
+              <thead>
+                <tr className="border-b" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+                  <th style={thStyle}>成员</th>
+                  <th style={thStyle}>角色</th>
+                  <th style={thStyle}>加入时间</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredMembers.map((m) => {
+                  const isOwner = m.role === 'owner'
+                  const canEditThis = canManage && (!isOwner || canTouchOwner)
+                  return (
+                    <tr key={m.user_id} className="border-b last:border-b-0" style={{ borderColor: 'var(--input-border)' }}>
+                      <td style={tdStyle}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{m.display_name}</span>
+                          {!m.is_active && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(148,163,184,0.16)', color: 'var(--text-muted)' }}>已停用</span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] flex-wrap" style={{ color: 'var(--text-muted)' }}>
+                          <span className="font-mono">{m.user_id}</span>
+                          {m.groups.length > 0 && m.groups.map((g) => (
+                            <span key={g.id} className="px-1.5 py-0 rounded border" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+                              {g.name}{g.is_primary ? ' · 主' : ''}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td style={tdStyle}>
+                        {canEditThis ? (
+                          <select
+                            value={m.role}
+                            disabled={busyId === m.user_id}
+                            onChange={(e) => changeRole(m.user_id, e.target.value as Role)}
+                            className="h-7 px-1.5 rounded-md text-[11px] border"
+                            style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
+                          >
+                            {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                          </select>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded border text-[10px]" style={ROLE_BADGE_STYLE[m.role]}>{ROLE_LABELS[m.role]}</span>
+                        )}
+                      </td>
+                      <td style={{ ...tdStyle, color: 'var(--text-muted)' }}>{formatDate(m.created_at)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>
+                        {canEditThis ? (
+                          <button type="button" onClick={() => removeMember(m.user_id)} disabled={busyId === m.user_id}
+                            className="h-7 px-2 rounded-md text-[11px] border transition-colors"
+                            style={{ borderColor: 'rgba(248,113,113,0.32)', color: '#f87171', background: 'rgba(248,113,113,0.06)' }}>
+                            移除
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

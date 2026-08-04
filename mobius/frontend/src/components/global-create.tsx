@@ -838,48 +838,14 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
       <div className="relative w-[440px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
         onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <h4 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>修改项目权限</h4>
-        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个项目，以及读者是否可创建任务单 / 启动会话。</p>
-        <div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {VISIBILITY_OPTIONS.map(opt => {
-              const active = visibility === opt.value
-              return (
-                <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value); setErr('') }} title={opt.desc}
-                  className="h-9 rounded-lg border text-[12px] transition-colors"
-                  style={active ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' } : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-                  {opt.label}
-                </button>
-              )
-            })}
-          </div>
-          <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{visibilityOption.desc}</p>
-        </div>
+        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>添加项目成员（谁能看到 / 使用本项目，由成员列表决定）。</p>
         {projectKind !== 'extension' && (
-          <div className="mt-4">
-            <ProjectMemberInvite
-              value={inviteMembers}
-              onChange={setInviteMembers}
-              currentUserId={user?.id}
-            />
-          </div>
+          <ProjectMemberInvite
+            value={inviteMembers}
+            onChange={setInviteMembers}
+            currentUserId={user?.id}
+          />
         )}
-        {/* 读者写权限: owner/admin 永远可写, 此开关仅对非 owner 读者生效 (private 永远只允许 owner). */}
-        <div className="mt-4 space-y-2">
-          <ToggleSwitch
-            checked={canPostIssue}
-            onChange={setCanPostIssue}
-            className="flex items-start gap-3 text-[12px]"
-            style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-            <span>读者可创建任务单<span className="block text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>仅影响非 owner 读者；private 永远只允许 owner</span></span>
-          </ToggleSwitch>
-          <ToggleSwitch
-            checked={canRunSession}
-            onChange={setCanRunSession}
-            className="flex items-start gap-3 text-[12px]"
-            style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-            <span>读者可启动执行会话<span className="block text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>同上，仅影响非 owner 读者</span></span>
-          </ToggleSwitch>
-        </div>
         <div className="mt-5 flex justify-end">
           <button type="button" onClick={() => setPermissionOpen(false)} className="h-9 px-5 rounded-xl text-[13px] btn-primary transition-colors">完成</button>
         </div>
@@ -979,18 +945,18 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               </button>
             </div>
           </div>
-          {/* 可见性: 学习 modals.tsx NewProjectModal 模式 → 单行按钮触发二级 modal */}
+          {/* 项目成员: 单行按钮触发二级 modal 添加成员 (纯成员制, 谁能看到/使用本项目由成员列表决定) */}
           <div>
-            <SectionLabel hint="谁能看到这个项目">可见性</SectionLabel>
+            <SectionLabel hint="谁能看到 / 使用本项目，由成员列表决定">项目成员</SectionLabel>
             <button type="button" onClick={() => setPermissionOpen(true)}
               className="flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
               style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
               <Eye className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
               <span className="min-w-0 flex-1">
-                <span className="block text-[12px] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>修改项目权限</span>
-                <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{visibilityOption.label} · {visibilityOption.desc}</span>
+                <span className="block text-[12px] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>设置项目成员</span>
+                <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{inviteMembers.length ? `已选 ${inviteMembers.length} 位成员` : '点击添加项目成员（负责人 / 管理员 / 成员 / 访客）'}</span>
               </span>
-              <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
+              <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>设置</span>
             </button>
           </div>
           {projectKind === 'default' && (
