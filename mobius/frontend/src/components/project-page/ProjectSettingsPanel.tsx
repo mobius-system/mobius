@@ -854,7 +854,7 @@ export function ProjectSettingsPanel({
     ]
     // 普通项目才显示"权限设置" tab (排在最后); 拓展项目不暴露团队协作/权限.
     if (assistantProject) arr.push({ key: 'assistant', label: '小莫预设', active: activePane === 'assistant' })
-    if (project.kind !== 'extension') arr.push({ key: 'members', label: '权限设置', active: activePane === 'members' })
+    if (project.kind !== 'extension') arr.push({ key: 'members', label: '项目成员设置', active: activePane === 'members' })
     return arr
   }, [activePane, gitTrackingAvailable, gitTrackingTitle, assistantProject, project.kind])
 

@@ -519,22 +519,6 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, onBack, onIntoSess
                       </button>
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>可见性</label>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {VISIBILITY_OPTIONS.map(opt => {
-                        const active = visibility === opt.value
-                        return (
-                          <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value); setErr('') }} title={opt.desc}
-                            className="h-9 rounded-lg border text-[12px] transition-colors"
-                            style={active ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' } : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-                            {opt.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{visibilityOption.desc}</p>
-                  </div>
                   <div className="mt-1">
                     <ProjectMemberInvite
                       value={inviteMembers}
