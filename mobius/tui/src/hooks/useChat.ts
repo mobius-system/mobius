@@ -109,6 +109,7 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
   const aliveRef = useRef(true)
   const stoppedRef = useRef(false)
   const doConnectRef = useRef<(sid: string) => void>(() => {})
+  const connectionGenerationRef = useRef(0)
 
   const updateTyping = useCallback((active: boolean) => {
     typingRef.current = active
@@ -147,6 +148,7 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
   // ── SSE connection ────────────────────────────────────────────────────────
   const connect = useCallback((sid: string) => {
     if (process.env.MOBIUS_TUI_DEBUG) console.error('[connect]', sid)
+    const generation = ++connectionGenerationRef.current
     sseRef.current?.close()
     if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null }
     const url = `${client.server}/api/sessions/${encodeURIComponent(sid)}/events?token=${encodeURIComponent(client.token)}`
@@ -183,6 +185,10 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
       },
       onError: (msg) => setError(msg),
       onClose: () => {
+        // `connect()` closes the previous stream before installing its
+        // replacement. Ignore that superseded stream's eventual close callback,
+        // otherwise it can schedule a timer that tears down the fresh stream.
+        if (generation !== connectionGenerationRef.current) return
         // Reconnect with exponential backoff as long as the session is still
         // alive; stop once it ends (alive=false) or after a few failed tries.
         if (stoppedRef.current || !aliveRef.current) return
@@ -200,6 +206,25 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
     conn.start()
   }, [client.server, client.token, appendEntries, setHistory, updateTyping])
   doConnectRef.current = connect
+
+  const ensureSseForSend = useCallback((sid: string): boolean => {
+    // A completed worker reports alive=false. If its SSE stream is later closed
+    // by an idle proxy, onClose deliberately stops reconnecting. Sending a new
+    // turn revives the same session, so reopen the stream before dispatching the
+    // message; otherwise the backend and web UI advance while this TUI remains
+    // attached to a permanently closed connection.
+    aliveRef.current = true
+    reconnectAttemptRef.current = 0
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+    if (!sseRef.current || sseRef.current.isClosed()) {
+      connect(sid)
+      return true
+    }
+    return false
+  }, [connect])
 
   // Connect immediately when a resume session is provided, or after we create one.
   useEffect(() => {
@@ -355,8 +380,11 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
     setSending(true)
     try {
       const sid = await ensureSession()
-      // SSE may not be connected yet for a freshly created session; give it a tick.
-      if (!sseRef.current) await new Promise(r => setTimeout(r, 200))
+      // Fresh sessions connect via the sessionId effect. Resumed sessions may
+      // have a permanently closed idle stream after their worker exited; revive
+      // that stream explicitly before POSTing so this turn cannot be missed.
+      const reopenedSse = ensureSseForSend(sid)
+      if (reopenedSse || !sseRef.current) await new Promise(r => setTimeout(r, 200))
       if (process.env.MOBIUS_TUI_DEBUG) console.error('[send-post]', sid, 'sse=', !!sseRef.current, 'closed=', sseRef.current?.isClosed())
       const reqId = `tui-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       await sendWithRetry(() => client.sendMessage(sid, body, reqId))
@@ -372,7 +400,7 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
       setSending(false)
       pollNowRef.current?.()
     }
-  }, [sending, ensureSession, client, updateTyping])
+  }, [sending, ensureSession, ensureSseForSend, client, updateTyping])
 
   const stop = useCallback(async () => {
     if (!sessionId) return
