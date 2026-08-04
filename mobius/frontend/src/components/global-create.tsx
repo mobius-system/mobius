@@ -945,18 +945,18 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               </button>
             </div>
           </div>
-          {/* 可见性: 学习 modals.tsx NewProjectModal 模式 → 单行按钮触发二级 modal */}
+          {/* 项目成员: 单行按钮触发二级 modal 添加成员 (纯成员制, 谁能看到/使用本项目由成员列表决定) */}
           <div>
-            <SectionLabel hint="谁能看到这个项目">可见性</SectionLabel>
+            <SectionLabel hint="谁能看到 / 使用本项目，由成员列表决定">项目成员</SectionLabel>
             <button type="button" onClick={() => setPermissionOpen(true)}
               className="flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
               style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
               <Eye className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
               <span className="min-w-0 flex-1">
-                <span className="block text-[12px] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>修改项目权限</span>
-                <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{visibilityOption.label} · {visibilityOption.desc}</span>
+                <span className="block text-[12px] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>设置项目成员</span>
+                <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{inviteMembers.length ? `已选 ${inviteMembers.length} 位成员` : '点击添加项目成员（负责人 / 管理员 / 成员 / 访客）'}</span>
               </span>
-              <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
+              <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>设置</span>
             </button>
           </div>
           {projectKind === 'default' && (

@@ -300,7 +300,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
       ) : (
         <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--input-border)' }}>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-[12px]" style={{ minWidth: 560 }}>
+            <table className="w-full border-collapse text-left text-[12px]">
               <thead>
                 <tr className="border-b" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
                   <th style={thStyle}>成员</th>
