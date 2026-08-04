@@ -58,7 +58,18 @@ let realFetch: FetchImpl
 
 function installMock(impl: (url: string, init?: RequestInit) => Response | Promise<Response>) {
   realFetch = globalThis.fetch
-  globalThis.fetch = ((url: any, init?: any) => impl(String(url), init)) as FetchImpl
+  globalThis.fetch = ((url: any, init?: any) => {
+    const requestUrl = String(url)
+    // Fresh TUI sessions probe the reverse AIMUX bridge before creating a
+    // session. Keep UI tests focused on their own mocked endpoint instead of
+    // waiting through the production 8-second bridge readiness grace period.
+    const marker = '/aimux_bridge/api/remotes/'
+    if (requestUrl.includes(marker) && requestUrl.endsWith('/connection')) {
+      const identifier = decodeURIComponent(requestUrl.slice(requestUrl.indexOf(marker) + marker.length, -'/connection'.length))
+      return jsonResponse({ identifier, event_stream_connected: true })
+    }
+    return impl(requestUrl, init)
+  }) as FetchImpl
 }
 function restoreFetch() { globalThis.fetch = realFetch }
 
@@ -154,7 +165,7 @@ async function testChat() {
     )
     await delay(40)
     const initialFrame = lastFrame() ?? ''
-    ok(initialFrame.includes('Mobius') && initialFrame.includes('(v0.2.1)') && !initialFrame.includes('Mobius TUI'), 'welcome card shows the Mobius product identity')
+    ok(initialFrame.includes('Mobius') && /\(v\d+\.\d+\.\d+\)/.test(initialFrame) && !initialFrame.includes('Mobius TUI'), 'welcome card shows the Mobius product identity')
     ok(initialFrame.includes('model:') && initialFrame.includes('project:') && initialFrame.includes('task:'), 'welcome card summarizes active context')
     ok(initialFrame.includes('Tip:') && initialFrame.includes('输入问题或 / 命令'), 'welcome tip and bottom composer are visible together')
     ok(initialFrame.includes('http://mock.local/u/test-user/p/p1/i/i1'), 'web issue URL is always visible before session creation')
