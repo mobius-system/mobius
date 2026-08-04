@@ -259,23 +259,17 @@ function ensureGroupVisCtx(user: any): { restricted: boolean; whitelist: Set<str
 function canReadProject(user: any, projectOrId: any): boolean {
   const project = projectById(projectOrId);
   if (!project || !user?.id) return false;
-  // 项目成员 (任意角色) 可读本项目, 先于可见性判定.
+  // 纯成员制 (项目可见性 public/team/allowlist 已退役): admin 全局可见; 创建者可见; 项目成员(任意角色)可读.
+  if (user.role === 'admin') return true;
+  if (project.created_by === user.id) return true;
   if (ProjectMemberships.roleFor(project.id, user.id)) return true;
-  // 受限群组: 非成员用户即使面对公开项目也只允许 ①自己创建的 ②群组白名单授权的, 其余拒绝.
+  // 受限群组白名单: 管理员授权给该群组的项目, 视同间接成员.
   const visCtx = ensureGroupVisCtx(user);
-  if (visCtx.restricted) {
-    if (project.created_by === user.id) return true;
-    if (visCtx.whitelist.has(project.id)) return true;
-    return false;
-  }
-  const visibility = normalizeProjectVisibility(project.visibility, 'private');
-  return allowedByVisibility(user, {
-    resourceType: 'project',
-    resourceId: project.id,
-    ownerId: project.created_by,
-    teamOwnerId: project.created_by,
-    visibility,
-  });
+  if (visCtx.restricted && visCtx.whitelist.has(project.id)) return true;
+  // 项目级 ACL 显式 allow (遗留 allowlist 授权), 保留.
+  if (hasAclEffect(user, 'project', project.id, 'allow')) return true;
+  // 其余非成员一律不可见.
+  return false;
 }
 
 function canManageProject(user: any, projectOrId: any): boolean {
@@ -291,22 +285,14 @@ function canCreateIssue(user: any, projectOrId: any): boolean {
   return projectAllowsReaderWrite(user, projectOrId, 'can_post_issue');
 }
 
-function projectAllowsReaderWrite(user: any, projectOrId: any, flagColumn: string): boolean {
+function projectAllowsReaderWrite(user: any, projectOrId: any, _flagColumn: string): boolean {
   const project = projectById(projectOrId);
   if (!project || !user?.id) return false;
   if (user.role === 'admin' || project.created_by === user.id) return true;
-  // 项目成员的写权限按角色: owner/manager 直接放行; member 跟随项目开关; viewer 只读.
+  // 成员制写权限 (读者开关 can_post_issue/can_run_session 已退役):
+  // owner/manager/member 可写(建任务单/跑会话); viewer 只读; 非成员不可写.
   const role = ProjectMemberships.roleFor(project.id, user.id);
-  if (role === 'owner' || role === 'manager') return true;
-  if (role === 'viewer') return false;
-  if (role === 'member') return !!project[flagColumn];
-  // 非成员: 走原有可见性 + 开关逻辑.
-  if (!canReadProject(user, project)) return false;
-  if (!project[flagColumn]) return false;
-  const visibility = normalizeProjectVisibility(project.visibility, 'private');
-  if (visibility === 'public') return true;
-  if (visibility === 'team') return sameGroup(user, project.created_by);
-  if (visibility === 'allowlist') return hasAclEffect(user, 'project', project.id, 'allow');
+  if (role === 'owner' || role === 'manager' || role === 'member') return true;
   return false;
 }
 
