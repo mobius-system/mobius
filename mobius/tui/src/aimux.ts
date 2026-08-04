@@ -271,8 +271,10 @@ export const downloadBundleForTest = downloadBundle
 
 export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string; launcher?: AimuxLauncher }> {
   // Fast-path：venv 里已有 aimux 可执行 → 直接用。
-  if (existsSync(aimuxExe()) && existsSync(venvPython())) { onProgress?.({ phase: 'ready' }); return { ok: true, launcher: { kind: 'exe', path: aimuxExe() } } }
+  if (existsSync(aimuxExe()) && existsSync(venvPython())) { logInstall(`ensureAimux fast-path: venv aimux exe present\n`); onProgress?.({ phase: 'ready' }); return { ok: true, launcher: { kind: 'exe', path: aimuxExe() } } }
+  logInstall(`\n########## ensureAimux install begin ${new Date().toISOString()} platform=${process.platform} arch=${process.arch} home=${mobiusHome()} ##########\n`)
   const py = await pythonForAimux(onProgress)
+  logInstall(`  pythonForAimux → ${py ?? '(null: no system python)'}\n`)
   let venvError = '未找到 Python。请先安装 Python 3.10+（或安装 uv 后重试）。'
   if (py) {
     onProgress?.({ phase: 'venv', detail: `创建 Python 虚拟环境（${py}）…` })
@@ -290,9 +292,11 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Pr
     }
   }
   // ── Plan B 兜底：本地 python/venv 不可用 → 下载内置 python+aimux 运行时 ──
+  logInstall(`  venv path failed (${(venvError || '').slice(0, 80)}) → falling back to bundle\n`)
   onProgress?.({ phase: 'install', detail: '本地 Python 不可用，改用内置运行时…' })
   const bundle = await ensureFromBundle(onProgress)
   if (bundle.ok && bundle.launcher) { onProgress?.({ phase: 'ready' }); return { ok: true, launcher: bundle.launcher } }
+  logInstall(`########## ensureAimux FAILED: ${venvError}；内置运行时也失败: ${bundle.error} ##########\n`)
   return { ok: false, error: `${venvError}；内置运行时也失败: ${bundle.error}` }
 }
 
@@ -518,7 +522,7 @@ export async function startAimuxConnection(opts: { server: string; token: string
       phase: p.phase === 'ready' ? 'connecting' : p.phase,
       detail: p.detail || (p.phase === 'ready' ? 'AIMUX 已就绪，准备连接…' : p.phase),
     }))
-    if (!ready.ok || !ready.launcher) { onStatus({ state: 'failed', phase: 'idle', detail: ready.error }); return }
+    if (!ready.ok || !ready.launcher) { logInstall(`startAimuxConnection giving up: ${ready.error}\n`); onStatus({ state: 'failed', phase: 'idle', detail: `${ready.error} · 日志: ${aimuxLogPath()}` }); return }
     const identifier = tuiAimuxIdentifier()
     const launcher = ready.launcher
     supervisor = new AimuxSupervisor({
