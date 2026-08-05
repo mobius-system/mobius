@@ -2,6 +2,7 @@ import { execFile, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { StringDecoder } from 'string_decoder';
 
 // Candidate aimux binaries, in priority order:
 //   1. AIMUX_BIN env (explicit override)
@@ -198,19 +199,123 @@ function resultMessage(result: any): string {
   return result.stderr || result.stdout || result.error || 'aimux remote 命令执行失败';
 }
 
+function normalizeRemote(item: any): any {
+  return {
+    name: String(item?.name || ''),
+    type: String(item?.type || ''),
+    user: String(item?.user || ''),
+    hostname: String(item?.hostname || ''),
+    port: Number(item?.port || 22),
+    status: String(item?.status || ''),
+    rtt_ms: typeof item?.rtt_ms === 'number' ? item.rtt_ms : null,
+  };
+}
+
 async function listRemotes(): Promise<any[]> {
   const result = await runAimux(['remote', 'ls', '--json'], { timeoutMs: 70000 });
   const data = parseJsonOutput(result);
   if (!result.ok && !Array.isArray(data)) throw new Error(resultMessage(result));
   if (!Array.isArray(data)) throw new Error('aimux remote ls 返回格式异常');
-  return data.map((item: any) => ({
-    name: String(item.name || ''),
-    user: String(item.user || ''),
-    hostname: String(item.hostname || ''),
-    port: Number(item.port || 22),
-    status: String(item.status || ''),
-    rtt_ms: typeof item.rtt_ms === 'number' ? item.rtt_ms : null,
-  })).filter((item: any) => item.name);
+  return data.map(normalizeRemote).filter((item: any) => item.name);
+}
+
+async function streamRemotes(
+  onEvent: (event: any) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(aimuxBin(), ['remote', 'ls', '--stream'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const decoder = new StringDecoder('utf8');
+    let stdoutBuffer = '';
+    let stderr = '';
+    let outputBytes = 0;
+    let settled = false;
+    let timedOut = false;
+
+    const abortError = () => {
+      const error = new Error('aimux remote 流扫描已取消');
+      error.name = 'AbortError';
+      return error;
+    };
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      if (error) reject(error);
+      else resolve();
+    };
+    const abort = () => {
+      child.kill('SIGTERM');
+      finish(abortError());
+    };
+    const handleLine = (line: string) => {
+      if (!line.trim()) return;
+      let event: any;
+      try { event = JSON.parse(line); }
+      catch { throw new Error('aimux remote 流返回了无效 JSON'); }
+      if (!event || typeof event.event !== 'string') return;
+      if (event.event === 'remote') {
+        const remote = normalizeRemote(event.remote);
+        if (!remote.name) return;
+        onEvent({ ...event, remote });
+        return;
+      }
+      onEvent(event);
+    };
+    const drainLines = () => {
+      let newline: number;
+      while ((newline = stdoutBuffer.indexOf('\n')) >= 0) {
+        const line = stdoutBuffer.slice(0, newline).replace(/\r$/, '');
+        stdoutBuffer = stdoutBuffer.slice(newline + 1);
+        handleLine(line);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGTERM');
+    }, 70000);
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    signal?.addEventListener('abort', abort, { once: true });
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      if (settled) return;
+      outputBytes += chunk.length;
+      if (outputBytes > REMOTE_FILE_OUTPUT_MAX_BYTES) {
+        child.kill('SIGTERM');
+        finish(new Error('aimux remote 流响应超过大小限制'));
+        return;
+      }
+      try {
+        stdoutBuffer += decoder.write(chunk);
+        drainLines();
+      } catch (error) {
+        child.kill('SIGTERM');
+        finish(error as Error);
+      }
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      if (stderr.length < MAX_BUFFER) stderr += chunk.toString('utf8');
+    });
+    child.on('error', (error) => finish(error));
+    child.on('close', (code) => {
+      if (settled) return;
+      try {
+        stdoutBuffer += decoder.end();
+        if (stdoutBuffer.trim()) handleLine(stdoutBuffer.replace(/\r$/, ''));
+      } catch (error) {
+        finish(error as Error);
+        return;
+      }
+      if (timedOut) finish(new Error('aimux remote 流扫描超时'));
+      else if (code !== 0) finish(new Error(stderr.trim() || `aimux remote 流扫描失败 (code=${code})`));
+      else finish();
+    });
+  });
 }
 
 async function testRemote(name: any, timeout: any): Promise<any> {
@@ -418,6 +523,7 @@ async function addRemote({ host, user, port, name, identity, timeout }: any = {}
 
 export {
   listRemotes,
+  streamRemotes,
   testRemote,
   hardwareRemote,
   browseRemotePath,
