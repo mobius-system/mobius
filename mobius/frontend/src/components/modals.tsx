@@ -3457,7 +3457,11 @@ function manifestToRows(manifest: DesktopManifest): DesktopDownloadRow[] {
 // size / sha256 由 build.py --build-mobile 从 momo-mobile 拷 APK 后自动回填
 // (按各 ABI 的 file 行匹配更新); iOS 暂留空 (file='' → 显示「未上线」)。
 const MOBILE_VERSION = '0.1.7'
-const MOBILE_BUILDS: Array<{ label: string; sub: string; file: string; size: number; sha256: string }> = [
+// iOS 走 TestFlight 公开邀请链接: build 上传后在 App Store Connect → TestFlight 开启"公开链接",
+// 把 https://testflight.apple.com/join/<CODE> 里的 <CODE> 填到下面 IOS_TESTFLIGHT_CODE。
+// 仍是占位时, iOS 行显示"未上线"; 填入真实 code 后自动变成 TestFlight 下载按钮。
+const IOS_TESTFLIGHT_CODE = 'EgamfnR7'
+const MOBILE_BUILDS: Array<{ label: string; sub: string; file: string; size: number; sha256: string; url?: string }> = [
   {
     label: 'Android',
     sub: 'arm64-v8a · 大多数现代手机',
@@ -3473,11 +3477,12 @@ const MOBILE_BUILDS: Array<{ label: string; sub: string; file: string; size: num
     sha256: '0a67ad4d98335549355f0e62c2e67de370e5fb305340208f6dc46eed50fb9820',
   },
   {
-    label: 'iOS (敬请期待)',
-    sub: 'App Store / TestFlight 上线后回填',
+    label: 'iOS',
+    sub: 'TestFlight 内测 · iPhone/iPad',
     file: '',
     size: 0,
     sha256: '',
+    url: `https://testflight.apple.com/join/${IOS_TESTFLIGHT_CODE}`,
   },
 ]
 
@@ -3701,7 +3706,22 @@ export function MobileDownloadModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="space-y-2 mt-4">
-          {MOBILE_BUILDS.map(b => b.file ? (
+          {MOBILE_BUILDS.map(b => (b.url && !b.url.includes('REPLACE_WITH_TESTFLIGHT_CODE')) ? (
+            <a key={b.label} href={b.url} target="_blank" rel="noopener noreferrer"
+              className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
+              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                </svg>
+                <div>
+                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
+                  <div className="text-[11px]" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>{b.sub}</div>
+                </div>
+              </div>
+              <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: '#0a84ff', color: '#fff' }}>TestFlight</span>
+            </a>
+          ) : b.file ? (
             <a key={b.file} href={`/mobile-builds/${b.file}`} download
               title={b.sha256 ? `SHA256: ${b.sha256}` : undefined}
               className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
