@@ -16,9 +16,9 @@ type ProjectMemberInviteProps = {
 // GitLab 风格"邀请成员": 选人 (UserPicker) + 批次角色 + 按员工群组一键加入;
 // 下方待添加列表每人可单独改角色. 取代原先并排的"添加用户(allowlist)"+"项目组成员"两个框.
 const ROLE_OPTIONS: Array<{ value: ProjectMemberRole; label: string; hint: string }> = [
-  { value: 'member', label: '开发者', hint: '可读可写' },
+  { value: 'member', label: '项目成员', hint: '可读可写' },
   { value: 'manager', label: '项目管理员', hint: '可管理成员' },
-  { value: 'viewer', label: '访客', hint: '只读' },
+  { value: 'viewer', label: '项目访客', hint: '只读' },
 ]
 const DEFAULT_ROLE: ProjectMemberRole = 'member'
 
@@ -155,39 +155,54 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
       </div>
 
       {value.length > 0 && (
-        <div className="rounded-lg border divide-y" style={{ borderColor: 'var(--input-border)' }}>
-          {value.map((m) => {
-            const roleOpt = ROLE_OPTIONS.find((r) => r.value === m.role) || ROLE_OPTIONS[0]
-            return (
-              <div key={m.user_id} className="flex items-center gap-2 px-2.5 py-1.5" style={{ borderColor: 'var(--input-border)' }}>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[12px] truncate" style={{ color: 'var(--text-primary)' }}>{nameMap[m.user_id] || m.user_id}</div>
-                  <div className="text-[10px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>{m.user_id}</div>
-                </div>
-                <select
-                  value={m.role}
-                  onChange={(e) => setRole(m.user_id, e.target.value)}
-                  disabled={disabled}
-                  title={roleOpt.hint}
-                  className="h-7 px-1.5 rounded-md text-[11px] border"
-                  style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
-                >
-                  {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => remove(m.user_id)}
-                  disabled={disabled}
-                  className="h-7 w-7 flex items-center justify-center rounded-md text-[12px]"
-                  style={{ color: '#f87171' }}
-                >✕</button>
-              </div>
-            )
-          })}
+        <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--input-border)' }}>
+          <table className="w-full border-collapse text-left text-[12px]">
+            <thead>
+              <tr className="border-b" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+                <th style={{ color: 'var(--text-muted)', fontWeight: 500, textAlign: 'left', padding: '8px 10px', fontSize: 11 }}>成员</th>
+                <th style={{ color: 'var(--text-muted)', fontWeight: 500, textAlign: 'left', padding: '8px 10px', fontSize: 11 }}>角色</th>
+                <th style={{ color: 'var(--text-muted)', fontWeight: 500, textAlign: 'right', padding: '8px 10px', fontSize: 11 }}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {value.map((m) => {
+                const roleOpt = ROLE_OPTIONS.find((r) => r.value === m.role) || ROLE_OPTIONS[0]
+                return (
+                  <tr key={m.user_id} className="border-b last:border-b-0" style={{ borderColor: 'var(--input-border)' }}>
+                    <td style={{ padding: '10px', verticalAlign: 'middle' }}>
+                      <div className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{nameMap[m.user_id] || m.user_id}</div>
+                      <div className="mt-0.5 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>{m.user_id}</div>
+                    </td>
+                    <td style={{ padding: '10px', verticalAlign: 'middle' }}>
+                      <select
+                        value={m.role}
+                        onChange={(e) => setRole(m.user_id, e.target.value)}
+                        disabled={disabled}
+                        title={roleOpt.hint}
+                        className="h-7 px-1.5 rounded-md text-[11px] border"
+                        style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
+                      >
+                        {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: '10px', verticalAlign: 'middle', textAlign: 'right' }}>
+                      <button
+                        type="button"
+                        onClick={() => remove(m.user_id)}
+                        disabled={disabled}
+                        className="h-7 px-2 rounded-md text-[11px] border transition-colors"
+                        style={{ borderColor: 'rgba(248,113,113,0.32)', color: '#f87171', background: 'rgba(248,113,113,0.06)' }}
+                      >移除</button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
       <p className="text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
-        创建者自动成为项目负责人。开发者可读可写、项目管理员可管理成员、访客只读；创建后可在项目设置中调整。
+        创建者自动成为项目负责人。项目成员可读可写、项目管理员可管理成员、项目访客只读；创建后可在项目设置中调整。
       </p>
     </div>
   )
