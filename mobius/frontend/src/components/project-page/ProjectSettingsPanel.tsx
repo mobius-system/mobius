@@ -848,8 +848,8 @@ export function ProjectSettingsPanel({
     const arr: OverflowTab[] = [
       { key: 'settings', label: '项目设置', active: activePane === 'settings', dataTour: 'project-settings-tab' },
     ]
-    // 项目成员设置紧跟「项目设置」之后、版本追踪之前 (普通项目; 拓展项目不暴露团队协作).
-    if (project.kind !== 'extension') arr.push({ key: 'members', label: '项目成员设置', active: activePane === 'members' })
+    // 项目成员设置紧跟「项目设置」之后、版本追踪之前 (所有项目, 含拓展应用).
+    arr.push({ key: 'members', label: '项目成员设置', active: activePane === 'members' })
     arr.push(
       { key: 'versions', label: '版本追踪', active: activePane === 'versions', disabled: !gitTrackingAvailable, title: gitTrackingTitle },
       { key: 'architecture', label: '系统结构剖析', active: activePane === 'architecture' },

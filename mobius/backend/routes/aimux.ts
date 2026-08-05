@@ -5,6 +5,28 @@ import * as aimuxRemote from '../services/aimux-remote';
 
 const router = express.Router();
 
+router.get('/remotes/stream', auth, async (req: express.Request, res: express.Response) => {
+  const controller = new AbortController();
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof (res as any).flushHeaders === 'function') (res as any).flushHeaders();
+  res.on('close', () => {
+    if (!res.writableEnded) controller.abort();
+  });
+  try {
+    await aimuxRemote.streamRemotes((event: any) => {
+      if (!res.destroyed && !res.writableEnded) res.write(`${JSON.stringify(event)}\n`);
+    }, controller.signal);
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') return;
+    if (!res.destroyed && !res.writableEnded) {
+      res.write(`${JSON.stringify({ event: 'error', error: (e as Error).message || '扫描 aimux remote 失败' })}\n`);
+    }
+  }
+  if (!res.destroyed && !res.writableEnded) res.end();
+});
+
 router.get('/remotes', auth, async (req: express.Request, res: express.Response) => {
   try {
     const remotes = await aimuxRemote.listRemotes();
