@@ -356,11 +356,13 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
 
 type AimuxRemote = {
   name: string
+  type?: string
   user: string
   hostname: string
   port: number
   status: string
   rtt_ms: number | null
+  cached?: boolean
 }
 
 type AddRemoteForm = {
@@ -373,6 +375,49 @@ type AddRemoteForm = {
 }
 
 type CollapsibleRemoteStatus = 'auth-required' | 'unreachable'
+
+const AIMUX_REMOTE_CACHE_KEY = 'mobius.aimux.remote-scan-cache.v1'
+
+function normalizeAimuxRemote(value: any): AimuxRemote | null {
+  const name = typeof value?.name === 'string' ? value.name.trim() : ''
+  if (!name) return null
+  return {
+    name,
+    type: typeof value?.type === 'string' ? value.type : '',
+    user: typeof value?.user === 'string' ? value.user : '',
+    hostname: typeof value?.hostname === 'string' ? value.hostname : '',
+    port: Number.isInteger(Number(value?.port)) ? Number(value.port) : 22,
+    status: typeof value?.status === 'string' ? value.status : 'unknown',
+    rtt_ms: typeof value?.rtt_ms === 'number' ? value.rtt_ms : null,
+    cached: !!value?.cached,
+  }
+}
+
+function readAimuxRemoteCache(): AimuxRemote[] {
+  if (typeof localStorage === 'undefined') return []
+  try {
+    const parsed = JSON.parse(localStorage.getItem(AIMUX_REMOTE_CACHE_KEY) || 'null')
+    if (!Array.isArray(parsed?.remotes)) return []
+    return parsed.remotes
+      .map(normalizeAimuxRemote)
+      .filter((remote: AimuxRemote | null): remote is AimuxRemote => !!remote)
+      .map((remote: AimuxRemote) => ({ ...remote, cached: true }))
+  } catch {
+    return []
+  }
+}
+
+function writeAimuxRemoteCache(remotes: AimuxRemote[]) {
+  if (typeof localStorage === 'undefined') return
+  const stable = remotes
+    .filter(remote => remote.name && remote.status !== 'probing')
+    .map(({ cached: _cached, ...remote }) => remote)
+  try {
+    localStorage.setItem(AIMUX_REMOTE_CACHE_KEY, JSON.stringify({ saved_at: Date.now(), remotes: stable }))
+  } catch {
+    // Cache is an acceleration only; quota/privacy-mode failures must not block the modal.
+  }
+}
 
 function statusStyle(status: string) {
   if (status === 'connected') return { color: '#22c55e', background: 'rgba(34,197,94,0.10)', borderColor: 'rgba(34,197,94,0.25)' }
@@ -557,7 +602,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
   onAnnounce?: (body: string) => void
 }) {
   const isAnnounce = mode === 'announce'
-  const [remotes, setRemotes] = useState<AimuxRemote[]>([])
+  const [remotes, setRemotes] = useState<AimuxRemote[]>(readAimuxRemoteCache)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -572,6 +617,8 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
   const [hardwareInfo, setHardwareInfo] = useState<Record<string, string>>({})
   const [remotePaths, setRemotePaths] = useState<Record<string, string>>({})
   const [pathPicker, setPathPicker] = useState<{ remote: AimuxRemote; path: string } | null>(null)
+  const loadAbortRef = useRef<AbortController | null>(null)
+  const loadRequestRef = useRef(0)
   const [addForm, setAddForm] = useState<AddRemoteForm>({
     name: '',
     host: '',
@@ -581,20 +628,125 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
     timeout: '5s',
   })
 
-  const loadRemotes = useCallback(() => {
-    setLoading(true); setErr('')
-    api('/api/aimux/remotes')
-      .then((d: any) => {
-        const rows = Array.isArray(d?.remotes) ? d.remotes : []
-        setRemotes(rows)
-        setSelected(prev => new Set(Array.from(prev).filter(name => rows.some((r: AimuxRemote) => r.name === name))))
-        setRemotePaths(prev => Object.fromEntries(Object.entries(prev).filter(([name]) => rows.some((r: AimuxRemote) => r.name === name))))
-        setLoading(false)
-      })
-      .catch(e => { setErr(e?.message || '读取 aimux remote 清单失败'); setRemotes([]); setLoading(false) })
+  const applyCompletedRows = useCallback((rows: AimuxRemote[]) => {
+    writeAimuxRemoteCache(rows)
+    setRemotes(rows)
+    setSelected(prev => new Set(Array.from(prev).filter(name => rows.some(r => r.name === name))))
+    setRemotePaths(prev => Object.fromEntries(Object.entries(prev).filter(([name]) => rows.some(r => r.name === name))))
   }, [])
 
-  useEffect(() => { loadRemotes() }, [loadRemotes])
+  const loadRemotes = useCallback(() => {
+    loadAbortRef.current?.abort()
+    const controller = new AbortController()
+    loadAbortRef.current = controller
+    const requestId = ++loadRequestRef.current
+    const seen = new Set<string>()
+    let receivedRemote = false
+    let completed = false
+    setLoading(true); setErr('')
+
+    const legacyFallback = async () => {
+      const data: any = await api('/api/aimux/remotes', { signal: controller.signal })
+      const rows = (Array.isArray(data?.remotes) ? data.remotes : [])
+        .map(normalizeAimuxRemote)
+        .filter((remote: AimuxRemote | null): remote is AimuxRemote => !!remote)
+        .map((remote: AimuxRemote) => ({ ...remote, cached: false }))
+      if (requestId !== loadRequestRef.current) return
+      applyCompletedRows(rows)
+    }
+
+    const run = async () => {
+      try {
+        const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cc-token') : null
+        const response = await fetch('/api/aimux/remotes/stream', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        })
+        if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        const handleEvent = (event: any) => {
+          if (requestId !== loadRequestRef.current) return
+          if (event?.event === 'error') throw new Error(event.error || '扫描 aimux remote 失败')
+          if (event?.event === 'done') {
+            completed = true
+            setRemotes(prev => {
+              const rows = prev.filter(remote => seen.has(remote.name)).map(remote => ({ ...remote, cached: false }))
+              writeAimuxRemoteCache(rows)
+              return rows
+            })
+            return
+          }
+          if (event?.event !== 'remote') return
+          const incoming = normalizeAimuxRemote(event.remote)
+          if (!incoming) return
+          receivedRemote = true
+          seen.add(incoming.name)
+          setRemotes(prev => {
+            const index = prev.findIndex(remote => remote.name === incoming.name)
+            const existing = index >= 0 ? prev[index] : null
+            const keepRememberedStatus = event.phase === 'discovered' && existing?.cached
+            const nextRemote: AimuxRemote = keepRememberedStatus
+              ? { ...incoming, status: existing.status, rtt_ms: existing.rtt_ms, cached: true }
+              : { ...incoming, cached: false }
+            if (index < 0) return [...prev, nextRemote]
+            const next = [...prev]
+            next[index] = nextRemote
+            return next
+          })
+        }
+        const drain = () => {
+          let newline: number
+          while ((newline = buffer.indexOf('\n')) >= 0) {
+            const line = buffer.slice(0, newline).replace(/\r$/, '')
+            buffer = buffer.slice(newline + 1)
+            if (line.trim()) handleEvent(JSON.parse(line))
+          }
+        }
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          drain()
+        }
+        buffer += decoder.decode()
+        if (buffer.trim()) handleEvent(JSON.parse(buffer))
+        if (!completed) {
+          setRemotes(prev => {
+            const rows = prev.filter(remote => seen.has(remote.name)).map(remote => ({ ...remote, cached: false }))
+            writeAimuxRemoteCache(rows)
+            return rows
+          })
+        }
+      } catch (error: any) {
+        if (error?.name === 'AbortError' || requestId !== loadRequestRef.current) return
+        if (!receivedRemote) {
+          try { await legacyFallback(); return }
+          catch (fallbackError: any) {
+            if (fallbackError?.name === 'AbortError') return
+            throw fallbackError
+          }
+        }
+        throw error
+      }
+    }
+
+    run()
+      .catch((error: any) => {
+        if (requestId === loadRequestRef.current && error?.name !== 'AbortError') {
+          setErr(error?.message || '读取 aimux remote 清单失败')
+        }
+      })
+      .finally(() => {
+        if (requestId === loadRequestRef.current) setLoading(false)
+      })
+  }, [applyCompletedRows])
+
+  useEffect(() => {
+    loadRemotes()
+    return () => loadAbortRef.current?.abort()
+  }, [loadRemotes])
 
   const selectedRemotes = useMemo(
     () => remotes.filter(r => selected.has(r.name)),
@@ -765,7 +917,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[13px] font-medium font-mono" style={{ color: 'var(--text-primary)' }}>{r.name}</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap" style={statusStyle(r.status)}>
-              {r.status || 'unknown'}
+              {r.status || 'unknown'}{r.cached ? ' [记忆]' : ''}
             </span>
             {typeof r.rtt_ms === 'number' && (
               <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.rtt_ms}ms</span>
@@ -801,8 +953,8 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
               <button type="button"
                 onClick={() => setPathPicker({ remote: r, path: remotePaths[r.name] || '~' })}
-                disabled={saving || r.status !== 'reachable'}
-                title={r.status === 'reachable' ? '浏览远端真实路径' : 'remote 状态不是 reachable, 无法浏览'}
+                disabled={saving || r.cached || r.status !== 'reachable'}
+                title={r.cached ? '等待本轮扫描确认后浏览' : (r.status === 'reachable' ? '浏览远端真实路径' : 'remote 状态不是 reachable, 无法浏览')}
                 className="h-7 px-2 text-[10.5px] rounded border transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
                 style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                 <FolderOpen className="w-3 h-3" strokeWidth={1.8} />
@@ -880,12 +1032,13 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
               <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 已选 {selectedRemotes.length}/{remotes.length}
               </span>
+              {loading && <span className="text-[10px] ml-auto" style={{ color: 'var(--text-muted)' }}>扫描中...</span>}
             </div>
 
             <div className="flex-1 overflow-auto p-5 space-y-2">
               {err && <pre className="text-[11px] text-red-400 whitespace-pre-wrap break-all">{err}</pre>}
               {info && <div className="text-[11px] text-emerald-400">{info}</div>}
-              {loading ? (
+              {loading && remotes.length === 0 ? (
                 <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
               ) : remotes.length === 0 ? (
                 <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>暂无 aimux remote</div>
