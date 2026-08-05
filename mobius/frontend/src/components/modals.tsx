@@ -780,9 +780,9 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
                 style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
                 <Eye className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[12px] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>修改项目权限</span>
+                  <span className="block text-[12px] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>设置项目成员</span>
                   <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    {visibilityOption.label} · {permissionDetail}
+                    {inviteMembers.length ? `已选 ${inviteMembers.length} 位成员` : '点击添加项目成员（创建后可随时修改）'}
                   </span>
                 </span>
                 <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
