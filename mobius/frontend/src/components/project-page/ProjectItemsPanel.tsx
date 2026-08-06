@@ -1,10 +1,11 @@
-import { ExternalLink, Settings, Wrench } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { ExternalLink, LayoutList, Rows3, Settings, Wrench } from 'lucide-react'
 import { IssueCard } from './IssueCard'
 import { ProjectTabButton, ProjectTabList } from './ProjectTabs'
 import { PrimaryActionButton } from '../primary-action-button'
 import { ResearchCard } from './ResearchCard'
 import { ListLoadingHint } from '../list-loading-hint'
-import type { IssueConfirmAction, ProjectFilter, ProjectIssuePagination, ProjectListSection } from './types'
+import type { IssueConfirmAction, ProjectCardDensity, ProjectFilter, ProjectIssuePagination, ProjectListSection } from './types'
 import type { ProjectSessionMatchMap } from '../../services/project-session-search'
 
 const EXTENSION_DEVELOPMENT_LINKS: Record<string, { label: string; href: string; description: string }> = {
@@ -29,12 +30,17 @@ type ProjectItemsPanelProps = {
   sessionMatchesByResearch: ProjectSessionMatchMap
   sessionSearchLoading?: boolean
   issuePagination: ProjectIssuePagination
+  researchPagination: ProjectIssuePagination
+  density: ProjectCardDensity
+  desktopWorkspace?: boolean
+  scrollResetKey: string
   // 切换到未缓存项目时, 列表先显示 loading 而不是闪现"暂无 Issue/Research".
   issuesLoading?: boolean
   researchesLoading?: boolean
   canCreateIssue?: boolean
   canCreateResearch?: boolean
   onSectionChange: (section: ProjectListSection) => void
+  onDensityChange: (density: ProjectCardDensity) => void
   onCreateIssue: () => void
   onCreatePlanningIssue?: () => void
   onCreateResearch: () => void
@@ -60,11 +66,16 @@ export function ProjectItemsPanel({
   sessionMatchesByResearch,
   sessionSearchLoading = false,
   issuePagination,
+  researchPagination,
+  density,
+  desktopWorkspace = false,
+  scrollResetKey,
   issuesLoading = false,
   researchesLoading = false,
   canCreateIssue = true,
   canCreateResearch = true,
   onSectionChange,
+  onDensityChange,
   onCreateIssue,
   onCreatePlanningIssue,
   onCreateResearch,
@@ -75,10 +86,19 @@ export function ProjectItemsPanel({
   onToggleIssueStar,
   onOpenSettings,
 }: ProjectItemsPanelProps) {
+  const listScrollRef = useRef<HTMLDivElement>(null)
   const extensionName = typeof project.extension_name === 'string' ? project.extension_name : ''
   const canRunExtension = project.kind === 'extension' && !!extensionName && !project.disabled
   const extensionRunUrl = extensionName ? `/extension/${extensionName}/` : ''
   const developmentLink = extensionName ? EXTENSION_DEVELOPMENT_LINKS[extensionName] : null
+  const compact = density === 'compact'
+  const activePagination = section === 'issues' ? issuePagination : researchPagination
+  const showPagination = activePagination.totalItems > activePagination.pageSize
+
+  useEffect(() => {
+    if (!desktopWorkspace) return
+    listScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' })
+  }, [desktopWorkspace, scrollResetKey])
 
   const runExtension = () => {
     if (!canRunExtension) return
@@ -91,7 +111,9 @@ export function ProjectItemsPanel({
   }
 
   return (
-    <div className="w-full lg:w-1/2" data-tour="project-items-panel">
+    <div
+      className={`w-full min-w-0 ${desktopWorkspace ? 'h-full min-h-0 flex flex-1 flex-col overflow-hidden' : ''}`}
+      data-tour="project-items-panel">
       {project.kind === 'extension' && (
         <div
           data-tour="project-extension-entry"
@@ -139,15 +161,17 @@ export function ProjectItemsPanel({
           </div>
         </div>
       )}
-      <div className="flex items-center justify-between mb-3">
+      <div
+        className={`flex flex-shrink-0 flex-wrap items-center justify-between gap-2 ${showPagination ? 'mb-1.5' : 'mb-3'}`}
+        style={{ background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-2 min-w-0">
-          {onOpenSettings && (
+          {onOpenSettings && !desktopWorkspace && (
             <button
               type="button"
               onClick={onOpenSettings}
               title="项目设置"
               aria-label="项目设置"
-              className="lg:hidden h-8 w-8 flex items-center justify-center rounded-lg border flex-shrink-0"
+              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
             >
               <Settings className="w-4 h-4" />
@@ -177,13 +201,51 @@ export function ProjectItemsPanel({
           )}
         </ProjectTabList>
         </div>
-        <PrimaryActionButton onClick={() => section === 'issues' ? onCreateIssue() : onCreateResearch()}
-          data-tour={section === 'issues' ? 'project-new-issue' : 'project-new-research'}
-          disabled={section === 'issues' ? !canCreateIssue : (!project.research_enabled || !canCreateResearch)}
-          icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
-          {section === 'issues' ? '新建任务' : '新建研究'}
-        </PrimaryActionButton>
+        <div className="flex items-center gap-2">
+          <div
+            className="flex h-8 items-center rounded-md border p-0.5"
+            style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
+            role="group"
+            aria-label="卡片显示密度">
+            <button
+              type="button"
+              onClick={() => onDensityChange('compact')}
+              aria-pressed={compact}
+              title="精简显示"
+              className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors"
+              style={{ color: compact ? '#60a5fa' : 'var(--text-muted)', background: compact ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
+              <Rows3 className="h-3.5 w-3.5" strokeWidth={1.8} />
+              精简
+            </button>
+            <button
+              type="button"
+              onClick={() => onDensityChange('detailed')}
+              aria-pressed={!compact}
+              title="详情显示"
+              className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors"
+              style={{ color: !compact ? '#60a5fa' : 'var(--text-muted)', background: !compact ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
+              <LayoutList className="h-3.5 w-3.5" strokeWidth={1.8} />
+              详情
+            </button>
+          </div>
+          <PrimaryActionButton onClick={() => section === 'issues' ? onCreateIssue() : onCreateResearch()}
+            data-tour={section === 'issues' ? 'project-new-issue' : 'project-new-research'}
+            disabled={section === 'issues' ? !canCreateIssue : (!project.research_enabled || !canCreateResearch)}
+            icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
+            {section === 'issues' ? '新建任务' : '新建研究'}
+          </PrimaryActionButton>
+        </div>
       </div>
+
+      {showPagination && (
+        <div className="mb-2 flex-shrink-0">
+          <ProjectPaginationControls pagination={activePagination} itemLabel={section === 'issues' ? '任务' : '研究'} />
+        </div>
+      )}
+
+      <div
+        ref={listScrollRef}
+        className={desktopWorkspace ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-6' : ''}>
 
       {section === 'issues' ? (
         <IssueList
@@ -195,6 +257,7 @@ export function ProjectItemsPanel({
           filter={filter}
           search={search}
           pagination={issuePagination}
+          compact={compact}
           issuesLoading={issuesLoading}
           sessionSearchLoading={sessionSearchLoading}
           canCreateIssue={canCreateIssue}
@@ -221,12 +284,15 @@ export function ProjectItemsPanel({
           search={search}
           researchesLoading={researchesLoading}
           sessionSearchLoading={sessionSearchLoading}
+          pagination={researchPagination}
+          compact={compact}
           canCreateResearch={canCreateResearch}
           onCreateResearch={onCreateResearch}
           onEditResearch={onEditResearch}
           onToggleResearchStatus={onToggleResearchStatus}
         />
       )}
+      </div>
     </div>
   )
 }
@@ -240,6 +306,7 @@ type IssueListProps = {
   filter: ProjectFilter
   search: string
   pagination: ProjectIssuePagination
+  compact: boolean
   issuesLoading?: boolean
   sessionSearchLoading?: boolean
   canCreateIssue: boolean
@@ -259,6 +326,7 @@ function IssueList({
   filter,
   search,
   pagination,
+  compact,
   issuesLoading = false,
   sessionSearchLoading = false,
   canCreateIssue,
@@ -299,12 +367,9 @@ function IssueList({
     )
   }
 
-  const showPagination = pagination.totalItems > pagination.pageSize
-
   return (
     <div className="space-y-3">
-      {showPagination && <IssuePaginationControls pagination={pagination} />}
-      <div className="grid grid-cols-1 gap-4">
+      <div className={`grid grid-cols-1 ${compact ? 'gap-2' : 'gap-4'}`}>
         {issues.map((issue: any) => (
           <IssueCard
             key={issue.id}
@@ -314,23 +379,25 @@ function IssueList({
             searchQuery={search}
             userParam={userParam}
             projectId={projectId}
+            compact={compact}
             onEdit={onEditIssue}
             onConfirm={onIssueConfirm}
             onToggleStar={onToggleIssueStar}
           />
         ))}
       </div>
-      {showPagination && <IssuePaginationControls pagination={pagination} compact />}
+      {pagination.totalItems > pagination.pageSize && <ProjectPaginationControls pagination={pagination} compact itemLabel="任务" />}
     </div>
   )
 }
 
-type IssuePaginationControlsProps = {
+type ProjectPaginationControlsProps = {
   pagination: ProjectIssuePagination
   compact?: boolean
+  itemLabel: string
 }
 
-function IssuePaginationControls({ pagination, compact = false }: IssuePaginationControlsProps) {
+function ProjectPaginationControls({ pagination, compact = false, itemLabel }: ProjectPaginationControlsProps) {
   const pageStart = pagination.totalItems === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1
   const pageEnd = Math.min(pagination.page * pagination.pageSize, pagination.totalItems)
   const goToPage = (page: number) => pagination.onPageChange(Math.min(Math.max(page, 1), pagination.totalPages))
@@ -340,7 +407,7 @@ function IssuePaginationControls({ pagination, compact = false }: IssuePaginatio
 
   return (
     <div className={`flex items-center gap-1.5 text-[11px] tabular-nums flex-wrap ${compact ? 'pt-1' : ''}`} style={{ color: 'var(--text-muted)' }}>
-      <span>显示 {pageStart}-{pageEnd} / {pagination.totalItems} 个任务</span>
+      <span>显示 {pageStart}-{pageEnd} / {pagination.totalItems} 个{itemLabel}</span>
       <span>·</span>
       <span>第 {pagination.page} / {pagination.totalPages} 页</span>
       <span>·</span>
@@ -375,6 +442,8 @@ type ResearchListProps = {
   search: string
   researchesLoading?: boolean
   sessionSearchLoading?: boolean
+  pagination: ProjectIssuePagination
+  compact: boolean
   canCreateResearch: boolean
   onCreateResearch: () => void
   onEditResearch: (research: any) => void
@@ -391,6 +460,8 @@ function ResearchList({
   search,
   researchesLoading = false,
   sessionSearchLoading = false,
+  pagination,
+  compact,
   canCreateResearch,
   onCreateResearch,
   onEditResearch,
@@ -419,7 +490,8 @@ function ResearchList({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4">
+    <div className="space-y-3">
+      <div className={`grid grid-cols-1 ${compact ? 'gap-2' : 'gap-4'}`}>
       {researches.map((research: any) => (
         <ResearchCard
           key={research.id}
@@ -429,10 +501,13 @@ function ResearchList({
           searchQuery={search}
           userParam={userParam}
           projectId={projectId}
+          compact={compact}
           onEdit={onEditResearch}
           onToggleStatus={onToggleResearchStatus}
         />
       ))}
+      </div>
+      {pagination.totalItems > pagination.pageSize && <ProjectPaginationControls pagination={pagination} compact itemLabel="研究" />}
     </div>
   )
 }
