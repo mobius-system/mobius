@@ -313,7 +313,7 @@ function startDesktopBuildsSyncer() {
   if (/^(0|false|no)$/i.test(process.env.MOBIUS_DESKTOP_SYNC_ENABLED || '')) return;
 
   const initDelay = Number(process.env.MOBIUS_DESKTOP_SYNC_INIT_DELAY_MS || 30000);
-  const intervalMin = Number(process.env.MOBIUS_DESKTOP_SYNC_INTERVAL_MIN || 30);
+  const intervalMin = Number(process.env.MOBIUS_DESKTOP_SYNC_INTERVAL_MIN || 60);
   const intervalMs = intervalMin * 60 * 1000;
 
   const runSync = async () => {
