@@ -61,6 +61,12 @@ export function mouseWheelDelta(input: string): number {
  * The DECSET enable/disable sequences are only written when stdout is a TTY
  * (writing them into a pipe would litter the output). The emitter listener is
  * attached unconditionally so the harness can simulate wheel events.
+ *
+ * Trade-off: terminal mouse reporting (DECSET 1000) hands the mouse to the app,
+ * so native drag-to-select is disabled while it is on. The universal escape is
+ * Shift+drag (the terminal selects and does not forward the event). Users who
+ * prefer native selection at all times can opt out with
+ * `MOBIUS_TUI_DISABLE_MOUSE=1` (wheel then stops working).
  */
 export function useMouseWheel(onWheel: (delta: number) => void): void {
   const { internal_eventEmitter } = useStdin()
@@ -70,6 +76,7 @@ export function useMouseWheel(onWheel: (delta: number) => void): void {
 
   useEffect(() => {
     if (!internal_eventEmitter) return
+    if (process.env.MOBIUS_TUI_DISABLE_MOUSE === '1') return
     const isTTY = Boolean(stdout.isTTY)
     if (isTTY) stdout.write('\x1b[?1000h\x1b[?1006h')
     let buf = ''
