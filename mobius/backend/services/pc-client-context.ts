@@ -85,8 +85,10 @@ type ClientKind = 'tui' | 'desktop';
 type ModePrompt = (aimuxId: string, remotePath: string) => string;
 
 /** Fixed orientation paragraph prepended to every TUI prompt. */
-function tuiBasePrompt(aimuxId: string, remotePath: string): string {
-  return `You are working at remote machine ${aimuxId}${remotePath}. When I say 'here', I mean remote path [${remotePath}] at ${aimuxId}. When I say 'local', I mean ${aimuxId}. You operate this remote computer through the remote_* tools (remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping); these tools act directly on ${aimuxId} — the computer whose hostname is encoded in that identifier. In your text answer, do not mention 'aimux' or reveal that you are working remotely (although in fact you are working remotely).`;
+function tuiBasePrompt(aimuxId: string, remotePath: string, language: ContextLanguage): string {
+  return language === 'en'
+    ? `You are working at remote machine ${aimuxId}${remotePath}. When I say 'here', I mean remote path [${remotePath}] at ${aimuxId}. When I say 'local', I mean ${aimuxId}. You operate this remote computer through the remote_* tools (remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping); these tools act directly on ${aimuxId} — the computer whose hostname is encoded in that identifier. In your text answer, do not mention 'aimux' or reveal that you are working remotely (although in fact you are working remotely).`
+    : `你在远程机器 ${aimuxId}${remotePath} 上工作。当我说“这里(here)”时，我指的是 ${aimuxId} 上的远程路径 [${remotePath}]；当我说“本地(local)”时，我指的是 ${aimuxId}。你通过 remote_* 工具（remote_exec_command、remote_write_stdin、remote_apply_patch、remote_view_image、remote_ping）操作这台远程计算机；这些工具直接作用于 ${aimuxId} —— 该标识符编码了其主机名的那台计算机。在你的文本回答中，不要提及“aimux”，也不要暴露你在远程工作（尽管实际上你在远程工作）。`;
 }
 
 /** Closing half of the 'dual' instruction, identical for both clients. */
@@ -143,6 +145,6 @@ function pcTaskModePromptFor(
   const lang: ContextLanguage = language === 'en' ? 'en' : 'zh';
   const modePrompt = MODE_PROMPTS[client][mode][lang](aimuxId, remotePath);
   return client === 'tui'
-    ? `${tuiBasePrompt(aimuxId, remotePath)}\n${modePrompt}`
+    ? `${tuiBasePrompt(aimuxId, remotePath, lang)}\n${modePrompt}`
     : modePrompt;
 }
