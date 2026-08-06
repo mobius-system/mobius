@@ -92,6 +92,32 @@ async function waitFor(lastFrame: () => string | undefined, needle: string, time
   return false
 }
 
+// Walk the prep wizard (project → issue → model → language) into the chat.
+async function bootToChat(stdin: any, lastFrame: () => string | undefined) {
+  ok(await waitFor(lastFrame, '选择当前路径的绑定项目'), 'booted into project picker')
+  stdin.write('\r'); await delay(120)
+  ok(await waitFor(lastFrame, '项目名称'), 'project create wizard opened')
+  stdin.write('测试项目PTY'); await delay(120)
+  stdin.write('\r'); await delay(300)
+  ok(await waitFor(lastFrame, '创建新任务'), 'issue picker shown')
+  stdin.write('\r'); await delay(120)
+  ok(await waitFor(lastFrame, '输入任务名称'), 'issue name wizard opened')
+  stdin.write('命令行任务'); await delay(120)
+  stdin.write('\r'); await delay(300)
+  ok(await waitFor(lastFrame, '选择模型'), 'model picker shown')
+  stdin.write('\r'); await delay(250)
+  ok(await waitFor(lastFrame, '选择回复语言'), 'language picker shown')
+  stdin.write('\r'); await delay(400)
+  ok(await waitFor(lastFrame, '输入问题'), 'entered chat')
+}
+
+async function populateTranscript(stdin: any, emit: (n: number) => void, count = 25) {
+  stdin.write('hi'); await delay(120)
+  stdin.write('\r'); await delay(400)                     // creates session → SSE connects
+  for (let i = 0; i < count; i++) { emit(i); await delay(15) }
+  await delay(500)
+}
+
 async function main() {
   fs.writeFileSync(path.join(TMP_HOME, 'login.json'), JSON.stringify({
     server: 'http://mock.local', username: 'tester', token: 'mock-jwt-token',
@@ -105,27 +131,10 @@ async function main() {
 
   try {
     // ── boot through the prep wizard into chat ────────────────────────────────
-    ok(await waitFor(lastFrame, '选择当前路径的绑定项目'), 'booted into project picker')
-    stdin.write('\r'); await delay(120)
-    ok(await waitFor(lastFrame, '项目名称'), 'project create wizard opened')
-    stdin.write('测试项目PTY'); await delay(120)
-    stdin.write('\r'); await delay(300)
-    ok(await waitFor(lastFrame, '创建新任务'), 'issue picker shown')
-    stdin.write('\r'); await delay(120)
-    ok(await waitFor(lastFrame, '输入任务名称'), 'issue name wizard opened')
-    stdin.write('命令行任务'); await delay(120)
-    stdin.write('\r'); await delay(300)
-    ok(await waitFor(lastFrame, '选择模型'), 'model picker shown')
-    stdin.write('\r'); await delay(250)
-    ok(await waitFor(lastFrame, '选择回复语言'), 'language picker shown')
-    stdin.write('\r'); await delay(400)
-    ok(await waitFor(lastFrame, '输入问题'), 'entered chat')
+    await bootToChat(stdin, lastFrame)
 
     // ── populate a long transcript ────────────────────────────────────────────
-    stdin.write('hi'); await delay(120)
-    stdin.write('\r'); await delay(400)                      // creates session → SSE connects
-    for (let i = 0; i < 25; i++) { emitEntry(i); await delay(15) }
-    await delay(500)
+    await populateTranscript(stdin, emitEntry)
     const tailFrame = strip(lastFrame() ?? '')
 
     ok(tailFrame.includes('回答 24'), 'latest entry visible at tail (not hidden)')
@@ -198,6 +207,39 @@ async function main() {
   } finally {
     unmount()
     globalThis.fetch = realFetch
+  }
+
+  // ── Phase 2: MOBIUS_TUI_DISABLE_MOUSE=1 opts out of wheel mode ─────────────
+  // Mouse reporting hands the terminal mouse to the app, which disables native
+  // drag-select. The env flag is the escape hatch: wheel stops, selection is
+  // free again. Here we assert wheel events no longer scroll the pager. A fresh
+  // MOBIUS_TUI_HOME is used because phase 1 persisted a dir→project binding.
+  const TMP_HOME2 = fs.mkdtempSync(path.join(os.tmpdir(), 'mobius-tui-scroll2-'))
+  process.env.MOBIUS_TUI_DISABLE_MOUSE = '1'
+  process.env.MOBIUS_TUI_HOME = TMP_HOME2
+  fs.writeFileSync(path.join(TMP_HOME2, 'login.json'), JSON.stringify({
+    server: 'http://mock.local', username: 'tester', token: 'mock-jwt-token',
+    user: { id: 'tester', display_name: 'Test User', role: 'admin' },
+  }))
+  globalThis.fetch = ((u: any, init?: any) => mockFetch(String(u), init)) as unknown as typeof fetch
+  const second = render(React.createElement(App))
+  try {
+    await bootToChat(second.stdin, second.lastFrame)
+    await populateTranscript(second.stdin, emitEntry)
+    const before = strip(second.lastFrame() ?? '')
+    ok(before.includes('回答 24'), 'disable-mouse: latest entry visible before wheel')
+
+    second.stdin.write('\x1b[<64;5;5M')                    // wheel up — must be ignored
+    await delay(300)
+    const after = strip(second.lastFrame() ?? '')
+    ok(after.includes('回答 24'), 'disable-mouse: wheel up leaves latest entry in view')
+    ok(!after.includes('PageDown'), 'disable-mouse: wheel up does NOT scroll (no PageDown hint)')
+  } finally {
+    second.unmount()
+    delete process.env.MOBIUS_TUI_DISABLE_MOUSE
+    delete process.env.MOBIUS_TUI_HOME
+    globalThis.fetch = realFetch
+    try { fs.rmSync(TMP_HOME2, { recursive: true, force: true }) } catch { /* ignore */ }
   }
 
   try { fs.rmSync(TMP_HOME, { recursive: true, force: true }) } catch { /* ignore */ }

@@ -134,6 +134,8 @@ export default function ProjectPage() {
   const [cardDensity, setCardDensity] = useState<ProjectCardDensity>(densityInit)
   useEffect(() => { try { localStorage.setItem(PROJECT_CARD_DENSITY_KEY, cardDensity) } catch {} }, [cardDensity])
   const pageSize = cardDensity === 'compact' ? COMPACT_PAGE_SIZE : DETAILED_PAGE_SIZE
+  // 左栏是独立的纵向列表，页容量按实际可用高度动态计算；右侧卡片继续使用密度页容量。
+  const [sidebarPageSize, setSidebarPageSize] = useState(COMPACT_PAGE_SIZE)
   const [sidebarIssuePage, setSidebarIssuePage] = useState(1)
   const [mainIssuePage, setMainIssuePage] = useState(1)
   const [researchPage, setResearchPage] = useState(1)
@@ -314,11 +316,12 @@ export default function ProjectPage() {
   }, [projectResearches, filter, search, activeSessionSearch.researches])
 
   const issueTotalPages = Math.max(1, Math.ceil(filteredIssues.length / pageSize))
-  const currentSidebarIssuePage = Math.min(sidebarIssuePage, issueTotalPages)
+  const sidebarIssueTotalPages = Math.max(1, Math.ceil(filteredIssues.length / sidebarPageSize))
+  const currentSidebarIssuePage = Math.min(sidebarIssuePage, sidebarIssueTotalPages)
   const sidebarPagedIssues = useMemo(() => {
-    const start = (currentSidebarIssuePage - 1) * pageSize
-    return filteredIssues.slice(start, start + pageSize)
-  }, [filteredIssues, currentSidebarIssuePage, pageSize])
+    const start = (currentSidebarIssuePage - 1) * sidebarPageSize
+    return filteredIssues.slice(start, start + sidebarPageSize)
+  }, [filteredIssues, currentSidebarIssuePage, sidebarPageSize])
   const currentMainIssuePage = Math.min(mainIssuePage, issueTotalPages)
   const mainPagedIssues = useMemo(() => {
     const start = (currentMainIssuePage - 1) * pageSize
@@ -346,8 +349,8 @@ export default function ProjectPage() {
   }, [projectId, filter, search, cardDensity])
 
   useEffect(() => {
-    if (sidebarIssuePage > issueTotalPages) setSidebarIssuePage(issueTotalPages)
-  }, [sidebarIssuePage, issueTotalPages])
+    if (sidebarIssuePage > sidebarIssueTotalPages) setSidebarIssuePage(sidebarIssueTotalPages)
+  }, [sidebarIssuePage, sidebarIssueTotalPages])
 
   useEffect(() => {
     if (mainIssuePage > issueTotalPages) setMainIssuePage(issueTotalPages)
@@ -678,11 +681,12 @@ export default function ProjectPage() {
             sessionSearchTruncated={activeSessionSearch.truncated}
             pagination={{
               page: currentSidebarIssuePage,
-              pageSize,
+              pageSize: sidebarPageSize,
               totalItems: filteredIssues.length,
-              totalPages: issueTotalPages,
+              totalPages: sidebarIssueTotalPages,
               onPageChange: setSidebarIssuePage,
             }}
+            onPageSizeChange={setSidebarPageSize}
             onSearchChange={setSearch}
             onFilterChange={setFilter}
             canCreateIssue={canCreateIssue}

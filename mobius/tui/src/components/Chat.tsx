@@ -146,8 +146,8 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
 
   const olderHint = !showWelcome && (fitted.hiddenOlder > 0 || scrollBack > 0)
     ? fitted.hiddenOlder > 0
-      ? `↑ 还有 ${fitted.hiddenOlder} 条较早记录 · 滚轮/PageUp 向上翻页`
-      : '已到最早记录 · 滚轮/PageDown 向下翻页'
+      ? `↑ 还有 ${fitted.hiddenOlder} 条较早记录 · 滚轮/PageUp 翻页 · Shift 拖动选中`
+      : '已到最早记录 · 滚轮/PageDown 翻页 · Shift 拖动选中'
     : null
 
   return (
@@ -167,7 +167,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
             always the first line of the transcript, spanning the full width,
             instead of floating mid-screen when the transcript has spare rows. */}
         {olderHint !== null
-          ? <Box width="100%" flexShrink={0}><Text dimColor>  {olderHint}</Text></Box>
+          ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  {olderHint}</Text></Box>
           : null}
 
         <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent={showWelcome ? 'flex-start' : 'flex-end'} overflowY="hidden">
@@ -176,7 +176,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           ))}
           {chat.pendingUser !== null ? <UserLine text={chat.pendingUser} /> : null}
           {fitted.hiddenRecent > 0
-            ? <Box width="100%" flexShrink={0}><Text dimColor>  ↓ 滚轮/PageDown 向下翻页 · 较新 {fitted.hiddenRecent} 条</Text></Box>
+            ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  ↓ 滚轮/PageDown 翻页 · 较新 {fitted.hiddenRecent} 条</Text></Box>
             : null}
         </Box>
 
@@ -463,6 +463,9 @@ export function shimmerText(label: string, frame: number): React.ReactNode[] {
 }
 
 function HelpBlock({ commands }: { commands: { cmd: string; desc: string }[] }) {
+  const mouseNote = process.env.MOBIUS_TUI_DISABLE_MOUSE === '1'
+    ? '滚轮翻页已关闭 (MOBIUS_TUI_DISABLE_MOUSE=1)，鼠标可用于直接选中文本。'
+    : '滚轮翻页 · 选中文本请按住 Shift 拖动 (滚轮模式接管了鼠标)。'
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="gray" borderDimColor paddingX={1} marginTop={1}>
       {commands.map(command => (
@@ -471,6 +474,7 @@ function HelpBlock({ commands }: { commands: { cmd: string; desc: string }[] }) 
           <Text>{command.desc}</Text>
         </Text>
       ))}
+      <Text dimColor>  {mouseNote}</Text>
     </Box>
   )
 }
