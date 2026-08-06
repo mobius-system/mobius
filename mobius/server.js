@@ -143,6 +143,8 @@ app.use('/aimux_bridge', aimuxBridgeProxy);
 app.use('/api/extensions', extRoutes.metaRouter);
 app.use('/api/ext', extRoutes.invokeRouter);
 app.use('/extension', extRoutes.staticRouter);
+// 桌面客户端 webhook: CI 发版后通知服务器同步产物到 /desktop-builds/。
+app.use('/api/webhook', require('./backend/routes/webhook-desktop').router);
 // /_next/* (Next.js chunk/runtime 走绝对根路径, 不带 /extension/ 前缀).
 // 见 routes/ext.js 里 unprefixedNextRouter 的注释, 要先于 catchall 之前.
 app.use('/_next', extRoutes.unprefixedNextRouter);
@@ -305,6 +307,29 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
+// 部署后自检: 每次重启(含 deploy-version / 自迭代触发的 redeploy)后, 后台跑一组 HTTP 冒烟,
+// 结果 append 到 <MOBIUS_LOG_DIR>/self-test.log, 失败绝不阻塞/崩 server。MOBIUS_SELF_TEST_ON_BOOT=0 可关。
+function runBootSelfTest() {
+  if (/^(0|false|no)$/i.test(process.env.MOBIUS_SELF_TEST_ON_BOOT || '')) return;
+  const delay = Number(process.env.MOBIUS_SELF_TEST_BOOT_DELAY_MS || 5000);
+  const logFile = path.join(process.env.MOBIUS_LOG_DIR || '/data/logs', 'self-test.log');
+  const appendLog = (line) => { try { fs.appendFileSync(logFile, line); } catch (_) { /* 日志写失败忽略 */ } };
+  setTimeout(async () => {
+    try {
+      const { runSelfTest } = require('./tests/self-test-lib');
+      const r = await runSelfTest({ base: `http://127.0.0.1:${PORT}` });
+      const stamp = new Date().toISOString();
+      const failed = r.results.filter((x) => !x.ok);
+      const head = `[${stamp}] boot self-test: ✅${r.pass} ❌${r.fail} ⏭${r.skipped} (${r.durationMs}ms)\n`;
+      appendLog(head + (failed.length ? failed.map((x) => `  ❌ ${x.name}: ${x.error || x.reason || ''}`).join('\n') + '\n\n' : '\n'));
+      console.log(`[mobius/self-test] boot: ✅${r.pass} ❌${r.fail} ⏭${r.skipped} → ${logFile}`);
+    } catch (e) {
+      appendLog(`[${new Date().toISOString()}] boot self-test ERROR: ${(e && e.message) || e}\n`);
+      console.warn('[mobius/self-test] boot 异常(已忽略):', (e && e.message) || e);
+    }
+  }, delay).unref();
+}
+
 server.listen(PORT, () => {
   console.log(`[mobius] MOBIUS Mobius listening on http://0.0.0.0:${PORT}`);
   console.log(`[mobius] health: http://0.0.0.0:${PORT}/api/v2/health`);
@@ -344,6 +369,8 @@ server.listen(PORT, () => {
   // 兜底自动生成 Session 标题: codex / gpt-5.5 等 tmux-codex 后端不产 type=ai-title,
   // 由本生成器周期扫描, 用会话自身模型把首条提问浓缩成标题写回 name。受同一开关控制。
   startSessionTitleGenerator();
+  // 部署后自检(后台 fire-and-forget, 失败不影响 server)。
+  runBootSelfTest();
 });
 
 // 优雅退出
