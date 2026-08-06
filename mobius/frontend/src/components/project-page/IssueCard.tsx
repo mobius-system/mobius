@@ -73,8 +73,6 @@ export function IssueCard({
           data-tour={isLogoReviewIssue ? 'logo-review-issue-link' : undefined}
           className={`${compact ? 'text-[13px]' : 'text-[14px]'} min-w-0 font-semibold flex-1 hover:text-blue-400 transition-colors ${isCompleted ? 'line-through' : ''}`}
           style={{ color: isCompleted ? 'var(--text-muted)' : 'var(--text-primary)' }}>{issue.title}</Link>
-        <Link to={`/u/${userParam}/p/${projectId}/i/${issue.id}`}
-          className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors flex-shrink-0 self-center whitespace-nowrap">进入对话 →</Link>
         <div className="flex items-center gap-0.5 flex-shrink-0">
           <button onClick={() => onToggleStar(issue)} className={`p-1 rounded hover:bg-white/10 transition-opacity ${issue.starred ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} title={issue.starred ? '取消收藏' : '收藏'}>
             <svg className="w-3.5 h-3.5" style={{ color: issue.starred ? '#f59e0b' : 'var(--text-muted)' }} fill={issue.starred ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
