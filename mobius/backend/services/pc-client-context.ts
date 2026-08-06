@@ -89,14 +89,16 @@ function tuiBasePrompt(aimuxId: string, remotePath: string, language: ContextLan
   // One template literal per sentence, joined with `+`, so the value stays single-line.
   return language === 'en'
     ? `You are working at remote machine ${aimuxId}${remotePath}. ` +
-      `When I say 'here', I mean remote path [${remotePath}] at ${aimuxId}. ` +
-      `When I say 'local', I mean ${aimuxId}. ` +
+      `I'm working in this remote machine as well, so when I say 'here', I mean remote path [${remotePath}] at ${aimuxId}. ` +
+      `When I say 'local', I also mean ${aimuxId}. ` +
+      `Only when I say '中枢(center)' do I mean the machine you are currently on. ` +
       `You operate this remote computer through the remote_* tools (remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping); ` +
       `these tools act directly on ${aimuxId} — the computer whose hostname is encoded in that identifier. ` +
       `In your text answer, do not mention 'aimux' or reveal that you are working remotely (although in fact you are working remotely).`
     : `你在远程机器 ${aimuxId}${remotePath} 上工作。` +
-      `当我说“这里(here)”时，我指的是 ${aimuxId} 上的远程路径 [${remotePath}]；` +
+      `由于我也正在远程机器上操作，所以当我说“这里(here)”时，我指的是 ${aimuxId} 上的远程路径 [${remotePath}]；` +
       `当我说“本地(local)”时，我指的是 ${aimuxId}。` +
+      `只有当我说“中枢(center)”时，才指现在你所处的机器。` +
       `你通过 remote_* 工具（remote_exec_command、remote_write_stdin、remote_apply_patch、remote_view_image、remote_ping）操作这台远程计算机；` +
       `这些工具直接作用于 ${aimuxId} —— 该标识符编码了其主机名的那台计算机。` +
       `在你的文本回答中，不要提及“aimux”，也不要暴露你在远程工作（尽管实际上你在远程工作）。`;
