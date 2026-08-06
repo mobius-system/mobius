@@ -282,7 +282,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  {olderHint}</Text></Box>
           : null}
 
-        <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent={showWelcome ? 'flex-start' : 'flex-end'} overflowY="hidden">
+        <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent={showWelcome || fitted.hiddenOlder > 0 ? 'flex-start' : 'flex-end'} overflowY="hidden">
           {fitted.peekLines.length > 0
             ? <Box width="100%" flexShrink={0} flexDirection="column">
                 {fitted.peekLines.map((line, index) => (
