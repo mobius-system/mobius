@@ -382,8 +382,11 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
                 data-tour="skill-add-package-input"
                 placeholder="可直接粘贴安装命令或 GitHub URL (自动提取); 例: owner/repo 或 owner/repo@skill-name"
                 disabled={submitting}
-                className="w-full px-2.5 py-1.5 rounded text-[12px] font-mono mb-2 focus:outline-none focus:border-blue-500/30 disabled:opacity-40"
+                className="w-full px-2.5 py-1.5 rounded text-[12px] font-mono mb-1 focus:outline-none focus:border-blue-500/30 disabled:opacity-40"
                 style={{ background: 'var(--bg-primary)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              <div className="text-[10px] mb-2 leading-snug" style={{ color: 'var(--text-muted)' }}>
+                后端执行 <code className="font-mono">npx skills add</code> 从 GitHub 拉取 (耗时较长, 最长 120s). 若本机无法直连 GitHub 会失败, 可改用「直接编辑/粘贴」或「上传文件」.
+              </div>
             </>
           ) : (
             <>
