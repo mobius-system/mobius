@@ -157,6 +157,28 @@ async function main() {
     stdin.write('\r'); await delay(500)                             // pick session → reconnect SSE
     ok(await waitFor(lastFrame, '输入问题'), 'resumed into chat')
     snap('5-after-resume', lastFrame() ?? '')
+
+    // ── /config opens the same flow; Esc cancels back to chat ────────────────
+    await delay(400)
+    stdin.write('/config'); await delay(300)
+    stdin.write('\r')
+    ok(await waitFor(lastFrame, '更换模型'), '/config opens the model-switch flow (alias of /model)')
+    stdin.write('\x1b'); await delay(300)
+    ok(await waitFor(lastFrame, '输入问题'), 'Esc cancels the config flow back to the conversation')
+
+    // ── /model switches model and starts a brand-new session ─────────────────
+    // No issue step — the current task is kept; pick a model and App remounts
+    // Chat on the eagerly created session.
+    stdin.write('/model'); await delay(300)
+    stdin.write('\r')
+    ok(await waitFor(lastFrame, '更换模型'), '/model opens the model picker directly')
+    ok(await waitFor(lastFrame, '选择模型'), 'model picker shown without an issue-selection step')
+    ok((lastFrame() ?? '').includes('当前任务: 命令行任务'), 'current task is kept (issue not changed)')
+    ok(await waitFor(lastFrame, 'GPT-5.5'), 'model list rendered (Select mounted)')
+    stdin.write('\r'); await delay(700)                             // pick codex → create session
+    ok(await waitFor(lastFrame, '输入问题'), 'config flow creates a fresh session and returns to chat')
+    ok((lastFrame() ?? '').includes('?session=sess-1'), 'reconfigured chat is attached to the new session')
+    snap('6-after-model', lastFrame() ?? '')
   } finally {
     unmount()
     globalThis.fetch = realFetch

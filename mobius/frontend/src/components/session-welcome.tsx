@@ -584,9 +584,19 @@ export function SessionSkillMemoryEditor({
     if (persistActivePanel) writeStoredActivePanel(next)
   }, [persistActivePanel])
   const [previewItem, setPreviewItem] = useState<null | { kind: 'skill' | 'memory'; item: EditorItem }>(null)
-  // 添加 skill/memory 成功后自增 reloadKey, 触发 selection-snapshot 重新拉取, 新条目立即出现在下方列表.
+  // 添加 skill/memory 成功后: 先让后端用当前 live 数据重建该会话的 selection snapshot
+  // (会话快照在创建时已冻结, 不刷新则新装的条目既不进列表也不被注入), 再重新拉取.
   const [reloadKey, setReloadKey] = useState(0)
-  const reload = useCallback(() => setReloadKey(k => k + 1), [])
+  const reload = useCallback(async () => {
+    try {
+      if (sessionId) {
+        await api(`/api/sessions/${sessionId}/refresh-selection-snapshot`, { method: 'POST', body: '{}' })
+      }
+    } catch {
+      // 刷新失败不阻塞: 仍重新拉取一次, 兜底显示当前已持久化的快照.
+    }
+    setReloadKey(k => k + 1)
+  }, [sessionId])
 
   useEffect(() => {
     let cancelled = false

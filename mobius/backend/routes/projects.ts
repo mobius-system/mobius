@@ -2,7 +2,6 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
-import bcrypt from 'bcryptjs';
 // @ts-ignore — multer 没有 TS 类型声明
 import multer from 'multer';
 import { extractArchiveFile, removeIfExists, detectArchiveKind } from '../services/context-import-utils';
@@ -18,6 +17,7 @@ import { Sessions } from '../repositories/sessions';
 import { Skills } from '../repositories/skills';
 import { Memories } from '../repositories/memories';
 import { Users } from '../repositories/users';
+import { ProjectDeletionAudit, type ProjectDeletionImpact } from '../repositories/project-deletion-audit';
 // @ts-ignore — service 仍是 .js
 import {
   buildIssueContextPreview,
@@ -65,6 +65,11 @@ import {
 } from '../services/user-project-view';
 import { searchProjectSessionMetadata } from '../services/project-session-search';
 import { searchProjectHierarchy } from '../services/project-hierarchy-search';
+import {
+  projectDeletePolicy,
+  type ProjectDeleteMode,
+} from '../services/project-deletion-policy';
+import { verifySensitiveActionPassword } from '../services/sensitive-action-auth';
 // @ts-ignore — service 仍是 .js
 import { recordAdminAuditIfCrossUser } from '../services/admin-audit';
 // @ts-ignore — service 仍是 .js
@@ -73,7 +78,6 @@ import {
   APP_DIR,
   BACKEND_WORKER_LOG_DIR,
   UPLOAD_DIR,
-  ENABLE_PASSWORD_LOGIN,
   MOBIUS_SSH_FORWARD_USER,
   MOBIUS_SSH_PORT,
   MOBIUS_SSH_PRIVATE_KEY_PATH,
@@ -496,6 +500,7 @@ function shapeProjectForUser(project: any, user: any, opts: { mutedIds?: Set<str
     can_create_issue: canCreate,
     can_create_session: projectAllowsReaderWrite(user, project, 'can_run_session'),
     can_create_research: canCreate && !!project.research_enabled,
+    delete_policy: projectDeletePolicy(project, user),
     muted,
     muted_label: muted ? '已屏蔽' : null,
     hidden,
@@ -827,6 +832,41 @@ function loadManageableProject(req: express.Request, res: express.Response, id: 
   return project;
 }
 
+function deletionRequestAddress(req: express.Request): string {
+  return String(req.ip || req.socket?.remoteAddress || '').trim();
+}
+
+function recordProjectDeletionAudit(args: {
+  req: express.Request;
+  actor: any;
+  project: any;
+  mode: ProjectDeleteMode | null;
+  reason?: string;
+  outcome: 'pending' | 'succeeded' | 'denied' | 'failed';
+  failureCode?: string;
+  impact: ProjectDeletionImpact;
+}): number | null {
+  try {
+    return ProjectDeletionAudit.record({
+      actorId: args.actor.id,
+      actorSystemRole: args.actor.role || '',
+      projectId: args.project.id,
+      projectName: args.project.name || '',
+      projectCreator: args.project.created_by || '',
+      deletionMode: args.mode,
+      reason: args.reason,
+      outcome: args.outcome,
+      failureCode: args.failureCode,
+      impact: args.impact,
+      requestIp: deletionRequestAddress(args.req),
+    });
+  } catch (error) {
+    console.warn('[project-delete-audit] record failed:', (error as Error).message);
+    if (args.outcome === 'pending') throw error;
+    return null;
+  }
+}
+
 const GIT_REPO_SCAN_MAX_DEPTH = 3;
 const GIT_REPO_SCAN_MAX_DIRS = 500;
 const GIT_COMMIT_LIMIT_DEFAULT = 12;
@@ -837,7 +877,6 @@ const ARCHITECTURE_ISSUE_DESCRIPTION = [
   `请分析当前项目结构，优先输出单文件 HTML/SVG 架构图到项目绑定路径下的 ${HIDDEN_FOLDER_NAME}/generated_figures/arch.html。`,
   '如需兼容截图或封面，也可以额外输出 arch.svg、arch.png、arch.jpg、arch.jpeg、arch.webp 等常见预览格式。',
 ].join('\n');
-const FIXED_LOGO_REVIEW_PROJECT_ID = '9986bdc3';
 const ARCHITECTURE_FIGURE_EXTENSIONS = ['.html', '.htm', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'];
 const GIT_FIELD_SEPARATOR = '\x1f';
 const GIT_RECORD_SEPARATOR = '\x1e';
@@ -2134,48 +2173,105 @@ router.delete('/:id/members/:userId', auth, (req: express.Request, res: express.
   }
 });
 
+router.get('/:id/delete-preview', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
+  if (!project || !canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+  res.json({
+    policy: projectDeletePolicy(project, user),
+    impact: ProjectDeletionAudit.impact(id),
+  });
+});
+
 router.delete('/:id', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const id = String(req.params.id);
   const project = Projects.findById(id);
-  if (!project) return res.status(404).json({ error: '未找到' });
-  if (project.created_by !== user.id) {
-    return res.status(403).json({ error: '只有项目创建者可以删除项目' });
-  }
-  if (project.id === FIXED_LOGO_REVIEW_PROJECT_ID) {
-    return res.status(400).json({
-      error: '这个项目是引导系统固定完成案例，用于“验收完成案例”路线，不能删除。其他同名临时演示项目仍可删除。',
+  if (!project || !canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+
+  const policy = projectDeletePolicy(project, user);
+  const impact = ProjectDeletionAudit.impact(id);
+  const body = req.body || {};
+  const reason = String(body.reason || '').trim().slice(0, 1000);
+  if (!policy.allowed) {
+    recordProjectDeletionAudit({
+      req,
+      actor: user,
+      project,
+      mode: policy.mode,
+      reason,
+      outcome: 'denied',
+      failureCode: policy.protected ? 'protected_project' : 'not_authorized',
+      impact,
+    });
+    return res.status(policy.protected ? 409 : 403).json({
+      error: policy.denial_reason || '当前账号没有删除此项目的权限',
+      code: policy.protected ? 'protected_project' : 'not_authorized',
     });
   }
-  if (project.kind === 'extension') {
-    return res.status(400).json({ error: '拓展项目由 mobius/extension/ 目录管理, 请删除对应目录后 reload' });
-  }
 
-  const { password, confirm } = req.body || {} as { password?: string; confirm?: string };
+  const confirm = body.confirm;
   const normalizedConfirm = String(confirm || '').trim();
   const accepted = new Set([project.name, project.id].filter(Boolean).map(String));
   if (!accepted.has(normalizedConfirm)) {
+    recordProjectDeletionAudit({ req, actor: user, project, mode: policy.mode, reason, outcome: 'denied', failureCode: 'confirmation_mismatch', impact });
     return res.status(400).json({ error: '请输入项目名或项目 ID 确认' });
   }
-
-  if (ENABLE_PASSWORD_LOGIN) {
-    if (!password) return res.status(400).json({ error: '请输入密码' });
-    const fullUser = Users.findById(user.id);
-    if (!fullUser?.password_hash || !bcrypt.compareSync(password, fullUser.password_hash)) {
-      return res.status(401).json({ error: '密码错误' });
-    }
+  if (body.irreversible_acknowledged !== true) {
+    recordProjectDeletionAudit({ req, actor: user, project, mode: policy.mode, reason, outcome: 'denied', failureCode: 'acknowledgement_required', impact });
+    return res.status(400).json({ error: '请确认理解删除操作不可恢复' });
+  }
+  if (policy.requires_reason && !reason) {
+    recordProjectDeletionAudit({ req, actor: user, project, mode: policy.mode, reason, outcome: 'denied', failureCode: 'reason_required', impact });
+    return res.status(400).json({ error: '系统管理员代删他人项目时必须填写原因' });
   }
 
+  const passwordResult = verifySensitiveActionPassword({
+    userId: user.id,
+    password: body.current_password ?? body.password,
+    clientAddress: deletionRequestAddress(req),
+  });
+  if (!passwordResult.ok) {
+    const rateLimited = passwordResult.code === 'rate_limited';
+    recordProjectDeletionAudit({ req, actor: user, project, mode: policy.mode, reason, outcome: 'denied', failureCode: passwordResult.code, impact });
+    if (rateLimited) {
+      res.setHeader('Retry-After', String(passwordResult.retry_after_seconds || 1));
+      return res.status(429).json({ error: '密码验证失败次数过多，请稍后再试', code: passwordResult.code });
+    }
+    return res.status(422).json({
+      error: passwordResult.code === 'password_required' ? '请输入当前账号密码' : '当前账号密码验证失败',
+      code: passwordResult.code,
+    });
+  }
+
+  if (impact.running_session_count > 0) {
+    recordProjectDeletionAudit({ req, actor: user, project, mode: policy.mode, reason, outcome: 'failed', failureCode: 'running_sessions', impact });
+    return res.status(409).json({
+      error: `项目仍有 ${impact.running_session_count} 个正在执行的会话，请先停止后再删除`,
+      code: 'running_sessions',
+    });
+  }
+
+  let auditId: number | null = null;
   try {
+    auditId = recordProjectDeletionAudit({ req, actor: user, project, mode: policy.mode, reason, outcome: 'pending', impact });
+    if (!auditId) throw new Error('无法建立删除审计记录');
     const contextCleanup = {
       skills: Skills.deleteForProject(id),
       memories: Memories.deleteForProject(id),
     };
-    const workspaceCleanup = removeDemoWorkspaceIfRequested(project, user, !!req.body?.cleanup_demo_workspace);
+    const workspaceCleanup = removeDemoWorkspaceIfRequested(project, user, !!body.cleanup_demo_workspace);
     recordAdminAuditIfCrossUser(user, 'delete_project', 'project', project.id, project.created_by);
-    Projects.delete(id);
+    db.transaction(() => {
+      Projects.delete(id);
+      ProjectDeletionAudit.complete(auditId!, 'succeeded');
+    })();
     res.json({ ok: true, context_cleanup: contextCleanup, workspace_cleanup: workspaceCleanup });
   } catch (e) {
+    if (auditId) {
+      try { ProjectDeletionAudit.complete(auditId, 'failed', 'delete_failed'); } catch {}
+    }
     res.status(500).json({ error: (e as Error).message || '删除项目失败' });
   }
 });

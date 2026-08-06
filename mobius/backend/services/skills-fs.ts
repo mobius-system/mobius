@@ -247,7 +247,9 @@ function getSourceDir(id: any): string | null {
   return null;
 }
 
-// 跨 scope 移动 skill 目录: 用户级 ↔ 项目级.
+// 跨 scope 复制 skill 目录: 用户级 ↔ 项目级.
+// 保留旧的 moveSkill 名称以兼容现有 API; Skill 的“移动”操作现在是快照复制,
+// 源位置继续保留, 目标副本与源目录相互独立.
 // 约束:
 //   - 只有 skill 的安装者本人 (id 里的 userId) 能调用; admin 由路由层放行.
 //   - 目标位置已有同 dirName 直接拒绝, 不静默覆盖.
@@ -288,12 +290,12 @@ function moveSkill({ id, requesterUserId, isAdmin, targetScope, targetProjectId 
 
   ensureDir(destParent);
   try {
-    fs.renameSync(srcResolved, destResolved);
+    fs.cpSync(srcResolved, destResolved, { recursive: true });
   } catch (e) {
-    return { ok: false, error: `重命名失败: ${e.message}` };
+    return { ok: false, error: `复制失败: ${e.message}` };
   }
   const sk = readSkillFromDir(destResolved);
-  if (!sk) return { ok: false, error: '移动后读取失败' };
+  if (!sk) return { ok: false, error: '复制后读取失败' };
   return {
     ok: true,
     skill: targetScope === 'user'
@@ -639,12 +641,30 @@ function runNpxSkillsAdd(targetDir: string, skillName: string): Promise<any> {
   return new Promise((resolve) => {
     const proc: any = spawn('npx', ['--yes', 'skills', 'add', skillName, '--agent', 'claude-code', '--yes'], {
       cwd: targetDir, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'],
+      // detached: true 让超时时能杀掉整个进程树 (npx 会 spawn git/node 子进程).
+      detached: true,
     });
     let stdout = '', stderr = '';
+    let settled = false;
+    const finish = (r: any) => {
+      if (settled) return; settled = true;
+      clearTimeout(timer);
+      resolve(r);
+    };
     proc.stdout.on('data', (d: any) => { stdout += d.toString(); });
     proc.stderr.on('data', (d: any) => { stderr += d.toString(); });
-    proc.on('error', (err: any) => resolve({ ok: false, code: -1, stdout, stderr: stderr + '\n' + err.message }));
-    proc.on('close', (code: any) => resolve({ ok: code === 0, code, stdout, stderr }));
+    proc.on('error', (err: any) => finish({ ok: false, code: -1, stdout, stderr: stderr + '\n' + err.message, timedOut: false }));
+    proc.on('close', (code: any) => finish({ ok: code === 0, code, stdout, stderr, timedOut: false }));
+    // 超时: 杀整个进程树 (-pid), 防止 npx / git clone 残留继续占用 & 后端 handler 永久挂起.
+    const timer = setTimeout(() => {
+      try { process.kill(-proc.pid); } catch {
+        try { proc.kill('SIGKILL'); } catch {}
+      }
+      finish({
+        ok: false, code: -1, stdout, timedOut: true,
+        stderr: stderr + '\n[超时] npx skills add 超过 ' + Math.round(NPX_SKILLS_TIMEOUT_MS / 1000) + 's, 已终止. 多半是 git clone github.com 不通 (本机 GitHub 直连受限), 请在 .env 配置 MOBIUS_SKILLS_PROXY, 或改用"粘贴/上传 SKILL.md"方式安装.',
+      });
+    }, NPX_SKILLS_TIMEOUT_MS);
   });
 }
 
@@ -653,6 +673,25 @@ function redactCreds(s: any): any {
   if (typeof s !== 'string') return s;
   return s.replace(/(https?:\/\/)[^:\s/@]+:[^@\s/]+@/g, '$1***:***@');
 }
+
+// 净化 npx skills CLI 的输出: 它用 ANSI 转义序列反复刷新 spinner 进度条
+// (如 "Cloning repository..." 配合 ◑◒◐◓), 直接回写到 UI 是乱码且无意义.
+// 剥离 ANSI 转义 + 压缩重复 spinner 行, 只保留有意义的错误文本.
+function cleanNpxOutput(s: any): string {
+  if (typeof s !== 'string') return '';
+  let out = s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
+    .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '')
+    .replace(/\x1b[=>]/g, '');
+  const lines = out.split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
+  const meaningful = lines.filter((l: string) =>
+    !/[◑◒◐◓◜◝◞◟↻]/.test(l) && !/^Cloning repository\.+$/i.test(l));
+  if (meaningful.length > 0) return meaningful.join('\n');
+  return /Cloning/i.test(out) ? '正在克隆 GitHub 仓库 (耗时较长, 可能因网络卡住)' : '';
+}
+
+// npx skills add 超时 (毫秒). 本机无代理时 git clone github.com 可能永久挂起,
+// 必须有上限, 否则后端 handler 永久阻塞 -> 前端 fetch 超时 -> "安装失败" 无明确原因.
+const NPX_SKILLS_TIMEOUT_MS = Number(process.env.MOBIUS_SKILLS_TIMEOUT_MS) || 120000;
 
 async function install({ userId, projectId, skillName }: any): Promise<any> {
   // 兜底净化: 用户可能粘贴完整命令 / GitHub URL (前端已实时净化, 这里对 API 直调再保险一次).
@@ -672,9 +711,19 @@ async function install({ userId, projectId, skillName }: any): Promise<any> {
   const before = new Set(listSkillDirs(skillsDir).map(d => path.basename(d)));
   const result = await runNpxSkillsAdd(cwd, skillName);
   if (!result.ok) {
+    // 超时: runNpxSkillsAdd 已给出可读的中文提示, 直接用.
+    if (result.timedOut) {
+      return { ok: false, error: redactCreds(cleanNpxOutput(result.stderr) || '安装超时'), code: result.code };
+    }
+    // 非超时失败: 净化 npx 的 ANSI spinner 乱码, 只留有意义文本; 常见是 git clone github 失败.
+    const cleaned = cleanNpxOutput(result.stderr || result.stdout || '').trim();
+    const hint = 'npx skills add 失败' + (cleaned ? `: ${cleaned}` : '');
+    const netHint = /clone|github|fetch|ENOTFOUND|ETIMEDOUT|ECONNRESET|unable to access|Connection/i.test(result.stderr || result.stdout || '')
+      ? '\n多半是本机无法直连 GitHub (git clone 失败). 请在 .env 配置 MOBIUS_SKILLS_PROXY, 或改用"粘贴/上传 SKILL.md"方式安装.'
+      : '';
     return {
       ok: false,
-      error: redactCreds((result.stderr || result.stdout || 'npx skills add 失败').trim()).slice(-2000),
+      error: redactCreds((hint + netHint)).slice(-2000),
       code: result.code,
     };
   }

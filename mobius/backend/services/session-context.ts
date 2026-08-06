@@ -1209,6 +1209,26 @@ function buildResearchSessionSelectionSnapshot(user: any, researchId: any, exclu
   return buildSelectionSnapshotFromSources(selected, total, excludedSkillIds, excludedMemoryIds);
 }
 
+// 用当前 live 数据 + 该 session 现存的勾选状态, 重新生成 selection snapshot.
+// 用途: 已创建会话内新装/新加 skill|memory 后, 让新条目进入该会话的有效集合
+// (会话的 snapshot 在创建时一次性冻结, 不刷新则新装的条目既不显示也不注入).
+// 保留用户此前取消勾选的 id (session_excluded_skills/memories), 新条目默认启用.
+// 仅 issue / research 两种 scope 可重建; 其它 scope 返回 null 由调用方兜底.
+function regenerateSessionSelectionSnapshot(user: any, sessionId: string): any {
+  const session = Sessions.findById(sessionId);
+  if (!session) return null;
+  const excludedSkillIds = parseStoredIdArray(session.session_excluded_skills);
+  const excludedMemoryIds = parseStoredIdArray(session.session_excluded_memories);
+  const options = { pc_client_metadata: session.pc_client_metadata ?? null };
+  if (session.scope_type === 'research' && session.research_id) {
+    return buildResearchSessionSelectionSnapshot(user, session.research_id, excludedSkillIds, excludedMemoryIds, options);
+  }
+  if (session.scope_type === 'issue' && session.issue_id) {
+    return buildSessionSelectionSnapshot(user, session.issue_id, excludedSkillIds, excludedMemoryIds, options);
+  }
+  return null;
+}
+
 function disabledIdsFromStoredSelection(storedSelection: any, rawSelection: any, allKey: string, excludedKey: string): string[] | null {
   if (!storedSelection) return null;
   const rawAll = rawSelection && Array.isArray(rawSelection[allKey]) ? rawSelection[allKey] : null;
@@ -1387,6 +1407,7 @@ export {
   buildResearchContextPreview,
   buildResearchSessionSelectionSnapshot,
   buildResearchSelectionDefaults,
+  regenerateSessionSelectionSnapshot,
   wrapUserMessage,
   gatherIssueSources,
   stripContextItemBodies,

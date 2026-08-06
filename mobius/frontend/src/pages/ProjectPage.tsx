@@ -12,12 +12,13 @@ import { ProjectItemsPanel } from '../components/project-page/ProjectItemsPanel'
 import { ProjectSettingsPanel } from '../components/project-page/ProjectSettingsPanel'
 import { ProjectSidebar } from '../components/project-page/ProjectSidebar'
 import { ResizablePanel, useMobileNavBreakpoint, useIsMobile } from '../components/resizable-panel'
-import type { GitRepoDraft, IssueConfirmAction, ProjectFilter, ProjectListSection } from '../components/project-page/types'
+import type { GitRepoDraft, IssueConfirmAction, ProjectCardDensity, ProjectFilter, ProjectListSection } from '../components/project-page/types'
 import {
   EMPTY_PROJECT_SESSION_SEARCH,
   textMatchesProjectSearch,
   type ProjectSessionSearchResponse,
 } from '../services/project-session-search'
+import { projectItemOrder } from '../services/project-session-order'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
@@ -32,7 +33,9 @@ import {
   parsePatienceInput,
 } from '../components/project-page/utils'
 
-const ISSUE_PAGE_SIZE = 20
+const COMPACT_PAGE_SIZE = 10
+const DETAILED_PAGE_SIZE = 6
+const PROJECT_CARD_DENSITY_KEY = 'mobius:project:card-density'
 const PROJECT_META_AUTO_SAVE_DELAY_MS = 700
 
 function parseAccessIdLines(value: string) {
@@ -125,7 +128,17 @@ export default function ProjectPage() {
   }
   const [section, setSection] = useState<ProjectListSection>(sectionInit)
   useEffect(() => { try { localStorage.setItem(SectionKey, section) } catch {} }, [SectionKey, section])
-  const [issuePage, setIssuePage] = useState(1)
+  const densityInit = (): ProjectCardDensity => {
+    try { return localStorage.getItem(PROJECT_CARD_DENSITY_KEY) === 'detailed' ? 'detailed' : 'compact' } catch { return 'compact' }
+  }
+  const [cardDensity, setCardDensity] = useState<ProjectCardDensity>(densityInit)
+  useEffect(() => { try { localStorage.setItem(PROJECT_CARD_DENSITY_KEY, cardDensity) } catch {} }, [cardDensity])
+  const pageSize = cardDensity === 'compact' ? COMPACT_PAGE_SIZE : DETAILED_PAGE_SIZE
+  // 左栏是独立的纵向列表，页容量按实际可用高度动态计算；右侧卡片继续使用密度页容量。
+  const [sidebarPageSize, setSidebarPageSize] = useState(COMPACT_PAGE_SIZE)
+  const [sidebarIssuePage, setSidebarIssuePage] = useState(1)
+  const [mainIssuePage, setMainIssuePage] = useState(1)
+  const [researchPage, setResearchPage] = useState(1)
   // 按项目的 issue / research 列表加载态: 切换到未缓存项目时, 列表先显示 loading,
   // 不再回落渲染上个项目的 issue (旧 issuesMap[projectId] || issues 是闪现旧数据的元凶).
   const [issuesLoading, setIssuesLoading] = useState(false)
@@ -285,11 +298,7 @@ export default function ProjectPage() {
         || (activeSessionSearch.issues[i.id]?.length || 0) > 0
       ))
     }
-    return [...arr].sort((a: any, b: any) => {
-      const s = Number(!!b.starred) - Number(!!a.starred)
-      if (s) return s
-      return Number(!!b.pinned) - Number(!!a.pinned)
-    })
+    return [...arr].sort(projectItemOrder)
   }, [projectIssues, filter, search, activeSessionSearch.issues])
 
   const filteredResearches = useMemo(() => {
@@ -303,31 +312,53 @@ export default function ProjectPage() {
         || (activeSessionSearch.researches[r.id]?.length || 0) > 0
       ))
     }
-    return arr.sort((a: any, b: any) => Number(!!b.pinned) - Number(!!a.pinned))
+    return [...arr].sort(projectItemOrder)
   }, [projectResearches, filter, search, activeSessionSearch.researches])
 
-  const issueTotalPages = Math.max(1, Math.ceil(filteredIssues.length / ISSUE_PAGE_SIZE))
-  const currentIssuePage = Math.min(issuePage, issueTotalPages)
-  const pagedIssues = useMemo(() => {
-    const start = (currentIssuePage - 1) * ISSUE_PAGE_SIZE
-    return filteredIssues.slice(start, start + ISSUE_PAGE_SIZE)
-  }, [filteredIssues, currentIssuePage])
+  const issueTotalPages = Math.max(1, Math.ceil(filteredIssues.length / pageSize))
+  const sidebarIssueTotalPages = Math.max(1, Math.ceil(filteredIssues.length / sidebarPageSize))
+  const currentSidebarIssuePage = Math.min(sidebarIssuePage, sidebarIssueTotalPages)
+  const sidebarPagedIssues = useMemo(() => {
+    const start = (currentSidebarIssuePage - 1) * sidebarPageSize
+    return filteredIssues.slice(start, start + sidebarPageSize)
+  }, [filteredIssues, currentSidebarIssuePage, sidebarPageSize])
+  const currentMainIssuePage = Math.min(mainIssuePage, issueTotalPages)
+  const mainPagedIssues = useMemo(() => {
+    const start = (currentMainIssuePage - 1) * pageSize
+    return filteredIssues.slice(start, start + pageSize)
+  }, [filteredIssues, currentMainIssuePage, pageSize])
+  const researchTotalPages = Math.max(1, Math.ceil(filteredResearches.length / pageSize))
+  const currentResearchPage = Math.min(researchPage, researchTotalPages)
+  const pagedResearches = useMemo(() => {
+    const start = (currentResearchPage - 1) * pageSize
+    return filteredResearches.slice(start, start + pageSize)
+  }, [filteredResearches, currentResearchPage, pageSize])
   const pagedIssueIdsKey = useMemo(() => (
-    pagedIssues.map((issue: any) => String(issue?.id || '').trim()).filter(Boolean).join(',')
-  ), [pagedIssues])
+    mainPagedIssues.map((issue: any) => String(issue?.id || '').trim()).filter(Boolean).join(',')
+  ), [mainPagedIssues])
   const visibleResearchIdsKey = useMemo(() => (
     section === 'researches'
-      ? filteredResearches.map((research: any) => String(research?.id || '').trim()).filter(Boolean).join(',')
+      ? pagedResearches.map((research: any) => String(research?.id || '').trim()).filter(Boolean).join(',')
       : ''
-  ), [section, filteredResearches])
+  ), [section, pagedResearches])
 
   useEffect(() => {
-    setIssuePage(1)
-  }, [projectId, filter, search])
+    setSidebarIssuePage(1)
+    setMainIssuePage(1)
+    setResearchPage(1)
+  }, [projectId, filter, search, cardDensity])
 
   useEffect(() => {
-    if (issuePage > issueTotalPages) setIssuePage(issueTotalPages)
-  }, [issuePage, issueTotalPages])
+    if (sidebarIssuePage > sidebarIssueTotalPages) setSidebarIssuePage(sidebarIssueTotalPages)
+  }, [sidebarIssuePage, sidebarIssueTotalPages])
+
+  useEffect(() => {
+    if (mainIssuePage > issueTotalPages) setMainIssuePage(issueTotalPages)
+  }, [mainIssuePage, issueTotalPages])
+
+  useEffect(() => {
+    if (researchPage > researchTotalPages) setResearchPage(researchTotalPages)
+  }, [researchPage, researchTotalPages])
 
   useEffect(() => {
     const issueIds = section === 'issues' ? pagedIssueIdsKey : ''
@@ -640,7 +671,7 @@ export default function ProjectPage() {
           <ProjectSidebar
             userParam={userParam}
             projectId={projectId}
-            issues={pagedIssues}
+            issues={sidebarPagedIssues}
             search={search}
             filter={filter}
             issuesLoading={issuesLoading}
@@ -649,12 +680,13 @@ export default function ProjectPage() {
             sessionSearchError={sessionSearchError}
             sessionSearchTruncated={activeSessionSearch.truncated}
             pagination={{
-              page: currentIssuePage,
-              pageSize: ISSUE_PAGE_SIZE,
+              page: currentSidebarIssuePage,
+              pageSize: sidebarPageSize,
               totalItems: filteredIssues.length,
-              totalPages: issueTotalPages,
-              onPageChange: setIssuePage,
+              totalPages: sidebarIssueTotalPages,
+              onPageChange: setSidebarIssuePage,
             }}
+            onPageSizeChange={setSidebarPageSize}
             onSearchChange={setSearch}
             onFilterChange={setFilter}
             canCreateIssue={canCreateIssue}
@@ -663,12 +695,13 @@ export default function ProjectPage() {
           />
         </ResizablePanel>
 
-        <main className="flex-1 overflow-y-auto" style={{ background: 'var(--bg-secondary)' }}>
-          <div className="max-w-7xl mx-auto p-3 sm:p-6">
+        <main className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`} style={{ background: 'var(--bg-secondary)' }}>
+          <div className={`max-w-7xl mx-auto p-3 sm:p-6 ${isMobile ? '' : 'h-full min-h-0'}`}>
             {(() => {
               const settingsPanel = (
                 <ProjectSettingsPanel
                   project={project}
+                  desktopWorkspace={!isMobile}
                   values={{
                     editName,
                     editDesc,
@@ -726,8 +759,8 @@ export default function ProjectPage() {
                   section={section}
                   filter={filter}
                   search={search}
-                  issues={pagedIssues}
-                  researches={filteredResearches}
+                  issues={mainPagedIssues}
+                  researches={pagedResearches}
                   sessionsMap={sessionsMap}
                   sessionMatchesByIssue={activeSessionSearch.issues}
                   sessionMatchesByResearch={activeSessionSearch.researches}
@@ -735,13 +768,24 @@ export default function ProjectPage() {
                   issuesLoading={issuesLoading}
                   researchesLoading={researchesLoading}
                   issuePagination={{
-                    page: currentIssuePage,
-                    pageSize: ISSUE_PAGE_SIZE,
+                    page: currentMainIssuePage,
+                    pageSize,
                     totalItems: filteredIssues.length,
                     totalPages: issueTotalPages,
-                    onPageChange: setIssuePage,
+                    onPageChange: setMainIssuePage,
                   }}
+                  researchPagination={{
+                    page: currentResearchPage,
+                    pageSize,
+                    totalItems: filteredResearches.length,
+                    totalPages: researchTotalPages,
+                    onPageChange: setResearchPage,
+                  }}
+                  density={cardDensity}
+                  desktopWorkspace={!isMobile}
+                  scrollResetKey={`${projectId}:${section}:${filter}:${search}:${cardDensity}:${currentMainIssuePage}:${currentResearchPage}`}
                   onSectionChange={setSection}
+                  onDensityChange={setCardDensity}
                   canCreateIssue={canCreateIssue}
                   canCreateResearch={canCreateResearch}
                   onCreateIssue={openNewIssue}
@@ -763,7 +807,7 @@ export default function ProjectPage() {
                   </MobileSettingsDrawer>
                 </>
               ) : (
-                <div className="flex gap-6 items-start">
+                <div className="flex h-full min-h-0 items-stretch gap-6">
                   {settingsPanel}
                   {itemsPanel}
                 </div>

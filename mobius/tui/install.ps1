@@ -9,7 +9,7 @@
   npm 安装和 mobius 启动均直接使用 node.exe/tsx；安装完成后同时注册两个
   Explorer 右键入口：“在 Mobius 中打开”（文件夹本身 + 文件夹空白处）。
 .EXAMPLE
-  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v14.ps1 | iex
+  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v15.ps1 | iex
 #>
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
@@ -94,31 +94,42 @@ try {
 
     function Invoke-NpmInstallAttempt([string]$registry, [int]$timeoutSeconds) {
         Remove-Item $npmStdout, $npmStderr -Force -ErrorAction SilentlyContinue
-        # Start-Process is used instead of the call operator so a hung npm
-        # process can be terminated deterministically on Windows PowerShell 5.1.
-        $args = '"{0}" install "@mobius-os/mobius@latest" --registry "{1}" --loglevel warn' -f $npmCli, $registry
-        $proc = Start-Process -FilePath $nodeExe -ArgumentList $args -WorkingDirectory $GLOBAL_DIR `
-            -RedirectStandardOutput $npmStdout -RedirectStandardError $npmStderr -PassThru -WindowStyle Hidden
-        $completed = $proc.WaitForExit($timeoutSeconds * 1000)
-        if (-not $completed) {
+        # Do not call System.Diagnostics.Process instance methods here.
+        # Windows PowerShell ConstrainedLanguage blocks those methods even
+        # though Start-Process itself is allowed. A tiny cmd wrapper records
+        # %ERRORLEVEL%; Wait-Process and taskkill remain CLM-safe.
+        $attemptCmd = Join-Path $GLOBAL_DIR 'npm-install-attempt.cmd'
+        $exitCodeFile = Join-Path $GLOBAL_DIR 'npm-install.exitcode'
+        Remove-Item $exitCodeFile -Force -ErrorAction SilentlyContinue
+        $attemptLines = @(
+            '@echo off',
+            'setlocal',
+            ('set "PATH={0};%PATH%"' -f $NODE_DIR),
+            ('"{0}" "{1}" install "@mobius-os/mobius@latest" --registry "{2}" --loglevel warn >"{3}" 2>"{4}"' -f $nodeExe, $npmCli, $registry, $npmStdout, $npmStderr),
+            'set "EXIT_CODE=%ERRORLEVEL%"',
+            ('>"{0}" echo %EXIT_CODE%' -f $exitCodeFile),
+            'exit /b %EXIT_CODE%'
+        )
+        Set-Content -Path $attemptCmd -Value $attemptLines -Encoding ASCII
+        $proc = Start-Process -FilePath $env:ComSpec -ArgumentList @('/d', '/s', '/c', ('"{0}"' -f $attemptCmd)) `
+            -WorkingDirectory $GLOBAL_DIR -PassThru -WindowStyle Hidden
+        Wait-Process -Id $proc.Id -Timeout $timeoutSeconds -ErrorAction SilentlyContinue | Out-Null
+        # Allow cmd a short moment to flush the marker after it exits, without
+        # invoking any restricted Process instance methods.
+        for ($markerAttempt = 1; $markerAttempt -le 20 -and -not (Test-Path $exitCodeFile); $markerAttempt++) {
+            Start-Sleep -Milliseconds 100
+        }
+        if (-not (Test-Path $exitCodeFile)) {
             Warn "npm 官方源安装超过 $timeoutSeconds 秒，正在终止并切换镜像源..."
             & $env:ComSpec /d /s /c "taskkill /PID $($proc.Id) /T /F" 2>&1 | Out-Null
             Start-Sleep -Milliseconds 300
+            Remove-Item $attemptCmd -Force -ErrorAction SilentlyContinue
             return @{ TimedOut = $true; ExitCode = $null }
         }
-        # Windows PowerShell 5.1 may leave ExitCode unset after only calling
-        # WaitForExit(milliseconds), especially with redirected output. The
-        # parameterless wait flushes redirected streams and Refresh reloads
-        # the native process state before reading ExitCode.
-        $proc.WaitForExit()
-        $proc.Refresh()
-        $exitCode = $proc.ExitCode
-        if ($null -eq $exitCode) {
-            # Defensive PS 5.1 fallback: verify the requested package with npm
-            # instead of treating an empty ExitCode as an installation error.
-            & $nodeExe $npmCli ls "@mobius-os/mobius" --depth 0 --silent 2>&1 | Out-Null
-            $exitCode = $LASTEXITCODE
-        }
+        $exitText = Get-Content -Path $exitCodeFile -Raw -ErrorAction SilentlyContinue
+        $exitCode = $exitText -as [int]
+        if ($null -eq $exitCode) { $exitCode = 1 }
+        Remove-Item $attemptCmd, $exitCodeFile -Force -ErrorAction SilentlyContinue
         return @{ TimedOut = $false; ExitCode = $exitCode }
     }
 
@@ -179,10 +190,15 @@ $mobiusCmd = Join-Path $binDir "mobius.cmd"
 Ok "启动器: $mobiusCmd"
 
 # --- 4. 用户 PATH (无需 admin) ---
-$userPath = [Environment]::GetEnvironmentVariable("Path","User")
+$userPath = (Get-ItemProperty -Path 'HKCU:\Environment' -Name Path -ErrorAction SilentlyContinue).Path
 if ($userPath -notlike "*$binDir*") {
     $newPath = if ($userPath) { "$userPath;$binDir" } else { $binDir }
-    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+    if (Test-Path 'HKCU:\Environment') {
+        Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Value $newPath
+    } else {
+        New-Item -Path 'HKCU:\Environment' -Force | Out-Null
+        New-ItemProperty -Path 'HKCU:\Environment' -Name Path -Value $newPath -PropertyType ExpandString -Force | Out-Null
+    }
     $env:Path += ";$binDir"
     Ok "已加入用户 PATH: $binDir (重开 PowerShell 生效)"
 } else {
@@ -194,8 +210,7 @@ if ($userPath -notlike "*$binDir*") {
 #   Directory\shell\Mobius            = 右键文件夹本身，目标参数 %1
 #   Directory\Background\shell\Mobius = 右键文件夹空白处，目标参数 %V
 # 使用 .cmd 辅助启动器，避免右键动作依赖 PowerShell ExecutionPolicy。
-$openHereCmd = [System.IO.Path]::Combine($MHOME, "bin", "mobius-open-here.cmd")
-if ([string]::IsNullOrWhiteSpace($openHereCmd)) { Fail "无法确定右键菜单辅助启动器路径" }
+$openHereCmd = Join-Path $binDir "mobius-open-here.cmd"
 $openHereLines = @(
     '@echo off',
     'setlocal',
@@ -238,7 +253,7 @@ Write-Host "右键文件夹或文件夹空白处，可选择: 在 Mobius 中打�
 try {
     Invoke-MobiusInstall
 } catch {
-    $errorLog = Join-Path $env:TEMP "mobius-install-v14-error.log"
+    $errorLog = Join-Path $env:TEMP "mobius-install-v15-error.log"
     $errorText = $_ | Format-List * -Force | Out-String
     $errorText | Set-Content -Path $errorLog -Encoding UTF8
     Write-Host ""
