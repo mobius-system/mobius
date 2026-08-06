@@ -149,6 +149,40 @@ async function syncDesktopBuilds(options = {}) {
     }
   } catch (_) { /* 清理失败不影响 */ }
 
+  // 5. 若 Release 未包含 manifest.json (旧 CI), 则从本地 zip 重新生成
+  const hasManifest = assets.some(a => a.name === "manifest.json");
+  if (!hasManifest && downloaded > 0) {
+    try {
+      const version = (release.tag_name || "").replace("desktop-v", "");
+      const builds = [];
+      for (const name of currentZipNames) {
+        const filePath = path.join(DESKTOP_BUILDS_DIR, name);
+        try {
+          const st = fs.statSync(filePath);
+          const sha256 = require("crypto").createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+          // 从文件名解析: mobius-desktop-0.0.19-win-x64.zip
+          const rest = name.replace(/^mobius-desktop-[^-]+-[^-]+-/, "").replace(".zip", ""); // mac-arm64
+          const sep = rest.lastIndexOf("-");
+          const platform = sep > 0 ? rest.slice(0, sep) : rest;
+          const arch = sep > 0 ? rest.slice(sep + 1) : "x64";
+          const format = name.endsWith(".dmg") ? "dmg" : "zip";
+          builds.push({ platform, arch, format, file: name, size: st.size, sha256 });
+        } catch (_) { /* skip */ }
+      }
+      if (builds.length > 0) {
+        const manifest = {
+          version,
+          generatedAt: new Date().toISOString(),
+          builds: builds.sort((a, b) => `${a.platform}-${a.arch}`.localeCompare(`${b.platform}-${b.arch}`)),
+        };
+        fs.writeFileSync(path.join(DESKTOP_BUILDS_DIR, "manifest.json"), JSON.stringify(manifest, null, 2));
+        log(`[desktop-sync]   ✓ generated manifest.json (${builds.length} builds, from local zip)`);
+      }
+    } catch (e) {
+      log(`[desktop-sync]   ⚠ manifest.json generation failed: ${e.message}`);
+    }
+  }
+
   log(`[desktop-sync] Done ${elapsed}s: ${downloaded} new, ${skipped} cached, ${failed} failed`);
 
   return {
