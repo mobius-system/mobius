@@ -59,6 +59,7 @@ import {
 } from '../services/text-redaction'
 import { pollRecursive } from '../services/polling'
 import { ToggleSwitch } from './toggle-switch'
+import { SkillMarketLink } from './skill-market-link'
 
 type AdminTmuxContext = {
   session_id: string
@@ -4640,17 +4641,20 @@ function MigrationItemEditModal({
         className="flex max-h-[88vh] w-full max-w-2xl flex-col gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <h4 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
             {isCreate ? `新建 ${kind === 'memory' ? 'Memory' : 'Skill'}` : `编辑 ${kind === 'memory' ? 'Memory' : 'Skill'}`}
           </h4>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-          >
-            关闭
-          </button>
+          <div className="flex items-center gap-2">
+            {isCreate && kind === 'skill' && <SkillMarketLink />}
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+            >
+              关闭
+            </button>
+          </div>
         </div>
         {error && (
           <div className="rounded-md border border-red-500/25 bg-red-500/10 px-2.5 py-1.5 text-[12px] text-red-300">

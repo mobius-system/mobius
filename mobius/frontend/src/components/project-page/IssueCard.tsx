@@ -2,6 +2,9 @@ import { Link } from 'react-router-dom'
 import { timeAgo } from '../shell'
 import { AgentStatusDot } from '../AgentStatusDot'
 import type { IssueConfirmAction } from './types'
+import { SearchMatchText } from '../search-match-text'
+import { textMatchesProjectSearch, type ProjectSessionMatch } from '../../services/project-session-search'
+import { sortProjectSessions } from '../../services/project-session-order'
 import {
   LOGO_REVIEW_ISSUE_TITLE,
   LOGO_REVIEW_PROJECT_ID,
@@ -11,6 +14,8 @@ import {
 type IssueCardProps = {
   issue: any
   sessions: any[]
+  searchMatches: ProjectSessionMatch[]
+  searchQuery: string
   userParam: string
   projectId: string
   onEdit: (issue: any) => void
@@ -21,6 +26,8 @@ type IssueCardProps = {
 export function IssueCard({
   issue,
   sessions,
+  searchMatches,
+  searchQuery,
   userParam,
   projectId,
   onEdit,
@@ -28,9 +35,11 @@ export function IssueCard({
   onToggleStar,
 }: IssueCardProps) {
   const isCompleted = issue.status === 'completed'
-  const activeSessions = sessions.filter((s: any) => s.status === 'active')
+  const activeSessions = sessions.filter((s: any) => s.agent_status === 'running')
   const sessionTotal = Number.isFinite(Number(issue.session_count)) ? Number(issue.session_count) : sessions.length
-  const activeSessionTotal = Number.isFinite(Number(issue.session_count)) ? sessionTotal : activeSessions.length
+  const activeSessionTotal = Number.isFinite(Number(issue.running_session_count)) ? Number(issue.running_session_count) : activeSessions.length
+  const showingSessionMatches = !!searchQuery.trim() && searchMatches.length > 0
+  const displayedSessions = sortProjectSessions(showingSessionMatches ? searchMatches : sessions)
   const isLogoReviewIssue = projectId === LOGO_REVIEW_PROJECT_ID
     && String(issue.title || '').includes(LOGO_REVIEW_ISSUE_TITLE)
   // v3 写权限: can_manage=false (非 owner, 不是允许名单, 项目不可写) 时隐藏所有管理按钮.
@@ -80,33 +89,50 @@ export function IssueCard({
       )}
 
       <div className="px-4 py-2 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        <span>{activeSessionTotal} 活跃 · {sessionTotal} 总会话</span>
+        <span>{activeSessionTotal} 执行中 · {sessionTotal} 总会话</span>
         <span className="ml-auto">活跃 {timeAgo(issue.last_active)}</span>
       </div>
 
       <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>会话</span>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+            {showingSessionMatches ? `匹配会话 ${searchMatches.length}` : '会话'}
+          </span>
           <Link to={`/u/${userParam}/p/${projectId}/i/${issue.id}`}
             className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">进入对话 →</Link>
         </div>
-        {sessions.length === 0 ? (
+        {displayedSessions.length === 0 ? (
           <div className="text-[11px] py-1" style={{ color: 'var(--text-muted)' }}>暂无会话</div>
         ) : (
           <div className="space-y-1">
-            {sessions.slice(0, 4).map((s: any) => {
+            {displayedSessions.slice(0, 4).map((s: any) => {
               const isLogoReviewSession = isLogoReviewIssue && String(s.name || '').includes(LOGO_REVIEW_SESSION_NAME)
+              const showDescription = showingSessionMatches && textMatchesProjectSearch(s.description, searchQuery)
               return (
               <Link key={s.session_id} to={`/u/${userParam}/p/${projectId}/i/${issue.id}?session=${s.session_id}`}
                 data-tour={isLogoReviewSession ? 'logo-review-session-link' : undefined}
+                data-project-card-session-match={showingSessionMatches ? s.session_id : undefined}
                 className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors">
                 <AgentStatusDot agentStatus={s.agent_status} className="flex-shrink-0" />
-                <span className="text-[12px] truncate flex-1" style={{ color: 'var(--text-primary)' }}>{s.name}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>
+                    <SearchMatchText text={s.name || '未命名会话'} query={showingSessionMatches ? searchQuery : ''} />
+                  </span>
+                  {showDescription && (
+                    <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      <SearchMatchText text={s.description || ''} query={searchQuery} />
+                    </span>
+                  )}
+                </span>
                 <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{s.message_count} · {timeAgo(s.last_active)}</span>
               </Link>
               )
             })}
-            {sessionTotal > sessions.length && (
+            {showingSessionMatches && searchMatches.length > 4 ? (
+              <div className="text-[11px] py-1 px-2" style={{ color: 'var(--text-muted)' }}>
+                还有 {searchMatches.length - 4} 个匹配会话...
+              </div>
+            ) : !showingSessionMatches && sessionTotal > sessions.length && (
               <div className="text-[11px] py-1 px-2" style={{ color: 'var(--text-muted)' }}>
                 还有 {sessionTotal - sessions.length} 个会话...
               </div>

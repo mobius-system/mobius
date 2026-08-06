@@ -46,6 +46,10 @@ function mockFetch(url: string, init?: RequestInit): Response {
   if (url.endsWith('/api/auth/config')) return json({ password_required: false })
   if (url.endsWith('/api/auth/me')) return json({ id: 'tester', display_name: 'Test User', role: 'admin', work_dir: '/tmp' })
   if (url.endsWith('/api/auth/login')) return json({ token: 'mock-jwt-token', user: { id: 'tester', display_name: 'Test User', role: 'admin' } })
+  if (url.includes('/aimux_bridge/api/remotes/') && url.endsWith('/connection')) {
+    const match = url.match(/remotes\/([^/]+)\/connection/)
+    return json({ identifier: match ? decodeURIComponent(match[1]) : 'tui-test', event_stream_connected: true })
+  }
   // sessions (must be checked before issues/projects — the session URL contains /issues too)
   if (url.includes('/sessions') && url.includes('/issues') && method === 'POST') return json({ session_id: SID })         // create session
   if (url.includes('/sessions') && url.includes('/issues') && method === 'GET') {                                            // list sessions (resume)

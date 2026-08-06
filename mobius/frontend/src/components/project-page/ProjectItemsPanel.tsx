@@ -5,6 +5,7 @@ import { PrimaryActionButton } from '../primary-action-button'
 import { ResearchCard } from './ResearchCard'
 import { ListLoadingHint } from '../list-loading-hint'
 import type { IssueConfirmAction, ProjectFilter, ProjectIssuePagination, ProjectListSection } from './types'
+import type { ProjectSessionMatchMap } from '../../services/project-session-search'
 
 const EXTENSION_DEVELOPMENT_LINKS: Record<string, { label: string; href: string; description: string }> = {
   'finance-news-wall': {
@@ -24,6 +25,9 @@ type ProjectItemsPanelProps = {
   issues: any[]
   researches: any[]
   sessionsMap: Record<string, any[]>
+  sessionMatchesByIssue: ProjectSessionMatchMap
+  sessionMatchesByResearch: ProjectSessionMatchMap
+  sessionSearchLoading?: boolean
   issuePagination: ProjectIssuePagination
   // 切换到未缓存项目时, 列表先显示 loading 而不是闪现"暂无 Issue/Research".
   issuesLoading?: boolean
@@ -52,6 +56,9 @@ export function ProjectItemsPanel({
   issues,
   researches,
   sessionsMap,
+  sessionMatchesByIssue,
+  sessionMatchesByResearch,
+  sessionSearchLoading = false,
   issuePagination,
   issuesLoading = false,
   researchesLoading = false,
@@ -182,12 +189,14 @@ export function ProjectItemsPanel({
         <IssueList
           issues={issues}
           sessionsMap={sessionsMap}
+          sessionMatchesByIssue={sessionMatchesByIssue}
           userParam={userParam}
           projectId={projectId}
           filter={filter}
           search={search}
           pagination={issuePagination}
           issuesLoading={issuesLoading}
+          sessionSearchLoading={sessionSearchLoading}
           canCreateIssue={canCreateIssue}
           onCreateIssue={onCreateIssue}
           onCreatePlanningIssue={onCreatePlanningIssue}
@@ -205,11 +214,13 @@ export function ProjectItemsPanel({
         <ResearchList
           researches={researches}
           sessionsMap={sessionsMap}
+          sessionMatchesByResearch={sessionMatchesByResearch}
           userParam={userParam}
           projectId={projectId}
           filter={filter}
           search={search}
           researchesLoading={researchesLoading}
+          sessionSearchLoading={sessionSearchLoading}
           canCreateResearch={canCreateResearch}
           onCreateResearch={onCreateResearch}
           onEditResearch={onEditResearch}
@@ -223,12 +234,14 @@ export function ProjectItemsPanel({
 type IssueListProps = {
   issues: any[]
   sessionsMap: Record<string, any[]>
+  sessionMatchesByIssue: ProjectSessionMatchMap
   userParam: string
   projectId: string
   filter: ProjectFilter
   search: string
   pagination: ProjectIssuePagination
   issuesLoading?: boolean
+  sessionSearchLoading?: boolean
   canCreateIssue: boolean
   onCreateIssue: () => void
   onCreatePlanningIssue?: () => void
@@ -240,12 +253,14 @@ type IssueListProps = {
 function IssueList({
   issues,
   sessionsMap,
+  sessionMatchesByIssue,
   userParam,
   projectId,
   filter,
   search,
   pagination,
   issuesLoading = false,
+  sessionSearchLoading = false,
   canCreateIssue,
   onCreateIssue,
   onCreatePlanningIssue,
@@ -255,7 +270,7 @@ function IssueList({
 }: IssueListProps) {
   if (issues.length === 0) {
     // 切换项目首次拉取 issue 列表时, 不要直接渲染"暂无 Issue"空态, 先显示 loading.
-    if (issuesLoading) {
+    if (issuesLoading || (sessionSearchLoading && !!search.trim())) {
       return (
         <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
           <ListLoadingHint />
@@ -266,7 +281,7 @@ function IssueList({
     return (
       <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
         <div className="text-[13px] mb-3" style={{ color: 'var(--text-muted)' }}>
-          {search.trim() || filter !== 'all' ? '没有匹配的任务' : '暂无任务'}
+          {search.trim() || filter !== 'all' ? '没有匹配的任务或会话' : '暂无任务'}
         </div>
         <div className="flex items-center justify-center gap-2 flex-wrap">
           <button onClick={onCreateIssue} disabled={!canCreateIssue} data-tour="project-empty-create-issue"
@@ -295,6 +310,8 @@ function IssueList({
             key={issue.id}
             issue={issue}
             sessions={sessionsMap[issue.id] || []}
+            searchMatches={sessionMatchesByIssue[issue.id] || []}
+            searchQuery={search}
             userParam={userParam}
             projectId={projectId}
             onEdit={onEditIssue}
@@ -351,11 +368,13 @@ function IssuePaginationControls({ pagination, compact = false }: IssuePaginatio
 type ResearchListProps = {
   researches: any[]
   sessionsMap: Record<string, any[]>
+  sessionMatchesByResearch: ProjectSessionMatchMap
   userParam: string
   projectId: string
   filter: ProjectFilter
   search: string
   researchesLoading?: boolean
+  sessionSearchLoading?: boolean
   canCreateResearch: boolean
   onCreateResearch: () => void
   onEditResearch: (research: any) => void
@@ -365,11 +384,13 @@ type ResearchListProps = {
 function ResearchList({
   researches,
   sessionsMap,
+  sessionMatchesByResearch,
   userParam,
   projectId,
   filter,
   search,
   researchesLoading = false,
+  sessionSearchLoading = false,
   canCreateResearch,
   onCreateResearch,
   onEditResearch,
@@ -377,7 +398,7 @@ function ResearchList({
 }: ResearchListProps) {
   if (researches.length === 0) {
     // 切换项目首次拉取 research 列表时, 不要直接渲染"暂无 Research"空态, 先显示 loading.
-    if (researchesLoading) {
+    if (researchesLoading || (sessionSearchLoading && !!search.trim())) {
       return (
         <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
           <ListLoadingHint />
@@ -387,7 +408,7 @@ function ResearchList({
     return (
       <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
         <div className="text-[13px] mb-3" style={{ color: 'var(--text-muted)' }}>
-          {search.trim() || filter !== 'all' ? '没有匹配的研究' : '暂无研究'}
+          {search.trim() || filter !== 'all' ? '没有匹配的研究或智能体' : '暂无研究'}
         </div>
         <button onClick={onCreateResearch} disabled={!canCreateResearch}
           className="h-9 px-4 rounded-lg text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
@@ -404,6 +425,8 @@ function ResearchList({
           key={research.id}
           research={research}
           sessions={sessionsMap[research.id] || []}
+          searchMatches={sessionMatchesByResearch[research.id] || []}
+          searchQuery={search}
           userParam={userParam}
           projectId={projectId}
           onEdit={onEditResearch}

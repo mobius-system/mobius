@@ -1,11 +1,15 @@
 /**
- * Scroll pager regression — "回答问题后把一切都隐藏了，请不要隐藏，支持向上翻页查看".
+ * Chat viewport regression: history paging and live terminal resizing.
  *
  * The chat caps the transcript to the terminal height and (because Ink redraws
  * only the live frame) the terminal's own scrollback holds no past turns, so
  * older messages used to be unreachable. The fix is an in-app pager: PageUp
  * scrolls back through history, PageDown forward, with a "stick to latest"
  * rule so the conversation auto-follows again once you page back to the bottom.
+ *
+ * It also emits real stdout resize events after a long transcript is present.
+ * The dynamic tree must refit the visible records without duplicating or
+ * corrupting the fixed header, composer, and status rows.
  *
  * Run:  npm run test:scroll
  */
@@ -37,6 +41,14 @@ function emitEntry(n: number) {
 let pass = 0, fail = 0
 function ok(c: boolean, m: string) { c ? (pass++, console.log(`  ✓ ${m}`)) : (fail++, console.error(`  ✗ ${m}`)) }
 const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+const answerCount = (s: string) => (strip(s).match(/回答 \d+/g) ?? []).length
+
+function resize(stdout: NodeJS.WriteStream, columns: number, rows: number) {
+  Object.defineProperty(stdout, 'columns', { configurable: true, value: columns })
+  Object.defineProperty(stdout, 'rows', { configurable: true, value: rows })
+  Object.defineProperty(stdout, 'isTTY', { configurable: true, value: true })
+  stdout.emit('resize')
+}
 
 const PID = 'proj-1', IID = 'issue-1', SID = 'sess-1'
 
@@ -89,7 +101,7 @@ async function main() {
   globalThis.fetch = ((u: any, init?: any) => mockFetch(String(u), init)) as unknown as typeof fetch
 
   console.log('\n[SCROLL] in-app history pager (mocked backend)\n')
-  const { stdin, lastFrame, unmount } = render(React.createElement(App))
+  const { stdin, stdout, lastFrame, unmount } = render(React.createElement(App))
 
   try {
     // ── boot through the prep wizard into chat ────────────────────────────────
@@ -118,6 +130,23 @@ async function main() {
 
     ok(tailFrame.includes('回答 24'), 'latest entry visible at tail (not hidden)')
     ok(tailFrame.includes('PageUp'), 'older-records hint offers PageUp (nothing is silently lost)')
+
+    // ── live resize: refit one dynamic frame, never retain old-width output ──
+    resize(stdout as unknown as NodeJS.WriteStream, 52, 18)
+    await delay(300)
+    const narrowFrame = strip(lastFrame() ?? '')
+    const narrowAnswers = answerCount(narrowFrame)
+    ok(narrowFrame.includes('回答 24'), 'narrow resize keeps the latest reply visible')
+    ok(narrowFrame.includes('Mobius') && narrowFrame.includes('输入问题或 / 命令') && narrowFrame.includes('web ·'), 'narrow resize preserves header, composer, and status')
+    ok((narrowFrame.match(/>_ Mobius/g) ?? []).length === 1, 'narrow resize leaves exactly one dynamic header')
+
+    resize(stdout as unknown as NodeJS.WriteStream, 100, 36)
+    await delay(300)
+    const tallFrame = strip(lastFrame() ?? '')
+    const tallAnswers = answerCount(tallFrame)
+    ok(tallFrame.includes('回答 24'), 'larger resize keeps the latest reply visible')
+    ok(tallAnswers > narrowAnswers, 'larger resize reveals more history in the same viewport')
+    ok((tallFrame.match(/>_ Mobius/g) ?? []).length === 1, 'larger resize still has one dynamic header')
 
     // ── PageUp: viewport scrolls back over history ────────────────────────────
     stdin.write('\x1b[5~')                                   // PageUp

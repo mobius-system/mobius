@@ -8,6 +8,11 @@ import type { SessionRow } from '../types/rows';
   if (!cols.some(c => c.name === 'pc_client_metadata')) {
     db.exec("ALTER TABLE sessions_v2 ADD COLUMN pc_client_metadata TEXT");
   }
+  // name_human_edited: 会话名是否由人类用户钦定 (重命名 / 创建表单手填). 1 → AI 标题生成器
+  // (claude-code syncer / codex generator) 跳过, 永不覆盖用户起的名字. 0 (默认) → AI 可生成首版标题.
+  if (!cols.some(c => c.name === 'name_human_edited')) {
+    db.exec("ALTER TABLE sessions_v2 ADD COLUMN name_human_edited INTEGER NOT NULL DEFAULT 0");
+  }
 })();
 
 type SessionLanguage = 'zh' | 'en';
@@ -86,6 +91,8 @@ interface InsertArgs {
   language?: SessionLanguage;
   // PC 任务模式 (Electron/TUI): web 端 null/缺省.
   pc_client_metadata?: { work_mode: string; aimux_id: string; local_path?: string; is_tui?: boolean; add_remote_aimux_mcp?: boolean } | null;
+  // 会话名是否用户钦定 (创建表单手填). 1 → AI 标题生成器跳过覆盖. 缺省 0 (沿用列默认值).
+  name_human_edited?: number;
 }
 
 // Session list endpoints feed cards/sidebars. Keep heavy snapshots out of these
@@ -201,13 +208,23 @@ const Sessions = {
       FROM sessions_v2 s
       LEFT JOIN users u ON s.user_id = u.id
       WHERE s.project_id = ?
-        AND s.status = 'active'
+        AND s.status != 'archived'
+        AND s.deleted_at IS NULL
         AND (${clauses.join(' OR ')})
       ORDER BY
         s.scope_type ASC,
         COALESCE(s.issue_id, s.research_id) ASC,
+        CASE
+          WHEN s.agent_status = 'running' THEN 0
+          WHEN s.status = 'active' THEN 1
+          ELSE 2
+        END,
+        CASE
+          WHEN s.status = 'completed' THEN COALESCE(s.completed_at, s.last_active)
+          ELSE s.last_active
+        END DESC,
         CASE s.research_role WHEN 'chief_researcher' THEN 0 ELSE 1 END,
-        s.last_active DESC
+        s.created_at DESC
     `).all(...params) as SessionListRow[];
     const limit = Math.max(1, Math.min(Number(previewLimit) || 4, 500));
     const seen = new Map<string, number>();
@@ -219,6 +236,54 @@ const Sessions = {
       seen.set(key, count + 1);
       return true;
     });
+  },
+
+  // 项目页层级搜索只需要会话元数据。使用 instr 而不是 LIKE，确保用户输入的
+  // `%` / `_` 按字面量匹配，不会意外变成通配符。
+  searchActiveByProjectMetadata: (projectId: string, rawQuery: string): SessionListRow[] => {
+    const query = String(rawQuery || '').trim().toLowerCase();
+    if (!projectId || !query) return [];
+    return db.prepare(`
+      SELECT ${SESSION_LIST_COLUMNS}, u.display_name as user_display_name
+      FROM sessions_v2 s
+      LEFT JOIN users u ON s.user_id = u.id
+      WHERE s.project_id = ?
+        AND s.status != 'archived'
+        AND s.deleted_at IS NULL
+        AND s.scope_type IN ('issue', 'research')
+        AND (
+          instr(lower(COALESCE(s.name, '')), ?) > 0
+          OR instr(lower(COALESCE(s.description, '')), ?) > 0
+        )
+      ORDER BY
+        CASE WHEN s.agent_status = 'running' THEN 0 WHEN s.status = 'active' THEN 1 ELSE 2 END,
+        CASE WHEN s.status = 'completed' THEN COALESCE(s.completed_at, s.last_active) ELSE s.last_active END DESC,
+        s.created_at DESC
+    `).all(projectId, query, query) as SessionListRow[];
+  },
+
+  searchActiveMetadata: (rawQuery: string, limit: number = 2001): SessionWithJoinsRow[] => {
+    const query = String(rawQuery || '').trim().toLowerCase();
+    if (!query) return [];
+    return db.prepare(`
+      SELECT ${SESSION_LIST_COLUMNS},
+        i.title as issue_title,
+        r.title as research_title,
+        p.name as project_name
+      FROM sessions_v2 s
+      LEFT JOIN issues i ON s.issue_id = i.id
+      LEFT JOIN researches r ON s.research_id = r.id
+      LEFT JOIN projects p ON s.project_id = p.id
+      WHERE s.status = 'active'
+        AND s.deleted_at IS NULL
+        AND s.scope_type IN ('issue', 'research')
+        AND (
+          instr(lower(COALESCE(s.name, '')), ?) > 0
+          OR instr(lower(COALESCE(s.description, '')), ?) > 0
+        )
+      ORDER BY s.last_active DESC
+      LIMIT ?
+    `).all(query, query, Math.max(1, Math.min(Number(limit) || 2001, 10001))) as SessionWithJoinsRow[];
   },
 
   listActiveByIssue: (issueId: string): SessionRow[] => db.prepare("SELECT * FROM sessions_v2 WHERE issue_id = ? AND scope_type = 'issue' AND status = 'active'").all(issueId) as SessionRow[],
@@ -248,7 +313,7 @@ const Sessions = {
   `).get(researchId) as ReusableSelectionRow | undefined,
 
   insert: (args: InsertArgs): void => {
-    const { session_id, issue_id, project_id, scope_type, research_id, research_role, user_id, name, description, session_key, excluded_skill_ids, excluded_memory_ids, selection_snapshot, model, language, pc_client_metadata } = args;
+    const { session_id, issue_id, project_id, scope_type, research_id, research_role, user_id, name, description, session_key, excluded_skill_ids, excluded_memory_ids, selection_snapshot, model, language, pc_client_metadata, name_human_edited } = args;
     const exSk = Array.isArray(excluded_skill_ids) && excluded_skill_ids.length > 0 ? JSON.stringify(excluded_skill_ids) : null;
     const exMm = Array.isArray(excluded_memory_ids) && excluded_memory_ids.length > 0 ? JSON.stringify(excluded_memory_ids) : null;
     const selSnap = selection_snapshot ? JSON.stringify(selection_snapshot) : null;
@@ -257,14 +322,16 @@ const Sessions = {
     const mdl = (typeof model === 'string' && model.length > 0) ? model : MODELS[DEFAULT_MODEL_KEY];
     const lang = normalizeLanguage(language);
     const scope = scope_type === 'research' ? 'research' : 'issue';
+    // name_human_edited: 仅用户钦定 (创建表单手填) 时显式写 1, 其余缺省走列默认值 0.
+    const nameHumanEdited = name_human_edited === 1 ? 1 : 0;
     // use_proxy 列已 deprecated (改由 admin-settings 全局配置), 不再写入, DB schema default=1 兜底.
     db.prepare(`INSERT INTO sessions_v2(
       session_id, issue_id, project_id, scope_type, research_id, research_role,
       user_id, name, description, session_key,
       session_excluded_skills, session_excluded_memories,
       session_selection_snapshot, session_selection_snapshot_at,
-      model, language, pc_client_metadata
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, ?)`)
+      model, language, pc_client_metadata, name_human_edited
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, ?, ?)`)
       .run(
         session_id,
         scope === 'issue' ? (issue_id ?? null) : null,
@@ -282,10 +349,14 @@ const Sessions = {
         mdl,
         lang,
         pcMeta,
+        nameHumanEdited,
       );
   },
 
   updateName: (id: string, name: string) => db.prepare('UPDATE sessions_v2 SET name = ? WHERE session_id = ?').run(name, id),
+  // 用户手动重命名: 同时置 name_human_edited=1, 标记此名由人类钦定, AI 标题生成器不再覆盖.
+  // (AI 生成器仍用上面的 updateName —— 不动标记; 但被标记的会话会在 syncer/generator 里提前跳过, 根本不会调到.)
+  updateNameByUser: (id: string, name: string) => db.prepare('UPDATE sessions_v2 SET name = ?, name_human_edited = 1 WHERE session_id = ?').run(name, id),
   updateStatus: (id: string, status: SessionStatus) => db.prepare('UPDATE sessions_v2 SET status = ? WHERE session_id = ?').run(status, id),
   updateDescription: (id: string, description: string) => db.prepare('UPDATE sessions_v2 SET description = ? WHERE session_id = ?').run(description, id),
   updateRiskLevel: (id: string, risk: string) => db.prepare('UPDATE sessions_v2 SET risk_level = ? WHERE session_id = ?').run(risk, id),
@@ -335,15 +406,18 @@ const Sessions = {
   countArchived: (): number => (db.prepare("SELECT COUNT(*) as c FROM sessions_v2 WHERE status='archived'").get() as { c: number }).c,
 
   findNameById: (id: string): { name: string } | undefined => db.prepare('SELECT name FROM sessions_v2 WHERE session_id = ?').get(id) as { name: string } | undefined,
+  // 带"是否用户钦定"标记的查询: 供 AI 标题生成器判断要不要覆盖.
+  findNameMetaById: (id: string): { name: string; name_human_edited: number } | undefined => db.prepare('SELECT name, name_human_edited FROM sessions_v2 WHERE session_id = ?').get(id) as { name: string; name_human_edited: number } | undefined,
 
   // 自动生成标题候选: 非删除 + 有足够消息 + 非 claude-code 后端(codex/gpt-5.5 等, 这些 agent
   // 不产 type=ai-title, 由 session-title-generator 兜底). 默认名(含时间戳)的过滤放 JS 层.
-  listTitleGenCandidates: (minMessages: number, limit: number): Array<{ session_id: string; name: string; model: string; message_count: number }> => db.prepare(
-    `SELECT session_id, name, model, message_count FROM sessions_v2
+  // name_human_edited 带回, JS 层据此跳过用户钦定过的会话.
+  listTitleGenCandidates: (minMessages: number, limit: number): Array<{ session_id: string; name: string; model: string; message_count: number; name_human_edited: number }> => db.prepare(
+    `SELECT session_id, name, model, message_count, name_human_edited FROM sessions_v2
      WHERE deleted_at IS NULL AND message_count >= ?
        AND (model LIKE 'codex:%' OR model IN ('gpt-5.5', 'codex'))
      ORDER BY last_active DESC LIMIT ?`
-  ).all(minMessages, limit) as Array<{ session_id: string; name: string; model: string; message_count: number }>,
+  ).all(minMessages, limit) as Array<{ session_id: string; name: string; model: string; message_count: number; name_human_edited: number }>,
 
   // 上下文快照: 首次发消息时由 chat.js 写入, 此后不再覆盖.
   getContextSnapshot: (id: string): { context_snapshot_body: string | null; context_snapshot_sources: string | null; context_snapshot_at: string | null } | undefined => db.prepare(

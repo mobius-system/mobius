@@ -13,6 +13,7 @@ interface ResearchWithProjectRow extends ResearchRow {
 interface ResearchListRow extends ResearchRow {
   created_by_name?: string;
   session_count?: number;
+  running_session_count?: number;
   chief_count?: number;
 }
 
@@ -46,13 +47,27 @@ const Researches = {
     }
     return db.prepare(`
       SELECT r.*, u.display_name as created_by_name,
-        (SELECT COUNT(*) FROM sessions_v2 WHERE research_id = r.id AND scope_type = 'research' AND status = 'active') as session_count,
+        (SELECT COUNT(*) FROM sessions_v2 WHERE research_id = r.id AND scope_type = 'research' AND status != 'archived' AND deleted_at IS NULL) as session_count,
+        (SELECT COUNT(*) FROM sessions_v2 WHERE research_id = r.id AND scope_type = 'research' AND status = 'active' AND agent_status = 'running' AND deleted_at IS NULL) as running_session_count,
         (SELECT COUNT(*) FROM sessions_v2 WHERE research_id = r.id AND scope_type = 'research' AND research_role = 'chief_researcher') as chief_count
       FROM researches r
       LEFT JOIN users u ON r.created_by = u.id
       WHERE ${where}
       ORDER BY r.last_active DESC
     `).all(...params) as ResearchListRow[];
+  },
+
+  searchMetadata: (rawQuery: string, limit: number = 1001): ResearchRow[] => {
+    const query = String(rawQuery || '').trim().toLowerCase();
+    if (!query) return [];
+    return db.prepare(`
+      SELECT r.*
+      FROM researches r
+      WHERE instr(lower(COALESCE(r.title, '')), ?) > 0
+         OR instr(lower(COALESCE(r.description, '')), ?) > 0
+      ORDER BY r.last_active DESC
+      LIMIT ?
+    `).all(query, query, Math.max(1, Math.min(Number(limit) || 1001, 5001))) as ResearchRow[];
   },
 
   insert: ({ id, project_id, title, description, created_by, visibility }: InsertArgs) =>

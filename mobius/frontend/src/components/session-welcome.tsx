@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, Brain, Eye, Plus, Puzzle, Rocket, Upload, X } from 'lucide-react'
 import { api } from '../store'
+import { normalizeGithubSkillInput } from './skills'
+import { SkillMarketLink } from './skill-market-link'
 
 const AUTO_CONFIRM_SECONDS = 4
 
@@ -366,11 +368,12 @@ function AddSkillMemoryBar({ kind, onAdded }: { kind: 'skill' | 'memory'; onAdde
   const [name, setName] = useState('')
   const [body, setBody] = useState('')
   const [ghName, setGhName] = useState('')
+  const [ghHint, setGhHint] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const reset = () => { setName(''); setBody(''); setGhName(''); setErr('') }
+  const reset = () => { setName(''); setBody(''); setGhName(''); setGhHint(''); setErr('') }
 
   const submitManual = async () => {
     const n = name.trim()
@@ -437,7 +440,7 @@ function AddSkillMemoryBar({ kind, onAdded }: { kind: 'skill' | 'memory'; onAdde
 
   return (
     <div className="space-y-1.5 rounded-lg border p-2" style={{ borderColor: 'var(--border-color-strong)', background: 'rgba(255,255,255,0.02)' }}>
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         {isSkill ? (
           <>
             <SegBtn active={mode === 'manual'} onClick={() => { setMode('manual'); setErr('') }} color={accent}>粘贴 / 上传</SegBtn>
@@ -446,18 +449,33 @@ function AddSkillMemoryBar({ kind, onAdded }: { kind: 'skill' | 'memory'; onAdde
         ) : (
           <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>写一条 Memory 或上传文件</span>
         )}
-        <button type="button" onClick={() => { reset(); setOpen(false) }} className="ml-auto text-[10px] hover:underline" style={{ color: 'var(--text-muted)' }}>收起</button>
+        {isSkill && <SkillMarketLink className="ml-auto" />}
+        <button type="button" onClick={() => { reset(); setOpen(false) }} className={`${isSkill ? '' : 'ml-auto'} text-[10px] hover:underline`} style={{ color: 'var(--text-muted)' }}>收起</button>
       </div>
 
       {mode === 'github' && isSkill ? (
         <>
           <input
             value={ghName}
-            onChange={e => setGhName(e.target.value)}
-            placeholder="owner/repo 或 owner/repo@skill-name"
+            onChange={e => {
+              const raw = e.target.value
+              const clean = normalizeGithubSkillInput(raw)
+              if (clean && clean !== raw.trim()) {
+                setGhName(clean)
+                setGhHint(`已从粘贴的命令 / URL 自动提取为: ${clean}`)
+              } else {
+                setGhName(raw)
+                setGhHint('')
+              }
+              setErr('')
+            }}
+            placeholder="可直接粘贴安装命令或 GitHub URL (自动提取); 例: owner/repo 或 owner/repo@skill-name"
             className="w-full rounded border px-2 py-1 text-[11px] outline-none"
             style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
           />
+          {ghHint && (
+            <div className="break-words text-[9.5px] leading-snug" style={{ color: '#fbbf24' }}>{ghHint}</div>
+          )}
           <div className="text-[9.5px] leading-snug" style={{ color: 'var(--text-muted)' }}>
             后端执行 <code className="font-mono">npx skills add</code>, 从 GitHub 拉取并写为用户级 Skill.
           </div>
@@ -769,13 +787,12 @@ export function SessionSkillMemoryEditor({
 
         {/* 内联菜单: 直接占据 tab 下方剩余空间, 无独立背景/边框/圆角, 无缝融入侧栏 */}
         {activePanel && (
-          <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-            {/* 顶部"快速添加"入口: 放在顶部便于发现, 无需划到列表底部. 添加成功后 reload()
-                立即把新条目刷进下方列表, 用户可点"追加/强调"注入当前会话 (对后续对话生效). */}
-            <div className="px-1 pt-1">
+          <div className="flex min-h-0 flex-1 flex-col">
+            {/* "快速添加"入口作为列表的第一项, 与列表项同处一个滚动容器、共用 space-y-1 间距,
+                风格统一(虚线 border 区分其为操作入口, 其余为数据项). 添加成功后 reload() 立即
+                把新条目刷进下方列表, 用户可点"追加/强调"注入当前会话 (对后续对话生效). */}
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
               <AddSkillMemoryBar kind={activePanel} onAdded={reload} />
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {skillActive
                 ? renderList(skills, '暂无 Skill', 'skill')
                 : renderList(memories, '暂无 Memory', 'memory')}

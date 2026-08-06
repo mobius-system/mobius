@@ -1,4 +1,4 @@
-import { createElementSnapshot, elementBelowPoint, resolveSelection, targetRect } from './dom.js'
+import { createElementSnapshot, elementBelowPoint, resolveSelection, targetRect } from './dom.js?v=20260805-shift-parent'
 import { locateSource } from './locator-client.js'
 import { buildAgentPrompt, replacePromptRequirement } from './prompt.js'
 import {
@@ -434,7 +434,7 @@ const SHELL_HTML = `
   <div class="outline" data-eye="outline" hidden><div class="outline-label" data-eye="outline-label"></div></div>
   <div class="toolbar" data-eye="toolbar" hidden>
     <span class="toolbar-dot"></span>
-    <span class="toolbar-copy" data-eye="toolbar-copy">设计师之眼已开启 · 点击选择元素 · Alt/Option 选择交互宿主 · Esc 退出</span>
+    <span class="toolbar-copy" data-eye="toolbar-copy">设计师之眼已开启 · 点击选择元素 · Shift 选择父元素 · Alt/Option 选择交互宿主 · Esc 退出</span>
     <span class="toolbar-key"></span>
   </div>
   <div class="modal-layer" data-eye="modal-layer" hidden>
@@ -571,6 +571,7 @@ export class DesignerEyeRuntime {
     this.selections = []
     this.pointerDownElement = null
     this.generatedPrompt = ''
+    this.lastPointerPosition = null
     this.raf = 0
     this.toastTimer = 0
     this.bootstrapPromise = null
@@ -597,6 +598,7 @@ export class DesignerEyeRuntime {
     }
 
     this.onGlobalKeyDown = this.onGlobalKeyDown.bind(this)
+    this.onGlobalKeyUp = this.onGlobalKeyUp.bind(this)
     this.onPointerMove = this.onPointerMove.bind(this)
     this.onPointerDown = this.onPointerDown.bind(this)
     this.onPointerUp = this.onPointerUp.bind(this)
@@ -606,6 +608,7 @@ export class DesignerEyeRuntime {
 
   install() {
     window.addEventListener('keydown', this.onGlobalKeyDown, true)
+    window.addEventListener('keyup', this.onGlobalKeyUp, true)
   }
 
   ensureShell() {
@@ -711,11 +714,19 @@ export class DesignerEyeRuntime {
       else this.activate()
       return
     }
+    if (this.active && !this.modalOpen && (event.key === 'Shift' || event.key === 'Alt')) {
+      this.refreshHoveredTarget(event.altKey, event.shiftKey)
+    }
     if (!this.active || event.key !== 'Escape') return
     event.preventDefault()
     event.stopImmediatePropagation()
     if (this.modalOpen) this.resumeSelection()
     else this.deactivate()
+  }
+
+  onGlobalKeyUp(event) {
+    if (!this.active || this.modalOpen || (event.key !== 'Shift' && event.key !== 'Alt')) return
+    this.refreshHoveredTarget(event.altKey, event.shiftKey)
   }
 
   activate() {
@@ -730,6 +741,7 @@ export class DesignerEyeRuntime {
     this.hoveredElement = null
     this.selectedElement = null
     this.selections = []
+    this.lastPointerPosition = null
     this.renderSelectedOutlines()
     this.updateToolbar()
     document.documentElement.setAttribute('data-designer-eye-active', '')
@@ -745,6 +757,7 @@ export class DesignerEyeRuntime {
     this.selectedElement = null
     this.selections = []
     this.pointerDownElement = null
+    this.lastPointerPosition = null
     this.lastCreatedSession = null
     cancelAnimationFrame(this.raf)
     this.elements.shield.hidden = true
@@ -763,17 +776,23 @@ export class DesignerEyeRuntime {
     return elementBelowPoint(event.clientX, event.clientY, this.host)
   }
 
-  onPointerMove(event) {
-    if (!this.active || this.modalOpen) return
-    const exact = this.elementAtEvent(event)
+  refreshHoveredTarget(preferSemanticOwner = false, preferParent = false) {
+    if (!this.lastPointerPosition) return
+    const exact = elementBelowPoint(this.lastPointerPosition.x, this.lastPointerPosition.y, this.host)
     if (!exact) {
       this.elements.outline.hidden = true
       this.hoveredElement = null
       return
     }
-    const selection = resolveSelection(exact, event.altKey)
+    const selection = resolveSelection(exact, preferSemanticOwner, preferParent)
     this.hoveredElement = selection.semantic
     this.drawOutline(selection.semantic, selection.exact)
+  }
+
+  onPointerMove(event) {
+    if (!this.active || this.modalOpen) return
+    this.lastPointerPosition = { x: event.clientX, y: event.clientY }
+    this.refreshHoveredTarget(event.altKey, event.shiftKey)
   }
 
   onPointerDown(event) {
@@ -783,6 +802,7 @@ export class DesignerEyeRuntime {
     }
     event.preventDefault()
     event.stopPropagation()
+    this.lastPointerPosition = { x: event.clientX, y: event.clientY }
     this.pointerDownElement = this.elementAtEvent(event)
     try { this.elements.shield.setPointerCapture(event.pointerId) } catch { /* noop */ }
   }
@@ -794,7 +814,7 @@ export class DesignerEyeRuntime {
     const exact = this.pointerDownElement || this.elementAtEvent(event)
     this.pointerDownElement = null
     if (!exact) return
-    const selection = resolveSelection(exact, event.altKey)
+    const selection = resolveSelection(exact, event.altKey, event.shiftKey)
     this.openSelection(selection)
   }
 
@@ -811,7 +831,7 @@ export class DesignerEyeRuntime {
     requestAnimationFrame(() => {
       const next = this.elementAtEvent(event)
       if (next) {
-        const selection = resolveSelection(next, event.altKey)
+        const selection = resolveSelection(next, event.altKey, event.shiftKey)
         this.hoveredElement = selection.semantic
         this.drawOutline(selection.semantic, selection.exact)
       }
@@ -847,8 +867,8 @@ export class DesignerEyeRuntime {
     if (!this.elements?.toolbarCopy) return
     const count = this.selections.length
     this.elements.toolbarCopy.textContent = count
-      ? `已选择 ${count} 个元素 · 点击继续添加 · Alt/Option 选择交互宿主 · Esc ${this.modalOpen ? '继续选择' : '退出'}`
-      : '设计师之眼已开启 · 点击选择元素 · Alt/Option 选择交互宿主 · Esc 退出'
+      ? `已选择 ${count} 个元素 · 点击继续添加 · Shift 选择父元素 · Alt/Option 选择交互宿主 · Esc ${this.modalOpen ? '继续选择' : '退出'}`
+      : '设计师之眼已开启 · 点击选择元素 · Shift 选择父元素 · Alt/Option 选择交互宿主 · Esc 退出'
   }
 
   renderSelectedOutlines() {

@@ -820,6 +820,12 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   // 文件浏览器默认宽度 ≈ 视口 18%, 留够空间给代码编辑 + 对话.
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
   const filesDefaultWidth = Math.max(180, Math.min(320, Math.floor(vw * 0.18)))
+  // 中栏代码编辑器宽度可拖拽 (ResizablePanel side=left → 手柄贴其右缘 = 与右栏 ChatArea 的分界;
+  // 拖动即调整代码区与对话区的相对宽度, 解决「原生文件编辑器下无法调整对话区大小」).
+  // 上限给左栏文件树(至多 360)+右栏对话区(至少 280)留出空间, 避免拖到一端挤死另一端.
+  const codeEditorMinWidth = 320
+  const codeEditorMaxWidth = Math.max(codeEditorMinWidth + 160, vw - 360 - 280)
+  const codeEditorDefaultWidth = Math.max(codeEditorMinWidth, Math.min(codeEditorMaxWidth, Math.floor(vw * 0.44)))
   const activeRootPath = source === 'local'
     ? localBindPath
     : (source === 'remote' ? (selectedRemote?.remote_path || '默认登录目录') : bindPath)
@@ -1025,8 +1031,18 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
         </div>
       </ResizablePanel>
 
-      {/* ===== 中: 代码编辑器 (明暗独立于全局主题, 用 cc 固定配色) ===== */}
-      <div className="flex min-w-0 flex-1 flex-col" style={{ background: cc.bg, color: cc.fg }}>
+      {/* ===== 中: 代码编辑器 (明暗独立于全局主题, 用 cc 固定配色).
+            width 可拖拽 (ResizablePanel side=left, 手柄贴右缘 = 与右栏 ChatArea 的分界)
+            → 用户可在此调整代码区与对话区(右栏)的相对宽度. ===== */}
+      <ResizablePanel
+        storageKey={`mobius:ui:split:cc-editor:${projectId}`}
+        defaultWidth={codeEditorDefaultWidth}
+        minWidth={codeEditorMinWidth}
+        maxWidth={codeEditorMaxWidth}
+        side="left"
+        className="flex flex-col"
+        style={{ background: cc.bg, color: cc.fg }}
+      >
         {/* 头部工具栏 */}
         <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: cc.border }}>
           {selected ? (
@@ -1142,7 +1158,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
             )
           ) : null}
         </div>
-      </div>
+      </ResizablePanel>
 
       {/* ===== 新建文件/目录弹窗 ===== */}
       {creating && (

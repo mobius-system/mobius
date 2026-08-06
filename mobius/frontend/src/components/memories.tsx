@@ -601,7 +601,12 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
   mode?: 'memory' | 'announce'
   onAnnounce?: (body: string) => void
 }) {
-  const isAnnounce = mode === 'announce'
+  // The session action opens a three-tab menu; the project Memory page keeps
+  // the legacy single-purpose "add remote" view by using mode="memory".
+  const hasTabs = mode === 'announce'
+  const [activeTab, setActiveTab] = useState<'announce' | 'memory' | 'update'>(mode === 'announce' ? 'announce' : 'memory')
+  const isAnnounce = activeTab === 'announce'
+  const isUpdate = activeTab === 'update'
   const [remotes, setRemotes] = useState<AimuxRemote[]>(readAimuxRemoteCache)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -609,6 +614,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
   const [err, setErr] = useState('')
   const [info, setInfo] = useState('')
   const [announceRequirement, setAnnounceRequirement] = useState('')
+  const [projectRemoteUpdateText, setProjectRemoteUpdateText] = useState('')
   const [collapsedRemoteStatuses, setCollapsedRemoteStatuses] = useState<Set<CollapsibleRemoteStatus>>(
     () => new Set<CollapsibleRemoteStatus>(['auth-required', 'unreachable']),
   )
@@ -744,9 +750,14 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
   }, [applyCompletedRows])
 
   useEffect(() => {
+    if (isUpdate) {
+      loadAbortRef.current?.abort()
+      setLoading(false)
+      return () => undefined
+    }
     loadRemotes()
     return () => loadAbortRef.current?.abort()
-  }, [loadRemotes])
+  }, [isUpdate, loadRemotes])
 
   const selectedRemotes = useMemo(
     () => remotes.filter(r => selected.has(r.name)),
@@ -998,10 +1009,12 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
       <div data-tour="remote-compute-modal" className="relative w-[min(980px,calc(100vw-24px))] max-h-[88vh] rounded-2xl shadow-2xl flex flex-col"
         onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="flex items-center justify-between px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2 min-w-0">
             <Server className="w-4 h-4 text-cyan-400 flex-shrink-0" strokeWidth={1.8} />
-            <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>{isAnnounce ? '声明可合作计算机' : '添加远程算力'}</span>
+            <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {isUpdate ? '更新项目远程算力' : (isAnnounce ? '声明可合作计算机' : '添加远程算力')}
+            </span>
             <span className="text-[11px] px-2 py-0.5 rounded border" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
               aimux remote
             </span>
@@ -1014,6 +1027,48 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
           </button>
         </div>
 
+        {hasTabs && (
+          <div className="flex flex-wrap items-center justify-center gap-1 px-5 py-2 border-y" role="tablist" aria-label="远程算力操作" style={{ borderColor: 'var(--border-color)' }}>
+            {([
+              ['announce', '声明可合作计算机'],
+              ['memory', '添加远程算力'],
+              ['update', '更新项目远程算力'],
+            ] as const).map(([tab, label]) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                onClick={() => setActiveTab(tab)}
+                className="h-7 px-2.5 text-[11px] rounded border transition-colors"
+                style={activeTab === tab
+                  ? { color: 'var(--text-primary)', borderColor: 'rgba(34,211,238,0.45)', background: 'rgba(34,211,238,0.12)' }
+                  : { color: 'var(--text-muted)', borderColor: 'transparent' }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {isUpdate ? (
+          <div className="flex-1 min-h-0 p-5">
+            <label htmlFor="remote-compute-project-update" className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>
+              项目远程算力更新内容（占位）
+            </label>
+            <textarea
+              id="remote-compute-project-update"
+              value={projectRemoteUpdateText}
+              onChange={e => setProjectRemoteUpdateText(e.target.value)}
+              placeholder="请输入基于当前项目上下文的远程算力更新内容"
+              data-tour="remote-compute-project-update"
+              data-text-redaction-ignore="true"
+              rows={12}
+              className="w-full h-full min-h-[220px] resize-y px-3 py-2 rounded-lg text-[12px] leading-relaxed focus:outline-none focus:border-cyan-500/30"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+            />
+          </div>
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] gap-0 flex-1 min-h-0 overflow-hidden">
           <div className="min-w-0 lg:border-r flex flex-col min-h-0" style={{ borderColor: 'var(--border-color)' }}>
             <div className="px-5 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
@@ -1070,38 +1125,59 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
 
           <div className="min-w-0 flex flex-col min-h-0">
             <div className="p-5 border-b space-y-3" style={{ borderColor: 'var(--border-color)' }}>
-              <div data-tour="remote-compute-add-form" className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>新增 remote</div>
-              <div className="grid grid-cols-2 gap-2">
-                <input value={addForm.name} onChange={e => updateAddForm({ name: e.target.value })}
-                  placeholder="Alias (可选)"
-                  disabled={!!busyName || saving}
-                  className="h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
-                  style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-                <input value={addForm.timeout} onChange={e => updateAddForm({ timeout: e.target.value })}
-                  placeholder="timeout"
-                  disabled={!!busyName || saving}
-                  className="h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
-                  style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-                <input value={addForm.host} onChange={e => updateAddForm({ host: e.target.value })}
-                  placeholder="HostName / IP"
-                  disabled={!!busyName || saving}
-                  className="h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
-                  style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-                <input value={addForm.user} onChange={e => updateAddForm({ user: e.target.value })}
-                  placeholder="SSH user"
-                  disabled={!!busyName || saving}
-                  className="h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
-                  style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-                <input value={addForm.port} onChange={e => updateAddForm({ port: e.target.value })}
-                  placeholder="Port"
-                  disabled={!!busyName || saving}
-                  className="h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
-                  style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-                <input value={addForm.identity} onChange={e => updateAddForm({ identity: e.target.value })}
-                  placeholder="IdentityFile (可选)"
-                  disabled={!!busyName || saving}
-                  className="h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
-                  style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              <div className="flex items-baseline justify-between gap-2">
+                <div data-tour="remote-compute-add-form" className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>新增 remote</div>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>填写 SSH 连接信息，添加后自动测试连通性</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                <label htmlFor="remote-compute-add-name" className="block">
+                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>别名</span>
+                  <input id="remote-compute-add-name" value={addForm.name} onChange={e => updateAddForm({ name: e.target.value })}
+                    placeholder="my-server"
+                    disabled={!!busyName || saving}
+                    className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                </label>
+                <label htmlFor="remote-compute-add-port" className="block">
+                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>端口</span>
+                  <input id="remote-compute-add-port" value={addForm.port} onChange={e => updateAddForm({ port: e.target.value })}
+                    placeholder="22"
+                    disabled={!!busyName || saving}
+                    className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                </label>
+                <label htmlFor="remote-compute-add-host" className="block">
+                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>主机 <span className="text-red-400">*</span></span>
+                  <input id="remote-compute-add-host" value={addForm.host} onChange={e => updateAddForm({ host: e.target.value })}
+                    placeholder="192.168.1.10 或 host.com"
+                    disabled={!!busyName || saving}
+                    className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                </label>
+                <label htmlFor="remote-compute-add-user" className="block">
+                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>用户名 <span className="text-red-400">*</span></span>
+                  <input id="remote-compute-add-user" value={addForm.user} onChange={e => updateAddForm({ user: e.target.value })}
+                    placeholder="root"
+                    disabled={!!busyName || saving}
+                    className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                </label>
+                <label htmlFor="remote-compute-add-identity" className="block">
+                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>密钥文件</span>
+                  <input id="remote-compute-add-identity" value={addForm.identity} onChange={e => updateAddForm({ identity: e.target.value })}
+                    placeholder="~/.ssh/id_rsa"
+                    disabled={!!busyName || saving}
+                    className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                </label>
+                <label htmlFor="remote-compute-add-timeout" className="block">
+                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>超时</span>
+                  <input id="remote-compute-add-timeout" value={addForm.timeout} onChange={e => updateAddForm({ timeout: e.target.value })}
+                    placeholder="5s"
+                    disabled={!!busyName || saving}
+                    className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                </label>
               </div>
               <button onClick={addRemote}
                 disabled={!!busyName || saving || !addForm.host.trim() || !addForm.user.trim()}
@@ -1109,6 +1185,9 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                 <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
                 {busyName === 'add' ? '添加中...' : '添加并探测'}
               </button>
+              {(!addForm.host.trim() || !addForm.user.trim()) && (
+                <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>填写带 <span className="text-red-400">*</span> 的主机与用户名后即可添加</div>
+              )}
             </div>
 
             <div className="flex-1 min-h-0 p-5 space-y-3 overflow-auto">
@@ -1146,10 +1225,13 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
             </div>
           </div>
         </div>
+        )}
 
         <div className="flex items-center justify-between gap-2 px-5 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            {selectedRemotes.length > 0
+            {isUpdate
+              ? '更新项目远程算力功能暂未接入'
+              : selectedRemotes.length > 0
               ? (isAnnounce ? `将声明 ${selectedRemotes.length} 台可合作计算机` : `将写入 ${selectedRemotes.length} 台 remote`)
               : '未选择 remote'}
           </div>
@@ -1157,7 +1239,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
             <button onClick={onClose} disabled={saving}
               className="h-8 px-3 text-[12px] rounded border disabled:opacity-40"
               style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
-            {isAnnounce ? (
+            {isUpdate ? null : isAnnounce ? (
               <button onClick={sendAnnounce} disabled={selectedRemotes.length === 0}
                 className="h-8 px-4 text-[12px] rounded btn-primary transition-colors disabled:opacity-40 inline-flex items-center gap-1.5">
                 <SendHorizontal className="w-3.5 h-3.5" strokeWidth={1.8} />

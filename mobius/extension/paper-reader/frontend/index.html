@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Paper Reader · 论文精读</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="paper-reader.css?v=0.4.0">
+</head>
+<body>
+  <div class="pr-loading" id="prLoading">
+    <div class="pr-loading-mark"><i data-lucide="book-open"></i></div>
+    <div class="pr-loading-line"><span></span></div>
+    <p id="prLoadingText">正在准备阅读工作台</p>
+  </div>
+
+  <header class="pr-topbar">
+    <div class="pr-topbar-start">
+      <a class="pr-icon-action" href="/extension/tianyi-radar/" target="_blank" rel="noopener" title="返回科研雷达" aria-label="返回科研雷达">
+        <i data-lucide="arrow-left"></i>
+      </a>
+      <button class="pr-brand" id="openCommand" type="button" title="打开其他论文">
+        <span class="pr-brand-mark"><i data-lucide="book-open"></i></span>
+        <span class="pr-brand-copy"><b>Paper Reader</b><small id="topPaperId">论文精读工作台</small></span>
+        <i data-lucide="chevrons-up-down" class="pr-brand-caret"></i>
+      </button>
+    </div>
+
+    <div class="pr-current" id="currentPaperMeta" hidden>
+      <span id="topPaperTitle"></span>
+    </div>
+
+    <div class="pr-topbar-actions">
+      <div class="pr-read-progress" id="readProgress" hidden>
+        <span id="progressLabel">0%</span><i><b id="progressBar"></b></i>
+      </div>
+      <button class="pr-icon-action pr-outline-toggle" id="outlineToggle" type="button" title="章节目录" aria-label="章节目录">
+        <i data-lucide="list-tree"></i>
+      </button>
+      <button class="pr-icon-action" id="sideToggle" type="button" title="研究面板" aria-label="研究面板">
+        <i data-lucide="panel-right"></i>
+      </button>
+    </div>
+  </header>
+
+  <main class="pr-shell" id="appShell">
+    <nav class="pr-outline" id="outline" aria-label="论文目录">
+      <div class="pr-outline-head">
+        <div><span>CONTENTS</span><strong>论文目录</strong></div>
+        <button class="pr-icon-action pr-panel-close" id="outlineClose" type="button" title="关闭目录" aria-label="关闭目录"><i data-lucide="x"></i></button>
+      </div>
+      <div class="pr-outline-list" id="outlineList">
+        <button class="is-active" type="button" data-target="paperTop"><span>开始阅读</span></button>
+      </div>
+      <div class="pr-outline-foot">
+        <span>READING PROGRESS</span>
+        <strong id="outlineProgress">0%</strong>
+        <div><i id="outlineProgressBar"></i></div>
+      </div>
+      <div class="pr-resizer pr-resizer-outline" id="outlineResizer" role="separator" aria-label="调整目录宽度" aria-orientation="vertical" aria-valuemin="184" aria-valuemax="340" tabindex="0"><span></span></div>
+    </nav>
+
+    <section class="pr-reader" id="reader">
+      <div class="pr-empty" id="readerEmpty">
+        <div class="pr-empty-mark"><i data-lucide="file-search"></i></div>
+        <p class="pr-kicker">RESEARCH READER</p>
+        <h1>打开论文，进入深度阅读</h1>
+        <p>选择一篇论文开始阅读。</p>
+        <button class="pr-btn primary" id="emptyOpen" type="button"><i data-lucide="search"></i>打开论文</button>
+      </div>
+
+      <div class="pr-reader-toolbar" id="viewbar" hidden>
+        <div class="pr-segmented" aria-label="阅读模式">
+          <button class="is-active" type="button" data-view="text"><i data-lucide="align-left"></i><span>全文</span></button>
+          <button type="button" data-view="pdf"><i data-lucide="file-text"></i><span>PDF</span></button>
+        </div>
+        <div class="pr-reader-links">
+          <a id="paperLink" target="_blank" rel="noopener"><i data-lucide="external-link"></i><span>arXiv</span></a>
+          <a id="pdfExtLink" href="#" target="_blank" rel="noopener" hidden><i data-lucide="square-arrow-out-up-right"></i><span>新窗口</span></a>
+        </div>
+      </div>
+
+      <article class="pr-paper" id="paper" hidden>
+        <header class="pr-paper-head" id="paperTop">
+          <div class="pr-paper-meta"><span id="paperArxiv"></span><span id="paperStatus">FULL TEXT</span></div>
+          <h1 id="paperTitle"></h1>
+          <p class="pr-authors" id="paperAuthors"></p>
+          <details class="pr-abstract" open>
+            <summary><span>摘要</span><i data-lucide="chevron-down"></i></summary>
+            <p id="paperAbstract"></p>
+          </details>
+        </header>
+        <div class="pr-paper-body" id="paperBody"></div>
+      </article>
+
+      <div class="pr-pdfview" id="pdfView" hidden>
+        <div class="pr-pdf-head"><strong id="pdfTitle"></strong></div>
+        <iframe id="pdfFrame" title="论文 PDF"></iframe>
+        <div class="pr-pdfmsg" id="pdfMsg" hidden></div>
+      </div>
+    </section>
+
+    <aside class="pr-side" id="sidePanel" aria-label="研究面板">
+      <div class="pr-side-head">
+        <div>
+          <span>RESEARCH PANEL</span>
+          <strong>论文工作台</strong>
+        </div>
+        <button class="pr-icon-action pr-panel-close" id="sideClose" type="button" title="关闭面板" aria-label="关闭面板"><i data-lucide="x"></i></button>
+      </div>
+      <div class="pr-side-tabs" role="tablist">
+        <button class="is-active" type="button" data-side-tab="chat"><i data-lucide="sparkles"></i><span>Assistant</span></button>
+        <button type="button" data-side-tab="notes"><i data-lucide="notebook-pen"></i><span>笔记</span><b id="notesCount">0</b></button>
+      </div>
+
+      <section class="pr-pane" id="paneChat">
+        <div class="pr-model-row">
+          <label for="modelSelect">回答模型</label>
+          <select id="modelSelect"></select>
+        </div>
+        <div class="pr-anchor" id="anchorBar" hidden>
+          <i data-lucide="text-quote"></i>
+          <div><span>当前上下文</span><em id="anchorText"></em></div>
+          <button class="pr-icon-action" type="button" id="anchorClear" title="清除锚定" aria-label="清除锚定"><i data-lucide="x"></i></button>
+        </div>
+        <div class="pr-transcript" id="transcript"></div>
+        <form class="pr-chat-input" id="chatForm">
+          <textarea id="chatInput" rows="2" placeholder="针对论文提问…"></textarea>
+          <div class="pr-composer-foot">
+            <span>论文全文</span>
+            <button class="pr-send" type="submit" id="chatSend" title="发送问题" aria-label="发送问题"><i data-lucide="arrow-up"></i></button>
+          </div>
+        </form>
+      </section>
+
+      <section class="pr-pane" id="paneNotes" hidden>
+        <form class="pr-note-editor" id="noteForm" hidden>
+          <div class="pr-note-editor-head"><span id="noteEditorTitle">新建锚定笔记</span><button class="pr-icon-action" id="noteCancel" type="button" title="取消" aria-label="取消"><i data-lucide="x"></i></button></div>
+          <blockquote id="noteQuote"></blockquote>
+          <textarea id="noteInput" rows="5" placeholder="记录判断、证据或待验证问题…"></textarea>
+          <div class="pr-note-editor-actions">
+            <div class="pr-note-kinds" aria-label="笔记类型">
+              <button class="is-active" type="button" data-note-kind="insight">判断</button>
+              <button type="button" data-note-kind="evidence">证据</button>
+              <button type="button" data-note-kind="question">疑问</button>
+            </div>
+            <button class="pr-btn primary sm" type="submit"><i data-lucide="check"></i>保存</button>
+          </div>
+        </form>
+        <div class="pr-notes-head"><span>已沉淀笔记</span><button class="pr-btn ghost sm" id="newNote" type="button"><i data-lucide="plus"></i>新建</button></div>
+        <div class="pr-notes" id="notesList"></div>
+      </section>
+
+      <section class="pr-pane pr-thread" id="paneThread" hidden>
+        <div class="pr-thread-head">
+          <button class="pr-icon-action" type="button" id="threadBack" title="返回" aria-label="返回"><i data-lucide="arrow-left"></i></button>
+          <div><span>PARAGRAPH THREAD</span><strong>段落讨论</strong></div>
+        </div>
+        <blockquote class="pr-thread-quote" id="threadQuote"></blockquote>
+        <div class="pr-thread-comments" id="threadComments"></div>
+        <div class="pr-thread-foot">
+          <form class="pr-thread-input" id="commentForm">
+            <textarea id="commentInput" rows="2" placeholder="记录关于这段的讨论…"></textarea>
+            <button class="pr-send" type="submit" title="发表评论" aria-label="发表评论"><i data-lucide="arrow-up"></i></button>
+          </form>
+          <button class="pr-btn ghost full" type="button" id="threadAskAi"><i data-lucide="sparkles"></i>就这段问 Assistant</button>
+        </div>
+      </section>
+      <div class="pr-resizer pr-resizer-side" id="sideResizer" role="separator" aria-label="调整研究面板宽度" aria-orientation="vertical" aria-valuemin="340" aria-valuemax="680" tabindex="0"><span></span></div>
+    </aside>
+  </main>
+
+  <div class="pr-backdrop" id="backdrop" hidden></div>
+
+  <div class="pr-selection" id="selectionToolbar" hidden>
+    <button type="button" data-selection-action="ask"><i data-lucide="sparkles"></i><span>问 AI</span></button>
+    <button type="button" data-selection-action="note"><i data-lucide="notebook-pen"></i><span>笔记</span></button>
+    <button type="button" data-selection-action="copy"><i data-lucide="copy"></i><span>复制</span></button>
+  </div>
+
+  <nav class="pr-mobile-dock" aria-label="阅读工具">
+    <button type="button" data-mobile-action="outline"><i data-lucide="list-tree"></i><span>目录</span></button>
+    <button type="button" data-mobile-action="chat"><i data-lucide="sparkles"></i><span>提问</span></button>
+    <button type="button" data-mobile-action="notes"><i data-lucide="notebook-pen"></i><span>笔记</span></button>
+  </nav>
+
+  <dialog class="pr-command" id="openDialog">
+    <form method="dialog" class="pr-command-shell" id="openForm">
+      <div class="pr-command-head">
+        <div class="pr-command-icon"><i data-lucide="search"></i></div>
+        <input id="openInput" type="text" autocomplete="off" placeholder="输入 arXiv ID 或链接">
+        <button class="pr-icon-action" value="cancel" type="submit" title="关闭" aria-label="关闭"><i data-lucide="x"></i></button>
+      </div>
+      <div class="pr-command-body">
+        <div class="pr-command-label"><span>最近打开</span><small>点击继续阅读</small></div>
+        <div class="pr-recent" id="recentPapers"></div>
+      </div>
+      <div class="pr-command-foot">
+        <span><i data-lucide="corner-down-left"></i>打开论文</span>
+        <button class="pr-btn primary" id="openSubmit" value="default" type="submit">打开</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="pr-toast" id="toast" role="status"></div>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script type="module" src="main.js?v=0.4.0"></script>
+</body>
+</html>

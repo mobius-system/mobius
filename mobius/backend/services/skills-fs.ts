@@ -558,6 +558,59 @@ function deleteForProject(projectId: any): number {
   return count;
 }
 
+// 把用户粘贴的"安装命令"或"仓库 URL"净化成 skills CLI 能接受的 package 标识
+// (owner/repo 或 owner/repo@skill-name). 与前端 skills.tsx 的 normalizeGithubSkillInput 同逻辑,
+// 作为 API 直调 / 旧客户端的兜底 (前端已实时净化, 这里再保险一次).
+// 例: `npx skills add https://github.com/anthropics/skills --skill frontend-design` -> `anthropics/skills@frontend-design`
+function normalizeSkillPackage(raw: any): string {
+  let s = String(raw || '').trim();
+  if (!s) return '';
+  // 1. 提取 --skill <name>
+  let skillFlag = '';
+  const mSkill = s.match(/(?:^|\s)--skill[=\s]+([A-Za-z0-9][\w.-]*)/);
+  if (mSkill) skillFlag = mSkill[1];
+  // 2. 剥离所有 --xxx[=yyy] 参数
+  s = s.replace(/(\s|^)--[A-Za-z][\w-]*(=\S+)?/g, ' ').trim();
+  // 3. 取第一个非命令关键词的 token 作为 source
+  const CMD = new Set(['npx', 'npm', 'yarn', 'pnpm', 'bun', 'dlx', 'skills', 'add', 'install', 'i', 'git', 'clone', 'run', '--yes']);
+  let pkg = '';
+  for (const t of s.split(/\s+/).filter(Boolean)) {
+    if (CMD.has(t.toLowerCase())) continue;
+    pkg = t; break;
+  }
+  if (!pkg) pkg = s;
+  if (!pkg) return '';
+  // 4. 去 scheme / git@host: / github host / query / .git / 尾斜杠
+  pkg = pkg.replace(/^(https?:\/\/|git:\/\/|ssh:\/\/|file:\/\/)/i, '');
+  pkg = pkg.replace(/^git@[^:/]+:/i, '');
+  pkg = pkg.replace(/^(www\.)?github\.com\//i, '');
+  pkg = pkg.replace(/^(raw|codeload)\.githubusercontent\.com\//i, '');
+  pkg = pkg.split(/[?#]/)[0];
+  pkg = pkg.replace(/\.git$/i, '');
+  pkg = pkg.replace(/\/+$/, '');
+  // 5. /tree/<branch>/<path> 子路径 -> owner/repo, 末段作 skill 名
+  const mTree = pkg.match(/^([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\/tree\/[^/]+\/(.+)$/);
+  if (mTree) {
+    pkg = mTree[1];
+    if (!skillFlag) {
+      const last = (mTree[2].split('/').filter(Boolean).pop() || '').replace(/\.\w+$/, '');
+      if (last) skillFlag = last;
+    }
+  } else {
+    // 6. 只保留 owner/repo (前两段)
+    const segs = pkg.split('/');
+    if (segs.length > 2) pkg = segs[0] + '/' + segs[1];
+  }
+  // 7. 拼 --skill -> @skill
+  if (skillFlag) pkg = pkg.split('@')[0] + '@' + skillFlag;
+  // 8. 终检 + 兜底
+  if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(@[A-Za-z0-9._-]+)?$/.test(pkg)) {
+    const m = String(raw || '').match(/([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)(?:@([A-Za-z0-9._-]+))?/);
+    return m ? (m[2] ? (m[1] + '@' + m[2]) : m[1]) : '';
+  }
+  return pkg;
+}
+
 // npx 包名/标识符放宽到常见 npm 字符集. 不允许 .. 或前导斜杠.
 function isSafeSkillName(name: any): boolean {
   if (typeof name !== 'string') return false;
@@ -602,8 +655,10 @@ function redactCreds(s: any): any {
 }
 
 async function install({ userId, projectId, skillName }: any): Promise<any> {
+  // 兜底净化: 用户可能粘贴完整命令 / GitHub URL (前端已实时净化, 这里对 API 直调再保险一次).
+  skillName = normalizeSkillPackage(skillName) || String(skillName || '').trim();
   if (!isSafeSkillName(skillName)) {
-    return { ok: false, error: 'skill 包名包含非法字符 (允许字符: A-Z a-z 0-9 . _ - @ /)' };
+    return { ok: false, error: 'skill 包名包含非法字符 (允许字符: A-Z a-z 0-9 . _ - @ /). 提示: 可直接粘贴 npx 安装命令或 GitHub URL, 系统会自动提取 owner/repo' };
   }
   let cwd, skillsDir;
   if (projectId) {

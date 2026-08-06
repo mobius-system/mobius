@@ -1,6 +1,18 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, MoreHorizontal, Settings, Star } from 'lucide-react'
+import {
+  CircleDot,
+  Eye,
+  EyeOff,
+  FlaskConical,
+  LoaderCircle,
+  MessageSquare,
+  MoreHorizontal,
+  Search,
+  Settings,
+  Star,
+  X,
+} from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
 import { usePagination, PaginationControls } from '../components/pagination'
@@ -10,11 +22,20 @@ import { PrimaryActionButton } from '../components/primary-action-button'
 import { SkillsManager } from '../components/skills'
 import { MemoriesManager } from '../components/memories'
 import { ResizablePanel } from '../components/resizable-panel'
+import { SearchMatchText } from '../components/search-match-text'
 import {
   effectiveProjectCardBorderTheme,
   projectCardHeaderStyle,
   projectCardThemeStyle,
 } from '../services/project-card-themes'
+import {
+  EMPTY_PROJECT_HIERARCHY_SEARCH,
+  hierarchyHitLabel,
+  hierarchyHitUrl,
+  type ProjectHierarchyGroup,
+  type ProjectHierarchyHit,
+  type ProjectHierarchySearchResponse,
+} from '../services/project-hierarchy-search'
 
 type ProjectFilterKey = 'owned' | 'starred' | 'extension'
 const PROJECT_FILTERS: Array<{ key: ProjectFilterKey; label: string; title: string }> = [
@@ -103,6 +124,66 @@ function LinklessNav({ to, className = '', children, onClick, onAuxClick, ...pro
   )
 }
 
+function HierarchyHitIcon({ kind, className = '' }: { kind: ProjectHierarchyHit['kind']; className?: string }) {
+  if (kind === 'issue') return <CircleDot className={className} />
+  if (kind === 'research') return <FlaskConical className={className} />
+  return <MessageSquare className={className} />
+}
+
+function HierarchyHitRow({
+  project,
+  hit,
+  query,
+  variant,
+}: {
+  project: any
+  hit: ProjectHierarchyHit
+  query: string
+  variant: 'sidebar' | 'card'
+}) {
+  const isSession = hit.kind === 'session' || hit.kind === 'research_agent'
+  const descriptionMatched = hit.matched_fields.includes('description') && !!hit.description
+  return (
+    <LinklessNav
+      to={hierarchyHitUrl(project, hit)}
+      data-project-hierarchy-hit={variant === 'sidebar' ? hit.id : undefined}
+      data-project-card-hierarchy-hit={variant === 'card' ? hit.id : undefined}
+      title={`${hierarchyHitLabel(hit.kind)}：${hit.title}`}
+      className={`w-full min-w-0 rounded-md transition-colors hover:bg-[var(--bg-card-hover)] ${
+        variant === 'sidebar' ? 'flex gap-2 px-2 py-1.5' : 'flex gap-2.5 px-2 py-2'
+      }`}
+    >
+      <HierarchyHitIcon
+        kind={hit.kind}
+        className={`mt-0.5 flex-shrink-0 ${variant === 'sidebar' ? 'h-3 w-3' : 'h-3.5 w-3.5'}`}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span
+            className="flex-shrink-0 rounded px-1 py-0.5 text-[9px] leading-none"
+            style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)' }}
+          >
+            {hierarchyHitLabel(hit.kind)}
+          </span>
+          <span className={`${variant === 'sidebar' ? 'text-[11px]' : 'text-[12px]'} min-w-0 truncate font-medium`} style={{ color: 'var(--text-primary)' }}>
+            <SearchMatchText text={hit.title || '未命名'} query={query} />
+          </span>
+        </span>
+        {isSession && hit.parent_title && (
+          <span className="mt-0.5 block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            位于 {hit.parent_kind === 'research' ? '研究' : '任务'} · {hit.parent_title}
+          </span>
+        )}
+        {descriptionMatched && (
+          <span className="mt-0.5 block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            <SearchMatchText text={hit.description} query={query} />
+          </span>
+        )}
+      </span>
+    </LinklessNav>
+  )
+}
+
 export default function UserPage() {
   const params = useParams()
   const navigate = useNavigate()
@@ -125,6 +206,9 @@ export default function UserPage() {
     })
   }
   const [search, setSearch] = useState('')
+  const [hierarchySearch, setHierarchySearch] = useState<ProjectHierarchySearchResponse>(EMPTY_PROJECT_HIERARCHY_SEARCH)
+  const [hierarchySearchLoading, setHierarchySearchLoading] = useState(false)
+  const [hierarchySearchError, setHierarchySearchError] = useState('')
   const [issuesByProject, setIssuesByProject] = useState<Record<string, any[]>>({})
   const [researchesByProject, setResearchesByProject] = useState<Record<string, any[]>>({})
   const [overviewByProject, setOverviewByProject] = useState<Record<string, any>>({})
@@ -160,6 +244,37 @@ export default function UserPage() {
   const [mutedProjectsLoading, setMutedProjectsLoading] = useState(false)
   const [mutedBusyId, setMutedBusyId] = useState<string | null>(null)
   const mutedIdSet = useMemo(() => new Set(mutedProjectIds || []), [mutedProjectIds])
+  const normalizedSearch = search.trim().slice(0, 200)
+
+  useEffect(() => {
+    const query = search.trim().slice(0, 200)
+    if (!query) {
+      setHierarchySearch(EMPTY_PROJECT_HIERARCHY_SEARCH)
+      setHierarchySearchLoading(false)
+      setHierarchySearchError('')
+      return
+    }
+
+    const controller = new AbortController()
+    setHierarchySearchLoading(true)
+    setHierarchySearchError('')
+    const timer = window.setTimeout(() => {
+      api(`/api/projects/hierarchy-search?q=${encodeURIComponent(query)}`, { signal: controller.signal })
+        .then((result: ProjectHierarchySearchResponse) => setHierarchySearch(result))
+        .catch((error: any) => {
+          if (error?.name === 'AbortError') return
+          setHierarchySearchError('项目内部搜索暂时不可用')
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setHierarchySearchLoading(false)
+        })
+    }, 300)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [search])
 
   // 进入页面清空更深层选择，避免残留
   useEffect(() => {
@@ -279,30 +394,48 @@ export default function UserPage() {
   // 当 "全部" 状态 (projectFilters.length === 0) 下, 不再按 created_by 限制到 userParam,
   // 让当前用户看到自己可见的所有项目 (含 public / 关注); 一旦切到某个 chip 才把范围收回到 userParam 视角.
   const isViewingOwnAsAll = projectFilters.length === 0
+  const activeHierarchySearch = hierarchySearch.query === normalizedSearch
+    ? hierarchySearch
+    : { ...EMPTY_PROJECT_HIERARCHY_SEARCH, query: normalizedSearch }
+  const hierarchyGroupByProject = useMemo(
+    () => new Map(activeHierarchySearch.projects.map((group) => [String(group.project?.id), group])),
+    [activeHierarchySearch.projects]
+  )
+  const searchProjectCandidates = useMemo(() => {
+    if (!normalizedSearch) return sortedProjects
+    const byId = new Map<string, any>()
+    activeHierarchySearch.projects.forEach((group) => {
+      if (group.project?.id) byId.set(String(group.project.id), group.project)
+    })
+    // 本地项目名即时命中，避免防抖请求期间输入框短暂显示空列表。
+    sortedProjects.filter((project: any) => projectMatchesSearch(project, normalizedSearch)).forEach((project: any) => {
+      if (project?.id && !byId.has(String(project.id))) byId.set(String(project.id), project)
+    })
+    return Array.from(byId.values())
+  }, [activeHierarchySearch.projects, normalizedSearch, sortedProjects])
+  const projectIsInView = (project: any) => (
+    (isViewingOwnAsAll || userParam === user?.id || project.kind === 'extension' || project.created_by === userParam)
+    && !project.hidden
+    && matchesProjectFilters(project, projectFilters, user?.id || '')
+  )
+  const projectIsMuted = (project: any) => mutedIdSet.has(project.id) || !!project.muted
   const myProjects = useMemo(
-    () => sortedProjects.filter((p: any) =>
-      (isViewingOwnAsAll || userParam === user?.id || p.kind === 'extension' || p.created_by === userParam)
-      && !p.hidden
-      && !mutedIdSet.has(p.id)
-      && matchesProjectFilters(p, projectFilters, user?.id || '')
-      && projectMatchesSearch(p, search)
-    ),
-    [sortedProjects, userParam, user?.id, mutedIdSet, projectFilters, search, isViewingOwnAsAll]
+    () => searchProjectCandidates.filter((project: any) => projectIsInView(project) && !projectIsMuted(project)),
+    [searchProjectCandidates, userParam, user?.id, mutedIdSet, projectFilters, isViewingOwnAsAll]
   )
-  // 搜索时: 已 mute 的项目也展示, 但带角标; 后端 GET /api/projects 本身在搜索词下会保留 mute 项目.
+  // 搜索时: 已 mute 的项目也展示, 但带角标; 后端层级搜索同样保留它们.
   const searchMutedProjects = useMemo(
-    () => search.trim()
-      ? sortedProjects.filter((p: any) =>
-        mutedIdSet.has(p.id)
-        && (isViewingOwnAsAll || userParam === user?.id || p.kind === 'extension' || p.created_by === userParam)
-        && !p.hidden
-        && matchesProjectFilters(p, projectFilters, user?.id || '')
-        && projectMatchesSearch(p, search)
-      )
+    () => normalizedSearch
+      ? searchProjectCandidates.filter((project: any) => projectIsInView(project) && projectIsMuted(project))
       : [],
-    [sortedProjects, userParam, mutedIdSet, projectFilters, search, user?.id, isViewingOwnAsAll]
+    [searchProjectCandidates, normalizedSearch, userParam, mutedIdSet, projectFilters, user?.id, isViewingOwnAsAll]
   )
-  const visibleProjectCount = myProjects.length + (search.trim() ? searchMutedProjects.length : 0)
+  const visibleProjectCount = myProjects.length + (normalizedSearch ? searchMutedProjects.length : 0)
+  const visibleSearchMatchCount = useMemo(() => (
+    normalizedSearch
+      ? [...myProjects, ...searchMutedProjects].reduce((total, project: any) => total + (hierarchyGroupByProject.get(String(project.id))?.total_matches || 0), 0)
+      : 0
+  ), [hierarchyGroupByProject, myProjects, normalizedSearch, searchMutedProjects])
 
   // 主区项目卡片分页: 只渲染当前页的 16 个, 翻页时再按需加载这些卡片的概览.
   const projectPagination = usePagination(myProjects, PROJECT_PAGE_SIZE)
@@ -395,27 +528,21 @@ export default function UserPage() {
   // 按 created_by 分组（sidebar）
   const grouped = useMemo(() => {
     const m: Record<string, any[]> = {}
-    // 默认视图排除已 mute 的项目; 搜索时保留它们, sidebar 用 muted: true 标记.
-    for (const p of sortedProjects) {
+    // 搜索态使用服务端返回的项目候选, 因此内部任务/会话命中也能进入侧栏.
+    const candidates = normalizedSearch ? searchProjectCandidates : sortedProjects
+    for (const p of candidates) {
       const isMuted = mutedIdSet.has(p.id) || !!p.muted
-      if (isMuted && !search.trim()) continue
+      if (isMuted && !normalizedSearch) continue
       if (p.hidden && !isMuted) continue
-      if (!(isViewingOwnAsAll || userParam === user?.id || p.kind === 'extension' || p.created_by === userParam)) continue
-      if (!matchesProjectFilters(p, projectFilters, user?.id || '')) continue
+      if (!projectIsInView(p)) continue
       const key = p.created_by || '未知'
       if (!m[key]) m[key] = []
       m[key].push(p)
     }
-    if (search.trim()) {
-      for (const k of Object.keys(m)) {
-        m[k] = m[k].filter((p: any) => projectMatchesSearch(p, search))
-        if (m[k].length === 0) delete m[k]
-      }
-    }
     return m
-  }, [sortedProjects, search, mutedIdSet, userParam, user?.id, projectFilters])
+  }, [sortedProjects, normalizedSearch, searchProjectCandidates, mutedIdSet, userParam, user?.id, projectFilters, isViewingOwnAsAll])
 
-  const emptyProjectText = search.trim()
+  const emptyProjectText = normalizedSearch
     ? '未找到匹配项目'
     : (projectFilters.length > 0 ? '当前筛选下没有项目' : `${userParam} 还没有项目`)
 
@@ -439,14 +566,29 @@ export default function UserPage() {
           style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
           <div className="px-3 py-2">
             <div className="relative">
-              <svg className="w-3.5 h-3.5 absolute left-2.5 top-[9px]" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+              <Search className="absolute left-2.5 top-[9px] h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
               <input value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="搜索项目..."
-                className="w-full h-8 pl-8 pr-3 rounded-lg text-[12px] focus:outline-none focus:border-blue-500/30"
+                maxLength={200}
+                data-project-hierarchy-search
+                placeholder="搜索项目、任务或会话..."
+                className="w-full h-8 pl-8 pr-8 rounded-lg text-[12px] focus:outline-none focus:border-blue-500/30"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              {hierarchySearchLoading ? (
+                <LoaderCircle className="absolute right-2.5 top-[9px] h-3.5 w-3.5 animate-spin" style={{ color: '#60a5fa' }} />
+              ) : search ? (
+                <button type="button" aria-label="清空搜索" title="清空搜索" onClick={() => setSearch('')}
+                  className="absolute right-1.5 top-1 h-6 w-6 rounded-md flex items-center justify-center hover:bg-[var(--bg-hover)]"
+                  style={{ color: 'var(--text-muted)' }}>
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
             </div>
+            {hierarchySearchError && <div className="mt-1 text-[10px]" style={{ color: '#f87171' }}>{hierarchySearchError}</div>}
+            {normalizedSearch && !hierarchySearchLoading && activeHierarchySearch.project_count > 0 && (
+              <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                找到 {activeHierarchySearch.project_count} 个项目 · {visibleSearchMatchCount} 条内部匹配
+              </div>
+            )}
             <div className="mt-2 rounded-lg px-2 py-2" style={{ }}>
               <div className="flex gap-1">
                 <button
@@ -558,27 +700,45 @@ export default function UserPage() {
                   </LinklessNav>
                 )}
                 {plist.map((p: any) => {
-                  const isMuted = mutedIdSet.has(p.id)
+                  const isMuted = projectIsMuted(p)
+                  const sidebarSearchGroup = hierarchyGroupByProject.get(String(p.id))
                   return (
-                  <div key={p.id}
-                    className="group flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer mb-0.5 transition-all hover:bg-[var(--bg-card-hover)]">
-                    <button
-                      onClick={(e) => toggleProjectStar(e, p)}
-                      disabled={starringProjectId === p.id}
-                      title={p.starred ? '取消关注' : '关注项目'}
-                      className={`h-6 w-6 flex items-center justify-center rounded-md transition-colors disabled:opacity-50 ${p.starred ? 'opacity-100' : 'opacity-60 group-hover:opacity-100 hover:bg-[var(--bg-hover)]'}`}
-                      style={{ color: p.starred ? '#fbbf24' : 'var(--text-muted)' }}>
-                      <Star className="w-3.5 h-3.5" fill={p.starred ? 'currentColor' : 'none'} strokeWidth={1.8} />
-                    </button>
-                    <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
-                      className="flex items-center gap-1.5 min-w-0 flex-1">
-                      <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                      <span className="text-[12px] font-medium truncate flex-1" style={{ color: 'var(--text-primary)' }}>{p.name}</span>
-                      {isMuted && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
-                      )}
-                      <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>{p.issue_count ?? 0}</span>
-                    </LinklessNav>
+                  <div key={p.id} className="mb-0.5">
+                    <div className="group flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-all hover:bg-[var(--bg-card-hover)]">
+                      <button
+                        onClick={(e) => toggleProjectStar(e, p)}
+                        disabled={starringProjectId === p.id}
+                        title={p.starred ? '取消关注' : '关注项目'}
+                        className={`h-6 w-6 flex items-center justify-center rounded-md transition-colors disabled:opacity-50 ${p.starred ? 'opacity-100' : 'opacity-60 group-hover:opacity-100 hover:bg-[var(--bg-hover)]'}`}
+                        style={{ color: p.starred ? '#fbbf24' : 'var(--text-muted)' }}>
+                        <Star className="w-3.5 h-3.5" fill={p.starred ? 'currentColor' : 'none'} strokeWidth={1.8} />
+                      </button>
+                      <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
+                        className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+                        <span className="text-[12px] font-medium truncate flex-1" style={{ color: 'var(--text-primary)' }}>
+                          <SearchMatchText text={p.name} query={normalizedSearch} />
+                        </span>
+                        {isMuted && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
+                        )}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>
+                          {normalizedSearch ? (sidebarSearchGroup?.total_matches || 0) : (p.issue_count ?? 0)}
+                        </span>
+                      </LinklessNav>
+                    </div>
+                    {normalizedSearch && !!sidebarSearchGroup?.matches.length && (
+                      <div className="ml-9 mb-1 border-l pl-1" style={{ borderColor: 'var(--border-color)' }}>
+                        {sidebarSearchGroup?.matches.slice(0, 3).map((hit) => (
+                          <HierarchyHitRow key={`${hit.kind}:${hit.id}`} project={p} hit={hit} query={normalizedSearch} variant="sidebar" />
+                        ))}
+                        {sidebarSearchGroup?.total_matches > 3 && (
+                          <div className="px-2 py-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                            另有 {sidebarSearchGroup?.total_matches - 3} 条匹配
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   )
                 })}
@@ -586,7 +746,9 @@ export default function UserPage() {
             ))}
             {Object.keys(grouped).length === 0 && (
               <div className="text-center py-8 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                {search.trim() ? '未找到匹配项目' : (projectFilters.length > 0 ? '当前筛选下暂无项目' : '暂无项目')}
+                {normalizedSearch && hierarchySearchLoading
+                  ? <ListLoadingHint compact />
+                  : (normalizedSearch ? '未找到匹配项目、任务或会话' : (projectFilters.length > 0 ? '当前筛选下暂无项目' : '暂无项目'))}
               </div>
             )}
           </div>
@@ -622,29 +784,39 @@ export default function UserPage() {
                   <PaginationControls {...projectPaginationProps} inlinePageSwitch />
                 </div>
               ) : (
-                <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>共 {visibleProjectCount} 个项目</p>
+                <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  {normalizedSearch
+                    ? `找到 ${visibleProjectCount} 个项目 · ${visibleSearchMatchCount} 条内部匹配`
+                    : `共 ${visibleProjectCount} 个项目`}
+                  {normalizedSearch && activeHierarchySearch.truncated ? ' · 匹配较多，仅显示最相关结果' : ''}
+                </p>
               )}
             </div>
 
             {myProjects.length === 0 ? (
               <div className="rounded-2xl border-dashed border-2 p-12 text-center" style={{ borderColor: 'var(--border-color)' }}>
-                <div className="text-[14px] mb-3" style={{ color: 'var(--text-muted)' }}>{emptyProjectText}</div>
-                {projectFilters.length > 0 ? (
+                {normalizedSearch && hierarchySearchLoading ? (
+                  <ListLoadingHint />
+                ) : <div className="text-[14px] mb-3" style={{ color: 'var(--text-muted)' }}>{emptyProjectText}</div>}
+                {!hierarchySearchLoading && projectFilters.length > 0 ? (
                   <button onClick={() => setProjectFilters([])}
                     className="h-9 px-4 rounded-lg text-[13px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 transition-colors">
                     清空筛选
                   </button>
-                ) : (
+                ) : !hierarchySearchLoading && !normalizedSearch ? (
                   <button onClick={() => setShowNew(true)} data-tour="user-empty-create-project"
                     className="h-9 px-4 rounded-lg text-[13px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 transition-colors">
                     创建第一个项目
                   </button>
-                )}
+                ) : null}
               </div>
             ) : (
               <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {projectPagination.pagedItems.map((p: any) => {
+                  const searchGroup = hierarchyGroupByProject.get(String(p.id)) as ProjectHierarchyGroup | undefined
+                  const searchMatches = searchGroup?.matches || []
+                  const showingSearchMatches = !!normalizedSearch && searchMatches.length > 0
                   const overview = overviewByProject[p.id] || null
                   const issues = issuesByProject[p.id] || []
                   const researches = researchesByProject[p.id] || []
@@ -664,7 +836,7 @@ export default function UserPage() {
                       ? (researchesLoadingByProject[p.id] && !researchesByProject[p.id])
                       : (issuesLoadingByProject[p.id] && !issuesByProject[p.id])
                   )
-                  const isMuted = mutedIdSet.has(p.id)
+                  const isMuted = projectIsMuted(p)
                   const cardTheme = effectiveProjectCardBorderTheme(p)
                   return (
                     <div key={p.id} data-tour="user-project-card"
@@ -678,7 +850,7 @@ export default function UserPage() {
                             className="text-[14px] font-semibold truncate flex-1 min-w-0 transition-colors hover:!text-[var(--project-card-accent)]"
                             style={{ color: 'var(--text-primary)' }}
                             title={p.name}>
-                            {p.name}
+                            <SearchMatchText text={p.name} query={normalizedSearch} />
                           </LinklessNav>
                           {isMuted && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
@@ -793,7 +965,9 @@ export default function UserPage() {
                       {/* 描述 + 元数据 */}
                       <div className="px-4 py-2.5">
                         {p.description ? (
-                          <p className="text-[12px] truncate mb-2" style={{ color: 'var(--text-secondary)' }} title={p.description}>{p.description}</p>
+                          <p className="text-[12px] truncate mb-2" style={{ color: 'var(--text-secondary)' }} title={p.description}>
+                            <SearchMatchText text={p.description} query={normalizedSearch} />
+                          </p>
                         ) : (
                           <p className="text-[12px] italic mb-2" style={{ color: 'var(--text-muted)' }}>无描述</p>
                         )}
@@ -822,7 +996,28 @@ export default function UserPage() {
                         </div>
                       )}
 
-                      {/* Issues / Research 概览 */}
+                      {/* 搜索态优先展示混合层级命中；只有项目自身命中时保留原概览。 */}
+                      {showingSearchMatches ? (
+                        <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
+                          <div className="mb-1.5 flex items-center justify-between gap-2">
+                            <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+                              命中内容 {searchGroup?.total_matches || searchMatches.length}
+                            </span>
+                            <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
+                              className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">进入项目 →</LinklessNav>
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            {searchMatches.slice(0, 5).map((hit) => (
+                              <HierarchyHitRow key={`${hit.kind}:${hit.id}`} project={p} hit={hit} query={normalizedSearch} variant="card" />
+                            ))}
+                            {(searchGroup?.total_matches || 0) > 5 && (
+                              <div className="px-2 py-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                另有 {(searchGroup?.total_matches || 0) - 5} 条匹配
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
                       <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>{showResearch ? '研究' : '任务'}</span>
@@ -858,6 +1053,7 @@ export default function UserPage() {
                           </div>
                         )}
                       </div>
+                      )}
                     </div>
                   )
                 })}
@@ -885,7 +1081,7 @@ export default function UserPage() {
                           <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
                             className="text-[14px] font-semibold truncate flex-1 min-w-0 transition-colors hover:text-blue-400"
                             style={{ color: 'var(--text-primary)' }} title={p.name}>
-                            {p.name}
+                            <SearchMatchText text={p.name} query={normalizedSearch} />
                           </LinklessNav>
                           <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
                           <button onClick={(e) => unmuteProject(e, p)} disabled={mutedBusyId === p.id}
@@ -900,6 +1096,18 @@ export default function UserPage() {
                           该项目仍在你的屏蔽列表中，仅搜索时可见。点击标题可直接进入；点击右侧按钮可恢复显示。
                         </p>
                       </div>
+                      {(hierarchyGroupByProject.get(String(p.id))?.matches.length || 0) > 0 && (
+                        <div className="px-3 py-2">
+                          {hierarchyGroupByProject.get(String(p.id))!.matches.slice(0, 5).map((hit) => (
+                            <HierarchyHitRow key={`${hit.kind}:${hit.id}`} project={p} hit={hit} query={normalizedSearch} variant="card" />
+                          ))}
+                          {hierarchyGroupByProject.get(String(p.id))!.total_matches > 5 && (
+                            <div className="px-2 py-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                              另有 {hierarchyGroupByProject.get(String(p.id))!.total_matches - 5} 条匹配
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
