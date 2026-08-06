@@ -283,6 +283,13 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           : null}
 
         <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent={showWelcome ? 'flex-start' : 'flex-end'} overflowY="hidden">
+          {fitted.peekLines.length > 0
+            ? <Box width="100%" flexShrink={0} flexDirection="column">
+                {fitted.peekLines.map((line, index) => (
+                  <Text key={`peek-${index}`} dimColor wrap="truncate-end">{index === 0 ? '  ⋯ ' : '    '}{line}</Text>
+                ))}
+              </Box>
+            : null}
           {fitted.entries.map((entry, index) => {
             const entrySel = selMap?.get(index)
             const key = entry.__id ?? `entry-${fitted.startIndex + index}`
@@ -1144,22 +1151,45 @@ function entryRows(entry: AnyEntry, columns: number): number {
 
 function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, scrollBack = 0): {
   entries: AnyEntry[]
+  /** Tail rows of the next older entry, used to fill spare space above the viewport. */
+  peekLines: string[]
   hiddenOlder: number
   hiddenRecent: number
   startIndex: number
 } {
   const tail = Math.max(0, entries.length - scrollBack)
   const available = tail === 0 ? [] : entries.slice(0, tail)
-  let rows = 0
-  let first = available.length
-  for (let index = available.length - 1; index >= 0; index--) {
-    const nextRows = entryRows(available[index], columns)
-    if (first < available.length && rows + nextRows > rowBudget) break
-    rows += nextRows
-    first = index
+  const renderedRows = available.map((entry) => entryScreenLines(viewsForEntry(entry), columns))
+  const fit = (budget: number) => {
+    let rows = 0
+    let first = available.length
+    for (let index = available.length - 1; index >= 0; index--) {
+      const nextRows = renderedRows[index].length
+      if (first < available.length && rows + nextRows > budget) break
+      rows += nextRows
+      first = index
+    }
+    return { first, rows }
+  }
+
+  const base = fit(rowBudget)
+  let first = base.first
+  let peekLines: string[] = []
+  // If older history exists, reserve one row for the tail of the next older
+  // message. This prevents flex-end from leaving a blank band above the first
+  // complete visible message while preserving the complete-entry pager.
+  if (first > 0 && base.rows <= rowBudget) {
+    const olderLines = renderedRows[first - 1].slice()
+    while (olderLines.length > 0 && !olderLines[0].trim()) olderLines.shift()
+    while (olderLines.length > 0 && !olderLines[olderLines.length - 1].trim()) olderLines.pop()
+    const spare = rowBudget - base.rows
+    if (spare > 0 && olderLines.length > 0) {
+      peekLines = olderLines.slice(-spare)
+    }
   }
   return {
     entries: available.slice(first),
+    peekLines,
     hiddenOlder: first,
     hiddenRecent: entries.length - tail,
     startIndex: first,
