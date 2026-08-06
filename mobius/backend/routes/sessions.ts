@@ -385,7 +385,7 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
   auditSessionAccess(user, 'write_session', session);
   const { name, status } = (req.body || {}) as { name?: string; status?: string };
-  if (name) Sessions.updateName(id, name);
+  if (name) Sessions.updateNameByUser(id, name);
   if (status !== undefined) {
     if (!['active', 'completed', 'archived'].includes(status)) {
       res.status(400).json({ error: '状态无效' });
@@ -1504,6 +1504,8 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     model?: any;
     language?: string;
   };
+  // 用户在创建表单手填过名称 → 标记 name_human_edited=1, AI 标题生成器不再覆盖此名 (仅 global-create 顶栏快捷菜单传入).
+  const nameHumanEdited = req.body?.name_touched === true ? 1 : 0;
   if (!name) { res.status(400).json({ error: '请填写会话名称' }); return; }
 
   // 前端传内置短键或管理员导入模型 key; 非法/缺省回退默认模型.
@@ -1582,6 +1584,7 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     model: resolvedModel.sessionModelValue,
     language: sessionLanguage,
     pc_client_metadata: pcClientMetadata,
+    name_human_edited: nameHumanEdited,
   } as any);
   if (sourceSession && transferResult?.paths?.full) {
     try {

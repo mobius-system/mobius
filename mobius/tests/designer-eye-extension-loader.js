@@ -18,8 +18,8 @@ const loaderPath = path.join(__dirname, '../frontend/public/designer-eye/loader.
 const loaderSource = fs.readFileSync(loaderPath, 'utf8');
 
 assert(
-  loaderSource.includes("import('./index.js')"),
-  'Designer Eye 加载器应通过相对 URL 动态导入现有入口模块',
+  /import\(['"]\.\/index\.js\?v=[^'"]+['"]\)/.test(loaderSource),
+  'Designer Eye 加载器应通过带版本的相对 URL 动态导入现有入口模块',
 );
 assert(
   loaderSource.includes('.catch('),

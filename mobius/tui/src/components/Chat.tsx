@@ -8,7 +8,7 @@
  * activity, composer, and a persistent context status line.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Static, Text, useInput, useStdout } from 'ink'
+import { Box, Text, useInput, useStdout } from 'ink'
 import { useChat } from '../hooks/useChat.js'
 import { MobiusClient } from '../api.js'
 import { renderMarkdownLines } from '../markdown.js'
@@ -38,6 +38,8 @@ interface TerminalSize {
 
 import { createRequire } from 'node:module'
 const VERSION = createRequire(import.meta.url)('../../package.json').version
+const DEFAULT_COMPOSER_ROWS = 5
+const STATUS_ROWS = 3
 
 const SLASH_COMMANDS = [
   { cmd: '/clear', desc: '清空当前对话，开启新会话' },
@@ -49,6 +51,8 @@ const SLASH_COMMANDS = [
 export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, aimuxStatus }: ChatProps) {
   const chat = useChat({ client, ready, resumeSessionId })
   const [showHelp, setShowHelp] = useState(false)
+  const [scrollBack, setScrollBack] = useState(0)
+  const [composerRows, setComposerRows] = useState(DEFAULT_COMPOSER_ROWS)
   const [modelLabel, setModelLabel] = useState<string | null>(null)
   const terminal = useTerminalSize()
 
@@ -71,14 +75,9 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       return
     }
     setShowHelp(false)
+    setScrollBack(0)
     void chat.send(t)
   }, [chat, runSlash])
-
-  // Welcome card is for a truly fresh session only — once there's any
-  // conversation (or an in-flight message) it disappears. The transcript then
-  // streams into <Static> below and accumulates into the terminal scrollback
-  // (the terminal's own scrollback holds history; no in-app pager needed).
-  const showWelcome = chat.entries.length === 0 && chat.pendingUser === null
 
   // First query of a fresh session triggers the full backend bootstrap (lazy
   // session creation, worker spawn, context load) before any output streams.
@@ -92,6 +91,29 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   // (type:user / response_item.message[user] / event_msg.user_message) 合并成 1 条,
   // 避免在累积视图里把同一条提问显示多次.
   const dedupedEntries = useMemo(() => dedupeUserEntries(chat.entries), [chat.entries])
+  const viewportRows = terminal.isTty ? Math.max(9, terminal.rows - 1) : terminal.rows
+  const activityRows = (chat.typing ? 2 : 0) + (chat.error ? 1 : 0)
+  const helpRows = showHelp ? SLASH_COMMANDS.length + 3 : 0
+  const transcriptRows = Math.max(1, viewportRows - composerRows - STATUS_ROWS - activityRows - helpRows - 3)
+  const fitted = useMemo(
+    () => fitTranscript(dedupedEntries, transcriptRows, terminal.columns, scrollBack),
+    [dedupedEntries, transcriptRows, terminal.columns, scrollBack],
+  )
+  const showWelcome = dedupedEntries.length === 0 && chat.pendingUser === null && scrollBack === 0
+
+  // Keep a history page pinned while new events stream in. At the latest page,
+  // new output continues to auto-follow as usual.
+  const prevLenRef = useRef(dedupedEntries.length)
+  useEffect(() => {
+    const previous = prevLenRef.current
+    const current = dedupedEntries.length
+    prevLenRef.current = current
+    if (current > previous && scrollBack > 0) {
+      setScrollBack(value => value + current - previous)
+    } else if (scrollBack > current) {
+      setScrollBack(current)
+    }
+  }, [dedupedEntries.length, scrollBack])
 
   // Show the model's friendly label (e.g. "GPT-5.6-Sol") in the header/status
   // instead of its opaque key (e.g. "codex:mobiusdefaultaabb").
@@ -106,45 +128,66 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   }, [client, ready.prefs.model])
   const modelDisplay = modelLabel ?? ready.prefs.model ?? 'default'
 
+  useInput((_input, key) => {
+    const step = Math.max(1, fitted.entries.length)
+    if (key.pageUp) setScrollBack(value => Math.min(dedupedEntries.length, value + step))
+    else if (key.pageDown) setScrollBack(value => Math.max(0, value - step))
+  })
+
   return (
-    <Box flexDirection="column" width={terminal.isTty ? terminal.columns : undefined} paddingX={1}>
-      {showWelcome ? (
-        <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} modelDisplay={modelDisplay} />
-      ) : null}
+    <Box
+      flexDirection="column"
+      width={terminal.isTty ? terminal.columns : undefined}
+      height={terminal.isTty ? viewportRows : undefined}
+      paddingX={1}
+      overflowY="hidden"
+    >
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} overflowY="hidden">
+        {showWelcome
+          ? <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} modelDisplay={modelDisplay} />
+          : <CompactHeader ready={ready} sessionId={chat.sessionId} columns={terminal.columns} />}
 
-      {/* <Static> 累积输出: 每个 entry 永久打印进终端 scrollback, 不参与动态重绘.
-          新 entry 只追加打印, 历史靠终端自身滚动, 不再需要 in-app 翻页/视窗裁剪. */}
-      <Static items={dedupedEntries}>
-        {(entry, index) => (
-          <EntryAccum key={entry.__id ?? `e${index}`} entry={entry} columns={terminal.columns} />
-        )}
-      </Static>
+        <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent={showWelcome ? 'flex-start' : 'flex-end'} overflowY="hidden">
+          {fitted.hiddenOlder > 0 || scrollBack > 0
+            ? <Text dimColor>  ↑ {fitted.hiddenOlder > 0 ? `还有 ${fitted.hiddenOlder} 条较早记录 · PageUp 向上翻页` : '已到最早记录 · PageDown 向下翻页'}</Text>
+            : null}
+          {fitted.entries.map((entry, index) => (
+            <EntryAccum key={entry.__id ?? `entry-${fitted.startIndex + index}`} entry={entry} columns={terminal.columns} />
+          ))}
+          {chat.pendingUser !== null ? <UserLine text={chat.pendingUser} /> : null}
+          {fitted.hiddenRecent > 0
+            ? <Text dimColor>  ↓ PageDown 向下翻页 · 较新 {fitted.hiddenRecent} 条</Text>
+            : null}
+        </Box>
 
-      {chat.pendingUser !== null ? <UserLine text={chat.pendingUser} /> : null}
-      {chat.typing ? <WorkingIndicator firstQuery={firstQueryInFlight} /> : null}
-      {chat.error ? <Text color="red">⚠ {chat.error}</Text> : null}
+        {dedupedEntries.length === 0 && chat.pendingUser === null && !showHelp
+          ? <Box marginTop={1}><Text dimColor>输入问题开始协作，或输入 <Text color="cyan">/</Text> 查看命令。</Text></Box>
+          : null}
 
-      {chat.entries.length === 0 && chat.pendingUser === null && !showHelp
-        ? <Box marginTop={1}><Text dimColor>输入问题开始协作，或输入 <Text color="cyan">/</Text> 查看命令。</Text></Box>
-        : null}
+        {showHelp ? <HelpBlock commands={SLASH_COMMANDS} /> : null}
+      </Box>
 
-      {showHelp ? <HelpBlock commands={SLASH_COMMANDS} /> : null}
+      <Box flexDirection="column" flexShrink={0}>
+        {chat.typing ? <WorkingIndicator firstQuery={firstQueryInFlight} /> : null}
+        {chat.error ? <Text color="red">⚠ {chat.error}</Text> : null}
 
-      <Composer
-        onSubmit={onSubmit}
-        onStop={chat.stop}
-        onQuit={onQuit}
-        typing={chat.typing}
-        commands={SLASH_COMMANDS}
-      />
-      <StatusArea
-        ready={ready}
-        sessionId={chat.sessionId}
-        columns={terminal.columns}
-        webUrl={buildWebUrl(client.server, webUserId, ready, chat.sessionId)}
-        aimuxStatus={aimuxStatus}
-        modelDisplay={modelDisplay}
-      />
+        <Composer
+          onSubmit={onSubmit}
+          onStop={chat.stop}
+          onQuit={onQuit}
+          typing={chat.typing}
+          commands={SLASH_COMMANDS}
+          onHeightChange={setComposerRows}
+        />
+        <StatusArea
+          ready={ready}
+          sessionId={chat.sessionId}
+          columns={terminal.columns}
+          webUrl={buildWebUrl(client.server, webUserId, ready, chat.sessionId)}
+          aimuxStatus={aimuxStatus}
+          modelDisplay={modelDisplay}
+        />
+      </Box>
     </Box>
   )
 }
@@ -152,8 +195,8 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
 function useTerminalSize(): TerminalSize {
   const { stdout } = useStdout()
   const read = useCallback((): TerminalSize => ({
-    columns: Math.max(40, stdout.columns ?? 80),
-    rows: Math.max(16, stdout.rows ?? 24),
+    columns: Math.max(20, stdout.columns ?? 80),
+    rows: Math.max(10, stdout.rows ?? 24),
     isTty: Boolean(stdout.isTTY && stdout.columns && stdout.rows),
   }), [stdout])
   const [size, setSize] = useState<TerminalSize>(read)
@@ -169,7 +212,7 @@ function useTerminalSize(): TerminalSize {
 
 function WelcomeCard({ ready, columns, resumed, modelDisplay }: { ready: ReadyState; columns: number; resumed: boolean; modelDisplay: string }) {
   const cwd = compactPath(process.cwd())
-  const width = Math.max(38, Math.min(68, columns - 4))
+  const width = Math.max(18, Math.min(68, columns - 4))
   const labelWidth = 11
   return (
     <Box flexDirection="column">
@@ -202,6 +245,16 @@ function MetaRow({ label, value, hint, labelWidth }: { label: string; value: str
   )
 }
 
+function CompactHeader({ ready, sessionId, columns }: { ready: ReadyState; sessionId: string | null; columns: number }) {
+  const context = `${ready.project.name} › ${ready.issue.title}${sessionId ? ` · ${sessionId.slice(0, 8)}` : ''}`
+  return (
+    <Box justifyContent="space-between">
+      <Text bold><Text dimColor>{'>_ '}</Text>Mobius</Text>
+      <Text dimColor>{truncateDisplay(context, columns - 14)}</Text>
+    </Box>
+  )
+}
+
 function EntryAccum({ entry, columns }: { entry: AnyEntry; columns: number }) {
   const views = viewsForEntry(entry)
   return (
@@ -212,7 +265,7 @@ function EntryAccum({ entry, columns }: { entry: AnyEntry; columns: number }) {
 }
 
 function ViewLine({ view, columns }: { view: EntryView; columns: number }) {
-  const width = Math.max(20, columns - 4)
+  const width = Math.max(8, columns - 4)
   switch (view.kind) {
     case 'skip':
       return null
@@ -408,9 +461,10 @@ interface ComposerProps {
   onQuit: () => void
   typing: boolean
   commands: { cmd: string; desc: string }[]
+  onHeightChange?: (rows: number) => void
 }
 
-export function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps) {
+export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightChange }: ComposerProps) {
   const [value, setValue] = useState('')
   const [cursor, setCursor] = useState(0)
   const [popupIdx, setPopupIdx] = useState(0)
@@ -673,6 +727,11 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands }: Compose
   const maxRows = Math.max(3, Math.min(10, Math.floor((stdout.rows ?? 24) * 0.42)))
   const firstVisible = Math.max(0, Math.min(visualCursor - maxRows + 1, visualCursor))
   const visible = wrapped.slice(firstVisible, firstVisible + maxRows)
+  const renderedRows = 4 + visible.length + (popupOpen ? filtered.length + 1 : 0)
+
+  useEffect(() => {
+    onHeightChange?.(renderedRows)
+  }, [onHeightChange, renderedRows])
 
   return (
     <Box flexDirection="column" marginTop={1}>
@@ -895,8 +954,9 @@ function compactPath(path: string): string {
 }
 
 function truncateDisplay(value: string, maxLength: number): string {
-  if (value.length <= maxLength) return value
-  return maxLength <= 1 ? '…' : `${value.slice(0, maxLength - 1)}…`
+  const limit = Math.max(1, Math.floor(maxLength))
+  if (value.length <= limit) return value
+  return limit <= 1 ? '…' : `${value.slice(0, limit - 1)}…`
 }
 
 function buildWebUrl(server: string, webUserId: string, ready: ReadyState, sessionId: string | null): string {
@@ -945,5 +1005,59 @@ function isWideCodepoint(code: number): boolean {
   )
 }
 
-// (fitTranscript / blockRows / wrappedRows 视窗裁剪 + in-app 翻页逻辑已移除:
-//  transcript 现由 <Static> 累积进终端 scrollback, 历史靠终端自身滚动.)
+function wrappedRows(text: string, width: number): number {
+  const safeWidth = Math.max(1, width)
+  return text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(displayWidth(line) / safeWidth)), 0)
+}
+
+function entryRows(entry: AnyEntry, columns: number): number {
+  const width = Math.max(8, columns - 4)
+  return Math.max(1, viewsForEntry(entry).reduce((sum, view) => {
+    switch (view.kind) {
+      case 'skip': return sum
+      case 'user': return sum + 1 + wrappedRows(view.text, width - 2)
+      case 'assistant': {
+        const rows = renderMarkdownLines(view.text).reduce((total, line) => {
+          return total + (line.code ? 1 : wrappedRows(line.text || ' ', width - 2))
+        }, 0)
+        return sum + 1 + rows
+      }
+      case 'tool_call': return sum + 2 + (view.result ? 1 : 0)
+      case 'tool_result': return sum + headTailLines(view.text, width - 4, 5).length
+      case 'code_edit':
+        return sum + 2 + wrappedRows(view.filePath || '(未指定文件)', width - 4)
+          + wrappedRows(view.oldString, width - 4) + wrappedRows(view.newString, width - 4)
+      case 'write_file':
+        return sum + 2 + wrappedRows(view.filePath || '(未指定文件)', width - 4)
+          + wrappedRows(view.content, width - 4)
+      case 'reasoning': return sum + 1 + clampLines(view.text, width - 4, 2).length
+      case 'system': return sum + 1
+      case 'error': return sum + 1 + wrappedRows(view.text, width - 2)
+      default: return sum
+    }
+  }, 0))
+}
+
+function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, scrollBack = 0): {
+  entries: AnyEntry[]
+  hiddenOlder: number
+  hiddenRecent: number
+  startIndex: number
+} {
+  const tail = Math.max(0, entries.length - scrollBack)
+  const available = tail === 0 ? [] : entries.slice(0, tail)
+  let rows = 0
+  let first = available.length
+  for (let index = available.length - 1; index >= 0; index--) {
+    const nextRows = entryRows(available[index], columns)
+    if (first < available.length && rows + nextRows > rowBudget) break
+    rows += nextRows
+    first = index
+  }
+  return {
+    entries: available.slice(first),
+    hiddenOlder: first,
+    hiddenRecent: entries.length - tail,
+    startIndex: first,
+  }
+}

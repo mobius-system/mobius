@@ -56,8 +56,10 @@ function handleAgentRawEntryForSessionTitle(event: AgentRawEntryEvent): { update
   if (!title) return { updated: false, title: null }
   if (!adminSettings.isAutoGenerateSessionTitleEnabled()) return { updated: false, title }
 
-  const current = Sessions.findNameById(sessionId)
+  const current = Sessions.findNameMetaById(sessionId)
   if (!current || current.name === title) return { updated: false, title }
+  // 用户已手动重命名 (name_human_edited=1) → 此名由人类钦定, 永不让 AI 标题覆盖.
+  if (current.name_human_edited === 1) return { updated: false, title }
 
   Sessions.updateName(sessionId, title)
   return { updated: true, title }

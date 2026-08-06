@@ -80,7 +80,7 @@ function TodoRow({ todo, canManage, busy, onUpdate, onDelete }: TodoRowProps) {
           className="mt-1 h-4 w-4 shrink-0 accent-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
           aria-label={todo.completed ? '取消完成' : '标记完成'}
         />
-        <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="min-w-0 flex-1 space-y-1.5" data-text-redaction-ignore="true">
           <input
             value={titleDraft}
             disabled={!canManage || busy}
@@ -281,6 +281,7 @@ export function ProjectTodosPanel({ projectId, canManage }: ProjectTodosPanelPro
           <input
             value={newTitle}
             disabled={creating}
+            data-text-redaction-ignore="true"
             onChange={(event) => setNewTitle(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {

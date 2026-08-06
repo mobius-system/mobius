@@ -1,0 +1,9 @@
+{
+  "name": "paper-reader",
+  "display_name": "论文阅读器",
+  "description": "沉浸式论文精读工作台：全文与 PDF 阅读、可调布局、全文 Agent 问答、实时运行进度和一键沉淀富文本研究笔记。用 source_id 与科研雷达互链。",
+  "version": "0.4.0",
+  "icon": "favicon.svg",
+  "schedule": [],
+  "project": { "sync": true, "default_hidden": false }
+}

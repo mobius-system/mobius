@@ -80,7 +80,7 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
     description?: string;
     risk_level?: string;
   };
-  if (name) Sessions.updateName(id, name);
+  if (name) Sessions.updateNameByUser(id, name);
   if (status) {
     if (status === 'deleted') {
       res.status(400).json({ error: 'Session 删除请使用 DELETE；删除后不会进入回收站' });

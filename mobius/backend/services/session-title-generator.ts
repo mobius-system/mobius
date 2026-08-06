@@ -163,6 +163,7 @@ async function scanOnce(): Promise<{ processed: number; attempted: number }> {
   for (const s of candidates) {
     if (processed >= BATCH_PER_SCAN) break;
     if (claudeCodeBackend(s.model)) continue;          // ai-title syncer 负责
+    if (s.name_human_edited === 1) continue;           // 用户已手动重命名, 永不覆盖
     if (!isDefaultName(s.name)) continue;              // 已有自定义名, 不动
     const last = recentAttempts.get(s.session_id) || 0;
     if (now - last < ATTEMPT_COOLDOWN_MS) continue;    // 冷却中

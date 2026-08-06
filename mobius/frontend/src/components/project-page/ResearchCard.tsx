@@ -1,9 +1,14 @@
 import { Link } from 'react-router-dom'
 import { timeAgo } from '../shell'
+import { SearchMatchText } from '../search-match-text'
+import { textMatchesProjectSearch, type ProjectSessionMatch } from '../../services/project-session-search'
+import { sortProjectSessions } from '../../services/project-session-order'
 
 type ResearchCardProps = {
   research: any
   sessions: any[]
+  searchMatches: ProjectSessionMatch[]
+  searchQuery: string
   userParam: string
   projectId: string
   onEdit: (research: any) => void
@@ -13,15 +18,19 @@ type ResearchCardProps = {
 export function ResearchCard({
   research,
   sessions,
+  searchMatches,
+  searchQuery,
   userParam,
   projectId,
   onEdit,
   onToggleStatus,
 }: ResearchCardProps) {
   const isCompleted = research.status === 'completed'
-  const activeSessions = sessions.filter((s: any) => s.status === 'active')
+  const activeSessions = sessions.filter((s: any) => s.agent_status === 'running')
   const sessionTotal = Number.isFinite(Number(research.session_count)) ? Number(research.session_count) : sessions.length
-  const activeSessionTotal = Number.isFinite(Number(research.session_count)) ? sessionTotal : activeSessions.length
+  const activeSessionTotal = Number.isFinite(Number(research.running_session_count)) ? Number(research.running_session_count) : activeSessions.length
+  const showingSessionMatches = !!searchQuery.trim() && searchMatches.length > 0
+  const displayedSessions = sortProjectSessions(showingSessionMatches ? searchMatches : sessions)
   const chief = sessions.find((s: any) => s.research_role === 'chief_researcher')
   const hasChief = !!chief || Number(research.chief_count || 0) > 0
 
@@ -53,32 +62,48 @@ export function ResearchCard({
       )}
 
       <div className="px-4 py-2 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        <span>{activeSessionTotal} 活跃 · {sessionTotal} 个研究智能体</span>
+        <span>{activeSessionTotal} 执行中 · {sessionTotal} 个研究智能体</span>
         <span>{hasChief ? '已有 chief' : '未创建 chief'}</span>
         <span className="ml-auto">活跃 {timeAgo(research.last_active)}</span>
       </div>
 
       <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>研究智能体</span>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+            {showingSessionMatches ? `匹配智能体 ${searchMatches.length}` : '研究智能体'}
+          </span>
           <Link to={`/u/${userParam}/p/${projectId}/r/${research.id}`}
             className="text-[11px] text-emerald-400 hover:text-emerald-300 transition-colors">进入研究 →</Link>
         </div>
-        {sessions.length === 0 ? (
+        {displayedSessions.length === 0 ? (
           <div className="text-[11px] py-1" style={{ color: 'var(--text-muted)' }}>暂无研究智能体</div>
         ) : (
           <div className="space-y-1">
-            {sessions.slice(0, 4).map((s: any) => (
+            {displayedSessions.slice(0, 4).map((s: any) => (
               <Link key={s.session_id} to={`/u/${userParam}/p/${projectId}/r/${research.id}?session=${s.session_id}`}
+                data-project-card-session-match={showingSessionMatches ? s.session_id : undefined}
                 className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors">
                 {s.agent_status === 'running' ? <div className="pulse-green" /> : <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/70 flex-shrink-0" />}
-                <span className="text-[12px] truncate flex-1" style={{ color: 'var(--text-primary)' }}>{s.name}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>
+                    <SearchMatchText text={s.name || '未命名智能体'} query={showingSessionMatches ? searchQuery : ''} />
+                  </span>
+                  {showingSessionMatches && textMatchesProjectSearch(s.description, searchQuery) && (
+                    <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      <SearchMatchText text={s.description || ''} query={searchQuery} />
+                    </span>
+                  )}
+                </span>
                 <span className="text-[10px] flex-shrink-0" style={{ color: s.research_role === 'chief_researcher' ? '#34d399' : 'var(--text-muted)' }}>
                   {s.research_role === 'chief_researcher' ? 'chief' : 'assistant'}
                 </span>
               </Link>
             ))}
-            {sessionTotal > sessions.length && (
+            {showingSessionMatches && searchMatches.length > 4 ? (
+              <div className="text-[11px] py-1 px-2" style={{ color: 'var(--text-muted)' }}>
+                还有 {searchMatches.length - 4} 个匹配智能体...
+              </div>
+            ) : !showingSessionMatches && sessionTotal > sessions.length && (
               <div className="text-[11px] py-1 px-2" style={{ color: 'var(--text-muted)' }}>
                 还有 {sessionTotal - sessions.length} 个 Research Agent...
               </div>

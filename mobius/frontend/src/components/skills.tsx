@@ -4,11 +4,73 @@ import { api } from '../store'
 import { ContextAccessModal } from './context-access'
 import { MoveScopeModal } from './modals'
 import { CopyFromCatalogModal } from './copy-catalog'
+import { SkillMarketLink } from './skill-market-link'
 import {
   CONTEXT_SETUP_DEMO_TOUR_EVENT,
   patchContextSetupDemoState,
   readContextSetupDemoState,
 } from '../services/context-setup-demo'
+
+// =====================================================================
+// normalizeGithubSkillInput — 把用户从网站/文档直接复制的"安装命令"或"仓库 URL"
+// 净化成 skills CLI 能接受的 package 标识 (owner/repo 或 owner/repo@skill-name).
+// 兼容常见复制形态:
+//   - shell 命令前缀: `npx skills add ...` / `npm install ...` / `yarn add ...` / `git clone ...`
+//   - URL: `https://github.com/owner/repo[.git]` / `git@github.com:owner/repo.git`
+//   - 子路径: `.../tree/<branch>/skills/<name>`  ->  owner/repo@<name>
+//   - 参数: `--skill <name>` 转成 `@<name>`; 其他 `--xxx` 直接剥离
+// 输入已是干净 owner/repo 时原样返回; 无法提取返回 ''.
+// 例: `npx skills add https://github.com/anthropics/skills --skill frontend-design`
+//   -> `anthropics/skills@frontend-design`
+// =====================================================================
+export function normalizeGithubSkillInput(raw: string): string {
+  let s = (raw || '').trim()
+  if (!s) return ''
+  // 1. 提取 --skill <name> / --skill=<name> (skills CLI 指定仓库内某个 skill)
+  let skillFlag = ''
+  const mSkill = s.match(/(?:^|\s)--skill[=\s]+([A-Za-z0-9][\w.-]*)/)
+  if (mSkill) skillFlag = mSkill[1]
+  // 2. 剥离所有 --xxx[=yyy] 参数
+  s = s.replace(/(\s|^)--[A-Za-z][\w-]*(=\S+)?/g, ' ').trim()
+  // 3. 取第一个非命令关键词的 token 作为 source (跳过 npx/npm/add/git/clone 等)
+  const CMD = new Set(['npx', 'npm', 'yarn', 'pnpm', 'bun', 'dlx', 'skills', 'add', 'install', 'i', 'git', 'clone', 'run', '--yes'])
+  let pkg = ''
+  for (const t of s.split(/\s+/).filter(Boolean)) {
+    if (CMD.has(t.toLowerCase())) continue
+    pkg = t; break
+  }
+  if (!pkg) pkg = s
+  if (!pkg) return ''
+  // 4. 去 scheme / git@host: / github host / query-string / .git 后缀 / 尾斜杠
+  pkg = pkg.replace(/^(https?:\/\/|git:\/\/|ssh:\/\/|file:\/\/)/i, '')
+  pkg = pkg.replace(/^git@[^:/]+:/i, '')
+  pkg = pkg.replace(/^(www\.)?github\.com\//i, '')
+  pkg = pkg.replace(/^(raw|codeload)\.githubusercontent\.com\//i, '')
+  pkg = pkg.split(/[?#]/)[0]
+  pkg = pkg.replace(/\.git$/i, '')
+  pkg = pkg.replace(/\/+$/, '')
+  // 5. /tree/<branch>/<path> 子路径 -> owner/repo, 末段作 skill 名
+  const mTree = pkg.match(/^([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\/tree\/[^/]+\/(.+)$/)
+  if (mTree) {
+    pkg = mTree[1]
+    if (!skillFlag) {
+      const last = (mTree[2].split('/').filter(Boolean).pop() || '').replace(/\.\w+$/, '')
+      if (last) skillFlag = last
+    }
+  } else {
+    // 6. 只保留 owner/repo (前两段), 超出截断 (防 /blob/... 之类多余路径)
+    const segs = pkg.split('/')
+    if (segs.length > 2) pkg = `${segs[0]}/${segs[1]}`
+  }
+  // 7. 拼 --skill -> @skill
+  if (skillFlag) pkg = `${pkg.split('@')[0]}@${skillFlag}`
+  // 8. 终检: 必须形如 owner/repo[@skill]; 否则从原串兜底抠一个出来
+  if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(@[A-Za-z0-9._-]+)?$/.test(pkg)) {
+    const m = (raw || '').match(/([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)(?:@([A-Za-z0-9._-]+))?/)
+    return m ? (m[2] ? `${m[1]}@${m[2]}` : m[1]) : ''
+  }
+  return pkg
+}
 
 // =====================================================================
 // SkillsManager — 用户级 / 项目级 Skill 管理
@@ -244,7 +306,7 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
 
       {adding && (
         <div data-tour="skill-add-panel" className="mb-4 p-3 rounded-lg border" style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
-          <div className="flex gap-1 mb-3">
+          <div className="mb-3 flex flex-wrap items-center gap-1">
             {([['manual', '直接编辑/粘贴'], ['github', 'Github 包'], ['local', '本地绝对路径']] as const).map(([m, label]) => (
               <button key={m} onClick={() => { setAddMode(m); setErr(''); setImportInfo('') }} disabled={submitting}
                 data-tour={m === 'manual' ? 'skill-add-manual-tab' : m === 'github' ? 'skill-add-github-tab' : 'skill-add-local-tab'}
@@ -255,6 +317,7 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
                 {label}
               </button>
             ))}
+            <SkillMarketLink className="ml-auto" />
           </div>
 
           {addMode === 'manual' ? (
@@ -303,10 +366,21 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
                 Skill 包标识 (将作为 <code>npx --yes skills add &lt;package&gt;</code> 参数; 格式 <code>owner/repo</code> 或 <code>owner/repo@skill-name</code>)
               </label>
               <input autoFocus value={skillName}
-                onChange={e => { setSkillName(e.target.value); setErr('') }}
+                onChange={e => {
+                  const raw = e.target.value
+                  const clean = normalizeGithubSkillInput(raw)
+                  if (clean && clean !== raw.trim()) {
+                    setSkillName(clean)
+                    setImportInfo(`已从粘贴的命令 / URL 自动提取为: ${clean}`)
+                  } else {
+                    setSkillName(raw)
+                    setImportInfo('')
+                  }
+                  setErr('')
+                }}
                 onKeyDown={e => { if (e.key === 'Enter' && !submitting) submitInstall() }}
                 data-tour="skill-add-package-input"
-                placeholder="例: vercel-labs/agent-skills 或 owner/repo@skill-name"
+                placeholder="可直接粘贴安装命令或 GitHub URL (自动提取); 例: owner/repo 或 owner/repo@skill-name"
                 disabled={submitting}
                 className="w-full px-2.5 py-1.5 rounded text-[12px] font-mono mb-2 focus:outline-none focus:border-blue-500/30 disabled:opacity-40"
                 style={{ background: 'var(--bg-primary)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />

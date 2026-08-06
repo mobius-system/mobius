@@ -63,6 +63,8 @@ import {
   filterProjectListForUser,
   normalizeProjectSearch,
 } from '../services/user-project-view';
+import { searchProjectSessionMetadata } from '../services/project-session-search';
+import { searchProjectHierarchy } from '../services/project-hierarchy-search';
 // @ts-ignore — service 仍是 .js
 import { recordAdminAuditIfCrossUser } from '../services/admin-audit';
 // @ts-ignore — service 仍是 .js
@@ -1664,6 +1666,20 @@ function sendProjectSearch(req: express.Request, res: express.Response): void {
   res.json(shapeProjectList(projects, req));
 }
 
+function sendProjectHierarchySearch(req: express.Request, res: express.Response): void {
+  const user = userOf(req);
+  const result = searchProjectHierarchy(req.query.q ?? req.query.search ?? '', user);
+  const projects = result.projects.map((group) => group.project);
+  auditAdminProjectList(req, 'search_project_hierarchy', projects);
+  res.json({
+    ...result,
+    projects: result.projects.map((group) => ({
+      ...group,
+      project: shapeProjectForUser(group.project, user),
+    })),
+  });
+}
+
 function parseProjectOverviewIds(raw: unknown): string[] {
   const input = Array.isArray(raw) ? raw.join(',') : String(raw || '');
   const seen = new Set<string>();
@@ -1706,6 +1722,7 @@ function shapeOverviewItem(item: any): any {
     last_active: item.last_active,
     message_count: item.message_count,
     session_count: item.session_count,
+    running_session_count: item.running_session_count,
     chief_count: item.chief_count,
     starred: item.starred,
     visibility: item.visibility,
@@ -1797,6 +1814,20 @@ router.get('/:id/sessions-overview', auth, (req: express.Request, res: express.R
   res.json({ issues, researches });
 });
 
+router.get('/:id/session-matches', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const projectId = String(req.params.id);
+  const project = Projects.findById(projectId);
+  if (!project || !canReadProject(user, project) || isHidden(user.id, 'project', project.id)) {
+    res.status(404).json({ error: '未找到' });
+    return;
+  }
+
+  const result = searchProjectSessionMetadata(projectId, req.query.q, user);
+  auditAdminProjectList(req, 'search_project_sessions', [project]);
+  res.json(result);
+});
+
 router.get('/', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   if (normalizeProjectSearch(req.query.q ?? req.query.search ?? '')) {
@@ -1812,6 +1843,7 @@ router.get('/', auth, (req: express.Request, res: express.Response) => {
 });
 
 router.get('/search', auth, sendProjectSearch);
+router.get('/hierarchy-search', auth, sendProjectHierarchySearch);
 
 router.get('/view-prefs', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);

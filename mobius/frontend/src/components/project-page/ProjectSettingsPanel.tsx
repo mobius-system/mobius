@@ -7,7 +7,6 @@ import { OpenInVSCodeButton } from '../project-files'
 import { SkillsManager } from '../skills'
 import { timeAgo } from '../shell'
 import { api, useStore } from '../../store'
-import { ProjectCardThemePicker } from '../project-card-theme-picker'
 import { readContextSetupDemoState } from '../../services/context-setup-demo'
 import {
   PROJECT_IMPORT_DEMO_TOUR_EVENT,
@@ -40,7 +39,6 @@ type ProjectMetaValues = {
   editCanPostIssue: boolean
   editCanRunSession: boolean
   editDefaultModel: string
-  editCardBorderTheme: string
   editForgottenFlagMessage: string
   editForgottenFlagIssueInit: string
   editForgottenFlagIssueBackoff: string
@@ -63,7 +61,6 @@ type ProjectMetaSetters = {
   setEditCanPostIssue: Dispatch<SetStateAction<boolean>>
   setEditCanRunSession: Dispatch<SetStateAction<boolean>>
   setEditDefaultModel: Dispatch<SetStateAction<string>>
-  setEditCardBorderTheme: Dispatch<SetStateAction<string>>
   setEditForgottenFlagMessage: Dispatch<SetStateAction<string>>
   setEditForgottenFlagIssueInit: Dispatch<SetStateAction<string>>
   setEditForgottenFlagIssueBackoff: Dispatch<SetStateAction<string>>
@@ -525,7 +522,6 @@ export function ProjectSettingsPanel({
     editCanPostIssue,
     editCanRunSession,
     editDefaultModel,
-    editCardBorderTheme,
     editForgottenFlagMessage,
     editForgottenFlagIssueInit,
     editForgottenFlagIssueBackoff,
@@ -546,7 +542,6 @@ export function ProjectSettingsPanel({
     setEditCanPostIssue,
     setEditCanRunSession,
     setEditDefaultModel,
-    setEditCardBorderTheme,
     setEditForgottenFlagMessage,
     setEditForgottenFlagIssueInit,
     setEditForgottenFlagIssueBackoff,
@@ -959,7 +954,9 @@ export function ProjectSettingsPanel({
           {project.kind === 'extension' ? null : (
             <SettingsCard title="基本设置">
               <LocalPcPathRow projectId={project.id} />
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+              {/* 豁免文本脱敏整框模糊: 项目名/描述/绑定路径常含 imac/tianyi 等匿名化关键词,
+                  命中后整框 filter:blur(5px) 不可读 (脱敏默认开启). 拥有者编辑面需可读. */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3" data-text-redaction-ignore="true">
                 <div>
                   <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>名称</label>
                   <textarea value={editName} disabled={!canManageProject} onChange={e => setEditName(normalizeSingleLineText(e.target.value))}
@@ -1104,6 +1101,7 @@ export function ProjectSettingsPanel({
                 <select
                   value={editDefaultModel}
                   disabled={!canManageProject}
+                  data-text-redaction-ignore="true"
                   onChange={e => setEditDefaultModel(e.target.value)}
                   className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
@@ -1123,15 +1121,6 @@ export function ProjectSettingsPanel({
               </div>
             </SettingsCard>
           )}
-
-          <SettingsCard title="项目外观">
-            <ProjectCardThemePicker
-              value={editCardBorderTheme}
-              disabled={!canManageProject}
-              project={project}
-              onChange={setEditCardBorderTheme}
-            />
-          </SettingsCard>
 
           {metaErr && <div className="text-[12px] text-red-400">{metaErr}</div>}
           {/* <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>

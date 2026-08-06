@@ -1,11 +1,10 @@
 import { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronDown, ChevronLeft, ChevronRight, MessageSquarePlus, Sparkles } from 'lucide-react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { CircleDot, ChevronDown, ChevronLeft, ChevronRight, FlaskConical, MessageSquare, MessageSquarePlus, Plus } from 'lucide-react'
 import { useStore, api } from '../store'
-import { TopNav, timeAgo } from '../components/shell'
+import { TopNav, timeAgo, timeAgoPrecise } from '../components/shell'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
 import { usePagination, PaginationControls } from '../components/pagination'
-import { PrimaryActionButton } from '../components/primary-action-button'
 import {
   NewSessionModal, RenameSessionModal, RenameIssueModal, ConfirmModal,
 } from '../components/modals'
@@ -24,6 +23,45 @@ const CodeConversationPane = lazy(() => import('../components/workspace/code-con
 const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
 const SESSION_OVERVIEW_PAGE_SIZE = 15
 const SESSION_SIDEBAR_PAGE_SIZE = 16  // sidebar 会话列表每页 16, 超过即分页
+const RECENT_SESSION_LIMIT = 50
+
+type SessionListMode = 'issue' | 'recent'
+
+type RecentSession = {
+  session_id: string
+  name?: string
+  project_id?: string | null
+  project_name?: string | null
+  issue_id?: string | null
+  issue_title?: string | null
+  research_id?: string | null
+  research_title?: string | null
+  scope_type?: 'issue' | 'research'
+  agent_status?: string
+  message_count?: number
+  last_active?: string
+  status?: string
+}
+
+function normalizeRecentSessions(value: unknown): RecentSession[] {
+  return (Array.isArray(value) ? value : [])
+    .filter((session: any) => session?.session_id && session?.status !== 'archived')
+    .sort((a: any, b: any) => (
+      new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime()
+    ))
+    .slice(0, RECENT_SESSION_LIMIT)
+}
+
+function recentSessionTarget(user: string, session: RecentSession) {
+  if (!user || !session.project_id || !session.session_id) return ''
+  const base = `/u/${encodeURIComponent(user)}/p/${encodeURIComponent(session.project_id)}`
+  const query = `?session=${encodeURIComponent(session.session_id)}`
+  if (session.scope_type === 'research' && session.research_id) {
+    return `${base}/r/${encodeURIComponent(session.research_id)}${query}`
+  }
+  if (session.issue_id) return `${base}/i/${encodeURIComponent(session.issue_id)}${query}`
+  return ''
+}
 
 // =====================================================================
 // Issue 处理页 /u/:user/p/:project/i/:issue?session=<id>
@@ -33,6 +71,7 @@ const SESSION_SIDEBAR_PAGE_SIZE = 16  // sidebar 会话列表每页 16, 超过�
 export default function IssuePage() {
   const params = useParams()
   const [search, setSearch] = useSearchParams()
+  const navigate = useNavigate()
   const { projects, setProjects, setCurrentProject, setCurrentIssue,
           issuesMap, setIssuesMap, sessionsMap, setSessionsMap, currentSession, setCurrentSession, setCurrentTask,
           workspaceLayoutMode, applySessionWorkspaceLayout } = useStore()
@@ -77,6 +116,11 @@ export default function IssuePage() {
   const [editingIssue, setEditingIssue] = useState(false)
   const [deletingSession, setDeletingSession] = useState<any>(null)
   const [sessionsLoaded, setSessionsLoaded] = useState(false)
+  const [sessionListMode, setSessionListMode] = useState<SessionListMode>('issue')
+  const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
+  const [recentSessionsLoading, setRecentSessionsLoading] = useState(false)
+  const [recentSessionsError, setRecentSessionsError] = useState('')
+  const [recentReloadVersion, setRecentReloadVersion] = useState(0)
 
   useEffect(() => {
     if (!autoOpenNewSession || !issue) return
@@ -117,6 +161,23 @@ export default function IssuePage() {
     })
     return () => { cancelled = true }
   }, [issueId])
+
+  useEffect(() => {
+    if (sessionListMode !== 'recent') return
+    const controller = new AbortController()
+    setRecentSessionsLoading(true)
+    setRecentSessionsError('')
+    api(`/api/tasks/recent?limit=${RECENT_SESSION_LIMIT}`, { signal: controller.signal })
+      .then((value: unknown) => setRecentSessions(normalizeRecentSessions(value)))
+      .catch((error: any) => {
+        if (error?.name === 'AbortError') return
+        setRecentSessionsError(error?.message || '近期会话加载失败')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRecentSessionsLoading(false)
+      })
+    return () => controller.abort()
+  }, [sessionListMode, userParam, recentReloadVersion])
 
   // URL ?session= 是唯一选中真理源：有则进入对话，无则清空展示概览.
   // 优先级:
@@ -294,7 +355,7 @@ export default function IssuePage() {
   const sessionListRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (sessionListRef.current) sessionListRef.current.scrollTop = 0
-  }, [sidebarPagination.page])
+  }, [sidebarPagination.page, sessionListMode])
 
   return (
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
@@ -373,63 +434,145 @@ export default function IssuePage() {
             )}
           </div>
 
-          {/* Sessions 标题 + 新建按钮（同一行） */}
-          <div className="px-3 py-2.5 border-b flex items-center justify-between gap-2"
-               style={{ borderColor: 'var(--border-color)' }}>
-            <div className="flex items-center gap-2 min-w-0">
-              <button onClick={goToOverview}
-                className="text-[12px] font-semibold hover:text-blue-400 transition-colors flex-shrink-0"
-                style={{ color: 'var(--text-muted)' }}
-                title="返回会话列表">
-                Sessions
-              </button>
-              {/* <span className="rounded-full border px-2 py-0.5 text-[10px] font-medium flex-shrink-0"
-                style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
-                {sessions.length} 个
-              </span> */}
+          {/* 当前任务会话与当前用户近期会话共用侧栏空间。 */}
+          <div className="flex items-center gap-1.5 px-2 py-2"
+               data-testid="issue-session-scope-switcher">
+            <div className="flex min-w-0 flex-1 rounded-md p-0.5" role="tablist" aria-label="会话列表范围"
+                 style={{ background: 'var(--bg-secondary)' }}>
+              {([
+                ['issue', '任务会话'],
+                ['recent', '近期会话'],
+              ] as const).map(([mode, label]) => {
+                const active = sessionListMode === mode
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-controls="issue-sidebar-session-list"
+                    onClick={() => setSessionListMode(mode)}
+                    className="min-w-0 flex-1 truncate rounded px-1 py-1.5 text-[10px] font-medium leading-none transition-colors hover:text-[var(--text-primary)]"
+                    style={{
+                      color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                      background: active ? 'var(--bg-active)' : 'transparent',
+                      boxShadow: active ? '0 1px 2px rgba(0,0,0,0.14)' : undefined,
+                    }}
+                    title={label}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
             </div>
-            <PrimaryActionButton onClick={() => setShowNewSession(true)} title="新建会话"
+            <button
+              type="button"
+              onClick={() => setShowNewSession(true)}
+              title="新建当前任务会话"
+              aria-label="新建当前任务会话"
               data-tour="issue-sidebar-new-session"
-              icon={<MessageSquarePlus className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} />}>
-              <span className="whitespace-nowrap">新会话</span>
-              {/* <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-current/10">
-                <Sparkles className="h-2.5 w-2.5" strokeWidth={2} />
-              </span> */}
-            </PrimaryActionButton>
+              className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border transition-colors hover:bg-blue-500/10"
+              style={{ color: 'var(--accent-primary)', borderColor: 'color-mix(in srgb, var(--accent-primary) 36%, var(--border-color))' }}
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+            </button>
           </div>
 
-          {/* Sessions 列表 */}
-          <div ref={sessionListRef} className="flex-1 overflow-y-auto px-2 py-1">
-            {sortedSessions.length === 0 ? (
-              <button onClick={() => setShowNewSession(true)}
-                className="mt-2 w-full rounded-xl border border-dashed px-3 py-5 text-center transition-colors hover:border-blue-500/35 hover:bg-blue-500/5"
-                style={{ borderColor: 'var(--border-color)' }}>
-                <MessageSquarePlus className="mx-auto mb-2 h-5 w-5 text-blue-400" strokeWidth={1.8} />
-                <div className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>创建第一个会话</div>
-                <div className="mt-1 text-[10px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                  为当前 Issue 开启一次智能体执行
-                </div>
-              </button>
-            ) : sidebarPagination.pagedItems.map((s: any) => (
-              <SessionRow key={s.session_id}
-                session={s}
-                isSelected={currentSession?.session_id === s.session_id}
-                onSelect={onSelectSession}
-                onEdit={(s) => setEditingSession(s)}
-                onDelete={(s) => setDeletingSession(s)}
-              />
-            ))}
-
+          <div ref={sessionListRef} id="issue-sidebar-session-list" role="tabpanel"
+               className={`min-h-0 flex-1 overflow-y-auto ${sessionListMode === 'recent' ? 'p-2' : 'px-2 py-1'}`}>
+            {sessionListMode === 'issue' ? (
+              sortedSessions.length === 0 ? (
+                <button onClick={() => setShowNewSession(true)}
+                  className="mt-2 w-full rounded-xl border border-dashed px-3 py-5 text-center transition-colors hover:border-blue-500/35 hover:bg-blue-500/5"
+                  style={{ borderColor: 'var(--border-color)' }}>
+                  <MessageSquarePlus className="mx-auto mb-2 h-5 w-5 text-blue-400" strokeWidth={1.8} />
+                  <div className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>创建第一个会话</div>
+                  <div className="mt-1 text-[10px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    为当前 Issue 开启一次智能体执行
+                  </div>
+                </button>
+              ) : sidebarPagination.pagedItems.map((s: any) => (
+                <SessionRow key={s.session_id}
+                  session={s}
+                  isSelected={currentSession?.session_id === s.session_id}
+                  onSelect={onSelectSession}
+                  onEdit={(s) => setEditingSession(s)}
+                  onDelete={(s) => setDeletingSession(s)}
+                />
+              ))
+            ) : recentSessionsLoading ? (
+              <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+            ) : recentSessionsError ? (
+              <div className="px-3 py-8 text-center">
+                <div className="text-[12px]" style={{ color: '#f87171' }}>{recentSessionsError}</div>
+                <button type="button" onClick={() => setRecentReloadVersion(value => value + 1)}
+                  className="mt-2 rounded-md border px-2 py-1 text-[11px] transition-colors hover:bg-[var(--bg-hover)]"
+                  style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}>
+                  重新加载
+                </button>
+              </div>
+            ) : recentSessions.length === 0 ? (
+              <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无近期会话</div>
+            ) : recentSessions.map((session) => {
+              const target = recentSessionTarget(userParam, session)
+              const active = session.session_id === sessionParam
+              const isResearch = session.scope_type === 'research'
+              const subject = isResearch
+                ? (session.research_title || session.research_id || '研究')
+                : (session.issue_title || session.issue_id || '任务')
+              return (
+                <button
+                  key={session.session_id}
+                  type="button"
+                  onClick={() => { if (target) navigate(target) }}
+                  disabled={!target}
+                  title={session.name || session.session_id}
+                  className="mb-1 flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:opacity-50"
+                  style={{
+                    borderColor: active ? 'color-mix(in srgb, var(--accent-primary) 42%, var(--border-color))' : 'transparent',
+                    background: active ? 'var(--bg-active)' : undefined,
+                  }}
+                  data-session-id={session.session_id}
+                  aria-current={active ? 'true' : undefined}
+                >
+                  <span className="mt-0.5 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md"
+                    style={{
+                      background: isResearch ? 'rgba(168,85,247,0.14)' : 'rgba(59,130,246,0.14)',
+                      color: isResearch ? '#c084fc' : '#60a5fa',
+                    }}>
+                    {isResearch ? <FlaskConical className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="min-w-0 flex-1 truncate text-[11px] font-medium leading-[13px]" style={{ color: 'var(--text-primary)' }}>
+                        {session.name || session.session_id}
+                      </span>
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                        style={{ background: session.agent_status === 'running' ? '#f59e0b' : 'var(--text-muted)' }} />
+                    </span>
+                    <span className="block truncate text-[10px] leading-[12px]" style={{ color: 'var(--text-secondary)' }}>
+                      {session.project_name || session.project_id || '项目'} / {subject}
+                    </span>
+                    <span className="mt-0.5 flex items-center gap-2 text-[10px] leading-[12px]" style={{ color: 'var(--text-muted)' }}>
+                      <span>{timeAgoPrecise(session.last_active || '')}</span>
+                      <span className="inline-flex items-center gap-1"><MessageSquare className="h-3 w-3" />{session.message_count || 0}</span>
+                    </span>
+                  </span>
+                </button>
+              )
+            })}
           </div>
-          <PaginationControls
-            compact
-            page={sidebarPagination.page}
-            totalPages={sidebarPagination.totalPages}
-            pageStart={sidebarPagination.pageStart}
-            pageEnd={sidebarPagination.pageEnd}
-            totalItems={sortedSessions.length}
-            onPageChange={sidebarPagination.goToPage}
-          />
+          {sessionListMode === 'issue' && (
+            <PaginationControls
+              compact
+              page={sidebarPagination.page}
+              totalPages={sidebarPagination.totalPages}
+              pageStart={sidebarPagination.pageStart}
+              pageEnd={sidebarPagination.pageEnd}
+              totalItems={sortedSessions.length}
+              onPageChange={sidebarPagination.goToPage}
+            />
+          )}
         </ResizablePanel>
         </div>
 

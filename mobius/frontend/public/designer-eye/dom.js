@@ -238,12 +238,15 @@ export function elementBelowPoint(x, y, designerHost) {
   return stack.find(element => element !== designerHost && !designerHost.contains(element) && element !== document.documentElement && element !== document.body) || null
 }
 
-export function resolveSelection(exact, preferSemanticOwner = false) {
+export function resolveSelection(exact, preferSemanticOwner = false, preferParent = false) {
   return {
     exact,
     // 默认尊重鼠标下最具体的可视元素，才能直接选择 h1/p/span 等非交互内容。
-    // 需要把图标、文字提升为外层按钮或带 data-tour 的组件时，再按 Alt/Option。
-    semantic: preferSemanticOwner ? semanticOwnerOf(exact) : exact,
+    // Shift 精确提升一层父元素；Alt/Option 则提升到最近的交互宿主。
+    // 同时按下时 Shift 优先，避免越过用户期望的直接父元素。
+    semantic: preferParent
+      ? (exact.parentElement || exact)
+      : (preferSemanticOwner ? semanticOwnerOf(exact) : exact),
   }
 }
 

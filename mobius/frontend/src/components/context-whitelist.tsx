@@ -80,12 +80,17 @@ function WhitelistGroup({
             onEnabledChange(nextEnabled)
             if (nextEnabled && selected.size === 0) setAll()
           }}
-          className="flex items-center gap-3 text-[13px]"
+          className="flex min-w-0 items-center gap-3 text-[13px]"
           style={{ color: 'var(--text-primary)' }}>
-          {title}
+          <span className="min-w-0">
+            <span className="block">{title}</span>
+            <span className="mt-0.5 block text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>
+              开启限制后，仅注入下方勾选的条目
+            </span>
+          </span>
         </ToggleSwitch>
         <span className="ml-auto text-[11px]" style={{ color: 'var(--text-muted)' }}>
-          {enabled ? `${selectedCount}/${items.length}` : '未启用'}
+          {enabled ? `${selectedCount}/${items.length} 允许注入` : `${items.length} 项全部可用`}
         </span>
       </div>
 
@@ -112,7 +117,12 @@ function WhitelistGroup({
                     <input type="checkbox" checked={checked} onChange={() => toggle(item.id)}
                       className="mt-0.5 accent-blue-500 cursor-pointer" />
                     <div className="min-w-0 flex-1" style={{ opacity: checked ? 1 : 0.45 }}>
-                      <div className="text-[12px] truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1 truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
+                        <span className="shrink-0 text-[10px]" style={{ color: checked ? '#22c55e' : 'var(--text-muted)' }}>
+                          {checked ? '允许注入' : '已屏蔽'}
+                        </span>
+                      </div>
                       {item.description && (
                         <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{item.description}</div>
                       )}
@@ -183,7 +193,7 @@ export function ProjectUserContextWhitelist({ projectId }: { projectId: string }
       const data: WhitelistPayload = await api(`/api/projects/${projectId}/user-context-whitelist`)
       applyPayload(data)
     } catch (e: any) {
-      setErr(e?.message || '加载白名单失败')
+      setErr(e?.message || '加载过滤设置失败')
     } finally {
       setLoading(false)
     }
@@ -217,7 +227,7 @@ export function ProjectUserContextWhitelist({ projectId }: { projectId: string }
       applyPayload(data)
       setInfo('已保存')
     } catch (e: any) {
-      setErr(e?.message || '保存白名单失败')
+      setErr(e?.message || '保存过滤设置失败')
     } finally {
       setSaving(false)
     }
@@ -229,7 +239,7 @@ export function ProjectUserContextWhitelist({ projectId }: { projectId: string }
         <div className="min-w-0">
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>Skill与Memory过滤</h3>
           <p className="text-[12px] mt-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            通过白名单，屏蔽与本项目无关的全局Skill与Memory（用户级 & Mobius内置），不让它们出现在本项目Session创建菜单中。
+            控制哪些全局 Skill 与 Memory 可用于本项目的 Session。关闭限制时全部可用；开启限制后，只注入勾选的条目。项目级条目不受影响。
           </p>
         </div>
         <button type="button" onClick={refresh} disabled={loading || saving}
@@ -242,7 +252,7 @@ export function ProjectUserContextWhitelist({ projectId }: { projectId: string }
       ) : (
         <div className="space-y-3">
           <WhitelistGroup
-            title="启用用户级 Skill 白名单"
+            title="用户级 Skill"
             enabled={skillEnabled}
             items={availableSkills}
             selected={skillIds}
@@ -250,7 +260,7 @@ export function ProjectUserContextWhitelist({ projectId }: { projectId: string }
             onSelectedChange={setSkillIds}
           />
           <WhitelistGroup
-            title="启用内置 Skill 白名单"
+            title="内置 Skill"
             enabled={builtinSkillEnabled}
             items={availableBuiltinSkills}
             selected={builtinSkillIds}
@@ -259,7 +269,7 @@ export function ProjectUserContextWhitelist({ projectId }: { projectId: string }
             emptyText="暂无内置 Skill"
           />
           <WhitelistGroup
-            title="启用用户级 Memory 白名单"
+            title="用户级 Memory"
             enabled={memoryEnabled}
             items={availableMemories}
             selected={memoryIds}
@@ -284,7 +294,7 @@ export function ProjectUserContextWhitelist({ projectId }: { projectId: string }
               style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>恢复默认</button>
             <button type="button" onClick={save} disabled={saving || !dirty}
               className="h-7 px-2.5 rounded-md text-[11px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
-              {saving ? '保存中...' : '保存白名单'}
+              {saving ? '保存中...' : '保存过滤设置'}
             </button>
           </div>
         </div>

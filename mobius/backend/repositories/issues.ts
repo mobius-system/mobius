@@ -7,6 +7,7 @@ type IssueVisibility = 'inherit' | 'private' | 'team' | 'public' | 'allowlist';
 interface IssueListRow extends IssueRow {
   created_by_name?: string;
   session_count?: number;
+  running_session_count?: number;
 }
 
 interface IssueInsertArgs {
@@ -57,36 +58,47 @@ const Issues = {
       let where = 'i.project_id = ?';
       // session_count 按当前用户过滤(与简易模式口径一致, 不再含协作者).
       // ? 绑定顺序按 SQL 文本出现先后: [0]=子查询 user_id, [1]=ius.user_id(starred), [2]=project_id, [3]=status?
-      const params: Array<string> = [userId, userId, projectId];
       if (statusFilter === 'active' || statusFilter === 'completed') {
         where += ' AND i.status = ?';
-        params.push(statusFilter);
       }
       return db.prepare(`
         SELECT i.*, u.display_name as created_by_name,
           CASE WHEN ius.user_id IS NULL THEN 0 ELSE 1 END AS starred,
-          (SELECT COUNT(*) FROM sessions_v2 WHERE issue_id = i.id AND scope_type = 'issue' AND status = 'active' AND user_id = ?) as session_count
+          (SELECT COUNT(*) FROM sessions_v2 WHERE issue_id = i.id AND scope_type = 'issue' AND status != 'archived' AND deleted_at IS NULL AND user_id = ?) as session_count,
+          (SELECT COUNT(*) FROM sessions_v2 WHERE issue_id = i.id AND scope_type = 'issue' AND status = 'active' AND agent_status = 'running' AND deleted_at IS NULL AND user_id = ?) as running_session_count
         FROM issues i
         LEFT JOIN users u ON i.created_by = u.id
         LEFT JOIN issue_user_stars ius ON ius.issue_id = i.id AND ius.user_id = ?
         WHERE ${where}
         ORDER BY i.last_active DESC
-      `).all(...params) as IssueListRow[];
+      `).all(userId, userId, userId, projectId, ...(statusFilter === 'active' || statusFilter === 'completed' ? [statusFilter] : [])) as IssueListRow[];
     }
     let where = 'i.project_id = ?';
-    const params: Array<string> = [projectId];
     if (statusFilter === 'active' || statusFilter === 'completed') {
       where += ' AND i.status = ?';
-      params.push(statusFilter);
     }
     return db.prepare(`
       SELECT i.*, u.display_name as created_by_name, 0 AS starred,
-        (SELECT COUNT(*) FROM sessions_v2 WHERE issue_id = i.id AND scope_type = 'issue' AND status = 'active') as session_count
+        (SELECT COUNT(*) FROM sessions_v2 WHERE issue_id = i.id AND scope_type = 'issue' AND status != 'archived' AND deleted_at IS NULL) as session_count,
+        (SELECT COUNT(*) FROM sessions_v2 WHERE issue_id = i.id AND scope_type = 'issue' AND status = 'active' AND agent_status = 'running' AND deleted_at IS NULL) as running_session_count
       FROM issues i
       LEFT JOIN users u ON i.created_by = u.id
       WHERE ${where}
       ORDER BY i.last_active DESC
-    `).all(...params) as IssueListRow[];
+    `).all(projectId, ...(statusFilter === 'active' || statusFilter === 'completed' ? [statusFilter] : [])) as IssueListRow[];
+  },
+
+  searchMetadata: (rawQuery: string, limit: number = 1001): IssueRow[] => {
+    const query = String(rawQuery || '').trim().toLowerCase();
+    if (!query) return [];
+    return db.prepare(`
+      SELECT i.*
+      FROM issues i
+      WHERE instr(lower(COALESCE(i.title, '')), ?) > 0
+         OR instr(lower(COALESCE(i.description, '')), ?) > 0
+      ORDER BY i.last_active DESC
+      LIMIT ?
+    `).all(query, query, Math.max(1, Math.min(Number(limit) || 1001, 5001))) as IssueRow[];
   },
 
   insert: ({ id, project_id, title, description, created_by, use_worktree, worktree_branch, visibility, is_planning }: IssueInsertArgs) => db.prepare(

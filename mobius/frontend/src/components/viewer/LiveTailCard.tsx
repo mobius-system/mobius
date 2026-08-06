@@ -53,9 +53,11 @@ export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo }: { lastTi
         <span className={`relative inline-flex rounded-full w-2 h-2 ${theme.dot}`} />
       </span>
       <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>LIVE</span>
+      {/* 用户要求移除 pid 显示，不再需要
       {pid != null && (
         <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">pid {pid}</span>
       )}
+      */}
       <span className="flex-1 text-[11px] truncate" style={{ color: 'var(--text-muted)' }} title={liveActive ? liveTextRef.current : undefined}>
         {liveActive
           ? liveTextRef.current
