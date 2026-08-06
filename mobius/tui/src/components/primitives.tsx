@@ -3,11 +3,94 @@
  * Select (single-choice list + multi-choice with checkboxes), and a Spinner.
  */
 import React, { useEffect, useRef, useState } from 'react'
-import { Box, Text, useInput, useStdout } from 'ink'
+import { Box, Text, useInput, useStdout, useStdin } from 'ink'
 
 /** Windows Terminal/ConPTY may expose Esc as a named key, a raw byte, or Ctrl+[. */
 export function isEscapeKeypress(input: string, key: { escape?: boolean; ctrl?: boolean }): boolean {
   return key.escape === true || input === '\x1b' || (key.ctrl === true && input === '[')
+}
+
+// ─── Mouse wheel ─────────────────────────────────────────────────────────────
+// Terminals report wheel events only after DECSET 1000 (button-event) + 1006
+// (SGR coordinates) are enabled. A wheel tick arrives as a mouse sequence:
+//   wheel up   → ESC [ < 64 ; x ; y M   (SGR, the modern encoding)
+//   wheel down → ESC [ < 65 ; x ; y M
+// Legacy X10 (no SGR support) reports ESC [ M Cb Cx Cy with Cb = button + 32,
+// so wheel up is 0x60 (`) and wheel down is 0x61 (a). There is no release event
+// for the wheel in either form. Button 64/65 map to a delta of +1/-1 so the
+// transcript pager can scroll back/forward by a fixed step.
+const SGR_MOUSE_RE = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g
+const LEGACY_MOUSE_RE = /\x1b\[M([\s\S]{3})/g
+
+/**
+ * True when `input` (a chunk Ink forwarded to useInput handlers) begins with a
+ * mouse event. Ink strips a leading ESC before passing `input`, so both the raw
+ * and stripped forms are accepted. Guards must be added to any handler that
+ * would otherwise treat a mouse event as typed text.
+ */
+export function isMouseInput(input: string): boolean {
+  return /^\x1b?\[<\d+;\d+;\d+[Mm]/.test(input) || /^\x1b?\[M/.test(input)
+}
+
+/** Extract the wheel delta from a chunk: +1 wheel-up, -1 wheel-down, else 0. */
+export function mouseWheelDelta(input: string): number {
+  SGR_MOUSE_RE.lastIndex = 0
+  let delta = 0
+  let m: RegExpExecArray | null
+  while ((m = SGR_MOUSE_RE.exec(input)) !== null) {
+    const btn = Number(m[1])
+    if (btn === 64) delta++
+    else if (btn === 65) delta--
+  }
+  LEGACY_MOUSE_RE.lastIndex = 0
+  let lm: RegExpExecArray | null
+  while ((lm = LEGACY_MOUSE_RE.exec(input)) !== null) {
+    const btn = lm[1].charCodeAt(0) - 32 // X10 adds a 32 offset to the button
+    if (btn === 64) delta++
+    else if (btn === 65) delta--
+  }
+  return delta
+}
+
+/**
+ * Enables terminal mouse tracking for the lifetime of the calling component and
+ * forwards wheel deltas to `onWheel`. Mouse events reach the rest of Ink as raw
+ * input chunks, so any text-inserting useInput handler must guard with
+ * `isMouseInput(input)`.
+ *
+ * The DECSET enable/disable sequences are only written when stdout is a TTY
+ * (writing them into a pipe would litter the output). The emitter listener is
+ * attached unconditionally so the harness can simulate wheel events.
+ */
+export function useMouseWheel(onWheel: (delta: number) => void): void {
+  const { internal_eventEmitter } = useStdin()
+  const { stdout } = useStdout()
+  const cbRef = useRef(onWheel)
+  cbRef.current = onWheel
+
+  useEffect(() => {
+    if (!internal_eventEmitter) return
+    const isTTY = Boolean(stdout.isTTY)
+    if (isTTY) stdout.write('\x1b[?1000h\x1b[?1006h')
+    let buf = ''
+    const handler = (chunk: unknown) => {
+      // A single read() chunk may carry several wheel ticks (fast scrolling) and
+      // an SGR sequence may be split across chunks, so accumulate and re-scan.
+      buf += String(chunk)
+      const delta = mouseWheelDelta(buf)
+      // Drop the fully-matched sequences, keeping any trailing partial escape
+      // prefix so a split sequence still matches on the next chunk.
+      buf = buf.replace(SGR_MOUSE_RE, '').replace(LEGACY_MOUSE_RE, '')
+      const esc = buf.lastIndexOf('\x1b')
+      buf = esc >= 0 ? buf.slice(esc) : ''
+      if (delta !== 0) cbRef.current(delta)
+    }
+    internal_eventEmitter.on('input', handler)
+    return () => {
+      internal_eventEmitter.off('input', handler)
+      if (isTTY) stdout.write('\x1b[?1000l\x1b[?1006l')
+    }
+  }, [internal_eventEmitter, stdout])
 }
 
 // ─── TextInput ───────────────────────────────────────────────────────────────
@@ -48,6 +131,7 @@ export function TextInput(props: TextInputProps) {
   }
 
   useInput((input, key) => {
+    if (isMouseInput(input)) return
     if (key.return) { props.onSubmit?.(); return }
     if (key.upArrow) { props.onArrowUp?.(); return }
     if (key.downArrow) { props.onArrowDown?.(); return }
@@ -172,6 +256,7 @@ export function Select(props: SelectProps) {
 
   useInput((input, key) => {
     if (!items.length) return
+    if (isMouseInput(input)) return
     if (key.upArrow) { setActive(a => (a - 1 + items.length) % items.length); return }
     if (key.downArrow) { setActive(a => (a + 1) % items.length); return }
     if (mode === 'single') {

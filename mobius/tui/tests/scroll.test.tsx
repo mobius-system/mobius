@@ -148,6 +148,14 @@ async function main() {
     ok(tallAnswers > narrowAnswers, 'larger resize reveals more history in the same viewport')
     ok((tallFrame.match(/>_ Mobius/g) ?? []).length === 1, 'larger resize still has one dynamic header')
 
+    // The "↑ 还有 N 条较早记录" hint must be pinned to the FIRST line below the
+    // header and span the full width — it must not float mid-transcript when the
+    // viewport has spare rows (regression for real terminals, which bound the
+    // transcript box height via stdout.isTTY).
+    const tallLines = tallFrame.split('\n')
+    const hintIdx = tallLines.findIndex(l => l.includes('较早记录'))
+    ok(hintIdx === 1, `older-records hint is the first line under the header (line ${hintIdx}, expected 1)`)
+
     // ── PageUp: viewport scrolls back over history ────────────────────────────
     stdin.write('\x1b[5~')                                   // PageUp
     await delay(300)
@@ -161,6 +169,32 @@ async function main() {
     await delay(300)
     const downFrame = strip(lastFrame() ?? '')
     ok(downFrame.includes('回答 24'), 'after PageDown: latest entry back in view')
+
+    // ── Mouse wheel: SGR wheel events drive the same pager ────────────────────
+    stdin.write('\x1b[<64;5;5M')                             // wheel up = scroll back
+    await delay(300)
+    const wheelUp = strip(lastFrame() ?? '')
+    ok(wheelUp.includes('PageDown'), 'wheel up: a PageDown hint appears (scrolled back)')
+    ok(!wheelUp.includes('回答 24'), 'wheel up: latest entry paged out of view')
+    ok(/回答 \d+/.test(wheelUp), 'wheel up: an older entry is visible')
+
+    stdin.write('\x1b[<65;5;5M')                             // wheel down = scroll forward
+    await delay(300)
+    const wheelDown = strip(lastFrame() ?? '')
+    ok(wheelDown.includes('回答 24'), 'wheel down: latest entry back in view')
+
+    // ── Mouse wheel (legacy X10 encoding, terminals without SGR 1006) ────────
+    // wheel up: ESC [ M Cb Cx Cy, Cb = button + 32 → 0x60 (96); coords at 18,18
+    stdin.write('\x1b[M' + String.fromCharCode(96, 50, 50))
+    await delay(300)
+    const legacyUp = strip(lastFrame() ?? '')
+    ok(legacyUp.includes('PageDown'), 'legacy wheel up: a PageDown hint appears (scrolled back)')
+    ok(!legacyUp.includes('回答 24'), 'legacy wheel up: latest entry paged out of view')
+
+    stdin.write('\x1b[M' + String.fromCharCode(97, 50, 50))  // wheel down Cb = 0x61
+    await delay(300)
+    const legacyDown = strip(lastFrame() ?? '')
+    ok(legacyDown.includes('回答 24'), 'legacy wheel down: latest entry back in view')
   } finally {
     unmount()
     globalThis.fetch = realFetch

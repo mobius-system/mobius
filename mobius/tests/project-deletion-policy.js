@@ -37,10 +37,11 @@ insertUser('admin', 'admin')
 insertUser('manager')
 insertUser('empty', 'user', 'empty-password')
 
-const ordinary = Projects.insert({ id: 'ordinary', name: '普通项目', createdBy: 'creator', bindPath: path.join(tempRoot, 'ordinary') })
+Projects.insert({ id: 'ordinary', name: '普通项目', createdBy: 'creator', bindPath: path.join(tempRoot, 'ordinary') })
+const ordinary = Projects.findById('ordinary')
 const fixed = { id: FIXED_LOGO_REVIEW_PROJECT_ID, name: '固定案例', created_by: 'creator', kind: 'normal', bind_path: path.join(tempRoot, 'fixed') }
 const extension = { id: 'extension', name: '拓展', created_by: 'creator', kind: 'extension', bind_path: path.join(tempRoot, 'extension') }
-const selfDevelop = { id: 'self-develop', name: '自迭代', created_by: 'creator', kind: 'normal', bind_path: process.cwd() }
+const selfDevelop = { id: 'self-develop', name: '自迭代', created_by: 'creator', kind: 'normal', bind_path: path.resolve(__dirname, '..', '..') }
 
 assert.strictEqual(projectDeletePolicy(ordinary, { id: 'creator', role: 'user' }).mode, 'creator')
 assert.strictEqual(projectDeletePolicy(ordinary, { id: 'admin', role: 'admin' }).mode, 'system_admin_override')
