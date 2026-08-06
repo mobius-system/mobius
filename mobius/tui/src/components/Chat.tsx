@@ -1195,16 +1195,7 @@ function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, 
       const olderLines = renderedRows[first - 1].filter(line => line.trim())
       if (olderLines.length > 0) peekLines = olderLines.slice(-peekBudget)
     }
-    if (partialBudget > 0) {
-      const lines = renderedRows[first]
-      const headIndex = lines.findIndex(line => line.trim())
-      if (headIndex >= 0 && partialBudget >= 2 && lines.length - headIndex > partialBudget) {
-        const tailBudget = partialBudget - 2
-        partialLines = [lines[headIndex], '  … （中间输出已折叠）', ...(tailBudget > 0 ? lines.slice(-tailBudget) : [])]
-      } else {
-        partialLines = lines.slice(-partialBudget)
-      }
-    }
+    if (partialBudget > 0) partialLines = renderedRows[first].slice(-partialBudget)
     first += 1
   } else if (first > 0 && base.rows <= rowBudget) {
     // If older history exists, use spare rows for the tail of the next older
