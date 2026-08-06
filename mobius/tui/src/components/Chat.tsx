@@ -17,7 +17,7 @@ import type { ReadyState } from './PrepScreen.js'
 import type { AnyEntry } from '../types.js'
 import type { AimuxStatus } from '../aimux.js'
 import { AimuxStatusLine, aimuxStatusText } from './AimuxStatus.js'
-import { isEscapeKeypress } from './primitives.js'
+import { isEscapeKeypress, isMouseInput, useMouseWheel } from './primitives.js'
 
 interface ChatProps {
   client: MobiusClient
@@ -134,6 +134,22 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     else if (key.pageDown) setScrollBack(value => Math.max(0, value - step))
   })
 
+  // Mouse wheel: up scrolls back through history, down returns toward the
+  // latest, mirroring PageUp/PageDown but in small fixed steps. Handled on the
+  // Ink event emitter (not useInput) so the sequence can be buffered across
+  // read() chunks; the Composer guards against inserting mouse bytes as text.
+  useMouseWheel((delta) => {
+    if (delta === 0) return
+    const step = 3
+    setScrollBack(value => Math.min(dedupedEntries.length, Math.max(0, value + delta * step)))
+  })
+
+  const olderHint = !showWelcome && (fitted.hiddenOlder > 0 || scrollBack > 0)
+    ? fitted.hiddenOlder > 0
+      ? `↑ 还有 ${fitted.hiddenOlder} 条较早记录 · 滚轮/PageUp 向上翻页`
+      : '已到最早记录 · 滚轮/PageDown 向下翻页'
+    : null
+
   return (
     <Box
       flexDirection="column"
@@ -147,16 +163,20 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           ? <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} modelDisplay={modelDisplay} />
           : <CompactHeader ready={ready} sessionId={chat.sessionId} columns={terminal.columns} />}
 
+        {/* Older-records hint is pinned OUTSIDE the flex-end scroll box so it is
+            always the first line of the transcript, spanning the full width,
+            instead of floating mid-screen when the transcript has spare rows. */}
+        {olderHint !== null
+          ? <Box width="100%" flexShrink={0}><Text dimColor>  {olderHint}</Text></Box>
+          : null}
+
         <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent={showWelcome ? 'flex-start' : 'flex-end'} overflowY="hidden">
-          {fitted.hiddenOlder > 0 || scrollBack > 0
-            ? <Text dimColor>  ↑ {fitted.hiddenOlder > 0 ? `还有 ${fitted.hiddenOlder} 条较早记录 · PageUp 向上翻页` : '已到最早记录 · PageDown 向下翻页'}</Text>
-            : null}
           {fitted.entries.map((entry, index) => (
             <EntryAccum key={entry.__id ?? `entry-${fitted.startIndex + index}`} entry={entry} columns={terminal.columns} />
           ))}
           {chat.pendingUser !== null ? <UserLine text={chat.pendingUser} /> : null}
           {fitted.hiddenRecent > 0
-            ? <Text dimColor>  ↓ PageDown 向下翻页 · 较新 {fitted.hiddenRecent} 条</Text>
+            ? <Box width="100%" flexShrink={0}><Text dimColor>  ↓ 滚轮/PageDown 向下翻页 · 较新 {fitted.hiddenRecent} 条</Text></Box>
             : null}
         </Box>
 
@@ -599,6 +619,7 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
   useEffect(() => () => resetPasteBurst(), [])
 
   useInput((input, key) => {
+    if (isMouseInput(input)) return // mouse events must never become typed text
     const now = Date.now()
     const escape = isEscapeKeypress(input, key)
     if (typing && escape) { void onStop(); return }
