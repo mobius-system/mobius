@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
-import { Cable, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorUp, Play, RefreshCw, Upload } from 'lucide-react'
+import { Cable, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorPlay, Play, RefreshCw, Upload } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 
@@ -412,7 +412,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
       tooltip={title}
       accent="emerald"
       className={className}
-      icon={loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MonitorUp className="h-4 w-4" />}
+      icon={loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MonitorPlay className="h-4 w-4" />}
     />
   )
 
@@ -478,7 +478,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
       >
         {projectId && loading
           ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-          : <MonitorUp className="w-3.5 h-3.5 shrink-0" />}
+          : <MonitorPlay className="w-3.5 h-3.5 shrink-0" />}
         <span className="btn-label">{buttonLabel}</span>
       </button>
     )
@@ -502,7 +502,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
           title="进入项目端口"
           className={buttonClassName}
         >
-          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> : <MonitorUp className="w-3.5 h-3.5 shrink-0" />}
+          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> : <MonitorPlay className="w-3.5 h-3.5 shrink-0" />}
           <span className="btn-label">{buttonLabel}</span>
         </button>
       )}
@@ -521,7 +521,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
             style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
           >
             <div className="px-5 py-3 border-b flex items-center gap-3" style={{ borderColor: 'var(--border-color)' }}>
-              <MonitorUp className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              <MonitorPlay className="w-4 h-4 text-emerald-400 flex-shrink-0" />
               <div className="min-w-0">
                 <div id="project-port-title" className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
                   进入项目端口
