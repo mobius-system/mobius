@@ -44,6 +44,10 @@ export function IssueCard({
   const displayedSessions = sortProjectSessions(showingSessionMatches ? searchMatches : sessions)
   const previewSessions = projectSessionPreview(displayedSessions, compact, showingSessionMatches)
   const hiddenSessionCount = Math.max(0, (showingSessionMatches ? searchMatches.length : sessionTotal) - previewSessions.length)
+  const description = typeof issue.description === 'string' ? issue.description.trim() : ''
+  const normalizedTitle = String(issue.title || '').trim().replace(/\s+/g, ' ')
+  const normalizedDescription = description.replace(/\s+/g, ' ')
+  const hasDistinctDescription = !!description && normalizedDescription !== normalizedTitle
   const isLogoReviewIssue = projectId === LOGO_REVIEW_PROJECT_ID
     && String(issue.title || '').includes(LOGO_REVIEW_ISSUE_TITLE)
   // v3 写权限: can_manage=false (非 owner, 不是允许名单, 项目不可写) 时隐藏所有管理按钮.
@@ -91,9 +95,9 @@ export function IssueCard({
         </div>
       </div>
 
-      {issue.description && (
+      {hasDistinctDescription && (
         <div className={`${compact ? 'px-3 py-2 line-clamp-1' : 'px-4 py-2.5 line-clamp-3'} text-[12px] leading-relaxed`} style={{ color: 'var(--text-secondary)' }}>
-          {issue.description}
+          {description}
         </div>
       )}
 

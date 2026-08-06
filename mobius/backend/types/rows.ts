@@ -292,6 +292,28 @@ export interface AdminAuditLogRawRow {
 
 export type AdminAuditLogRow = AdminAuditLogRawRow;
 
+// ===== project_deletion_audit_log =====
+export interface ProjectDeletionAuditLogRow {
+  id: number;
+  actor_id: string;
+  actor_system_role: string;
+  project_id: string;
+  project_name_snapshot: string;
+  project_creator_snapshot: string;
+  deletion_mode: 'creator' | 'system_admin_override' | null;
+  reason: string;
+  auth_method: 'password';
+  outcome: 'pending' | 'succeeded' | 'denied' | 'failed';
+  failure_code: string;
+  issue_count: number;
+  research_count: number;
+  session_count: number;
+  running_session_count: number;
+  request_ip: string;
+  occurred_at: string;
+  updated_at: string;
+}
+
 // ===== audit (integration_audit_logs) =====
 export interface AuditLogRawRow {
   id: number;

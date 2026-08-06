@@ -134,7 +134,8 @@ export default function ProjectPage() {
   const [cardDensity, setCardDensity] = useState<ProjectCardDensity>(densityInit)
   useEffect(() => { try { localStorage.setItem(PROJECT_CARD_DENSITY_KEY, cardDensity) } catch {} }, [cardDensity])
   const pageSize = cardDensity === 'compact' ? COMPACT_PAGE_SIZE : DETAILED_PAGE_SIZE
-  const [issuePage, setIssuePage] = useState(1)
+  const [sidebarIssuePage, setSidebarIssuePage] = useState(1)
+  const [mainIssuePage, setMainIssuePage] = useState(1)
   const [researchPage, setResearchPage] = useState(1)
   // 按项目的 issue / research 列表加载态: 切换到未缓存项目时, 列表先显示 loading,
   // 不再回落渲染上个项目的 issue (旧 issuesMap[projectId] || issues 是闪现旧数据的元凶).
@@ -313,11 +314,16 @@ export default function ProjectPage() {
   }, [projectResearches, filter, search, activeSessionSearch.researches])
 
   const issueTotalPages = Math.max(1, Math.ceil(filteredIssues.length / pageSize))
-  const currentIssuePage = Math.min(issuePage, issueTotalPages)
-  const pagedIssues = useMemo(() => {
-    const start = (currentIssuePage - 1) * pageSize
+  const currentSidebarIssuePage = Math.min(sidebarIssuePage, issueTotalPages)
+  const sidebarPagedIssues = useMemo(() => {
+    const start = (currentSidebarIssuePage - 1) * pageSize
     return filteredIssues.slice(start, start + pageSize)
-  }, [filteredIssues, currentIssuePage, pageSize])
+  }, [filteredIssues, currentSidebarIssuePage, pageSize])
+  const currentMainIssuePage = Math.min(mainIssuePage, issueTotalPages)
+  const mainPagedIssues = useMemo(() => {
+    const start = (currentMainIssuePage - 1) * pageSize
+    return filteredIssues.slice(start, start + pageSize)
+  }, [filteredIssues, currentMainIssuePage, pageSize])
   const researchTotalPages = Math.max(1, Math.ceil(filteredResearches.length / pageSize))
   const currentResearchPage = Math.min(researchPage, researchTotalPages)
   const pagedResearches = useMemo(() => {
@@ -325,8 +331,8 @@ export default function ProjectPage() {
     return filteredResearches.slice(start, start + pageSize)
   }, [filteredResearches, currentResearchPage, pageSize])
   const pagedIssueIdsKey = useMemo(() => (
-    pagedIssues.map((issue: any) => String(issue?.id || '').trim()).filter(Boolean).join(',')
-  ), [pagedIssues])
+    mainPagedIssues.map((issue: any) => String(issue?.id || '').trim()).filter(Boolean).join(',')
+  ), [mainPagedIssues])
   const visibleResearchIdsKey = useMemo(() => (
     section === 'researches'
       ? pagedResearches.map((research: any) => String(research?.id || '').trim()).filter(Boolean).join(',')
@@ -334,13 +340,18 @@ export default function ProjectPage() {
   ), [section, pagedResearches])
 
   useEffect(() => {
-    setIssuePage(1)
+    setSidebarIssuePage(1)
+    setMainIssuePage(1)
     setResearchPage(1)
   }, [projectId, filter, search, cardDensity])
 
   useEffect(() => {
-    if (issuePage > issueTotalPages) setIssuePage(issueTotalPages)
-  }, [issuePage, issueTotalPages])
+    if (sidebarIssuePage > issueTotalPages) setSidebarIssuePage(issueTotalPages)
+  }, [sidebarIssuePage, issueTotalPages])
+
+  useEffect(() => {
+    if (mainIssuePage > issueTotalPages) setMainIssuePage(issueTotalPages)
+  }, [mainIssuePage, issueTotalPages])
 
   useEffect(() => {
     if (researchPage > researchTotalPages) setResearchPage(researchTotalPages)
@@ -657,7 +668,7 @@ export default function ProjectPage() {
           <ProjectSidebar
             userParam={userParam}
             projectId={projectId}
-            issues={pagedIssues}
+            issues={sidebarPagedIssues}
             search={search}
             filter={filter}
             issuesLoading={issuesLoading}
@@ -666,11 +677,11 @@ export default function ProjectPage() {
             sessionSearchError={sessionSearchError}
             sessionSearchTruncated={activeSessionSearch.truncated}
             pagination={{
-              page: currentIssuePage,
+              page: currentSidebarIssuePage,
               pageSize,
               totalItems: filteredIssues.length,
               totalPages: issueTotalPages,
-              onPageChange: setIssuePage,
+              onPageChange: setSidebarIssuePage,
             }}
             onSearchChange={setSearch}
             onFilterChange={setFilter}
@@ -744,7 +755,7 @@ export default function ProjectPage() {
                   section={section}
                   filter={filter}
                   search={search}
-                  issues={pagedIssues}
+                  issues={mainPagedIssues}
                   researches={pagedResearches}
                   sessionsMap={sessionsMap}
                   sessionMatchesByIssue={activeSessionSearch.issues}
@@ -753,11 +764,11 @@ export default function ProjectPage() {
                   issuesLoading={issuesLoading}
                   researchesLoading={researchesLoading}
                   issuePagination={{
-                    page: currentIssuePage,
+                    page: currentMainIssuePage,
                     pageSize,
                     totalItems: filteredIssues.length,
                     totalPages: issueTotalPages,
-                    onPageChange: setIssuePage,
+                    onPageChange: setMainIssuePage,
                   }}
                   researchPagination={{
                     page: currentResearchPage,
@@ -768,7 +779,7 @@ export default function ProjectPage() {
                   }}
                   density={cardDensity}
                   desktopWorkspace={!isMobile}
-                  scrollResetKey={`${projectId}:${section}:${filter}:${search}:${cardDensity}:${currentIssuePage}:${currentResearchPage}`}
+                  scrollResetKey={`${projectId}:${section}:${filter}:${search}:${cardDensity}:${currentMainIssuePage}:${currentResearchPage}`}
                   onSectionChange={setSection}
                   onDensityChange={setCardDensity}
                   canCreateIssue={canCreateIssue}
