@@ -72,6 +72,7 @@ type ProjectMetaSetters = {
 
 type ProjectSettingsPanelProps = {
   project: any
+  desktopWorkspace?: boolean
   values: ProjectMetaValues
   setters: ProjectMetaSetters
   metaErr: string
@@ -501,6 +502,7 @@ function LocalPcPathRow({ projectId }: { projectId: string }) {
 
 export function ProjectSettingsPanel({
   project,
+  desktopWorkspace = false,
   values,
   setters,
   metaErr,
@@ -863,7 +865,10 @@ export function ProjectSettingsPanel({
   }
 
   return (
-    <section data-tour="project-settings-panel" className="w-full lg:w-1/2 overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+    <section
+      data-tour="project-settings-panel"
+      className={`w-full min-w-0 ${desktopWorkspace ? 'h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-6' : 'overflow-hidden'}`}
+      style={{ borderColor: 'var(--border-color)' }}>
       <div className="flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
         <ProjectOverflowTabs
           tabs={settingsTabs}
