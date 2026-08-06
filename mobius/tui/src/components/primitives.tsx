@@ -10,17 +10,24 @@ export function isEscapeKeypress(input: string, key: { escape?: boolean; ctrl?: 
   return key.escape === true || input === '\x1b' || (key.ctrl === true && input === '[')
 }
 
-// ─── Mouse wheel ─────────────────────────────────────────────────────────────
-// Terminals report wheel events only after DECSET 1000 (button-event) + 1006
-// (SGR coordinates) are enabled. A wheel tick arrives as a mouse sequence:
-//   wheel up   → ESC [ < 64 ; x ; y M   (SGR, the modern encoding)
-//   wheel down → ESC [ < 65 ; x ; y M
-// Legacy X10 (no SGR support) reports ESC [ M Cb Cx Cy with Cb = button + 32,
-// so wheel up is 0x60 (`) and wheel down is 0x61 (a). There is no release event
-// for the wheel in either form. Button 64/65 map to a delta of +1/-1 so the
-// transcript pager can scroll back/forward by a fixed step.
+// ─── Mouse events ────────────────────────────────────────────────────────────
+// Terminals report mouse events only after DECSET 1000 (button-event) + 1002
+// (cell motion while a button is held) + 1006 (SGR coordinates) are enabled.
+// An event arrives as a sequence:
+//   press   → ESC [ < b ; x ; y M     b = 0/1/2 (left/middle/right)
+//   release → ESC [ < b ; x ; y m     b = 0/1/2
+//   motion  → ESC [ < b ; x ; y M     b = 32/33/34 (drag with button 0/1/2)
+//   wheel   → ESC [ < 64 ; x ; y M    (up) / < 65 (down), no release event
+// Legacy X10 (no SGR support) reports ESC [ M Cb Cx Cy with Cb = button + 32
+// (0x20 left, 0x23 release, 0x40 left-drag, 0x60 wheel-up, 0x61 wheel-down).
+// Coordinates are 1-based in SGR and offset by 32 in X10; both are normalized
+// to 0-based row/col here.
 const SGR_MOUSE_RE = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g
 const LEGACY_MOUSE_RE = /\x1b\[M([\s\S]{3})/g
+
+export type MouseEventInfo =
+  | { kind: 'wheel'; delta: number }
+  | { kind: 'press' | 'release' | 'motion'; button: number; row: number; col: number }
 
 /**
  * True when `input` (a chunk Ink forwarded to useInput handlers) begins with a
@@ -34,68 +41,94 @@ export function isMouseInput(input: string): boolean {
 
 /** Extract the wheel delta from a chunk: +1 wheel-up, -1 wheel-down, else 0. */
 export function mouseWheelDelta(input: string): number {
-  SGR_MOUSE_RE.lastIndex = 0
   let delta = 0
+  for (const e of parseMouseEvents(input)) if (e.kind === 'wheel') delta += e.delta
+  return delta
+}
+
+/** Parse every mouse event in a chunk (may contain several; fast scroll batches). */
+export function parseMouseEvents(input: string): MouseEventInfo[] {
+  const out: MouseEventInfo[] = []
+  SGR_MOUSE_RE.lastIndex = 0
   let m: RegExpExecArray | null
   while ((m = SGR_MOUSE_RE.exec(input)) !== null) {
     const btn = Number(m[1])
-    if (btn === 64) delta++
-    else if (btn === 65) delta--
+    const row = Number(m[3]) - 1
+    const col = Number(m[2]) - 1
+    const down = m[4] === 'M'
+    if (btn === 64) out.push({ kind: 'wheel', delta: 1 })
+    else if (btn === 65) out.push({ kind: 'wheel', delta: -1 })
+    else if (btn >= 32 && btn <= 34) out.push({ kind: 'motion', button: btn - 32, row, col })
+    else if (btn <= 2) out.push({ kind: down ? 'press' : 'release', button: btn, row, col })
   }
   LEGACY_MOUSE_RE.lastIndex = 0
   let lm: RegExpExecArray | null
   while ((lm = LEGACY_MOUSE_RE.exec(input)) !== null) {
-    const btn = lm[1].charCodeAt(0) - 32 // X10 adds a 32 offset to the button
-    if (btn === 64) delta++
-    else if (btn === 65) delta--
+    const bytes = lm[1]
+    const btn = bytes.charCodeAt(0) - 32
+    const row = bytes.charCodeAt(2) - 32 - 1
+    const col = bytes.charCodeAt(1) - 32 - 1
+    if (btn === 64) out.push({ kind: 'wheel', delta: 1 })
+    else if (btn === 65) out.push({ kind: 'wheel', delta: -1 })
+    else if (btn >= 32 && btn <= 34) out.push({ kind: 'motion', button: btn - 32, row, col })
+    else if (btn === 3) out.push({ kind: 'release', button: 0, row, col })
+    else if (btn <= 2) out.push({ kind: 'press', button: btn, row, col })
   }
-  return delta
+  return out
 }
 
 /**
  * Enables terminal mouse tracking for the lifetime of the calling component and
- * forwards wheel deltas to `onWheel`. Mouse events reach the rest of Ink as raw
- * input chunks, so any text-inserting useInput handler must guard with
- * `isMouseInput(input)`.
+ * forwards mouse events (wheel + left-button press/motion/release) to the given
+ * handlers. Mouse events reach the rest of Ink as raw input chunks, so any
+ * text-inserting useInput handler must guard with `isMouseInput(input)`.
  *
  * The DECSET enable/disable sequences are only written when stdout is a TTY
  * (writing them into a pipe would litter the output). The emitter listener is
- * attached unconditionally so the harness can simulate wheel events.
+ * attached unconditionally so the harness can simulate mouse events.
  *
  * Trade-off: terminal mouse reporting (DECSET 1000) hands the mouse to the app,
- * so native drag-to-select is disabled while it is on. The universal escape is
- * Shift+drag (the terminal selects and does not forward the event). Users who
- * prefer native selection at all times can opt out with
- * `MOBIUS_TUI_DISABLE_MOUSE=1` (wheel then stops working).
+ * so native drag-to-select is disabled while it is on. The app therefore draws
+ * its own selection (tmux-style) and copies via OSC 52. Users who prefer native
+ * selection can opt out with `MOBIUS_TUI_DISABLE_MOUSE=1`.
  */
-export function useMouseWheel(onWheel: (delta: number) => void): void {
+export function useMouseEvents(handlers: {
+  onWheel?: (delta: number) => void
+  onPress?: (row: number, col: number) => void
+  onMotion?: (row: number, col: number) => void
+  onRelease?: (row: number, col: number) => void
+}): void {
   const { internal_eventEmitter } = useStdin()
   const { stdout } = useStdout()
-  const cbRef = useRef(onWheel)
-  cbRef.current = onWheel
+  const refs = useRef(handlers)
+  refs.current = handlers
 
   useEffect(() => {
     if (!internal_eventEmitter) return
     if (process.env.MOBIUS_TUI_DISABLE_MOUSE === '1') return
     const isTTY = Boolean(stdout.isTTY)
-    if (isTTY) stdout.write('\x1b[?1000h\x1b[?1006h')
+    if (isTTY) stdout.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h')
     let buf = ''
     const handler = (chunk: unknown) => {
-      // A single read() chunk may carry several wheel ticks (fast scrolling) and
-      // an SGR sequence may be split across chunks, so accumulate and re-scan.
+      // A single read() chunk may carry several events and a sequence may be
+      // split across chunks, so accumulate and re-scan.
       buf += String(chunk)
-      const delta = mouseWheelDelta(buf)
+      for (const e of parseMouseEvents(buf)) {
+        if (e.kind === 'wheel') refs.current.onWheel?.(e.delta)
+        else if (e.kind === 'press') refs.current.onPress?.(e.row, e.col)
+        else if (e.kind === 'motion') refs.current.onMotion?.(e.row, e.col)
+        else refs.current.onRelease?.(e.row, e.col)
+      }
       // Drop the fully-matched sequences, keeping any trailing partial escape
       // prefix so a split sequence still matches on the next chunk.
       buf = buf.replace(SGR_MOUSE_RE, '').replace(LEGACY_MOUSE_RE, '')
       const esc = buf.lastIndexOf('\x1b')
       buf = esc >= 0 ? buf.slice(esc) : ''
-      if (delta !== 0) cbRef.current(delta)
     }
     internal_eventEmitter.on('input', handler)
     return () => {
       internal_eventEmitter.off('input', handler)
-      if (isTTY) stdout.write('\x1b[?1000l\x1b[?1006l')
+      if (isTTY) stdout.write('\x1b[?1000l\x1b[?1002l\x1b[?1006l')
     }
   }, [internal_eventEmitter, stdout])
 }

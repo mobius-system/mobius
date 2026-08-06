@@ -3288,11 +3288,12 @@ export function ConfirmModal({ title, message, onConfirm, onClose, confirmText =
 // 项目级条目则 user / project 二选一.
 // =====================================================================
 export function MoveScopeModal({
-  title, currentScopeLabel, lockToProject = false, onClose, onMove,
+  title, currentScopeLabel, lockToProject = false, operationLabel = '移动', onClose, onMove,
 }: {
   title: string
   currentScopeLabel: string
   lockToProject?: boolean
+  operationLabel?: '移动' | '复制'
   onClose: () => void
   onMove: (target: { scope: 'user' | 'project'; projectId?: string }) => Promise<void>
 }) {
@@ -3331,7 +3332,9 @@ export function MoveScopeModal({
       <div className="relative w-[420px] rounded-2xl p-5 shadow-2xl" onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <h3 className="text-[14px] font-semibold mb-1" style={{ color: textPrimary }}>{title}</h3>
-        <p className="text-[11px] mb-4" style={{ color: textMuted }}>当前位置: {currentScopeLabel}</p>
+        <p className="text-[11px] mb-4" style={{ color: textMuted }}>
+          当前位置: {currentScopeLabel}{operationLabel === '复制' ? '。复制后源位置仍会保留' : ''}
+        </p>
 
         {!lockToProject && (
           <div className="mb-3">
@@ -3380,7 +3383,7 @@ export function MoveScopeModal({
             style={{ color: textMuted, borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submit} disabled={saving || loading || (scope === 'project' && !projectId)}
             className="flex-1 h-8 rounded text-[12px] bg-blue-500 text-white hover:bg-blue-600 transition-colors disabled:opacity-40">
-            {saving ? '移动中...' : '移动'}
+            {saving ? `${operationLabel}中...` : operationLabel}
           </button>
         </div>
       </div>

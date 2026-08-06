@@ -161,7 +161,7 @@ async function testChat() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />
+      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} />
     )
     await delay(40)
     const initialFrame = lastFrame() ?? ''
@@ -225,7 +225,7 @@ async function testResumedWorkingStatus() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />
+      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} />
     )
     await delay(120)
     ok((lastFrame() ?? '').includes('Working ('), 'resuming an already-running session restores Working without a new typing event')
@@ -602,7 +602,7 @@ async function testChatSseReconnects() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} />,
     )
     await delay(40)
     // Ink's test stdin treats one chunk as one keypress. Send text and Enter as
@@ -674,7 +674,7 @@ async function testIdleCompletedSessionReopensSseOnSend() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} />,
     )
     await delay(180)
     ok(sseCall === 1, 'completed idle session did not reconnect by itself')
@@ -714,7 +714,7 @@ async function testSendRetries502() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} />,
     )
     await delay(40)
     stdin.write('hi'); await delay(30); stdin.write('\r')
