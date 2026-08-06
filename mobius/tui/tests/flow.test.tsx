@@ -162,21 +162,19 @@ async function main() {
     await delay(400)
     stdin.write('/config'); await delay(300)
     stdin.write('\r')
-    ok(await waitFor(lastFrame, '更换任务与模型'), '/config opens the config flow (alias of /model)')
-    ok(await waitFor(lastFrame, '命令行任务'), 'config flow lists the project issues (before Esc)')
+    ok(await waitFor(lastFrame, '更换模型'), '/config opens the model-switch flow (alias of /model)')
     stdin.write('\x1b'); await delay(300)
     ok(await waitFor(lastFrame, '输入问题'), 'Esc cancels the config flow back to the conversation')
 
-    // ── /model swaps task+model and starts a brand-new session ───────────────
-    // ① pick an Issue in the current project  → ② pick a model  → ③ App remounts
+    // ── /model switches model and starts a brand-new session ─────────────────
+    // No issue step — the current task is kept; pick a model and App remounts
     // Chat on the eagerly created session.
     stdin.write('/model'); await delay(300)
     stdin.write('\r')
-    ok(await waitFor(lastFrame, '更换任务与模型'), '/model opens the config flow')
-    ok(await waitFor(lastFrame, '命令行任务'), 'config flow lists the project issues')
-    stdin.write('\r'); await delay(400)                             // pick the issue
-    ok(await waitFor(lastFrame, '选择模型'), 'config flow proceeds to the model picker')
-    ok((lastFrame() ?? '').includes('已选任务'), 'model step shows the chosen issue')
+    ok(await waitFor(lastFrame, '更换模型'), '/model opens the model picker directly')
+    ok(await waitFor(lastFrame, '选择模型'), 'model picker shown without an issue-selection step')
+    ok((lastFrame() ?? '').includes('当前任务: 命令行任务'), 'current task is kept (issue not changed)')
+    ok(await waitFor(lastFrame, 'GPT-5.5'), 'model list rendered (Select mounted)')
     stdin.write('\r'); await delay(700)                             // pick codex → create session
     ok(await waitFor(lastFrame, '输入问题'), 'config flow creates a fresh session and returns to chat')
     ok((lastFrame() ?? '').includes('?session=sess-1'), 'reconfigured chat is attached to the new session')
