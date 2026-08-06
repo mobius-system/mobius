@@ -108,6 +108,19 @@ export function App() {
 
   function onResume() { if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] resume'); setRoute('resume') }
 
+  // /model (= /config) Esc-cancel: go back to the conversation. Remounting Chat
+  // (rather than re-rendering it in place) is deliberate — toggling the config
+  // flow off and on re-mounted the whole chat subtree, which left Ink's frame
+  // blank in the harness. Remount via chatKey is the same path /clear and /resume
+  // use; the live sessionId (if any) is carried as resumeSessionId so the
+  // conversation is reconnected intact.
+  function onConfigCancel(sessionId: string | null) {
+    if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] config-cancel', sessionId)
+    setResumeSessionId(sessionId)
+    setChatKey(k => k + 1)
+    setRoute('chat')
+  }
+
   // /model (= /config): swap task+model and start a brand-new session. App owns
   // `ready`, so it folds the ConfigFlow result in and remounts Chat on the fresh
   // session (resumeSessionId = the eagerly created session).
@@ -149,6 +162,7 @@ export function App() {
         onResume={onResume}
         onQuit={onQuit}
         onReconfigure={onReconfigure}
+        onConfigCancel={onConfigCancel}
         aimuxStatus={aimuxStatus}
       />
     )

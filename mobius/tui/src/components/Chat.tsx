@@ -36,6 +36,7 @@ interface ChatProps {
   onResume: () => void
   onQuit: () => void
   onReconfigure: (result: ConfigResult) => void
+  onConfigCancel: (sessionId: string | null) => void
   aimuxStatus?: AimuxStatus
 }
 
@@ -53,19 +54,24 @@ const STATUS_ROWS = 3
 const SLASH_COMMANDS = [
   { cmd: '/clear', desc: '清空当前对话，开启新会话' },
   { cmd: '/resume', desc: '恢复一个历史会话' },
-  { cmd: '/model', desc: '更换任务与模型，并开启新会话' },
-  { cmd: '/config', desc: '更换任务与模型（/model 的别名）' },
+  { cmd: '/model', desc: '更换模型并开启新会话（保留当前任务）' },
+  { cmd: '/config', desc: '更换模型（/model 的别名）' },
   { cmd: '/help', desc: '显示帮助' },
   { cmd: '/quit', desc: '退出 TUI' },
 ]
 
-export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, onReconfigure, aimuxStatus }: ChatProps) {
+export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, onReconfigure, onConfigCancel, aimuxStatus }: ChatProps) {
   const chat = useChat({ client, ready, resumeSessionId })
   const [showHelp, setShowHelp] = useState(false)
   const [scrollBack, setScrollBack] = useState(0)
   const [composerRows, setComposerRows] = useState(DEFAULT_COMPOSER_ROWS)
   const [modelLabel, setModelLabel] = useState<string | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
+  // Ink's useInput keeps whatever handler was registered at subscription time;
+  // reading mutable refs (updated every render) keeps the callback from acting
+  // on a stale `configOpen`/sessionId closure after the config flow opens.
+  const handlerRef = useRef<{ configOpen: boolean; sessionId: string | null }>({ configOpen: false, sessionId: null })
+  handlerRef.current = { configOpen, sessionId: chat.sessionId }
   const terminal = useTerminalSize()
 
   const runSlash = useCallback((raw: string) => {
@@ -142,6 +148,15 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   const modelDisplay = modelLabel ?? ready.prefs.model ?? 'default'
 
   useInput((_input, key) => {
+    // While the config flow is open, this ChatScreen-level handler owns Esc so
+    // cancel is reliable even mid-list-loading (a per-component EscToCancel
+    // could be unmounted by the loading→loaded transition and drop the keypress).
+    // configOpen/sessionId are read from handlerRef (see above) because Ink keeps
+    // the originally-registered callback and would otherwise see a stale closure.
+    if (handlerRef.current.configOpen) {
+      if (isEscapeKeypress(_input, key)) onConfigCancel(handlerRef.current.sessionId)
+      return
+    }
     const step = Math.max(1, fitted.entries.length)
     if (key.pageUp) setScrollBack(value => Math.min(dedupedEntries.length, value + step))
     else if (key.pageDown) setScrollBack(value => Math.max(0, value - step))
@@ -225,13 +240,25 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   }, [copyNotice])
 
   if (configOpen) {
+    // Keep the SAME height-pinned root box the chat uses, so the frame stays
+    // exactly terminal-height whether the flow is open or the conversation is
+    // shown. Rendering the flow at its natural (shorter) height and then
+    // re-painting the tall chat on Esc made Ink's frame accounting go blank in
+    // the harness (and looked like a glitch in real terminals too).
     return (
-      <ConfigFlow
-        client={client}
-        project={ready.project}
-        onDone={(result) => onReconfigure(result)}
-        onCancel={() => setConfigOpen(false)}
-      />
+      <Box
+        flexDirection="column"
+        width={terminal.isTty ? terminal.columns : undefined}
+        height={terminal.isTty ? viewportRows : undefined}
+        paddingX={1}
+        overflowY="hidden"
+      >
+        <ConfigFlow
+          client={client}
+          issue={ready.issue}
+          onDone={(result) => onReconfigure(result)}
+        />
+      </Box>
     )
   }
 
