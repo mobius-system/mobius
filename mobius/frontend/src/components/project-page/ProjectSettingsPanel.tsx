@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import { Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
+import { AlertTriangle, Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
 import { ProjectUserContextWhitelist } from '../context-whitelist'
 import { ToggleSwitch } from '../toggle-switch'
 import { MemoriesManager } from '../memories'
@@ -557,7 +557,9 @@ export function ProjectSettingsPanel({
     return v && (['settings','versions','architecture','todos','members','package','assistant'] as const).includes(v as SettingsPane) ? v as SettingsPane : 'settings'
   }
   const [activePane, setActivePane] = useState<SettingsPane>(paneInit)
+  const [showDeletePermissionNotice, setShowDeletePermissionNotice] = useState(false)
   useEffect(() => { try { localStorage.setItem(PaneKey, activePane) } catch {} }, [PaneKey, activePane])
+  useEffect(() => { setShowDeletePermissionNotice(false) }, [project?.id])
   const [gitTracking, setGitTracking] = useState<GitTrackingState | null>(null)
   const [gitTrackingLoading, setGitTrackingLoading] = useState(false)
   const [gitTrackingErr, setGitTrackingErr] = useState('')
@@ -943,13 +945,6 @@ export function ProjectSettingsPanel({
               当前账号可以查看和使用此项目；项目设置只有 owner/admin 可以修改。
             </div>
           )}
-          {canManageProject && !canDeleteProject && project.kind !== 'extension' && (
-            <div className="rounded-lg border px-3 py-2 text-[12px] leading-5"
-              style={{ borderColor: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.08)', color: 'var(--text-secondary)' }}>
-              当前账号可以修改项目设置；删除项目只允许项目创建者操作。
-            </div>
-          )}
-
           {/* 拓展项目: name / description / bindPath / worktree / research 都由 manifest 锁定 */}
           {project.kind === 'extension' ? null : (
             <SettingsCard title="基本设置">
@@ -1297,7 +1292,7 @@ export function ProjectSettingsPanel({
             </div>
           </SettingsCard>
 
-          {canDeleteProject && project.kind !== 'extension' && (
+          {canManageProject && project.kind !== 'extension' && (
             <section className="rounded-lg border overflow-hidden"
               style={{ borderColor: 'rgba(239,68,68,0.38)', background: 'var(--bg-secondary)' }}>
               <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(239,68,68,0.25)' }}>
@@ -1311,13 +1306,30 @@ export function ProjectSettingsPanel({
                       删除后，该项目及其全部 Issue、执行会话、项目知识与绑定目录资料将无法恢复。点击后需要完成多重确认。
                     </p>
                   </div>
-                  <button onClick={onDeleteProject} title="删除项目（需要多重确认）"
+                  <button
+                    onClick={() => {
+                      if (canDeleteProject) {
+                        onDeleteProject()
+                        return
+                      }
+                      setShowDeletePermissionNotice(true)
+                    }}
+                    title={canDeleteProject ? '删除项目（需要多重确认）' : '申请删除项目'}
                     data-tour="project-delete"
                     className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-red-500/45 bg-red-500/10 px-3 text-[12px] font-medium text-red-400 transition-colors hover:bg-red-500 hover:text-white">
                     <Trash2 className="h-4 w-4" strokeWidth={1.8} />
                     删除项目
                   </button>
                 </div>
+                {showDeletePermissionNotice && !canDeleteProject && (
+                  <div
+                    role="alert"
+                    className="mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] leading-5"
+                    style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.08)', color: 'var(--text-secondary)' }}>
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" strokeWidth={1.8} />
+                    <span>当前账号没有删除此项目的权限。请联系项目创建者处理；如无法确认创建者，请联系相关管理员协助。</span>
+                  </div>
+                )}
               </div>
             </section>
           )}
