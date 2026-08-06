@@ -10,7 +10,7 @@ import { Messages } from '../repositories/messages';
 // @ts-ignore — bridge instance 仍是 .js
 import { bridge } from '../bridge/instance';
 // @ts-ignore — service 仍是 .js
-import { buildSessionContext, buildSessionSelectionSnapshot } from '../services/session-context';
+import { buildSessionContext, buildSessionSelectionSnapshot, regenerateSessionSelectionSnapshot } from '../services/session-context';
 // @ts-ignore — repository 仍是 .js
 import { audit } from '../repositories/audit';
 // @ts-ignore — service 仍是 .js
@@ -1239,49 +1239,75 @@ router.get('/:id/context-preview', auth, (req: express.Request, res: express.Res
 // Session 右栏 Skill / Memory 只读快照:
 // 新 Session 直接读创建时写入的 session_selection_snapshot.
 // 老 Session 没有该字段时, 优先回退到首轮 context 快照; 再没有才实时构建一次作为兼容展示.
+// 把 snapshot 里的 skill/memory 正文 (body) 抹掉, 只留列表展示所需的轻量字段.
+// GET /:id/selection-snapshot 与 POST /:id/refresh-selection-snapshot 共用.
+function stripBodies(snapshot: any) {
+  const src = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  const skills = Array.isArray(src.skills) ? src.skills : [];
+  const memories = Array.isArray(src.memories) ? src.memories : [];
+  const allSkills = Array.isArray(src.all_skills) ? src.all_skills : skills.map((s: any) => ({ ...s, enabled: true }));
+  const allMemories = Array.isArray(src.all_memories) ? src.all_memories : memories.map((m: any) => ({ ...m, enabled: true }));
+  const totals = src.totals && typeof src.totals === 'object' ? src.totals : {};
+  const mapSkill = (s: any) => ({
+    id: s.id,
+    scope: s.scope,
+    name: s.name,
+    description: s.description || '',
+    dirName: s.dirName || null,
+    body: typeof s.body === 'string' ? s.body : '',
+    enabled: s.enabled !== false,
+  });
+  const mapMemory = (m: any) => ({
+    id: m.id,
+    scope: m.scope,
+    name: m.name,
+    description: m.description || '',
+    body: typeof m.body === 'string' ? m.body : '',
+    enabled: m.enabled !== false,
+  });
+  return {
+    version: src.version || 1,
+    skills: skills.map((s: any) => mapSkill({ ...s, enabled: true })).filter((s: any) => s.id && s.name),
+    memories: memories.map((m: any) => mapMemory({ ...m, enabled: true })).filter((m: any) => m.id && m.name),
+    all_skills: allSkills.map(mapSkill).filter((s: any) => s.id && s.name),
+    all_memories: allMemories.map(mapMemory).filter((m: any) => m.id && m.name),
+    totals: {
+      skills: Number.isFinite(Number(totals.skills)) ? Number(totals.skills) : allSkills.length,
+      memories: Number.isFinite(Number(totals.memories)) ? Number(totals.memories) : allMemories.length,
+    },
+  };
+}
+
+// 在已存在的会话内新装/新加 skill|memory 后, 用当前 live 数据 + 该会话现存的勾选状态
+// 重建并持久化 selection snapshot. 会话快照在创建时一次性冻结, 不刷新则新装的条目
+// 既不进入会话面板列表、也不会在后续对话回合被注入.
+router.post('/:id/refresh-selection-snapshot', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'refresh_session_selection_snapshot', session);
+  const snapshot = regenerateSessionSelectionSnapshot(user, id);
+  if (!snapshot) {
+    res.status(400).json({ error: '该会话类型不支持刷新快照' });
+    return;
+  }
+  Sessions.updateSelectionSnapshot(id, JSON.stringify(snapshot));
+  const reread = Sessions.getSelectionSnapshot(id) as any;
+  res.json({
+    snapshot: stripBodies(snapshot),
+    snapshot_at: reread?.session_selection_snapshot_at || null,
+    source: 'refreshed',
+    legacy: false,
+  });
+});
+
 router.get('/:id/selection-snapshot', auth, (req: express.Request, res: express.Response) => {
   const id = String(req.params.id);
   const user = userOf(req);
   const session = findSessionReadable(id, user);
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
   auditSessionAccess(user, 'read_session_selection_snapshot', session);
-
-  const stripBodies = (snapshot: any) => {
-    const src = snapshot && typeof snapshot === 'object' ? snapshot : {};
-    const skills = Array.isArray(src.skills) ? src.skills : [];
-    const memories = Array.isArray(src.memories) ? src.memories : [];
-    const allSkills = Array.isArray(src.all_skills) ? src.all_skills : skills.map((s: any) => ({ ...s, enabled: true }));
-    const allMemories = Array.isArray(src.all_memories) ? src.all_memories : memories.map((m: any) => ({ ...m, enabled: true }));
-    const totals = src.totals && typeof src.totals === 'object' ? src.totals : {};
-    const mapSkill = (s: any) => ({
-      id: s.id,
-      scope: s.scope,
-      name: s.name,
-      description: s.description || '',
-      dirName: s.dirName || null,
-      body: typeof s.body === 'string' ? s.body : '',
-      enabled: s.enabled !== false,
-    });
-    const mapMemory = (m: any) => ({
-      id: m.id,
-      scope: m.scope,
-      name: m.name,
-      description: m.description || '',
-      body: typeof m.body === 'string' ? m.body : '',
-      enabled: m.enabled !== false,
-    });
-    return {
-      version: src.version || 1,
-      skills: skills.map((s: any) => mapSkill({ ...s, enabled: true })).filter((s: any) => s.id && s.name),
-      memories: memories.map((m: any) => mapMemory({ ...m, enabled: true })).filter((m: any) => m.id && m.name),
-      all_skills: allSkills.map(mapSkill).filter((s: any) => s.id && s.name),
-      all_memories: allMemories.map(mapMemory).filter((m: any) => m.id && m.name),
-      totals: {
-        skills: Number.isFinite(Number(totals.skills)) ? Number(totals.skills) : allSkills.length,
-        memories: Number.isFinite(Number(totals.memories)) ? Number(totals.memories) : allMemories.length,
-      },
-    };
-  };
 
   const stored = Sessions.getSelectionSnapshot(id) as any;
   if (stored?.session_selection_snapshot) {

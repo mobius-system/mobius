@@ -1072,38 +1072,70 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
   )
 }
 
+type ProjectDeletePolicy = {
+  allowed: boolean
+  mode: 'creator' | 'system_admin_override' | null
+  requires_password: boolean
+  requires_reason: boolean
+  protected: boolean
+  denial_reason: string | null
+}
+
+type ProjectDeletePreview = {
+  policy: ProjectDeletePolicy
+  impact: {
+    issue_count: number
+    research_count: number
+    session_count: number
+    running_session_count: number
+  }
+}
+
 // =====================================================================
-// 删除 Project（创建者 + 多重确认 + 密码）
+// 删除 Project（后端策略 + 多重确认 + 当前账号密码）
 // =====================================================================
 export function DeleteProjectModal({ project, onClose, onDeleted }: { project: any; onClose: () => void; onDeleted: () => void }) {
   const [confirmName, setConfirmName] = useState('')
   const [dangerAcknowledged, setDangerAcknowledged] = useState(false)
   const [password, setPassword] = useState('')
-  const [passwordRequired, setPasswordRequired] = useState(false)
+  const [reason, setReason] = useState('')
+  const [preview, setPreview] = useState<ProjectDeletePreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(true)
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(false)
   const { theme } = useStore()
-  const isFixedLogoReviewProject = project.id === LOGO_REVIEW_PROJECT_ID
+  const policy = preview?.policy || project?.delete_policy as ProjectDeletePolicy | undefined
+  const impact = preview?.impact
+  const adminOverride = policy?.mode === 'system_admin_override'
   const accepted = new Set([project.name, project.id].filter(Boolean).map(String))
   const confirmValue = confirmName.trim()
-  const canSubmit = !isFixedLogoReviewProject && accepted.has(confirmValue) && dangerAcknowledged && (!passwordRequired || !!password)
+  const canSubmit = !previewLoading
+    && policy?.allowed === true
+    && accepted.has(confirmValue)
+    && dangerAcknowledged
+    && !!password
+    && (!policy.requires_reason || !!reason.trim())
 
   useEffect(() => {
     let alive = true
-    api('/api/auth/config')
-      .then((cfg: any) => { if (alive) setPasswordRequired(!!cfg?.password_required) })
-      .catch(() => {})
+    setPreviewLoading(true)
+    api(`/api/projects/${project.id}/delete-preview`)
+      .then((data: ProjectDeletePreview) => {
+        if (!alive) return
+        setPreview(data)
+        if (!data?.policy?.allowed) setErr(data?.policy?.denial_reason || '当前账号不能删除此项目')
+      })
+      .catch((e: any) => { if (alive) setErr(e?.message || '无法读取项目删除信息') })
+      .finally(() => { if (alive) setPreviewLoading(false) })
     return () => { alive = false }
-  }, [])
+  }, [project.id])
 
   const submit = async () => {
-    if (isFixedLogoReviewProject) {
-      setErr('这个项目是引导系统固定完成案例，用于“验收完成案例”路线，不能删除。其他同名临时演示项目仍可删除。')
-      return
-    }
+    if (!policy?.allowed) { setErr(policy?.denial_reason || '当前账号不能删除此项目'); return }
     if (!accepted.has(confirmValue)) { setErr('请输入项目名或项目 ID 确认'); return }
     if (!dangerAcknowledged) { setErr('请勾选不可恢复确认'); return }
-    if (passwordRequired && !password) { setErr('请输入密码'); return }
+    if (policy.requires_reason && !reason.trim()) { setErr('系统管理员代删他人项目时必须填写原因'); return }
+    if (!password) { setErr('请输入当前账号密码'); return }
     setLoading(true); setErr('')
     try {
       const demo = readActiveGuidedDemo()
@@ -1115,29 +1147,55 @@ export function DeleteProjectModal({ project, onClose, onDeleted }: { project: a
         && (cleanupProjectRelPath || '').startsWith('/imac-demo/')
       await api(`/api/projects/${project.id}`, {
         method: 'DELETE',
-        body: JSON.stringify({ confirm: confirmValue, password, cleanup_demo_workspace: cleanupDemoWorkspace }),
+        body: JSON.stringify({
+          confirm: confirmValue,
+          irreversible_acknowledged: dangerAcknowledged,
+          current_password: password,
+          reason: reason.trim(),
+          cleanup_demo_workspace: cleanupDemoWorkspace,
+        }),
       })
       completeGuidedDemoStateForProject(project.id)
       onDeleted()
-    } catch (e: any) { setErr(e?.message || '确认信息错误或权限不足') } finally { setLoading(false) }
+    } catch (e: any) {
+      setPassword('')
+      setErr(e?.message || '确认信息错误或权限不足')
+    } finally { setLoading(false) }
   }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <div data-tour="delete-project-modal" className="relative w-[360px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+      <div data-tour="delete-project-modal" className="relative max-h-[calc(100vh-32px)] w-[440px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-xl p-5 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <h3 className="text-[15px] font-semibold mb-2" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>删除项目</h3>
-        <p className="text-[13px] mb-4" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>
-          确定删除项目「<strong>{project.name}</strong>」？此操作不可恢复。请完成下面的多重确认。
+        <p className="text-[12px] leading-5 mb-4" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>
+          删除「<strong>{project.name}</strong>」后，相关数据不能从回收站恢复。
         </p>
-        <div className="mb-4 flex gap-2 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px]"
+        <div className="mb-4 flex gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px]"
           style={{ color: theme !== 'light' ? '#fca5a5' : '#b91c1c' }}>
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" strokeWidth={1.75} />
-          <div className="min-w-0">
-            {isFixedLogoReviewProject
-              ? '这个项目是“验收完成案例”路线使用的固定完成案例，不能删除。其他同名临时演示项目仍可删除。'
-              : '删除会移除该项目及其任务、会话记录，删除后不能从回收站恢复。'}
-          </div>
+          <div className="min-w-0">删除会移除该项目、任务单、研究记录、执行会话及项目级 Skill 和 Memory。</div>
         </div>
+        <div className="mb-4 grid grid-cols-4 overflow-hidden rounded-lg border" style={{ borderColor: 'var(--input-border)' }}>
+          {[
+            ['Issue', impact?.issue_count],
+            ['Research', impact?.research_count],
+            ['Session', impact?.session_count],
+            ['运行中', impact?.running_session_count],
+          ].map(([label, value], index) => (
+            <div key={String(label)} className={`min-w-0 px-2 py-2 text-center ${index ? 'border-l' : ''}`} style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+              <div className="text-[15px] font-semibold tabular-nums" style={{ color: label === '运行中' && Number(value) > 0 ? '#f59e0b' : 'var(--text-primary)' }}>
+                {previewLoading ? '...' : Number(value || 0)}
+              </div>
+              <div className="mt-0.5 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{label}</div>
+            </div>
+          ))}
+        </div>
+        {adminOverride && (
+          <div className="mb-4 rounded-lg border px-3 py-2 text-[12px] leading-5"
+            style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.08)', color: 'var(--text-secondary)' }}>
+            你正在以系统管理员身份删除他人创建的项目。本次操作将记录账号、原因、影响范围和结果。
+          </div>
+        )}
         <div className="space-y-3 mb-4">
           <label className="block">
             <span className="mb-1.5 block text-[12px] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
@@ -1159,26 +1217,38 @@ export function DeleteProjectModal({ project, onClose, onDeleted }: { project: a
               确认 2：我理解删除项目不可恢复，并确认继续删除。
             </span>
           </label>
-          {passwordRequired && (
+          {policy?.requires_reason && (
             <label className="block">
               <span className="mb-1.5 block text-[12px] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
-                当前账号密码
+                代删原因
               </span>
-              <input type="password" value={password} onChange={e => { setPassword(e.target.value); setErr('') }}
-                data-tour="delete-project-password-input"
-                placeholder="输入当前账号密码"
-                onKeyDown={e => e.key === 'Enter' && submit()}
-                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+              <textarea value={reason} onChange={e => { setReason(e.target.value); setErr('') }}
+                data-tour="delete-project-reason-input"
+                placeholder="说明为什么需要由系统管理员删除"
+                maxLength={1000}
+                className="h-20 w-full resize-none rounded-lg px-3 py-2 text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-amber-500/40"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
             </label>
           )}
+          <label className="block">
+            <span className="mb-1.5 block text-[12px] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+              当前账号密码
+            </span>
+            <input type="password" value={password} onChange={e => { setPassword(e.target.value); setErr('') }}
+              data-tour="delete-project-password-input"
+              placeholder="输入当前登录账号的密码"
+              autoComplete="current-password"
+              onKeyDown={e => { if (e.key === 'Enter' && canSubmit) submit() }}
+              className="w-full h-10 px-3 rounded-lg text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-red-500/40"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
+          </label>
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} className="flex-1 h-9 rounded-lg text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submit} disabled={loading || !canSubmit}
             data-tour="delete-project-submit"
-            className="flex-1 h-9 rounded-xl text-[13px] text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-40">
+            className="flex-1 h-9 rounded-lg text-[13px] text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-40">
             {loading ? '删除中...' : '确认删除'}
           </button>
         </div>
@@ -3218,11 +3288,12 @@ export function ConfirmModal({ title, message, onConfirm, onClose, confirmText =
 // 项目级条目则 user / project 二选一.
 // =====================================================================
 export function MoveScopeModal({
-  title, currentScopeLabel, lockToProject = false, onClose, onMove,
+  title, currentScopeLabel, lockToProject = false, operationLabel = '移动', onClose, onMove,
 }: {
   title: string
   currentScopeLabel: string
   lockToProject?: boolean
+  operationLabel?: '移动' | '复制'
   onClose: () => void
   onMove: (target: { scope: 'user' | 'project'; projectId?: string }) => Promise<void>
 }) {
@@ -3261,7 +3332,9 @@ export function MoveScopeModal({
       <div className="relative w-[420px] rounded-2xl p-5 shadow-2xl" onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <h3 className="text-[14px] font-semibold mb-1" style={{ color: textPrimary }}>{title}</h3>
-        <p className="text-[11px] mb-4" style={{ color: textMuted }}>当前位置: {currentScopeLabel}</p>
+        <p className="text-[11px] mb-4" style={{ color: textMuted }}>
+          当前位置: {currentScopeLabel}{operationLabel === '复制' ? '。复制后源位置仍会保留' : ''}
+        </p>
 
         {!lockToProject && (
           <div className="mb-3">
@@ -3310,7 +3383,7 @@ export function MoveScopeModal({
             style={{ color: textMuted, borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submit} disabled={saving || loading || (scope === 'project' && !projectId)}
             className="flex-1 h-8 rounded text-[12px] bg-blue-500 text-white hover:bg-blue-600 transition-colors disabled:opacity-40">
-            {saving ? '移动中...' : '移动'}
+            {saving ? `${operationLabel}中...` : operationLabel}
           </button>
         </div>
       </div>
@@ -3604,7 +3677,7 @@ const TERMINAL_INSTALL_OPTIONS = [
     id: 'windows',
     label: 'Windows',
     sub: 'PowerShell 5.1+ · 无需 Node.js、无需管理员权限',
-    command: 'irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v14.ps1 | iex',
+    command: 'irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v15.ps1 | iex',
     note: '安装后重新打开 PowerShell 并运行 mobius；同时添加文件夹和文件夹空白处的“在 Mobius 中打开”右键菜单。',
   },
 ] as const

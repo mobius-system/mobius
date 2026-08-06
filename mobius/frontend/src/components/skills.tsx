@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Eye, FolderInput, Lock, Trash2, Upload } from 'lucide-react'
+import { Copy, Eye, Lock, Trash2, Upload } from 'lucide-react'
 import { api } from '../store'
 import { ContextAccessModal } from './context-access'
 import { MoveScopeModal } from './modals'
@@ -382,8 +382,11 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
                 data-tour="skill-add-package-input"
                 placeholder="可直接粘贴安装命令或 GitHub URL (自动提取); 例: owner/repo 或 owner/repo@skill-name"
                 disabled={submitting}
-                className="w-full px-2.5 py-1.5 rounded text-[12px] font-mono mb-2 focus:outline-none focus:border-blue-500/30 disabled:opacity-40"
+                className="w-full px-2.5 py-1.5 rounded text-[12px] font-mono mb-1 focus:outline-none focus:border-blue-500/30 disabled:opacity-40"
                 style={{ background: 'var(--bg-primary)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              <div className="text-[10px] mb-2 leading-snug" style={{ color: 'var(--text-muted)' }}>
+                后端执行 <code className="font-mono">npx skills add</code> 从 GitHub 拉取 (耗时较长, 最长 120s). 若本机无法直连 GitHub 会失败, 可改用「直接编辑/粘贴」或「上传文件」.
+              </div>
             </>
           ) : (
             <>
@@ -465,10 +468,10 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
                       <Lock className="w-3.5 h-3.5" />
                     </button>
                   )}
-                  <button onClick={() => setMoving(sk)} title={scope === 'user' ? '移到项目级' : '移到我的 / 其他项目'}
+                  <button onClick={() => setMoving(sk)} title={scope === 'user' ? '复制到项目级' : '复制到我的 / 其他项目'}
                     className="h-7 w-7 inline-flex items-center justify-center rounded border transition-colors hover:bg-[var(--bg-hover)]"
                     style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
-                    <FolderInput className="w-3.5 h-3.5" />
+                    <Copy className="w-3.5 h-3.5" />
                   </button>
                   <button onClick={() => handleDelete(sk.id)} title="移除"
                     className="h-7 w-7 inline-flex items-center justify-center rounded border hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
@@ -495,9 +498,10 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
 
       {moving && (
         <MoveScopeModal
-          title={`移动 Skill: ${moving.name}`}
+          title={`复制 Skill: ${moving.name}`}
           currentScopeLabel={scope === 'user' ? '我的 (用户级)' : '项目级'}
           lockToProject={scope === 'user'}
+          operationLabel="复制"
           onClose={() => setMoving(null)}
           onMove={async (target) => {
             const body: any = { scope: target.scope }

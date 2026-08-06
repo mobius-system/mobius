@@ -16,6 +16,7 @@ import { loadLogin, saveLogin, type LoginRecord } from './config.js'
 import { LoginScreen } from './components/Login.js'
 import { PrepScreen, type ReadyState } from './components/PrepScreen.js'
 import { ChatScreen } from './components/Chat.js'
+import type { ConfigResult } from './components/ConfigFlow.js'
 import { ResumePicker } from './components/ResumePicker.js'
 import { Screen } from './components/Screen.js'
 import { startAimuxConnection, stopAimuxConnection, type AimuxStatus } from './aimux.js'
@@ -107,6 +108,31 @@ export function App() {
 
   function onResume() { if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] resume'); setRoute('resume') }
 
+  // /model (= /config) Esc-cancel: go back to the conversation. Remounting Chat
+  // (rather than re-rendering it in place) is deliberate — toggling the config
+  // flow off and on re-mounted the whole chat subtree, which left Ink's frame
+  // blank in the harness. Remount via chatKey is the same path /clear and /resume
+  // use; the live sessionId (if any) is carried as resumeSessionId so the
+  // conversation is reconnected intact.
+  function onConfigCancel(sessionId: string | null) {
+    if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] config-cancel', sessionId)
+    setResumeSessionId(sessionId)
+    setChatKey(k => k + 1)
+    setRoute('chat')
+  }
+
+  // /model (= /config): swap task+model and start a brand-new session. App owns
+  // `ready`, so it folds the ConfigFlow result in and remounts Chat on the fresh
+  // session (resumeSessionId = the eagerly created session).
+  function onReconfigure(result: ConfigResult) {
+    if (!ready || !client) return
+    if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] reconfigure', result.issue.id, result.prefs.model, result.sessionId)
+    setReady({ project: ready.project, issue: result.issue, prefs: result.prefs })
+    setResumeSessionId(result.sessionId)
+    setChatKey(k => k + 1)
+    setRoute('chat')
+  }
+
   function onResumed(sid: string) {
     setResumeSessionId(sid)
     setChatKey(k => k + 1)
@@ -135,6 +161,8 @@ export function App() {
         onClear={onClear}
         onResume={onResume}
         onQuit={onQuit}
+        onReconfigure={onReconfigure}
+        onConfigCancel={onConfigCancel}
         aimuxStatus={aimuxStatus}
       />
     )

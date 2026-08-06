@@ -27,6 +27,8 @@
     "test:project-user-picker": "node --require tsx/cjs tests/project-user-picker.js",
     "test:user-group-memberships": "node --require tsx/cjs tests/user-group-memberships.js",
     "test:project-memberships": "node --require tsx/cjs tests/project-memberships.js",
+    "test:project-deletion-policy": "node --require tsx/cjs tests/project-deletion-policy.js",
+    "test:project-deletion-route": "node --require tsx/cjs tests/project-deletion-route.js",
     "test:agent-tmux-server": "node tests/agent-tmux-server.js",
     "test:claude-realtime-info": "node --require tsx/cjs tests/claude-realtime-info.js",
     "test:codex-error-scan": "node --require tsx/cjs tests/codex-error-scan.js",
