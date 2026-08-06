@@ -1530,17 +1530,18 @@ button {
 }
 .driver-popover.imac-driver-popover .driver-popover-description {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.65;
   white-space: pre-line;
 }
 .driver-popover.imac-driver-popover .driver-popover-progress-text {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .driver-popover.imac-driver-popover .driver-popover-footer button {
-  min-width: 56px;
-  padding: 6px 11px;
+  min-width: 60px;
+  min-height: 34px;
+  padding: 7px 13px;
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.3;
