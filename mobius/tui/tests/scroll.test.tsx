@@ -164,6 +164,8 @@ async function main() {
     const tallLines = tallFrame.split('\n')
     const hintIdx = tallLines.findIndex(l => l.includes('较早记录'))
     ok(hintIdx === 1, `older-records hint is the first line under the header (line ${hintIdx}, expected 1)`)
+    const messageRows = tallLines.slice(hintIdx + 1).filter(line => line.trim())
+    ok(messageRows.length > 0 && (messageRows[0].includes('⋯') || messageRows[0].includes('回答')), 'first visible message starts immediately after the history hint')
 
     // ── PageUp: viewport scrolls back over history ────────────────────────────
     stdin.write('\x1b[5~')                                   // PageUp

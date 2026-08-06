@@ -76,13 +76,13 @@ function Invoke-MobiusUninstall {
     Step '从当前用户 PATH 删除 Mobius 目录...'
     $removeEntries = @($mobiusBin, $npmGlobal, $npmGlobalBin) |
         ForEach-Object { Normalize-PathEntry $_ }
-    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $userPath = (Get-ItemProperty -Path 'HKCU:\Environment' -Name Path -ErrorAction SilentlyContinue).Path
     if ($null -ne $userPath) {
         $filteredUserPath = @($userPath -split ';' | Where-Object {
             $normalized = Normalize-PathEntry $_
             $normalized -and -not ($removeEntries -contains $normalized)
         })
-        [Environment]::SetEnvironmentVariable('Path', ($filteredUserPath -join ';'), 'User')
+        Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Value ($filteredUserPath -join ';')
     }
     $filteredCurrentPath = @($env:Path -split ';' | Where-Object {
         $normalized = Normalize-PathEntry $_
@@ -93,7 +93,7 @@ function Invoke-MobiusUninstall {
 
     Step '清除 Mobius TUI 用户级环境变量...'
     foreach ($name in @('MOBIUS_TUI_HOME', 'MOBIUS_TUI_PYTHON', 'MOBIUS_TUI_PYTHON_BUNDLE_URL')) {
-        [Environment]::SetEnvironmentVariable($name, $null, 'User')
+        Remove-ItemProperty -Path 'HKCU:\Environment' -Name $name -ErrorAction SilentlyContinue
         Remove-Item "Env:$name" -ErrorAction SilentlyContinue
     }
     Ok 'Mobius TUI 用户级环境变量已清理。'
@@ -120,6 +120,7 @@ function Invoke-MobiusUninstall {
     Remove-Item (Join-Path $env:TEMP 'mobius-install-v12-error.log') -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $env:TEMP 'mobius-install-v13-error.log') -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $env:TEMP 'mobius-install-v14-error.log') -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $env:TEMP 'mobius-install-v15-error.log') -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $env:TEMP 'mobius-uninstall-v11-error.log') -Force -ErrorAction SilentlyContinue
     Ok '临时安装文件已清理。'
 
