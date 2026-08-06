@@ -64,8 +64,8 @@ function pathClause(meta: PcClientMetadata, language: ContextLanguage): string {
   const localPath = typeof meta.local_path === 'string' ? meta.local_path.trim() : '';
   if (!localPath || meta.work_mode === 'hub') return '';
   return language === 'en'
-    ? `. The working directory on that remote object is: \`${localPath}\``
-    : `。该远程对象上的工作目录为：\`${localPath}\``;
+    ? `. The working directory on that remote machine is: \`${localPath}\``
+    : `。该远程机器上的工作目录为：\`${localPath}\``;
 }
 
 export function pcTaskModePrompt(raw: unknown, language: ContextLanguage): string {
@@ -91,14 +91,14 @@ function tuiBasePrompt(aimuxId: string, remotePath: string, language: ContextLan
     ? `You are working at remote machine ${aimuxId}${remotePath}. ` +
       `I'm working in this remote machine as well, so when I say 'here', I mean remote path [${remotePath}] at ${aimuxId}. ` +
       `When I say 'local', I also mean ${aimuxId}. ` +
-      `Only when I say '中枢(center)' do I mean the machine you are currently on. ` +
+      `Only when I say 'mobius center/hub' do I mean the machine you are currently on. ` +
       `You operate this remote computer through the remote_* tools (remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping); ` +
       `these tools act directly on ${aimuxId} — the computer whose hostname is encoded in that identifier. ` +
       `In your text answer, do not mention 'aimux' or reveal that you are working remotely (although in fact you are working remotely).`
     : `你在远程机器 ${aimuxId}${remotePath} 上工作。` +
       `由于我也正在远程机器上操作，所以当我说“这里(here)”时，我指的是 ${aimuxId} 上的远程路径 [${remotePath}]；` +
       `当我说“本地(local)”时，我指的是 ${aimuxId}。` +
-      `只有当我说“中枢(center)”时，才指现在你所处的机器。` +
+      `只有当我说“中枢(mobius center/hub)”时，才指现在你所处的机器。` +
       `你通过 remote_* 工具（remote_exec_command、remote_write_stdin、remote_apply_patch、remote_view_image、remote_ping）操作这台远程计算机；` +
       `这些工具直接作用于 ${aimuxId} —— 该标识符编码了其主机名的那台计算机。` +
       `在你的文本回答中，不要提及“aimux”，也不要暴露你在远程工作（尽管实际上你在远程工作）。`;
@@ -121,46 +121,46 @@ function dualModeTail(aimuxId: string, remotePath: string, language: ContextLang
 const MODE_PROMPTS: Record<ClientKind, Record<PcWorkMode, Record<ContextLanguage, ModePrompt>>> = {
   tui: {
     hub: {
-      en: (id) => `Do not use the remote_* tools to operate the following remote object: ${id}. Work in the Mobius Hub (that is, locally).`,
-      zh: (id) => `不要使用 remote_* 工具操作以下远程对象： ${id}，在mobius中枢（即本地）工作`,
+      en: (id) => `Do not use the remote_* tools to operate the following remote machine: ${id}. Work in the Mobius Hub (that is, locally).`,
+      zh: (id) => `不要使用 remote_* 工具操作以下远程机器： ${id}，在mobius中枢（即本地）工作`,
     },
     pc: {
       en: (id, rp) =>
-        `Carry out all work on the following remote object via the remote_* tools: ${id}${rp}. ` +
+        `Carry out all work on the following remote machine via the remote_* tools: ${id}${rp}. ` +
         `When you need to modify documents, first sync the project to the Mobius Hub (that is, locally), ` +
         `then immediately sync every change back to the path specified by ${id}, unless the user objects. ` +
         `If the user objects, read or modify files directly through the remote_* tools.`,
       zh: (id, rp) =>
-        `通过 remote_* 工具在以下远程对象上执行所有工作：${id}${rp}。` +
+        `通过 remote_* 工具在以下远程机器上执行所有工作：${id}${rp}。` +
         `当你需要修改文档时，先将项目同步到mobius中枢（即本地），每次修改后都立即同步回到 ${id} 指定路径，除非用户反对你这样做。` +
-        `如果用户反对，直接通过 remote_* 工具读取或修改文件`,
+        `如果用户反对，直接通过 remote_* 工具读取或修改文件。`,
     },
     dual: {
       en: (id, rp) =>
-        `You are authorized to operate the following remote object via the remote_* tools: ${id}. ` +
+        `You are authorized to operate the following remote machine via the remote_* tools: ${id}. ` +
         dualModeTail(id, rp, 'en'),
       zh: (id, rp) =>
-        `你现在被授权通过 remote_* 工具操作以下远程对象： ${id}，` +
+        `你现在被授权通过 remote_* 工具操作以下远程机器： ${id}，` +
         dualModeTail(id, rp, 'zh'),
     },
   },
   desktop: {
     hub: {
-      en: (id) => `Do not use aimux to connect to the following remote object: ${id}`,
-      zh: (id) => `不要使用aimux连接到以下远程对象： ${id}`,
+      en: (id) => `Do not use aimux to connect to the following remote machine: ${id}`,
+      zh: (id) => `不要使用aimux连接到以下远程机器： ${id}`,
     },
     pc: {
       en: (id, rp) =>
-        `Use aimux to connect to the following remote object to carry out all work, ` +
+        `Use aimux to connect to the following remote machine to carry out all work, ` +
         `and try to avoid modifying local code: ${id}${rp}`,
-      zh: (id, rp) => `使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${id}${rp}`,
+      zh: (id, rp) => `使用aimux连接到以下远程机器执行所有工作，尽量不修改本地的代码： ${id}${rp}`,
     },
     dual: {
       en: (id, rp) =>
-        `You are authorized to use aimux to connect to the following remote object: ${id}. ` +
+        `You are authorized to use aimux to connect to the following remote machine: ${id}. ` +
         dualModeTail(id, rp, 'en'),
       zh: (id, rp) =>
-        `你现在被授权使用aimux连接到以下远程对象： ${id}，` +
+        `你现在被授权使用aimux连接到以下远程机器： ${id}，` +
         dualModeTail(id, rp, 'zh'),
     },
   },
