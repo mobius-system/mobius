@@ -13,11 +13,18 @@ import { useChat } from '../hooks/useChat.js'
 import { MobiusClient } from '../api.js'
 import { renderMarkdownLines } from '../markdown.js'
 import { viewsForEntry, dedupeUserEntries, toolLabel, isAssistantOutput, type EntryView } from '../lib/entry-view.js'
+import {
+  clampLines, headTailLines, displayWidth, compareSel, entryScreenLines,
+  buildTranscriptModel, computeTranscriptGeometry, screenToSelPoint,
+  buildSelectionMap, buildSelectionText, osc52,
+  type TranscriptModel, type TranscriptGeometry, type SelPoint,
+} from '../lib/screen-text.js'
 import type { ReadyState } from './PrepScreen.js'
 import type { AnyEntry } from '../types.js'
+import { ConfigFlow, type ConfigResult } from './ConfigFlow.js'
 import type { AimuxStatus } from '../aimux.js'
 import { AimuxStatusLine, aimuxStatusText } from './AimuxStatus.js'
-import { isEscapeKeypress, isMouseInput, useMouseWheel } from './primitives.js'
+import { isEscapeKeypress, isMouseInput, useMouseEvents } from './primitives.js'
 
 interface ChatProps {
   client: MobiusClient
@@ -27,6 +34,7 @@ interface ChatProps {
   onClear: () => void
   onResume: () => void
   onQuit: () => void
+  onReconfigure: (result: ConfigResult) => void
   aimuxStatus?: AimuxStatus
 }
 
@@ -44,16 +52,19 @@ const STATUS_ROWS = 3
 const SLASH_COMMANDS = [
   { cmd: '/clear', desc: '清空当前对话，开启新会话' },
   { cmd: '/resume', desc: '恢复一个历史会话' },
+  { cmd: '/model', desc: '更换任务与模型，并开启新会话' },
+  { cmd: '/config', desc: '更换任务与模型（/model 的别名）' },
   { cmd: '/help', desc: '显示帮助' },
   { cmd: '/quit', desc: '退出 TUI' },
 ]
 
-export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, aimuxStatus }: ChatProps) {
+export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, onReconfigure, aimuxStatus }: ChatProps) {
   const chat = useChat({ client, ready, resumeSessionId })
   const [showHelp, setShowHelp] = useState(false)
   const [scrollBack, setScrollBack] = useState(0)
   const [composerRows, setComposerRows] = useState(DEFAULT_COMPOSER_ROWS)
   const [modelLabel, setModelLabel] = useState<string | null>(null)
+  const [configOpen, setConfigOpen] = useState(false)
   const terminal = useTerminalSize()
 
   const runSlash = useCallback((raw: string) => {
@@ -62,6 +73,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       case '/clear': onClear(); return true
       case '/resume': onResume(); return true
       case '/help': setShowHelp(s => !s); return true
+      case '/model': case '/config': setConfigOpen(true); return true
       case '/quit': case '/exit': onQuit(); return true
       default: return false
     }
@@ -134,21 +146,93 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     else if (key.pageDown) setScrollBack(value => Math.max(0, value - step))
   })
 
-  // Mouse wheel: up scrolls back through history, down returns toward the
-  // latest, mirroring PageUp/PageDown but in small fixed steps. Handled on the
-  // Ink event emitter (not useInput) so the sequence can be buffered across
-  // read() chunks; the Composer guards against inserting mouse bytes as text.
-  useMouseWheel((delta) => {
-    if (delta === 0) return
-    const step = 3
-    setScrollBack(value => Math.min(dedupedEntries.length, Math.max(0, value + delta * step)))
-  })
-
   const olderHint = !showWelcome && (fitted.hiddenOlder > 0 || scrollBack > 0)
     ? fitted.hiddenOlder > 0
-      ? `↑ 还有 ${fitted.hiddenOlder} 条较早记录 · 滚轮/PageUp 翻页 · Shift 拖动选中`
-      : '已到最早记录 · 滚轮/PageDown 翻页 · Shift 拖动选中'
+      ? `↑ 还有 ${fitted.hiddenOlder} 条较早记录 · 滚轮/PageUp 翻页 · 拖动选中文本`
+      : '已到最早记录 · 滚轮/PageDown 翻页 · 拖动选中文本'
     : null
+
+  // Mouse: wheel pages through history in small fixed steps, and a left-button
+  // drag selects transcript text (tmux-style: the app owns the mouse, draws its
+  // own highlight, and copies the range via OSC 52 on release). Handled on the
+  // Ink event emitter (not useInput) so sequences can be buffered across read()
+  // chunks; the Composer guards against inserting mouse bytes as typed text.
+  const { stdout } = useStdout()
+  const selState = useRef<{ anchor: SelPoint; end: SelPoint; active: boolean } | null>(null)
+  const [sel, setSel] = useState<{ anchor: SelPoint; end: SelPoint; active: boolean } | null>(null)
+  const [copyNotice, setCopyNotice] = useState<string | null>(null)
+
+  // Geometry + text model must mirror the rendered transcript so a screen
+  // (row, col) maps to the right entry/line/char. Recompute with the fitted view.
+  const tipShown = dedupedEntries.length === 0 && chat.pendingUser === null && !showHelp
+  const geometry: TranscriptGeometry = useMemo(() => computeTranscriptGeometry({
+    viewportRows,
+    composerRows,
+    statusRows: STATUS_ROWS,
+    activityRows,
+    helpRows,
+    showWelcome,
+    welcomeRows: 10,
+    olderHintShown: olderHint !== null,
+    tipShown,
+  }), [viewportRows, composerRows, activityRows, helpRows, showWelcome, olderHint, tipShown])
+  const transcriptModel: TranscriptModel = useMemo(
+    () => buildTranscriptModel(fitted.entries, terminal.columns),
+    [fitted.entries, terminal.columns],
+  )
+  const selMap = useMemo(
+    () => (sel?.active ? buildSelectionMap(transcriptModel, sel.anchor, sel.end) : null),
+    [sel, transcriptModel],
+  )
+
+  const commitCopy = useCallback((anchor: SelPoint, end: SelPoint) => {
+    const text = buildSelectionText(transcriptModel, anchor, end)
+    if (!text) return
+    stdout.write(osc52(text))
+    setCopyNotice(`已复制 ${Array.from(text).length} 字符`)
+  }, [transcriptModel, stdout])
+
+  useMouseEvents({
+    onWheel: (delta) => {
+      if (delta === 0) return
+      const step = 3
+      setScrollBack(value => Math.min(dedupedEntries.length, Math.max(0, value + delta * step)))
+    },
+    onPress: (row, col) => {
+      const p = screenToSelPoint(row, col, transcriptModel, geometry)
+      if (p) { selState.current = { anchor: p, end: p, active: true }; setSel(selState.current) }
+    },
+    onMotion: (row, col) => {
+      const s = selState.current
+      if (!s?.active) return
+      const p = screenToSelPoint(row, col, transcriptModel, geometry)
+      if (p) { selState.current = { ...s, end: p }; setSel(selState.current) }
+    },
+    onRelease: () => {
+      const s = selState.current
+      selState.current = null
+      setSel(null)
+      if (s?.active && compareSel(s.anchor, s.end) !== 0) commitCopy(s.anchor, s.end)
+    },
+  })
+
+  // Transient "已复制 N 字符" notice in the status row, then it clears itself.
+  useEffect(() => {
+    if (!copyNotice) return
+    const id = setTimeout(() => setCopyNotice(null), 2500)
+    return () => clearTimeout(id)
+  }, [copyNotice])
+
+  if (configOpen) {
+    return (
+      <ConfigFlow
+        client={client}
+        project={ready.project}
+        onDone={(result) => onReconfigure(result)}
+        onCancel={() => setConfigOpen(false)}
+      />
+    )
+  }
 
   return (
     <Box
@@ -171,9 +255,13 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           : null}
 
         <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent={showWelcome ? 'flex-start' : 'flex-end'} overflowY="hidden">
-          {fitted.entries.map((entry, index) => (
-            <EntryAccum key={entry.__id ?? `entry-${fitted.startIndex + index}`} entry={entry} columns={terminal.columns} />
-          ))}
+          {fitted.entries.map((entry, index) => {
+            const entrySel = selMap?.get(index)
+            const key = entry.__id ?? `entry-${fitted.startIndex + index}`
+            return entrySel
+              ? <EntryScreenWithSelection key={key} entry={entry} columns={terminal.columns} sel={entrySel} />
+              : <EntryAccum key={key} entry={entry} columns={terminal.columns} />
+          })}
           {chat.pendingUser !== null ? <UserLine text={chat.pendingUser} /> : null}
           {fitted.hiddenRecent > 0
             ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  ↓ 滚轮/PageDown 翻页 · 较新 {fitted.hiddenRecent} 条</Text></Box>
@@ -206,6 +294,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           webUrl={buildWebUrl(client.server, webUserId, ready, chat.sessionId)}
           aimuxStatus={aimuxStatus}
           modelDisplay={modelDisplay}
+          copyNotice={copyNotice}
         />
       </Box>
     </Box>
@@ -280,6 +369,35 @@ function EntryAccum({ entry, columns }: { entry: AnyEntry; columns: number }) {
   return (
     <Box flexDirection="column">
       {views.map((view, index) => <ViewLine key={index} view={view} columns={columns} />)}
+    </Box>
+  )
+}
+
+// While a drag-selection is active, the affected entries are re-rendered from the
+// screen-text model (plain rows, no ANSI) so the selected char range can be
+// painted with a background — the same rows the model produces, keeping the
+// layout stable. Rows outside the selection keep their original text.
+function EntryScreenWithSelection({ entry, columns, sel }: {
+  entry: AnyEntry
+  columns: number
+  sel: Map<number, { start: number; end: number }>
+}) {
+  const lines = entryScreenLines(viewsForEntry(entry), columns)
+  return (
+    <Box flexDirection="column">
+      {lines.map((row, index) => {
+        const range = sel.get(index)
+        if (range && range.start < range.end) {
+          return (
+            <Text key={index} wrap="truncate-end">
+              <Text>{row.slice(0, range.start)}</Text>
+              <Text backgroundColor="cyan" color="black">{row.slice(range.start, range.end)}</Text>
+              <Text>{row.slice(range.end)}</Text>
+            </Text>
+          )
+        }
+        return <Text key={index} wrap="truncate-end">{row || ' '}</Text>
+      })}
     </Box>
   )
 }
@@ -385,41 +503,9 @@ function WriteFileView({ view }: { view: { filePath: string; content: string } }
   )
 }
 
-// 把文本按宽度硬切成最多 maxLines 行 (超出则在末行加 …), 用于 compact 类的 ≤2 行硬约束.
-function clampLines(text: string, width: number, maxLines: number): string[] {
-  if (!text) return ['']
-  const paras = text.replace(/\r\n/g, '\n').split('\n')
-  const wrapped: string[] = []
-  for (const para of paras) {
-    if (para === '') { wrapped.push(''); continue }
-    for (let i = 0; i < para.length; i += width) wrapped.push(para.slice(i, i + width))
-  }
-  if (wrapped.length <= maxLines) return wrapped
-  const trimmed = wrapped.slice(0, maxLines)
-  const last = trimmed[maxLines - 1]
-  trimmed[maxLines - 1] = last.length >= width ? last.slice(0, width - 1) + '…' : last + '…'
-  return trimmed
-}
-
-// codex 式 head + ellipsis + tail 截断 (参考 codex-rs/tui/src/exec_cell/render.rs
-// 的 truncate_lines_middle): 保留输出头尾, 中间省略并报告省略行数. 长输出既能看
-// 到结论 (成功/失败常在尾), 又不刷屏. maxLines 含省略行 (如 5 = 头2 + 省1 + 尾2).
-function headTailLines(text: string, width: number, maxLines: number): string[] {
-  if (!text) return ['']
-  const paras = text.replace(/\r\n/g, '\n').split('\n')
-  const wrapped: string[] = []
-  for (const para of paras) {
-    if (para === '') { wrapped.push(''); continue }
-    for (let i = 0; i < para.length; i += width) wrapped.push(para.slice(i, i + width))
-  }
-  if (wrapped.length <= maxLines) return wrapped.slice(0, maxLines)
-  const budget = maxLines - 1 // 留 1 行给省略标记
-  const head = Math.max(1, Math.ceil(budget / 2))
-  const tail = Math.max(1, budget - head)
-  const omitted = wrapped.length - head - tail
-  if (omitted <= 0) return wrapped.slice(0, maxLines)
-  return [...wrapped.slice(0, head), `… +${omitted} 行`, ...wrapped.slice(wrapped.length - tail)]
-}
+// clampLines / headTailLines / displayWidth live in src/lib/screen-text.ts
+// (mirrored, exported) and are imported above; they must match ViewLine exactly
+// so the drag-selection text model aligns with the rendered rows.
 
 function UserLine({ text }: { text: string }) {
   const lines = text.split('\n')
@@ -465,7 +551,7 @@ export function shimmerText(label: string, frame: number): React.ReactNode[] {
 function HelpBlock({ commands }: { commands: { cmd: string; desc: string }[] }) {
   const mouseNote = process.env.MOBIUS_TUI_DISABLE_MOUSE === '1'
     ? '滚轮翻页已关闭 (MOBIUS_TUI_DISABLE_MOUSE=1)，鼠标可用于直接选中文本。'
-    : '滚轮翻页 · 选中文本请按住 Shift 拖动 (滚轮模式接管了鼠标)。'
+    : '滚轮翻页 · 拖动选中文本，松开即经 OSC 52 复制到剪贴板。'
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="gray" borderDimColor paddingX={1} marginTop={1}>
       {commands.map(command => (
@@ -908,13 +994,14 @@ function findComposerCursorLine(lines: ComposerLine[], cursor: number): number {
   return Math.max(0, lines.length - 1)
 }
 
-function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus, modelDisplay }: {
+function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus, modelDisplay, copyNotice }: {
   ready: ReadyState
   sessionId: string | null
   columns: number
   webUrl: string
   aimuxStatus?: AimuxStatus
   modelDisplay: string
+  copyNotice?: string | null
 }) {
   const model = modelDisplay
   const language = ready.prefs.language === 'en' ? 'English' : '中文'
@@ -930,7 +1017,7 @@ function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus, modelDispl
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box justifyContent="space-between">
-        <Text dimColor>{left}</Text>
+        <Text dimColor color={copyNotice ? 'green' : undefined}>{copyNotice ?? left}</Text>
         {right ? <Text dimColor>{right}</Text> : null}
       </Box>
       {/* Merged connectivity row: AIMUX status sits left, the clickable web URL
@@ -1000,35 +1087,8 @@ function clickableUrl(url: string, maxLen?: number): string {
   return `\u001B]8;;${url}\u0007${display}\u001B]8;;\u0007`
 }
 
-// Visible-column width (CJK / emoji / fullwidth count as 2; combining marks as
-// 0), used to size the AIMUX status block so the web URL truncates to exactly
-// the remaining width without overflowing the row.
-function displayWidth(str: string): number {
-  let w = 0
-  for (const ch of str) {
-    const code = ch.codePointAt(0) ?? 0
-    if (code >= 0x0300 && code <= 0x036F) continue // combining diacriticals: 0 cols
-    w += isWideCodepoint(code) ? 2 : 1
-  }
-  return w
-}
-
-function isWideCodepoint(code: number): boolean {
-  return (
-    (code >= 0x1100 && code <= 0x115F) || // Hangul Jamo
-    (code >= 0x2E80 && code <= 0x303E) || // CJK radicals / punctuation
-    (code >= 0x3041 && code <= 0x33FF) || // Hiragana / Katakana / CJK compat
-    (code >= 0x3400 && code <= 0x4DBF) || // CJK Unified Extension A
-    (code >= 0x4E00 && code <= 0x9FFF) || // CJK Unified Ideographs (心跳正常 …)
-    (code >= 0xA000 && code <= 0xA4CF) || // Yi
-    (code >= 0xAC00 && code <= 0xD7A3) || // Hangul syllables
-    (code >= 0xF900 && code <= 0xFAFF) || // CJK compatibility ideographs
-    (code >= 0xFE30 && code <= 0xFE4F) || // CJK compatibility forms
-    (code >= 0xFF00 && code <= 0xFF60) || // Fullwidth ASCII
-    (code >= 0xFFE0 && code <= 0xFFE6) || // Fullwidth signs
-    (code >= 0x1F300 && code <= 0x1FAFF)  // Emoji / symbols
-  )
-}
+// displayWidth is imported from src/lib/screen-text.ts (CJK/emoji-aware), used
+// here to size the AIMUX status block so the web URL truncates exactly.
 
 function wrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width)
