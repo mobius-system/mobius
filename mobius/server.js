@@ -307,6 +307,39 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
+// 桌面客户端产物同步: 启动后延迟首次同步, 之后按固定间隔周期性从 GitHub Release 拉取。
+// 多服务器: 每台独立运行, 不需要 webhook 或互相知道对方。MOBIUS_DESKTOP_SYNC_INTERVAL_MIN 可调间隔。
+function startDesktopBuildsSyncer() {
+  if (/^(0|false|no)$/i.test(process.env.MOBIUS_DESKTOP_SYNC_ENABLED || '')) return;
+
+  const initDelay = Number(process.env.MOBIUS_DESKTOP_SYNC_INIT_DELAY_MS || 30000);
+  const intervalMin = Number(process.env.MOBIUS_DESKTOP_SYNC_INTERVAL_MIN || 30);
+  const intervalMs = intervalMin * 60 * 1000;
+
+  const runSync = async () => {
+    try {
+      const { syncDesktopBuilds } = require('./backend/services/sync-desktop-builds');
+      const r = await syncDesktopBuilds({
+        log: (...args) => console.log('[mobius/desktop-sync]', ...args),
+      });
+      if (r.downloaded > 0) {
+        console.log(`[mobius/desktop-sync] ${r.tag}: ${r.downloaded} downloaded, ${r.skipped} cached → ${r.dest}`);
+      }
+    } catch (e) {
+      console.warn('[mobius/desktop-sync] 同步异常(下次重试):', (e && e.message) || e);
+    }
+  };
+
+  // 首次延迟启动 (等 server 完全就绪)
+  setTimeout(() => {
+    runSync();
+    // 之后周期性运行
+    setInterval(runSync, intervalMs).unref();
+  }, initDelay).unref();
+
+  console.log(`[mobius/desktop-sync] 已启动: 首次 ${initDelay / 1000}s 后, 之后每 ${intervalMin}min`);
+}
+
 // 部署后自检: 每次重启(含 deploy-version / 自迭代触发的 redeploy)后, 后台跑一组 HTTP 冒烟,
 // 结果 append 到 <MOBIUS_LOG_DIR>/self-test.log, 失败绝不阻塞/崩 server。MOBIUS_SELF_TEST_ON_BOOT=0 可关。
 function runBootSelfTest() {
@@ -369,6 +402,14 @@ server.listen(PORT, () => {
   // 兜底自动生成 Session 标题: codex / gpt-5.5 等 tmux-codex 后端不产 type=ai-title,
   // 由本生成器周期扫描, 用会话自身模型把首条提问浓缩成标题写回 name。受同一开关控制。
   startSessionTitleGenerator();
+  // 桌面客户端产物同步：启动后首次同步 (延迟 30s, 让 server 完全就绪),
+  // 之后每 30 分钟自动检查一次。多服务器: 每台独立运行, 互不依赖。
+  // MOBIUS_DESKTOP_SYNC_ENABLED=0 可关闭。
+  try {
+    startDesktopBuildsSyncer();
+  } catch (e) {
+    console.warn('[mobius/desktop-sync] 初始化失败(已忽略):', e.message);
+  }
   // 部署后自检(后台 fire-and-forget, 失败不影响 server)。
   runBootSelfTest();
 });
