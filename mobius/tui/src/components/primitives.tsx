@@ -4,6 +4,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react'
 import { Box, Text, useInput, useStdout, useStdin } from 'ink'
+import { useDeleteKeyCapture, applyDeleteIntent } from '../lib/delete-keys.js'
 
 /** Windows Terminal/ConPTY may expose Esc as a named key, a raw byte, or Ctrl+[. */
 export function isEscapeKeypress(input: string, key: { escape?: boolean; ctrl?: boolean }): boolean {
@@ -170,6 +171,20 @@ export function TextInput(props: TextInputProps) {
     setCursor(nextCursor)
   }
 
+  // Physical Backspace/Delete keys are owned by useDeleteKeyCapture from the
+  // raw stdin bytes — Ink reports the Backspace key (\x7f) and the Delete key
+  // (ESC[3~) both as `key.delete`, so handling `key.delete` in useInput would
+  // delete in the wrong direction. Refs keep the hook's callback on the latest
+  // value/cursor without re-subscribing.
+  const valueRef = useRef(value)
+  const cursorRef = useRef(cursor)
+  valueRef.current = value
+  cursorRef.current = cursor
+  useDeleteKeyCapture(focused, (intent) => {
+    const { text, cursor: nextCursor } = applyDeleteIntent(valueRef.current, cursorRef.current, intent)
+    edit(text, nextCursor)
+  })
+
   useInput((input, key) => {
     if (isMouseInput(input)) return
     if (key.return) { props.onSubmit?.(); return }
@@ -177,21 +192,21 @@ export function TextInput(props: TextInputProps) {
     if (key.downArrow) { props.onArrowDown?.(); return }
     if (isEscapeKeypress(input, key)) { props.onEscape?.(); return }
     if (key.tab) { props.onTab?.(); return }
-    // Ink labels the \x7f that virtually every terminal's Backspace key emits
-    // as `key.delete` (see its parse-keypress.js TODO). Treat either signal as
-    // a backward delete — otherwise Backspace at the end of the input is a no-op.
-    if (key.backspace || key.delete || (key.ctrl && input === 'h')) {
-      if (cursor > 0) {
-        // delete word on Ctrl+W
-        if (key.ctrl && input === 'w') {
-          const before = value.slice(0, cursor)
-          const m = before.match(/\S+\s*$/)
-          const cut = m ? m[0].length : 0
-          edit(value.slice(0, cursor - cut) + value.slice(cursor), cursor - cut)
-        } else {
-          edit(value.slice(0, cursor - 1) + value.slice(cursor), cursor - 1)
-        }
-      }
+    // Only the unambiguous logical editing bindings stay here; the physical
+    // delete keys are handled above via useDeleteKeyCapture.
+    if (key.ctrl && input === 'w') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(value, cursor, 'backward-word')
+      edit(text, nextCursor)
+      return
+    }
+    if (key.ctrl && input === 'h') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(value, cursor, 'backward')
+      edit(text, nextCursor)
+      return
+    }
+    if (key.ctrl && input === 'd') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(value, cursor, 'forward')
+      edit(text, nextCursor)
       return
     }
     if (key.leftArrow) { setCursor(c => Math.max(0, c - 1)); return }

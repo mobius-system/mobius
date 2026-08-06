@@ -25,6 +25,7 @@ import { ConfigFlow, type ConfigResult } from './ConfigFlow.js'
 import type { AimuxStatus } from '../aimux.js'
 import { AimuxStatusLine, aimuxStatusText } from './AimuxStatus.js'
 import { isEscapeKeypress, isMouseInput, useMouseEvents } from './primitives.js'
+import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousCursorBoundary, nextCursorBoundary } from '../lib/delete-keys.js'
 
 interface ChatProps {
   client: MobiusClient
@@ -594,6 +595,15 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
   })
   const { stdout } = useStdout()
 
+  // Physical Backspace/Delete keys are owned by useDeleteKeyCapture from the
+  // raw stdin bytes — Ink reports the Backspace key (\x7f) and the Delete key
+  // (ESC[3~) both as `key.delete`, so handling `key.delete` in useInput would
+  // delete in the wrong direction. The composer is always active while mounted.
+  useDeleteKeyCapture(true, (intent) => {
+    const { text, cursor: nextCursor } = applyDeleteIntent(valueRef.current, cursorRef.current, intent)
+    edit(text, nextCursor)
+  })
+
   const filtered = useMemo(() => {
     const match = /^(\w*)$/.exec(value.slice(1))
     if (!value.startsWith('/') || match === null) return []
@@ -775,20 +785,22 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
       return
     }
     if (key.ctrl && input === 'c') { typing ? void onStop() : onQuit(); return }
-    // Ink reports the terminal Backspace key (\x7f) as `key.delete`; handle both
-    // as a backward delete so Backspace works at the end of the input.
-    if (key.backspace || key.delete || (key.ctrl && (input === 'h' || input === 'w'))) {
-      if (at > 0) {
-        if (key.ctrl && input === 'w') {
-          const before = current.slice(0, at)
-          const match = before.match(/\S+\s*$/)
-          const cut = match ? match[0].length : 0
-          edit(current.slice(0, at - cut) + current.slice(at), at - cut)
-        } else {
-          const previous = previousCursorBoundary(current, at)
-          edit(current.slice(0, previous) + current.slice(at), previous)
-        }
-      }
+    // Physical Backspace/Delete keys are handled by useDeleteKeyCapture above
+    // (raw stdin bytes distinguish them; Ink maps both to `key.delete`). Only
+    // the unambiguous logical editing bindings stay here.
+    if (key.ctrl && input === 'w') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(current, at, 'backward-word')
+      edit(text, nextCursor)
+      return
+    }
+    if (key.ctrl && input === 'h') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(current, at, 'backward')
+      edit(text, nextCursor)
+      return
+    }
+    if (key.ctrl && input === 'd') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(current, at, 'forward')
+      edit(text, nextCursor)
       return
     }
     if (key.leftArrow) { moveCursor(previousCursorBoundary(current, at)); return }
@@ -928,26 +940,6 @@ function findPasteMarker(input: string, code: '200' | '201', from = 0): number {
 
 function pasteMarkerLength(input: string, at: number, code: '200' | '201'): number {
   return input.startsWith(`\x1b[${code}~`, at) ? 6 : 5
-}
-
-function clampCursor(text: string, cursor: number): number {
-  let at = Math.max(0, Math.min(text.length, cursor))
-  while (at > 0 && at < text.length && /[\uDC00-\uDFFF]/.test(text[at])) at--
-  return at
-}
-
-function previousCursorBoundary(text: string, cursor: number): number {
-  const at = clampCursor(text, cursor)
-  if (at <= 0) return 0
-  const code = text.charCodeAt(at - 1)
-  return at - (code >= 0xDC00 && code <= 0xDFFF ? 2 : 1)
-}
-
-function nextCursorBoundary(text: string, cursor: number): number {
-  const at = clampCursor(text, cursor)
-  if (at >= text.length) return text.length
-  const code = text.charCodeAt(at)
-  return at + (code >= 0xD800 && code <= 0xDBFF ? 2 : 1)
 }
 
 interface ComposerLine { text: string; start: number; end: number }
