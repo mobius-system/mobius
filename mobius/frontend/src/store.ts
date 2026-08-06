@@ -167,6 +167,14 @@ interface Project {
   hidden?: boolean
   // Mobius 自我迭代项目: 后端判定 bind_path 是否等于 APP_DIR.
   is_self_develop?: boolean
+  delete_policy?: {
+    allowed: boolean
+    mode: 'creator' | 'system_admin_override' | null
+    requires_password: boolean
+    requires_reason: boolean
+    protected: boolean
+    denial_reason: string | null
+  }
   // 项目级默认模型偏好: 新建 Session 时模型下拉的初始值. null/缺省 = 未指定 (跟系统全局默认).
   // 存的是 model-registry 暴露的短键 (opus / codex / 管理员导入模型的 key).
   default_model?: string | null

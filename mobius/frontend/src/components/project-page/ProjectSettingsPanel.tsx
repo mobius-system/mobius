@@ -611,7 +611,8 @@ export function ProjectSettingsPanel({
     ? downloadUrlForRelPath(contextDemoState?.skillMaterialRelPath || 'context-materials/weekly-notes-summary/SKILL.md')
     : ''
   const assistantProject = isAssistantProject(project, user?.id)
-  const canDeleteProject = project?.created_by === user?.id
+  const deletePolicy = project?.delete_policy
+  const canDeleteProject = deletePolicy?.allowed === true
   const metaSaveStatus = !canManageProject
     ? '只读'
     : savingMeta
@@ -1319,7 +1320,7 @@ export function ProjectSettingsPanel({
                       }
                       setShowDeletePermissionNotice(true)
                     }}
-                    title={canDeleteProject ? '删除项目（需要多重确认）' : '申请删除项目'}
+                    title={canDeleteProject ? '删除项目（需要多重确认）' : '查看删除限制'}
                     data-tour="project-delete"
                     className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-red-500/45 bg-red-500/10 px-3 text-[12px] font-medium text-red-400 transition-colors hover:bg-red-500 hover:text-white">
                     <Trash2 className="h-4 w-4" strokeWidth={1.8} />
@@ -1332,7 +1333,7 @@ export function ProjectSettingsPanel({
                     className="mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] leading-5"
                     style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.08)', color: 'var(--text-secondary)' }}>
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" strokeWidth={1.8} />
-                    <span>当前账号没有删除此项目的权限。请联系项目创建者处理；如无法确认创建者，请联系相关管理员协助。</span>
+                    <span>{deletePolicy?.denial_reason || '当前账号没有删除此项目的权限。请联系项目创建者或系统管理员处理。'}</span>
                   </div>
                 )}
               </div>

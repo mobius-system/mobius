@@ -285,6 +285,32 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
   occurred_at TEXT NOT NULL
 );
 
+-- 项目硬删除审计独立于 projects 外键，保证项目删除后仍可追溯。
+CREATE TABLE IF NOT EXISTS project_deletion_audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_id TEXT NOT NULL,
+  actor_system_role TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  project_name_snapshot TEXT NOT NULL,
+  project_creator_snapshot TEXT NOT NULL,
+  deletion_mode TEXT,
+  reason TEXT NOT NULL DEFAULT '',
+  auth_method TEXT NOT NULL DEFAULT 'password',
+  outcome TEXT NOT NULL CHECK(outcome IN ('pending','succeeded','denied','failed')),
+  failure_code TEXT NOT NULL DEFAULT '',
+  issue_count INTEGER NOT NULL DEFAULT 0,
+  research_count INTEGER NOT NULL DEFAULT 0,
+  session_count INTEGER NOT NULL DEFAULT 0,
+  running_session_count INTEGER NOT NULL DEFAULT 0,
+  request_ip TEXT NOT NULL DEFAULT '',
+  occurred_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_project_deletion_audit_project
+  ON project_deletion_audit_log(project_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_project_deletion_audit_actor
+  ON project_deletion_audit_log(actor_id, occurred_at DESC);
+
 -- ===== v1 会话 / 消息 (历史栈; 新机为空, 但 db-check / 部分读路径仍引用, 须存在) =====
 CREATE TABLE IF NOT EXISTS sessions (
   session_id TEXT PRIMARY KEY,
