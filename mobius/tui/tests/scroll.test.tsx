@@ -34,7 +34,10 @@ function json(body: unknown, status = 200) {
 }
 function emitEntry(n: number) {
   // distinct uuid per entry so useChat's de-dup keeps every one
-  const payload = { event: 'jsonl_entry', session_id: SID, entry: { type: 'assistant', uuid: `a-${n}`, message: { role: 'assistant', content: [{ type: 'text', text: `回答 ${n}` }] } } }
+  const text = n === 24
+    ? `回答 ${n}\n${Array.from({ length: 80 }, (_, i) => `长输出第 ${i + 1} 行：${'内容 '.repeat(12)}`).join('\n')}`
+    : `回答 ${n}`
+  const payload = { event: 'jsonl_entry', session_id: SID, entry: { type: 'assistant', uuid: `a-${n}`, message: { role: 'assistant', content: [{ type: 'text', text }] } } }
   sseController?.enqueue(enc.encode(`event: jsonl_entry\ndata: ${JSON.stringify(payload)}\n\n`))
 }
 

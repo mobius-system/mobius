@@ -193,8 +193,8 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     tipShown,
   }), [viewportRows, composerRows, activityRows, helpRows, showWelcome, olderHint, tipShown])
   const transcriptModel: TranscriptModel = useMemo(
-    () => buildTranscriptModel(fitted.entries, terminal.columns),
-    [fitted.entries, terminal.columns],
+    () => buildTranscriptModel(fitted.entries, terminal.columns, fitted.peekLines.length + fitted.partialLines.length),
+    [fitted.entries, fitted.peekLines.length, fitted.partialLines.length, terminal.columns],
   )
   const selMap = useMemo(
     () => (sel?.active ? buildSelectionMap(transcriptModel, sel.anchor, sel.end) : null),
@@ -283,10 +283,13 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           : null}
 
         <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent={showWelcome ? 'flex-start' : 'flex-end'} overflowY="hidden">
-          {fitted.peekLines.length > 0
+          {fitted.peekLines.length > 0 || fitted.partialLines.length > 0
             ? <Box width="100%" flexShrink={0} flexDirection="column">
                 {fitted.peekLines.map((line, index) => (
                   <Text key={`peek-${index}`} dimColor wrap="truncate-end">{index === 0 ? '  ⋯ ' : '    '}{line}</Text>
+                ))}
+                {fitted.partialLines.map((line, index) => (
+                  <Text key={`partial-${index}`} wrap="truncate-end">{line}</Text>
                 ))}
               </Box>
             : null}
@@ -1153,6 +1156,8 @@ function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, 
   entries: AnyEntry[]
   /** Tail rows of the next older entry, used to fill spare space above the viewport. */
   peekLines: string[]
+  /** Tail rows of an oversized first visible entry, rendered without clipping its parent tree. */
+  partialLines: string[]
   hiddenOlder: number
   hiddenRecent: number
   startIndex: number
@@ -1174,11 +1179,28 @@ function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, 
 
   const base = fit(rowBudget)
   let first = base.first
+  let hiddenOlder = first
   let peekLines: string[] = []
-  // If older history exists, reserve one row for the tail of the next older
-  // message. This prevents flex-end from leaving a blank band above the first
-  // complete visible message while preserving the complete-entry pager.
-  if (first > 0 && base.rows <= rowBudget) {
+  let partialLines: string[] = []
+  if (base.rows > rowBudget && first < available.length) {
+    // Yoga/Ink cannot reliably show the tail of an oversized nested Box when
+    // the parent uses flex-end + overflowY=hidden. Flatten only this clipped
+    // entry to its screen rows, leaving all complete entries styled normally.
+    const afterRows = base.rows - renderedRows[first].length
+    const hasOlder = first > 0
+    const remaining = rowBudget - afterRows
+    const peekBudget = hasOlder && remaining > 1 ? 1 : 0
+    const partialBudget = Math.max(0, remaining - peekBudget)
+    if (peekBudget > 0) {
+      const olderLines = renderedRows[first - 1].filter(line => line.trim())
+      if (olderLines.length > 0) peekLines = olderLines.slice(-peekBudget)
+    }
+    if (partialBudget > 0) partialLines = renderedRows[first].slice(-partialBudget)
+    first += 1
+  } else if (first > 0 && base.rows <= rowBudget) {
+    // If older history exists, use spare rows for the tail of the next older
+    // message. This prevents flex-end from leaving a blank band above the
+    // first complete visible message while preserving complete-entry paging.
     const olderLines = renderedRows[first - 1].slice()
     while (olderLines.length > 0 && !olderLines[0].trim()) olderLines.shift()
     while (olderLines.length > 0 && !olderLines[olderLines.length - 1].trim()) olderLines.pop()
@@ -1190,7 +1212,8 @@ function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, 
   return {
     entries: available.slice(first),
     peekLines,
-    hiddenOlder: first,
+    partialLines,
+    hiddenOlder,
     hiddenRecent: entries.length - tail,
     startIndex: first,
   }

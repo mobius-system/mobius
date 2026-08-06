@@ -228,11 +228,13 @@ export interface SelPoint {
 export interface TranscriptModel {
   entries: string[][] // per fitted entry, its screen lines (margins as '')
   totalRows: number
+  /** Rows rendered before the selectable complete entries (peek/partial rows). */
+  leadingRows: number
 }
 
-export function buildTranscriptModel(fittedEntries: AnyEntry[], columns: number): TranscriptModel {
+export function buildTranscriptModel(fittedEntries: AnyEntry[], columns: number, leadingRows = 0): TranscriptModel {
   const entries = fittedEntries.map((e) => entryScreenLines(viewsForEntry(e), columns))
-  return { entries, totalRows: entries.reduce((sum, l) => sum + l.length, 0) }
+  return { entries, totalRows: entries.reduce((sum, l) => sum + l.length, 0), leadingRows }
 }
 
 /** Convert a screen (row, col) into a SelPoint, or null if outside the transcript. */
@@ -244,9 +246,11 @@ export function screenToSelPoint(
 ): SelPoint | null {
   if (screenRow < geo.boxTop || screenRow >= geo.boxTop + geo.boxH) return null
   let local = screenRow - geo.boxTop
-  const startOffset = geo.boxH - model.totalRows
+  const startOffset = geo.boxH - model.leadingRows - model.totalRows
   if (local < startOffset) return null
   local -= startOffset
+  if (local < model.leadingRows) return null
+  local -= model.leadingRows
   let acc = 0
   for (let e = 0; e < model.entries.length; e++) {
     const n = model.entries[e].length
