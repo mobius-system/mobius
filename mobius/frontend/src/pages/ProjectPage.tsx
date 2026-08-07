@@ -130,7 +130,8 @@ export default function ProjectPage() {
   const [section, setSection] = useState<ProjectListSection>(sectionInit)
   useEffect(() => { try { localStorage.setItem(SectionKey, section) } catch {} }, [SectionKey, section])
   const densityInit = (): ProjectCardDensity => {
-    try { return localStorage.getItem(PROJECT_CARD_DENSITY_KEY) === 'detailed' ? 'detailed' : 'compact' } catch { return 'compact' }
+    // 默认固定为详情模式: 仅当用户显式存过「精简」时才回落 compact, 否则一律 detailed.
+    try { return localStorage.getItem(PROJECT_CARD_DENSITY_KEY) === 'compact' ? 'compact' : 'detailed' } catch { return 'detailed' }
   }
   const [cardDensity, setCardDensity] = useState<ProjectCardDensity>(densityInit)
   useEffect(() => { try { localStorage.setItem(PROJECT_CARD_DENSITY_KEY, cardDensity) } catch {} }, [cardDensity])
