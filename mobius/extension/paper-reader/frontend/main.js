@@ -6,6 +6,7 @@ const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
 }[char]));
 const state = {
   channels: [], model: '', recent: [], paper: null, notes: [], comments: [], commentCounts: {}, runs: [],
+  conversation: [], conversationHasMore: false,
   anchor: null, selectedQuote: '', activeParagraph: null, editingNote: null, noteKind: 'insight',
   pdfUrl: null, currentView: 'text', activeSideTab: 'chat', headingObserver: null, saveScrollTimer: null,
   panelSizes: { outline: 232, side: 480 }
@@ -361,7 +362,7 @@ async function openPaper(input) {
   try {
     const result = await call({ action: 'open_paper', arxiv_id: value });
     renderPaper(result.paper);
-    await Promise.all([loadNotes(result.paper.source_id), loadComments(result.paper.source_id), loadRuns(result.paper.source_id)]);
+    await Promise.all([loadNotes(result.paper.source_id), loadComments(result.paper.source_id), loadRuns(result.paper.source_id, { restore: true })]);
     switchPane('chat', false);
     history.replaceState(null, '', `${location.pathname}?id=${encodeURIComponent(result.paper.source_id)}`);
     setLoading('', false);
@@ -559,12 +560,22 @@ function closeThread() {
   switchPane(state.activeSideTab || 'chat', false);
 }
 
-async function loadRuns(sourceId) {
+async function loadRuns(sourceId, { restore = false } = {}) {
   try {
-    const result = await call({ action: 'list_runs', source_id: sourceId, limit: 12 });
-    state.runs = result.items || [];
-  } catch { state.runs = []; }
-  if (!$('transcript').querySelector('.pr-msg')) renderChatEmpty();
+    const [runsResult, conversationResult] = await Promise.all([
+      call({ action: 'list_runs', source_id: sourceId, limit: 100 }),
+      call({ action: 'list_conversation', source_id: sourceId, limit: 100 })
+    ]);
+    state.runs = runsResult.items || [];
+    state.conversation = conversationResult.items || [];
+    state.conversationHasMore = Boolean(conversationResult.has_more);
+  } catch {
+    state.runs = [];
+    state.conversation = [];
+    state.conversationHasMore = false;
+  }
+  if (restore) renderConversation();
+  else if (!$('transcript').querySelector('.pr-msg')) renderChatEmpty();
 }
 
 function cleanStoredReply(value) {
@@ -647,6 +658,25 @@ function renderChatEmpty() {
   }));
   transcript.querySelectorAll('[data-run-id]').forEach((button) => button.addEventListener('click', () => restoreRun(button.dataset.runId)));
   refreshIcons(transcript);
+}
+
+function renderConversation() {
+  const transcript = $('transcript');
+  transcript.innerHTML = '';
+  if (!state.conversation.length) {
+    renderChatEmpty();
+    return;
+  }
+  const marker = document.createElement('div');
+  marker.className = 'pr-conversation-marker';
+  marker.innerHTML = `<i data-lucide="history"></i><span>已恢复这篇论文的 ${state.conversation.length} 轮问答</span>${state.conversationHasMore ? '<small>仅显示最近 100 轮</small>' : ''}`;
+  transcript.appendChild(marker);
+  for (const turn of state.conversation) {
+    if (turn.question) addMessage('user', turn.question, false, '');
+    if (turn.answer) addMessage('assistant', cleanStoredReply(turn.answer), false, turn.run_id);
+  }
+  transcript.scrollTop = transcript.scrollHeight;
+  refreshIcons(marker);
 }
 
 async function restoreRun(runId) {

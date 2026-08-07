@@ -1,4 +1,4 @@
-import { Archive, BookOpen, Brain, FileDiff, Hash, History, Loader2, Network, Puzzle, Replace, ScrollText, Terminal } from 'lucide-react'
+import { BookOpen, Brain, Clock, Cpu, FileDiff, GitBranch, History, Loader2, Network, Puzzle, RotateCcw, Share2, Terminal, Wand2 } from 'lucide-react'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { ProjectPortEntryButton } from './project-files'
 
@@ -26,6 +26,7 @@ type AdvancedSessionActionsProps = {
   onContinueWithModel: () => void
   onOpenSkill: () => void
   onOpenMemory: () => void
+  onOpenGit: () => void
 }
 
 /**
@@ -58,6 +59,7 @@ export function AdvancedSessionActions({
   onContinueWithModel,
   onOpenSkill,
   onOpenMemory,
+  onOpenGit,
 }: AdvancedSessionActionsProps) {
   const compact = variant === 'compact'
   const hasSession = !!sessionId
@@ -89,7 +91,7 @@ export function AdvancedSessionActions({
           label="查看运行命令"
           tooltip="查看当前会话运行的所有Bash命令"
           accent="emerald"
-          icon={<ScrollText className="h-4 w-4" strokeWidth={1.9} />}
+          icon={<History className="h-4 w-4" strokeWidth={1.9} />}
         />
         <AdvancedInteractionBtn
           onClick={onOpenInputReplay}
@@ -97,7 +99,7 @@ export function AdvancedSessionActions({
           label="回放输入"
           tooltip="回放输入"
           accent="blue"
-          icon={<History className="h-4 w-4" strokeWidth={1.9} />}
+          icon={<RotateCcw className="h-4 w-4" strokeWidth={1.9} />}
         />
         <AdvancedInteractionBtn
           onClick={onToggleJsonlMeta}
@@ -107,7 +109,7 @@ export function AdvancedSessionActions({
           accent="blue"
           aria-pressed={showJsonlMeta}
           className={showJsonlMeta ? 'bg-blue-500/15' : ''}
-          icon={<Hash className="h-4 w-4" strokeWidth={1.9} />}
+          icon={<Clock className="h-4 w-4" strokeWidth={1.9} />}
         />
         <ProjectPortEntryButton
           projectId={projectId}
@@ -136,7 +138,7 @@ export function AdvancedSessionActions({
           label="可合作计算机"
           tooltip="声明可合作计算机 (勾选 aimux remote, 生成声明直接发给当前 agent, 不写 Memory)"
           accent="amber"
-          icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
+          icon={<Share2 className="h-4 w-4" strokeWidth={1.9} />}
         />
         {researchId && onOpenResearchGraph ? (
           <AdvancedInteractionBtn
@@ -164,7 +166,7 @@ export function AdvancedSessionActions({
           accent="violet"
           icon={projectKnowledgeSending
             ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.9} />
-            : <Archive className="h-4 w-4" strokeWidth={1.9} />}
+            : <Wand2 className="h-4 w-4" strokeWidth={1.9} />}
         />
         <AdvancedInteractionBtn
           onClick={onContinueWithModel}
@@ -172,14 +174,14 @@ export function AdvancedSessionActions({
           label="修改模型并继续"
           tooltip="修改模型并继续"
           accent="violet"
-          icon={<Replace className="h-4 w-4" strokeWidth={1.9} />}
+          icon={<Cpu className="h-4 w-4" strokeWidth={1.9} />}
         />
       </div>
 
       <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
 
       {compact && (
-        <div className="grid grid-cols-2 items-stretch gap-2">
+        <div className="grid grid-cols-3 items-stretch gap-2">
           <AdvancedInteractionBtn
             onClick={onOpenSkill}
             disabled={!hasSession}
@@ -205,6 +207,20 @@ export function AdvancedSessionActions({
               <>
                 <Brain className="h-4 w-4" strokeWidth={1.9} />
                 <span className="text-[11px] font-medium leading-none">Memory</span>
+              </>
+            )}
+          />
+          <AdvancedInteractionBtn
+            onClick={onOpenGit}
+            disabled={!hasSession || !projectId}
+            label="Git"
+            tooltip="查看当前项目 Git 仓库"
+            accent="amber"
+            iconClassName="h-4 w-auto gap-1.5"
+            icon={(
+              <>
+                <GitBranch className="h-4 w-4" strokeWidth={1.9} />
+                <span className="text-[11px] font-medium leading-none">Git</span>
               </>
             )}
           />

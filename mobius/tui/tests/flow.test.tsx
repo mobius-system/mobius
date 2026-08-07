@@ -157,6 +157,41 @@ async function main() {
     stdin.write('\r'); await delay(500)                             // pick session → reconnect SSE
     ok(await waitFor(lastFrame, '输入问题'), 'resumed into chat')
     snap('5-after-resume', lastFrame() ?? '')
+
+    // ── /config: full reconfigure (project → issue → model) ──────────────
+    // Unlike /model, /config walks through project, issue, AND model steps.
+    await delay(400)
+    stdin.write('/config'); await delay(300)
+    stdin.write('\r')
+    ok(await waitFor(lastFrame, '重新配置'), '/config opens the full reconfig flow')
+    ok(await waitFor(lastFrame, '选择项目'), '/config shows project picker first')
+    // Pick the first project (created above).
+    stdin.write('\r'); await delay(400)
+    ok(await waitFor(lastFrame, '选择任务'), '/config shows issue picker after project')
+    // Pick the first issue.
+    stdin.write('\r'); await delay(400)
+    ok(await waitFor(lastFrame, '选择模型'), '/config shows model picker after issue')
+    ok(await waitFor(lastFrame, 'GPT-5.5'), '/config model list rendered')
+    stdin.write('\r'); await delay(700)                             // pick codex → create session
+    ok(await waitFor(lastFrame, '输入问题'), '/config creates a fresh session and returns to chat')
+    ok((lastFrame() ?? '').includes('?session=sess-1'), 'reconfigured chat is attached to the new session')
+    snap('6-after-config', lastFrame() ?? '')
+
+    // ── /model: swap model only, keep current task ─────────────────────────
+    // No issue/project step — the current task is kept; pick a model and App
+    // remounts Chat on the eagerly created session.
+    await delay(400)
+    stdin.write('/model'); await delay(300)
+    stdin.write('\r')
+    ok(await waitFor(lastFrame, '更换模型'), '/model opens the model picker directly')
+    ok(await waitFor(lastFrame, '选择模型'), 'model picker shown without an issue-selection step')
+    ok((lastFrame() ?? '').includes('当前任务: 命令行任务'), 'current task is kept (issue not changed)')
+    ok(await waitFor(lastFrame, 'GPT-5.5'), 'model list rendered (Select mounted)')
+    stdin.write('\r'); await delay(700)                             // pick codex → create session
+    ok(await waitFor(lastFrame, '输入问题'), '/model creates a fresh session and returns to chat')
+    ok((lastFrame() ?? '').includes('?session=sess-1'), '/model new session attached')
+    snap('7-after-model', lastFrame() ?? '')
+    snap('6-after-config', lastFrame() ?? '')
   } finally {
     unmount()
     globalThis.fetch = realFetch

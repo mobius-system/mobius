@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { LoaderCircle, MessageSquare, Search } from 'lucide-react'
 import type { ProjectFilter, ProjectIssuePagination } from './types'
@@ -23,6 +24,7 @@ type ProjectSidebarProps = {
   onFilterChange: (value: ProjectFilter) => void
   onCreateIssue: () => void
   onToggleStar: (issue: any) => void
+  onPageSizeChange: (pageSize: number) => void
 }
 
 export function ProjectSidebar({
@@ -42,11 +44,36 @@ export function ProjectSidebar({
   onFilterChange,
   onCreateIssue,
   onToggleStar,
+  onPageSizeChange,
 }: ProjectSidebarProps) {
+  const issueListRef = useRef<HTMLDivElement>(null)
   const showPagination = pagination.totalItems > pagination.pageSize
   const pageStart = pagination.totalItems === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1
   const pageEnd = Math.min(pagination.page * pagination.pageSize, pagination.totalItems)
   const goToPage = (page: number) => pagination.onPageChange(Math.min(Math.max(page, 1), pagination.totalPages))
+
+  // Keep the sidebar dense without tying its page size to the main card density.
+  // A ResizeObserver makes this respond to desktop window resizes and the mobile
+  // sidebar layout without a global viewport breakpoint table.
+  const measurePageSize = useCallback(() => {
+    const list = issueListRef.current
+    if (!list || list.clientHeight <= 0) return
+    const firstRow = list.querySelector<HTMLElement>('[data-project-sidebar-issue-row]')
+    const rowHeight = firstRow?.getBoundingClientRect().height || 28
+    const rowGap = 2 // `mb-0.5` on each issue wrapper
+    const nextPageSize = Math.max(1, Math.floor((list.clientHeight + rowGap) / (rowHeight + rowGap)))
+    if (nextPageSize !== pagination.pageSize) onPageSizeChange(nextPageSize)
+  }, [onPageSizeChange, pagination.pageSize])
+
+  useLayoutEffect(() => { measurePageSize() }, [measurePageSize, issues.length, search])
+
+  useEffect(() => {
+    const list = issueListRef.current
+    if (!list || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measurePageSize)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [measurePageSize])
 
   return (
     <>
@@ -87,7 +114,7 @@ export function ProjectSidebar({
           </div>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto px-2 py-1">
+      <div ref={issueListRef} className="flex-1 overflow-y-auto px-2 py-1">
         {(issuesLoading || (sessionSearchLoading && !!search.trim())) && issues.length === 0 ? (
           <ListLoadingHint />
         ) : issues.length === 0 ? (
@@ -100,6 +127,7 @@ export function ProjectSidebar({
           return (
             <div key={iss.id} className="mb-0.5">
               <Link to={`/u/${userParam}/p/${projectId}/i/${iss.id}`}
+                data-project-sidebar-issue-row
                 className="group flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer transition-all hover:bg-[var(--bg-card-hover)]">
                 <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleStar(iss) }}
                   title={iss.starred ? '取消收藏' : '收藏'}

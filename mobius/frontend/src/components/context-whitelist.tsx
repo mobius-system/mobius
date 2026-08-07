@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../store'
 import { ToggleSwitch } from './toggle-switch'
+import { HelpHint } from './project-page/help-hint'
 
 type ContextItem = {
   id: string
@@ -237,10 +238,10 @@ export function ProjectUserContextWhitelist({ projectId }: { projectId: string }
     <div data-tour="project-context-whitelist" className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5">
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="min-w-0">
-          <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>Skill与Memory过滤</h3>
-          <p className="text-[12px] mt-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            控制哪些全局 Skill 与 Memory 可用于本项目的 Session。关闭限制时全部可用；开启限制后，只注入勾选的条目。项目级条目不受影响。
-          </p>
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>Skill与Memory过滤</h3>
+            <HelpHint text="控制哪些全局 Skill 与 Memory 可用于本项目的会话。关闭限制时全部可用；开启限制后，只注入勾选的条目。项目级条目不受影响。" />
+          </div>
         </div>
         <button type="button" onClick={refresh} disabled={loading || saving}
           className="h-7 px-2.5 rounded text-[11px] border hover:bg-[var(--bg-card-hover)] transition-colors disabled:opacity-40"

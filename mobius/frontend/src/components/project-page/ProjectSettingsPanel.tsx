@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import { Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
+import { AlertTriangle, Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
 import { ProjectUserContextWhitelist } from '../context-whitelist'
+import { HelpHint } from './help-hint'
 import { ToggleSwitch } from '../toggle-switch'
 import { MemoriesManager } from '../memories'
 import { OpenInVSCodeButton } from '../project-files'
@@ -72,6 +73,7 @@ type ProjectMetaSetters = {
 
 type ProjectSettingsPanelProps = {
   project: any
+  desktopWorkspace?: boolean
   values: ProjectMetaValues
   setters: ProjectMetaSetters
   metaErr: string
@@ -429,11 +431,14 @@ function GitTrackingPanel({
   )
 }
 
-function SettingsCard({ title, children }: { title: string; children: ReactNode }) {
+function SettingsCard({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
     <section className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
       <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
-        <h3 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h3 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+          {hint && <HelpHint text={hint} />}
+        </div>
       </div>
       <div className="p-4 space-y-3">
         {children}
@@ -501,6 +506,7 @@ function LocalPcPathRow({ projectId }: { projectId: string }) {
 
 export function ProjectSettingsPanel({
   project,
+  desktopWorkspace = false,
   values,
   setters,
   metaErr,
@@ -557,7 +563,9 @@ export function ProjectSettingsPanel({
     return v && (['settings','versions','architecture','todos','members','package','assistant'] as const).includes(v as SettingsPane) ? v as SettingsPane : 'settings'
   }
   const [activePane, setActivePane] = useState<SettingsPane>(paneInit)
+  const [showDeletePermissionNotice, setShowDeletePermissionNotice] = useState(false)
   useEffect(() => { try { localStorage.setItem(PaneKey, activePane) } catch {} }, [PaneKey, activePane])
+  useEffect(() => { setShowDeletePermissionNotice(false) }, [project?.id])
   const [gitTracking, setGitTracking] = useState<GitTrackingState | null>(null)
   const [gitTrackingLoading, setGitTrackingLoading] = useState(false)
   const [gitTrackingErr, setGitTrackingErr] = useState('')
@@ -607,7 +615,8 @@ export function ProjectSettingsPanel({
     ? downloadUrlForRelPath(contextDemoState?.skillMaterialRelPath || 'context-materials/weekly-notes-summary/SKILL.md')
     : ''
   const assistantProject = isAssistantProject(project, user?.id)
-  const canDeleteProject = project?.created_by === user?.id
+  const deletePolicy = project?.delete_policy
+  const canDeleteProject = deletePolicy?.allowed === true
   const metaSaveStatus = !canManageProject
     ? '只读'
     : savingMeta
@@ -861,7 +870,10 @@ export function ProjectSettingsPanel({
   }
 
   return (
-    <section data-tour="project-settings-panel" className="w-full lg:w-1/2 overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+    <section
+      data-tour="project-settings-panel"
+      className={`w-full min-w-0 ${desktopWorkspace ? 'h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-6' : 'overflow-hidden'}`}
+      style={{ borderColor: 'var(--border-color)' }}>
       <div className="flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
         <ProjectOverflowTabs
           tabs={settingsTabs}
@@ -899,7 +911,7 @@ export function ProjectSettingsPanel({
           </div>
         ) : activePane === 'members' ? (
           <div className="w-full min-w-0 p-3 space-y-4">
-            <SettingsCard title="权限设置">
+            <SettingsCard title="权限设置" hint="管理项目成员及角色（owner/manager/member/viewer），决定谁能查看或修改本项目。">
               {/* 项目可见性(私有/公开)与两个读者开关已退役 —— 改纯成员制:
                   非成员不可见, 项目成员按角色(owner/manager/member/viewer)分权. */}
               {/* 项目成员管理 (照 Aone 权限页样式: 角色筛选 Tab + 表格 + 搜索) ——
@@ -943,16 +955,9 @@ export function ProjectSettingsPanel({
               当前账号可以查看和使用此项目；项目设置只有 owner/admin 可以修改。
             </div>
           )}
-          {canManageProject && !canDeleteProject && project.kind !== 'extension' && (
-            <div className="rounded-lg border px-3 py-2 text-[12px] leading-5"
-              style={{ borderColor: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.08)', color: 'var(--text-secondary)' }}>
-              当前账号可以修改项目设置；删除项目只允许项目创建者操作。
-            </div>
-          )}
-
           {/* 拓展项目: name / description / bindPath / worktree / research 都由 manifest 锁定 */}
           {project.kind === 'extension' ? null : (
-            <SettingsCard title="基本设置">
+            <SettingsCard title="基本设置" hint="项目的名称、描述，以及 Agent 实际读写的工作目录（绑定路径）。绑定路径下会持久化项目知识、Issue 知识与会话产物。">
               <LocalPcPathRow projectId={project.id} />
               {/* 豁免文本脱敏整框模糊: 项目名/描述/绑定路径常含 imac/tianyi 等匿名化关键词,
                   命中后整框 filter:blur(5px) 不可读 (脱敏默认开启). 拥有者编辑面需可读. */}
@@ -1095,9 +1100,9 @@ export function ProjectSettingsPanel({
           )}
 
           {project.kind === 'extension' ? null : (
-            <SettingsCard title="默认模型偏好">
+            <SettingsCard title="默认模型偏好" hint="本项目新建执行会话时默认套用的模型；不指定则跟随系统默认。">
               <div>
-                <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>本项目新建执行会话时，默认套用的模型</label>
+                <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>默认模型</label>
                 <select
                   value={editDefaultModel}
                   disabled={!canManageProject}
@@ -1138,7 +1143,7 @@ export function ProjectSettingsPanel({
           </div>
 
           {project.kind === 'extension' ? null : (
-            <SettingsCard title="拓展功能">
+            <SettingsCard title="拓展功能" hint="git worktree 默认开关、Research 研究系统，以及本项目关联的 Git 仓库。">
               <div>
                 <ToggleSwitch
                   checked={!editResearchEnabled && editDefaultUseWorktree}
@@ -1216,14 +1221,13 @@ export function ProjectSettingsPanel({
             </SettingsCard>
           )}
 
-          <SettingsCard title="巡检设置 - Agent鞭策设置">
+          <SettingsCard title="巡检设置 - Agent鞭策设置" hint="后台每 60s 巡检；当某会话 Agent 已停工却未清理 running.flag 时，按下方策略自动发送此消息，鞭策其继续工作。">
             <div>
               <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>Agent偷懒时的自动提醒消息</label>
               <ExpandableTextarea value={editForgottenFlagMessage} disabled={!canManageProject} onValueChange={setEditForgottenFlagMessage} rows={4}
                 overlayTitle="编辑自动提醒消息"
                 className="w-full px-3 py-2 rounded-lg text-[13px] resize-y focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>后台每 60s 巡检，若某会话Agent已停工但running.flag未删除，自动向该会话发送此消息，鞭策其继续工作。</p>
             </div>
             <div>
               <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒策略</label>
@@ -1297,7 +1301,7 @@ export function ProjectSettingsPanel({
             </div>
           </SettingsCard>
 
-          {canDeleteProject && project.kind !== 'extension' && (
+          {canManageProject && project.kind !== 'extension' && (
             <section className="rounded-lg border overflow-hidden"
               style={{ borderColor: 'rgba(239,68,68,0.38)', background: 'var(--bg-secondary)' }}>
               <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(239,68,68,0.25)' }}>
@@ -1311,13 +1315,30 @@ export function ProjectSettingsPanel({
                       删除后，该项目及其全部 Issue、执行会话、项目知识与绑定目录资料将无法恢复。点击后需要完成多重确认。
                     </p>
                   </div>
-                  <button onClick={onDeleteProject} title="删除项目（需要多重确认）"
+                  <button
+                    onClick={() => {
+                      if (canDeleteProject) {
+                        onDeleteProject()
+                        return
+                      }
+                      setShowDeletePermissionNotice(true)
+                    }}
+                    title={canDeleteProject ? '删除项目（需要多重确认）' : '查看删除限制'}
                     data-tour="project-delete"
                     className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-red-500/45 bg-red-500/10 px-3 text-[12px] font-medium text-red-400 transition-colors hover:bg-red-500 hover:text-white">
                     <Trash2 className="h-4 w-4" strokeWidth={1.8} />
                     删除项目
                   </button>
                 </div>
+                {showDeletePermissionNotice && !canDeleteProject && (
+                  <div
+                    role="alert"
+                    className="mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] leading-5"
+                    style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.08)', color: 'var(--text-secondary)' }}>
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" strokeWidth={1.8} />
+                    <span>{deletePolicy?.denial_reason || '当前账号没有删除此项目的权限。请联系项目创建者或系统管理员处理。'}</span>
+                  </div>
+                )}
               </div>
             </section>
           )}

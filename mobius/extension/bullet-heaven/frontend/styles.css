@@ -284,6 +284,7 @@ button { color: inherit; }
   border: 1px solid rgba(143, 191, 222, 0.12);
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.025);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--item-color) 65%, transparent);
 }
 
 .arsenal-item i {
@@ -338,7 +339,7 @@ button { color: inherit; }
 }
 
 .director-button:hover { transform: translateX(-2px); border-color: var(--button-color); background: color-mix(in srgb, var(--button-color) 9%, transparent); }
-.director-button.active { border-color: var(--button-color); box-shadow: inset 0 0 22px color-mix(in srgb, var(--button-color) 12%, transparent), 0 0 20px color-mix(in srgb, var(--button-color) 10%, transparent); }
+.director-button.active { border-color: var(--button-color); box-shadow: inset 0 0 22px color-mix(in srgb, var(--button-color) 12%, transparent), 0 0 20px color-mix(in srgb, var(--button-color) 10%, transparent); animation: directorPulse 1.25s ease-in-out infinite; }
 .director-button:disabled { opacity: 0.42; cursor: default; transform: none; }
 .director-button > i { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: color-mix(in srgb, var(--button-color) 17%, transparent); color: var(--button-color); font-style: normal; font-size: 18px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--button-color) 32%, transparent); }
 .director-button span { display: grid; gap: 2px; }
@@ -406,10 +407,14 @@ kbd {
   padding: 10px 13px;
   border: 1px solid rgba(255, 82, 111, 0.4);
   border-radius: 12px;
-  background: rgba(15, 5, 15, 0.84);
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 82, 111, 0.06) 0 8px, transparent 8px 16px),
+    rgba(15, 5, 15, 0.88);
   box-shadow: 0 0 38px rgba(255, 30, 92, 0.18);
   backdrop-filter: blur(12px);
 }
+
+.boss-hud::before { content: "BOSS SIGNAL // LOCKED"; position: absolute; top: -17px; left: 3px; color: rgba(255, 145, 166, 0.75); font-size: 7px; font-weight: 950; letter-spacing: 0.18em; }
 
 .boss-hud > div { display: flex; justify-content: space-between; margin-bottom: 5px; color: #ffb0c2; font-size: 10px; font-weight: 900; letter-spacing: 0.09em; }
 .boss-hud section { height: 8px; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
@@ -450,12 +455,15 @@ kbd {
   font-weight: 1000;
   font-style: italic;
   letter-spacing: -0.04em;
+  -webkit-text-stroke: 1px color-mix(in srgb, currentColor 28%, transparent);
   text-align: center;
   text-shadow: 0 0 18px currentColor, 0 4px 0 rgba(0, 0, 0, 0.5);
   opacity: 0;
   transform: translate(-50%, 25px) scale(1.15) skewX(-7deg);
   pointer-events: none;
 }
+
+@keyframes directorPulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.16); } }
 
 .event-banner.visible { animation: bannerIn 1.8s ease both; }
 @keyframes bannerIn { 0% { opacity: 0; transform: translate(-50%, 25px) scale(1.35) skewX(-7deg); } 15%, 68% { opacity: 1; transform: translate(-50%, 0) scale(1) skewX(-7deg); } 100% { opacity: 0; transform: translate(-50%, -15px) scale(0.92) skewX(-7deg); } }
@@ -612,6 +620,7 @@ kbd {
   .feature-grid { grid-template-columns: 1fr 1fr; }
   .mobile-controls { position: absolute; z-index: 30; inset: auto 0 15px; display: flex; justify-content: space-between; padding: 0 22px; pointer-events: none; }
   .stick { position: relative; width: 92px; height: 92px; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 50%; background: rgba(4, 9, 19, 0.35); box-shadow: inset 0 0 25px rgba(112, 255, 241, 0.06); pointer-events: auto; touch-action: none; }
+  .stick::before { content: ""; position: absolute; inset: 10px; border: 1px dashed rgba(255, 255, 255, 0.16); border-radius: 50%; pointer-events: none; }
   .stick i { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; border: 1px solid rgba(112, 255, 241, 0.5); border-radius: 50%; background: rgba(112, 255, 241, 0.17); box-shadow: 0 0 15px rgba(112, 255, 241, 0.18); transform: translate(-50%, -50%); }
   .stick span { position: absolute; left: 50%; bottom: -15px; transform: translateX(-50%); color: #698493; font-size: 7px; font-weight: 850; }
   .aim-stick { border-color: rgba(255, 228, 92, 0.25); }

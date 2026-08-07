@@ -1,5 +1,6 @@
 export type ProjectFilter = 'all' | 'active' | 'completed'
 export type ProjectListSection = 'issues' | 'researches'
+export type ProjectCardDensity = 'compact' | 'detailed'
 
 export type ProjectIssuePagination = {
   page: number

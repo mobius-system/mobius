@@ -8,16 +8,23 @@
  * activity, composer, and a persistent context status line.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Text, useInput, useStdout } from 'ink'
+import { Box, Text, useStdout } from 'ink'
 import { useChat } from '../hooks/useChat.js'
 import { MobiusClient } from '../api.js'
-import { renderMarkdownLines } from '../markdown.js'
-import { viewsForEntry, dedupeUserEntries, toolLabel, isAssistantOutput, type EntryView } from '../lib/entry-view.js'
+import { viewsForEntry, dedupeUserEntries, isAssistantOutput } from '../lib/entry-view.js'
+import {
+  displayWidth, compareSel, entryScreenLines, entryScreenRows,
+  buildTranscriptModel, computeTranscriptGeometry, screenToSelPoint,
+  buildSelectionMap, buildSelectionText, osc52,
+  type TranscriptModel, type TranscriptGeometry, type SelPoint, type ScreenRow,
+} from '../lib/screen-text.js'
 import type { ReadyState } from './PrepScreen.js'
 import type { AnyEntry } from '../types.js'
+import { ConfigFlow, ReconfigFlow, type ConfigResult } from './ConfigFlow.js'
 import type { AimuxStatus } from '../aimux.js'
 import { AimuxStatusLine, aimuxStatusText } from './AimuxStatus.js'
-import { isEscapeKeypress } from './primitives.js'
+import { isEscapeKeypress, isMouseInput, useMouseEvents, useStableInput } from './primitives.js'
+import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousCursorBoundary, nextCursorBoundary } from '../lib/delete-keys.js'
 
 interface ChatProps {
   client: MobiusClient
@@ -27,6 +34,8 @@ interface ChatProps {
   onClear: () => void
   onResume: () => void
   onQuit: () => void
+  onReconfigure: (result: ConfigResult) => void
+  onConfigCancel: (sessionId: string | null) => void
   aimuxStatus?: AimuxStatus
 }
 
@@ -44,16 +53,30 @@ const STATUS_ROWS = 3
 const SLASH_COMMANDS = [
   { cmd: '/clear', desc: '清空当前对话，开启新会话' },
   { cmd: '/resume', desc: '恢复一个历史会话' },
+  { cmd: '/model', desc: '更换模型并开启新会话（保留当前任务）' },
+  { cmd: '/config', desc: '重新选择项目、任务和模型' },
   { cmd: '/help', desc: '显示帮助' },
   { cmd: '/quit', desc: '退出 TUI' },
 ]
 
-export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, aimuxStatus }: ChatProps) {
+export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, onReconfigure, onConfigCancel, aimuxStatus }: ChatProps) {
   const chat = useChat({ client, ready, resumeSessionId })
   const [showHelp, setShowHelp] = useState(false)
   const [scrollBack, setScrollBack] = useState(0)
   const [composerRows, setComposerRows] = useState(DEFAULT_COMPOSER_ROWS)
   const [modelLabel, setModelLabel] = useState<string | null>(null)
+  const [configOpen, setConfigOpen] = useState(false)
+  const [reconfigOpen, setReconfigOpen] = useState(false)
+  // Ink may deliver one final event to Composer while an async config picker is
+  // replacing it. The shared ref lets that stale listener report "not handled"
+  // so App can replay the key after the new Select mounts.
+  const chatInputActiveRef = useRef(true)
+  chatInputActiveRef.current = !configOpen && !reconfigOpen
+  // Ink's useInput keeps whatever handler was registered at subscription time;
+  // reading mutable refs (updated every render) keeps the callback from acting
+  // on a stale `configOpen`/sessionId closure after the config flow opens.
+  const handlerRef = useRef<{ configOpen: boolean; reconfigOpen: boolean; sessionId: string | null }>({ configOpen: false, reconfigOpen: false, sessionId: null })
+  handlerRef.current = { configOpen, reconfigOpen, sessionId: chat.sessionId }
   const terminal = useTerminalSize()
 
   const runSlash = useCallback((raw: string) => {
@@ -62,6 +85,8 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       case '/clear': onClear(); return true
       case '/resume': onResume(); return true
       case '/help': setShowHelp(s => !s); return true
+      case '/model': setConfigOpen(true); return true
+      case '/config': setReconfigOpen(true); return true
       case '/quit': case '/exit': onQuit(); return true
       default: return false
     }
@@ -91,6 +116,16 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   // (type:user / response_item.message[user] / event_msg.user_message) 合并成 1 条,
   // 避免在累积视图里把同一条提问显示多次.
   const dedupedEntries = useMemo(() => dedupeUserEntries(chat.entries), [chat.entries])
+  // Cache: entry index → rendered line count. Cleared when entries or columns change.
+  const entryLines = useRef<Map<number, number>>(new Map())
+  useEffect(() => { entryLines.current.clear() }, [dedupedEntries, terminal.columns])
+  const getEntryLines = useCallback((i: number) => {
+    const c = entryLines.current.get(i)
+    if (c !== undefined) return c
+    const n = entryScreenLines(viewsForEntry(dedupedEntries[i]), terminal.columns).length || 1
+    entryLines.current.set(i, n)
+    return n
+  }, [dedupedEntries, terminal.columns])
   const viewportRows = terminal.isTty ? Math.max(9, terminal.rows - 1) : terminal.rows
   const activityRows = (chat.typing ? 2 : 0) + (chat.error ? 1 : 0)
   const helpRows = showHelp ? SLASH_COMMANDS.length + 3 : 0
@@ -128,11 +163,154 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   }, [client, ready.prefs.model])
   const modelDisplay = modelLabel ?? ready.prefs.model ?? 'default'
 
-  useInput((_input, key) => {
+  useStableInput((_input, key) => {
+    // While a config/reconfig flow is open, this ChatScreen-level handler owns
+    // Esc so cancel is reliable even mid-list-loading (a per-component
+    // EscToCancel could be unmounted by the loading→loaded transition and drop
+    // the keypress). configOpen/reconfigOpen/sessionId are read from handlerRef
+    // (see above) because Ink keeps the originally-registered callback and would
+    // otherwise see a stale closure.
+    if (handlerRef.current.configOpen || handlerRef.current.reconfigOpen) {
+      if (isEscapeKeypress(_input, key)) onConfigCancel(handlerRef.current.sessionId)
+      return
+    }
     const step = Math.max(1, fitted.entries.length)
     if (key.pageUp) setScrollBack(value => Math.min(dedupedEntries.length, value + step))
     else if (key.pageDown) setScrollBack(value => Math.max(0, value - step))
+  }, { interactive: false })
+
+  const olderHint = !showWelcome && (fitted.hiddenOlder > 0 || scrollBack > 0)
+    ? fitted.hiddenOlder > 0
+      ? `↑ 还有 ${fitted.hiddenOlder} 条较早记录 · 滚轮/PageUp 翻页 · 拖动选中文本`
+      : '已到最早记录 · 滚轮/PageDown 翻页 · 拖动选中文本'
+    : null
+
+  // Mouse: wheel pages through history in small fixed steps, and a left-button
+  // drag selects transcript text (tmux-style: the app owns the mouse, draws its
+  // own highlight, and copies the range via OSC 52 on release). Handled on the
+  // Ink event emitter (not useInput) so sequences can be buffered across read()
+  // chunks; the Composer guards against inserting mouse bytes as typed text.
+  const { stdout } = useStdout()
+  const selState = useRef<{ anchor: SelPoint; end: SelPoint; active: boolean } | null>(null)
+  const [sel, setSel] = useState<{ anchor: SelPoint; end: SelPoint; active: boolean } | null>(null)
+  const [copyNotice, setCopyNotice] = useState<string | null>(null)
+
+  // Geometry + text model must mirror the rendered transcript so a screen
+  // (row, col) maps to the right entry/line/char. Recompute with the fitted view.
+  const tipShown = dedupedEntries.length === 0 && chat.pendingUser === null && !showHelp
+  const geometry: TranscriptGeometry = useMemo(() => computeTranscriptGeometry({
+    viewportRows,
+    composerRows,
+    statusRows: STATUS_ROWS,
+    activityRows,
+    helpRows,
+    showWelcome,
+    welcomeRows: 10,
+    olderHintShown: olderHint !== null,
+    tipShown,
+  }), [viewportRows, composerRows, activityRows, helpRows, showWelcome, olderHint, tipShown])
+  const transcriptModel: TranscriptModel = useMemo(
+    () => buildTranscriptModel(fitted.entries, terminal.columns),
+    [fitted.entries, terminal.columns],
+  )
+  const selMap = useMemo(
+    () => (sel?.active ? buildSelectionMap(transcriptModel, sel.anchor, sel.end) : null),
+    [sel, transcriptModel],
+  )
+
+  const commitCopy = useCallback((anchor: SelPoint, end: SelPoint) => {
+    const text = buildSelectionText(transcriptModel, anchor, end)
+    if (!text) return
+    stdout.write(osc52(text))
+    setCopyNotice(`已复制 ${Array.from(text).length} 字符`)
+  }, [transcriptModel, stdout])
+
+  useMouseEvents({
+    onWheel: (delta) => {
+      if (delta === 0) return
+      const targetLines = 2
+      let lines = 0
+      let next = scrollBack
+      const n = dedupedEntries.length
+      if (delta > 0) {
+        // scroll up (older): hide more entries from the tail
+        for (let i = n - 1 - next; i >= 0 && lines < targetLines; i--) {
+          lines += getEntryLines(i)
+          next++
+        }
+      } else {
+        // scroll down (newer): unhide entries from the tail
+        for (let i = n - next; i < n && lines < targetLines; i++) {
+          lines += getEntryLines(i)
+          next--
+        }
+      }
+      setScrollBack(Math.min(n, Math.max(0, next)))
+    },
+    onPress: (row, col) => {
+      const p = screenToSelPoint(row, col, transcriptModel, geometry)
+      if (p) { selState.current = { anchor: p, end: p, active: true }; setSel(selState.current) }
+    },
+    onMotion: (row, col) => {
+      const s = selState.current
+      if (!s?.active) return
+      const p = screenToSelPoint(row, col, transcriptModel, geometry)
+      if (p) { selState.current = { ...s, end: p }; setSel(selState.current) }
+    },
+    onRelease: () => {
+      const s = selState.current
+      selState.current = null
+      setSel(null)
+      if (s?.active && compareSel(s.anchor, s.end) !== 0) commitCopy(s.anchor, s.end)
+    },
   })
+
+  // Transient "已复制 N 字符" notice in the status row, then it clears itself.
+  useEffect(() => {
+    if (!copyNotice) return
+    const id = setTimeout(() => setCopyNotice(null), 2500)
+    return () => clearTimeout(id)
+  }, [copyNotice])
+
+  if (configOpen) {
+    // Keep the SAME height-pinned root box the chat uses, so the frame stays
+    // exactly terminal-height whether the flow is open or the conversation is
+    // shown. Rendering the flow at its natural (shorter) height and then
+    // re-painting the tall chat on Esc made Ink's frame accounting go blank in
+    // the harness (and looked like a glitch in real terminals too).
+    return (
+      <Box
+        flexDirection="column"
+        width={terminal.isTty ? terminal.columns : undefined}
+        height={terminal.isTty ? viewportRows : undefined}
+        paddingX={1}
+        overflowY="hidden"
+      >
+        <ConfigFlow
+          client={client}
+          issue={ready.issue}
+          onDone={(result) => onReconfigure(result)}
+        />
+      </Box>
+    )
+  }
+
+  if (reconfigOpen) {
+    return (
+      <Box
+        flexDirection="column"
+        width={terminal.isTty ? terminal.columns : undefined}
+        height={terminal.isTty ? viewportRows : undefined}
+        paddingX={1}
+        overflowY="hidden"
+      >
+        <ReconfigFlow
+          client={client}
+          onDone={(result) => onReconfigure(result)}
+        />
+      </Box>
+    )
+  }
 
   return (
     <Box
@@ -147,16 +325,29 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           ? <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} modelDisplay={modelDisplay} />
           : <CompactHeader ready={ready} sessionId={chat.sessionId} columns={terminal.columns} />}
 
-        <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent={showWelcome ? 'flex-start' : 'flex-end'} overflowY="hidden">
-          {fitted.hiddenOlder > 0 || scrollBack > 0
-            ? <Text dimColor>  ↑ {fitted.hiddenOlder > 0 ? `还有 ${fitted.hiddenOlder} 条较早记录 · PageUp 向上翻页` : '已到最早记录 · PageDown 向下翻页'}</Text>
+        {/* Older-records hint is pinned OUTSIDE the flex-end scroll box so it is
+            always the first line of the transcript, spanning the full width,
+            instead of floating mid-screen when the transcript has spare rows. */}
+        {olderHint !== null
+          ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  {olderHint}</Text></Box>
+          : null}
+
+        <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent={showWelcome || fitted.hiddenOlder > 0 ? 'flex-start' : 'flex-end'} overflowY="hidden">
+          {fitted.peekLines.length > 0
+            ? <Box width="100%" flexShrink={0} flexDirection="column">
+                {fitted.peekLines.map((line, index) => (
+                  <Text key={`peek-${index}`} dimColor wrap="truncate-end">{index === 0 ? '  ⋯ ' : '    '}{line}</Text>
+                ))}
+              </Box>
             : null}
-          {fitted.entries.map((entry, index) => (
-            <EntryAccum key={entry.__id ?? `entry-${fitted.startIndex + index}`} entry={entry} columns={terminal.columns} />
-          ))}
+          {fitted.entries.map((entry, index) => {
+            const entrySel = selMap?.get(index)
+            const key = entry.__id ?? `entry-${fitted.startIndex + index}`
+            return <EntryScreen key={key} entry={entry} columns={terminal.columns} sel={entrySel} />
+          })}
           {chat.pendingUser !== null ? <UserLine text={chat.pendingUser} /> : null}
           {fitted.hiddenRecent > 0
-            ? <Text dimColor>  ↓ PageDown 向下翻页 · 较新 {fitted.hiddenRecent} 条</Text>
+            ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  ↓ 滚轮/PageDown 翻页 · 较新 {fitted.hiddenRecent} 条</Text></Box>
             : null}
         </Box>
 
@@ -178,6 +369,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           typing={chat.typing}
           commands={SLASH_COMMANDS}
           onHeightChange={setComposerRows}
+          inputActiveRef={chatInputActiveRef}
         />
         <StatusArea
           ready={ready}
@@ -186,6 +378,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           webUrl={buildWebUrl(client.server, webUserId, ready, chat.sessionId)}
           aimuxStatus={aimuxStatus}
           modelDisplay={modelDisplay}
+          copyNotice={copyNotice}
         />
       </Box>
     </Box>
@@ -255,150 +448,81 @@ function CompactHeader({ ready, sessionId, columns }: { ready: ReadyState; sessi
   )
 }
 
-function EntryAccum({ entry, columns }: { entry: AnyEntry; columns: number }) {
-  const views = viewsForEntry(entry)
+// Normal and selected transcript rows use the exact same component tree. Mouse
+// motion now changes only ANSI background bytes inside a row; it never swaps a
+// rich Markdown entry for a structurally different plain-text entry, which used
+// to make long/styled messages jump as the selection crossed entry boundaries.
+function EntryScreen({ entry, columns, sel }: {
+  entry: AnyEntry
+  columns: number
+  sel?: Map<number, { start: number; end: number }>
+}) {
+  const rows = entryScreenRows(viewsForEntry(entry), columns)
   return (
     <Box flexDirection="column">
-      {views.map((view, index) => <ViewLine key={index} view={view} columns={columns} />)}
+      {rows.map((row, index) => {
+        const range = sel?.get(index)
+        const text = range && range.start < range.end
+          ? highlightScreenRow(row.styled, range.start, range.end)
+          : row.styled
+        return <ScreenText key={index} row={row} text={text || ' '} />
+      })}
     </Box>
   )
 }
 
-function ViewLine({ view, columns }: { view: EntryView; columns: number }) {
-  const width = Math.max(8, columns - 4)
-  switch (view.kind) {
-    case 'skip':
-      return null
-    case 'user':
-      return <UserLine text={view.text} />
-    case 'assistant': {
-      const lines = renderMarkdownLines(view.text)
-      return (
-        <Box marginTop={1} flexDirection="column">
-          {lines.map((line, index) => (
-            <Text key={index} wrap={line.code ? 'truncate-end' : 'wrap'}>
-              {index === 0 ? '• ' : '  '}{line.text || ' '}
-            </Text>
-          ))}
-        </Box>
-      )
+function ScreenText({ row, text }: { row: ScreenRow; text: string }) {
+  const tone = row.tone
+  const color = tone === 'tool' ? 'cyan'
+    : tone === 'tool_error' || tone === 'edit_old' || tone === 'error' ? 'red'
+      : tone === 'edit_header' || tone === 'reasoning' ? 'magenta'
+        : tone === 'edit_new' ? 'green'
+          : tone === 'system' ? 'yellow'
+            : undefined
+  const dimColor = tone === 'tool_result' || tone === 'tool_error' || tone === 'reasoning' || tone === 'system'
+  return <Text wrap="truncate-end" bold={tone === 'user'} dimColor={dimColor} color={color}>{text}</Text>
+}
+
+const ANSI_CSI_RE = /^\x1b\[[0-?]*[ -/]*[@-~]/
+const SELECTION_BG = '\x1b[46m'
+const SELECTION_BG_END = '\x1b[49m'
+
+/** Add a background to visible UTF-16 offsets without stripping existing ANSI. */
+function highlightScreenRow(styled: string, start: number, end: number): string {
+  if (start >= end) return styled
+  let out = ''
+  let raw = 0
+  let visible = 0
+  let highlighted = false
+  while (raw < styled.length) {
+    if (styled.charCodeAt(raw) === 0x1b) {
+      const match = ANSI_CSI_RE.exec(styled.slice(raw))
+      if (match) {
+        out += match[0]
+        raw += match[0].length
+        // A full SGR reset inside Markdown/syntax text also resets the injected
+        // background; immediately restore it while the selected span is active.
+        if (highlighted && /^\x1b\[(?:0)?m$/.test(match[0])) out += SELECTION_BG
+        continue
+      }
     }
-    case 'tool_call': {
-      // compact (≤2 行): 命令行 + 可选结果行 (已与 tool_result 合并).
-      const head = clampLines(`${toolLabel(view.toolName)} ${view.summary}`.trim(), width - 2, 1)[0]
-      return (
-        <Box marginTop={1} flexDirection="column">
-          <Text color="cyan">• {head}</Text>
-          {view.result ? (
-            <Text dimColor color={view.result.isError ? 'red' : undefined}>
-              {'  └ '}{clampLines(view.result.text, width - 4, 1)[0] || '(无输出)'}
-            </Text>
-          ) : null}
-        </Box>
-      )
+    const codePoint = styled.codePointAt(raw)!
+    const char = String.fromCodePoint(codePoint)
+    const nextVisible = visible + char.length
+    if (!highlighted && nextVisible > start && visible < end) {
+      out += SELECTION_BG
+      highlighted = true
     }
-    case 'tool_result': {
-      // codex 式 head+ellipsis+tail (output_max_lines=5): tool 结果保留头尾,
-      // 中间省略行数; DIM 样式 + └/缩进前缀 (对齐 codex exec_cell/render.rs).
-      const lines = headTailLines(view.text, width - 4, 5)
-      return (
-        <Box flexDirection="column">
-          {lines.map((l, i) => (
-            <Text key={i} dimColor color={view.isError ? 'red' : undefined}>{i === 0 ? '  └ ' : '    '}{l}</Text>
-          ))}
-        </Box>
-      )
+    if (highlighted && visible >= end) {
+      out += SELECTION_BG_END
+      highlighted = false
     }
-    case 'code_edit':
-      return <CodeEditView view={view} />
-    case 'write_file':
-      return <WriteFileView view={view} />
-    case 'reasoning': {
-      const lines = clampLines(view.text, width - 4, 2)
-      return (
-        <Box marginTop={1} flexDirection="column">
-          {lines.map((line, i) => (
-            <Text key={i} dimColor color="magenta">{i === 0 ? '  ◇ ' : '    '}{line}</Text>
-          ))}
-        </Box>
-      )
-    }
-    case 'system':
-      return <Text dimColor color="yellow">  {clampLines(view.text, width - 2, 2)[0]}</Text>
-    case 'error':
-      return (
-        <Box marginTop={1} flexDirection="column">
-          {view.text.split('\n').map((line, i) => (
-            <Text key={i} color="red">{i === 0 ? '⚠ ' : '  '}{line}</Text>
-          ))}
-        </Box>
-      )
-    default:
-      return null
+    out += char
+    raw += char.length
+    visible = nextVisible
   }
-}
-
-// 代码修改 (Edit/StrReplace/apply_patch) — full: 完整展示 old(−)/new(+) 改动原文.
-function CodeEditView({ view }: { view: { filePath: string; oldString: string; newString: string } }) {
-  return (
-    <Box marginTop={1} flexDirection="column">
-      <Text color="magenta">✎ 编辑 {view.filePath || '(未指定文件)'}</Text>
-      {view.oldString ? view.oldString.split('\n').map((line, i) => (
-        <Text key={`o${i}`} color="red">{'  − '}{line}</Text>
-      )) : null}
-      {view.newString ? view.newString.split('\n').map((line, i) => (
-        <Text key={`n${i}`} color="green">{'  + '}{line}</Text>
-      )) : null}
-    </Box>
-  )
-}
-
-// 文件写入 (Write/create_file) — full: 完整展示写入内容原文.
-function WriteFileView({ view }: { view: { filePath: string; content: string } }) {
-  return (
-    <Box marginTop={1} flexDirection="column">
-      <Text color="magenta">✎ 写入 {view.filePath || '(未指定文件)'}</Text>
-      {view.content.split('\n').map((line, i) => (
-        <Text key={i} color="green">{'  + '}{line}</Text>
-      ))}
-    </Box>
-  )
-}
-
-// 把文本按宽度硬切成最多 maxLines 行 (超出则在末行加 …), 用于 compact 类的 ≤2 行硬约束.
-function clampLines(text: string, width: number, maxLines: number): string[] {
-  if (!text) return ['']
-  const paras = text.replace(/\r\n/g, '\n').split('\n')
-  const wrapped: string[] = []
-  for (const para of paras) {
-    if (para === '') { wrapped.push(''); continue }
-    for (let i = 0; i < para.length; i += width) wrapped.push(para.slice(i, i + width))
-  }
-  if (wrapped.length <= maxLines) return wrapped
-  const trimmed = wrapped.slice(0, maxLines)
-  const last = trimmed[maxLines - 1]
-  trimmed[maxLines - 1] = last.length >= width ? last.slice(0, width - 1) + '…' : last + '…'
-  return trimmed
-}
-
-// codex 式 head + ellipsis + tail 截断 (参考 codex-rs/tui/src/exec_cell/render.rs
-// 的 truncate_lines_middle): 保留输出头尾, 中间省略并报告省略行数. 长输出既能看
-// 到结论 (成功/失败常在尾), 又不刷屏. maxLines 含省略行 (如 5 = 头2 + 省1 + 尾2).
-function headTailLines(text: string, width: number, maxLines: number): string[] {
-  if (!text) return ['']
-  const paras = text.replace(/\r\n/g, '\n').split('\n')
-  const wrapped: string[] = []
-  for (const para of paras) {
-    if (para === '') { wrapped.push(''); continue }
-    for (let i = 0; i < para.length; i += width) wrapped.push(para.slice(i, i + width))
-  }
-  if (wrapped.length <= maxLines) return wrapped.slice(0, maxLines)
-  const budget = maxLines - 1 // 留 1 行给省略标记
-  const head = Math.max(1, Math.ceil(budget / 2))
-  const tail = Math.max(1, budget - head)
-  const omitted = wrapped.length - head - tail
-  if (omitted <= 0) return wrapped.slice(0, maxLines)
-  return [...wrapped.slice(0, head), `… +${omitted} 行`, ...wrapped.slice(wrapped.length - tail)]
+  if (highlighted) out += SELECTION_BG_END
+  return out
 }
 
 function UserLine({ text }: { text: string }) {
@@ -443,6 +567,9 @@ export function shimmerText(label: string, frame: number): React.ReactNode[] {
 }
 
 function HelpBlock({ commands }: { commands: { cmd: string; desc: string }[] }) {
+  const mouseNote = process.env.MOBIUS_TUI_DISABLE_MOUSE === '1'
+    ? '滚轮翻页已关闭 (MOBIUS_TUI_DISABLE_MOUSE=1)，鼠标可用于直接选中文本。'
+    : '滚轮翻页 · 拖动选中文本，松开即经 OSC 52 复制到剪贴板。'
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="gray" borderDimColor paddingX={1} marginTop={1}>
       {commands.map(command => (
@@ -451,6 +578,7 @@ function HelpBlock({ commands }: { commands: { cmd: string; desc: string }[] }) 
           <Text>{command.desc}</Text>
         </Text>
       ))}
+      <Text dimColor>  {mouseNote}</Text>
     </Box>
   )
 }
@@ -462,9 +590,10 @@ interface ComposerProps {
   typing: boolean
   commands: { cmd: string; desc: string }[]
   onHeightChange?: (rows: number) => void
+  inputActiveRef?: React.RefObject<boolean>
 }
 
-export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightChange }: ComposerProps) {
+export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightChange, inputActiveRef }: ComposerProps) {
   const [value, setValue] = useState('')
   const [cursor, setCursor] = useState(0)
   const [popupIdx, setPopupIdx] = useState(0)
@@ -483,6 +612,15 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
     timer: null,
   })
   const { stdout } = useStdout()
+
+  // Physical Backspace/Delete keys are owned by useDeleteKeyCapture from the
+  // raw stdin bytes — Ink reports the Backspace key (\x7f) and the Delete key
+  // (ESC[3~) both as `key.delete`, so handling `key.delete` in useInput would
+  // delete in the wrong direction. The composer is always active while mounted.
+  useDeleteKeyCapture(true, (intent) => {
+    const { text, cursor: nextCursor } = applyDeleteIntent(valueRef.current, cursorRef.current, intent)
+    edit(text, nextCursor)
+  })
 
   const filtered = useMemo(() => {
     const match = /^(\w*)$/.exec(value.slice(1))
@@ -598,7 +736,9 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
 
   useEffect(() => () => resetPasteBurst(), [])
 
-  useInput((input, key) => {
+  useStableInput((input, key) => {
+    if (inputActiveRef?.current === false) return false
+    if (isMouseInput(input)) return // mouse events must never become typed text
     const now = Date.now()
     const escape = isEscapeKeypress(input, key)
     if (typing && escape) { void onStop(); return }
@@ -664,20 +804,22 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
       return
     }
     if (key.ctrl && input === 'c') { typing ? void onStop() : onQuit(); return }
-    // Ink reports the terminal Backspace key (\x7f) as `key.delete`; handle both
-    // as a backward delete so Backspace works at the end of the input.
-    if (key.backspace || key.delete || (key.ctrl && (input === 'h' || input === 'w'))) {
-      if (at > 0) {
-        if (key.ctrl && input === 'w') {
-          const before = current.slice(0, at)
-          const match = before.match(/\S+\s*$/)
-          const cut = match ? match[0].length : 0
-          edit(current.slice(0, at - cut) + current.slice(at), at - cut)
-        } else {
-          const previous = previousCursorBoundary(current, at)
-          edit(current.slice(0, previous) + current.slice(at), previous)
-        }
-      }
+    // Physical Backspace/Delete keys are handled by useDeleteKeyCapture above
+    // (raw stdin bytes distinguish them; Ink maps both to `key.delete`). Only
+    // the unambiguous logical editing bindings stay here.
+    if (key.ctrl && input === 'w') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(current, at, 'backward-word')
+      edit(text, nextCursor)
+      return
+    }
+    if (key.ctrl && input === 'h') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(current, at, 'backward')
+      edit(text, nextCursor)
+      return
+    }
+    if (key.ctrl && input === 'd') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(current, at, 'forward')
+      edit(text, nextCursor)
       return
     }
     if (key.leftArrow) { moveCursor(previousCursorBoundary(current, at)); return }
@@ -819,26 +961,6 @@ function pasteMarkerLength(input: string, at: number, code: '200' | '201'): numb
   return input.startsWith(`\x1b[${code}~`, at) ? 6 : 5
 }
 
-function clampCursor(text: string, cursor: number): number {
-  let at = Math.max(0, Math.min(text.length, cursor))
-  while (at > 0 && at < text.length && /[\uDC00-\uDFFF]/.test(text[at])) at--
-  return at
-}
-
-function previousCursorBoundary(text: string, cursor: number): number {
-  const at = clampCursor(text, cursor)
-  if (at <= 0) return 0
-  const code = text.charCodeAt(at - 1)
-  return at - (code >= 0xDC00 && code <= 0xDFFF ? 2 : 1)
-}
-
-function nextCursorBoundary(text: string, cursor: number): number {
-  const at = clampCursor(text, cursor)
-  if (at >= text.length) return text.length
-  const code = text.charCodeAt(at)
-  return at + (code >= 0xD800 && code <= 0xDBFF ? 2 : 1)
-}
-
 interface ComposerLine { text: string; start: number; end: number }
 
 function wrapComposerLines(text: string, width: number): ComposerLine[] {
@@ -883,13 +1005,14 @@ function findComposerCursorLine(lines: ComposerLine[], cursor: number): number {
   return Math.max(0, lines.length - 1)
 }
 
-function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus, modelDisplay }: {
+function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus, modelDisplay, copyNotice }: {
   ready: ReadyState
   sessionId: string | null
   columns: number
   webUrl: string
   aimuxStatus?: AimuxStatus
   modelDisplay: string
+  copyNotice?: string | null
 }) {
   const model = modelDisplay
   const language = ready.prefs.language === 'en' ? 'English' : '中文'
@@ -905,7 +1028,7 @@ function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus, modelDispl
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box justifyContent="space-between">
-        <Text dimColor>{left}</Text>
+        <Text dimColor color={copyNotice ? 'green' : undefined}>{copyNotice ?? left}</Text>
         {right ? <Text dimColor>{right}</Text> : null}
       </Box>
       {/* Merged connectivity row: AIMUX status sits left, the clickable web URL
@@ -975,87 +1098,60 @@ function clickableUrl(url: string, maxLen?: number): string {
   return `\u001B]8;;${url}\u0007${display}\u001B]8;;\u0007`
 }
 
-// Visible-column width (CJK / emoji / fullwidth count as 2; combining marks as
-// 0), used to size the AIMUX status block so the web URL truncates to exactly
-// the remaining width without overflowing the row.
-function displayWidth(str: string): number {
-  let w = 0
-  for (const ch of str) {
-    const code = ch.codePointAt(0) ?? 0
-    if (code >= 0x0300 && code <= 0x036F) continue // combining diacriticals: 0 cols
-    w += isWideCodepoint(code) ? 2 : 1
-  }
-  return w
-}
-
-function isWideCodepoint(code: number): boolean {
-  return (
-    (code >= 0x1100 && code <= 0x115F) || // Hangul Jamo
-    (code >= 0x2E80 && code <= 0x303E) || // CJK radicals / punctuation
-    (code >= 0x3041 && code <= 0x33FF) || // Hiragana / Katakana / CJK compat
-    (code >= 0x3400 && code <= 0x4DBF) || // CJK Unified Extension A
-    (code >= 0x4E00 && code <= 0x9FFF) || // CJK Unified Ideographs (心跳正常 …)
-    (code >= 0xA000 && code <= 0xA4CF) || // Yi
-    (code >= 0xAC00 && code <= 0xD7A3) || // Hangul syllables
-    (code >= 0xF900 && code <= 0xFAFF) || // CJK compatibility ideographs
-    (code >= 0xFE30 && code <= 0xFE4F) || // CJK compatibility forms
-    (code >= 0xFF00 && code <= 0xFF60) || // Fullwidth ASCII
-    (code >= 0xFFE0 && code <= 0xFFE6) || // Fullwidth signs
-    (code >= 0x1F300 && code <= 0x1FAFF)  // Emoji / symbols
-  )
-}
-
-function wrappedRows(text: string, width: number): number {
-  const safeWidth = Math.max(1, width)
-  return text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(displayWidth(line) / safeWidth)), 0)
-}
-
-function entryRows(entry: AnyEntry, columns: number): number {
-  const width = Math.max(8, columns - 4)
-  return Math.max(1, viewsForEntry(entry).reduce((sum, view) => {
-    switch (view.kind) {
-      case 'skip': return sum
-      case 'user': return sum + 1 + wrappedRows(view.text, width - 2)
-      case 'assistant': {
-        const rows = renderMarkdownLines(view.text).reduce((total, line) => {
-          return total + (line.code ? 1 : wrappedRows(line.text || ' ', width - 2))
-        }, 0)
-        return sum + 1 + rows
-      }
-      case 'tool_call': return sum + 2 + (view.result ? 1 : 0)
-      case 'tool_result': return sum + headTailLines(view.text, width - 4, 5).length
-      case 'code_edit':
-        return sum + 2 + wrappedRows(view.filePath || '(未指定文件)', width - 4)
-          + wrappedRows(view.oldString, width - 4) + wrappedRows(view.newString, width - 4)
-      case 'write_file':
-        return sum + 2 + wrappedRows(view.filePath || '(未指定文件)', width - 4)
-          + wrappedRows(view.content, width - 4)
-      case 'reasoning': return sum + 1 + clampLines(view.text, width - 4, 2).length
-      case 'system': return sum + 1
-      case 'error': return sum + 1 + wrappedRows(view.text, width - 2)
-      default: return sum
-    }
-  }, 0))
-}
+// displayWidth is imported from src/lib/screen-text.ts (CJK/emoji-aware), used
+// here to size the AIMUX status block so the web URL truncates exactly.
 
 function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, scrollBack = 0): {
   entries: AnyEntry[]
+  /** Tail rows of the next older entry, used to fill spare space above the viewport. */
+  peekLines: string[]
   hiddenOlder: number
   hiddenRecent: number
   startIndex: number
 } {
   const tail = Math.max(0, entries.length - scrollBack)
   const available = tail === 0 ? [] : entries.slice(0, tail)
-  let rows = 0
-  let first = available.length
-  for (let index = available.length - 1; index >= 0; index--) {
-    const nextRows = entryRows(available[index], columns)
-    if (first < available.length && rows + nextRows > rowBudget) break
-    rows += nextRows
-    first = index
+  const renderedRows = available.map((entry) => entryScreenLines(viewsForEntry(entry), columns))
+  const fit = (budget: number) => {
+    let rows = 0
+    let first = available.length
+    for (let index = available.length - 1; index >= 0; index--) {
+      const nextRows = renderedRows[index].length
+      if (first < available.length && rows + nextRows > budget) break
+      rows += nextRows
+      first = index
+    }
+    return { first, rows }
+  }
+
+  const base = fit(rowBudget)
+  let fitted = base
+  let first = fitted.first
+  let peekLines: string[] = []
+  // When older history exists, guarantee at least one row for the tail of the
+  // next older message. If complete entries exactly consume the budget, refit
+  // them with one fewer row; only the oldest complete entry can drop out, while
+  // the latest content remains visible. A single oversized entry keeps its
+  // original rendering because it cannot safely donate a row.
+  if (first > 0 && fitted.rows <= rowBudget) {
+    if (fitted.rows === rowBudget && rowBudget > 1) {
+      const reduced = fit(rowBudget - 1)
+      if (reduced.first > 0 && reduced.rows <= rowBudget - 1) {
+        fitted = reduced
+        first = reduced.first
+      }
+    }
+    const olderLines = renderedRows[first - 1].slice()
+    while (olderLines.length > 0 && !olderLines[0].trim()) olderLines.shift()
+    while (olderLines.length > 0 && !olderLines[olderLines.length - 1].trim()) olderLines.pop()
+    const spare = rowBudget - fitted.rows
+    if (spare > 0 && olderLines.length > 0) {
+      peekLines = olderLines.slice(-spare)
+    }
   }
   return {
     entries: available.slice(first),
+    peekLines,
     hiddenOlder: first,
     hiddenRecent: entries.length - tail,
     startIndex: first,

@@ -10,6 +10,7 @@
  * Preferences are stored INSIDE the selected Issue (switching issues restores
  * that issue's saved model/language/skill/memory choices).
  */
+import { randomBytes } from 'crypto'
 import React, { useEffect, useState } from 'react'
 import { Box, Text } from 'ink'
 import { Select, TextInput, type SelectItem } from './primitives.js'
@@ -116,7 +117,14 @@ export function PrepScreen({ client, onReady, onQuit }: {
   async function createProject(name: string, description: string) {
     setStatusMsg('创建项目…')
     try {
-      const p = await client.createProject({ name: name || '未命名项目', description, bindPath: thisCwd, defaultUseWorktree: false })
+      // bindPath 是 mobius 服务器上的工作目录，不应使用 TUI 客户端的 process.cwd()。
+      // TUI 可能运行在不同机器/OS 上（尤其是通过 aimux 连接时），
+      // 客户端 cwd 对服务器无意义（Windows 路径如 C:\Users\... 在 Linux 上会被误解析为相对路径）。
+      // 用项目名+随机后缀生成唯一服务器端子目录，由服务器 resolveBindPath 拼到用户 work_dir 下。
+      const slug = (name || '未命名项目').replace(/[^a-zA-Z0-9一-鿿_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 56) || 'project'
+      const suffix = randomBytes(3).toString('hex')
+      const safeDir = `/${slug}-${suffix}`
+      const p = await client.createProject({ name: name || '未命名项目', description, bindPath: safeDir, defaultUseWorktree: false })
       const list = await client.listProjects(); await saveProjectsCache(list); setProjects(list)
       await bindCwdToProject(thisCwd, p.id)
       await enterProject(p, list)
