@@ -24,8 +24,10 @@ assert.strictEqual(pcClientRequiresAimuxSkill({ work_mode: 'pc', aimux_id: devic
   'Electron pc mode must include mobius-aimux');
 
 const tuiHubPrompt = pcTaskModePrompt({ work_mode: 'hub', aimux_id: device, is_tui: true }, 'zh');
-assert.match(tuiHubPrompt, /You are working at remote machine tui-workstation/,
-  'TUI prompt should include the remote-machine orientation');
+assert.match(tuiHubPrompt, /你在远程机器 tui-workstation/,
+  'TUI prompt should include the remote-machine orientation (localized to zh)');
+assert.doesNotMatch(tuiHubPrompt, /You are working at remote machine/,
+  'zh sessions should not receive the English orientation text');
 assert.match(tuiHubPrompt, /不要使用 remote_\* 工具操作.*在mobius中枢（即本地）工作/,
   'TUI hub prompt should select Mobius Hub work');
 

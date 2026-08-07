@@ -346,7 +346,9 @@ function update({ id, name, description, body }: any): any {
   return { ok: true, memory: shaped };
 }
 
-// 跨 scope 移动 memory 文件: 用户级 ↔ 项目级.
+// 跨 scope 复制 memory 文件: 用户级 ↔ 项目级.
+// 保留旧的 moveMemory 名称以兼容现有 API; “移动”操作只新增独立副本,
+// 源位置继续保留.
 // 约束:
 //   - 只有 memory 的创建者本人 (id 里的 userId) 能调用; admin 由路由层放行.
 //   - 目标位置已有同 slug.md 直接拒绝, 不静默覆盖.
@@ -385,12 +387,12 @@ function moveMemory({ id, requesterUserId, isAdmin, targetScope, targetProjectId
 
   ensureDir(destDir);
   try {
-    fs.renameSync(srcFile, destFile);
+    fs.copyFileSync(srcFile, destFile);
   } catch (e) {
-    return { ok: false, error: `重命名失败: ${e.message}` };
+    return { ok: false, error: `复制失败: ${e.message}` };
   }
   const m = readMemoryFromFile(destFile);
-  if (!m) return { ok: false, error: '移动后读取失败' };
+  if (!m) return { ok: false, error: '复制后读取失败' };
   return {
     ok: true,
     memory: targetScope === 'user'

@@ -661,9 +661,11 @@ function launchDriver(steps: DriveStep[], onDestroyed?: () => void, opts?: { dis
   // 该回调对所有走 launchDriver 的引导通用 (web 与桌面端共享前端, 桌面端同样受益, 不影响其他引导).
   const forceCloseButton = !!opts?.disableOverlayClose
   let currentDriver: Driver | null = null
+  const prefersReducedMotion = typeof window !== 'undefined'
+    && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   currentDriver = driver({
-    animate: true,
-    smoothScroll: true,
+    animate: !prefersReducedMotion,
+    smoothScroll: !prefersReducedMotion,
     allowClose: !opts?.disableOverlayClose,
     allowKeyboardControl: true,
     overlayColor: '#020617',

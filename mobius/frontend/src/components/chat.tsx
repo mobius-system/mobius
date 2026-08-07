@@ -2,13 +2,13 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, ChevronRight, FileText } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal } from './session-welcome'
 import { NewSessionModal } from './modals'
-import { OpenInVSCodeButton } from './project-files'
+import { FileTreeLevel, OpenInVSCodeButton, type DirState, type Entry } from './project-files'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
 import { useVisibleJsonl } from './session-jsonl-filter'
@@ -1450,6 +1450,213 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
   )
 }
 
+type RemoteFileSource = {
+  name: string
+  status: string
+  remote_path: string
+  hostname?: string
+  hardware?: string
+}
+
+function RemoteFileMentionDrawer({ projectId, open, onClose, onPickPath }: {
+  projectId: string
+  open: boolean
+  onClose: () => void
+  onPickPath: (path: string) => void
+}) {
+  const [sources, setSources] = useState<RemoteFileSource[]>([])
+  const [selectedRemote, setSelectedRemote] = useState('')
+  const [sourcesLoading, setSourcesLoading] = useState(false)
+  const [sourcesError, setSourcesError] = useState('')
+  const [dirs, setDirs] = useState<Record<string, DirState>>({})
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
+
+  const loadSources = useCallback(async () => {
+    if (!projectId) return
+    setSourcesLoading(true)
+    setSourcesError('')
+    try {
+      const data = await api(`/api/projects/${projectId}/remote-file-sources`)
+      const next = Array.isArray(data?.remotes) ? data.remotes as RemoteFileSource[] : []
+      setSources(next)
+      setSelectedRemote(current => current && next.some(source => source.name === current) ? current : (next[0]?.name || ''))
+    } catch (error: any) {
+      setSources([])
+      setSelectedRemote('')
+      setSourcesError(error?.message || '加载远程服务器失败')
+    } finally {
+      setSourcesLoading(false)
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    if (!open) return
+    void loadSources()
+  }, [open, loadSources])
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open, onClose])
+
+  const loadDir = useCallback(async (relPath: string) => {
+    if (!projectId || !selectedRemote) return
+    setDirs(previous => ({ ...previous, [relPath]: { ...previous[relPath], loading: true, error: undefined } }))
+    try {
+      const data = await api(`/api/projects/${projectId}/remote-files?remote=${encodeURIComponent(selectedRemote)}&path=${encodeURIComponent(relPath)}`)
+      setDirs(previous => ({ ...previous, [relPath]: { loading: false, entries: Array.isArray(data?.entries) ? data.entries : [] } }))
+    } catch (error: any) {
+      setDirs(previous => ({ ...previous, [relPath]: { loading: false, error: error?.message || '加载远程目录失败' } }))
+    }
+  }, [projectId, selectedRemote])
+
+  useEffect(() => {
+    setDirs({})
+    setExpanded(new Set(['/']))
+    if (open && selectedRemote) void loadDir('/')
+  }, [open, selectedRemote, loadDir])
+
+  const toggleDir = useCallback((relPath: string) => {
+    setExpanded(previous => {
+      const next = new Set(previous)
+      if (next.has(relPath)) next.delete(relPath)
+      else {
+        next.add(relPath)
+        if (!dirs[relPath]) void loadDir(relPath)
+      }
+      return next
+    })
+  }, [dirs, loadDir])
+
+  const pickFile = useCallback((entry: Entry) => {
+    if (entry.abs_path) onPickPath(entry.abs_path)
+  }, [onPickPath])
+
+  if (!open) return null
+  const selectedSource = sources.find(source => source.name === selectedRemote)
+  const rootState = dirs['/']
+
+  return (
+    <div className="fixed inset-0 z-[90]" role="dialog" aria-modal="true" aria-label="选择远程服务器文件">
+      <button
+        type="button"
+        className="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[1px]"
+        aria-label="关闭远程文件抽屉"
+        onClick={onClose}
+      />
+      <aside
+        data-testid="remote-file-mention-drawer"
+        className="absolute inset-y-0 left-0 flex w-[380px] max-w-[calc(100vw-24px)] flex-col shadow-2xl transition-transform duration-200 ease-out"
+        style={{ background: 'var(--modal-bg)', borderRight: '1px solid var(--border-color)' }}
+      >
+        <div className="flex h-14 flex-shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400">
+            <Server className="h-4 w-4" strokeWidth={1.8} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>远程服务器 · 文件</div>
+            <div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>选择文件，把绝对路径插入输入框</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+            style={{ color: 'var(--text-muted)' }}
+            title="关闭"
+            aria-label="关闭远程文件抽屉"
+          >
+            <X className="h-4 w-4" strokeWidth={1.9} />
+          </button>
+        </div>
+
+        <div className="flex-shrink-0 border-b p-3" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>远程服务器</span>
+            <button
+              type="button"
+              onClick={() => void loadSources()}
+              disabled={sourcesLoading}
+              className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <RefreshCw className={`h-3 w-3 ${sourcesLoading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
+              刷新
+            </button>
+          </div>
+          {sourcesLoading && sources.length === 0 ? (
+            <div className="flex h-16 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+              <Loader2 className="h-4 w-4 animate-spin" />加载远程服务器…
+            </div>
+          ) : sourcesError ? (
+            <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">{sourcesError}</div>
+          ) : sources.length === 0 ? (
+            <div className="rounded-lg border px-3 py-3 text-[12px] leading-relaxed" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+              当前项目还没有可用的远程服务器。请先在项目设置中同步 AIMUX 远程算力清单。
+            </div>
+          ) : (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {sources.map(source => {
+                const active = source.name === selectedRemote
+                return (
+                  <button
+                    key={source.name}
+                    type="button"
+                    onClick={() => setSelectedRemote(source.name)}
+                    className="min-w-[150px] rounded-lg border px-3 py-2 text-left transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                    style={{ borderColor: active ? 'rgba(59,130,246,0.55)' : 'var(--border-color)', background: active ? 'rgba(59,130,246,0.10)' : 'var(--bg-primary)' }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2 w-2 flex-shrink-0 rounded-full ${source.status === 'reachable' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                      <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{source.name}</span>
+                      {active && <Check className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={2} />}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-[10px]" title={source.remote_path || '默认登录目录'} style={{ color: 'var(--text-muted)' }}>
+                      {source.remote_path || '默认登录目录'}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex h-10 flex-shrink-0 items-center gap-1.5 border-b px-4 text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+            <FolderOpen className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.8} />
+            <span className="truncate">{selectedSource?.name || '未选择服务器'}</span>
+            {selectedSource && <ChevronRight className="h-3 w-3 flex-shrink-0" />}
+            <span className="truncate font-mono">{selectedSource?.remote_path || (selectedSource ? '默认登录目录' : '')}</span>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+            {!selectedRemote || sources.length === 0 ? null : !rootState ? (
+              <div className="flex h-28 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                <Loader2 className="h-4 w-4 animate-spin" />加载文件…
+              </div>
+            ) : (
+              <FileTreeLevel
+                relPath="/"
+                depth={0}
+                dirs={dirs}
+                expanded={expanded}
+                onToggleDir={toggleDir}
+                onOpenFile={pickFile}
+                vscodeReady
+                fileActionLabel="插入绝对路径"
+              />
+            )}
+          </div>
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2 border-t px-4 py-3 text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+          <FileText className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.8} />
+          点击文件后会替换当前的 <code className="rounded bg-[var(--bg-card-hover)] px-1 py-0.5">@</code> 并回到输入框
+        </div>
+      </aside>
+    </div>
+  )
+}
+
 // =====================================================================
 // 主对话区（基于 currentSession）
 // =====================================================================
@@ -1648,7 +1855,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false)
   const [continueModalOpen, setContinueModalOpen] = useState(false)
   const [cooperablePcOpen, setCooperablePcOpen] = useState(false)
-  const [skillMemoryModal, setSkillMemoryModal] = useState<null | 'skill' | 'memory'>(null)
+  const [skillMemoryModal, setSkillMemoryModal] = useState<null | 'skill' | 'memory' | 'git'>(null)
   // 会话内 Web 终端弹窗 (issue session / research agent 共用 ChatArea, 一处入口覆盖两类会话).
   const [terminalChoiceOpen, setTerminalChoiceOpen] = useState(false)
   const [terminalOpen, setTerminalOpen] = useState(false)
@@ -2241,6 +2448,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const endRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const [remoteFileDrawerOpen, setRemoteFileDrawerOpen] = useState(false)
+  const remoteMentionRangeRef = useRef<{ start: number; end: number } | null>(null)
   // IME 合成状态守卫: macOS 系统拼音输入法打字母时(合成进行中)按回车, 本意是确认候选字/上屏
   // 字母, 不应触发发送. Chromium on macOS 合成中的 keydown(Enter) 其 isComposing===true,
   // 但原代码 onKeyDown 没检查 isComposing, 直接 preventDefault+send() 抢在 IME 前面发送了
@@ -2260,6 +2469,49 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     : isNewConversation
       ? '今天有什么计划？'
       : '发送指令（Shift+Enter 换行 · Ctrl/⌘+V 粘贴文件 · ↑键回溯）...'
+
+  const handleChatInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const nextValue = event.target.value
+    const caret = event.target.selectionStart ?? nextValue.length
+    setInput(nextValue)
+    const beforeCaret = nextValue.slice(0, caret)
+    const mentionMatch = beforeCaret.match(/@([^\s@]*)$/)
+    if (!mentionMatch || !currentProjectId) {
+      remoteMentionRangeRef.current = null
+      setRemoteFileDrawerOpen(false)
+      return
+    }
+    const start = beforeCaret.lastIndexOf('@')
+    remoteMentionRangeRef.current = { start, end: caret }
+    setRemoteFileDrawerOpen(true)
+  }
+
+  const insertRemoteFilePath = useCallback((absolutePath: string) => {
+    const range = remoteMentionRangeRef.current
+    const currentValue = inputRef.current?.value ?? input
+    const start = range?.start ?? (inputRef.current?.selectionStart ?? currentValue.length)
+    const end = range?.end ?? start
+    const suffix = currentValue.slice(end)
+    const trailingSpace = suffix && !/^\s/.test(suffix) ? ' ' : ''
+    const nextValue = `${currentValue.slice(0, start)}${absolutePath}${trailingSpace}${suffix}`
+    const caret = start + absolutePath.length + trailingSpace.length
+    setInput(nextValue)
+    remoteMentionRangeRef.current = null
+    setRemoteFileDrawerOpen(false)
+    requestAnimationFrame(() => {
+      const textarea = inputRef.current
+      if (!textarea) return
+      textarea.focus()
+      try { textarea.setSelectionRange(caret, caret) } catch {}
+    })
+  // setInput is session-scoped and intentionally recreated with the active draft.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, sessionId])
+
+  useEffect(() => {
+    remoteMentionRangeRef.current = null
+    setRemoteFileDrawerOpen(false)
+  }, [sessionId])
   const loadHistoryRef = useRef<() => void>(() => {})
   const postSessionMessage = useCallback(async ({
     content,
@@ -3167,11 +3419,18 @@ export function ChatArea({ layout = 'default', onNewSession }: {
       onContinueWithModel={() => setContinueModalOpen(true)}
       onOpenSkill={() => setSkillMemoryModal('skill')}
       onOpenMemory={() => setSkillMemoryModal('memory')}
+      onOpenGit={() => setSkillMemoryModal('git')}
     />
   )
 
   return (
     <div className="flex-1 flex flex-col h-full min-w-0" style={{ background: 'var(--bg-secondary)' }}>
+      <RemoteFileMentionDrawer
+        projectId={currentProjectId}
+        open={remoteFileDrawerOpen}
+        onClose={() => setRemoteFileDrawerOpen(false)}
+        onPickPath={insertRemoteFilePath}
+      />
       {attachmentImagePreview && (
         <AttachmentImagePreviewModal preview={attachmentImagePreview} onClose={closeAttachmentImagePreview} />
       )}
@@ -3245,6 +3504,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
       {layout === 'easy' && skillMemoryModal && (
         <SessionSkillMemoryModal
           sessionId={currentSession?.session_id || sessionId}
+          projectId={currentProjectId || undefined}
           initialPanel={skillMemoryModal}
           onClose={() => setSkillMemoryModal(null)}
         />
@@ -3539,7 +3799,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                   ))}
                 </div>
               )}
-              <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+              <textarea ref={inputRef} value={input} onChange={handleChatInputChange}
                 onCompositionStart={() => { composingRef.current = true }}
                 onCompositionEnd={() => { composingRef.current = false }}
                 onKeyDown={e => {
@@ -3716,6 +3976,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
               {renderAdvancedSessionActions('default')}
                 <SessionSkillMemoryEditor
                   sessionId={currentSession?.session_id || sessionId}
+                  projectId={currentProjectId || undefined}
                   initialPanel="memory"
                   persistActivePanel
                 />

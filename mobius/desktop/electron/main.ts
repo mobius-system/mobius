@@ -1,7 +1,7 @@
 // Mobius Desktop 主进程：登录 → 保证 aimux → reverse connect → loadURL 远程 web UI。
 // 详见 README。关键：退出前务必 supervisor.stop() 杀 aimux；aimux 状态经徽标+IPC 常驻可见。
 import { app, BrowserWindow, Menu, ipcMain, shell, dialog, session, screen, type WebPreferences } from "electron";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import * as net from "node:net";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -972,6 +972,33 @@ ipcMain.handle("project:bind-status", async (_e, projectId: string) => {
 ipcMain.handle("desktop:machine-info", () => `${os.hostname()} · ${process.platform}`);
 // 读/写 project 的本机路径与工作模式偏好 (新建 Session 第1步 PC 任务模式区块用)
 ipcMain.handle("project:get-path", (_e, projectId: string) => getProjectLocalPath(serverOrigin(), projectId));
+ipcMain.handle("project:git-status", (_e, projectId: string) => {
+  const saved = getProjectLocalPath(serverOrigin(), projectId);
+  if (!saved) return { available: false, reason: "未绑定本机工作路径" };
+  const root = resolve(saved);
+  try {
+    if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+      return { available: false, path: root, reason: "本机工作路径不可用" };
+    }
+    const top = spawnSync("git", ["-C", root, "rev-parse", "--show-toplevel"], { encoding: "utf8", timeout: 8000 });
+    if (top.status !== 0) return { available: false, path: root, reason: "本机路径不是 Git 仓库" };
+    const repoPath = String(top.stdout || "").trim() || root;
+    const branch = spawnSync("git", ["-C", repoPath, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", timeout: 8000 });
+    const head = spawnSync("git", ["-C", repoPath, "rev-parse", "--short", "HEAD"], { encoding: "utf8", timeout: 8000 });
+    const status = spawnSync("git", ["-C", repoPath, "status", "--porcelain=v1"], { encoding: "utf8", timeout: 8000 });
+    const dirtyCount = String(status.stdout || "").split(/\r?\n/).filter(Boolean).length;
+    return {
+      available: true,
+      path: repoPath,
+      branch: String(branch.stdout || "").trim() || null,
+      head: String(head.stdout || "").trim() || null,
+      dirty: dirtyCount > 0,
+      dirty_count: dirtyCount,
+    };
+  } catch (e) {
+    return { available: false, path: root, reason: (e as Error).message || "读取本机 Git 状态失败" };
+  }
+});
 ipcMain.handle("project:get-work-mode", (_e, projectId: string) => getProjectWorkMode(serverOrigin(), projectId));
 ipcMain.handle("project:set-work-mode", (_e, projectId: string, mode: string) => {
   setProjectWorkMode(serverOrigin(), projectId, String(mode || "dual"));

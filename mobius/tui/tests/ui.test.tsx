@@ -161,7 +161,7 @@ async function testChat() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />
+      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />
     )
     await delay(40)
     const initialFrame = lastFrame() ?? ''
@@ -225,7 +225,7 @@ async function testResumedWorkingStatus() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />
+      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />
     )
     await delay(120)
     ok((lastFrame() ?? '').includes('Working ('), 'resuming an already-running session restores Working without a new typing event')
@@ -320,6 +320,16 @@ async function testSelectViewport() {
   ok(frame.includes('项目5'), 'middle: active item kept visible')
   ok(frame.includes('↑ 还有') && frame.includes('↓ 还有'), 'middle: both tail hints shown')
   ok(!frame.includes('项目0') && !frame.includes('项目11'), 'middle: far items hidden')
+
+  // The first navigation key after mounting must not depend on a later render
+  // (the regression presented as arrows doing nothing until Enter was pressed).
+  const immediate = render(<Select items={[{ label: '首项', value: 'first' }, { label: '次项', value: 'second' }]} />)
+  await delay(20)
+  immediate.rerender(<Select items={[{ label: '首项', value: 'first' }, { label: '次项', value: 'second' }]} />)
+  immediate.stdin.write('\x1b[B')
+  await delay(20)
+  ok((immediate.lastFrame() ?? '').includes('❯ 次项'), 'first arrow key is handled immediately after Select mounts')
+  immediate.unmount()
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -363,6 +373,100 @@ async function testTextInputBackspace() {
   await delay(20)
   const after = lastFrame() ?? ''
   ok(after.includes('ab') && !after.includes('abc'), 'Backspace (0x7f) deleted the trailing char')
+  unmount()
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 8b — TextInput: Delete key (ESC[3~) deletes FORWARD, not backward;
+// Ctrl+Backspace (ESC[3;5~) and Alt+Backspace (ESC DEL) delete the whole word.
+// Ink reports Backspace (\x7f) and Delete ([3~) as the same key.delete, so the
+// raw stdin bytes must drive these.
+// ════════════════════════════════════════════════════════════════════════════
+async function testTextInputDeleteKeys() {
+  console.log('\n[UI 8b] TextInput Delete-forward + Ctrl+Backspace word delete')
+  function Harness() {
+    const [v, setV] = React.useState('abc')
+    return <TextInput value={v} onChange={setV} focused />
+  }
+  const { stdin, lastFrame, unmount } = render(<Harness />)
+  await delay(20)
+  // Cursor starts at the end; Ctrl+A moves it to position 0.
+  stdin.write('\x01')
+  await delay(10)
+  stdin.write('\x1b[3~') // Delete key
+  await delay(20)
+  let frame = lastFrame() ?? ''
+  ok(frame.includes('bc') && !frame.includes('abc'), 'TextInput Delete key (ESC[3~) deleted forward, not backward')
+
+  // Now type a word and delete it backward with Ctrl+Backspace.
+  stdin.write('hello world')
+  await delay(10)
+  stdin.write('\x1b[3;5~') // Ctrl+Backspace
+  await delay(20)
+  frame = lastFrame() ?? ''
+  ok(frame.includes('hello ') && !frame.includes('world'), 'TextInput Ctrl+Backspace (ESC[3;5~) deleted the whole word backward')
+  unmount()
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 8c — Composer: Backspace deletes backward, Delete deletes forward,
+// Ctrl+Backspace / Alt+Backspace / Ctrl+W delete the whole word backward.
+// ════════════════════════════════════════════════════════════════════════════
+async function testComposerDeleteKeys() {
+  console.log('\n[UI 8c] composer Backspace / Delete / word-delete keys')
+  const submitted: string[] = []
+  const { stdin, unmount } = render(
+    <Composer
+      onSubmit={(text) => submitted.push(text)}
+      onStop={() => {}}
+      onQuit={() => {}}
+      typing={false}
+      commands={[]}
+    />,
+  )
+  await delay(20)
+
+  // Backspace (0x7f) deletes backward, not forward.
+  stdin.write('hello')
+  stdin.write(String.fromCharCode(127))
+  await delay(80) // outlast the 20ms paste-burst window so Enter submits
+  stdin.write('\r')
+  await delay(20)
+  ok(submitted[0] === 'hell', 'Composer Backspace (0x7f) deleted the char before the cursor')
+
+  // Delete key (ESC[3~) deletes FORWARD after Ctrl+A moves to the start.
+  stdin.write('hello')
+  stdin.write('\x01') // Ctrl+A → cursor at 0
+  stdin.write('\x1b[3~') // Delete key
+  await delay(80)
+  stdin.write('\r')
+  await delay(20)
+  ok(submitted[1] === 'ello', 'Composer Delete key (ESC[3~) deleted the char after the cursor')
+
+  // Ctrl+Backspace (ESC[3;5~) deletes the whole word backward.
+  stdin.write('hello world')
+  stdin.write('\x1b[3;5~')
+  await delay(80)
+  stdin.write('\r')
+  await delay(20)
+  ok(submitted[2] === 'hello ', 'Composer Ctrl+Backspace (ESC[3;5~) deleted the whole word backward')
+
+  // Alt+Backspace (ESC DEL) deletes the whole word backward too.
+  stdin.write('hello world')
+  stdin.write('\x1b\x7f')
+  await delay(80)
+  stdin.write('\r')
+  await delay(20)
+  ok(submitted[3] === 'hello ', 'Composer Alt+Backspace (ESC DEL) deleted the whole word backward')
+
+  // Ctrl+W (0x17) still deletes the whole word backward.
+  stdin.write('hello world')
+  stdin.write('\x17')
+  await delay(80)
+  stdin.write('\r')
+  await delay(20)
+  ok(submitted[4] === 'hello ', 'Composer Ctrl+W still deletes the whole word backward')
+
   unmount()
 }
 
@@ -602,7 +706,7 @@ async function testChatSseReconnects() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
     )
     await delay(40)
     // Ink's test stdin treats one chunk as one keypress. Send text and Enter as
@@ -674,7 +778,7 @@ async function testIdleCompletedSessionReopensSseOnSend() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
     )
     await delay(180)
     ok(sseCall === 1, 'completed idle session did not reconnect by itself')
@@ -714,7 +818,7 @@ async function testSendRetries502() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
     )
     await delay(40)
     stdin.write('hi'); await delay(30); stdin.write('\r')
@@ -735,6 +839,8 @@ async function main() {
   await testSelectViewport()
   await testProjectPickerEscQuit()
   await testTextInputBackspace()
+  await testTextInputDeleteKeys()
+  await testComposerDeleteKeys()
   await testComposerMultilinePaste()
   testWorkingShimmer()
   testReasoningViews()

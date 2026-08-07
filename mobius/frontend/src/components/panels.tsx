@@ -16,6 +16,7 @@ import {
   Eye,
   EyeOff,
   FileText,
+  FolderInput,
   FolderOpen,
   LayoutDashboard,
   Loader2,
@@ -4091,7 +4092,7 @@ function MigrationManageTab() {
         method: 'POST',
         body: JSON.stringify(targetScope === 'project' ? { project_id: projectId } : { scope: 'user' }),
       })
-      setNotice(`已移动到 ${targetScope === 'user' ? '用户级' : '项目级'}`)
+      setNotice(`${kind === 'skill' ? '已复制' : '已移动'}到 ${targetScope === 'user' ? '用户级' : '项目级'}`)
       setMovingItem(null)
       await refresh()
     } catch (e: any) {
@@ -4156,7 +4157,7 @@ function MigrationManageTab() {
         fail += 1
       }
     }))
-    setNotice(`批量移动完成: 成功 ${ok} 条${fail > 0 ? ` · 失败 ${fail} 条` : ''}`)
+    setNotice(`批量转移完成: 成功 ${ok} 条${fail > 0 ? ` · 失败 ${fail} 条` : ''}`)
     setBatchMoveOpen(false)
     setSelectedIds(new Set())
     await refresh()
@@ -4242,11 +4243,11 @@ function MigrationManageTab() {
             </button>
             <button
               type="button"
-              title="移动 scope"
+              title={kind === 'skill' ? '复制到其他位置' : '移动 scope'}
               onClick={() => setMovingItem({ kind, item })}
               className="inline-flex h-7 w-7 items-center justify-center rounded text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
-              <FolderOpen className="h-3.5 w-3.5" />
+              {kind === 'skill' ? <FolderInput className="h-3.5 w-3.5" /> : <FolderOpen className="h-3.5 w-3.5" />}
             </button>
             <button
               type="button"
@@ -4385,7 +4386,7 @@ function MigrationManageTab() {
             className="inline-flex h-7 items-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-card)] px-2 text-[11.5px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
           >
             <FolderOpen className="h-3.5 w-3.5" />
-            批量移动
+            批量转移
           </button>
           <button
             type="button"
@@ -4948,6 +4949,7 @@ function MigrationMoveTargetModal({
   const [projectId, setProjectId] = useState<string>('')
   const ownProjects = (inventory?.project_scopes ?? []).filter((s) => s.is_own_project)
   const kindLabel = kind === 'memory' ? 'Memory' : 'Skill'
+  const copiesSource = !batchCount && kind === 'skill'
   const targetLabel = batchCount
     ? `${batchCount} 条`
     : (item?.name ?? kindLabel)
@@ -4960,7 +4962,7 @@ function MigrationMoveTargetModal({
       >
         <div className="flex items-center justify-between">
           <h4 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {batchCount ? '批量移动' : `移动 · ${kindLabel}`}
+            {batchCount ? '批量转移' : `${copiesSource ? '复制' : '移动'} · ${kindLabel}`}
           </h4>
           <button
             type="button"
@@ -4971,7 +4973,11 @@ function MigrationMoveTargetModal({
           </button>
         </div>
         <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-          目标: {targetLabel}. 只能移动到自己拥有的位置 (用户级 / 自己创建的项目).
+          目标: {targetLabel}. {batchCount
+            ? 'Skill 会复制并保留来源，Memory 会移动；目标只能选择自己拥有的位置。'
+            : copiesSource
+              ? '复制后来源仍会保留；只能复制到自己拥有的位置。'
+              : '只能移动到自己拥有的位置 (用户级 / 自己创建的项目).'}
         </div>
         <div className="flex flex-col gap-2">
           <label
@@ -4990,7 +4996,9 @@ function MigrationMoveTargetModal({
             />
             <div>
               <div className="text-[12.5px] font-medium" style={{ color: 'var(--text-primary)' }}>用户级</div>
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>移动到我的用户级 ({inventory?.current_user_id})</div>
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {copiesSource ? '复制到' : '移动到'}我的用户级 ({inventory?.current_user_id})
+              </div>
             </div>
           </label>
           <label
@@ -5043,8 +5051,8 @@ function MigrationMoveTargetModal({
             className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium text-white transition-colors disabled:opacity-50"
             style={{ background: '#2563eb' }}
           >
-            <FolderOpen className="h-3.5 w-3.5" />
-            移动
+            {copiesSource ? <Copy className="h-3.5 w-3.5" /> : <FolderOpen className="h-3.5 w-3.5" />}
+            {batchCount ? '转移' : copiesSource ? '复制' : '移动'}
           </button>
         </div>
       </div>

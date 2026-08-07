@@ -1530,17 +1530,18 @@ button {
 }
 .driver-popover.imac-driver-popover .driver-popover-description {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.65;
   white-space: pre-line;
 }
 .driver-popover.imac-driver-popover .driver-popover-progress-text {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .driver-popover.imac-driver-popover .driver-popover-footer button {
-  min-width: 56px;
-  padding: 6px 11px;
+  min-width: 60px;
+  min-height: 34px;
+  padding: 7px 13px;
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.3;
@@ -4970,6 +4971,45 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .jsonl-entry-card {
   content-visibility: auto;
   contain-intrinsic-size: auto 180px;
+}
+
+/* 对话轮次标题：高度与折叠态 JSONL entry 卡片一致；Ctrl+Shift+K 在两套微纹理间切换。 */
+.round-group-trigger {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--round-header-background);
+  background-size: var(--round-header-background-size);
+  /* 所有背景层从同一个视口原点取样。多张卡片像同一张固定材质上的窗口，
+     因而滚动、展开或并列显示时，纹理不会在卡片边界重新起相位。 */
+  background-position: 0 0;
+  background-attachment: fixed;
+  border-color: var(--round-header-border);
+  box-shadow:
+    inset 3px 0 0 var(--round-header-accent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  transition: border-color 180ms ease, filter 180ms ease, box-shadow 180ms ease;
+}
+
+.round-group-trigger > span {
+  position: relative;
+  z-index: 1;
+}
+
+.round-group-trigger:hover:not(:disabled) {
+  border-color: var(--round-header-border-hover);
+  filter: brightness(1.1) saturate(1.06);
+}
+
+.round-group-trigger:focus-visible {
+  outline: 2px solid var(--round-header-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .round-group-trigger {
+    transition: none;
+  }
 }
 
 /* jsonl 卡片右上角图标按钮的共享基底 (复制 / 模式切换等共用同一套尺寸与样式). */

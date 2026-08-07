@@ -16,14 +16,21 @@ import { loadLogin, saveLogin, type LoginRecord } from './config.js'
 import { LoginScreen } from './components/Login.js'
 import { PrepScreen, type ReadyState } from './components/PrepScreen.js'
 import { ChatScreen } from './components/Chat.js'
+import type { ConfigResult } from './components/ConfigFlow.js'
 import { ResumePicker } from './components/ResumePicker.js'
 import { Screen } from './components/Screen.js'
 import { startAimuxConnection, stopAimuxConnection, type AimuxStatus } from './aimux.js'
 import { AimuxStatusLine } from './components/AimuxStatus.js'
+import { bufferUnclaimedInput, useStableInput } from './components/primitives.js'
 
 type Route = 'boot' | 'login' | 'prep' | 'chat' | 'resume'
 
 export function App() {
+  // Keep stdin raw mode alive across route transitions. Without a persistent
+  // owner, Ink can briefly drop raw mode between an async picker unmount and
+  // the next Chat/Select mount, making the first arrows or typed characters
+  // appear ignored until a later key causes another render.
+  useStableInput(bufferUnclaimedInput, { interactive: false })
   const [route, setRoute] = useState<Route>('boot')
   const [bootMsg, setBootMsg] = useState('初始化…')
   const [client, setClient] = useState<MobiusClient | null>(null)
@@ -107,6 +114,32 @@ export function App() {
 
   function onResume() { if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] resume'); setRoute('resume') }
 
+  // /model (= /config) Esc-cancel: go back to the conversation. Remounting Chat
+  // (rather than re-rendering it in place) is deliberate — toggling the config
+  // flow off and on re-mounted the whole chat subtree, which left Ink's frame
+  // blank in the harness. Remount via chatKey is the same path /clear and /resume
+  // use; the live sessionId (if any) is carried as resumeSessionId so the
+  // conversation is reconnected intact.
+  function onConfigCancel(sessionId: string | null) {
+    if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] config-cancel', sessionId)
+    setResumeSessionId(sessionId)
+    setChatKey(k => k + 1)
+    setRoute('chat')
+  }
+
+  // /model or /config: swap task+model (and optionally project for /config)
+  // and start a brand-new session. App owns `ready`, so it folds the result in
+  // and remounts Chat on the fresh session (resumeSessionId = the eagerly
+  // created session).
+  function onReconfigure(result: ConfigResult) {
+    if (!ready || !client) return
+    if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] reconfigure', result.project?.id, result.issue.id, result.prefs.model, result.sessionId)
+    setReady({ project: result.project || ready.project, issue: result.issue, prefs: result.prefs })
+    setResumeSessionId(result.sessionId)
+    setChatKey(k => k + 1)
+    setRoute('chat')
+  }
+
   function onResumed(sid: string) {
     setResumeSessionId(sid)
     setChatKey(k => k + 1)
@@ -135,6 +168,8 @@ export function App() {
         onClear={onClear}
         onResume={onResume}
         onQuit={onQuit}
+        onReconfigure={onReconfigure}
+        onConfigCancel={onConfigCancel}
         aimuxStatus={aimuxStatus}
       />
     )

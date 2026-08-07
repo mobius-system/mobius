@@ -91,8 +91,12 @@ let rafId = 0;
 let autoPickTimer = 0;
 let toastTimer = 0;
 let audioCtx = null;
+let audioMaster = null;
+let audioCompressor = null;
 let muted = localStorage.getItem('bullet-heaven-muted') === '1';
 let lastRenderTs = 0;
+const audioLastPlayed = new Map();
+const noiseBufferCache = new Map();
 
 const spriteFrames = [];
 const atlas = new Image();
@@ -267,15 +271,35 @@ const activeProjectileDrawBatches = [];
 function ensureAudio() {
   if (muted) return null;
   if (!audioCtx) {
-    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { audioCtx = null; }
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioMaster = audioCtx.createGain();
+      audioMaster.gain.value = 0.72;
+      audioCompressor = audioCtx.createDynamicsCompressor();
+      audioCompressor.threshold.value = -18;
+      audioCompressor.knee.value = 12;
+      audioCompressor.ratio.value = 5;
+      audioCompressor.attack.value = 0.004;
+      audioCompressor.release.value = 0.16;
+      audioMaster.connect(audioCompressor).connect(audioCtx.destination);
+    } catch { audioCtx = null; audioMaster = null; audioCompressor = null; }
   }
   if (audioCtx?.state === 'suspended') audioCtx.resume().catch(() => {});
   return audioCtx;
 }
 
-function tone(freq, duration = 0.06, type = 'square', gain = 0.025, slide = 0) {
+function audioReady(tag, minGap) {
+  if (!minGap) return true;
+  const now = performance.now();
+  const last = audioLastPlayed.get(tag) || -Infinity;
+  if (now - last < minGap) return false;
+  audioLastPlayed.set(tag, now);
+  return true;
+}
+
+function tone(freq, duration = 0.06, type = 'square', gain = 0.025, slide = 0, tag = 'tone', minGap = 0) {
   const audio = ensureAudio();
-  if (!audio) return;
+  if (!audio || !audioReady(tag, minGap)) return;
   const now = audio.currentTime;
   const osc = audio.createOscillator();
   const amp = audio.createGain();
@@ -284,9 +308,61 @@ function tone(freq, duration = 0.06, type = 'square', gain = 0.025, slide = 0) {
   if (slide) osc.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), now + duration);
   amp.gain.setValueAtTime(gain, now);
   amp.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-  osc.connect(amp).connect(audio.destination);
+  osc.connect(amp).connect(audioMaster || audio.destination);
   osc.start(now);
   osc.stop(now + duration + 0.02);
+}
+
+function getNoiseBuffer(duration) {
+  const audio = audioCtx;
+  if (!audio) return null;
+  const length = Math.max(1, Math.round(audio.sampleRate * duration));
+  const cached = noiseBufferCache.get(length);
+  if (cached) return cached;
+  const buffer = audio.createBuffer(1, length, audio.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let index = 0; index < data.length; index += 1) {
+    const hashed = Math.sin(index * 12.9898 + length * 0.017) * 43758.5453;
+    const noise = (hashed - Math.floor(hashed)) * 2 - 1;
+    data[index] = noise * (1 - index / data.length * 0.35);
+  }
+  noiseBufferCache.set(length, buffer);
+  return buffer;
+}
+
+function noiseBurst(duration = 0.08, gain = 0.03, filterFrequency = 1800, tag = 'noise', minGap = 0) {
+  const audio = ensureAudio();
+  if (!audio || !audioReady(tag, minGap)) return;
+  const source = audio.createBufferSource();
+  const filter = audio.createBiquadFilter();
+  const amp = audio.createGain();
+  source.buffer = getNoiseBuffer(duration);
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(filterFrequency, audio.currentTime);
+  filter.Q.value = 0.65;
+  const now = audio.currentTime;
+  amp.gain.setValueAtTime(gain, now);
+  amp.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+  source.connect(filter).connect(amp).connect(audioMaster || audio.destination);
+  source.start(now);
+  source.stop(now + duration + 0.015);
+}
+
+function playPickupSound(type) {
+  if (type === 'xp') {
+    tone(760, 0.025, 'triangle', 0.008, 80, 'pickup-xp', 70);
+    return;
+  }
+  const profiles = {
+    heal: [520, 360, '#69ff9a'],
+    overdrive: [420, 650, '#70fff1'],
+    magnet: [620, 240, '#76d9ff'],
+    nuke: [180, 820, '#ffe45c'],
+  };
+  const [frequency, slide, color] = profiles[type] || [520, 220, '#70fff1'];
+  tone(frequency, 0.12, 'triangle', 0.04, slide, `pickup-${type}`, 80);
+  noiseBurst(0.07, 0.022, frequency * 2.2, `pickup-noise-${type}`, 80);
+  showBanner(type === 'heal' ? 'FIELD REPAIR' : type === 'overdrive' ? 'OVERDRIVE CORE' : type === 'magnet' ? 'GRAVITY WELL' : 'ORBITAL CHARGE', color);
 }
 
 function showToast(message, duration = 2500) {
@@ -397,7 +473,7 @@ function startRun() {
   state.lastTs = performance.now();
   showToast('枪口跟随鼠标自动开火；WASD 移动，Shift 冲刺撞开包围圈', 3600);
   showBanner('SURVIVE THE SWARM', '#70fff1');
-  tone(460, 0.08, 'triangle', 0.045, 180);
+  tone(460, 0.08, 'triangle', 0.045, 180, 'run-start');
 }
 
 function returnToMenu() {
@@ -460,7 +536,7 @@ function openUpgrade() {
   });
   clearTimeout(autoPickTimer);
   if (els.autoPick.checked) autoPickTimer = window.setTimeout(() => selectUpgrade(pick(options).id), 2500);
-  tone(680, 0.12, 'triangle', 0.045, 280);
+  tone(680, 0.12, 'triangle', 0.045, 280, 'upgrade-open');
 }
 
 function selectUpgrade(id) {
@@ -476,7 +552,7 @@ function selectUpgrade(id) {
   showBanner(upgrade.name, upgrade.color);
   updateArsenal();
   syncHud(true);
-  tone(820, 0.1, 'triangle', 0.05, 330);
+  tone(820, 0.1, 'triangle', 0.05, 330, 'upgrade-select');
   if (state.pendingLevelUps > 0) window.setTimeout(openUpgrade, 180);
   else { setMode('running'); state.lastTs = performance.now(); }
 }
@@ -537,7 +613,8 @@ function spawnEnemy(type = chooseEnemyType(), options = {}) {
     showToast('终局 Boss 从尸潮里挤进来了：继续移动，所有火力会自动锁定它附近的敌人', 3800);
     state.shake = Math.max(state.shake, 1.5);
     addShockwave(enemy.x, enemy.y, '#ff365f', 30, 360, 1.25);
-    tone(82, 0.7, 'sawtooth', 0.08, -25);
+    tone(82, 0.7, 'sawtooth', 0.08, -25, 'boss-spawn');
+    noiseBurst(0.28, 0.045, 160, 'boss-spawn-noise');
   }
   return enemy;
 }
@@ -645,7 +722,7 @@ function firePrimary(dt) {
       addParticle(state.player.x + Math.cos(baseAngle) * 24, state.player.y + Math.sin(baseAngle) * 24, '#fff3a1', rand(40, 90), 0.11, rand(2, 5), baseAngle + Math.PI + rand(-0.5, 0.5));
     }
   }
-  if (Math.random() < 0.22) tone(180 + Math.random() * 35, 0.025, 'square', 0.009, -35);
+  if (Math.random() < 0.22) tone(180 + Math.random() * 35, 0.025, 'square', 0.009, -35, 'primary-fire', 48);
 }
 
 function nearestEnemy(x, y, maxDistance = Infinity, excludeIds = null, grid = null) {
@@ -695,7 +772,8 @@ function fireMissiles(dt, grid) {
     const angle = state.player.angle + (index - (count - 1) / 2) * 0.3;
     fireBullet(state.player.x, state.player.y, angle, { damage: state.damage * (3.8 + state.missile * 0.65), radius: 7, speed: 330, color: '#ff6f91', pierce: 0, explosive: 2 + state.missile, chain: 0, frost: 0, ricochet: 0, homing: 4.2, target, life: 3.2, kind: 'missile' });
   }
-  tone(110, 0.09, 'sawtooth', 0.025, 90);
+  tone(110, 0.09, 'sawtooth', 0.025, 90, 'missile-launch', 90);
+  noiseBurst(0.06, 0.018, 520, 'missile-launch-noise', 90);
 }
 
 function fireHostile(enemy) {
@@ -751,12 +829,13 @@ function killEnemy(enemy, options = {}) {
     state.shake = 2.6;
     state.hitStop = 0.18;
     showBanner('OMEGA ANNIHILATED', '#ffe45c');
-    tone(65, 0.8, 'sawtooth', 0.1, 360);
+    tone(65, 0.8, 'sawtooth', 0.1, 360, 'boss-kill');
+    noiseBurst(0.42, 0.065, 110, 'boss-kill-noise');
     window.setTimeout(() => finishRun(true), 1200);
   } else if (enemy.elite) {
     state.shake = Math.max(state.shake, 0.45);
     state.hitStop = Math.max(state.hitStop, 0.025);
-    tone(120, 0.07, 'sawtooth', 0.025, -30);
+    tone(120, 0.07, 'sawtooth', 0.025, -30, 'elite-kill', 110);
   }
   if (state.combo > 0 && state.combo % 100 === 0) {
     showBanner(`${state.combo} KILL RAMPAGE`, '#ffe45c');
@@ -843,7 +922,8 @@ function startDash() {
   player.dashCooldown = Math.max(0.75, 2.15 - upgradeLevel('speed') * 0.12);
   state.invulnerableUntil = state.elapsed + 0.28;
   addShockwave(player.x, player.y, '#70fff1', 8, 75, 0.32, 4);
-  tone(260, 0.08, 'sawtooth', 0.035, 280);
+  tone(260, 0.08, 'sawtooth', 0.035, 280, 'dash', 120);
+  noiseBurst(0.055, 0.022, 1100, 'dash-noise', 120);
 }
 
 function updateEnemyMotion(dt) {
@@ -922,7 +1002,8 @@ function hitPlayer(amount, sourceX, sourceY) {
   state.player.vx += Math.cos(angle) * 180;
   state.player.vy += Math.sin(angle) * 180;
   burst(state.player.x, state.player.y, '#ff526f', 22, 230);
-  tone(95, 0.16, 'sawtooth', 0.07, -45);
+  tone(95, 0.16, 'sawtooth', 0.07, -45, 'player-hit', 90);
+  noiseBurst(0.09, 0.032, 240, 'player-hit-noise', 90);
   if (state.hp <= 0) finishRun(false);
 }
 
@@ -1028,22 +1109,25 @@ function updatePickups(dt) {
 function collectPickup(pickup) {
   if (pickup.type === 'xp') {
     grantXp(pickup.value);
-    if (Math.random() < 0.08) tone(760, 0.025, 'triangle', 0.008, 80);
+    if (Math.random() < 0.08) playPickupSound('xp');
   } else if (pickup.type === 'heal') {
     state.hp = Math.min(state.maxHp, state.hp + state.maxHp * 0.32);
     showToast('急救包：恢复 32% 最大生命');
     addFloater(state.player.x, state.player.y - 30, '+HEAL', '#69ff9a', 16, 0.8);
-    tone(520, 0.12, 'triangle', 0.04, 360);
+    playPickupSound('heal');
   } else if (pickup.type === 'overdrive') {
     state.overdriveUntil = Math.max(state.overdriveUntil, state.elapsed + 9);
     showBanner('INFINITE MAGAZINE', '#ffe45c');
     showToast('无限弹匣：9 秒射速 ×3、伤害 ×2');
+    playPickupSound('overdrive');
   } else if (pickup.type === 'magnet') {
     for (const item of state.pickups) if (item.type === 'xp') { item.x = state.player.x + rand(-45, 45); item.y = state.player.y + rand(-45, 45); }
     showBanner('VACUUM FIELD', '#73b7ff');
     showToast('引力爆发：全场经验正在被吸入');
+    playPickupSound('magnet');
   } else if (pickup.type === 'nuke') {
     triggerNuke(false);
+    playPickupSound('nuke');
   }
   burst(pickup.x, pickup.y, pickup.color, 28, 190);
 }
@@ -1138,7 +1222,8 @@ function triggerOverdrive() {
   state.overdriveUntil = state.elapsed + 10;
   showBanner('BULLET OVERDRIVE', '#70fff1');
   showToast('无限弹匣：10 秒射速 ×3、伤害 ×2', 2800);
-  tone(420, 0.18, 'sawtooth', 0.045, 650);
+    tone(420, 0.18, 'sawtooth', 0.045, 650, 'director-overdrive');
+    noiseBurst(0.12, 0.03, 900, 'director-overdrive-noise');
 }
 
 function triggerElite() {
@@ -1162,7 +1247,8 @@ function triggerNuke(checkCooldown = true) {
     else killEnemy(enemy, { color: '#ffe45c' });
   }
   for (let index = 0; index < 170; index += 1) addParticle(state.player.x, state.player.y, index % 2 ? '#ffe45c' : '#ffffff', rand(150, 780), rand(0.4, 1.2), rand(2, 8));
-  tone(55, 0.9, 'sawtooth', 0.11, 520);
+  tone(55, 0.9, 'sawtooth', 0.11, 520, 'director-nuke');
+  noiseBurst(0.5, 0.075, 90, 'director-nuke-noise');
 }
 
 function syncHud(force = false) {
@@ -1225,6 +1311,7 @@ function drawBackground() {
 
 function drawPickup(pickup) {
   const pulse = 1 + Math.sin(pickup.phase) * 0.18;
+  const special = pickup.type !== 'xp';
   ctx.save();
   ctx.translate(pickup.x, pickup.y);
   ctx.rotate(pickup.phase * 0.18);
@@ -1235,6 +1322,8 @@ function drawPickup(pickup) {
   if (pickup.type === 'xp') {
     ctx.rotate(Math.PI / 4);
     ctx.fillRect(-pickup.radius * pulse, -pickup.radius * pulse, pickup.radius * 2 * pulse, pickup.radius * 2 * pulse);
+    ctx.fillStyle = 'rgba(255,255,255,0.82)';
+    ctx.fillRect(-pickup.radius * 0.28, -pickup.radius * 0.28, pickup.radius * 0.56, pickup.radius * 0.56);
   } else {
     ctx.beginPath();
     for (let index = 0; index < 8; index += 1) {
@@ -1251,6 +1340,56 @@ function drawPickup(pickup) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText({ heal: '+', overdrive: '∞', magnet: 'U', nuke: '✺' }[pickup.type], 0, 0);
+  }
+  if (special) {
+    ctx.globalAlpha = 0.38 + Math.sin(pickup.phase * 1.7) * 0.12;
+    ctx.strokeStyle = pickup.color;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, pickup.radius * (1.65 + Math.sin(pickup.phase) * 0.12), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.22;
+    ctx.beginPath();
+    ctx.arc(0, 0, pickup.radius * 2.05, pickup.phase * 0.6, pickup.phase * 0.6 + Math.PI * 0.72);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawEnemyMark(enemy) {
+  if (enemy.type === 'grunt' || enemy.type === 'runner' || enemy.type === 'splitter') return;
+  const radius = enemy.radius;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.globalAlpha = enemy.boss ? 0.84 : enemy.elite ? 0.72 : 0.58;
+  ctx.strokeStyle = enemy.color;
+  ctx.fillStyle = enemy.color;
+  ctx.lineWidth = enemy.boss ? 2.5 : 1.6;
+  if (enemy.type === 'runner') {
+    ctx.beginPath();
+    ctx.moveTo(-radius * 0.72, -radius * 0.24); ctx.lineTo(-radius * 0.18, 0); ctx.lineTo(-radius * 0.72, radius * 0.24);
+    ctx.moveTo(-radius * 0.28, -radius * 0.24); ctx.lineTo(radius * 0.26, 0); ctx.lineTo(-radius * 0.28, radius * 0.24);
+    ctx.stroke();
+  } else if (enemy.type === 'tank') {
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.77, -Math.PI * 0.72, Math.PI * 0.72);
+    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-radius * 0.52, radius * 0.32); ctx.lineTo(0, radius * 0.68); ctx.lineTo(radius * 0.52, radius * 0.32); ctx.stroke();
+  } else if (enemy.type === 'splitter') {
+    ctx.beginPath();
+    ctx.moveTo(-radius * 0.5, radius * 0.42); ctx.lineTo(0, -radius * 0.45); ctx.lineTo(radius * 0.5, radius * 0.42);
+    ctx.moveTo(0, -radius * 0.45); ctx.lineTo(0, radius * 0.48); ctx.stroke();
+  } else if (enemy.type === 'shooter') {
+    ctx.beginPath(); ctx.arc(0, 0, radius * 0.62, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-radius * 0.88, 0); ctx.lineTo(-radius * 0.46, 0); ctx.moveTo(radius * 0.46, 0); ctx.lineTo(radius * 0.88, 0); ctx.moveTo(0, -radius * 0.88); ctx.lineTo(0, -radius * 0.46); ctx.moveTo(0, radius * 0.46); ctx.lineTo(0, radius * 0.88); ctx.stroke();
+  } else if (enemy.elite) {
+    ctx.save(); ctx.rotate(Math.PI / 4);
+    ctx.strokeRect(-radius * 0.58, -radius * 0.58, radius * 1.16, radius * 1.16);
+    ctx.restore();
+  } else if (enemy.boss) {
+    ctx.beginPath(); ctx.arc(0, 0, radius * 0.55, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, radius * 0.83, -0.35, 1.2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, radius * 0.83, 2.8, 4.35); ctx.stroke();
   }
   ctx.restore();
 }
@@ -1278,6 +1417,7 @@ function drawEnemy(enemy) {
     ctx.beginPath(); ctx.arc(0, 0, enemy.radius, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#101522'; ctx.beginPath(); ctx.arc(-enemy.radius * 0.3, -enemy.radius * 0.15, enemy.radius * 0.12, 0, Math.PI * 2); ctx.arc(enemy.radius * 0.3, -enemy.radius * 0.15, enemy.radius * 0.12, 0, Math.PI * 2); ctx.fill();
   }
+  drawEnemyMark(enemy);
   if (frozen) {
     ctx.globalCompositeOperation = 'screen';
     ctx.globalAlpha = 0.42;
@@ -1323,6 +1463,12 @@ function drawPlayer() {
   ctx.beginPath(); ctx.arc(-3, 0, 6, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#65a8ff';
   ctx.fillRect(-17, -15, 7, 6); ctx.fillRect(-17, 9, 7, 6);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = state.elapsed < state.overdriveUntil ? 'rgba(112,255,241,0.9)' : 'rgba(101,168,255,0.72)';
+  ctx.beginPath();
+  ctx.moveTo(-18, -6); ctx.lineTo(-34 - Math.sin(state.elapsed * 32) * 3, 0); ctx.lineTo(-18, 6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,244,161,0.9)';
+  ctx.beginPath(); ctx.arc(31, 0, state.elapsed < state.overdriveUntil ? 3.2 : 2.2, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 
   ctx.save();
@@ -1331,6 +1477,9 @@ function drawPlayer() {
   ctx.lineWidth = 1;
   ctx.setLineDash([6, 9]);
   ctx.beginPath(); ctx.moveTo(player.x + input.aimX * 28, player.y + input.aimY * 28); ctx.lineTo(player.x + input.aimX * 115, player.y + input.aimY * 115); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 0.62;
+  ctx.beginPath(); ctx.arc(player.x + input.aimX * 115, player.y + input.aimY * 115, 3.5, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
 }
 
@@ -1473,7 +1622,8 @@ async function finishRun(victory) {
   els.finalLevel.textContent = state.level;
   els.finalRank.textContent = '—';
   els.newBest.classList.add('hidden');
-  tone(victory ? 520 : 90, victory ? 0.5 : 0.7, victory ? 'triangle' : 'sawtooth', 0.075, victory ? 520 : -40);
+  tone(victory ? 520 : 90, victory ? 0.5 : 0.7, victory ? 'triangle' : 'sawtooth', 0.075, victory ? 520 : -40, victory ? 'run-victory' : 'run-defeat');
+  noiseBurst(victory ? 0.18 : 0.26, victory ? 0.025 : 0.04, victory ? 1200 : 150, victory ? 'run-victory-noise' : 'run-defeat-noise');
   try {
     const result = await extCall({ action: 'submit_run', score: Math.round(state.score), kills: state.kills, duration: Math.round(state.elapsed), level: state.level, victory });
     if (result?.ok) {
@@ -1569,7 +1719,7 @@ els.soundBtn.addEventListener('click', () => {
   muted = !muted;
   localStorage.setItem('bullet-heaven-muted', muted ? '1' : '0');
   els.soundBtn.textContent = muted ? '声音 OFF' : '声音 ON';
-  if (!muted) tone(620, 0.08, 'triangle', 0.04, 120);
+  if (!muted) tone(620, 0.08, 'triangle', 0.04, 120, 'sound-toggle');
 });
 els.directorToggle.addEventListener('click', () => {
   const collapsed = els.directorPanel.classList.toggle('collapsed');

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen, Brain, Eye, Plus, Puzzle, Rocket, Upload, X } from 'lucide-react'
+import { BookOpen, Brain, Eye, GitBranch, Loader2, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
 import { api } from '../store'
 import { normalizeGithubSkillInput } from './skills'
 import { SkillMarketLink } from './skill-market-link'
@@ -315,11 +315,11 @@ interface SelectionSnapshotResponse {
 // =====================================================================
 const ACTIVE_PANEL_STORAGE_KEY = 'mobius:skill-memory-active-panel'
 
-function readStoredActivePanel(): null | 'skill' | 'memory' | undefined {
+function readStoredActivePanel(): null | 'skill' | 'memory' | 'git' | undefined {
   if (typeof window === 'undefined') return undefined
   try {
     const value = window.localStorage.getItem(ACTIVE_PANEL_STORAGE_KEY)
-    if (value === 'skill' || value === 'memory') return value
+    if (value === 'skill' || value === 'memory' || value === 'git') return value
     if (value === 'closed') return null
     return undefined
   } catch {
@@ -327,7 +327,7 @@ function readStoredActivePanel(): null | 'skill' | 'memory' | undefined {
   }
 }
 
-function writeStoredActivePanel(panel: null | 'skill' | 'memory'): void {
+function writeStoredActivePanel(panel: null | 'skill' | 'memory' | 'git'): void {
   if (typeof window === 'undefined') return
   try {
     window.localStorage.setItem(ACTIVE_PANEL_STORAGE_KEY, panel === null ? 'closed' : panel)
@@ -555,13 +555,31 @@ function SegBtn({ active, onClick, color, children }: { active: boolean; onClick
   )
 }
 
+type GitSource = {
+  id: string
+  kind: 'hub' | 'local' | 'remote'
+  label: string
+  available: boolean
+  branch?: string | null
+  head?: string | null
+  path: string
+  dirty?: boolean
+  dirty_count?: number
+  status?: string
+  hostname?: string
+  reason?: string
+  cache_expires_at?: number
+}
+
 export function SessionSkillMemoryEditor({
   sessionId,
+  projectId,
   initialPanel = null,
   persistActivePanel = false,
 }: {
   sessionId?: string
-  initialPanel?: null | 'skill' | 'memory'
+  projectId?: string
+  initialPanel?: null | 'skill' | 'memory' | 'git'
   persistActivePanel?: boolean
 }) {
   const [memories, setMemories] = useState<EditorItem[]>([])
@@ -571,7 +589,12 @@ export function SessionSkillMemoryEditor({
   const [loading, setLoading] = useState(true)
   // 按钮三态: idle / sending / done. key = `${kind}:${itemId}`
   const [emphasizeState, setEmphasizeState] = useState<Record<string, 'idle' | 'sending' | 'done'>>({})
-  const [activePanel, setActivePanel] = useState<null | 'skill' | 'memory'>(() => {
+  const [gitSources, setGitSources] = useState<GitSource[]>([])
+  const [gitLoading, setGitLoading] = useState(false)
+  const [gitError, setGitError] = useState('')
+  const [gitRefreshKey, setGitRefreshKey] = useState(0)
+  const [gitScanMeta, setGitScanMeta] = useState<{ cached: boolean; scannedAt: string }>({ cached: false, scannedAt: '' })
+  const [activePanel, setActivePanel] = useState<null | 'skill' | 'memory' | 'git'>(() => {
     if (persistActivePanel) {
       const stored = readStoredActivePanel()
       if (stored !== undefined) return stored
@@ -579,14 +602,67 @@ export function SessionSkillMemoryEditor({
     return initialPanel
   })
   // 切换/收起 tab 时同步写回 localStorage (仅 persistActivePanel=true 的非精简侧栏).
-  const setActivePanelAndPersist = useCallback((next: null | 'skill' | 'memory') => {
+  const setActivePanelAndPersist = useCallback((next: null | 'skill' | 'memory' | 'git') => {
     setActivePanel(next)
     if (persistActivePanel) writeStoredActivePanel(next)
   }, [persistActivePanel])
+
+  useEffect(() => {
+    if (activePanel !== 'git' || !projectId) return
+    let cancelled = false
+    setGitLoading(true)
+    setGitError('')
+    const desktop = typeof window !== 'undefined' ? (window as any).mobiusDesktop : null
+    const hubRequest = api(`/api/projects/${projectId}/git-sources${gitRefreshKey > 0 ? '?refresh=1' : ''}`)
+      .then((res: any) => ({
+        sources: (Array.isArray(res?.sources) ? res.sources as GitSource[] : []).filter((source) => (
+          source.kind !== 'remote'
+          || (Array.isArray(res?.registered_remote_names) && res.registered_remote_names.includes(source.label))
+        )),
+        cached: !!res?.cached,
+        scannedAt: typeof res?.scanned_at === 'string' ? res.scanned_at : '',
+      }))
+    const localRequest = desktop?.isDesktop && typeof desktop.getProjectGitStatus === 'function'
+      ? Promise.resolve(desktop.getProjectGitStatus(projectId)).then((local: any) => local?.available ? [{
+        id: `local:${projectId}`,
+        kind: 'local' as const,
+        available: true,
+        label: 'Electron 本地',
+        branch: local.branch || null,
+        head: local.head || null,
+        path: local.path || '',
+        dirty: !!local.dirty,
+        dirty_count: Number(local.dirty_count || 0),
+      }] : [])
+      : Promise.resolve([] as GitSource[])
+    Promise.allSettled([hubRequest, localRequest])
+      .then(([hubResult, localResult]) => {
+        if (cancelled) return
+        const hubData = hubResult.status === 'fulfilled' ? hubResult.value : { sources: [], cached: false, scannedAt: '' }
+        const localSources = localResult.status === 'fulfilled' ? localResult.value : []
+        setGitSources([...hubData.sources, ...localSources])
+        setGitScanMeta({ cached: hubData.cached, scannedAt: hubData.scannedAt })
+        if (hubResult.status === 'rejected' && localResult.status === 'rejected') {
+          setGitError('中枢与 Electron 本机 Git 扫描均失败')
+        }
+      })
+      .finally(() => { if (!cancelled) setGitLoading(false) })
+    return () => { cancelled = true }
+  }, [activePanel, projectId, gitRefreshKey])
   const [previewItem, setPreviewItem] = useState<null | { kind: 'skill' | 'memory'; item: EditorItem }>(null)
-  // 添加 skill/memory 成功后自增 reloadKey, 触发 selection-snapshot 重新拉取, 新条目立即出现在下方列表.
+  // 添加 skill/memory 成功后: 先让后端用当前 live 数据重建该会话的 selection snapshot
+  // (会话快照在创建时已冻结, 不刷新则新装的条目既不进列表也不被注入), 再重新拉取.
   const [reloadKey, setReloadKey] = useState(0)
-  const reload = useCallback(() => setReloadKey(k => k + 1), [])
+  const reload = useCallback(async () => {
+    try {
+      if (sessionId) {
+        await api(`/api/sessions/${sessionId}/refresh-selection-snapshot`, { method: 'POST', body: '{}' })
+      }
+    } catch {
+      // 刷新失败不阻塞: 仍重新拉取一次, 兜底显示当前已持久化的快照.
+    }
+    setReloadKey(k => k + 1)
+  }, [sessionId])
 
   useEffect(() => {
     let cancelled = false
@@ -755,13 +831,14 @@ export function SessionSkillMemoryEditor({
   const memoryTotal = totals.memories || memories.length
   const skillActive = activePanel === 'skill'
   const memActive = activePanel === 'memory'
+  const gitActive = activePanel === 'git'
 
   return (
     <>
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
-            下划线 tab 样式: 两个 tab 紧挨成 tab 条, 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
-        <div className="grid grid-cols-2 items-stretch">
+            下划线 tab 样式: 三个 tab 紧挨成 tab 条, 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
+        <div className="grid grid-cols-3 items-stretch">
           <button
             type="button"
             onClick={() => setActivePanelAndPersist(activePanel === 'skill' ? null : 'skill')}
@@ -770,7 +847,7 @@ export function SessionSkillMemoryEditor({
             style={{ color: skillActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
           >
             <Puzzle className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
-            <span className="btn-label">Skill ({enabledSkills}/{skillTotal} 启用)</span>
+            <span className="btn-label">Skill</span>
           </button>
           <button
             type="button"
@@ -781,7 +858,19 @@ export function SessionSkillMemoryEditor({
             style={{ color: memActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
           >
             <Brain className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
-            <span className="btn-label">Memory ({enabledMemories}/{memoryTotal} 启用)</span>
+            <span className="btn-label">Memory</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActivePanelAndPersist(gitActive ? null : 'git')}
+            aria-pressed={gitActive}
+            data-tour="session-git-toggle"
+            className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${gitActive ? 'border-amber-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
+            style={{ color: gitActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
+          >
+            <GitBranch className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" strokeWidth={1.9} />
+            <span className="btn-label">Git</span>
+            {gitSources.length > 0 && <span className="text-[9px] text-amber-300">{gitSources.length}</span>}
           </button>
         </div>
 
@@ -792,10 +881,64 @@ export function SessionSkillMemoryEditor({
                 风格统一(虚线 border 区分其为操作入口, 其余为数据项). 添加成功后 reload() 立即
                 把新条目刷进下方列表, 用户可点"追加/强调"注入当前会话 (对后续对话生效). */}
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
-              <AddSkillMemoryBar kind={activePanel} onAdded={reload} />
-              {skillActive
-                ? renderList(skills, '暂无 Skill', 'skill')
-                : renderList(memories, '暂无 Memory', 'memory')}
+              {activePanel !== 'git' && <AddSkillMemoryBar kind={activePanel} onAdded={reload} />}
+              {skillActive ? renderList(skills, '暂无 Skill', 'skill')
+                : memActive ? renderList(memories, '暂无 Memory', 'memory')
+                  : (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 px-1 py-0.5">
+                        <span className="min-w-0 flex-1 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                          {gitScanMeta.scannedAt ? `${gitScanMeta.cached ? '缓存' : '刚刚扫描'} · ${new Date(gitScanMeta.scannedAt).toLocaleTimeString()}` : '按需扫描中枢、本机与远端'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setGitRefreshKey(key => key + 1)}
+                          disabled={gitLoading}
+                          className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-wait disabled:opacity-50"
+                          style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
+                          title="刷新 Git 仓库状态"
+                          aria-label="刷新 Git 仓库状态"
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 ${gitLoading ? 'animate-spin' : ''}`} strokeWidth={1.9} />
+                        </button>
+                      </div>
+                      {gitLoading && (
+                        <div className="flex items-center justify-center gap-2 py-5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> 扫描 Git 仓库...
+                        </div>
+                      )}
+                      {!gitLoading && gitError && <div className="py-4 text-center text-[11px] text-red-400">{gitError}</div>}
+                      {!gitLoading && !gitError && gitSources.length === 0 && (
+                        <div className="rounded-lg border border-dashed px-3 py-5 text-center text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                          当前中枢、本机和已登记远程计算机都没有检测到 Git 仓库
+                        </div>
+                      )}
+                      {!gitLoading && gitSources.map(source => {
+                        const dirtyFresh = !!source.dirty
+                          && typeof source.cache_expires_at === 'number'
+                          && source.cache_expires_at - Date.now() < 10 * 60 * 1000
+                        return (
+                        <div key={source.id} className="rounded-lg border px-2.5 py-2" style={{ borderColor: source.available ? 'var(--border-color)' : 'rgba(148,163,184,0.28)', background: source.available ? 'rgba(245,158,11,0.04)' : 'rgba(148,163,184,0.04)' }}>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <GitBranch className={`h-3.5 w-3.5 flex-shrink-0 ${source.available ? 'text-amber-400' : 'text-slate-400'}`} strokeWidth={1.9} />
+                            <span className="min-w-0 flex-1 truncate text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>{source.label}</span>
+                            {source.available && source.branch && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">{source.branch}</span>}
+                            {!source.available && <span className="flex-shrink-0 rounded border border-slate-400/25 bg-slate-400/10 px-1.5 py-0.5 text-[10px] text-slate-300">无 Git 仓库</span>}
+                            {source.available && !source.branch && source.head && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">游离 HEAD {source.head}</span>}
+                          </div>
+                          <div className="mt-1 truncate font-mono text-[10px]" title={source.path} style={{ color: 'var(--text-muted)' }}>{source.path || '路径未知'}</div>
+                          <div className="mt-1 flex items-center gap-2 text-[9px]" style={{ color: 'var(--text-muted)' }}>
+                            <span>{source.kind === 'hub' ? '中枢仓库' : source.kind === 'local' ? 'Electron 本地仓库' : `远程仓库${source.hostname ? ` · ${source.hostname}` : ''}`}</span>
+                            {dirtyFresh && <span className="text-amber-300">· {source.dirty_count || 0} 项未提交</span>}
+                            {source.status && <span>· {source.status}</span>}
+                            {!source.available && source.reason && <span className="truncate text-slate-400" title={source.reason}>· {source.reason}</span>}
+                            {source.available && !source.branch && !source.head && source.reason && <span className="truncate text-amber-300" title={source.reason}>· {source.reason}</span>}
+                          </div>
+                        </div>
+                        )
+                      })}
+                    </div>
+                  )}
             </div>
           </div>
         )}
@@ -871,14 +1014,16 @@ export function SessionSkillMemoryEditor({
 
 export function SessionSkillMemoryModal({
   sessionId,
+  projectId,
   initialPanel,
   onClose,
 }: {
   sessionId?: string
-  initialPanel: 'skill' | 'memory'
+  projectId?: string
+  initialPanel: 'skill' | 'memory' | 'git'
   onClose: () => void
 }) {
-  const title = initialPanel === 'skill' ? '当前会话 Skill' : '当前会话 Memory'
+  const title = initialPanel === 'skill' ? '当前会话 Skill' : initialPanel === 'memory' ? '当前会话 Memory' : '当前项目 Git'
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
@@ -897,7 +1042,9 @@ export function SessionSkillMemoryModal({
           <div className="flex min-w-0 items-center gap-2">
             {initialPanel === 'skill'
               ? <Puzzle className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
-              : <Brain className="h-4 w-4 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />}
+              : initialPanel === 'memory'
+                ? <Brain className="h-4 w-4 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
+                : <GitBranch className="h-4 w-4 flex-shrink-0 text-amber-400" strokeWidth={1.9} />}
             <h3 className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
           </div>
           <button
@@ -915,6 +1062,7 @@ export function SessionSkillMemoryModal({
           <SessionSkillMemoryEditor
             key={initialPanel}
             sessionId={sessionId}
+            projectId={projectId}
             initialPanel={initialPanel}
           />
         </div>

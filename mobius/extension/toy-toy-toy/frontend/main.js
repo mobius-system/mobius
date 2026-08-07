@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { extCall } from '/extension/_sdk/ext.js';
-import { createToyVisualSystem } from './visual-system.js?v=0.12.0';
-import { createToyAudioSystem } from './audio-system.js?v=0.12.0';
+import { createToyVisualSystem } from './visual-system.js?v=0.13.0';
+import { createToyAudioSystem } from './audio-system.js?v=0.13.0';
 
 const WORLD = Object.freeze({
   width: 20,
@@ -980,21 +980,38 @@ const ENEMY_ATLAS_FRAMES = Object.freeze({ normal: 0, runner: 1, tank: 2, elite:
 const textureLoader = new THREE.TextureLoader();
 const enemyPlaneGeometry = new THREE.PlaneGeometry(1.95, 2.55);
 enemyPlaneGeometry.translate(0, 1.275, 0);
+// MeshBasicMaterial multiplies the per-instance tint with the geometry colour.
+// PlaneGeometry has no colour attribute by default; provide a white baseline
+// so the atlas remains fully saturated while hit/frost tints can still use
+// InstancedMesh.instanceColor.
+enemyPlaneGeometry.setAttribute(
+  'color',
+  new THREE.Float32BufferAttribute(
+    new Float32Array(enemyPlaneGeometry.attributes.position.count * 3).fill(1),
+    3,
+  ),
+);
 
-function createEnemyMaterial(themeId, type) {
-  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.12.0`);
+function createEnemyMaterial(themeId, type, outline = false) {
+  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.13.0`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
+  // The atlas has no padded mip borders. A non-mip linear sample prevents the
+  // adjacent character from bleeding into a frame at the tiny crowd scale.
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
   texture.repeat.set(0.2, 1);
   texture.offset.set(ENEMY_ATLAS_FRAMES[type] * 0.2, 0);
   texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   return new THREE.MeshBasicMaterial({
     map: texture,
-    color: 0xffffff,
+    color: outline ? 0x061018 : 0xffffff,
     transparent: true,
-    alphaTest: 0.08,
-    depthWrite: true,
+    alphaTest: outline ? 0.035 : 0.08,
+    depthWrite: !outline,
+    vertexColors: !outline,
     fog: true,
     toneMapped: false,
     side: THREE.DoubleSide,
@@ -1013,17 +1030,37 @@ for (const [type, visual] of Object.entries(enemyVisuals)) {
     zombie: createEnemyMaterial('zombie', type),
     deadline: createEnemyMaterial('deadline', type),
   };
+  visual.outlineMaterials = {
+    zombie: createEnemyMaterial('zombie', type, true),
+    deadline: createEnemyMaterial('deadline', type, true),
+  };
   visual.mesh = new THREE.InstancedMesh(
     enemyPlaneGeometry,
     visual.materials.zombie,
     WORLD.maxEnemies,
   );
   visual.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  visual.mesh.setColorAt(0, new THREE.Color(0xffffff));
+  // MeshBasicMaterial vertex colors are enabled for hit/slow tinting. Fill
+  // every slot with white first; an InstancedMesh color buffer otherwise
+  // defaults untouched instances to black and swallows the atlas texture.
+  visual.mesh.instanceColor = new THREE.InstancedBufferAttribute(
+    new Float32Array(WORLD.maxEnemies * 3).fill(1),
+    3,
+  );
   visual.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
   visual.mesh.frustumCulled = false;
   visual.mesh.count = 0;
   worldGroup.add(visual.mesh);
+  visual.outlineMesh = new THREE.InstancedMesh(
+    enemyPlaneGeometry,
+    visual.outlineMaterials.zombie,
+    WORLD.maxEnemies,
+  );
+  visual.outlineMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  visual.outlineMesh.frustumCulled = false;
+  visual.outlineMesh.count = 0;
+  visual.outlineMesh.renderOrder = -1;
+  worldGroup.add(visual.outlineMesh);
 }
 
 const enemyShadowGeometry = new THREE.CircleGeometry(0.72, 20);
@@ -1161,6 +1198,7 @@ for (let i = 0; i < WORLD.maxProjectiles; i += 1) {
 }
 
 const matrixDummy = new THREE.Object3D();
+const outlineDummy = new THREE.Object3D();
 const shadowDummy = new THREE.Object3D();
 const enemyTint = new THREE.Color();
 const impactWhite = new THREE.Color(0xffffff);
@@ -1565,7 +1603,7 @@ function renderLevelPicker() {
     const frame = ENEMY_ATLAS_FRAMES[role.visual] || 0;
     return `
       <div class="enemy-roster-item">
-        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.12.0');background-position:${frame * 25}% center"></i>
+        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.13.0');background-position:${frame * 25}% center"></i>
         <span>${role.name}</span>
       </div>
     `;
@@ -1657,6 +1695,7 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   focusRailMaterial.color.setHex(theme.palette.core);
   for (const visual of Object.values(enemyVisuals)) {
     visual.mesh.material = visual.materials[theme.id];
+    visual.outlineMesh.material = visual.outlineMaterials[theme.id];
   }
   turretGroups.forEach(({ housingMaterial, barrelMaterial, coreMaterial, screenMaterial, cannonModel, workbenchModel, heroHaloMaterial }) => {
     housingMaterial.color.setHex(theme.palette.core);
@@ -3043,7 +3082,7 @@ function applyDamage(enemy, amount, options = {}) {
     if (state.random() < criticalChance) {
       critical = true;
       damage *= 1.8 + state.levels.crit * 0.18;
-      addExplosionBurst(enemy.x, 0.9 * enemy.scale, enemy.z, '#ffd84f', 0.72 + state.levels.crit * 0.08, currentTheme().id === 'deadline' ? 'digital' : 'energy');
+      addExplosionBurst(enemy.x, 0.9 * enemy.scale, enemy.z, '#ffd84f', 0.72 + state.levels.crit * 0.08, currentTheme().id === 'deadline' ? 'digital' : 'energy', { critical: true, heavy: true });
       for (let index = 0; index < 6; index += 1) addFxParticle(enemy.x, 0.9 * enemy.scale, enemy.z, '#fff1a3', 0.7, 'shard');
     }
   }
@@ -3149,10 +3188,10 @@ function killEnemy(enemy, critical = false) {
   }
 }
 
-function addExplosionBurst(x, y, z, color, power = 1, style = 'energy') {
-  visualSystem.spawnImpact({ x, y, z, color, power, style });
-  addShockwave(x, z, color, 0.9 + power * 0.9);
-  if (power >= 1.15) addShockwave(x, z, '#ffffff', 0.45 + power * 0.45);
+function addExplosionBurst(x, y, z, color, power = 1, style = 'energy', options = {}) {
+  visualSystem.spawnImpact({ x, y, z, color, power, style, critical: options.critical, heavy: options.heavy });
+  addShockwave(x, z, color, 0.9 + power * 0.9, options);
+  if (power >= 1.15) addShockwave(x, z, '#ffffff', 0.45 + power * 0.45, { ...options, critical: true });
   const count = Math.min(28, 6 + Math.round(power * 8));
   for (let index = 0; index < count; index += 1) {
     const shape = style === 'digital'
@@ -3172,16 +3211,16 @@ function addProjectileImpact(projectile, target) {
   const baseColor = variantColor || (theme.id === 'deadline' ? '#62a8ff' : theme.palette.accent);
   const power = clamp(0.36 + projectile.visualPower * 0.16, 0.45, 0.92);
   if (projectile.variant === 'blast') {
-    addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * target.scale, target.z, theme.id === 'deadline' ? '#ff526a' : '#ff9f43', 0.92 + state.levels.blast * 0.18, style);
+    addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * target.scale, target.z, theme.id === 'deadline' ? '#ff526a' : '#ff9f43', 0.92 + state.levels.blast * 0.18, style, { variant: projectile.variant, heavy: true });
   } else {
-    addShockwave(target.x, target.z, baseColor, 0.42 + power * 0.34);
+    addShockwave(target.x, target.z, baseColor, 0.42 + power * 0.34, { variant: projectile.variant, heavy: projectile.variant !== 'normal' });
     for (let index = 0; index < 3; index += 1) {
       addFxParticle(target.x, target.kind === 'gate' ? 1.35 : 0.72 * target.scale, target.z, index ? baseColor : '#ffffff', 0.42 + power * 0.2, theme.id === 'deadline' ? 'ticket' : 'shard');
     }
-    if (projectile.visualPower >= 2.2 || (state.levels.blast > 0 && projectile.spin % 3 < 0.6)) addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * (target.scale || 1), target.z, baseColor, power * 0.64, style);
+    if (projectile.visualPower >= 2.2 || (state.levels.blast > 0 && projectile.spin % 3 < 0.6)) addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * (target.scale || 1), target.z, baseColor, power * 0.64, style, { variant: projectile.variant, heavy: projectile.variant !== 'normal' });
   }
   if (projectile.variant === 'chain') {
-    addShockwave(target.x, target.z, '#b37cff', 1.05 + state.levels.chain * 0.12);
+    addShockwave(target.x, target.z, '#b37cff', 1.05 + state.levels.chain * 0.12, { variant: projectile.variant, heavy: true });
   }
   if (projectile.variant === 'frost' || state.levels.frost > 0) {
     for (let index = 0; index < 3 + state.levels.frost; index += 1) addFxParticle(target.x, 0.9, target.z, '#9beaff', 0.7, 'shard');
@@ -3202,6 +3241,8 @@ function addDefeatEffect(enemy, critical = false) {
     style: theme.id === 'deadline' ? 'digital' : 'energy',
     boss: isBoss,
     elite: isElite,
+    critical,
+    heavy: isBoss || isElite || critical,
   });
   const style = theme.id === 'deadline' ? 'digital' : 'energy';
   const power = isBoss ? 3.2 : isElite ? 1.35 + enemy.scale * 0.18 : 0.72 + enemy.scale * 0.15;
@@ -3256,8 +3297,8 @@ function addDefeatEffect(enemy, critical = false) {
   }
 }
 
-function addShockwave(x, z, color, maxScale = 1) {
-  visualSystem.spawnShockwave({ x, z, color, maxScale });
+function addShockwave(x, z, color, maxScale = 1, options = {}) {
+  visualSystem.spawnShockwave({ x, z, color, maxScale, ...options });
 }
 
 function addFxText(x, y, z, text, color = '#ffffff', life = 0.8, size = 12) {
@@ -3604,6 +3645,18 @@ function renderEnemies() {
     matrixDummy.rotation.set(-0.72, 0, stride * (enemy.type === 'runner' ? 0.105 : 0.055) + (enemy.impactSide || 0) * impact * 0.12);
     matrixDummy.updateMatrix();
     visual.mesh.setMatrixAt(index, matrixDummy.matrix);
+    // The camera looks toward decreasing Z from the base, so the dark sticker
+    // outline must sit slightly farther away (positive Z) to remain behind the
+    // full-colour character atlas instead of occluding it.
+    outlineDummy.position.set(enemy.x + (enemy.impactSide || 0) * impact * 0.14, matrixDummy.position.y, matrixDummy.position.z + 0.035);
+    outlineDummy.rotation.copy(matrixDummy.rotation);
+    outlineDummy.scale.set(
+      matrixDummy.scale.x * 1.085,
+      matrixDummy.scale.y * 1.085,
+      matrixDummy.scale.z,
+    );
+    outlineDummy.updateMatrix();
+    visual.outlineMesh.setMatrixAt(index, outlineDummy.matrix);
     enemyTint.setHex(hit ? 0xff6d78 : slowed ? 0x79d9ff : (enemy.tint || 0xffffff));
     if (impact > 0) enemyTint.lerp(impactWhite, impact * 0.78);
     visual.mesh.setColorAt(index, enemyTint);
@@ -3621,6 +3674,8 @@ function renderEnemies() {
     visual.mesh.count = counts[type] || 0;
     visual.mesh.instanceMatrix.needsUpdate = true;
     if (visual.mesh.instanceColor) visual.mesh.instanceColor.needsUpdate = true;
+    visual.outlineMesh.count = counts[type] || 0;
+    visual.outlineMesh.instanceMatrix.needsUpdate = true;
   }
   enemyShadowMesh.count = shadowCount;
   enemyShadowMesh.instanceMatrix.needsUpdate = true;
@@ -3860,7 +3915,7 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
     const combat = currentCombatStats();
     const cinematicVisuals = visualSystem.snapshot();
     return {
-      version: '0.12.0',
+      version: '0.13.0',
       mode: state.mode,
       lastVictory: state.lastVictory,
       theme: state.themeId,

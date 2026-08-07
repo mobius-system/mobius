@@ -433,6 +433,15 @@ const Sessions = {
         context_snapshot_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
     WHERE session_id = ? AND context_snapshot_at IS NULL
   `).run(body, sourcesJson, id),
+  // 用当前 live 数据重建并覆盖 selection snapshot (会话内新装/新加 skill|memory 后调用,
+  // 否则旧会话快照在创建时已冻结, 新条目不会进入列表 / 注入). 与 writeContextSnapshot 不同:
+  // 这里无条件覆盖 (是显式刷新动作, 不是"首次发消息固化").
+  updateSelectionSnapshot: (id: string, snapshotJson: string) => db.prepare(`
+    UPDATE sessions_v2
+    SET session_selection_snapshot = ?,
+        session_selection_snapshot_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE session_id = ?
+  `).run(snapshotJson, id),
 };
 
 export { Sessions };

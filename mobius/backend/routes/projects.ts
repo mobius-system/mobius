@@ -2,7 +2,6 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
-import bcrypt from 'bcryptjs';
 // @ts-ignore — multer 没有 TS 类型声明
 import multer from 'multer';
 import { extractArchiveFile, removeIfExists, detectArchiveKind } from '../services/context-import-utils';
@@ -18,6 +17,7 @@ import { Sessions } from '../repositories/sessions';
 import { Skills } from '../repositories/skills';
 import { Memories } from '../repositories/memories';
 import { Users } from '../repositories/users';
+import { ProjectDeletionAudit, type ProjectDeletionImpact } from '../repositories/project-deletion-audit';
 // @ts-ignore — service 仍是 .js
 import {
   buildIssueContextPreview,
@@ -65,6 +65,11 @@ import {
 } from '../services/user-project-view';
 import { searchProjectSessionMetadata } from '../services/project-session-search';
 import { searchProjectHierarchy } from '../services/project-hierarchy-search';
+import {
+  projectDeletePolicy,
+  type ProjectDeleteMode,
+} from '../services/project-deletion-policy';
+import { verifySensitiveActionPassword } from '../services/sensitive-action-auth';
 // @ts-ignore — service 仍是 .js
 import { recordAdminAuditIfCrossUser } from '../services/admin-audit';
 // @ts-ignore — service 仍是 .js
@@ -73,7 +78,6 @@ import {
   APP_DIR,
   BACKEND_WORKER_LOG_DIR,
   UPLOAD_DIR,
-  ENABLE_PASSWORD_LOGIN,
   MOBIUS_SSH_FORWARD_USER,
   MOBIUS_SSH_PORT,
   MOBIUS_SSH_PRIVATE_KEY_PATH,
@@ -90,6 +94,33 @@ import {
 } from '../config';
 
 const router = express.Router();
+const GIT_SOURCES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+type GitSourceCacheEntry = { expiresAt: number; scannedAt: string; source: any };
+const gitSourceCache = new Map<string, GitSourceCacheEntry>();
+const remotePathCache = new Map<string, { expiresAt: number; path: string }>();
+
+function gitSourceCacheKey(remote: string, pathValue: string): string {
+  return `${remote}\u0000${pathValue}`;
+}
+
+function isAbsoluteRemotePath(value: string): boolean {
+  return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value);
+}
+
+async function resolveAbsoluteRemotePath(remoteName: string, requestedPath: string): Promise<string> {
+  const raw = requestedPath.trim() || '~';
+  if (isAbsoluteRemotePath(raw)) return raw;
+  const cacheKey = `${remoteName}\u0000${raw}`;
+  const cached = remotePathCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.path;
+  const browsed = await aimuxRemote.browseRemotePath(remoteName, raw, '10s');
+  const resolved = String(browsed?.path || '').trim();
+  if (!resolved || !isAbsoluteRemotePath(resolved)) {
+    throw new Error('无法解析远端 Git 路径为绝对路径');
+  }
+  remotePathCache.set(cacheKey, { path: resolved, expiresAt: Date.now() + GIT_SOURCES_CACHE_TTL_MS });
+  return resolved;
+}
 // 上传 ZIP 导入: 放宽到 200MB (解压后另有 inspectExtractedTree 的 1GB/5w 文件配额兜底).
 const importZipUpload = multer({ dest: UPLOAD_DIR, limits: { fileSize: 200 * 1024 * 1024 } });
 const MAIN_PROJECT_PORT_REL = path.join(HIDDEN_FOLDER_NAME, 'port_forward', 'main_project_port.txt');
@@ -496,6 +527,7 @@ function shapeProjectForUser(project: any, user: any, opts: { mutedIds?: Set<str
     can_create_issue: canCreate,
     can_create_session: projectAllowsReaderWrite(user, project, 'can_run_session'),
     can_create_research: canCreate && !!project.research_enabled,
+    delete_policy: projectDeletePolicy(project, user),
     muted,
     muted_label: muted ? '已屏蔽' : null,
     hidden,
@@ -827,6 +859,41 @@ function loadManageableProject(req: express.Request, res: express.Response, id: 
   return project;
 }
 
+function deletionRequestAddress(req: express.Request): string {
+  return String(req.ip || req.socket?.remoteAddress || '').trim();
+}
+
+function recordProjectDeletionAudit(args: {
+  req: express.Request;
+  actor: any;
+  project: any;
+  mode: ProjectDeleteMode | null;
+  reason?: string;
+  outcome: 'pending' | 'succeeded' | 'denied' | 'failed';
+  failureCode?: string;
+  impact: ProjectDeletionImpact;
+}): number | null {
+  try {
+    return ProjectDeletionAudit.record({
+      actorId: args.actor.id,
+      actorSystemRole: args.actor.role || '',
+      projectId: args.project.id,
+      projectName: args.project.name || '',
+      projectCreator: args.project.created_by || '',
+      deletionMode: args.mode,
+      reason: args.reason,
+      outcome: args.outcome,
+      failureCode: args.failureCode,
+      impact: args.impact,
+      requestIp: deletionRequestAddress(args.req),
+    });
+  } catch (error) {
+    console.warn('[project-delete-audit] record failed:', (error as Error).message);
+    if (args.outcome === 'pending') throw error;
+    return null;
+  }
+}
+
 const GIT_REPO_SCAN_MAX_DEPTH = 3;
 const GIT_REPO_SCAN_MAX_DIRS = 500;
 const GIT_COMMIT_LIMIT_DEFAULT = 12;
@@ -837,7 +904,6 @@ const ARCHITECTURE_ISSUE_DESCRIPTION = [
   `请分析当前项目结构，优先输出单文件 HTML/SVG 架构图到项目绑定路径下的 ${HIDDEN_FOLDER_NAME}/generated_figures/arch.html。`,
   '如需兼容截图或封面，也可以额外输出 arch.svg、arch.png、arch.jpg、arch.jpeg、arch.webp 等常见预览格式。',
 ].join('\n');
-const FIXED_LOGO_REVIEW_PROJECT_ID = '9986bdc3';
 const ARCHITECTURE_FIGURE_EXTENSIONS = ['.html', '.htm', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'];
 const GIT_FIELD_SEPARATOR = '\x1f';
 const GIT_RECORD_SEPARATOR = '\x1e';
@@ -2134,48 +2200,105 @@ router.delete('/:id/members/:userId', auth, (req: express.Request, res: express.
   }
 });
 
+router.get('/:id/delete-preview', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const id = String(req.params.id);
+  const project = Projects.findById(id);
+  if (!project || !canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+  res.json({
+    policy: projectDeletePolicy(project, user),
+    impact: ProjectDeletionAudit.impact(id),
+  });
+});
+
 router.delete('/:id', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const id = String(req.params.id);
   const project = Projects.findById(id);
-  if (!project) return res.status(404).json({ error: '未找到' });
-  if (project.created_by !== user.id) {
-    return res.status(403).json({ error: '只有项目创建者可以删除项目' });
-  }
-  if (project.id === FIXED_LOGO_REVIEW_PROJECT_ID) {
-    return res.status(400).json({
-      error: '这个项目是引导系统固定完成案例，用于“验收完成案例”路线，不能删除。其他同名临时演示项目仍可删除。',
+  if (!project || !canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+
+  const policy = projectDeletePolicy(project, user);
+  const impact = ProjectDeletionAudit.impact(id);
+  const body = req.body || {};
+  const reason = String(body.reason || '').trim().slice(0, 1000);
+  if (!policy.allowed) {
+    recordProjectDeletionAudit({
+      req,
+      actor: user,
+      project,
+      mode: policy.mode,
+      reason,
+      outcome: 'denied',
+      failureCode: policy.protected ? 'protected_project' : 'not_authorized',
+      impact,
+    });
+    return res.status(policy.protected ? 409 : 403).json({
+      error: policy.denial_reason || '当前账号没有删除此项目的权限',
+      code: policy.protected ? 'protected_project' : 'not_authorized',
     });
   }
-  if (project.kind === 'extension') {
-    return res.status(400).json({ error: '拓展项目由 mobius/extension/ 目录管理, 请删除对应目录后 reload' });
-  }
 
-  const { password, confirm } = req.body || {} as { password?: string; confirm?: string };
+  const confirm = body.confirm;
   const normalizedConfirm = String(confirm || '').trim();
   const accepted = new Set([project.name, project.id].filter(Boolean).map(String));
   if (!accepted.has(normalizedConfirm)) {
+    recordProjectDeletionAudit({ req, actor: user, project, mode: policy.mode, reason, outcome: 'denied', failureCode: 'confirmation_mismatch', impact });
     return res.status(400).json({ error: '请输入项目名或项目 ID 确认' });
   }
-
-  if (ENABLE_PASSWORD_LOGIN) {
-    if (!password) return res.status(400).json({ error: '请输入密码' });
-    const fullUser = Users.findById(user.id);
-    if (!fullUser?.password_hash || !bcrypt.compareSync(password, fullUser.password_hash)) {
-      return res.status(401).json({ error: '密码错误' });
-    }
+  if (body.irreversible_acknowledged !== true) {
+    recordProjectDeletionAudit({ req, actor: user, project, mode: policy.mode, reason, outcome: 'denied', failureCode: 'acknowledgement_required', impact });
+    return res.status(400).json({ error: '请确认理解删除操作不可恢复' });
+  }
+  if (policy.requires_reason && !reason) {
+    recordProjectDeletionAudit({ req, actor: user, project, mode: policy.mode, reason, outcome: 'denied', failureCode: 'reason_required', impact });
+    return res.status(400).json({ error: '系统管理员代删他人项目时必须填写原因' });
   }
 
+  const passwordResult = verifySensitiveActionPassword({
+    userId: user.id,
+    password: body.current_password ?? body.password,
+    clientAddress: deletionRequestAddress(req),
+  });
+  if (!passwordResult.ok) {
+    const rateLimited = passwordResult.code === 'rate_limited';
+    recordProjectDeletionAudit({ req, actor: user, project, mode: policy.mode, reason, outcome: 'denied', failureCode: passwordResult.code, impact });
+    if (rateLimited) {
+      res.setHeader('Retry-After', String(passwordResult.retry_after_seconds || 1));
+      return res.status(429).json({ error: '密码验证失败次数过多，请稍后再试', code: passwordResult.code });
+    }
+    return res.status(422).json({
+      error: passwordResult.code === 'password_required' ? '请输入当前账号密码' : '当前账号密码验证失败',
+      code: passwordResult.code,
+    });
+  }
+
+  if (impact.running_session_count > 0) {
+    recordProjectDeletionAudit({ req, actor: user, project, mode: policy.mode, reason, outcome: 'failed', failureCode: 'running_sessions', impact });
+    return res.status(409).json({
+      error: `项目仍有 ${impact.running_session_count} 个正在执行的会话，请先停止后再删除`,
+      code: 'running_sessions',
+    });
+  }
+
+  let auditId: number | null = null;
   try {
+    auditId = recordProjectDeletionAudit({ req, actor: user, project, mode: policy.mode, reason, outcome: 'pending', impact });
+    if (!auditId) throw new Error('无法建立删除审计记录');
     const contextCleanup = {
       skills: Skills.deleteForProject(id),
       memories: Memories.deleteForProject(id),
     };
-    const workspaceCleanup = removeDemoWorkspaceIfRequested(project, user, !!req.body?.cleanup_demo_workspace);
+    const workspaceCleanup = removeDemoWorkspaceIfRequested(project, user, !!body.cleanup_demo_workspace);
     recordAdminAuditIfCrossUser(user, 'delete_project', 'project', project.id, project.created_by);
-    Projects.delete(id);
+    db.transaction(() => {
+      Projects.delete(id);
+      ProjectDeletionAudit.complete(auditId!, 'succeeded');
+    })();
     res.json({ ok: true, context_cleanup: contextCleanup, workspace_cleanup: workspaceCleanup });
   } catch (e) {
+    if (auditId) {
+      try { ProjectDeletionAudit.complete(auditId, 'failed', 'delete_failed'); } catch {}
+    }
     res.status(500).json({ error: (e as Error).message || '删除项目失败' });
   }
 });
@@ -2460,6 +2583,152 @@ router.get('/:id/git-tracking', auth, (req: express.Request, res: express.Respon
     res.json(readProjectGitTracking(project, req.query.limit));
   } catch (e) {
     res.status(500).json({ error: (e as Error).message || '读取 Git 追踪信息失败' });
+  }
+});
+
+// 会话侧栏 Git Tab 使用的轻量仓库清单：中枢项目绑定路径 + 当前项目已登记的远程机器。
+// Electron 本机路径只由桌面端 IPC 读取，避免中枢误把本机路径当成服务器路径。
+router.get('/:id/git-sources', auth, async (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+
+  const forceRefresh = ['1', 'true', 'yes'].includes(String(req.query.refresh || '').toLowerCase());
+  const sources: any[] = [];
+  const cacheEntries: GitSourceCacheEntry[] = [];
+  let queriedSourceCount = 0;
+  try {
+    const inventory = Array.isArray(project.aimux_remote_inventory) ? project.aimux_remote_inventory : [];
+    const remember = (key: string, source: any): any => {
+      const expiresAt = Date.now() + GIT_SOURCES_CACHE_TTL_MS;
+      const entry = { expiresAt, scannedAt: new Date().toISOString(), source: { ...source, cache_expires_at: expiresAt } };
+      gitSourceCache.set(key, entry);
+      cacheEntries.push(entry);
+      queriedSourceCount += 1;
+      return entry.source;
+    };
+    const readSource = (key: string): any | null => {
+      if (forceRefresh) return null;
+      const entry = gitSourceCache.get(key);
+      if (!entry || entry.expiresAt <= Date.now()) return null;
+      cacheEntries.push(entry);
+      return { ...entry.source, cache_expires_at: entry.expiresAt };
+    };
+
+    const hubCacheKey = gitSourceCacheKey('hub', String(project.bind_path || ''));
+    const cachedHub = readSource(hubCacheKey);
+    if (cachedHub) {
+      sources.push({ ...cachedHub, id: `hub:${project.id}` });
+    } else {
+      const hub = readProjectGitTracking(project, 1);
+      sources.push(remember(hubCacheKey, {
+        id: `hub:${project.id}`,
+        kind: 'hub',
+        label: '中枢',
+        available: !!hub.available,
+        branch: hub.available ? (hub.branch || null) : null,
+        head: hub.available ? (hub.head || null) : null,
+        path: hub.repo_path || hub.bind_path || project.bind_path || '',
+        dirty: hub.available ? !!hub.dirty : false,
+        dirty_count: hub.available ? Number(hub.dirty_count || 0) : 0,
+        reason: hub.available ? '' : (hub.reason || '未检测到 Git 仓库'),
+      }));
+    }
+
+    const remoteSources = await Promise.all(inventory.map(async (remote: any) => {
+      const name = String(remote?.name || '').trim();
+      const requestedPath = String(remote?.remote_path || '').trim() || '~';
+      if (!name) return null;
+      let rootPath = '';
+      try {
+        rootPath = await resolveAbsoluteRemotePath(name, requestedPath);
+      } catch (e) {
+        return {
+          id: `remote:${name}`,
+          kind: 'remote',
+          label: name,
+          available: false,
+          branch: null,
+          head: null,
+          path: isAbsoluteRemotePath(requestedPath) ? requestedPath : '',
+          status: String(remote?.status || ''),
+          hostname: String(remote?.hostname || ''),
+          reason: (e as Error).message || '无法解析远端 Git 路径为绝对路径',
+        };
+      }
+      const remoteCacheKey = gitSourceCacheKey(name, rootPath);
+      const cachedRemote = readSource(remoteCacheKey);
+      if (cachedRemote) {
+        return {
+          ...cachedRemote,
+          id: `remote:${name}`,
+          label: name,
+          path: rootPath,
+          status: String(remote?.status || ''),
+          hostname: String(remote?.hostname || ''),
+        };
+      }
+      const unavailable = (reason: string) => ({
+        id: `remote:${name}`,
+        kind: 'remote',
+        label: name,
+        available: false,
+        branch: null,
+        head: null,
+        path: rootPath,
+        status: String(remote?.status || ''),
+        hostname: String(remote?.hostname || ''),
+        reason,
+      });
+      try {
+        let head: any;
+        let headSource = '/.git/HEAD';
+        try {
+          head = await aimuxRemote.readRemoteFile(name, rootPath, '/.git/HEAD');
+        } catch {
+          // git worktree 的 .git 可能是文件；只确认仓库存在，不虚构分支名。
+          headSource = '/.git';
+          head = await aimuxRemote.readRemoteFile(name, rootPath, '/.git');
+        }
+        const content = String(head?.content || '').trim();
+        const branchMatch = content.match(/^ref:\s+refs\/heads\/(.+)$/m);
+        const detachedHead = headSource === '/.git/HEAD' && /^[0-9a-f]{7,64}$/i.test(content) ? content.slice(0, 12) : null;
+        return remember(remoteCacheKey, {
+          id: `remote:${name}`,
+          kind: 'remote',
+          label: name,
+          available: true,
+          branch: branchMatch?.[1]?.trim() || null,
+          head: detachedHead,
+          path: rootPath,
+          status: String(remote?.status || ''),
+          hostname: String(remote?.hostname || ''),
+          reason: branchMatch ? '' : (detachedHead ? '游离 HEAD，当前没有分支' : '已检测到 Git，但无法从 HEAD 解析分支'),
+        });
+      } catch (e) {
+        const message = (e as Error).message || '';
+        const noRepo = /not exist|不存在|no such|not found|未找到|不是文件|目标不是文件/i.test(message);
+        return remember(remoteCacheKey, unavailable(noRepo ? '未检测到 Git 仓库' : `远端 Git 扫描失败：${message}`));
+      }
+    }));
+    sources.push(...remoteSources.filter(Boolean));
+    const payload = {
+      project_id: project.id,
+      sources,
+      registered_remote_names: inventory.map((remote: any) => String(remote?.name || '').trim()).filter(Boolean),
+      scanned_at: new Date().toISOString(),
+    };
+    const expiresAt = cacheEntries.length ? Math.min(...cacheEntries.map(entry => entry.expiresAt)) : Date.now();
+    const scannedAt = cacheEntries.length
+      ? cacheEntries.map(entry => entry.scannedAt).sort().at(-1) || payload.scanned_at
+      : payload.scanned_at;
+    res.json({
+      ...payload,
+      scanned_at: scannedAt,
+      cached: queriedSourceCount === 0,
+      cache_expires_at: new Date(expiresAt).toISOString(),
+    });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message || '读取 Git 仓库清单失败' });
   }
 });
 

@@ -452,7 +452,7 @@ export default function IssuePage() {
                     aria-selected={active}
                     aria-controls="issue-sidebar-session-list"
                     onClick={() => setSessionListMode(mode)}
-                    className="min-w-0 flex-1 truncate rounded px-1 py-1.5 text-[10px] font-medium leading-none transition-colors hover:text-[var(--text-primary)]"
+                    className="min-w-0 flex-1 truncate rounded px-1 py-1.5 text-[11px] font-medium leading-none transition-colors hover:text-[var(--text-primary)]"
                     style={{
                       color: active ? 'var(--text-primary)' : 'var(--text-muted)',
                       background: active ? 'var(--bg-active)' : 'transparent',
@@ -471,8 +471,8 @@ export default function IssuePage() {
               title="新建当前任务会话"
               aria-label="新建当前任务会话"
               data-tour="issue-sidebar-new-session"
-              className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border transition-colors hover:bg-blue-500/10"
-              style={{ color: 'var(--accent-primary)', borderColor: 'color-mix(in srgb, var(--accent-primary) 36%, var(--border-color))' }}
+              className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors hover:bg-blue-500/10"
+              style={{ color: 'var(--accent-primary)' }}
             >
               <Plus className="h-3.5 w-3.5" strokeWidth={2} />
             </button>

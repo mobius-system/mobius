@@ -4,6 +4,7 @@ import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { ContextAccessModal } from './context-access'
 import { MoveScopeModal } from './modals'
 import { CopyFromCatalogModal } from './copy-catalog'
+import { HelpHint } from './project-page/help-hint'
 import {
   CONTEXT_SETUP_DEMO_TOUR_EVENT,
   patchContextSetupDemoState,
@@ -140,8 +141,8 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
 
   const title = scope === 'user' ? '用户级 Memory' : '项目级 Memory'
   const desc = scope === 'user'
-    ? '创建用户级记忆'
-    : '本项目中共享的记忆'
+    ? '写入或上传 .md 长期记忆条目，在你创建的所有任务会话中默认注入。'
+    : '写入或上传 .md 长期记忆条目，只对本项目后续新建会话默认注入；已有会话已固定快照，不会自动补入。'
   const managerTour = scope === 'user' ? 'user-memory-manager' : 'project-memory-manager'
   const newTour = scope === 'user' ? 'user-memory-new' : 'project-memory-new'
   const copyTour = scope === 'user' ? 'user-memory-copy' : 'project-memory-copy'
@@ -156,7 +157,10 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
   return (
     <div data-tour={managerTour} className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-4">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <h3 className="text-[13px] font-semibold whitespace-nowrap flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h3 className="text-[13px] font-semibold whitespace-nowrap flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+          <HelpHint text={desc} />
+        </div>
         <div className="flex min-w-0 flex-wrap justify-end gap-1">
           <input
             ref={memoryFileRef}
