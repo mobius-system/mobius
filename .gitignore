@@ -161,3 +161,4 @@ mobius/mobile-builds/
 mobius/frontend/public/mobile-builds/
 mobius/tui-builds/
 .worktrees/
+.python-portable
