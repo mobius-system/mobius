@@ -1,6 +1,7 @@
-# Mobius Desktop 三平台客户端发布到 GitHub Release。
+# Mobius Desktop 三平台客户端发布到 GitHub Release + 同步到服务器下载菜单。
 #
-# 构建 win-x64 / mac-arm64 / mac-x64 三个 zip, 上传到 GitHub Release。
+# 构建 win-x64 / mac-arm64 / mac-x64 三个 zip, 上传到 GitHub Release，
+# 生成 manifest.json，通过 webhook 触发服务器同步到 /desktop-builds/。
 # 桌面端版本号独立 (mobius/desktop/package.json 的 version), 与 mobius 主版本解耦。
 #
 # 触发 (合理可控 —— 两种都是显式动作, 日常 push 绝不误发):
@@ -12,9 +13,6 @@
 #
 # 产物文件名 = mobius-desktop-<V>-<os>-<arch>.zip (小写 kebab, 与下载菜单约定一致),
 # 由 electron-builder 默认产物 (Mobius Desktop-<V>-<os>-<arch>.zip, 大写+空格) 重命名而来。
-#
-# 注: 此 workflow 只负责 GitHub Release 发布。下载菜单的 /desktop-builds/ 同源分发
-# 仍由本地 build.py --build-electron 维护, 二者互不影响 (Release 作公开归档/CDN 镜像)。
 
 name: Release Desktop
 
@@ -22,23 +20,23 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号 (留空则读 mobius/desktop/package.json)'
+        description: "版本号 (留空则读 mobius/desktop/package.json)"
         required: false
-        default: ''
+        default: ""
       make_latest:
-        description: '标记为 latest release'
+        description: "标记为 latest release"
         type: boolean
         default: true
       draft:
-        description: '草稿 release (不公开, 发布前可审)'
+        description: "草稿 release (不公开, 发布前可审)"
         type: boolean
         default: false
   push:
     tags:
-      - 'desktop-v*'
+      - "desktop-v*"
 
 permissions:
-  contents: write   # 创建 tag + release + 上传 asset
+  contents: write # 创建 tag + release + 上传 asset
 
 # 同一时刻只跑一个 release; 排队不取消, 避免产出半成品 release。
 concurrency:
@@ -56,7 +54,7 @@ jobs:
         shell: bash
         working-directory: mobius/desktop
     strategy:
-      fail-fast: false   # 一个平台失败不取消其它, 便于定位
+      fail-fast: false # 一个平台失败不取消其它, 便于定位
       matrix:
         include:
           - target: win-x64
@@ -65,12 +63,12 @@ jobs:
             arch: x64
             os: win
           - target: mac-arm64
-            runner: macos-latest     # Apple Silicon, 原生 arm64 最稳
+            runner: macos-latest # Apple Silicon, 原生 arm64 最稳
             plat: mac
             arch: arm64
             os: mac
           - target: mac-x64
-            runner: macos-13         # Intel, 原生 x64; 若将来弃用改 macos-latest 交叉
+            runner: macos-13 # Intel, 原生 x64; 若将来弃用改 macos-latest 交叉
             plat: mac
             arch: x64
             os: mac
@@ -79,7 +77,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
           cache: npm
           cache-dependency-path: mobius/desktop/package-lock.json
 
@@ -143,7 +141,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: build   # 3 个平台全部成功才发 (不发半成品)
+    needs: build # 3 个平台全部成功才发 (不发半成品)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -168,6 +166,7 @@ jobs:
           echo "Resolved version: $V"
 
       - name: Create release + upload 3 zips
+        id: gh_release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -216,5 +215,89 @@ jobs:
               --notes "$NOTES" \
               $LATEST_FLAG $DRAFT_FLAG
           fi
+
+          RELEASE_URL=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json url -q '.url')
+          echo "release_url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
           echo "✓ Release $TAG 发布完成"
-          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json url,assets --jq '{url, assets: [.assets[].name]}'
+
+      - name: Generate manifest.json + upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          TAG="desktop-v${V}"
+          BUILDS="["
+          FIRST=1
+          # 遍历下载的 artifact 产物
+          for f in artifacts/*/mobius-desktop-*.zip; do
+            [ -f "$f" ] || continue
+            filename=$(basename "$f")
+            size=$(stat -c%s "$f" 2>/dev/null || echo 0)
+            sha256=$(sha256sum "$f" | cut -d' ' -f1)
+
+            # 从文件名解析 platform + arch: mobius-desktop-0.0.22-win-x64.zip
+            # 格式: mobius-desktop-<version>-<platform>-<arch>.zip
+            rest="${filename#mobius-desktop-}"    # 0.0.22-win-x64.zip
+            rest="${rest%.zip}"                    # 0.0.22-win-x64
+            # 去掉版本号 (三段数字: x.y.z-)
+            plat_arch="${rest#*-*-*-}"             # win-x64 (去掉 0.0.22-)
+            plat="${plat_arch%-*}"                 # win
+            arch="${plat_arch##*-}"                # x64
+
+            [ $FIRST -eq 1 ] || BUILDS="$BUILDS,"
+            BUILDS="$BUILDS{\"platform\":\"$plat\",\"arch\":\"$arch\",\"format\":\"zip\",\"file\":\"$filename\",\"size\":$size,\"sha256\":\"$sha256\"}"
+            FIRST=0
+            echo "  + $filename (plat=$plat, arch=$arch, size=$size)"
+          done
+          BUILDS="$BUILDS]"
+
+          cat > manifest.json << JSONEOF
+          {
+            "version": "$V",
+            "generatedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "builds": $BUILDS
+          }
+          JSONEOF
+
+          echo "=== manifest.json ==="
+          cat manifest.json
+
+          # 上传 manifest.json 到 GitHub Release
+          gh release upload "$TAG" manifest.json -R "$GITHUB_REPOSITORY" --clobber
+          echo "✓ manifest.json uploaded to release"
+
+      - name: Notify server webhook (sync desktop-builds)
+        if: ${{ !inputs.draft }}
+        shell: bash
+        run: |
+          WEBHOOK_URL="${{ secrets.DESKTOP_WEBHOOK_URL }}"
+          WEBHOOK_TOKEN="${{ secrets.DESKTOP_WEBHOOK_TOKEN }}"
+
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "⚠ DESKTOP_WEBHOOK_URL 未配置, 跳过 webhook 通知"
+            echo "  服务器需要手动运行 tools/sync-desktop-builds.sh"
+            exit 0
+          fi
+
+          V="${{ steps.ver.outputs.version }}"
+          echo "→ 通知服务器同步桌面客户端 v${V}..."
+
+          # 最多重试 3 次, 每次间隔 10s
+          for i in 1 2 3; do
+            RESP=$(curl -sS -w "\n%{http_code}" -X POST "$WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -H "X-Webhook-Token: $WEBHOOK_TOKEN" \
+              -H "X-Desktop-Version: $V" \
+              -d "{\"version\":\"$V\",\"tag\":\"desktop-v$V\"}" \
+              --connect-timeout 10 --max-time 120)
+            HTTP_CODE=$(echo "$RESP" | tail -1)
+            BODY=$(echo "$RESP" | head -n -1)
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
+              echo "✓ Webhook 成功 (HTTP $HTTP_CODE): $BODY"
+              exit 0
+            fi
+            echo "  attempt $i/3: HTTP $HTTP_CODE, retrying in 10s..."
+            sleep 10
+          done
+          echo "⚠ Webhook 通知失败 (3 次重试均失败), 但 release 已发布, 服务器可手动同步"
