@@ -48,7 +48,6 @@ description: you are a helpful assistant to help user operate the mobius AI syst
 - `/api/projects/` | auth | 新建项目 |
 - `/api/projects/:id/hide` | auth | 当前用户隐藏项目 |
 - `/api/projects/:id/unhide` | auth | 取消隐藏 |
-- `/api/projects/:id/purge` | auth | 清空项目工作区 (用户主动) |
 - `/api/projects/:id/deploy-version` | auth | 部署指定版本 (切 commit/分支) |
 - `/api/projects/:id/hard-reset-version` | auth | 强制重置到指定版本 |
 - `/api/projects/:id/architecture-session-preset/context-preview` | auth | 同上 (POST 走 body) |

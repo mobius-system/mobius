@@ -1,6 +1,7 @@
-import { Component, Suspense, useEffect, useState, type ReactNode } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { CheckCircle2, X } from 'lucide-react'
+import { Component, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { ToastCard } from './components/toast-card'
 import { useStore, api } from './store'
 import { startTextRedactionRuntime } from './services/text-redaction'
 import { THEME_NAMES } from './theme'
@@ -167,31 +168,122 @@ function SelfIterationToast() {
   if (!visible) return null
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="fixed right-4 top-4 z-[10020] flex w-[360px] max-w-[calc(100vw-32px)] items-center gap-3 rounded-lg border px-4 py-3 shadow-2xl backdrop-blur"
-      style={{
-        color: 'var(--text-primary)',
-        background: 'color-mix(in srgb, var(--modal-bg) 92%, transparent)',
-        borderColor: 'var(--border-color-strong)',
-      }}>
-      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-400">
-        <CheckCircle2 className="h-4 w-4" strokeWidth={2} />
-      </div>
-      <div className="min-w-0 flex-1 text-sm font-medium leading-5">
-        Mobius已完成一次自我迭代
-      </div>
-      <button
-        type="button"
-        aria-label="关闭通知"
-        title="关闭通知"
-        onClick={() => setVisible(false)}
-        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-hover)]"
-        style={{ color: 'var(--text-muted)' }}>
-        <X className="h-4 w-4" strokeWidth={2} />
-      </button>
-    </div>
+    <ToastCard
+      tone="success"
+      icon={<CheckCircle2 className="h-4 w-4" strokeWidth={2} />}
+      title="Mobius已完成一次自我迭代"
+      onClose={() => setVisible(false)}
+    />
+  )
+}
+
+// 小莫(或用户)派出去的任务 Session 跑完时, 在右上角弹一个完成/失败提醒。
+// 复用 ToastCard 外观; 完成态来源 = /api/tasks/recent 里 session 的 agent_status
+// (后端 agent-status-syncer 写入的单一真相源, completed/failed)。仅当某 session
+// 从"进行中(idle/running/waiting)"跳变到终态、且用户当前没停在该会话页时才提醒, 防刷屏。
+const ASSISTANT_TASK_POLL_MS = 8000
+const ASSISTANT_TASK_SUCCESS_DURATION_MS = 6000
+
+type AssistantTaskDoneEntry = {
+  sessionId: string
+  name: string
+  scopeType: string
+  projectId: string | null
+  issueId: string | null
+  researchId: string | null
+  failed: boolean
+}
+
+function AssistantTaskDoneToast() {
+  const { user } = useStore()
+  const navigate = useNavigate()
+  const [entry, setEntry] = useState<AssistantTaskDoneEntry | null>(null)
+  // entryRef: 让轮询闭包读到最新"当前是否在展示", 不用把 entry 放进 effect 依赖(避免每次弹/收都重启轮询)
+  const entryRef = useRef<AssistantTaskDoneEntry | null>(null)
+  // 记每个 session 上一次的 agent_status, 用于识别"进行中 → 终态"的跳变
+  const prevStatusRef = useRef<Map<string, string>>(new Map())
+  // 已提醒过的 session 不再重复提醒(同一次会话内)
+  const notifiedRef = useRef<Set<string>>(new Set())
+  // 待展示队列: 一次只弹一条; 多个任务在同一轮询窗口内同时完成时按到达顺序依次弹出, 不丢
+  const queueRef = useRef<AssistantTaskDoneEntry[]>([])
+
+  const showEntry = useCallback((e: AssistantTaskDoneEntry | null) => {
+    entryRef.current = e
+    setEntry(e)
+  }, [])
+
+  useEffect(() => {
+    if (!user) return
+    const stop = pollRecursive(async (signal) => {
+      // 标签页不可见时跳过, 复用 chat.tsx 轮询惯例, 避免后台无谓请求堆积
+      if (document.visibilityState !== 'visible') return
+      let recent: any[] = []
+      try {
+        recent = await api('/api/tasks/recent?limit=50', { signal }) as any[]
+      } catch {
+        return // 网络抖动/超时忽略, 下一轮再来(pollRecursive 外层也有兜底)
+      }
+      if (!Array.isArray(recent)) return
+      // 用 window.location.search 实时取当前会话, 避免把 location 放进依赖导致每次导航重启轮询
+      const currentSessionId = new URLSearchParams(window.location.search).get('session')
+      for (const s of recent) {
+        const sid = String(s?.session_id || '')
+        if (!sid) continue
+        const status = String(s?.agent_status || 'idle')
+        const prev = prevStatusRef.current.get(sid)
+        prevStatusRef.current.set(sid, status)
+        const wasActive = prev === 'idle' || prev === 'running' || prev === 'waiting'
+        const terminal = status === 'completed' || status === 'failed'
+        // 仅在 进行中→终态 的跳变、且未提醒过、且不是当前正查看的会话 时入队
+        if (wasActive && terminal && !notifiedRef.current.has(sid) && sid !== currentSessionId) {
+          notifiedRef.current.add(sid)
+          queueRef.current.push({
+            sessionId: sid,
+            name: String(s?.name || '未命名任务'),
+            scopeType: String(s?.scope_type || 'issue'),
+            projectId: s?.project_id ?? null,
+            issueId: s?.issue_id ?? null,
+            researchId: s?.research_id ?? null,
+            failed: status === 'failed',
+          })
+        }
+      }
+      // 当前没在展示且队列有积压 → 取下一条
+      if (!entryRef.current && queueRef.current.length > 0) {
+        showEntry(queueRef.current.shift() as AssistantTaskDoneEntry)
+      }
+    }, ASSISTANT_TASK_POLL_MS)
+    return () => stop()
+  }, [user, showEntry])
+
+  // 成功自动消失; 失败常驻到用户手动关闭(失败值得多看一眼)。消失后上面 effect 会自动取下一条。
+  useEffect(() => {
+    if (!entry || entry.failed) return
+    const t = window.setTimeout(() => showEntry(null), ASSISTANT_TASK_SUCCESS_DURATION_MS)
+    return () => window.clearTimeout(t)
+  }, [entry, showEntry])
+
+  if (!entry || !user) return null
+
+  // 深链到该会话: issue 走 /i/:issue, research 走 /r/:research, 都带 ?session= 选中它
+  const isResearch = entry.scopeType === 'research'
+  const containerId = isResearch ? entry.researchId : entry.issueId
+  const openUrl = entry.projectId && containerId
+    ? `/u/${user.id}/p/${entry.projectId}/${isResearch ? 'r' : 'i'}/${containerId}?session=${encodeURIComponent(entry.sessionId)}`
+    : null
+
+  return (
+    <ToastCard
+      tone={entry.failed ? 'error' : 'success'}
+      icon={entry.failed
+        ? <AlertTriangle className="h-4 w-4" strokeWidth={2} />
+        : <CheckCircle2 className="h-4 w-4" strokeWidth={2} />}
+      title={entry.failed ? '小莫任务失败' : '小莫已完成任务'}
+      subtitle={entry.name}
+      actionLabel={openUrl ? '查看' : undefined}
+      onAction={openUrl ? () => navigate(openUrl) : undefined}
+      onClose={() => showEntry(null)}
+    />
   )
 }
 
@@ -254,6 +346,7 @@ function AuthenticatedApp() {
         </Suspense>
       </StaleChunkErrorBoundary>
       <SelfIterationToast />
+      <AssistantTaskDoneToast />
       <Suspense fallback={null}>
         <TourController />
       </Suspense>
