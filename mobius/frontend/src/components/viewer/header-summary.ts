@@ -30,6 +30,7 @@ import {
   extractPlanUpdate,
   extractTaskReminder,
   summarizePlanUpdate,
+  parseMcpResultEnvelope,
 } from './entry-extract'
 
 // 阈值=80: 一行 summary 在常规桌面宽度下大概 80~100 字就会被 CSS truncate 截断,
@@ -248,6 +249,20 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
           : Array.isArray(tr.content) ? tr.content.map((b: any) => b?.text || '').join('') : ''
         const head = `tool_result ← ${tr.tool_use_id?.slice(0, 8)}…`
         if (!body) return clip(head, HEADER_SHORT_LIMIT)
+        // MCP 工具返回信封: 精简模式正文 = meta 行 + output 代码块. 终端文本必须用 code fence 包,
+        // 否则 markdown 会吞掉 Windows 路径的反斜杠; 用 codeFence 自动处理 output 内嵌的反引号.
+        // 标题栏一行展示 output 首行 (折叠态预览), 不暴露原始 JSON 信封.
+        const env = parseMcpResultEnvelope(body)
+        if (env) {
+          const metaParts: string[] = []
+          if (typeof env.raw.wall_time_seconds === 'number') metaParts.push(`耗时 ${env.raw.wall_time_seconds}s`)
+          if (typeof env.raw.original_token_count === 'number') metaParts.push(`${env.raw.original_token_count} tokens`)
+          const headLine = metaParts.length > 0 ? `**工具返回** · ${metaParts.join(' · ')}\n\n` : '**工具返回**\n\n'
+          const full = env.output ? headLine + codeFence(env.output, '') : headLine.replace(/\n\n$/, '')
+          const firstLine = env.output.split(/\r?\n/).find((l) => l.trim()) || ''
+          const clipped = clip(firstLine || '工具返回', HEADER_SHORT_LIMIT)
+          return { short: clipped.short, shortTail: clipped.shortTail, full, truncated: true, canCompact: true }
+        }
         return clip(`${body}`, HEADER_SHORT_LIMIT)
       }
     }

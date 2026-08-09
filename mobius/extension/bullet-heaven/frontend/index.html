@@ -6,12 +6,13 @@
   <meta name="theme-color" content="#070b16">
   <title>弹幕割草实验室</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css?v=0.1.2">
+  <link rel="stylesheet" href="./styles.css?v=0.3.0">
 </head>
 <body>
   <main id="gameShell" class="game-shell">
     <canvas id="gameCanvas" aria-label="弹幕割草实验室游戏战场"></canvas>
     <div id="damageFlash" class="damage-flash"></div>
+    <div id="upgradeFlash" class="upgrade-flash"></div>
     <div class="vignette"></div>
     <div class="scanlines"></div>
 
@@ -56,10 +57,14 @@
         <button id="directorToggle" type="button" aria-label="收起导演台">−</button>
       </div>
       <div class="director-body">
-        <button id="hordeBtn" class="director-button danger" type="button"><i>☣</i><span><b>八倍围城</b><small>7 秒生成 ×8，立即塞入 120 只</small></span></button>
-        <button id="overdriveBtn" class="director-button energy" type="button"><i>⚡</i><span><b>无限弹匣</b><small>10 秒射速 ×3、伤害 ×2</small></span></button>
-        <button id="eliteBtn" class="director-button elite" type="button"><i>♛</i><span><b>精英空投</b><small>召唤 8 只精英，必掉强化</small></span></button>
-        <button id="nukeBtn" class="director-button nuke" type="button"><i>✺</i><span><b>轨道清场</b><small>全屏轰炸，但不会伤害 Boss</small></span></button>
+        <button id="hordeBtn" class="director-button danger" type="button"><i>☣</i><span><b>八倍围城</b><small>7 秒生成 ×8，立即塞入 120 只</small><em>READY</em></span></button>
+        <button id="overdriveBtn" class="director-button energy" type="button"><i>⚡</i><span><b>无限弹匣</b><small>10 秒射速 ×3、伤害 ×2</small><em>READY</em></span></button>
+        <button id="eliteBtn" class="director-button elite" type="button"><i>♛</i><span><b>精英空投</b><small>召唤 8 只精英，必掉强化</small><em>READY</em></span></button>
+        <button id="nukeBtn" class="director-button nuke" type="button"><i>✺</i><span><b>轨道清场</b><small>全屏轰炸，但不会伤害 Boss</small><em>READY</em></span></button>
+        <button id="ironCurtainBtn" class="director-button curtain" type="button"><i>⬢</i><span><b>核心铁幕</b><small>7 秒完全免伤，撞入尸潮中央</small><em>READY</em></span></button>
+        <button id="teslaBtn" class="director-button tesla" type="button"><i>ϟ</i><span><b>磁暴风暴</b><small>36 道磁暴轰击全场高威胁单位</small><em>READY</em></span></button>
+        <button id="supplyBtn" class="director-button supply" type="button"><i>▣</i><span><b>战地工厂</b><small>空投四类补给并吸附附近经验</small><em>READY</em></span></button>
+        <button id="freezeBtn" class="director-button freeze" type="button"><i>❄</i><span><b>时空冻结</b><small>普通怪冻结 5.5 秒，Boss 冻结 2 秒</small><em>READY</em></span></button>
         <label class="auto-row"><span><b>自动选升级</b><small>挂机观看模式</small></span><input id="autoPickInput" type="checkbox"><i></i></label>
       </div>
     </aside>
@@ -145,6 +150,6 @@
       <div id="aimStick" class="stick aim-stick"><i></i><span>瞄准</span></div>
     </div>
   </main>
-  <script type="module" src="./main.js?v=0.1.2"></script>
+  <script type="module" src="./main.js?v=0.3.0"></script>
 </body>
 </html>

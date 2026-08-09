@@ -82,9 +82,16 @@ type ProjectSettingsPanelProps = {
   onDeleteProject: () => void
   onOpenPathPicker: () => void
   onArchitectureSessionCreated: (issue: any, session: any) => void
+  // 设计师之眼布局: 把顶部 settings tab 条外移到 ProjectPage 左侧边栏时,
+  // 由父层接管 activePane (受控) 并把 settingsTabs 上抛给父层渲染;
+  // hideHeaderTabs=true 时不再在面板内部渲染那条横向 tab 条 (移动端仍保留).
+  controlledActivePane?: SettingsPane
+  onSelectPane?: (pane: SettingsPane) => void
+  onExposeTabs?: (tabs: OverflowTab[]) => void
+  hideHeaderTabs?: boolean
 }
 
-type SettingsPane = 'settings' | 'versions' | 'architecture' | 'todos' | 'members' | 'package' | 'assistant'
+export type SettingsPane = 'settings' | 'versions' | 'architecture' | 'todos' | 'members' | 'package' | 'assistant'
 
 const PROJECT_VISIBILITY_OPTIONS: Array<{ value: 'private' | 'public'; label: string; description: string }> = [
   { value: 'private', label: '私有', description: '只有项目成员（含创建者与项目管理员）能看到本项目。' },
@@ -515,6 +522,10 @@ export function ProjectSettingsPanel({
   onDeleteProject,
   onOpenPathPicker,
   onArchitectureSessionCreated,
+  controlledActivePane,
+  onSelectPane,
+  onExposeTabs,
+  hideHeaderTabs = false,
 }: ProjectSettingsPanelProps) {
   const { user } = useStore()
   const {
@@ -562,7 +573,13 @@ export function ProjectSettingsPanel({
     const v = typeof localStorage !== 'undefined' ? localStorage.getItem(PaneKey) : null
     return v && (['settings','versions','architecture','todos','members','package','assistant'] as const).includes(v as SettingsPane) ? v as SettingsPane : 'settings'
   }
-  const [activePane, setActivePane] = useState<SettingsPane>(paneInit)
+  // 受控模式 (设计师之眼侧边栏): 父层接管 activePane; 否则维持原有内部状态.
+  const [internalPane, setInternalPane] = useState<SettingsPane>(paneInit)
+  const activePane = controlledActivePane ?? internalPane
+  const setActivePane = (pane: SettingsPane) => {
+    if (controlledActivePane !== undefined) onSelectPane?.(pane)
+    else setInternalPane(pane)
+  }
   const [showDeletePermissionNotice, setShowDeletePermissionNotice] = useState(false)
   useEffect(() => { try { localStorage.setItem(PaneKey, activePane) } catch {} }, [PaneKey, activePane])
   useEffect(() => { setShowDeletePermissionNotice(false) }, [project?.id])
@@ -853,10 +870,10 @@ export function ProjectSettingsPanel({
       { key: 'settings', label: '项目设置', active: activePane === 'settings', dataTour: 'project-settings-tab' },
     ]
     // 项目成员设置紧跟「项目设置」之后、版本追踪之前 (所有项目, 含拓展应用).
-    arr.push({ key: 'members', label: '项目成员设置', active: activePane === 'members' })
+    arr.push({ key: 'members', label: '项目成员', active: activePane === 'members' })
     arr.push(
       { key: 'versions', label: '版本追踪', active: activePane === 'versions', disabled: !gitTrackingAvailable, title: gitTrackingTitle },
-      { key: 'architecture', label: '系统结构剖析', active: activePane === 'architecture' },
+      { key: 'architecture', label: '系统剖析', active: activePane === 'architecture' },
       { key: 'todos', label: '项目待办', active: activePane === 'todos' },
       { key: 'package', label: '打包下载', active: activePane === 'package' },
     )
@@ -864,9 +881,21 @@ export function ProjectSettingsPanel({
     return arr
   }, [activePane, gitTrackingAvailable, gitTrackingTitle, assistantProject, project.kind])
 
+  // 把当前 settingsTabs 上抛给父层 (设计师之眼侧边栏渲染用). settingsTabs 是 useMemo 产物,
+  // 仅在其依赖变化时换身份, 故不会造成父子间渲染抖动.
+  useEffect(() => {
+    if (onExposeTabs) onExposeTabs(settingsTabs)
+  }, [onExposeTabs, settingsTabs])
+
+  // 切到「版本追踪」时懒加载 git 追踪数据; 统一用 effect 触发, 这样无论是面板内点击
+  // 还是侧边栏外置 tab 条点击 (受控模式, 绕过 handleSelectPane) 都能覆盖.
+  useEffect(() => {
+    if (activePane === 'versions' && !gitTracking) loadGitTracking()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePane])
+
   const handleSelectPane = (key: string) => {
     setActivePane(key as SettingsPane)
-    if (key === 'versions' && !gitTracking) loadGitTracking()
   }
 
   return (
@@ -874,13 +903,15 @@ export function ProjectSettingsPanel({
       data-tour="project-settings-panel"
       className={`w-full min-w-0 ${desktopWorkspace ? 'h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-6' : 'overflow-hidden'}`}
       style={{ borderColor: 'var(--border-color)' }}>
-      <div className="flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
-        <ProjectOverflowTabs
-          tabs={settingsTabs}
-          onSelect={handleSelectPane}
-          className="flex-1 min-w-0"
-        />
-      </div>
+      {!hideHeaderTabs && (
+        <div className="flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
+          <ProjectOverflowTabs
+            tabs={settingsTabs}
+            onSelect={handleSelectPane}
+            className="flex-1 min-w-0"
+          />
+        </div>
+      )}
 
       {project.kind === 'extension' && (
         <div className="px-5 py-3 border mt-3 rounded-lg text-[12px]"

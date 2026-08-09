@@ -162,7 +162,7 @@ export function ProjectItemsPanel({
         </div>
       )}
       <div
-        className={`flex flex-shrink-0 flex-wrap items-center justify-between gap-2 ${showPagination ? 'mb-1.5' : 'mb-3'}`}
+        className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 mb-3"
         style={{ background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-2 min-w-0">
           {onOpenSettings && !desktopWorkspace && (
@@ -177,29 +177,35 @@ export function ProjectItemsPanel({
               <Settings className="w-4 h-4" />
             </button>
           )}
-          <ProjectTabList>
-          <ProjectTabButton active={section === 'issues'} onClick={() => onSectionChange('issues')} data-tour="project-issue-tab">
-            Issue
-          </ProjectTabButton>
-          <ProjectTabButton
-            active={section === 'researches'}
-            activeClassName="bg-emerald-500/15 text-emerald-400"
-            onClick={() => onSectionChange('researches')}
-            disabled={!project.research_enabled}
-          >
-            Research
-          </ProjectTabButton>
-          {project.kind === 'extension' && (
-            <ProjectTabButton
-              onClick={runExtension}
-              disabled={!canRunExtension}
-              title={canRunExtension ? `运行 ${project.name}` : '拓展目录已删除或入口不可用'}
-              inactiveColor={canRunExtension ? '#a78bfa' : 'var(--text-muted)'}
-            >
-              打开应用
-            </ProjectTabButton>
+          {/* 桌面端: Issue/Research 这组 section tab 已外移到 ProjectPage 左侧边栏, 这里不再渲染. */}
+          {!desktopWorkspace && (
+            <ProjectTabList>
+              <ProjectTabButton active={section === 'issues'} onClick={() => onSectionChange('issues')} data-tour="project-issue-tab">
+                Issue
+              </ProjectTabButton>
+              <ProjectTabButton
+                active={section === 'researches'}
+                activeClassName="bg-emerald-500/15 text-emerald-400"
+                onClick={() => onSectionChange('researches')}
+                disabled={!project.research_enabled}
+              >
+                Research
+              </ProjectTabButton>
+              {project.kind === 'extension' && (
+                <ProjectTabButton
+                  onClick={runExtension}
+                  disabled={!canRunExtension}
+                  title={canRunExtension ? `运行 ${project.name}` : '拓展目录已删除或入口不可用'}
+                  inactiveColor={canRunExtension ? '#a78bfa' : 'var(--text-muted)'}
+                >
+                  打开应用
+                </ProjectTabButton>
+              )}
+            </ProjectTabList>
           )}
-        </ProjectTabList>
+          {showPagination && (
+            <ProjectPaginationControls pagination={activePagination} itemLabel={section === 'issues' ? '任务' : '研究'} />
+          )}
         </div>
         <div className="flex items-center gap-2">
           <div
@@ -236,12 +242,6 @@ export function ProjectItemsPanel({
           </PrimaryActionButton>
         </div>
       </div>
-
-      {showPagination && (
-        <div className="mb-2 flex-shrink-0">
-          <ProjectPaginationControls pagination={activePagination} itemLabel={section === 'issues' ? '任务' : '研究'} />
-        </div>
-      )}
 
       <div
         ref={listScrollRef}

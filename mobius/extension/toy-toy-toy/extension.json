@@ -2,7 +2,7 @@
   "name": "toy-toy-toy",
   "display_name": "广告爽游实验室",
   "description": "双题材十关电影化广告爽游：程序化角色配件、题材基地、进化主角与完整视听战斗反馈。",
-  "version": "0.13.0",
+  "version": "0.15.0",
   "icon": "favicon.svg",
   "project": {
     "sync": true

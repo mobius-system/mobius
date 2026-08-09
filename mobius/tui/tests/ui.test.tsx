@@ -16,6 +16,7 @@ process.env.MOBIUS_TUI_HOME = TMP_HOME
 import React from 'react'
 import { render } from 'ink-testing-library'
 import { ChatScreen, Composer, shimmerText } from '../src/components/Chat.js'
+import { WindowsInputDecoder } from '../src/lib/windows-input.js'
 import { LoginScreen } from '../src/components/Login.js'
 import { PrepScreen } from '../src/components/PrepScreen.js'
 import { Select, TextInput } from '../src/components/primitives.js'
@@ -516,6 +517,35 @@ async function testComposerMultilinePaste() {
   stdin.write('\r')
   await delay(20)
   ok(submitted[1] === 'first sentence\nsecond sentence\nlast sentence', 'Enter after the burst submits the complete multiline text once')
+
+  // Windows Terminal win32-input-mode preserves SHIFT_PRESSED in the key
+  // record. The decoder turns that into CSI-u before Ink sees the keypress.
+  const windowsInput = new WindowsInputDecoder()
+  stdin.write('Windows first line')
+  stdin.write(windowsInput.push('\x1b[16;42;0;1;16;1_\x1b[13;28;13;1;16;1_'))
+  stdin.write(windowsInput.push('\x1b[13;28;13;0;16;1_\x1b[16;42;0;0;0;1_'))
+  stdin.write('Windows second line')
+  await delay(20)
+  ok(submitted.length === 2, 'Windows Shift+Enter inserts a newline instead of submitting')
+  stdin.write('\r')
+  await delay(20)
+  ok(submitted[2] === 'Windows first line\nWindows second line', 'plain Windows Enter submits the multiline message')
+
+  const split = new WindowsInputDecoder()
+  ok(split.push('\x1b[13;28;13;1;16') === '', 'split Windows key record waits for its trailing bytes')
+  ok(split.push(';1_') === '\x1b[13;2u', 'split Windows Shift+Enter record decodes after completion')
+  ok(split.push('\x1b[13;28;13;1;0;1_') === '\r', 'plain Windows Enter remains a submit event')
+  ok(split.push('\x1b[65;30;65;1;16;1_\x1b[65;30;97;0;0;1_') === 'A', 'Windows key release does not duplicate typed text')
+  ok(split.push('\x1b[A') === '\x1b[A', 'ordinary VT sequences pass through unchanged')
+
+  stdin.write('xterm first line')
+  stdin.write('\x1b[27;2;13~')
+  stdin.write('xterm second line')
+  await delay(20)
+  ok(submitted.length === 3, 'xterm modifyOtherKeys Shift+Enter also inserts a newline')
+  stdin.write('\r')
+  await delay(20)
+  ok(submitted[3] === 'xterm first line\nxterm second line', 'xterm Shift+Enter content submits intact')
   unmount()
 }
 

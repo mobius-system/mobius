@@ -9,5 +9,9 @@
 import React from 'react'
 import { render } from 'ink'
 import { App } from './App.js'
+import { createInkInputStream } from './lib/windows-input.js'
 
-render(React.createElement(App), { exitOnCtrlC: true })
+render(React.createElement(App), {
+  exitOnCtrlC: true,
+  stdin: createInkInputStream(process.stdin, process.stdout),
+})

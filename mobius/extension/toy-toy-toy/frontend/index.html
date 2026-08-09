@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#07111f">
   <title>广告爽游实验室</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css?v=0.13.0">
+  <link rel="stylesheet" href="./styles.css?v=0.15.0">
   <script type="importmap">
   {
     "imports": {
@@ -40,7 +40,7 @@
 
       <div class="hud-actions">
         <button id="soundBtn" class="icon-button" type="button" title="声音开关">声音 ON</button>
-        <button id="pauseBtn" class="icon-button" type="button" title="暂停 / 继续（P）">暂停</button>
+        <button id="pauseBtn" class="icon-button game-menu-button" type="button" title="打开游戏菜单（P / Esc）"><span>Ⅱ</span> 游戏菜单</button>
       </div>
     </header>
 
@@ -183,11 +183,25 @@
     </section>
 
     <section id="pauseOverlay" class="overlay">
-      <div class="pause-card panel-card compact-card">
-        <span class="eyebrow">SIMULATION PAUSED</span>
-        <h2>游戏已暂停</h2>
-        <button id="resumeBtn" class="primary-button" type="button"><span id="resumeButtonLabel">继续屠杀</span></button>
-        <button id="restartBtn" class="secondary-button" type="button">重新开始</button>
+      <div class="pause-card panel-card">
+        <div class="pause-heading">
+          <span class="eyebrow">GAME PAUSED / 战术菜单</span>
+          <h2>游戏已暂停</h2>
+          <p id="pauseRunLabel">尸潮防线 · 第 1 关 · 封锁线外缘</p>
+        </div>
+        <div class="pause-run-stats" aria-label="当前战局数据">
+          <div><span>当前得分</span><b id="pauseScoreValue">0</b></div>
+          <div><span>击杀数量</span><b id="pauseKillsValue">0</b></div>
+          <div><span>基地状态</span><b id="pauseBaseValue">100%</b></div>
+        </div>
+        <button id="resumeBtn" class="primary-button pause-resume" type="button"><span id="resumeButtonLabel">继续屠杀</span><small>P / ESC</small></button>
+        <div class="pause-action-grid">
+          <button id="restartBtn" class="pause-action" type="button"><i>↻</i><span><b>重新开始</b><small>重置当前关卡</small></span></button>
+          <button id="pauseLevelBtn" class="pause-action" type="button"><i>▦</i><span><b>选择关卡</b><small>返回关卡大厅</small></span></button>
+          <button id="pauseThemeBtn" class="pause-action" type="button"><i>⇄</i><span><b>切换题材</b><small id="pauseThemeHint">前往程序员模式</small></span></button>
+          <button id="pauseExitBtn" class="pause-action danger" type="button"><i>⌂</i><span><b>退出本局</b><small>返回游戏标题</small></span></button>
+        </div>
+        <p class="pause-footnote">当前战局不会在切换关卡或题材后保留。声音与自动选择设置会继续保存。</p>
       </div>
     </section>
 
@@ -211,6 +225,6 @@
     </section>
   </main>
 
-  <script type="module" src="./main.js?v=0.13.0"></script>
+  <script type="module" src="./main.js?v=0.15.0"></script>
 </body>
 </html>

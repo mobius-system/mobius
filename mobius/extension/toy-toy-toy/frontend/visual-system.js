@@ -6,9 +6,9 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const VISUAL_MODES = Object.freeze(['final', 'noPost', 'silhouette', 'material', 'emissive', 'vfx', 'bounds']);
 const QUALITY_PRESETS = Object.freeze({
-  low: { maxDpr: 1, pixelBudget: 720000, bloom: false, roleProps: true, vfxScale: 0.62 },
-  balanced: { maxDpr: 1.3, pixelBudget: 1250000, bloom: true, roleProps: true, vfxScale: 0.82 },
-  high: { maxDpr: 1.6, pixelBudget: 1850000, bloom: true, roleProps: true, vfxScale: 1 },
+  low: { maxDpr: 1.25, pixelBudget: 1100000, bloom: false, roleProps: true, vfxScale: 0.62 },
+  balanced: { maxDpr: 1.5, pixelBudget: 2200000, bloom: true, roleProps: true, vfxScale: 0.82 },
+  high: { maxDpr: 2, pixelBudget: 4200000, bloom: true, roleProps: true, vfxScale: 1 },
 });
 
 const ROLE_PROPS = Object.freeze({
@@ -83,9 +83,10 @@ function makeChamferedPanelGeometry(width, height, depth, cut = 0.16) {
 
 function makeRoleTexture(config, themeId = 'zombie') {
   const canvas = document.createElement('canvas');
-  canvas.width = 320;
-  canvas.height = 320;
+  canvas.width = 512;
+  canvas.height = 512;
   const ctx = canvas.getContext('2d');
+  ctx.scale(1.6, 1.6);
   const isDeadline = themeId === 'deadline';
   const accent = config.color;
   const panel = isDeadline ? '#122343' : '#112922';
@@ -224,13 +225,13 @@ function buildZombieBase() {
   }
   const core = new THREE.Group();
   core.position.set(0, 1.6, 13.22);
-  const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.18, 1.55, 2.72, 10), armor);
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.18, 1.55, 2.72, 28, 3), armor);
   core.add(tower);
   const reactor = new THREE.Mesh(new THREE.IcosahedronGeometry(0.68, 2), makePbr(0xcffff3, 0.18, 0.08, 0x28b89b, 1.85));
   reactor.position.y = 0.24;
   core.add(reactor);
   const rings = [0, 1, 2].map((index) => {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.9 + index * 0.16, 0.045, 8, 40), glow.clone());
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.9 + index * 0.16, 0.045, 12, 64), glow.clone());
     ring.rotation.x = Math.PI / 2 + (index - 1) * 0.35;
     ring.position.y = 0.24;
     core.add(ring);
@@ -241,10 +242,10 @@ function buildZombieBase() {
   for (const side of [-1, 1]) {
     const pivot = new THREE.Group();
     pivot.position.set(side * 8.75, 0, 11.45);
-    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 3.7, 8), rust);
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 3.7, 20), rust);
     mast.position.y = 1.85;
     pivot.add(mast);
-    const head = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.38, 0.62, 10), armor);
+    const head = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.38, 0.62, 24, 2), armor);
     head.rotation.x = Math.PI / 2;
     head.position.set(0, 3.65, -0.2);
     pivot.add(head);
@@ -260,7 +261,7 @@ function buildZombieBase() {
   }
   for (const side of [-1, 1]) {
     for (let index = 0; index < 6; index += 1) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 1.35, 6), rust);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 1.35, 12), rust);
       post.position.set(side * (10.15 + (index % 2) * 0.18), 0.65, 8.6 - index * 2.4);
       post.rotation.z = side * 0.05;
       group.add(post);
@@ -416,10 +417,10 @@ function createRolePropSystem(worldGroup) {
 
 function createBurstPool(worldGroup, capacity = 24) {
   const pool = [];
-  const coreGeometry = new THREE.IcosahedronGeometry(0.42, 1);
-  const ringGeometry = new THREE.TorusGeometry(0.36, 0.055, 7, 28);
-  const flashGeometry = new THREE.SphereGeometry(0.3, 10, 8);
-  const shardGeometry = new THREE.ConeGeometry(0.08, 0.62, 4);
+  const coreGeometry = new THREE.IcosahedronGeometry(0.42, 2);
+  const ringGeometry = new THREE.TorusGeometry(0.36, 0.055, 12, 48);
+  const flashGeometry = new THREE.SphereGeometry(0.3, 18, 12);
+  const shardGeometry = new THREE.ConeGeometry(0.08, 0.62, 7);
   const shardDummy = new THREE.Object3D();
   for (let index = 0; index < capacity; index += 1) {
     const group = new THREE.Group();
@@ -504,8 +505,8 @@ function createBurstPool(worldGroup, capacity = 24) {
 
 function createShockwavePool(worldGroup, capacity = 36) {
   const pool = [];
-  const geometry = new THREE.RingGeometry(0.26, 0.34, 32);
-  const innerGeometry = new THREE.RingGeometry(0.1, 0.14, 16);
+  const geometry = new THREE.RingGeometry(0.26, 0.34, 64);
+  const innerGeometry = new THREE.RingGeometry(0.1, 0.14, 36);
   for (let index = 0; index < capacity; index += 1) {
     const material = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -628,7 +629,7 @@ function decorateTurrets(turrets) {
   });
 }
 
-export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wall, core, grid, turretGroups }) {
+export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wall, core, grid, turretGroups, groundMaterial = null }) {
   const visualRoot = new THREE.Group();
   visualRoot.name = 'cinematic-visual-root';
   worldGroup.add(visualRoot);
@@ -646,7 +647,9 @@ export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wal
 
   const renderPass = new RenderPass(scene, camera);
   const composer = new EffectComposer(renderer);
-  const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.24, 0.34, 0.9);
+  // Bloom is what sells the energy-weapon fantasy: a low threshold catches
+  // every neon accent, a moderate radius keeps sprites crisp.
+  const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.45, 0.72);
   const outputPass = new OutputPass();
   composer.addPass(renderPass);
   composer.addPass(bloomPass);
@@ -662,6 +665,8 @@ export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wal
 
   let mode = 'final';
   let themeId = 'zombie';
+  let bloomBoost = 0;
+  let baseBloomStrength = 0.58;
   let qualityTier = window.matchMedia('(max-width: 760px)').matches ? 'low' : 'high';
   let width = 1;
   let height = 1;
@@ -684,9 +689,11 @@ export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wal
     if (!['silhouette', 'material', 'emissive'].includes(mode)) scene.background.copy(originalBackground);
     zombieBase.group.visible = themeId === 'zombie';
     deadlineBase.group.visible = themeId === 'deadline';
-    bloomPass.strength = themeId === 'deadline' ? 0.2 : 0.24;
-    bloomPass.radius = themeId === 'deadline' ? 0.28 : 0.34;
-    bloomPass.threshold = themeId === 'deadline' ? 0.92 : 0.9;
+    bloomPass.strength = themeId === 'deadline' ? 0.5 : 0.58;
+    bloomPass.radius = themeId === 'deadline' ? 0.42 : 0.48;
+    bloomPass.threshold = themeId === 'deadline' ? 0.74 : 0.7;
+    baseBloomStrength = bloomPass.strength;
+    bloomBoost = 0;
   }
 
   function applyQuality() {
@@ -749,10 +756,22 @@ export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wal
   function update({ dt, elapsed, enemies, baseHp, levels, overdriveUntil, seed }) {
     const startedAt = performance.now();
     if (seedValue !== seed) seedValue = seed >>> 0;
+    // Decay any transient bloom surge back to the theme baseline.
+    if (bloomBoost > 0.001) {
+      bloomBoost = Math.max(0, bloomBoost - dt * 1.6);
+      bloomPass.strength = baseBloomStrength + bloomBoost;
+    }
     roleProps.update(enemies, elapsed, QUALITY_PRESETS[qualityTier].roleProps && mode !== 'vfx');
     activeBursts = bursts.update(dt, QUALITY_PRESETS[qualityTier].vfxScale);
     activeShockwaves = shockwaves.update(dt, QUALITY_PRESETS[qualityTier].vfxScale);
     const damage = clamp((100 - baseHp) / 100, 0, 1);
+    // Ground emissive surges while overdrive burns: the whole floor breathes.
+    if (groundMaterial) {
+      const overdrive = elapsed < overdriveUntil;
+      const pulse = overdrive ? 0.34 + Math.sin(elapsed * 9) * 0.16 : Math.max(0, Math.sin(elapsed * 1.6) - 0.86) * 0.5;
+      groundMaterial.emissive.setHex(themeId === 'deadline' ? 0x123a6e : 0x0c3a34);
+      groundMaterial.emissiveIntensity = 0.12 + pulse + clamp(damage * 0.25, 0, 0.2);
+    }
     zombieBase.panels.forEach((panel, index) => {
       const severity = clamp(damage * 1.6 - index * 0.025, 0, 1);
       panel.rotation.z = (index % 2 ? -1 : 1) * severity * 0.045;
@@ -864,5 +883,8 @@ export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wal
 
   setTheme(themeId);
   setCameraBookmark('design');
-  return { setTheme, resize, setMode, setQuality, setCameraBookmark, update, render, spawnImpact, spawnShockwave, spawnDefeat, spawnUpgrade, reset, snapshot, visualModes: VISUAL_MODES, qualityPresets: Object.keys(QUALITY_PRESETS) };
+  function pulseBloom(amount = 0.35) {
+    bloomBoost = Math.max(bloomBoost, amount);
+  }
+  return { setTheme, resize, setMode, setQuality, setCameraBookmark, update, render, spawnImpact, spawnShockwave, spawnDefeat, spawnUpgrade, pulseBloom, reset, snapshot, visualModes: VISUAL_MODES, qualityPresets: Object.keys(QUALITY_PRESETS) };
 }

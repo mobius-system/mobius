@@ -944,7 +944,7 @@ function normalizeComposerPaste(text: string): string {
 }
 
 function isEnhancedNewlineInput(input: string): boolean {
-  return /^\[(?:13|27);2(?:u|~)$/.test(input) || input === '\x1b\r'
+  return /^\[13;2u$/.test(input) || /^\[27;2;13~$/.test(input) || input === '\x1b\r'
 }
 
 function findPasteMarker(input: string, code: '200' | '201', from = 0): number {

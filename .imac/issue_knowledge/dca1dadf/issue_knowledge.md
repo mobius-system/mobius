@@ -86,3 +86,10 @@
 - `code-conversation`（原生文件编辑器，顶栏第三个布局项）= IssuePage/ResearchPage 的三栏 flex 行：左文件树 `ResizablePanel(side=left)` + 中代码编辑器 + 右 `ChatArea`(flex-1)。改前中栏是 `flex-1`、与 ChatArea 各占一半且二者间无分隔条 → 对话区宽度锁死不可调（拖文件树只平移整体边界，对话区占比恒 50%）。
 - 修法：把中栏代码编辑器也包成 `ResizablePanel`，**必须 `side="left"`**——手柄在该面板**右缘**（= 代码区｜对话区接缝，拖动即调对话区宽）。易踩坑：①误用 `side="right"` 会把手柄落到面板左缘（与文件树接缝重叠、调错边界）；②切勿条件包裹 `ChatArea` 来调宽——IssuePage 靠 ChatArea 兄弟索引恒定避免切布局时重挂（SSE/草稿/agent 状态全依赖不重挂），包裹即破坏该不变式。正确做法永远是改它的兄弟栏。storageKey `mobius:ui:split:cc-editor:<projectId>`，双击复位。
 - 通用规则：mobius 多栏工作区给某栏加可调宽，把该栏包成 `ResizablePanel`，handle 总在该面板右缘（故都用 `side="left"`）；多栏都 `side="left"` 不冲突，各手柄落各自右缘。
+
+## 广告爽游实验室正式游戏流程与高精度模型（2026-08-07，v0.14.0）
+
+- 炮台/工位近景模型使用 `RoundedBoxGeometry`、高分段圆柱/圆环、炮身套环、散热鳍、铆钉与主题附件；角色身份贴纸 Canvas 提升到 512px（逻辑绘制坐标按 1.6 倍缩放），保留固定对象池特效。
+- 低分辨率观感不只由几何段数造成：必须同时检查材质过曝、Bloom 和实际 DPR。v0.14 将 high 画质预算提升到 4.2M 像素（DPR 上限 2），并降低主灯/核心/屏幕自发光与 Bloom，避免炮台材质被白光吞掉；1440×900、deviceScaleFactor 2 实测 DPR 约 1.8、无页面错误。
+- 暂停菜单应提供继续、重开当前关、选择关卡、切换题材、退出本局返回标题；暂停时展示当前关卡、得分、击杀和基地状态。移动端用单列动作按钮，390×844 实测菜单卡与四个按钮均未溢出。
+- 正式流程回归需验证 `playing → paused → menu → level select → playing`、重开保持所选关卡、退出返回标题，以及切换 zombie/deadline 后重新开始；零编译扩展每次资源版本提升后必须 `POST /api/extensions/toy-toy-toy/rebuild`。

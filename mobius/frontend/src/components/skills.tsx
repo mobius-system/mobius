@@ -465,7 +465,7 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
                     style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                     <Eye className="w-3.5 h-3.5" />
                   </button>
-                  {sk.can_manage && (
+                  {sk.can_manage && scope !== 'project' && (
                     <button onClick={() => setAccessing(sk)} title="设置可见性和指定用户"
                       className="h-7 w-7 inline-flex items-center justify-center rounded border transition-colors hover:bg-[var(--bg-hover)]"
                       style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
