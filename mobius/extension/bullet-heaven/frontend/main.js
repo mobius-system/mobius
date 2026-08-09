@@ -1,4 +1,5 @@
 import { extCall } from '/extension/_sdk/ext.js';
+import { createMusicEngine } from './music-engine.js?v=0.3.0';
 
 const CONFIG = Object.freeze({
   duration: 150,
@@ -10,7 +11,8 @@ const CONFIG = Object.freeze({
   maxPickups: 420,
   cellSize: 76,
 });
-const COOLDOWN_KEYS = Object.freeze(['horde', 'overdrive', 'elite', 'nuke']);
+const DIRECTOR_COOLDOWNS = Object.freeze({ horde: 22, overdrive: 20, elite: 26, nuke: 34, ironCurtain: 30, tesla: 28, supply: 32, freeze: 30 });
+const COOLDOWN_KEYS = Object.freeze(Object.keys(DIRECTOR_COOLDOWNS));
 const MAX_SHOCKWAVES = 192;
 const MAX_BEAMS = 384;
 
@@ -50,6 +52,10 @@ const els = {
   overdriveBtn: document.getElementById('overdriveBtn'),
   eliteBtn: document.getElementById('eliteBtn'),
   nukeBtn: document.getElementById('nukeBtn'),
+  ironCurtainBtn: document.getElementById('ironCurtainBtn'),
+  teslaBtn: document.getElementById('teslaBtn'),
+  supplyBtn: document.getElementById('supplyBtn'),
+  freezeBtn: document.getElementById('freezeBtn'),
   autoPick: document.getElementById('autoPickInput'),
   bossHud: document.getElementById('bossHud'),
   bossName: document.getElementById('bossName'),
@@ -58,6 +64,7 @@ const els = {
   toast: document.getElementById('toast'),
   banner: document.getElementById('banner'),
   damageFlash: document.getElementById('damageFlash'),
+  upgradeFlash: document.getElementById('upgradeFlash'),
   startOverlay: document.getElementById('startOverlay'),
   upgradeOverlay: document.getElementById('upgradeOverlay'),
   pauseOverlay: document.getElementById('pauseOverlay'),
@@ -91,6 +98,7 @@ let rafId = 0;
 let autoPickTimer = 0;
 let toastTimer = 0;
 let audioCtx = null;
+let musicBus = null;
 let audioMaster = null;
 let audioCompressor = null;
 let muted = localStorage.getItem('bullet-heaven-muted') === '1';
@@ -133,6 +141,7 @@ const state = {
   kills: 0,
   combo: 0,
   maxCombo: 0,
+  infiniteRayHits: 0,
   comboTimer: 0,
   level: 1,
   xp: 0,
@@ -163,6 +172,8 @@ const state = {
   pickupRange: 90,
   overdriveUntil: 0,
   hordeUntil: 0,
+  ironCurtainUntil: 0,
+  freezeUntil: 0,
   invulnerableUntil: 0,
   fireAccumulator: 0,
   spawnAccumulator: 0,
@@ -178,7 +189,7 @@ const state = {
   hitStop: 0,
   lastTs: 0,
   uiAccumulator: 0,
-  cooldowns: { horde: 0, overdrive: 0, elite: 0, nuke: 0 },
+  cooldowns: Object.fromEntries(COOLDOWN_KEYS.map((key) => [key, 0])),
   upgradeLevels: {},
   enemies: [],
   bullets: [],
@@ -189,6 +200,11 @@ const state = {
   beams: [],
   floaters: [],
   stars: [],
+  pulseRings: [],
+  afterimages: [],
+  scorches: [],
+  xpChain: { count: 0, at: 0 },
+  heartbeatAt: 0,
   player: { x: width * 0.5, y: height * 0.55, vx: 0, vy: 0, angle: 0, radius: 16, dashTime: 0, dashCooldown: 0, dashX: 1, dashY: 0 },
 };
 
@@ -282,10 +298,65 @@ function ensureAudio() {
       audioCompressor.attack.value = 0.004;
       audioCompressor.release.value = 0.16;
       audioMaster.connect(audioCompressor).connect(audioCtx.destination);
-    } catch { audioCtx = null; audioMaster = null; audioCompressor = null; }
+      // BGM rides its own bus into the compressor so director events can duck
+      // it independently of the SFX master.
+      musicBus = audioCtx.createGain();
+      musicBus.gain.value = 1;
+      musicBus.connect(audioCompressor);
+    } catch { audioCtx = null; audioMaster = null; audioCompressor = null; musicBus = null; }
   }
   if (audioCtx?.state === 'suspended') audioCtx.resume().catch(() => {});
   return audioCtx;
+}
+
+const music = createMusicEngine({
+  getContext: () => (muted ? null : ensureAudio()),
+  getOutput: () => (ensureAudio() ? musicBus : null),
+  masterVolume: 0.4,
+});
+let musicMode = 'off'; // off | menu | battle | boss
+let musicDuck = { amount: 1, until: 0 };
+
+function duckMusic(amount = 0.3, seconds = 0.8) {
+  musicDuck = { amount, until: performance.now() + seconds * 1000 };
+  if (musicBus && audioCtx) {
+    const now = audioCtx.currentTime;
+    musicBus.gain.cancelScheduledValues(now);
+    musicBus.gain.setValueAtTime(musicBus.gain.value, now);
+    musicBus.gain.linearRampToValueAtTime(amount, now + 0.05);
+    musicBus.gain.linearRampToValueAtTime(1, now + seconds);
+  }
+}
+
+function musicIntensity() {
+  const threat = Math.min(1, state.enemies.length / 520);
+  const timeRamp = Math.min(1, state.elapsed / 100) * 0.35;
+  const overdrive = state.elapsed < state.overdriveUntil ? 0.12 : 0;
+  return clamp(0.3 + threat * 0.5 + timeRamp + overdrive, 0, 1);
+}
+
+function syncMusic() {
+  if (muted) return;
+  if (state.mode === 'running') {
+    const boss = Boolean(state.boss && !state.boss.dead);
+    const target = boss ? 'boss' : 'battle';
+    if (musicMode !== target) {
+      musicMode = target;
+      music.start({ theme: 'synthwave', intensity: musicIntensity(), boss });
+    }
+    music.setBossMode(boss);
+    music.setIntensity(musicIntensity());
+  } else if (state.mode === 'menu' || state.mode === 'result') {
+    if (musicMode !== 'menu') {
+      musicMode = 'menu';
+      music.start({ theme: 'synthwave', intensity: 0.16, boss: false });
+    }
+    music.setBossMode(false);
+    music.setIntensity(0.16);
+  } else {
+    // upgrade / paused: keep the sequencer running but pull layers down.
+    music.setIntensity(0.12);
+  }
 }
 
 function audioReady(tag, minGap) {
@@ -400,11 +471,109 @@ function resize() {
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  vignetteSprite = makeVignetteSprite(canvas.width, canvas.height);
   state.player.x = clamp(state.player.x || width * 0.5, 35, width - 35);
   state.player.y = clamp(state.player.y || height * 0.55, 105, height - 35);
   if (!state.stars.length) {
     for (let i = 0; i < 120; i += 1) state.stars.push({ x: Math.random(), y: Math.random(), size: rand(0.5, 1.8), phase: rand(0, Math.PI * 2) });
   }
+}
+
+// Pre-rendered radial glow discs: drawing light with drawImage + 'lighter' is
+// far cheaper than shadowBlur or per-frame gradients on the software raster.
+const glowSpriteCache = new Map();
+let vignetteSprite = null;
+
+function makeGlowSprite(color, size = 64) {
+  const key = `${color}:${size}`;
+  if (glowSpriteCache.has(key)) return glowSpriteCache.get(key);
+  const sprite = document.createElement('canvas');
+  sprite.width = size;
+  sprite.height = size;
+  const g = sprite.getContext('2d');
+  const gradient = g.createRadialGradient(size / 2, size / 2, 1, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, '#ffffff');
+  gradient.addColorStop(0.22, color);
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gradient;
+  g.fillRect(0, 0, size, size);
+  glowSpriteCache.set(key, sprite);
+  return sprite;
+}
+
+function drawGlow(x, y, color, radius, alpha = 1) {
+  ctx.globalAlpha = clamp(alpha, 0, 1);
+  ctx.drawImage(makeGlowSprite(color), x - radius, y - radius, radius * 2, radius * 2);
+}
+
+function makeVignetteSprite(w, h) {
+  const sprite = document.createElement('canvas');
+  sprite.width = Math.max(1, w);
+  sprite.height = Math.max(1, h);
+  const g = sprite.getContext('2d');
+  const radius = Math.hypot(w, h) * 0.62;
+  const gradient = g.createRadialGradient(w / 2, h / 2, radius * 0.42, w / 2, h / 2, radius);
+  gradient.addColorStop(0, 'rgba(2,4,10,0)');
+  gradient.addColorStop(0.72, 'rgba(2,4,10,0.18)');
+  gradient.addColorStop(1, 'rgba(1,2,7,0.55)');
+  g.fillStyle = gradient;
+  g.fillRect(0, 0, w, h);
+  return sprite;
+}
+
+// Scorch marks left by explosions: pooled, fading ground decals.
+const MAX_SCORCHES = 40;
+function addScorch(x, y, radius) {
+  if (state.scorches.length >= MAX_SCORCHES) state.scorches.shift();
+  state.scorches.push({ x, y, radius, life: 4.5, maxLife: 4.5 });
+}
+
+function drawScorches() {
+  if (!state.scorches.length) return;
+  ctx.save();
+  for (const mark of state.scorches) {
+    const t = clamp(mark.life / mark.maxLife, 0, 1);
+    ctx.globalAlpha = 0.34 * t;
+    ctx.fillStyle = '#04070d';
+    ctx.beginPath();
+    ctx.arc(mark.x, mark.y, mark.radius * (1 + (1 - t) * 0.12), 0, Math.PI * 2);
+    ctx.fill();
+    if (t > 0.55) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = (t - 0.55) * 0.5;
+      ctx.strokeStyle = '#ff9d4d';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(mark.x, mark.y, mark.radius * 0.92, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+  }
+  ctx.restore();
+}
+
+// Dash afterimages: simplified tank silhouettes fading behind the player.
+function pushAfterimage() {
+  if (state.afterimages.length >= 8) state.afterimages.shift();
+  state.afterimages.push({ x: state.player.x, y: state.player.y, angle: state.player.angle, life: 0.3, maxLife: 0.3 });
+}
+
+function drawAfterimages() {
+  if (!state.afterimages.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const ghost of state.afterimages) {
+    const t = clamp(ghost.life / ghost.maxLife, 0, 1);
+    ctx.save();
+    ctx.translate(ghost.x, ghost.y);
+    ctx.rotate(ghost.angle);
+    ctx.globalAlpha = t * 0.34;
+    ctx.fillStyle = '#70fff1';
+    ctx.fillRect(-16, -11, 30, 22);
+    ctx.fillRect(10, -3, 16, 6);
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
 const UPGRADES = [
@@ -431,29 +600,67 @@ const UPGRADES = [
   { id: 'velocity', icon: '➟', name: '磁轨加速', color: '#84f4ff', max: 5, desc: '弹速提高 22%，并额外增加少量射速。', apply: () => { state.bulletSpeed *= 1.22; state.fireRate *= 1.05; } },
   { id: 'spread', icon: '⌇', name: '弹幕收束', color: '#d5a2ff', max: 4, desc: '多重射击更加集中，同时所有弹丸额外增伤。', apply: () => { state.spread *= 0.78; state.damage *= 1.12; } },
   { id: 'overclock', icon: '∞', name: '过载核心', color: '#fff173', max: 4, desc: '立即获得 6 秒无限弹匣，并永久提高伤害与射速。', apply: () => { state.damage *= 1.15; state.fireRate *= 1.1; state.overdriveUntil = Math.max(state.overdriveUntil, state.elapsed + 6); } },
-  { id: 'heal', icon: '✚', name: '战地急救', color: '#7affac', max: 99, desc: '立即恢复 42% 最大生命，并短暂无敌。', apply: () => { state.hp = Math.min(state.maxHp, state.hp + state.maxHp * 0.42); state.invulnerableUntil = state.elapsed + 1.2; } },
+  { id: 'heal', icon: '✚', name: '战地急救', color: '#7affac', max: 99, desc: '立即恢复 42% 最大生命，并短暂无敌。', apply: () => { state.hp = Math.min(state.maxHp, state.hp + state.maxHp * 0.42); state.invulnerableUntil = Math.max(state.invulnerableUntil, state.elapsed + 1.2); } },
 ];
 
 const UPGRADE_MAP = new Map(UPGRADES.map((upgrade) => [upgrade.id, upgrade]));
 
 function upgradeLevel(id) { return state.upgradeLevels[id] || 0; }
 
+function percent(value, digits = 0) { return `${(value * 100).toFixed(digits)}%`; }
+
+function upgradePreview(upgrade) {
+  const level = upgradeLevel(upgrade.id);
+  const nextLevel = level + 1;
+  switch (upgrade.id) {
+    case 'damage': return { primary: `单发伤害 ${state.damage.toFixed(1)} → ${(state.damage * 1.32).toFixed(1)}`, secondary: '本级 +32% · 所有武器同步', badge: '+32% 伤害' };
+    case 'rate': return { primary: `射速 ${state.fireRate.toFixed(1)} → ${(state.fireRate * 1.24).toFixed(1)}/秒`, secondary: '本级 +24% 射速', badge: '+24% 射速' };
+    case 'multishot': return { primary: `齐射弹丸 ${state.multishot} → ${Math.min(9, state.multishot + 1)} 发`, secondary: `覆盖角度同步扩展 · 第 ${nextLevel} 级`, badge: '+1 发弹丸' };
+    case 'pierce': return { primary: `额外穿透 ${state.pierce} → ${state.pierce + 1} 个目标`, secondary: '射程始终无限 · 本级 +1 穿透', badge: '+1 穿透' };
+    case 'crit': return { primary: `暴击率 ${percent(state.critChance)} → ${percent(state.critChance + 0.09)}`, secondary: `暴击倍率 ${state.critDamage.toFixed(2)}× → ${(state.critDamage + 0.08).toFixed(2)}×`, badge: '+9% 暴击率' };
+    case 'explosion': return { primary: `爆炸半径 ${level ? 28 + level * 11 : 0} → ${28 + nextLevel * 11}px`, secondary: `范围伤害系数 ${level ? Math.round((0.32 + level * 0.035) * 100) : 0}% → ${Math.round((0.32 + nextLevel * 0.035) * 100)}%`, badge: `爆炸 Lv.${nextLevel}` };
+    case 'chain': return { primary: `触发率 ${Math.round(Math.min(0.86, 0.16 + level * 0.11) * 100)}% → ${Math.round(Math.min(0.86, 0.16 + nextLevel * 0.11) * 100)}%`, secondary: `最大跳跃 ${level ? Math.min(7, level + 1) : 0} → ${Math.min(7, nextLevel + 1)} 个`, badge: '+11% 闪电触发' };
+    case 'frost': return { primary: `冻结率 ${Math.round(Math.min(0.74, 0.12 + level * 0.1) * 100)}% → ${Math.round(Math.min(0.74, 0.12 + nextLevel * 0.1) * 100)}%`, secondary: `冻结时长 ${(0.65 + level * 0.18).toFixed(2)} → ${(0.65 + nextLevel * 0.18).toFixed(2)} 秒`, badge: '+10% 冻结率' };
+    case 'ricochet': return { primary: `弹射率 ${Math.round(Math.min(0.92, 0.25 + level * 0.13) * 100)}% → ${Math.round(Math.min(0.92, 0.25 + nextLevel * 0.13) * 100)}%`, secondary: '每级 +13% · 280px 智能索敌', badge: '+13% 弹射率' };
+    case 'drone': return { primary: `护航无人机 ${state.drones} → ${state.drones + 1} 架`, secondary: `独立射击间隔约 ${Math.max(0.13, 0.56 - (state.drones + 1) * 0.045).toFixed(2)} 秒`, badge: '+1 无人机' };
+    case 'orbit': return { primary: `旋转环刃 ${state.orbit} → ${state.orbit + 1} 枚`, secondary: `单次伤害系数 ${Math.round((0.62 + state.orbit * 0.12) * 100)}% → ${Math.round((0.62 + (state.orbit + 1) * 0.12) * 100)}%`, badge: '+1 环刃' };
+    case 'missile': return { primary: `导弹等级 ${state.missile} → ${state.missile + 1}`, secondary: `单发伤害系数 ${Math.round((3.8 + state.missile * 0.65) * 100)}% → ${Math.round((3.8 + (state.missile + 1) * 0.65) * 100)}%`, badge: `导弹 Lv.${nextLevel}` };
+    case 'bulletSize': return { primary: `弹丸直径 ${(state.bulletSize * 2).toFixed(1)} → ${(state.bulletSize * 2 * 1.19).toFixed(1)}px`, secondary: '弹丸 +19% · 伤害 +10%', badge: '+19% 弹丸' };
+    case 'speed': return { primary: `移动速度 ${Math.round(state.moveSpeed)} → ${Math.round(state.moveSpeed * 1.14)}`, secondary: '本级 +14% · 冲刺冷却同步缩短', badge: '+14% 移速' };
+    case 'maxHp': return { primary: `最大生命 ${state.maxHp} → ${state.maxHp + 25}`, secondary: `立即回复 25 · 增幅 ${Math.round(25 / state.maxHp * 100)}%`, badge: '+25 最大生命' };
+    case 'armor': return { primary: `伤害减免 ${percent(state.armor)} → ${percent(state.armor + 0.08)}`, secondary: '本级 +8% · 同步增强冲刺撞击', badge: '+8% 减伤' };
+    case 'regen': return { primary: `每秒回复 ${state.regen.toFixed(1)} → ${(state.regen + 0.8).toFixed(1)} HP`, secondary: '每分钟额外恢复 48 HP', badge: '+0.8 HP/秒' };
+    case 'magnet': return { primary: `拾取半径 ${Math.round(state.pickupRange)} → ${Math.round(state.pickupRange + 75)}px`, secondary: `本级范围 +${Math.round(75 / state.pickupRange * 100)}%`, badge: '+75px 拾取范围' };
+    case 'lifesteal': return { primary: `击杀吸血率 ${percent(state.lifesteal, 1)} → ${percent(state.lifesteal + 0.035, 1)}`, secondary: '本级 +3.5% · 精英/Boss 倍率更高', badge: '+3.5% 吸血' };
+    case 'critPower': return { primary: `暴击倍率 ${state.critDamage.toFixed(2)}× → ${(state.critDamage + 0.45).toFixed(2)}×`, secondary: '本级倍率 +0.45×', badge: '+0.45× 暴伤' };
+    case 'velocity': return { primary: `弹速 ${Math.round(state.bulletSpeed)} → ${Math.round(state.bulletSpeed * 1.22)}`, secondary: '弹速 +22% · 射速 +5%', badge: '+22% 弹速' };
+    case 'spread': return { primary: `散射角 ${(state.spread * 180 / Math.PI).toFixed(1)}° → ${(state.spread * 0.78 * 180 / Math.PI).toFixed(1)}°`, secondary: '散射 -22% · 全武器伤害 +12%', badge: '-22% 散射' };
+    case 'overclock': return { primary: '永久伤害 +15% · 射速 +10%', secondary: '立即获得 6 秒：射速 ×3、伤害 ×2', badge: '6秒过载核心' };
+    case 'heal': return { primary: '立即恢复最大生命的 42%', secondary: '同时获得 1.2 秒完全免伤', badge: '+42% 生命' };
+    default: return { primary: `Lv.${level} → Lv.${nextLevel}`, secondary: upgrade.desc, badge: `Lv.${nextLevel}` };
+  }
+}
+
 function resetRun() {
   Object.assign(state, {
-    elapsed: 0, score: 0, kills: 0, combo: 0, maxCombo: 0, comboTimer: 0,
+    elapsed: 0, score: 0, kills: 0, combo: 0, maxCombo: 0, comboTimer: 0, infiniteRayHits: 0,
     level: 1, xp: 0, nextXp: 14, pendingLevelUps: 0,
     hp: 100, maxHp: 100, armor: 0, regen: 0,
     damage: 18, fireRate: 12, bulletSpeed: 760, bulletSize: 4.2, moveSpeed: 260,
     multishot: 1, spread: 0.105, pierce: 0, critChance: 0.06, critDamage: 2,
     explosion: 0, chain: 0, frost: 0, ricochet: 0, drones: 0, orbit: 0,
     missile: 0, lifesteal: 0, pickupRange: 90,
-    overdriveUntil: 0, hordeUntil: 0, invulnerableUntil: 1.2,
+    overdriveUntil: 0, hordeUntil: 0, ironCurtainUntil: 0, freezeUntil: 0, invulnerableUntil: 1.2,
     fireAccumulator: 0, spawnAccumulator: 0, droneAccumulator: 0, missileAccumulator: 0,
     healAccumulator: 0, supplyAt: 15, bossSpawned: false, bossKilled: false, boss: null,
     shake: 0, flash: 0, hitStop: 0, uiAccumulator: 0,
-    cooldowns: { horde: 0, overdrive: 0, elite: 0, nuke: 0 },
+    cooldowns: Object.fromEntries(COOLDOWN_KEYS.map((key) => [key, 0])),
     upgradeLevels: {}, enemies: [], bullets: [], hostileBullets: [], pickups: [], particles: [], shockwaves: [], beams: [], floaters: [],
+    pulseRings: [], afterimages: [], scorches: [],
   });
+  state.xpChain.count = 0;
+  state.xpChain.at = 0;
+  state.heartbeatAt = 0;
   nextEnemyId = 1;
   enemyGrid.clear();
   state.player = { x: width * 0.5, y: height * 0.57, vx: 0, vy: 0, angle: -Math.PI / 2, radius: 16, dashTime: 0, dashCooldown: 0, dashX: 1, dashY: 0 };
@@ -526,8 +733,11 @@ function openUpgrade() {
   const options = chooseUpgradeOptions();
   els.upgradeOptions.innerHTML = options.map((upgrade, index) => {
     const level = upgradeLevel(upgrade.id);
+    const preview = upgradePreview(upgrade);
     return `<button class="upgrade-option" type="button" data-upgrade="${upgrade.id}" style="--upgrade-color:${upgrade.color}">
-      <kbd>${index + 1}</kbd><i>${upgrade.icon}</i><h3>${upgrade.name}</h3><p>${upgrade.desc}</p><small>${upgrade.max >= 90 ? '即时强化' : `Lv.${level} → Lv.${level + 1} / ${upgrade.max}`}</small>
+      <kbd>${index + 1}</kbd><i>${upgrade.icon}</i><h3>${upgrade.name}</h3><p>${upgrade.desc}</p>
+      <div class="upgrade-values"><b>${preview.primary}</b><span>${preview.secondary}</span></div>
+      <small>${upgrade.max >= 90 ? '即时强化' : `Lv.${level} → Lv.${level + 1} / ${upgrade.max}`}</small>
     </button>`;
   }).join('');
   els.upgradeCountdown.textContent = els.autoPick.checked ? '挂机模式：2.5 秒后自动选择' : '选择后立刻恢复战斗';
@@ -544,24 +754,41 @@ function selectUpgrade(id) {
   const upgrade = UPGRADE_MAP.get(id);
   if (!upgrade) return;
   clearTimeout(autoPickTimer);
+  const preview = upgradePreview(upgrade);
   upgrade.apply();
   if (upgrade.max < 90) state.upgradeLevels[id] = upgradeLevel(id) + 1;
   state.pendingLevelUps = Math.max(0, state.pendingLevelUps - 1);
-  burst(state.player.x, state.player.y, upgrade.color, 34, 220);
-  addShockwave(state.player.x, state.player.y, upgrade.color, 12, 150, 0.55);
-  showBanner(upgrade.name, upgrade.color);
+  burst(state.player.x, state.player.y, upgrade.color, 68, 320);
+  addShockwave(state.player.x, state.player.y, '#ffffff', 8, 95, 0.38, 3);
+  addShockwave(state.player.x, state.player.y, upgrade.color, 18, 190, 0.72, 7);
+  addShockwave(state.player.x, state.player.y, upgrade.color, 30, 320, 1.05, 3);
+  for (let index = 0; index < 12; index += 1) {
+    const angle = index * Math.PI * 2 / 12;
+    addBeam(state.player.x, state.player.y, state.player.x + Math.cos(angle) * Math.max(width, height) * 0.42, state.player.y + Math.sin(angle) * Math.max(width, height) * 0.42, upgrade.color, 2.5, 0.36);
+  }
+  state.shake = Math.max(state.shake, 0.62);
+  els.upgradeFlash.style.setProperty('--upgrade-flash-color', upgrade.color);
+  els.upgradeFlash.classList.remove('active');
+  void els.upgradeFlash.offsetWidth;
+  els.upgradeFlash.classList.add('active');
+  showBanner(`${upgrade.name} · ${preview.badge}`, upgrade.color);
+  addFloater(state.player.x, state.player.y - 52, preview.badge, upgrade.color, 18, 1.15);
   updateArsenal();
   syncHud(true);
-  tone(820, 0.1, 'triangle', 0.05, 330, 'upgrade-select');
+  tone(820, 0.16, 'triangle', 0.055, 420, 'upgrade-select');
+  noiseBurst(0.14, 0.032, 1500, 'upgrade-select-noise');
+  // Major-triad resolution on top of the whoosh.
+  [523, 659, 784].forEach((freq, index) => window.setTimeout(() => tone(freq, 0.14, 'triangle', 0.032, 30, 'upgrade-chord'), 60 + index * 70));
+  duckMusic(0.4, 0.7);
   if (state.pendingLevelUps > 0) window.setTimeout(openUpgrade, 180);
   else { setMode('running'); state.lastTs = performance.now(); }
 }
 
 function updateArsenal() {
   const items = [
-    { icon: '▰', name: '脉冲步枪', detail: `${state.multishot} 发 · ${state.pierce} 穿透`, level: `Lv.${Math.max(1, upgradeLevel('damage') + upgradeLevel('rate') + 1)}`, color: '#ffe45c', active: true },
-    { icon: '✺', name: '高爆弹头', detail: '范围冲击波', level: `Lv.${state.explosion}`, color: '#ff9d4d', active: state.explosion > 0 },
-    { icon: 'ϟ', name: '连锁闪电', detail: '自动跳跃目标', level: `Lv.${state.chain}`, color: '#c977ff', active: state.chain > 0 },
+    { icon: '▰', name: '脉冲步枪', detail: `${state.multishot} 发 · ${state.pierce} 穿透 · 伤害 ${formatCompact(state.damage)}`, level: `Lv.${Math.max(1, upgradeLevel('damage') + upgradeLevel('rate') + 1)}`, color: '#ffe45c', active: true },
+    { icon: '✺', name: '高爆弹头', detail: `半径 ${state.explosion ? 28 + state.explosion * 11 : 0}px · ${Math.round((0.32 + state.explosion * 0.035) * 100)}% 范围伤害`, level: `Lv.${state.explosion}`, color: '#ff9d4d', active: state.explosion > 0 },
+    { icon: 'ϟ', name: '连锁闪电', detail: `${Math.round(Math.min(0.86, 0.16 + state.chain * 0.11) * 100)}% 触发 · ${Math.min(7, state.chain + 1)} 跳`, level: `Lv.${state.chain}`, color: '#c977ff', active: state.chain > 0 },
     { icon: '◇', name: '护航无人机', detail: `${state.drones} 架独立射击`, level: `Lv.${state.drones}`, color: '#69b8ff', active: state.drones > 0 },
     { icon: '◉', name: '旋转环刃', detail: `${state.orbit} 枚近身切割`, level: `Lv.${state.orbit}`, color: '#aaff75', active: state.orbit > 0 },
     { icon: '➤', name: '追踪导弹', detail: '自动索敌爆炸', level: `Lv.${state.missile}`, color: '#ff6f91', active: state.missile > 0 },
@@ -612,9 +839,13 @@ function spawnEnemy(type = chooseEnemyType(), options = {}) {
     showBanner('OMEGA ABOMINATION', '#ff526f');
     showToast('终局 Boss 从尸潮里挤进来了：继续移动，所有火力会自动锁定它附近的敌人', 3800);
     state.shake = Math.max(state.shake, 1.5);
+    state.hitStop = Math.max(state.hitStop, 0.16);
     addShockwave(enemy.x, enemy.y, '#ff365f', 30, 360, 1.25);
+    addShockwave(enemy.x, enemy.y, '#ffffff', 12, 220, 0.7);
     tone(82, 0.7, 'sawtooth', 0.08, -25, 'boss-spawn');
+    tone(41, 1.1, 'sine', 0.12, 12, 'boss-spawn-sub');
     noiseBurst(0.28, 0.045, 160, 'boss-spawn-noise');
+    duckMusic(0.3, 1.1);
   }
   return enemy;
 }
@@ -638,7 +869,7 @@ function spawnPickup(x, y, type = 'xp', value = 1) {
     return;
   }
   const colors = { xp: '#70fff1', heal: '#69ff9a', overdrive: '#ffe45c', magnet: '#73b7ff', nuke: '#ff6d8f' };
-  state.pickups.push({ x, y, type, value, color: colors[type], radius: type === 'xp' ? 5 : 12, phase: rand(0, Math.PI * 2), life: type === 'xp' ? 28 : 20 });
+  state.pickups.push({ x, y, type, value, color: colors[type], radius: type === 'xp' ? 5 : 12, phase: rand(0, Math.PI * 2), life: type === 'xp' ? 28 : 20, vx: 0, vy: 0 });
 }
 
 function spawnPowerup(x = rand(100, width - 100), y = rand(130, height - 100), forcedType) {
@@ -660,8 +891,14 @@ function addShockwave(x, y, color, start = 5, end = 90, life = 0.45, widthValue 
 }
 
 function addFloater(x, y, text, color = '#ffffff', size = 12, life = 0.65) {
-  if (state.floaters.length > 180) state.floaters.shift();
-  state.floaters.push({ x, y, text, color, size, life, maxLife: life, vx: rand(-16, 16), vy: rand(-80, -50) });
+  if (state.floaters.length > 120) {
+    // Under heavy load, only critical/announced floaters survive the cap.
+    if (size < 14) return;
+    state.floaters.shift();
+  }
+  // Damage numbers get tossed with a horizontal impulse + gravity instead of
+  // drifting straight up — reads far more physical in a crowd.
+  state.floaters.push({ x, y, text, color, size, life, maxLife: life, vx: rand(-46, 46), vy: rand(-118, -78), gravity: 210 });
 }
 
 function addBeam(x1, y1, x2, y2, color = '#c977ff', widthValue = 3, life = 0.14) {
@@ -722,7 +959,10 @@ function firePrimary(dt) {
       addParticle(state.player.x + Math.cos(baseAngle) * 24, state.player.y + Math.sin(baseAngle) * 24, '#fff3a1', rand(40, 90), 0.11, rand(2, 5), baseAngle + Math.PI + rand(-0.5, 0.5));
     }
   }
-  if (Math.random() < 0.22) tone(180 + Math.random() * 35, 0.025, 'square', 0.009, -35, 'primary-fire', 48);
+  if (audioReady('primary-fire', 48)) {
+    tone(180 + Math.random() * 35, 0.025, 'square', 0.009, -35, 'primary-fire');
+    if (Math.random() < 0.4) noiseBurst(0.014, 0.006, 2600, 'primary-fire-crack');
+  }
 }
 
 function nearestEnemy(x, y, maxDistance = Infinity, excludeIds = null, grid = null) {
@@ -822,6 +1062,12 @@ function killEnemy(enemy, options = {}) {
   const color = enemy.color;
   burst(enemy.x, enemy.y, color, enemy.boss ? 150 : enemy.elite ? 42 : Math.min(24, 9 + enemy.radius / 2), enemy.boss ? 420 : 180);
   addShockwave(enemy.x, enemy.y, color, enemy.radius * 0.3, enemy.radius * (enemy.boss ? 5 : 2.5), enemy.boss ? 1.2 : 0.38, enemy.boss ? 8 : 3);
+  if (!enemy.boss && (options.exploded || enemy.killedByExplosion || enemy.elite || enemy.type === 'tank')) addScorch(enemy.x, enemy.y, enemy.radius * (enemy.elite ? 2.6 : 1.9));
+  if (!enemy.boss && !enemy.elite && audioReady('grind-kill', 90)) {
+    // Regular kills finally make a sound — a tiny layered crunch.
+    noiseBurst(0.05, 0.02, 950 + Math.random() * 700, 'grind-kill-noise');
+    tone(150 + Math.random() * 40, 0.05, 'sine', 0.018, -70, 'grind-kill-thump');
+  }
   if (enemy.boss) {
     state.bossKilled = true;
     state.boss = null;
@@ -831,6 +1077,7 @@ function killEnemy(enemy, options = {}) {
     showBanner('OMEGA ANNIHILATED', '#ffe45c');
     tone(65, 0.8, 'sawtooth', 0.1, 360, 'boss-kill');
     noiseBurst(0.42, 0.065, 110, 'boss-kill-noise');
+    duckMusic(0.22, 1.6);
     window.setTimeout(() => finishRun(true), 1200);
   } else if (enemy.elite) {
     state.shake = Math.max(state.shake, 0.45);
@@ -840,12 +1087,22 @@ function killEnemy(enemy, options = {}) {
   if (state.combo > 0 && state.combo % 100 === 0) {
     showBanner(`${state.combo} KILL RAMPAGE`, '#ffe45c');
     state.overdriveUntil = Math.max(state.overdriveUntil, state.elapsed + 3);
+    state.hitStop = Math.max(state.hitStop, 0.08);
+    // Pentatonic rampage arpeggio.
+    [523, 659, 784, 1047].forEach((freq, index) => {
+      window.setTimeout(() => tone(freq, 0.11, 'triangle', 0.045, 40, 'rampage'), index * 62);
+    });
   }
 }
 
 function explode(x, y, radius, damage, color, grid, excludeId = null) {
   addShockwave(x, y, color, 6, radius, 0.32 + radius / 600, Math.max(3, radius / 24));
   burst(x, y, color, Math.min(36, Math.round(radius / 4)), radius * 1.7);
+  if (radius >= 34) addScorch(x, y, radius * 0.72);
+  if (audioReady('blast-boom', 70)) {
+    noiseBurst(0.24, 0.05, 300 + radius * 4, 'blast-boom-noise');
+    tone(120 + radius, 0.18, 'sine', 0.05, -(60 + radius * 0.5), 'blast-boom-sub');
+  }
   const radiusSq = radius * radius;
   grid.visit(x, y, radius, (target) => {
     if (target.dead || target.id === excludeId || distanceSq(x, y, target.x, target.y) > radiusSq) return;
@@ -896,6 +1153,7 @@ function updatePlayer(dt, grid) {
     player.vx = player.dashX * state.moveSpeed * 3.8;
     player.vy = player.dashY * state.moveSpeed * 3.8;
     state.invulnerableUntil = Math.max(state.invulnerableUntil, state.elapsed + 0.08);
+    if ((player.dashGhostAt || 0) <= state.elapsed) { player.dashGhostAt = state.elapsed + 0.03; pushAfterimage(); }
     addParticle(player.x, player.y, '#70fff1', rand(15, 70), rand(0.18, 0.35), rand(4, 9), player.angle + Math.PI + rand(-0.8, 0.8));
     grid.visit(player.x, player.y, 42, (enemy) => {
       if (!enemy.dead && distanceSq(player.x, player.y, enemy.x, enemy.y) < Math.pow(player.radius + enemy.radius + 12, 2)) damageEnemy(enemy, state.damage * (4 + state.armor * 10), { color: '#70fff1', critical: false });
@@ -920,7 +1178,7 @@ function startDash() {
   player.dashY = length > 0.2 ? keyboardY / length : input.aimY;
   player.dashTime = 0.2;
   player.dashCooldown = Math.max(0.75, 2.15 - upgradeLevel('speed') * 0.12);
-  state.invulnerableUntil = state.elapsed + 0.28;
+  state.invulnerableUntil = Math.max(state.invulnerableUntil, state.elapsed + 0.28);
   addShockwave(player.x, player.y, '#70fff1', 8, 75, 0.32, 4);
   tone(260, 0.08, 'sawtooth', 0.035, 280, 'dash', 120);
   noiseBurst(0.055, 0.022, 1100, 'dash-noise', 120);
@@ -995,6 +1253,7 @@ function hitPlayer(amount, sourceX, sourceY) {
   state.comboTimer = 0.8;
   state.shake = Math.max(state.shake, 0.8);
   state.flash = 1;
+  state.hitStop = Math.max(state.hitStop, 0.05);
   els.damageFlash.classList.add('active');
   window.setTimeout(() => els.damageFlash.classList.remove('active'), 80);
   addFloater(state.player.x, state.player.y - 25, `-${Math.ceil(reduced)}`, '#ff526f', 18, 0.8);
@@ -1003,8 +1262,57 @@ function hitPlayer(amount, sourceX, sourceY) {
   state.player.vy += Math.sin(angle) * 180;
   burst(state.player.x, state.player.y, '#ff526f', 22, 230);
   tone(95, 0.16, 'sawtooth', 0.07, -45, 'player-hit', 90);
+  tone(1150, 0.05, 'square', 0.02, -300, 'player-hit-pain', 90);
   noiseBurst(0.09, 0.032, 240, 'player-hit-noise', 90);
   if (state.hp <= 0) finishRun(false);
+}
+
+function resolveInfiniteRay(bullet, grid) {
+  if (bullet.kind === 'missile' || bullet.pierce < 0) return 0;
+  const speed = Math.hypot(bullet.vx, bullet.vy) || 1;
+  const directionX = bullet.vx / speed;
+  const directionY = bullet.vy / speed;
+  const candidates = [];
+  for (const enemy of state.enemies) {
+    if (enemy.dead || bullet.hitIds.includes(enemy.id)) continue;
+    const relativeX = enemy.x - bullet.x;
+    const relativeY = enemy.y - bullet.y;
+    const projection = relativeX * directionX + relativeY * directionY;
+    if (projection <= 0) continue;
+    const perpendicular = Math.abs(relativeX * directionY - relativeY * directionX);
+    if (perpendicular > bullet.radius + enemy.radius * 0.72) continue;
+    candidates.push({ enemy, projection });
+  }
+  if (!candidates.length) return 0;
+  candidates.sort((left, right) => left.projection - right.projection);
+  let hitCount = 0;
+  let originX = bullet.x;
+  let originY = bullet.y;
+  for (const candidate of candidates) {
+    if (bullet.pierce < 0) break;
+    if (candidate.enemy.dead) continue;
+    const impactX = bullet.x + directionX * candidate.projection;
+    const impactY = bullet.y + directionY * candidate.projection;
+    bullet.hitIds.push(candidate.enemy.id);
+    const critical = Math.random() < state.critChance;
+    damageEnemy(candidate.enemy, bullet.damage, { critical, color: bullet.color, frost: bullet.frost });
+    addBeam(originX, originY, impactX, impactY, bullet.color, Math.max(1.5, bullet.radius * 0.72), 0.12);
+    burst(impactX, impactY, bullet.color, 5, 75);
+    if (bullet.explosive > 0) {
+      const radius = 28 + bullet.explosive * 11;
+      explode(impactX, impactY, radius, bullet.damage * (0.32 + bullet.explosive * 0.035), bullet.color, grid, candidate.enemy.id);
+      if (candidate.enemy.dead) candidate.enemy.killedByExplosion = true;
+    }
+    if (bullet.chain > 0 && Math.random() < Math.min(0.86, 0.16 + bullet.chain * 0.11)) {
+      chainLightning(candidate.enemy, Math.min(7, bullet.chain + 1), bullet.damage * 0.75, grid, bullet.hitIds);
+    }
+    bullet.pierce -= 1;
+    hitCount += 1;
+    state.infiniteRayHits += 1;
+    originX = impactX;
+    originY = impactY;
+  }
+  return hitCount;
 }
 
 function updateBullets(dt, grid) {
@@ -1026,6 +1334,7 @@ function updateBullets(dt, grid) {
     bullet.y += bullet.vy * dt;
     if (bullet.kind === 'missile' && Math.random() < 0.85) addParticle(bullet.x, bullet.y, '#ff8a68', rand(5, 28), rand(0.2, 0.45), rand(2, 5), bullet.angle + Math.PI + rand(-0.4, 0.4));
     if (bullet.life <= 0 || bullet.x < -120 || bullet.x > width + 120 || bullet.y < -120 || bullet.y > height + 120) {
+      resolveInfiniteRay(bullet, grid);
       bullet.dead = true;
       continue;
     }
@@ -1045,6 +1354,7 @@ function updateBullets(dt, grid) {
     if (bullet.explosive > 0) {
       const radius = bullet.kind === 'missile' ? 88 + bullet.explosive * 10 : 28 + bullet.explosive * 11;
       explode(bullet.x, bullet.y, radius, bullet.damage * (bullet.kind === 'missile' ? 1.15 : 0.32 + bullet.explosive * 0.035), bullet.color, grid, hit.id);
+      if (hit.dead) hit.killedByExplosion = true;
     }
     if (bullet.chain > 0 && Math.random() < Math.min(0.86, 0.16 + bullet.chain * 0.11)) chainLightning(hit, Math.min(7, bullet.chain + 1), bullet.damage * 0.75, grid, bullet.hitIds);
     if (bullet.ricochet > 0 && Math.random() < Math.min(0.92, 0.25 + bullet.ricochet * 0.13)) {
@@ -1092,9 +1402,18 @@ function updatePickups(dt) {
     const distance = Math.hypot(dx, dy) || 1;
     const range = pickup.type === 'xp' ? state.pickupRange : state.pickupRange * 1.25;
     if (distance < range) {
-      const speed = 180 + (range - distance) * 5;
-      pickup.x += dx / distance * speed * dt;
-      pickup.y += dy / distance * speed * dt;
+      // Spiral vacuum: tangential wobble + exponential pull reads as suction.
+      const pull = 190 + Math.pow(range - Math.min(distance, range), 1.35) * 6;
+      const spiral = Math.sin(state.elapsed * 9 + pickup.phase) * 0.55;
+      const dirX = dx / distance;
+      const dirY = dy / distance;
+      pickup.vx = (dirX - dirY * spiral) * pull;
+      pickup.vy = (dirY + dirX * spiral) * pull;
+      pickup.x += pickup.vx * dt;
+      pickup.y += pickup.vy * dt;
+    } else {
+      pickup.vx = 0;
+      pickup.vy = 0;
     }
     if (distance < player.radius + pickup.radius + 8) {
       collectPickup(pickup);
@@ -1109,7 +1428,13 @@ function updatePickups(dt) {
 function collectPickup(pickup) {
   if (pickup.type === 'xp') {
     grantXp(pickup.value);
-    if (Math.random() < 0.08) playPickupSound('xp');
+    // Vampire-Survivors-style pickup ladder: chained pickups climb a
+    // pentatonic scale so vacuuming a field sounds rewarding.
+    const chain = state.elapsed - state.xpChain.at < 1.1 ? state.xpChain.count + 1 : 0;
+    state.xpChain.count = chain;
+    state.xpChain.at = state.elapsed;
+    const PENTA = [660, 742.5, 880, 990, 1173.3, 1320, 1485, 1760];
+    tone(PENTA[Math.min(chain, PENTA.length - 1)], 0.045, 'triangle', 0.016, 30, 'pickup-xp', 46);
   } else if (pickup.type === 'heal') {
     state.hp = Math.min(state.maxHp, state.hp + state.maxHp * 0.32);
     showToast('急救包：恢复 32% 最大生命');
@@ -1153,11 +1478,35 @@ function updateEffects(dt) {
   compactInPlace(state.beams, (beam) => beam.life > 0);
   for (let index = state.floaters.length - 1; index >= 0; index -= 1) {
     const floater = state.floaters[index];
-    floater.life -= dt; floater.x += floater.vx * dt; floater.y += floater.vy * dt; floater.vy *= Math.pow(0.25, dt);
+    floater.life -= dt;
+    floater.vy += (floater.gravity || 0) * dt;
+    floater.x += floater.vx * dt;
+    floater.y += floater.vy * dt;
+    floater.vx *= Math.pow(0.3, dt);
   }
   compactInPlace(state.floaters, (floater) => floater.life > 0);
+  for (let index = state.pulseRings.length - 1; index >= 0; index -= 1) state.pulseRings[index].life -= dt;
+  compactInPlace(state.pulseRings, (ring) => ring.life > 0);
+  for (let index = state.afterimages.length - 1; index >= 0; index -= 1) state.afterimages[index].life -= dt;
+  compactInPlace(state.afterimages, (ghost) => ghost.life > 0);
+  for (let index = state.scorches.length - 1; index >= 0; index -= 1) state.scorches[index].life -= dt;
+  compactInPlace(state.scorches, (mark) => mark.life > 0);
   state.shake *= Math.pow(0.035, dt);
   state.flash = Math.max(0, state.flash - dt * 3);
+  // Ambient ground energy ripple keeps the battlefield alive between events.
+  state.pulseTimer = (state.pulseTimer || 0) - dt;
+  if (state.pulseTimer <= 0 && state.mode === 'running') {
+    state.pulseTimer = 1.7;
+    if (state.pulseRings.length < 4) state.pulseRings.push({ x: state.player.x, y: state.player.y, radius: 30, speed: 130, life: 1.4, maxLife: 1.4 });
+  }
+  // Low-HP heartbeat warning.
+  if (state.mode === 'running' && state.hp < state.maxHp * 0.3 && state.hp > 0) {
+    if (state.elapsed >= state.heartbeatAt) {
+      state.heartbeatAt = state.elapsed + 1.05;
+      tone(58, 0.09, 'sine', 0.09, -18, 'heartbeat-a', 200);
+      tone(52, 0.11, 'sine', 0.075, -14, 'heartbeat-b', 420);
+    }
+  }
 }
 
 function updateSpawner(dt) {
@@ -1201,15 +1550,15 @@ function update(dt) {
   if (state.elapsed >= CONFIG.duration && !state.bossSpawned) spawnBoss();
 }
 
-function directorReady(key, cooldown) {
+function directorReady(key) {
   if (state.mode !== 'running') return false;
   if (state.cooldowns[key] > 0) { showToast(`导演指令冷却中：${Math.ceil(state.cooldowns[key])} 秒`); return false; }
-  state.cooldowns[key] = cooldown;
+  state.cooldowns[key] = DIRECTOR_COOLDOWNS[key];
   return true;
 }
 
 function triggerHorde() {
-  if (!directorReady('horde', 18)) return;
+  if (!directorReady('horde')) return;
   state.hordeUntil = state.elapsed + 7;
   spawnHorde(120);
   showBanner('EIGHTFOLD HORDE', '#ff526f');
@@ -1218,16 +1567,16 @@ function triggerHorde() {
 }
 
 function triggerOverdrive() {
-  if (!directorReady('overdrive', 17)) return;
+  if (!directorReady('overdrive')) return;
   state.overdriveUntil = state.elapsed + 10;
   showBanner('BULLET OVERDRIVE', '#70fff1');
   showToast('无限弹匣：10 秒射速 ×3、伤害 ×2', 2800);
-    tone(420, 0.18, 'sawtooth', 0.045, 650, 'director-overdrive');
-    noiseBurst(0.12, 0.03, 900, 'director-overdrive-noise');
+  tone(420, 0.18, 'sawtooth', 0.045, 650, 'director-overdrive');
+  noiseBurst(0.12, 0.03, 900, 'director-overdrive-noise');
 }
 
 function triggerElite() {
-  if (!directorReady('elite', 20)) return;
+  if (!directorReady('elite')) return;
   for (let index = 0; index < 8; index += 1) spawnEnemy('elite', { side: index % 4, margin: 30 + index * 6, eliteScale: 0.9 });
   showBanner('ELITE AIRDROP ×8', '#c977ff');
   showToast('八名精英已空投：全部击杀会掉落强化补给', 3000);
@@ -1235,7 +1584,7 @@ function triggerElite() {
 }
 
 function triggerNuke(checkCooldown = true) {
-  if (checkCooldown && !directorReady('nuke', 24)) return;
+  if (checkCooldown && !directorReady('nuke')) return;
   showBanner('ORBITAL PURGE', '#ffe45c');
   showToast('轨道清场：普通敌人全部蒸发，Boss 不会被秒杀', 2800);
   state.shake = 2.1;
@@ -1249,6 +1598,84 @@ function triggerNuke(checkCooldown = true) {
   for (let index = 0; index < 170; index += 1) addParticle(state.player.x, state.player.y, index % 2 ? '#ffe45c' : '#ffffff', rand(150, 780), rand(0.4, 1.2), rand(2, 8));
   tone(55, 0.9, 'sawtooth', 0.11, 520, 'director-nuke');
   noiseBurst(0.5, 0.075, 90, 'director-nuke-noise');
+  state.hitStop = Math.max(state.hitStop, 0.1);
+  duckMusic(0.25, 1.2);
+}
+
+function triggerIronCurtain() {
+  if (!directorReady('ironCurtain')) return;
+  state.ironCurtainUntil = state.elapsed + 7;
+  state.invulnerableUntil = Math.max(state.invulnerableUntil, state.ironCurtainUntil);
+  showBanner('IRON CURTAIN ONLINE', '#ff435f');
+  showToast('核心铁幕：7 秒完全免伤，履带可以直接碾入尸潮', 3000);
+  addShockwave(state.player.x, state.player.y, '#ff435f', 25, 230, 0.9, 8);
+  addShockwave(state.player.x, state.player.y, '#ffffff', 12, 130, 0.58, 2);
+  burst(state.player.x, state.player.y, '#ff435f', 55, 260);
+  state.shake = Math.max(state.shake, 0.72);
+  tone(125, 0.42, 'sawtooth', 0.07, 240, 'director-curtain');
+  noiseBurst(0.18, 0.045, 280, 'director-curtain-noise');
+}
+
+function triggerTeslaStorm() {
+  if (!directorReady('tesla')) return;
+  const targets = state.enemies.filter((enemy) => !enemy.dead).sort((left, right) => {
+    const threatLeft = (left.boss ? 100000 : left.elite ? 10000 : left.type === 'shooter' ? 1000 : 0) + left.hp;
+    const threatRight = (right.boss ? 100000 : right.elite ? 10000 : right.type === 'shooter' ? 1000 : 0) + right.hp;
+    return threatRight - threatLeft;
+  }).slice(0, 36);
+  for (const [index, enemy] of targets.entries()) {
+    const originX = index % 2 ? state.player.x : clamp(enemy.x + rand(-160, 160), 0, width);
+    const originY = index % 2 ? state.player.y : 85;
+    addBeam(originX, originY, enemy.x, enemy.y, index % 3 ? '#a96cff' : '#f0d2ff', 3.2, 0.34);
+    damageEnemy(enemy, state.damage * (enemy.boss ? 10 : 7), { color: '#c977ff', critical: false, frost: 1 });
+  }
+  showBanner(`TESLA STORM ×${targets.length}`, '#c977ff');
+  showToast(`磁暴风暴：已锁定 ${targets.length} 个高威胁目标`, 3000);
+  state.shake = Math.max(state.shake, 1.15);
+  tone(92, 0.55, 'sawtooth', 0.07, 620, 'director-tesla');
+  noiseBurst(0.28, 0.05, 720, 'director-tesla-noise');
+}
+
+function triggerSupplyDrop() {
+  if (!directorReady('supply')) return;
+  const types = ['heal', 'overdrive', 'magnet', 'nuke', 'heal', 'overdrive', 'magnet', 'nuke'];
+  for (const [index, type] of types.entries()) {
+    const angle = index * Math.PI * 2 / types.length;
+    const radius = 92 + (index % 2) * 48;
+    const x = clamp(state.player.x + Math.cos(angle) * radius, 38, width - 38);
+    const y = clamp(state.player.y + Math.sin(angle) * radius, 112, height - 38);
+    spawnPickup(x, y, type, 1);
+    addBeam(x, 80, x, y, type === 'nuke' ? '#ff6d8f' : type === 'heal' ? '#69ff9a' : type === 'magnet' ? '#73b7ff' : '#ffe45c', 3, 0.48);
+    addShockwave(x, y, '#ffffff', 6, 42, 0.42, 2);
+  }
+  for (const pickup of state.pickups) {
+    if (pickup.type === 'xp' && distanceSq(pickup.x, pickup.y, state.player.x, state.player.y) < 520 * 520) {
+      pickup.x = state.player.x + rand(-42, 42);
+      pickup.y = state.player.y + rand(-42, 42);
+    }
+  }
+  showBanner('WAR FACTORY DELIVERY', '#66f5a2');
+  showToast('战地工厂：八件补给已装配完成，附近经验同步回收', 3200);
+  tone(310, 0.24, 'square', 0.045, 260, 'director-supply');
+  noiseBurst(0.16, 0.035, 950, 'director-supply-noise');
+}
+
+function triggerFreeze() {
+  if (!directorReady('freeze')) return;
+  state.freezeUntil = state.elapsed + 5.5;
+  for (const enemy of state.enemies) {
+    if (enemy.dead) continue;
+    const duration = enemy.boss ? 2 : 5.5;
+    enemy.frozenUntil = Math.max(enemy.frozenUntil, state.elapsed + duration);
+  }
+  showBanner('CHRONO FREEZE', '#69d9ff');
+  showToast('时空冻结：普通怪冻结 5.5 秒，Boss 冻结 2 秒', 3000);
+  addShockwave(state.player.x, state.player.y, '#69d9ff', 20, Math.hypot(width, height), 1.25, 9);
+  state.shake = Math.max(state.shake, 0.62);
+  tone(720, 0.48, 'triangle', 0.055, -540, 'director-freeze');
+  noiseBurst(0.2, 0.035, 1800, 'director-freeze-noise');
+  tone(1750, 0.5, 'sine', 0.03, -700, 'director-freeze-glass');
+  duckMusic(0.45, 0.9);
 }
 
 function syncHud(force = false) {
@@ -1268,8 +1695,24 @@ function syncHud(force = false) {
   els.speedStat.textContent = Math.round(state.moveSpeed);
   els.hordeBtn.classList.toggle('active', state.elapsed < state.hordeUntil);
   els.overdriveBtn.classList.toggle('active', state.elapsed < state.overdriveUntil);
-  const directorButtons = [['horde', els.hordeBtn], ['overdrive', els.overdriveBtn], ['elite', els.eliteBtn], ['nuke', els.nukeBtn]];
-  for (const [key, button] of directorButtons) button.disabled = state.mode === 'running' && state.cooldowns[key] > 0;
+  els.ironCurtainBtn.classList.toggle('active', state.elapsed < state.ironCurtainUntil);
+  els.freezeBtn.classList.toggle('active', state.elapsed < state.freezeUntil);
+  const directorButtons = [
+    ['horde', els.hordeBtn], ['overdrive', els.overdriveBtn], ['elite', els.eliteBtn], ['nuke', els.nukeBtn],
+    ['ironCurtain', els.ironCurtainBtn], ['tesla', els.teslaBtn], ['supply', els.supplyBtn], ['freeze', els.freezeBtn],
+  ];
+  for (const [key, button] of directorButtons) {
+    const remaining = state.cooldowns[key];
+    const cooling = remaining > 0;
+    const progress = cooling ? 1 - remaining / DIRECTOR_COOLDOWNS[key] : 1;
+    button.disabled = state.mode === 'running' && cooling;
+    button.classList.toggle('cooling', cooling);
+    button.style.setProperty('--cooldown-progress', clamp(progress, 0, 1));
+    const icon = button.querySelector('i');
+    if (icon) icon.dataset.cooldown = cooling ? `${Math.ceil(remaining)}` : '';
+    const status = button.querySelector('em');
+    if (status) status.textContent = cooling ? `生产中 ${remaining.toFixed(1)}s` : 'READY';
+  }
   if (state.boss && !state.boss.dead) {
     els.bossHpFill.style.width = `${clamp(state.boss.hp / state.boss.maxHp * 100, 0, 100)}%`;
     els.bossHpText.textContent = `${Math.ceil(state.boss.hp / state.boss.maxHp * 100)}% · ${formatCompact(state.boss.hp)} HP`;
@@ -1284,6 +1727,9 @@ function drawBackground() {
   gradient.addColorStop(1, '#050812');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
+
+  // Pre-rendered vignette darkens the frame edges — one drawImage, no per-frame gradient work.
+  if (vignetteSprite) ctx.drawImage(vignetteSprite, 0, 0);
 
   ctx.save();
   ctx.globalAlpha = 0.35;
@@ -1304,6 +1750,23 @@ function drawBackground() {
   for (let y = offsetY; y < height; y += gridSize) { ctx.moveTo(0, y); ctx.lineTo(width, y); }
   ctx.stroke();
 
+  // Breathing pulse points on a sparse grid subset keep the floor alive while
+  // the iteration stays cheap: step 4 covers ~1/16 of intersections.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let gx = offsetX, column = 0; gx < width; gx += gridSize, column += 1) {
+    if (column % 4 !== 0) continue;
+    for (let gy = offsetY, row = 0; gy < height; gy += gridSize, row += 1) {
+      if (row % 4 !== (column / 4) % 4) continue;
+      const pulse = Math.sin(state.elapsed * 2.1 + gx * 0.011 + gy * 0.013);
+      if (pulse < 0.35) continue;
+      ctx.globalAlpha = (pulse - 0.35) * 0.16;
+      ctx.fillStyle = '#70fff1';
+      ctx.fillRect(gx - 1.5, gy - 1.5, 3, 3);
+    }
+  }
+  ctx.restore();
+
   ctx.strokeStyle = 'rgba(112,255,241,0.075)';
   ctx.lineWidth = 2;
   ctx.strokeRect(16, 92, width - 32, height - 110);
@@ -1318,6 +1781,19 @@ function drawPickup(pickup) {
   ctx.globalCompositeOperation = 'lighter';
   ctx.shadowColor = pickup.color;
   ctx.shadowBlur = 0;
+  // Vacuum trail: being sucked toward the player leaves a light streak.
+  if (pickup.vx || pickup.vy) {
+    ctx.globalAlpha = 0.4;
+    ctx.strokeStyle = pickup.color;
+    ctx.lineWidth = pickup.radius * 0.9;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-pickup.vx * 0.05, -pickup.vy * 0.05);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  drawGlow(0, 0, pickup.color, pickup.radius * (special ? 3.4 : 2.4), special ? 0.5 : 0.32);
   ctx.fillStyle = pickup.color;
   if (pickup.type === 'xp') {
     ctx.rotate(Math.PI / 4);
@@ -1400,7 +1876,7 @@ function drawEnemy(enemy) {
   const scale = enemy.radius / ENEMY_TYPES[enemy.type].radius;
   ctx.save();
   ctx.translate(enemy.x, enemy.y + bob);
-  ctx.globalAlpha = enemy.hitFlash > 0 ? 0.58 : 1;
+  ctx.globalAlpha = enemy.hitFlash > 0 ? 1 : 1;
   ctx.shadowColor = frozen ? '#6edbff' : enemy.color;
   ctx.shadowBlur = enemy.boss ? 8 : enemy.elite ? 4 : 0;
   ctx.fillStyle = 'rgba(0,0,0,0.42)';
@@ -1416,6 +1892,17 @@ function drawEnemy(enemy) {
     ctx.fillStyle = enemy.color;
     ctx.beginPath(); ctx.arc(0, 0, enemy.radius, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#101522'; ctx.beginPath(); ctx.arc(-enemy.radius * 0.3, -enemy.radius * 0.15, enemy.radius * 0.12, 0, Math.PI * 2); ctx.arc(enemy.radius * 0.3, -enemy.radius * 0.15, enemy.radius * 0.12, 0, Math.PI * 2); ctx.fill();
+  }
+  // Hit flash: additive white burst reads as an actual impact, unlike the old
+  // alpha dip which was nearly invisible in a crowd.
+  if (enemy.hitFlash > 0) {
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = clamp(enemy.hitFlash / 0.08, 0, 1) * 0.85;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(0, -enemy.radius * 0.18, enemy.radius * 1.02, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
   }
   drawEnemyMark(enemy);
   if (frozen) {
@@ -1443,32 +1930,62 @@ function drawEnemy(enemy) {
 function drawPlayer() {
   const player = state.player;
   const invulnerable = state.elapsed < state.invulnerableUntil;
+  const ironCurtain = state.elapsed < state.ironCurtainUntil;
+  const firingPulse = 0.5 + Math.sin(state.elapsed * Math.max(8, state.fireRate * 1.8)) * 0.5;
   ctx.save();
   ctx.translate(player.x, player.y);
   ctx.rotate(player.angle);
-  ctx.globalAlpha = invulnerable && Math.floor(state.elapsed * 20) % 2 ? 0.55 : 1;
-  ctx.shadowColor = state.elapsed < state.overdriveUntil ? '#70fff1' : '#65a8ff';
-  ctx.shadowBlur = state.elapsed < state.overdriveUntil ? 10 : 5;
+  ctx.scale(1.22, 1.22);
+  ctx.globalAlpha = !ironCurtain && invulnerable && Math.floor(state.elapsed * 20) % 2 ? 0.55 : 1;
+  ctx.shadowColor = ironCurtain ? '#ff435f' : state.elapsed < state.overdriveUntil ? '#70fff1' : '#65a8ff';
+  ctx.shadowBlur = ironCurtain ? 16 : state.elapsed < state.overdriveUntil ? 10 : 5;
   ctx.fillStyle = 'rgba(2,5,12,0.5)';
-  ctx.beginPath(); ctx.ellipse(-3, 10, 22, 12, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#162c49';
-  ctx.strokeStyle = '#d8f8ff';
-  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.ellipse(-4, 13, 30, 15, 0, 0, Math.PI * 2); ctx.fill();
+  // Original retro-RTS tank silhouette: tracks, sloped hull, turret and a readable forward barrel.
+  ctx.fillStyle = '#202d29';
+  ctx.strokeStyle = '#9bb69d';
+  ctx.lineWidth = 1.8;
+  for (const y of [-12, 12]) {
+    ctx.fillRect(-25, y - 5, 42, 10);
+    ctx.strokeRect(-25, y - 5, 42, 10);
+    ctx.fillStyle = '#536b54';
+    for (let tread = -20; tread <= 12; tread += 8) ctx.fillRect(tread, y - 3.5, 4, 7);
+    ctx.fillStyle = '#202d29';
+  }
+  ctx.fillStyle = ironCurtain ? '#6f252e' : '#556b4c';
+  ctx.strokeStyle = ironCurtain ? '#ff8a98' : '#c7e1b5';
   ctx.beginPath();
-  ctx.moveTo(23, 0); ctx.lineTo(8, -15); ctx.lineTo(-16, -12); ctx.lineTo(-21, 0); ctx.lineTo(-16, 12); ctx.lineTo(8, 15); ctx.closePath();
+  ctx.moveTo(22, 0); ctx.lineTo(12, -12); ctx.lineTo(-17, -11); ctx.lineTo(-23, -5); ctx.lineTo(-23, 5); ctx.lineTo(-17, 11); ctx.lineTo(12, 12); ctx.closePath();
   ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#70fff1';
-  ctx.fillRect(4, -4, 27, 8);
+  ctx.fillStyle = '#758d61';
+  ctx.fillRect(-13, -8, 22, 16);
+  ctx.strokeStyle = 'rgba(11,22,16,0.7)';
+  ctx.strokeRect(-13, -8, 22, 16);
+  ctx.fillStyle = '#41543e';
+  ctx.beginPath(); ctx.arc(-1, 0, 10, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = ironCurtain ? '#ff526f' : '#c9e8a2';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(-1, 0, 9 + firingPulse * 1.5, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#9fc67e';
+  ctx.fillRect(4, -3, 27, 6);
   ctx.fillStyle = '#ffe45c';
-  ctx.beginPath(); ctx.arc(-3, 0, 6, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#65a8ff';
-  ctx.fillRect(-17, -15, 7, 6); ctx.fillRect(-17, 9, 7, 6);
+  ctx.beginPath(); ctx.arc(-1, 0, 4.5 + firingPulse * 1.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#b8d6a6';
+  ctx.fillRect(-4, -17, 3, 7);
+  ctx.strokeStyle = '#ff526f';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-18, 0); ctx.lineTo(-10, 0); ctx.moveTo(-14, -4); ctx.lineTo(-14, 4); ctx.stroke();
   ctx.globalCompositeOperation = 'lighter';
-  ctx.fillStyle = state.elapsed < state.overdriveUntil ? 'rgba(112,255,241,0.9)' : 'rgba(101,168,255,0.72)';
+  ctx.fillStyle = ironCurtain ? 'rgba(255,67,95,0.95)' : state.elapsed < state.overdriveUntil ? 'rgba(112,255,241,0.9)' : 'rgba(101,168,255,0.72)';
   ctx.beginPath();
-  ctx.moveTo(-18, -6); ctx.lineTo(-34 - Math.sin(state.elapsed * 32) * 3, 0); ctx.lineTo(-18, 6); ctx.closePath(); ctx.fill();
+  ctx.moveTo(-22, -5); ctx.lineTo(-38 - Math.sin(state.elapsed * 32) * 4, 0); ctx.lineTo(-22, 5); ctx.closePath(); ctx.fill();
   ctx.fillStyle = 'rgba(255,244,161,0.9)';
-  ctx.beginPath(); ctx.arc(31, 0, state.elapsed < state.overdriveUntil ? 3.2 : 2.2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(32, 0, state.elapsed < state.overdriveUntil ? 3.2 : 2.2, 0, Math.PI * 2); ctx.fill();
+  if (ironCurtain) {
+    ctx.strokeStyle = 'rgba(255,67,95,0.78)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, 34 + Math.sin(state.elapsed * 8) * 3, 0, Math.PI * 2); ctx.stroke();
+  }
   ctx.restore();
 
   ctx.save();
@@ -1481,6 +1998,26 @@ function drawPlayer() {
   ctx.globalAlpha = 0.62;
   ctx.beginPath(); ctx.arc(player.x + input.aimX * 115, player.y + input.aimY * 115, 3.5, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
+  // Combo rune ring: sustained kill streaks spin up under the tank.
+  if (state.combo >= 25 && state.mode === 'running') {
+    const tier = Math.min(4, Math.floor(state.combo / 50));
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(state.elapsed * (0.8 + tier * 0.35));
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = Math.min(0.42, 0.14 + tier * 0.08);
+    ctx.strokeStyle = state.combo >= 100 ? '#ffe45c' : '#70fff1';
+    ctx.lineWidth = 2;
+    const segments = Math.min(12, 3 + Math.floor(state.combo / 25));
+    const ringRadius = 30 + tier * 3;
+    for (let index = 0; index < segments; index += 1) {
+      const start = index * Math.PI * 2 / segments;
+      ctx.beginPath();
+      ctx.arc(0, 0, ringRadius, start, start + Math.PI / segments * 0.9);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 
 function drawDronesAndOrbit() {
@@ -1504,12 +2041,12 @@ function drawDronesAndOrbit() {
   }
 }
 
-function queueProjectileSegment(x1, y1, x2, y2, color, lineWidth) {
+function queueProjectileSegment(x1, y1, x2, y2, color, lineWidth, halo = 0) {
   const roundedWidth = Math.round(lineWidth * 10) / 10;
-  const key = `${color}:${roundedWidth}`;
+  const key = `${color}:${roundedWidth}:${halo ? 1 : 0}`;
   let batch = projectileDrawBatches.get(key);
   if (!batch) {
-    batch = { color, lineWidth: roundedWidth, segments: [] };
+    batch = { color, lineWidth: roundedWidth, halo: Boolean(halo), segments: [] };
     projectileDrawBatches.set(key, batch);
   }
   if (batch.segments.length === 0) activeProjectileDrawBatches.push(batch);
@@ -1521,22 +2058,43 @@ function drawProjectiles() {
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = 'round';
   activeProjectileDrawBatches.length = 0;
+  const haloEnabled = state.bullets.length + state.hostileBullets.length < 800;
   for (const bullet of state.bullets) {
     queueProjectileSegment(bullet.px, bullet.py, bullet.x, bullet.y, bullet.color, bullet.radius * (bullet.kind === 'missile' ? 1.2 : 1.55));
+    if (haloEnabled) queueProjectileSegment(bullet.px, bullet.py, bullet.x, bullet.y, bullet.color, bullet.radius * (bullet.kind === 'missile' ? 1.2 : 1.55) * 2.6, 1);
   }
   for (const bullet of state.hostileBullets) {
     queueProjectileSegment(bullet.px, bullet.py, bullet.x, bullet.y, bullet.color, bullet.radius * 1.6);
+    if (haloEnabled) queueProjectileSegment(bullet.px, bullet.py, bullet.x, bullet.y, bullet.color, bullet.radius * 4.2, 1);
   }
-  for (const batch of activeProjectileDrawBatches) {
-    ctx.strokeStyle = batch.color;
-    ctx.lineWidth = batch.lineWidth;
-    ctx.beginPath();
-    for (let index = 0; index < batch.segments.length; index += 4) {
-      ctx.moveTo(batch.segments[index], batch.segments[index + 1]);
-      ctx.lineTo(batch.segments[index + 2], batch.segments[index + 3]);
+  // Halo pass first: wide, dim strokes under the bright cores.
+  for (const pass of [1, 0]) {
+    for (const batch of activeProjectileDrawBatches) {
+      if ((batch.halo ? 1 : 0) !== pass) continue;
+      ctx.strokeStyle = batch.color;
+      ctx.lineWidth = batch.lineWidth;
+      ctx.globalAlpha = pass === 1 ? 0.22 : 1;
+      ctx.beginPath();
+      for (let index = 0; index < batch.segments.length; index += 4) {
+        ctx.moveTo(batch.segments[index], batch.segments[index + 1]);
+        ctx.lineTo(batch.segments[index + 2], batch.segments[index + 3]);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
-    batch.segments.length = 0;
+  }
+  ctx.globalAlpha = 1;
+  for (const batch of activeProjectileDrawBatches) batch.segments.length = 0;
+  // Soft light bloom on bullet heads — capped so 800-bullet storms stay cheap.
+  let glowBudget = 130;
+  for (const bullet of state.bullets) {
+    if (glowBudget <= 0) break;
+    glowBudget -= 1;
+    drawGlow(bullet.x, bullet.y, bullet.color, bullet.radius * 3.1, 0.4);
+  }
+  for (const bullet of state.hostileBullets) {
+    if (glowBudget <= 0) break;
+    glowBudget -= 1;
+    drawGlow(bullet.x, bullet.y, bullet.color, bullet.radius * 2.8, 0.42);
   }
   for (const bullet of state.bullets) {
     if (bullet.kind !== 'missile') continue;
@@ -1571,11 +2129,29 @@ function drawEffects() {
   ctx.restore();
   ctx.save();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  let floaterFont = '';
   for (const floater of state.floaters) {
-    ctx.globalAlpha = clamp(floater.life / floater.maxLife, 0, 1);
-    ctx.fillStyle = floater.color; ctx.shadowColor = floater.color; ctx.shadowBlur = 0;
-    ctx.font = `950 ${floater.size}px system-ui, sans-serif`;
-    ctx.fillText(floater.text, floater.x, floater.y);
+    const lifeT = clamp(floater.life / floater.maxLife, 0, 1);
+    ctx.globalAlpha = lifeT;
+    // Set the font string only when the size actually changes.
+    const font = `950 ${floater.size}px system-ui, sans-serif`;
+    if (font !== floaterFont) { floaterFont = font; ctx.font = font; }
+    if (floater.size >= 15) {
+      // Big crit/announce numbers pop with a scale punch and a dark outline.
+      const punch = 1 + Math.max(0, lifeT - 0.82) * 3.2;
+      ctx.save();
+      ctx.translate(floater.x, floater.y);
+      ctx.scale(punch, punch);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(4,8,16,0.85)';
+      ctx.strokeText(floater.text, 0, 0);
+      ctx.fillStyle = floater.color;
+      ctx.fillText(floater.text, 0, 0);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = floater.color;
+      ctx.fillText(floater.text, floater.x, floater.y);
+    }
   }
   ctx.restore();
 }
@@ -1583,18 +2159,58 @@ function drawEffects() {
 function render() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawBackground();
+  drawScorches();
+  // Ambient energy ripples expand from the player position.
+  if (state.pulseRings.length) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const ring of state.pulseRings) {
+      ring.radius += ring.speed * 0.025;
+      const t = clamp(ring.life / ring.maxLife, 0, 1);
+      ctx.globalAlpha = t * 0.12;
+      ctx.strokeStyle = '#70fff1';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(ring.x, ring.y, ring.radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   const shakeAmount = state.shake * 8;
   ctx.save();
   ctx.translate(rand(-shakeAmount, shakeAmount), rand(-shakeAmount, shakeAmount));
   for (const pickup of state.pickups) drawPickup(pickup);
   for (const enemy of state.enemies) drawEnemy(enemy);
   drawDronesAndOrbit();
+  drawAfterimages();
   drawProjectiles();
   drawPlayer();
   drawEffects();
   ctx.restore();
   if (state.elapsed < state.overdriveUntil && state.mode === 'running') {
     ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.035 + Math.sin(state.elapsed * 18) * 0.015; ctx.fillStyle = '#70fff1'; ctx.fillRect(0, 0, width, height); ctx.restore();
+  }
+  // Iron curtain edge tint: full-screen flood was invisible, edge glow is not.
+  if (state.elapsed < state.ironCurtainUntil && state.mode === 'running') {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const pulse = 0.16 + Math.sin(state.elapsed * 10) * 0.07;
+    ctx.globalAlpha = pulse;
+    ctx.strokeStyle = '#ff435f';
+    ctx.lineWidth = 22;
+    ctx.strokeRect(8, 88, width - 16, height - 102);
+    ctx.restore();
+  }
+  // Low HP: pulsing red vignette corners.
+  if (state.mode === 'running' && state.hp < state.maxHp * 0.3) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    const pulse = 0.1 + Math.max(0, Math.sin(state.elapsed * 5.2)) * 0.12;
+    ctx.globalAlpha = pulse;
+    ctx.strokeStyle = '#ff2233';
+    ctx.lineWidth = 46;
+    ctx.strokeRect(-12, 76, width + 24, height - 62);
+    ctx.restore();
   }
 }
 
@@ -1603,6 +2219,7 @@ function loop(timestamp) {
   state.lastTs = timestamp;
   const dt = Math.min(0.05, Math.max(0, rawDt));
   update(dt);
+  syncMusic();
   if (timestamp - lastRenderTs >= 25) {
     lastRenderTs = timestamp;
     render();
@@ -1624,6 +2241,10 @@ async function finishRun(victory) {
   els.newBest.classList.add('hidden');
   tone(victory ? 520 : 90, victory ? 0.5 : 0.7, victory ? 'triangle' : 'sawtooth', 0.075, victory ? 520 : -40, victory ? 'run-victory' : 'run-defeat');
   noiseBurst(victory ? 0.18 : 0.26, victory ? 0.025 : 0.04, victory ? 1200 : 150, victory ? 'run-victory-noise' : 'run-defeat-noise');
+  if (victory) {
+    // I-V-vi-IV pad stinger over the win jingle.
+    [262, 330, 392, 523].forEach((freq, index) => window.setTimeout(() => tone(freq, 0.6, 'triangle', 0.04, 6, 'victory-chord'), 120 + index * 140));
+  }
   try {
     const result = await extCall({ action: 'submit_run', score: Math.round(state.score), kills: state.kills, duration: Math.round(state.elapsed), level: state.level, victory });
     if (result?.ok) {
@@ -1710,6 +2331,8 @@ window.addEventListener('keyup', (event) => input.keys.delete(event.key.toLowerC
 window.addEventListener('blur', () => { input.keys.clear(); if (state.mode === 'running') pauseGame(); });
 
 els.startBtn.addEventListener('click', startRun);
+// First pointer interaction anywhere unlocks the menu ambience.
+window.addEventListener('pointerdown', () => { ensureAudio(); syncMusic(); }, { once: true });
 els.resumeBtn.addEventListener('click', pauseGame);
 els.pauseBtn.addEventListener('click', pauseGame);
 els.restartBtn.addEventListener('click', startRun);
@@ -1719,7 +2342,14 @@ els.soundBtn.addEventListener('click', () => {
   muted = !muted;
   localStorage.setItem('bullet-heaven-muted', muted ? '1' : '0');
   els.soundBtn.textContent = muted ? '声音 OFF' : '声音 ON';
-  if (!muted) tone(620, 0.08, 'triangle', 0.04, 120, 'sound-toggle');
+  if (muted) {
+    music.stop();
+    musicMode = 'off';
+  } else {
+    musicMode = 'off'; // force syncMusic to re-enter the right state
+    syncMusic();
+    tone(620, 0.08, 'triangle', 0.04, 120, 'sound-toggle');
+  }
 });
 els.directorToggle.addEventListener('click', () => {
   const collapsed = els.directorPanel.classList.toggle('collapsed');
@@ -1729,12 +2359,16 @@ els.hordeBtn.addEventListener('click', triggerHorde);
 els.overdriveBtn.addEventListener('click', triggerOverdrive);
 els.eliteBtn.addEventListener('click', triggerElite);
 els.nukeBtn.addEventListener('click', () => triggerNuke(true));
+els.ironCurtainBtn.addEventListener('click', triggerIronCurtain);
+els.teslaBtn.addEventListener('click', triggerTeslaStorm);
+els.supplyBtn.addEventListener('click', triggerSupplyDrop);
+els.freezeBtn.addEventListener('click', triggerFreeze);
 
 setupStick(els.moveStick, 'move');
 setupStick(els.aimStick, 'aim');
 
 window.__bulletHeavenDebug = Object.freeze({
-  snapshot: () => ({ mode: state.mode, elapsed: state.elapsed, enemies: state.enemies.length, bullets: state.bullets.length, hostileBullets: state.hostileBullets.length, pickups: state.pickups.length, particles: state.particles.length, kills: state.kills, level: state.level, hp: state.hp, bossSpawned: state.bossSpawned, bossHp: state.boss?.hp || 0, upgrades: { ...state.upgradeLevels } }),
+  snapshot: () => ({ mode: state.mode, elapsed: state.elapsed, enemies: state.enemies.length, bullets: state.bullets.length, hostileBullets: state.hostileBullets.length, pickups: state.pickups.length, particles: state.particles.length, kills: state.kills, level: state.level, hp: state.hp, bossSpawned: state.bossSpawned, bossHp: state.boss?.hp || 0, infiniteRayHits: state.infiniteRayHits, cooldowns: { ...state.cooldowns }, upgrades: { ...state.upgradeLevels } }),
   start: startRun,
   grantUpgrade(id, count = 1) { const upgrade = UPGRADE_MAP.get(id); if (!upgrade) return false; for (let index = 0; index < count; index += 1) { upgrade.apply(); if (upgrade.max < 90) state.upgradeLevels[id] = Math.min(upgrade.max, upgradeLevel(id) + 1); } updateArsenal(); syncHud(true); return true; },
   grantXp,
@@ -1742,8 +2376,16 @@ window.__bulletHeavenDebug = Object.freeze({
   triggerOverdrive,
   triggerElite,
   triggerNuke: () => triggerNuke(false),
+  triggerIronCurtain,
+  triggerTeslaStorm,
+  triggerSupplyDrop,
+  triggerFreeze,
   spawnBoss,
+  spawnEnemyAt(type, x, y, hp = 500) { const enemy = spawnEnemy(type || 'tank', { side: 0, margin: 0 }); if (!enemy) return null; enemy.x = Number(x); enemy.y = Number(y); enemy.hp = Number(hp); enemy.maxHp = Number(hp); enemy.speed = 0; return enemy.id; },
+  fireBulletAt(angle, options = {}) { const bullet = fireBullet(state.player.x, state.player.y, Number(angle) || 0, options); if (bullet) bullet.life = Math.min(bullet.life, 0.02); return Boolean(bullet); },
+  enemyState(id) { const enemy = state.enemies.find((item) => item.id === id); return enemy ? { id: enemy.id, hp: enemy.hp, dead: enemy.dead, x: enemy.x, y: enemy.y } : null; },
   setHealth(value) { state.hp = clamp(Number(value) || 0, 0, state.maxHp); syncHud(); },
+  music: () => music.snapshot(),
 });
 
 resize();

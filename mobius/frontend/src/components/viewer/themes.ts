@@ -86,3 +86,7 @@ export const IMAGES_THEME: CardTheme = { dot: 'bg-teal-400', border: 'border-tea
 // 特例: codex 计划模式 (update_plan function_call) 卡片.
 // 用 violet, 与 Edit indigo / Bash cyan / Read sky 等工具主题都拉开, 让分步计划在长列表里一眼可扫.
 export const PLAN_THEME: CardTheme = { dot: 'bg-violet-400', border: 'border-violet-500/20', bg: 'bg-violet-500/[0.06]', text: 'text-violet-300', label: '计划' }
+
+// 特例: MCP 工具返回信封 ({"output":..., "wall_time_seconds":..., "original_token_count":...}) 的 user 卡片.
+// 套了 user 外壳但实质是工具返回, 标"返回"; 用 emerald 与用户 slate / 命令 cyan / 读取 sky 都拉开, 一眼可扫.
+export const MCP_RESULT_THEME: CardTheme = { dot: 'bg-emerald-400', border: 'border-emerald-500/20', bg: 'bg-emerald-500/[0.06]', text: 'text-emerald-300', label: '返回' }

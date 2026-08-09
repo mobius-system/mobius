@@ -417,16 +417,9 @@ function canReadContextItem(user: any, kind: string, item: any): boolean {
   if (parsed.scope === 'project') {
     const project = projectById(parsed.projectId || item.owner_id);
     if (!project) return false;
-    if (project.created_by === user.id) return true;
-    if (visibility === 'inherit') return canReadProject(user, project);
-    if (!canReadProject(user, project)) return false;
-    return allowedByVisibility(user, {
-      resourceType: kind,
-      resourceId: item.id,
-      ownerId: creatorId,
-      teamOwnerId: project.created_by,
-      visibility,
-    });
+    // 项目级 skill/memory 一律跟随项目: 能读项目(= 项目成员 / admin / owner)即可读,
+    // 不再单独设可见性 / 指定用户 (与项目成员制统一).
+    return canReadProject(user, project);
   }
   if (visibility === 'inherit') return false;
   return allowedByVisibility(user, {

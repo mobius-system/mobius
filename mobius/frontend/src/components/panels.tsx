@@ -6114,7 +6114,7 @@ function AdminTextRedactionPanel() {
   )
 }
 
-type AdminPanelTab = 'users' | 'runtime' | 'redaction' | 'settings' | 'assistant' | 'models' | 'extensions' | 'migration'
+export type AdminPanelTab = 'users' | 'runtime' | 'redaction' | 'settings' | 'assistant' | 'models' | 'extensions' | 'migration'
 
 const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[] = [
   { key: 'users', label: '用户管理', icon: <UsersIcon className="h-3.5 w-3.5" /> },
@@ -6127,8 +6127,9 @@ const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[]
   { key: 'migration', label: 'Skill与Memory管理', icon: <Package className="h-3.5 w-3.5" /> },
 ]
 
-export function AdminPanel({ onClose }: { onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<AdminPanelTab>('users')
+export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initialTab?: AdminPanelTab }) {
+  // 初次渲染时取 initialTab (外部 openAdminOverlay(tab) 传入, 通常用于「监控」按钮直接落在「运行监控」tab)
+  const [activeTab, setActiveTab] = useState<AdminPanelTab>(initialTab || 'users')
   const [data, setData] = useState<AdminTmuxPayload | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')

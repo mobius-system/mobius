@@ -2,7 +2,7 @@
   "name": "bullet-heaven",
   "display_name": "弹幕割草实验室",
   "description": "自由移动的俯视角高密度割草爽游：鼠标八向瞄准、WASD 移动、海量敌潮、武器叠加与夸张特效。",
-  "version": "0.1.2",
+  "version": "0.3.0",
   "icon": "favicon.svg",
   "project": {
     "sync": true

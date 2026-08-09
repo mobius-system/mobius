@@ -238,7 +238,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
                   )}
                 </div>
                 <div className="ml-auto flex flex-[0_1_auto] flex-wrap items-center justify-end gap-1">
-                  {m.can_manage && (
+                  {m.can_manage && scope !== 'project' && (
                     <button onClick={() => setAccessing(m)} title="设置可见性和指定用户"
                       className="h-7 w-7 inline-flex items-center justify-center rounded border transition-colors hover:bg-[var(--bg-hover)]"
                       style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>

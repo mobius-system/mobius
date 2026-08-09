@@ -8,9 +8,20 @@ import {
   NewProjectModal, DeleteProjectModal, PathPickerModal,
   NewResearchModal, RenameResearchModal,
 } from '../components/modals'
+import {
+  Boxes,
+  ClipboardList,
+  FlaskConical,
+  GitBranch,
+  ListTodo,
+  Package,
+  Settings,
+  Users,
+} from 'lucide-react'
 import { ProjectItemsPanel } from '../components/project-page/ProjectItemsPanel'
-import { ProjectSettingsPanel } from '../components/project-page/ProjectSettingsPanel'
+import { ProjectSettingsPanel, type SettingsPane } from '../components/project-page/ProjectSettingsPanel'
 import { ProjectSidebar } from '../components/project-page/ProjectSidebar'
+import type { OverflowTab } from '../components/project-page/ProjectOverflowTabs'
 import { ResizablePanel, useMobileNavBreakpoint, useIsMobile } from '../components/resizable-panel'
 import type { GitRepoDraft, IssueConfirmAction, ProjectCardDensity, ProjectFilter, ProjectListSection } from '../components/project-page/types'
 import {
@@ -105,7 +116,9 @@ export default function ProjectPage() {
 
   // 项目详情页内容密集 (左栏 + 多面板主区), 把移动端断点提到 1024px,
   // 让平板宽度也进入抽屉式侧栏 + 主区纵向堆叠, 排版更宽松美观.
-  useMobileNavBreakpoint(1024)
+  // 项目页改用「左侧导航边栏 + 右侧单栏」后不再内容密集, 窄屏阈值从 1024 下调到 768:
+  // 平板/窄窗口也能用新布局, 只有手机(<768) 才回落到抽屉模式.
+  useMobileNavBreakpoint(768)
   const isMobile = useIsMobile()
   // 移动端: 项目设置收进右侧抽屉, 主区以「新建 Issue / 列表」为主.
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -129,6 +142,35 @@ export default function ProjectPage() {
   }
   const [section, setSection] = useState<ProjectListSection>(sectionInit)
   useEffect(() => { try { localStorage.setItem(SectionKey, section) } catch {} }, [SectionKey, section])
+
+  // 设计师之眼布局: 「项目设置」tab 条 (元素2) 与 Issue/Research tab 条 (元素1) 外移到本页左侧边栏,
+  // 这里接管 settingsPane (受控). 键名与 ProjectSettingsPanel 内部 localStorage 完全一致, 保持兼容.
+  const SettingsPaneKey = `mobius:project:pane:${projectId || ''}`
+  const settingsPaneInit = (): SettingsPane => {
+    const v = typeof localStorage !== 'undefined' ? localStorage.getItem(SettingsPaneKey) : null
+    return v && (['settings', 'versions', 'architecture', 'todos', 'members', 'package', 'assistant'] as const).includes(v as SettingsPane)
+      ? v as SettingsPane
+      : 'settings'
+  }
+  const [settingsPane, setSettingsPane] = useState<SettingsPane>(settingsPaneInit)
+  // 切换项目时按该项目上次记忆的 settings tab 重新初始化 (原面板按 project.id 持久化).
+  useEffect(() => { setSettingsPane(settingsPaneInit()) /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [projectId])
+  // ProjectSettingsPanel 把内部 settingsTabs 上抛, 供左侧边栏渲染.
+  const [exposedSettingsTabs, setExposedSettingsTabs] = useState<OverflowTab[]>([])
+  // 右侧不再并排展示「项目设置」与「任务列表」, 改由左侧边栏选中项决定右侧显示哪一个面板.
+  const [rightView, setRightView] = useState<'items' | 'settings'>('items')
+
+  // 左侧导航按钮样式与用户主页统一 (图标 + 文案). settings tab 在此追加图标并改用更短的文案.
+  const navCls = (active: boolean) =>
+    `flex items-center gap-2 h-9 px-3 rounded-lg text-[13px] transition-colors ${active ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-hover)]'}`
+  const SETTINGS_NAV_META: Record<string, { label: string; icon: ReactNode }> = {
+    settings: { label: '项目设置', icon: <Settings className="w-4 h-4" strokeWidth={1.8} /> },
+    members: { label: '项目成员', icon: <Users className="w-4 h-4" strokeWidth={1.8} /> },
+    versions: { label: '版本追踪', icon: <GitBranch className="w-4 h-4" strokeWidth={1.8} /> },
+    architecture: { label: '系统剖析', icon: <Boxes className="w-4 h-4" strokeWidth={1.8} /> },
+    todos: { label: '项目待办', icon: <ClipboardList className="w-4 h-4" strokeWidth={1.8} /> },
+    package: { label: '打包下载', icon: <Package className="w-4 h-4" strokeWidth={1.8} /> },
+  }
   const densityInit = (): ProjectCardDensity => {
     // 默认固定为详情模式: 仅当用户显式存过「精简」时才回落 compact, 否则一律 detailed.
     try { return localStorage.getItem(PROJECT_CARD_DENSITY_KEY) === 'compact' ? 'compact' : 'detailed' } catch { return 'detailed' }
@@ -665,10 +707,15 @@ export default function ProjectPage() {
     </div>
   )
 
+  // 设计师之眼: 暂时隐藏原项目 issue 列表侧边栏 (元素3), 改由元素1+元素2 组成新侧边栏. 置 false 可还原.
+  const PROJECT_SIDEBAR_HIDDEN = true
+
   return (
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
       <TopNav />
       <div className="flex flex-1 min-h-0">
+        {/* 元素3 (原项目 issue 列表侧边栏) 暂时隐藏 (仅桌面端; 移动端仍保留抽屉). */}
+        {(!PROJECT_SIDEBAR_HIDDEN || isMobile) && (
         <ResizablePanel
           storageKey="mobius:ui:sidebar:project-issues"
           defaultWidth={288}
@@ -703,6 +750,49 @@ export default function ProjectPage() {
             onToggleStar={toggleIssueStar}
           />
         </ResizablePanel>
+        )}
+
+        {/* 设计师之眼: 元素2 (项目设置 tab) + 元素1 (Issue/Research tab) 组成新的可拖拽左侧边栏;
+            右侧不再并排两栏, 由左侧选中项决定右侧只显示哪一个面板. */}
+        {!isMobile && (
+          <ResizablePanel
+            storageKey="mobius:ui:sidebar:project-nav"
+            defaultWidth={184}
+            minWidth={160}
+            maxWidth={360}
+            side="left"
+            className="border-r flex flex-col"
+            style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+            <div className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto p-2">
+              <button type="button" onClick={() => { setRightView('items'); setSection('issues') }}
+                className={navCls(rightView === 'items' && section === 'issues')}
+                style={rightView === 'items' && section === 'issues' ? undefined : { color: 'var(--text-secondary)' }}
+                data-tour="project-issue-tab">
+                <ListTodo className="w-4 h-4" strokeWidth={1.8} /> 任务列表
+              </button>
+              <button type="button"
+                onClick={() => { setRightView('items'); setSection('researches') }}
+                disabled={!project.research_enabled}
+                className={`${navCls(rightView === 'items' && section === 'researches')} disabled:opacity-40 disabled:cursor-not-allowed`}
+                style={rightView === 'items' && section === 'researches' ? undefined : { color: 'var(--text-secondary)' }}>
+                <FlaskConical className="w-4 h-4" strokeWidth={1.8} /> 研究列表
+              </button>
+              <div className="mx-2 my-1 border-t" style={{ borderColor: 'var(--border-color)' }} />
+              {exposedSettingsTabs.map(t => {
+                const meta = SETTINGS_NAV_META[t.key] || { label: t.label, icon: null as ReactNode }
+                const active = rightView === 'settings' && !!t.active
+                return (
+                  <button key={t.key} type="button" disabled={t.disabled} title={t.title} data-tour={t.dataTour}
+                    onClick={() => { setRightView('settings'); setSettingsPane(t.key as SettingsPane) }}
+                    className={`${navCls(active)} disabled:opacity-40 disabled:cursor-not-allowed`}
+                    style={active ? undefined : { color: 'var(--text-secondary)' }}>
+                    {meta.icon}{meta.label}
+                  </button>
+                )
+              })}
+            </div>
+          </ResizablePanel>
+        )}
 
         <main className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`} style={{ background: 'var(--bg-secondary)' }}>
           <div className={`max-w-7xl mx-auto p-3 sm:p-6 ${isMobile ? '' : 'h-full min-h-0'}`}>
@@ -758,6 +848,10 @@ export default function ProjectPage() {
                   onDeleteProject={() => setShowDelete(true)}
                   onOpenPathPicker={() => setPickerOpen(true)}
                   onArchitectureSessionCreated={handleArchitectureSessionCreated}
+                  controlledActivePane={settingsPane}
+                  onSelectPane={setSettingsPane}
+                  onExposeTabs={setExposedSettingsTabs}
+                  hideHeaderTabs={!isMobile}
                 />
               )
               const itemsPanel = (
@@ -816,9 +910,10 @@ export default function ProjectPage() {
                   </MobileSettingsDrawer>
                 </>
               ) : (
-                <div className="flex h-full min-h-0 items-stretch gap-6">
-                  {settingsPanel}
-                  {itemsPanel}
+                <div className="h-full min-h-0">
+                  {/* 右侧不再并排两栏: 左侧选中项决定只显示哪一个面板; 两者始终挂载以保留各自状态/滚动. */}
+                  <div className={rightView === 'items' ? 'h-full min-h-0' : 'hidden'}>{itemsPanel}</div>
+                  <div className={rightView === 'settings' ? 'h-full min-h-0' : 'hidden'}>{settingsPanel}</div>
                 </div>
               )
             })()}

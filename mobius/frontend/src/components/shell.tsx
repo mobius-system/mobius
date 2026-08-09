@@ -6,7 +6,7 @@ import { GlobalCreateMenu, GlobalCreateRoot, type CreateKind } from './global-cr
 import { SearchModal } from './search-modal'
 import { AimuxStatusBadge } from './aimux-status-badge'
 import { ProjectPathBindGate } from './project-path-bind-gate'
-import { AdminPanel } from './panels'
+import { AdminPanel, type AdminPanelTab } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
@@ -1034,7 +1034,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                   aria-label="切换项目"
                   aria-haspopup="menu"
                   aria-expanded={openSwitcher === 'project'}
-                  className="ml-0.5 inline-flex h-6 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]"
+                  className="ml-0.5 inline-flex h-6 w-4 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]"
                   style={{ color: 'var(--text-muted)' }}>
                   <ChevronDown className={`h-3 w-3 transition-transform ${openSwitcher === 'project' ? 'rotate-180' : ''}`} />
                 </button>
@@ -1510,7 +1510,12 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 type OverlayKind = 'admin' | null
 
 // 全局打开 overlay 的函数 (供引导系统等外部触发, 如「重温管理中心」按钮先打开 overlay 再启动引导).
-window.openAdminOverlay = () => {
+// 可选 tab: 传入即直接落到该 tab (例如「监控」按钮传 'runtime' = 运行监控), 不传则用管理中心默认 tab.
+// 使用 pending 模式: OverlayPanels 在 useEffect 中赋值 _setOverlay 之前若被调用, 请求会留在 _pendingAdminTab
+// 里, 下次 OverlayPanels 挂载 AdminPanel 时读取并清空, 避免「点按钮 overlay 没反应 / 落错 tab」.
+let _pendingAdminTab: AdminPanelTab | null = null
+window.openAdminOverlay = (tab?: AdminPanelTab) => {
+  _pendingAdminTab = tab ?? null
   _setOverlay?.('admin')
   window.dispatchEvent(new CustomEvent('imac:admin-overlay-opened'))
 }
@@ -1524,9 +1529,12 @@ function OverlayPanels() {
     return () => { _setOverlay = null }
   }, [])
   if (!overlay) return null
+  // 取一次 pending tab 后立即清空, 避免下次无参 openAdminOverlay 时落错 tab.
+  const initialTab = _pendingAdminTab
+  _pendingAdminTab = null
   return (
     <div className="fixed inset-0 z-40 flex" style={{ background: 'var(--bg-secondary)' }}>
-      {overlay === 'admin' && <AdminPanel onClose={() => setOverlay(null)} />}
+      {overlay === 'admin' && <AdminPanel onClose={() => setOverlay(null)} initialTab={initialTab ?? undefined} />}
     </div>
   )
 }

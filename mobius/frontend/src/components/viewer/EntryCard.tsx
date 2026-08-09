@@ -30,6 +30,7 @@ import {
   ASSISTANT_RESPONSE_KEYWORD_THEME,
   BLACKBOARD_THEME,
   PLAN_THEME,
+  MCP_RESULT_THEME,
 } from './themes'
 import { formatTs } from './utils'
 import {
@@ -43,6 +44,7 @@ import {
   functionOutputTextBody,
   isFunctionCallOutputPayload,
   extractPlanCard,
+  extractMcpToolResult,
 } from './entry-extract'
 import {
   isEditToolUse,
@@ -202,6 +204,10 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   const localCommandParts = useMemo(() => extractLocalCommandParts(renderEntry), [renderEntry])
   // 计划模式 (codex update_plan / Claude task_reminder): 展开时走专属计划卡片, 不铺原始 JSON 字段.
   const planUpdate = useMemo(() => extractPlanCard(renderEntry), [renderEntry])
+  // MCP 工具返回信封 ({"output":..., "wall_time_seconds":..., "original_token_count":...}):
+  // 仅用于主题识别 (emerald "返回"). 渲染走精简模式 - header-summary 把 output 包成 markdown 代码块,
+  // 卡片展开时由 compact 分支 (CompactMarkdown) 渲染, 不铺原始 JSON 字段.
+  const mcpResult = useMemo(() => extractMcpToolResult(renderEntry), [renderEntry])
   // canCode 覆盖代码视图: Edit diff / Write 文件预览 / Bash 命令卡片 / Read 文件读取卡片.
   // 字段模式仍是入口的兜底, 让用户随时切回看原始 JSON.
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
@@ -240,6 +246,8 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
     ? CONTEXT_COMPACTED_THEME
     : canPlan
     ? PLAN_THEME
+    : mcpResult
+    ? MCP_RESULT_THEME
     : (TYPE_THEME[type] || DEFAULT_THEME)
   const ts = entry?.timestamp ? formatTs(entry.timestamp) : null
   // 仅 summary 被截断时才提供"精简模式"入口; 没截断的卡片只有字段模式

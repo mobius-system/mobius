@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { extCall } from '/extension/_sdk/ext.js';
-import { createToyVisualSystem } from './visual-system.js?v=0.13.0';
-import { createToyAudioSystem } from './audio-system.js?v=0.13.0';
+import { createToyVisualSystem } from './visual-system.js?v=0.15.0';
+import { createToyAudioSystem } from './audio-system.js?v=0.15.0';
+import { createMusicEngine } from './music-engine.js?v=0.15.0';
 
 const WORLD = Object.freeze({
   width: 20,
@@ -333,6 +335,14 @@ const els = {
   upgradeCountdown: document.getElementById('upgradeCountdown'),
   upgradeOptions: document.getElementById('upgradeOptions'),
   pauseOverlay: document.getElementById('pauseOverlay'),
+  pauseRunLabel: document.getElementById('pauseRunLabel'),
+  pauseScoreValue: document.getElementById('pauseScoreValue'),
+  pauseKillsValue: document.getElementById('pauseKillsValue'),
+  pauseBaseValue: document.getElementById('pauseBaseValue'),
+  pauseLevelBtn: document.getElementById('pauseLevelBtn'),
+  pauseThemeBtn: document.getElementById('pauseThemeBtn'),
+  pauseThemeHint: document.getElementById('pauseThemeHint'),
+  pauseExitBtn: document.getElementById('pauseExitBtn'),
   resumeBtn: document.getElementById('resumeBtn'),
   resumeButtonLabel: document.getElementById('resumeButtonLabel'),
   restartBtn: document.getElementById('restartBtn'),
@@ -355,6 +365,7 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const lerp = (a, b, t) => a + (b - a) * t;
 const formatScore = (value) => Math.max(0, Math.round(value)).toLocaleString('zh-CN');
 const cssHex = (value) => `#${Number(value).toString(16).padStart(6, '0')}`;
+const roundedBox = (width, height, depth, radius = 0.06, segments = 4) => new RoundedBoxGeometry(width, height, depth, segments, radius);
 
 function mulberry32(seed) {
   let value = seed >>> 0;
@@ -379,11 +390,54 @@ function ensureAudio() {
   return audioSystem.unlock();
 }
 
+// Procedural BGM: layered synthwave/industrial loop scheduled on the audio
+// clock, riding the dedicated music bus inside the audio system.
+const music = createMusicEngine({
+  getContext: () => audioSystem.musicOutput()?.context || null,
+  getOutput: () => audioSystem.musicOutput(),
+  masterVolume: 0.4,
+});
+let musicMode = 'off'; // off | menu | battle | boss
+
+function musicThemeName() {
+  return state.themeId === 'deadline' ? 'chiptune' : 'industrial';
+}
+
+function musicIntensity() {
+  const threat = Math.min(1, enemies.length / 260);
+  const timeRamp = Math.min(1, state.elapsed / 70) * 0.3;
+  const overdrive = state.elapsed < state.overdriveUntil ? 0.14 : 0;
+  return clamp(0.34 + threat * 0.45 + timeRamp + overdrive, 0, 1);
+}
+
+function syncMusic() {
+  if (muted) return;
+  if (state.mode === 'playing') {
+    const boss = state.bossAlive;
+    const target = boss ? 'boss' : 'battle';
+    if (musicMode !== target) {
+      musicMode = target;
+      music.start({ theme: musicThemeName(), intensity: musicIntensity(), boss });
+    }
+    music.setBossMode(boss);
+    music.setIntensity(musicIntensity());
+  } else if (state.mode === 'menu' || state.mode === 'result') {
+    if (musicMode !== 'menu') {
+      musicMode = 'menu';
+      music.start({ theme: musicThemeName(), intensity: 0.16, boss: false });
+    }
+    music.setBossMode(false);
+    music.setIntensity(0.16);
+  } else {
+    music.setIntensity(0.12);
+  }
+}
+
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
+renderer.toneMappingExposure = 1.06;
 els.stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -400,14 +454,14 @@ scene.add(new THREE.HemisphereLight(0xaeefff, 0x102238, 2.6));
 const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
 keyLight.position.set(-7, 17, 6);
 scene.add(keyLight);
-const baseLight = new THREE.PointLight(0x4fffd2, 18, 22, 2);
+const baseLight = new THREE.PointLight(0x4fffd2, 11, 22, 2);
 baseLight.position.set(0, 3, 10);
 scene.add(baseLight);
 
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
 
-const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x102638, roughness: 0.82, metalness: 0.16 });
+const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x102638, roughness: 0.82, metalness: 0.16, emissive: 0x0c3a34, emissiveIntensity: 0.12 });
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(WORLD.width + 1, WORLD.depth + 2), groundMaterial);
 ground.rotation.x = -Math.PI / 2;
 ground.position.set(0, -0.11, 0);
@@ -543,7 +597,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
     side: THREE.DoubleSide,
     toneMapped: false,
   });
-  const heroHalo = new THREE.Mesh(new THREE.RingGeometry(0.72, 1.28, 32), heroHaloMaterial);
+  const heroHalo = new THREE.Mesh(new THREE.RingGeometry(0.72, 1.28, 64), heroHaloMaterial);
   heroHalo.rotation.x = -Math.PI / 2;
   heroHalo.position.y = 0.08;
   turret.add(heroHalo);
@@ -554,24 +608,24 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x173447, metalness: 0.82, roughness: 0.25 });
   const trimMaterial = new THREE.MeshStandardMaterial({ color: 0x6b8fa0, metalness: 0.9, roughness: 0.14 });
   const pedestal = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.66, 0.96, 0.66, 10),
+    new THREE.CylinderGeometry(0.66, 0.96, 0.66, 32, 2),
     baseMaterial,
   );
   pedestal.position.y = 0.34;
   cannonModel.add(pedestal);
-  const basePlate = new THREE.Mesh(new THREE.CylinderGeometry(0.98, 1.06, 0.16, 12), trimMaterial);
+  const basePlate = new THREE.Mesh(new THREE.CylinderGeometry(0.98, 1.06, 0.16, 40, 2), trimMaterial);
   basePlate.position.y = 0.08;
   cannonModel.add(basePlate);
   const rateRings = [0, 1].map((ringIndex) => {
     const material = new THREE.MeshBasicMaterial({ color: ringIndex ? 0xffd84f : 0x4fffd2, transparent: true, opacity: 0.56, toneMapped: false });
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.74 + ringIndex * 0.13, 0.035, 6, 28), material);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.74 + ringIndex * 0.13, 0.035, 12, 64), material);
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.7 + ringIndex * 0.08;
     cannonModel.add(ring);
     return ring;
   });
   for (let legIndex = 0; legIndex < 4; legIndex += 1) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.18, 0.68), baseMaterial);
+    const leg = new THREE.Mesh(roundedBox(0.25, 0.18, 0.68, 0.055, 3), baseMaterial);
     leg.position.set(Math.sin(legIndex * Math.PI / 2) * 0.64, 0.14, Math.cos(legIndex * Math.PI / 2) * 0.64);
     leg.rotation.y = legIndex * Math.PI / 2;
     cannonModel.add(leg);
@@ -584,16 +638,16 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
     metalness: 0.62,
     roughness: 0.2,
     emissive: 0x164f4a,
-    emissiveIntensity: 0.82,
+    emissiveIntensity: 0.48,
   });
-  const housing = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.66, 0.98), housingMaterial);
+  const housing = new THREE.Mesh(roundedBox(1.08, 0.66, 0.98, 0.12, 5), housingMaterial);
   housing.position.z = -0.08;
   pivot.add(housing);
-  const rearArmor = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.42, 0.22), baseMaterial);
+  const rearArmor = new THREE.Mesh(roundedBox(1.28, 0.42, 0.22, 0.07, 4), baseMaterial);
   rearArmor.position.set(0, 0.02, 0.52);
   pivot.add(rearArmor);
   const armorWings = [-1, 1].map((side) => {
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.54, 0.72), trimMaterial);
+    const wing = new THREE.Mesh(roundedBox(0.18, 0.54, 0.72, 0.055, 4), trimMaterial);
     wing.position.set(side * 0.63, -0.02, -0.08);
     wing.rotation.z = side * -0.16;
     pivot.add(wing);
@@ -602,11 +656,11 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   const coreMaterial = new THREE.MeshStandardMaterial({
     color: 0xffffff,
     emissive: 0x4fffd2,
-    emissiveIntensity: 2.2,
+    emissiveIntensity: 1.15,
     metalness: 0.08,
     roughness: 0.12,
   });
-  const energyCore = new THREE.Mesh(new THREE.IcosahedronGeometry(0.25, 1), coreMaterial);
+  const energyCore = new THREE.Mesh(new THREE.IcosahedronGeometry(0.25, 2), coreMaterial);
   energyCore.position.set(0, 0.03, 0.56);
   pivot.add(energyCore);
   const barrelMaterial = new THREE.MeshStandardMaterial({
@@ -614,21 +668,45 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
     metalness: 0.84,
     roughness: 0.16,
     emissive: 0x4fffd2,
-    emissiveIntensity: 0.35,
+    emissiveIntensity: 0.2,
   });
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 2.2, 10), barrelMaterial);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 2.2, 32, 3), barrelMaterial);
   barrel.rotation.x = Math.PI / 2;
   barrel.position.z = -1.38;
   pivot.add(barrel);
-  const barrelJacket = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.29, 0.72, 10, 1, true), baseMaterial);
+  const barrelJacket = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.29, 0.72, 32, 2, true), baseMaterial);
   barrelJacket.rotation.x = Math.PI / 2;
   barrelJacket.position.z = -0.72;
   pivot.add(barrelJacket);
-  const muzzleRing = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.05, 8, 18), trimMaterial);
+  const muzzleRing = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.05, 12, 48), trimMaterial);
   muzzleRing.position.z = -2.49;
   pivot.add(muzzleRing);
+  // 近景也能辨认的炮身分段、散热鳍和铆钉，避免整门炮只剩几块低模几何。
+  [-0.98, -1.42, -1.88].forEach((z, sleeveIndex) => {
+    const sleeve = new THREE.Mesh(
+      new THREE.TorusGeometry(0.17 + sleeveIndex * 0.008, 0.026, 10, 40),
+      sleeveIndex === 1 ? housingMaterial : trimMaterial,
+    );
+    sleeve.position.z = z;
+    pivot.add(sleeve);
+  });
+  [-1, 1].forEach((side) => {
+    for (let ventIndex = 0; ventIndex < 3; ventIndex += 1) {
+      const vent = new THREE.Mesh(roundedBox(0.045, 0.12, 0.34, 0.014, 2), baseMaterial);
+      vent.position.set(side * 0.553, 0.14 - ventIndex * 0.14, -0.12);
+      vent.rotation.z = side * 0.05;
+      pivot.add(vent);
+    }
+  });
+  const rivetGeometry = new THREE.SphereGeometry(0.042, 12, 8);
+  for (let rivetIndex = 0; rivetIndex < 8; rivetIndex += 1) {
+    const angle = rivetIndex / 8 * Math.PI * 2;
+    const rivet = new THREE.Mesh(rivetGeometry, trimMaterial);
+    rivet.position.set(Math.cos(angle) * 0.78, 0.63, Math.sin(angle) * 0.78);
+    cannonModel.add(rivet);
+  }
   const sideBarrels = [-1, 1].map((side) => {
-    const sideBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.085, 1.72, 8), barrelMaterial);
+    const sideBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.085, 1.72, 20, 2), barrelMaterial);
     sideBarrel.rotation.x = Math.PI / 2;
     sideBarrel.position.set(side * 0.27, -0.09, -1.25);
     sideBarrel.visible = false;
@@ -636,7 +714,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
     return sideBarrel;
   });
   const ammoDrums = [-1, 1].map((side) => {
-    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.3, 12), baseMaterial);
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.3, 28, 2), baseMaterial);
     drum.rotation.z = Math.PI / 2;
     drum.position.set(side * 0.69, -0.08, 0.2);
     pivot.add(drum);
@@ -644,7 +722,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   });
   const blastPods = [-1, 1].map((side) => {
     const podMaterial = new THREE.MeshStandardMaterial({ color: 0xff9f43, emissive: 0x9b3510, emissiveIntensity: 1.1, metalness: 0.5, roughness: 0.24 });
-    const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.52, 8), podMaterial);
+    const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.52, 20, 2), podMaterial);
     pod.position.set(side * 0.72, 0.3, -0.16);
     pod.rotation.z = side * 0.18;
     pod.visible = false;
@@ -653,7 +731,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   });
   const chainCoils = [-1, 1].map((side) => {
     const coil = new THREE.Mesh(
-      new THREE.TorusGeometry(0.19, 0.035, 6, 18),
+      new THREE.TorusGeometry(0.19, 0.035, 10, 40),
       new THREE.MeshBasicMaterial({ color: 0xb37cff, transparent: true, opacity: 0.9, toneMapped: false }),
     );
     coil.rotation.y = Math.PI / 2;
@@ -674,7 +752,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
     return fin;
   });
   const critSight = new THREE.Mesh(
-    new THREE.TorusGeometry(0.18, 0.025, 6, 20),
+    new THREE.TorusGeometry(0.18, 0.025, 10, 40),
     new THREE.MeshBasicMaterial({ color: 0xffd84f, transparent: true, opacity: 0.92, toneMapped: false }),
   );
   critSight.position.set(0, 0.48, -0.72);
@@ -684,9 +762,9 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   zombieMuzzle.position.set(0, 0, -2.58);
   const muzzleCoreMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
   const muzzleGlowMaterial = new THREE.MeshBasicMaterial({ color: 0xffd84f, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-  zombieMuzzle.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), muzzleCoreMaterial));
+  zombieMuzzle.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 18, 12), muzzleCoreMaterial));
   for (let rayIndex = 0; rayIndex < 4; rayIndex += 1) {
-    const ray = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.72, 5), muzzleGlowMaterial);
+    const ray = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.72, 12), muzzleGlowMaterial);
     ray.rotation.x = Math.PI / 2;
     ray.rotation.z = rayIndex * Math.PI / 2;
     ray.position.z = -0.26;
@@ -700,7 +778,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
     if (stage === 1) {
       [-1, 1].forEach((side) => {
         const capacitor = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.16, 0.2, 0.72, 8),
+          new THREE.CylinderGeometry(0.16, 0.2, 0.72, 20, 2),
           new THREE.MeshStandardMaterial({ color: 0x244f67, emissive: 0x4fffd2, emissiveIntensity: 0.45, metalness: 0.68, roughness: 0.25 }),
         );
         capacitor.position.set(side * 0.72, 1.3, 0.3);
@@ -709,7 +787,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
     } else if (stage === 2) {
       [-1, 1].forEach((side) => {
         const shoulderRail = new THREE.Mesh(
-          new THREE.BoxGeometry(0.22, 0.2, 1.48),
+          roundedBox(0.22, 0.2, 1.48, 0.045, 3),
           new THREE.MeshStandardMaterial({ color: 0x8dacb7, emissive: 0xff9f43, emissiveIntensity: 0.28, metalness: 0.86, roughness: 0.16 }),
         );
         shoulderRail.position.set(side * 0.48, 1.72, -0.4);
@@ -718,14 +796,14 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
       });
     } else {
       const crown = new THREE.Mesh(
-        new THREE.TorusGeometry(0.72, 0.07, 8, 30),
+        new THREE.TorusGeometry(0.72, 0.07, 12, 56),
         new THREE.MeshBasicMaterial({ color: 0xffd84f, transparent: true, opacity: 0.52, blending: THREE.AdditiveBlending, toneMapped: false }),
       );
       crown.rotation.x = Math.PI / 2;
       crown.position.y = 1.82;
       group.add(crown);
       for (let spikeIndex = 0; spikeIndex < 4; spikeIndex += 1) {
-        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.58, 5), new THREE.MeshBasicMaterial({ color: 0x4fffd2, toneMapped: false }));
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.58, 12), new THREE.MeshBasicMaterial({ color: 0x4fffd2, toneMapped: false }));
         const angle = spikeIndex * Math.PI / 2;
         spike.position.set(Math.cos(angle) * 0.84, 1.76, Math.sin(angle) * 0.84);
         spike.rotation.z = Math.cos(angle) * 0.34;
@@ -742,26 +820,26 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   const workbenchModel = new THREE.Group();
   const chassisMaterial = new THREE.MeshStandardMaterial({ color: 0x172f5d, metalness: 0.68, roughness: 0.28, emissive: 0x071a42, emissiveIntensity: 0.48 });
   const deskMaterial = new THREE.MeshStandardMaterial({ color: 0x2b68a3, metalness: 0.44, roughness: 0.3, emissive: 0x0b356c, emissiveIntensity: 0.62 });
-  const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.18, 1.05), chassisMaterial);
+  const chassis = new THREE.Mesh(roundedBox(1.45, 0.18, 1.05, 0.09, 5), chassisMaterial);
   chassis.position.y = 0.32;
   workbenchModel.add(chassis);
   [-1, 1].forEach((side) => [-0.32, 0.36].forEach((z) => {
-    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.13, 12), new THREE.MeshStandardMaterial({ color: 0x09101c, metalness: 0.5, roughness: 0.5 }));
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.13, 24, 2), new THREE.MeshStandardMaterial({ color: 0x09101c, metalness: 0.5, roughness: 0.5 }));
     wheel.rotation.z = Math.PI / 2;
     wheel.position.set(side * 0.68, 0.22, z);
     workbenchModel.add(wheel);
   }));
   const desk = new THREE.Mesh(
-    new THREE.BoxGeometry(1.38, 0.16, 0.88),
+    roundedBox(1.38, 0.16, 0.88, 0.07, 4),
     deskMaterial,
   );
   desk.position.y = 0.94;
   workbenchModel.add(desk);
   const screenPivot = new THREE.Group();
   screenPivot.position.set(0, 1.15, -0.16);
-  const screenMaterial = new THREE.MeshStandardMaterial({ color: 0x79d8ff, emissive: 0x2388d4, emissiveIntensity: 1.4, metalness: 0.18, roughness: 0.18 });
+  const screenMaterial = new THREE.MeshStandardMaterial({ color: 0x79d8ff, emissive: 0x2388d4, emissiveIntensity: 0.85, metalness: 0.18, roughness: 0.22 });
   const screen = new THREE.Mesh(
-    new THREE.BoxGeometry(0.78, 0.52, 0.09),
+    roundedBox(0.78, 0.52, 0.09, 0.055, 4),
     screenMaterial,
   );
   screenPivot.add(screen);
@@ -782,25 +860,25 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
     const sidePivot = new THREE.Group();
     sidePivot.position.set(side * 0.58, 1.22, -0.1);
     sidePivot.rotation.y = side * -0.32;
-    const sideScreen = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.35, 0.07), screenMaterial.clone());
+    const sideScreen = new THREE.Mesh(roundedBox(0.48, 0.35, 0.07, 0.04, 4), screenMaterial.clone());
     sidePivot.add(sideScreen);
     sidePivot.visible = false;
     workbenchModel.add(sidePivot);
     return sidePivot;
   });
   const keyboard = new THREE.Mesh(
-    new THREE.BoxGeometry(0.58, 0.055, 0.22),
+    roundedBox(0.58, 0.055, 0.22, 0.022, 3),
     new THREE.MeshStandardMaterial({ color: 0xe9f4ff, emissive: 0x4ca9ff, emissiveIntensity: 0.28, metalness: 0.2, roughness: 0.34 }),
   );
   keyboard.position.set(0.08, 1.04, 0.26);
   workbenchModel.add(keyboard);
-  const chair = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 0.15, 12), new THREE.MeshStandardMaterial({ color: 0xd66bff, metalness: 0.28, roughness: 0.42 }));
+  const chair = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 0.15, 28, 2), new THREE.MeshStandardMaterial({ color: 0xd66bff, metalness: 0.28, roughness: 0.42 }));
   chair.position.set(0, 0.45, 0.42);
   workbenchModel.add(chair);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 10), new THREE.MeshStandardMaterial({ color: 0xffc59e, roughness: 0.66 }));
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 24, 18), new THREE.MeshStandardMaterial({ color: 0xffc59e, roughness: 0.66 }));
   head.position.set(0, 1.45, 0.34);
   workbenchModel.add(head);
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.24), new THREE.MeshStandardMaterial({ color: 0x45f0d0, emissive: 0x116e71, emissiveIntensity: 0.4, roughness: 0.56 }));
+  const torso = new THREE.Mesh(roundedBox(0.34, 0.42, 0.24, 0.06, 4), new THREE.MeshStandardMaterial({ color: 0x45f0d0, emissive: 0x116e71, emissiveIntensity: 0.4, roughness: 0.56 }));
   torso.position.set(0, 1.12, 0.34);
   workbenchModel.add(torso);
   const armMaterial = new THREE.MeshStandardMaterial({ color: 0xffc59e, roughness: 0.66 });
@@ -812,17 +890,17 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   rightArm.position.x = 0.23;
   rightArm.rotation.z = 0.65;
   workbenchModel.add(rightArm);
-  const coffee = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.18, 10), new THREE.MeshStandardMaterial({ color: 0xffca5c, emissive: 0x7e4c14, emissiveIntensity: 0.45 }));
+  const coffee = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.18, 24, 2), new THREE.MeshStandardMaterial({ color: 0xffca5c, emissive: 0x7e4c14, emissiveIntensity: 0.45 }));
   coffee.position.set(0.47, 1.12, 0.2);
   workbenchModel.add(coffee);
   const coffeeTank = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.14, 0.18, 0.52, 10),
+    new THREE.CylinderGeometry(0.14, 0.18, 0.52, 24, 2),
     new THREE.MeshStandardMaterial({ color: 0xffca5c, emissive: 0xff8a2b, emissiveIntensity: 1.1, metalness: 0.35, roughness: 0.3 }),
   );
   coffeeTank.position.set(0.61, 0.72, 0.15);
   coffeeTank.visible = false;
   workbenchModel.add(coffeeTank);
-  const printer = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.32, 0.46), new THREE.MeshStandardMaterial({ color: 0xf1f6ff, emissive: 0x4679a8, emissiveIntensity: 0.32, metalness: 0.24, roughness: 0.28 }));
+  const printer = new THREE.Mesh(roundedBox(0.72, 0.32, 0.46, 0.065, 4), new THREE.MeshStandardMaterial({ color: 0xf1f6ff, emissive: 0x4679a8, emissiveIntensity: 0.32, metalness: 0.24, roughness: 0.28 }));
   printer.position.set(0, 0.72, -0.58);
   workbenchModel.add(printer);
   const printerSlot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.055, 0.08), new THREE.MeshBasicMaterial({ color: 0xff526a, toneMapped: false }));
@@ -838,16 +916,16 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   deadlineMuzzle.add(stampFlash);
   deadlineMuzzle.visible = false;
   workbenchModel.add(deadlineMuzzle);
-  const sirenMaterial = new THREE.MeshStandardMaterial({ color: 0xff526a, emissive: 0xff1744, emissiveIntensity: 1.8, transparent: true, opacity: 0.9 });
-  const siren = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), sirenMaterial);
+  const sirenMaterial = new THREE.MeshStandardMaterial({ color: 0xff526a, emissive: 0xff1744, emissiveIntensity: 1.1, transparent: true, opacity: 0.9 });
+  const siren = new THREE.Mesh(new THREE.SphereGeometry(0.13, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2), sirenMaterial);
   siren.position.set(-0.52, 1.2, 0.2);
   workbenchModel.add(siren);
   const networkAntenna = new THREE.Group();
-  const antennaPole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.58, 7), new THREE.MeshStandardMaterial({ color: 0xb37cff, emissive: 0x6e3bd1, emissiveIntensity: 1.1 }));
+  const antennaPole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.58, 16), new THREE.MeshStandardMaterial({ color: 0xb37cff, emissive: 0x6e3bd1, emissiveIntensity: 1.1 }));
   antennaPole.position.y = 0.26;
   networkAntenna.add(antennaPole);
   [0.12, 0.22].forEach((radius, ringIndex) => {
-    const antennaRing = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.018, 5, 16), new THREE.MeshBasicMaterial({ color: 0xb37cff, toneMapped: false }));
+    const antennaRing = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.018, 8, 32), new THREE.MeshBasicMaterial({ color: 0xb37cff, toneMapped: false }));
     antennaRing.position.y = 0.54 + ringIndex * 0.08;
     networkAntenna.add(antennaRing);
   });
@@ -855,7 +933,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   networkAntenna.visible = false;
   workbenchModel.add(networkAntenna);
   const frostFan = new THREE.Group();
-  const fanRing = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 6, 20), new THREE.MeshBasicMaterial({ color: 0x69d8ff, toneMapped: false }));
+  const fanRing = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 10, 40), new THREE.MeshBasicMaterial({ color: 0x69d8ff, toneMapped: false }));
   frostFan.add(fanRing);
   for (let bladeIndex = 0; bladeIndex < 4; bladeIndex += 1) {
     const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.2, 0.025), new THREE.MeshBasicMaterial({ color: 0xc9f6ff, toneMapped: false }));
@@ -887,7 +965,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
     if (stage === 1) {
       [-1, 1].forEach((side) => {
         const rack = new THREE.Mesh(
-          new THREE.BoxGeometry(0.32, 0.78, 0.46),
+          roundedBox(0.32, 0.78, 0.46, 0.055, 4),
           new THREE.MeshStandardMaterial({ color: 0x18294e, emissive: side > 0 ? 0x45f0d0 : 0xff526a, emissiveIntensity: 0.42, metalness: 0.48, roughness: 0.3 }),
         );
         rack.position.set(side * 0.88, 0.72, 0.1);
@@ -895,7 +973,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
       });
     } else if (stage === 2) {
       const deployBar = new THREE.Mesh(
-        new THREE.BoxGeometry(1.65, 0.12, 0.12),
+        roundedBox(1.65, 0.12, 0.12, 0.035, 3),
         new THREE.MeshStandardMaterial({ color: 0x568db5, emissive: 0x2388d4, emissiveIntensity: 0.7, metalness: 0.55, roughness: 0.2 }),
       );
       deployBar.position.set(0, 1.92, -0.05);
@@ -907,7 +985,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
       });
     } else {
       const deployHalo = new THREE.Mesh(
-        new THREE.TorusGeometry(0.66, 0.055, 7, 30),
+        new THREE.TorusGeometry(0.66, 0.055, 12, 56),
         new THREE.MeshBasicMaterial({ color: 0x45f0d0, transparent: true, opacity: 0.54, blending: THREE.AdditiveBlending, toneMapped: false }),
       );
       deployHalo.rotation.x = Math.PI / 2;
@@ -993,7 +1071,7 @@ enemyPlaneGeometry.setAttribute(
 );
 
 function createEnemyMaterial(themeId, type, outline = false) {
-  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.13.0`);
+  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.14.0`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -1314,6 +1392,7 @@ const visualSystem = createToyVisualSystem({
   core,
   grid,
   turretGroups,
+  groundMaterial,
 });
 
 const upgrades = [
@@ -1603,7 +1682,7 @@ function renderLevelPicker() {
     const frame = ENEMY_ATLAS_FRAMES[role.visual] || 0;
     return `
       <div class="enemy-roster-item">
-        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.13.0');background-position:${frame * 25}% center"></i>
+        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.14.0');background-position:${frame * 25}% center"></i>
         <span>${role.name}</span>
       </div>
     `;
@@ -1688,8 +1767,8 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   coreMaterial.color.setHex(theme.palette.wall);
   core.visible = theme.id === 'zombie';
   baseLight.color.setHex(theme.palette.core);
-  projectileMaterial.color.setHex(theme.palette.projectile);
-  projectileAuraMaterial.color.setHex(theme.palette.core);
+  projectileMaterial.color.setHex(theme.palette.projectile).multiplyScalar(1.9);
+  projectileAuraMaterial.color.setHex(theme.palette.core).multiplyScalar(1.6);
   projectileTrailMaterial.color.setHex(theme.id === 'deadline' ? 0xff526a : 0xff9f43);
   focusLaneMaterial.color.setHex(theme.palette.core);
   focusRailMaterial.color.setHex(theme.palette.core);
@@ -1836,7 +1915,7 @@ function resetGame() {
   wallMaterial.emissive.setHex(theme.palette.wallEmissive);
   coreMaterial.emissive.setHex(theme.palette.core);
   baseLight.color.setHex(theme.palette.core);
-  baseLight.intensity = 18;
+  baseLight.intensity = 11;
   focusLaneGlow.position.x = 0;
   focusRail.position.x = 0;
   turretGroups.forEach((turret, index) => {
@@ -1878,15 +1957,26 @@ function showMenu() {
   setOverlay(els.pauseOverlay, false);
   setOverlay(els.upgradeOverlay, false);
   setOverlay(els.startOverlay, true);
+  els.pauseBtn.innerHTML = '<span>Ⅱ</span> 游戏菜单';
   renderLevelPicker();
   loadLeaderboard();
+}
+
+function updatePauseMenu() {
+  const theme = currentTheme();
+  els.pauseRunLabel.textContent = `${theme.title} · 第 ${state.level} 关 · ${currentLevel().title}`;
+  els.pauseScoreValue.textContent = formatScore(state.score);
+  els.pauseKillsValue.textContent = formatScore(state.kills);
+  els.pauseBaseValue.textContent = `${Math.max(0, Math.round(state.baseHp))}%`;
+  els.pauseThemeHint.textContent = theme.id === 'zombie' ? '切换到程序员模式' : '切换到尸潮模式';
 }
 
 function togglePause(forceResume = false) {
   if (state.mode === 'playing' && !forceResume) {
     state.mode = 'paused';
+    updatePauseMenu();
     setOverlay(els.pauseOverlay, true);
-    els.pauseBtn.textContent = '继续';
+    els.pauseBtn.innerHTML = '<span>▶</span> 继续游戏';
     updateHud(true);
     return;
   }
@@ -1894,9 +1984,16 @@ function togglePause(forceResume = false) {
     state.mode = 'playing';
     state.lastTs = performance.now();
     setOverlay(els.pauseOverlay, false);
-    els.pauseBtn.textContent = '暂停';
+    els.pauseBtn.innerHTML = '<span>Ⅱ</span> 游戏菜单';
     updateHud(true);
   }
+}
+
+function switchThemeFromPause() {
+  const nextTheme = state.themeId === 'zombie' ? 'deadline' : 'zombie';
+  showMenu();
+  applyTheme(nextTheme);
+  showToast(`已切换到「${currentTheme().title}」，请选择关卡后开始`, 2200);
 }
 
 function pickEnemyRole(forceRole = null) {
@@ -1991,6 +2088,8 @@ function summonBoss(manual = false) {
   }
   if (cleared) addFxText(0, 1.7, -2.8, `Boss 压场清算 ${cleared}`, theme.palette.secondary, 1.35, 15);
   state.shake = Math.max(state.shake, 0.85);
+  state.hitStopUntil = Math.max(state.hitStopUntil, performance.now() + 120);
+  visualSystem.pulseBloom(0.5);
   showToast(manual ? theme.director.manualBossToast : theme.director.bossToast, 2600);
   showOverdriveBanner(theme.director.bossBanner);
   sfx.boss();
@@ -2519,6 +2618,7 @@ function resolveChoiceGate(gate) {
   }
   const color = cssHex(gate.displayColor);
   addShockwave(gate.x, gate.z, color, 3.8);
+  visualSystem.pulseBloom(0.4);
   if (convoyCleared) addFxText(gate.x, 2.2, gate.z + 0.8, `选择冲击波 ×${convoyCleared}`, color, 1.2, 16);
   for (let index = 0; index < 26; index += 1) addFxParticle(gate.x, 1.3, gate.z, color, 1.2);
   for (const other of [...choiceGates]) {
@@ -2825,9 +2925,9 @@ function updateTurretUpgradeVisuals(turret, dt) {
   });
   const coreScale = 1 + damageTier * 0.055 + Math.sin(time * (overdrive ? 13 : 5)) * (overdrive ? 0.16 : 0.06) + upgradePulse * 0.18;
   turret.energyCore.scale.setScalar(coreScale);
-  turret.coreMaterial.emissiveIntensity = 1.8 + damageTier * 0.55 + (overdrive ? 3.4 : 0) + upgradePulse * 2.2;
-  turret.housingMaterial.emissiveIntensity = 0.72 + damageTier * 0.2 + (overdrive ? 1.5 : 0) + upgradePulse;
-  turret.barrelMaterial.emissiveIntensity = 0.28 + rateTier * 0.16 + (overdrive ? 1.1 : 0);
+  turret.coreMaterial.emissiveIntensity = 0.9 + damageTier * 0.25 + (overdrive ? 1.8 : 0) + upgradePulse * 1.1;
+  turret.housingMaterial.emissiveIntensity = 0.34 + damageTier * 0.1 + (overdrive ? 0.75 : 0) + upgradePulse * 0.5;
+  turret.barrelMaterial.emissiveIntensity = 0.14 + rateTier * 0.08 + (overdrive ? 0.58 : 0);
 
   turret.sideScreens.forEach((screen, screenIndex) => {
     screen.visible = state.levels.multi > screenIndex || damageTier >= screenIndex + 2;
@@ -2842,8 +2942,8 @@ function updateTurretUpgradeVisuals(turret, dt) {
   turret.approvalLamp.visible = state.levels.crit > 0 || state.bonuses.crit >= 0.05;
   turret.approvalLamp.rotation.y += dt * 2.6;
   turret.approvalLamp.scale.setScalar(1 + Math.sin(time * 7) * 0.12);
-  turret.screenMaterial.emissiveIntensity = 1.15 + damageTier * 0.3 + (overdrive ? 2.2 : 0) + upgradePulse * 1.2;
-  turret.sirenMaterial.emissiveIntensity = 1.2 + (overdrive ? 4 : 0) + upgradePulse * 2.4;
+  turret.screenMaterial.emissiveIntensity = 0.72 + damageTier * 0.14 + (overdrive ? 1.15 : 0) + upgradePulse * 0.55;
+  turret.sirenMaterial.emissiveIntensity = 0.78 + (overdrive ? 2.1 : 0) + upgradePulse * 1.1;
   turret.sirenMaterial.opacity = 0.68 + Math.sin(time * (overdrive ? 16 : 5)) * 0.22;
   turret.siren.scale.setScalar(1 + Math.sin(time * 9) * (overdrive ? 0.22 : 0.08));
 
@@ -2884,6 +2984,7 @@ function triggerTurretUpgradeEffect(effectId, label) {
     }
   });
   addFxText(WORLD.lanes[state.focusLane], 4.35, 8.65, theme.id === 'deadline' ? `热修部署 · ${label}` : `炮台进化 · ${label}`, color, 1.15, 16);
+  visualSystem.pulseBloom(0.32);
 }
 
 function updateTurrets(dt) {
@@ -3181,6 +3282,7 @@ function killEnemy(enemy, critical = false) {
     els.bossHud.classList.add('hidden');
     showOverdriveBanner(theme.victoryBanner);
     showToast(theme.victoryToast, 2600);
+    visualSystem.pulseBloom(0.9);
     sfx.victory();
   } else if (performance.now() - state.lastKillSoundAt > (elite ? 82 : 128)) {
     state.lastKillSoundAt = performance.now();
@@ -3606,6 +3708,11 @@ function endGame(victory) {
   els.finalRank.textContent = '提交中';
   els.newBestBadge.classList.add('hidden');
   setOverlay(els.resultOverlay, true);
+  if (!victory) {
+    // Defeat stinger: low descending thud with a long tail.
+    sfx.defeat();
+    triggerCombatFlash(0.4, '#ff3348');
+  }
   submitRun(victory);
 }
 
@@ -3780,6 +3887,7 @@ function frame(now) {
     updateGame(rawDt * state.speed * hitStopScale);
   }
   else if (state.mode === 'upgrade') updateUpgradeCountdown(now);
+  syncMusic();
   updateHud();
   renderScene(rawDt);
   requestAnimationFrame(frame);
@@ -3915,7 +4023,7 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
     const combat = currentCombatStats();
     const cinematicVisuals = visualSystem.snapshot();
     return {
-      version: '0.13.0',
+      version: '0.14.0',
       mode: state.mode,
       lastVictory: state.lastVictory,
       theme: state.themeId,
@@ -4017,6 +4125,8 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
 });
 
 els.startBtn.addEventListener('click', startGame);
+// First pointer interaction anywhere unlocks the menu ambience.
+window.addEventListener('pointerdown', () => { ensureAudio(); syncMusic(); }, { once: true });
 els.themeButtons.forEach((button) => button.addEventListener('click', () => {
   if (state.mode !== 'menu') return;
   applyTheme(button.dataset.theme);
@@ -4027,6 +4137,9 @@ els.menuBtn.addEventListener('click', showMenu);
 els.pauseBtn.addEventListener('click', () => togglePause());
 els.resumeBtn.addEventListener('click', () => togglePause(true));
 els.restartBtn.addEventListener('click', startGame);
+els.pauseLevelBtn.addEventListener('click', showMenu);
+els.pauseThemeBtn.addEventListener('click', switchThemeFromPause);
+els.pauseExitBtn.addEventListener('click', showMenu);
 els.frenzyBtn.addEventListener('click', triggerFrenzy);
 els.overdriveBtn.addEventListener('click', () => triggerOverdrive(false));
 els.bossBtn.addEventListener('click', () => summonBoss(true));
@@ -4044,8 +4157,13 @@ els.soundBtn.addEventListener('click', () => {
   localStorage.setItem('toy-toy-toy-muted', muted ? '1' : '0');
   els.soundBtn.textContent = muted ? '声音 OFF' : '声音 ON';
   audioSystem.setMuted(muted);
-  if (!muted) {
+  if (muted) {
+    music.stop();
+    musicMode = 'off';
+  } else {
     ensureAudio();
+    musicMode = 'off'; // force syncMusic to re-enter the right state
+    syncMusic();
     sfx.soundOn();
   }
 });
@@ -4079,6 +4197,7 @@ window.addEventListener('keydown', (event) => {
 
 window.addEventListener('resize', resize);
 window.addEventListener('pagehide', (event) => {
+  music.dispose();
   if (!event.persisted) audioSystem.dispose();
 });
 document.addEventListener('visibilitychange', () => {

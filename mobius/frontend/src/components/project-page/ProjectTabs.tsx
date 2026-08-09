@@ -4,6 +4,7 @@ type ProjectTabListProps = {
   children: ReactNode
   className?: string
   style?: CSSProperties
+  vertical?: boolean
 }
 
 type ProjectTabButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -12,15 +13,23 @@ type ProjectTabButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   inactiveColor?: string
 }
 
-export function ProjectTabList({ children, className = '', style }: ProjectTabListProps) {
+export function ProjectTabList({ children, className = '', style, vertical = false }: ProjectTabListProps) {
   return (
     <div
-      className={`flex items-center gap-1 rounded-lg border p-1 ${className}`}
-      style={{
-        borderColor: 'var(--border-color)',
-        background: 'var(--bg-primary)',
-        ...style,
-      }}
+      className={
+        vertical
+          ? `flex flex-col items-stretch gap-1 [&_button]:w-full [&_button]:justify-start ${className}`
+          : `flex items-center gap-1 rounded-lg border p-1 ${className}`
+      }
+      style={
+        vertical
+          ? style
+          : {
+              borderColor: 'var(--border-color)',
+              background: 'var(--bg-primary)',
+              ...style,
+            }
+      }
     >
       {children}
     </div>

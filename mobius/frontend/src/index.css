@@ -915,6 +915,33 @@ body::after {
 .btn-primary:active:not(:disabled) { transform: scale(0.97); }
 .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
 
+/* Project create actions mirror the compact action used by the research-agent sidebar. */
+.btn-primary:is([data-tour="project-new-research"], [data-tour="project-new-issue"], [data-tour="user-new-project"]) {
+  height: 1.5rem;
+  padding-inline: 0.5rem;
+  gap: 0.25rem;
+  border-radius: 0.375rem;
+  background: transparent;
+  font-size: 0.6875rem;
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+  transition-duration: 150ms;
+}
+.btn-primary[data-tour="project-new-research"] { color: #34d399; }
+.btn-primary:is([data-tour="project-new-issue"], [data-tour="user-new-project"]) { color: #60a5fa; }
+.btn-primary[data-tour="project-new-research"]:hover:not(:disabled) {
+  background: rgb(16 185 129 / 0.15);
+  opacity: 1;
+}
+.btn-primary:is([data-tour="project-new-issue"], [data-tour="user-new-project"]):hover:not(:disabled) {
+  background: rgb(59 130 246 / 0.15);
+  opacity: 1;
+}
+.btn-primary:is([data-tour="project-new-research"], [data-tour="project-new-issue"], [data-tour="user-new-project"]):active:not(:disabled) { transform: none; }
+.btn-primary:is([data-tour="project-new-research"], [data-tour="project-new-issue"], [data-tour="user-new-project"]) > svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
 /* ===== 全局: 所有按钮文本默认单行不换行 (系统级防"按钮文字分成两行") =====
    按钮文字几乎不应换两行 (换行几乎都是 bug, 视觉很丑). 这条全局规则一次覆盖全站 button,
    不必逐个加 whitespace-nowrap. 真正需要换行的极少数按钮可加 Tailwind `whitespace-normal`
