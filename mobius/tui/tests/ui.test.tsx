@@ -22,7 +22,7 @@ import { PrepScreen } from '../src/components/PrepScreen.js'
 import { Select, TextInput } from '../src/components/primitives.js'
 import { MobiusClient } from '../src/api.js'
 import { renderMarkdownLines } from '../src/markdown.js'
-import { viewsForEntry, toolLabel } from '../src/lib/entry-view.js'
+import { dedupeUserEntries, viewsForEntry, toolLabel } from '../src/lib/entry-view.js'
 import { SseConnection } from '../src/sse.js'
 import type { ReadyState } from '../src/components/PrepScreen.js'
 
@@ -261,6 +261,17 @@ function testMarkdownCodeRendering() {
 
   const unlabelled = renderMarkdownLines('```\necho $HOME\n```')
   ok(unlabelled.length === 1 && unlabelled[0].text === 'echo $HOME' && unlabelled[0].code, 'unlabelled code stays plain instead of being guessed as bash')
+}
+
+function testFirstUserEntryDedupe() {
+  console.log('\n[UI 4b] first user message event deduplication')
+  const framed = '上下文注入\n\n## 用户的问题\n\n你好，检查首条消息'
+  const entries = [
+    { type: 'user', uuid: 'framed-user', message: { role: 'user', content: framed } },
+    { type: 'event_msg', uuid: 'plain-user', payload: { type: 'user_message', message: '你好，检查首条消息' } },
+  ]
+  const deduped = dedupeUserEntries(entries as any)
+  ok(deduped.length === 1, 'framed and plain first-turn user events render once')
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -865,6 +876,7 @@ async function main() {
   await testChat()
   await testResumedWorkingStatus()
   testMarkdownCodeRendering()
+  testFirstUserEntryDedupe()
   await testPrepRender()
   await testSelectViewport()
   await testProjectPickerEscQuit()

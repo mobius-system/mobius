@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
-import { Cable, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorPlay, Play, RefreshCw, Upload } from 'lucide-react'
+import { Cable, Copy, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorPlay, Play, RefreshCw, Upload } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 
@@ -1032,13 +1032,15 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
 // 文件树内部拖拽移动用的 dataTransfer MIME: 与 OS 文件拖拽 (ChatArea 的 'Files') 区分, 互不干扰.
 export const TREE_FILE_DND_MIME = 'application/x-mobius-tree-file'
 
-export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile, vscodeReady, selectedAbsPath, fileActionLabel, onContextMenu, onBlankContextMenu, renamingRelPath, renderRenameInput, onMoveEntry }: {
+export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onOpenFile, onCopyPath, vscodeReady, selectedAbsPath, fileActionLabel, onContextMenu, onBlankContextMenu, renamingRelPath, renderRenameInput, onMoveEntry }: {
   relPath: string
   depth: number
   dirs: Record<string, DirState>
   expanded: Set<string>
   onToggleDir: (relPath: string) => void
   onOpenFile: (entry: Entry) => void
+  // 可选的路径复制动作。传入后会在每个文件/目录行右侧显示复制按钮。
+  onCopyPath?: (entry: Entry) => void
   vscodeReady: boolean
   // v2 代码对话: 当前选中文件的 abs_path, 命中时文件行高亮. 不传则不高亮.
   selectedAbsPath?: string
@@ -1144,23 +1146,38 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
                   {renderRenameInput?.({ entry, relPath: childPath, parentRelPath: relPath })}
                 </div>
               ) : (
-                <button
-                  data-tour={fileTourTarget(entry.name)}
-                  draggable={dndEnabled}
-                  onDragStart={(e) => onEntryDragStart(e, entry, childPath)}
-                  onDragOver={(e) => onDirDragOver(e, childPath)}
-                  onDragLeave={() => { if (dragOverRel === childPath) setDragOverRel(null) }}
-                  onDrop={(e) => onDirDrop(e, childPath)}
-                  onClick={() => onToggleDir(childPath)}
-                  onContextMenu={ctxHandler(entry, childPath)}
-                  className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[12px] ${dragOverRel === childPath ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
-                  style={{ paddingLeft: `${depth * 16 + 8}px`, color: 'var(--text-primary)', background: dragOverRel === childPath ? 'color-mix(in srgb, var(--accent-primary) 20%, transparent)' : undefined, outline: dragOverRel === childPath ? '1px solid color-mix(in srgb, var(--accent-primary) 55%, transparent)' : undefined, outlineOffset: '-1px' }}>
-                  <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                  <span className="flex-shrink-0">{fileIcon(entry.name, 'dir')}</span>
-                  <span className="truncate">{entry.name}</span>
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    data-tour={fileTourTarget(entry.name)}
+                    draggable={dndEnabled}
+                    onDragStart={(e) => onEntryDragStart(e, entry, childPath)}
+                    onDragOver={(e) => onDirDragOver(e, childPath)}
+                    onDragLeave={() => { if (dragOverRel === childPath) setDragOverRel(null) }}
+                    onDrop={(e) => onDirDrop(e, childPath)}
+                    onClick={() => onToggleDir(childPath)}
+                    onContextMenu={ctxHandler(entry, childPath)}
+                    className={`min-w-0 flex-1 text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[12px] ${dragOverRel === childPath ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
+                    style={{ paddingLeft: `${depth * 16 + 8}px`, color: 'var(--text-primary)', background: dragOverRel === childPath ? 'color-mix(in srgb, var(--accent-primary) 20%, transparent)' : undefined, outline: dragOverRel === childPath ? '1px solid color-mix(in srgb, var(--accent-primary) 55%, transparent)' : undefined, outlineOffset: '-1px' }}>
+                    <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span className="flex-shrink-0">{fileIcon(entry.name, 'dir')}</span>
+                    <span className="truncate">{entry.name}</span>
+                  </button>
+                  {onCopyPath && (
+                    <button
+                      type="button"
+                      onClick={(event) => { event.stopPropagation(); onCopyPath(entry) }}
+                      onContextMenu={ctxHandler(entry, childPath)}
+                      className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                      style={{ color: 'var(--text-muted)' }}
+                      title="复制路径"
+                      aria-label={`复制路径：${entry.abs_path}`}
+                    >
+                      <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />
+                    </button>
+                  )}
+                </div>
               )}
               {isOpen && (
                 <FileTreeLevel
@@ -1170,6 +1187,7 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
                   expanded={expanded}
                   onToggleDir={onToggleDir}
                   onOpenFile={onOpenFile}
+                  onCopyPath={onCopyPath}
                   vscodeReady={vscodeReady}
                   selectedAbsPath={selectedAbsPath}
                   fileActionLabel={fileActionLabel}
@@ -1198,23 +1216,37 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
           )
         }
         return (
-          <button
-            key={childPath}
-            data-tour={fileTourTarget(entry.name)}
-            draggable={dndEnabled}
-            onDragStart={(e) => onEntryDragStart(e, entry, childPath)}
-            onClick={() => vscodeReady && onOpenFile(entry)}
-            onContextMenu={ctxHandler(entry, childPath)}
-            disabled={!vscodeReady}
-            title={vscodeReady ? actionLabel : '未配置 VSCode Web'}
-            className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[12px] disabled:cursor-default ${selected ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
-            style={{ paddingLeft: `${depth * 16 + 8 + 14}px`, color: vscodeReady ? 'var(--text-primary)' : 'var(--text-muted)', background: selected ? 'color-mix(in srgb, var(--accent-primary) 16%, transparent)' : undefined }}>
-            <span className="flex-shrink-0">{fileIcon(entry.name, 'file')}</span>
-            <span className="truncate flex-1">{entry.name}</span>
-            {entry.size !== null && (
-              <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{formatSize(entry.size)}</span>
+          <div key={childPath} className="flex items-center gap-1">
+            <button
+              data-tour={fileTourTarget(entry.name)}
+              draggable={dndEnabled}
+              onDragStart={(e) => onEntryDragStart(e, entry, childPath)}
+              onClick={() => vscodeReady && onOpenFile(entry)}
+              onContextMenu={ctxHandler(entry, childPath)}
+              disabled={!vscodeReady}
+              title={vscodeReady ? actionLabel : '未配置 VSCode Web'}
+              className={`min-w-0 flex-1 text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[12px] disabled:cursor-default ${selected ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
+              style={{ paddingLeft: `${depth * 16 + 8 + 14}px`, color: vscodeReady ? 'var(--text-primary)' : 'var(--text-muted)', background: selected ? 'color-mix(in srgb, var(--accent-primary) 16%, transparent)' : undefined }}>
+              <span className="flex-shrink-0">{fileIcon(entry.name, 'file')}</span>
+              <span className="truncate flex-1">{entry.name}</span>
+              {entry.size !== null && (
+                <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{formatSize(entry.size)}</span>
+              )}
+            </button>
+            {onCopyPath && (
+              <button
+                type="button"
+                onClick={(event) => { event.stopPropagation(); onCopyPath(entry) }}
+                onContextMenu={ctxHandler(entry, childPath)}
+                className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                style={{ color: 'var(--text-muted)' }}
+                title="复制路径"
+                aria-label={`复制路径：${entry.abs_path}`}
+              >
+                <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />
+              </button>
             )}
-          </button>
+          </div>
         )
       })}
     </div>

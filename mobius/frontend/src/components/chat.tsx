@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, ChevronRight, FileText, AtSign, ArrowLeftRight, Search } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -1047,6 +1047,140 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
   )
 }
 
+// 读取并展示当前 Claude Code 会话所属项目目录下的活跃定时任务 (durable scheduled tasks).
+// 数据来自后端 /api/sessions/:id/features/scheduled-tasks (读 <bind_path>/.claude/scheduled_tasks.json + .lock).
+function SessionScheduledTasksModal({ sessionId, onClose }: {
+  sessionId: string
+  onClose: () => void
+}) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const d = await api(`/api/sessions/${sessionId}/features/scheduled-tasks`)
+      setData(d)
+    } catch (e: any) {
+      setError(e?.message || '读取定时任务失败')
+      setData(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [sessionId])
+
+  useEffect(() => { void load() }, [load])
+
+  const tasks: any[] = Array.isArray(data?.tasks) ? data.tasks : []
+  const sessionTasks: any[] = Array.isArray(data?.session_tasks) ? data.session_tasks : []
+  const lock = data?.lock || null
+  const schedulerAlive = !!data?.scheduler_alive
+  const available = data?.available !== false
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative flex h-[80vh] w-[min(860px,94vw)] flex-col overflow-hidden rounded-2xl shadow-2xl"
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="flex flex-shrink-0 items-center gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Clock className="h-4 w-4 flex-shrink-0 text-amber-400" strokeWidth={1.8} />
+            <span className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>定时任务</span>
+            <span className="flex-shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>· {tasks.length + sessionTasks.length} 个</span>
+          </div>
+          <button type="button" onClick={() => void load()} disabled={loading}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
+            style={{ color: 'var(--text-secondary)' }}>
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            刷新
+          </button>
+          <button onClick={onClose}
+            className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
+            style={{ color: 'var(--text-secondary)' }}>关闭</button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {loading && (
+            <div className="flex items-center justify-center gap-2 py-10 text-[13px]" style={{ color: 'var(--text-muted)' }}>
+              <Loader2 className="h-4 w-4 animate-spin" /> 读取中...
+            </div>
+          )}
+          {!loading && error && (
+            <pre className="whitespace-pre-wrap break-words rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-[12px] text-red-300">{error}</pre>
+          )}
+          {!loading && !error && !available && (
+            <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>当前会话所属项目未绑定路径 (bind_path), 无法读取定时任务</div>
+          )}
+          {!loading && !error && available && (
+            <>
+              <div className="mb-3 rounded-xl border px-3.5 py-3 text-[12px]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                <div className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+                  <span className="inline-block h-2 w-2 flex-shrink-0 rounded-full" style={{ background: lock ? (schedulerAlive ? '#22c55e' : '#fbbf24') : '#6b7280' }} />
+                  <span>
+                    {lock
+                      ? (schedulerAlive ? '调度器运行中' : '锁文件存在但持锁进程未运行 (任务休眠, 下个 Claude Code 会话接管后恢复)')
+                      : '无活跃调度器 (当前没有 Claude Code 会话在此项目持锁)'}
+                  </span>
+                </div>
+                {lock && (
+                  <div className="mt-1.5 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    持锁 session: {lock.sessionId || '-'} · pid: {lock.pid || '-'}{lock.acquiredAt ? ` · 接管于 ${formatFeatureTime(lock.acquiredAt)}` : ''}
+                  </div>
+                )}
+                <div className="mt-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                  durable 任务持久化在 <code className="font-mono">.claude/scheduled_tasks.json</code>, 由持锁会话触发 (创建者 ≠ 触发者)。session-only 任务 (durable:false) 只存在于本会话内存、Claude 退出即消失, 从会话转录重建, 下方以「仅本会话」标记列出。
+                </div>
+              </div>
+
+              {tasks.length === 0 && sessionTasks.length === 0 ? (
+                <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>暂无活跃定时任务</div>
+              ) : (
+                <div className="space-y-3">
+                  {[...tasks.map((t: any) => ({ t, sessionOnly: false })), ...sessionTasks.map((t: any) => ({ t, sessionOnly: true }))].map(({ t, sessionOnly }, i: number) => {
+                    const created = t.createdAt ? formatFeatureTime(t.createdAt) : '-'
+                    const recurring = t.recurring === true
+                    const permanent = t.permanent === true
+                    const promptStr = typeof t.prompt === 'string' ? t.prompt : ''
+                    return (
+                      <div key={(t.id || '') + '-' + i} className="rounded-xl border p-3.5" style={{ background: 'var(--bg-primary)', borderColor: sessionOnly ? 'rgba(251,191,36,0.35)' : 'var(--border-color)' }}>
+                        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                          <span className="rounded px-1.5 py-0.5 font-mono" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-primary)' }}>{t.id || '?'}</span>
+                          <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>{t.cron || '-'}</span>
+                          {sessionOnly
+                            ? <span className="rounded px-1.5 py-0.5" style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>仅本会话</span>
+                            : <span className="rounded px-1.5 py-0.5" style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}>durable</span>}
+                          {recurring
+                            ? <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--bg-card-hover)' }}>循环</span>
+                            : <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--bg-card-hover)' }}>一次性</span>}
+                          {permanent && <span className="rounded px-1.5 py-0.5" style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>永久</span>}
+                          {!sessionOnly && created !== '-' && <span>· 创建于 {created}</span>}
+                          {t.lastFiredAt && <span>· 上次触发 {formatFeatureTime(t.lastFiredAt)}</span>}
+                        </div>
+                        {promptStr && (
+                          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed"
+                            style={{ background: 'var(--prose-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+                            {promptStr}
+                          </pre>
+                        )}
+                        {sessionOnly
+                          ? <div className="mt-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>session-only: 只存在于本会话内存, Claude 退出即消失</div>
+                          : (t.createdBySessionId && <div className="mt-1.5 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>创建 session: {t.createdBySessionId}{t.createdByPid ? ` · pid ${t.createdByPid}` : ''}</div>)}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // =====================================================================
 // HeaderActionButton — 顶栏操作按钮统一元件.
 // 尺寸/圆角/字号与 SessionStatusChip 严格对齐 (text-[11px] + py-0.5 + rounded-full),
@@ -1104,6 +1238,7 @@ function ChatHeaderOverflowMenu({
   showJsonlMeta, onToggleShowJsonlMeta,
   autoUrgentOnEnter, onToggleAutoUrgentOnEnter,
   onStop, canStop,
+  onViewScheduledTasks,
 }: {
   jsonlCount: number
   minorCount: number
@@ -1116,6 +1251,7 @@ function ChatHeaderOverflowMenu({
   onToggleAutoUrgentOnEnter: () => void
   onStop: () => void
   canStop: boolean
+  onViewScheduledTasks: () => void
 }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -1165,6 +1301,10 @@ function ChatHeaderOverflowMenu({
             onClick={() => { setOpen(false); onToggleAutoUrgentOnEnter() }}>
             <span>{autoUrgentOnEnter ? '关闭回车自动加急' : '启动回车自动加急'}</span>
             {autoUrgentOnEnter && <span className="text-[10px]" style={{ color: '#fbbf24' }}>已开启</span>}
+          </button>
+          <button className={itemClass}
+            onClick={() => { setOpen(false); onViewScheduledTasks() }}>
+            <span>查看定时任务</span>
           </button>
           <button className={itemClass} disabled={jsonlCount === 0}
             onClick={() => { setOpen(false); onToggleShowJsonlMeta() }}>
@@ -1481,6 +1621,11 @@ type MentionAgentSession = {
   scope_type?: 'issue' | 'research'
   last_active?: string
   message_count?: number
+  project_name?: string
+  issue_title?: string
+  research_title?: string
+  group?: 'same_scope' | 'same_project' | 'other_project'
+  can_communicate?: boolean
 }
 
 type ChatDesktopFileBridge = {
@@ -1573,16 +1718,15 @@ function RemoteFileMentionDrawer({
   }, [projectId])
 
   const agentScopeUrl = useMemo(() => {
-    if (researchId) return `/api/researches/${researchId}/sessions`
-    if (issueId) return `/api/issues/${issueId}/sessions`
-    return ''
-  }, [issueId, researchId])
+    if (!currentSessionId) return ''
+    return `/api/sessions/mention-targets?session_id=${encodeURIComponent(currentSessionId)}`
+  }, [currentSessionId])
 
   useEffect(() => {
     if (!open) return
-    setActiveTab(issueId || researchId ? 'agents' : 'files')
+    setActiveTab(currentSessionId ? 'agents' : 'files')
     setAgentMode('read_only')
-  }, [issueId, open, researchId])
+  }, [currentSessionId, open])
 
   const loadAgentSessions = useCallback(async () => {
     if (!agentScopeUrl) {
@@ -1592,8 +1736,10 @@ function RemoteFileMentionDrawer({
     setAgentLoading(true)
     setAgentError('')
     try {
-      const data = await api(agentScopeUrl)
-      const list = Array.isArray(data) ? data as MentionAgentSession[] : []
+      const normalizedQuery = String(query || '').trim()
+      const suffix = normalizedQuery ? `&q=${encodeURIComponent(normalizedQuery)}` : ''
+      const data = await api(`${agentScopeUrl}${suffix}`)
+      const list = Array.isArray(data?.targets) ? data.targets as MentionAgentSession[] : []
       setAgentSessions(list.filter(item => item.session_id !== currentSessionId))
     } catch (error: any) {
       setAgentSessions([])
@@ -1601,7 +1747,7 @@ function RemoteFileMentionDrawer({
     } finally {
       setAgentLoading(false)
     }
-  }, [agentScopeUrl, currentSessionId])
+  }, [agentScopeUrl, currentSessionId, query])
 
   useEffect(() => {
     if (!open) return
@@ -1610,8 +1756,9 @@ function RemoteFileMentionDrawer({
 
   useEffect(() => {
     if (!open || activeTab !== 'agents') return
-    void loadAgentSessions()
-  }, [open, activeTab, loadAgentSessions])
+    const timer = window.setTimeout(() => { void loadAgentSessions() }, String(query || '').trim() ? 120 : 0)
+    return () => window.clearTimeout(timer)
+  }, [open, activeTab, loadAgentSessions, query])
 
   useEffect(() => {
     if (!open) return
@@ -1663,30 +1810,26 @@ function RemoteFileMentionDrawer({
     if (entry.abs_path) onPickPath(entry.abs_path)
   }, [onPickPath])
 
+  const copyPath = useCallback((entry: Entry) => {
+    if (entry.abs_path) void copyTextToClipboard(entry.abs_path)
+  }, [])
+
   const pickAgent = useCallback((agent: MentionAgentSession) => {
     if (!onPickAgent) return
-    onPickAgent(agent, agentMode)
+    const mode = agentMode === 'bidirectional' && agent.can_communicate === false ? 'read_only' : agentMode
+    onPickAgent(agent, mode)
     onClose()
   }, [agentMode, onClose, onPickAgent])
 
   const filteredAgents = useMemo(() => {
-    const q = String(query || '').trim().toLowerCase()
     const list = [...agentSessions].sort((a, b) => {
       const ar = a.agent_status === 'running' ? 0 : 1
       const br = b.agent_status === 'running' ? 0 : 1
       if (ar !== br) return ar - br
       return new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime()
     })
-    if (!q) return list
-    return list.filter((agent) => [
-      agent.session_id,
-      agent.name,
-      agent.description,
-      agent.model,
-      agent.model_label,
-      agent.research_role,
-    ].some(value => String(value || '').toLowerCase().includes(q)))
-  }, [agentSessions, query])
+    return list
+  }, [agentSessions])
 
   if (!open) return null
   const selectedSource = sourceOptions.find(source => source.key === selectedSourceKey)
@@ -1810,7 +1953,7 @@ function RemoteFileMentionDrawer({
             <>
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  {agentScopeUrl ? (researchId ? 'Research 会话' : 'Issue 会话') : '无可用范围'}
+                  {agentScopeUrl ? '按相关性排序的 Session' : '无可用范围'}
                 </span>
                 <div className="flex items-center gap-1 rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
                   <button
@@ -1872,6 +2015,11 @@ function RemoteFileMentionDrawer({
                       {filteredAgents.map(agent => {
                         const active = agent.agent_status === 'running'
                         const modelLabel = sessionModelLabel(agent.model, agent.model_label)
+                        const relationLabel = agent.group === 'same_scope'
+                          ? (agent.scope_type === 'research' ? '同 Research' : '同 Issue')
+                          : agent.group === 'same_project' ? '同项目' : '其他项目'
+                        const selectedModeLabel = agentMode === 'bidirectional' && agent.can_communicate === false
+                          ? '只读权限' : agentMode === 'bidirectional' ? '双向' : '只读'
                         return (
                           <button
                             key={agent.session_id}
@@ -1886,11 +2034,12 @@ function RemoteFileMentionDrawer({
                                 {agent.name || agent.session_id}
                               </span>
                               <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-                                {agentMode === 'bidirectional' ? '双向' : '只读'}
+                                {selectedModeLabel}
                               </span>
                             </div>
                             <div className="mt-1 flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
                               <span className="truncate">{agent.session_id}</span>
+                              <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{relationLabel}</span>
                               {modelLabel && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{modelLabel}</span>}
                               {agent.research_role && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.research_role}</span>}
                             </div>
@@ -1932,6 +2081,7 @@ function RemoteFileMentionDrawer({
                     expanded={expanded}
                     onToggleDir={toggleDir}
                     onOpenFile={pickFile}
+                    onCopyPath={copyPath}
                     vscodeReady
                     fileActionLabel="插入绝对路径"
                   />
@@ -2149,6 +2299,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
   const [fileChangesOpen, setFileChangesOpen] = useState(false)
   const [bashCommandsOpen, setBashCommandsOpen] = useState(false)
+  const [scheduledTasksOpen, setScheduledTasksOpen] = useState(false)
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false)
   const [continueModalOpen, setContinueModalOpen] = useState(false)
   const [cooperablePcOpen, setCooperablePcOpen] = useState(false)
@@ -2778,16 +2929,19 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     const caret = event.target.selectionStart ?? nextValue.length
     setInput(nextValue)
     const beforeCaret = nextValue.slice(0, caret)
-    const mentionMatch = beforeCaret.match(/@([^\s@]*)$/)
-    if (!mentionMatch || (!currentProjectId && !currentIssueId && !currentResearchId)) {
+    const copiedSessionMatch = beforeCaret.match(/(?:^|\s)(@?session=([^\s]*)?)$/i)
+    const mentionMatch = copiedSessionMatch ? null : beforeCaret.match(/@([^\s@]*)$/)
+    if ((!mentionMatch && !copiedSessionMatch) || !sessionId) {
       remoteMentionRangeRef.current = null
       setMentionQuery('')
       setRemoteFileDrawerOpen(false)
       return
     }
-    const start = beforeCaret.lastIndexOf('@')
+    const start = mentionMatch
+      ? beforeCaret.lastIndexOf('@')
+      : Math.max(0, beforeCaret.toLowerCase().lastIndexOf('session=') - (beforeCaret[beforeCaret.toLowerCase().lastIndexOf('session=') - 1] === '@' ? 1 : 0))
     remoteMentionRangeRef.current = { start, end: caret }
-    setMentionQuery(mentionMatch[1] || '')
+    setMentionQuery(mentionMatch ? (mentionMatch[1] || '') : (copiedSessionMatch?.[2] || ''))
     setRemoteFileDrawerOpen(true)
   }
 
@@ -3969,6 +4123,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
             onToggleAutoUrgentOnEnter={toggleAutoUrgentOnEnter}
             onStop={handleStopSession}
             canStop={!!sessionId}
+            onViewScheduledTasks={() => setScheduledTasksOpen(true)}
           />
         </div>
       </div>}
@@ -4455,6 +4610,13 @@ export function ChatArea({ layout = 'default', onNewSession }: {
         <SessionBashCommandsModal
           sessionId={sessionId}
           onClose={() => setBashCommandsOpen(false)}
+        />
+      )}
+
+      {scheduledTasksOpen && sessionId && (
+        <SessionScheduledTasksModal
+          sessionId={sessionId}
+          onClose={() => setScheduledTasksOpen(false)}
         />
       )}
 

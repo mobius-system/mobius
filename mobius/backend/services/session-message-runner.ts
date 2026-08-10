@@ -8,10 +8,11 @@ import { appendSessionInput } from './session-inputs';
 import { syncSkillsToWorkspace } from './session-skills-sync';
 import { formatBackendSendFailure } from './session-errors';
 import { buildSessionTransferMarkdown, transferReferencePrompt } from './session-transfer';
-import { canOperateSession } from './access-control';
+import { canOperateSession, canReadSession } from './access-control';
 import { aimuxRemoteNameFromMeta } from './pc-client-context';
 import {
   buildBidirectionalMentionPrompt,
+  createAgentBridgeChannel,
   buildReadOnlyMentionPrompt,
   mintAgentBridgeToken,
   type AgentMentionMode,
@@ -95,7 +96,7 @@ function resolveSessionJsonlPath(session: any, sessionId: string): string | null
   }
 }
 
-function normalizeAgentMentions(mentions: any): NormalizedAgentMention[] {
+function normalizeAgentMentions(mentions: any, content: string = ''): NormalizedAgentMention[] {
   if (!Array.isArray(mentions)) return [];
   const seen = new Set<string>();
   const output: NormalizedAgentMention[] = [];
@@ -112,6 +113,16 @@ function normalizeAgentMentions(mentions: any): NormalizedAgentMention[] {
     if (seen.has(key)) continue;
     seen.add(key);
     output.push({ sessionId, mode });
+  }
+  // 支持从别的页面直接复制 `session=<id>`，也支持 `@session=<id>`。
+  // 直填 ID 默认只读，双向模式必须通过选择器明确选择，避免粘贴即唤醒对端。
+  const copiedIds = String(content || '').match(/(?:^|[\s(@])@?session=([A-Za-z0-9_-]{4,128})(?=$|[\s),.;!?，。！？])/gi) || [];
+  for (const raw of copiedIds) {
+    const match = raw.match(/session=([A-Za-z0-9_-]{4,128})/i);
+    const sessionId = match?.[1]?.trim();
+    if (!sessionId || seen.has(`${sessionId}:read_only`)) continue;
+    seen.add(`${sessionId}:read_only`);
+    output.push({ sessionId, mode: 'read_only' });
   }
   return output;
 }
@@ -189,7 +200,7 @@ async function runSessionMessage({
     user,
     [workspace.projectRoot, workspace.workDir],
   );
-  const normalizedMentions = normalizeAgentMentions(mentions);
+  const normalizedMentions = normalizeAgentMentions(mentions, normalizedContent);
   if (!normalizedContent.trim() && normalizedAttachments.length === 0) {
     throw httpError('content 不能为空', 400);
   }
@@ -248,6 +259,7 @@ async function runSessionMessage({
     sourceTransferMarkdown: string;
     targetTransferMarkdown: string;
     mode: AgentMentionMode;
+    channelId: string;
   }> = [];
   if (Messages.countUserMessagesFor(normalizedSessionId) <= 1) {
     const ctx = buildSessionContext(user, normalizedSessionId);
@@ -282,7 +294,10 @@ async function runSessionMessage({
       const targetSession = Sessions.findById(mention.sessionId) as any;
       if (!targetSession) continue;
       if (targetSession.session_id === normalizedSessionId) continue;
-      if (!canOperateSession(user, targetSession)) continue;
+      const canUseTarget = mention.mode === 'read_only'
+        ? canReadSession(user, targetSession)
+        : canOperateSession(user, targetSession);
+      if (!canUseTarget) continue;
       const sourceTransferMarkdown = buildMentionTransferMarkdown(user, targetSession, normalizedSessionId, logger);
       if (!sourceTransferMarkdown) continue;
       if (mention.mode === 'read_only') {
@@ -299,10 +314,16 @@ async function runSessionMessage({
       }
 
       const targetTransferMarkdown = buildMentionTransferMarkdown(user, sess, targetSession.session_id, logger);
+      const channel = createAgentBridgeChannel({
+        ownerUserId: user.id,
+        sourceSessionId: normalizedSessionId,
+        targetSessionId: targetSession.session_id,
+      });
       const token = mintAgentBridgeToken({
         owner_user_id: user.id,
         source_session_id: normalizedSessionId,
         target_session_id: targetSession.session_id,
+        channel_id: channel.channelId,
         mode: mention.mode,
         source_session_name: String(sess?.name || '').trim() || normalizedSessionId,
         target_session_name: String(targetSession?.name || '').trim() || targetSession.session_id,
@@ -317,6 +338,7 @@ async function runSessionMessage({
           targetSession,
           transferMarkdown: sourceTransferMarkdown,
           currentUserName: user?.display_name || user?.id,
+          channelId: channel.channelId,
         }),
       ].filter(Boolean).join('\n\n');
       bridgeKickoffs.push({
@@ -325,6 +347,7 @@ async function runSessionMessage({
         sourceTransferMarkdown,
         targetTransferMarkdown,
         mode: mention.mode,
+        channelId: channel.channelId,
       });
     }
   }
@@ -377,6 +400,7 @@ async function runSessionMessage({
           transferMarkdown: kickoff.targetTransferMarkdown || kickoff.sourceTransferMarkdown,
           currentUserName: user?.display_name || user?.id,
           initialMessage: normalizedContent.trim() || displayContent,
+          channelId: kickoff.channelId,
         });
         await runSessionMessage({
           user,

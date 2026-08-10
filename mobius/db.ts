@@ -418,6 +418,49 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_agent_prompt_events_backend_created ON agent_prompt_events(backend_name, created_at);
 `);
 
+// ===== Agent @ 双向通讯通道 =====
+// 只读 @ 不创建通道；双向 @ 使用持久化通道承载后续 Agent↔Agent 消息。
+// JWT 只负责证明通道创建者，实际生命周期、幂等和消息审计落在 SQLite。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_bridge_channels (
+    channel_id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL,
+    source_session_id TEXT NOT NULL,
+    target_session_id TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'bidirectional' CHECK(mode = 'bidirectional'),
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','closed','expired','exhausted')),
+    max_messages INTEGER NOT NULL DEFAULT 100,
+    message_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    last_active TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    expires_at TEXT NOT NULL,
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_session_id) REFERENCES sessions_v2(session_id) ON DELETE CASCADE,
+    FOREIGN KEY (target_session_id) REFERENCES sessions_v2(session_id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_agent_bridge_channels_owner
+    ON agent_bridge_channels(owner_user_id, status, last_active);
+  CREATE INDEX IF NOT EXISTS idx_agent_bridge_channels_pair
+    ON agent_bridge_channels(source_session_id, target_session_id, status);
+
+  CREATE TABLE IF NOT EXISTS agent_bridge_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    from_session_id TEXT NOT NULL,
+    to_session_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','delivered','failed','rejected')),
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    delivered_at TEXT,
+    FOREIGN KEY (channel_id) REFERENCES agent_bridge_channels(channel_id) ON DELETE CASCADE,
+    UNIQUE(channel_id, request_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_agent_bridge_messages_channel
+    ON agent_bridge_messages(channel_id, id);
+`);
+
 // 自检: 生产栈表存在(只读), 不动它们.
 // 注意: skills/memories 在 v1.7 起改为文件系统存储 (protected_data/), 不再是 SQLite 表, 故不查.
 function verifySharedTables() {

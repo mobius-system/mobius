@@ -45,8 +45,7 @@ interface TerminalSize {
   isTty: boolean
 }
 
-import { createRequire } from 'node:module'
-const VERSION = createRequire(import.meta.url)('../../package.json').version
+import { TUI_VERSION } from '../version.js'
 const DEFAULT_COMPOSER_ROWS = 5
 const STATUS_ROWS = 3
 
@@ -417,7 +416,7 @@ function WelcomeCard({ ready, columns, resumed, modelDisplay }: { ready: ReadySt
         <Text>
           <Text dimColor>{'>_ '}</Text>
           <Text bold>Mobius</Text>
-          <Text dimColor> (v{VERSION})</Text>
+          <Text dimColor> (v{TUI_VERSION})</Text>
         </Text>
         <Text> </Text>
         <MetaRow label="model:" value={modelDisplay} hint="/help 查看命令" labelWidth={labelWidth} />

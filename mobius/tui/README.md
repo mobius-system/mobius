@@ -130,6 +130,13 @@ npm test                   # all three
 
 ## Build an installable package
 
+The TUI release version has one source of truth: `mobius/tui/package.json`.
+The welcome screen, npm package metadata, artifact filename, and download
+manifest all read that value. `package-lock.json` mirrors it as generated npm
+metadata; do not edit it as a separate release setting. The AIMUX bundle
+version (`BUNDLE_VER`) is an independent Python runtime cache version and is
+not the TUI version.
+
 From the repository root:
 
 ```bash
