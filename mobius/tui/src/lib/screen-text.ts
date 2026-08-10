@@ -13,7 +13,6 @@
 import wrapAnsi from 'wrap-ansi'
 import { renderMarkdownLines } from '../markdown.js'
 import { toolLabel, viewsForEntry, type EntryView } from './entry-view.js'
-import type { AnyEntry } from '../types.js'
 
 // ── shared text helpers (mirrored from Chat.tsx, kept here to avoid a cycle) ─
 export function displayWidth(str: string): number {
@@ -221,11 +220,6 @@ export function entryScreenRows(views: EntryView[], columns: number): ScreenRow[
   return lines
 }
 
-/** Plain projection used by fitting, geometry, hit-testing, and copying. */
-export function entryScreenLines(views: EntryView[], columns: number): string[] {
-  return entryScreenRows(views, columns).map(row => row.plain)
-}
-
 // ── vertical geometry ────────────────────────────────────────────────────────
 export interface TranscriptGeometry {
   /** Screen row where the transcript box's top edge sits. */
@@ -240,30 +234,6 @@ export interface TranscriptGeometry {
  * (`flexShrink=0`); the middle column holds header + hint + transcript (flexGrow)
  * + tip + help. Margins that render as extra rows are counted explicitly.
  */
-export function computeTranscriptGeometry(opts: {
-  viewportRows: number
-  composerRows: number
-  statusRows: number
-  activityRows: number
-  helpRows: number
-  showWelcome: boolean
-  welcomeRows: number
-  olderHintShown: boolean
-  tipShown: boolean
-}): TranscriptGeometry {
-  // The composer's reported height already includes its marginTop; the status
-  // area and working indicator rows are already folded into statusRows and
-  // activityRows. No extra +1 here — calibrated against the rendered frame.
-  const bottomH = opts.activityRows + opts.composerRows + opts.statusRows
-  const midH = opts.viewportRows - bottomH
-  const headerH = opts.showWelcome ? opts.welcomeRows : 1
-  const hintH = opts.olderHintShown ? 1 : 0
-  const tipH = opts.tipShown ? 2 : 0 // marginTop 1 + content 1
-  const helpH = opts.helpRows > 0 ? opts.helpRows + 1 : 0 // +1 marginTop
-  const boxTop = headerH + hintH + tipH + helpH
-  return { boxTop, boxH: Math.max(0, midH - boxTop) }
-}
-
 // ── selection mapping ────────────────────────────────────────────────────────
 export interface SelPoint {
   entry: number // index into the fitted entries
@@ -274,11 +244,6 @@ export interface SelPoint {
 export interface TranscriptModel {
   entries: string[][] // per fitted entry, its screen lines (margins as '')
   totalRows: number
-}
-
-export function buildTranscriptModel(fittedEntries: AnyEntry[], columns: number): TranscriptModel {
-  const entries = fittedEntries.map((e) => entryScreenLines(viewsForEntry(e), columns))
-  return { entries, totalRows: entries.reduce((sum, l) => sum + l.length, 0) }
 }
 
 /** Convert a screen (row, col) into a SelPoint, or null if outside the transcript. */

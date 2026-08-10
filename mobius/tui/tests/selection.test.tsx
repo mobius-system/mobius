@@ -139,7 +139,7 @@ async function main() {
     const row1 = lines.findIndex(l => l.includes('回答 1'))
     const row3 = lines.findIndex(l => l.includes('回答 3'))
     ok(row1 >= 0 && row3 >= 0, `found 回答 1 (row ${row1}) and 回答 3 (row ${row3}) in the transcript`)
-    ok(!frame.includes('PageDown'), 'all entries fit — no paging hints at rest')
+    ok(frame.includes('全部内容') && !frame.includes('↑ 较早内容') && !frame.includes('↓ 还有较新内容'), 'all entries fit — navigation reports the complete transcript')
 
     // press on 回答 1 (col 4 → first content char), drag to 回答 3 (col beyond EOL)
     stdin.write(`\x1b[<0;5;${row1 + 1}M`)                 // left-button press (SGR 1-based)
