@@ -379,6 +379,8 @@ db.exec(`
     task_id TEXT NOT NULL,
     role TEXT NOT NULL CHECK(role IN ('user','assistant','tool','system','thinking','raw')),
     content TEXT NOT NULL,
+    -- 结构化展示元数据（如 Session @ 引用来源）；不进入 Agent prompt.
+    metadata TEXT,
     -- Claude SDK 事件原文 (JSON), 仅 role='raw' 时使用
     raw_event TEXT,
     -- tool 调用相关
@@ -393,6 +395,19 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   );
 `);
+
+// messages_v2 轻量迁移: 持久化 Session @ 来源等 UI 元数据。
+(() => {
+  try {
+    const cols = db.prepare('PRAGMA table_info(messages_v2)').all().map((c: any) => c.name);
+    if (!cols.includes('metadata')) {
+      db.exec('ALTER TABLE messages_v2 ADD COLUMN metadata TEXT');
+      console.log('[mobius/db] migrate: messages_v2.metadata 已加');
+    }
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️ messages_v2.metadata 迁移失败:', (e as Error).message);
+  }
+})();
 
 // ===== agent_prompt_events =====
 // 管理员面板统计用: 每次真正 paste 到 tmux TUI 并提交成功后记录一行.

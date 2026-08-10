@@ -1420,6 +1420,12 @@ export function MessageBubble({
   const isUser = m.role === 'user'
   const isMoAssistant = isMoVariant && !isUser
   const isBookmarked = m.bookmarked === 1
+  const sessionMentions = isUser && Array.isArray(m.session_mentions) ? m.session_mentions : []
+  const formatMentionContextTime = (value: any) => {
+    if (!value) return ''
+    const date = new Date(value)
+    return Number.isFinite(date.getTime()) ? date.toLocaleString() : String(value)
+  }
   // ChatGPT 风格: 用户用中性灰色 pill 气泡, assistant 完全无气泡 (纯文本流).
   // 气泡四角对称, 不再有指向头像的"尾巴"那一边变小的 rounded-tr-md / rounded-tl-md.
   const userBubbleClass = isDark
@@ -1481,6 +1487,25 @@ export function MessageBubble({
         {isBookmarked && (
           <div className={`absolute -top-1.5 ${isUser ? '-right-1.5' : '-left-1.5'}`}>
             <Bookmark className="w-3 h-3 fill-amber-400 text-amber-400" strokeWidth={1.5} />
+          </div>
+        )}
+        {sessionMentions.length > 0 && (
+          <div className="mb-2 space-y-1 border-b pb-2 text-[10px] leading-relaxed"
+            style={{ borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.10)', color: isDark ? 'rgba(255,255,255,0.62)' : 'rgba(0,0,0,0.58)' }}>
+            {sessionMentions.map((mention: any) => (
+              <div key={`${mention.session_id}:${mention.mode || 'read_only'}`} className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span className="font-medium">{mention.mode === 'bidirectional' ? '交流 Session' : '引用了 Session'}</span>
+                  <span className="font-mono">{mention.name || mention.session_id}</span>
+                  <span className="font-mono opacity-75">({mention.session_id})</span>
+                </div>
+                <div className="flex flex-wrap gap-x-2 opacity-80">
+                  {mention.project_name && <span>项目：{mention.project_name}</span>}
+                  {mention.scope_title && <span>{mention.scope_type === 'research' ? 'Research' : 'Issue'}：{mention.scope_title}</span>}
+                  {mention.context_at && <span>上下文：{formatMentionContextTime(mention.context_at)}</span>}
+                </div>
+              </div>
+            ))}
           </div>
         )}
         {renderContent()}
@@ -1831,6 +1856,19 @@ function RemoteFileMentionDrawer({
     return list
   }, [agentSessions])
 
+  const compactAgents = activeTab === 'agents'
+  const agentPanelRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!open || !compactAgents) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (target && agentPanelRef.current?.contains(target)) return
+      onClose()
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [open, compactAgents, onClose])
+
   if (!open) return null
   const selectedSource = sourceOptions.find(source => source.key === selectedSourceKey)
   const rootState = dirs['/']
@@ -1840,17 +1878,22 @@ function RemoteFileMentionDrawer({
     : '选择文件，把绝对路径插入输入框'
 
   return (
-    <div className="fixed inset-0 z-[90]" role="dialog" aria-modal="true" aria-label="选择 @ 目标">
-      <button
+    <div className={compactAgents ? 'pointer-events-none fixed inset-0 z-[90]' : 'fixed inset-0 z-[90]'} role="dialog" aria-modal={!compactAgents} aria-label="选择 @ 目标">
+      {!compactAgents && <button
         type="button"
         className="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[1px]"
         aria-label="关闭 @ 弹层"
         onClick={onClose}
-      />
+      />}
       <aside
         data-testid="remote-file-mention-drawer"
-        className="absolute inset-y-0 left-0 flex w-[420px] max-w-[calc(100vw-24px)] flex-col shadow-2xl transition-transform duration-200 ease-out"
-        style={{ background: 'var(--modal-bg)', borderRight: '1px solid var(--border-color)' }}
+        ref={agentPanelRef}
+        className={compactAgents
+          ? 'pointer-events-auto absolute bottom-24 right-4 flex max-h-[min(64vh,520px)] w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-xl shadow-2xl transition-transform duration-150 ease-out sm:right-6'
+          : 'absolute inset-y-0 left-0 flex w-[420px] max-w-[calc(100vw-24px)] flex-col shadow-2xl transition-transform duration-200 ease-out'}
+        style={compactAgents
+          ? { background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }
+          : { background: 'var(--modal-bg)', borderRight: '1px solid var(--border-color)' }}
       >
         <div className="flex h-14 flex-shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: 'var(--border-color)' }}>
           <div className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400">
@@ -2011,7 +2054,7 @@ function RemoteFileMentionDrawer({
                       没有找到可 @ 的智能体。
                     </div>
                   ) : (
-                    <div className="max-h-[calc(100vh-330px)] space-y-2 overflow-y-auto pr-1">
+                    <div className={`${compactAgents ? 'max-h-[260px]' : 'max-h-[calc(100vh-330px)]'} space-y-2 overflow-y-auto pr-1`}>
                       {filteredAgents.map(agent => {
                         const active = agent.agent_status === 'running'
                         const modelLabel = sessionModelLabel(agent.model, agent.model_label)
@@ -2903,6 +2946,10 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     sessionId: string
     name: string
     mode: AgentMentionMode
+    projectName?: string
+    scopeType?: 'issue' | 'research' | null
+    scopeTitle?: string
+    contextAt?: string | null
   } | null>(null)
   // IME 合成状态守卫: macOS 系统拼音输入法打字母时(合成进行中)按回车, 本意是确认候选字/上屏
   // 字母, 不应触发发送. Chromium on macOS 合成中的 keydown(Enter) 其 isComposing===true,
@@ -2980,7 +3027,15 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     const nextValue = `${currentValue.slice(0, start)}${label}${trailingSpace}${suffix}`
     const caret = start + label.length + trailingSpace.length
     setInput(nextValue)
-    setSelectedAgentMention({ sessionId: agent.session_id, name: agent.name || agent.session_id, mode })
+    setSelectedAgentMention({
+      sessionId: agent.session_id,
+      name: agent.name || agent.session_id,
+      mode,
+      projectName: agent.project_name,
+      scopeType: agent.scope_type || null,
+      scopeTitle: agent.scope_type === 'research' ? agent.research_title : agent.issue_title,
+      contextAt: agent.last_active || null,
+    })
     remoteMentionRangeRef.current = null
     setMentionQuery('')
     setRemoteFileDrawerOpen(false)
@@ -3317,14 +3372,19 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     m.bookmarked ?? 0,
     m.content?.length ?? 0,
     JSON.stringify(m.buttons || []),
+    JSON.stringify(m.session_mentions || []),
     (m.content || '').slice(-48),
   ].join(':')).join('|')
 
   const normalizeMessages = (items: any[]) => items.map((m: any) => {
-    if (m.buttons || !m.metadata) return m
+    if (!m.metadata) return m
     try {
       const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata
-      return meta?.buttons ? { ...m, buttons: meta.buttons } : m
+      return {
+        ...m,
+        ...(meta?.buttons ? { buttons: meta.buttons } : {}),
+        ...(Array.isArray(meta?.session_mentions) ? { session_mentions: meta.session_mentions } : {}),
+      }
     } catch {
       return m
     }
@@ -3676,8 +3736,17 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           name: selectedAgentMention.name,
         }]
       : []
+    const optimisticSessionMentions = selectedAgentMention ? [{
+      session_id: selectedAgentMention.sessionId,
+      name: selectedAgentMention.name,
+      mode: selectedAgentMention.mode,
+      project_name: selectedAgentMention.projectName,
+      scope_type: selectedAgentMention.scopeType,
+      scope_title: selectedAgentMention.scopeTitle,
+      context_at: selectedAgentMention.contextAt || new Date().toISOString(),
+    }] : []
     setLastSendError('')
-    addMessage({ role: 'user', content })
+    addMessage({ role: 'user', content, session_mentions: optimisticSessionMentions })
     pendingUrgentRef.current = urgent
     setPendingSendAt(Date.now())
     setMessageSubmitting(true)

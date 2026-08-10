@@ -127,6 +127,32 @@ function normalizeAgentMentions(mentions: any, content: string = ''): Normalized
   return output;
 }
 
+function sessionMentionMetadata(user: any, currentSessionId: string, mentions: NormalizedAgentMention[]): any[] {
+  return mentions.map((mention) => {
+    if (!mention.sessionId || mention.sessionId === currentSessionId) return null;
+    const target = Sessions.findByIdWithJoins(mention.sessionId) as any;
+    if (!target) return null;
+    const allowed = mention.mode === 'read_only'
+      ? canReadSession(user, target)
+      : canOperateSession(user, target);
+    if (!allowed) return null;
+    const scopeTitle = target.scope_type === 'research'
+      ? (target.research_title || target.research_id || '')
+      : (target.issue_title || target.issue_id || '');
+    return {
+      session_id: target.session_id,
+      name: target.name || target.session_id,
+      mode: mention.mode,
+      project_id: target.project_id || null,
+      project_name: target.project_name || target.project_id || '',
+      scope_type: target.scope_type || null,
+      scope_id: target.scope_type === 'research' ? target.research_id : target.issue_id,
+      scope_title: scopeTitle,
+      context_at: new Date().toISOString(),
+    };
+  }).filter(Boolean);
+}
+
 function buildMentionTransferMarkdown(user: any, sourceSession: any, targetSessionId: string, logger: any): string {
   const jsonlPath = resolveSessionJsonlPath(sourceSession, sourceSession.session_id);
   if (jsonlPath) {
@@ -201,6 +227,7 @@ async function runSessionMessage({
     [workspace.projectRoot, workspace.workDir],
   );
   const normalizedMentions = normalizeAgentMentions(mentions, normalizedContent);
+  const mentionMetadata = sessionMentionMetadata(user, normalizedSessionId, normalizedMentions);
   if (!normalizedContent.trim() && normalizedAttachments.length === 0) {
     throw httpError('content 不能为空', 400);
   }
@@ -222,7 +249,12 @@ async function runSessionMessage({
   const backend = agents.get(launch.backend);
 
   const turnNum = (Messages.maxTurnFor(normalizedSessionId) || 0) + 1;
-  Messages.insertUser(normalizedSessionId, displayContent, turnNum);
+  Messages.insertUser(
+    normalizedSessionId,
+    displayContent,
+    turnNum,
+    mentionMetadata.length > 0 ? JSON.stringify({ session_mentions: mentionMetadata }) : null,
+  );
   Sessions.touchActive(normalizedSessionId);
   if (hasInputText) {
     try {

@@ -285,6 +285,16 @@ interface Message {
   turn_number?: number
   turn_summary?: string
   created_at?: string
+  metadata?: string | Record<string, any> | null
+  session_mentions?: Array<{
+    session_id: string
+    name?: string
+    mode?: 'read_only' | 'bidirectional'
+    project_name?: string
+    scope_type?: 'issue' | 'research' | null
+    scope_title?: string
+    context_at?: string | null
+  }>
 }
 
 interface Turn {
