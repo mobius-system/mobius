@@ -381,7 +381,12 @@ def install_tui_artifact(artifact: Path, prefix: Path) -> None:
 
 
 def build_tui(args: argparse.Namespace, install: bool = False) -> int:
-    version = args.version or read_tui_version()
+    version = read_tui_version()
+    if args.version:
+        sys.exit(
+            f"[build] TUI version is defined only by {TUI_DIR / 'package.json'} ({version}); "
+            "do not override it with --version"
+        )
     print(f"=== Mobius TUI build | version {version} ===")
     ensure_tui_node_modules()
     print("=== [1/4] typecheck ===")
@@ -592,7 +597,7 @@ def main() -> int:
         action="store_true",
         help="build Mobius TUI and install the `mobius` command to a user-writable npm prefix (default ~/.local)",
     )
-    parser.add_argument("--version", metavar="V", help="override version (electron/tui: package.json; mobile: momo-mobile androidApp versionName)")
+    parser.add_argument("--version", metavar="V", help="override version (electron package.json; mobile: momo-mobile androidApp versionName; TUI reads mobius/tui/package.json only)")
     parser.add_argument("--targets", default="win-x64,mac-arm64,mac-x64", help="[electron] comma-separated target subset (defaults to all three)")
     parser.add_argument("--skip-fetch-python", action="store_true", help="[electron] reuse existing resources/python-* (default fetch is idempotent)")
     parser.add_argument("--skip-menu-sync", action="store_true", help="do not sync download menu version/size/sha256 (default syncs into modals.tsx)")

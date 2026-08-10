@@ -1,6 +1,7 @@
 import express from 'express';
 import { v4 as uuid } from 'uuid';
 import path from 'path';
+import fs from 'fs';
 import { auth, authOrQuery } from '../middleware/auth';
 import { Sessions } from '../repositories/sessions';
 import { Conversations } from '../repositories/conversations';
@@ -167,6 +168,61 @@ router.get('/model-options', auth, (_req: express.Request, res: express.Response
 // 未设置时 model 为 null, 前端再回落到内置 'codex'.
 router.get('/default-model', auth, (_req: express.Request, res: express.Response) => {
   res.json({ model: modelRegistry.globalDefaultModelKey() });
+});
+
+// 轻量 @ Session 选择器: 先给同 Issue/Research，再同项目，最后其他可读项目。
+// q 同时匹配 session_id、名称、描述和父级名称；直接输入 session=<id> 时前端可用同一接口精确解析。
+router.get('/mention-targets', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const currentId = String(req.query.session_id || '').trim();
+  const query = String(req.query.q || '').trim().slice(0, 200);
+  const current = currentId ? Sessions.findById(currentId) as any : null;
+  if (!current || !canOperateSession(user, current)) {
+    res.status(404).json({ error: '当前 Session 不存在或无权访问' });
+    return;
+  }
+  const rows = Sessions.listMentionCandidates(query, query ? 600 : 300)
+    .filter((row: any) => row.session_id !== currentId && canReadSession(user, row));
+  const targets = rows.map((row: any) => {
+    const sameIssue = current.scope_type === row.scope_type
+      && current.scope_type === 'issue'
+      && current.issue_id && row.issue_id === current.issue_id;
+    const sameResearch = current.scope_type === row.scope_type
+      && current.scope_type === 'research'
+      && current.research_id && row.research_id === current.research_id;
+    const sameProject = !!current.project_id && current.project_id === row.project_id;
+    const group = sameIssue || sameResearch ? 'same_scope' : sameProject ? 'same_project' : 'other_project';
+    return {
+      session_id: row.session_id,
+      name: row.name || row.session_id,
+      description: row.description || '',
+      model: row.model || null,
+      project_id: row.project_id || null,
+      project_name: row.project_name || '',
+      issue_id: row.issue_id || null,
+      issue_title: row.issue_title || '',
+      research_id: row.research_id || null,
+      research_title: row.research_title || '',
+      scope_type: row.scope_type,
+      research_role: row.research_role || null,
+      status: row.status,
+      agent_status: row.agent_status,
+      last_active: row.last_active,
+      message_count: Number(row.message_count || 0),
+      group,
+      can_communicate: canOperateSession(user, row),
+    };
+  }).sort((a: any, b: any) => {
+    const groupRank: Record<string, number> = { same_scope: 0, same_project: 1, other_project: 2 };
+    const ga = groupRank[a.group] ?? 9;
+    const gb = groupRank[b.group] ?? 9;
+    if (ga !== gb) return ga - gb;
+    const ar = a.agent_status === 'running' ? 0 : 1;
+    const br = b.agent_status === 'running' ? 0 : 1;
+    if (ar !== br) return ar - br;
+    return new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime();
+  }).slice(0, 120);
+  res.json({ query, current_session_id: currentId, targets, total: targets.length });
 });
 
 function findSessionReadable(id: string, user: AnyUser): AnySession | null {
@@ -1044,6 +1100,107 @@ router.get('/:id/features/git-diff', auth, (req: express.Request, res: express.R
     console.warn(`[sessions/features/git-diff] failed (${sessionId}): ${(e as Error).message}`);
     res.status(500).json({ error: (e as Error).message || String(e) });
     return;
+  }
+});
+
+// 从会话 JSONL 转录里重建本会话创建过的 cron 任务: 扫描 CronCreate / CronDelete 工具调用,
+// 用 tool_result 里的 "Scheduled ... job <id>" 把 CronCreate 配对出 jobId, 减去已 CronDelete 的,
+// 得到仍活跃的. durable 任务已落盘 scheduled_tasks.json, 调用方按 id 去重; 这里返回所有活跃任务.
+// 用途: 非 durable(session-only)任务不落盘, 只有转录里有痕迹 — 这是唯一能从外部看到它们的方式.
+function scanSessionCronTasksFromTranscript(jsonlPath: string): Array<{ id: string; cron: string; prompt: string; recurring: boolean; durable: boolean }> {
+  const createdInfo = new Map<string, { cron: string; prompt: string; recurring: boolean; durable: boolean }>();
+  const jobIdByToolUse = new Map<string, string>();
+  const deletedIds = new Set<string>();
+  let raw = '';
+  try { raw = fs.readFileSync(jsonlPath, 'utf8'); } catch { return []; }
+  for (const line of raw.split('\n')) {
+    if (!line) continue;
+    // 廉价预过滤: 只解析可能相关的行, 避免对大转录逐行 JSON.parse.
+    if (!line.includes('CronCreate') && !line.includes('CronDelete')
+      && !line.includes('Scheduled recurring job') && !line.includes('Scheduled one-shot job')) continue;
+    let obj: any;
+    try { obj = JSON.parse(line); } catch { continue; }
+    const blocks = obj?.message?.content;
+    if (!Array.isArray(blocks)) continue;
+    for (const b of blocks) {
+      if (!b || typeof b !== 'object') continue;
+      if (b.type === 'tool_use' && b.name === 'CronCreate') {
+        const inp = b.input || {};
+        createdInfo.set(String(b.id), {
+          cron: typeof inp.cron === 'string' ? inp.cron : '',
+          prompt: typeof inp.prompt === 'string' ? inp.prompt : '',
+          recurring: inp.recurring === true,
+          durable: inp.durable !== false, // 缺省默认 durable (与 Claude Code 行为一致)
+        });
+      } else if (b.type === 'tool_use' && b.name === 'CronDelete') {
+        if (b.input && b.input.id) deletedIds.add(String(b.input.id));
+      } else if (b.type === 'tool_result' && typeof b.content === 'string' && b.tool_use_id) {
+        const m = b.content.match(/job ([0-9a-fA-F]{4,16})/);
+        if (m) jobIdByToolUse.set(String(b.tool_use_id), m[1]);
+      }
+    }
+  }
+  const out: Array<{ id: string; cron: string; prompt: string; recurring: boolean; durable: boolean }> = [];
+  for (const [tuId, info] of createdInfo) {
+    const jobId = jobIdByToolUse.get(tuId);
+    if (!jobId || deletedIds.has(jobId)) continue;
+    out.push({ id: jobId, ...info });
+  }
+  return out;
+}
+
+// 读取当前会话的活跃定时任务: ① durable 任务来自 <bind_path>/.claude/scheduled_tasks.json
+// (跨会话共享, 由持锁 session 触发); ② session-only(非 durable)任务不落盘, 从会话 JSONL
+// 转录里重建 (本会话创建且未删除的). <bind_path>/.claude/scheduled_tasks.lock 标识持锁进程.
+// 详见研究文档 faf9cf72_scheduled_tasks.md.
+router.get('/:id/features/scheduled-tasks', auth, (req: express.Request, res: express.Response) => {
+  const sessionId = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(sessionId, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'read_session_scheduled_tasks', session);
+
+  const proj = session.project_id ? (Projects.findById(session.project_id) as any) : null;
+  const root = (proj && proj.bind_path) ? path.resolve(proj.bind_path) : null;
+  if (!root) {
+    res.json({ session_id: sessionId, available: false, reason: 'no_bind_path', tasks: [], session_tasks: [], total: 0, lock: null, scheduler_alive: false });
+    return;
+  }
+  try {
+    const tasksPath = path.join(root, '.claude', 'scheduled_tasks.json');
+    const lockPath = path.join(root, '.claude', 'scheduled_tasks.lock');
+    let tasks: any[] = [];
+    if (fs.existsSync(tasksPath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
+        tasks = Array.isArray(parsed?.tasks) ? parsed.tasks.filter((t: any) => t && typeof t === 'object') : [];
+      } catch { /* 文件损坏 → 返回空清单 */ }
+    }
+    let lock: any = null;
+    if (fs.existsSync(lockPath)) {
+      try { lock = JSON.parse(fs.readFileSync(lockPath, 'utf8')); } catch { lock = null; }
+    }
+    const schedulerAlive = !!(lock && typeof lock.pid === 'number' && pidExists(lock.pid));
+    // session-only 任务从转录重建, 再按 id 去掉已落盘的 durable 任务 (避免重复).
+    const jsonlPath = sessionJsonlPath(session, sessionId);
+    let sessionTasks: any[] = [];
+    if (jsonlPath) {
+      const fileIds = new Set(tasks.map((t: any) => String(t.id)));
+      sessionTasks = scanSessionCronTasksFromTranscript(jsonlPath).filter((t: any) => !fileIds.has(String(t.id)));
+    }
+    res.json({
+      session_id: sessionId,
+      available: true,
+      root,
+      tasks,
+      session_tasks: sessionTasks,
+      total: tasks.length + sessionTasks.length,
+      lock,
+      scheduler_alive: schedulerAlive,
+    });
+  } catch (e) {
+    console.warn(`[sessions/features/scheduled-tasks] failed (${sessionId}): ${(e as Error).message}`);
+    res.status(500).json({ error: (e as Error).message || String(e) });
   }
 });
 

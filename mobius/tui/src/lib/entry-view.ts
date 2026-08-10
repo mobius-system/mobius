@@ -638,18 +638,18 @@ export function toolLabel(name: string): string {
 // agent 输出, 则视为同一次输入的重复入口 → 丢弃, 避免 TUI 把同一条提问显示多次.
 export function userTextOf(e: AnyEntry): string {
   if (e?.type === 'event_msg' && e?.payload?.type === 'user_message') {
-    return String(e?.payload?.message || '').trim()
+    return canonicalUserText(String(e?.payload?.message || ''))
   }
   if (e?.type === 'response_item' && e?.payload?.type === 'message' && e?.payload?.role === 'user') {
     const c = e?.payload?.content
-    if (typeof c === 'string') return c.trim()
-    if (Array.isArray(c)) return c.map((b: any) => b?.text || b?.input_text || '').filter(Boolean).join('\n').trim()
+    if (typeof c === 'string') return canonicalUserText(c)
+    if (Array.isArray(c)) return canonicalUserText(c.map((b: any) => b?.text || b?.input_text || '').filter(Boolean).join('\n'))
     return ''
   }
   if (e?.type === 'user') {
     const c = e?.message?.content
-    if (typeof c === 'string') return c.trim()
-    if (Array.isArray(c)) return c.filter((b: any) => b?.type === 'text').map((b: any) => b?.text || '').join('\n').trim()
+    if (typeof c === 'string') return canonicalUserText(c)
+    if (Array.isArray(c)) return canonicalUserText(c.filter((b: any) => b?.type === 'text').map((b: any) => b?.text || '').join('\n'))
     return ''
   }
   return ''
@@ -667,6 +667,11 @@ export function stripUserFraming(text: string): string {
   if (!m || m.index == null) return text
   const after = text.slice(m.index + m[0].length).trim()
   return after || text
+}
+
+/** Canonical user text for duplicate event identities (framed vs plain). */
+function canonicalUserText(text: string): string {
+  return stripUserFraming(text).replace(/\s+/g, ' ').trim()
 }
 
 export function isAssistantOutput(e: AnyEntry): boolean {
