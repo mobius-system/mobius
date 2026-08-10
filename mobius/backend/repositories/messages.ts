@@ -15,9 +15,9 @@ interface TurnRow {
 }
 
 const Messages = {
-  insertUser: (taskId: string, content: string, turnNumber: number) => db.prepare(
-    'INSERT INTO messages_v2 (task_id, role, content, turn_number) VALUES (?, ?, ?, ?)'
-  ).run(taskId, 'user', content, turnNumber),
+  insertUser: (taskId: string, content: string, turnNumber: number, metadata: string | null = null) => db.prepare(
+    'INSERT INTO messages_v2 (task_id, role, content, turn_number, metadata) VALUES (?, ?, ?, ?, ?)'
+  ).run(taskId, 'user', content, turnNumber, metadata),
 
   // system 消息支持 turn_summary 字段, 用于 stop 终止信号、permission 持久化等
   insertSystem: (taskId: string, content: string, turnNumber: number, turnSummary: string | null) => db.prepare(

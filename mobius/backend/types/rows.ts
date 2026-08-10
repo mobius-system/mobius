@@ -229,6 +229,7 @@ export interface MessageRawRow {
   task_id: string;
   role: 'user' | 'assistant' | 'tool' | 'system' | 'thinking' | 'raw';
   content: string;
+  metadata: string | null;
   raw_event: string | null;
   tool_summary: string | null;
   tool_status: string | null;
