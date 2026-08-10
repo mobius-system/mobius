@@ -192,6 +192,26 @@ export function parseMouseEvents(input: string): MouseEventInfo[] {
   return out
 }
 
+/** Collapse each contiguous wheel burst into one delta without reordering clicks. */
+export function coalesceMouseEvents(events: MouseEventInfo[]): MouseEventInfo[] {
+  const out: MouseEventInfo[] = []
+  let wheelDelta = 0
+  const flushWheel = () => {
+    if (wheelDelta !== 0) out.push({ kind: 'wheel', delta: wheelDelta })
+    wheelDelta = 0
+  }
+  for (const event of events) {
+    if (event.kind === 'wheel') {
+      wheelDelta += event.delta
+    } else {
+      flushWheel()
+      out.push(event)
+    }
+  }
+  flushWheel()
+  return out
+}
+
 /**
  * Enables terminal mouse tracking for the lifetime of the calling component and
  * forwards mouse events (wheel + left-button press/motion/release) to the given
@@ -228,7 +248,7 @@ export function useMouseEvents(handlers: {
       // A single read() chunk may carry several events and a sequence may be
       // split across chunks, so accumulate and re-scan.
       buf += String(chunk)
-      for (const e of parseMouseEvents(buf)) {
+      for (const e of coalesceMouseEvents(parseMouseEvents(buf))) {
         if (e.kind === 'wheel') refs.current.onWheel?.(e.delta)
         else if (e.kind === 'press') refs.current.onPress?.(e.row, e.col)
         else if (e.kind === 'motion') refs.current.onMotion?.(e.row, e.col)

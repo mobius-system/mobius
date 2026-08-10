@@ -13,11 +13,14 @@ import { useChat } from '../hooks/useChat.js'
 import { MobiusClient } from '../api.js'
 import { viewsForEntry, dedupeUserEntries, isAssistantOutput } from '../lib/entry-view.js'
 import {
-  displayWidth, compareSel, entryScreenLines, entryScreenRows,
-  buildTranscriptModel, computeTranscriptGeometry, screenToSelPoint,
+  displayWidth, compareSel, entryScreenRows, screenToSelPoint,
   buildSelectionMap, buildSelectionText, osc52,
   type TranscriptModel, type TranscriptGeometry, type SelPoint, type ScreenRow,
 } from '../lib/screen-text.js'
+import {
+  createRowAccess, moveAnchorByRows, sliceViewport, tailAnchor,
+  type RowAnchor,
+} from '../lib/transcript-viewport.js'
 import type { ReadyState } from './PrepScreen.js'
 import type { AnyEntry } from '../types.js'
 import { ConfigFlow, ReconfigFlow, type ConfigResult } from './ConfigFlow.js'
@@ -61,7 +64,9 @@ const SLASH_COMMANDS = [
 export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, onReconfigure, onConfigCancel, aimuxStatus }: ChatProps) {
   const chat = useChat({ client, ready, resumeSessionId })
   const [showHelp, setShowHelp] = useState(false)
-  const [scrollBack, setScrollBack] = useState(0)
+  // null means "follow the tail". A concrete anchor identifies the exact row
+  // at the top of the viewport while the user browses history.
+  const [rowAnchor, setRowAnchor] = useState<RowAnchor | null>(null)
   const [composerRows, setComposerRows] = useState(DEFAULT_COMPOSER_ROWS)
   const [modelLabel, setModelLabel] = useState<string | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
@@ -99,7 +104,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       return
     }
     setShowHelp(false)
-    setScrollBack(0)
+    setRowAnchor(null)
     void chat.send(t)
   }, [chat, runSlash])
 
@@ -115,39 +120,66 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   // (type:user / response_item.message[user] / event_msg.user_message) 合并成 1 条,
   // 避免在累积视图里把同一条提问显示多次.
   const dedupedEntries = useMemo(() => dedupeUserEntries(chat.entries), [chat.entries])
-  // Cache: entry index → rendered line count. Cleared when entries or columns change.
-  const entryLines = useRef<Map<number, number>>(new Map())
-  useEffect(() => { entryLines.current.clear() }, [dedupedEntries, terminal.columns])
-  const getEntryLines = useCallback((i: number) => {
-    const c = entryLines.current.get(i)
-    if (c !== undefined) return c
-    const n = entryScreenLines(viewsForEntry(dedupedEntries[i]), terminal.columns).length || 1
-    entryLines.current.set(i, n)
-    return n
-  }, [dedupedEntries, terminal.columns])
+  const pendingEntry = useMemo<AnyEntry | null>(() => chat.pendingUser === null ? null : ({
+    type: 'user',
+    __id: '__pending-user__',
+    message: { role: 'user', content: chat.pendingUser },
+  }), [chat.pendingUser])
+  const transcriptEntries = useMemo(
+    () => pendingEntry ? [...dedupedEntries, pendingEntry] : dedupedEntries,
+    [dedupedEntries, pendingEntry],
+  )
+
+  // Markdown parsing and wrapping are paid once per entry/terminal width. Keep
+  // the two most recent widths so resize-back does not immediately reparse the
+  // whole visible history, while bounding cache growth during repeated resizes.
+  const rowCache = useRef<WeakMap<AnyEntry, Map<number, ScreenRow[]>>>(new WeakMap())
+  const rowsForEntry = useCallback((entry: AnyEntry): readonly ScreenRow[] => {
+    let widths = rowCache.current.get(entry)
+    if (!widths) {
+      widths = new Map()
+      rowCache.current.set(entry, widths)
+    }
+    const cached = widths.get(terminal.columns)
+    if (cached) return cached
+    const rows = entryScreenRows(viewsForEntry(entry), terminal.columns)
+    if (widths.size >= 2) widths.delete(widths.keys().next().value!)
+    widths.set(terminal.columns, rows)
+    return rows
+  }, [terminal.columns])
+  const rowAccess = useMemo(() => createRowAccess(
+    transcriptEntries,
+    // UUID is stable across SSE history replay; __id is only the local fallback
+    // for entries that do not carry a backend identity (notably the optimistic
+    // pending user row).
+    (entry, index) => String(entry.uuid ?? entry.__id ?? `entry-${index}`),
+    (entry) => rowsForEntry(entry),
+  ), [transcriptEntries, rowsForEntry])
   const viewportRows = terminal.isTty ? Math.max(9, terminal.rows - 1) : terminal.rows
   const activityRows = (chat.typing ? 2 : 0) + (chat.error ? 1 : 0)
   const helpRows = showHelp ? SLASH_COMMANDS.length + 3 : 0
-  const transcriptRows = Math.max(1, viewportRows - composerRows - STATUS_ROWS - activityRows - helpRows - 3)
-  const fitted = useMemo(
-    () => fitTranscript(dedupedEntries, transcriptRows, terminal.columns, scrollBack),
-    [dedupedEntries, transcriptRows, terminal.columns, scrollBack],
+  // Conversation chrome is exactly two rows: compact header + navigation.
+  const transcriptRows = Math.max(1, viewportRows - composerRows - STATUS_ROWS - activityRows - helpRows - 2)
+  const tail = useMemo(() => tailAnchor(rowAccess, transcriptRows), [rowAccess, transcriptRows])
+  const effectiveAnchor = rowAnchor ?? tail
+  const viewport = useMemo(
+    () => sliceViewport(rowAccess, effectiveAnchor, transcriptRows),
+    [rowAccess, effectiveAnchor, transcriptRows],
   )
-  const showWelcome = dedupedEntries.length === 0 && chat.pendingUser === null && scrollBack === 0
+  const showWelcome = transcriptEntries.length === 0
+  const pageRows = Math.max(1, transcriptRows - 1)
 
-  // Keep a history page pinned while new events stream in. At the latest page,
-  // new output continues to auto-follow as usual.
-  const prevLenRef = useRef(dedupedEntries.length)
-  useEffect(() => {
-    const previous = prevLenRef.current
-    const current = dedupedEntries.length
-    prevLenRef.current = current
-    if (current > previous && scrollBack > 0) {
-      setScrollBack(value => value + current - previous)
-    } else if (scrollBack > current) {
-      setScrollBack(current)
-    }
-  }, [dedupedEntries.length, scrollBack])
+  const scrollRows = useCallback((deltaRows: number) => {
+    if (deltaRows === 0) return
+    selState.current = null
+    setSel(null)
+    setRowAnchor(previous => {
+      const start = previous ?? tailAnchor(rowAccess, transcriptRows)
+      const next = moveAnchorByRows(rowAccess, start, deltaRows)
+      if (deltaRows > 0 && !sliceViewport(rowAccess, next, transcriptRows).hasNewer) return null
+      return next
+    })
+  }, [rowAccess, transcriptRows])
 
   // Show the model's friendly label (e.g. "GPT-5.6-Sol") in the header/status
   // instead of its opaque key (e.g. "codex:mobiusdefaultaabb").
@@ -173,16 +205,13 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       if (isEscapeKeypress(_input, key)) onConfigCancel(handlerRef.current.sessionId)
       return
     }
-    const step = Math.max(1, fitted.entries.length)
-    if (key.pageUp) setScrollBack(value => Math.min(dedupedEntries.length, value + step))
-    else if (key.pageDown) setScrollBack(value => Math.max(0, value - step))
+    if (key.pageUp) scrollRows(-pageRows)
+    else if (key.pageDown) scrollRows(pageRows)
   }, { interactive: false })
 
-  const olderHint = !showWelcome && (fitted.hiddenOlder > 0 || scrollBack > 0)
-    ? fitted.hiddenOlder > 0
-      ? `↑ 还有 ${fitted.hiddenOlder} 条较早记录 · 滚轮/PageUp 翻页 · 拖动选中文本`
-      : '已到最早记录 · 滚轮/PageDown 翻页 · 拖动选中文本'
-    : null
+  const navigationHint = viewport.hasOlder
+    ? `${viewport.hasNewer ? '↑ 较早内容 · ↓ 较新内容' : '↑ 还有较早内容'} · 滚轮 3 行 · PageUp/PageDown ${pageRows} 行 · 拖动选中文本`
+    : `${viewport.hasNewer ? '已到最早 · ↓ 还有较新内容' : '全部内容'} · 滚轮 3 行 · PageUp/PageDown ${pageRows} 行 · 拖动选中文本`
 
   // Mouse: wheel pages through history in small fixed steps, and a left-button
   // drag selects transcript text (tmux-style: the app owns the mouse, draws its
@@ -194,23 +223,16 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   const [sel, setSel] = useState<{ anchor: SelPoint; end: SelPoint; active: boolean } | null>(null)
   const [copyNotice, setCopyNotice] = useState<string | null>(null)
 
-  // Geometry + text model must mirror the rendered transcript so a screen
-  // (row, col) maps to the right entry/line/char. Recompute with the fitted view.
-  const tipShown = dedupedEntries.length === 0 && chat.pendingUser === null && !showHelp
-  const geometry: TranscriptGeometry = useMemo(() => computeTranscriptGeometry({
-    viewportRows,
-    composerRows,
-    statusRows: STATUS_ROWS,
-    activityRows,
-    helpRows,
-    showWelcome,
-    welcomeRows: 10,
-    olderHintShown: olderHint !== null,
-    tipShown,
-  }), [viewportRows, composerRows, activityRows, helpRows, showWelcome, olderHint, tipShown])
+  // Selection uses the exact virtual rows mounted below. There is no separate
+  // fitting/geometry pass, so hit-testing, rendering and clipboard extraction
+  // cannot disagree about which rows are on screen.
+  const geometry: TranscriptGeometry = useMemo(
+    () => ({ boxTop: 2, boxH: transcriptRows }),
+    [transcriptRows],
+  )
   const transcriptModel: TranscriptModel = useMemo(
-    () => buildTranscriptModel(fitted.entries, terminal.columns),
-    [fitted.entries, terminal.columns],
+    () => ({ entries: viewport.rows.map(item => [item.row.plain]), totalRows: viewport.rows.length }),
+    [viewport.rows],
   )
   const selMap = useMemo(
     () => (sel?.active ? buildSelectionMap(transcriptModel, sel.anchor, sel.end) : null),
@@ -226,25 +248,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
 
   useMouseEvents({
     onWheel: (delta) => {
-      if (delta === 0) return
-      const targetLines = 2
-      let lines = 0
-      let next = scrollBack
-      const n = dedupedEntries.length
-      if (delta > 0) {
-        // scroll up (older): hide more entries from the tail
-        for (let i = n - 1 - next; i >= 0 && lines < targetLines; i--) {
-          lines += getEntryLines(i)
-          next++
-        }
-      } else {
-        // scroll down (newer): unhide entries from the tail
-        for (let i = n - next; i < n && lines < targetLines; i++) {
-          lines += getEntryLines(i)
-          next--
-        }
-      }
-      setScrollBack(Math.min(n, Math.max(0, next)))
+      scrollRows(delta * -3)
     },
     onPress: (row, col) => {
       const p = screenToSelPoint(row, col, transcriptModel, geometry)
@@ -324,34 +328,25 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           ? <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} modelDisplay={modelDisplay} />
           : <CompactHeader ready={ready} sessionId={chat.sessionId} columns={terminal.columns} />}
 
-        {/* Older-records hint is pinned OUTSIDE the flex-end scroll box so it is
-            always the first line of the transcript, spanning the full width,
-            instead of floating mid-screen when the transcript has spare rows. */}
-        {olderHint !== null
-          ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  {olderHint}</Text></Box>
+        {!showWelcome
+          ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  {navigationHint}</Text></Box>
           : null}
 
-        <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent={showWelcome || fitted.hiddenOlder > 0 ? 'flex-start' : 'flex-end'} overflowY="hidden">
-          {fitted.peekRows.length > 0
-            ? <Box width="100%" flexShrink={0} flexDirection="column">
-                {fitted.peekRows.map((row, index) => (
-                  <ScreenText
-                    key={`peek-${index}`}
-                    row={row}
-                    text={`${index === 0 ? '  ⋯ ' : '    '}${row.styled}`}
-                  />
-                ))}
-              </Box>
-            : null}
-          {fitted.entries.map((entry, index) => {
-            const entrySel = selMap?.get(index)
-            const key = entry.__id ?? `entry-${fitted.startIndex + index}`
-            return <EntryScreen key={key} entry={entry} columns={terminal.columns} sel={entrySel} />
-          })}
-          {chat.pendingUser !== null ? <UserLine text={chat.pendingUser} /> : null}
-          {fitted.hiddenRecent > 0
-            ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  ↓ 滚轮/PageDown 翻页 · 较新 {fitted.hiddenRecent} 条</Text></Box>
-            : null}
+        <Box
+          height={showWelcome ? undefined : transcriptRows}
+          flexGrow={showWelcome ? 1 : 0}
+          flexShrink={showWelcome ? 1 : 0}
+          flexDirection="column"
+          justifyContent="flex-end"
+          overflowY="hidden"
+        >
+          {!showWelcome ? viewport.rows.map((item, index) => {
+            const range = selMap?.get(index)?.get(0)
+            const text = range && range.start < range.end
+              ? highlightScreenRow(item.row.styled, range.start, range.end)
+              : item.row.styled
+            return <ScreenText key={`${item.entryId}:${item.rowIndex}`} row={item.row} text={text || ' '} />
+          }) : null}
         </Box>
 
         {dedupedEntries.length === 0 && chat.pendingUser === null && !showHelp
@@ -451,29 +446,6 @@ function CompactHeader({ ready, sessionId, columns }: { ready: ReadyState; sessi
   )
 }
 
-// Normal and selected transcript rows use the exact same component tree. Mouse
-// motion now changes only ANSI background bytes inside a row; it never swaps a
-// rich Markdown entry for a structurally different plain-text entry, which used
-// to make long/styled messages jump as the selection crossed entry boundaries.
-function EntryScreen({ entry, columns, sel }: {
-  entry: AnyEntry
-  columns: number
-  sel?: Map<number, { start: number; end: number }>
-}) {
-  const rows = entryScreenRows(viewsForEntry(entry), columns)
-  return (
-    <Box flexDirection="column">
-      {rows.map((row, index) => {
-        const range = sel?.get(index)
-        const text = range && range.start < range.end
-          ? highlightScreenRow(row.styled, range.start, range.end)
-          : row.styled
-        return <ScreenText key={index} row={row} text={text || ' '} />
-      })}
-    </Box>
-  )
-}
-
 function ScreenText({ row, text }: { row: ScreenRow; text: string }) {
   const tone = row.tone
   const color = tone === 'tool' ? 'cyan'
@@ -526,13 +498,6 @@ function highlightScreenRow(styled: string, start: number, end: number): string 
   }
   if (highlighted) out += SELECTION_BG_END
   return out
-}
-
-function UserLine({ text }: { text: string }) {
-  const lines = text.split('\n')
-  if (lines[0] !== undefined) lines[0] = `› ${lines[0]}`
-  for (let i = 1; i < lines.length; i++) lines[i] = `  ${lines[i]}`
-  return <Box marginTop={1}><Text bold>{lines.join('\n')}</Text></Box>
 }
 
 function WorkingIndicator({ firstQuery }: { firstQuery: boolean }) {
@@ -1103,60 +1068,3 @@ function clickableUrl(url: string, maxLen?: number): string {
 
 // displayWidth is imported from src/lib/screen-text.ts (CJK/emoji-aware), used
 // here to size the AIMUX status block so the web URL truncates exactly.
-
-export function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, scrollBack = 0): {
-  entries: AnyEntry[]
-  /** Tail rows of the next older entry, used to fill spare space above the viewport. */
-  peekRows: ScreenRow[]
-  hiddenOlder: number
-  hiddenRecent: number
-  startIndex: number
-} {
-  const tail = Math.max(0, entries.length - scrollBack)
-  const available = tail === 0 ? [] : entries.slice(0, tail)
-  const renderedRows = available.map((entry) => entryScreenRows(viewsForEntry(entry), columns))
-  const fit = (budget: number) => {
-    let rows = 0
-    let first = available.length
-    for (let index = available.length - 1; index >= 0; index--) {
-      const nextRows = renderedRows[index].length
-      if (first < available.length && rows + nextRows > budget) break
-      rows += nextRows
-      first = index
-    }
-    return { first, rows }
-  }
-
-  const base = fit(rowBudget)
-  let fitted = base
-  let first = fitted.first
-  let peekRows: ScreenRow[] = []
-  // When older history exists, guarantee at least one row for the tail of the
-  // next older message. If complete entries exactly consume the budget, refit
-  // them with one fewer row; only the oldest complete entry can drop out, while
-  // the latest content remains visible. A single oversized entry keeps its
-  // original rendering because it cannot safely donate a row.
-  if (first > 0 && fitted.rows <= rowBudget) {
-    if (fitted.rows === rowBudget && rowBudget > 1) {
-      const reduced = fit(rowBudget - 1)
-      if (reduced.first > 0 && reduced.rows <= rowBudget - 1) {
-        fitted = reduced
-        first = reduced.first
-      }
-    }
-    const olderRows = renderedRows[first - 1].slice()
-    while (olderRows.length > 0 && !olderRows[0].plain.trim()) olderRows.shift()
-    while (olderRows.length > 0 && !olderRows[olderRows.length - 1].plain.trim()) olderRows.pop()
-    const spare = rowBudget - fitted.rows
-    if (spare > 0 && olderRows.length > 0) {
-      peekRows = olderRows.slice(-spare)
-    }
-  }
-  return {
-    entries: available.slice(first),
-    peekRows,
-    hiddenOlder: first,
-    hiddenRecent: entries.length - tail,
-    startIndex: first,
-  }
-}
