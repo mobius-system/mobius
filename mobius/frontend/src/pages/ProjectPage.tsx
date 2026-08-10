@@ -795,7 +795,9 @@ export default function ProjectPage() {
         )}
 
         <main className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`} style={{ background: 'var(--bg-secondary)' }}>
-          <div className={`max-w-7xl mx-auto p-3 sm:p-6 ${isMobile ? '' : 'h-full min-h-0'}`}>
+          {/* 任务/研究列表是卡片网格, 在大屏放宽最大宽度让网格铺开更多列, 减少右侧留白;
+              项目设置表单仍保持 max-w-7xl 保证长表单可读性. */}
+          <div className={`${rightView === 'items' && !isMobile ? 'max-w-[1600px]' : 'max-w-7xl'} mx-auto p-3 sm:p-6 ${isMobile ? '' : 'h-full min-h-0'}`}>
             {(() => {
               const settingsPanel = (
                 <ProjectSettingsPanel

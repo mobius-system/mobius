@@ -1013,7 +1013,12 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             )}
           </div>
           <span className="mobius-topnav-sep-pre text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
-          <LinklessRouteButton to={`/u/${userParam}`} className="mobius-topnav-userlink text-[13px] hover:text-blue-400 truncate flex-shrink-0"
+          <LinklessRouteButton
+            to={userParam ? `/u/${userParam}` : '/'}
+            newTab
+            aria-label="回到主页"
+            title="回到主页"
+            className="mobius-topnav-userlink text-[13px] hover:text-blue-400 truncate flex-shrink-0"
             style={{ color: 'var(--text-secondary)', maxWidth: 140 }}>
             {userParam}
           </LinklessRouteButton>

@@ -736,21 +736,26 @@ export default function UserPage() {
                   const overview = overviewByProject[p.id] || null
                   const issues = issuesByProject[p.id] || []
                   const researches = researchesByProject[p.id] || []
-                  const showResearch = !!p.research_enabled && !((p.research_count || 0) === 0 && issues.length > 0)
-                  const overviewItems = showResearch ? researches : issues
-                  const overviewKind = showResearch ? 'research' : 'issue'
                   const issueCounts = overview?.issue_counts || null
                   const researchCounts = overview?.research_counts || null
                   const activeIssueCount = issueCounts ? issueCounts.active : issues.filter((i: any) => i.status !== 'completed').length
                   const completedIssueCount = issueCounts ? issueCounts.completed : issues.filter((i: any) => i.status === 'completed').length
-                  const overviewTotal = showResearch
-                    ? (researchCounts?.total ?? overviewItems.length)
-                    : (issueCounts?.total ?? overviewItems.length)
-                  // 当前卡片展示的概览(research 或 issue)是否仍在拉取: 拉取期间不显示"暂无 XX"空态.
+                  // 列表穿插显示活跃的 research 与 issue: 各取未完成项, 按各自最近活跃顺序交替合并, 取前 5.
+                  const activeResearches = researches.filter((r: any) => r.status !== 'completed')
+                  const activeIssues = issues.filter((i: any) => i.status !== 'completed')
+                  const overviewItems: Array<{ item: any; kind: 'research' | 'issue' }> = []
+                  const interleaveMax = Math.max(activeResearches.length, activeIssues.length)
+                  for (let idx = 0; idx < interleaveMax; idx++) {
+                    if (idx < activeResearches.length) overviewItems.push({ item: activeResearches[idx], kind: 'research' })
+                    if (idx < activeIssues.length) overviewItems.push({ item: activeIssues[idx], kind: 'issue' })
+                  }
+                  const overviewTotal = (researchCounts?.active ?? activeResearches.length) + (issueCounts?.active ?? activeIssues.length)
+                  const overviewLabel = p.research_enabled ? '研究 / 任务' : '任务'
+                  const overviewEmpty = p.research_enabled ? '暂无活跃研究/任务' : '暂无活跃任务'
+                  // 任一来源仍在拉取且未到货时不显示空态.
                   const overviewLoading = !!(
-                    overviewKind === 'research'
-                      ? (researchesLoadingByProject[p.id] && !researchesByProject[p.id])
-                      : (issuesLoadingByProject[p.id] && !issuesByProject[p.id])
+                    (p.research_enabled && researchesLoadingByProject[p.id] && !researchesByProject[p.id]) ||
+                    (issuesLoadingByProject[p.id] && !issuesByProject[p.id])
                   )
                   const isMuted = projectIsMuted(p)
                   const cardTheme = effectiveProjectCardBorderTheme(p)
@@ -913,7 +918,7 @@ export default function UserPage() {
                       ) : (
                       <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>{showResearch ? '研究' : '任务'}</span>
+                          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>{overviewLabel}</span>
                           <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
                             className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">查看全部 →</LinklessNav>
                         </div>
@@ -921,16 +926,19 @@ export default function UserPage() {
                           overviewLoading ? (
                             <ListLoadingHint compact />
                           ) : (
-                            <div className="text-[11px] py-2" style={{ color: 'var(--text-muted)' }}>{showResearch ? '暂无研究' : '暂无任务'}</div>
+                            <div className="text-[11px] py-2" style={{ color: 'var(--text-muted)' }}>{overviewEmpty}</div>
                           )
                         ) : (
                           <div className="space-y-1 min-w-0">
-                            {overviewItems.slice(0, 5).map((item: any) => (
-                              <LinklessNav key={item.id} to={`/u/${p.created_by}/p/${p.id}/${overviewKind === 'research' ? 'r' : 'i'}/${item.id}`}
+                            {overviewItems.slice(0, 5).map(({ item, kind }) => (
+                              <LinklessNav key={`${kind}:${item.id}`} to={`/u/${p.created_by}/p/${p.id}/${kind === 'research' ? 'r' : 'i'}/${item.id}`}
                                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors group/iss min-w-0">
-                                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.status === 'completed' ? 'bg-green-400' : (overviewKind === 'research' ? 'bg-emerald-400/80' : 'bg-blue-400/70')}`} />
-                                <span className={`text-[12px] truncate flex-1 min-w-0 ${item.status === 'completed' ? 'line-through' : ''}`}
-                                  style={{ color: item.status === 'completed' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${kind === 'research' ? 'bg-emerald-400/80' : 'bg-blue-400/70'}`} />
+                                <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 font-medium"
+                                  style={kind === 'research' ? { color: '#34d399', background: 'rgba(52,211,153,0.10)' } : { color: '#60a5fa', background: 'rgba(96,165,250,0.10)' }}>
+                                  {kind === 'research' ? '研究' : '任务'}
+                                </span>
+                                <span className="text-[12px] truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>
                                   {item.title}
                                 </span>
                                 {item.session_count > 0 && (

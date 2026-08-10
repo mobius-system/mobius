@@ -1616,12 +1616,12 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
   }, [DRAFT_KEY, title, desc, descTouched])
   const submit = async () => {
     if (!title.trim()) { setErr('请填写研究标题'); return }
-    if (!effectiveDesc.trim()) { setErr('请填写研究描述'); return }
+    const submittedDescription = effectiveDesc.trim() || title.trim()
     setLoading(true); setErr('')
     try {
       const research = await api(`/api/projects/${projectId}/researches`, {
         method: 'POST',
-        body: JSON.stringify({ title, description: effectiveDesc }),
+        body: JSON.stringify({ title, description: submittedDescription }),
       })
       draftClear(DRAFT_KEY)
       onCreated(research)
@@ -2464,7 +2464,7 @@ export function NewSessionModal({
         ...(options.includeBody === false ? { include_body: false } : {}),
         ...(options.includeItemBodies === false ? { include_item_bodies: false } : {}),
         // PC 任务模式 (仅桌面端): 与 session 创建 body 同源, 让 preview 也注入 PC 提示词; web 端 workMode null 不传.
-        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false } } : {}),
+        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
       }),
     }) as WizardPreview
   }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality, workMode, aimuxId, pcPath])
@@ -2612,7 +2612,7 @@ export function NewSessionModal({
           excluded_memory_ids: Array.from(excludedMemories),
           continue_from_session_id: continueFromSessionId || undefined,
           // PC 任务模式 (仅桌面端): workMode 非空才附带 pc_client_metadata; web 端 workMode 恒 null → body 完全不变.
-          ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false } } : {}),
+            ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
         }),
       })
       draftClear(DRAFT_KEY)

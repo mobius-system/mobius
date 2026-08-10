@@ -70,7 +70,11 @@ export class AimuxSupervisor {
     onStatus({ state: "starting", detail: "正在连接 mobius…", identifier });
 
     appendAimuxLog(`\n==== [${new Date().toISOString()}] spawn reverse connect identifier=${identifier} ====\n`);
-    const child = spawn(aimuxExe, ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token, "--replace"]);
+    const args = ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token, "--replace"];
+    // Windows otherwise opens a console window for every reverse-connect
+    // child and for its shell helpers.  TUI and Electron now share this flag.
+    if (process.platform === "win32") args.push("--silent-shell");
+    const child = spawn(aimuxExe, args, { windowsHide: true });
     this.child = child;
     this.startConnectionProbe();
 

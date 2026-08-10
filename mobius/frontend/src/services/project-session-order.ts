@@ -38,7 +38,7 @@ export function projectSessionPreview<T extends { agent_status?: string | null }
   showingSearchMatches = false,
 ): T[] {
   const ordered = sortProjectSessions(sessions)
-  if (!compact) return ordered.slice(0, 4)
+  if (!compact) return ordered.slice(0, 3)
   if (showingSearchMatches) return ordered.slice(0, 2)
   const running = ordered.filter((session) => session?.agent_status === 'running')
   return running.length > 0 ? running.slice(0, 2) : ordered.slice(0, 1)

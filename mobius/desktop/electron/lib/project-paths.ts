@@ -4,11 +4,56 @@
 import { app } from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 
 const FILE = (): string => path.join(app.getPath("userData"), "project-paths.json");
 
 interface Store {
   [k: string]: { path?: string; workMode?: string; updatedAt: string };
+}
+
+/** TUI-compatible mapping stored in the user's shared ~/.mobius directory. */
+export function sharedMobiusHome(): string {
+  return path.join(os.homedir(), ".mobius");
+}
+
+export function readSharedDir2Project(): Record<string, string> {
+  try {
+    const file = path.join(sharedMobiusHome(), "dir2project.json");
+    const value = JSON.parse(fs.readFileSync(file, "utf8"));
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Exact path first, then the nearest bound ancestor (useful for subfolders). */
+export function findSharedProjectForPath(rawPath: string): { projectId: string; root: string } | null {
+  const target = path.resolve(rawPath);
+  const map = readSharedDir2Project();
+  let best: { projectId: string; root: string } | null = null;
+  for (const [rawRoot, rawId] of Object.entries(map)) {
+    if (typeof rawId !== "string" || !rawId.trim()) continue;
+    const root = path.resolve(rawRoot);
+    const rel = path.relative(root, target);
+    if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) {
+      if (!best || root.length > best.root.length) best = { projectId: rawId.trim(), root };
+    }
+  }
+  return best;
+}
+
+export function bindSharedProjectPath(rawPath: string, projectId: string): void {
+  const file = path.join(sharedMobiusHome(), "dir2project.json");
+  const target = path.resolve(rawPath);
+  try {
+    const map = readSharedDir2Project();
+    map[target] = projectId;
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(map, null, 2), { mode: 0o600 });
+  } catch (e) {
+    console.error("[project-paths] 写入共享 .mobius 映射失败:", e);
+  }
 }
 
 function read(): Store {

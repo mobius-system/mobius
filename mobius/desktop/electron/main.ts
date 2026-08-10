@@ -11,7 +11,8 @@ import { loadCreds, saveCreds, clearCreds, loadServerUrl, saveServerUrl, loadSer
 import { gatherHostInfo, type BootData } from "./lib/host-info";
 import { ensureAimux, upgradeAimux, getAimuxVersion, checkAimuxUpdate, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
 import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
-import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
+import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName, findSharedProjectForPath, bindSharedProjectPath } from "./lib/project-paths";
+import { ensureWindowsContextMenu, openPathArgument } from "./lib/windows-context-menu";
 import { FileOpError, validateNewName, assertNoSymlink, isDirEqualOrChild, copyEntryRecursive } from "./lib/project-file-ops";
 import { getAimuxEnabled, setAimuxEnabled, getLastRoute } from "./lib/desktop-settings";
 import { createStatusWindow } from "./status-window";
@@ -33,6 +34,7 @@ let windowDragTimer: NodeJS.Timeout | null = null;
 // aimux 反向连接开关（持久化于 userData/desktop-settings.json，默认开）。
 // 关闭后本机不再作为可调度节点连入 mobius，桌面端其他功能不受影响。
 let aimuxEnabled = true;
+let pendingOpenPath: string | null = openPathArgument();
 
 // 多 tab 编排（实验版 0.0.12）。每个 tab = 一个独立 WebContentsView，挂 mainWindow.contentView。
 let tabManager: TabManager | null = null;
@@ -186,6 +188,29 @@ async function fetchProjectName(server: string, projectId: string): Promise<stri
   } catch {
     return projectId;
   }
+}
+
+/** Resolve a Windows Explorer path through the TUI-compatible ~/.mobius map. */
+async function openRequestedPath(rawPath: string): Promise<void> {
+  const candidate = String(rawPath || "").trim();
+  if (!candidate || !tabManager || !creds) return;
+  const target = resolve(candidate);
+  let route = `/welcome?path=${encodeURIComponent(target)}`;
+  const match = findSharedProjectForPath(target);
+  if (match) {
+    try {
+      const res = await fetch(`${serverOrigin()}/api/projects`, { headers: { Authorization: `Bearer ${creds.jwt}` } });
+      const data = await res.json().catch(() => ({}));
+      const projects: any[] = Array.isArray(data) ? data : (data?.projects || []);
+      const project = projects.find((p) => String(p?.id || "") === match.projectId);
+      if (project) {
+        // Import the TUI mapping into the legacy Electron store on first use.
+        setProjectLocalPath(serverOrigin(), match.projectId, match.root);
+        route = `/u/${encodeURIComponent(creds.username)}/p/${encodeURIComponent(match.projectId)}`;
+      }
+    } catch { /* server unavailable: leave the welcome flow with the path */ }
+  }
+  tabManager.createTab(route, { activate: true });
 }
 
 // ——— 状态分发：推给 web UI（前端 AimuxStatusBadge 通过 IPC 接收，不再由主进程注入徽标）———
@@ -494,6 +519,11 @@ async function bootDesktop(): Promise<void> {
   ensureTabManager();
   void mainWindow.loadURL(ABOUT_BLANK);
   tabManager!.restore();
+  if (pendingOpenPath) {
+    const requested = pendingOpenPath;
+    pendingOpenPath = null;
+    void openRequestedPath(requested);
+  }
   scheduleAutoAimuxUpdateCheck();
 }
 
@@ -951,6 +981,9 @@ ipcMain.handle("project:confirm-path", async (_e, projectId: string, pathRaw: st
     return { ok: false, error: (e as Error).message };
   }
   setProjectLocalPath(serverOrigin(), projectId, p);
+  // Keep Electron and TUI on the same cwd -> project protocol.  The old
+  // userData mapping remains as a machine/server-local cache for compatibility.
+  bindSharedProjectPath(p, projectId);
   return { ok: true, path: p };
 });
 // 进入项目页时前端拉取：已绑则(必要时补建目录)返回 bound:true；未绑返回默认路径供弹窗预填。
@@ -1269,14 +1302,18 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    const requested = openPathArgument(argv);
+    if (requested) pendingOpenPath = requested;
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
+      if (requested && creds) void openRequestedPath(requested);
     }
   });
 
   app.whenReady().then(async () => {
+    ensureWindowsContextMenu();
     aimuxEnabled = getAimuxEnabled();
     buildMenu();
     createWindow();
