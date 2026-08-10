@@ -333,10 +333,14 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           : null}
 
         <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent={showWelcome || fitted.hiddenOlder > 0 ? 'flex-start' : 'flex-end'} overflowY="hidden">
-          {fitted.peekLines.length > 0
+          {fitted.peekRows.length > 0
             ? <Box width="100%" flexShrink={0} flexDirection="column">
-                {fitted.peekLines.map((line, index) => (
-                  <Text key={`peek-${index}`} dimColor wrap="truncate-end">{index === 0 ? '  ⋯ ' : '    '}{line}</Text>
+                {fitted.peekRows.map((row, index) => (
+                  <ScreenText
+                    key={`peek-${index}`}
+                    row={row}
+                    text={`${index === 0 ? '  ⋯ ' : '    '}${row.styled}`}
+                  />
                 ))}
               </Box>
             : null}
@@ -1101,17 +1105,17 @@ function clickableUrl(url: string, maxLen?: number): string {
 // displayWidth is imported from src/lib/screen-text.ts (CJK/emoji-aware), used
 // here to size the AIMUX status block so the web URL truncates exactly.
 
-function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, scrollBack = 0): {
+export function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, scrollBack = 0): {
   entries: AnyEntry[]
   /** Tail rows of the next older entry, used to fill spare space above the viewport. */
-  peekLines: string[]
+  peekRows: ScreenRow[]
   hiddenOlder: number
   hiddenRecent: number
   startIndex: number
 } {
   const tail = Math.max(0, entries.length - scrollBack)
   const available = tail === 0 ? [] : entries.slice(0, tail)
-  const renderedRows = available.map((entry) => entryScreenLines(viewsForEntry(entry), columns))
+  const renderedRows = available.map((entry) => entryScreenRows(viewsForEntry(entry), columns))
   const fit = (budget: number) => {
     let rows = 0
     let first = available.length
@@ -1127,7 +1131,7 @@ function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, 
   const base = fit(rowBudget)
   let fitted = base
   let first = fitted.first
-  let peekLines: string[] = []
+  let peekRows: ScreenRow[] = []
   // When older history exists, guarantee at least one row for the tail of the
   // next older message. If complete entries exactly consume the budget, refit
   // them with one fewer row; only the oldest complete entry can drop out, while
@@ -1141,17 +1145,17 @@ function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, 
         first = reduced.first
       }
     }
-    const olderLines = renderedRows[first - 1].slice()
-    while (olderLines.length > 0 && !olderLines[0].trim()) olderLines.shift()
-    while (olderLines.length > 0 && !olderLines[olderLines.length - 1].trim()) olderLines.pop()
+    const olderRows = renderedRows[first - 1].slice()
+    while (olderRows.length > 0 && !olderRows[0].plain.trim()) olderRows.shift()
+    while (olderRows.length > 0 && !olderRows[olderRows.length - 1].plain.trim()) olderRows.pop()
     const spare = rowBudget - fitted.rows
-    if (spare > 0 && olderLines.length > 0) {
-      peekLines = olderLines.slice(-spare)
+    if (spare > 0 && olderRows.length > 0) {
+      peekRows = olderRows.slice(-spare)
     }
   }
   return {
     entries: available.slice(first),
-    peekLines,
+    peekRows,
     hiddenOlder: first,
     hiddenRecent: entries.length - tail,
     startIndex: first,

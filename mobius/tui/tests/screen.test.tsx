@@ -20,6 +20,8 @@ import { Box, Text } from 'ink'
 import { render } from 'ink-testing-library'
 import { Screen } from '../src/components/Screen.js'
 import { Select } from '../src/components/primitives.js'
+import { fitTranscript } from '../src/components/Chat.js'
+import type { AnyEntry } from '../src/types.js'
 
 const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
@@ -33,6 +35,18 @@ const ROWS = 24
 
 async function main() {
   console.log('\n[SCREEN] no-residue picker transitions\n')
+
+  // A hidden older entry may contribute only its tail rows when the viewport
+  // has one spare row. That preview must retain the entry's foreground style;
+  // rendering it as a bare dimColor string makes a clipped cyan Markdown link
+  // look gray even though the rest of the message is colored.
+  const styledEntries: AnyEntry[] = [
+    { type: 'assistant', uuid: 'styled-old', message: { role: 'assistant', content: [{ type: 'text', text: '[彩色链接](https://example.com)' }] } },
+    { type: 'assistant', uuid: 'styled-new', message: { role: 'assistant', content: [{ type: 'text', text: '最新消息' }] } },
+  ]
+  const fitted = fitTranscript(styledEntries, 3, 80)
+  ok(fitted.peekRows.length === 1, 'small viewport exposes one tail row from the hidden message')
+  ok(fitted.peekRows[0]?.styled.includes('\x1b[') && fitted.peekRows[0]?.styled.includes('彩色链接'), 'partial older row keeps its ANSI foreground styling')
 
   // ── 1. Without Screen, a tall frame overflows the terminal (the bug). ───────
   const tall = render(

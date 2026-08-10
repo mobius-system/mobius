@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CircleDot, ChevronDown, ChevronLeft, ChevronRight, FlaskConical, MessageSquare, MessageSquarePlus, Plus } from 'lucide-react'
+import { CircleDot, ChevronDown, FlaskConical, MessageSquare, MessageSquarePlus, Plus } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo, timeAgoPrecise } from '../components/shell'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
@@ -8,7 +8,7 @@ import { usePagination, PaginationControls } from '../components/pagination'
 import {
   NewSessionModal, RenameSessionModal, RenameIssueModal, ConfirmModal,
 } from '../components/modals'
-import { ChatArea, SessionRow, isSessionNameMuted } from '../components/chat'
+import { ChatArea, SessionRow } from '../components/chat'
 import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
@@ -21,7 +21,6 @@ const EditorPane = lazy(() => import('../components/workspace/editor-pane').then
 const CodeConversationPane = lazy(() => import('../components/workspace/code-conversation-pane').then(m => ({ default: m.CodeConversationPane })))
 
 const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
-const SESSION_OVERVIEW_PAGE_SIZE = 15
 const SESSION_SIDEBAR_PAGE_SIZE = 16  // sidebar 会话列表每页 16, 超过即分页
 const RECENT_SESSION_LIMIT = 50
 
@@ -491,15 +490,22 @@ export default function IssuePage() {
                     为当前 Issue 开启一次智能体执行
                   </div>
                 </button>
-              ) : sidebarPagination.pagedItems.map((s: any) => (
-                <SessionRow key={s.session_id}
-                  session={s}
-                  isSelected={currentSession?.session_id === s.session_id}
-                  onSelect={onSelectSession}
-                  onEdit={(s) => setEditingSession(s)}
-                  onDelete={(s) => setDeletingSession(s)}
-                />
-              ))
+              ) : sidebarPagination.pagedItems.map((s: any) => {
+                // guided-demo / logo-review 的 tour 锚点 (session-card / logo-review-session-card)
+                // 从原右侧会话卡片网格迁移到左侧 SessionRow: 会话导航统一在左侧列表, demo 流程不破坏.
+                const isLogoReviewSessionCard = projectId === LOGO_REVIEW_PROJECT_ID
+                  && String(s.name || '').includes(LOGO_REVIEW_SESSION_NAME)
+                return (
+                  <SessionRow key={s.session_id}
+                    session={s}
+                    isSelected={currentSession?.session_id === s.session_id}
+                    onSelect={onSelectSession}
+                    onEdit={(s) => setEditingSession(s)}
+                    onDelete={(s) => setDeletingSession(s)}
+                    dataTour={isGuidedDemoSession(s.session_id) ? 'session-card' : isLogoReviewSessionCard ? 'logo-review-session-card' : undefined}
+                  />
+                )
+              })
             ) : recentSessionsLoading ? (
               <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
             ) : recentSessionsError ? (
@@ -645,11 +651,7 @@ export default function IssuePage() {
         ) : (
           <SessionOverview
             sessions={sortedSessions}
-            issueId={issueId}
-            onOpenSession={goToSession}
             onNewSession={() => setShowNewSession(true)}
-            onEdit={(s) => setEditingSession(s)}
-            onDelete={(s) => setDeletingSession(s)}
             projectId={projectId}
           />
         )}
@@ -699,52 +701,42 @@ function WorkspacePaneLoading({ label }: { label: string }) {
 
 // =====================================================================
 // SessionOverview — 没有选中 session 时的右侧主区
-// 展示 session 卡片网格 + 新建会话按钮
+// 会话导航统一收敛到左侧 SessionRow 列表 (master-detail 的 master), 这里只做
+// 任务概览: 统计摘要 + 状态统计卡 + 新建会话入口. 不再与左侧列表并列展示同一批
+// 会话卡片 (消除冗余). guided-demo / logo-review 的 tour 锚点已迁移到左侧
+// SessionRow (见 IssuePage 渲染处), demo 流程不破坏.
 // =====================================================================
-function SessionOverview({ sessions, issueId, onOpenSession, onNewSession, onEdit, onDelete, projectId }: {
+function SessionOverview({ sessions, onNewSession, projectId }: {
   sessions: any[]
-  issueId: string
-  onOpenSession: (sid: string) => void
   onNewSession: () => void
-  onEdit: (s: any) => void
-  onDelete: (s: any) => void
   projectId: string
 }) {
-  const [page, setPage] = useState(1)
-  const totalPages = Math.max(1, Math.ceil(sessions.length / SESSION_OVERVIEW_PAGE_SIZE))
-  const currentPage = Math.min(page, totalPages)
-  const showPagination = sessions.length > SESSION_OVERVIEW_PAGE_SIZE
-  const pageStart = sessions.length === 0 ? 0 : (currentPage - 1) * SESSION_OVERVIEW_PAGE_SIZE + 1
-  const pageEnd = Math.min(currentPage * SESSION_OVERVIEW_PAGE_SIZE, sessions.length)
-  const pagedSessions = useMemo(() => {
-    const start = (currentPage - 1) * SESSION_OVERVIEW_PAGE_SIZE
-    return sessions.slice(start, start + SESSION_OVERVIEW_PAGE_SIZE)
-  }, [sessions, currentPage])
-
-  useEffect(() => {
-    setPage(1)
-  }, [issueId])
-
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages)
-  }, [page, totalPages])
-
-  const goToPage = (nextPage: number) => {
-    setPage(Math.min(Math.max(nextPage, 1), totalPages))
-  }
+  // 状态分类复用 agent_status 单一真相源 (与 AgentStatusDot 同源), 颜色语义一致.
+  const stats = useMemo(() => {
+    let running = 0, completed = 0, failed = 0
+    sessions.forEach((s: any) => {
+      const st = s.agent_status || 'idle'
+      if (st === 'running') running++
+      else if (st === 'completed') completed++
+      else if (st === 'failed') failed++
+    })
+    return {
+      total: sessions.length,
+      running, completed, failed,
+      idle: sessions.length - running - completed - failed,
+    }
+  }, [sessions])
 
   return (
     <main className="flex-1 overflow-y-auto" style={{ background: 'var(--bg-secondary)' }}>
       <div className="max-w-5xl mx-auto p-6">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>所有会话</h1>
-            <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>
-              {showPagination
-                ? `共 ${sessions.length} 个会话 · 当前显示 ${pageStart}-${pageEnd} 个`
-                : `共 ${sessions.length} 个会话 · 点击进入对话或新建会话`}
-            </p>
-          </div>
+        <div className="mb-5">
+          <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>任务概览</h1>
+          <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>
+            {sessions.length === 0
+              ? '当前任务还没有会话，新建一个开始执行'
+              : `共 ${stats.total} 个会话${stats.running ? ` · ${stats.running} 个执行中` : ''}${stats.completed ? ` · ${stats.completed} 个已完成` : ''} · 从左侧选择会话进入对话`}
+          </p>
         </div>
 
         {sessions.length === 0 ? (
@@ -758,86 +750,30 @@ function SessionOverview({ sessions, issueId, onOpenSession, onNewSession, onEdi
             </button>
           </div>
         ) : (
-          <div className="space-y-4">
-            {showPagination && (
-              <SessionOverviewPagination
-                page={currentPage}
-                totalPages={totalPages}
-                pageStart={pageStart}
-                pageEnd={pageEnd}
-                totalItems={sessions.length}
-                onPageChange={goToPage}
-              />
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {pagedSessions.map((s: any) => {
-                // session 状态完全由 agent_status 决定 (单一真相源: 后端 agent-status-syncer
-                // 周期重算写入, 与 GET /api/sessions/:id/status 共用判定). 前端只读 agent_status,
-                // 不再二次判定 job_failed / job_accomplished / sessions_v2.status.
-                const _st = s.agent_status || 'idle'
-                const isFailed = _st === 'failed'
-                const isRunning = _st === 'running'
-                const isCompleted = _st === 'completed'
-                const nameMuted = isSessionNameMuted(_st)
-                const isLogoReviewSessionCard = projectId === LOGO_REVIEW_PROJECT_ID
-                  && String(s.name || '').includes(LOGO_REVIEW_SESSION_NAME)
-                const isGuidedOrReviewSession = isGuidedDemoSession(s.session_id) || isLogoReviewSessionCard
-                return (
-                  <div key={s.session_id}
-                    data-tour={isGuidedDemoSession(s.session_id) ? 'session-card' : isLogoReviewSessionCard ? 'logo-review-session-card' : undefined}
-                    onClick={() => onOpenSession(s.session_id)}
-                    className="rounded-xl border overflow-hidden flex flex-col group cursor-pointer transition-all hover:border-blue-500/30"
-                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
-                    <div className="px-4 py-3 border-b flex items-start gap-2" style={{ borderColor: 'var(--border-color)' }}>
-                      <div className="mt-1 flex-shrink-0">
-                        <AgentStatusDot agentStatus={s.agent_status} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className={`text-[14px] font-semibold truncate ${isCompleted ? 'line-through' : ''}`}
-                          style={{ color: nameMuted ? 'var(--text-muted)' : 'var(--text-primary)' }}>{s.name}</div>
-                        <div className="text-[10px] mt-0.5 flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
-                          {isFailed && <span className="text-red-400">● 任务失败</span>}
-                          {!isFailed && isRunning && <span className="text-green-400">● 执行中</span>}
-                          {!isFailed && !isRunning && isCompleted && <span>已完成</span>}
-                          {!isFailed && !isRunning && !isCompleted && <span>{s.status === 'active' ? '活跃' : s.status}</span>}
-                        </div>
-                      </div>
-                      <div className={`flex items-center gap-0.5 transition-opacity flex-shrink-0 ${isGuidedOrReviewSession ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                        <button onClick={(e) => { e.stopPropagation(); onEdit(s) }} className="p-1 rounded hover:bg-white/10" title="重命名">
-                          <svg className="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); onDelete(s) }} className="p-1 rounded hover:bg-red-500/10" title="删除">
-                          <svg className="w-3.5 h-3.5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
-                      </div>
-                    </div>
-
-                    {s.description && (
-                      <div className="px-4 py-2.5 text-[12px] leading-relaxed line-clamp-3" style={{ color: 'var(--text-secondary)' }}>
-                        {s.description}
-                      </div>
-                    )}
-
-                    <div className="px-4 py-2.5 mt-auto flex items-center justify-between text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                      <span>{s.message_count || 0} 消息 · {s.raw_entry_count || 0} 条原始数据</span>
-                      <span>活跃 {timeAgo(s.last_active)}</span>
-                    </div>
-                  </div>
-                )
-              })}
+          <>
+            {/* 状态统计卡 — agent_status 单一真相源, 圆点颜色复用 AgentStatusDot 语义 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+              <OverviewStatCard label="总会话" value={stats.total} />
+              <OverviewStatCard label="执行中" value={stats.running} agentStatus="running" />
+              <OverviewStatCard label="已完成" value={stats.completed} agentStatus="completed" />
+              <OverviewStatCard label="失败" value={stats.failed} agentStatus="failed" />
             </div>
-            {showPagination && (
-              <SessionOverviewPagination
-                page={currentPage}
-                totalPages={totalPages}
-                pageStart={pageStart}
-                pageEnd={pageEnd}
-                totalItems={sessions.length}
-                onPageChange={goToPage}
-                compact
-              />
-            )}
-          </div>
+
+            {/* 新建会话入口 */}
+            <div className="rounded-2xl border p-6 mb-6 flex items-center justify-between gap-4"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+              <div className="min-w-0">
+                <div className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>开启一次智能体执行</div>
+                <div className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>从左侧选择已有会话进入对话，或新建会话</div>
+              </div>
+              <button onClick={onNewSession}
+                data-tour="issue-overview-create-session"
+                className="h-10 px-4 rounded-xl text-[13px] btn-primary transition-colors inline-flex items-center gap-2 shadow-lg shadow-black/10 flex-shrink-0">
+                <MessageSquarePlus className="h-4 w-4" strokeWidth={2} />
+                新建会话
+              </button>
+            </div>
+          </>
         )}
 
         {projectId && (
@@ -850,50 +786,19 @@ function SessionOverview({ sessions, issueId, onOpenSession, onNewSession, onEdi
   )
 }
 
-function SessionOverviewPagination({
-  page,
-  totalPages,
-  pageStart,
-  pageEnd,
-  totalItems,
-  onPageChange,
-  compact = false,
-}: {
-  page: number
-  totalPages: number
-  pageStart: number
-  pageEnd: number
-  totalItems: number
-  onPageChange: (page: number) => void
-  compact?: boolean
+// OverviewStatCard — 任务概览的状态统计小卡: 标签 + 计数, 可选状态圆点 (颜色复用 AgentStatusDot).
+function OverviewStatCard({ label, value, agentStatus }: {
+  label: string
+  value: number
+  agentStatus?: string
 }) {
   return (
-    <div className={`flex flex-wrap items-center justify-between gap-3 ${compact ? 'pt-1' : ''}`}>
-      <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-        显示 {pageStart}-{pageEnd} / {totalItems} 个Session<span className="hidden md:inline"> · 第 {page} / {totalPages} 页</span>
-      </span>
-      <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1}
-          className="inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-          style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
-        >
-          <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.8} />
-          上一页
-        </button>
-        <button
-          type="button"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages}
-          className="inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-          style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
-        >
-          下一页
-          <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.8} />
-        </button>
+    <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+      <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        {agentStatus && <AgentStatusDot agentStatus={agentStatus} />}
+        {label}
       </div>
+      <div className="text-[22px] font-semibold mt-1 tabular-nums" style={{ color: 'var(--text-primary)' }}>{value}</div>
     </div>
   )
 }

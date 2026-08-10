@@ -443,7 +443,7 @@ function isSameQueuedRequest(sigA, sigB) {
   return false
 }
 
-// Resolve the aimux binary to spawn as a stdio MCP server (for TUI sessions that
+// Resolve the aimux binary to spawn as a stdio MCP server (for desktop/TUI sessions that
 // opted into add_remote_aimux_mcp). Mirrors tmux-codex.js + aimux-remote.ts
 // AIMUX_BIN_CANDIDATES (kept inline to avoid crossing the .js/.ts boundary).
 function resolveAimuxBin() {
@@ -454,6 +454,19 @@ function resolveAimuxBin() {
   ]
   for (const c of candidates) { if (c && fs.existsSync(c)) return c }
   return 'aimux'
+}
+
+// Resolve the guling 实盘 MCP (HTTP / streamable-http) server config from env, so
+// the 小莫 assistant session can directly read 资金/持仓 (mcp__guling__position /
+// balance 等) without going through Hermes. The bearer token is a credential and
+// MUST live in .env (MOBIUS_GULING_MCP_URL / MOBIUS_GULING_MCP_TOKEN) — never in
+// source. Returns a { type:'http', url, headers } entry ready to drop into the
+// per-session --mcp-config mcpServers, or null when unset (→ injection is a no-op).
+function resolveGulingMcp() {
+  const url = (process.env.MOBIUS_GULING_MCP_URL || '').trim()
+  const token = (process.env.MOBIUS_GULING_MCP_TOKEN || '').trim()
+  if (!url || !token) return null
+  return { type: 'http', url, headers: { Authorization: `Bearer ${token}` } }
 }
 
 class TmuxClaudeCodeBackend extends AgentBackend {
@@ -791,7 +804,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // ── 内部实现 ──────────────────────────────────────────
-  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, aimuxRemoteName }) {
+  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }) {
     if (!sessionId || !cwd) throw new Error('createNewSession 需要 sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession 需要 initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd 不存在: ${cwd}`)
@@ -799,7 +812,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // tmux 模式特点: window 可跨后端重启存活. 已有活窗口 → 复用 (跟原 hub.startSession
     // idempotent 一致). 这跟 stream-json 那版"严格新建"语义不同, 是有意为之.
     if (!windowExists(sessionId)) {
-      await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy, aimuxRemoteName })
+      await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy, aimuxRemoteName, enableGulingMcp })
     } else {
       // 窗口在但 runtime entry 可能不在 (后端首次 reload) — 兜底建一个
       if (!this.runtime.has(sessionId) && agentSessionId) {
@@ -833,7 +846,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // 宽松版 — 没活进程就按 opts 自动 spawn (chat 不区分首发/续发, 统一走这里).
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusJsonl = null, aimuxRemoteName }) {
+  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusJsonl = null, aimuxRemoteName, enableGulingMcp = false }) {
     if (!sessionId) throw new Error('需要 sessionId')
     if (!prompt) throw new Error('需要 prompt')
 
@@ -857,6 +870,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         displayName: displayName || persisted?.displayName,
         agentSessionId: finalAgentSid,
         aimuxRemoteName,
+        enableGulingMcp,
       })
     }
     this._appendMobiusPromptEntry(sessionId, mobiusJsonl)
@@ -950,7 +964,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
   // ── tmux 操作底层 ─────────────────────────────────────
   // 启动一个新的 Claude Code tmux 窗口，并把运行态登记到内存和持久化存储。
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy = false, aimuxRemoteName }) {
+  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }) {
     // 确保承载 agent 窗口的 tmux hub session 已经存在。
     ensureHub()
     // 运行标记默认写在 cwd 下；调用方传 flagRoot 时优先使用仓库根等稳定路径。
@@ -983,28 +997,45 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // resume 使用旧 agentSessionId，新会话生成一个新的 UUID。
     const claudeSessionId = useResume ? agentSessionId : crypto.randomUUID()
 
+    // 收集要禁用的工具: 永久禁用 AskUserQuestion/ExitPlanMode (避免 agent 停下来等
+    // 人 / 卡在 plan 模式). 若注入了 guling 实盘 MCP, 额外禁用其真实下单类工具
+    // (buy/sell/cancel/switch_account), 只保留只读查询 (position/balance/orders/
+    // settlement/watchlist), 防止 AI 误触发真实证券交易.
+    const disallowedTools = ['AskUserQuestion', 'ExitPlanMode']
+
+    // 收集要注入的 stdio/http MCP server (会话级 --mcp-config <json-file>, 顶层
+    // mcpServers, additive 不叠 --strict-mcp-config, 且 --mcp-config 传入的 server
+    // 被视为显式可信, 不触发 .mcp.json 那种信任弹窗). per-session 文件各会话不同.
+    const mcpServers = {}
+    // TUI 会话 (add_remote_aimux_mcp): aimux stdio MCP, 让 claude 经 remote_* 工具
+    // (remote_exec_command/write_stdin/apply_patch/view_image/ping) 操作远程工作站.
+    if (aimuxRemoteName) {
+      mcpServers.aimux = { command: resolveAimuxBin(), args: ['mcp', 'serve', '--remote', aimuxRemoteName] }
+    }
+    // 小莫 assistant 会话 (enableGulingMcp): guling 实盘 MCP (HTTP), 让 claude 直接读
+    // 资金/持仓. token 从 env 读, 未配置时 resolveGulingMcp() 返回 null → 跳过.
+    if (enableGulingMcp) {
+      const guling = resolveGulingMcp()
+      if (guling) {
+        mcpServers.guling = guling
+        disallowedTools.push('mcp__guling__buy', 'mcp__guling__sell', 'mcp__guling__cancel', 'mcp__guling__switch_account')
+      }
+    }
+
     // 组装传给 claude CLI 的参数列表。
     const claudeArgs = [
       // 跳过权限确认，让后台 agent 可以自动执行。
       `--dangerously-skip-permissions`,
-      // 绝对禁止 agent 停下来问人: 在 harness 层 deny 掉 AskUserQuestion 工具.
-      // 同时禁掉 ExitPlanMode, 避免 agent 卡在 plan 模式里等待用户批准.
-      `--disallowedTools AskUserQuestion,ExitPlanMode`,
+      `--disallowedTools ${disallowedTools.join(',')}`,
       // resume 用 --resume，新会话用 --session-id 绑定固定会话 id。
       useResume ? `--resume ${claudeSessionId}` : `--session-id ${claudeSessionId}`,
     ]
     // 如果调用方指定模型，就追加 --model 参数并做 shell 转义。
     if (model) claudeArgs.push(`--model ${shellQuote(model)}`)
-    // TUI 会话 (add_remote_aimux_mcp): 注入 aimux stdio MCP server, 让 claude 经
-    // remote_* 工具 (remote_exec_command/write_stdin/apply_patch/view_image/ping)
-    // 操作远程工作站. claude 用 --mcp-config <json-file> (顶层 mcpServers, stdio 默认),
-    // additive (不叠 --strict-mcp-config). per-session 文件因 --remote 各会话不同.
-    if (aimuxRemoteName) {
-      const aimuxBinPath = resolveAimuxBin()
-      const mcpConfigPath = path.join(os.tmpdir(), `mobius-aimux-mcp-${sessionId}-${crypto.randomUUID().slice(0, 8)}.json`)
-      fs.writeFileSync(mcpConfigPath, JSON.stringify({
-        mcpServers: { aimux: { command: aimuxBinPath, args: ['mcp', 'serve', '--remote', aimuxRemoteName] } },
-      }))
+    // 有任一 MCP server 要注入时, 写 per-session 配置文件并传给 claude.
+    if (Object.keys(mcpServers).length > 0) {
+      const mcpConfigPath = path.join(os.tmpdir(), `mobius-mcp-${sessionId}-${crypto.randomUUID().slice(0, 8)}.json`)
+      fs.writeFileSync(mcpConfigPath, JSON.stringify({ mcpServers }))
       claudeArgs.push(`--mcp-config ${shellQuote(mcpConfigPath)}`)
     }
     // settings 参数优先使用调用方指定文件，否则使用默认 Mobius Claude settings。
