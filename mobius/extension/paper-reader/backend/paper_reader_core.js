@@ -525,15 +525,15 @@ async function openPaper(e, t, user) {
   if (cached?.origin === "upload") {
     if (cached.owner_id && cached.owner_id !== user) return { ok: false, error: "这篇上传论文不属于当前用户" };
     const migrated = migrateLegacyUploadQuality(e, cached);
-    return { ok: true, paper: paperOut(migrated), from_cache: true };
+    return { ok: true, paper: paperOutWithJob(e, migrated, user), from_cache: true };
   }
   const fresh = cached && cached.expires_at && Date.parse(cached.expires_at) > Date.now();
   if (cached && fresh && !t.force) {
     if ((cached.text_excerpt || "").length < 2e4 && (cached.html || "").length > 2e4) {
       e.prepare("UPDATE paper_fulltext SET text_excerpt=? WHERE source_id=?").run(htmlToExcerpt(cached.html), sid);
-      return { ok: true, paper: paperOut(e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid)), from_cache: true };
+      return { ok: true, paper: paperOutWithJob(e, e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid), user), from_cache: true };
     }
-    return { ok: true, paper: paperOut(cached), from_cache: true };
+    return { ok: true, paper: paperOutWithJob(e, cached, user), from_cache: true };
   }
   // 抓元数据
   let meta = cached ? { title: cached.title, authors: cached.authors, abstract: cached.abstract } : null;
@@ -550,7 +550,7 @@ async function openPaper(e, t, user) {
     ON CONFLICT(source_id) DO UPDATE SET arxiv_id=excluded.arxiv_id,title=excluded.title,authors=excluded.authors,abstract=excluded.abstract,html=excluded.html,text_excerpt=excluded.text_excerpt,fetched_at=excluded.fetched_at,expires_at=excluded.expires_at`)
     .run({ source_id: sid, arxiv_id: aid, title: txt(meta.title, 600), authors: txt(meta.authors, 600), abstract: long(meta.abstract, 8000), html, text_excerpt: excerpt, fetched_at: now(), expires_at: expires });
   const row = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid);
-  return { ok: true, paper: paperOut(row), from_cache: false };
+  return { ok: true, paper: paperOutWithJob(e, row, user), from_cache: false };
 }
 function paperOut(r) {
   if (!r) return null;
@@ -562,6 +562,13 @@ function paperOut(r) {
     quality_score: quality.score, quality_status: quality.status, quality_reasons: quality.reasons,
     quality_report: quality.report, active_revision: documentMeta(r).active_revision || 0,
     has_fulltext: !!((r.html && r.html.length > 500) || (r.document_markdown && r.document_markdown.length > 200)), fetched_at: r.fetched_at, expires_at: r.expires_at };
+}
+function paperOutWithJob(e, r, user) {
+  const out = paperOut(r);
+  if (!out) return out;
+  const job = e.prepare("SELECT * FROM paper_parse_jobs WHERE source_id=? AND owner_id=? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1").get(r.source_id, user);
+  out.parse_job = job ? parseJobOut(job) : null;
+  return out;
 }
 function getPaper(e, t) {
   const sid = txt(t.source_id || t.arxiv_id || t.id, 200);
