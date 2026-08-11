@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
 import { ArrowLeft, ChevronDown, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
 import { useStore, api, APP_DIR } from '../store'
 import { timeAgo } from './shell'
@@ -3450,13 +3451,13 @@ export function TurnTree({ sessionId, onClose, onRefresh }: { sessionId: string;
                 <div>
                   <div className="text-[12px] font-semibold mb-1" style={{ color: textMuted }}>用户输入</div>
                   <div className="text-[12px] px-3 py-2 rounded-lg" style={{ background: 'var(--input-bg)', color: textPrimary }}>
-                    {t.user_input ? <ReactMarkdown className="prose-sm prose-invert">{t.user_input}</ReactMarkdown> : <span style={{ color: textMuted }}>(无)</span>}
+                    {t.user_input ? <ReactMarkdown className="prose-sm prose-invert" remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>{t.user_input}</ReactMarkdown> : <span style={{ color: textMuted }}>(无)</span>}
                   </div>
                 </div>
                 <div>
                   <div className="text-[12px] font-semibold mb-1" style={{ color: textMuted }}>Agent 输出</div>
                   <div className="text-[12px] px-3 py-2 rounded-lg max-h-[300px] overflow-y-auto" style={{ background: 'var(--input-bg)', color: textPrimary }}>
-                    {t.agent_output ? <ReactMarkdown className="prose-sm prose-invert">{t.agent_output}</ReactMarkdown> : <span style={{ color: textMuted }}>(无)</span>}
+                    {t.agent_output ? <ReactMarkdown className="prose-sm prose-invert" remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>{t.agent_output}</ReactMarkdown> : <span style={{ color: textMuted }}>(无)</span>}
                   </div>
                 </div>
               </div>
