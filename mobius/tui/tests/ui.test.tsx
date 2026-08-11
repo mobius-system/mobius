@@ -314,6 +314,56 @@ async function testPrepRender() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// TEST 5b — Project and issue pickers filter by the search field
+// ════════════════════════════════════════════════════════════════════════════
+async function testPrepSearch() {
+  console.log('\n[UI 5b] Prep picker search filtering')
+  const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
+  installMock((url) => {
+    if (url.includes('/api/projects') && !url.includes('/issues') && !url.includes('/skills') && !url.includes('/memories')) {
+      return jsonResponse([
+        { id: 'p1', name: '前端平台', description: '用户界面与组件' },
+        { id: 'p2', name: '数据管线', description: '批处理任务' },
+      ])
+    }
+    if (url.includes('/api/projects/p2/issues')) {
+      return jsonResponse([
+        { id: 'i1', project_id: 'p2', title: '修复导入超时', description: '处理批处理任务' },
+        { id: 'i2', project_id: 'p2', title: '更新监控面板', description: '前端界面' },
+      ])
+    }
+    if (url.includes('/sessions/model-options')) return jsonResponse([])
+    if (url.includes('/sessions/default-model')) return jsonResponse({ model: 'codex' })
+    if (url.includes('/skills') || url.includes('/memories')) return jsonResponse([])
+    return jsonResponse({ error: 'no mock' }, 404)
+  })
+  try {
+    const { lastFrame, stdin, unmount } = render(<PrepScreen client={client} onReady={() => {}} />)
+    await delay(120)
+    stdin.write('数据')
+    await delay(40)
+    let frame = lastFrame() ?? ''
+    ok(frame.includes('数据管线') && !frame.includes('前端平台'), 'project search keeps matching project and hides non-matches')
+    ok(!frame.includes('创建新项目'), 'project search hides the create row while searching')
+    stdin.write('\r')
+    await delay(160)
+    ok((lastFrame() ?? '').includes('选择任务（Issue）'), 'matching project opens its issue picker')
+
+    stdin.write('超时')
+    await delay(40)
+    frame = lastFrame() ?? ''
+    ok(frame.includes('修复导入超时') && !frame.includes('更新监控面板'), 'issue search matches title and hides other issues')
+    stdin.write('\r')
+    await delay(120)
+    ok((lastFrame() ?? '').includes('选择模型') || (lastFrame() ?? '').includes('加载模型列表'), 'matching issue is selected with Enter')
+    unmount()
+    // This test deliberately selects a project; remove its persisted cwd
+    // binding so later picker tests still start on the project screen.
+    try { fs.rmSync(path.join(TMP_HOME, 'dir2project.json'), { force: true }) } catch { /* ignore */ }
+  } finally { restoreFetch() }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // TEST 6 — Select viewport: a long list must not overflow the terminal
 // ════════════════════════════════════════════════════════════════════════════
 async function testSelectViewport() {
@@ -878,6 +928,7 @@ async function main() {
   testMarkdownCodeRendering()
   testFirstUserEntryDedupe()
   await testPrepRender()
+  await testPrepSearch()
   await testSelectViewport()
   await testProjectPickerEscQuit()
   await testTextInputBackspace()

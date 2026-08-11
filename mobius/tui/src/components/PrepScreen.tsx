@@ -236,6 +236,77 @@ function flattenDesc(s?: string): string {
   return s.replace(/\s*\n\s*/g, ' ⏎ ').replace(/[ \t]+/g, ' ').trim()
 }
 
+// Search-first picker used by the project and issue screens. The search field
+// owns the initial focus so a user can type immediately; Down hands control to
+// the normal Select for keyboard navigation. Enter in the search field chooses
+// the first matching row, which keeps the common "type a unique name, Enter"
+// workflow to one step.
+function SearchableSelect({
+  items,
+  createItem,
+  title,
+  placeholder,
+  onSelect,
+  onCreate,
+  onQuit,
+}: {
+  items: SelectItem[]
+  createItem?: SelectItem
+  title: string
+  placeholder: string
+  onSelect: (value: string) => void
+  onCreate?: () => void
+  onQuit?: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [focus, setFocus] = useState<'search' | 'list'>('search')
+  const needle = query.trim().toLocaleLowerCase()
+  const matches = (item: SelectItem) => {
+    if (!needle) return true
+    return `${item.label}\n${item.desc ?? ''}\n${item.value}`.toLocaleLowerCase().includes(needle)
+  }
+  const filtered = items.filter(matches)
+  const createMatches = createItem && matches(createItem)
+  const visibleItems = createItem && (!needle || createMatches)
+    ? [createItem, ...filtered]
+    : filtered
+
+  function choose(value: string) {
+    if (value === createItem?.value) onCreate?.()
+    else onSelect(value)
+  }
+
+  return (
+    <Box flexDirection="column">
+      <Text bold color="cyan">{title}</Text>
+      <Box marginTop={1} flexDirection="column">
+        <TextInput
+          value={query}
+          onChange={setQuery}
+          focused={focus === 'search'}
+          prompt="搜索:"
+          placeholder={placeholder}
+          onArrowDown={() => setFocus('list')}
+          onArrowUp={() => setFocus('list')}
+          onSubmit={() => { if (visibleItems.length) choose(visibleItems[0].value) }}
+          onEscape={() => onQuit?.()}
+        />
+        {query.trim() && !filtered.length
+          ? <Text color="yellow">没有匹配的项目，请修改搜索</Text>
+          : focus === 'search' && query.trim() ? <Text color="gray">匹配 {filtered.length} 项 · ↓进入列表</Text> : null}
+        {focus === 'list' && !visibleItems.length
+          ? <Text color="yellow">没有匹配的项目，请按 Esc 修改搜索</Text>
+          : <Select
+              items={visibleItems}
+              focused={focus === 'list'}
+              onBack={() => setFocus('search')}
+              onSelect={choose}
+            />}
+      </Box>
+    </Box>
+  )
+}
+
 // ── Project picker ───────────────────────────────────────────────────────────
 function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate, onQuit }: {
   cwd: string
@@ -264,22 +335,24 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate, onQuit }: {
     )
   }
 
-  const items: SelectItem[] = [
-    { label: '➕ 创建新项目', value: '__create__', desc: '绑定到当前路径' },
-    ...projects.map(p => {
+  const items: SelectItem[] = projects.map(p => {
       const desc = flattenDesc(p.description)
       return { label: desc ? `${p.name} — ${desc}` : p.name, value: p.id }
-    }),
-  ]
+    })
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      <Text bold color="cyan">选择当前路径的绑定项目</Text>
       <Text color="gray">{cwd}</Text>
-      <Box marginTop={1}>
-        <Select items={items} onBack={onQuit} onSelect={v => v === '__create__' ? setMode('create') : onPick(projects.find(p => p.id === v)!)} />
-      </Box>
+      <SearchableSelect
+        title="选择当前路径的绑定项目"
+        placeholder="输入项目名或描述"
+        items={items}
+        createItem={{ label: '➕ 创建新项目', value: '__create__', desc: '绑定到当前路径' }}
+        onSelect={v => onPick(projects.find(p => p.id === v)!)}
+        onCreate={() => setMode('create')}
+        onQuit={onQuit}
+      />
       {statusMsg ? <Text color="yellow">{statusMsg}</Text> : null}
-      <Text color="gray">↑↓ 选择 · 回车确认 · Esc 退出</Text>
+      <Text color="gray">输入关键词筛选 · ↓进入列表 · Esc 退出</Text>
     </Box>
   )
 }
@@ -306,18 +379,19 @@ function IssuePicker({ issues, onPick, onCreate }: {
       </Box>
     )
   }
-  const items: SelectItem[] = [
-    { label: '➕ 创建新任务', value: '__create__' },
-    ...issues.map(i => ({ label: i.title, value: i.id, desc: i.description })),
-  ]
+  const items: SelectItem[] = issues.map(i => ({ label: i.title, value: i.id, desc: flattenDesc(i.description) }))
   return (
     <Box flexDirection="column">
-      <Text bold color="cyan">选择任务（Issue）</Text>
       <Text color="gray">偏好设置将保存在所选任务内部</Text>
       <Box marginTop={1}>
-        {issues.length === 0 && mode === 'list'
-          ? <Select items={[{ label: '➕ 创建新任务（尚无任务）', value: '__create__' }]} onSelect={() => setMode('create-name')} />
-          : <Select items={items} onSelect={v => v === '__create__' ? setMode('create-name') : onPick(issues.find(i => i.id === v)!)} />}
+        <SearchableSelect
+          title="选择任务（Issue）"
+          placeholder="输入任务标题或描述"
+          items={items}
+          createItem={{ label: issues.length ? '➕ 创建新任务' : '➕ 创建新任务（尚无任务）', value: '__create__' }}
+          onSelect={v => onPick(issues.find(i => i.id === v)!)}
+          onCreate={() => setMode('create-name')}
+        />
       </Box>
     </Box>
   )
