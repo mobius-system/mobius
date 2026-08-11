@@ -3,7 +3,7 @@
 // 用 source_id (= arxiv id) 与 tianyi-radar 互链。
 // 复用 self-cognition/tianyi-radar 同构的宿主契约：createExtensionAnalysisSession + __mobius_post_actions。
 
-const path = require("path"), fs = require("fs"), os = require("os"), crypto = require("crypto"),
+const path = require("path"), fs = require("fs"), os = require("os"), crypto = require("crypto"), childProcess = require("child_process"),
   Database = require("better-sqlite3"),
   EXT_NAME = "paper-reader",
   DB_FILE = "paper-reader.db",
@@ -40,8 +40,19 @@ CREATE TABLE IF NOT EXISTS paper_fulltext (
   source_id TEXT PRIMARY KEY, arxiv_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
   authors TEXT NOT NULL DEFAULT '', abstract TEXT NOT NULL DEFAULT '',
   html TEXT NOT NULL DEFAULT '', text_excerpt TEXT NOT NULL DEFAULT '',
-  fetched_at TEXT, expires_at TEXT
+  fetched_at TEXT, expires_at TEXT,
+  origin TEXT NOT NULL DEFAULT 'arxiv', original_filename TEXT NOT NULL DEFAULT '',
+  owner_id TEXT NOT NULL DEFAULT '', pdf_sha256 TEXT NOT NULL DEFAULT '', pdf_asset_rel TEXT NOT NULL DEFAULT '',
+  pdf_bytes INTEGER NOT NULL DEFAULT 0, page_count INTEGER NOT NULL DEFAULT 0,
+  extraction_status TEXT NOT NULL DEFAULT '', extraction_error TEXT NOT NULL DEFAULT '', parser TEXT NOT NULL DEFAULT '',
+  document_markdown TEXT NOT NULL DEFAULT '', document_json TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS paper_chunks (
+  id TEXT PRIMARY KEY, source_id TEXT NOT NULL, chunk_index INTEGER NOT NULL,
+  page_start INTEGER NOT NULL DEFAULT 0, page_end INTEGER NOT NULL DEFAULT 0,
+  section TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_chunks_source ON paper_chunks(source_id, chunk_index);
 CREATE TABLE IF NOT EXISTS anchored_notes (
   id TEXT PRIMARY KEY, source_id TEXT NOT NULL, section TEXT NOT NULL DEFAULT '',
   quote TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', color TEXT NOT NULL DEFAULT '',
@@ -68,6 +79,17 @@ CREATE TABLE IF NOT EXISTS agent_messages (
 CREATE INDEX IF NOT EXISTS idx_messages_run ON agent_messages(run_id);
 CREATE TABLE IF NOT EXISTS install_state (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL);
 `);
+  const paperColumns = {
+    origin: "TEXT NOT NULL DEFAULT 'arxiv'", original_filename: "TEXT NOT NULL DEFAULT ''",
+    owner_id: "TEXT NOT NULL DEFAULT ''", pdf_sha256: "TEXT NOT NULL DEFAULT ''", pdf_asset_rel: "TEXT NOT NULL DEFAULT ''",
+    pdf_bytes: "INTEGER NOT NULL DEFAULT 0", page_count: "INTEGER NOT NULL DEFAULT 0",
+    extraction_status: "TEXT NOT NULL DEFAULT ''", extraction_error: "TEXT NOT NULL DEFAULT ''", parser: "TEXT NOT NULL DEFAULT ''",
+    document_markdown: "TEXT NOT NULL DEFAULT ''", document_json: "TEXT NOT NULL DEFAULT ''"
+  };
+  const existing = new Set(db.prepare("PRAGMA table_info(paper_fulltext)").all().map(row => row.name));
+  for (const [name, definition] of Object.entries(paperColumns)) {
+    if (!existing.has(name)) db.exec(`ALTER TABLE paper_fulltext ADD COLUMN ${name} ${definition}`);
+  }
   return db;
 }
 
@@ -194,12 +216,115 @@ function resolveArxivId(input) {
   return s; // 当作字面 id
 }
 
+function safeUserSegment(value) {
+  return String(value || "unknown").replace(/[^A-Za-z0-9_.@-]/g, "_").slice(0, 120) || "unknown";
+}
+function sha256File(file) {
+  return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+}
+function parseUploadedPdf(file) {
+  const script = path.join(__dirname, "extract_pdf.py");
+  const result = childProcess.spawnSync(process.env.PAPER_READER_PYTHON || "python3", [script, file], {
+    encoding: "utf8", timeout: int(process.env.PAPER_READER_PARSE_TIMEOUT_MS, 22000, 5000, 28000),
+    maxBuffer: 48 * 1024 * 1024, windowsHide: true
+  });
+  if (result.error) {
+    if (result.error.code === "ETIMEDOUT") throw new Error("PDF 本地解析超时，请尝试较小的文件");
+    throw new Error(`PDF 解析器不可用：${result.error.message}`);
+  }
+  let parsed;
+  try { parsed = JSON.parse(String(result.stdout || "").trim()); }
+  catch { throw new Error(`PDF 解析器返回异常${result.stderr ? `：${txt(result.stderr, 300)}` : ""}`); }
+  if (result.status !== 0 || !parsed?.ok) throw new Error(parsed?.error || txt(result.stderr, 500) || "PDF 解析失败");
+  return parsed;
+}
+function uploadedAssetUrl(row) {
+  if (!row?.pdf_asset_rel) return "";
+  return `/api/extensions/${EXT_NAME}/user-asset/${String(row.pdf_asset_rel).split("/").map(encodeURIComponent).join("/")}`;
+}
+function ingestUploadedPdf(e, t, user, dir) {
+  const storedName = path.basename(txt(t.stored_name || t.uploaded_stored_name, 220));
+  const originalName = txt(t.filename || t.original_filename || storedName, 220);
+  if (!storedName || !/\.pdf$/i.test(storedName) || !/\.pdf$/i.test(originalName)) return { ok: false, error: "只支持 PDF 文件" };
+  const userSegment = safeUserSegment(user);
+  const uploadRoot = path.resolve(dir, "users", userSegment, "uploads");
+  const uploadedFile = path.resolve(uploadRoot, storedName);
+  if (!uploadedFile.startsWith(uploadRoot + path.sep) || !fs.existsSync(uploadedFile) || !fs.statSync(uploadedFile).isFile()) {
+    return { ok: false, error: "找不到刚刚上传的 PDF" };
+  }
+  const stat = fs.statSync(uploadedFile);
+  if (stat.size < 5 || stat.size > 50 * 1024 * 1024) return { ok: false, error: "PDF 大小必须在 5 字节到 50 MB 之间" };
+  const magic = Buffer.alloc(5);
+  const fd = fs.openSync(uploadedFile, "r");
+  try { fs.readSync(fd, magic, 0, 5, 0); } finally { fs.closeSync(fd); }
+  if (magic.toString("ascii") !== "%PDF-") return { ok: false, error: "文件内容不是有效的 PDF" };
+
+  const sha = sha256File(uploadedFile);
+  const sid = `upload_${sha.slice(0, 16)}`;
+  const papersDir = path.join(dir, "users", userSegment, "papers");
+  const canonicalFile = path.join(papersDir, `${sid}.pdf`);
+  fs.mkdirSync(papersDir, { recursive: true });
+  if (!fs.existsSync(canonicalFile) || fs.statSync(canonicalFile).size !== stat.size) fs.copyFileSync(uploadedFile, canonicalFile);
+  const assetRel = `papers/${sid}.pdf`;
+  const existing = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=? AND origin='upload' AND owner_id=?").get(sid, user);
+  if (existing && existing.pdf_sha256 === sha && ["ready", "needs_ocr"].includes(existing.extraction_status) && !t.force) {
+    if (t.title || t.authors) {
+      e.prepare("UPDATE paper_fulltext SET title=?,authors=?,fetched_at=? WHERE source_id=?")
+        .run(txt(t.title || existing.title, 600), txt(t.authors || existing.authors, 600), now(), sid);
+    }
+    const row = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid);
+    return { ok: true, paper: paperOut(row), duplicate: true, from_cache: true };
+  }
+
+  let parsed;
+  try { parsed = parseUploadedPdf(canonicalFile); }
+  catch (error) {
+    const timestamp = now();
+    e.prepare(`INSERT INTO paper_fulltext
+      (source_id,arxiv_id,title,authors,abstract,html,text_excerpt,fetched_at,expires_at,origin,original_filename,owner_id,pdf_sha256,pdf_asset_rel,pdf_bytes,page_count,extraction_status,extraction_error,parser,document_markdown,document_json)
+      VALUES (@source_id,'',@title,@authors,'','','',@fetched_at,NULL,'upload',@original_filename,@owner_id,@pdf_sha256,@pdf_asset_rel,@pdf_bytes,0,'error',@extraction_error,'','','')
+      ON CONFLICT(source_id) DO UPDATE SET title=excluded.title,authors=excluded.authors,fetched_at=excluded.fetched_at,origin='upload',original_filename=excluded.original_filename,owner_id=excluded.owner_id,pdf_sha256=excluded.pdf_sha256,pdf_asset_rel=excluded.pdf_asset_rel,pdf_bytes=excluded.pdf_bytes,extraction_status='error',extraction_error=excluded.extraction_error`)
+      .run({ source_id: sid, title: txt(t.title || originalName.replace(/\.pdf$/i, ""), 600), authors: txt(t.authors, 600), fetched_at: timestamp,
+        original_filename: originalName, owner_id: user, pdf_sha256: sha, pdf_asset_rel: assetRel, pdf_bytes: stat.size, extraction_error: txt(error.message, 2000) });
+    return { ok: false, error: `PDF 已保存，但正文解析失败：${error.message}`, source_id: sid, pdf_saved: true };
+  }
+
+  const title = txt(t.title || parsed.title || originalName.replace(/\.pdf$/i, ""), 600);
+  const authors = txt(t.authors || parsed.authors, 600);
+  const abstract = long(t.abstract || parsed.abstract, 8000);
+  const markdown = String(parsed.document_markdown || "").slice(0, 4_000_000);
+  const plainText = String(parsed.plain_text || "").slice(0, 500_000);
+  const pageMetadata = (parsed.pages || []).map(page => ({ page_number: page.page_number, width: page.width, height: page.height,
+    sections: page.sections || [], character_count: String(page.text || "").length }));
+  const documentJson = JSON.stringify({ parser: parsed.parser, character_count: parsed.character_count || plainText.length, pages: pageMetadata });
+  const timestamp = now();
+  const insertPaper = e.prepare(`INSERT INTO paper_fulltext
+    (source_id,arxiv_id,title,authors,abstract,html,text_excerpt,fetched_at,expires_at,origin,original_filename,owner_id,pdf_sha256,pdf_asset_rel,pdf_bytes,page_count,extraction_status,extraction_error,parser,document_markdown,document_json)
+    VALUES (@source_id,'',@title,@authors,@abstract,'',@text_excerpt,@fetched_at,NULL,'upload',@original_filename,@owner_id,@pdf_sha256,@pdf_asset_rel,@pdf_bytes,@page_count,@extraction_status,'',@parser,@document_markdown,@document_json)
+    ON CONFLICT(source_id) DO UPDATE SET title=excluded.title,authors=excluded.authors,abstract=excluded.abstract,html='',text_excerpt=excluded.text_excerpt,fetched_at=excluded.fetched_at,expires_at=NULL,origin='upload',original_filename=excluded.original_filename,owner_id=excluded.owner_id,pdf_sha256=excluded.pdf_sha256,pdf_asset_rel=excluded.pdf_asset_rel,pdf_bytes=excluded.pdf_bytes,page_count=excluded.page_count,extraction_status=excluded.extraction_status,extraction_error='',parser=excluded.parser,document_markdown=excluded.document_markdown,document_json=excluded.document_json`);
+  const insertChunk = e.prepare("INSERT INTO paper_chunks (id,source_id,chunk_index,page_start,page_end,section,content,created_at) VALUES (?,?,?,?,?,?,?,?)");
+  e.transaction(() => {
+    insertPaper.run({ source_id: sid, title, authors, abstract, text_excerpt: plainText, fetched_at: timestamp, original_filename: originalName,
+      owner_id: user, pdf_sha256: sha, pdf_asset_rel: assetRel, pdf_bytes: stat.size, page_count: int(parsed.page_count, 0, 0, 800),
+      extraction_status: txt(parsed.extraction_status || "ready", 40), parser: txt(parsed.parser, 80), document_markdown: markdown, document_json: documentJson });
+    e.prepare("DELETE FROM paper_chunks WHERE source_id=?").run(sid);
+    (parsed.pages || []).forEach((page, index) => insertChunk.run(id("chunk", `${sid}:${index}`), sid, index,
+      int(page.page_number, index + 1, 1, 800), int(page.page_number, index + 1, 1, 800),
+      txt((page.sections || [])[0]?.title, 300), String(page.markdown || page.text || "").slice(0, 200_000), timestamp));
+  })();
+  return { ok: true, paper: paperOut(e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid)), duplicate: false, from_cache: false };
+}
+
 async function openPaper(e, t, user) {
   const aid = resolveArxivId(t.arxiv_id || t.source_id || t.id || t.url);
   if (!aid) return { ok: false, error: "需要 arxiv_id / source_id / url" };
   const sid = aid;
   // 缓存命中且未过期
   const cached = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid);
+  if (cached?.origin === "upload") {
+    if (cached.owner_id && cached.owner_id !== user) return { ok: false, error: "这篇上传论文不属于当前用户" };
+    return { ok: true, paper: paperOut(cached), from_cache: true };
+  }
   const fresh = cached && cached.expires_at && Date.parse(cached.expires_at) > Date.now();
   if (cached && fresh && !t.force) {
     if ((cached.text_excerpt || "").length < 2e4 && (cached.html || "").length > 2e4) {
@@ -227,18 +352,30 @@ async function openPaper(e, t, user) {
 }
 function paperOut(r) {
   if (!r) return null;
-  return { source_id: r.source_id, arxiv_id: r.arxiv_id, title: r.title, authors: r.authors, abstract: r.abstract, html: r.html, has_fulltext: !!(r.html && r.html.length > 500), fetched_at: r.fetched_at, expires_at: r.expires_at };
+  return { source_id: r.source_id, arxiv_id: r.arxiv_id, title: r.title, authors: r.authors, abstract: r.abstract, html: r.html,
+    origin: r.origin || "arxiv", original_filename: r.original_filename || "", pdf_bytes: Number(r.pdf_bytes || 0), page_count: Number(r.page_count || 0),
+    extraction_status: r.extraction_status || "", extraction_error: r.extraction_error || "", parser: r.parser || "",
+    document_markdown: r.document_markdown || "", pdf_asset_url: uploadedAssetUrl(r),
+    has_fulltext: !!((r.html && r.html.length > 500) || (r.document_markdown && r.document_markdown.length > 200)), fetched_at: r.fetched_at, expires_at: r.expires_at };
 }
 function getPaper(e, t) {
   const sid = txt(t.source_id || t.arxiv_id || t.id, 200);
   const row = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid);
   return { item: row ? paperOut(row) : null };
 }
-// 取论文 PDF：优先复用 tianyi-radar 已下载的（跨 extension ../tianyi-radar/papers/），否则从 arxiv 下；
-// ≤3.2MB 返回 base64（前端 blob 渲染），超限返回 too_large + arxiv 链接兜底（extCall 返回 ≤5MB）
-async function getPaperPdf(e, t, dir) {
+// 上传论文直接走 paper-reader 用户资产 Range 流；arXiv 论文保留既有缓存/下载路径。
+async function getPaperPdf(e, t, dir, user) {
   const sid = txt(t.source_id || t.arxiv_id || t.id, 200);
   if (!sid) return { ok: false, error: "需要 source_id" };
+  const paper = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid);
+  if (paper?.origin === "upload") {
+    if (paper.owner_id && paper.owner_id !== user) return { ok: false, error: "这篇上传论文不属于当前用户" };
+    const expectedRel = `papers/${sid}.pdf`;
+    if (paper.pdf_asset_rel !== expectedRel) return { ok: false, error: "上传论文的 PDF 路径无效" };
+    const file = path.join(dir, "users", safeUserSegment(user), expectedRel);
+    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return { ok: false, error: "上传论文的原始 PDF 不存在" };
+    return { ok: true, stream_url: uploadedAssetUrl(paper), bytes: fs.statSync(file).size, mime: "application/pdf" };
+  }
   const candidates = [path.join(dir, "..", "tianyi-radar", "papers", sid + ".pdf"), path.join(dir, "papers", sid + ".pdf")];
   let file = candidates.find(p => { try { return fs.existsSync(p) && fs.statSync(p).isFile(); } catch { return false; } });
   if (!file) {
@@ -258,8 +395,8 @@ async function getPaperPdf(e, t, dir) {
   if (buf.length > MAX) return { ok: true, too_large: true, bytes: buf.length, url: isArxiv ? `https://arxiv.org/pdf/${sid}` : "" };
   return { ok: true, pdf_base64: buf.toString("base64"), bytes: buf.length, mime: "application/pdf" };
 }
-function listRecentPapers(e) {
-  return { items: e.prepare("SELECT source_id,arxiv_id,title,authors,fetched_at FROM paper_fulltext ORDER BY fetched_at DESC LIMIT 50").all() };
+function listRecentPapers(e, user = "") {
+  return { items: e.prepare("SELECT source_id,arxiv_id,title,authors,fetched_at,origin,original_filename,page_count,extraction_status FROM paper_fulltext WHERE origin!='upload' OR owner_id=? ORDER BY fetched_at DESC LIMIT 50").all(user) };
 }
 
 // ============ AI 渠道（模型可选）============
@@ -353,7 +490,7 @@ function buildChatPrompt({ paper, message, anchor, runId, dbPath, priorConversat
     "",
     "## 论文",
     `- 标题: ${paper.title || "(未知)"}`,
-    `- arxiv id: ${paper.arxiv_id || paper.source_id}`,
+    `- 来源: ${paper.origin === "upload" ? `用户上传 PDF（${paper.original_filename || paper.source_id}）` : `arXiv ${paper.arxiv_id || paper.source_id}`}`,
     `- 作者: ${paper.authors || "(未知)"}`,
     "",
     "### 摘要",
@@ -423,7 +560,7 @@ function buildNoteDistillPrompt({ paper, question, answer, runId, dbPath }) {
     "",
     SEEUPO_ANCHOR,
     "",
-    `## 论文\n- 标题: ${paper.title || "(未知)"}\n- arxiv id: ${paper.arxiv_id || paper.source_id}`,
+    `## 论文\n- 标题: ${paper.title || "(未知)"}\n- 来源: ${paper.origin === "upload" ? `用户上传 PDF（${paper.original_filename || paper.source_id}）` : `arXiv ${paper.arxiv_id || paper.source_id}`}`,
     `## 用户问题\n${long(question, 5000)}`,
     `## Assistant 回答\n${long(answer, 14000)}`,
     "",
@@ -485,6 +622,7 @@ async function chatWithPaper(e, t, user, dir) {
   if (!message) return { ok: false, error: "需要 message" };
   const row = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid);
   if (!row) return { ok: false, error: "论文未打开，请先 open_paper" };
+  if (row.origin === "upload" && row.owner_id && row.owner_id !== user) return { ok: false, error: "这篇上传论文不属于当前用户" };
   const paper = { ...paperOut(row), text_excerpt: row.text_excerpt };
   const modelKey = txt(t.model_key, 200);
   const provider = findProvider(modelKey);
@@ -597,12 +735,12 @@ function listAiChannels() {
   return { channels: ps.map(p => ({ key: p.key, label: p.label, model: p.model, type: p.type, is_default: p === ps[0] })), default_key: ps[0]?.key || null };
 }
 
-function bootstrapData(e) {
-  return { papers: listRecentPapers(e).items, channels: listAiChannels().channels, default_model: listAiChannels().default_key };
+function bootstrapData(e, user) {
+  return { papers: listRecentPapers(e, user).items, channels: listAiChannels().channels, default_model: listAiChannels().default_key };
 }
 
 // ============ dispatch ============
-const RETAINED_ACTIONS = ["current_user", "bootstrap", "list_ai_channels", "open_paper", "get_paper", "get_paper_pdf", "list_recent_papers",
+const RETAINED_ACTIONS = ["current_user", "bootstrap", "list_ai_channels", "open_paper", "ingest_uploaded_pdf", "get_paper", "get_paper_pdf", "list_recent_papers",
   "chat_with_paper", "distill_chat_to_note", "poll_run", "list_runs", "list_conversation", "get_run_messages",
   "list_notes", "save_note", "delete_note",
   "list_comments", "add_comment", "delete_comment"];
@@ -610,12 +748,13 @@ const RETAINED_ACTIONS = ["current_user", "bootstrap", "list_ai_channels", "open
 async function dispatch(e, t, r, a) {
   const s = txt(t.action || "bootstrap", 64);
   if ("current_user" === s) return { ok: true, user: txt(r, 120) };
-  if ("bootstrap" === s) return { ok: true, ...bootstrapData(e), constants: { retained_actions: RETAINED_ACTIONS } };
+  if ("bootstrap" === s) return { ok: true, ...bootstrapData(e, r), constants: { retained_actions: RETAINED_ACTIONS } };
   if ("list_ai_channels" === s) return { ok: true, ...listAiChannels() };
   if ("open_paper" === s) return { ok: true, ...(await openPaper(e, t, r)) };
+  if ("ingest_uploaded_pdf" === s) return { ok: true, ...ingestUploadedPdf(e, t, r, a) };
   if ("get_paper" === s) return { ok: true, ...getPaper(e, t) };
-  if ("get_paper_pdf" === s) return { ok: true, ...(await getPaperPdf(e, t, a)) };
-  if ("list_recent_papers" === s) return { ok: true, ...listRecentPapers(e) };
+  if ("get_paper_pdf" === s) return { ok: true, ...(await getPaperPdf(e, t, a, r)) };
+  if ("list_recent_papers" === s) return { ok: true, ...listRecentPapers(e, r) };
   if ("chat_with_paper" === s) { const res = await chatWithPaper(e, t, r, a); const post = pullPostActions(res); return { ok: true, ...res, ...(post.length ? { __mobius_post_actions: post } : {}) }; }
   if ("distill_chat_to_note" === s) { const res = distillChatToNote(e, t, r, a); const post = pullPostActions(res); return { ok: true, ...res, ...(post.length ? { __mobius_post_actions: post } : {}) }; }
   if ("poll_run" === s) return { ok: true, ...pollRun(e, t) };
