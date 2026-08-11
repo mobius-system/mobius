@@ -267,6 +267,17 @@ function qualityOf(row) {
   return { score: Number(quality.score || 0), status: quality.status || row?.extraction_status || "",
     reasons: Array.isArray(quality.reasons) ? quality.reasons : [], report: quality };
 }
+function migrateLegacyUploadQuality(e, row) {
+  if (!row || row.origin !== "upload" || !String(row.parser || "").startsWith("pymupdf-local")) return row;
+  const meta = documentMeta(row);
+  if (meta.quality && meta.quality.status) return row;
+  const quality = { score: 50, status: "needs_enhanced_parse", reasons: ["这是旧版本地解析结果，尚未完成双栏、公式和表格质量检测"],
+    legacy: true };
+  const merged = { ...meta, quality };
+  e.prepare("UPDATE paper_fulltext SET extraction_status='needs_enhanced_parse',document_json=? WHERE source_id=?")
+    .run(JSON.stringify(merged), row.source_id);
+  return e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(row.source_id);
+}
 function ingestUploadedPdf(e, t, user, dir) {
   const storedName = path.basename(txt(t.stored_name || t.uploaded_stored_name, 220));
   const originalName = txt(t.filename || t.original_filename || storedName, 220);
@@ -480,7 +491,8 @@ async function openPaper(e, t, user) {
   const cached = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid);
   if (cached?.origin === "upload") {
     if (cached.owner_id && cached.owner_id !== user) return { ok: false, error: "这篇上传论文不属于当前用户" };
-    return { ok: true, paper: paperOut(cached), from_cache: true };
+    const migrated = migrateLegacyUploadQuality(e, cached);
+    return { ok: true, paper: paperOut(migrated), from_cache: true };
   }
   const fresh = cached && cached.expires_at && Date.parse(cached.expires_at) > Date.now();
   if (cached && fresh && !t.force) {
@@ -511,7 +523,7 @@ function paperOut(r) {
   if (!r) return null;
   const quality = qualityOf(r);
   return { source_id: r.source_id, arxiv_id: r.arxiv_id, title: r.title, authors: r.authors, abstract: r.abstract, html: r.html,
-    origin: r.origin || "arxiv", original_filename: r.original_filename || "", pdf_bytes: Number(r.pdf_bytes || 0), page_count: Number(r.page_count || 0),
+    origin: r.origin || "arxiv", original_filename: r.original_filename || "", pdf_sha256: r.pdf_sha256 || "", pdf_bytes: Number(r.pdf_bytes || 0), page_count: Number(r.page_count || 0),
     extraction_status: r.extraction_status || "", extraction_error: r.extraction_error || "", parser: r.parser || "",
     document_markdown: r.document_markdown || "", pdf_asset_url: uploadedAssetUrl(r),
     quality_score: quality.score, quality_status: quality.status, quality_reasons: quality.reasons,
