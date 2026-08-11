@@ -395,16 +395,40 @@ function parseJobOut(row) {
     progress: Number(row.progress || 0), error: row.error || "", created_at: row.created_at, updated_at: row.updated_at,
     finished_at: row.finished_at || "" };
 }
-function assertUploadedPaper(e, sid, user) {
+async function preparePrecisionPdf(e, paper, user, dir) {
+  const sid = paper.source_id;
+  if (paper.origin === "upload") {
+    if (paper.owner_id && paper.owner_id !== user) throw new Error("这篇上传论文不属于当前用户");
+    const file = path.resolve(dir, "users", safeUserSegment(user), paper.pdf_asset_rel || `papers/${sid}.pdf`);
+    if (!file.startsWith(path.resolve(dir, "users", safeUserSegment(user)) + path.sep) || !fs.existsSync(file)) throw new Error("原始 PDF 不存在");
+    return file;
+  }
+  const aid = paper.arxiv_id || sid;
+  if (!/^\d{4}\.\d{4,5}(?:v\d+)?$|^[a-z-]+\/\d{7}$/i.test(aid)) throw new Error("当前论文没有可下载的 arXiv PDF");
+  const userRoot = path.join(dir, "users", safeUserSegment(user));
+  const papersDir = path.join(userRoot, "papers");
+  const safeName = String(aid).replace(/[^A-Za-z0-9._-]/g, "_").replace(/\.pdf$/i, "");
+  const file = path.join(papersDir, `arxiv_${safeName}.pdf`);
+  fs.mkdirSync(papersDir, { recursive: true });
+  if (!fs.existsSync(file) || fs.statSync(file).size < 1000) {
+    const fetched = await fetchBinary(`https://arxiv.org/pdf/${aid}`, { timeoutMs: 45e3 });
+    if (!fetched.ok || !fetched.buf?.length) throw new Error("arXiv PDF 下载失败");
+    fs.writeFileSync(file, fetched.buf);
+    const rel = `papers/${path.basename(file)}`;
+    e.prepare("UPDATE paper_fulltext SET pdf_sha256=?,pdf_asset_rel=?,pdf_bytes=? WHERE source_id=?")
+      .run(crypto.createHash("sha256").update(fetched.buf).digest("hex"), rel, fetched.buf.length, sid);
+  }
+  return file;
+}
+function assertPrecisionPaper(e, sid, user) {
   const paper = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid);
   if (!paper) throw new Error("论文不存在");
-  if (paper.origin !== "upload") throw new Error("高精度云解析目前只对手动上传的 PDF 开放");
   if (paper.owner_id && paper.owner_id !== user) throw new Error("这篇上传论文不属于当前用户");
   return paper;
 }
-function startHighPrecisionParse(e, t, user, dir) {
+async function startHighPrecisionParse(e, t, user, dir) {
   const sid = txt(t.source_id || t.id, 200);
-  const paper = assertUploadedPaper(e, sid, user);
+  const paper = assertPrecisionPaper(e, sid, user);
   const active = e.prepare("SELECT * FROM paper_parse_jobs WHERE source_id=? AND owner_id=? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1").get(sid, user);
   if (active) return { job: parseJobOut(active), already_running: true };
   const jobId = id("parse", `${sid}:${user}:${Date.now()}`);
@@ -413,12 +437,13 @@ function startHighPrecisionParse(e, t, user, dir) {
   const statusPath = path.join(jobRoot, "status.json");
   const outputDir = path.join(jobRoot, "output");
   fs.mkdirSync(outputDir, { recursive: true });
+  const pdfPath = await preparePrecisionPdf(e, paper, user, dir);
   const timestamp = now();
   e.prepare(`INSERT INTO paper_parse_jobs
     (id,source_id,owner_id,provider,status,stage,progress,worker_status_path,worker_output_dir,error,created_at,updated_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(jobId, sid, user, "doc2x", "queued", "等待启动", 0, String(statusPath), String(outputDir), "", timestamp, timestamp);
   const configPath = path.join(jobRoot, "job.json");
-  fs.writeFileSync(configPath, JSON.stringify({ job_id: jobId, source_id: sid, pdf_path: path.join(dir, "users", userSegment, paper.pdf_asset_rel || `papers/${sid}.pdf`),
+  fs.writeFileSync(configPath, JSON.stringify({ job_id: jobId, source_id: sid, pdf_path: pdfPath,
     status_path: statusPath, output_dir: outputDir }, null, 2), { mode: 0o600 });
   const script = path.join(__dirname, "high_precision_worker.py");
   const child = childProcess.spawn(process.env.PAPER_READER_PYTHON || "python3", [script, configPath], { detached: true, stdio: "ignore", windowsHide: true });
@@ -925,7 +950,7 @@ async function dispatch(e, t, r, a) {
   if ("list_ai_channels" === s) return { ok: true, ...listAiChannels() };
   if ("open_paper" === s) return { ok: true, ...(await openPaper(e, t, r)) };
   if ("ingest_uploaded_pdf" === s) return { ok: true, ...ingestUploadedPdf(e, t, r, a) };
-  if ("start_high_precision_parse" === s) return { ok: true, ...startHighPrecisionParse(e, t, r, a) };
+  if ("start_high_precision_parse" === s) return { ok: true, ...(await startHighPrecisionParse(e, t, r, a)) };
   if ("poll_parse_job" === s) return { ok: true, ...pollHighPrecisionParse(e, t, r) };
   if ("get_paper" === s) return { ok: true, ...getPaper(e, t) };
   if ("get_paper_pdf" === s) return { ok: true, ...(await getPaperPdf(e, t, a, r)) };
