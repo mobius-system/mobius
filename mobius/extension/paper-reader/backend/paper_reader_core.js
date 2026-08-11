@@ -64,6 +64,22 @@ CREATE TABLE IF NOT EXISTS paragraph_comments (
   content TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pcomments ON paragraph_comments(source_id, pid);
+CREATE TABLE IF NOT EXISTS paper_parse_jobs (
+  id TEXT PRIMARY KEY, source_id TEXT NOT NULL, owner_id TEXT NOT NULL DEFAULT '',
+  provider TEXT NOT NULL DEFAULT 'doc2x', status TEXT NOT NULL DEFAULT 'queued',
+  stage TEXT NOT NULL DEFAULT '', progress INTEGER NOT NULL DEFAULT 0,
+  worker_status_path TEXT NOT NULL DEFAULT '', worker_output_dir TEXT NOT NULL DEFAULT '',
+  error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_parse_jobs_source ON paper_parse_jobs(source_id, created_at);
+CREATE TABLE IF NOT EXISTS paper_derivatives (
+  id TEXT PRIMARY KEY, source_id TEXT NOT NULL, revision INTEGER NOT NULL,
+  provider TEXT NOT NULL, provider_version TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT '',
+  markdown TEXT NOT NULL DEFAULT '', latex TEXT NOT NULL DEFAULT '', docx_path TEXT NOT NULL DEFAULT '',
+  quality_score INTEGER NOT NULL DEFAULT 0, metadata_json TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_derivative_revision ON paper_derivatives(source_id, revision);
 CREATE TABLE IF NOT EXISTS agent_runs (
   id TEXT PRIMARY KEY, source_id TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT 'chat',
   model_key TEXT NOT NULL, model_label TEXT NOT NULL DEFAULT '',
@@ -242,6 +258,15 @@ function uploadedAssetUrl(row) {
   if (!row?.pdf_asset_rel) return "";
   return `/api/extensions/${EXT_NAME}/user-asset/${String(row.pdf_asset_rel).split("/").map(encodeURIComponent).join("/")}`;
 }
+function documentMeta(row) {
+  try { return JSON.parse(String(row?.document_json || "{}")) || {}; } catch { return {}; }
+}
+function qualityOf(row) {
+  const meta = documentMeta(row);
+  const quality = meta.quality || {};
+  return { score: Number(quality.score || 0), status: quality.status || row?.extraction_status || "",
+    reasons: Array.isArray(quality.reasons) ? quality.reasons : [], report: quality };
+}
 function ingestUploadedPdf(e, t, user, dir) {
   const storedName = path.basename(txt(t.stored_name || t.uploaded_stored_name, 220));
   const originalName = txt(t.filename || t.original_filename || storedName, 220);
@@ -267,7 +292,7 @@ function ingestUploadedPdf(e, t, user, dir) {
   if (!fs.existsSync(canonicalFile) || fs.statSync(canonicalFile).size !== stat.size) fs.copyFileSync(uploadedFile, canonicalFile);
   const assetRel = `papers/${sid}.pdf`;
   const existing = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=? AND origin='upload' AND owner_id=?").get(sid, user);
-  if (existing && existing.pdf_sha256 === sha && ["ready", "needs_ocr"].includes(existing.extraction_status) && !t.force) {
+  if (existing && existing.pdf_sha256 === sha && ["ready", "fast_ready", "needs_ocr", "needs_enhanced_parse", "enhanced_ready"].includes(existing.extraction_status) && !t.force) {
     if (t.title || t.authors) {
       e.prepare("UPDATE paper_fulltext SET title=?,authors=?,fetched_at=? WHERE source_id=?")
         .run(txt(t.title || existing.title, 600), txt(t.authors || existing.authors, 600), now(), sid);
@@ -296,7 +321,8 @@ function ingestUploadedPdf(e, t, user, dir) {
   const plainText = String(parsed.plain_text || "").slice(0, 500_000);
   const pageMetadata = (parsed.pages || []).map(page => ({ page_number: page.page_number, width: page.width, height: page.height,
     sections: page.sections || [], character_count: String(page.text || "").length }));
-  const documentJson = JSON.stringify({ parser: parsed.parser, character_count: parsed.character_count || plainText.length, pages: pageMetadata });
+  const documentJson = JSON.stringify({ parser: parsed.parser, character_count: parsed.character_count || plainText.length,
+    quality: parsed.quality || {}, pages: pageMetadata });
   const timestamp = now();
   const insertPaper = e.prepare(`INSERT INTO paper_fulltext
     (source_id,arxiv_id,title,authors,abstract,html,text_excerpt,fetched_at,expires_at,origin,original_filename,owner_id,pdf_sha256,pdf_asset_rel,pdf_bytes,page_count,extraction_status,extraction_error,parser,document_markdown,document_json)
@@ -311,6 +337,12 @@ function ingestUploadedPdf(e, t, user, dir) {
     (parsed.pages || []).forEach((page, index) => insertChunk.run(id("chunk", `${sid}:${index}`), sid, index,
       int(page.page_number, index + 1, 1, 800), int(page.page_number, index + 1, 1, 800),
       txt((page.sections || [])[0]?.title, 300), String(page.markdown || page.text || "").slice(0, 200_000), timestamp));
+    const localRevision = e.prepare("SELECT COALESCE(MAX(revision),0)+1 AS revision FROM paper_derivatives WHERE source_id=?").get(sid).revision;
+    e.prepare(`INSERT OR IGNORE INTO paper_derivatives
+      (id,source_id,revision,provider,provider_version,status,markdown,latex,quality_score,metadata_json,created_at,active)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,1)`).run(id("derivative", `${sid}:${localRevision}`), sid, localRevision, "pymupdf-local",
+      txt(parsed.parser, 80), "active", markdown, "", Number(parsed.quality?.score || 0), JSON.stringify(parsed.quality || {}), timestamp);
+    e.prepare("UPDATE paper_derivatives SET active=CASE WHEN revision=? THEN 1 ELSE 0 END WHERE source_id=?").run(localRevision, sid);
   })();
   return { ok: true, paper: paperOut(e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid)), duplicate: false, from_cache: false };
 }
@@ -352,10 +384,13 @@ async function openPaper(e, t, user) {
 }
 function paperOut(r) {
   if (!r) return null;
+  const quality = qualityOf(r);
   return { source_id: r.source_id, arxiv_id: r.arxiv_id, title: r.title, authors: r.authors, abstract: r.abstract, html: r.html,
     origin: r.origin || "arxiv", original_filename: r.original_filename || "", pdf_bytes: Number(r.pdf_bytes || 0), page_count: Number(r.page_count || 0),
     extraction_status: r.extraction_status || "", extraction_error: r.extraction_error || "", parser: r.parser || "",
     document_markdown: r.document_markdown || "", pdf_asset_url: uploadedAssetUrl(r),
+    quality_score: quality.score, quality_status: quality.status, quality_reasons: quality.reasons,
+    quality_report: quality.report, active_revision: documentMeta(r).active_revision || 0,
     has_fulltext: !!((r.html && r.html.length > 500) || (r.document_markdown && r.document_markdown.length > 200)), fetched_at: r.fetched_at, expires_at: r.expires_at };
 }
 function getPaper(e, t) {
