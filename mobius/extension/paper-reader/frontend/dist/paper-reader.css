@@ -215,6 +215,12 @@ body.is-resizing iframe { pointer-events: none; }
 .pr-page-marker:first-child { margin-top: 0; }
 .pr-extract-warning { display: flex; flex-direction: column; gap: 5px; margin: 0 0 28px; padding: 14px 16px; border: 1px solid #e8c36f; border-left: 3px solid #c98212; border-radius: var(--radius); color: var(--ink-2); background: var(--amber-soft); font-family: var(--sans); font-size: 12px; line-height: 19px; }
 .pr-extract-warning strong { color: var(--ink); font-size: 13px; }
+.pr-enhanced-card { display: flex; flex-direction: column; gap: 8px; margin: 0 0 24px; padding: 14px 16px; border: 1px solid #c9d8f4; border-left: 3px solid var(--blue); border-radius: var(--radius); color: var(--ink-2); background: #f5f8ff; font-family: var(--sans); font-size: 12px; line-height: 19px; }
+.pr-enhanced-card strong { color: var(--ink); font-size: 13px; }
+.pr-enhanced-card p { margin: 0; }
+.pr-enhanced-card .pr-enhanced-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pr-enhanced-card .pr-enhanced-progress { color: var(--blue); font-family: var(--mono); font-size: 10px; }
+.pr-enhanced-trigger { white-space: nowrap; }
 .pr-pbadge { position: absolute; right: -34px; top: 2px; width: 25px; height: 25px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 50%; color: var(--faint); background: var(--paper); opacity: 0; cursor: pointer; transition: opacity .12s, color .12s, border-color .12s; }
 .pr-pbadge svg { width: 13px; height: 13px; }
 .pr-pbadge b { position: absolute; right: -4px; top: -5px; min-width: 14px; height: 14px; padding: 0 3px; display: grid; place-items: center; border-radius: 7px; color: #fff; background: var(--blue); font-family: var(--sans); font-size: 8px; }

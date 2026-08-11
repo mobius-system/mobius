@@ -9,7 +9,8 @@ const state = {
   conversation: [], conversationHasMore: false,
   anchor: null, selectedQuote: '', activeParagraph: null, editingNote: null, noteKind: 'insight',
   pdfUrl: null, currentView: 'text', activeSideTab: 'chat', headingObserver: null, saveScrollTimer: null,
-  panelSizes: { outline: 232, side: 480 }, uploadFile: null, uploadBusy: false
+  panelSizes: { outline: 232, side: 480 }, uploadFile: null, uploadBusy: false,
+  parseJob: null, parseTimer: null, enhancedPrompted: false
 };
 const SUGGESTIONS = [
   '提炼这篇论文真正新增的算法机制',
@@ -324,6 +325,78 @@ async function finishOpeningPaper(paper, message = '论文已载入') {
   setLoading('', false);
   toast(message);
   restoreReadingPosition(paper.source_id);
+  maybePromptEnhancedParse(paper);
+}
+
+function enhancedNeeded(paper) {
+  return paper?.origin === 'upload' && ['needs_enhanced_parse', 'needs_ocr'].includes(paper.extraction_status);
+}
+function renderEnhancedState(paper, job = state.parseJob) {
+  const card = $('enhancedCard');
+  const button = $('highPrecisionBtn');
+  const uploaded = paper?.origin === 'upload';
+  button.hidden = !uploaded;
+  button.disabled = Boolean(job && ['queued', 'running'].includes(job.status));
+  button.innerHTML = job && ['queued', 'running'].includes(job.status)
+    ? '<i data-lucide="loader-circle"></i><span>解析中…</span>'
+    : paper?.extraction_status === 'enhanced_ready'
+      ? '<i data-lucide="badge-check"></i><span>高精度已完成</span>'
+      : '<i data-lucide="scan-search"></i><span>高精度解析</span>';
+  if (!uploaded || paper?.extraction_status === 'enhanced_ready') { card.hidden = true; refreshIcons(); return; }
+  card.hidden = false;
+  const reasons = (paper.quality_reasons || []).map((reason) => esc(reason)).join('；');
+  if (job && ['queued', 'running'].includes(job.status)) {
+    card.innerHTML = `<strong>高精度云解析正在进行</strong><p>${esc(job.stage || '正在处理论文版面、公式和表格')}。</p><div class="pr-enhanced-actions"><span class="pr-enhanced-progress">${Number(job.progress || 0)}% · ${esc(job.provider || 'doc2x')}</span><button class="pr-btn ghost sm" type="button" id="cancelEnhancedHint">后台运行中</button></div>`;
+  } else if (paper.extraction_status === 'needs_ocr') {
+    card.innerHTML = `<strong>本地解析没有得到足够正文</strong><p>原始 PDF 已保留。可以授权高精度云解析识别扫描文字、公式和表格。</p><div class="pr-enhanced-actions"><button class="pr-btn primary sm" type="button" data-enhanced-action="start">授权并开始</button><span class="pr-enhanced-progress">文件将发送给 Doc2X</span></div>`;
+  } else {
+    card.innerHTML = `<strong>检测到版面结构可能不可靠（评分 ${Number(paper.quality_score || 0)}/100）</strong><p>${reasons ? `风险：${reasons}。` : '双栏、公式或表格可能没有被可靠恢复。'} 建议用高精度解析后再让 Agent 分析。</p><div class="pr-enhanced-actions"><button class="pr-btn primary sm" type="button" data-enhanced-action="start">授权并开始高精度解析</button><span class="pr-enhanced-progress">原始 PDF 会发送给 Doc2X</span></div>`;
+  }
+  card.querySelector('[data-enhanced-action="start"]')?.addEventListener('click', () => startEnhancedParse());
+  refreshIcons(card); refreshIcons(button);
+}
+function maybePromptEnhancedParse(paper) {
+  renderEnhancedState(paper);
+  if (!enhancedNeeded(paper) || state.enhancedPrompted || state.parseJob) return;
+  const key = `pr-enhanced-prompt:${paper.source_id}:${paper.pdf_sha256 || paper.fetched_at || ''}`;
+  if (localStorage.getItem(key) === 'dismissed') return;
+  state.enhancedPrompted = true;
+  setTimeout(() => {
+    const accepted = window.confirm(`这篇 PDF 的本地版面解析质量较低（${Number(paper.quality_score || 0)}/100）。\n\n是否授权将原始 PDF 发送给 Doc2X，进行公式、表格和双栏结构的高精度解析？`);
+    if (accepted) startEnhancedParse(true);
+    else localStorage.setItem(key, 'dismissed');
+  }, 450);
+}
+async function startEnhancedParse(confirmed = false) {
+  if (!state.paper || state.paper.origin !== 'upload') return toast('高精度云解析目前只支持手动上传的 PDF', true);
+  if (state.parseJob && ['queued', 'running'].includes(state.parseJob.status)) return toast('高精度解析已经在后台运行');
+  if (!confirmed && !window.confirm('确认将这篇原始 PDF 发送给 Doc2X？匿名审稿稿件或敏感材料请先确认授权范围。')) return;
+  try {
+    const result = await call({ action: 'start_high_precision_parse', source_id: state.paper.source_id });
+    state.parseJob = result.job;
+    renderEnhancedState(state.paper, state.parseJob);
+    toast('已启动高精度解析，完成后会自动切换到新版本');
+    pollEnhancedParse();
+  } catch (error) { toast(`启动高精度解析失败：${error.message}`, true); }
+}
+function pollEnhancedParse() {
+  clearTimeout(state.parseTimer);
+  const tick = async () => {
+    if (!state.parseJob?.id) return;
+    try {
+      const result = await call({ action: 'poll_parse_job', job_id: state.parseJob.id });
+      state.parseJob = result.job;
+      renderEnhancedState(state.paper, state.parseJob);
+      if (result.completed && result.paper) {
+        state.parseJob = null;
+        await finishOpeningPaper(result.paper, '高精度解析完成，已切换到新版阅读索引');
+        return;
+      }
+      if (['failed'].includes(result.job?.status)) { toast(`高精度解析失败：${result.job.error || '未知错误'}`, true); return; }
+    } catch {}
+    state.parseTimer = setTimeout(tick, 3500);
+  };
+  tick();
 }
 
 async function uploadPdf(event) {
@@ -496,6 +569,7 @@ function renderPaper(paper) {
   $('paperAbstract').textContent = paper.abstract || (uploaded ? 'PDF 中未自动识别出独立摘要；正文与原始 PDF 均已保留。' : '摘要不可用');
   $('paperArxiv').textContent = uploaded ? `UPLOADED PDF${paper.page_count ? ` · ${paper.page_count} PAGES` : ''}` : `ARXIV ${paper.arxiv_id || paper.source_id}`;
   $('paperStatus').textContent = uploaded ? (paper.extraction_status === 'needs_ocr' ? 'OCR REQUIRED' : 'LOCAL TEXT') : 'FULL TEXT';
+  if (uploaded && paper.extraction_status === 'enhanced_ready') $('paperStatus').textContent = 'HIGH PRECISION';
   $('topPaperId').textContent = uploaded ? '本地 PDF' : (paper.arxiv_id || paper.source_id);
   $('topPaperTitle').textContent = paper.title || '';
   $('pdfTitle').textContent = paper.title || '';
@@ -522,6 +596,7 @@ function renderPaper(paper) {
   renderChatEmpty();
   document.querySelectorAll('[data-view]').forEach((button) => button.classList.toggle('is-active', button.dataset.view === 'text'));
   if (!uploaded) renderMath(body);
+  renderEnhancedState(paper);
   refreshIcons();
   updateProgress();
 }
@@ -1292,6 +1367,7 @@ function bind() {
   $('emptyOpen').addEventListener('click', showOpenDialog);
   $('emptyUpload').addEventListener('click', showUploadDialog);
   $('openUpload').addEventListener('click', showUploadDialog);
+  $('highPrecisionBtn').addEventListener('click', () => startEnhancedParse(false));
   $('uploadForm').addEventListener('submit', uploadPdf);
   $('pdfFile').addEventListener('change', (event) => selectUploadFile(event.target.files?.[0]));
   $('uploadClose').addEventListener('click', () => { if (!state.uploadBusy) $('uploadDialog').close(); });
