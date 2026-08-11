@@ -52,15 +52,100 @@ async function runSelfTest(opts = {}) {
   function skip(name, reason) { skipped++; results.push({ name, ok: null, skipped: true, reason }); if (onCheck) onCheck(name, null, 0, null, true, reason); }
   const G = (path, o = {}) => getJson(base, path, { token, ok: 200, timeoutMs, ...o });
 
+  // —— 健康 ——
   await check('健康 GET /api/health', async () => { const d = await G('/api/health', { token: false }); if (!d || d.status !== 'ok') throw new Error('status!=ok'); });
   await check('健康 GET /api/v2/health', async () => { const d = await G('/api/v2/health', { token: false }); if (!d.version) throw new Error('无 version'); });
+
+  // —— 鉴权 ——
   await check('鉴权 GET /api/auth/config', async () => { const d = await G('/api/auth/config', { token: false }); if (!('password_required' in d)) throw new Error('无 password_required'); });
   await check('鉴权 GET /api/auth/me', async () => { const d = await G('/api/auth/me'); if (d.id !== 'system') throw new Error(`id=${d.id} != system`); });
+
+  // —— 核心读 ——
   await check('读 GET /api/projects', async () => { const d = await G('/api/projects'); if (!Array.isArray(d)) throw new Error('非数组'); });
   await check('读 GET /api/sessions/model-options', async () => { const d = await G('/api/sessions/model-options'); if (!Array.isArray(d) || d.length === 0) throw new Error('模型列表空'); });
   await check('读 GET /api/tasks/recent', async () => { const d = await G('/api/tasks/recent?limit=10'); if (!Array.isArray(d)) throw new Error('非数组'); });
   await check('读 GET /api/extensions', async () => { const d = await G('/api/extensions'); if (!d || !Array.isArray(d.extensions)) throw new Error('无 extensions[]'); });
+
+  // —— 搜索 ——
+  await check('搜索 GET /api/search?q=test', async () => {
+    const d = await G('/api/search?q=test&limit=5');
+    if (typeof d !== 'object' || !d) throw new Error('非对象');
+    if (!Array.isArray(d.results)) throw new Error('无 results[]');
+  });
+
+  // —— 群聊/会话 ——
+  await check('群聊 GET /api/conversations', async () => { const d = await G('/api/conversations'); if (!Array.isArray(d)) throw new Error('非数组'); });
+  await check('会话 GET /api/sessions?limit=5', async () => {
+    const d = await G('/api/sessions?limit=5');
+    if (!Array.isArray(d)) throw new Error('非数组');
+  });
+
+  // —— 语音 ——
   await check('语音 GET /api/assistant/tts/voices', async () => { const d = await G('/api/assistant/tts/voices'); if (typeof d.configured !== 'boolean') throw new Error('无 configured'); });
+
+  // —— 文件上传 (轻量 text/plain) ——
+  if (doWrite) {
+    await check('上传 POST /api/upload (text/plain)', async () => {
+      const boundary = `--selftest-${Date.now()}`;
+      const body = [
+        `--${boundary}`,
+        'Content-Disposition: form-data; name="file"; filename="selftest.txt"',
+        'Content-Type: text/plain',
+        '', 'mobius-self-test',
+        `--${boundary}--`, ''
+      ].join('\r\n');
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const r = await fetch(`${base}/api/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+          body,
+          signal: ctrl.signal,
+        });
+        if (r.status !== 200 && r.status !== 201) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json().catch(() => ({}));
+        if (!d.file && !d.url && !d.path && !d.id) throw new Error('响应无 file/url/path');
+      } finally { clearTimeout(to); }
+    });
+  }
+
+  // —— SSE 流 (连接到第一个事件) ——
+  await check('SSE GET /api/sessions/:id/events (首事件)', async () => {
+    // 先获取任意 sessionId (取第一个可用的)
+    const sessions = await G('/api/sessions?limit=1');
+    const sid = (Array.isArray(sessions) && sessions.length > 0 && sessions[0].session_id)
+      ? sessions[0].session_id : null;
+    if (!sid) throw new Error('无可用 session');
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), timeoutMs + 5000);
+    try {
+      const r = await fetch(`${base}/api/sessions/${sid}/events?token=${encodeURIComponent(token)}`, {
+        headers: { Accept: 'text/event-stream' },
+        signal: ctrl.signal,
+      });
+      if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
+      const ct = r.headers.get('content-type') || '';
+      if (!ct.includes('text/event-stream')) throw new Error(`非 SSE: ${ct}`);
+      // 读取第一个非注释事件
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '', events = 0;
+      while (events < 2) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        for (const line of lines) {
+          if (line.startsWith('event:') || line.startsWith('data:')) events++;
+        }
+        if (events > 0) break;
+      }
+      reader.cancel();
+      if (events === 0) throw new Error('无 SSE 事件');
+    } finally { clearTimeout(to); }
+  });
 
   if (doWrite) {
     let mid = null;
