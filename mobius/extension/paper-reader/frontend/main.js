@@ -358,6 +358,10 @@ function renderEnhancedState(paper, job = state.parseJob) {
 }
 function maybePromptEnhancedParse(paper) {
   renderEnhancedState(paper);
+  if (state.parseJob && ['queued', 'running'].includes(state.parseJob.status)) {
+    pollEnhancedParse();
+    return;
+  }
   if (!enhancedNeeded(paper) || state.enhancedPrompted || state.parseJob) return;
   const key = `pr-enhanced-prompt:${paper.source_id}:${paper.pdf_sha256 || paper.fetched_at || ''}`;
   if (localStorage.getItem(key) === 'dismissed') return;
@@ -553,6 +557,7 @@ async function openPaper(input) {
 
 function renderPaper(paper) {
   state.paper = paper;
+  state.parseJob = paper.parse_job || null;
   state.anchor = null;
   state.activeParagraph = null;
   if (state.pdfUrl?.startsWith('blob:')) URL.revokeObjectURL(state.pdfUrl);
