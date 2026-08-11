@@ -138,6 +138,7 @@ body.is-resizing iframe { pointer-events: none; }
 }
 .pr-outline-list button::before { content: ""; position: absolute; left: 4px; top: 11px; width: 4px; height: 4px; border-radius: 50%; background: var(--line-strong); }
 .pr-outline-list button[data-level="3"] { padding-left: 24px; font-size: 10px; }
+.pr-outline-list button[data-level="4"] { padding-left: 32px; font-size: 10px; }
 .pr-outline-list button:hover { color: var(--ink); background: #eef1f4; }
 .pr-outline-list button.is-active { color: var(--blue); background: var(--blue-soft); font-weight: 600; }
 .pr-outline-list button.is-active::before { background: var(--blue); }
@@ -154,6 +155,7 @@ body.is-resizing iframe { pointer-events: none; }
 .pr-kicker { margin: 24px 0 6px; color: var(--blue); font-size: 10px; font-weight: 700; }
 .pr-empty h1 { margin: 0; font-size: 26px; line-height: 36px; font-weight: 700; }
 .pr-empty > p:not(.pr-kicker) { max-width: 480px; margin: 10px 0 22px; color: var(--muted); line-height: 24px; }
+.pr-empty-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
 .pr-reader-toolbar {
   max-width: var(--paper-w); height: 54px; position: sticky; top: var(--topbar-h); z-index: 25; display: flex; align-items: center; justify-content: space-between;
   margin: 0 auto; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--line); backdrop-filter: blur(12px);
@@ -209,6 +211,10 @@ body.is-resizing iframe { pointer-events: none; }
 .pr-paper-body [data-pid]:hover { background: #f5f7fa; box-shadow: 0 0 0 5px #f5f7fa; }
 .pr-paper-body [data-pid].is-anchor { background: var(--blue-soft); box-shadow: -4px 0 0 var(--blue), 0 0 0 6px var(--blue-soft); }
 .pr-paper-body [data-pid].has-note { background: var(--amber-soft); box-shadow: -4px 0 0 #d99120, 0 0 0 6px var(--amber-soft); }
+.pr-page-marker { margin: 52px 0 24px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--faint); font-family: var(--mono); font-size: 10px; font-weight: 500; text-transform: uppercase; }
+.pr-page-marker:first-child { margin-top: 0; }
+.pr-extract-warning { display: flex; flex-direction: column; gap: 5px; margin: 0 0 28px; padding: 14px 16px; border: 1px solid #e8c36f; border-left: 3px solid #c98212; border-radius: var(--radius); color: var(--ink-2); background: var(--amber-soft); font-family: var(--sans); font-size: 12px; line-height: 19px; }
+.pr-extract-warning strong { color: var(--ink); font-size: 13px; }
 .pr-pbadge { position: absolute; right: -34px; top: 2px; width: 25px; height: 25px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 50%; color: var(--faint); background: var(--paper); opacity: 0; cursor: pointer; transition: opacity .12s, color .12s, border-color .12s; }
 .pr-pbadge svg { width: 13px; height: 13px; }
 .pr-pbadge b { position: absolute; right: -4px; top: -5px; min-width: 14px; height: 14px; padding: 0 3px; display: grid; place-items: center; border-radius: 7px; color: #fff; background: var(--blue); font-family: var(--sans); font-size: 8px; }
@@ -414,11 +420,58 @@ body.is-resizing iframe { pointer-events: none; }
 .pr-recent button { width: 100%; min-height: 48px; display: grid; grid-template-columns: 92px minmax(0,1fr) 18px; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid transparent; border-radius: var(--radius); color: var(--ink-2); background: transparent; cursor: pointer; text-align: left; }
 .pr-recent button:hover { border-color: var(--line); background: #f4f6f8; }
 .pr-recent code { color: var(--blue); font-family: var(--mono); font-size: 9px; }
+.pr-recent code i { display: inline-flex; vertical-align: middle; }
+.pr-recent code svg { width: 11px; height: 11px; }
 .pr-recent span { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .pr-recent svg { width: 13px; height: 13px; color: var(--faint); }
 .pr-command-foot { height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-top: 1px solid var(--line); background: var(--panel); }
 .pr-command-foot > span { display: flex; align-items: center; gap: 5px; color: var(--faint); font-size: 9px; }
 .pr-command-foot svg { width: 12px; height: 12px; }
+.pr-command-submit { display: flex; align-items: center; gap: 12px; }
+.pr-command-submit > span { display: flex; align-items: center; gap: 5px; color: var(--faint); font-size: 9px; }
+
+/* Persistent local PDF import */
+.pr-upload-dialog { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; overflow: auto; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--ink); background: var(--paper); box-shadow: 0 24px 70px rgba(22,27,36,.25); }
+.pr-upload-dialog::backdrop { background: rgba(20,24,31,.46); backdrop-filter: blur(3px); }
+.pr-upload-shell { margin: 0; }
+.pr-upload-head { min-height: 70px; display: grid; grid-template-columns: 38px minmax(0,1fr) 34px; align-items: center; gap: 11px; padding: 0 18px; border-bottom: 1px solid var(--line); }
+.pr-upload-head-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: var(--radius); color: var(--blue); background: var(--blue-soft); }
+.pr-upload-head-icon svg { width: 18px; height: 18px; }
+.pr-upload-head > div:nth-child(2) { min-width: 0; display: flex; flex-direction: column; }
+.pr-upload-head span { color: var(--faint); font-size: 9px; font-weight: 700; }
+.pr-upload-head strong { font-size: 15px; line-height: 22px; }
+.pr-dropzone { min-height: 154px; margin: 18px 18px 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--ink-2); background: var(--panel); cursor: pointer; text-align: center; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
+.pr-dropzone:hover, .pr-dropzone.is-dragging { border-color: var(--blue); background: var(--blue-soft); box-shadow: inset 0 0 0 1px rgba(36,87,214,.08); }
+.pr-dropzone.has-file { border-style: solid; border-color: #9bb0df; background: #f7f9ff; }
+.pr-drop-icon { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: var(--blue); background: var(--paper); }
+.pr-drop-icon svg { width: 18px; height: 18px; }
+.pr-dropzone strong { max-width: 100%; color: var(--ink); font-size: 14px; overflow-wrap: anywhere; }
+.pr-dropzone small { max-width: 480px; color: var(--muted); font-size: 11px; line-height: 18px; }
+.pr-upload-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 18px; }
+.pr-upload-fields label { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.pr-upload-fields label > span { color: var(--ink-2); font-size: 11px; font-weight: 600; }
+.pr-upload-fields label small { color: var(--faint); font-size: 9px; font-weight: 400; }
+.pr-upload-fields input { width: 100%; height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius); outline: 0; color: var(--ink); background: var(--paper); font-size: 12px; }
+.pr-upload-fields input:focus { border-color: #8fa8e3; box-shadow: 0 0 0 3px rgba(36,87,214,.08); }
+.pr-upload-progress { margin: 16px 18px 0; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.pr-upload-progress.is-error { border-color: #e4aaa6; background: #fff8f7; }
+.pr-upload-progress.is-error .pr-upload-progress-head span { color: var(--danger); }
+.pr-upload-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--ink-2); font-size: 11px; }
+.pr-upload-progress-head b { color: var(--blue); font-family: var(--mono); font-size: 10px; }
+.pr-upload-progress-track { height: 3px; margin-top: 9px; overflow: hidden; background: var(--line); }
+.pr-upload-progress-track i { width: 0; height: 100%; display: block; background: var(--blue); transition: width .22s ease; }
+.pr-upload-progress ol { margin: 13px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); list-style: none; }
+.pr-upload-progress li { min-width: 0; position: relative; display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 9px; line-height: 14px; }
+.pr-upload-progress li:not(:last-child)::after { content: ""; height: 1px; position: absolute; left: 11px; right: -3px; top: 5px; z-index: 0; background: var(--line); }
+.pr-upload-progress li i { width: 11px; height: 11px; position: relative; z-index: 1; flex: 0 0 auto; border: 2px solid var(--line-strong); border-radius: 50%; background: var(--panel); }
+.pr-upload-progress li span { position: relative; z-index: 1; padding-right: 5px; background: var(--panel); }
+.pr-upload-progress li.is-active { color: var(--blue); font-weight: 600; }
+.pr-upload-progress li.is-active i { border: 3px solid #b9c8eb; background: var(--blue); }
+.pr-upload-progress li.is-done { color: var(--ink-2); }
+.pr-upload-progress li.is-done i { border-color: var(--green); background: var(--green); }
+.pr-upload-note { display: flex; align-items: flex-start; gap: 8px; margin: 14px 18px 0; color: var(--muted); font-size: 10px; line-height: 17px; }
+.pr-upload-note svg { width: 15px; height: 15px; margin-top: 1px; color: var(--green); }
+.pr-upload-actions { min-height: 62px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px; padding: 0 18px; border-top: 1px solid var(--line); background: var(--panel); }
 
 .pr-backdrop { position: fixed; inset: var(--topbar-h) 0 0; z-index: 110; background: rgba(20,24,31,.35); }
 .pr-mobile-dock { display: none; }
@@ -488,6 +541,16 @@ body.is-resizing iframe { pointer-events: none; }
   .pr-command-head { grid-template-columns: 28px minmax(0,1fr) auto; padding-inline: 10px; }
   .pr-command-head input { font-size: 15px; }
   .pr-recent button { grid-template-columns: 76px minmax(0,1fr) 14px; }
+  .pr-command-submit > span { display: none; }
+  .pr-upload-dialog { width: calc(100vw - 20px); max-height: calc(100vh - 20px); }
+  .pr-upload-head { padding-inline: 12px; }
+  .pr-dropzone { min-height: 138px; margin: 12px; padding: 18px 12px; }
+  .pr-upload-fields { grid-template-columns: 1fr; padding: 0 12px; }
+  .pr-upload-progress { margin: 14px 12px 0; }
+  .pr-upload-progress ol { grid-template-columns: 1fr 1fr; gap: 9px 5px; }
+  .pr-upload-progress li::after { display: none; }
+  .pr-upload-note { margin-inline: 12px; }
+  .pr-upload-actions { padding-inline: 12px; }
   .pr-toast { bottom: 82px; }
 }
 
