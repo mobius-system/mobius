@@ -297,12 +297,18 @@ async function testPrepRender() {
     ok(frame.includes('选择当前路径的绑定项目'), 'project picker title shown')
     ok(frame.includes('已有项目A') && frame.includes('已有项目B'), 'existing projects listed')
     ok(frame.includes('创建新项目'), 'create-new option present')
-    // multi-line description must be flattened onto one line with ⏎ in place of \n
-    ok(frame.includes('已有项目A - 第一行 ⏎ 第二行'), 'multi-line description flattened into the project row')
-    ok(frame.includes('已有项目B - 单行描述'), 'single-line description kept on the project row')
+    // Only the highlighted row carries its description; unfocused rows stay
+    // compact and show their names alone.
+    ok(!frame.includes('已有项目A - 第一行') && !frame.includes('已有项目B - 单行描述'), 'unfocused project rows omit their descriptions')
+    stdin.write('\x1b[B'); await delay(15) // move focus from search to the list
+    stdin.write('\x1b[B'); await delay(15) // highlight the first project
+    const selectedFrame = lastFrame() ?? ''
+    ok(selectedFrame.includes('已有项目A - 第一行 ⏎ 第二行'), 'selected multi-line description stays on the main row')
+    ok(!selectedFrame.includes('已有项目B - 单行描述'), 'unselected project description is omitted')
     ok(!frame.includes('\n    第一行') && !frame.includes('\n    单行描述'), 'project explanations do not render as an additional row')
     ok(!frame.includes('加载项目列表…'), 'completed project load does not leave a stale loading message')
 
+    stdin.write('\x1b[A'); await delay(15) // return to the create row
     stdin.write('\r')
     await delay(30)
     const createFrame = lastFrame() ?? ''
