@@ -166,15 +166,25 @@ async function main() {
     ok(await waitFor(lastFrame, '重新配置'), '/config opens the full reconfig flow')
     ok(await waitFor(lastFrame, '选择项目'), '/config shows project picker first')
     ok(await waitFor(lastFrame, '已有项目甲 - 项目说明'), '/config keeps the project explanation on its main row')
-    // Pick the first project (created above).
+    // Pick the first project (created above), then verify Esc walks back one
+    // level at a time instead of closing the entire config flow.
     stdin.write('\r'); await delay(400)
     ok(await waitFor(lastFrame, '选择任务'), '/config shows issue picker after project')
     ok((lastFrame() ?? '').includes('命令行任务 - 任务说明'), '/config keeps the issue explanation on its main row')
-    // Pick the first issue.
+    stdin.write('\x1b'); await delay(180)
+    ok(await waitFor(lastFrame, '选择项目'), 'Esc from issue selection returns to project selection')
+    stdin.write('\r'); await delay(400)
+    ok(await waitFor(lastFrame, '选择任务'), 'project selection can be re-entered after Esc')
+
+    // Pick the issue and verify the model step also returns to the issue step.
     stdin.write('\r'); await delay(400)
     ok(await waitFor(lastFrame, '选择模型'), '/config shows model picker after issue')
     ok(await waitFor(lastFrame, 'GPT-5.5'), '/config model list rendered')
     ok((lastFrame() ?? '').includes('GPT-5.5 （默认） - Codex'), '/config keeps the model explanation on its main row')
+    stdin.write('\x1b'); await delay(180)
+    ok(await waitFor(lastFrame, '选择任务'), 'Esc from model selection returns to issue selection')
+    stdin.write('\r'); await delay(400)
+    ok(await waitFor(lastFrame, '选择模型'), 'issue selection can be re-entered after Esc')
     stdin.write('\r'); await delay(700)                             // pick codex → create session
     ok(await waitFor(lastFrame, '输入问题'), '/config creates a fresh session and returns to chat')
     ok((lastFrame() ?? '').includes('?session=sess-1'), 'reconfigured chat is attached to the new session')
@@ -194,6 +204,14 @@ async function main() {
     ok(await waitFor(lastFrame, '输入问题'), '/model creates a fresh session and returns to chat')
     ok((lastFrame() ?? '').includes('?session=sess-1'), '/model new session attached')
     snap('7-after-model', lastFrame() ?? '')
+
+    // ── /logout ─────────────────────────────────────────────────────────────
+    await delay(400)
+    stdin.write('/logout'); await delay(150)
+    stdin.write('\r')
+    ok(await waitFor(lastFrame, 'Mobius 登录'), '/logout returns to the login form')
+    ok(!fs.existsSync(path.join(TMP_HOME, 'login.json')), '/logout clears the persisted login token')
+    ok((lastFrame() ?? '').includes('http://mock.local') && (lastFrame() ?? '').includes('tester'), '/logout keeps server and username available for the next login')
     snap('6-after-config', lastFrame() ?? '')
   } finally {
     unmount()

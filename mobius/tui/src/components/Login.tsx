@@ -15,12 +15,14 @@ import { saveLogin, type LoginRecord } from '../config.js'
 
 const DEFAULT_SERVER = ''
 
-export function LoginScreen({ onSuccess, onError }: {
+export function LoginScreen({ onSuccess, onError, initialServer = DEFAULT_SERVER, initialUsername = '' }: {
   onSuccess: (rec: LoginRecord) => void
   onError?: (msg: string) => void
+  initialServer?: string
+  initialUsername?: string
 }) {
-  const [server, setServer] = useState(DEFAULT_SERVER)
-  const [username, setUsername] = useState('')
+  const [server, setServer] = useState(initialServer)
+  const [username, setUsername] = useState(initialUsername)
   const [password, setPassword] = useState('')
   const [pwdRequired, setPwdRequired] = useState<boolean | null>(null)
   const [focus, setFocus] = useState(0) // 0 server, 1 user, 2 password

@@ -12,7 +12,7 @@
 import React, { useEffect, useState } from 'react'
 import { Box, Text } from 'ink'
 import { MobiusClient, getMe, login, ApiError } from './api.js'
-import { loadLogin, saveLogin, type LoginRecord } from './config.js'
+import { clearLogin, loadLogin, saveLogin, type LoginRecord } from './config.js'
 import { LoginScreen } from './components/Login.js'
 import { PrepScreen, type ReadyState } from './components/PrepScreen.js'
 import { ChatScreen } from './components/Chat.js'
@@ -150,6 +150,21 @@ export function App() {
     void stopAimuxConnection().finally(() => process.exit(0))
   }
 
+  async function onLogout() {
+    if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] logout')
+    try {
+      await clearLogin()
+      await stopAimuxConnection()
+    } finally {
+      setClient(null)
+      setUserId(null)
+      setReady(null)
+      setResumeSessionId(null)
+      setAimuxStatus({ state: 'stopped', phase: 'idle', detail: '登录后自动连接' })
+      setRoute('login')
+    }
+  }
+
   // ── render ─────────────────────────────────────────────────────────────────
   // The chat screen already pins itself to the terminal height, so render it
   // bare — a <Screen> wrapper would clip its transcript in short terminals and
@@ -168,6 +183,7 @@ export function App() {
         onClear={onClear}
         onResume={onResume}
         onQuit={onQuit}
+        onLogout={() => { void onLogout() }}
         onReconfigure={onReconfigure}
         onConfigCancel={onConfigCancel}
         aimuxStatus={aimuxStatus}
@@ -178,7 +194,7 @@ export function App() {
   if (route === 'boot') {
     node = <Box paddingX={2} paddingY={1}><Text color="cyan">{bootMsg}</Text></Box>
   } else if (route === 'login' || !client) {
-    node = <LoginScreen onSuccess={onLoginSuccess} />
+    node = <LoginScreen onSuccess={onLoginSuccess} initialServer={prefill.server} initialUsername={prefill.username} />
   } else if (route === 'resume' && ready) {
     node = <Box flexDirection="column"><AimuxStatusLine status={aimuxStatus} compact /><ResumePicker client={client} project={ready.project} onPick={onResumed} onBack={() => setRoute('chat')} /></Box>
   } else {

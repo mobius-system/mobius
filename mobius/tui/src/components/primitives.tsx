@@ -4,7 +4,8 @@
  */
 import React, { useEffect, useRef, useState } from 'react'
 import { Box, Text, useInput, useStdout, useStdin, type Key } from 'ink'
-import { useDeleteKeyCapture, applyDeleteIntent } from '../lib/delete-keys.js'
+import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousWordBoundary, nextWordBoundary } from '../lib/delete-keys.js'
+import { useCursorKeyCapture } from '../lib/cursor-keys.js'
 
 /** Return false when a mounted listener deliberately did not consume the input. */
 type InputHandler = (input: string, key: Key) => void | false
@@ -318,6 +319,14 @@ export function TextInput(props: TextInputProps) {
     const { text, cursor: nextCursor } = applyDeleteIntent(valueRef.current, cursorRef.current, intent)
     edit(text, nextCursor)
   })
+  useCursorKeyCapture(focused, (intent) => {
+    const current = valueRef.current
+    const at = clampCursor(current, cursorRef.current)
+    const next = intent === 'home' ? 0 : intent === 'end' ? current.length
+      : intent === 'backward-word' ? previousWordBoundary(current, at) : nextWordBoundary(current, at)
+    cursorRef.current = next
+    setCursor(next)
+  })
 
   useStableInput((input, key) => {
     if (isMouseInput(input)) return
@@ -343,6 +352,7 @@ export function TextInput(props: TextInputProps) {
       edit(text, nextCursor)
       return
     }
+    if (key.ctrl && (key.leftArrow || key.rightArrow)) return
     if (key.leftArrow) { setCursor(c => Math.max(0, c - 1)); return }
     if (key.rightArrow) { setCursor(c => Math.min(value.length, c + 1)); return }
     if (key.ctrl && input === 'a') { setCursor(0); return }

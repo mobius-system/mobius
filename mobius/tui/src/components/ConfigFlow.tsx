@@ -21,7 +21,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react'
 import { Box, Text } from 'ink'
-import { inlineSelectLabel, Select, TextInput, Spinner, type SelectItem } from './primitives.js'
+import { inlineSelectLabel, isEscapeKeypress, Select, TextInput, Spinner, useStableInput, type SelectItem } from './primitives.js'
 import { MobiusClient } from '../api.js'
 import {
   bindCwdToProject, cwd, getCwdPreference, loadDir2Project, loadProjectsCache,
@@ -133,9 +133,10 @@ export function ConfigFlow({ client, issue, onDone }: {
 
 type ReconfigStep = 'projects' | 'issues' | 'models' | 'creating'
 
-export function ReconfigFlow({ client, onDone }: {
+export function ReconfigFlow({ client, onDone, onCancel }: {
   client: MobiusClient
   onDone: (r: ConfigResult) => void
+  onCancel: () => void
 }) {
   const [step, setStep] = useState<ReconfigStep>('projects')
   const [projects, setProjects] = useState<Project[] | null>(null)
@@ -149,6 +150,29 @@ export function ReconfigFlow({ client, onDone }: {
   const [createMode, setCreateMode] = useState<'project' | 'issue' | null>(null)
   const doneRef = useRef(false)
   const thisCwd = cwd()
+
+  function goBack() {
+    // The focused TextInput owns Esc while a create form is open. Returning
+    // here prevents the same raw key from also navigating the underlying step.
+    if (createMode !== null) return
+    if (step === 'models') {
+      setIssue(null)
+      setStep('issues')
+      return
+    }
+    if (step === 'issues') {
+      setProject(null)
+      setIssue(null)
+      setStep('projects')
+      return
+    }
+    if (step === 'projects') onCancel()
+  }
+
+  // Own Esc across both loaded lists and their async loading frames.
+  useStableInput((input, key) => {
+    if (isEscapeKeypress(input, key)) goBack()
+  })
 
   useEffect(() => () => { doneRef.current = true }, [])
 
