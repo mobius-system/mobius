@@ -1642,6 +1642,7 @@ type MentionAgentSession = {
   description?: string
   model?: string
   model_label?: string
+  backend?: string
   agent_status?: string
   research_role?: string | null
   scope_type?: 'issue' | 'research'
@@ -1699,6 +1700,7 @@ function RemoteFileMentionDrawer({
   const [agentLoading, setAgentLoading] = useState(false)
   const [agentError, setAgentError] = useState('')
   const [agentMode, setAgentMode] = useState<AgentMentionMode>('read_only')
+  const [agentSearch, setAgentSearch] = useState('')
   const [dirs, setDirs] = useState<Record<string, DirState>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
 
@@ -1752,7 +1754,8 @@ function RemoteFileMentionDrawer({
     if (!open) return
     setActiveTab(currentSessionId ? 'agents' : 'files')
     setAgentMode('read_only')
-  }, [currentSessionId, open])
+    setAgentSearch(String(query || '').trim())
+  }, [currentSessionId, open, query])
 
   const loadAgentSessions = useCallback(async () => {
     if (!agentScopeUrl) {
@@ -1762,7 +1765,7 @@ function RemoteFileMentionDrawer({
     setAgentLoading(true)
     setAgentError('')
     try {
-      const normalizedQuery = String(query || '').trim()
+      const normalizedQuery = String(agentSearch || '').trim()
       const suffix = normalizedQuery ? `&q=${encodeURIComponent(normalizedQuery)}` : ''
       const data = await api(`${agentScopeUrl}${suffix}`)
       const list = Array.isArray(data?.targets) ? data.targets as MentionAgentSession[] : []
@@ -1773,7 +1776,7 @@ function RemoteFileMentionDrawer({
     } finally {
       setAgentLoading(false)
     }
-  }, [agentScopeUrl, currentSessionId, query])
+  }, [agentScopeUrl, currentSessionId, agentSearch])
 
   useEffect(() => {
     if (!open) return
@@ -1782,9 +1785,9 @@ function RemoteFileMentionDrawer({
 
   useEffect(() => {
     if (!open || activeTab !== 'agents') return
-    const timer = window.setTimeout(() => { void loadAgentSessions() }, String(query || '').trim() ? 120 : 0)
+    const timer = window.setTimeout(() => { void loadAgentSessions() }, String(agentSearch || '').trim() ? 160 : 0)
     return () => window.clearTimeout(timer)
-  }, [open, activeTab, loadAgentSessions, query])
+  }, [open, activeTab, loadAgentSessions, agentSearch])
 
   useEffect(() => {
     if (!open) return
@@ -1848,13 +1851,9 @@ function RemoteFileMentionDrawer({
   }, [agentMode, onClose, onPickAgent])
 
   const filteredAgents = useMemo(() => {
-    const list = [...agentSessions].sort((a, b) => {
-      const ar = a.agent_status === 'running' ? 0 : 1
-      const br = b.agent_status === 'running' ? 0 : 1
-      if (ar !== br) return ar - br
-      return new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime()
-    })
-    return list
+    // 后端已按「精确搜索 → 同 Scope → 同项目 → 运行态 → 最近活跃」稳定排序；
+    // 前端不要再按运行态二次排序，否则会把精确 ID/名称命中挤到列表后面。
+    return agentSessions
   }, [agentSessions])
 
   const compactAgents = activeTab === 'agents'
@@ -1875,7 +1874,7 @@ function RemoteFileMentionDrawer({
   const rootState = dirs['/']
   const activeLabel = activeTab === 'agents' ? (researchId ? 'Research 智能体' : 'Issue 智能体') : '项目文件'
   const activeHint = activeTab === 'agents'
-    ? '选择一个其他智能体，把它的上下文或双向通道插入当前输入框'
+    ? '选择一个 Session，并明确使用只读引用或开启交流'
     : '选择文件，把绝对路径插入输入框'
 
   return (
@@ -2010,7 +2009,7 @@ function RemoteFileMentionDrawer({
                     }}
                   >
                     <Search className="h-3.5 w-3.5" strokeWidth={1.8} />
-                    只读
+                    只读引用
                   </button>
                   <button
                     type="button"
@@ -2022,12 +2021,33 @@ function RemoteFileMentionDrawer({
                     }}
                   >
                     <ArrowLeftRight className="h-3.5 w-3.5" strokeWidth={1.8} />
-                    双向
+                    开启交流
                   </button>
                 </div>
               </div>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>候选智能体</span>
+              <div className="mb-2 flex items-center gap-2">
+                <label className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" strokeWidth={1.8} style={{ color: 'var(--text-muted)' }} />
+                  <input
+                    value={agentSearch}
+                    onChange={(event) => setAgentSearch(event.target.value)}
+                    placeholder="搜索名称、Session ID、项目、Issue、消息或模型"
+                    className="h-8 w-full rounded-md border bg-transparent pl-8 pr-8 text-[11px] outline-none focus:ring-2 focus:ring-blue-500/40"
+                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}
+                    aria-label="搜索 Session"
+                  />
+                  {agentSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setAgentSearch('')}
+                      className="absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded hover:bg-[var(--bg-card-hover)]"
+                      style={{ color: 'var(--text-muted)' }}
+                      aria-label="清空 Session 搜索"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </label>
                 <button
                   type="button"
                   onClick={() => void loadAgentSessions()}
@@ -2036,7 +2056,7 @@ function RemoteFileMentionDrawer({
                   style={{ color: 'var(--text-muted)' }}
                 >
                   <RefreshCw className={`h-3 w-3 ${agentLoading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
-                  刷新
+                  <span className="sr-only">刷新</span>
                 </button>
               </div>
               {agentLoading && agentSessions.length === 0 ? (
@@ -2063,7 +2083,7 @@ function RemoteFileMentionDrawer({
                           ? (agent.scope_type === 'research' ? '同 Research' : '同 Issue')
                           : agent.group === 'same_project' ? '同项目' : '其他项目'
                         const selectedModeLabel = agentMode === 'bidirectional' && agent.can_communicate === false
-                          ? '只读权限' : agentMode === 'bidirectional' ? '双向' : '只读'
+                          ? '只读权限' : agentMode === 'bidirectional' ? '开启交流' : '只读引用'
                         return (
                           <button
                             key={agent.session_id}
@@ -2085,7 +2105,13 @@ function RemoteFileMentionDrawer({
                               <span className="truncate">{agent.session_id}</span>
                               <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{relationLabel}</span>
                               {modelLabel && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{modelLabel}</span>}
+                              {agent.backend && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.backend}</span>}
                               {agent.research_role && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.research_role}</span>}
+                            </div>
+                            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                              {agent.project_name && <span className="truncate">{agent.project_name}</span>}
+                              {(agent.research_title || agent.issue_title) && <span className="truncate">· {agent.research_title || agent.issue_title}</span>}
+                              {agent.last_active && <span className="ml-auto flex-shrink-0">{timeAgo(agent.last_active)}</span>}
                             </div>
                             {agent.description && (
                               <div className="mt-1 line-clamp-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>

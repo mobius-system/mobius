@@ -282,8 +282,16 @@ const Sessions = {
         OR instr(lower(COALESCE(p.name, '')), ?) > 0
         OR instr(lower(COALESCE(i.title, '')), ?) > 0
         OR instr(lower(COALESCE(r.title, '')), ?) > 0
+        OR instr(lower(COALESCE(s.model, '')), ?) > 0
+        OR EXISTS (
+          SELECT 1 FROM messages_v2 mention_message
+          WHERE mention_message.task_id = s.session_id
+            AND mention_message.role IN ('user','system')
+            AND instr(lower(COALESCE(mention_message.content, '')), ?) > 0
+          LIMIT 1
+        )
       )`);
-      params.push(query, query, query, query, query, query);
+      params.push(query, query, query, query, query, query, query, query);
     }
     return db.prepare(`
       SELECT s.session_id, s.issue_id, s.project_id, s.scope_type, s.research_id,

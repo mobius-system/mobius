@@ -12,9 +12,12 @@ import { canOperateSession, canReadSession } from './access-control';
 import { aimuxRemoteNameFromMeta } from './pc-client-context';
 import {
   buildBidirectionalMentionPrompt,
+  externalSessionWakePrompt,
+  closeAgentBridgeChannel,
   createAgentBridgeChannel,
   buildReadOnlyMentionPrompt,
   mintAgentBridgeToken,
+  recordAgentBridgeMessage,
   type AgentMentionMode,
 } from './agent-mention-bridge';
 import {
@@ -52,6 +55,15 @@ interface PendingTransferPaths {
 type NormalizedAgentMention = {
   sessionId: string;
   mode: AgentMentionMode;
+};
+
+export type ExternalSessionEvent = {
+  messageId: number;
+  channelId: string;
+  sourceSessionId: string;
+  sourceSessionName?: string;
+  targetSessionId: string;
+  token: string;
 };
 
 function readPendingTransferPaths(sessionId: any): PendingTransferPaths | null {
@@ -190,6 +202,7 @@ async function runSessionMessage({
   source = 'service.session.messages',
   logger = console,
   urgent = false,
+  externalEvent = null,
 }: {
   user?: any;
   sessionId?: any;
@@ -202,11 +215,13 @@ async function runSessionMessage({
   source?: string;
   logger?: any;
   urgent?: boolean;
+  externalEvent?: ExternalSessionEvent | null;
 } = {}): Promise<any> {
   const normalizedSessionId = String(sessionId || '').trim();
   const normalizedContent = typeof content === 'string' ? content : '';
   const normalizedRequestId = typeof requestId === 'string' ? requestId : null;
   const normalizedInputText = hasInputText ? String(inputText || '') : '';
+  const isExternalEvent = !!externalEvent;
 
   if (!user?.id) throw httpError('用户不可用', 401);
 
@@ -221,17 +236,19 @@ async function runSessionMessage({
   }
   const workDir = workspace.workDir;
   const flagRoot = workspace.projectRoot || workspace.workDir;
-  const normalizedAttachments = normalizeSessionAttachments(
+  const normalizedAttachments = isExternalEvent ? [] : normalizeSessionAttachments(
     attachments,
     user,
     [workspace.projectRoot, workspace.workDir],
   );
-  const normalizedMentions = normalizeAgentMentions(mentions, normalizedContent);
-  const mentionMetadata = sessionMentionMetadata(user, normalizedSessionId, normalizedMentions);
-  if (!normalizedContent.trim() && normalizedAttachments.length === 0) {
+  const normalizedMentions = isExternalEvent ? [] : normalizeAgentMentions(mentions, normalizedContent);
+  const mentionMetadata = isExternalEvent ? [] : sessionMentionMetadata(user, normalizedSessionId, normalizedMentions);
+  if (!isExternalEvent && !normalizedContent.trim() && normalizedAttachments.length === 0) {
     throw httpError('content 不能为空', 400);
   }
-  const displayContent = normalizedContent.trim()
+  const displayContent = isExternalEvent
+    ? `[外部 Session 通知 ${externalEvent?.messageId || ''}]`
+    : normalizedContent.trim()
     ? normalizedContent
     : sessionContentWithAttachments('', normalizedAttachments);
 
@@ -248,15 +265,18 @@ async function runSessionMessage({
   const launch = modelRegistry.launchOptionsForSession(sess);
   const backend = agents.get(launch.backend);
 
-  const turnNum = (Messages.maxTurnFor(normalizedSessionId) || 0) + 1;
-  Messages.insertUser(
-    normalizedSessionId,
-    displayContent,
-    turnNum,
-    mentionMetadata.length > 0 ? JSON.stringify({ session_mentions: mentionMetadata }) : null,
-  );
-  Sessions.touchActive(normalizedSessionId);
-  if (hasInputText) {
+  const lastTurnNum = Messages.maxTurnFor(normalizedSessionId) || 0;
+  const turnNum = isExternalEvent ? lastTurnNum : lastTurnNum + 1;
+  if (!isExternalEvent) {
+    Messages.insertUser(
+      normalizedSessionId,
+      displayContent,
+      turnNum,
+      mentionMetadata.length > 0 ? JSON.stringify({ session_mentions: mentionMetadata }) : null,
+    );
+    Sessions.touchActive(normalizedSessionId);
+  }
+  if (hasInputText && !isExternalEvent) {
     try {
       appendSessionInput({
         projectRoot: flagRoot,
@@ -273,27 +293,40 @@ async function runSessionMessage({
 
   const mobiusJsonl = {
     source,
-    kind: mobiusPromptKind(displayContent),
-    content: displayContent,
-    inputText: hasInputText ? normalizedInputText : null,
+    kind: isExternalEvent ? 'external_session_message' : mobiusPromptKind(displayContent),
+    content: isExternalEvent ? '' : displayContent,
+    inputText: isExternalEvent ? null : (hasInputText ? normalizedInputText : null),
     requestId: normalizedRequestId,
     turnNumber: turnNum,
     userId: user?.id || null,
     attachments: normalizedAttachments,
     mentions: normalizedMentions,
+    ...(isExternalEvent ? {
+      sourceSessionId: externalEvent?.sourceSessionId,
+      targetSessionId: externalEvent?.targetSessionId,
+      messageId: externalEvent?.messageId,
+      channelId: externalEvent?.channelId,
+    } : {}),
     timestamp: new Date().toISOString(),
   };
 
-  let finalContent = sessionContentWithAttachments(normalizedContent, normalizedAttachments);
+  let finalContent = isExternalEvent
+    ? externalSessionWakePrompt({
+        messageId: externalEvent!.messageId,
+        sourceSession: { session_id: externalEvent!.sourceSessionId, name: externalEvent!.sourceSessionName },
+        targetSession: sess,
+        token: externalEvent!.token,
+      })
+    : sessionContentWithAttachments(normalizedContent, normalizedAttachments);
   const bridgeKickoffs: Array<{
     targetSession: any;
     token: string;
-    sourceTransferMarkdown: string;
-    targetTransferMarkdown: string;
     mode: AgentMentionMode;
     channelId: string;
+    content: string;
+    messageId?: number;
   }> = [];
-  if (Messages.countUserMessagesFor(normalizedSessionId) <= 1) {
+  if (!isExternalEvent && Messages.countUserMessagesFor(normalizedSessionId) <= 1) {
     const ctx = buildSessionContext(user, normalizedSessionId);
     if (workDir && ctx.sources?.skills?.length > 0) {
       try { syncSkillsToWorkspace(workDir, ctx.sources.skills); }
@@ -321,7 +354,7 @@ async function runSessionMessage({
     }
   }
 
-  if (normalizedMentions.length > 0) {
+  if (!isExternalEvent && normalizedMentions.length > 0) {
     for (const mention of normalizedMentions) {
       const targetSession = Sessions.findById(mention.sessionId) as any;
       if (!targetSession) continue;
@@ -345,7 +378,6 @@ async function runSessionMessage({
         continue;
       }
 
-      const targetTransferMarkdown = buildMentionTransferMarkdown(user, sess, targetSession.session_id, logger);
       const channel = createAgentBridgeChannel({
         ownerUserId: user.id,
         sourceSessionId: normalizedSessionId,
@@ -357,6 +389,7 @@ async function runSessionMessage({
         target_session_id: targetSession.session_id,
         channel_id: channel.channelId,
         mode: mention.mode,
+        actor_session_id: normalizedSessionId,
         source_session_name: String(sess?.name || '').trim() || normalizedSessionId,
         target_session_name: String(targetSession?.name || '').trim() || targetSession.session_id,
       });
@@ -376,10 +409,9 @@ async function runSessionMessage({
       bridgeKickoffs.push({
         targetSession,
         token,
-        sourceTransferMarkdown,
-        targetTransferMarkdown,
         mode: mention.mode,
         channelId: channel.channelId,
+        content: normalizedContent.trim() || displayContent,
       });
     }
   }
@@ -402,6 +434,7 @@ async function runSessionMessage({
       displayName: sess.name,
       agentSessionId: sess.claude_session_id || undefined,
       mobiusJsonl,
+      suppressRunningFlag: isExternalEvent,
       aimuxRemoteName: aimuxRemoteNameFromMeta(sess?.pc_client_metadata),
     };
     if (urgent) {
@@ -421,30 +454,15 @@ async function runSessionMessage({
         logger?.warn?.(`[sessions/messages] save agent session id: ${e.message}`);
       }
     }
-    if (bridgeKickoffs.length > 0) {
-      void Promise.allSettled(bridgeKickoffs.map(async (kickoff) => {
-        const kickoffContent = buildBidirectionalMentionPrompt({
-          perspective: 'target',
-          mode: kickoff.mode,
-          token: kickoff.token,
-          sourceSession: sess,
-          targetSession: kickoff.targetSession,
-          transferMarkdown: kickoff.targetTransferMarkdown || kickoff.sourceTransferMarkdown,
-          currentUserName: user?.display_name || user?.id,
-          initialMessage: normalizedContent.trim() || displayContent,
-          channelId: kickoff.channelId,
-        });
-        await runSessionMessage({
-          user,
-          sessionId: kickoff.targetSession.session_id,
-          content: kickoffContent,
-          inputText: kickoffContent,
-          hasInputText: true,
-          requestId: `agent-bridge-kickoff-${normalizedSessionId}-${kickoff.targetSession.session_id}-${Date.now()}` as any,
-          source: 'service.session.agent_bridge',
-          logger,
-        } as any);
-      }));
+    for (const kickoff of bridgeKickoffs) {
+      const queued = recordAgentBridgeMessage({
+        channelId: kickoff.channelId,
+        requestId: `initial-${normalizedRequestId || `${normalizedSessionId}-${Date.now()}`}`,
+        fromSessionId: normalizedSessionId,
+        toSessionId: kickoff.targetSession.session_id,
+        content: kickoff.content,
+      });
+      kickoff.messageId = queued.id;
     }
     return {
       ok: true,
@@ -452,8 +470,17 @@ async function runSessionMessage({
       turn_number: turnNum,
       request_id: normalizedRequestId,
       backend: backend.name,
+      external_messages_queued: bridgeKickoffs.map((kickoff) => ({
+        message_id: kickoff.messageId || null,
+        channel_id: kickoff.channelId,
+        target_session_id: kickoff.targetSession.session_id,
+        delivery: 'queued',
+      })),
     };
   } catch (e) {
+    for (const kickoff of bridgeKickoffs) {
+      try { closeAgentBridgeChannel(kickoff.channelId); } catch {}
+    }
     const { userMessage: detail, rawMessage } = formatBackendSendFailure(e);
     logger?.warn?.(`[sessions/messages] ${rawMessage}${rawMessage !== detail ? `; user_message=${detail}` : ''} (session=${normalizedSessionId})`);
     const failedFields: any = { backend: backend.name, reason: detail };
