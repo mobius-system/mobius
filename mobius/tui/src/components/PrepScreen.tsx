@@ -13,7 +13,7 @@
 import { randomBytes } from 'crypto'
 import React, { useEffect, useState } from 'react'
 import { Box, Text } from 'ink'
-import { Select, TextInput, type SelectItem } from './primitives.js'
+import { inlineSelectLabel, Select, TextInput, type SelectItem } from './primitives.js'
 import { MobiusClient } from '../api.js'
 import {
   bindCwdToProject, cwd, getCwdPreference, loadDir2Project, loadProjectsCache,
@@ -230,12 +230,6 @@ function toItems(arr: { id: string; name: string; description?: string }[]): Sel
   return arr.map(s => ({ label: s.name, value: s.id, desc: s.description }))
 }
 
-// 把可能含换行的描述压成单行：换行 → 可见符号 ⏎，避免列表项跨行。
-function flattenDesc(s?: string): string {
-  if (!s) return ''
-  return s.replace(/\s*\n\s*/g, ' ⏎ ').replace(/[ \t]+/g, ' ').trim()
-}
-
 // Search-first picker used by the project and issue screens. The search field
 // owns the initial focus so a user can type immediately; Down hands control to
 // the normal Select for keyboard navigation. Enter in the search field chooses
@@ -335,10 +329,10 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate, onQuit }: {
     )
   }
 
-  const items: SelectItem[] = projects.map(p => {
-      const desc = flattenDesc(p.description)
-      return { label: desc ? `${p.name} — ${desc}` : p.name, value: p.id }
-    })
+  const items: SelectItem[] = projects.map(p => ({
+    label: inlineSelectLabel(p.name, p.description),
+    value: p.id,
+  }))
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
       <Text color="gray">{cwd}</Text>
@@ -379,7 +373,10 @@ function IssuePicker({ issues, onPick, onCreate }: {
       </Box>
     )
   }
-  const items: SelectItem[] = issues.map(i => ({ label: i.title, value: i.id, desc: flattenDesc(i.description) }))
+  const items: SelectItem[] = issues.map(i => ({
+    label: inlineSelectLabel(i.title, i.description),
+    value: i.id,
+  }))
   return (
     <Box flexDirection="column">
       <Text color="gray">偏好设置将保存在所选任务内部</Text>
@@ -405,9 +402,8 @@ function ModelPicker({ options, defaultKey, onSelect }: {
 }) {
   if (!options.length) return <Text color="gray">加载模型列表…</Text>
   const items: SelectItem[] = options.map(o => ({
-    label: `${o.label}${o.key === defaultKey ? ' （默认）' : ''}`,
+    label: inlineSelectLabel(`${o.label}${o.key === defaultKey ? ' （默认）' : ''}`, o.sub),
     value: o.key,
-    desc: o.sub,
   }))
   return (
     <Box flexDirection="column">
