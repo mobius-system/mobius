@@ -74,10 +74,9 @@ async function runSelfTest(opts = {}) {
   });
 
   // —— 群聊/会话 ——
-  await check('群聊 GET /api/conversations', async () => { const d = await G('/api/conversations'); if (!Array.isArray(d)) throw new Error('非数组'); });
-  await check('会话 GET /api/sessions?limit=5', async () => {
-    const d = await G('/api/sessions?limit=5');
-    if (!Array.isArray(d)) throw new Error('非数组');
+  await check('群聊 GET /api/conversations', async () => {
+    const d = await G('/api/conversations');
+    if (!d || !Array.isArray(d.conversations)) throw new Error('无 conversations[]');
   });
 
   // —— 语音 ——
@@ -112,10 +111,16 @@ async function runSelfTest(opts = {}) {
 
   // —— SSE 流 (连接到第一个事件) ——
   await check('SSE GET /api/sessions/:id/events (首事件)', async () => {
-    // 先获取任意 sessionId (取第一个可用的)
-    const sessions = await G('/api/sessions?limit=1');
-    const sid = (Array.isArray(sessions) && sessions.length > 0 && sessions[0].session_id)
-      ? sessions[0].session_id : null;
+    // 先获取任意 sessionId: projects → issues → sessions
+    const projects = await G('/api/projects');
+    const pid = (Array.isArray(projects) && projects.length > 0 && projects[0].id) ? projects[0].id : null;
+    if (!pid) throw new Error('无可用 project');
+    const issues = await G(`/api/projects/${pid}/issues`);
+    const iid = (Array.isArray(issues) && issues.length > 0 && issues[0].id) ? issues[0].id : null;
+    if (!iid) throw new Error('无可用 issue');
+    const issueSessions = await G(`/api/issues/${iid}/sessions`);
+    const sid = (Array.isArray(issueSessions) && issueSessions.length > 0 && issueSessions[0].session_id)
+      ? issueSessions[0].session_id : null;
     if (!sid) throw new Error('无可用 session');
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), timeoutMs + 5000);
