@@ -298,8 +298,9 @@ async function testPrepRender() {
     ok(frame.includes('已有项目A') && frame.includes('已有项目B'), 'existing projects listed')
     ok(frame.includes('创建新项目'), 'create-new option present')
     // multi-line description must be flattened onto one line with ⏎ in place of \n
-    ok(frame.includes('已有项目A — 第一行 ⏎ 第二行'), 'multi-line description flattened to a single line')
-    ok(frame.includes('已有项目B — 单行描述'), 'single-line description kept as-is')
+    ok(frame.includes('已有项目A - 第一行 ⏎ 第二行'), 'multi-line description flattened into the project row')
+    ok(frame.includes('已有项目B - 单行描述'), 'single-line description kept on the project row')
+    ok(!frame.includes('\n    第一行') && !frame.includes('\n    单行描述'), 'project explanations do not render as an additional row')
     ok(!frame.includes('加载项目列表…'), 'completed project load does not leave a stale loading message')
 
     stdin.write('\r')

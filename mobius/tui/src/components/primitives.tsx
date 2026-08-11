@@ -421,6 +421,12 @@ export interface SelectItem {
   desc?: string
 }
 
+/** Keep a picker explanation on the item's main row; Select truncates that row. */
+export function inlineSelectLabel(label: string, detail?: string): string {
+  const oneLine = detail?.replace(/\s*\n\s*/g, ' ⏎ ').replace(/[ \t]+/g, ' ').trim()
+  return oneLine ? `${label} - ${oneLine}` : label
+}
+
 export interface SelectProps {
   items: SelectItem[]
   mode?: 'single' | 'multi'

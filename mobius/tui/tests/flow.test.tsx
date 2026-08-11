@@ -68,9 +68,9 @@ function mockFetch(url: string, init?: RequestInit): Response {
   }
   // issues
   if (url.includes('/api/projects/') && url.includes('/issues') && method === 'POST') return json({ id: IID, project_id: PID, title: '命令行任务' })  // create issue
-  if (url.includes('/api/projects/') && url.includes('/issues') && method === 'GET') return json([{ id: IID, project_id: PID, title: '命令行任务' }]) // list issues
+  if (url.includes('/api/projects/') && url.includes('/issues') && method === 'GET') return json([{ id: IID, project_id: PID, title: '命令行任务', description: '任务说明' }]) // list issues
   // projects
-  if (url.includes('/api/projects') && method === 'GET') return json([{ id: PID, name: '已有项目甲' }])   // list projects
+  if (url.includes('/api/projects') && method === 'GET') return json([{ id: PID, name: '已有项目甲', description: '项目说明' }])   // list projects
   if (url.endsWith('/api/projects') && method === 'POST') return json({ id: PID, name: '测试项目PTY' })   // create project (exact)
   // preference lookups
   if (url.includes('/sessions/model-options')) return json([{ key: 'codex', label: 'GPT-5.5', title: 'GPT-5.5', sub: 'Codex', backend: 'tmux-codex' }])
@@ -165,13 +165,16 @@ async function main() {
     stdin.write('\r')
     ok(await waitFor(lastFrame, '重新配置'), '/config opens the full reconfig flow')
     ok(await waitFor(lastFrame, '选择项目'), '/config shows project picker first')
+    ok((lastFrame() ?? '').includes('已有项目甲 - 项目说明'), '/config keeps the project explanation on its main row')
     // Pick the first project (created above).
     stdin.write('\r'); await delay(400)
     ok(await waitFor(lastFrame, '选择任务'), '/config shows issue picker after project')
+    ok((lastFrame() ?? '').includes('命令行任务 - 任务说明'), '/config keeps the issue explanation on its main row')
     // Pick the first issue.
     stdin.write('\r'); await delay(400)
     ok(await waitFor(lastFrame, '选择模型'), '/config shows model picker after issue')
     ok(await waitFor(lastFrame, 'GPT-5.5'), '/config model list rendered')
+    ok((lastFrame() ?? '').includes('GPT-5.5 （默认） - Codex'), '/config keeps the model explanation on its main row')
     stdin.write('\r'); await delay(700)                             // pick codex → create session
     ok(await waitFor(lastFrame, '输入问题'), '/config creates a fresh session and returns to chat')
     ok((lastFrame() ?? '').includes('?session=sess-1'), 'reconfigured chat is attached to the new session')
