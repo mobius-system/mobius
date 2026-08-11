@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { render } from 'ink-testing-library'
 import { AimuxStatusLine } from '../src/components/AimuxStatus.js'
-import { AimuxSupervisor, probeAimuxBridgeConnection, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, downloadBundleForTest, reverseConnectArgs, aimuxLogPath, bundleHealthCheckCode } from '../src/aimux.js'
+import { AimuxSupervisor, probeAimuxBridgeConnection, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, downloadBundleForTest, reverseConnectArgs, aimuxLogPath, bundleHealthCheckCode, tuiAimuxIdentifier } from '../src/aimux.js'
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 let pass = 0, fail = 0
@@ -78,11 +78,11 @@ async function testBundleArchAndUrl() {
   const arch = bundleArch()
   ok(arch === 'linux-x64' || arch === 'win-x64' || arch === 'mac-x64', `bundleArch returns a supported arch on this host (${arch})`)
   const before = bundleUrl('linux-x64')
-  ok(before.includes('mobius-python-linux-x64-v2') && before.endsWith('.zip'), 'bundleUrl follows the fixed filename pattern')
+  ok(before.includes('mobius-python-linux-x64-v3') && before.endsWith('.zip'), 'bundleUrl follows the fixed filename pattern')
   const saved = process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL
   process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL = 'https://example.test/cdn/'
   try {
-    ok(bundleUrl('win-x64') === 'https://example.test/cdn/mobius-python-win-x64-v2.zip', 'MOBIUS_TUI_PYTHON_BUNDLE_URL overrides the CDN base and trims trailing slash')
+    ok(bundleUrl('win-x64') === 'https://example.test/cdn/mobius-python-win-x64-v3.zip', 'MOBIUS_TUI_PYTHON_BUNDLE_URL overrides the CDN base and trims trailing slash')
   } finally { if (saved === undefined) delete process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL; else process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL = saved }
 }
 
@@ -139,6 +139,16 @@ function testReverseConnectArgs() {
   ok(win.includes('--slient-v2'), 'Windows reverse connection always requests the no-console shell mode')
   ok(!linux.includes('--slient-v2'), 'non-Windows reverse connection does not receive the Windows-only flag')
   ok(win[2] === 'https://mobius.test/aimux_bridge', 'reverse connection normalizes the bridge URL')
+}
+
+function testAimuxIdentifierScopesWorkspace() {
+  console.log('\n[AIMUX 6a] reverse client identifier workspace isolation')
+  const first = tuiAimuxIdentifier('same-host', '/work/project-a')
+  const firstAgain = tuiAimuxIdentifier('same-host', '/work/project-a')
+  const second = tuiAimuxIdentifier('same-host', '/work/project-b')
+  ok(first === firstAgain, 'identifier is stable for the same host and workspace')
+  ok(first !== second, 'different workspaces on one host do not replace each other')
+  ok(/^tui-same-host-[a-f0-9]{10}$/.test(first), 'identifier remains bridge-safe and recognizable')
 }
 
 function testBundleHealthCheck() {
@@ -199,6 +209,7 @@ async function main() {
   await testBundleArchAndUrl()
   await testSpawnLauncher()
   testReverseConnectArgs()
+  testAimuxIdentifierScopesWorkspace()
   testBundleHealthCheck()
   await testEnsureFromBundleReady()
   await testDownloadBundleStream()
