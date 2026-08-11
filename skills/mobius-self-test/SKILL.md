@@ -41,18 +41,23 @@ curl -sS http://localhost:33316/api/admin/self-test \
 
 ## 检查项目
 
-| 类别 | 端点 | 说明 |
-|------|------|------|
-| 健康 | `/api/health` | 基础健康检查 |
-| 健康 | `/api/v2/health` | 版本信息 |
-| 鉴权 | `/api/auth/config` | 认证配置 |
-| 鉴权 | `/api/auth/me` | system token 有效 |
-| 读 | `/api/projects` | 项目列表 |
-| 读 | `/api/sessions/model-options` | 模型选项 |
-| 读 | `/api/tasks/recent` | 最近任务 |
-| 读 | `/api/extensions` | 扩展列表 |
-| 语音 | `/api/assistant/tts/voices` | TTS 配置 |
-| 写(可选) | POST+DELETE `/api/memories` | 建→列→删往返 |
+| # | 类别 | 端点 | 说明 |
+|---|---|---|---|
+| 1 | 健康 | `GET /api/health` | `{"status":"ok"}` |
+| 2 | 健康 | `GET /api/v2/health` | 版本信息 |
+| 3 | 鉴权 | `GET /api/auth/config` | 认证配置 |
+| 4 | 鉴权 | `GET /api/auth/me` | system token |
+| 5 | 核心读 | `GET /api/projects` | 项目列表 |
+| 6 | 核心读 | `GET /api/sessions/model-options` | 模型列表 |
+| 7 | 核心读 | `GET /api/tasks/recent` | 最近任务 |
+| 8 | 核心读 | `GET /api/extensions` | 扩展列表 |
+| 9 | 搜索 | `GET /api/search?q=test` | 全局搜索 |
+| 10 | 群聊 | `GET /api/conversations` | 群聊列表 |
+| 11 | 会话 | `GET /api/sessions?limit=5` | 会话列表 |
+| 12 | 语音 | `GET /api/assistant/tts/voices` | TTS 配置 |
+| 13 | 上传 | `POST /api/upload` | 文件上传 (仅 write) |
+| 14 | SSE | `GET /api/sessions/:id/events` | 流式连接 + 首事件 |
+| 15 | 写 | POST→DELETE `/api/memories` | 往返 (仅 write) |
 
 ## 部署后自动自检
 
