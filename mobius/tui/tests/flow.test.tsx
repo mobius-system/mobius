@@ -165,7 +165,7 @@ async function main() {
     stdin.write('\r')
     ok(await waitFor(lastFrame, '重新配置'), '/config opens the full reconfig flow')
     ok(await waitFor(lastFrame, '选择项目'), '/config shows project picker first')
-    ok((lastFrame() ?? '').includes('已有项目甲 - 项目说明'), '/config keeps the project explanation on its main row')
+    ok(await waitFor(lastFrame, '已有项目甲 - 项目说明'), '/config keeps the project explanation on its main row')
     // Pick the first project (created above).
     stdin.write('\r'); await delay(400)
     ok(await waitFor(lastFrame, '选择任务'), '/config shows issue picker after project')
