@@ -6,6 +6,7 @@
  * currently authenticated Mobius server.  Nothing is started before login.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { promises as fs, existsSync, createWriteStream } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -300,9 +301,15 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Pr
   return { ok: false, error: `${venvError}；内置运行时也失败: ${bundle.error}` }
 }
 
-export function tuiAimuxIdentifier(): string {
-  const host = os.hostname().toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32)
-  return `tui-${host || 'pc'}`
+export function tuiAimuxIdentifier(hostname = os.hostname(), cwd = process.cwd()): string {
+  const host = hostname.toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32)
+  // One machine may run several Mobius TUIs for different projects.  A
+  // hostname-only identifier makes every reverse client register with the
+  // same name and --replace continuously evicts its siblings ("client
+  // replaced").  The normalized cwd hash is stable across restarts/resume but
+  // unique for the common multi-project case.
+  const workspace = createHash('sha256').update(path.resolve(cwd)).digest('hex').slice(0, 10)
+  return `tui-${host || 'pc'}-${workspace}`
 }
 
 /**
