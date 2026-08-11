@@ -32,6 +32,7 @@
     "test:agent-tmux-server": "node tests/agent-tmux-server.js",
     "test:claude-realtime-info": "node --require tsx/cjs tests/claude-realtime-info.js",
     "test:codex-error-scan": "node --require tsx/cjs tests/codex-error-scan.js",
+    "test:self-test": "node tests/self-test.js",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",
     "start:tsx": "tsx server.js"
   },
