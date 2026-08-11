@@ -460,10 +460,18 @@ function finalizeHighPrecisionParse(e, job, statusPayload) {
   const latex = String(result.latex || "").slice(0, 8_000_000);
   const paper = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(job.source_id);
   const previousMeta = documentMeta(paper);
-  const revision = Number(e.prepare("SELECT COALESCE(MAX(revision),0)+1 AS revision FROM paper_derivatives WHERE source_id=?").get(job.source_id).revision);
+  let revision = Number(e.prepare("SELECT COALESCE(MAX(revision),0)+1 AS revision FROM paper_derivatives WHERE source_id=?").get(job.source_id).revision);
   const timestamp = now();
   const chunks = markdownChunks(markdown, job.source_id);
   e.transaction(() => {
+    const hasDerivative = e.prepare("SELECT 1 FROM paper_derivatives WHERE source_id=? LIMIT 1").get(job.source_id);
+    if (!hasDerivative && paper.document_markdown) {
+      e.prepare(`INSERT INTO paper_derivatives
+        (id,source_id,revision,provider,provider_version,status,markdown,latex,quality_score,metadata_json,created_at,active)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,0)`).run(id("derivative", `${job.source_id}:legacy`), job.source_id, revision, paper.parser || "pymupdf-local",
+        "legacy", "archived", paper.document_markdown, "", Number(previousMeta.quality?.score || 0), JSON.stringify(previousMeta.quality || {}), timestamp);
+      revision += 1;
+    }
     e.prepare("UPDATE paper_derivatives SET active=0 WHERE source_id=?").run(job.source_id);
     e.prepare(`INSERT INTO paper_derivatives
       (id,source_id,revision,provider,provider_version,status,markdown,latex,quality_score,metadata_json,created_at,active)
