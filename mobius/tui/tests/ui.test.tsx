@@ -568,6 +568,7 @@ async function testCursorNavigationKeys() {
       commands={[]}
     />,
   )
+  await delay(20)
   composer.stdin.write('alpha beta'); await delay(20)
   composer.stdin.write('\x1b[H'); await delay(15)
   composer.stdin.write('^'); await delay(15)
