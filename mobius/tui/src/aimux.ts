@@ -88,8 +88,8 @@ async function pythonForAimux(onProgress?: (p: InstallProgress) => void): Promis
 // 解压到 ~/.mobius/python-bundle/ 后用 `<python> -m aimux` 运行，彻底绕开宿主机
 // 系统 python（如被精简掉 ensurepip 的容器镜像）。aimux 全部依赖为纯 Python，
 // 故三平台可共用同一套打包产物，分别按 arch 发布到 CDN。
-const BUNDLE_VER = '2'
-const BUNDLE_AIMUX_VERSION = '0.1.21'
+const BUNDLE_VER = '3'
+const BUNDLE_AIMUX_VERSION = '0.1.22'
 const bundleDir = () => path.join(mobiusHome(), 'python-bundle')
 const bundlePython = () => WIN
   ? path.join(bundleDir(), 'python', 'python.exe')
@@ -308,8 +308,10 @@ export function tuiAimuxIdentifier(): string {
 /**
  * Build the reverse-connect command in one place. The TUI can launch AIMUX
  * through either a venv executable or bundled Python; both paths must request
- * hidden Windows shells or every remote command flashes a console and steals
- * keyboard focus from the TUI.
+ * a fully headless Windows shell or every remote command flashes a console and
+ * steals keyboard focus from the TUI. Keep the old --silent-shell path
+ * available for older AIMUX bundles; current bundles use the no-console v2
+ * implementation (the historical spelling --slient-v2 is intentional).
  */
 export function reverseConnectArgs(
   server: string,
@@ -322,7 +324,7 @@ export function reverseConnectArgs(
     '--identifier', identifier,
     '--token', token,
     '--replace',
-    ...(platform === 'win32' ? ['--silent-shell'] : []),
+    ...(platform === 'win32' ? ['--slient-v2'] : []),
   ]
 }
 

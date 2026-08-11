@@ -136,8 +136,8 @@ function testReverseConnectArgs() {
   console.log('\n[AIMUX 6] reverse connect Windows shell visibility')
   const win = reverseConnectArgs('https://mobius.test/', 'tui-win', 'jwt-test', 'win32')
   const linux = reverseConnectArgs('https://mobius.test/', 'tui-linux', 'jwt-test', 'linux')
-  ok(win.includes('--silent-shell'), 'Windows reverse connection always requests hidden command shells')
-  ok(!linux.includes('--silent-shell'), 'non-Windows reverse connection does not receive the Windows-only flag')
+  ok(win.includes('--slient-v2'), 'Windows reverse connection always requests the no-console shell mode')
+  ok(!linux.includes('--slient-v2'), 'non-Windows reverse connection does not receive the Windows-only flag')
   ok(win[2] === 'https://mobius.test/aimux_bridge', 'reverse connection normalizes the bridge URL')
 }
 
@@ -146,7 +146,7 @@ function testBundleHealthCheck() {
   const win = bundleHealthCheckCode('win32')
   const linux = bundleHealthCheckCode('linux')
   ok(win.includes('aimux.bridge_client') && win.includes('win32_setctime'), 'Windows bundle probe imports the real bridge path and its platform dependency')
-  ok(win.includes("aimux.__version__ == '0.1.21'"), 'bundle probe rejects stale AIMUX versions')
+  ok(win.includes("aimux.__version__ == '0.1.22'"), 'bundle probe rejects stale AIMUX versions')
   ok(!linux.includes('win32_setctime'), 'non-Windows bundle probe does not require the Windows-only package')
 }
 
