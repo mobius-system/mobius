@@ -334,15 +334,16 @@ function enhancedNeeded(paper) {
 function renderEnhancedState(paper, job = state.parseJob) {
   const card = $('enhancedCard');
   const button = $('highPrecisionBtn');
+  const available = paper?.origin === 'upload' || Boolean(paper?.arxiv_id);
   const uploaded = paper?.origin === 'upload';
-  button.hidden = !uploaded;
+  button.hidden = !available;
   button.disabled = Boolean(job && ['queued', 'running'].includes(job.status));
   button.innerHTML = job && ['queued', 'running'].includes(job.status)
     ? '<i data-lucide="loader-circle"></i><span>解析中…</span>'
     : paper?.extraction_status === 'enhanced_ready'
       ? '<i data-lucide="badge-check"></i><span>高精度已完成</span>'
       : '<i data-lucide="scan-search"></i><span>高精度解析</span>';
-  if (!uploaded || paper?.extraction_status === 'enhanced_ready') { card.hidden = true; refreshIcons(); return; }
+  if ((!uploaded && !job) || paper?.extraction_status === 'enhanced_ready') { card.hidden = true; refreshIcons(); return; }
   card.hidden = false;
   const reasons = (paper.quality_reasons || []).map((reason) => esc(reason)).join('；');
   if (job && ['queued', 'running'].includes(job.status)) {
@@ -368,7 +369,7 @@ function maybePromptEnhancedParse(paper) {
   }, 450);
 }
 async function startEnhancedParse(confirmed = false) {
-  if (!state.paper || state.paper.origin !== 'upload') return toast('高精度云解析目前只支持手动上传的 PDF', true);
+  if (!state.paper || (state.paper.origin !== 'upload' && !state.paper.arxiv_id)) return toast('当前论文没有可用的 PDF 来源', true);
   if (state.parseJob && ['queued', 'running'].includes(state.parseJob.status)) return toast('高精度解析已经在后台运行');
   if (!confirmed && !window.confirm('确认将这篇原始 PDF 发送给 Doc2X？匿名审稿稿件或敏感材料请先确认授权范围。')) return;
   try {
