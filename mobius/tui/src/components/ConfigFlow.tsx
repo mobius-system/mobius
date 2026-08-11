@@ -21,7 +21,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react'
 import { Box, Text } from 'ink'
-import { inlineSelectLabel, isEscapeKeypress, Select, TextInput, Spinner, useStableInput, type SelectItem } from './primitives.js'
+import { isEscapeKeypress, Select, TextInput, Spinner, useStableInput, type SelectItem } from './primitives.js'
 import { MobiusClient } from '../api.js'
 import {
   bindCwdToProject, cwd, getCwdPreference, loadDir2Project, loadProjectsCache,
@@ -117,7 +117,8 @@ export function ConfigFlow({ client, issue, onDone }: {
               ? <Text color="gray">（无可用模型）</Text>
               : <Select
                   items={models.map(o => ({
-                    label: inlineSelectLabel(`${o.label}${o.key === defaultKey ? ' （默认）' : ''}`, o.sub),
+                    label: `${o.label}${o.key === defaultKey ? ' （默认）' : ''}`,
+                    desc: o.sub,
                     value: o.key,
                   }))}
                   onSelect={key => void pickModel(key)}
@@ -343,7 +344,7 @@ export function ReconfigFlow({ client, onDone, onCancel }: {
               : <Select
                   items={[
                     { label: '➕ 创建新项目', value: '__create__' },
-                    ...projects.map(p => ({ label: inlineSelectLabel(p.name, p.description), value: p.id })),
+                    ...projects.map(p => ({ label: p.name, desc: p.description, value: p.id })),
                   ]}
                   initialActive={projects.length > 0 ? 1 : 0}
                   onSelect={v => v === '__create__' ? setCreateMode('project') : pickProject(projects!.find(p => p.id === v)!)}
@@ -367,7 +368,7 @@ export function ReconfigFlow({ client, onDone, onCancel }: {
                 : <Select
                     items={[
                       { label: '➕ 创建新任务', value: '__create__' },
-                      ...issues.map(i => ({ label: inlineSelectLabel(i.title, i.description), value: i.id })),
+                      ...issues.map(i => ({ label: i.title, desc: i.description, value: i.id })),
                     ]}
                     initialActive={1}
                     onSelect={v => v === '__create__' ? setCreateMode('issue') : pickIssue(issues!.find(i => i.id === v)!)} />}
@@ -387,7 +388,8 @@ export function ReconfigFlow({ client, onDone, onCancel }: {
                 ? <Text color="gray">（无可用模型）</Text>
                 : <Select
                     items={models.map(o => ({
-                      label: inlineSelectLabel(`${o.label}${o.key === defaultKey ? ' （默认）' : ''}`, o.sub),
+                      label: `${o.label}${o.key === defaultKey ? ' （默认）' : ''}`,
+                      desc: o.sub,
                       value: o.key,
                     }))}
                     onSelect={key => void pickModel(key)}

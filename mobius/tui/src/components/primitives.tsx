@@ -507,17 +507,20 @@ export function Select(props: SelectProps) {
         const isActive = realIdx === active
         const checked = mode === 'multi' ? selectedSet.has(it.value) : false
         const marker = mode === 'multi' ? (checked ? '☑' : '☐') : isActive ? '❯' : ' '
+        // Keep picker rows compact: descriptions belong on the highlighted
+        // row only.  Unfocused rows show just their label so a long list does
+        // not turn every item into a multi-line block.
+        const rowLabel = isActive ? inlineSelectLabel(it.label, it.desc) : it.label
         return (
-          <Box key={it.value} flexDirection="column">
+          <Box key={it.value}>
             <Text
               color={isActive ? 'black' : undefined}
               backgroundColor={isActive ? 'cyan' : undefined}
               bold={isActive}
               wrap="truncate-end"
             >
-              {marker} {it.label}
+              {marker} {rowLabel}
             </Text>
-            {isActive && it.desc ? <Text color="gray" wrap="truncate-end">    {it.desc}</Text> : null}
           </Box>
         )
       })}

@@ -13,7 +13,7 @@
 import { randomBytes } from 'crypto'
 import React, { useEffect, useState } from 'react'
 import { Box, Text } from 'ink'
-import { inlineSelectLabel, Select, TextInput, type SelectItem } from './primitives.js'
+import { Select, TextInput, type SelectItem } from './primitives.js'
 import { MobiusClient } from '../api.js'
 import {
   bindCwdToProject, cwd, getCwdPreference, loadDir2Project, loadProjectsCache,
@@ -330,7 +330,8 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate, onQuit }: {
   }
 
   const items: SelectItem[] = projects.map(p => ({
-    label: inlineSelectLabel(p.name, p.description),
+    label: p.name,
+    desc: p.description,
     value: p.id,
   }))
   return (
@@ -374,7 +375,8 @@ function IssuePicker({ issues, onPick, onCreate }: {
     )
   }
   const items: SelectItem[] = issues.map(i => ({
-    label: inlineSelectLabel(i.title, i.description),
+    label: i.title,
+    desc: i.description,
     value: i.id,
   }))
   return (
@@ -402,7 +404,8 @@ function ModelPicker({ options, defaultKey, onSelect }: {
 }) {
   if (!options.length) return <Text color="gray">加载模型列表…</Text>
   const items: SelectItem[] = options.map(o => ({
-    label: inlineSelectLabel(`${o.label}${o.key === defaultKey ? ' （默认）' : ''}`, o.sub),
+    label: `${o.label}${o.key === defaultKey ? ' （默认）' : ''}`,
+    desc: o.sub,
     value: o.key,
   }))
   return (
