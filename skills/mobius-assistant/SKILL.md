@@ -63,8 +63,22 @@ description: you are a helpful assistant to help user operate the mobius AI syst
 - `/api/researches/:id/complete` | auth | 标记 Research 完成 |
 - `/api/projects/:projectId/researches/` | auth | 新建 Research (项目需 `research_enabled=1`) |
 - `/api/researches/:researchId/sessions/` | auth | 新建 Research Session, `role` ∈ `chief_researcher` / `research_assistant`, 自动 append blackboard 加入通知 |
+- `/api/search?q=keyword&project_id=&range=7d&limit=50` | auth | 全局搜索历史会话 JSONL 记录，支持 SSE 流式 (`stream=1`) |
+- `/api/conversations/` | auth | 列出当前用户的群聊列表 |
+- `/api/conversations/` POST | auth | 创建群聊，body `{name, members: [{type:'user'|'agent', id, agent_session_id?}]}` |
+- `/api/conversations/direct` POST | auth | 发起 1v1 私聊，body `{member_id}` |
+- `/api/conversations/:id/messages` POST | auth | 发群消息，body `{content, mentions}` (支持 @agent) |
+- `/api/sessions/mention-targets?session_id=xxx&q=` | auth | @ 引用候选 session 列表 |
+- `/api/sessions/default-model` | auth | 系统默认模型 |
+- `/api/sessions/:id/model` PATCH | auth | 切换 session 模型 |
+- `/api/sessions/:id/terminate` | auth | 优雅终止 agent |
+- `/api/sessions/:id/stop` | auth | 强制停止 agent |
+- `/api/admin/self-test` | adminAuth | 系统自检 (健康/鉴权/搜索/群聊/上传/SSE)，返回 JSON 报告 |
+- `/api/user-groups/` | auth | 用户分组列表 |
+- `/api/profile/` PATCH | auth | 更新用户偏好 (tour 引导等) |
+- `/api/webhook/desktop-sync` POST | token | 触发桌面客户端产物同步到服务器 |
 
-...... 还有很多，例如 `/api/memories` 等 (如果撞到API错误，或者需要查看API目录，请查看 `${APP_DIR}/skills/mobius-assistant/MOBIUS_API.md` （内置记忆）) ......
+...... 还有很多，例如 `/api/memories` / `/api/extensions` / `/api/agent-bridge` 等 (如果撞到API错误，或者需要查看API目录，请查看 `${APP_DIR}/skills/mobius-assistant/MOBIUS_API.md` （内置记忆）) ......
 
 建议：你发送HTTP请求时，最好把当前的 Authorization Bearer 扔进环境变量里面，然后在curl时读环境变量。
 
@@ -124,3 +138,9 @@ Issue和Research层和session层**没有自己专属的skill和memory**，只能
 
 【转发通知的能力】
 当一个Session结束时，你会收到来自系统的通知，你要用简洁明了的话语，把信息转达给用户。同一个Session可能会需要处理后续事件，所以你会收到多次系统通知，这是正常的。
+
+【系统自检能力】
+当用户怀疑系统异常、刚部署/重启完需要验收时，你可以：
+- 调 `GET /api/admin/self-test` 跑一组 HTTP 冒烟 (健康/鉴权/搜索/群聊/上传/SSE)，返回 JSON 报告
+- 或通过 `/skill mobius-self-test` 触发 CLI 自检 (`npm run test:self-test`)
+- 检查结果：✅=通过 ❌=失败，全 ✅ 即系统正常
