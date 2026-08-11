@@ -347,6 +347,131 @@ function ingestUploadedPdf(e, t, user, dir) {
   return { ok: true, paper: paperOut(e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid)), duplicate: false, from_cache: false };
 }
 
+// ============ 高精度 PDF 解析（用户明确点击后才外传，异步持久化） ============
+function markdownToPlain(markdown, max = 500000) {
+  return String(markdown || "").replace(/<div[^>]*pr-page-marker[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/```[\s\S]*?```/g, " ").replace(/[#*_>`]/g, " ")
+    .replace(/\s+/g, " ").trim().slice(0, max);
+}
+function markdownChunks(markdown, sid) {
+  const lines = String(markdown || "").replace(/\r/g, "").split("\n");
+  const chunks = []; let current = []; let section = ""; let page = 1; let index = 0;
+  const flush = () => {
+    const content = current.join("\n").trim();
+    if (!content) return;
+    chunks.push({ id: id("chunk", `${sid}:enhanced:${index}`), chunk_index: index++, page_start: page, page_end: page,
+      section: section.slice(0, 300), content: content.slice(0, 200000) });
+    current = [];
+  };
+  for (const line of lines) {
+    const pageMatch = line.match(/data-page=["'](\d+)["']/i);
+    if (pageMatch) page = int(pageMatch[1], page, 1, 800);
+    const heading = line.match(/^#{1,4}\s+(.+)$/);
+    if (heading) {
+      if (current.join("\n").length > 7000) flush();
+      section = heading[1].replace(/[*_`]/g, " ").trim();
+    }
+    current.push(line);
+    if (current.join("\n").length >= 10000) flush();
+  }
+  flush();
+  return chunks;
+}
+function parseJobOut(row) {
+  if (!row) return null;
+  return { id: row.id, source_id: row.source_id, provider: row.provider, status: row.status, stage: row.stage,
+    progress: Number(row.progress || 0), error: row.error || "", created_at: row.created_at, updated_at: row.updated_at,
+    finished_at: row.finished_at || "" };
+}
+function assertUploadedPaper(e, sid, user) {
+  const paper = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid);
+  if (!paper) throw new Error("论文不存在");
+  if (paper.origin !== "upload") throw new Error("高精度云解析目前只对手动上传的 PDF 开放");
+  if (paper.owner_id && paper.owner_id !== user) throw new Error("这篇上传论文不属于当前用户");
+  return paper;
+}
+function startHighPrecisionParse(e, t, user, dir) {
+  const sid = txt(t.source_id || t.id, 200);
+  const paper = assertUploadedPaper(e, sid, user);
+  const active = e.prepare("SELECT * FROM paper_parse_jobs WHERE source_id=? AND owner_id=? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1").get(sid, user);
+  if (active) return { job: parseJobOut(active), already_running: true };
+  const jobId = id("parse", `${sid}:${user}:${Date.now()}`);
+  const userSegment = safeUserSegment(user);
+  const jobRoot = path.join(dir, "users", userSegment, "parse_jobs", jobId);
+  const statusPath = path.join(jobRoot, "status.json");
+  const outputDir = path.join(jobRoot, "output");
+  fs.mkdirSync(outputDir, { recursive: true });
+  const timestamp = now();
+  e.prepare(`INSERT INTO paper_parse_jobs
+    (id,source_id,owner_id,provider,status,stage,progress,worker_status_path,worker_output_dir,error,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(jobId, sid, user, "doc2x", "queued", "等待启动", 0, String(statusPath), String(outputDir), "", timestamp, timestamp);
+  const configPath = path.join(jobRoot, "job.json");
+  fs.writeFileSync(configPath, JSON.stringify({ job_id: jobId, source_id: sid, pdf_path: path.join(dir, "users", userSegment, paper.pdf_asset_rel || `papers/${sid}.pdf`),
+    status_path: statusPath, output_dir: outputDir }, null, 2), { mode: 0o600 });
+  const script = path.join(__dirname, "high_precision_worker.py");
+  const child = childProcess.spawn(process.env.PAPER_READER_PYTHON || "python3", [script, configPath], { detached: true, stdio: "ignore", windowsHide: true });
+  child.unref();
+  const row = e.prepare("SELECT * FROM paper_parse_jobs WHERE id=?").get(jobId);
+  return { job: parseJobOut(row), consent_required: true };
+}
+function finalizeHighPrecisionParse(e, job, statusPayload) {
+  const resultPath = statusPayload.result_path || path.join(job.worker_output_dir, "result.json");
+  if (!fs.existsSync(resultPath)) throw new Error("高精度解析已完成，但结果文件不存在");
+  const result = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+  const markdown = String(result.markdown || "").slice(0, 4_000_000);
+  if (markdown.length < 200) throw new Error("高精度服务返回的 Markdown 为空或过短");
+  const latex = String(result.latex || "").slice(0, 8_000_000);
+  const paper = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(job.source_id);
+  const previousMeta = documentMeta(paper);
+  const revision = Number(e.prepare("SELECT COALESCE(MAX(revision),0)+1 AS revision FROM paper_derivatives WHERE source_id=?").get(job.source_id).revision);
+  const timestamp = now();
+  const chunks = markdownChunks(markdown, job.source_id);
+  e.transaction(() => {
+    e.prepare("UPDATE paper_derivatives SET active=0 WHERE source_id=?").run(job.source_id);
+    e.prepare(`INSERT INTO paper_derivatives
+      (id,source_id,revision,provider,provider_version,status,markdown,latex,quality_score,metadata_json,created_at,active)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,1)`).run(id("derivative", `${job.source_id}:${revision}`), job.source_id, revision, result.provider || "doc2x",
+      result.provider_version || "v2", "active", markdown, latex, 100, JSON.stringify({ uid: result.uid || "", quality: "enhanced" }), timestamp);
+    const meta = { ...previousMeta, parser: "doc2x-v2", active_revision: revision, quality: { score: 100, status: "enhanced_ready", reasons: [], provider: "doc2x" } };
+    e.prepare(`UPDATE paper_fulltext SET text_excerpt=?,extraction_status='enhanced_ready',extraction_error='',parser='doc2x-v2',document_markdown=?,document_json=?,fetched_at=? WHERE source_id=?`)
+      .run(markdownToPlain(markdown), markdown, JSON.stringify(meta), timestamp, job.source_id);
+    e.prepare("DELETE FROM paper_chunks WHERE source_id=?").run(job.source_id);
+    const insert = e.prepare("INSERT INTO paper_chunks (id,source_id,chunk_index,page_start,page_end,section,content,created_at) VALUES (?,?,?,?,?,?,?,?)");
+    chunks.forEach(chunk => insert.run(chunk.id, job.source_id, chunk.chunk_index, chunk.page_start, chunk.page_end, chunk.section, chunk.content, timestamp));
+    e.prepare("UPDATE paper_parse_jobs SET status='completed',stage='高精度结果已写入阅读索引',progress=100,error='',finished_at=?,updated_at=? WHERE id=?")
+      .run(timestamp, timestamp, job.id);
+  })();
+  return e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(job.source_id);
+}
+function pollHighPrecisionParse(e, t, user) {
+  const job = e.prepare("SELECT * FROM paper_parse_jobs WHERE id=? AND owner_id=?").get(txt(t.job_id || t.id, 200), user);
+  if (!job) return { ok: false, error: "高精度解析任务不存在" };
+  if (["queued", "running"].includes(job.status) && fs.existsSync(job.worker_status_path)) {
+    try {
+      const payload = JSON.parse(fs.readFileSync(job.worker_status_path, "utf8"));
+      const nextStatus = payload.state === "completed" ? "running" : payload.state === "failed" ? "failed" : "running";
+      e.prepare("UPDATE paper_parse_jobs SET status=?,stage=?,progress=?,error=?,updated_at=? WHERE id=?")
+        .run(nextStatus, txt(payload.stage, 200), int(payload.progress, 0, 0, 100), txt(payload.error, 2000), now(), job.id);
+    } catch {}
+  }
+  let current = e.prepare("SELECT * FROM paper_parse_jobs WHERE id=?").get(job.id);
+  if (current.status === "running" && fs.existsSync(current.worker_status_path)) {
+    try {
+      const payload = JSON.parse(fs.readFileSync(current.worker_status_path, "utf8"));
+      if (payload.state === "completed") {
+        const paper = finalizeHighPrecisionParse(e, current, payload);
+        current = e.prepare("SELECT * FROM paper_parse_jobs WHERE id=?").get(job.id);
+        return { job: parseJobOut(current), paper: paperOut(paper), completed: true };
+      }
+    } catch (error) {
+      e.prepare("UPDATE paper_parse_jobs SET status='failed',stage='高精度结果写入失败',error=?,updated_at=? WHERE id=?").run(txt(error.message, 2000), now(), job.id);
+      current = e.prepare("SELECT * FROM paper_parse_jobs WHERE id=?").get(job.id);
+    }
+  }
+  return { job: parseJobOut(current), completed: current.status === "completed", paper: current.status === "completed" ? paperOut(e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(current.source_id)) : null };
+}
+
 async function openPaper(e, t, user) {
   const aid = resolveArxivId(t.arxiv_id || t.source_id || t.id || t.url);
   if (!aid) return { ok: false, error: "需要 arxiv_id / source_id / url" };
@@ -776,6 +901,7 @@ function bootstrapData(e, user) {
 
 // ============ dispatch ============
 const RETAINED_ACTIONS = ["current_user", "bootstrap", "list_ai_channels", "open_paper", "ingest_uploaded_pdf", "get_paper", "get_paper_pdf", "list_recent_papers",
+  "start_high_precision_parse", "poll_parse_job",
   "chat_with_paper", "distill_chat_to_note", "poll_run", "list_runs", "list_conversation", "get_run_messages",
   "list_notes", "save_note", "delete_note",
   "list_comments", "add_comment", "delete_comment"];
@@ -787,6 +913,8 @@ async function dispatch(e, t, r, a) {
   if ("list_ai_channels" === s) return { ok: true, ...listAiChannels() };
   if ("open_paper" === s) return { ok: true, ...(await openPaper(e, t, r)) };
   if ("ingest_uploaded_pdf" === s) return { ok: true, ...ingestUploadedPdf(e, t, r, a) };
+  if ("start_high_precision_parse" === s) return { ok: true, ...startHighPrecisionParse(e, t, r, a) };
+  if ("poll_parse_job" === s) return { ok: true, ...pollHighPrecisionParse(e, t, r) };
   if ("get_paper" === s) return { ok: true, ...getPaper(e, t) };
   if ("get_paper_pdf" === s) return { ok: true, ...(await getPaperPdf(e, t, a, r)) };
   if ("list_recent_papers" === s) return { ok: true, ...listRecentPapers(e, r) };
