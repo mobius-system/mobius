@@ -29,6 +29,7 @@ const crypto = require('crypto')
 const { AgentBackend } = require('./base')
 const {
   appendMobiusPromptEntry,
+  appendMobiusExternalEntry,
   readMergedJsonlHistory,
   watchMergedJsonl,
 } = require('../services/mobius-jsonl')
@@ -788,7 +789,10 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       return false
     }
     try {
-      appendMobiusPromptEntry({
+      const append = mobiusJsonl?.kind === 'external_session_message'
+        ? appendMobiusExternalEntry
+        : appendMobiusPromptEntry
+      append({
         jsonlPath: entry.jsonlPath,
         sessionId,
         agentSessionId: entry.agentSessionId || null,
@@ -846,7 +850,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // 宽松版 — 没活进程就按 opts 自动 spawn (chat 不区分首发/续发, 统一走这里).
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusJsonl = null, aimuxRemoteName, enableGulingMcp = false }) {
+  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName, enableGulingMcp = false }) {
     if (!sessionId) throw new Error('需要 sessionId')
     if (!prompt) throw new Error('需要 prompt')
 
@@ -876,7 +880,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     this._appendMobiusPromptEntry(sessionId, mobiusJsonl)
     await this._sendMaybeInitialContextPrompt(sessionId, prompt, isInitialContextPrompt)
     const entry = this.runtime.get(sessionId)
-    markRunning(flagRoot || entry?.flagRoot || entry?.cwd || cwd, sessionId)
+    if (!suppressRunningFlag) markRunning(flagRoot || entry?.flagRoot || entry?.cwd || cwd, sessionId)
   }
 
   async _pauseImpl({ sessionId, prompt, cwd, flagRoot, urgent = false, mobiusJsonl = null }) {

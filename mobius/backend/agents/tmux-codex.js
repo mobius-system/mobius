@@ -31,6 +31,7 @@ function resolveAimuxBin() {
 const { AgentBackend } = require('./base')
 const {
   appendMobiusPromptEntry,
+  appendMobiusExternalEntry,
   readMergedJsonlHistory,
   watchMergedJsonl,
 } = require('../services/mobius-jsonl')
@@ -826,7 +827,10 @@ class TmuxCodexBackend extends AgentBackend {
       return false
     }
     try {
-      appendMobiusPromptEntry({
+      const append = mobiusJsonl?.kind === 'external_session_message'
+        ? appendMobiusExternalEntry
+        : appendMobiusPromptEntry
+      append({
         jsonlPath: entry.jsonlPath,
         sessionId,
         agentSessionId: entry.agentSessionId || null,
@@ -886,7 +890,7 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, mobiusJsonl = null, aimuxRemoteName }) {
+  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName }) {
     if (!sessionId) throw new Error('sessionId required')
     if (!prompt) throw new Error('prompt required')
 
@@ -937,7 +941,7 @@ class TmuxCodexBackend extends AgentBackend {
       mobiusJsonlWritten = this._appendMobiusPromptEntry(sessionId, mobiusJsonl)
     }
     await this._sendPromptToWindow(sessionId, prompt)
-    markRunning(flagRoot || entry?.flagRoot || entry?.cwd || cwd, sessionId)
+    if (!suppressRunningFlag) markRunning(flagRoot || entry?.flagRoot || entry?.cwd || cwd, sessionId)
     if (!this.runtime.get(sessionId)?.agentSessionId) {
       await this._bindRuntimeAfterPrompt({
         sessionId,

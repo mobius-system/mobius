@@ -466,15 +466,58 @@ db.exec(`
     to_session_id TEXT NOT NULL,
     content TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','delivered','failed','rejected')),
+    -- delivery_state 描述消息是否已送入目标 Harness; status 保留兼容旧查询语义。
+    delivery_state TEXT NOT NULL DEFAULT 'queued' CHECK(delivery_state IN ('queued','delivered','failed','expired')),
+    -- decision 是目标 Agent 对外部消息的独立接收决策, 不等同于权限批准。
+    decision TEXT NOT NULL DEFAULT 'pending' CHECK(decision IN ('pending','accepted','held','refused','expired')),
+    wake_requested INTEGER NOT NULL DEFAULT 0,
     error TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     delivered_at TEXT,
+    accepted_at TEXT,
+    decision_at TEXT,
+    expires_at TEXT,
     FOREIGN KEY (channel_id) REFERENCES agent_bridge_channels(channel_id) ON DELETE CASCADE,
     UNIQUE(channel_id, request_id)
   );
   CREATE INDEX IF NOT EXISTS idx_agent_bridge_messages_channel
     ON agent_bridge_messages(channel_id, id);
 `);
+
+// agent_bridge_messages 扩展迁移: 旧库保留原 status 约束, 新字段承载 L5 投递/接收状态。
+(() => {
+  try {
+    const cols = db.prepare('PRAGMA table_info(agent_bridge_messages)').all().map((c: any) => c.name);
+    const migrations: Array<[string, string]> = [
+      ['delivery_state', "ALTER TABLE agent_bridge_messages ADD COLUMN delivery_state TEXT NOT NULL DEFAULT 'queued'"],
+      ['decision', "ALTER TABLE agent_bridge_messages ADD COLUMN decision TEXT NOT NULL DEFAULT 'pending'"],
+      ['wake_requested', "ALTER TABLE agent_bridge_messages ADD COLUMN wake_requested INTEGER NOT NULL DEFAULT 0"],
+      ['accepted_at', 'ALTER TABLE agent_bridge_messages ADD COLUMN accepted_at TEXT'],
+      ['decision_at', 'ALTER TABLE agent_bridge_messages ADD COLUMN decision_at TEXT'],
+      ['expires_at', 'ALTER TABLE agent_bridge_messages ADD COLUMN expires_at TEXT'],
+    ];
+    for (const [name, sql] of migrations) {
+      if (!cols.includes(name)) db.exec(sql);
+    }
+    db.exec(`
+      UPDATE agent_bridge_messages
+      SET delivery_state = CASE
+        WHEN status = 'delivered' THEN 'delivered'
+        WHEN status = 'failed' OR status = 'rejected' THEN 'failed'
+        ELSE 'queued'
+      END
+      WHERE delivery_state IS NULL OR delivery_state = ''
+         OR status IN ('delivered','failed','rejected');
+      UPDATE agent_bridge_messages
+      SET expires_at = datetime(created_at, '+1 day')
+      WHERE expires_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_agent_bridge_messages_target_state
+        ON agent_bridge_messages(to_session_id, delivery_state, decision, id);
+    `);
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️ agent_bridge_messages L5 状态迁移失败:', (e as Error).message);
+  }
+})();
 
 // 自检: 生产栈表存在(只读), 不动它们.
 // 注意: skills/memories 在 v1.7 起改为文件系统存储 (protected_data/), 不再是 SQLite 表, 故不查.
