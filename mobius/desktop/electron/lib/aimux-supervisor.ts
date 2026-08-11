@@ -71,9 +71,10 @@ export class AimuxSupervisor {
 
     appendAimuxLog(`\n==== [${new Date().toISOString()}] spawn reverse connect identifier=${identifier} ====\n`);
     const args = ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token, "--replace"];
-    // Windows otherwise opens a console window for every reverse-connect
-    // child and for its shell helpers.  TUI and Electron now share this flag.
-    if (process.platform === "win32") args.push("--silent-shell");
+    // Windows otherwise opens a console window for every remote terminal.
+    // v2 uses CREATE_NO_WINDOW + pipes, so there is no flash before hiding;
+    // keep --silent-shell in AIMUX for older manually launched clients.
+    if (process.platform === "win32") args.push("--slient-v2");
     const child = spawn(aimuxExe, args, { windowsHide: true });
     this.child = child;
     this.startConnectionProbe();
