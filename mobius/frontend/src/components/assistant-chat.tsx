@@ -2,8 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { createPortal } from 'react-dom'
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, ComponentPropsWithoutRef, CSSProperties, DragEvent as ReactDragEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
-import rehypeHighlight from 'rehype-highlight'
-import remarkGfm from 'remark-gfm'
+import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
 import { AlertTriangle, Archive, BookOpen, Check, ChevronsLeft, ChevronsRight, Copy, Eraser, ExternalLink, FilePlus2, Maximize2, Mic, Minimize2, RefreshCw, SendHorizontal, Settings, Square, Trash2, UserPlus, Volume2, VolumeX, X } from 'lucide-react'
 import { api, useStore } from '../store'
 import { AssistantPresetModal } from './assistant-preset-modal'
@@ -239,8 +238,6 @@ type AssistantSnapshot = {
   }
 }
 
-const MARKDOWN_REMARK_PLUGINS = [remarkGfm]
-const MARKDOWN_REHYPE_PLUGINS = [rehypeHighlight as any]
 const DEFAULT_ASSISTANT_TTS_VOICE = 'zh_female_vv_uranus_bigtts'
 const ASSISTANT_TTS_VOICE_FALLBACK: AssistantVoiceOption[] = [
   { id: 'zh_female_vv_uranus_bigtts', label: 'vivi 2.0', language: 'zh-CN', gender: 'female', category: 'general', description: '自然清亮的通用女声', default: true },

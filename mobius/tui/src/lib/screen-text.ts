@@ -13,7 +13,10 @@
 import wrapAnsi from 'wrap-ansi'
 import { renderMarkdownLines } from '../markdown.js'
 import { toolLabel, viewsForEntry, type EntryView } from './entry-view.js'
+<<<<<<< HEAD
 import type { AnyEntry } from '../types.js'
+=======
+>>>>>>> gitlab-mobius/main
 
 // ── shared text helpers (mirrored from Chat.tsx, kept here to avoid a cycle) ─
 export function displayWidth(str: string): number {
@@ -103,8 +106,34 @@ export function headTailLines(text: string, width: number, maxLines: number): st
 export interface ScreenRows {
   /** Whether this view renders with a leading blank row (its Box has marginTop). */
   marginTop: boolean
+<<<<<<< HEAD
   /** Full screen lines: prefix included, wrapped/truncated, plain text (no ANSI). */
   rows: string[]
+=======
+  /** Full screen rows: a plain layout/copy projection plus its styled ANSI text. */
+  rows: ScreenRow[]
+}
+
+export type ScreenRowTone =
+  | 'normal'
+  | 'user'
+  | 'tool'
+  | 'tool_result'
+  | 'tool_error'
+  | 'edit_header'
+  | 'edit_old'
+  | 'edit_new'
+  | 'reasoning'
+  | 'system'
+  | 'error'
+
+export interface ScreenRow {
+  /** Visible text used for geometry, hit-testing, and clipboard extraction. */
+  plain: string
+  /** Same row with Markdown/syntax ANSI styling preserved for terminal output. */
+  styled: string
+  tone: ScreenRowTone
+>>>>>>> gitlab-mobius/main
 }
 
 const textWidth = (columns: number) => Math.max(8, columns - 4)
@@ -114,12 +143,31 @@ const fullWidth = (columns: number) => Math.max(1, columns - 2) // root paddingX
 export function viewScreenRows(view: EntryView, columns: number): ScreenRows {
   const width = textWidth(columns)
   const full = fullWidth(columns)
+<<<<<<< HEAD
   const fit = (rows: string[]): string[] => rows.map((r) => truncateText(r, full))
+=======
+  const row = (styled: string, tone: ScreenRowTone = 'normal'): ScreenRow => ({
+    plain: stripAnsi(styled),
+    styled,
+    tone,
+  })
+  // Keep the original styled string and let Ink perform its ANSI-aware
+  // truncate-end rendering. The plain projection mirrors the visible row.
+  const fit = (rows: string[], tone: ScreenRowTone = 'normal'): ScreenRow[] => rows.map((styled) => ({
+    plain: truncateText(stripAnsi(styled), full),
+    styled,
+    tone,
+  }))
+  const wrap = (styled: string, tone: ScreenRowTone = 'normal'): ScreenRow[] => (
+    wrapAnsi(styled, full, { trim: false, hard: true }).split('\n').map(text => row(text, tone))
+  )
+>>>>>>> gitlab-mobius/main
   switch (view.kind) {
     case 'skip':
       return { marginTop: false, rows: [] }
     case 'user': {
       const rows = view.text.split('\n').map((l, i) => (i === 0 ? `› ${l}` : `  ${l}`))
+<<<<<<< HEAD
       return { marginTop: true, rows: fit(rows) }
     }
     case 'assistant': {
@@ -130,11 +178,24 @@ export function viewScreenRows(view: EntryView, columns: number): ScreenRows {
         const fullLine = prefix + stripAnsi(line.text || ' ')
         if (line.code) rows.push(truncateText(fullLine, full))
         else rows.push(...wrapText(fullLine, full))
+=======
+      return { marginTop: true, rows: fit(rows, 'user') }
+    }
+    case 'assistant': {
+      const md = renderMarkdownLines(view.text)
+      const rows: ScreenRow[] = []
+      md.forEach((line, i) => {
+        const prefix = i === 0 ? '• ' : '  '
+        const fullLine = prefix + (line.text || ' ')
+        if (line.code) rows.push(...fit([fullLine]))
+        else rows.push(...wrap(fullLine))
+>>>>>>> gitlab-mobius/main
       })
       return { marginTop: true, rows }
     }
     case 'tool_call': {
       const head = clampLines(`${toolLabel(view.toolName)} ${view.summary}`.trim(), width - 2, 1)[0]
+<<<<<<< HEAD
       const rows = [`• ${head}`]
       if (view.result) rows.push(`  └ ${clampLines(view.result.text, width - 4, 1)[0] || '(无输出)'}`)
       return { marginTop: true, rows: fit(rows) }
@@ -163,18 +224,63 @@ export function viewScreenRows(view: EntryView, columns: number): ScreenRows {
     case 'error': {
       const rows = view.text.split('\n').map((l, i) => `${i === 0 ? '⚠ ' : '  '}${l}`)
       return { marginTop: true, rows: fit(rows) }
+=======
+      const rows = fit([`• ${head}`], 'tool')
+      if (view.result) rows.push(...fit(
+        [`  └ ${clampLines(view.result.text, width - 4, 1)[0] || '(无输出)'}`],
+        view.result.isError ? 'tool_error' : 'tool_result',
+      ))
+      return { marginTop: true, rows }
+    }
+    case 'tool_result': {
+      const lines = headTailLines(view.text, width - 4, 5)
+      return { marginTop: false, rows: fit(
+        lines.map((l, i) => `${i === 0 ? '  └ ' : '    '}${l}`),
+        view.isError ? 'tool_error' : 'tool_result',
+      ) }
+    }
+    case 'code_edit': {
+      const rows = fit([`✎ 编辑 ${view.filePath || '(未指定文件)'}`], 'edit_header')
+      if (view.oldString) rows.push(...fit(view.oldString.split('\n').map((l) => `  − ${l}`), 'edit_old'))
+      if (view.newString) rows.push(...fit(view.newString.split('\n').map((l) => `  + ${l}`), 'edit_new'))
+      return { marginTop: true, rows }
+    }
+    case 'write_file': {
+      const rows = fit([`✎ 写入 ${view.filePath || '(未指定文件)'}`], 'edit_header')
+      rows.push(...fit(view.content.split('\n').map((l) => `  + ${l}`), 'edit_new'))
+      return { marginTop: true, rows }
+    }
+    case 'reasoning': {
+      const lines = clampLines(view.text, width - 4, 2)
+      return { marginTop: true, rows: fit(lines.map((l, i) => `${i === 0 ? '  ◇ ' : '    '}${l}`), 'reasoning') }
+    }
+    case 'system':
+      return { marginTop: false, rows: fit([`  ${clampLines(view.text, width - 2, 2)[0]}`], 'system') }
+    case 'error': {
+      const rows = view.text.split('\n').map((l, i) => `${i === 0 ? '⚠ ' : '  '}${l}`)
+      return { marginTop: true, rows: fit(rows, 'error') }
+>>>>>>> gitlab-mobius/main
     }
     default:
       return { marginTop: false, rows: [] }
   }
 }
 
+<<<<<<< HEAD
 /** Flatten a whole entry (all its views) into screen lines, margins as ''. */
 export function entryScreenLines(views: EntryView[], columns: number): string[] {
   const lines: string[] = []
   for (const v of views) {
     const { marginTop, rows } = viewScreenRows(v, columns)
     if (marginTop) lines.push('')
+=======
+/** Flatten a whole entry into stable rows, with margins represented explicitly. */
+export function entryScreenRows(views: EntryView[], columns: number): ScreenRow[] {
+  const lines: ScreenRow[] = []
+  for (const v of views) {
+    const { marginTop, rows } = viewScreenRows(v, columns)
+    if (marginTop) lines.push({ plain: '', styled: '', tone: 'normal' })
+>>>>>>> gitlab-mobius/main
     lines.push(...rows)
   }
   return lines
@@ -194,6 +300,7 @@ export interface TranscriptGeometry {
  * (`flexShrink=0`); the middle column holds header + hint + transcript (flexGrow)
  * + tip + help. Margins that render as extra rows are counted explicitly.
  */
+<<<<<<< HEAD
 export function computeTranscriptGeometry(opts: {
   viewportRows: number
   composerRows: number
@@ -218,6 +325,8 @@ export function computeTranscriptGeometry(opts: {
   return { boxTop, boxH: Math.max(0, midH - boxTop) }
 }
 
+=======
+>>>>>>> gitlab-mobius/main
 // ── selection mapping ────────────────────────────────────────────────────────
 export interface SelPoint {
   entry: number // index into the fitted entries
@@ -230,11 +339,14 @@ export interface TranscriptModel {
   totalRows: number
 }
 
+<<<<<<< HEAD
 export function buildTranscriptModel(fittedEntries: AnyEntry[], columns: number): TranscriptModel {
   const entries = fittedEntries.map((e) => entryScreenLines(viewsForEntry(e), columns))
   return { entries, totalRows: entries.reduce((sum, l) => sum + l.length, 0) }
 }
 
+=======
+>>>>>>> gitlab-mobius/main
 /** Convert a screen (row, col) into a SelPoint, or null if outside the transcript. */
 export function screenToSelPoint(
   screenRow: number,
@@ -269,7 +381,11 @@ function charAtDisplayWidth(line: string, col: number): number {
     const w = displayWidth(ch)
     if (col < acc + w) return i
     acc += w
+<<<<<<< HEAD
     i++
+=======
+    i += ch.length
+>>>>>>> gitlab-mobius/main
   }
   return i
 }

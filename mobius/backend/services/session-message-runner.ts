@@ -7,9 +7,16 @@ import { resolveSessionWorkspace } from './workspace';
 import { appendSessionInput } from './session-inputs';
 import { syncSkillsToWorkspace } from './session-skills-sync';
 import { formatBackendSendFailure } from './session-errors';
-import { transferReferencePrompt } from './session-transfer';
-import { canOperateSession } from './access-control';
+import { buildSessionTransferMarkdown, transferReferencePrompt } from './session-transfer';
+import { canOperateSession, canReadSession } from './access-control';
 import { aimuxRemoteNameFromMeta } from './pc-client-context';
+import {
+  buildBidirectionalMentionPrompt,
+  createAgentBridgeChannel,
+  buildReadOnlyMentionPrompt,
+  mintAgentBridgeToken,
+  type AgentMentionMode,
+} from './agent-mention-bridge';
 import {
   normalizeSessionAttachments,
   sessionContentWithAttachments,
@@ -42,6 +49,11 @@ interface PendingTransferPaths {
   metadata: string | null;
 }
 
+type NormalizedAgentMention = {
+  sessionId: string;
+  mode: AgentMentionMode;
+};
+
 function readPendingTransferPaths(sessionId: any): PendingTransferPaths | null {
   try {
     const row = db.prepare(`
@@ -72,6 +84,100 @@ function readPendingTransferPaths(sessionId: any): PendingTransferPaths | null {
   }
 }
 
+function resolveSessionJsonlPath(session: any, sessionId: string): string | null {
+  try {
+    const launch = modelRegistry.launchOptionsForSession(session);
+    const backend = agents.get(launch.backend);
+    return typeof backend?._resolveJsonlPath === 'function'
+      ? backend._resolveJsonlPath(sessionId)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeAgentMentions(mentions: any, content: string = ''): NormalizedAgentMention[] {
+  if (!Array.isArray(mentions)) return [];
+  const seen = new Set<string>();
+  const output: NormalizedAgentMention[] = [];
+  for (const raw of mentions) {
+    if (!raw || typeof raw !== 'object') continue;
+    const kind = String(raw.kind || raw.type || '').trim();
+    if (kind !== 'agent') continue;
+    const sessionId = String(raw.session_id || raw.sessionId || raw.id || '').trim();
+    if (!sessionId) continue;
+    const mode = String(raw.mode || raw.mention_mode || raw.agent_mode || '').trim() === 'bidirectional'
+      ? 'bidirectional'
+      : 'read_only';
+    const key = `${sessionId}:${mode}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push({ sessionId, mode });
+  }
+  // 支持从别的页面直接复制 `session=<id>`，也支持 `@session=<id>`。
+  // 直填 ID 默认只读，双向模式必须通过选择器明确选择，避免粘贴即唤醒对端。
+  const copiedIds = String(content || '').match(/(?:^|[\s(@])@?session=([A-Za-z0-9_-]{4,128})(?=$|[\s),.;!?，。！？])/gi) || [];
+  for (const raw of copiedIds) {
+    const match = raw.match(/session=([A-Za-z0-9_-]{4,128})/i);
+    const sessionId = match?.[1]?.trim();
+    if (!sessionId || seen.has(`${sessionId}:read_only`)) continue;
+    seen.add(`${sessionId}:read_only`);
+    output.push({ sessionId, mode: 'read_only' });
+  }
+  return output;
+}
+
+function sessionMentionMetadata(user: any, currentSessionId: string, mentions: NormalizedAgentMention[]): any[] {
+  return mentions.map((mention) => {
+    if (!mention.sessionId || mention.sessionId === currentSessionId) return null;
+    const target = Sessions.findByIdWithJoins(mention.sessionId) as any;
+    if (!target) return null;
+    const allowed = mention.mode === 'read_only'
+      ? canReadSession(user, target)
+      : canOperateSession(user, target);
+    if (!allowed) return null;
+    const scopeTitle = target.scope_type === 'research'
+      ? (target.research_title || target.research_id || '')
+      : (target.issue_title || target.issue_id || '');
+    return {
+      session_id: target.session_id,
+      name: target.name || target.session_id,
+      mode: mention.mode,
+      project_id: target.project_id || null,
+      project_name: target.project_name || target.project_id || '',
+      scope_type: target.scope_type || null,
+      scope_id: target.scope_type === 'research' ? target.research_id : target.issue_id,
+      scope_title: scopeTitle,
+      context_at: new Date().toISOString(),
+    };
+  }).filter(Boolean);
+}
+
+function buildMentionTransferMarkdown(user: any, sourceSession: any, targetSessionId: string, logger: any): string {
+  const jsonlPath = resolveSessionJsonlPath(sourceSession, sourceSession.session_id);
+  if (jsonlPath) {
+    try {
+      const transfer = buildSessionTransferMarkdown({
+        sourceSession,
+        targetSessionId,
+        jsonlPath,
+        maxTextChars: 12_000,
+        maxTotalChars: 120_000,
+      });
+      if (transfer?.markdown) return String(transfer.markdown || '').trimEnd();
+    } catch (e) {
+      logger?.warn?.(`[sessions/messages] build mention transfer failed (${sourceSession.session_id}): ${e.message}`);
+    }
+  }
+
+  try {
+    const ctx = buildSessionContext(user, sourceSession.session_id);
+    return String(ctx?.body || '').trimEnd();
+  } catch {
+    return '';
+  }
+}
+
 async function runSessionMessage({
   user,
   sessionId,
@@ -80,6 +186,7 @@ async function runSessionMessage({
   hasInputText = false,
   requestId = null,
   attachments = [],
+  mentions = [],
   source = 'service.session.messages',
   logger = console,
   urgent = false,
@@ -91,6 +198,7 @@ async function runSessionMessage({
   hasInputText?: boolean;
   requestId?: any;
   attachments?: any[];
+  mentions?: any[];
   source?: string;
   logger?: any;
   urgent?: boolean;
@@ -118,6 +226,8 @@ async function runSessionMessage({
     user,
     [workspace.projectRoot, workspace.workDir],
   );
+  const normalizedMentions = normalizeAgentMentions(mentions, normalizedContent);
+  const mentionMetadata = sessionMentionMetadata(user, normalizedSessionId, normalizedMentions);
   if (!normalizedContent.trim() && normalizedAttachments.length === 0) {
     throw httpError('content 不能为空', 400);
   }
@@ -139,7 +249,12 @@ async function runSessionMessage({
   const backend = agents.get(launch.backend);
 
   const turnNum = (Messages.maxTurnFor(normalizedSessionId) || 0) + 1;
-  Messages.insertUser(normalizedSessionId, displayContent, turnNum);
+  Messages.insertUser(
+    normalizedSessionId,
+    displayContent,
+    turnNum,
+    mentionMetadata.length > 0 ? JSON.stringify({ session_mentions: mentionMetadata }) : null,
+  );
   Sessions.touchActive(normalizedSessionId);
   if (hasInputText) {
     try {
@@ -165,10 +280,19 @@ async function runSessionMessage({
     turnNumber: turnNum,
     userId: user?.id || null,
     attachments: normalizedAttachments,
+    mentions: normalizedMentions,
     timestamp: new Date().toISOString(),
   };
 
   let finalContent = sessionContentWithAttachments(normalizedContent, normalizedAttachments);
+  const bridgeKickoffs: Array<{
+    targetSession: any;
+    token: string;
+    sourceTransferMarkdown: string;
+    targetTransferMarkdown: string;
+    mode: AgentMentionMode;
+    channelId: string;
+  }> = [];
   if (Messages.countUserMessagesFor(normalizedSessionId) <= 1) {
     const ctx = buildSessionContext(user, normalizedSessionId);
     if (workDir && ctx.sources?.skills?.length > 0) {
@@ -194,6 +318,69 @@ async function runSessionMessage({
       } catch (e) {
         logger?.warn?.(`[sessions/messages] append session transfer references failed (${normalizedSessionId}): ${e.message}`);
       }
+    }
+  }
+
+  if (normalizedMentions.length > 0) {
+    for (const mention of normalizedMentions) {
+      const targetSession = Sessions.findById(mention.sessionId) as any;
+      if (!targetSession) continue;
+      if (targetSession.session_id === normalizedSessionId) continue;
+      const canUseTarget = mention.mode === 'read_only'
+        ? canReadSession(user, targetSession)
+        : canOperateSession(user, targetSession);
+      if (!canUseTarget) continue;
+      const sourceTransferMarkdown = buildMentionTransferMarkdown(user, targetSession, normalizedSessionId, logger);
+      if (!sourceTransferMarkdown) continue;
+      if (mention.mode === 'read_only') {
+        finalContent = [
+          finalContent,
+          buildReadOnlyMentionPrompt({
+            sourceSession: sess,
+            targetSession,
+            transferMarkdown: sourceTransferMarkdown,
+            currentUserName: user?.display_name || user?.id,
+          }),
+        ].filter(Boolean).join('\n\n');
+        continue;
+      }
+
+      const targetTransferMarkdown = buildMentionTransferMarkdown(user, sess, targetSession.session_id, logger);
+      const channel = createAgentBridgeChannel({
+        ownerUserId: user.id,
+        sourceSessionId: normalizedSessionId,
+        targetSessionId: targetSession.session_id,
+      });
+      const token = mintAgentBridgeToken({
+        owner_user_id: user.id,
+        source_session_id: normalizedSessionId,
+        target_session_id: targetSession.session_id,
+        channel_id: channel.channelId,
+        mode: mention.mode,
+        source_session_name: String(sess?.name || '').trim() || normalizedSessionId,
+        target_session_name: String(targetSession?.name || '').trim() || targetSession.session_id,
+      });
+      finalContent = [
+        finalContent,
+        buildBidirectionalMentionPrompt({
+          perspective: 'source',
+          mode: mention.mode,
+          token,
+          sourceSession: sess,
+          targetSession,
+          transferMarkdown: sourceTransferMarkdown,
+          currentUserName: user?.display_name || user?.id,
+          channelId: channel.channelId,
+        }),
+      ].filter(Boolean).join('\n\n');
+      bridgeKickoffs.push({
+        targetSession,
+        token,
+        sourceTransferMarkdown,
+        targetTransferMarkdown,
+        mode: mention.mode,
+        channelId: channel.channelId,
+      });
     }
   }
 
@@ -233,6 +420,31 @@ async function runSessionMessage({
       } catch (e) {
         logger?.warn?.(`[sessions/messages] save agent session id: ${e.message}`);
       }
+    }
+    if (bridgeKickoffs.length > 0) {
+      void Promise.allSettled(bridgeKickoffs.map(async (kickoff) => {
+        const kickoffContent = buildBidirectionalMentionPrompt({
+          perspective: 'target',
+          mode: kickoff.mode,
+          token: kickoff.token,
+          sourceSession: sess,
+          targetSession: kickoff.targetSession,
+          transferMarkdown: kickoff.targetTransferMarkdown || kickoff.sourceTransferMarkdown,
+          currentUserName: user?.display_name || user?.id,
+          initialMessage: normalizedContent.trim() || displayContent,
+          channelId: kickoff.channelId,
+        });
+        await runSessionMessage({
+          user,
+          sessionId: kickoff.targetSession.session_id,
+          content: kickoffContent,
+          inputText: kickoffContent,
+          hasInputText: true,
+          requestId: `agent-bridge-kickoff-${normalizedSessionId}-${kickoff.targetSession.session_id}-${Date.now()}` as any,
+          source: 'service.session.agent_bridge',
+          logger,
+        } as any);
+      }));
     }
     return {
       ok: true,

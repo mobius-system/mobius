@@ -7,7 +7,7 @@
  *  - RoundGroup: 一个对话轮次 (1 条 user 问题 + N 条 agent 回复); 最新两轮默认展开,
  *    更早的轮在跌出最新两轮时自动折叠, 用户手动操作过的轮尊重用户.
  */
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Search } from 'lucide-react'
 import type { AnyEntry, BashToolResult, JsonlViewItem, Round, RoundItem } from './types'
 import type { ResolvedCallMap } from './tool-status'
@@ -16,6 +16,7 @@ import { entryDisplayImages, entryUserAttachmentImages } from './entry-extract'
 import { buildHeaderSummary } from './header-summary'
 import { JsonEntryCard } from './EntryCard'
 import { DisplayImagesCard } from './DisplayImages'
+import type { RoundHeaderPalette } from './round-header-palette'
 
 export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], forceOpen = false, parentOrderedCollapse = false, showMeta = true, resolvedMap }: {
   entry: AnyEntry
@@ -144,7 +145,7 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
   )
 }
 
-export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, forceOpen = false, showMeta = true, resolvedMap, cursorStyleTools = true, collapseLineNos, focusLineNo }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; forceOpen?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; cursorStyleTools?: boolean; collapseLineNos?: Set<number>; focusLineNo?: number | null }) {
+export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, forceOpen = false, showMeta = true, resolvedMap, cursorStyleTools = true, collapseLineNos, focusLineNo, headerPalette }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; forceOpen?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; cursorStyleTools?: boolean; collapseLineNos?: Set<number>; focusLineNo?: number | null; headerPalette: RoundHeaderPalette }) {
   // 追踪用户是否手动点击过折叠/展开. 一旦手动操作, 后续不再被 autoOpen/forceExpandAll 自动接管.
   // 实现"最新两轮自动展开, 除非人为折叠": 最新轮和上一轮默认展开, 更早的轮默认折叠;
   // 某轮升入最新两轮时自动展开, 跌出最新两轮时自动折叠; 用户手动操作过的轮尊重用户, 不再自动改.
@@ -181,10 +182,20 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
         type="button"
         onClick={onlyGroup ? undefined : toggle}
         disabled={onlyGroup}
-        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg border border-slate-500/15 transition-colors text-left group ${onlyGroup ? 'cursor-default' : 'hover:bg-[var(--bg-card-hover)] hover:border-slate-500/30'}`}
+        data-round-header-palette={headerPalette.id}
+        aria-keyshortcuts="Control+Shift+K"
+        title={`轮次背景：${headerPalette.name} · Ctrl+Shift+K 切换`}
+        className={`round-group-trigger w-full h-8 min-h-8 flex items-center gap-2 px-2 py-0 rounded-lg border text-left group ${onlyGroup ? 'cursor-default' : 'cursor-pointer'}`}
+        style={{
+          '--round-header-background': headerPalette.background,
+          '--round-header-background-size': headerPalette.backgroundSize,
+          '--round-header-border': headerPalette.border,
+          '--round-header-border-hover': headerPalette.borderHover,
+          '--round-header-accent': headerPalette.accent,
+        } as CSSProperties}
       >
-        <span className="w-1.5 h-1.5 rounded-full bg-slate-400 flex-shrink-0" />
-        <span className="font-mono text-[10px] font-bold text-blue-400/70 flex-shrink-0 w-12" title={`第 ${round.roundNum} 轮`}>
+        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[var(--round-header-accent)]" />
+        <span className="font-mono text-[10px] font-bold text-[var(--text-secondary)] flex-shrink-0 w-12" title={`第 ${round.roundNum} 轮`}>
           第 {round.roundNum} 轮
         </span>
         <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1 min-w-0">

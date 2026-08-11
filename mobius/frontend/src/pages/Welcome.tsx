@@ -22,7 +22,7 @@
 // 绑定路径 = mobius 中枢 agent 工作目录 (服务器侧 user.work_dir/<随机 slug>)。
 // =====================================================================
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   History, FolderInput, Plus, FileText, FolderOpen, ChevronLeft, ChevronDown,
   ChevronRight, FolderOpen as FolderBrowse, Dices, Loader2, Sparkles, Star, Search,
@@ -145,6 +145,7 @@ type Step = 'menu' | 'project' | 'session' | 'projectList'
 export default function Welcome() {
   const { user, theme } = useStore()
   const navigate = useNavigate()
+  const location = useLocation()
   const dark = theme !== 'light'
 
   const md = getDesktopBridge()
@@ -157,12 +158,23 @@ export default function Welcome() {
   const [sessionCtx, setSessionCtx] = useState<SessionCtx | null>(null)
   const [checking, setChecking] = useState(false)
   const [checkErr, setCheckErr] = useState('')
+  const requestedPath = (() => {
+    try { return new URLSearchParams(location.search).get('path') || '' } catch { return '' }
+  })()
 
   useEffect(() => {
     md?.getBootData?.().then(b => setBoot(b || null)).catch(() => {})
     md?.getLastRoute?.().then(r => setLastRoute(r || null)).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Explorer's "在 Mobius 桌面端打开" fallback enters the same guided
+  // project flow as the welcome page, with the selected folder prefilled.
+  useEffect(() => {
+    if (!isDesktop || !requestedPath || flow || step !== 'menu') return
+    setFlow(FLOW.connect)
+    setStep('project')
+  }, [isDesktop, requestedPath, flow, step])
 
   if (!user) return null
 
@@ -197,7 +209,7 @@ export default function Welcome() {
   if (step === 'project' && flow) {
     return (
       <WelcomeProject
-        flow={flow} dark={dark} isDesktop={isDesktop} desktopPath={boot?.desktopPath}
+        flow={flow} dark={dark} isDesktop={isDesktop} desktopPath={boot?.desktopPath} initialLocalPath={requestedPath}
         onBack={() => { setStep('menu'); setCheckErr('') }}
         onIntoSession={(ctx) => { setSessionCtx(ctx); setStep('session') }}
       />
@@ -345,19 +357,20 @@ async function ensureIssue(projectId: string, title: string): Promise<string | n
 // =====================================================================
 // 页面 2: 项目创建菜单 (接入/创建/导入共用, 【下一步】)
 // =====================================================================
-function WelcomeProject({ flow, dark, isDesktop, desktopPath, onBack, onIntoSession }: {
+function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, onBack, onIntoSession }: {
   flow: FlowConfig
   dark: boolean
   isDesktop: boolean
   desktopPath?: string
+  initialLocalPath?: string
   onBack: () => void
   onIntoSession: (ctx: SessionCtx) => void
 }) {
   const { user } = useStore()
 
   const [name, setName] = useState(flow.nameDefault)
-  const [localPath, setLocalPath] = useState('')
-  const [localPathTouched, setLocalPathTouched] = useState(false)
+  const [localPath, setLocalPath] = useState(initialLocalPath || '')
+  const [localPathTouched, setLocalPathTouched] = useState(!!initialLocalPath)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [desc, setDesc] = useState('一个新项目')
   const [bindPath, setBindPath] = useState(() => randomBindPath(user?.work_dir))
@@ -677,7 +690,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
         name, description: finalDesc, model, language,
         excluded_skill_ids: excludedSkillIds, excluded_memory_ids: Array.from(excludedMemories),
         // PC 任务模式 (仅桌面端): workMode 非空才附 pc_client_metadata; web 端恒 null → body 完全不变.
-        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false } } : {}),
+        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
       }) })
       if (s?.error) { window.clearInterval(timer); setSubmitting(false); setErr(s.error); return }
       // 等进度条走完

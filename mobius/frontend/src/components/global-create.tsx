@@ -1345,7 +1345,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
         // 用户手填过名称 → 标记 name_touched, 后端置 name_human_edited=1, AI 标题生成器不再覆盖此名.
         name_touched: nameUserTouchedRef.current,
         // PC 任务模式 (仅桌面端): workMode 非空才附 pc_client_metadata; web 端恒 null → body 完全不变.
-        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false } } : {}),
+        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
       }) })
       if (s?.error) { setErr(s.error); return }
       // 记录「恢复上次选择」快照 (项目/任务/语言/Skill·Memory), 下次新建可一键回填. 与工作草稿 (gc:new-session) 不同键, 提交清草稿不影响此快照.

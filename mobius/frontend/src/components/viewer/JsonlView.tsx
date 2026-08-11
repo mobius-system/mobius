@@ -17,6 +17,13 @@ import { buildHeaderSummary } from './header-summary'
 import { ContinuationGroup, RoundGroup, EntryCardWithImages } from './RoundGroups'
 import { isHiddenJsonlNoiseEntry } from './entry-classify'
 import { computeCollapsedByForgottenFlag } from './fold-rules'
+import {
+  ROUND_HEADER_PALETTES,
+  ROUND_HEADER_PALETTE_STORAGE_KEY,
+  normalizeRoundHeaderPaletteIndex,
+  readRoundHeaderPaletteIndex,
+  saveRoundHeaderPaletteIndex,
+} from './round-header-palette'
 
 const JSONL_INITIAL_WINDOW_SIZE = 200
 
@@ -139,9 +146,33 @@ export function JsonlView({
   onScrollUnresolved?: () => void
 }) {
   const [showAll, setShowAll] = useState(false)
+  const [roundHeaderPaletteIndex, setRoundHeaderPaletteIndex] = useState(readRoundHeaderPaletteIndex)
+  const [roundHeaderPaletteAnnouncement, setRoundHeaderPaletteAnnouncement] = useState('')
+  const roundHeaderPalette = ROUND_HEADER_PALETTES[roundHeaderPaletteIndex]
   // 点 "加载全部" 后置 true: 把所有轮次组 / 上文续接组强制展开 (尊重用户已手动折叠的组).
   // 同时把 showAll 一并打开, 让加载到的头部条目也进入视窗, 真正 "全部可见且展开".
   const [forceExpandAll, setForceExpandAll] = useState(false)
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || event.altKey || event.metaKey || !event.ctrlKey || !event.shiftKey || event.key.toLowerCase() !== 'k') return
+      event.preventDefault()
+      const next = (roundHeaderPaletteIndex + 1) % ROUND_HEADER_PALETTES.length
+      saveRoundHeaderPaletteIndex(next)
+      setRoundHeaderPaletteAnnouncement(`轮次背景已切换为${ROUND_HEADER_PALETTES[next].name}，第 ${next + 1} 种，共 ${ROUND_HEADER_PALETTES.length} 种`)
+      setRoundHeaderPaletteIndex(next)
+    }
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== ROUND_HEADER_PALETTE_STORAGE_KEY) return
+      setRoundHeaderPaletteIndex(normalizeRoundHeaderPaletteIndex(event.newValue))
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [roundHeaderPaletteIndex])
   const recent = useMemo(() => entries.slice(-(showAll ? entries.length : JSONL_INITIAL_WINDOW_SIZE)), [entries, showAll])
   const windowOffset = entries.length - recent.length
   // 工具调用状态集合: 哪些 tool_use_id 已有结果落地 (供卡片推导 running/success/error).
@@ -305,6 +336,7 @@ export function JsonlView({
         cursorStyleTools={cursorStyleTools}
         collapseLineNos={collapseLineNos}
         focusLineNo={extFocusLineNo}
+        headerPalette={roundHeaderPalette}
       />
     )
   }
@@ -338,6 +370,7 @@ export function JsonlView({
   // 非空
   return (
     <div className="text-[12px]">
+      <span className="sr-only" aria-live="polite" aria-atomic="true">{roundHeaderPaletteAnnouncement}</span>
       <div ref={headerRef} className="flex items-center gap-2 px-1 py-1 sticky top-0 z-10 backdrop-blur-lg bg-[var(--bg-page)]/80">
         {headerTitle && <span className="min-w-0 truncate text-[var(--text-secondary)] font-semibold" title={headerTitle}>{headerTitle}</span>}
         {rounds.length > 0 && <span className="text-[var(--text-muted)] text-[11px]">{rounds.length} 轮</span>}

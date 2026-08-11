@@ -33,62 +33,6 @@ const SESSION_STATUS_LABELS_EN: Record<string, string> = { active: 'In Progress'
 function normalizeLanguage(value: any): 'zh' | 'en' {
   return value === 'en' ? 'en' : 'zh';
 }
-const RANDOM_EMOJIS = [
-  // 天体 / 天气
-  '✨', '🌟', '💫', '⭐', '🌙', '☀️', '🌤️', '🌦️',
-  '🌧️', '⛅', '⛈️', '🌩️', '🌨️', '🌬️', '🌫️', '🌠',
-  // 植物 / 自然
-  '🍀', '🌿', '🌱', '🌵', '🌸', '🌼', '🌻', '🍁',
-  '🌹', '🌷', '🌺', '🌳', '🌲', '🎋', '🍂', '🍄',
-  // 游戏 / 艺术
-  '🎲', '🧩', '🎯', '🎪', '🎨', '🎭', '🎬', '🎧',
-  // 交通 / 场景
-  '🚀', '🛰️', '✈️', '🛸', '🚦', '🛤️', '🏕️', '🏙️',
-  '🚁', '⛵', '🚂', '🚲', '🏎️', '🗽', '🏰', '🎡',
-  // 元素 / 气象
-  '🔥', '⚡', '💧', '❄️', '🌊', '🌪️', '☄️', '🌈',
-  // 水果
-  '🍉', '🍓', '🍒', '🍑', '🍍', '🥝', '🫐', '🍯',
-  '🍎', '🍊', '🍋', '🍌', '🍇', '🥭', '🍈', '🥥',
-  // 庆祝 / 奖励
-  '🎉', '🎊', '🎈', '🎁', '🏆', '🥇', '🏅', '🎖️',
-  // 工具 / 魔法 / 探索
-  '💎', '🔮', '🪄', '🧭', '🗺️', '🔭', '🔬', '⚙️',
-  '🛠️', '🔑', '🧪', '💡', '📌', '📎', '📝', '📚',
-  // 爱心
-  '💜', '💙', '💚', '💛', '🧡', '❤️', '🤍', '🖤',
-  // 圆点
-  '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '⚪', '⚫',
-  // 动物
-  '🐶', '🐱', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁',
-  '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🦉', '🦇',
-  '🐺', '🐗', '🦄', '🐝', '🦋', '🐌', '🐞', '🐢',
-  '🐙', '🦑', '🦀', '🐠', '🐬', '🐳', '🦈', '🐊',
-  '🦓', '🦍', '🐘', '🦒', '🦘', '🐪', '🦔', '🦦',
-  // 表情
-  '😀', '😄', '😁', '😆', '😂', '🤣', '😊', '😍',
-  '🥰', '😎', '🤩', '🥳', '🤓', '🧐', '🤔', '😉',
-  // 食物
-  '🍕', '🍔', '🍟', '🌭', '🍿', '🥐', '🥯', '🧀',
-  '🌮', '🌯', '🍣', '🍱', '🍜', '🍝', '🍪', '🍩',
-  '🍰', '🧁', '🍫', '🍬', '🍭', '🍦', '🍨', '🥧',
-  // 饮品
-  '☕', '🍵', '🧃', '🥤', '🧋', '🍺', '🍻', '🥂',
-  '🍷', '🍸', '🍹', '🥃', '🧉', '🍾',
-  // 运动
-  '⚽', '🏀', '🏈', '⚾', '🎾', '🏐', '🏉', '🎱',
-  '🏓', '🏸', '🥏', '🪁', '🏹', '🥊', '🛹', '⛸️',
-  '🎿', '🏂', '🏄', '🏊', '🚵', '🚴', '🧗', '🧘',
-  // 乐器
-  '🎵', '🎶', '🎼', '🎤', '🎷', '🎸', '🎹', '🎺',
-  '🎻', '🪕', '🥁',
-  // 电子 / 设备
-  '⌚', '📱', '💻', '⌨️', '🖥️', '🖱️', '🕹️', '💾',
-  '📷', '📸', '📹', '🎥', '📺', '📻', '⏰', '⏱️',
-];
-
-// memory scope -> 展示标签; 未列出的 (如 'user') 回退到 '用户级', 与历史行为一致.
-const MEMORY_SCOPE_LABELS: Record<string, string> = { project: '项目级', builtin: '内置级' };
 
 function indent(text: any, prefix: string = '  '): string {
   return String(text || '').split('\n').map((l: string) => prefix + l).join('\n');
@@ -541,19 +485,6 @@ function en_add_completion_flag_info(lines: string[], session: any, project: any
   lines.push('When user gives new instruction again, running.flag will be recreated.');
 }
 
-function buildRandomEmojiPrefix(): string {
-  const emojiCount = 1;
-  const pool = [...RANDOM_EMOJIS];
-  const picked: string[] = [];
-
-  for (let i = 0; i < emojiCount && pool.length > 0; i += 1) {
-    const index = Math.floor(Math.random() * pool.length);
-    picked.push(pool.splice(index, 1)[0]);
-  }
-
-  return `${picked.join('')}\n`;
-}
-
 // PC task mode prompt injection (Electron/TUI sessions only, when
 // session.pc_client_metadata is non-null; web sessions return early).
 function en_add_pc_task_mode_info(lines: string[], session: any): void {
@@ -613,7 +544,7 @@ function formatBody({ user, project, issue, research, session, skills, memories,
   fns.issue(lines, issue);
   fns.session(lines, session);
   fns.pcTaskMode(lines, session);
-  return `${buildRandomEmojiPrefix()}${lines.join('\n').trimEnd()}`;
+  return lines.join('\n').trimEnd();
 }
 
 function compactSkillForSnapshot(sk: any): any {

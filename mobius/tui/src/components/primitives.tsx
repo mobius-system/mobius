@@ -3,8 +3,128 @@
  * Select (single-choice list + multi-choice with checkboxes), and a Spinner.
  */
 import React, { useEffect, useRef, useState } from 'react'
+<<<<<<< HEAD
 import { Box, Text, useInput, useStdout, useStdin } from 'ink'
 import { useDeleteKeyCapture, applyDeleteIntent } from '../lib/delete-keys.js'
+=======
+import { Box, Text, useInput, useStdout, useStdin, type Key } from 'ink'
+import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousWordBoundary, nextWordBoundary } from '../lib/delete-keys.js'
+import { useCursorKeyCapture } from '../lib/cursor-keys.js'
+
+/** Return false when a mounted listener deliberately did not consume the input. */
+type InputHandler = (input: string, key: Key) => void | false
+
+type StableInputOptions = {
+  isActive?: boolean
+  /** Passive listeners (App raw-mode keepalive, Chat paging) must not claim or receive replayed input. */
+  interactive?: boolean
+}
+
+type ReplayInput = { input: string; key: Key; signature: string; claimed: boolean }
+
+const pendingRootInputs: ReplayInput[] = []
+const replayQueue: ReplayInput[] = []
+const interactiveHandlers = new Set<InputHandler>()
+const earlyClaimCredits = new Map<string, number>()
+let earlyClaimCleanupScheduled = false
+let replayingInput = false
+
+function inputSignature(input: string, key: Key): string {
+  const flags = Object.keys(key)
+    .filter(name => Boolean((key as unknown as Record<string, unknown>)[name]))
+    .sort()
+    .join(',')
+  return `${input}\u0000${flags}`
+}
+
+function markRootInputClaimed(input: string, key: Key): void {
+  const signature = inputSignature(input, key)
+  const pending = pendingRootInputs.find(event => !event.claimed && event.signature === signature)
+  if (pending) {
+    pending.claimed = true
+    return
+  }
+
+  // React/Ink may register a child's listener before the App listener. Keep a
+  // one-microtask credit so the root callback later in the same emitter pass
+  // recognizes that this exact input was already handled.
+  earlyClaimCredits.set(signature, (earlyClaimCredits.get(signature) ?? 0) + 1)
+  if (!earlyClaimCleanupScheduled) {
+    earlyClaimCleanupScheduled = true
+    queueMicrotask(() => {
+      earlyClaimCredits.clear()
+      earlyClaimCleanupScheduled = false
+    })
+  }
+}
+
+function deliverOrQueue(event: ReplayInput): void {
+  for (const handler of Array.from(interactiveHandlers).reverse()) {
+    replayingInput = true
+    try {
+      if (handler(event.input, event.key) !== false) return
+    } finally {
+      replayingInput = false
+    }
+  }
+  replayQueue.push(event)
+  if (replayQueue.length > 8) replayQueue.shift()
+}
+
+/**
+ * App-level input safety net. It stays mounted across async route changes and
+ * only buffers a key when no interactive Ink listener claimed that emitter
+ * pass. The next Select/TextInput/Composer receives the key after it mounts.
+ */
+export function bufferUnclaimedInput(input: string, key: Key): void {
+  if (isMouseInput(input)) return
+  const signature = inputSignature(input, key)
+  const credits = earlyClaimCredits.get(signature) ?? 0
+  if (credits > 0) {
+    if (credits === 1) earlyClaimCredits.delete(signature)
+    else earlyClaimCredits.set(signature, credits - 1)
+    return
+  }
+
+  const event: ReplayInput = { input, key: { ...key }, signature, claimed: false }
+  pendingRootInputs.push(event)
+  setTimeout(() => {
+    const index = pendingRootInputs.indexOf(event)
+    if (index >= 0) pendingRootInputs.splice(index, 1)
+    if (!event.claimed) deliverOrQueue(event)
+  }, 0)
+}
+
+/** Keep one Ink listener while a component rerenders; read the latest handler through a ref. */
+export function useStableInput(handler: InputHandler, options?: StableInputOptions): void {
+  const handlerRef = useRef(handler)
+  handlerRef.current = handler
+  const stableRef = useRef<InputHandler | null>(null)
+  const interactive = options?.interactive !== false
+  if (!stableRef.current) {
+    stableRef.current = (input, key) => {
+      const handled = handlerRef.current(input, key)
+      if (interactive && !replayingInput && handled !== false) markRootInputClaimed(input, key)
+      return handled
+    }
+  }
+  useInput(stableRef.current, { isActive: options?.isActive })
+
+  useEffect(() => {
+    if (!interactive || options?.isActive === false || !stableRef.current) return
+    const stable = stableRef.current
+    interactiveHandlers.add(stable)
+    const queued = replayQueue.splice(0)
+    replayingInput = true
+    try {
+      for (const event of queued) stable(event.input, event.key)
+    } finally {
+      replayingInput = false
+    }
+    return () => { interactiveHandlers.delete(stable) }
+  }, [interactive, options?.isActive])
+}
+>>>>>>> gitlab-mobius/main
 
 /** Windows Terminal/ConPTY may expose Esc as a named key, a raw byte, or Ctrl+[. */
 export function isEscapeKeypress(input: string, key: { escape?: boolean; ctrl?: boolean }): boolean {
@@ -78,6 +198,29 @@ export function parseMouseEvents(input: string): MouseEventInfo[] {
   return out
 }
 
+<<<<<<< HEAD
+=======
+/** Collapse each contiguous wheel burst into one delta without reordering clicks. */
+export function coalesceMouseEvents(events: MouseEventInfo[]): MouseEventInfo[] {
+  const out: MouseEventInfo[] = []
+  let wheelDelta = 0
+  const flushWheel = () => {
+    if (wheelDelta !== 0) out.push({ kind: 'wheel', delta: wheelDelta })
+    wheelDelta = 0
+  }
+  for (const event of events) {
+    if (event.kind === 'wheel') {
+      wheelDelta += event.delta
+    } else {
+      flushWheel()
+      out.push(event)
+    }
+  }
+  flushWheel()
+  return out
+}
+
+>>>>>>> gitlab-mobius/main
 /**
  * Enables terminal mouse tracking for the lifetime of the calling component and
  * forwards mouse events (wheel + left-button press/motion/release) to the given
@@ -114,7 +257,11 @@ export function useMouseEvents(handlers: {
       // A single read() chunk may carry several events and a sequence may be
       // split across chunks, so accumulate and re-scan.
       buf += String(chunk)
+<<<<<<< HEAD
       for (const e of parseMouseEvents(buf)) {
+=======
+      for (const e of coalesceMouseEvents(parseMouseEvents(buf))) {
+>>>>>>> gitlab-mobius/main
         if (e.kind === 'wheel') refs.current.onWheel?.(e.delta)
         else if (e.kind === 'press') refs.current.onPress?.(e.row, e.col)
         else if (e.kind === 'motion') refs.current.onMotion?.(e.row, e.col)
@@ -184,8 +331,21 @@ export function TextInput(props: TextInputProps) {
     const { text, cursor: nextCursor } = applyDeleteIntent(valueRef.current, cursorRef.current, intent)
     edit(text, nextCursor)
   })
+<<<<<<< HEAD
 
   useInput((input, key) => {
+=======
+  useCursorKeyCapture(focused, (intent) => {
+    const current = valueRef.current
+    const at = clampCursor(current, cursorRef.current)
+    const next = intent === 'home' ? 0 : intent === 'end' ? current.length
+      : intent === 'backward-word' ? previousWordBoundary(current, at) : nextWordBoundary(current, at)
+    cursorRef.current = next
+    setCursor(next)
+  })
+
+  useStableInput((input, key) => {
+>>>>>>> gitlab-mobius/main
     if (isMouseInput(input)) return
     if (key.return) { props.onSubmit?.(); return }
     if (key.upArrow) { props.onArrowUp?.(); return }
@@ -197,6 +357,19 @@ export function TextInput(props: TextInputProps) {
     if (key.ctrl && input === 'w') {
       const { text, cursor: nextCursor } = applyDeleteIntent(value, cursor, 'backward-word')
       edit(text, nextCursor)
+<<<<<<< HEAD
+      return
+    }
+    if (key.ctrl && input === 'h') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(value, cursor, 'backward')
+      edit(text, nextCursor)
+      return
+    }
+    if (key.ctrl && input === 'd') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(value, cursor, 'forward')
+      edit(text, nextCursor)
+=======
+>>>>>>> gitlab-mobius/main
       return
     }
     if (key.ctrl && input === 'h') {
@@ -209,6 +382,7 @@ export function TextInput(props: TextInputProps) {
       edit(text, nextCursor)
       return
     }
+    if (key.ctrl && (key.leftArrow || key.rightArrow)) return
     if (key.leftArrow) { setCursor(c => Math.max(0, c - 1)); return }
     if (key.rightArrow) { setCursor(c => Math.min(value.length, c + 1)); return }
     if (key.ctrl && input === 'a') { setCursor(0); return }
@@ -287,6 +461,12 @@ export interface SelectItem {
   desc?: string
 }
 
+/** Keep a picker explanation on the item's main row; Select truncates that row. */
+export function inlineSelectLabel(label: string, detail?: string): string {
+  const oneLine = detail?.replace(/\s*\n\s*/g, ' ⏎ ').replace(/[ \t]+/g, ' ').trim()
+  return oneLine ? `${label} - ${oneLine}` : label
+}
+
 export interface SelectProps {
   items: SelectItem[]
   mode?: 'single' | 'multi'
@@ -298,24 +478,28 @@ export interface SelectProps {
   focused?: boolean
   title?: string
   maxVisible?: number // cap rendered rows so long lists never overflow the terminal
+  initialActive?: number // initial keyboard focus; useful when a create action occupies row 0
 }
 
 export function Select(props: SelectProps) {
   const mode = props.mode ?? 'single'
-  const [active, setActive] = useState(0)
+  const [active, setActive] = useState(() => Math.max(0, props.initialActive ?? 0))
   const items = props.items
   const selectedSet = new Set<string>(mode === 'multi' ? (props.selected as string[]) ?? [] : [])
   const { stdout } = useStdout()
 
   useEffect(() => { setActive(a => Math.min(a, Math.max(0, items.length - 1))) }, [items.length])
 
-  useInput((input, key) => {
+  useStableInput((input, key) => {
     if (!items.length) return
     if (isMouseInput(input)) return
     if (key.upArrow) { setActive(a => (a - 1 + items.length) % items.length); return }
     if (key.downArrow) { setActive(a => (a + 1) % items.length); return }
     if (mode === 'single') {
-      if (key.return) { props.onSelect?.(items[active].value); return }
+      if (key.return) {
+        props.onSelect?.(items[active].value)
+        return
+      }
     } else {
       if (key.return) { props.onConfirm?.(Array.from(selectedSet)); return }
       if (input === ' ') { props.onToggle?.(items[active].value); return }
@@ -353,17 +537,20 @@ export function Select(props: SelectProps) {
         const isActive = realIdx === active
         const checked = mode === 'multi' ? selectedSet.has(it.value) : false
         const marker = mode === 'multi' ? (checked ? '☑' : '☐') : isActive ? '❯' : ' '
+        // Keep picker rows compact: descriptions belong on the highlighted
+        // row only.  Unfocused rows show just their label so a long list does
+        // not turn every item into a multi-line block.
+        const rowLabel = isActive ? inlineSelectLabel(it.label, it.desc) : it.label
         return (
-          <Box key={it.value} flexDirection="column">
+          <Box key={it.value}>
             <Text
               color={isActive ? 'black' : undefined}
               backgroundColor={isActive ? 'cyan' : undefined}
               bold={isActive}
               wrap="truncate-end"
             >
-              {marker} {it.label}
+              {marker} {rowLabel}
             </Text>
-            {isActive && it.desc ? <Text color="gray" wrap="truncate-end">    {it.desc}</Text> : null}
           </Box>
         )
       })}

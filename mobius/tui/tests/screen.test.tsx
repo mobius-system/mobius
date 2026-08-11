@@ -20,6 +20,9 @@ import { Box, Text } from 'ink'
 import { render } from 'ink-testing-library'
 import { Screen } from '../src/components/Screen.js'
 import { Select } from '../src/components/primitives.js'
+import { entryScreenRows } from '../src/lib/screen-text.js'
+import { viewsForEntry } from '../src/lib/entry-view.js'
+import { createRowAccess, sliceViewport, tailAnchor } from '../src/lib/transcript-viewport.js'
 
 const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
@@ -33,6 +36,18 @@ const ROWS = 24
 
 async function main() {
   console.log('\n[SCREEN] no-residue picker transitions\n')
+
+  // A partial message is now represented by the same styled ScreenRow as a
+  // complete message. Virtual slicing must preserve its ANSI foreground bytes.
+  const styledEntries = [
+    { type: 'assistant', uuid: 'styled-old', message: { role: 'assistant', content: [{ type: 'text', text: '[彩色链接](https://example.com)' }] } },
+    { type: 'assistant', uuid: 'styled-new', message: { role: 'assistant', content: [{ type: 'text', text: '最新消息' }] } },
+  ]
+  const rowAccess = createRowAccess(styledEntries, entry => entry.uuid, entry => entryScreenRows(viewsForEntry(entry), 80))
+  const viewport = sliceViewport(rowAccess, tailAnchor(rowAccess, 3), 3)
+  const partial = viewport.rows.find(item => item.entryId === 'styled-old')?.row
+  ok(partial !== undefined, 'small viewport exposes a row from the partial older message')
+  ok(!!partial?.styled.includes('\x1b[') && partial.styled.includes('彩色链接'), 'partial older row keeps its ANSI foreground styling')
 
   // ── 1. Without Screen, a tall frame overflows the terminal (the bug). ───────
   const tall = render(

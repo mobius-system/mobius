@@ -884,3 +884,70 @@ export function extractLocalCommandParts(entry: AnyEntry): LocalCommandPart[] {
 }
 
 export { extractWriteToolCall }
+
+// ── MCP 工具返回信封解析 ────────────────────────────────────────────────
+// 部分 MCP 工具 (如外置 exec/shell MCP) 把命令返回包成统一信封:
+//   {"output": "<命令 stdout/终端文本>", "original_token_count": N, "wall_time_seconds": N, "session_id": N}
+// 这种 tool_result 若按字段模式铺开, 整张卡全是元数据 JSON, 真正有用的 output 淹没在嵌套里.
+// 这里识别该信封, 抽出 output 文本 + 执行元信息, 供卡片以"代码模式"渲染 (终端式 pre + 行号 + 折叠),
+// 与 Bash 返回结果面板观感一致.
+
+export type McpToolResultMeta = { label: string; value: string }
+
+export type McpToolResult = {
+  output: string
+  meta: McpToolResultMeta[]
+  toolUseId?: string
+  isError: boolean
+}
+
+// 判定一段文本是否为 MCP 工具返回信封: 解析为 JSON 对象, 含字符串 output 且至少带一个
+// 执行元信息字段 (wall_time_seconds / original_token_count). 单凭 output 字段不够 --
+// 普通工具也可能返回 {"output": "..."} 结构化数据会被误判; 元信息字段是 exec 信封的强特征.
+// 解析失败 / 不匹配一律返回 null, 调用方回退到原字段模式.
+export function parseMcpResultEnvelope(text: unknown): { output: string; raw: Record<string, any> } | null {
+  if (typeof text !== 'string' || text.length === 0) return null
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null
+  let parsed: any
+  try { parsed = JSON.parse(trimmed) } catch { return null }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  if (typeof parsed.output !== 'string') return null
+  const hasExecMeta =
+    typeof parsed.wall_time_seconds === 'number' ||
+    typeof parsed.original_token_count === 'number'
+  if (!hasExecMeta) return null
+  return { output: parsed.output, raw: parsed }
+}
+
+// 从 type:user 的纯 tool_result entry 抽出 MCP 返回信封 (若有). 命中即返回首个; 不命中返回 null.
+// 读 message.content 里的 tool_result 文本块 (与 extractBashToolResultRecords 同源), 不依赖 toolUseResult.
+export function extractMcpToolResult(entry: AnyEntry): McpToolResult | null {
+  if (entry?.type !== 'user') return null
+  const content = entry?.message?.content
+  if (!Array.isArray(content)) return null
+  const blocks = content.filter((b: any) => b?.type === 'tool_result')
+  if (blocks.length === 0) return null
+  for (const block of blocks) {
+    const text = toolResultContentText(block?.content)
+    const env = parseMcpResultEnvelope(text)
+    if (!env) continue
+    const meta: McpToolResultMeta[] = []
+    if (typeof env.raw.wall_time_seconds === 'number') {
+      meta.push({ label: '耗时', value: `${env.raw.wall_time_seconds}s` })
+    }
+    if (typeof env.raw.original_token_count === 'number') {
+      meta.push({ label: 'tokens', value: String(env.raw.original_token_count) })
+    }
+    if (env.raw.session_id != null && env.raw.session_id !== '') {
+      meta.push({ label: 'session', value: String(env.raw.session_id) })
+    }
+    return {
+      output: env.output,
+      meta,
+      toolUseId: stringField(block?.tool_use_id) || undefined,
+      isError: block?.is_error === true || env.raw.is_error === true || env.raw.status === 'failed',
+    }
+  }
+  return null
+}

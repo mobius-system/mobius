@@ -94,6 +94,33 @@ import {
 } from '../config';
 
 const router = express.Router();
+const GIT_SOURCES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+type GitSourceCacheEntry = { expiresAt: number; scannedAt: string; source: any };
+const gitSourceCache = new Map<string, GitSourceCacheEntry>();
+const remotePathCache = new Map<string, { expiresAt: number; path: string }>();
+
+function gitSourceCacheKey(remote: string, pathValue: string): string {
+  return `${remote}\u0000${pathValue}`;
+}
+
+function isAbsoluteRemotePath(value: string): boolean {
+  return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value);
+}
+
+async function resolveAbsoluteRemotePath(remoteName: string, requestedPath: string): Promise<string> {
+  const raw = requestedPath.trim() || '~';
+  if (isAbsoluteRemotePath(raw)) return raw;
+  const cacheKey = `${remoteName}\u0000${raw}`;
+  const cached = remotePathCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.path;
+  const browsed = await aimuxRemote.browseRemotePath(remoteName, raw, '10s');
+  const resolved = String(browsed?.path || '').trim();
+  if (!resolved || !isAbsoluteRemotePath(resolved)) {
+    throw new Error('无法解析远端 Git 路径为绝对路径');
+  }
+  remotePathCache.set(cacheKey, { path: resolved, expiresAt: Date.now() + GIT_SOURCES_CACHE_TTL_MS });
+  return resolved;
+}
 // 上传 ZIP 导入: 放宽到 200MB (解压后另有 inspectExtractedTree 的 1GB/5w 文件配额兜底).
 const importZipUpload = multer({ dest: UPLOAD_DIR, limits: { fileSize: 200 * 1024 * 1024 } });
 const MAIN_PROJECT_PORT_REL = path.join(HIDDEN_FOLDER_NAME, 'port_forward', 'main_project_port.txt');
@@ -2556,6 +2583,152 @@ router.get('/:id/git-tracking', auth, (req: express.Request, res: express.Respon
     res.json(readProjectGitTracking(project, req.query.limit));
   } catch (e) {
     res.status(500).json({ error: (e as Error).message || '读取 Git 追踪信息失败' });
+  }
+});
+
+// 会话侧栏 Git Tab 使用的轻量仓库清单：中枢项目绑定路径 + 当前项目已登记的远程机器。
+// Electron 本机路径只由桌面端 IPC 读取，避免中枢误把本机路径当成服务器路径。
+router.get('/:id/git-sources', auth, async (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+
+  const forceRefresh = ['1', 'true', 'yes'].includes(String(req.query.refresh || '').toLowerCase());
+  const sources: any[] = [];
+  const cacheEntries: GitSourceCacheEntry[] = [];
+  let queriedSourceCount = 0;
+  try {
+    const inventory = Array.isArray(project.aimux_remote_inventory) ? project.aimux_remote_inventory : [];
+    const remember = (key: string, source: any): any => {
+      const expiresAt = Date.now() + GIT_SOURCES_CACHE_TTL_MS;
+      const entry = { expiresAt, scannedAt: new Date().toISOString(), source: { ...source, cache_expires_at: expiresAt } };
+      gitSourceCache.set(key, entry);
+      cacheEntries.push(entry);
+      queriedSourceCount += 1;
+      return entry.source;
+    };
+    const readSource = (key: string): any | null => {
+      if (forceRefresh) return null;
+      const entry = gitSourceCache.get(key);
+      if (!entry || entry.expiresAt <= Date.now()) return null;
+      cacheEntries.push(entry);
+      return { ...entry.source, cache_expires_at: entry.expiresAt };
+    };
+
+    const hubCacheKey = gitSourceCacheKey('hub', String(project.bind_path || ''));
+    const cachedHub = readSource(hubCacheKey);
+    if (cachedHub) {
+      sources.push({ ...cachedHub, id: `hub:${project.id}` });
+    } else {
+      const hub = readProjectGitTracking(project, 1);
+      sources.push(remember(hubCacheKey, {
+        id: `hub:${project.id}`,
+        kind: 'hub',
+        label: '中枢',
+        available: !!hub.available,
+        branch: hub.available ? (hub.branch || null) : null,
+        head: hub.available ? (hub.head || null) : null,
+        path: hub.repo_path || hub.bind_path || project.bind_path || '',
+        dirty: hub.available ? !!hub.dirty : false,
+        dirty_count: hub.available ? Number(hub.dirty_count || 0) : 0,
+        reason: hub.available ? '' : (hub.reason || '未检测到 Git 仓库'),
+      }));
+    }
+
+    const remoteSources = await Promise.all(inventory.map(async (remote: any) => {
+      const name = String(remote?.name || '').trim();
+      const requestedPath = String(remote?.remote_path || '').trim() || '~';
+      if (!name) return null;
+      let rootPath = '';
+      try {
+        rootPath = await resolveAbsoluteRemotePath(name, requestedPath);
+      } catch (e) {
+        return {
+          id: `remote:${name}`,
+          kind: 'remote',
+          label: name,
+          available: false,
+          branch: null,
+          head: null,
+          path: isAbsoluteRemotePath(requestedPath) ? requestedPath : '',
+          status: String(remote?.status || ''),
+          hostname: String(remote?.hostname || ''),
+          reason: (e as Error).message || '无法解析远端 Git 路径为绝对路径',
+        };
+      }
+      const remoteCacheKey = gitSourceCacheKey(name, rootPath);
+      const cachedRemote = readSource(remoteCacheKey);
+      if (cachedRemote) {
+        return {
+          ...cachedRemote,
+          id: `remote:${name}`,
+          label: name,
+          path: rootPath,
+          status: String(remote?.status || ''),
+          hostname: String(remote?.hostname || ''),
+        };
+      }
+      const unavailable = (reason: string) => ({
+        id: `remote:${name}`,
+        kind: 'remote',
+        label: name,
+        available: false,
+        branch: null,
+        head: null,
+        path: rootPath,
+        status: String(remote?.status || ''),
+        hostname: String(remote?.hostname || ''),
+        reason,
+      });
+      try {
+        let head: any;
+        let headSource = '/.git/HEAD';
+        try {
+          head = await aimuxRemote.readRemoteFile(name, rootPath, '/.git/HEAD');
+        } catch {
+          // git worktree 的 .git 可能是文件；只确认仓库存在，不虚构分支名。
+          headSource = '/.git';
+          head = await aimuxRemote.readRemoteFile(name, rootPath, '/.git');
+        }
+        const content = String(head?.content || '').trim();
+        const branchMatch = content.match(/^ref:\s+refs\/heads\/(.+)$/m);
+        const detachedHead = headSource === '/.git/HEAD' && /^[0-9a-f]{7,64}$/i.test(content) ? content.slice(0, 12) : null;
+        return remember(remoteCacheKey, {
+          id: `remote:${name}`,
+          kind: 'remote',
+          label: name,
+          available: true,
+          branch: branchMatch?.[1]?.trim() || null,
+          head: detachedHead,
+          path: rootPath,
+          status: String(remote?.status || ''),
+          hostname: String(remote?.hostname || ''),
+          reason: branchMatch ? '' : (detachedHead ? '游离 HEAD，当前没有分支' : '已检测到 Git，但无法从 HEAD 解析分支'),
+        });
+      } catch (e) {
+        const message = (e as Error).message || '';
+        const noRepo = /not exist|不存在|no such|not found|未找到|不是文件|目标不是文件/i.test(message);
+        return remember(remoteCacheKey, unavailable(noRepo ? '未检测到 Git 仓库' : `远端 Git 扫描失败：${message}`));
+      }
+    }));
+    sources.push(...remoteSources.filter(Boolean));
+    const payload = {
+      project_id: project.id,
+      sources,
+      registered_remote_names: inventory.map((remote: any) => String(remote?.name || '').trim()).filter(Boolean),
+      scanned_at: new Date().toISOString(),
+    };
+    const expiresAt = cacheEntries.length ? Math.min(...cacheEntries.map(entry => entry.expiresAt)) : Date.now();
+    const scannedAt = cacheEntries.length
+      ? cacheEntries.map(entry => entry.scannedAt).sort().at(-1) || payload.scanned_at
+      : payload.scanned_at;
+    res.json({
+      ...payload,
+      scanned_at: scannedAt,
+      cached: queriedSourceCount === 0,
+      cache_expires_at: new Date(expiresAt).toISOString(),
+    });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message || '读取 Git 仓库清单失败' });
   }
 });
 

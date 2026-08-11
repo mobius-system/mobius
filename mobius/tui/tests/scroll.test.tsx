@@ -138,7 +138,7 @@ async function main() {
     const tailFrame = strip(lastFrame() ?? '')
 
     ok(tailFrame.includes('回答 24'), 'latest entry visible at tail (not hidden)')
-    ok(tailFrame.includes('PageUp'), 'older-records hint offers PageUp (nothing is silently lost)')
+    ok(tailFrame.includes('↑ 还有较早内容') && tailFrame.includes('滚轮 3 行'), 'navigation reports older content and the exact wheel step')
 
     // ── live resize: refit one dynamic frame, never retain old-width output ──
     resize(stdout as unknown as NodeJS.WriteStream, 52, 18)
@@ -157,6 +157,7 @@ async function main() {
     ok(tallAnswers > narrowAnswers, 'larger resize reveals more history in the same viewport')
     ok((tallFrame.match(/>_ Mobius/g) ?? []).length === 1, 'larger resize still has one dynamic header')
 
+<<<<<<< HEAD
     // The "↑ 还有 N 条较早记录" hint must be pinned to the FIRST line below the
     // header and span the full width — it must not float mid-transcript when the
     // viewport has spare rows (regression for real terminals, which bound the
@@ -166,12 +167,22 @@ async function main() {
     ok(hintIdx === 1, `older-records hint is the first line under the header (line ${hintIdx}, expected 1)`)
     const messageRows = tallLines.slice(hintIdx + 1).filter(line => line.trim())
     ok(messageRows.length > 0 && (messageRows[0].includes('⋯') || messageRows[0].includes('回答')), 'first visible message starts immediately after the history hint')
+=======
+    // Navigation is a fixed one-row part of the conversation chrome. It must be
+    // the FIRST line below the header and state the exact PageUp/PageDown step.
+    const tallLines = tallFrame.split('\n')
+    const hintIdx = tallLines.findIndex(l => l.includes('滚轮 3 行'))
+    ok(hintIdx === 1, `navigation is the first line under the header (line ${hintIdx}, expected 1)`)
+    ok(/PageUp\/PageDown \d+ 行/.test(tallLines[hintIdx] ?? ''), 'navigation exposes the deterministic page size')
+    const messageRows = tallLines.slice(hintIdx + 1).filter(line => line.trim())
+    ok(messageRows.length > 0 && messageRows[0].includes('回答'), 'a real virtualized message row follows navigation without a synthetic peek row')
+>>>>>>> gitlab-mobius/main
 
     // ── PageUp: viewport scrolls back over history ────────────────────────────
     stdin.write('\x1b[5~')                                   // PageUp
     await delay(300)
     const upFrame = strip(lastFrame() ?? '')
-    ok(upFrame.includes('PageDown'), 'after PageUp: a PageDown hint appears (scrolled up)')
+    ok(upFrame.includes('↓ 较新内容'), 'after PageUp: navigation reports newer content below')
     ok(!upFrame.includes('回答 24'), 'after PageUp: latest entry paged out of view')
     ok(/回答 \d+/.test(upFrame), 'after PageUp: an older entry is visible')
 
@@ -185,7 +196,11 @@ async function main() {
     stdin.write('\x1b[<64;5;5M')                             // wheel up = scroll back
     await delay(300)
     const wheelUp = strip(lastFrame() ?? '')
+<<<<<<< HEAD
     ok(wheelUp.includes('PageDown'), 'wheel up: a PageDown hint appears (scrolled back)')
+=======
+    ok(wheelUp.includes('↓ 较新内容'), 'wheel up: navigation reports newer content below')
+>>>>>>> gitlab-mobius/main
     ok(!wheelUp.includes('回答 24'), 'wheel up: latest entry paged out of view')
     ok(/回答 \d+/.test(wheelUp), 'wheel up: an older entry is visible')
 
@@ -199,7 +214,11 @@ async function main() {
     stdin.write('\x1b[M' + String.fromCharCode(96, 50, 50))
     await delay(300)
     const legacyUp = strip(lastFrame() ?? '')
+<<<<<<< HEAD
     ok(legacyUp.includes('PageDown'), 'legacy wheel up: a PageDown hint appears (scrolled back)')
+=======
+    ok(legacyUp.includes('↓ 较新内容'), 'legacy wheel up: navigation reports newer content below')
+>>>>>>> gitlab-mobius/main
     ok(!legacyUp.includes('回答 24'), 'legacy wheel up: latest entry paged out of view')
 
     stdin.write('\x1b[M' + String.fromCharCode(97, 50, 50))  // wheel down Cb = 0x61
@@ -229,13 +248,23 @@ async function main() {
     await bootToChat(second.stdin, second.lastFrame)
     await populateTranscript(second.stdin, emitEntry)
     const before = strip(second.lastFrame() ?? '')
+<<<<<<< HEAD
+=======
+    const beforeAnswers = before.match(/回答 \d+/g) ?? []
+>>>>>>> gitlab-mobius/main
     ok(before.includes('回答 24'), 'disable-mouse: latest entry visible before wheel')
 
     second.stdin.write('\x1b[<64;5;5M')                    // wheel up — must be ignored
     await delay(300)
     const after = strip(second.lastFrame() ?? '')
+<<<<<<< HEAD
     ok(after.includes('回答 24'), 'disable-mouse: wheel up leaves latest entry in view')
     ok(!after.includes('PageDown'), 'disable-mouse: wheel up does NOT scroll (no PageDown hint)')
+=======
+    const afterAnswers = after.match(/回答 \d+/g) ?? []
+    ok(after.includes('回答 24'), 'disable-mouse: wheel up leaves latest entry in view')
+    ok(JSON.stringify(afterAnswers) === JSON.stringify(beforeAnswers), 'disable-mouse: wheel up leaves the visible row window unchanged')
+>>>>>>> gitlab-mobius/main
   } finally {
     second.unmount()
     delete process.env.MOBIUS_TUI_DISABLE_MOUSE

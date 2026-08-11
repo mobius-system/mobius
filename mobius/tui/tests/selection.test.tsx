@@ -33,6 +33,17 @@ function emitEntry(n: number) {
   const payload = { event: 'jsonl_entry', session_id: SID, entry: { type: 'assistant', uuid: `a-${n}`, message: { role: 'assistant', content: [{ type: 'text', text: `回答 ${n}` }] } } }
   sseController?.enqueue(enc.encode(`event: jsonl_entry\ndata: ${JSON.stringify(payload)}\n\n`))
 }
+<<<<<<< HEAD
+=======
+function emitAssistantText(text: string) {
+  const payload = { event: 'jsonl_entry', session_id: SID, entry: { type: 'assistant', uuid: `a-${Date.now()}`, message: { role: 'assistant', content: [{ type: 'text', text }] } } }
+  sseController?.enqueue(enc.encode(`event: jsonl_entry\ndata: ${JSON.stringify(payload)}\n\n`))
+}
+function emitUserText(text: string) {
+  const payload = { event: 'jsonl_entry', session_id: SID, entry: { type: 'user', uuid: `u-${Date.now()}`, message: { role: 'user', content: [{ type: 'text', text }] } } }
+  sseController?.enqueue(enc.encode(`event: jsonl_entry\ndata: ${JSON.stringify(payload)}\n\n`))
+}
+>>>>>>> gitlab-mobius/main
 
 let pass = 0, fail = 0
 function ok(c: boolean, m: string) { c ? (pass++, console.log(`  ✓ ${m}`)) : (fail++, console.error(`  ✗ ${m}`)) }
@@ -131,7 +142,11 @@ async function main() {
     const row1 = lines.findIndex(l => l.includes('回答 1'))
     const row3 = lines.findIndex(l => l.includes('回答 3'))
     ok(row1 >= 0 && row3 >= 0, `found 回答 1 (row ${row1}) and 回答 3 (row ${row3}) in the transcript`)
+<<<<<<< HEAD
     ok(!frame.includes('PageDown'), 'all entries fit — no paging hints at rest')
+=======
+    ok(frame.includes('全部内容') && !frame.includes('↑ 较早内容') && !frame.includes('↓ 还有较新内容'), 'all entries fit — navigation reports the complete transcript')
+>>>>>>> gitlab-mobius/main
 
     // press on 回答 1 (col 4 → first content char), drag to 回答 3 (col beyond EOL)
     stdin.write(`\x1b[<0;5;${row1 + 1}M`)                 // left-button press (SGR 1-based)
@@ -154,6 +169,53 @@ async function main() {
     const after = strip(lastFrame() ?? '')
     ok(after.includes('已复制'), 'copy notice shown in the status row')
     ok(!after.includes('回答 3') || true, 'selection cleared after release (highlight gone)')
+<<<<<<< HEAD
+=======
+
+    // A long user line wraps in the normal Ink renderer. The selection renderer
+    // must keep exactly the same rows while the mouse moves through it.
+    await delay(2700)
+    emitUserText(`长消息 ${'内容 '.repeat(80)} 结束标记`)
+    await delay(500)
+    const beforeLongDrag = strip(lastFrame() ?? '')
+    const longRows = beforeLongDrag.split('\n')
+    const longRow = longRows.findIndex(line => line.includes('长消息'))
+    ok(longRow >= 0, `found long user message (row ${longRow})`)
+    if (longRow >= 0) {
+      stdin.write(`\x1b[<0;5;${longRow + 1}M`)
+      await delay(80)
+      stdin.write(`\x1b[<32;25;${longRow + 1}M`)
+      await delay(200)
+      const duringLongDragRaw = lastFrame() ?? ''
+      ok(duringLongDragRaw.includes('\x1b[46m'), 'wrapped long message is actively highlighted')
+      const duringLongDrag = strip(duringLongDragRaw)
+      ok(duringLongDrag === beforeLongDrag, 'dragging across a wrapped long message does not change layout')
+      stdin.write(`\x1b[<0;25;${longRow + 1}m`)
+      await delay(80)
+    }
+
+    // Selecting one part of a styled Markdown entry must not replace the whole
+    // entry with unstyled plain text as the selection crosses it.
+    emitAssistantText(`**粗体布局锚点** ${'带样式正文 '.repeat(45)} 末尾`)
+    await delay(500)
+    const styledBeforeRaw = lastFrame() ?? ''
+    const styledBefore = strip(styledBeforeRaw)
+    const styledRow = styledBefore.split('\n').findIndex(line => line.includes('粗体布局锚点'))
+    ok(styledRow >= 0, `found styled long assistant message (row ${styledRow})`)
+    ok(styledBeforeRaw.includes('\x1b[1m'), 'Markdown bold style is present before selection')
+    if (styledRow >= 0) {
+      stdin.write(`\x1b[<0;5;${styledRow + 1}M`)
+      await delay(80)
+      stdin.write(`\x1b[<32;30;${styledRow + 1}M`)
+      await delay(200)
+      const styledDuringRaw = lastFrame() ?? ''
+      ok(styledDuringRaw.includes('\x1b[46m'), 'styled long message is actively highlighted')
+      ok(styledDuringRaw.includes('\x1b[1m'), 'Markdown bold style remains present during selection')
+      ok(strip(styledDuringRaw) === styledBefore, 'styled long message keeps identical rows during selection')
+      stdin.write(`\x1b[<0;30;${styledRow + 1}m`)
+      await delay(80)
+    }
+>>>>>>> gitlab-mobius/main
   } finally {
     unmount()
     globalThis.fetch = realFetch

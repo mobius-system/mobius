@@ -56,6 +56,25 @@
     -d '{"old_password":"old123456","new_password":"new123456"}'
   ```
 
+- **`GET /api/auth/branding`** — 公共接口(无 auth), 返回全站品牌配置, 供登录页首屏渲染. 字段 `{ hideLogo, systemNameZh, systemNameEn, hiddenFolderName, appDir }`.
+  ```bash
+  curl -sS "${BASE}/api/auth/branding"
+  ```
+
+- **`GET /api/auth/user-search?q=<关键字>`** — 资源访问面板的用户选择器, 按关键字返回最多 12 个活跃用户 `{ id, display_name, role }`. `q` 为空时返回前 12 条.
+  ```bash
+  curl -sS "${BASE}/api/auth/user-search?q=ali" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`POST /api/auth/users-by-id`** — 一次性按 id 数组反查用户信息(上限 64, 超出截断, 去重去空). Body `{ "ids": ["alice","bob"] }`.
+  ```bash
+  curl -sS -X POST "${BASE}/api/auth/users-by-id" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -d '{"ids":["alice","bob"]}'
+  ```
+
 ### 2.2 健康 `/api/health`
 
 - **`GET /api/health`** — 后端 + agent bridge 状态(无 auth).
@@ -180,14 +199,6 @@
     -H "Authorization: Bearer ${TOKEN}"
   ```
 
-- **`POST /api/projects/:id/purge`** — 拓展项目专用:删当前用户在拓展上的全部数据. Body `{ "confirm": "<拓展名/项目名/id 之一>" }`.
-  ```bash
-  curl -sS -X POST "${BASE}/api/projects/abc12345/purge" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -d '{"confirm":"finance-news-wall"}'
-  ```
-
 - **`PATCH /api/projects/:id/star`** — 设置星标. Body `{ "starred": true|false }`.
   ```bash
   curl -sS -X PATCH "${BASE}/api/projects/abc12345/star" \
@@ -298,6 +309,89 @@
 - **`POST /api/projects/:id/files/copy`** — 同项目内复制文件/目录. Body `{ "sourcePath": "/a/x.pdf", "targetDir": "/b" }`. 拒绝符号链接(含中间目录)、目录复制到自身/子目录; 同名返回 409 `{ error, code: "CONFLICT" }` (不静默覆盖); 目录异步递归复制带上限(文件数/大小/深度), 失败清理半成品. 返回 `{ sourcePath, path, type, copied }`.
 - **`POST /api/projects/:id/files/rename`** — 重命名文件/目录. Body `{ "path": "/a/x.pdf", "newName": "y.pdf" }`. 拒绝根目录/符号链接/非法名(含 `/` `\` 控制符 `.` `..` 保留名)/同名冲突(409). 返回 `{ oldPath, path, name, renamed }`. 写操作均校验项目可读 + `bind_path` 可写 + 目标父目录 W_OK.
 
+- **`GET /api/projects/overview?ids=<id,id>&limit=<n>`** — 批量查多个项目的 issue/research 计数与概览条目(`ids` 逗号分隔或数组; `limit` 每项条数 1–20). 无读权限或被隐藏的项目自动跳过.
+  ```bash
+  curl -sS "${BASE}/api/projects/overview?ids=abc12345,def67890&limit=5" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`GET /api/projects/:id/sessions-overview?issue_ids=<id,id>`** — 查指定项目下若干 issue/research 的活跃会话预览(还接受 `research_ids` / `preview_limit`).
+  ```bash
+  curl -sS "${BASE}/api/projects/abc12345/sessions-overview?issue_ids=iss12345" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`GET /api/projects/search?q=<关键词>&limit=<n>`** — 按关键词搜当前用户可见的项目.
+  ```bash
+  curl -sS "${BASE}/api/projects/search?q=demo&limit=20" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`GET /api/projects/view-prefs`** / **`PATCH /api/projects/view-prefs`** — 当前用户的项目视图偏好; PATCH Body `{ "hide_others_projects": true|false }`(也接受驼峰 `hideOthersProjects`).
+
+- **`GET /api/projects/muted`** — 当前用户已静音的项目列表.
+
+成员管理(列表/候选只需读权限, 增删改需项目管理权限 `canManage`):
+
+- **`GET /api/projects/:id/members`** — 成员列表 + 计数 + 当前用户的管理能力(`can_manage` / `actor_role`).
+- **`GET /api/projects/:id/member-candidates?q=<关键字>`** — 搜索可加为成员的员工(前缀匹配 id/display_name, 最多 30 条, 仅返回脱敏字段).
+- **`POST /api/projects/:id/members`** — 批量加成员. Body `{ "user_ids": ["..."], "role"?: "member|owner"(owner 仅项目负责人/管理员) }`.
+  ```bash
+  curl -sS -X POST "${BASE}/api/projects/abc12345/members" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -d '{"user_ids":["bob","carol"],"role":"member"}'
+  ```
+- **`PATCH /api/projects/:id/members/:userId`** — 改成员角色. Body `{ "role": "<新角色>" }`.
+- **`DELETE /api/projects/:id/members/:userId`** — 移除成员(移除 owner 需项目负责人/管理员).
+
+- **`POST /api/projects/:id/mute`** / **`POST /api/projects/:id/unmute`** — 静音/取消静音(同时写 hidden 状态).
+
+- **`POST /api/projects/:id/git-action`** — 在项目仓库执行 Git 操作. Body `{ "action": "status|log|pull|push|..." }`. 需 `canManage`.
+  ```bash
+  curl -sS -X POST "${BASE}/api/projects/abc12345/git-action" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -d '{"action":"status"}'
+  ```
+
+项目待办(列表只需读权限, 增删改需 `canManage`):
+
+- **`GET /api/projects/:id/todos`** — 待办列表 `{ items: [...] }`.
+- **`POST /api/projects/:id/todos`** — 新建. Body `{ "title": "<必填>", "description"?: "...", "completed"?: false, "sort_order"?: <n> }`.
+- **`PATCH /api/projects/:id/todos/:todoId`** — 更新(部分字段: `title` / `description` / `completed` / `sort_order`).
+- **`DELETE /api/projects/:id/todos/:todoId`** — 删除.
+- **`PUT /api/projects/:id/todos/reorder`** — 重排. Body `{ "ids": ["<有序 id 数组>"] }`.
+
+打包下载(只需读权限):
+
+- **`GET /api/projects/:id/package/items`** — 列出可打包的文件条目.
+- **`POST /api/projects/:id/package/estimate`** — 估算选中文件打包大小. Body `{ "names": ["..."] }`.
+- **`POST /api/projects/:id/package/download`** — 打包下载(响应为 zip 流). Body `{ "names": ["..."] }`.
+
+远程算力文件(只需读权限; `remote` 必须在项目 aimux 清单内):
+
+- **`GET /api/projects/:id/remote-file-sources`** — 项目注册的远程机器清单.
+- **`GET /api/projects/:id/remote-files?remote=<name>&path=</>`** — 列远程目录.
+- **`GET /api/projects/:id/remote-file?remote=<name>&path=<file>`** — 读远程单个文件.
+- **`POST /api/projects/:id/remote-file`** — 写远程单个文件. Body `{ "remote": "<name>", "path": "<file>", "content": "..." }`.
+
+项目文件读写(原生文件编辑器用; 只读项目可读不可写):
+
+- **`GET /api/projects/:id/file?path=<rel>`** — 读 `bind_path` 下单个文件(>1.5MB 截断并标 `truncated`).
+- **`POST /api/projects/:id/file`** — 覆盖保存已存在文件(不新建). Body `{ "path": "<rel>", "content": "<≤5MB>" }`.
+- **`POST /api/projects/:id/import-zip`** — 上传 zip/tar 解压导入 `bind_path`(`multipart` 字段 `file`). 需 `canManage`.
+- **`POST /api/projects/:id/files/move`** — 移动. Body `{ "sourcePath": "/a/x", "targetDir": "/b" }`.
+- **`POST /api/projects/:id/files/mkdir`** — 建目录. Body `{ "parentPath"?: "/", "name": "<新目录名>" }`.
+- **`POST /api/projects/:id/files/create`** — 建空文件(已存在返回 409). Body `{ "parentPath"?: "/", "name": "<新文件名>" }`.
+  > 文件写操作同名冲突统一返回 409 `{ error, code: "CONFLICT" }`, 不静默覆盖; 均防路径穿越与符号链接.
+
+端口转发(读只需读权限, 写端口需可写 + bind_path):
+
+- **`GET /api/projects/:id/main-project-port`** — 读项目主端口 `{ port, valid, exists }`.
+- **`POST /api/projects/:id/main-project-port`** — 保存主端口. Body `{ "port": <1–65535> }`.
+- **`GET /api/projects/:id/ssh-forward-config`** — SSH 端口转发配置(读环境变量与私钥, 返回 `enabled/host/port/user/private_key`).
+
 ### 2.5 任务单 `/api/issues` 与 `/api/projects/:projectId/issues`
 
 项目维度(`/api/projects/:projectId/issues`):
@@ -385,6 +479,34 @@ Issue 维度(`/api/issues`):
   ```bash
   curl -sS -X DELETE "${BASE}/api/issues/iss12345" \
     -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`GET /api/issues/:id/skills`** — Issue 视角可见的 skill 列表(用户级 ∪ 项目级), 含 `available` / `selected` / `excluded` / `effective`.
+  ```bash
+  curl -sS "${BASE}/api/issues/iss12345/skills" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`GET /api/issues/:id/knowledge/content`** — 读 Issue 级任务知识文件内容(项目须有 bind_path; 不存在返回 `{ ok, content:'', exists:false }`).
+  ```bash
+  curl -sS "${BASE}/api/issues/iss12345/knowledge/content" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`POST /api/issues/:id/knowledge/upload`** — 写入/覆盖 Issue 级任务知识. Body `{ "content": "<正文, 去空格后非空>" }`. 需 `canManageIssue`.
+  ```bash
+  curl -sS -X POST "${BASE}/api/issues/iss12345/knowledge/upload" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -d '{"content":"# 任务知识\n\n本 issue 要修复 ..."}'
+  ```
+
+- **`PATCH /api/issues/:id/star`** — 当前用户对该 issue 的个人收藏(区别于项目级 `pinned`). Body `{ "starred": true|false }`.
+  ```bash
+  curl -sS -X PATCH "${BASE}/api/issues/iss12345/star" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -d '{"starred":true}'
   ```
 
 ### 2.6 Research `/api/researches` 与 `/api/projects/:projectId/researches`
@@ -658,6 +780,44 @@ Issue 维度(`/api/issues/:issueId/sessions`):
     }'
   ```
 
+- **`GET /api/sessions/default-model`** — 系统级全局默认模型偏好 key(未设置时 `model: null`).
+  ```bash
+  curl -sS "${BASE}/api/sessions/default-model" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`PATCH /api/sessions/:id/model`** — 原地更换会话模型(模型被删导致只读时, "更换模型并继续"用此). Body `{ "model": "<新模型 key>" }`. 旧 agent 活跃则先 close.
+  ```bash
+  curl -sS -X PATCH "${BASE}/api/sessions/ses12345/model" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -d '{"model":"codex"}'
+  ```
+
+- **`POST /api/sessions/:id/predicted-next-questions`** — 基于 session 历史预测用户可能追问的问题. 返回 `{ session_id, questions, meta }`.
+  ```bash
+  curl -sS -X POST "${BASE}/api/sessions/ses12345/predicted-next-questions" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`GET /api/sessions/:id/features/files`** — 从 session JSONL 抽取"文件修改"特征清单.
+
+- **`GET /api/sessions/:id/features/bash`** — 抽取 Bash/shell 命令特征(按时间顺序).
+
+- **`GET /api/sessions/:id/features/git-diff?file=<路径>`** — 按文件特征清单限定路径读 git diff(无 diff 回退文件内容); `file` 不在清单内则 400.
+  ```bash
+  curl -sS "${BASE}/api/sessions/ses12345/features/git-diff?file=src/foo.ts" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`POST /api/sessions/:id/emphasize`** — 进行中临时把某个 skill/memory "再喂一遍"给 agent. Body `{ "kind": "skill|memory", "id": "<id>" }`.
+  ```bash
+  curl -sS -X POST "${BASE}/api/sessions/ses12345/emphasize" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -d '{"kind":"memory","id":"mem-uuid-1"}'
+  ```
+
 ### 2.8 历史任务 `/api/tasks`(v1 旧接口)
 
 - **`GET /api/tasks`** — 当前用户全部历史 task 列表(已迁移到 v2 sessions, 仅兼容保留).
@@ -721,6 +881,12 @@ Issue 维度(`/api/issues/:issueId/sessions`):
 - **`GET /api/tasks/:id/risk`** — task 风险等级(无 auth, 给 wrapper/hooks 调用).
   ```bash
   curl -sS "${BASE}/api/tasks/old12345/risk"
+  ```
+
+- **`GET /api/tasks/recent?limit=<n>`** — 当前用户最近活跃的 session/任务列表(`limit` 默认 12, 钳到 1–50).
+  ```bash
+  curl -sS "${BASE}/api/tasks/recent?limit=20" \
+    -H "Authorization: Bearer ${TOKEN}"
   ```
 
 ### 2.9 消息 `/api/messages`
@@ -1039,6 +1205,28 @@ Issue 维度(`/api/issues/:issueId/sessions`):
     -d '{"scope":"user"}'
   ```
 
+- **`POST /api/memories/import-file`**(用户级) — 上传单个 `.md` 文件创建用户级 Memory. 支持 `multipart/form-data`(字段 `file`)或 JSON `{ "content": "...", "filename": "..." }` 两种入参.
+
+项目级补充(`/api/projects/:projectId/memories`):
+
+- **`POST /api/projects/:projectId/memories/aimux-remote-inventory`** — 用选中的 aimux remote 生成项目级"远程算力清单" Memory(会替换旧清单). Body `{ "selected_names": ["..."], "remote_paths": { "<name>": "<path>" }, "hardware_by_name": { ... }, "markdown": "..." }`. 需 `canManageProject`.
+
+- **`GET /api/projects/:projectId/memories/project-knowledge/lock`** — 查项目规划写入锁状态 `{ locked, locked_at }`(Agent 写 `project_knowledge.md` 前会建 `.planning_lock`).
+
+- **`GET /api/projects/:projectId/memories/project-knowledge/content`** — 读当前 `project_knowledge.md` 正文(规划编辑器初始化用; 不存在返回 `{ content:'', exists:false }`).
+
+- **`GET /api/projects/:projectId/memories/project-knowledge/history`** — 列项目知识历史快照(按时间倒序, 保留最近 30 份).
+
+- **`GET /api/projects/:projectId/memories/project-knowledge/history/:filename`** — 读单个历史快照内容(供 diff/查看).
+
+- **`POST /api/projects/:projectId/memories/project-knowledge/restore`** — 把指定历史快照回滚覆盖当前 `project_knowledge.md` 再同步 Memory(覆盖前先对当前内容做一次快照备份). Body `{ "filename": "<快照文件名>" }`.
+  ```bash
+  curl -sS -X POST "${BASE}/api/projects/abc12345/memories/project-knowledge/restore" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -d '{"filename":"20260801-120000.md"}'
+  ```
+
 ### 2.12 小莫助理 `/api/assistant`
 
 > 这套是小莫问答入口, 不是被 assistant 直接读 Skill 的 Skill 列表. 详细见 `SKILL.md`.
@@ -1118,6 +1306,28 @@ Issue 维度(`/api/issues/:issueId/sessions`):
         "auth": {"user_id":"alice","display_name":"alice","role":"user"}
       }
     }'
+  ```
+
+- **`POST /api/assistant/transcribe`** — 语音转文字(ASR). `multipart/form-data` 字段 `audio`(单文件 ≤25MB). 返回 `{ ok, text, alternatives, request_id }`.
+  ```bash
+  curl -sS -X POST "${BASE}/api/assistant/transcribe" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -F "audio=@/path/to/voice.wav"
+  ```
+
+- **`GET /api/assistant/tts/voices`** — 列出可用 TTS 音色. 返回 `{ ok, default_voice, voices, configured }`(豆包凭据未配时 `configured:false` 且 `voices:[]`).
+  ```bash
+  curl -sS "${BASE}/api/assistant/tts/voices" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`POST /api/assistant/speak`** — 文字转语音, 直接返回二进制 audio 字节(带 `Content-Type` / `X-Mobius-TTS-*` 头). Body `{ "text": "<必填, 去空格后非空>", "voice"?: "<音色 id>" }`.
+  ```bash
+  curl -sS -X POST "${BASE}/api/assistant/speak" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -d '{"text":"你好, 这是语音播报","voice":"zh_female_vv_uranus_bigtts"}' \
+    -o speak.mp3
   ```
 
 ### 2.13 管理员 `/api/admin`
@@ -1229,20 +1439,6 @@ Issue 维度(`/api/issues/:issueId/sessions`):
     -H "Authorization: Bearer ${TOKEN}"
   ```
 
-- **`GET /api/admin/settings/agent-defaults`** — Agent backend `use_proxy` 默认.
-  ```bash
-  curl -sS "${BASE}/api/admin/settings/agent-defaults" \
-    -H "Authorization: Bearer ${TOKEN}"
-  ```
-
-- **`PUT /api/admin/settings/agent-defaults`** — 设默认值. Body: `{ "backend": "tmux-codex|tmux-claude-code", "useProxy": true|false }`.
-  ```bash
-  curl -sS -X PUT "${BASE}/api/admin/settings/agent-defaults" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -d '{"backend":"tmux-codex","useProxy":true}'
-  ```
-
 - **`GET /api/admin/settings/model-prompt-limits`** — 每用户/每模型 5h 动态窗口提问限额.
   ```bash
   curl -sS "${BASE}/api/admin/settings/model-prompt-limits" \
@@ -1325,6 +1521,52 @@ Issue 维度(`/api/issues/:issueId/sessions`):
     }'
   ```
 
+- **`PUT /api/admin/settings/global-default-model`** — 设置全局默认模型(空串/null 清除, 恢复系统内置启发式). Body `{ "model": "<key>|''|null" }`. 非空值必须是当前可用模型, 否则 400.
+  ```bash
+  curl -sS -X PUT "${BASE}/api/admin/settings/global-default-model" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -d '{"model":"codex"}'
+  ```
+
+- **`PUT /api/admin/settings/model-display-order`** — 设置模型在新建 Session 选择器里的显示顺序. Body `{ "order": ["<key>", ...] }`(也兼容旧字段 `model_order`; 仅保留当前可用模型的 key).
+
+- **`GET /api/admin/settings/auto-generate-session-title`** / **`PUT /api/admin/settings/auto-generate-session-title`** — 查询/设置"自动生成 Session 标题"开关; PUT Body `{ "enabled": true|false }`.
+
+- **`GET /api/admin/settings/admin-assistant-callbacks`** / **`PUT /api/admin/settings/admin-assistant-callbacks`** — 当前管理员是否接收全站 Session 完成/失败回调; PUT Body `{ "enabled": true|false }`.
+
+豆包语音/ASR 凭证(`/api/admin/settings/doubao-voice`):
+
+- **`GET /api/admin/settings/doubao-voice`** — 读豆包 ASR/TTS 凭证(脱敏).
+- **`GET /api/admin/settings/doubao-voice/reveal`** — 读明文(不脱敏, 写 reveal 审计).
+- **`PUT /api/admin/settings/doubao-voice/asr`** / **`PUT /api/admin/settings/doubao-voice/tts`** — 更新 ASR / TTS 凭证(整个 body 透传给 service 层).
+- **`POST /api/admin/settings/doubao-voice/test`** — 用 body 里的**临时凭证**测连通性(不落盘). Body `{ "service": "asr|tts", "appId": "...", "accessToken": "...", "resourceId"?: "...", "endpoint": "<wss/https>", "voiceType"?: "<TTS 用>" }`.
+
+特殊轻模型 API(`/api/admin/settings/light-model-api`, 仅架构师用):
+
+- **`GET /api/admin/settings/light-model-api`** / **`GET .../reveal`** — 读配置(脱敏/明文).
+- **`PUT /api/admin/settings/light-model-api`** — 更新配置(整个 body 透传).
+- **`POST /api/admin/settings/light-model-api/test`** — 用**已存配置** + body 里临时 `model` 测连通. Body `{ "model": "<key>" }`.
+
+文字隐藏 / 代理配置 / 审计:
+
+- **`GET /api/admin/text-redaction/global`**(普通 `auth`, 全员可读) / **`PUT /api/admin/text-redaction/global`**(`adminAuth`) — 全员强制文字替换隐藏规则; PUT Body `{ "rules": [...] }`.
+- **`GET /api/admin/settings/proxy-files`** / **`PUT /api/admin/settings/proxy-files`** — 读/写两个 proxychains 配置(`/etc/proxychains.conf`、`~/proxy_claude.conf`); PUT Body `{ "system"?: "...", "model"?: "..." }`(≤256KB, 禁 NUL).
+- **`GET /api/admin/audit-log?limit=<n>&offset=<n>`** — 管理员审计日志(分页); `/api/admin/admin-audit-log` 是等价别名.
+
+用户组项目可见性:
+
+- **`GET /api/admin/user-groups/:id/project-visibility`** — 取某群组的项目可见性 `{ mode, visible_project_ids[], candidates[] }`.
+- **`PUT /api/admin/user-groups/:id/project-visibility`** — 设可见性. Body `{ "mode": "default|restricted", "visible_project_ids": ["..."] }`.
+
+Codex 模型接入(`/api/admin/model-access/codex`, 与已记录的 claude-code 完全对称):
+
+- **`GET /api/admin/model-access/codex`** — 全部 Codex 模型接入(不含 TOML 明文).
+- **`POST /api/admin/model-access/codex`** — 新增一条(整个 body 透传).
+- **`GET /api/admin/model-access/codex/:key`** — 单条详情(含 TOML).
+- **`PUT /api/admin/model-access/codex/:key`** — 按 key 改.
+- **`DELETE /api/admin/model-access/codex/:key`** — 删(`key === 'mobiusdefault'` 拒绝; 有 session 引用不阻断, 返回 `affected_session_count`).
+
 ### 2.14 远端算力 `/api/aimux`
 
 - **`GET /api/aimux/remotes`** — 列出已配置 aimux remote.
@@ -1371,98 +1613,70 @@ Issue 维度(`/api/issues/:issueId/sessions`):
     }'
   ```
 
-### 2.15 集成队列 / 冲突 `/api/...` (integration)
+### 2.15 会话与群聊 `/api/conversations`
 
-Session 维度(`/api/sessions/:id/changes/...`):
+> Mobius 的"聊天"子系统: 支持 1v1 私聊和多人/多 agent 群聊. 发群消息时可 @ 群内的 agent(小莫/分身), 后端会用该 agent owner 身份触发任务并把回复回写群聊.
 
-- **`GET /api/sessions/:id/changes`** — Session 变更扫描结果.
+- **`GET /api/conversations`** — 当前用户的会话列表(按最近活跃排序).
   ```bash
-  curl -sS "${BASE}/api/sessions/ses12345/changes" \
+  curl -sS "${BASE}/api/conversations" \
     -H "Authorization: Bearer ${TOKEN}"
   ```
 
-- **`POST /api/sessions/:id/changes/scan`** — 重新扫描. Body: `{ "files": [<可选, 显式文件列表>] }`.
+- **`POST /api/conversations`** — 建群, 当前用户自动作为 owner 加入. Body `{ "name"?: "<群名, 可空>", "members"?: [{ "type": "user|agent", "id": "<id>", "display_name"?: "...", "agent_session_id"?: "..." }] }`. 返回 `{ id, name }`.
   ```bash
-  curl -sS -X POST "${BASE}/api/sessions/ses12345/changes/scan" \
+  curl -sS -X POST "${BASE}/api/conversations" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${TOKEN}" \
-    -d '{"files":["src/foo.ts","src/bar.ts"]}'
+    -d '{"name":"项目讨论","members":[{"type":"user","id":"alice"},{"type":"agent","id":"<agent-id>","agent_session_id":"<sid>"}]}'
   ```
 
-- **`POST /api/sessions/:id/changes/check`** — 阻塞冲突检查(写审计). Body 同上.
+- **`POST /api/conversations/direct`** — 发起或复用与某用户的 1v1 私聊. Body `{ "member_id": "<对方用户 id>" }`(不能为空、不能是自己).
   ```bash
-  curl -sS -X POST "${BASE}/api/sessions/ses12345/changes/check" \
+  curl -sS -X POST "${BASE}/api/conversations/direct" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${TOKEN}" \
-    -d '{"files":[]}'
+    -d '{"member_id":"alice"}'
   ```
 
-Issue 维度(`/api/issues/:id/integration/...`):
-
-- **`GET /api/issues/:id/integration`** — Issue 集成态 + 关联 Session 变更.
+- **`GET /api/conversations/:id`** — 会话详情 + 成员列表(含在线状态, 仅成员可见; 命中后顺带把该用户未读标为已读).
   ```bash
-  curl -sS "${BASE}/api/issues/iss12345/integration" \
+  curl -sS "${BASE}/api/conversations/conv12345" \
     -H "Authorization: Bearer ${TOKEN}"
   ```
 
-- **`POST /api/issues/:id/integration/check`** — 重新扫所有 active session 并刷新 Issue 集成态.
+- **`POST /api/conversations/:id/members`** — 邀请单个成员进群(任意成员均可操作). Body `{ "type": "user|agent", "id": "<id>", "display_name"?: "...", "agent_session_id"?: "..." }`.
   ```bash
-  curl -sS -X POST "${BASE}/api/issues/iss12345/integration/check" \
+  curl -sS -X POST "${BASE}/api/conversations/conv12345/members" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -d '{"type":"user","id":"bob"}'
+  ```
+
+- **`DELETE /api/conversations/:id`** — 删除/退出会话: owner = 解散整群(`{ ok, dissolved: true }`); 非 owner = 仅自己退出(`{ ok, removed: 1 }`).
+  ```bash
+  curl -sS -X DELETE "${BASE}/api/conversations/conv12345" \
     -H "Authorization: Bearer ${TOKEN}"
   ```
 
-- **`POST /api/issues/:id/integration/accept`** — 验收. Body: `{ "release_note": "<可选, 字符串>" }`.
+- **`DELETE /api/conversations/:id/members/:memberType/:memberId`** — 退群 / 移除成员. 路径参数 `memberType` = `user|agent`, `memberId` = 成员 id. 退自己随时; 群主自退会 400(需先转让/解散); 踢别人需相应权限(非群主只能移除"自己名下的 agent").
   ```bash
-  curl -sS -X POST "${BASE}/api/issues/iss12345/integration/accept" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -d '{"release_note":"本次集成修复了 ... "}'
-  ```
-
-- **`POST /api/issues/:id/integration/enqueue`** — 入队(管理员执行集成时使用).
-  ```bash
-  curl -sS -X POST "${BASE}/api/issues/iss12345/integration/enqueue" \
+  curl -sS -X DELETE "${BASE}/api/conversations/conv12345/members/user/bob" \
     -H "Authorization: Bearer ${TOKEN}"
   ```
 
-项目维度(`/api/projects/:id/integration-queue/...`):
-
-- **`GET /api/projects/:id/integration-queue`** — 项目集成队列 + 指标 + 已排队的 Issue.
+- **`POST /api/conversations/:id/messages`** — 发群消息(真人发送, 可选 @agent). Body `{ "content": "<消息文本, trim 后非空, ≤8000 字>", "mentions"?: [{ "type": "agent", "id": "<群内 agent id>", ... }] }`. 后端 fire-and-forget: ① 给离线真人成员远程推送(deepLink `momo://group/<id>`); ② 若 mentions 含群内 agent, 用其 owner 身份执行任务并把回复回写群聊.
   ```bash
-  curl -sS "${BASE}/api/projects/abc12345/integration-queue" \
+  curl -sS -X POST "${BASE}/api/conversations/conv12345/messages" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -d '{"content":"@小莫 帮我看一下 README","mentions":[{"type":"agent","id":"<agent-id>"}]}'
+  ```
+
+- **`GET /api/conversations/:id/events`** — 群消息 SSE 流: 首包 `history`(回灌最近 50 条) → `ready`({ last_id }) → 有新消息时发 `message`(单条); 每 25s 发一次 `keepalive`. 鉴权支持 `Authorization` 头或 `?token=` query.
+  ```bash
+  curl -N "${BASE}/api/conversations/conv12345/events" \
     -H "Authorization: Bearer ${TOKEN}"
-  ```
-
-- **`POST /api/projects/:id/integration-queue/reorder`** — 调顺序(管理员). Body: `{ "issue_ids": ["<id1>", "<id2>", ...] }`.
-  ```bash
-  curl -sS -X POST "${BASE}/api/projects/abc12345/integration-queue/reorder" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -d '{"issue_ids":["iss12345","iss67890"]}'
-  ```
-
-- **`POST /api/projects/:id/integration-queue/run`** — 跑队列(管理员). Body: `{ "issue_ids": [<可选, 空表示全部已排队的>] }`.
-  ```bash
-  curl -sS -X POST "${BASE}/api/projects/abc12345/integration-queue/run" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -d '{"issue_ids":[]}'
-  ```
-
-冲突(`/api/conflicts/...`):
-
-- **`GET /api/conflicts?project_id=<项目 id>`** — 项目冲突列表.
-  ```bash
-  curl -sS "${BASE}/api/conflicts?project_id=abc12345" \
-    -H "Authorization: Bearer ${TOKEN}"
-  ```
-
-- **`PATCH /api/conflicts/:id`** — 改冲突状态(管理员). Body: `{ "status": "open|resolved|ignored", "resolution_note": "<可选, 字符串>" }`.
-  ```bash
-  curl -sS -X PATCH "${BASE}/api/conflicts/conf-uuid-1" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -d '{"status":"resolved","resolution_note":"已合并另一分支"}'
   ```
 
 ### 2.16 拓展 `/api/extensions` 与 `/api/ext`
@@ -1545,6 +1759,23 @@ Issue 维度(`/api/issues/:id/integration/...`):
     -H "Authorization: Bearer ${TOKEN}"
   ```
 
+- **`POST /api/extensions/:name/upload`** — 拓展通用文件上传, 存到该拓展 `data_dir/users/<user>/uploads/`. `multipart` 字段 `file`(单文件, 上限由 `MOBIUS_EXT_UPLOAD_MAX_MB` 控制, 默认 50MB). 返回 `{ ok, file: { path, name, stored_name, size, mime_type } }`.
+  ```bash
+  curl -sS -X POST "${BASE}/api/extensions/finance-news-wall/upload" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -F "file=@/path/to/data.csv"
+  ```
+
+- **`GET /api/extensions/:name/user-asset/<相对路径>`** — 当前用户读自己在该拓展用户目录下的媒体文件(`<img>`/`<video>` 直链, 鉴权走 `Authorization` 头或 `?token=` query; 扩展名白名单, 支持 Range/ETag).
+
+- **`GET /api/extensions/:name/shared-asset/<相对路径>`** — 任意登录用户读该拓展的共享公共资产(`shared/` 区, 同上鉴权与白名单).
+
+- **`POST /api/extensions/_admin/hidden/:projectId/:userId/purge`** — 管理员: 清空某用户在某拓展项目上的全部数据(即原"拓展 purge"能力的真实路径). 返回删除统计.
+  ```bash
+  curl -sS -X POST "${BASE}/api/extensions/_admin/hidden/proj12345/alice/purge" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
 ### 2.17 code-server 反代 `/code-server` 与 `/api/admin/code-server`
 
 - **`GET /code-server/:userId__:projectId/`** — VSCode Web 编辑器, 走反代 + JWT. 首次 navigate 需要把 token 当 `?_jwt=<token>` 拼上, 后端会种 `cc_cs_jwt` cookie 并 302 跳转.
@@ -1557,6 +1788,28 @@ Issue 维度(`/api/issues/:id/integration/...`):
   curl -sS "${BASE}/api/admin/code-server/list" \
     -H "Authorization: Bearer ${TOKEN}"
   ```
+
+### 2.18 用户列表 / 全局搜索 / 个人偏好
+
+- **`GET /api/users?q=<关键字>&page=<n>&pageSize=<n>`** — 全部已注册用户(脱敏 `{id, display_name, role}`, 当前用户排第一, 支持搜索 + 分页). 供群聊邀请成员首屏. 返回 `{ users, page, pageSize, total }`.
+  ```bash
+  curl -sS "${BASE}/api/users?q=ali&page=1&pageSize=50" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`GET /api/search?q=<关键词>`** — **全局会话正文搜索**(网页"搜索会话"能力). 扫描候选 session 的 JSONL, 返回命中 session + 命中片段. Query: `q`(必填, 2–200 字符) / `case=1`(大小写敏感) / `word=1`(全字匹配) / `stream=1`(SSE 流式: `start → result* → done`, 否则一次 JSON) / `project_id` / `range`(1d|7d 默认|30d|all, 按 session 创建时间收窄候选) / `candidates`(1–600, 默认 200) / `limit`(1–100, 默认 50) / `max_fragments`(1–5, 默认 3).
+  ```bash
+  # 一次性 JSON
+  curl -sS "${BASE}/api/search?q=deploy-version" \
+    -H "Authorization: Bearer ${TOKEN}"
+  # 流式, 限定项目 + 30 天
+  curl -N "${BASE}/api/search?q=README&project_id=abc12345&stream=1&range=30d" \
+    -H "Authorization: Bearer ${TOKEN}"
+  ```
+
+- **`GET /api/profile/tour-first-login-seen`** / **`POST /api/profile/tour-first-login-seen`** — 查询/标记当前用户是否已看过首登引导. 返回 `{ seen: boolean }`.
+
+- **`GET /api/profile/scene-seen/:scene`** / **`POST /api/profile/scene-seen/:scene`** — 查询/标记某场景的首触引导; `:scene` 白名单 `admin-center / research-page / session-page / self-cognition`.
 
 ---
 

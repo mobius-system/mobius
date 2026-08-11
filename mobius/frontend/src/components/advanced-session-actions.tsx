@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { BookOpen, Brain, Clock, Cpu, FileDiff, History, Loader2, Network, Puzzle, RotateCcw, Share2, Terminal, Wand2 } from 'lucide-react'
+=======
+import { BookOpen, Brain, Clock, Cpu, FileDiff, GitBranch, History, Loader2, Network, Puzzle, RotateCcw, Share2, Terminal, Wand2 } from 'lucide-react'
+>>>>>>> gitlab-mobius/main
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { ProjectPortEntryButton } from './project-files'
 
@@ -26,6 +30,7 @@ type AdvancedSessionActionsProps = {
   onContinueWithModel: () => void
   onOpenSkill: () => void
   onOpenMemory: () => void
+  onOpenGit: () => void
 }
 
 /**
@@ -58,6 +63,7 @@ export function AdvancedSessionActions({
   onContinueWithModel,
   onOpenSkill,
   onOpenMemory,
+  onOpenGit,
 }: AdvancedSessionActionsProps) {
   const compact = variant === 'compact'
   const hasSession = !!sessionId
@@ -179,7 +185,7 @@ export function AdvancedSessionActions({
       <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
 
       {compact && (
-        <div className="grid grid-cols-2 items-stretch gap-2">
+        <div className="grid grid-cols-3 items-stretch gap-2">
           <AdvancedInteractionBtn
             onClick={onOpenSkill}
             disabled={!hasSession}
@@ -205,6 +211,20 @@ export function AdvancedSessionActions({
               <>
                 <Brain className="h-4 w-4" strokeWidth={1.9} />
                 <span className="text-[11px] font-medium leading-none">Memory</span>
+              </>
+            )}
+          />
+          <AdvancedInteractionBtn
+            onClick={onOpenGit}
+            disabled={!hasSession || !projectId}
+            label="Git"
+            tooltip="查看当前项目 Git 仓库"
+            accent="amber"
+            iconClassName="h-4 w-auto gap-1.5"
+            icon={(
+              <>
+                <GitBranch className="h-4 w-4" strokeWidth={1.9} />
+                <span className="text-[11px] font-medium leading-none">Git</span>
               </>
             )}
           />

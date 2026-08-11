@@ -12,7 +12,7 @@
 import React, { useEffect, useState } from 'react'
 import { Box, Text } from 'ink'
 import { MobiusClient, getMe, login, ApiError } from './api.js'
-import { loadLogin, saveLogin, type LoginRecord } from './config.js'
+import { clearLogin, loadLogin, saveLogin, type LoginRecord } from './config.js'
 import { LoginScreen } from './components/Login.js'
 import { PrepScreen, type ReadyState } from './components/PrepScreen.js'
 import { ChatScreen } from './components/Chat.js'
@@ -21,10 +21,16 @@ import { ResumePicker } from './components/ResumePicker.js'
 import { Screen } from './components/Screen.js'
 import { startAimuxConnection, stopAimuxConnection, type AimuxStatus } from './aimux.js'
 import { AimuxStatusLine } from './components/AimuxStatus.js'
+import { bufferUnclaimedInput, useStableInput } from './components/primitives.js'
 
 type Route = 'boot' | 'login' | 'prep' | 'chat' | 'resume'
 
 export function App() {
+  // Keep stdin raw mode alive across route transitions. Without a persistent
+  // owner, Ink can briefly drop raw mode between an async picker unmount and
+  // the next Chat/Select mount, making the first arrows or typed characters
+  // appear ignored until a later key causes another render.
+  useStableInput(bufferUnclaimedInput, { interactive: false })
   const [route, setRoute] = useState<Route>('boot')
   const [bootMsg, setBootMsg] = useState('初始化…')
   const [client, setClient] = useState<MobiusClient | null>(null)
@@ -121,6 +127,7 @@ export function App() {
     setRoute('chat')
   }
 
+<<<<<<< HEAD
   // /model (= /config): swap task+model and start a brand-new session. App owns
   // `ready`, so it folds the ConfigFlow result in and remounts Chat on the fresh
   // session (resumeSessionId = the eagerly created session).
@@ -128,6 +135,16 @@ export function App() {
     if (!ready || !client) return
     if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] reconfigure', result.issue.id, result.prefs.model, result.sessionId)
     setReady({ project: ready.project, issue: result.issue, prefs: result.prefs })
+=======
+  // /model or /config: swap task+model (and optionally project for /config)
+  // and start a brand-new session. App owns `ready`, so it folds the result in
+  // and remounts Chat on the fresh session (resumeSessionId = the eagerly
+  // created session).
+  function onReconfigure(result: ConfigResult) {
+    if (!ready || !client) return
+    if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] reconfigure', result.project?.id, result.issue.id, result.prefs.model, result.sessionId)
+    setReady({ project: result.project || ready.project, issue: result.issue, prefs: result.prefs })
+>>>>>>> gitlab-mobius/main
     setResumeSessionId(result.sessionId)
     setChatKey(k => k + 1)
     setRoute('chat')
@@ -141,6 +158,21 @@ export function App() {
 
   function onQuit() {
     void stopAimuxConnection().finally(() => process.exit(0))
+  }
+
+  async function onLogout() {
+    if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] logout')
+    try {
+      await clearLogin()
+      await stopAimuxConnection()
+    } finally {
+      setClient(null)
+      setUserId(null)
+      setReady(null)
+      setResumeSessionId(null)
+      setAimuxStatus({ state: 'stopped', phase: 'idle', detail: '登录后自动连接' })
+      setRoute('login')
+    }
   }
 
   // ── render ─────────────────────────────────────────────────────────────────
@@ -161,6 +193,10 @@ export function App() {
         onClear={onClear}
         onResume={onResume}
         onQuit={onQuit}
+<<<<<<< HEAD
+=======
+        onLogout={() => { void onLogout() }}
+>>>>>>> gitlab-mobius/main
         onReconfigure={onReconfigure}
         onConfigCancel={onConfigCancel}
         aimuxStatus={aimuxStatus}
@@ -171,7 +207,7 @@ export function App() {
   if (route === 'boot') {
     node = <Box paddingX={2} paddingY={1}><Text color="cyan">{bootMsg}</Text></Box>
   } else if (route === 'login' || !client) {
-    node = <LoginScreen onSuccess={onLoginSuccess} />
+    node = <LoginScreen onSuccess={onLoginSuccess} initialServer={prefill.server} initialUsername={prefill.username} />
   } else if (route === 'resume' && ready) {
     node = <Box flexDirection="column"><AimuxStatusLine status={aimuxStatus} compact /><ResumePicker client={client} project={ready.project} onPick={onResumed} onBack={() => setRoute('chat')} /></Box>
   } else {

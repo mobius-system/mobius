@@ -6,9 +6,9 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const VISUAL_MODES = Object.freeze(['final', 'noPost', 'silhouette', 'material', 'emissive', 'vfx', 'bounds']);
 const QUALITY_PRESETS = Object.freeze({
-  low: { maxDpr: 1, pixelBudget: 720000, bloom: false, roleProps: true, vfxScale: 0.62 },
-  balanced: { maxDpr: 1.3, pixelBudget: 1250000, bloom: true, roleProps: true, vfxScale: 0.82 },
-  high: { maxDpr: 1.6, pixelBudget: 1850000, bloom: true, roleProps: true, vfxScale: 1 },
+  low: { maxDpr: 1.25, pixelBudget: 1100000, bloom: false, roleProps: true, vfxScale: 0.62 },
+  balanced: { maxDpr: 1.5, pixelBudget: 2200000, bloom: true, roleProps: true, vfxScale: 0.82 },
+  high: { maxDpr: 2, pixelBudget: 4200000, bloom: true, roleProps: true, vfxScale: 1 },
 });
 
 const ROLE_PROPS = Object.freeze({
@@ -81,39 +81,117 @@ function makeChamferedPanelGeometry(width, height, depth, cut = 0.16) {
   return geometry;
 }
 
-function makeRoleTexture(config) {
+function makeRoleTexture(config, themeId = 'zombie') {
   const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
+  canvas.width = 512;
+  canvas.height = 512;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, 256, 256);
-  const gradient = ctx.createRadialGradient(128, 116, 8, 128, 116, 112);
-  gradient.addColorStop(0, 'rgba(255,255,255,.22)');
-  gradient.addColorStop(0.58, `${config.color}42`);
+  ctx.scale(1.6, 1.6);
+  const isDeadline = themeId === 'deadline';
+  const accent = config.color;
+  const panel = isDeadline ? '#122343' : '#112922';
+  const panelDeep = isDeadline ? '#071326' : '#071914';
+  const secondary = isDeadline ? '#8fdcff' : '#baff8b';
+  const gradient = ctx.createRadialGradient(160, 136, 8, 160, 136, 142);
+  gradient.addColorStop(0, isDeadline ? 'rgba(159,222,255,.28)' : 'rgba(204,255,151,.25)');
+  gradient.addColorStop(0.56, `${accent}45`);
   gradient.addColorStop(1, 'rgba(3,8,15,0)');
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 256, 256);
-  ctx.beginPath();
-  ctx.arc(128, 112, 70, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(4,12,21,.86)';
-  ctx.fill();
-  ctx.lineWidth = 8;
-  ctx.strokeStyle = config.color;
-  ctx.shadowColor = config.color;
-  ctx.shadowBlur = 20;
-  ctx.stroke();
+  ctx.fillRect(0, 0, 320, 320);
+
+  // A sticker-like identity plate survives the tiny in-game scale better than
+  // a floating text label. The face/expression stays comic, while the accent
+  // and footer remain semantic for the role.
+  const plate = new Path2D();
+  plate.moveTo(36, 28);
+  plate.lineTo(284, 28);
+  plate.quadraticCurveTo(300, 28, 300, 44);
+  plate.lineTo(300, 252);
+  plate.quadraticCurveTo(300, 270, 282, 270);
+  plate.lineTo(38, 270);
+  plate.quadraticCurveTo(20, 270, 20, 252);
+  plate.lineTo(20, 46);
+  plate.quadraticCurveTo(20, 28, 36, 28);
+  plate.closePath();
+  ctx.fillStyle = panel;
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 6;
+  ctx.shadowColor = `${accent}99`;
+  ctx.shadowBlur = 18;
+  ctx.fill(plate);
+  ctx.stroke(plate);
   ctx.shadowBlur = 0;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const compact = config.glyph.length >= 3;
-  ctx.font = `1000 ${compact ? 50 : 74}px system-ui, "PingFang SC", sans-serif`;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(config.glyph, 128, 111);
-  ctx.fillStyle = config.color;
-  ctx.fillRect(52, 183, 152, 38);
-  ctx.font = '1000 25px system-ui, "PingFang SC", sans-serif';
+
+  ctx.fillStyle = panelDeep;
+  ctx.beginPath();
+  ctx.arc(160, 132, 84, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = `${accent}bb`;
+  ctx.stroke();
+
+  ctx.fillStyle = accent;
+  ctx.beginPath();
+  ctx.roundRect(102, 42, 116, 42, 13);
+  ctx.fill();
   ctx.fillStyle = '#07111f';
-  ctx.fillText(config.label, 128, 203);
+  ctx.textAlign = 'center';
+  ctx.font = `1000 ${config.glyph.length >= 3 ? 22 : 28}px system-ui, "PingFang SC", sans-serif`;
+  ctx.fillText(config.glyph, 160, 72);
+
+  const expression = config.glyph === '啊' || config.glyph === '99+' || config.glyph === '!' ? 'surprised' : config.glyph === '⌕' || config.glyph === '锁' ? 'focused' : config.glyph === '肉' || config.glyph === '改' ? 'smug' : 'goofy';
+  ctx.fillStyle = '#f7fbff';
+  ctx.strokeStyle = '#09121a';
+  ctx.lineWidth = 5;
+  if (expression === 'surprised') {
+    ctx.beginPath(); ctx.ellipse(125, 122, 13, 21, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(195, 122, 13, 21, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#101923'; ctx.beginPath(); ctx.arc(128, 125, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(192, 125, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff7891'; ctx.beginPath(); ctx.ellipse(160, 174, 15, 21, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  } else if (expression === 'focused') {
+    ctx.fillStyle = secondary;
+    ctx.fillRect(104, 112, 42, 21); ctx.fillRect(174, 112, 42, 21);
+    ctx.strokeRect(104, 112, 42, 21); ctx.strokeRect(174, 112, 42, 21);
+    ctx.beginPath(); ctx.moveTo(146, 121); ctx.lineTo(174, 121); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(128, 165); ctx.quadraticCurveTo(160, 181, 192, 165); ctx.stroke();
+  } else if (expression === 'smug') {
+    ctx.fillStyle = '#f7fbff';
+    ctx.beginPath(); ctx.arc(125, 121, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(195, 121, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#111b25'; ctx.beginPath(); ctx.arc(130, 119, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(190, 119, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(132, 171); ctx.quadraticCurveTo(164, 185, 198, 161); ctx.stroke();
+  } else {
+    ctx.fillStyle = '#f7fbff';
+    ctx.beginPath(); ctx.ellipse(124, 122, 18, 14, -0.18, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(196, 122, 18, 14, 0.18, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#111b25'; ctx.beginPath(); ctx.arc(128, 124, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(192, 124, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = secondary; ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.arc(160, 145, 36, 0.18, Math.PI - 0.18); ctx.stroke();
+  }
+
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(56, 58); ctx.lineTo(82, 45);
+  ctx.moveTo(264, 58); ctx.lineTo(238, 45);
+  ctx.stroke();
+  ctx.fillStyle = isDeadline ? '#71d9ff' : '#b8ff7f';
+  ctx.font = '1000 18px system-ui, "PingFang SC", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(isDeadline ? 'LIVE / 需求流' : 'LIVE / 尸潮流', 42, 298);
+  ctx.textAlign = 'right';
+  ctx.fillText(isDeadline ? '工单处理中' : '正在觅食', 278, 298);
+
+  ctx.fillStyle = accent;
+  ctx.fillRect(48, 214, 224, 40);
+  ctx.fillStyle = '#07111f';
+  ctx.textAlign = 'center';
+  const compact = config.glyph.length >= 3;
+  ctx.font = `1000 ${compact ? 26 : 29}px system-ui, "PingFang SC", sans-serif`;
+  ctx.fillText(config.label, 160, 242);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearFilter;
@@ -147,13 +225,13 @@ function buildZombieBase() {
   }
   const core = new THREE.Group();
   core.position.set(0, 1.6, 13.22);
-  const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.18, 1.55, 2.72, 10), armor);
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.18, 1.55, 2.72, 28, 3), armor);
   core.add(tower);
   const reactor = new THREE.Mesh(new THREE.IcosahedronGeometry(0.68, 2), makePbr(0xcffff3, 0.18, 0.08, 0x28b89b, 1.85));
   reactor.position.y = 0.24;
   core.add(reactor);
   const rings = [0, 1, 2].map((index) => {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.9 + index * 0.16, 0.045, 8, 40), glow.clone());
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.9 + index * 0.16, 0.045, 12, 64), glow.clone());
     ring.rotation.x = Math.PI / 2 + (index - 1) * 0.35;
     ring.position.y = 0.24;
     core.add(ring);
@@ -164,10 +242,10 @@ function buildZombieBase() {
   for (const side of [-1, 1]) {
     const pivot = new THREE.Group();
     pivot.position.set(side * 8.75, 0, 11.45);
-    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 3.7, 8), rust);
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 3.7, 20), rust);
     mast.position.y = 1.85;
     pivot.add(mast);
-    const head = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.38, 0.62, 10), armor);
+    const head = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.38, 0.62, 24, 2), armor);
     head.rotation.x = Math.PI / 2;
     head.position.set(0, 3.65, -0.2);
     pivot.add(head);
@@ -183,7 +261,7 @@ function buildZombieBase() {
   }
   for (const side of [-1, 1]) {
     for (let index = 0; index < 6; index += 1) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 1.35, 6), rust);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 1.35, 12), rust);
       post.position.set(side * (10.15 + (index % 2) * 0.18), 0.65, 8.6 - index * 2.4);
       post.rotation.z = side * 0.05;
       group.add(post);
@@ -262,8 +340,8 @@ function createRolePropSystem(worldGroup) {
   const geometry = new THREE.PlaneGeometry(0.78, 0.78);
   const meshes = new Map();
   for (const [roleId, config] of Object.entries(ROLE_PROPS)) {
-    const material = new THREE.MeshBasicMaterial({
-      map: makeRoleTexture(config),
+    const materials = Object.fromEntries(['zombie', 'deadline'].map((themeId) => [themeId, new THREE.MeshBasicMaterial({
+      map: makeRoleTexture(config, themeId),
       transparent: true,
       depthWrite: false,
       depthTest: true,
@@ -271,15 +349,16 @@ function createRolePropSystem(worldGroup) {
       fog: true,
       toneMapped: false,
       side: THREE.DoubleSide,
-    });
+    })]));
     const capacity = roleId === 'boss' ? 8 : 110;
-    const mesh = new THREE.InstancedMesh(geometry, material, capacity);
+    const mesh = new THREE.InstancedMesh(geometry, materials.zombie, capacity);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.count = 0;
     mesh.frustumCulled = false;
     mesh.renderOrder = 3;
     worldGroup.add(mesh);
-    meshes.set(roleId, { mesh, config, capacity });
+    mesh.material = materials.zombie;
+    meshes.set(roleId, { mesh, materials, config, capacity });
   }
   const dummy = new THREE.Object3D();
   return {
@@ -292,7 +371,9 @@ function createRolePropSystem(worldGroup) {
           const entry = meshes.get(enemy.roleId) || meshes.get(enemy.type === 'boss' ? 'boss' : '');
           if (!entry) continue;
           const important = enemy.type === 'boss' || enemy.type === 'elite' || enemy.type === 'tank';
-          if (!important && stableHash(enemy.id) % 3 !== 0) continue;
+          // Keep enough ordinary badges to make the crowd funny and readable,
+          // while still leaving silhouettes and projectiles visible.
+          if (!important && stableHash(enemy.id) % 2 !== 0) continue;
           const index = counts.get(enemy.roleId) || 0;
           if (index < entry.capacity) {
             const impact = clamp(enemy.impactPulse || 0, 0, 1);
@@ -305,7 +386,7 @@ function createRolePropSystem(worldGroup) {
               enemy.z - 0.08 - impact * 0.24,
             );
             dummy.rotation.set(-0.72, 0, stride * 0.08 + Math.sin(elapsed * entry.config.spin + enemy.wobble) * 0.08);
-            const baseScale = enemy.scale * (enemy.type === 'boss' ? 0.44 : 0.34) * (slowed ? 0.94 : 1) * (1 + impact * 0.18);
+            const baseScale = enemy.scale * (enemy.type === 'boss' ? 0.52 : 0.4) * (slowed ? 0.94 : 1) * (1 + impact * 0.18);
             dummy.scale.set(baseScale, baseScale, 1);
             dummy.updateMatrix();
             entry.mesh.setMatrixAt(index, dummy.matrix);
@@ -321,6 +402,10 @@ function createRolePropSystem(worldGroup) {
     setVisible(visible) {
       for (const entry of meshes.values()) entry.mesh.visible = visible;
     },
+    setTheme(themeId) {
+      const activeTheme = themeId === 'deadline' ? 'deadline' : 'zombie';
+      for (const entry of meshes.values()) entry.mesh.material = entry.materials[activeTheme];
+    },
     drawCalls() {
       return [...meshes.values()].filter((entry) => entry.mesh.visible && entry.mesh.count > 0).length;
     },
@@ -332,30 +417,33 @@ function createRolePropSystem(worldGroup) {
 
 function createBurstPool(worldGroup, capacity = 24) {
   const pool = [];
-  const coreGeometry = new THREE.IcosahedronGeometry(0.42, 1);
-  const ringGeometry = new THREE.TorusGeometry(0.36, 0.055, 7, 28);
-  const shardGeometry = new THREE.ConeGeometry(0.08, 0.62, 4);
+  const coreGeometry = new THREE.IcosahedronGeometry(0.42, 2);
+  const ringGeometry = new THREE.TorusGeometry(0.36, 0.055, 12, 48);
+  const flashGeometry = new THREE.SphereGeometry(0.3, 18, 12);
+  const shardGeometry = new THREE.ConeGeometry(0.08, 0.62, 7);
   const shardDummy = new THREE.Object3D();
   for (let index = 0; index < capacity; index += 1) {
     const group = new THREE.Group();
     const coreMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     const shellMaterial = coreMaterial.clone();
+    const flashMaterial = coreMaterial.clone();
     const core = new THREE.Mesh(coreGeometry, coreMaterial);
     const ring = new THREE.Mesh(ringGeometry, shellMaterial);
+    const flash = new THREE.Mesh(flashGeometry, flashMaterial);
     ring.rotation.x = Math.PI / 2;
-    group.add(core, ring);
+    group.add(flash, core, ring);
     const shards = new THREE.InstancedMesh(shardGeometry, shellMaterial, 7);
     shards.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     shards.count = 7;
     group.add(shards);
     group.visible = false;
     worldGroup.add(group);
-    pool.push({ group, core, ring, shards, coreMaterial, shellMaterial, active: false, age: 0, life: 0.5, power: 1, style: 'energy', sequence: index });
+    pool.push({ group, core, ring, flash, shards, coreMaterial, shellMaterial, flashMaterial, active: false, age: 0, life: 0.5, power: 1, style: 'energy', critical: false, heavy: false, sequence: index });
   }
   let cursor = 0;
   return {
     pool,
-    spawn({ x, y, z, color, power = 1, style = 'energy' }) {
+    spawn({ x, y, z, color, power = 1, style = 'energy', critical = false, heavy = false }) {
       const item = pool[cursor % pool.length];
       cursor += 1;
       item.active = true;
@@ -363,11 +451,14 @@ function createBurstPool(worldGroup, capacity = 24) {
       item.life = 0.42 + power * 0.11;
       item.power = power;
       item.style = style;
+      item.critical = critical;
+      item.heavy = heavy;
       item.group.visible = true;
       item.group.position.set(x, y, z);
       item.group.rotation.set(item.sequence * 0.61, item.sequence * 0.37, item.sequence * 0.23);
       item.coreMaterial.color.set(color);
       item.shellMaterial.color.set(style === 'digital' ? 0x62a8ff : color);
+      item.flashMaterial.color.set(critical ? 0xffffff : color);
       item.core.material.wireframe = style === 'digital';
       return item;
     },
@@ -380,8 +471,11 @@ function createBurstPool(worldGroup, capacity = 24) {
         const t = clamp(item.age / item.life, 0, 1);
         const envelope = Math.sin(t * Math.PI);
         const scale = (0.24 + envelope * (1.15 + item.power * 0.72)) * vfxScale;
+        const flashEnvelope = Math.max(0, 1 - clamp(item.age / Math.min(0.16, item.life * 0.34), 0, 1));
+        item.flash.scale.setScalar((0.42 + flashEnvelope * (0.72 + item.power * 0.58)) * vfxScale);
+        item.flashMaterial.opacity = flashEnvelope * (item.critical ? 1.1 : item.heavy ? 0.78 : 0.5);
         item.core.scale.setScalar(scale);
-        item.ring.scale.setScalar(0.6 + t * (2.2 + item.power));
+        item.ring.scale.setScalar(0.5 + t * (2.2 + item.power * 1.12));
         item.ring.rotation.z += dt * (item.style === 'digital' ? 9 : 5);
         item.core.rotation.x += dt * 5;
         item.core.rotation.y += dt * 7;
@@ -411,7 +505,8 @@ function createBurstPool(worldGroup, capacity = 24) {
 
 function createShockwavePool(worldGroup, capacity = 36) {
   const pool = [];
-  const geometry = new THREE.RingGeometry(0.26, 0.34, 32);
+  const geometry = new THREE.RingGeometry(0.26, 0.34, 64);
+  const innerGeometry = new THREE.RingGeometry(0.1, 0.14, 36);
   for (let index = 0; index < capacity; index += 1) {
     const material = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -423,26 +518,37 @@ function createShockwavePool(worldGroup, capacity = 36) {
       toneMapped: false,
     });
     const mesh = new THREE.Mesh(geometry, material);
+    const innerMaterial = material.clone();
+    const inner = new THREE.Mesh(innerGeometry, innerMaterial);
     mesh.rotation.x = -Math.PI / 2;
+    inner.rotation.x = -Math.PI / 2;
     mesh.visible = false;
-    worldGroup.add(mesh);
-    pool.push({ mesh, material, active: false, age: 0, life: 0.42, maxScale: 1, sequence: index });
+    inner.visible = false;
+    worldGroup.add(mesh, inner);
+    pool.push({ mesh, inner, material, innerMaterial, active: false, age: 0, life: 0.42, maxScale: 1, critical: false, variant: 'normal', sequence: index });
   }
   let cursor = 0;
   return {
     pool,
-    spawn({ x, z, color, maxScale = 1 }) {
+    spawn({ x, z, color, maxScale = 1, critical = false, heavy = false, variant = 'normal' }) {
       const item = pool[cursor % pool.length];
       cursor += 1;
       item.active = true;
       item.age = 0;
       item.life = 0.34 + Math.min(0.24, maxScale * 0.04);
       item.maxScale = maxScale;
+      item.critical = critical;
+      item.variant = variant;
       item.mesh.visible = true;
+      item.inner.visible = true;
       item.mesh.position.set(x, 0.035 + (item.sequence % 3) * 0.003, z);
+      item.inner.position.set(x, 0.039 + (item.sequence % 3) * 0.003, z);
       item.mesh.scale.setScalar(0.28);
+      item.inner.scale.setScalar(0.22);
       item.material.color.set(color);
+      item.innerMaterial.color.set(critical ? 0xffffff : color);
       item.material.opacity = 0.82;
+      item.innerMaterial.opacity = heavy ? 0.64 : 0.42;
     },
     update(dt, vfxScale = 1) {
       let active = 0;
@@ -452,16 +558,20 @@ function createShockwavePool(worldGroup, capacity = 36) {
         item.age += dt;
         const t = clamp(item.age / item.life, 0, 1);
         item.mesh.scale.setScalar((0.28 + t * item.maxScale) * vfxScale);
-        item.material.opacity = (1 - t) * 0.82;
+        item.inner.scale.setScalar((0.22 + t * item.maxScale * (item.critical ? 0.65 : 0.42)) * vfxScale);
+        item.material.opacity = (1 - t) * (item.critical ? 0.95 : 0.82);
+        item.innerMaterial.opacity = (1 - t) * (item.critical ? 0.72 : 0.42);
+        item.inner.rotation.z += dt * (item.variant === 'chain' ? 11 : 5);
         if (t >= 1) {
           item.active = false;
           item.mesh.visible = false;
+          item.inner.visible = false;
         }
       }
       return active;
     },
     reset() {
-      pool.forEach((item) => { item.active = false; item.mesh.visible = false; });
+      pool.forEach((item) => { item.active = false; item.mesh.visible = false; item.inner.visible = false; });
     },
   };
 }
@@ -519,7 +629,7 @@ function decorateTurrets(turrets) {
   });
 }
 
-export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wall, core, grid, turretGroups }) {
+export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wall, core, grid, turretGroups, groundMaterial = null }) {
   const visualRoot = new THREE.Group();
   visualRoot.name = 'cinematic-visual-root';
   worldGroup.add(visualRoot);
@@ -537,7 +647,9 @@ export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wal
 
   const renderPass = new RenderPass(scene, camera);
   const composer = new EffectComposer(renderer);
-  const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.24, 0.34, 0.9);
+  // Bloom is what sells the energy-weapon fantasy: a low threshold catches
+  // every neon accent, a moderate radius keeps sprites crisp.
+  const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.45, 0.72);
   const outputPass = new OutputPass();
   composer.addPass(renderPass);
   composer.addPass(bloomPass);
@@ -553,6 +665,8 @@ export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wal
 
   let mode = 'final';
   let themeId = 'zombie';
+  let bloomBoost = 0;
+  let baseBloomStrength = 0.58;
   let qualityTier = window.matchMedia('(max-width: 760px)').matches ? 'low' : 'high';
   let width = 1;
   let height = 1;
@@ -570,13 +684,16 @@ export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wal
 
   function setTheme(nextTheme) {
     themeId = nextTheme === 'deadline' ? 'deadline' : 'zombie';
+    roleProps.setTheme(themeId);
     originalBackground.setHex(themeId === 'deadline' ? 0x071022 : 0x07111f);
     if (!['silhouette', 'material', 'emissive'].includes(mode)) scene.background.copy(originalBackground);
     zombieBase.group.visible = themeId === 'zombie';
     deadlineBase.group.visible = themeId === 'deadline';
-    bloomPass.strength = themeId === 'deadline' ? 0.2 : 0.24;
-    bloomPass.radius = themeId === 'deadline' ? 0.28 : 0.34;
-    bloomPass.threshold = themeId === 'deadline' ? 0.92 : 0.9;
+    bloomPass.strength = themeId === 'deadline' ? 0.5 : 0.58;
+    bloomPass.radius = themeId === 'deadline' ? 0.42 : 0.48;
+    bloomPass.threshold = themeId === 'deadline' ? 0.74 : 0.7;
+    baseBloomStrength = bloomPass.strength;
+    bloomBoost = 0;
   }
 
   function applyQuality() {
@@ -639,10 +756,22 @@ export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wal
   function update({ dt, elapsed, enemies, baseHp, levels, overdriveUntil, seed }) {
     const startedAt = performance.now();
     if (seedValue !== seed) seedValue = seed >>> 0;
+    // Decay any transient bloom surge back to the theme baseline.
+    if (bloomBoost > 0.001) {
+      bloomBoost = Math.max(0, bloomBoost - dt * 1.6);
+      bloomPass.strength = baseBloomStrength + bloomBoost;
+    }
     roleProps.update(enemies, elapsed, QUALITY_PRESETS[qualityTier].roleProps && mode !== 'vfx');
     activeBursts = bursts.update(dt, QUALITY_PRESETS[qualityTier].vfxScale);
     activeShockwaves = shockwaves.update(dt, QUALITY_PRESETS[qualityTier].vfxScale);
     const damage = clamp((100 - baseHp) / 100, 0, 1);
+    // Ground emissive surges while overdrive burns: the whole floor breathes.
+    if (groundMaterial) {
+      const overdrive = elapsed < overdriveUntil;
+      const pulse = overdrive ? 0.34 + Math.sin(elapsed * 9) * 0.16 : Math.max(0, Math.sin(elapsed * 1.6) - 0.86) * 0.5;
+      groundMaterial.emissive.setHex(themeId === 'deadline' ? 0x123a6e : 0x0c3a34);
+      groundMaterial.emissiveIntensity = 0.12 + pulse + clamp(damage * 0.25, 0, 0.2);
+    }
     zombieBase.panels.forEach((panel, index) => {
       const severity = clamp(damage * 1.6 - index * 0.025, 0, 1);
       panel.rotation.z = (index % 2 ? -1 : 1) * severity * 0.045;
@@ -754,5 +883,8 @@ export function createToyVisualSystem({ renderer, scene, camera, worldGroup, wal
 
   setTheme(themeId);
   setCameraBookmark('design');
-  return { setTheme, resize, setMode, setQuality, setCameraBookmark, update, render, spawnImpact, spawnShockwave, spawnDefeat, spawnUpgrade, reset, snapshot, visualModes: VISUAL_MODES, qualityPresets: Object.keys(QUALITY_PRESETS) };
+  function pulseBloom(amount = 0.35) {
+    bloomBoost = Math.max(bloomBoost, amount);
+  }
+  return { setTheme, resize, setMode, setQuality, setCameraBookmark, update, render, spawnImpact, spawnShockwave, spawnDefeat, spawnUpgrade, pulseBloom, reset, snapshot, visualModes: VISUAL_MODES, qualityPresets: Object.keys(QUALITY_PRESETS) };
 }

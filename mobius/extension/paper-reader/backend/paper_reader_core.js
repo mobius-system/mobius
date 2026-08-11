@@ -302,7 +302,48 @@ function sessionModel(modelKey) {
 }
 
 // ============ Agent session（异步，接 mobius Agent）============
-function buildChatPrompt({ paper, message, anchor, runId, dbPath }) {
+function conversationAnswer(e, run) {
+  const direct = extractFurther(run.web_reply) || long(run.web_reply, 16000);
+  if (direct) return direct;
+  if (run.status !== "completed") return "";
+  const row = e.prepare("SELECT content FROM agent_messages WHERE run_id=? AND role='assistant' ORDER BY created_at DESC LIMIT 1").get(run.id);
+  return long(row?.content, 16000);
+}
+function conversationQuestion(e, run) {
+  const row = e.prepare("SELECT content FROM agent_messages WHERE run_id=? AND role='user' ORDER BY created_at ASC LIMIT 1").get(run.id);
+  return long(row?.content, 8000);
+}
+function recentConversationContext(e, sourceId, { excludeRunId = '', maxTurns = 5, maxChars = 14000 } = {}) {
+  const rows = e.prepare("SELECT * FROM agent_runs WHERE source_id=? AND kind='chat' AND status='completed' ORDER BY created_at DESC LIMIT 30").all(txt(sourceId, 200));
+  const turns = [];
+  for (const run of rows) {
+    if (excludeRunId && run.id === excludeRunId) continue;
+    const question = conversationQuestion(e, run);
+    const answer = conversationAnswer(e, run);
+    if (!question || !answer) continue;
+    turns.push({ run_id: run.id, question, answer, created_at: run.created_at, model: run.model_label });
+    if (turns.length >= maxTurns) break;
+  }
+  turns.reverse();
+  let used = 0;
+  const kept = [];
+  for (const turn of turns) {
+    const block = `用户：${turn.question}\nAssistant：${turn.answer}`;
+    if (kept.length && used + block.length > maxChars) continue;
+    kept.push(turn); used += block.length;
+  }
+  return kept;
+}
+function buildConversationPromptSection(turns) {
+  if (!turns?.length) return "";
+  return [
+    "## 此前对话（仅用户输入与最终回答）",
+    "以下内容只用于保持这篇论文讨论的连续性，不是论文证据；若与当前问题无关，不要强行引用。不要复述 thinking、工具调用或运行过程。",
+    ...turns.map((turn, index) => `### 第 ${index + 1} 轮\n用户：${turn.question}\nAssistant：${turn.answer}`),
+    ""
+  ].join("\n");
+}
+function buildChatPrompt({ paper, message, anchor, runId, dbPath, priorConversation }) {
   const relevantContext = relevantPaperContext(paper.text_excerpt || paper.excerpt, message, anchor);
   const ctx = [
     "# Paper Reader · 就文对话",
@@ -321,6 +362,7 @@ function buildChatPrompt({ paper, message, anchor, runId, dbPath }) {
     "### 按问题召回的全文相关章节",
     long(relevantContext, 26000) || "(未取到全文，依摘要回答)",
     "",
+    buildConversationPromptSection(priorConversation),
     anchor ? `## 用户锚定的段落\n${long(anchor, 2000)}` : "",
     "",
     "## 用户问题",
@@ -362,10 +404,11 @@ function createReaderSession({ userId, paper, runId, modelKey, prompt }) {
 }
 function startChat(e, { paper, message, anchor, modelKey, provider, createdBy, dir }) {
   const runId = id("run", now() + Math.random());
+  const priorConversation = recentConversationContext(e, paper.source_id, { excludeRunId: runId });
   e.prepare(`INSERT INTO agent_runs (id,source_id,kind,model_key,model_label,status,created_by,created_at,updated_at) VALUES (?,?,?,?,?,'running',?,?,?)`)
     .run(runId, paper.source_id, "chat", txt(modelKey || provider?.key || "", 200), txt(provider?.label || "", 200), createdBy, now(), now());
   const dbPath = e.name || path.join(dir, DB_FILE);
-  const prompt = buildChatPrompt({ paper, message, anchor, runId, dbPath });
+  const prompt = buildChatPrompt({ paper, message, anchor, runId, dbPath, priorConversation });
   const launched = createReaderSession({ userId: createdBy, paper, runId, modelKey: modelKey || provider?.key, prompt });
   e.prepare("UPDATE agent_runs SET session_id=?,project_id=?,issue_id=?,session_url=?,summary=?,updated_at=? WHERE id=?")
     .run(launched.created.session.session_id, launched.created.project.id, launched.created.issue.id, launched.url, "已启动精读 Agent", now(), runId);
@@ -445,12 +488,13 @@ async function chatWithPaper(e, t, user, dir) {
   const paper = { ...paperOut(row), text_excerpt: row.text_excerpt };
   const modelKey = txt(t.model_key, 200);
   const provider = findProvider(modelKey);
+  const priorConversation = recentConversationContext(e, sid, { maxTurns: 5 });
   // 默认异步接 Agent；sync=true 时直接调 LLM
   if (t.sync === true || t.wait === true) {
-    const resp = await callMessages({ provider, paper, message, anchor: t.anchor });
+    const resp = await callMessages({ provider, paper, message, anchor: t.anchor, priorConversation });
     const runId = id("run", now() + Math.random());
-    e.prepare(`INSERT INTO agent_runs (id,source_id,kind,model_key,model_label,status,summary,web_reply,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,'completed',?,?,?,?)`)
-      .run(runId, sid, "chat", txt(modelKey || provider.key, 200), txt(provider.label, 200), long(resp.text, 6000), long(resp.text, 6000), user, now(), now());
+    e.prepare(`INSERT INTO agent_runs (id,source_id,kind,model_key,model_label,status,summary,web_reply,created_by,created_at,updated_at) VALUES (?,?,?,?,?,'completed',?,?,?,?,?)`)
+      .run(runId, sid, "chat", txt(modelKey || provider.key, 200), txt(provider.label, 200), long(resp.text, 6000), long(resp.text, 16000), user, now(), now());
     appendMessage(e, runId, "user", message);
     appendMessage(e, runId, "assistant", resp.text);
     return { ok: true, run_id: runId, reply: resp.text, model: provider.label, tokens: resp.usage };
@@ -461,10 +505,10 @@ async function fetchJson(urlStr, opts, timeoutMs = 3e4) {
   const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try { const r = await fetch(urlStr, { ...opts, signal: ctrl.signal }); const tx = await r.text(); if (!r.ok) throw new Error(`HTTP ${r.status}: ${tx.slice(0, 300)}`); return JSON.parse(tx); } finally { clearTimeout(timer); }
 }
-async function callMessages({ provider, paper, message, anchor }) {
+async function callMessages({ provider, paper, message, anchor, priorConversation }) {
   const urlStr = provider.baseUrl.replace(/\/+$/, "") + "/v1/messages";
   const relevantContext = relevantPaperContext(paper.text_excerpt || "", message, anchor);
-  const system = SEEUPO_ANCHOR + "\n\n论文: " + txt(paper.title, 300) + "\n摘要: " + long(paper.abstract, 3000) + "\n按问题召回的全文相关章节:\n" + long(relevantContext, 26000);
+  const system = SEEUPO_ANCHOR + "\n\n论文: " + txt(paper.title, 300) + "\n摘要: " + long(paper.abstract, 3000) + "\n按问题召回的全文相关章节:\n" + long(relevantContext, 26000) + "\n\n" + buildConversationPromptSection(priorConversation);
   const resp = await fetchJson(urlStr, { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": provider.authToken, "anthropic-version": "2023-06-01", Authorization: `Bearer ${provider.authToken}` },
     body: JSON.stringify({ model: provider.model, max_tokens: 3000, system, messages: [{ role: "user", content: (anchor ? "[锚定] " + long(anchor, 2000) + "\n" : "") + message }] }) }, 4e4);
   const content = Array.isArray(resp.content) ? resp.content : [];
@@ -506,6 +550,20 @@ function listRuns(e, t) {
   return { items: rows };
 }
 function getRunMessages(e, t) { return { items: e.prepare("SELECT * FROM agent_messages WHERE run_id=? ORDER BY created_at ASC").all(txt(t.run_id || t.id, 120)) }; }
+function listConversation(e, t) {
+  const lim = int(t?.limit, 30, 1, 100);
+  const rows = e.prepare("SELECT * FROM agent_runs WHERE source_id=? AND kind='chat' ORDER BY created_at DESC LIMIT ?").all(txt(t?.source_id, 200), lim + 1);
+  const items = [];
+  for (const run of rows) {
+    const question = conversationQuestion(e, run);
+    const answer = conversationAnswer(e, run);
+    if (!question || !answer) continue;
+    items.push({ run_id: run.id, status: run.status, model: run.model_label, question, answer,
+      created_at: run.created_at, updated_at: run.updated_at, summary: run.summary || "" });
+  }
+  const hasMore = items.length > lim;
+  return { items: items.slice(0, lim).reverse(), has_more: hasMore };
+}
 
 // ============ 锚定笔记 ============
 function listNotes(e, t) { return { items: e.prepare("SELECT * FROM anchored_notes WHERE source_id=? ORDER BY created_at DESC").all(txt(t.source_id, 200)) }; }
@@ -545,7 +603,7 @@ function bootstrapData(e) {
 
 // ============ dispatch ============
 const RETAINED_ACTIONS = ["current_user", "bootstrap", "list_ai_channels", "open_paper", "get_paper", "get_paper_pdf", "list_recent_papers",
-  "chat_with_paper", "distill_chat_to_note", "poll_run", "list_runs", "get_run_messages",
+  "chat_with_paper", "distill_chat_to_note", "poll_run", "list_runs", "list_conversation", "get_run_messages",
   "list_notes", "save_note", "delete_note",
   "list_comments", "add_comment", "delete_comment"];
 
@@ -562,6 +620,7 @@ async function dispatch(e, t, r, a) {
   if ("distill_chat_to_note" === s) { const res = distillChatToNote(e, t, r, a); const post = pullPostActions(res); return { ok: true, ...res, ...(post.length ? { __mobius_post_actions: post } : {}) }; }
   if ("poll_run" === s) return { ok: true, ...pollRun(e, t) };
   if ("list_runs" === s) return { ok: true, ...listRuns(e, t) };
+  if ("list_conversation" === s) return { ok: true, ...listConversation(e, t) };
   if ("get_run_messages" === s) return { ok: true, ...getRunMessages(e, t) };
   if ("list_notes" === s) return { ok: true, ...listNotes(e, t) };
   if ("save_note" === s) return { ok: true, ...saveNote(e, t, r) };

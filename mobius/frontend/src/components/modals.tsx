@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
 import { ArrowLeft, ChevronDown, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
 import { useStore, api, APP_DIR } from '../store'
 import { timeAgo } from './shell'
@@ -1616,12 +1617,12 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
   }, [DRAFT_KEY, title, desc, descTouched])
   const submit = async () => {
     if (!title.trim()) { setErr('请填写研究标题'); return }
-    if (!effectiveDesc.trim()) { setErr('请填写研究描述'); return }
+    const submittedDescription = effectiveDesc.trim() || title.trim()
     setLoading(true); setErr('')
     try {
       const research = await api(`/api/projects/${projectId}/researches`, {
         method: 'POST',
-        body: JSON.stringify({ title, description: effectiveDesc }),
+        body: JSON.stringify({ title, description: submittedDescription }),
       })
       draftClear(DRAFT_KEY)
       onCreated(research)
@@ -2464,7 +2465,7 @@ export function NewSessionModal({
         ...(options.includeBody === false ? { include_body: false } : {}),
         ...(options.includeItemBodies === false ? { include_item_bodies: false } : {}),
         // PC 任务模式 (仅桌面端): 与 session 创建 body 同源, 让 preview 也注入 PC 提示词; web 端 workMode null 不传.
-        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false } } : {}),
+        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
       }),
     }) as WizardPreview
   }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality, workMode, aimuxId, pcPath])
@@ -2612,7 +2613,7 @@ export function NewSessionModal({
           excluded_memory_ids: Array.from(excludedMemories),
           continue_from_session_id: continueFromSessionId || undefined,
           // PC 任务模式 (仅桌面端): workMode 非空才附带 pc_client_metadata; web 端 workMode 恒 null → body 完全不变.
-          ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false } } : {}),
+            ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
         }),
       })
       draftClear(DRAFT_KEY)
@@ -3450,13 +3451,13 @@ export function TurnTree({ sessionId, onClose, onRefresh }: { sessionId: string;
                 <div>
                   <div className="text-[12px] font-semibold mb-1" style={{ color: textMuted }}>用户输入</div>
                   <div className="text-[12px] px-3 py-2 rounded-lg" style={{ background: 'var(--input-bg)', color: textPrimary }}>
-                    {t.user_input ? <ReactMarkdown className="prose-sm prose-invert">{t.user_input}</ReactMarkdown> : <span style={{ color: textMuted }}>(无)</span>}
+                    {t.user_input ? <ReactMarkdown className="prose-sm prose-invert" remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>{t.user_input}</ReactMarkdown> : <span style={{ color: textMuted }}>(无)</span>}
                   </div>
                 </div>
                 <div>
                   <div className="text-[12px] font-semibold mb-1" style={{ color: textMuted }}>Agent 输出</div>
                   <div className="text-[12px] px-3 py-2 rounded-lg max-h-[300px] overflow-y-auto" style={{ background: 'var(--input-bg)', color: textPrimary }}>
-                    {t.agent_output ? <ReactMarkdown className="prose-sm prose-invert">{t.agent_output}</ReactMarkdown> : <span style={{ color: textMuted }}>(无)</span>}
+                    {t.agent_output ? <ReactMarkdown className="prose-sm prose-invert" remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>{t.agent_output}</ReactMarkdown> : <span style={{ color: textMuted }}>(无)</span>}
                   </div>
                 </div>
               </div>

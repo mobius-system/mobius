@@ -65,6 +65,7 @@ const mobiusDesktop = {
     ipcRenderer.invoke("project:bind-status", projectId),
   getMachineInfo: () => ipcRenderer.invoke("desktop:machine-info"),
   getProjectLocalPath: (projectId: string) => ipcRenderer.invoke("project:get-path", projectId),
+  getProjectGitStatus: (projectId: string) => ipcRenderer.invoke("project:git-status", projectId),
   getProjectWorkMode: (projectId: string) => ipcRenderer.invoke("project:get-work-mode", projectId),
   setProjectWorkMode: (projectId: string, mode: string) => ipcRenderer.invoke("project:set-work-mode", projectId, mode),
   listProjectLocalFiles: (projectId: string, path: string) => ipcRenderer.invoke("project:list-local-files", projectId, path),

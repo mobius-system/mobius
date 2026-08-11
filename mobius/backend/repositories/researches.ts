@@ -13,6 +13,7 @@ interface ResearchWithProjectRow extends ResearchRow {
 interface ResearchListRow extends ResearchRow {
   created_by_name?: string;
   session_count?: number;
+  active_session_count?: number;
   running_session_count?: number;
   chief_count?: number;
 }
@@ -48,6 +49,7 @@ const Researches = {
     return db.prepare(`
       SELECT r.*, u.display_name as created_by_name,
         (SELECT COUNT(*) FROM sessions_v2 WHERE research_id = r.id AND scope_type = 'research' AND status != 'archived' AND deleted_at IS NULL) as session_count,
+        (SELECT COUNT(*) FROM sessions_v2 WHERE research_id = r.id AND scope_type = 'research' AND status = 'active' AND deleted_at IS NULL) as active_session_count,
         (SELECT COUNT(*) FROM sessions_v2 WHERE research_id = r.id AND scope_type = 'research' AND status = 'active' AND agent_status = 'running' AND deleted_at IS NULL) as running_session_count,
         (SELECT COUNT(*) FROM sessions_v2 WHERE research_id = r.id AND scope_type = 'research' AND research_role = 'chief_researcher') as chief_count
       FROM researches r
