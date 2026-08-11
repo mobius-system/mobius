@@ -899,7 +899,7 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
           })}
         </Box>
         <Box justifyContent="space-between">
-          <Text dimColor>{(stdout.columns ?? 80) >= 58 ? 'Enter 发送 · Shift+Enter / Ctrl+J 换行' : 'Enter 发送 · Ctrl+J 换行'}</Text>
+          <Text dimColor>{(stdout.columns ?? 80) >= 72 ? 'Enter 发送 · Shift+Enter / Alt+Enter / Ctrl+J 换行' : 'Enter 发送 · Alt+Enter / Ctrl+J 换行'}</Text>
           <Text dimColor>{wrapped.length > maxRows ? `${visualCursor + 1}/${wrapped.length} 行` : `${wrapped.length} 行`}</Text>
         </Box>
       </Box>

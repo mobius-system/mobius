@@ -607,7 +607,7 @@ async function testComposerMultilinePaste() {
   await delay(20)
   const initial = lastFrame() ?? ''
   ok(initial.includes('╭') && initial.includes('╰'), 'composer has a visible bordered input boundary')
-  ok(initial.includes('Enter 发送') && initial.includes('Ctrl+J 换行'), 'composer shows Codex-style submit/newline hints')
+  ok(initial.includes('Enter 发送') && initial.includes('Shift+Enter / Alt+Enter / Ctrl+J 换行'), 'composer shows submit/newline hints')
 
   stdin.write('\x1b[200~第一行\r\n第二行\r第三行\x1b[201~')
   await delay(20)
