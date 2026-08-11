@@ -162,7 +162,7 @@ async function testChat() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />
+      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />
     )
     await delay(40)
     const initialFrame = lastFrame() ?? ''
@@ -226,7 +226,7 @@ async function testResumedWorkingStatus() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />
+      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />
     )
     await delay(120)
     ok((lastFrame() ?? '').includes('Working ('), 'resuming an already-running session restores Working without a new typing event')
@@ -534,6 +534,55 @@ async function testComposerDeleteKeys() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// TEST 8d — Home/End and Ctrl+Left/Right cursor movement
+// ════════════════════════════════════════════════════════════════════════════
+async function testCursorNavigationKeys() {
+  console.log('\n[UI 8d] Home/End + Ctrl-arrow cursor navigation')
+
+  let textInputSubmitted = ''
+  function TextHarness() {
+    const [v, setV] = React.useState('alpha beta')
+    return <TextInput value={v} onChange={setV} focused onSubmit={() => { textInputSubmitted = v }} />
+  }
+  const textInput = render(<TextHarness />)
+  await delay(20)
+  textInput.stdin.write('\x1b[H'); await delay(15)       // Home
+  textInput.stdin.write('^'); await delay(15)
+  textInput.stdin.write('\x1b[F'); await delay(15)       // End
+  textInput.stdin.write('$'); await delay(15)
+  textInput.stdin.write('\x1b[1;5D'); await delay(15)    // Ctrl+Left
+  textInput.stdin.write('|'); await delay(15)
+  textInput.stdin.write('\x1b[1;5C'); await delay(15)    // Ctrl+Right
+  textInput.stdin.write('!'); await delay(15)
+  textInput.stdin.write('\r'); await delay(20)
+  textInput.unmount()
+  ok(textInputSubmitted === '^alpha |beta$!', `TextInput cursor keys edit at expected boundaries (got ${JSON.stringify(textInputSubmitted)})`)
+
+  const composerSubmitted: string[] = []
+  const composer = render(
+    <Composer
+      onSubmit={v => composerSubmitted.push(v)}
+      onStop={() => {}}
+      onQuit={() => {}}
+      typing={false}
+      commands={[]}
+    />,
+  )
+  composer.stdin.write('alpha beta'); await delay(20)
+  composer.stdin.write('\x1b[H'); await delay(15)
+  composer.stdin.write('^'); await delay(15)
+  composer.stdin.write('\x1b[F'); await delay(15)
+  composer.stdin.write('$'); await delay(15)
+  composer.stdin.write('\x1b[1;5D'); await delay(15)
+  composer.stdin.write('|'); await delay(15)
+  composer.stdin.write('\x1b[1;5C'); await delay(15)
+  composer.stdin.write('!'); await delay(15)
+  composer.stdin.write('\r'); await delay(30)
+  composer.unmount()
+  ok(composerSubmitted[0] === '^alpha |beta$!', `Composer cursor keys edit at expected boundaries (got ${JSON.stringify(composerSubmitted[0])})`)
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // TEST 9 — Codex-style composer keeps multiline pastes intact and grows/shrinks
 // ════════════════════════════════════════════════════════════════════════════
 async function testComposerMultilinePaste() {
@@ -798,7 +847,7 @@ async function testChatSseReconnects() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
     )
     await delay(40)
     // Ink's test stdin treats one chunk as one keypress. Send text and Enter as
@@ -870,7 +919,7 @@ async function testIdleCompletedSessionReopensSseOnSend() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
     )
     await delay(180)
     ok(sseCall === 1, 'completed idle session did not reconnect by itself')
@@ -910,7 +959,7 @@ async function testSendRetries502() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
     )
     await delay(40)
     stdin.write('hi'); await delay(30); stdin.write('\r')
@@ -935,6 +984,7 @@ async function main() {
   await testTextInputBackspace()
   await testTextInputDeleteKeys()
   await testComposerDeleteKeys()
+  await testCursorNavigationKeys()
   await testComposerMultilinePaste()
   testWorkingShimmer()
   testReasoningViews()

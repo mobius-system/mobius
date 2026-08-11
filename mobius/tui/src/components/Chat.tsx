@@ -27,7 +27,8 @@ import { ConfigFlow, ReconfigFlow, type ConfigResult } from './ConfigFlow.js'
 import type { AimuxStatus } from '../aimux.js'
 import { AimuxStatusLine, aimuxStatusText } from './AimuxStatus.js'
 import { isEscapeKeypress, isMouseInput, useMouseEvents, useStableInput } from './primitives.js'
-import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousCursorBoundary, nextCursorBoundary } from '../lib/delete-keys.js'
+import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousCursorBoundary, nextCursorBoundary, previousWordBoundary, nextWordBoundary } from '../lib/delete-keys.js'
+import { useCursorKeyCapture } from '../lib/cursor-keys.js'
 
 interface ChatProps {
   client: MobiusClient
@@ -37,6 +38,7 @@ interface ChatProps {
   onClear: () => void
   onResume: () => void
   onQuit: () => void
+  onLogout: () => void
   onReconfigure: (result: ConfigResult) => void
   onConfigCancel: (sessionId: string | null) => void
   aimuxStatus?: AimuxStatus
@@ -57,11 +59,12 @@ const SLASH_COMMANDS = [
   { cmd: '/resume', desc: '恢复一个历史会话' },
   { cmd: '/model', desc: '更换模型并开启新会话（保留当前任务）' },
   { cmd: '/config', desc: '重新选择项目、任务和模型' },
+  { cmd: '/logout', desc: '断开当前连接并返回登录界面' },
   { cmd: '/help', desc: '显示帮助' },
   { cmd: '/quit', desc: '退出 TUI' },
 ]
 
-export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, onReconfigure, onConfigCancel, aimuxStatus }: ChatProps) {
+export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, onLogout, onReconfigure, onConfigCancel, aimuxStatus }: ChatProps) {
   const chat = useChat({ client, ready, resumeSessionId })
   const [showHelp, setShowHelp] = useState(false)
   // null means "follow the tail". A concrete anchor identifies the exact row
@@ -91,10 +94,11 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       case '/help': setShowHelp(s => !s); return true
       case '/model': setConfigOpen(true); return true
       case '/config': setReconfigOpen(true); return true
+      case '/logout': onLogout(); return true
       case '/quit': case '/exit': onQuit(); return true
       default: return false
     }
-  }, [onClear, onResume, onQuit])
+  }, [onClear, onResume, onQuit, onLogout])
 
   const onSubmit = useCallback((text: string) => {
     const t = text.trim()
@@ -201,10 +205,11 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     // the keypress). configOpen/reconfigOpen/sessionId are read from handlerRef
     // (see above) because Ink keeps the originally-registered callback and would
     // otherwise see a stale closure.
-    if (handlerRef.current.configOpen || handlerRef.current.reconfigOpen) {
+    if (handlerRef.current.configOpen) {
       if (isEscapeKeypress(_input, key)) onConfigCancel(handlerRef.current.sessionId)
       return
     }
+    if (handlerRef.current.reconfigOpen) return // ReconfigFlow owns hierarchical Esc navigation.
     if (key.pageUp) scrollRows(-pageRows)
     else if (key.pageDown) scrollRows(pageRows)
   }, { interactive: false })
@@ -310,6 +315,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
         <ReconfigFlow
           client={client}
           onDone={(result) => onReconfigure(result)}
+          onCancel={() => onConfigCancel(chat.sessionId)}
         />
       </Box>
     )
@@ -589,6 +595,13 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
     const { text, cursor: nextCursor } = applyDeleteIntent(valueRef.current, cursorRef.current, intent)
     edit(text, nextCursor)
   })
+  useCursorKeyCapture(true, (intent) => {
+    const current = valueRef.current
+    const at = clampCursor(current, cursorRef.current)
+    const next = intent === 'home' ? 0 : intent === 'end' ? current.length
+      : intent === 'backward-word' ? previousWordBoundary(current, at) : nextWordBoundary(current, at)
+    moveCursor(next)
+  })
 
   const filtered = useMemo(() => {
     const match = /^(\w*)$/.exec(value.slice(1))
@@ -790,6 +803,7 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
       edit(text, nextCursor)
       return
     }
+    if (key.ctrl && (key.leftArrow || key.rightArrow)) return
     if (key.leftArrow) { moveCursor(previousCursorBoundary(current, at)); return }
     if (key.rightArrow) { moveCursor(nextCursorBoundary(current, at)); return }
 
