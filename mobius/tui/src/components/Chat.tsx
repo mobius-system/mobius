@@ -8,9 +8,10 @@
  * activity, composer, and a persistent context status line.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Text, useInput, useStdout } from 'ink'
+import { Box, Text, useStdout } from 'ink'
 import { useChat } from '../hooks/useChat.js'
 import { MobiusClient } from '../api.js'
+<<<<<<< HEAD
 import { renderMarkdownLines } from '../markdown.js'
 import { viewsForEntry, dedupeUserEntries, toolLabel, isAssistantOutput, type EntryView } from '../lib/entry-view.js'
 import {
@@ -26,6 +27,26 @@ import type { AimuxStatus } from '../aimux.js'
 import { AimuxStatusLine, aimuxStatusText } from './AimuxStatus.js'
 import { isEscapeKeypress, isMouseInput, useMouseEvents } from './primitives.js'
 import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousCursorBoundary, nextCursorBoundary } from '../lib/delete-keys.js'
+=======
+import { viewsForEntry, dedupeUserEntries, isAssistantOutput } from '../lib/entry-view.js'
+import {
+  displayWidth, compareSel, entryScreenRows, screenToSelPoint,
+  buildSelectionMap, buildSelectionText, osc52,
+  type TranscriptModel, type TranscriptGeometry, type SelPoint, type ScreenRow,
+} from '../lib/screen-text.js'
+import {
+  createRowAccess, moveAnchorByRows, sliceViewport, tailAnchor,
+  type RowAnchor,
+} from '../lib/transcript-viewport.js'
+import type { ReadyState } from './PrepScreen.js'
+import type { AnyEntry } from '../types.js'
+import { ConfigFlow, ReconfigFlow, type ConfigResult } from './ConfigFlow.js'
+import type { AimuxStatus } from '../aimux.js'
+import { AimuxStatusLine, aimuxStatusText } from './AimuxStatus.js'
+import { isEscapeKeypress, isMouseInput, useMouseEvents, useStableInput } from './primitives.js'
+import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousCursorBoundary, nextCursorBoundary, previousWordBoundary, nextWordBoundary } from '../lib/delete-keys.js'
+import { useCursorKeyCapture } from '../lib/cursor-keys.js'
+>>>>>>> gitlab-mobius/main
 
 interface ChatProps {
   client: MobiusClient
@@ -35,6 +56,10 @@ interface ChatProps {
   onClear: () => void
   onResume: () => void
   onQuit: () => void
+<<<<<<< HEAD
+=======
+  onLogout: () => void
+>>>>>>> gitlab-mobius/main
   onReconfigure: (result: ConfigResult) => void
   onConfigCancel: (sessionId: string | null) => void
   aimuxStatus?: AimuxStatus
@@ -46,8 +71,7 @@ interface TerminalSize {
   isTty: boolean
 }
 
-import { createRequire } from 'node:module'
-const VERSION = createRequire(import.meta.url)('../../package.json').version
+import { TUI_VERSION } from '../version.js'
 const DEFAULT_COMPOSER_ROWS = 5
 const STATUS_ROWS = 3
 
@@ -55,23 +79,48 @@ const SLASH_COMMANDS = [
   { cmd: '/clear', desc: '清空当前对话，开启新会话' },
   { cmd: '/resume', desc: '恢复一个历史会话' },
   { cmd: '/model', desc: '更换模型并开启新会话（保留当前任务）' },
+<<<<<<< HEAD
   { cmd: '/config', desc: '更换模型（/model 的别名）' },
+=======
+  { cmd: '/config', desc: '重新选择项目、任务和模型' },
+  { cmd: '/logout', desc: '断开当前连接并返回登录界面' },
+>>>>>>> gitlab-mobius/main
   { cmd: '/help', desc: '显示帮助' },
   { cmd: '/quit', desc: '退出 TUI' },
 ]
 
+<<<<<<< HEAD
 export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, onReconfigure, onConfigCancel, aimuxStatus }: ChatProps) {
+=======
+export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, onLogout, onReconfigure, onConfigCancel, aimuxStatus }: ChatProps) {
+>>>>>>> gitlab-mobius/main
   const chat = useChat({ client, ready, resumeSessionId })
   const [showHelp, setShowHelp] = useState(false)
-  const [scrollBack, setScrollBack] = useState(0)
+  // null means "follow the tail". A concrete anchor identifies the exact row
+  // at the top of the viewport while the user browses history.
+  const [rowAnchor, setRowAnchor] = useState<RowAnchor | null>(null)
   const [composerRows, setComposerRows] = useState(DEFAULT_COMPOSER_ROWS)
   const [modelLabel, setModelLabel] = useState<string | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
+<<<<<<< HEAD
   // Ink's useInput keeps whatever handler was registered at subscription time;
   // reading mutable refs (updated every render) keeps the callback from acting
   // on a stale `configOpen`/sessionId closure after the config flow opens.
   const handlerRef = useRef<{ configOpen: boolean; sessionId: string | null }>({ configOpen: false, sessionId: null })
   handlerRef.current = { configOpen, sessionId: chat.sessionId }
+=======
+  const [reconfigOpen, setReconfigOpen] = useState(false)
+  // Ink may deliver one final event to Composer while an async config picker is
+  // replacing it. The shared ref lets that stale listener report "not handled"
+  // so App can replay the key after the new Select mounts.
+  const chatInputActiveRef = useRef(true)
+  chatInputActiveRef.current = !configOpen && !reconfigOpen
+  // Ink's useInput keeps whatever handler was registered at subscription time;
+  // reading mutable refs (updated every render) keeps the callback from acting
+  // on a stale `configOpen`/sessionId closure after the config flow opens.
+  const handlerRef = useRef<{ configOpen: boolean; reconfigOpen: boolean; sessionId: string | null }>({ configOpen: false, reconfigOpen: false, sessionId: null })
+  handlerRef.current = { configOpen, reconfigOpen, sessionId: chat.sessionId }
+>>>>>>> gitlab-mobius/main
   const terminal = useTerminalSize()
 
   const runSlash = useCallback((raw: string) => {
@@ -80,11 +129,17 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       case '/clear': onClear(); return true
       case '/resume': onResume(); return true
       case '/help': setShowHelp(s => !s); return true
+<<<<<<< HEAD
       case '/model': case '/config': setConfigOpen(true); return true
+=======
+      case '/model': setConfigOpen(true); return true
+      case '/config': setReconfigOpen(true); return true
+      case '/logout': onLogout(); return true
+>>>>>>> gitlab-mobius/main
       case '/quit': case '/exit': onQuit(); return true
       default: return false
     }
-  }, [onClear, onResume, onQuit])
+  }, [onClear, onResume, onQuit, onLogout])
 
   const onSubmit = useCallback((text: string) => {
     const t = text.trim()
@@ -94,7 +149,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       return
     }
     setShowHelp(false)
-    setScrollBack(0)
+    setRowAnchor(null)
     void chat.send(t)
   }, [chat, runSlash])
 
@@ -110,29 +165,66 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   // (type:user / response_item.message[user] / event_msg.user_message) 合并成 1 条,
   // 避免在累积视图里把同一条提问显示多次.
   const dedupedEntries = useMemo(() => dedupeUserEntries(chat.entries), [chat.entries])
+  const pendingEntry = useMemo<AnyEntry | null>(() => chat.pendingUser === null ? null : ({
+    type: 'user',
+    __id: '__pending-user__',
+    message: { role: 'user', content: chat.pendingUser },
+  }), [chat.pendingUser])
+  const transcriptEntries = useMemo(
+    () => pendingEntry ? [...dedupedEntries, pendingEntry] : dedupedEntries,
+    [dedupedEntries, pendingEntry],
+  )
+
+  // Markdown parsing and wrapping are paid once per entry/terminal width. Keep
+  // the two most recent widths so resize-back does not immediately reparse the
+  // whole visible history, while bounding cache growth during repeated resizes.
+  const rowCache = useRef<WeakMap<AnyEntry, Map<number, ScreenRow[]>>>(new WeakMap())
+  const rowsForEntry = useCallback((entry: AnyEntry): readonly ScreenRow[] => {
+    let widths = rowCache.current.get(entry)
+    if (!widths) {
+      widths = new Map()
+      rowCache.current.set(entry, widths)
+    }
+    const cached = widths.get(terminal.columns)
+    if (cached) return cached
+    const rows = entryScreenRows(viewsForEntry(entry), terminal.columns)
+    if (widths.size >= 2) widths.delete(widths.keys().next().value!)
+    widths.set(terminal.columns, rows)
+    return rows
+  }, [terminal.columns])
+  const rowAccess = useMemo(() => createRowAccess(
+    transcriptEntries,
+    // UUID is stable across SSE history replay; __id is only the local fallback
+    // for entries that do not carry a backend identity (notably the optimistic
+    // pending user row).
+    (entry, index) => String(entry.uuid ?? entry.__id ?? `entry-${index}`),
+    (entry) => rowsForEntry(entry),
+  ), [transcriptEntries, rowsForEntry])
   const viewportRows = terminal.isTty ? Math.max(9, terminal.rows - 1) : terminal.rows
   const activityRows = (chat.typing ? 2 : 0) + (chat.error ? 1 : 0)
   const helpRows = showHelp ? SLASH_COMMANDS.length + 3 : 0
-  const transcriptRows = Math.max(1, viewportRows - composerRows - STATUS_ROWS - activityRows - helpRows - 3)
-  const fitted = useMemo(
-    () => fitTranscript(dedupedEntries, transcriptRows, terminal.columns, scrollBack),
-    [dedupedEntries, transcriptRows, terminal.columns, scrollBack],
+  // Conversation chrome is exactly two rows: compact header + navigation.
+  const transcriptRows = Math.max(1, viewportRows - composerRows - STATUS_ROWS - activityRows - helpRows - 2)
+  const tail = useMemo(() => tailAnchor(rowAccess, transcriptRows), [rowAccess, transcriptRows])
+  const effectiveAnchor = rowAnchor ?? tail
+  const viewport = useMemo(
+    () => sliceViewport(rowAccess, effectiveAnchor, transcriptRows),
+    [rowAccess, effectiveAnchor, transcriptRows],
   )
-  const showWelcome = dedupedEntries.length === 0 && chat.pendingUser === null && scrollBack === 0
+  const showWelcome = transcriptEntries.length === 0
+  const pageRows = Math.max(1, transcriptRows - 1)
 
-  // Keep a history page pinned while new events stream in. At the latest page,
-  // new output continues to auto-follow as usual.
-  const prevLenRef = useRef(dedupedEntries.length)
-  useEffect(() => {
-    const previous = prevLenRef.current
-    const current = dedupedEntries.length
-    prevLenRef.current = current
-    if (current > previous && scrollBack > 0) {
-      setScrollBack(value => value + current - previous)
-    } else if (scrollBack > current) {
-      setScrollBack(current)
-    }
-  }, [dedupedEntries.length, scrollBack])
+  const scrollRows = useCallback((deltaRows: number) => {
+    if (deltaRows === 0) return
+    selState.current = null
+    setSel(null)
+    setRowAnchor(previous => {
+      const start = previous ?? tailAnchor(rowAccess, transcriptRows)
+      const next = moveAnchorByRows(rowAccess, start, deltaRows)
+      if (deltaRows > 0 && !sliceViewport(rowAccess, next, transcriptRows).hasNewer) return null
+      return next
+    })
+  }, [rowAccess, transcriptRows])
 
   // Show the model's friendly label (e.g. "GPT-5.6-Sol") in the header/status
   // instead of its opaque key (e.g. "codex:mobiusdefaultaabb").
@@ -147,16 +239,27 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   }, [client, ready.prefs.model])
   const modelDisplay = modelLabel ?? ready.prefs.model ?? 'default'
 
+<<<<<<< HEAD
   useInput((_input, key) => {
     // While the config flow is open, this ChatScreen-level handler owns Esc so
     // cancel is reliable even mid-list-loading (a per-component EscToCancel
     // could be unmounted by the loading→loaded transition and drop the keypress).
     // configOpen/sessionId are read from handlerRef (see above) because Ink keeps
     // the originally-registered callback and would otherwise see a stale closure.
+=======
+  useStableInput((_input, key) => {
+    // While a config/reconfig flow is open, this ChatScreen-level handler owns
+    // Esc so cancel is reliable even mid-list-loading (a per-component
+    // EscToCancel could be unmounted by the loading→loaded transition and drop
+    // the keypress). configOpen/reconfigOpen/sessionId are read from handlerRef
+    // (see above) because Ink keeps the originally-registered callback and would
+    // otherwise see a stale closure.
+>>>>>>> gitlab-mobius/main
     if (handlerRef.current.configOpen) {
       if (isEscapeKeypress(_input, key)) onConfigCancel(handlerRef.current.sessionId)
       return
     }
+<<<<<<< HEAD
     const step = Math.max(1, fitted.entries.length)
     if (key.pageUp) setScrollBack(value => Math.min(dedupedEntries.length, value + step))
     else if (key.pageDown) setScrollBack(value => Math.max(0, value - step))
@@ -232,6 +335,72 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     },
   })
 
+=======
+    if (handlerRef.current.reconfigOpen) return // ReconfigFlow owns hierarchical Esc navigation.
+    if (key.pageUp) scrollRows(-pageRows)
+    else if (key.pageDown) scrollRows(pageRows)
+  }, { interactive: false })
+
+  const navigationHint = viewport.hasOlder
+    ? `${viewport.hasNewer ? '↑ 较早内容 · ↓ 较新内容' : '↑ 还有较早内容'} · 滚轮 3 行 · PageUp/PageDown ${pageRows} 行 · 拖动选中文本`
+    : `${viewport.hasNewer ? '已到最早 · ↓ 还有较新内容' : '全部内容'} · 滚轮 3 行 · PageUp/PageDown ${pageRows} 行 · 拖动选中文本`
+
+  // Mouse: wheel pages through history in small fixed steps, and a left-button
+  // drag selects transcript text (tmux-style: the app owns the mouse, draws its
+  // own highlight, and copies the range via OSC 52 on release). Handled on the
+  // Ink event emitter (not useInput) so sequences can be buffered across read()
+  // chunks; the Composer guards against inserting mouse bytes as typed text.
+  const { stdout } = useStdout()
+  const selState = useRef<{ anchor: SelPoint; end: SelPoint; active: boolean } | null>(null)
+  const [sel, setSel] = useState<{ anchor: SelPoint; end: SelPoint; active: boolean } | null>(null)
+  const [copyNotice, setCopyNotice] = useState<string | null>(null)
+
+  // Selection uses the exact virtual rows mounted below. There is no separate
+  // fitting/geometry pass, so hit-testing, rendering and clipboard extraction
+  // cannot disagree about which rows are on screen.
+  const geometry: TranscriptGeometry = useMemo(
+    () => ({ boxTop: 2, boxH: transcriptRows }),
+    [transcriptRows],
+  )
+  const transcriptModel: TranscriptModel = useMemo(
+    () => ({ entries: viewport.rows.map(item => [item.row.plain]), totalRows: viewport.rows.length }),
+    [viewport.rows],
+  )
+  const selMap = useMemo(
+    () => (sel?.active ? buildSelectionMap(transcriptModel, sel.anchor, sel.end) : null),
+    [sel, transcriptModel],
+  )
+
+  const commitCopy = useCallback((anchor: SelPoint, end: SelPoint) => {
+    const text = buildSelectionText(transcriptModel, anchor, end)
+    if (!text) return
+    stdout.write(osc52(text))
+    setCopyNotice(`已复制 ${Array.from(text).length} 字符`)
+  }, [transcriptModel, stdout])
+
+  useMouseEvents({
+    onWheel: (delta) => {
+      scrollRows(delta * -3)
+    },
+    onPress: (row, col) => {
+      const p = screenToSelPoint(row, col, transcriptModel, geometry)
+      if (p) { selState.current = { anchor: p, end: p, active: true }; setSel(selState.current) }
+    },
+    onMotion: (row, col) => {
+      const s = selState.current
+      if (!s?.active) return
+      const p = screenToSelPoint(row, col, transcriptModel, geometry)
+      if (p) { selState.current = { ...s, end: p }; setSel(selState.current) }
+    },
+    onRelease: () => {
+      const s = selState.current
+      selState.current = null
+      setSel(null)
+      if (s?.active && compareSel(s.anchor, s.end) !== 0) commitCopy(s.anchor, s.end)
+    },
+  })
+
+>>>>>>> gitlab-mobius/main
   // Transient "已复制 N 字符" notice in the status row, then it clears itself.
   useEffect(() => {
     if (!copyNotice) return
@@ -262,6 +431,27 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     )
   }
 
+<<<<<<< HEAD
+=======
+  if (reconfigOpen) {
+    return (
+      <Box
+        flexDirection="column"
+        width={terminal.isTty ? terminal.columns : undefined}
+        height={terminal.isTty ? viewportRows : undefined}
+        paddingX={1}
+        overflowY="hidden"
+      >
+        <ReconfigFlow
+          client={client}
+          onDone={(result) => onReconfigure(result)}
+          onCancel={() => onConfigCancel(chat.sessionId)}
+        />
+      </Box>
+    )
+  }
+
+>>>>>>> gitlab-mobius/main
   return (
     <Box
       flexDirection="column"
@@ -275,6 +465,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           ? <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} modelDisplay={modelDisplay} />
           : <CompactHeader ready={ready} sessionId={chat.sessionId} columns={terminal.columns} />}
 
+<<<<<<< HEAD
         {/* Older-records hint is pinned OUTSIDE the flex-end scroll box so it is
             always the first line of the transcript, spanning the full width,
             instead of floating mid-screen when the transcript has spare rows. */}
@@ -301,6 +492,27 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           {fitted.hiddenRecent > 0
             ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  ↓ 滚轮/PageDown 翻页 · 较新 {fitted.hiddenRecent} 条</Text></Box>
             : null}
+=======
+        {!showWelcome
+          ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  {navigationHint}</Text></Box>
+          : null}
+
+        <Box
+          height={showWelcome ? undefined : transcriptRows}
+          flexGrow={showWelcome ? 1 : 0}
+          flexShrink={showWelcome ? 1 : 0}
+          flexDirection="column"
+          justifyContent="flex-end"
+          overflowY="hidden"
+        >
+          {!showWelcome ? viewport.rows.map((item, index) => {
+            const range = selMap?.get(index)?.get(0)
+            const text = range && range.start < range.end
+              ? highlightScreenRow(item.row.styled, range.start, range.end)
+              : item.row.styled
+            return <ScreenText key={`${item.entryId}:${item.rowIndex}`} row={item.row} text={text || ' '} />
+          }) : null}
+>>>>>>> gitlab-mobius/main
         </Box>
 
         {dedupedEntries.length === 0 && chat.pendingUser === null && !showHelp
@@ -321,6 +533,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           typing={chat.typing}
           commands={SLASH_COMMANDS}
           onHeightChange={setComposerRows}
+          inputActiveRef={chatInputActiveRef}
         />
         <StatusArea
           ready={ready}
@@ -364,7 +577,7 @@ function WelcomeCard({ ready, columns, resumed, modelDisplay }: { ready: ReadySt
         <Text>
           <Text dimColor>{'>_ '}</Text>
           <Text bold>Mobius</Text>
-          <Text dimColor> (v{VERSION})</Text>
+          <Text dimColor> (v{TUI_VERSION})</Text>
         </Text>
         <Text> </Text>
         <MetaRow label="model:" value={modelDisplay} hint="/help 查看命令" labelWidth={labelWidth} />
@@ -399,15 +612,19 @@ function CompactHeader({ ready, sessionId, columns }: { ready: ReadyState; sessi
   )
 }
 
-function EntryAccum({ entry, columns }: { entry: AnyEntry; columns: number }) {
-  const views = viewsForEntry(entry)
-  return (
-    <Box flexDirection="column">
-      {views.map((view, index) => <ViewLine key={index} view={view} columns={columns} />)}
-    </Box>
-  )
+function ScreenText({ row, text }: { row: ScreenRow; text: string }) {
+  const tone = row.tone
+  const color = tone === 'tool' ? 'cyan'
+    : tone === 'tool_error' || tone === 'edit_old' || tone === 'error' ? 'red'
+      : tone === 'edit_header' || tone === 'reasoning' ? 'magenta'
+        : tone === 'edit_new' ? 'green'
+          : tone === 'system' ? 'yellow'
+            : undefined
+  const dimColor = tone === 'tool_result' || tone === 'tool_error' || tone === 'reasoning' || tone === 'system'
+  return <Text wrap="truncate-end" bold={tone === 'user'} dimColor={dimColor} color={color}>{text}</Text>
 }
 
+<<<<<<< HEAD
 // While a drag-selection is active, the affected entries are re-rendered from the
 // screen-text model (plain rows, no ANSI) so the selected char range can be
 // painted with a background — the same rows the model produces, keeping the
@@ -455,60 +672,47 @@ function ViewLine({ view, columns }: { view: EntryView; columns: number }) {
           ))}
         </Box>
       )
+=======
+const ANSI_CSI_RE = /^\x1b\[[0-?]*[ -/]*[@-~]/
+const SELECTION_BG = '\x1b[46m'
+const SELECTION_BG_END = '\x1b[49m'
+
+/** Add a background to visible UTF-16 offsets without stripping existing ANSI. */
+function highlightScreenRow(styled: string, start: number, end: number): string {
+  if (start >= end) return styled
+  let out = ''
+  let raw = 0
+  let visible = 0
+  let highlighted = false
+  while (raw < styled.length) {
+    if (styled.charCodeAt(raw) === 0x1b) {
+      const match = ANSI_CSI_RE.exec(styled.slice(raw))
+      if (match) {
+        out += match[0]
+        raw += match[0].length
+        // A full SGR reset inside Markdown/syntax text also resets the injected
+        // background; immediately restore it while the selected span is active.
+        if (highlighted && /^\x1b\[(?:0)?m$/.test(match[0])) out += SELECTION_BG
+        continue
+      }
+>>>>>>> gitlab-mobius/main
     }
-    case 'tool_call': {
-      // compact (≤2 行): 命令行 + 可选结果行 (已与 tool_result 合并).
-      const head = clampLines(`${toolLabel(view.toolName)} ${view.summary}`.trim(), width - 2, 1)[0]
-      return (
-        <Box marginTop={1} flexDirection="column">
-          <Text color="cyan">• {head}</Text>
-          {view.result ? (
-            <Text dimColor color={view.result.isError ? 'red' : undefined}>
-              {'  └ '}{clampLines(view.result.text, width - 4, 1)[0] || '(无输出)'}
-            </Text>
-          ) : null}
-        </Box>
-      )
+    const codePoint = styled.codePointAt(raw)!
+    const char = String.fromCodePoint(codePoint)
+    const nextVisible = visible + char.length
+    if (!highlighted && nextVisible > start && visible < end) {
+      out += SELECTION_BG
+      highlighted = true
     }
-    case 'tool_result': {
-      // codex 式 head+ellipsis+tail (output_max_lines=5): tool 结果保留头尾,
-      // 中间省略行数; DIM 样式 + └/缩进前缀 (对齐 codex exec_cell/render.rs).
-      const lines = headTailLines(view.text, width - 4, 5)
-      return (
-        <Box flexDirection="column">
-          {lines.map((l, i) => (
-            <Text key={i} dimColor color={view.isError ? 'red' : undefined}>{i === 0 ? '  └ ' : '    '}{l}</Text>
-          ))}
-        </Box>
-      )
+    if (highlighted && visible >= end) {
+      out += SELECTION_BG_END
+      highlighted = false
     }
-    case 'code_edit':
-      return <CodeEditView view={view} />
-    case 'write_file':
-      return <WriteFileView view={view} />
-    case 'reasoning': {
-      const lines = clampLines(view.text, width - 4, 2)
-      return (
-        <Box marginTop={1} flexDirection="column">
-          {lines.map((line, i) => (
-            <Text key={i} dimColor color="magenta">{i === 0 ? '  ◇ ' : '    '}{line}</Text>
-          ))}
-        </Box>
-      )
-    }
-    case 'system':
-      return <Text dimColor color="yellow">  {clampLines(view.text, width - 2, 2)[0]}</Text>
-    case 'error':
-      return (
-        <Box marginTop={1} flexDirection="column">
-          {view.text.split('\n').map((line, i) => (
-            <Text key={i} color="red">{i === 0 ? '⚠ ' : '  '}{line}</Text>
-          ))}
-        </Box>
-      )
-    default:
-      return null
+    out += char
+    raw += char.length
+    visible = nextVisible
   }
+<<<<<<< HEAD
 }
 
 // 代码修改 (Edit/StrReplace/apply_patch) — full: 完整展示 old(−)/new(+) 改动原文.
@@ -547,6 +751,10 @@ function UserLine({ text }: { text: string }) {
   if (lines[0] !== undefined) lines[0] = `› ${lines[0]}`
   for (let i = 1; i < lines.length; i++) lines[i] = `  ${lines[i]}`
   return <Box marginTop={1}><Text bold>{lines.join('\n')}</Text></Box>
+=======
+  if (highlighted) out += SELECTION_BG_END
+  return out
+>>>>>>> gitlab-mobius/main
 }
 
 function WorkingIndicator({ firstQuery }: { firstQuery: boolean }) {
@@ -607,9 +815,10 @@ interface ComposerProps {
   typing: boolean
   commands: { cmd: string; desc: string }[]
   onHeightChange?: (rows: number) => void
+  inputActiveRef?: React.RefObject<boolean>
 }
 
-export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightChange }: ComposerProps) {
+export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightChange, inputActiveRef }: ComposerProps) {
   const [value, setValue] = useState('')
   const [cursor, setCursor] = useState(0)
   const [popupIdx, setPopupIdx] = useState(0)
@@ -637,6 +846,16 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
     const { text, cursor: nextCursor } = applyDeleteIntent(valueRef.current, cursorRef.current, intent)
     edit(text, nextCursor)
   })
+<<<<<<< HEAD
+=======
+  useCursorKeyCapture(true, (intent) => {
+    const current = valueRef.current
+    const at = clampCursor(current, cursorRef.current)
+    const next = intent === 'home' ? 0 : intent === 'end' ? current.length
+      : intent === 'backward-word' ? previousWordBoundary(current, at) : nextWordBoundary(current, at)
+    moveCursor(next)
+  })
+>>>>>>> gitlab-mobius/main
 
   const filtered = useMemo(() => {
     const match = /^(\w*)$/.exec(value.slice(1))
@@ -752,7 +971,12 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
 
   useEffect(() => () => resetPasteBurst(), [])
 
+<<<<<<< HEAD
   useInput((input, key) => {
+=======
+  useStableInput((input, key) => {
+    if (inputActiveRef?.current === false) return false
+>>>>>>> gitlab-mobius/main
     if (isMouseInput(input)) return // mouse events must never become typed text
     const now = Date.now()
     const escape = isEscapeKeypress(input, key)
@@ -825,6 +1049,19 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
     if (key.ctrl && input === 'w') {
       const { text, cursor: nextCursor } = applyDeleteIntent(current, at, 'backward-word')
       edit(text, nextCursor)
+<<<<<<< HEAD
+      return
+    }
+    if (key.ctrl && input === 'h') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(current, at, 'backward')
+      edit(text, nextCursor)
+      return
+    }
+    if (key.ctrl && input === 'd') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(current, at, 'forward')
+      edit(text, nextCursor)
+=======
+>>>>>>> gitlab-mobius/main
       return
     }
     if (key.ctrl && input === 'h') {
@@ -837,6 +1074,7 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
       edit(text, nextCursor)
       return
     }
+    if (key.ctrl && (key.leftArrow || key.rightArrow)) return
     if (key.leftArrow) { moveCursor(previousCursorBoundary(current, at)); return }
     if (key.rightArrow) { moveCursor(nextCursorBoundary(current, at)); return }
 
@@ -932,7 +1170,7 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
           })}
         </Box>
         <Box justifyContent="space-between">
-          <Text dimColor>{(stdout.columns ?? 80) >= 58 ? 'Enter 发送 · Shift+Enter / Ctrl+J 换行' : 'Enter 发送 · Ctrl+J 换行'}</Text>
+          <Text dimColor>{(stdout.columns ?? 80) >= 72 ? 'Enter 发送 · Shift+Enter / Alt+Enter / Ctrl+J 换行' : 'Enter 发送 · Alt+Enter / Ctrl+J 换行'}</Text>
           <Text dimColor>{wrapped.length > maxRows ? `${visualCursor + 1}/${wrapped.length} 行` : `${wrapped.length} 行`}</Text>
         </Box>
       </Box>
@@ -959,7 +1197,7 @@ function normalizeComposerPaste(text: string): string {
 }
 
 function isEnhancedNewlineInput(input: string): boolean {
-  return /^\[(?:13|27);2(?:u|~)$/.test(input) || input === '\x1b\r'
+  return /^\[13;2u$/.test(input) || /^\[27;2;13~$/.test(input) || input === '\x1b\r'
 }
 
 function findPasteMarker(input: string, code: '200' | '201', from = 0): number {
@@ -1115,6 +1353,7 @@ function clickableUrl(url: string, maxLen?: number): string {
 
 // displayWidth is imported from src/lib/screen-text.ts (CJK/emoji-aware), used
 // here to size the AIMUX status block so the web URL truncates exactly.
+<<<<<<< HEAD
 
 function wrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width)
@@ -1195,3 +1434,5 @@ function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, 
     startIndex: first,
   }
 }
+=======
+>>>>>>> gitlab-mobius/main

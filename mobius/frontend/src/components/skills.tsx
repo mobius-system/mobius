@@ -4,6 +4,7 @@ import { api } from '../store'
 import { ContextAccessModal } from './context-access'
 import { MoveScopeModal } from './modals'
 import { CopyFromCatalogModal } from './copy-catalog'
+import { HelpHint } from './project-page/help-hint'
 import { SkillMarketLink } from './skill-market-link'
 import {
   CONTEXT_SETUP_DEMO_TOUR_EVENT,
@@ -268,7 +269,10 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
   return (
     <div data-tour={managerTour} className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-4">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <h3 className="text-[13px] font-semibold whitespace-nowrap flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h3 className="text-[13px] font-semibold whitespace-nowrap flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+          <HelpHint text={desc} />
+        </div>
         <div className="flex min-w-0 flex-wrap justify-end gap-1">
           <input
             ref={skillFileInputRef}
@@ -461,7 +465,7 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
                     style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                     <Eye className="w-3.5 h-3.5" />
                   </button>
-                  {sk.can_manage && (
+                  {sk.can_manage && scope !== 'project' && (
                     <button onClick={() => setAccessing(sk)} title="设置可见性和指定用户"
                       className="h-7 w-7 inline-flex items-center justify-center rounded border transition-colors hover:bg-[var(--bg-hover)]"
                       style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>

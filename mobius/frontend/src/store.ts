@@ -69,9 +69,14 @@ declare global {
   interface Window {
     __BRANDING__?: Branding
     // 全局打开管理中心 overlay (shell.tsx 注册). 引导系统「重温管理中心」按钮先打开 overlay 再启动引导.
-    openAdminOverlay?: () => void
+    // 可选 tab: 传入即直接落到该 tab (例如 'runtime' = 运行监控), 不传则用管理中心默认 tab.
+    openAdminOverlay?: (tab?: AdminPanelTab) => void
   }
 }
+
+// 仅用于全局 Window.openAdminOverlay 的入参类型 — 与 panels.tsx 的 AdminPanelTab 保持一致.
+// 不在此文件 import panels 是为了避免 store ↔ panels 形成循环依赖.
+type AdminPanelTab = 'users' | 'runtime' | 'redaction' | 'settings' | 'assistant' | 'models' | 'extensions' | 'migration'
 
 const DEFAULT_BRANDING: Branding = {
   hideLogo: false,
@@ -280,6 +285,16 @@ interface Message {
   turn_number?: number
   turn_summary?: string
   created_at?: string
+  metadata?: string | Record<string, any> | null
+  session_mentions?: Array<{
+    session_id: string
+    name?: string
+    mode?: 'read_only' | 'bidirectional'
+    project_name?: string
+    scope_type?: 'issue' | 'research' | null
+    scope_title?: string
+    context_at?: string | null
+  }>
 }
 
 interface Turn {

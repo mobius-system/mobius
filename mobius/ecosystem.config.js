@@ -64,6 +64,8 @@ const envKeys = [
   'MOBIUS_LOG_DIR',
   'MOBIUS_TOKEN_PROXY_HOST',
   'MOBIUS_TOKEN_PROXY_PORT',
+  'MOBIUS_GULING_MCP_URL',
+  'MOBIUS_GULING_MCP_TOKEN',
 ];
 
 const inheritedEnv = {};

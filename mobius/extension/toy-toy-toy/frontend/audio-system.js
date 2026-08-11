@@ -18,6 +18,7 @@ const EVENT_COOLDOWNS = Object.freeze({
   overdrive: 0.22,
   boss: 0.4,
   victory: 0.5,
+  defeat: 0.5,
   soundOn: 0.12,
 });
 
@@ -307,8 +308,26 @@ export function createToyAudioSystem({
     }
     reverb.buffer = reverbBuffer;
     reverb.connect(reverbGain).connect(masterInput);
-    graph = { masterInput, compressor, limiter, master, categories, reverb, reverbGain };
+    // Dedicated BGM bus: pre-compressor so the music engine can be ducked by
+    // big SFX moments without touching the weapon/impact buses.
+    const musicBus = context.createGain();
+    musicBus.gain.value = 1;
+    musicBus.connect(masterInput);
+    graph = { masterInput, compressor, limiter, master, categories, reverb, reverbGain, musicBus };
     buildBuffers();
+  }
+
+  function musicOutput() {
+    return ensureAudio() && graph ? graph.musicBus : null;
+  }
+
+  function duckMusic(amount = 0.35, seconds = 0.9) {
+    if (!context || !graph?.musicBus) return;
+    const now = context.currentTime;
+    graph.musicBus.gain.cancelScheduledValues(now);
+    graph.musicBus.gain.setValueAtTime(Math.min(1, graph.musicBus.gain.value), now);
+    graph.musicBus.gain.linearRampToValueAtTime(clamp(amount, 0.05, 1), now + 0.05);
+    graph.musicBus.gain.linearRampToValueAtTime(1, now + seconds);
   }
 
   function ensureAudio() {
@@ -616,6 +635,7 @@ export function createToyAudioSystem({
 
   function playGateBreak() {
     countEvent('gateBreak');
+    duckMusic(0.32, 0.9);
     const voice = beginVoice('gateBreak', 'feedback', 1.05, 4);
     if (!voice) return false;
     duck({ weapon: 0.28, impact: 0.48, duration: 0.46 });
@@ -629,6 +649,7 @@ export function createToyAudioSystem({
 
   function playUpgrade() {
     countEvent('upgrade');
+    duckMusic(0.4, 1.1);
     const voice = beginVoice('upgrade', 'cinematic', 1.38, 5);
     if (!voice) return false;
     duck({ weapon: 0.22, impact: 0.42, duration: 0.72 });
@@ -680,6 +701,7 @@ export function createToyAudioSystem({
 
   function playBoss() {
     countEvent('boss');
+    duckMusic(0.18, 1.8);
     const voice = beginVoice('boss', 'cinematic', 2.05, 9);
     if (!voice) return false;
     duck({ weapon: 0.12, impact: 0.28, duration: 1.2 });
@@ -698,6 +720,7 @@ export function createToyAudioSystem({
 
   function playVictory() {
     countEvent('victory');
+    duckMusic(0.12, 2.2);
     const voice = beginVoice('victory', 'cinematic', 1.85, 10);
     if (!voice) return false;
     duck({ weapon: 0.08, impact: 0.18, duration: 1.35 });
@@ -709,6 +732,24 @@ export function createToyAudioSystem({
     melody.forEach((ratio, index) => oscillatorLayer(voice, { delay: 0.1 + index * 0.13, duration: index === melody.length - 1 ? 0.62 : 0.3, frequency: root * ratio * 0.92, endFrequency: root * ratio, type: index === melody.length - 1 ? 'triangle' : 'sine', gain: index === melody.length - 1 ? 0.15 : 0.085, pan: (index % 2 ? 1 : -1) * 0.22, reverb: 0.28 }));
     if (deadline) bufferLayer(voice, 'keyboard', { delay: 0.74, gain: 0.15, rate: 0.82, pan: 0.25 });
     else bufferLayer(voice, 'electric', { delay: 0.68, gain: 0.12, rate: 0.62, pan: 0.25, filter: { type: 'bandpass', frequency: 1650, q: 0.6 }, reverb: 0.18 });
+    return true;
+  }
+
+  function playDefeat() {
+    countEvent('defeat');
+    duckMusic(0.1, 2.4);
+    const voice = beginVoice('defeat', 'cinematic', 2.2, 10);
+    if (!voice) return false;
+    duck({ weapon: 0.06, impact: 0.12, duration: 1.6 });
+    const deadline = themeId() === 'deadline';
+    bufferLayer(voice, deadline ? 'glitch' : 'explosion', { gain: deadline ? 0.3 : 0.4, rate: deadline ? 0.42 : 0.5, filter: { type: 'lowpass', frequency: 640 }, drive: 0.14, reverb: 0.3 });
+    // Diminished descent: root, tritone, then a long minor-second drop.
+    const root = deadline ? 233 : 155;
+    [1, 0.707, 0.53].forEach((ratio, index) => {
+      oscillatorLayer(voice, { delay: 0.12 + index * 0.42, duration: index === 2 ? 1.05 : 0.42, frequency: root * ratio, endFrequency: root * ratio * (index === 2 ? 0.82 : 0.94), type: index === 2 ? 'triangle' : 'sine', gain: 0.14 - index * 0.02, pan: (index - 1) * 0.22, reverb: 0.34 });
+    });
+    if (deadline) bufferLayer(voice, 'paper', { delay: 0.5, gain: 0.18, rate: 0.5, pan: 0.24, reverb: 0.26 });
+    else bufferLayer(voice, 'debris', { delay: 0.44, gain: 0.22, rate: 0.56, pan: -0.22, reverb: 0.3 });
     return true;
   }
 
@@ -733,6 +774,7 @@ export function createToyAudioSystem({
     overdrive: playOverdrive,
     boss: playBoss,
     victory: playVictory,
+    defeat: playDefeat,
     soundOn: playSoundOn,
   });
 
@@ -812,5 +854,7 @@ export function createToyAudioSystem({
     previewSound,
     snapshot,
     dispose,
+    musicOutput,
+    duckMusic,
   });
 }

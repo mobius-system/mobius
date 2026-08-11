@@ -1,11 +1,7 @@
 import { useContext, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
-import rehypeHighlight from 'rehype-highlight'
-import remarkGfm from 'remark-gfm'
+import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
 import { VSCodeOpenContext, isLikelyFilesystemPath, resolveMediaSrc } from './jsonl-vscode-link'
-
-const MARKDOWN_REMARK_PLUGINS = [remarkGfm]
-const MARKDOWN_REHYPE_PLUGINS = [rehypeHighlight as any]
 
 function MarkdownAnchor({ href, children }: { href?: string; children?: ReactNode }) {
   const ctx = useContext(VSCodeOpenContext)

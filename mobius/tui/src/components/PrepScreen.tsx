@@ -10,6 +10,7 @@
  * Preferences are stored INSIDE the selected Issue (switching issues restores
  * that issue's saved model/language/skill/memory choices).
  */
+import { randomBytes } from 'crypto'
 import React, { useEffect, useState } from 'react'
 import { Box, Text } from 'ink'
 import { Select, TextInput, type SelectItem } from './primitives.js'
@@ -116,7 +117,14 @@ export function PrepScreen({ client, onReady, onQuit }: {
   async function createProject(name: string, description: string) {
     setStatusMsg('创建项目…')
     try {
-      const p = await client.createProject({ name: name || '未命名项目', description, bindPath: thisCwd, defaultUseWorktree: false })
+      // bindPath 是 mobius 服务器上的工作目录，不应使用 TUI 客户端的 process.cwd()。
+      // TUI 可能运行在不同机器/OS 上（尤其是通过 aimux 连接时），
+      // 客户端 cwd 对服务器无意义（Windows 路径如 C:\Users\... 在 Linux 上会被误解析为相对路径）。
+      // 用项目名+随机后缀生成唯一服务器端子目录，由服务器 resolveBindPath 拼到用户 work_dir 下。
+      const slug = (name || '未命名项目').replace(/[^a-zA-Z0-9一-鿿_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 56) || 'project'
+      const suffix = randomBytes(3).toString('hex')
+      const safeDir = `/${slug}-${suffix}`
+      const p = await client.createProject({ name: name || '未命名项目', description, bindPath: safeDir, defaultUseWorktree: false })
       const list = await client.listProjects(); await saveProjectsCache(list); setProjects(list)
       await bindCwdToProject(thisCwd, p.id)
       await enterProject(p, list)
@@ -222,10 +230,75 @@ function toItems(arr: { id: string; name: string; description?: string }[]): Sel
   return arr.map(s => ({ label: s.name, value: s.id, desc: s.description }))
 }
 
-// 把可能含换行的描述压成单行：换行 → 可见符号 ⏎，避免列表项跨行。
-function flattenDesc(s?: string): string {
-  if (!s) return ''
-  return s.replace(/\s*\n\s*/g, ' ⏎ ').replace(/[ \t]+/g, ' ').trim()
+// Search-first picker used by the project and issue screens. The search field
+// owns the initial focus so a user can type immediately; Down hands control to
+// the normal Select for keyboard navigation. Enter in the search field chooses
+// the first matching row, which keeps the common "type a unique name, Enter"
+// workflow to one step.
+function SearchableSelect({
+  items,
+  createItem,
+  title,
+  placeholder,
+  onSelect,
+  onCreate,
+  onQuit,
+}: {
+  items: SelectItem[]
+  createItem?: SelectItem
+  title: string
+  placeholder: string
+  onSelect: (value: string) => void
+  onCreate?: () => void
+  onQuit?: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [focus, setFocus] = useState<'search' | 'list'>('search')
+  const needle = query.trim().toLocaleLowerCase()
+  const matches = (item: SelectItem) => {
+    if (!needle) return true
+    return `${item.label}\n${item.desc ?? ''}\n${item.value}`.toLocaleLowerCase().includes(needle)
+  }
+  const filtered = items.filter(matches)
+  const createMatches = createItem && matches(createItem)
+  const visibleItems = createItem && (!needle || createMatches)
+    ? [createItem, ...filtered]
+    : filtered
+
+  function choose(value: string) {
+    if (value === createItem?.value) onCreate?.()
+    else onSelect(value)
+  }
+
+  return (
+    <Box flexDirection="column">
+      <Text bold color="cyan">{title}</Text>
+      <Box marginTop={1} flexDirection="column">
+        <TextInput
+          value={query}
+          onChange={setQuery}
+          focused={focus === 'search'}
+          prompt="搜索:"
+          placeholder={placeholder}
+          onArrowDown={() => setFocus('list')}
+          onArrowUp={() => setFocus('list')}
+          onSubmit={() => { if (visibleItems.length) choose(visibleItems[0].value) }}
+          onEscape={() => onQuit?.()}
+        />
+        {query.trim() && !filtered.length
+          ? <Text color="yellow">没有匹配的项目，请修改搜索</Text>
+          : focus === 'search' && query.trim() ? <Text color="gray">匹配 {filtered.length} 项 · ↓进入列表</Text> : null}
+        {focus === 'list' && !visibleItems.length
+          ? <Text color="yellow">没有匹配的项目，请按 Esc 修改搜索</Text>
+          : <Select
+              items={visibleItems}
+              focused={focus === 'list'}
+              onBack={() => setFocus('search')}
+              onSelect={choose}
+            />}
+      </Box>
+    </Box>
+  )
 }
 
 // ── Project picker ───────────────────────────────────────────────────────────
@@ -256,22 +329,25 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate, onQuit }: {
     )
   }
 
-  const items: SelectItem[] = [
-    { label: '➕ 创建新项目', value: '__create__', desc: '绑定到当前路径' },
-    ...projects.map(p => {
-      const desc = flattenDesc(p.description)
-      return { label: desc ? `${p.name} — ${desc}` : p.name, value: p.id }
-    }),
-  ]
+  const items: SelectItem[] = projects.map(p => ({
+    label: p.name,
+    desc: p.description,
+    value: p.id,
+  }))
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      <Text bold color="cyan">选择当前路径的绑定项目</Text>
       <Text color="gray">{cwd}</Text>
-      <Box marginTop={1}>
-        <Select items={items} onBack={onQuit} onSelect={v => v === '__create__' ? setMode('create') : onPick(projects.find(p => p.id === v)!)} />
-      </Box>
+      <SearchableSelect
+        title="选择当前路径的绑定项目"
+        placeholder="输入项目名或描述"
+        items={items}
+        createItem={{ label: '➕ 创建新项目', value: '__create__', desc: '绑定到当前路径' }}
+        onSelect={v => onPick(projects.find(p => p.id === v)!)}
+        onCreate={() => setMode('create')}
+        onQuit={onQuit}
+      />
       {statusMsg ? <Text color="yellow">{statusMsg}</Text> : null}
-      <Text color="gray">↑↓ 选择 · 回车确认 · Esc 退出</Text>
+      <Text color="gray">输入关键词筛选 · ↓进入列表 · Esc 退出</Text>
     </Box>
   )
 }
@@ -298,18 +374,23 @@ function IssuePicker({ issues, onPick, onCreate }: {
       </Box>
     )
   }
-  const items: SelectItem[] = [
-    { label: '➕ 创建新任务', value: '__create__' },
-    ...issues.map(i => ({ label: i.title, value: i.id, desc: i.description })),
-  ]
+  const items: SelectItem[] = issues.map(i => ({
+    label: i.title,
+    desc: i.description,
+    value: i.id,
+  }))
   return (
     <Box flexDirection="column">
-      <Text bold color="cyan">选择任务（Issue）</Text>
       <Text color="gray">偏好设置将保存在所选任务内部</Text>
       <Box marginTop={1}>
-        {issues.length === 0 && mode === 'list'
-          ? <Select items={[{ label: '➕ 创建新任务（尚无任务）', value: '__create__' }]} onSelect={() => setMode('create-name')} />
-          : <Select items={items} onSelect={v => v === '__create__' ? setMode('create-name') : onPick(issues.find(i => i.id === v)!)} />}
+        <SearchableSelect
+          title="选择任务（Issue）"
+          placeholder="输入任务标题或描述"
+          items={items}
+          createItem={{ label: issues.length ? '➕ 创建新任务' : '➕ 创建新任务（尚无任务）', value: '__create__' }}
+          onSelect={v => onPick(issues.find(i => i.id === v)!)}
+          onCreate={() => setMode('create-name')}
+        />
       </Box>
     </Box>
   )
@@ -324,8 +405,8 @@ function ModelPicker({ options, defaultKey, onSelect }: {
   if (!options.length) return <Text color="gray">加载模型列表…</Text>
   const items: SelectItem[] = options.map(o => ({
     label: `${o.label}${o.key === defaultKey ? ' （默认）' : ''}`,
-    value: o.key,
     desc: o.sub,
+    value: o.key,
   }))
   return (
     <Box flexDirection="column">

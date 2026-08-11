@@ -1,7 +1,7 @@
 // Mobius Desktop 主进程：登录 → 保证 aimux → reverse connect → loadURL 远程 web UI。
 // 详见 README。关键：退出前务必 supervisor.stop() 杀 aimux；aimux 状态经徽标+IPC 常驻可见。
 import { app, BrowserWindow, Menu, ipcMain, shell, dialog, session, screen, type WebPreferences } from "electron";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import * as net from "node:net";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,7 +11,8 @@ import { loadCreds, saveCreds, clearCreds, loadServerUrl, saveServerUrl, loadSer
 import { gatherHostInfo, type BootData } from "./lib/host-info";
 import { ensureAimux, upgradeAimux, getAimuxVersion, checkAimuxUpdate, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
 import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
-import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
+import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName, findSharedProjectForPath, bindSharedProjectPath } from "./lib/project-paths";
+import { ensureWindowsContextMenu, openPathArgument } from "./lib/windows-context-menu";
 import { FileOpError, validateNewName, assertNoSymlink, isDirEqualOrChild, copyEntryRecursive } from "./lib/project-file-ops";
 import { getAimuxEnabled, setAimuxEnabled, getLastRoute } from "./lib/desktop-settings";
 import { createStatusWindow } from "./status-window";
@@ -33,6 +34,7 @@ let windowDragTimer: NodeJS.Timeout | null = null;
 // aimux 反向连接开关（持久化于 userData/desktop-settings.json，默认开）。
 // 关闭后本机不再作为可调度节点连入 mobius，桌面端其他功能不受影响。
 let aimuxEnabled = true;
+let pendingOpenPath: string | null = openPathArgument();
 
 // 多 tab 编排（实验版 0.0.12）。每个 tab = 一个独立 WebContentsView，挂 mainWindow.contentView。
 let tabManager: TabManager | null = null;
@@ -186,6 +188,29 @@ async function fetchProjectName(server: string, projectId: string): Promise<stri
   } catch {
     return projectId;
   }
+}
+
+/** Resolve a Windows Explorer path through the TUI-compatible ~/.mobius map. */
+async function openRequestedPath(rawPath: string): Promise<void> {
+  const candidate = String(rawPath || "").trim();
+  if (!candidate || !tabManager || !creds) return;
+  const target = resolve(candidate);
+  let route = `/welcome?path=${encodeURIComponent(target)}`;
+  const match = findSharedProjectForPath(target);
+  if (match) {
+    try {
+      const res = await fetch(`${serverOrigin()}/api/projects`, { headers: { Authorization: `Bearer ${creds.jwt}` } });
+      const data = await res.json().catch(() => ({}));
+      const projects: any[] = Array.isArray(data) ? data : (data?.projects || []);
+      const project = projects.find((p) => String(p?.id || "") === match.projectId);
+      if (project) {
+        // Import the TUI mapping into the legacy Electron store on first use.
+        setProjectLocalPath(serverOrigin(), match.projectId, match.root);
+        route = `/u/${encodeURIComponent(creds.username)}/p/${encodeURIComponent(match.projectId)}`;
+      }
+    } catch { /* server unavailable: leave the welcome flow with the path */ }
+  }
+  tabManager.createTab(route, { activate: true });
 }
 
 // ——— 状态分发：推给 web UI（前端 AimuxStatusBadge 通过 IPC 接收，不再由主进程注入徽标）———
@@ -494,6 +519,11 @@ async function bootDesktop(): Promise<void> {
   ensureTabManager();
   void mainWindow.loadURL(ABOUT_BLANK);
   tabManager!.restore();
+  if (pendingOpenPath) {
+    const requested = pendingOpenPath;
+    pendingOpenPath = null;
+    void openRequestedPath(requested);
+  }
   scheduleAutoAimuxUpdateCheck();
 }
 
@@ -951,6 +981,9 @@ ipcMain.handle("project:confirm-path", async (_e, projectId: string, pathRaw: st
     return { ok: false, error: (e as Error).message };
   }
   setProjectLocalPath(serverOrigin(), projectId, p);
+  // Keep Electron and TUI on the same cwd -> project protocol.  The old
+  // userData mapping remains as a machine/server-local cache for compatibility.
+  bindSharedProjectPath(p, projectId);
   return { ok: true, path: p };
 });
 // 进入项目页时前端拉取：已绑则(必要时补建目录)返回 bound:true；未绑返回默认路径供弹窗预填。
@@ -972,6 +1005,33 @@ ipcMain.handle("project:bind-status", async (_e, projectId: string) => {
 ipcMain.handle("desktop:machine-info", () => `${os.hostname()} · ${process.platform}`);
 // 读/写 project 的本机路径与工作模式偏好 (新建 Session 第1步 PC 任务模式区块用)
 ipcMain.handle("project:get-path", (_e, projectId: string) => getProjectLocalPath(serverOrigin(), projectId));
+ipcMain.handle("project:git-status", (_e, projectId: string) => {
+  const saved = getProjectLocalPath(serverOrigin(), projectId);
+  if (!saved) return { available: false, reason: "未绑定本机工作路径" };
+  const root = resolve(saved);
+  try {
+    if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+      return { available: false, path: root, reason: "本机工作路径不可用" };
+    }
+    const top = spawnSync("git", ["-C", root, "rev-parse", "--show-toplevel"], { encoding: "utf8", timeout: 8000 });
+    if (top.status !== 0) return { available: false, path: root, reason: "本机路径不是 Git 仓库" };
+    const repoPath = String(top.stdout || "").trim() || root;
+    const branch = spawnSync("git", ["-C", repoPath, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", timeout: 8000 });
+    const head = spawnSync("git", ["-C", repoPath, "rev-parse", "--short", "HEAD"], { encoding: "utf8", timeout: 8000 });
+    const status = spawnSync("git", ["-C", repoPath, "status", "--porcelain=v1"], { encoding: "utf8", timeout: 8000 });
+    const dirtyCount = String(status.stdout || "").split(/\r?\n/).filter(Boolean).length;
+    return {
+      available: true,
+      path: repoPath,
+      branch: String(branch.stdout || "").trim() || null,
+      head: String(head.stdout || "").trim() || null,
+      dirty: dirtyCount > 0,
+      dirty_count: dirtyCount,
+    };
+  } catch (e) {
+    return { available: false, path: root, reason: (e as Error).message || "读取本机 Git 状态失败" };
+  }
+});
 ipcMain.handle("project:get-work-mode", (_e, projectId: string) => getProjectWorkMode(serverOrigin(), projectId));
 ipcMain.handle("project:set-work-mode", (_e, projectId: string, mode: string) => {
   setProjectWorkMode(serverOrigin(), projectId, String(mode || "dual"));
@@ -1242,14 +1302,18 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    const requested = openPathArgument(argv);
+    if (requested) pendingOpenPath = requested;
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
+      if (requested && creds) void openRequestedPath(requested);
     }
   });
 
   app.whenReady().then(async () => {
+    ensureWindowsContextMenu();
     aimuxEnabled = getAimuxEnabled();
     buildMenu();
     createWindow();

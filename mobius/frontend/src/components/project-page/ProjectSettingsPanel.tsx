@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { AlertTriangle, Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
 import { ProjectUserContextWhitelist } from '../context-whitelist'
+import { HelpHint } from './help-hint'
 import { ToggleSwitch } from '../toggle-switch'
 import { MemoriesManager } from '../memories'
 import { OpenInVSCodeButton } from '../project-files'
@@ -81,9 +82,16 @@ type ProjectSettingsPanelProps = {
   onDeleteProject: () => void
   onOpenPathPicker: () => void
   onArchitectureSessionCreated: (issue: any, session: any) => void
+  // 设计师之眼布局: 把顶部 settings tab 条外移到 ProjectPage 左侧边栏时,
+  // 由父层接管 activePane (受控) 并把 settingsTabs 上抛给父层渲染;
+  // hideHeaderTabs=true 时不再在面板内部渲染那条横向 tab 条 (移动端仍保留).
+  controlledActivePane?: SettingsPane
+  onSelectPane?: (pane: SettingsPane) => void
+  onExposeTabs?: (tabs: OverflowTab[]) => void
+  hideHeaderTabs?: boolean
 }
 
-type SettingsPane = 'settings' | 'versions' | 'architecture' | 'todos' | 'members' | 'package' | 'assistant'
+export type SettingsPane = 'settings' | 'versions' | 'architecture' | 'todos' | 'members' | 'package' | 'assistant'
 
 const PROJECT_VISIBILITY_OPTIONS: Array<{ value: 'private' | 'public'; label: string; description: string }> = [
   { value: 'private', label: '私有', description: '只有项目成员（含创建者与项目管理员）能看到本项目。' },
@@ -430,11 +438,14 @@ function GitTrackingPanel({
   )
 }
 
-function SettingsCard({ title, children }: { title: string; children: ReactNode }) {
+function SettingsCard({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
     <section className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
       <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
-        <h3 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h3 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+          {hint && <HelpHint text={hint} />}
+        </div>
       </div>
       <div className="p-4 space-y-3">
         {children}
@@ -511,6 +522,10 @@ export function ProjectSettingsPanel({
   onDeleteProject,
   onOpenPathPicker,
   onArchitectureSessionCreated,
+  controlledActivePane,
+  onSelectPane,
+  onExposeTabs,
+  hideHeaderTabs = false,
 }: ProjectSettingsPanelProps) {
   const { user } = useStore()
   const {
@@ -558,7 +573,17 @@ export function ProjectSettingsPanel({
     const v = typeof localStorage !== 'undefined' ? localStorage.getItem(PaneKey) : null
     return v && (['settings','versions','architecture','todos','members','package','assistant'] as const).includes(v as SettingsPane) ? v as SettingsPane : 'settings'
   }
+<<<<<<< HEAD
   const [activePane, setActivePane] = useState<SettingsPane>(paneInit)
+=======
+  // 受控模式 (设计师之眼侧边栏): 父层接管 activePane; 否则维持原有内部状态.
+  const [internalPane, setInternalPane] = useState<SettingsPane>(paneInit)
+  const activePane = controlledActivePane ?? internalPane
+  const setActivePane = (pane: SettingsPane) => {
+    if (controlledActivePane !== undefined) onSelectPane?.(pane)
+    else setInternalPane(pane)
+  }
+>>>>>>> gitlab-mobius/main
   const [showDeletePermissionNotice, setShowDeletePermissionNotice] = useState(false)
   useEffect(() => { try { localStorage.setItem(PaneKey, activePane) } catch {} }, [PaneKey, activePane])
   useEffect(() => { setShowDeletePermissionNotice(false) }, [project?.id])
@@ -849,10 +874,10 @@ export function ProjectSettingsPanel({
       { key: 'settings', label: '项目设置', active: activePane === 'settings', dataTour: 'project-settings-tab' },
     ]
     // 项目成员设置紧跟「项目设置」之后、版本追踪之前 (所有项目, 含拓展应用).
-    arr.push({ key: 'members', label: '项目成员设置', active: activePane === 'members' })
+    arr.push({ key: 'members', label: '项目成员', active: activePane === 'members' })
     arr.push(
       { key: 'versions', label: '版本追踪', active: activePane === 'versions', disabled: !gitTrackingAvailable, title: gitTrackingTitle },
-      { key: 'architecture', label: '系统结构剖析', active: activePane === 'architecture' },
+      { key: 'architecture', label: '系统剖析', active: activePane === 'architecture' },
       { key: 'todos', label: '项目待办', active: activePane === 'todos' },
       { key: 'package', label: '打包下载', active: activePane === 'package' },
     )
@@ -860,9 +885,21 @@ export function ProjectSettingsPanel({
     return arr
   }, [activePane, gitTrackingAvailable, gitTrackingTitle, assistantProject, project.kind])
 
+  // 把当前 settingsTabs 上抛给父层 (设计师之眼侧边栏渲染用). settingsTabs 是 useMemo 产物,
+  // 仅在其依赖变化时换身份, 故不会造成父子间渲染抖动.
+  useEffect(() => {
+    if (onExposeTabs) onExposeTabs(settingsTabs)
+  }, [onExposeTabs, settingsTabs])
+
+  // 切到「版本追踪」时懒加载 git 追踪数据; 统一用 effect 触发, 这样无论是面板内点击
+  // 还是侧边栏外置 tab 条点击 (受控模式, 绕过 handleSelectPane) 都能覆盖.
+  useEffect(() => {
+    if (activePane === 'versions' && !gitTracking) loadGitTracking()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePane])
+
   const handleSelectPane = (key: string) => {
     setActivePane(key as SettingsPane)
-    if (key === 'versions' && !gitTracking) loadGitTracking()
   }
 
   return (
@@ -870,6 +907,7 @@ export function ProjectSettingsPanel({
       data-tour="project-settings-panel"
       className={`w-full min-w-0 ${desktopWorkspace ? 'h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-6' : 'overflow-hidden'}`}
       style={{ borderColor: 'var(--border-color)' }}>
+<<<<<<< HEAD
       <div className="flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
         <ProjectOverflowTabs
           tabs={settingsTabs}
@@ -877,6 +915,17 @@ export function ProjectSettingsPanel({
           className="flex-1 min-w-0"
         />
       </div>
+=======
+      {!hideHeaderTabs && (
+        <div className="flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
+          <ProjectOverflowTabs
+            tabs={settingsTabs}
+            onSelect={handleSelectPane}
+            className="flex-1 min-w-0"
+          />
+        </div>
+      )}
+>>>>>>> gitlab-mobius/main
 
       {project.kind === 'extension' && (
         <div className="px-5 py-3 border mt-3 rounded-lg text-[12px]"
@@ -907,7 +956,7 @@ export function ProjectSettingsPanel({
           </div>
         ) : activePane === 'members' ? (
           <div className="w-full min-w-0 p-3 space-y-4">
-            <SettingsCard title="权限设置">
+            <SettingsCard title="权限设置" hint="管理项目成员及角色（owner/manager/member/viewer），决定谁能查看或修改本项目。">
               {/* 项目可见性(私有/公开)与两个读者开关已退役 —— 改纯成员制:
                   非成员不可见, 项目成员按角色(owner/manager/member/viewer)分权. */}
               {/* 项目成员管理 (照 Aone 权限页样式: 角色筛选 Tab + 表格 + 搜索) ——
@@ -953,7 +1002,7 @@ export function ProjectSettingsPanel({
           )}
           {/* 拓展项目: name / description / bindPath / worktree / research 都由 manifest 锁定 */}
           {project.kind === 'extension' ? null : (
-            <SettingsCard title="基本设置">
+            <SettingsCard title="基本设置" hint="项目的名称、描述，以及 Agent 实际读写的工作目录（绑定路径）。绑定路径下会持久化项目知识、Issue 知识与会话产物。">
               <LocalPcPathRow projectId={project.id} />
               {/* 豁免文本脱敏整框模糊: 项目名/描述/绑定路径常含 imac/tianyi 等匿名化关键词,
                   命中后整框 filter:blur(5px) 不可读 (脱敏默认开启). 拥有者编辑面需可读. */}
@@ -1096,9 +1145,9 @@ export function ProjectSettingsPanel({
           )}
 
           {project.kind === 'extension' ? null : (
-            <SettingsCard title="默认模型偏好">
+            <SettingsCard title="默认模型偏好" hint="本项目新建执行会话时默认套用的模型；不指定则跟随系统默认。">
               <div>
-                <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>本项目新建执行会话时，默认套用的模型</label>
+                <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>默认模型</label>
                 <select
                   value={editDefaultModel}
                   disabled={!canManageProject}
@@ -1139,7 +1188,7 @@ export function ProjectSettingsPanel({
           </div>
 
           {project.kind === 'extension' ? null : (
-            <SettingsCard title="拓展功能">
+            <SettingsCard title="拓展功能" hint="git worktree 默认开关、Research 研究系统，以及本项目关联的 Git 仓库。">
               <div>
                 <ToggleSwitch
                   checked={!editResearchEnabled && editDefaultUseWorktree}
@@ -1217,14 +1266,13 @@ export function ProjectSettingsPanel({
             </SettingsCard>
           )}
 
-          <SettingsCard title="巡检设置 - Agent鞭策设置">
+          <SettingsCard title="巡检设置 - Agent鞭策设置" hint="后台每 60s 巡检；当某会话 Agent 已停工却未清理 running.flag 时，按下方策略自动发送此消息，鞭策其继续工作。">
             <div>
               <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>Agent偷懒时的自动提醒消息</label>
               <ExpandableTextarea value={editForgottenFlagMessage} disabled={!canManageProject} onValueChange={setEditForgottenFlagMessage} rows={4}
                 overlayTitle="编辑自动提醒消息"
                 className="w-full px-3 py-2 rounded-lg text-[13px] resize-y focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>后台每 60s 巡检，若某会话Agent已停工但running.flag未删除，自动向该会话发送此消息，鞭策其继续工作。</p>
             </div>
             <div>
               <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒策略</label>

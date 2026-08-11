@@ -32,7 +32,7 @@ assert.match(tuiHubPrompt, /不要使用 remote_\* 工具操作.*在mobius中枢
   'TUI hub prompt should select Mobius Hub work');
 
 const tuiPcPrompt = pcTaskModePrompt({ work_mode: 'pc', aimux_id: device, local_path: localPath, is_tui: true }, 'zh');
-assert.match(tuiPcPrompt, /通过 remote_\* 工具在以下远程对象上执行所有工作/,
+assert.match(tuiPcPrompt, /通过 remote_\* 工具在以下远程机器上执行所有工作/,
   'TUI pc prompt should require remote execution via remote_* tools');
 assert.match(tuiPcPrompt, /先将项目同步到mobius中枢.*每次修改后都立即同步回到 tui-workstation 指定路径/s,
   'TUI pc prompt should describe hub sync and direct-aimux fallback');
@@ -40,10 +40,10 @@ assert.match(tuiPcPrompt, /先将项目同步到mobius中枢.*每次修改后都
 const tuiDualPrompt = pcTaskModePrompt({ work_mode: 'dual', aimux_id: device, local_path: localPath, is_tui: true }, 'zh');
 assert.match(tuiDualPrompt, /先修改本地的代码.*同步到tui-workstation上/s,
   'TUI dual prompt should retain the synchronization rule');
-assert.strictEqual(
+assert.match(
   pcTaskModePrompt({ work_mode: 'pc', aimux_id: device, local_path: localPath, is_tui: false }, 'zh'),
-  `使用aimux连接到以下远程对象执行所有工作，尽量不修改本地的代码： ${device}。该远程对象上的工作目录为：\`${localPath}\``,
-  'Electron prompt should remain unchanged apart from explicit is_tui metadata',
+  /使用已注册的 remote_\* MCP 工具.*尽量不修改本地的代码/s,
+  'Electron prompt should explain the shared remote MCP toolset',
 );
 assert.match(
   pcTaskModePrompt({ work_mode: 'pc', aimux_id: device, local_path: localPath, is_tui: true }, 'en'),
@@ -53,7 +53,8 @@ assert.match(
 assert.strictEqual(pcTaskModePrompt({ work_mode: 'invalid', aimux_id: device, is_tui: true }, 'zh'), '',
   'invalid work modes should not produce a prompt');
 
-// aimuxRemoteNameFromMeta gate: requires is_tui === true AND add_remote_aimux_mcp === true AND aimux_id.
+// aimuxRemoteNameFromMeta gate: requires explicit opt-in and aimux_id for both
+// TUI and Electron desktop clients.
 assert.strictEqual(
   aimuxRemoteNameFromMeta({ work_mode: 'pc', aimux_id: device, is_tui: true, add_remote_aimux_mcp: true }),
   device,
@@ -66,8 +67,8 @@ assert.strictEqual(
 );
 assert.strictEqual(
   aimuxRemoteNameFromMeta({ work_mode: 'pc', aimux_id: device, is_tui: false, add_remote_aimux_mcp: true }),
-  undefined,
-  'non-TUI sessions must not get MCP even with the flag',
+  device,
+  'Electron sessions opt into the same MCP protocol with the flag',
 );
 assert.strictEqual(
   aimuxRemoteNameFromMeta({ work_mode: 'pc', is_tui: true, add_remote_aimux_mcp: true }),

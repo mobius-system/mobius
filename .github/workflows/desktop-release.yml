@@ -20,23 +20,23 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号 (留空则读 mobius/desktop/package.json)'
+        description: "版本号 (留空则读 mobius/desktop/package.json)"
         required: false
-        default: ''
+        default: ""
       make_latest:
-        description: '标记为 latest release'
+        description: "标记为 latest release"
         type: boolean
         default: true
       draft:
-        description: '草稿 release (不公开, 发布前可审)'
+        description: "草稿 release (不公开, 发布前可审)"
         type: boolean
         default: false
   push:
     tags:
-      - 'desktop-v*'
+      - "desktop-v*"
 
 permissions:
-  contents: write   # 创建 tag + release + 上传 asset
+  contents: write # 创建 tag + release + 上传 asset
 
 # 同一时刻只跑一个 release; 排队不取消, 避免产出半成品 release。
 concurrency:
@@ -54,7 +54,7 @@ jobs:
         shell: bash
         working-directory: mobius/desktop
     strategy:
-      fail-fast: false   # 一个平台失败不取消其它, 便于定位
+      fail-fast: false # 一个平台失败不取消其它, 便于定位
       matrix:
         include:
           - target: win-x64
@@ -63,12 +63,12 @@ jobs:
             arch: x64
             os: win
           - target: mac-arm64
-            runner: macos-latest     # Apple Silicon, 原生 arm64 最稳
+            runner: macos-latest # Apple Silicon, 原生 arm64 最稳
             plat: mac
             arch: arm64
             os: mac
           - target: mac-x64
-            runner: macos-13         # Intel, 原生 x64; 若将来弃用改 macos-latest 交叉
+            runner: macos-13 # Intel, 原生 x64; 若将来弃用改 macos-latest 交叉
             plat: mac
             arch: x64
             os: mac
@@ -77,7 +77,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
           cache: npm
           cache-dependency-path: mobius/desktop/package-lock.json
 
@@ -141,7 +141,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: build   # 3 个平台全部成功才发 (不发半成品)
+    needs: build # 3 个平台全部成功才发 (不发半成品)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

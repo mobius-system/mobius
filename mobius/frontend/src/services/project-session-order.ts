@@ -38,7 +38,11 @@ export function projectSessionPreview<T extends { agent_status?: string | null }
   showingSearchMatches = false,
 ): T[] {
   const ordered = sortProjectSessions(sessions)
+<<<<<<< HEAD
   if (!compact) return ordered.slice(0, 4)
+=======
+  if (!compact) return ordered.slice(0, 3)
+>>>>>>> gitlab-mobius/main
   if (showingSearchMatches) return ordered.slice(0, 2)
   const running = ordered.filter((session) => session?.agent_status === 'running')
   return running.length > 0 ? running.slice(0, 2) : ordered.slice(0, 1)
@@ -49,6 +53,13 @@ export function projectItemOrder(a: any, b: any): number {
     - Number(Number(a?.running_session_count || 0) > 0)
   if (runningDiff !== 0) return runningDiff
 
+<<<<<<< HEAD
+=======
+  const activeSessionDiff = Number(Number(b?.active_session_count || 0) > 0)
+    - Number(Number(a?.active_session_count || 0) > 0)
+  if (activeSessionDiff !== 0) return activeSessionDiff
+
+>>>>>>> gitlab-mobius/main
   const activeDiff = Number(b?.status !== 'completed') - Number(a?.status !== 'completed')
   if (activeDiff !== 0) return activeDiff
 

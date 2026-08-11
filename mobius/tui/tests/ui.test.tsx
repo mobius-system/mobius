@@ -16,12 +16,13 @@ process.env.MOBIUS_TUI_HOME = TMP_HOME
 import React from 'react'
 import { render } from 'ink-testing-library'
 import { ChatScreen, Composer, shimmerText } from '../src/components/Chat.js'
+import { WindowsInputDecoder } from '../src/lib/windows-input.js'
 import { LoginScreen } from '../src/components/Login.js'
 import { PrepScreen } from '../src/components/PrepScreen.js'
 import { Select, TextInput } from '../src/components/primitives.js'
 import { MobiusClient } from '../src/api.js'
 import { renderMarkdownLines } from '../src/markdown.js'
-import { viewsForEntry, toolLabel } from '../src/lib/entry-view.js'
+import { dedupeUserEntries, viewsForEntry, toolLabel } from '../src/lib/entry-view.js'
 import { SseConnection } from '../src/sse.js'
 import type { ReadyState } from '../src/components/PrepScreen.js'
 
@@ -161,7 +162,7 @@ async function testChat() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />
+      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />
     )
     await delay(40)
     const initialFrame = lastFrame() ?? ''
@@ -225,7 +226,7 @@ async function testResumedWorkingStatus() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />
+      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />
     )
     await delay(120)
     ok((lastFrame() ?? '').includes('Working ('), 'resuming an already-running session restores Working without a new typing event')
@@ -262,6 +263,17 @@ function testMarkdownCodeRendering() {
   ok(unlabelled.length === 1 && unlabelled[0].text === 'echo $HOME' && unlabelled[0].code, 'unlabelled code stays plain instead of being guessed as bash')
 }
 
+function testFirstUserEntryDedupe() {
+  console.log('\n[UI 4b] first user message event deduplication')
+  const framed = '上下文注入\n\n## 用户的问题\n\n你好，检查首条消息'
+  const entries = [
+    { type: 'user', uuid: 'framed-user', message: { role: 'user', content: framed } },
+    { type: 'event_msg', uuid: 'plain-user', payload: { type: 'user_message', message: '你好，检查首条消息' } },
+  ]
+  const deduped = dedupeUserEntries(entries as any)
+  ok(deduped.length === 1, 'framed and plain first-turn user events render once')
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // TEST 5 — Prep screen renders the project picker when cwd is unbound
 // ════════════════════════════════════════════════════════════════════════════
@@ -285,11 +297,18 @@ async function testPrepRender() {
     ok(frame.includes('选择当前路径的绑定项目'), 'project picker title shown')
     ok(frame.includes('已有项目A') && frame.includes('已有项目B'), 'existing projects listed')
     ok(frame.includes('创建新项目'), 'create-new option present')
-    // multi-line description must be flattened onto one line with ⏎ in place of \n
-    ok(frame.includes('已有项目A — 第一行 ⏎ 第二行'), 'multi-line description flattened to a single line')
-    ok(frame.includes('已有项目B — 单行描述'), 'single-line description kept as-is')
+    // Only the highlighted row carries its description; unfocused rows stay
+    // compact and show their names alone.
+    ok(!frame.includes('已有项目A - 第一行') && !frame.includes('已有项目B - 单行描述'), 'unfocused project rows omit their descriptions')
+    stdin.write('\x1b[B'); await delay(15) // move focus from search to the list
+    stdin.write('\x1b[B'); await delay(15) // highlight the first project
+    const selectedFrame = lastFrame() ?? ''
+    ok(selectedFrame.includes('已有项目A - 第一行 ⏎ 第二行'), 'selected multi-line description stays on the main row')
+    ok(!selectedFrame.includes('已有项目B - 单行描述'), 'unselected project description is omitted')
+    ok(!frame.includes('\n    第一行') && !frame.includes('\n    单行描述'), 'project explanations do not render as an additional row')
     ok(!frame.includes('加载项目列表…'), 'completed project load does not leave a stale loading message')
 
+    stdin.write('\x1b[A'); await delay(15) // return to the create row
     stdin.write('\r')
     await delay(30)
     const createFrame = lastFrame() ?? ''
@@ -298,6 +317,56 @@ async function testPrepRender() {
     ok(!createFrame.includes('描述（可空）'), 'project description input is hidden')
     ok(createFrame.includes('回车创建 · Esc 返回'), 'project name submits directly with Enter')
     unmount()
+  } finally { restoreFetch() }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 5b — Project and issue pickers filter by the search field
+// ════════════════════════════════════════════════════════════════════════════
+async function testPrepSearch() {
+  console.log('\n[UI 5b] Prep picker search filtering')
+  const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
+  installMock((url) => {
+    if (url.includes('/api/projects') && !url.includes('/issues') && !url.includes('/skills') && !url.includes('/memories')) {
+      return jsonResponse([
+        { id: 'p1', name: '前端平台', description: '用户界面与组件' },
+        { id: 'p2', name: '数据管线', description: '批处理任务' },
+      ])
+    }
+    if (url.includes('/api/projects/p2/issues')) {
+      return jsonResponse([
+        { id: 'i1', project_id: 'p2', title: '修复导入超时', description: '处理批处理任务' },
+        { id: 'i2', project_id: 'p2', title: '更新监控面板', description: '前端界面' },
+      ])
+    }
+    if (url.includes('/sessions/model-options')) return jsonResponse([])
+    if (url.includes('/sessions/default-model')) return jsonResponse({ model: 'codex' })
+    if (url.includes('/skills') || url.includes('/memories')) return jsonResponse([])
+    return jsonResponse({ error: 'no mock' }, 404)
+  })
+  try {
+    const { lastFrame, stdin, unmount } = render(<PrepScreen client={client} onReady={() => {}} />)
+    await delay(120)
+    stdin.write('数据')
+    await delay(40)
+    let frame = lastFrame() ?? ''
+    ok(frame.includes('数据管线') && !frame.includes('前端平台'), 'project search keeps matching project and hides non-matches')
+    ok(!frame.includes('创建新项目'), 'project search hides the create row while searching')
+    stdin.write('\r')
+    await delay(160)
+    ok((lastFrame() ?? '').includes('选择任务（Issue）'), 'matching project opens its issue picker')
+
+    stdin.write('超时')
+    await delay(40)
+    frame = lastFrame() ?? ''
+    ok(frame.includes('修复导入超时') && !frame.includes('更新监控面板'), 'issue search matches title and hides other issues')
+    stdin.write('\r')
+    await delay(120)
+    ok((lastFrame() ?? '').includes('选择模型') || (lastFrame() ?? '').includes('加载模型列表'), 'matching issue is selected with Enter')
+    unmount()
+    // This test deliberately selects a project; remove its persisted cwd
+    // binding so later picker tests still start on the project screen.
+    try { fs.rmSync(path.join(TMP_HOME, 'dir2project.json'), { force: true }) } catch { /* ignore */ }
   } finally { restoreFetch() }
 }
 
@@ -320,6 +389,16 @@ async function testSelectViewport() {
   ok(frame.includes('项目5'), 'middle: active item kept visible')
   ok(frame.includes('↑ 还有') && frame.includes('↓ 还有'), 'middle: both tail hints shown')
   ok(!frame.includes('项目0') && !frame.includes('项目11'), 'middle: far items hidden')
+
+  // The first navigation key after mounting must not depend on a later render
+  // (the regression presented as arrows doing nothing until Enter was pressed).
+  const immediate = render(<Select items={[{ label: '首项', value: 'first' }, { label: '次项', value: 'second' }]} />)
+  await delay(20)
+  immediate.rerender(<Select items={[{ label: '首项', value: 'first' }, { label: '次项', value: 'second' }]} />)
+  immediate.stdin.write('\x1b[B')
+  await delay(20)
+  ok((immediate.lastFrame() ?? '').includes('❯ 次项'), 'first arrow key is handled immediately after Select mounts')
+  immediate.unmount()
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -461,6 +540,56 @@ async function testComposerDeleteKeys() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// TEST 8d — Home/End and Ctrl+Left/Right cursor movement
+// ════════════════════════════════════════════════════════════════════════════
+async function testCursorNavigationKeys() {
+  console.log('\n[UI 8d] Home/End + Ctrl-arrow cursor navigation')
+
+  let textInputSubmitted = ''
+  function TextHarness() {
+    const [v, setV] = React.useState('alpha beta')
+    return <TextInput value={v} onChange={setV} focused onSubmit={() => { textInputSubmitted = v }} />
+  }
+  const textInput = render(<TextHarness />)
+  await delay(20)
+  textInput.stdin.write('\x1b[H'); await delay(15)       // Home
+  textInput.stdin.write('^'); await delay(15)
+  textInput.stdin.write('\x1b[F'); await delay(15)       // End
+  textInput.stdin.write('$'); await delay(15)
+  textInput.stdin.write('\x1b[1;5D'); await delay(15)    // Ctrl+Left
+  textInput.stdin.write('|'); await delay(15)
+  textInput.stdin.write('\x1b[1;5C'); await delay(15)    // Ctrl+Right
+  textInput.stdin.write('!'); await delay(15)
+  textInput.stdin.write('\r'); await delay(20)
+  textInput.unmount()
+  ok(textInputSubmitted === '^alpha |beta$!', `TextInput cursor keys edit at expected boundaries (got ${JSON.stringify(textInputSubmitted)})`)
+
+  const composerSubmitted: string[] = []
+  const composer = render(
+    <Composer
+      onSubmit={v => composerSubmitted.push(v)}
+      onStop={() => {}}
+      onQuit={() => {}}
+      typing={false}
+      commands={[]}
+    />,
+  )
+  await delay(20)
+  composer.stdin.write('alpha beta'); await delay(20)
+  composer.stdin.write('\x1b[H'); await delay(15)
+  composer.stdin.write('^'); await delay(15)
+  composer.stdin.write('\x1b[F'); await delay(15)
+  composer.stdin.write('$'); await delay(15)
+  composer.stdin.write('\x1b[1;5D'); await delay(15)
+  composer.stdin.write('|'); await delay(15)
+  composer.stdin.write('\x1b[1;5C'); await delay(15)
+  composer.stdin.write('!'); await delay(15)
+  composer.stdin.write('\r'); await delay(30)
+  composer.unmount()
+  ok(composerSubmitted[0] === '^alpha |beta$!', `Composer cursor keys edit at expected boundaries (got ${JSON.stringify(composerSubmitted[0])})`)
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // TEST 9 — Codex-style composer keeps multiline pastes intact and grows/shrinks
 // ════════════════════════════════════════════════════════════════════════════
 async function testComposerMultilinePaste() {
@@ -478,7 +607,7 @@ async function testComposerMultilinePaste() {
   await delay(20)
   const initial = lastFrame() ?? ''
   ok(initial.includes('╭') && initial.includes('╰'), 'composer has a visible bordered input boundary')
-  ok(initial.includes('Enter 发送') && initial.includes('Ctrl+J 换行'), 'composer shows Codex-style submit/newline hints')
+  ok(initial.includes('Enter 发送') && initial.includes('Shift+Enter / Alt+Enter / Ctrl+J 换行'), 'composer shows submit/newline hints')
 
   stdin.write('\x1b[200~第一行\r\n第二行\r第三行\x1b[201~')
   await delay(20)
@@ -506,6 +635,35 @@ async function testComposerMultilinePaste() {
   stdin.write('\r')
   await delay(20)
   ok(submitted[1] === 'first sentence\nsecond sentence\nlast sentence', 'Enter after the burst submits the complete multiline text once')
+
+  // Windows Terminal win32-input-mode preserves SHIFT_PRESSED in the key
+  // record. The decoder turns that into CSI-u before Ink sees the keypress.
+  const windowsInput = new WindowsInputDecoder()
+  stdin.write('Windows first line')
+  stdin.write(windowsInput.push('\x1b[16;42;0;1;16;1_\x1b[13;28;13;1;16;1_'))
+  stdin.write(windowsInput.push('\x1b[13;28;13;0;16;1_\x1b[16;42;0;0;0;1_'))
+  stdin.write('Windows second line')
+  await delay(20)
+  ok(submitted.length === 2, 'Windows Shift+Enter inserts a newline instead of submitting')
+  stdin.write('\r')
+  await delay(20)
+  ok(submitted[2] === 'Windows first line\nWindows second line', 'plain Windows Enter submits the multiline message')
+
+  const split = new WindowsInputDecoder()
+  ok(split.push('\x1b[13;28;13;1;16') === '', 'split Windows key record waits for its trailing bytes')
+  ok(split.push(';1_') === '\x1b[13;2u', 'split Windows Shift+Enter record decodes after completion')
+  ok(split.push('\x1b[13;28;13;1;0;1_') === '\r', 'plain Windows Enter remains a submit event')
+  ok(split.push('\x1b[65;30;65;1;16;1_\x1b[65;30;97;0;0;1_') === 'A', 'Windows key release does not duplicate typed text')
+  ok(split.push('\x1b[A') === '\x1b[A', 'ordinary VT sequences pass through unchanged')
+
+  stdin.write('xterm first line')
+  stdin.write('\x1b[27;2;13~')
+  stdin.write('xterm second line')
+  await delay(20)
+  ok(submitted.length === 3, 'xterm modifyOtherKeys Shift+Enter also inserts a newline')
+  stdin.write('\r')
+  await delay(20)
+  ok(submitted[3] === 'xterm first line\nxterm second line', 'xterm Shift+Enter content submits intact')
   unmount()
 }
 
@@ -696,7 +854,7 @@ async function testChatSseReconnects() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="test-user" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
     )
     await delay(40)
     // Ink's test stdin treats one chunk as one keypress. Send text and Enter as
@@ -768,7 +926,7 @@ async function testIdleCompletedSessionReopensSseOnSend() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="test-user" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
     )
     await delay(180)
     ok(sseCall === 1, 'completed idle session did not reconnect by itself')
@@ -808,7 +966,7 @@ async function testSendRetries502() {
   })
   try {
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
     )
     await delay(40)
     stdin.write('hi'); await delay(30); stdin.write('\r')
@@ -825,12 +983,15 @@ async function main() {
   await testChat()
   await testResumedWorkingStatus()
   testMarkdownCodeRendering()
+  testFirstUserEntryDedupe()
   await testPrepRender()
+  await testPrepSearch()
   await testSelectViewport()
   await testProjectPickerEscQuit()
   await testTextInputBackspace()
   await testTextInputDeleteKeys()
   await testComposerDeleteKeys()
+  await testCursorNavigationKeys()
   await testComposerMultilinePaste()
   testWorkingShimmer()
   testReasoningViews()

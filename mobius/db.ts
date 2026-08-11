@@ -379,6 +379,8 @@ db.exec(`
     task_id TEXT NOT NULL,
     role TEXT NOT NULL CHECK(role IN ('user','assistant','tool','system','thinking','raw')),
     content TEXT NOT NULL,
+    -- 结构化展示元数据（如 Session @ 引用来源）；不进入 Agent prompt.
+    metadata TEXT,
     -- Claude SDK 事件原文 (JSON), 仅 role='raw' 时使用
     raw_event TEXT,
     -- tool 调用相关
@@ -393,6 +395,19 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   );
 `);
+
+// messages_v2 轻量迁移: 持久化 Session @ 来源等 UI 元数据。
+(() => {
+  try {
+    const cols = db.prepare('PRAGMA table_info(messages_v2)').all().map((c: any) => c.name);
+    if (!cols.includes('metadata')) {
+      db.exec('ALTER TABLE messages_v2 ADD COLUMN metadata TEXT');
+      console.log('[mobius/db] migrate: messages_v2.metadata 已加');
+    }
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️ messages_v2.metadata 迁移失败:', (e as Error).message);
+  }
+})();
 
 // ===== agent_prompt_events =====
 // 管理员面板统计用: 每次真正 paste 到 tmux TUI 并提交成功后记录一行.
@@ -416,6 +431,49 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_agent_prompt_events_created ON agent_prompt_events(created_at);
   CREATE INDEX IF NOT EXISTS idx_agent_prompt_events_session_created ON agent_prompt_events(session_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_agent_prompt_events_backend_created ON agent_prompt_events(backend_name, created_at);
+`);
+
+// ===== Agent @ 双向通讯通道 =====
+// 只读 @ 不创建通道；双向 @ 使用持久化通道承载后续 Agent↔Agent 消息。
+// JWT 只负责证明通道创建者，实际生命周期、幂等和消息审计落在 SQLite。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_bridge_channels (
+    channel_id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL,
+    source_session_id TEXT NOT NULL,
+    target_session_id TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'bidirectional' CHECK(mode = 'bidirectional'),
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','closed','expired','exhausted')),
+    max_messages INTEGER NOT NULL DEFAULT 100,
+    message_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    last_active TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    expires_at TEXT NOT NULL,
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_session_id) REFERENCES sessions_v2(session_id) ON DELETE CASCADE,
+    FOREIGN KEY (target_session_id) REFERENCES sessions_v2(session_id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_agent_bridge_channels_owner
+    ON agent_bridge_channels(owner_user_id, status, last_active);
+  CREATE INDEX IF NOT EXISTS idx_agent_bridge_channels_pair
+    ON agent_bridge_channels(source_session_id, target_session_id, status);
+
+  CREATE TABLE IF NOT EXISTS agent_bridge_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    from_session_id TEXT NOT NULL,
+    to_session_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','delivered','failed','rejected')),
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    delivered_at TEXT,
+    FOREIGN KEY (channel_id) REFERENCES agent_bridge_channels(channel_id) ON DELETE CASCADE,
+    UNIQUE(channel_id, request_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_agent_bridge_messages_channel
+    ON agent_bridge_messages(channel_id, id);
 `);
 
 // 自检: 生产栈表存在(只读), 不动它们.

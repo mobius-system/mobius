@@ -1214,7 +1214,7 @@ class TmuxCodexBackend extends AgentBackend {
     // 并在 tmux 命令中 export TOML env_key 对应的秘钥环境变量.
     // 组装 Codex CLI 参数：模型、工作目录以及自动审批/沙箱绕过参数。
     const codexArgs = ['-m', finalModel, '-C', cwd, '--dangerously-bypass-approvals-and-sandbox']
-    // TUI 会话 (is_tui + aimux_id): 注入 aimux stdio MCP server, 让 codex 经 MCP
+    // TUI/Electron 会话 (add_remote_aimux_mcp + aimux_id): 注入 aimux stdio MCP server, 让 codex 经 MCP
     // 工具 (remote_execute/read_file/write_file/ping/apply_patch) 操作远程工作站.
     // codex `-c key=value` 按 TOML 解析 value, args 用 inline array.
     if (aimuxRemoteName) {

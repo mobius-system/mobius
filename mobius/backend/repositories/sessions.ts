@@ -262,6 +262,44 @@ const Sessions = {
     `).all(projectId, query, query) as SessionListRow[];
   },
 
+  // @ Session 候选: 只返回可被上层 access-control 继续过滤的轻量元数据。
+  // 不绑定当前项目，便于“同 Issue → 同项目 → 其他项目”的分层排序。
+  listMentionCandidates: (rawQuery: string = '', limit: number = 300): any[] => {
+    const query = String(rawQuery || '').trim().toLowerCase();
+    const max = Math.max(1, Math.min(Number(limit) || 300, 600));
+    const clauses = [
+      "s.status != 'archived'",
+      's.deleted_at IS NULL',
+      "s.session_key NOT LIKE 'assistant-question:%'",
+      "s.scope_type IN ('issue','research')",
+    ];
+    const params: any[] = [];
+    if (query) {
+      clauses.push(`(
+        instr(lower(COALESCE(s.session_id, '')), ?) > 0
+        OR instr(lower(COALESCE(s.name, '')), ?) > 0
+        OR instr(lower(COALESCE(s.description, '')), ?) > 0
+        OR instr(lower(COALESCE(p.name, '')), ?) > 0
+        OR instr(lower(COALESCE(i.title, '')), ?) > 0
+        OR instr(lower(COALESCE(r.title, '')), ?) > 0
+      )`);
+      params.push(query, query, query, query, query, query);
+    }
+    return db.prepare(`
+      SELECT s.session_id, s.issue_id, s.project_id, s.scope_type, s.research_id,
+             s.research_role, s.user_id, s.name, s.description, s.model,
+             s.status, s.agent_status, s.created_at, s.last_active, s.message_count,
+             p.name AS project_name, i.title AS issue_title, r.title AS research_title
+      FROM sessions_v2 s
+      LEFT JOIN projects p ON p.id = s.project_id
+      LEFT JOIN issues i ON i.id = s.issue_id
+      LEFT JOIN researches r ON r.id = s.research_id
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY s.last_active DESC
+      LIMIT ?
+    `).all(...params, max) as any[];
+  },
+
   searchActiveMetadata: (rawQuery: string, limit: number = 2001): SessionWithJoinsRow[] => {
     const query = String(rawQuery || '').trim().toLowerCase();
     if (!query) return [];

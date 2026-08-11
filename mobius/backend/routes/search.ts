@@ -16,7 +16,7 @@
 //   - 有界并发扫描 SCAN_CONCURRENCY=8, 重叠文件 I/O (await 让出事件循环时其它 worker 推进).
 //   - 单 jsonl 文件读取上限 FILE_READ_CAP=1.5MB, 超过只读尾部; 整文件一次小写预判, 无命中直接跳过.
 //   - 单 session 命中片段上限 MAX_FRAGMENTS_PER_SESSION=3, 命中即提前结束该文件扫描.
-//   - 全局墙钟预算 BUDGET_MS=4000ms, 超时返回已得部分 + truncated=true.
+//   - 全局墙钟预算 SEARCH_BUDGET_MS=2 分钟, 超时返回已得部分 + truncated=true.
 //   - 匹配用「原始 JSONL 行小写子串」, 命中行才 JSON.parse 提取可读片段 — 不逐行 parse.
 // =====================================================================
 import express from 'express';
@@ -31,6 +31,7 @@ import * as agents from '../agents';
 import { mobiusJsonlPathOf } from '../services/mobius-jsonl';
 // @ts-ignore — service 仍是 .js
 import { canReadSession } from '../services/access-control';
+import { is_mobius_attached_content } from '../services/search-content';
 
 const router = express.Router();
 
@@ -50,7 +51,7 @@ const MAX_EXTRACTED_TEXT = 200 * 1024; // 单条消息展示文本上限；需�
 const MAX_FRAGMENTS_PER_SESSION = 3;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
-const BUDGET_MS = 4000;
+const SEARCH_BUDGET_MS = 2 * 60 * 1000;
 const SCAN_CONCURRENCY = 8; // 并发扫 JSONL 的 worker 数 (重叠文件 I/O; 单 worker 事件循环不被长时阻塞)
 
 function clampInt(v: any, def: number, lo: number, hi: number): number {
@@ -150,7 +151,7 @@ async function readJsonlTailOrFull(p: string): Promise<string | null> {
 // - 子串 (默认): 大小写不敏感走 toLowerCase, 敏感走原样 indexOf.
 // - 全字: 用 lookbehind/lookahead 锚定词边界 (\w = [A-Za-z0-9_], CJK 视为边界), exec().index 即命中起点.
 // matchLen 恒等于 q.length (全字命中的就是 q 本身), 供 windowAround 取窗口.
-interface Matcher { matchLen: number; findIndex: (text: string) => number; }
+interface Matcher { matchLen: number; findIndex: (text: string, from?: number) => number; }
 function buildMatcher(q: string, caseSensitive: boolean, wholeWord: boolean): Matcher {
   const matchLen = q.length;
   if (wholeWord) {
@@ -158,14 +159,27 @@ function buildMatcher(q: string, caseSensitive: boolean, wholeWord: boolean): Ma
     const re = new RegExp(`(?<![\\w])${escaped}(?![\\w])`, caseSensitive ? 'g' : 'gi');
     return {
       matchLen,
-      findIndex: (text: string) => { re.lastIndex = 0; const m = re.exec(text || ''); return m ? m.index : -1; },
+      findIndex: (text: string, from = 0) => { re.lastIndex = Math.max(0, from); const m = re.exec(text || ''); return m ? m.index : -1; },
     };
   }
   if (caseSensitive) {
-    return { matchLen, findIndex: (text: string) => (text || '').indexOf(q) };
+    return { matchLen, findIndex: (text: string, from = 0) => (text || '').indexOf(q, from) };
   }
   const ql = q.toLowerCase();
-  return { matchLen, findIndex: (text: string) => (text || '').toLowerCase().indexOf(ql) };
+  return { matchLen, findIndex: (text: string, from = 0) => (text || '').toLowerCase().indexOf(ql, from) };
+}
+
+function findSearchMatch(text: string, matcher: Matcher): number {
+  let from = 0;
+  while (from <= text.length) {
+    const index = matcher.findIndex(text, from);
+    if (index < 0) return -1;
+    if (!is_mobius_attached_content(text, index, matcher.matchLen)) return index;
+    const next = index + Math.max(1, matcher.matchLen);
+    if (next <= from) return -1;
+    from = next;
+  }
+  return -1;
 }
 
 function entryUuidOf(entry: any): string | null {
@@ -207,7 +221,7 @@ async function scanSession(sessionId: string, model: any, matcher: Matcher, maxF
       try { entry = JSON.parse(line); } catch { continue; }
       const ext = extractTextFromEntry(entry);
       if (!ext) continue;
-      const mIdx = matcher.findIndex(ext.text);
+      const mIdx = findSearchMatch(ext.text, matcher);
       if (mIdx < 0) continue;
       const snippet = windowAround(ext.text, mIdx, matcher.matchLen);
       const key = ext.role + '|' + snippet.slice(0, 60);
@@ -346,7 +360,7 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
         const myIdx = nextIdx++;
         if (myIdx >= readable.length) return;
         if (streamed >= limit) return; // 已达结果上限, 停止扫描
-        if (Date.now() - start > BUDGET_MS) { truncatedByBudget = true; budgetStopped = true; return; }
+        if (Date.now() - start > SEARCH_BUDGET_MS) { truncatedByBudget = true; budgetStopped = true; return; }
         const row = readable[myIdx];
         let ff: Fragment[];
         try { ff = await scanSession(row.session_id, row.model, matcher, maxFragments); }
@@ -377,7 +391,7 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
     while (!budgetStopped) {
       const myIdx = nextIdx++;
       if (myIdx >= readable.length) return;
-      if (Date.now() - start > BUDGET_MS) { truncatedByBudget = true; budgetStopped = true; return; }
+      if (Date.now() - start > SEARCH_BUDGET_MS) { truncatedByBudget = true; budgetStopped = true; return; }
       const row = readable[myIdx];
       let ff: Fragment[];
       try {
