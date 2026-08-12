@@ -4,6 +4,7 @@
 //   引用具体事实时用 [事实N] 标注（render/humanize 不动该标注，发布版渲染时去除）。
 
 const { callModel, callJson } = require("./llm");
+const { NATURAL_WRITING_GUIDE } = require("./natural-style");
 const txt = (s, n = 8000) => String(s || "").trim().slice(0, n);
 
 const FRAMEWORKS = {
@@ -27,6 +28,7 @@ function buildOutlinePrompt({ topic, facts, profile, style }) {
     "可用事实点（仅可引用这些，不可编造新的数字/引语/能力）：",
     factsBlock || "（无结构化事实点，只用通用且可核验的表述，避免具体数字）",
     `风格要求：${style.tone || ""}；禁用表达：${[...BANNED_PHRASES, style.banned_phrases || ""].filter(Boolean).join("、")}`,
+    "自然中文写作要求：\n" + NATURAL_WRITING_GUIDE,
     `输出大纲 JSON：{"title":"≤32字","digest":"≤110字摘要","outline":[{"heading":"","facts":[1]}]}`,
   ].join("\n");
 }
@@ -56,9 +58,10 @@ async function draft({ provider, topic, profile, style, facts, outlineObj }) {
     "3) 允许有立场，但不强制每段表态。",
     `4) 禁用模板表达：${[...BANNED_PHRASES, style.banned_phrases || ""].filter(Boolean).join("、")}。`,
     "5) 开头直接进入具体事实，不要用套话。",
+    "6) 自然中文写作要求：\n" + NATURAL_WRITING_GUIDE,
     "输出：纯 Markdown 正文，不要 ```代码块；首行用 # 作为正文大标题（可与选题不同）。",
   ].join("\n");
-  const r = await callModel({ provider, system: "你是优秀的中文科技公众号作者，文风克制、具体、有判断力。", maxTokens: 4000, timeoutMs: 75_000, retries: 1, user });
+  const r = await callModel({ provider, system: "你是优秀的中文科技公众号作者。写作要像经过编辑审阅的文章：克制、具体、有判断，不使用模板化 AI 腔。\n" + NATURAL_WRITING_GUIDE, maxTokens: 4000, timeoutMs: 75_000, retries: 1, user });
   return { bodyMd: (r.text || "").trim() };
 }
 
