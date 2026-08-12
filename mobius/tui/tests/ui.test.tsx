@@ -261,6 +261,16 @@ function testMarkdownCodeRendering() {
 
   const unlabelled = renderMarkdownLines('```\necho $HOME\n```')
   ok(unlabelled.length === 1 && unlabelled[0].text === 'echo $HOME' && unlabelled[0].code, 'unlabelled code stays plain instead of being guessed as bash')
+
+  // HTML entity decoding — marked's lexer encodes ', ", <, >, & even when
+  // only tokenising, so the TUI renderer must decode them back.
+  const entities = renderMarkdownLines("What's \"cool\"? 1 < 2 & 3 > 1")
+  const entityText = entities.map(r => r.text).join('\n')
+  ok(entityText.includes("What's"), "&#39; decoded back to apostrophe")
+  ok(entityText.includes('"cool"'), "&quot; decoded back to double-quote")
+  ok(entityText.includes('1 < 2'), "&lt; decoded back to <")
+  ok(entityText.includes('3 > 1'), "&gt; decoded back to >")
+  ok(entityText.includes('& 3'), "&amp; decoded back to &")
 }
 
 function testFirstUserEntryDedupe() {
