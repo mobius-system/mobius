@@ -62,6 +62,7 @@ export function AdvancedSessionActions({
   onOpenGit,
 }: AdvancedSessionActionsProps) {
   const compact = variant === 'compact'
+  const menu = variant === 'menu'
   const condensed = variant !== 'default'
   const hasSession = !!sessionId
   const canOpenKnowledge = !!projectId && !!issueId
@@ -70,19 +71,21 @@ export function AdvancedSessionActions({
 
   return (
     <div
-      className={`advanced-session-actions mobius-chat-input-actions flex flex-col gap-1.5${condensed ? ` advanced-session-actions--compact ${compact ? 'w-[176px]' : 'w-[360px]'} flex-none rounded-lg border p-2 shadow-sm` : ''}`}
+      className={`advanced-session-actions mobius-chat-input-actions flex flex-col gap-1.5${condensed ? ` advanced-session-actions--compact ${compact ? 'w-[176px]' : 'w-[336px] max-w-[calc(100vw-24px)]'} flex-none rounded-lg border p-2 shadow-sm` : ''}`}
       style={condensed ? { background: 'var(--input-bg)', borderColor: 'var(--border-color)' } : undefined}
       data-testid="advanced-session-actions"
       data-variant={variant}
       aria-label="高级会话按钮组"
     >
-      <div className="grid grid-cols-5 items-stretch gap-2">
+      {menu && <div className="px-1 text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>查看与工作</div>}
+      <div className={`grid ${menu ? 'grid-cols-2 gap-1' : 'grid-cols-5 gap-2'} items-stretch`}>
         <AdvancedInteractionBtn
           onClick={onOpenFileChanges}
           disabled={!hasSession}
           label="查看文件修改"
           tooltip="查看当前会话所有文件修改"
           accent="blue"
+          displayLabel={menu}
           icon={<FileDiff className="h-4 w-4" strokeWidth={1.9} />}
         />
         <AdvancedInteractionBtn
@@ -92,6 +95,7 @@ export function AdvancedSessionActions({
           label="查看运行命令"
           tooltip="查看当前会话运行的所有Bash命令"
           accent="emerald"
+          displayLabel={menu}
           icon={<History className="h-4 w-4" strokeWidth={1.9} />}
         />
         <AdvancedInteractionBtn
@@ -100,6 +104,7 @@ export function AdvancedSessionActions({
           label="回放输入"
           tooltip="回放输入"
           accent="blue"
+          displayLabel={menu}
           icon={<RotateCcw className="h-4 w-4" strokeWidth={1.9} />}
         />
         <AdvancedInteractionBtn
@@ -108,6 +113,7 @@ export function AdvancedSessionActions({
           label={showJsonlMeta ? '隐藏时间与序号' : '显示时间与序号'}
           tooltip={showJsonlMeta ? '隐藏 JSONL 卡片标题里的序号与时间前缀' : '在 JSONL 卡片标题里显示 #序号 与 MM-DD HH:MM:SS 时间前缀'}
           accent="blue"
+          displayLabel={menu}
           aria-pressed={showJsonlMeta}
           className={showJsonlMeta ? 'bg-blue-500/15' : ''}
           icon={<Clock className="h-4 w-4" strokeWidth={1.9} />}
@@ -117,19 +123,22 @@ export function AdvancedSessionActions({
           subPath={vscodeSubPath}
           label="进入项目端口"
           triggerVariant="advanced"
+          advancedDisplayLabel={menu}
           onRequestRunProject={onRequestRunProject}
         />
       </div>
 
       <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
 
-      <div className="grid grid-cols-5 items-stretch gap-2">
+      {menu && <div className="px-1 text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>执行与上下文</div>}
+      <div className={`grid ${menu ? 'grid-cols-2 gap-1' : 'grid-cols-5 gap-2'} items-stretch`}>
         <AdvancedInteractionBtn
           onClick={onOpenTerminal}
           disabled={!hasSession}
           label="打开终端"
           tooltip="打开当前会话终端"
           accent="emerald"
+          displayLabel={menu}
           icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
         />
         <AdvancedInteractionBtn
@@ -139,6 +148,7 @@ export function AdvancedSessionActions({
           label="可合作计算机"
           tooltip="声明可合作计算机 (勾选 aimux remote, 生成声明直接发给当前 agent, 不写 Memory)"
           accent="amber"
+          displayLabel={menu}
           icon={<Share2 className="h-4 w-4" strokeWidth={1.9} />}
         />
         {researchId && onOpenResearchGraph ? (
@@ -147,6 +157,7 @@ export function AdvancedSessionActions({
             label="Research Graph"
             tooltip="跳转到 Research Graph"
             accent="cyan"
+            displayLabel={menu}
             icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
           />
         ) : (
@@ -156,6 +167,7 @@ export function AdvancedSessionActions({
             label="查看当前知识"
             tooltip="查看当前知识 (项目知识 / 本任务知识)"
             accent="cyan"
+            displayLabel={menu}
             icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
           />
         )}
@@ -165,6 +177,7 @@ export function AdvancedSessionActions({
           label="项目知识沉淀到记忆"
           tooltip={projectKnowledgeSending ? '正在发送项目知识沉淀指令...' : '请智能体整理并更新项目级与任务级可复用知识'}
           accent="violet"
+          displayLabel={menu}
           icon={projectKnowledgeSending
             ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.9} />
             : <Wand2 className="h-4 w-4" strokeWidth={1.9} />}
@@ -175,6 +188,7 @@ export function AdvancedSessionActions({
           label="修改模型并继续"
           tooltip="修改模型并继续"
           accent="violet"
+          displayLabel={menu}
           icon={<Cpu className="h-4 w-4" strokeWidth={1.9} />}
         />
       </div>
@@ -182,15 +196,18 @@ export function AdvancedSessionActions({
       <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
 
       {condensed && (
-        <div className="grid grid-cols-3 items-stretch gap-2">
+        <>
+        {menu && <div className="px-1 text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>会话配置</div>}
+        <div className={`grid ${menu ? 'grid-cols-2 gap-1' : 'grid-cols-3 gap-2'} items-stretch`}>
           <AdvancedInteractionBtn
             onClick={onOpenSkill}
             disabled={!hasSession}
             label="Skill"
             tooltip="查看当前会话 Skill"
             accent="blue"
-            iconClassName="h-4 w-auto gap-1.5"
-            icon={(
+            displayLabel={menu}
+            iconClassName={menu ? undefined : 'h-4 w-auto gap-1.5'}
+            icon={menu ? <Puzzle className="h-4 w-4" strokeWidth={1.9} /> : (
               <>
                 <Puzzle className="h-4 w-4" strokeWidth={1.9} />
                 <span className="text-[11px] font-medium leading-none">Skill</span>
@@ -203,8 +220,9 @@ export function AdvancedSessionActions({
             label="Memory"
             tooltip="查看当前会话 Memory"
             accent="cyan"
-            iconClassName="h-4 w-auto gap-1.5"
-            icon={(
+            displayLabel={menu}
+            iconClassName={menu ? undefined : 'h-4 w-auto gap-1.5'}
+            icon={menu ? <Brain className="h-4 w-4" strokeWidth={1.9} /> : (
               <>
                 <Brain className="h-4 w-4" strokeWidth={1.9} />
                 <span className="text-[11px] font-medium leading-none">Memory</span>
@@ -217,8 +235,9 @@ export function AdvancedSessionActions({
             label="Git"
             tooltip="查看当前项目 Git 仓库"
             accent="amber"
-            iconClassName="h-4 w-auto gap-1.5"
-            icon={(
+            displayLabel={menu}
+            iconClassName={menu ? undefined : 'h-4 w-auto gap-1.5'}
+            icon={menu ? <GitBranch className="h-4 w-4" strokeWidth={1.9} /> : (
               <>
                 <GitBranch className="h-4 w-4" strokeWidth={1.9} />
                 <span className="text-[11px] font-medium leading-none">Git</span>
@@ -226,6 +245,7 @@ export function AdvancedSessionActions({
             )}
           />
         </div>
+        </>
       )}
     </div>
   )

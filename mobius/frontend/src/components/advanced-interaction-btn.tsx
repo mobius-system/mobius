@@ -19,6 +19,7 @@ type AdvancedInteractionBtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   buttonClassName?: string
   iconClassName?: string
   motion?: 'tilt' | 'breathe'
+  displayLabel?: boolean
 }
 
 export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInteractionBtnProps>(function AdvancedInteractionBtn({
@@ -31,6 +32,7 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
   disabled,
   iconClassName,
   motion = 'tilt',
+  displayLabel = false,
   onBlur,
   onFocus,
   onMouseEnter,
@@ -136,11 +138,12 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
           onBlur?.(event)
           hideTooltip()
         }}
-        className={`group/advanced-interaction relative inline-flex ${buttonClassName || 'h-7 w-full rounded-md'} min-w-0 items-center justify-center bg-transparent px-0 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]} ${className}`}
+        className={`group/advanced-interaction relative inline-flex ${buttonClassName || (displayLabel ? 'min-h-9 w-full rounded-md px-2 py-1.5' : 'h-7 w-full rounded-md px-0')} min-w-0 items-center ${displayLabel ? 'justify-start gap-2 text-left' : 'justify-center'} bg-transparent transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]} ${className}`}
       >
         <span className={`inline-flex ${iconClassName || 'h-4 w-4'} items-center justify-center transition-transform ${motion === 'breathe' ? 'duration-300 ease-out group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:scale-110' : 'duration-200 group-hover/advanced-interaction:-translate-y-0.5 group-hover/advanced-interaction:rotate-[-8deg] group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:-translate-y-0.5 group-focus-visible/advanced-interaction:rotate-[-8deg] group-focus-visible/advanced-interaction:scale-110'}`}>
           {icon}
         </span>
+        {displayLabel && <span className="min-w-0 flex-1 truncate text-[11px] font-medium leading-4">{label}</span>}
       </button>
       {tooltipOpen && typeof document !== 'undefined'
         ? createPortal(
