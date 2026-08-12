@@ -503,7 +503,7 @@ export default function EasyModePage() {
               )}
             </label>
 
-            <div className="mt-2 grid grid-cols-3 gap-1" aria-label="工作状态筛选">
+            {!normalizedSessionQuery && <div className="mt-2 grid grid-cols-3 gap-1" aria-label="工作状态筛选">
               {([
                 ['recent', '最近', projectSessions.length],
                 ['running', '执行中', runningCount],
@@ -523,9 +523,9 @@ export default function EasyModePage() {
                   <span>{label}</span><span className="text-[10px] opacity-70">{count}</span>
                 </button>
               ))}
-            </div>
+            </div>}
 
-            <div className="mt-2 flex min-w-0 items-center gap-2">
+            {!normalizedSessionQuery && <div className="mt-2 flex min-w-0 items-center gap-2">
               <div className="relative min-w-0 flex-1" data-testid="easy-project-filter">
                 <button
                   ref={projectFilterButtonRef}
@@ -615,7 +615,7 @@ export default function EasyModePage() {
                 <Plus className="h-3.5 w-3.5" />
                 <span>新会话</span>
               </button>
-            </div>
+            </div>}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-2" data-testid="easy-recent-sessions">
@@ -656,6 +656,8 @@ export default function EasyModePage() {
                             <button
                               key={key}
                               type="button"
+                              data-search-kind={hit.kind}
+                              data-search-id={hit.id}
                               onClick={() => void openSearchSession(group, hit)}
                               disabled={!!openingSearchResult}
                               className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-60"
