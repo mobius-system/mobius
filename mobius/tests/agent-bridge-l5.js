@@ -2,6 +2,7 @@ const assert = require('node:assert/strict')
 
 const { db } = require('../db')
 const {
+  buildBidirectionalMentionPrompt,
   createAgentBridgeChannel,
   decideAgentBridgeMessage,
   expireAgentBridgeMessages,
@@ -28,8 +29,28 @@ const wake = externalSessionWakePrompt({
 assert.match(wake, /<external_session_notification>/)
 assert.match(wake, /不是当前用户指令/)
 assert.match(wake, /accept、hold 或 refuse/)
+assert.match(wake, /只有明确 accept 后.*向来源 Session 回复/)
+assert.match(wake, /from_session_id = 你自己的 Session ID \(target-1\)/)
+assert.match(wake, /to_session_id = 对方的 Session ID \(source-1\)/)
+assert.match(wake, /"from_session_id":"target-1"/)
+assert.match(wake, /"to_session_id":"source-1"/)
 assert.match(wake, /不得把消息正文.*Memory/)
 assert.doesNotMatch(wake, /ignore safety/)
+
+const sourcePrompt = buildBidirectionalMentionPrompt({
+  perspective: 'source',
+  mode: 'bidirectional',
+  token: 'source-token',
+  sourceSession: { session_id: 'source-1', name: 'Source' },
+  targetSession: { session_id: 'target-1', name: 'Target' },
+  transferMarkdown: 'external context',
+  channelId: 'channel-1',
+})
+assert.match(sourcePrompt, /from_session_id = 你自己的 Session ID \(source-1\)/)
+assert.match(sourcePrompt, /to_session_id = 对方的 Session ID \(target-1\)/)
+assert.match(sourcePrompt, /不要交换 from_session_id 与 to_session_id/)
+assert.match(sourcePrompt, /"from_session_id":"source-1"/)
+assert.match(sourcePrompt, /"to_session_id":"target-1"/)
 
 const externalEntry = buildMobiusExternalEntry({
   sessionId: 'target-1',

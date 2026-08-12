@@ -143,7 +143,16 @@ router.post('/messages', async (req: express.Request, res: express.Response) => 
   const sourceSessionId = bodyFromSessionId || payload.source_session_id;
   const targetSessionId = bodyToSessionId || payload.target_session_id;
   if (payload.actor_session_id && sourceSessionId !== payload.actor_session_id) {
-    res.status(403).json({ error: '桥接 token 不能代表其他 Session 发送消息' });
+    res.status(403).json({
+      error: 'from_session_id 不匹配，桥接 token 不能代表其他 Session 发送消息',
+      category: 'agent_bridge_source_mismatch',
+      hint: 'from_session_id 应填你自己的 Session ID；to_session_id 应填对方的 Session ID，请不要交换。',
+      expected: payload.actor_session_id,
+      actual: sourceSessionId,
+      expected_to_session_id: payload.actor_session_id === payload.source_session_id
+        ? payload.target_session_id
+        : payload.source_session_id,
+    });
     return;
   }
   const sourceMatches = sourceSessionId === payload.source_session_id && targetSessionId === payload.target_session_id;
@@ -197,6 +206,9 @@ router.post('/messages', async (req: express.Request, res: express.Response) => 
       res.status(409).json({
         error: '目标 Agent 尚未 accept 入站消息，不能回复',
         category: 'external_message_decision_required',
+        hint: '先对收到的消息调用 decision 接口并提交 decision=accept，再使用当前 Session 作为 from_session_id 回复。',
+        required_decision: 'accept',
+        deciding_session_id: sourceSessionId,
       });
       return;
     }
