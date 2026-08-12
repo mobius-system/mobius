@@ -12,7 +12,7 @@ type AdvancedSessionActionsProps = {
   showJsonlMeta: boolean
   connectionReady: boolean
   projectKnowledgeSending: boolean
-  variant?: 'default' | 'compact'
+  variant?: 'default' | 'compact' | 'menu'
   onOpenFileChanges: () => void
   onOpenBashCommands: () => void
   onOpenInputReplay: () => void
@@ -62,6 +62,7 @@ export function AdvancedSessionActions({
   onOpenGit,
 }: AdvancedSessionActionsProps) {
   const compact = variant === 'compact'
+  const condensed = variant !== 'default'
   const hasSession = !!sessionId
   const canOpenKnowledge = !!projectId && !!issueId
   const canContinue = hasSession && (!!issueId || !!researchId)
@@ -69,8 +70,8 @@ export function AdvancedSessionActions({
 
   return (
     <div
-      className={`advanced-session-actions mobius-chat-input-actions flex flex-col gap-1.5${compact ? ' advanced-session-actions--compact w-[176px] flex-none rounded-lg border p-1.5 shadow-sm' : ''}`}
-      style={compact ? { background: 'var(--input-bg)', borderColor: 'var(--border-color)' } : undefined}
+      className={`advanced-session-actions mobius-chat-input-actions flex flex-col gap-1.5${condensed ? ` advanced-session-actions--compact ${compact ? 'w-[176px]' : 'w-[360px]'} flex-none rounded-lg border p-2 shadow-sm` : ''}`}
+      style={condensed ? { background: 'var(--input-bg)', borderColor: 'var(--border-color)' } : undefined}
       data-testid="advanced-session-actions"
       data-variant={variant}
       aria-label="高级会话按钮组"
@@ -180,7 +181,7 @@ export function AdvancedSessionActions({
 
       <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
 
-      {compact && (
+      {condensed && (
         <div className="grid grid-cols-3 items-stretch gap-2">
           <AdvancedInteractionBtn
             onClick={onOpenSkill}

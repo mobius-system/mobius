@@ -5916,6 +5916,21 @@ body.mobius-resizing .mobius-resizable-handle {
   align-items: flex-end;
   gap: 8px;
 }
+
+/* 简易模式的低频会话工具改为标题栏按需展开。全局窄屏规则会隐藏
+   .mobius-chat-input-actions，这里为有明确替代入口的工具弹层恢复显示。 */
+.easy-session-context .easy-session-tools .mobius-chat-input-actions {
+  display: flex !important;
+}
+@media (max-width: 700px) {
+  .easy-session-context { padding-left: 10px; padding-right: 10px; gap: 6px; }
+  .easy-session-context [aria-label="当前会话上下文"] > span:not(:last-of-type),
+  .easy-session-context [aria-label="当前会话上下文"] > svg { display: none; }
+  .easy-session-context [aria-label="当前会话上下文"] strong { max-width: 120px; }
+  .easy-session-tools > [role="group"] { right: -58px; max-width: calc(100vw - 16px); overflow-x: auto; }
+  .easy-session-tools .advanced-session-actions--compact { width: 340px; }
+  [data-page="easy-mode"] input { font-size: 16px !important; }
+}
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input--with-actions .mobius-chat-input-editor {
   flex: 1 1 auto;
 }
