@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import path from "node:path";
-import { findExactProjectPath, findNearestProjectRoot } from "../electron/lib/project-path-matching";
+import { findExactProjectPath, findExactProjectRoot } from "../electron/lib/project-path-matching";
 
 const userRoot = "C:\\Users\\example";
 const assistantId = "assistant-project";
@@ -24,20 +24,20 @@ const local = [
   { projectId: assistantId, root: userRoot },
   { projectId: "pawbench-project", root: `${userRoot}\\Desktop\\MobiusOS\\pawbench` },
 ];
+assert.equal(
+  findExactProjectRoot(`${userRoot}\\Desktop\\MobiusOS\\pawbench\\src`, local, path.win32),
+  null,
+  "an Electron project binding must not capture a child directory",
+);
 assert.deepEqual(
-  findNearestProjectRoot(
-    `${userRoot}\\Desktop\\MobiusOS\\pawbench\\src`,
-    local,
-    path.win32,
-    ["C:\\", userRoot],
-  ),
+  findExactProjectRoot(`${userRoot}\\Desktop\\MobiusOS\\pawbench`, local, path.win32),
   { projectId: "pawbench-project", root: `${userRoot}\\Desktop\\MobiusOS\\pawbench` },
-  "an explicit Electron project root should capture its subdirectories",
+  "an exact Electron project binding remains valid",
 );
 assert.equal(
-  findNearestProjectRoot(`${userRoot}\\Downloads\\other`, local, path.win32, ["C:\\", userRoot]),
+  findExactProjectRoot(`${userRoot}\\Downloads\\other`, local, path.win32),
   null,
-  "a stale user-profile binding must not capture unrelated paths",
+  "an Electron binding must not capture unrelated paths",
 );
 
 console.log("project path matching tests passed");

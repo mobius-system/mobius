@@ -5,7 +5,7 @@ import { app } from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { findExactProjectPath, findNearestProjectRoot, type ProjectPathMatch } from "./project-path-matching";
+import { findExactProjectPath, findExactProjectRoot, type ProjectPathMatch } from "./project-path-matching";
 
 const FILE = (): string => path.join(app.getPath("userData"), "project-paths.json");
 
@@ -64,7 +64,7 @@ function write(store: Store): void {
 
 const key = (server: string, projectId: string): string => `${server}::${projectId}`;
 
-/** Find a project from Electron-owned local bindings, including subdirectories. */
+/** Electron local bindings use the same exact-path rule as the shared TUI map. */
 export function findLocalProjectForPath(server: string, rawPath: string): ProjectPathMatch | null {
   const prefix = `${server}::`;
   const mappings: ProjectPathMatch[] = [];
@@ -74,14 +74,7 @@ export function findLocalProjectForPath(server: string, rawPath: string): Projec
     if (projectId) mappings.push({ projectId, root: value.path });
   }
 
-  // Never auto-route an entire drive or user profile. Older builds could import
-  // a broad TUI cwd here and make every Explorer path open the same project.
-  const filesystemRoot = path.parse(path.resolve(rawPath)).root;
-  const broadRoots = [filesystemRoot, os.homedir()];
-  for (const name of ["desktop", "documents", "downloads", "music", "pictures", "videos"] as const) {
-    try { broadRoots.push(app.getPath(name)); } catch { /* unavailable on this platform */ }
-  }
-  return findNearestProjectRoot(rawPath, mappings, path, broadRoots);
+  return findExactProjectRoot(rawPath, mappings, path);
 }
 
 export function getProjectLocalPath(server: string, projectId: string): string | null {
