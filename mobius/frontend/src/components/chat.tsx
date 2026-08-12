@@ -2184,7 +2184,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   layout?: 'default' | 'stacked' | 'easy'
   onNewSession?: () => void
 } = {}) {
-  const { currentSession, currentTask, currentIssue, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
+  const { currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
   const navigate = useNavigate()
   // 搜索结果跳转: URL 带 ?match=<uuid>&ts=<iso> 时, 把命中条目交给 JsonlView 滚到所属卡片.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -2206,6 +2206,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [inputExpanded, setInputExpanded] = useState(false)
   const [inputMenuOpen, setInputMenuOpen] = useState(false)
+  const [easyToolsOpen, setEasyToolsOpen] = useState(false)
   const [inputFocused, setInputFocused] = useState(false)
   // 每个 session 维持一份附件列表 (粘贴 / 拖放 / 上传按钮三路共用).
   // 切 session 时不清空, 让用户在哪儿留下就在哪儿见.
@@ -2214,6 +2215,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const inputMenuRef = useRef<HTMLDivElement | null>(null)
   const inputMenuButtonRef = useRef<HTMLButtonElement | null>(null)
+  const easyToolsRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLDivElement>(null)
@@ -2224,6 +2226,22 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     startWidth: number
     currentWidth: number
   } | null>(null)
+
+  useEffect(() => {
+    if (!easyToolsOpen) return
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!easyToolsRef.current?.contains(event.target as Node)) setEasyToolsOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setEasyToolsOpen(false)
+    }
+    document.addEventListener('mousedown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [easyToolsOpen])
 
   // 右栏宽度不放进 React inline style：拖动时直接写 DOM，避免每个 mousemove
   // 都重渲染 JSONL 与输入区两棵重子树；松手时才提交一次 state 并持久化比例。
@@ -2411,6 +2429,9 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     })
   }, [])
   const sessionId = currentSession?.session_id || currentTask?.task_id || ''
+  useEffect(() => {
+    setEasyToolsOpen(false)
+  }, [sessionId])
   const currentProjectId = (currentIssue as any)?.project_id || (currentSession as any)?.project_id || (currentTask as any)?.project_id || ''
   const currentIssueId = (currentSession as any)?.issue_id || (currentIssue as any)?.id || ''
   const currentResearchId = (currentSession as any)?.research_id || (currentTask as any)?.research_id || ''
@@ -3982,7 +4003,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     </div>
   )
 
-  const renderAdvancedSessionActions = (variant: 'default' | 'compact') => (
+  const renderAdvancedSessionActions = (variant: 'default' | 'compact' | 'menu') => (
     <AdvancedSessionActions
       variant={variant}
       sessionId={currentSession?.session_id || sessionId}
@@ -4119,7 +4140,68 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           onAnnounce={(body) => { handleAnnouncePc(body); setCooperablePcOpen(false) }}
         />
       )}
-      {/* 简易模式把会话上下文收进左侧近期会话列表，右侧仅保留 JSONL 和输入。 */}
+      {layout === 'easy' && (
+        <div className="easy-session-context flex h-11 flex-shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }} data-testid="easy-session-context">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <SessionStatusChip
+              connected={connectionStatus === 'connected'}
+              failed={backendJobFailed === true}
+              pending={!!pendingSendAt}
+              working={!!(backendAlive && backendWorking)}
+              waiting={!!(backendAlive && !backendWorking)}
+              done={backendJobDone === true && !backendAlive}
+              alwaysShowLabel
+            />
+            <div className="flex min-w-0 items-center gap-1.5 text-[12px]" aria-label="当前会话上下文">
+              <span className="max-w-[180px] truncate font-medium" style={{ color: 'var(--text-secondary)' }} title={projectForSession?.name || currentProjectId}>
+                {projectForSession?.name || currentProjectId || '项目'}
+              </span>
+              <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+              <span className="max-w-[220px] truncate" style={{ color: 'var(--text-secondary)' }} title={(currentResearch as any)?.title || (currentIssue as any)?.title || ''}>
+                {(currentResearch as any)?.title || (currentIssue as any)?.title || '任务'}
+              </span>
+              <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+              <strong className="min-w-0 truncate font-semibold" style={{ color: 'var(--text-primary)' }} title={currentSession?.name || currentTask?.name || sessionId}>
+                {currentSession?.name || currentTask?.name || sessionId}
+              </strong>
+            </div>
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <div className="easy-session-tools relative" ref={easyToolsRef}>
+              <button
+                type="button"
+                onClick={() => setEasyToolsOpen(value => !value)}
+                aria-controls="easy-session-tools-panel"
+                aria-expanded={easyToolsOpen}
+                className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                style={{ borderColor: 'var(--border-color)', color: easyToolsOpen ? 'var(--text-primary)' : 'var(--text-secondary)', background: easyToolsOpen ? 'var(--bg-active)' : undefined }}
+              >
+                <Wrench className="h-3.5 w-3.5" />
+                <span>工具</span>
+              </button>
+              {easyToolsOpen && (
+                <div id="easy-session-tools-panel" role="group" aria-label="当前会话工具" className="absolute right-0 top-9 z-50 rounded-xl p-1 shadow-2xl" style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }} onClick={() => setEasyToolsOpen(false)}>
+                  <div className="px-2 pb-2 pt-1 text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>当前会话工具</div>
+                  {renderAdvancedSessionActions('menu')}
+                </div>
+              )}
+            </div>
+            <HeaderActionButton
+              tone="red"
+              title="终止当前智能体正在执行的操作"
+              disabled={!sessionId}
+              aria-live="polite"
+              onClick={handleStopSession}
+              className={`session-stop-button ${stopFeedbackActive ? 'session-stop-button--active' : ''}`}
+            >
+              <span className="session-stop-button__square inline-block h-1.5 w-1.5 rounded-sm bg-current opacity-90" />
+              <span>{stopFeedbackActive ? '已触发' : '停止'}</span>
+            </HeaderActionButton>
+          </div>
+        </div>
+      )}
+
+      {/* 标准模式保留完整会话标题栏；简易模式使用上方轻量上下文与监督栏。 */}
       {layout !== 'easy' && <div data-tour="session-chat-header" className="h-9 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="min-w-0 flex items-center gap-2">
@@ -4309,7 +4391,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
         />
 
         {/* 右侧: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽。 */}
-        <div ref={chatInputRef} className={`mobius-chat-input relative flex flex-shrink-0 flex-col border-l${layout === 'easy' && !isPlanningSession ? ' mobius-chat-input--with-actions' : ''}`} style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+        <div ref={chatInputRef} className="mobius-chat-input relative flex flex-shrink-0 flex-col border-l" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
           {layout === 'default' && (
             <div
               ref={chatSplitHandleRef}
@@ -4584,9 +4666,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           </div>
         </div>
       </div>
-          {/* 简易模式把同一组高级会话操作紧凑放到输入框左侧。 */}
-          {layout === 'easy' && !isPlanningSession && renderAdvancedSessionActions('compact')}
-
           {/* 标准/堆叠布局的下方操作区: 普通会话展示快捷按钮 + Skill/Memory 快照;
               规划模式展示项目知识编辑器。简易模式不重复挂载隐藏侧区，避免端口按钮重复请求。 */}
           {layout !== 'easy' && (isPlanningSession && currentProjectId ? (
