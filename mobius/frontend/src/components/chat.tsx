@@ -2237,7 +2237,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       setEasyToolsOpen(false)
-      easyToolsButtonRef.current?.focus()
+      window.setTimeout(() => easyToolsButtonRef.current?.focus(), 0)
     }
     window.requestAnimationFrame(() => {
       easyToolsPanelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
@@ -4190,7 +4190,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
               {easyToolsOpen && (
                 <div ref={easyToolsPanelRef} id="easy-session-tools-panel" role="group" aria-label="当前会话工具" className="absolute right-0 top-9 z-50 rounded-xl p-1 shadow-2xl" style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }} onClick={() => {
                   setEasyToolsOpen(false)
-                  easyToolsButtonRef.current?.focus()
                 }}>
                   <div className="px-2 pb-2 pt-1 text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>当前会话工具</div>
                   {renderAdvancedSessionActions('menu')}
