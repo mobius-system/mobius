@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { ExternalLink, LayoutList, Rows3, Settings, Wrench } from 'lucide-react'
+import { ExternalLink, LayoutList, Plus, Rows3, Settings, Wrench } from 'lucide-react'
 import { IssueCard } from './IssueCard'
 import { ProjectTabButton, ProjectTabList } from './ProjectTabs'
 import { PrimaryActionButton } from '../primary-action-button'
@@ -345,23 +345,28 @@ function IssueList({
         </div>
       )
     }
+    const emptyMessage = search.trim() || filter !== 'all' ? '没有匹配的任务或会话' : '暂无任务'
     const showQuickPlanning = !search.trim() && filter === 'all' && !!onCreatePlanningIssue
     return (
-      <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
-        <div className="text-[13px] mb-3" style={{ color: 'var(--text-muted)' }}>
-          {search.trim() || filter !== 'all' ? '没有匹配的任务或会话' : '暂无任务'}
+      <div className="space-y-3">
+        <div className="text-center text-[12px]" role="status" style={{ color: 'var(--text-muted)' }}>
+          {emptyMessage}
         </div>
-        <div className="flex items-center justify-center gap-2 flex-wrap">
-          <button onClick={onCreateIssue} disabled={!canCreateIssue} data-tour="project-empty-create-issue"
-            className="h-9 px-4 rounded-lg text-[13px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-            创建第一个任务
-          </button>
+        <div className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 ${compact ? 'gap-2' : 'gap-3'}`}>
           {showQuickPlanning && (
             <button onClick={onCreatePlanningIssue} disabled={!canCreateIssue}
-              className="h-9 px-4 rounded-lg text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              className={`rounded-lg border border-dashed text-[13px] text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${compact ? 'h-[136px]' : 'h-[220px]'}`}
+              style={{ borderColor: 'var(--border-color)' }}>
               创建交互式系统宏观规划
             </button>
           )}
+          <CreateItemCard
+            kind="issue"
+            compact={compact}
+            disabled={!canCreateIssue}
+            onClick={onCreateIssue}
+            dataTour="project-empty-create-issue"
+          />
         </div>
       </div>
     )
@@ -385,6 +390,12 @@ function IssueList({
             onToggleStar={onToggleIssueStar}
           />
         ))}
+        <CreateItemCard
+          kind="issue"
+          compact={compact}
+          disabled={!canCreateIssue}
+          onClick={onCreateIssue}
+        />
       </div>
       {pagination.totalItems > pagination.pageSize && <ProjectPaginationControls pagination={pagination} compact itemLabel="任务" />}
     </div>
@@ -477,14 +488,18 @@ function ResearchList({
       )
     }
     return (
-      <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
-        <div className="text-[13px] mb-3" style={{ color: 'var(--text-muted)' }}>
+      <div className="space-y-3">
+        <div className="text-center text-[12px]" role="status" style={{ color: 'var(--text-muted)' }}>
           {search.trim() || filter !== 'all' ? '没有匹配的研究或智能体' : '暂无研究'}
         </div>
-        <button onClick={onCreateResearch} disabled={!canCreateResearch}
-          className="h-9 px-4 rounded-lg text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-          创建第一个研究
-        </button>
+        <div className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 ${compact ? 'gap-2' : 'gap-3'}`}>
+          <CreateItemCard
+            kind="research"
+            compact={compact}
+            disabled={!canCreateResearch}
+            onClick={onCreateResearch}
+          />
+        </div>
       </div>
     )
   }
@@ -506,8 +521,55 @@ function ResearchList({
           onToggleStatus={onToggleResearchStatus}
         />
       ))}
+      <CreateItemCard
+        kind="research"
+        compact={compact}
+        disabled={!canCreateResearch}
+        onClick={onCreateResearch}
+      />
       </div>
       {pagination.totalItems > pagination.pageSize && <ProjectPaginationControls pagination={pagination} compact itemLabel="研究" />}
     </div>
+  )
+}
+
+type CreateItemCardProps = {
+  kind: 'issue' | 'research'
+  compact: boolean
+  disabled: boolean
+  onClick: () => void
+  dataTour?: string
+}
+
+function CreateItemCard({ kind, compact, disabled, onClick, dataTour }: CreateItemCardProps) {
+  const isIssue = kind === 'issue'
+  const label = isIssue ? '创建新任务' : '创建新研究'
+  const accent = isIssue ? '#60a5fa' : '#34d399'
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      data-tour={dataTour || (isIssue ? 'project-list-create-issue' : 'project-list-create-research')}
+      aria-label={disabled ? `${label}（无权限）` : label}
+      className={`group flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--bg-primary)] ${isIssue ? 'hover:border-blue-400' : 'hover:border-emerald-400'} ${compact ? 'h-[136px]' : 'h-[220px]'}`}
+      style={{
+        color: accent,
+        borderColor: 'var(--border-color-strong)',
+        background: 'var(--bg-primary)',
+        '--tw-ring-color': accent,
+        '--tw-ring-offset-color': 'var(--bg-secondary)',
+      } as React.CSSProperties}
+    >
+      <span
+        className="flex h-9 w-9 items-center justify-center rounded-full border transition-transform group-hover:scale-105"
+        style={{ borderColor: accent, background: 'var(--bg-card-hover)' }}
+        aria-hidden="true"
+      >
+        <Plus className="h-4 w-4" strokeWidth={2} />
+      </span>
+      <span className="text-[13px] font-medium">{label}</span>
+    </button>
   )
 }
