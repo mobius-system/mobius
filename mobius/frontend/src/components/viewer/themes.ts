@@ -8,7 +8,7 @@
 export type CardTheme = { dot: string; border: string; bg: string; text: string; label: string }
 
 // 顶层 type → 卡片色调 (Tailwind class fragments)
-// label 全部 ≤2 汉字 (用户审查确认: 2026-07-23), 数据 type 名仍保持英文以便 JSONL 协议稳定.
+// label 默认保持精短；工具特例可按明确业务语义使用更长标签。数据 type 名仍保持英文以便 JSONL 协议稳定.
 export const TYPE_THEME: Record<string, CardTheme> = {
   user:                   { dot: 'bg-slate-400',  border: 'border-slate-500/15', bg: 'bg-slate-500/[0.04]',  text: 'text-slate-300',  label: '用户' },
   assistant:              { dot: 'bg-blue-400',   border: 'border-blue-500/15',  bg: 'bg-blue-500/[0.04]',   text: 'text-blue-300',   label: '智能体' },
@@ -40,6 +40,9 @@ export const START_PY_THEME: CardTheme = { dot: 'bg-yellow-400', border: 'border
 // 特例: assistant 里带 name:"Bash" 的 tool_use 卡片 (Claude Code shell 调用).
 // 用 cyan, 呼应终端/控制台意象, 与 Edit indigo、start.py yellow 都拉开, 长列表里可识别.
 export const BASH_TOOL_THEME: CardTheme = { dot: 'bg-cyan-400', border: 'border-cyan-500/20', bg: 'bg-cyan-500/[0.06]', text: 'text-cyan-300', label: '命令' }
+
+// AIMUX MCP 远程执行卡片。执行内容仍走代码卡片，但标签强调这是已连接算力参与的协作执行。
+export const AIMUX_COMMAND_THEME: CardTheme = { dot: 'bg-teal-400', border: 'border-teal-500/20', bg: 'bg-teal-500/[0.06]', text: 'text-teal-300', label: '协作执行' }
 
 // 特例: assistant 里带 name:"Read" 的 tool_use 卡片.
 // 用 sky, 与 Bash cyan / Edit indigo 近邻但可区分, 方便扫文件读取操作.
