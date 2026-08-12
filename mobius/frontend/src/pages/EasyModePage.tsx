@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Check,
@@ -16,6 +16,13 @@ import {
 import { useStore, api } from '../store'
 import { useLayoutMode, buildNormalModeTargetUrl } from '../services/layout-mode'
 import { pollRecursive } from '../services/polling'
+import {
+  EMPTY_PROJECT_HIERARCHY_SEARCH,
+  hierarchyHitLabel,
+  type ProjectHierarchyGroup,
+  type ProjectHierarchyHit,
+  type ProjectHierarchySearchResponse,
+} from '../services/project-hierarchy-search'
 import { ChatArea } from '../components/chat'
 import { GlobalCreateRoot, type CreateKind } from '../components/global-create'
 import { ResizablePanel } from '../components/resizable-panel'
@@ -113,7 +120,14 @@ export default function EasyModePage() {
   const [projectFilterOpen, setProjectFilterOpen] = useState(false)
   const [projectFilterQuery, setProjectFilterQuery] = useState('')
   const [sessionQuery, setSessionQuery] = useState('')
+  const [hierarchySearch, setHierarchySearch] = useState<ProjectHierarchySearchResponse>(EMPTY_PROJECT_HIERARCHY_SEARCH)
+  const [hierarchySearchLoading, setHierarchySearchLoading] = useState(false)
+  const [hierarchySearchError, setHierarchySearchError] = useState('')
+  const [openingSearchResult, setOpeningSearchResult] = useState('')
+  const [lookupFailedSessionId, setLookupFailedSessionId] = useState('')
   const [createKind, setCreateKind] = useState<CreateKind | null>(null)
+  const [createIssueOverride, setCreateIssueOverride] = useState('')
+  const projectFilterButtonRef = useRef<HTMLButtonElement | null>(null)
   const navigate = useNavigate()
   const layoutMode = useLayoutMode()
   const sessionParam = search.get('session') || ''
@@ -160,33 +174,67 @@ export default function EasyModePage() {
     : sessions
   const runningCount = projectSessions.filter(session => session.agent_status === 'running').length
   const completedCount = projectSessions.filter(session => session.agent_status === 'completed' || session.status === 'completed').length
-  const visibleSessions = useMemo(() => {
-    const q = sessionQuery.trim().toLowerCase()
-    return projectSessions.filter(session => {
-      if (!sessionMatchesView(session, workView)) return false
-      if (!q) return true
-      return [session.name, session.project_name, session.project_id, sessionSubject(session)]
-        .some(value => String(value || '').toLowerCase().includes(q))
-    })
-  }, [projectSessions, sessionQuery, workView])
+  const visibleSessions = useMemo(() => (
+    projectSessions.filter(session => sessionMatchesView(session, workView))
+  ), [projectSessions, workView])
+  const normalizedSessionQuery = sessionQuery.trim().slice(0, 200)
+  const activeHierarchySearch = hierarchySearch.query === normalizedSessionQuery
+    ? hierarchySearch
+    : { ...EMPTY_PROJECT_HIERARCHY_SEARCH, query: normalizedSessionQuery }
 
   const selectedSession = sessions.find(session => session.session_id === sessionParam) || null
   const contextMatchesProject = !!selectedSession && (!effectiveProject || selectedSession.project_id === effectiveProject)
   const createDefaultProjectId = effectiveProject || (currentSession as RecentSession | null)?.project_id || undefined
-  const createDefaultIssueId = (
+  const createDefaultIssueId = createIssueOverride || ((
     createDefaultProjectId &&
     (currentSession as RecentSession | null)?.project_id === createDefaultProjectId &&
     (currentSession as RecentSession | null)?.scope_type !== 'research'
   )
     ? (currentSession as RecentSession | null)?.issue_id || undefined
-    : undefined
+    : undefined)
 
   useEffect(() => {
     if (!projectFilterOpen) return
     const close = () => setProjectFilterOpen(false)
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setProjectFilterOpen(false)
+      projectFilterButtonRef.current?.focus()
+    }
     document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('click', close)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
   }, [projectFilterOpen])
+
+  useEffect(() => {
+    if (!normalizedSessionQuery) {
+      setHierarchySearch(EMPTY_PROJECT_HIERARCHY_SEARCH)
+      setHierarchySearchLoading(false)
+      setHierarchySearchError('')
+      return
+    }
+    const controller = new AbortController()
+    setHierarchySearchLoading(true)
+    setHierarchySearchError('')
+    const timer = window.setTimeout(() => {
+      api(`/api/projects/hierarchy-search?q=${encodeURIComponent(normalizedSessionQuery)}`, { signal: controller.signal })
+        .then((result: ProjectHierarchySearchResponse) => setHierarchySearch(result))
+        .catch((err: any) => {
+          if (err?.name === 'AbortError') return
+          setHierarchySearchError('全部工作搜索暂时不可用，请稍后重试')
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setHierarchySearchLoading(false)
+        })
+    }, 300)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [normalizedSessionQuery])
 
   useEffect(() => {
     if (!layoutMode || layoutMode === 'easy_mode') return
@@ -232,16 +280,41 @@ export default function EasyModePage() {
     setRefreshing(true)
     try {
       const recent = await api(`/api/tasks/recent?limit=${RECENT_SESSION_LIMIT}`, { signal })
-      setSessions(normalizeRecent(recent))
+      setSessions((current) => {
+        const next = normalizeRecent(recent)
+        const selected = current.find(session => session.session_id === sessionParam)
+        return selected && !next.some(session => session.session_id === selected.session_id)
+          ? [selected, ...next]
+          : next
+      })
     } finally {
       setRefreshing(false)
     }
-  }, 10_000, 10_000, { startImmediately: false }), [params.user])
+  }, 10_000, 10_000, { startImmediately: false }), [params.user, sessionParam])
+
+  // 全局搜索可以打开不在“最近 50 个”中的历史会话；刷新深链时也补拉该会话，
+  // 避免 URL 中的有效 session 因近期列表未包含而被错误清除。
+  useEffect(() => {
+    if (loading || !sessionParam || sessions.some(session => session.session_id === sessionParam)) return
+    if (lookupFailedSessionId === sessionParam) return
+    const controller = new AbortController()
+    api(`/api/tasks/${encodeURIComponent(sessionParam)}`, { signal: controller.signal })
+      .then((session: RecentSession) => {
+        if (!session?.session_id || session.status === 'archived') throw new Error('未找到可打开的会话')
+        setSessions(current => [session, ...current.filter(item => item.session_id !== session.session_id)])
+        setLookupFailedSessionId('')
+      })
+      .catch((err: any) => {
+        if (err?.name !== 'AbortError') setLookupFailedSessionId(sessionParam)
+      })
+    return () => controller.abort()
+  }, [loading, sessionParam, sessions, lookupFailedSessionId])
 
   // project + session 是简易模式的权威上下文。项目切换后，只能打开该项目的会话；
   // 若该项目在近期列表中没有会话，清空右侧并给出创建入口，绝不保留另一项目的上下文。
   useEffect(() => {
     if (loading) return
+    if (sessionParam && !selectedSession && lookupFailedSessionId !== sessionParam) return
     if (projectParam && projectOptions.length > 0 && !effectiveProject) {
       const next = new URLSearchParams(search)
       next.delete('project')
@@ -297,7 +370,7 @@ export default function EasyModePage() {
         title: selected.issue_title || '任务',
       } as any : null)
     }
-  }, [loading, sessions, sessionParam, projectParam, effectiveProject, projectOptions.length, projects, currentSession?.session_id, search, setSearch, workView])
+  }, [loading, sessions, sessionParam, selectedSession, lookupFailedSessionId, projectParam, effectiveProject, projectOptions.length, projects, currentSession?.session_id, search, setSearch, workView])
 
   const selectSession = (session: RecentSession) => {
     const next = new URLSearchParams(search)
@@ -330,6 +403,61 @@ export default function EasyModePage() {
     setSearch(next)
   }
 
+  const openCreateSession = (issueId = '') => {
+    setCreateIssueOverride(issueId)
+    setCreateKind('session')
+  }
+
+  const openSearchSession = async (group: ProjectHierarchyGroup, hit: ProjectHierarchyHit) => {
+    const resultKey = `${hit.kind}:${hit.id}`
+    setOpeningSearchResult(resultKey)
+    setHierarchySearchError('')
+    try {
+      let session: RecentSession | null = null
+      if (hit.kind === 'session' || hit.kind === 'research_agent') {
+        session = await api(`/api/tasks/${encodeURIComponent(hit.id)}`)
+      } else {
+        const endpoint = hit.kind === 'research'
+          ? `/api/researches/${encodeURIComponent(hit.id)}/sessions`
+          : `/api/issues/${encodeURIComponent(hit.id)}/sessions`
+        const list = await api(endpoint)
+        session = Array.isArray(list) && list.length > 0 ? list[0] : null
+        if (!session) {
+          if (hit.kind === 'issue') {
+            setSessionQuery('')
+            selectProjectFilter(String(group.project.id))
+            openCreateSession(hit.id)
+            return
+          }
+          throw new Error('这个研究还没有可继续的智能体')
+        }
+      }
+      if (!session) throw new Error('没有可打开的会话')
+      const decorated: RecentSession = {
+        ...session,
+        session_id: session.session_id,
+        project_id: session.project_id || String(group.project.id),
+        project_name: session.project_name || group.project.name,
+        issue_id: session.issue_id || (hit.parent_kind === 'issue' ? hit.parent_id : hit.kind === 'issue' ? hit.id : null),
+        issue_title: session.issue_title || (hit.parent_kind === 'issue' ? hit.parent_title : hit.kind === 'issue' ? hit.title : null),
+        research_id: session.research_id || (hit.parent_kind === 'research' ? hit.parent_id : hit.kind === 'research' ? hit.id : null),
+        research_title: session.research_title || (hit.parent_kind === 'research' ? hit.parent_title : hit.kind === 'research' ? hit.title : null),
+        scope_type: session.scope_type || (hit.kind === 'research' || hit.kind === 'research_agent' ? 'research' : 'issue'),
+      }
+      setSessions(current => [decorated, ...current.filter(item => item.session_id !== decorated.session_id)])
+      const next = new URLSearchParams(search)
+      next.set('project', String(group.project.id))
+      next.set('session', decorated.session_id)
+      next.delete('view')
+      setSearch(next)
+      setSessionQuery('')
+    } catch (err: any) {
+      setHierarchySearchError(err?.message || '无法打开这项工作')
+    } finally {
+      setOpeningSearchResult('')
+    }
+  }
+
   return (
     <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)' }} data-page="easy-mode">
       <TopNav />
@@ -360,12 +488,15 @@ export default function EasyModePage() {
               <input
                 value={sessionQuery}
                 onChange={event => setSessionQuery(event.target.value)}
-                placeholder="搜索近期项目、任务或会话"
-                aria-label="搜索近期项目、任务或会话"
+                maxLength={200}
+                placeholder="搜索全部项目、任务或会话"
+                aria-label="搜索全部项目、任务或会话"
                 className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] outline-none"
                 style={{ color: 'var(--text-primary)' }}
               />
-              {sessionQuery && (
+              {hierarchySearchLoading ? (
+                <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin" style={{ color: 'var(--accent-primary)' }} aria-label="正在搜索全部工作" />
+              ) : sessionQuery && (
                 <button type="button" onClick={() => setSessionQuery('')} aria-label="清空搜索" className="rounded p-0.5 hover:bg-[var(--bg-hover)]">
                   <X className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
                 </button>
@@ -397,6 +528,7 @@ export default function EasyModePage() {
             <div className="mt-2 flex min-w-0 items-center gap-2">
               <div className="relative min-w-0 flex-1" data-testid="easy-project-filter">
                 <button
+                  ref={projectFilterButtonRef}
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation()
@@ -470,7 +602,7 @@ export default function EasyModePage() {
               </div>
               <button
                 type="button"
-                onClick={() => setCreateKind('session')}
+                onClick={() => openCreateSession()}
                 data-testid="easy-new-session"
                 className="inline-flex h-9 flex-shrink-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
                 style={{
@@ -487,7 +619,64 @@ export default function EasyModePage() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-2" data-testid="easy-recent-sessions">
-            {loading ? (
+            {normalizedSessionQuery ? (
+              <div data-testid="easy-global-search-results">
+                <div className="flex min-h-8 items-center justify-between px-2 py-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  <span>{hierarchySearchLoading ? '正在搜索全部工作…' : `全部工作 · ${activeHierarchySearch.match_count} 条匹配`}</span>
+                  {activeHierarchySearch.truncated && <span>仅显示最相关结果</span>}
+                </div>
+                {hierarchySearchError ? (
+                  <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-5 text-center text-[11px] text-red-300">{hierarchySearchError}</div>
+                ) : !hierarchySearchLoading && activeHierarchySearch.projects.length === 0 ? (
+                  <div className="px-3 py-10 text-center">
+                    <SearchIcon className="mx-auto h-7 w-7" style={{ color: 'var(--text-muted)' }} />
+                    <div className="mt-3 text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>没有找到相关工作</div>
+                    <div className="mt-1 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>尝试项目简称、任务标题或会话名称</div>
+                  </div>
+                ) : activeHierarchySearch.projects.map(group => (
+                  <section key={group.project.id} className="mb-2 overflow-hidden rounded-lg border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSessionQuery('')
+                        selectProjectFilter(String(group.project.id))
+                      }}
+                      className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                      title={`切换到项目：${group.project.name || group.project.id}`}
+                    >
+                      <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                      <span className="min-w-0 flex-1 truncate text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{group.project.name || group.project.id}</span>
+                      <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>{group.project_match ? '项目匹配' : `${group.total_matches} 项`}</span>
+                    </button>
+                    {group.matches.length > 0 && (
+                      <div className="border-t px-1 py-1" style={{ borderColor: 'var(--border-color)' }}>
+                        {group.matches.map(hit => {
+                          const key = `${hit.kind}:${hit.id}`
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => void openSearchSession(group, hit)}
+                              disabled={!!openingSearchResult}
+                              className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-60"
+                            >
+                              <span className="mt-0.5 flex-shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium" style={{ background: 'var(--bg-active)', color: 'var(--text-secondary)' }}>{hierarchyHitLabel(hit.kind)}</span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>{hit.title || hit.id}</span>
+                                <span className="mt-0.5 block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                                  {hit.parent_title || (hit.kind === 'issue' ? '打开最近会话；没有会话则新建' : hit.kind === 'research' ? '打开研究智能体' : '直接继续会话')}
+                                </span>
+                              </span>
+                              {openingSearchResult === key && <Loader2 className="mt-1 h-3.5 w-3.5 flex-shrink-0 animate-spin" style={{ color: 'var(--accent-primary)' }} />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </section>
+                ))}
+              </div>
+            ) : loading ? (
               <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>正在加载工作导航...</div>
             ) : error ? (
               <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-5 text-center text-[12px] text-red-300">{error}</div>
@@ -495,13 +684,13 @@ export default function EasyModePage() {
               <div className="px-3 py-10 text-center">
                 <FolderOpen className="mx-auto h-7 w-7" style={{ color: 'var(--text-muted)' }} />
                 <div className="mt-3 text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                  {sessionQuery ? '没有匹配的近期会话' : workView !== 'recent' ? `当前没有${workView === 'running' ? '执行中' : '已完成'}的会话` : '这个项目没有近期会话'}
+                  {workView !== 'recent' ? `当前没有${workView === 'running' ? '执行中' : '已完成'}的会话` : '这个项目没有近期会话'}
                 </div>
                 <div className="mt-1 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
-                  {sessionQuery ? '尝试搜索项目、任务或会话名称' : selectedProjectOption ? '可以在当前项目中创建一个新会话' : '创建会话后会显示在这里'}
+                  {selectedProjectOption ? '可以在当前项目中创建一个新会话' : '创建会话后会显示在这里'}
                 </div>
-                {!sessionQuery && selectedProjectOption && workView === 'recent' && (
-                  <button type="button" onClick={() => setCreateKind('session')} className="mt-3 rounded-lg border px-3 py-2 text-[11px] font-medium text-blue-400 hover:bg-blue-500/10" style={{ borderColor: 'rgba(59,130,246,.28)' }}>
+                {selectedProjectOption && workView === 'recent' && (
+                  <button type="button" onClick={() => openCreateSession()} className="mt-3 rounded-lg border px-3 py-2 text-[11px] font-medium text-blue-400 hover:bg-blue-500/10" style={{ borderColor: 'rgba(59,130,246,.28)' }}>
                     在当前项目新建会话
                   </button>
                 )}
@@ -571,7 +760,7 @@ export default function EasyModePage() {
                 {workView !== 'recent' ? '切换到“最近”查看其他工作，或创建一个新会话。' : selectedProjectOption ? '这个项目不在最近 50 个会话中。新建会话后可以直接从这里继续工作。' : '选择一个项目或创建会话后开始工作。'}
               </div>
               {selectedProjectOption && workView === 'recent' && (
-                <button type="button" onClick={() => setCreateKind('session')} className="mt-4 rounded-lg bg-blue-500 px-4 py-2 text-[12px] font-medium text-white hover:bg-blue-600">
+                <button type="button" onClick={() => openCreateSession()} className="mt-4 rounded-lg bg-blue-500 px-4 py-2 text-[12px] font-medium text-white hover:bg-blue-600">
                   在当前项目新建会话
                 </button>
               )}
@@ -583,7 +772,10 @@ export default function EasyModePage() {
         <GlobalCreateRoot
           kind={createKind}
           ctx={{ projectId: createDefaultProjectId, issueId: createDefaultIssueId }}
-          onClose={() => setCreateKind(null)}
+          onClose={() => {
+            setCreateKind(null)
+            setCreateIssueOverride('')
+          }}
           onNavigate={navigate}
         />
       )}

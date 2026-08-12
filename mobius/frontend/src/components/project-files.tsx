@@ -335,10 +335,11 @@ type ProjectPortEntryButtonProps = {
   className?: string
   label?: string
   triggerVariant?: 'default' | 'advanced'
+  advancedDisplayLabel?: boolean
   onRequestRunProject?: (mainProjectPortPath: string) => void
 }
 
-export function ProjectPortEntryButton({ projectId, subPath, className, label, triggerVariant = 'default', onRequestRunProject }: ProjectPortEntryButtonProps) {
+export function ProjectPortEntryButton({ projectId, subPath, className, label, triggerVariant = 'default', advancedDisplayLabel = false, onRequestRunProject }: ProjectPortEntryButtonProps) {
   const [bindPath, setBindPath] = useState('')
   const [vscodeWebUrl, setVscodeWebUrl] = useState('')
   const [autoPort, setAutoPort] = useState<number | null>(null)
@@ -412,6 +413,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
       tooltip={title}
       accent="emerald"
       className={className}
+      displayLabel={advancedDisplayLabel}
       icon={loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MonitorPlay className="h-4 w-4" />}
     />
   )
