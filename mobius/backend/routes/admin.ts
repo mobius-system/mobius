@@ -1560,4 +1560,19 @@ router.post('/skill-memory/import', adminAuth, (req: express.Request, res: expre
   res.json(result);
 });
 
+// GET /api/admin/self-test: 跑一组 HTTP 只读冒烟, 返回 JSON 报告 (需要 admin 权限).
+router.get('/self-test', adminAuth, async (_req: express.Request, res: express.Response) => {
+  try {
+    const { runSelfTest } = require('../../tests/self-test-lib');
+    const r = await runSelfTest({
+      base: `http://127.0.0.1:${process.env.MOBIUS_PORT || '33316'}`,
+      doWrite: false,
+      timeoutMs: 10000,
+    });
+    res.json(r);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || '自检异常' });
+  }
+});
+
 export = router;

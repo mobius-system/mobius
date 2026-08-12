@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Eye, FolderInput, Lock, Trash2, Upload } from 'lucide-react'
+import { Copy, Eye, Lock, Trash2, Upload } from 'lucide-react'
 import { api } from '../store'
 import { ContextAccessModal } from './context-access'
 import { MoveScopeModal } from './modals'
@@ -475,7 +475,7 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
                   <button onClick={() => setMoving(sk)} title={scope === 'user' ? '复制到项目级' : '复制到我的 / 其他项目'}
                     className="h-7 w-7 inline-flex items-center justify-center rounded border transition-colors hover:bg-[var(--bg-hover)]"
                     style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
-                    <FolderInput className="w-3.5 h-3.5" />
+                    <Copy className="w-3.5 h-3.5" />
                   </button>
                   <button onClick={() => handleDelete(sk.id)} title="移除"
                     className="h-7 w-7 inline-flex items-center justify-center rounded border hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
