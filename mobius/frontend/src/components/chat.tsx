@@ -2216,7 +2216,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const inputMenuRef = useRef<HTMLDivElement | null>(null)
   const inputMenuButtonRef = useRef<HTMLButtonElement | null>(null)
   const easyToolsRef = useRef<HTMLDivElement | null>(null)
-  const easyToolsButtonRef = useRef<HTMLButtonElement | null>(null)
   const easyToolsPanelRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
@@ -2237,7 +2236,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       setEasyToolsOpen(false)
-      window.setTimeout(() => easyToolsButtonRef.current?.focus(), 0)
     }
     window.requestAnimationFrame(() => {
       easyToolsPanelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
@@ -4086,7 +4084,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                 </div>
               </div>
               <button
-                ref={easyToolsButtonRef}
                 type="button"
                 onClick={() => setRunProjectPrompt('')}
                 className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
@@ -4188,7 +4185,12 @@ export function ChatArea({ layout = 'default', onNewSession }: {
                 <span>工具</span>
               </button>
               {easyToolsOpen && (
-                <div ref={easyToolsPanelRef} id="easy-session-tools-panel" role="group" aria-label="当前会话工具" className="absolute right-0 top-9 z-50 rounded-xl p-1 shadow-2xl" style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }} onClick={() => {
+                <div ref={easyToolsPanelRef} id="easy-session-tools-panel" role="group" aria-label="当前会话工具" className="absolute right-0 top-9 z-50 rounded-xl p-1 shadow-2xl" style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }} onKeyDown={(event) => {
+                  if (event.key !== 'Escape') return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setEasyToolsOpen(false)
+                }} onClick={() => {
                   setEasyToolsOpen(false)
                 }}>
                   <div className="px-2 pb-2 pt-1 text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>当前会话工具</div>
