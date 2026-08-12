@@ -40,6 +40,9 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
   ...props
 }, forwardedRef) {
   const tooltipText = tooltip || label
+  // 菜单模式已经展示完整文字标签，再弹出同义 tooltip 会遮挡相邻操作，
+  // 也会让浅色 tooltip 看起来像一块突兀的白色浮层。纯图标按钮仍保留提示。
+  const hasTooltip = !displayLabel
   const tooltipId = useId()
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const tooltipRef = useRef<HTMLDivElement | null>(null)
@@ -94,10 +97,11 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
   }, [tooltipOpen, tooltipPos, updateTooltipPosition])
 
   const showTooltip = useCallback(() => {
+    if (!hasTooltip) return
     // 不预设位置: 先 setTooltipOpen(true), tooltip 以 tooltipPos===null (visibility:hidden) 渲染,
     // useLayoutEffect 测到实测宽高后调 updateTooltipPosition 得到经四向 clamp 的最终坐标, 再可见. 这样宽 tooltip 不会溢出视口.
     setTooltipOpen(true)
-  }, [])
+  }, [hasTooltip])
 
   const hideTooltip = useCallback(() => {
     setTooltipOpen(false)
@@ -121,7 +125,7 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
         type={props.type || 'button'}
         disabled={disabled}
         aria-label={label}
-        aria-describedby={tooltipOpen ? tooltipId : undefined}
+        aria-describedby={hasTooltip && tooltipOpen ? tooltipId : undefined}
         onMouseEnter={(event) => {
           onMouseEnter?.(event)
           showTooltip()

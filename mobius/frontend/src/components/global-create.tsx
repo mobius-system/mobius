@@ -216,7 +216,7 @@ type DropdownOption = {
   badge?: { text: string; color: string; bg: string }
 }
 function DropdownSelect({
-  value, onChange, options, placeholder, dark, disabled, emptyText, forceSearch,
+  value, onChange, options, placeholder, dark, disabled, emptyText, forceSearch, panelAction,
 }: {
   value: string
   onChange: (v: string) => void
@@ -226,6 +226,7 @@ function DropdownSelect({
   disabled?: boolean
   emptyText?: string
   forceSearch?: boolean
+  panelAction?: { label: string; onClick: () => void; disabled?: boolean }
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -313,6 +314,24 @@ function DropdownSelect({
                     </button>
                   )}
                 </div>
+              </div>
+            )}
+            {panelAction && (
+              <div className="border-b p-1.5" style={{ borderColor: 'var(--border-color)' }}>
+                <button
+                  type="button"
+                  disabled={panelAction.disabled}
+                  onClick={() => {
+                    if (panelAction.disabled) return
+                    setOpen(false)
+                    panelAction.onClick()
+                  }}
+                  className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] font-medium transition-colors hover:bg-blue-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ color: '#60a5fa' }}
+                >
+                  <FolderPlus className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="truncate">{panelAction.label}</span>
+                </button>
               </div>
             )}
             <div className="flex-1 min-h-0 overflow-y-auto py-1">
@@ -1207,6 +1226,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   const [err, setErr] = useState('')
   // 创建成功弹窗 (查看 / 再创建一个 / 关闭). null = 不显示.
   const [success, setSuccess] = useState<{ sessionId?: string; detailUrl?: string; name: string } | null>(null)
+  const [createIssueOpen, setCreateIssueOpen] = useState(false)
   // 「更多会话设置」折叠: 会话名称 / 模型 / 语言 / Skill·Memory 收纳其中, 默认收起 (快捷会话核心只需 项目+任务+描述).
   const [moreOpen, setMoreOpen] = useState(false)
   // PC 任务模式 (仅 electron 桌面端, 与 NewSessionModal 同源): work_mode/aimux_id/local_path
@@ -1447,6 +1467,10 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
           dark={dark}
           placeholder={projectId ? '— 选择任务 —' : '请先选择项目'}
           emptyText={projectId ? '该项目下暂无任务' : '请先选择项目'}
+          panelAction={projectId ? {
+            label: '在当前项目新建任务',
+            onClick: () => setCreateIssueOpen(true),
+          } : undefined}
           options={[
             { value: '', label: projectId ? '— 选择任务 —' : '请先选择项目', description: '取消选择' },
             ...issues.list.map((i: any) => ({
@@ -1493,6 +1517,19 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
             />
           </div>
         </>
+      )}
+      {createIssueOpen && (
+        <CreateIssueForm
+          defaultProjectId={projectId}
+          onClose={() => setCreateIssueOpen(false)}
+          onDone={(issue) => {
+            setIssueId(String(issue.id))
+            setSelectionReady(false)
+            setErr('')
+            setCreateIssueOpen(false)
+            issues.refresh()
+          }}
+        />
       )}
       {err && <ErrBanner>{err}</ErrBanner>}
     </CreateModalShell>
