@@ -553,11 +553,9 @@ function CreateItemCard({ kind, compact, disabled, onClick, dataTour }: CreateIt
       disabled={disabled}
       data-tour={dataTour || (isIssue ? 'project-list-create-issue' : 'project-list-create-research')}
       aria-label={disabled ? `${label}（无权限）` : label}
-      className={`group flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--bg-primary)] ${isIssue ? 'hover:border-blue-400' : 'hover:border-emerald-400'} ${compact ? 'h-[136px]' : 'h-[220px]'}`}
+      className={`group flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-[var(--border-color-strong)] bg-[var(--bg-primary)] transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[var(--border-color-strong)] disabled:hover:bg-[var(--bg-primary)] ${isIssue ? 'hover:border-blue-400' : 'hover:border-emerald-400'} ${compact ? 'h-[136px]' : 'h-[220px]'}`}
       style={{
         color: accent,
-        borderColor: 'var(--border-color-strong)',
-        background: 'var(--bg-primary)',
         '--tw-ring-color': accent,
         '--tw-ring-offset-color': 'var(--bg-secondary)',
       } as React.CSSProperties}
