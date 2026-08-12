@@ -2350,6 +2350,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
       })
       if (voiceStopTimerRef.current !== null) window.clearTimeout(voiceStopTimerRef.current)
       if (voiceTickTimerRef.current !== null) window.clearInterval(voiceTickTimerRef.current)
+      if (bridgeQueueNoticeTimerRef.current !== null) window.clearTimeout(bridgeQueueNoticeTimerRef.current)
       const recorder = mediaRecorderRef.current
       try {
         if (recorder && recorder.state !== 'inactive') recorder.stop()
@@ -2410,6 +2411,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [stopFeedbackActive, setStopFeedbackActive] = useState(false)
   const stopFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [bridgeQueueNotice, setBridgeQueueNotice] = useState<string | null>(null)
+  const bridgeQueueNoticeTimerRef = useRef<number | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
@@ -3808,7 +3811,18 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     // 要等后端 POST /messages 返回才清空, 体感是"字过了一会儿才消失".
     clearSessionInputDraft(sentSessionId, sentInput)
     postSessionMessage({ content, inputText: text, requestId, urgent, mentions: mentionPayload })
-      .then(() => {
+      .then((resp) => {
+        const queued = Array.isArray(resp?.external_messages_queued)
+          ? resp.external_messages_queued.filter((item: any) => item?.delivery === 'queued')
+          : []
+        if (queued.length > 0 && selectedAgentMention) {
+          setBridgeQueueNotice(`已通知 ${selectedAgentMention.name}，等待对方空闲后投递`)
+          if (bridgeQueueNoticeTimerRef.current !== null) window.clearTimeout(bridgeQueueNoticeTimerRef.current)
+          bridgeQueueNoticeTimerRef.current = window.setTimeout(() => {
+            setBridgeQueueNotice(null)
+            bridgeQueueNoticeTimerRef.current = null
+          }, 5000)
+        }
         setEditingMsg(null)
         clearAttachments()
         setSelectedAgentMention(null)
@@ -4325,6 +4339,15 @@ export function ChatArea({ layout = 'default', onNewSession }: {
               <span className="h-2.5 w-2.5 rounded-sm bg-white" />
             </span>
             终止指令已发送
+          </div>
+        </div>
+      )}
+
+      {bridgeQueueNotice && (
+        <div className="pointer-events-none fixed right-4 top-16 z-[80] max-w-[min(360px,calc(100vw-2rem))]">
+          <div className="flex items-center gap-2 rounded-lg border border-blue-400/30 bg-[var(--bg-card)] px-3 py-2 text-[12px] font-medium text-[var(--text-primary)] shadow-xl">
+            <Clock className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
+            <span className="min-w-0 break-words">{bridgeQueueNotice}</span>
           </div>
         </div>
       )}
