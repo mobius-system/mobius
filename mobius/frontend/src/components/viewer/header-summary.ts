@@ -26,6 +26,7 @@ import {
   extractBashCalls,
   extractBashCallFromBlock,
   bashCallOneLineSummary,
+  isAimuxCommandToolUseName,
   isBashToolUseName,
   extractPlanUpdate,
   extractTaskReminder,
@@ -270,6 +271,7 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
   if (t === 'assistant' && Array.isArray(msg?.content)) {
     const parts: string[] = []
     const bashPartIndices: number[] = []
+    let hasAimuxCommand = false
     let hasThinking = false
     for (const item of msg.content) {
       if (item.type === 'text') parts.push(String(item.text || ''))
@@ -290,13 +292,16 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
         }
         // Bash tool_use 单独摘要: 显示 "Bash · <description|$cmd>" 而非整段 JSON,
         // 多条 Bash 显示数量. 字段模式里仍保留原始 input JSON.
-        if (isBashToolUseName(item.name)) {
+        if (isBashToolUseName(item.name) || isAimuxCommandToolUseName(item.name)) {
           const entryCwd = typeof entry?.cwd === 'string' ? entry.cwd.trim() : ''
           const call = extractBashCallFromBlock(item, entryCwd)
           if (call) {
             const oneLine = bashCallOneLineSummary(call)
             bashPartIndices.push(parts.length)
-            parts.push(oneLine ? `Bash · ${oneLine}` : 'Bash')
+            const isAimuxCommand = isAimuxCommandToolUseName(item.name)
+            if (isAimuxCommand) hasAimuxCommand = true
+            const commandLabel = isAimuxCommand ? '协作执行' : 'Bash'
+            parts.push(oneLine ? `${commandLabel} · ${oneLine}` : commandLabel)
             continue
           }
         }
@@ -313,9 +318,10 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
     if (bashPartIndices.length > 1) {
       const bashCalls = extractBashCalls(entry)
       const first = bashCalls.length > 0 ? bashCallOneLineSummary(bashCalls[0]) : ''
+      const commandLabel = hasAimuxCommand ? '协作执行' : 'Bash'
       const bashSummary = first
-        ? `Bash · ${bashPartIndices.length} calls · ${first}`
-        : `Bash · ${bashPartIndices.length} calls`
+        ? `${commandLabel} · ${bashPartIndices.length} calls · ${first}`
+        : `${commandLabel} · ${bashPartIndices.length} calls`
       const dropSet = new Set(bashPartIndices)
       const filtered = parts.filter((_, idx) => !dropSet.has(idx))
       filtered.push(bashSummary)

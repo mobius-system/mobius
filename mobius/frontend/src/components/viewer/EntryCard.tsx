@@ -20,6 +20,7 @@ import {
   EDIT_TOOL_THEME,
   START_PY_THEME,
   BASH_TOOL_THEME,
+  AIMUX_COMMAND_THEME,
   READ_TOOL_THEME,
   CONTEXT_COMPACTED_THEME,
   ASSISTANT_END_TURN_THEME,
@@ -45,6 +46,7 @@ import {
   isFunctionCallOutputPayload,
   extractPlanCard,
   extractMcpToolResult,
+  isAimuxCommandToolUse,
 } from './entry-extract'
 import {
   isEditToolUse,
@@ -216,7 +218,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   const isPatchApplyEvent = entry?.type === 'event_msg' && String(entry?.payload?.type || '').startsWith('patch_apply')
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
-  // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > user /goal 设置信号 (gold) > user 其他本地命令产物 (gold) > assistant 只含 thinking 思考卡 (purple) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
+  // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > user /goal 设置信号 (gold) > user 其他本地命令产物 (gold) > assistant 只含 thinking 思考卡 (purple) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > AIMUX 协作执行 (teal) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
   // start.py 必须排在 Bash 之前: 它本身也是 Bash, 但语义更具体, 不能被 cyan 普通主题盖掉.
   // compact / goal-set 必须排在 local-cmd 之前: 它们都是 local-command-stdout 的特例, 文案/标签更具体.
   // thinking-only 必须排在 end_turn 之前: 只含思考块的卡片, "这是思考卡"比"这是结束态"更能说明卡片性质.
@@ -236,6 +238,8 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
     ? ASSISTANT_RESPONSE_KEYWORD_THEME
     : isEditToolUse(entry)
     ? EDIT_TOOL_THEME
+    : isAimuxCommandToolUse(entry)
+    ? AIMUX_COMMAND_THEME
     : isStartPyToolUse(entry)
     ? START_PY_THEME
     : bashCalls.length > 0
