@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -2180,9 +2180,23 @@ function RemoteFileMentionDrawer({
 // layout: 'default' = 现有 68/32 横向分栏; 'stacked' = 强制纵向堆叠 (历史在上、输入在下),
 // 用于「代码对话」模式的窄右栏. 仅切换 .mobius-chat-body 上的修饰类 (见 index.css),
 // 不触碰任何 SSE / 草稿 / Stop / Send / Agent 状态逻辑. 向后兼容 (默认 default).
-export function ChatArea({ layout = 'default', onNewSession }: {
+type EasyProjectOption = {
+  id: string
+  name: string
+  count?: number
+  runningCount?: number
+}
+
+export function ChatArea({ layout = 'default', onNewSession, easyProjectControl }: {
   layout?: 'default' | 'stacked' | 'easy'
   onNewSession?: () => void
+  easyProjectControl?: {
+    selectedProjectId?: string
+    selectedProjectName?: string
+    projects: EasyProjectOption[]
+    onSelectProject: (projectId: string | null) => void
+    onCreateProject: () => void
+  }
 } = {}) {
   const { currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
   const navigate = useNavigate()
@@ -2207,6 +2221,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [inputExpanded, setInputExpanded] = useState(false)
   const [inputMenuOpen, setInputMenuOpen] = useState(false)
   const [easyToolsOpen, setEasyToolsOpen] = useState(false)
+  const [easyProjectMenuOpen, setEasyProjectMenuOpen] = useState(false)
+  const [easyProjectQuery, setEasyProjectQuery] = useState('')
   const [inputFocused, setInputFocused] = useState(false)
   // 每个 session 维持一份附件列表 (粘贴 / 拖放 / 上传按钮三路共用).
   // 切 session 时不清空, 让用户在哪儿留下就在哪儿见.
@@ -2217,6 +2233,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const inputMenuButtonRef = useRef<HTMLButtonElement | null>(null)
   const easyToolsRef = useRef<HTMLDivElement | null>(null)
   const easyToolsPanelRef = useRef<HTMLDivElement | null>(null)
+  const easyProjectMenuRef = useRef<HTMLDivElement | null>(null)
+  const easyProjectButtonRef = useRef<HTMLButtonElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLDivElement>(null)
@@ -2247,6 +2265,38 @@ export function ChatArea({ layout = 'default', onNewSession }: {
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [easyToolsOpen])
+
+  useEffect(() => {
+    if (!easyProjectMenuOpen) return
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!easyProjectMenuRef.current?.contains(event.target as Node)) setEasyProjectMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setEasyProjectMenuOpen(false)
+      easyProjectButtonRef.current?.focus()
+    }
+    document.addEventListener('mousedown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [easyProjectMenuOpen])
+
+  useEffect(() => {
+    setEasyProjectMenuOpen(false)
+    setEasyProjectQuery('')
+  }, [currentSession?.session_id])
+
+  const easyFilteredProjects = useMemo(() => {
+    const query = easyProjectQuery.trim().toLocaleLowerCase('zh-CN')
+    if (!query) return easyProjectControl?.projects || []
+    return (easyProjectControl?.projects || []).filter(project => (
+      project.name.toLocaleLowerCase('zh-CN').includes(query)
+      || project.id.toLocaleLowerCase('zh-CN').includes(query)
+    ))
+  }, [easyProjectControl?.projects, easyProjectQuery])
 
   // 右栏宽度不放进 React inline style：拖动时直接写 DOM，避免每个 mousemove
   // 都重渲染 JSONL 与输入区两棵重子树；松手时才提交一次 state 并持久化比例。
