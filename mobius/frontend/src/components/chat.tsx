@@ -25,6 +25,7 @@ import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { RemoteComputeMemoryModal } from './memories'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { AdvancedSessionActions } from './advanced-session-actions'
+import { DevPortsBar } from './dev-ports-bar'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { extensionAppUrlForProject } from '../services/extension-entry'
 import { isFireAndForgetSession } from '../services/session-start-policy'
@@ -3928,11 +3929,17 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       setLastSendError('当前没有可发送指令的会话')
       return
     }
+    // mainProjectPortPath 是旧的单端口 txt 路径; 新协议改为写同目录下的多端口 ports.json,
+    // 供"端口预览栏"显示前端/后端等多个可点 chip. 保留入参名以兼容 ProjectPortEntryButton 调用.
+    const portsJsonPath = mainProjectPortPath
+      ? mainProjectPortPath.replace(/main_project_port\.txt$/, 'ports.json')
+      : ''
     const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
     const hostHint = hostname
       ? `如果是 Vite 项目，你需要向 server.allowedHosts 中添加 ${hostname}；如果是其他更新颖的前端框架，如果有必要，也需要将 ${hostname} 加白。`
       : '如果是 Vite 项目，你需要向 server.allowedHosts 中添加当前前端访问 hostname；如果是其他更新颖的前端框架，如果有必要，也需要将当前 hostname 加白。'
-    const content = `[这条消息来自系统而不是用户] 如果当前项目是一个有对外端口服务的项目，请现在开始在合适的端口运行项目（自行选择合适运行模式），等待运行成功后，将端口号码写入 ${mainProjectPortPath}。${hostHint}`
+    const target = portsJsonPath || '<项目bind_path>/.mobius/port_forward/ports.json'
+    const content = `[这条消息来自系统而不是用户] 如果当前项目是一个有对外端口服务的项目，请现在开始运行项目的全部服务（自行选择合适的端口与运行模式），等待每个服务都启动成功后，把所有对外可访问的端口写入 ${target}。文件格式必须是 JSON：{"ports":[{"port":8080,"label":"前端","kind":"frontend"},{"port":28000,"label":"后端","kind":"backend"}]}，每个端口一项，port 为整数（必填），label 是中文短标签（如 前端/后端/认证中心/API/数据库），kind 是英文小写（frontend/backend/api/db/admin/auth 等）。前端、后端以及任何对外可访问的服务端口都要写全，不要只写一个。${hostHint}`
     setRunProjectPrompt(content)
   }, [sessionId])
 
@@ -4488,6 +4495,8 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
               title="拖拽调整宽度 · 双击恢复默认"
             />
           )}
+          {/* 端口预览栏: 项目注册了开发端口时常驻显示, 一点即开预览 (桌面端 AIMUX / Web 端 code-server proxy) */}
+          <DevPortsBar projectId={currentProjectId} className="px-3 pt-2" />
           {/* 输入区 */}
           <div className="mobius-chat-input-editor min-w-0 flex-shrink-0 p-3">
             <div>
