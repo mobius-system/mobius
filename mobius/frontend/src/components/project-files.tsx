@@ -602,7 +602,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
                       打开端口（AIMUX 自动）
                     </div>
                     <div className="mt-1 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>
-                      读取 main_project_port.txt：{autoPort}
+                      {canUseAimuxPortForward ? `读取 main_project_port.txt：${autoPort}` : '该功能需要桌面客户端'}
                     </div>
                   </button>
                 )}
