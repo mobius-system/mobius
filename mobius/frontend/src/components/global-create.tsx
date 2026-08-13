@@ -1883,13 +1883,15 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
 // research agent 创建成功 → 经 onNavigate 在 SPA 内直接进入该 Session.
 // project / issue 创建成功 → 仍走次级确认弹窗, 「跳转详情」新开浏览器 Tab.
 // 传统「新建 Session · 第 1 步 / 共 2 步」菜单 (modals.tsx) 走自己的 onCreated/goToSession, 不受此处影响.
-export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate, sessionSuccessMode = 'dialog', onSessionCreated }: {
+export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate, sessionSuccessMode = 'dialog', onSessionCreated, onEntityCreated, entitySuccessMode = 'dialog' }: {
   kind: CreateKind | null
   ctx: { projectId?: string; issueId?: string; researchId?: string }
   onClose: () => void
   onNavigate?: (path: string) => void
   sessionSuccessMode?: 'dialog' | 'toast'
   onSessionCreated?: (entity: any, detailUrl?: string) => void
+  onEntityCreated?: (kind: CreateKind, entity: any, detailUrl?: string) => void
+  entitySuccessMode?: 'dialog' | 'external'
 }) {
   const [success, setSuccess] = useState<{ entity: any; detailUrl?: string; name: string } | null>(null)
 
@@ -1897,8 +1899,13 @@ export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate, sessionSucces
     return <CreateSuccessDialog kind={kind || 'project'} name={success.name} detailUrl={success.detailUrl} onClose={() => { setSuccess(null); onClose() }} />
   }
   const handleDone = (entity: any, detailUrl?: string) => {
+    if (kind) onEntityCreated?.(kind, entity, detailUrl)
     if (kind === 'session' && sessionSuccessMode === 'toast') {
       onSessionCreated?.(entity, detailUrl)
+      onClose()
+      return
+    }
+    if (entitySuccessMode === 'external') {
       onClose()
       return
     }
