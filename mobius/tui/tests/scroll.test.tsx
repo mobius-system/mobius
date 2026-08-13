@@ -170,7 +170,7 @@ async function main() {
     stdin.write('\x1b[5~')                                   // PageUp
     await delay(300)
     const upFrame = strip(lastFrame() ?? '')
-    ok(upFrame.includes('↓ 较新内容'), 'after PageUp: navigation reports newer content below')
+    ok(upFrame.includes('↓ 有新内容'), 'after PageUp: navigation reports newer content below')
     ok(!upFrame.includes('回答 24'), 'after PageUp: latest entry paged out of view')
     ok(/回答 \d+/.test(upFrame), 'after PageUp: an older entry is visible')
 
@@ -184,7 +184,7 @@ async function main() {
     stdin.write('\x1b[<64;5;5M')                             // wheel up = scroll back
     await delay(300)
     const wheelUp = strip(lastFrame() ?? '')
-    ok(wheelUp.includes('↓ 较新内容'), 'wheel up: navigation reports newer content below')
+    ok(wheelUp.includes('↓ 有新内容'), 'wheel up: navigation reports newer content below')
     ok(!wheelUp.includes('回答 24'), 'wheel up: latest entry paged out of view')
     ok(/回答 \d+/.test(wheelUp), 'wheel up: an older entry is visible')
 
@@ -198,7 +198,7 @@ async function main() {
     stdin.write('\x1b[M' + String.fromCharCode(96, 50, 50))
     await delay(300)
     const legacyUp = strip(lastFrame() ?? '')
-    ok(legacyUp.includes('↓ 较新内容'), 'legacy wheel up: navigation reports newer content below')
+    ok(legacyUp.includes('↓ 有新内容'), 'legacy wheel up: navigation reports newer content below')
     ok(!legacyUp.includes('回答 24'), 'legacy wheel up: latest entry paged out of view')
 
     stdin.write('\x1b[M' + String.fromCharCode(97, 50, 50))  // wheel down Cb = 0x61
