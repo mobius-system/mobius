@@ -1,9 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
-<<<<<<< HEAD
-import { Cable, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorPlay, Play, RefreshCw, Upload } from 'lucide-react'
-=======
 import { Cable, Copy, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorPlay, Play, RefreshCw, Upload } from 'lucide-react'
->>>>>>> gitlab-mobius/main
 import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 

@@ -573,9 +573,6 @@ export function ProjectSettingsPanel({
     const v = typeof localStorage !== 'undefined' ? localStorage.getItem(PaneKey) : null
     return v && (['settings','versions','architecture','todos','members','package','assistant'] as const).includes(v as SettingsPane) ? v as SettingsPane : 'settings'
   }
-<<<<<<< HEAD
-  const [activePane, setActivePane] = useState<SettingsPane>(paneInit)
-=======
   // 受控模式 (设计师之眼侧边栏): 父层接管 activePane; 否则维持原有内部状态.
   const [internalPane, setInternalPane] = useState<SettingsPane>(paneInit)
   const activePane = controlledActivePane ?? internalPane
@@ -583,7 +580,6 @@ export function ProjectSettingsPanel({
     if (controlledActivePane !== undefined) onSelectPane?.(pane)
     else setInternalPane(pane)
   }
->>>>>>> gitlab-mobius/main
   const [showDeletePermissionNotice, setShowDeletePermissionNotice] = useState(false)
   useEffect(() => { try { localStorage.setItem(PaneKey, activePane) } catch {} }, [PaneKey, activePane])
   useEffect(() => { setShowDeletePermissionNotice(false) }, [project?.id])
@@ -907,15 +903,6 @@ export function ProjectSettingsPanel({
       data-tour="project-settings-panel"
       className={`w-full min-w-0 ${desktopWorkspace ? 'h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-6' : 'overflow-hidden'}`}
       style={{ borderColor: 'var(--border-color)' }}>
-<<<<<<< HEAD
-      <div className="flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
-        <ProjectOverflowTabs
-          tabs={settingsTabs}
-          onSelect={handleSelectPane}
-          className="flex-1 min-w-0"
-        />
-      </div>
-=======
       {!hideHeaderTabs && (
         <div className="flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
           <ProjectOverflowTabs
@@ -925,7 +912,6 @@ export function ProjectSettingsPanel({
           />
         </div>
       )}
->>>>>>> gitlab-mobius/main
 
       {project.kind === 'extension' && (
         <div className="px-5 py-3 border mt-3 rounded-lg text-[12px]"

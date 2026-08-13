@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import { BookOpen, Brain, Clock, Cpu, FileDiff, History, Loader2, Network, Puzzle, RotateCcw, Share2, Terminal, Wand2 } from 'lucide-react'
-=======
 import { BookOpen, Brain, Clock, Cpu, FileDiff, GitBranch, History, Loader2, Network, Puzzle, RotateCcw, Share2, Terminal, Wand2 } from 'lucide-react'
->>>>>>> gitlab-mobius/main
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { ProjectPortEntryButton } from './project-files'
 

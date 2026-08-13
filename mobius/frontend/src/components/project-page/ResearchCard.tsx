@@ -34,19 +34,11 @@ export function ResearchCard({
   const showingSessionMatches = !!searchQuery.trim() && searchMatches.length > 0
   const displayedSessions = sortProjectSessions(showingSessionMatches ? searchMatches : sessions)
   const previewSessions = projectSessionPreview(displayedSessions, compact, showingSessionMatches)
-<<<<<<< HEAD
-  const hiddenSessionCount = Math.max(0, (showingSessionMatches ? searchMatches.length : sessionTotal) - previewSessions.length)
-=======
->>>>>>> gitlab-mobius/main
   const chief = sessions.find((s: any) => s.research_role === 'chief_researcher')
   const hasChief = !!chief || Number(research.chief_count || 0) > 0
 
   return (
-<<<<<<< HEAD
-    <div className="rounded-lg border overflow-hidden flex flex-col group transition-all hover:border-emerald-500/30"
-=======
     <div className={`rounded-lg border overflow-hidden flex flex-col group transition-all hover:border-emerald-500/30 ${compact ? 'h-[136px]' : 'h-[220px]'}`}
->>>>>>> gitlab-mobius/main
       style={{
         background: 'var(--bg-primary)',
         borderColor: 'var(--border-color)',
@@ -71,13 +63,8 @@ export function ResearchCard({
         </div>
       </div>
 
-<<<<<<< HEAD
-      {research.description && (
-        <div className={`${compact ? 'px-3 py-2 line-clamp-1' : 'px-4 py-2.5 line-clamp-3'} text-[12px] leading-relaxed`} style={{ color: 'var(--text-secondary)' }}>
-=======
       {research.description && !compact && (
         <div className="px-4 py-1.5 line-clamp-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
->>>>>>> gitlab-mobius/main
           {research.description}
         </div>
       )}
@@ -88,11 +75,7 @@ export function ResearchCard({
         <span className="ml-auto">活跃 {timeAgo(research.last_active)}</span>
       </div>
 
-<<<<<<< HEAD
-      <div className={`${compact ? 'px-3 py-2' : 'px-4 py-2.5'} border-t flex-1`} style={{ borderColor: 'var(--border-color)' }}>
-=======
       <div className={`${compact ? 'px-3 py-2' : 'px-4 py-2'} border-t flex-1 overflow-hidden`} style={{ borderColor: 'var(--border-color)' }}>
->>>>>>> gitlab-mobius/main
         <div className={`flex items-center justify-between ${compact ? 'mb-1' : 'mb-2'}`}>
           <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>
             {showingSessionMatches ? `匹配智能体 ${searchMatches.length}` : '研究智能体'}
@@ -124,14 +107,6 @@ export function ResearchCard({
                 </span>
               </Link>
             ))}
-<<<<<<< HEAD
-            {hiddenSessionCount > 0 && (
-              <div className="text-[11px] py-1 px-2" style={{ color: 'var(--text-muted)' }}>
-                还有 {hiddenSessionCount} 个{showingSessionMatches ? '匹配' : ''}研究智能体...
-              </div>
-            )}
-=======
->>>>>>> gitlab-mobius/main
           </div>
         )}
       </div>
