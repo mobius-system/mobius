@@ -43,10 +43,6 @@ export function IssueCard({
   const showingSessionMatches = !!searchQuery.trim() && searchMatches.length > 0
   const displayedSessions = sortProjectSessions(showingSessionMatches ? searchMatches : sessions)
   const previewSessions = projectSessionPreview(displayedSessions, compact, showingSessionMatches)
-<<<<<<< HEAD
-  const hiddenSessionCount = Math.max(0, (showingSessionMatches ? searchMatches.length : sessionTotal) - previewSessions.length)
-=======
->>>>>>> gitlab-mobius/main
   const description = typeof issue.description === 'string' ? issue.description.trim() : ''
   const normalizedTitle = String(issue.title || '').trim().replace(/\s+/g, ' ')
   const normalizedDescription = description.replace(/\s+/g, ' ')
@@ -60,11 +56,7 @@ export function IssueCard({
   return (
     <div
       data-tour={isLogoReviewIssue ? 'logo-review-issue-card' : undefined}
-<<<<<<< HEAD
-      className="rounded-lg border overflow-hidden flex flex-col group transition-all hover:border-blue-500/30"
-=======
       className={`rounded-lg border overflow-hidden flex flex-col group transition-all hover:border-blue-500/30 ${compact ? 'h-[136px]' : 'h-[220px]'}`}
->>>>>>> gitlab-mobius/main
       style={{
         background: 'var(--bg-primary)',
         borderColor: 'var(--border-color)',
@@ -102,13 +94,8 @@ export function IssueCard({
         </div>
       </div>
 
-<<<<<<< HEAD
-      {hasDistinctDescription && (
-        <div className={`${compact ? 'px-3 py-2 line-clamp-1' : 'px-4 py-2.5 line-clamp-3'} text-[12px] leading-relaxed`} style={{ color: 'var(--text-secondary)' }}>
-=======
       {hasDistinctDescription && !compact && (
         <div className="px-4 py-1.5 line-clamp-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
->>>>>>> gitlab-mobius/main
           {description}
         </div>
       )}
@@ -118,11 +105,7 @@ export function IssueCard({
         <span className="ml-auto">活跃 {timeAgo(issue.last_active)}</span>
       </div>
 
-<<<<<<< HEAD
-      <div className={`${compact ? 'px-3 py-2' : 'px-4 py-2.5'} border-t flex-1`} style={{ borderColor: 'var(--border-color)' }}>
-=======
       <div className={`${compact ? 'px-3 py-2' : 'px-4 py-2'} border-t flex-1 overflow-hidden`} style={{ borderColor: 'var(--border-color)' }}>
->>>>>>> gitlab-mobius/main
         {showingSessionMatches && (
           <div className={`${compact ? 'mb-1' : 'mb-2'}`}>
             <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>
@@ -157,14 +140,6 @@ export function IssueCard({
               </Link>
               )
             })}
-<<<<<<< HEAD
-            {hiddenSessionCount > 0 && (
-              <div className="text-[11px] py-1 px-2" style={{ color: 'var(--text-muted)' }}>
-                还有 {hiddenSessionCount} 个{showingSessionMatches ? '匹配' : ''}会话...
-              </div>
-            )}
-=======
->>>>>>> gitlab-mobius/main
           </div>
         )}
       </div>

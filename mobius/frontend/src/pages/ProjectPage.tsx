@@ -30,10 +30,7 @@ import {
   type ProjectSessionSearchResponse,
 } from '../services/project-session-search'
 import { projectItemOrder } from '../services/project-session-order'
-<<<<<<< HEAD
-=======
 import { pollRecursive } from '../services/polling'
->>>>>>> gitlab-mobius/main
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
@@ -145,10 +142,6 @@ export default function ProjectPage() {
   }
   const [section, setSection] = useState<ProjectListSection>(sectionInit)
   useEffect(() => { try { localStorage.setItem(SectionKey, section) } catch {} }, [SectionKey, section])
-<<<<<<< HEAD
-  const densityInit = (): ProjectCardDensity => {
-    try { return localStorage.getItem(PROJECT_CARD_DENSITY_KEY) === 'detailed' ? 'detailed' : 'compact' } catch { return 'compact' }
-=======
 
   // 设计师之眼布局: 「项目设置」tab 条 (元素2) 与 Issue/Research tab 条 (元素1) 外移到本页左侧边栏,
   // 这里接管 settingsPane (受控). 键名与 ProjectSettingsPanel 内部 localStorage 完全一致, 保持兼容.
@@ -181,7 +174,6 @@ export default function ProjectPage() {
   const densityInit = (): ProjectCardDensity => {
     // 默认固定为详情模式: 仅当用户显式存过「精简」时才回落 compact, 否则一律 detailed.
     try { return localStorage.getItem(PROJECT_CARD_DENSITY_KEY) === 'compact' ? 'compact' : 'detailed' } catch { return 'detailed' }
->>>>>>> gitlab-mobius/main
   }
   const [cardDensity, setCardDensity] = useState<ProjectCardDensity>(densityInit)
   useEffect(() => { try { localStorage.setItem(PROJECT_CARD_DENSITY_KEY, cardDensity) } catch {} }, [cardDensity])
@@ -760,10 +752,6 @@ export default function ProjectPage() {
         </ResizablePanel>
         )}
 
-<<<<<<< HEAD
-        <main className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`} style={{ background: 'var(--bg-secondary)' }}>
-          <div className={`max-w-7xl mx-auto p-3 sm:p-6 ${isMobile ? '' : 'h-full min-h-0'}`}>
-=======
         {/* 设计师之眼: 元素2 (项目设置 tab) + 元素1 (Issue/Research tab) 组成新的可拖拽左侧边栏;
             右侧不再并排两栏, 由左侧选中项决定右侧只显示哪一个面板. */}
         {!isMobile && (
@@ -810,7 +798,6 @@ export default function ProjectPage() {
           {/* 任务/研究列表是卡片网格, 在大屏放宽最大宽度让网格铺开更多列, 减少右侧留白;
               项目设置表单仍保持 max-w-7xl 保证长表单可读性. */}
           <div className={`${rightView === 'items' && !isMobile ? 'max-w-[1600px]' : 'max-w-7xl'} mx-auto p-3 sm:p-6 ${isMobile ? '' : 'h-full min-h-0'}`}>
->>>>>>> gitlab-mobius/main
             {(() => {
               const settingsPanel = (
                 <ProjectSettingsPanel
@@ -925,16 +912,10 @@ export default function ProjectPage() {
                   </MobileSettingsDrawer>
                 </>
               ) : (
-<<<<<<< HEAD
-                <div className="flex h-full min-h-0 items-stretch gap-6">
-                  {settingsPanel}
-                  {itemsPanel}
-=======
                 <div className="h-full min-h-0">
                   {/* 右侧不再并排两栏: 左侧选中项决定只显示哪一个面板; 两者始终挂载以保留各自状态/滚动. */}
                   <div className={rightView === 'items' ? 'h-full min-h-0' : 'hidden'}>{itemsPanel}</div>
                   <div className={rightView === 'settings' ? 'h-full min-h-0' : 'hidden'}>{settingsPanel}</div>
->>>>>>> gitlab-mobius/main
                 </div>
               )
             })()}

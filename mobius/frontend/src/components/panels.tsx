@@ -4247,11 +4247,7 @@ function MigrationManageTab() {
               onClick={() => setMovingItem({ kind, item })}
               className="inline-flex h-7 w-7 items-center justify-center rounded text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
-<<<<<<< HEAD
-              {kind === 'skill' ? <Copy className="h-3.5 w-3.5" /> : <FolderOpen className="h-3.5 w-3.5" />}
-=======
               {kind === 'skill' ? <FolderInput className="h-3.5 w-3.5" /> : <FolderOpen className="h-3.5 w-3.5" />}
->>>>>>> gitlab-mobius/main
             </button>
             <button
               type="button"

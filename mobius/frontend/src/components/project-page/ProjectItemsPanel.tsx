@@ -162,11 +162,7 @@ export function ProjectItemsPanel({
         </div>
       )}
       <div
-<<<<<<< HEAD
-        className={`flex flex-shrink-0 flex-wrap items-center justify-between gap-2 ${showPagination ? 'mb-1.5' : 'mb-3'}`}
-=======
         className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 mb-3"
->>>>>>> gitlab-mobius/main
         style={{ background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-2 min-w-0">
           {onOpenSettings && !desktopWorkspace && (
@@ -247,15 +243,6 @@ export function ProjectItemsPanel({
         </div>
       </div>
 
-<<<<<<< HEAD
-      {showPagination && (
-        <div className="mb-2 flex-shrink-0">
-          <ProjectPaginationControls pagination={activePagination} itemLabel={section === 'issues' ? '任务' : '研究'} />
-        </div>
-      )}
-
-=======
->>>>>>> gitlab-mobius/main
       <div
         ref={listScrollRef}
         className={desktopWorkspace ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-6' : ''}>
@@ -382,11 +369,7 @@ function IssueList({
 
   return (
     <div className="space-y-3">
-<<<<<<< HEAD
-      <div className={`grid grid-cols-1 ${compact ? 'gap-2' : 'gap-4'}`}>
-=======
       <div className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 ${compact ? 'gap-2' : 'gap-3'}`}>
->>>>>>> gitlab-mobius/main
         {issues.map((issue: any) => (
           <IssueCard
             key={issue.id}
@@ -508,11 +491,7 @@ function ResearchList({
 
   return (
     <div className="space-y-3">
-<<<<<<< HEAD
-      <div className={`grid grid-cols-1 ${compact ? 'gap-2' : 'gap-4'}`}>
-=======
       <div className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 ${compact ? 'gap-2' : 'gap-3'}`}>
->>>>>>> gitlab-mobius/main
       {researches.map((research: any) => (
         <ResearchCard
           key={research.id}
