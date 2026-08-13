@@ -5918,9 +5918,6 @@ body.mobius-resizing .mobius-resizable-handle {
   font-size: 15px;
   line-height: 1.6;
 }
-.mobius-chat-body.mobius-chat-body--easy .easy-input-project-row {
-  min-height: 48px;
-}
 .mobius-chat-body.mobius-chat-body--easy .easy-input-project-trigger:hover {
   background: var(--bg-hover) !important;
 }
