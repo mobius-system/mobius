@@ -4745,6 +4745,111 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                 )
               })()}
             </div>
+            {layout === 'easy' && easyProjectControl && (
+              <div className="easy-input-project-row relative flex items-center border-t px-3 py-2" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="relative" ref={easyProjectMenuRef}>
+                  <button
+                    ref={easyProjectButtonRef}
+                    type="button"
+                    onClick={() => setEasyProjectMenuOpen(value => !value)}
+                    aria-haspopup="menu"
+                    aria-expanded={easyProjectMenuOpen}
+                    className="easy-input-project-trigger inline-flex h-8 max-w-[320px] cursor-pointer items-center gap-2 rounded-full px-3 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                    style={{ background: 'var(--bg-active)', color: 'var(--text-primary)' }}
+                    title={easyProjectControl.selectedProjectName || '所有项目'}
+                  >
+                    <FolderOpen className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
+                    <span className="min-w-0 truncate">{easyProjectControl.selectedProjectName || '所有项目'}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${easyProjectMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {easyProjectMenuOpen && (
+                    <div
+                      role="menu"
+                      aria-label="选择项目"
+                      className="easy-input-project-menu absolute bottom-11 left-0 z-40 w-[360px] max-w-[calc(100vw-48px)] overflow-hidden rounded-2xl p-2 shadow-2xl"
+                      style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
+                    >
+                      <label className="flex h-10 items-center gap-2 rounded-xl px-3" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
+                        <Search className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
+                        <input
+                          value={easyProjectQuery}
+                          onChange={event => setEasyProjectQuery(event.target.value)}
+                          placeholder="搜索项目"
+                          aria-label="搜索项目"
+                          autoFocus
+                          className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[13px] outline-none placeholder:text-[var(--text-muted)]"
+                          style={{ color: 'var(--text-primary)' }}
+                        />
+                        {easyProjectQuery && (
+                          <button type="button" onClick={() => setEasyProjectQuery('')} className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-[var(--bg-hover)]" aria-label="清空项目搜索">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </label>
+
+                      <div className="mt-2 max-h-[260px] overflow-y-auto">
+                        {easyFilteredProjects.length === 0 ? (
+                          <div className="px-3 py-7 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>没有匹配的项目</div>
+                        ) : easyFilteredProjects.map(project => {
+                          const active = project.id === easyProjectControl.selectedProjectId
+                          return (
+                            <button
+                              key={project.id}
+                              type="button"
+                              role="menuitemradio"
+                              aria-checked={active}
+                              onClick={() => {
+                                easyProjectControl.onSelectProject(project.id)
+                                setEasyProjectMenuOpen(false)
+                                setEasyProjectQuery('')
+                              }}
+                              className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                              style={{ background: active ? 'var(--bg-active)' : undefined, color: 'var(--text-primary)' }}
+                            >
+                              <FolderOpen className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
+                              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{project.name}</span>
+                              {project.runningCount ? <span className="text-[10px] text-amber-400">运行 {project.runningCount}</span> : null}
+                              {active && <Check className="h-4 w-4 flex-shrink-0" strokeWidth={2} />}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-color)' }}>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setEasyProjectMenuOpen(false)
+                            easyProjectControl.onCreateProject()
+                          }}
+                          className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] font-semibold transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                          style={{ color: 'var(--text-primary)' }}
+                        >
+                          <FolderPlus className="h-4 w-4" strokeWidth={1.8} />
+                          新建项目
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            easyProjectControl.onSelectProject(null)
+                            setEasyProjectMenuOpen(false)
+                            setEasyProjectQuery('')
+                          }}
+                          className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          <X className="h-4 w-4" strokeWidth={1.8} />
+                          不限项目
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="pointer-events-none absolute bottom-3 right-3 z-10 max-w-[55%] truncate text-right text-[10px]" style={{ color: sendingHint ? '#facc15' : 'var(--text-muted)' }}>
               {sendingHint ?? ''}
             </div>

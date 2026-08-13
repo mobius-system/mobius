@@ -131,6 +131,7 @@ export default function EasyModePage() {
   const [createKind, setCreateKind] = useState<CreateKind | null>(null)
   const [createIssueOverride, setCreateIssueOverride] = useState('')
   const [createSuccessToast, setCreateSuccessToast] = useState<{ name: string } | null>(null)
+  const [projectSuccessToast, setProjectSuccessToast] = useState<{ name: string } | null>(null)
   const projectFilterButtonRef = useRef<HTMLButtonElement | null>(null)
   const navigate = useNavigate()
   const layoutMode = useLayoutMode()
@@ -301,6 +302,12 @@ export default function EasyModePage() {
     const timer = window.setTimeout(() => setCreateSuccessToast(null), CREATE_SUCCESS_TOAST_MS)
     return () => window.clearTimeout(timer)
   }, [createSuccessToast])
+
+  useEffect(() => {
+    if (!projectSuccessToast) return
+    const timer = window.setTimeout(() => setProjectSuccessToast(null), CREATE_SUCCESS_TOAST_MS)
+    return () => window.clearTimeout(timer)
+  }, [projectSuccessToast])
 
   const handleSessionCreated = (session: RecentSession) => {
     setCreateSuccessToast({ name: session?.name || '新会话' })
@@ -777,7 +784,16 @@ export default function EasyModePage() {
         {loading ? (
           <Loading text="正在加载工作导航..." />
         ) : currentSession && contextMatchesProject ? (
-          <ChatArea layout="easy" />
+          <ChatArea
+            layout="easy"
+            easyProjectControl={{
+              selectedProjectId: effectiveProject || selectedSession?.project_id || undefined,
+              selectedProjectName: selectedProjectOption?.name || selectedSession?.project_name || projects.find((project: any) => project.id === selectedSession?.project_id)?.name,
+              projects: projectOptions,
+              onSelectProject: selectProjectFilter,
+              onCreateProject: () => setCreateKind('project'),
+            }}
+          />
         ) : (
           <main className="flex min-w-0 flex-1 items-center justify-center px-6" style={{ background: 'var(--bg-secondary)' }} data-testid="easy-project-empty">
             <div className="max-w-sm text-center">
@@ -802,7 +818,14 @@ export default function EasyModePage() {
           kind={createKind}
           ctx={{ projectId: createDefaultProjectId, issueId: createDefaultIssueId }}
           sessionSuccessMode="toast"
+          entitySuccessMode={createKind === 'project' ? 'external' : 'dialog'}
           onSessionCreated={handleSessionCreated}
+          onEntityCreated={(kind, entity) => {
+            if (kind !== 'project' || !entity?.id) return
+            setProjects([...projects.filter((project: any) => project.id !== entity.id), entity])
+            setProjectSuccessToast({ name: entity.name || entity.id })
+            selectProjectFilter(entity.id)
+          }}
           onClose={() => {
             setCreateKind(null)
             setCreateIssueOverride('')
@@ -817,6 +840,15 @@ export default function EasyModePage() {
           title="会话已创建并开始执行"
           subtitle={createSuccessToast.name}
           onClose={() => setCreateSuccessToast(null)}
+        />
+      )}
+      {projectSuccessToast && (
+        <ToastCard
+          tone="success"
+          icon={<CheckCircle2 className="h-4 w-4" strokeWidth={2} />}
+          title="项目已创建并切换"
+          subtitle={projectSuccessToast.name}
+          onClose={() => setProjectSuccessToast(null)}
         />
       )}
     </div>
