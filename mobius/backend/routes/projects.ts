@@ -124,6 +124,10 @@ async function resolveAbsoluteRemotePath(remoteName: string, requestedPath: stri
 // 上传 ZIP 导入: 放宽到 200MB (解压后另有 inspectExtractedTree 的 1GB/5w 文件配额兜底).
 const importZipUpload = multer({ dest: UPLOAD_DIR, limits: { fileSize: 200 * 1024 * 1024 } });
 const MAIN_PROJECT_PORT_REL = path.join(HIDDEN_FOLDER_NAME, 'port_forward', 'main_project_port.txt');
+// 多端口注册表: 一个前后端项目通常有多个对外端口 (前端/后端/认证中心/...),
+// 单一 main_project_port.txt 装不下. ports.json 存带标签的端口列表, 读取时
+// 向后兼容旧 txt (仅当 ports.json 不存在或为空时回落). 供前端"端口预览栏"消费.
+const DEV_PORTS_REL = path.join(HIDDEN_FOLDER_NAME, 'port_forward', 'ports.json');
 
 // 统一取当前用户 (auth 中间件已塞到 req.user)
 function userOf(req: express.Request): any {
@@ -220,6 +224,73 @@ function readSshPrivateKey(): { privateKey: string; privateKeyExists: boolean } 
 function mainProjectPortPath(project: any): string {
   if (!project?.bind_path) return '';
   return path.join(project.bind_path, MAIN_PROJECT_PORT_REL);
+}
+
+// 一个开发端口条目: port 必填, label/kind 可选 (给前端 chip 显示用).
+// kind 约定值: frontend / backend / api / db / admin / other (仅用于图标/配色, 不强校验).
+interface DevPortEntry {
+  port: number;
+  label: string;
+  kind: string;
+}
+
+function devPortsPath(project: any): string {
+  if (!project?.bind_path) return '';
+  return path.join(project.bind_path, DEV_PORTS_REL);
+}
+
+function coerceDevPortEntry(item: any): DevPortEntry | null {
+  const port = normalizeProjectPort(item?.port);
+  if (port === null) return null;
+  const label = item?.label ? String(item.label).trim().slice(0, 40) : '';
+  const kind = item?.kind ? String(item.kind).trim().slice(0, 20) : '';
+  return { port, label, kind };
+}
+
+// 读取项目的开发端口列表. 优先 ports.json; 若 ports.json 缺失/损坏/为空, 回落
+// 到旧 main_project_port.txt 的单端口 (兼容已部署的旧项目). 始终返回去重+校验过的数组.
+function readDevPorts(project: any): DevPortEntry[] {
+  const filePath = devPortsPath(project);
+  if (filePath) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (parsed && Array.isArray(parsed.ports)) {
+          const seen = new Set<number>();
+          const out: DevPortEntry[] = [];
+          for (const item of parsed.ports) {
+            const entry = coerceDevPortEntry(item);
+            if (!entry || seen.has(entry.port)) continue;
+            seen.add(entry.port);
+            out.push(entry);
+          }
+          if (out.length > 0) return out;
+        }
+      }
+    } catch {
+      // ports.json 损坏: 落到旧 txt 兜底, 不抛错
+    }
+  }
+  const legacy = mainProjectPortPath(project);
+  if (legacy && fs.existsSync(legacy)) {
+    try {
+      const port = normalizeProjectPort(fs.readFileSync(legacy, 'utf8'));
+      if (port !== null) return [{ port, label: '', kind: '' }];
+    } catch {
+      // 忽略
+    }
+  }
+  return [];
+}
+
+function writeDevPorts(project: any, ports: DevPortEntry[]): void {
+  const filePath = devPortsPath(project);
+  if (!filePath) throw new Error('项目未配置 bind_path');
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  // 原子写: 先写临时文件再 rename, 避免 AI/前端并发写读到半截 JSON.
+  const tmp = `${filePath}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ ports, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
+  fs.renameSync(tmp, filePath);
 }
 
 function spawnProductHardReset(gitHash: string): { pid: number | undefined; log_path: string } {
@@ -3693,6 +3764,62 @@ router.post('/:id/main-project-port', auth, (req: express.Request, res: express.
     return res.json({ port, valid: true, exists: true });
   } catch (e) {
     return res.status(500).json({ error: (e as Error).message || '保存项目端口失败' });
+  }
+});
+
+// ── 多端口注册表 (dev-ports) ──────────────────────────────────────
+// 前端"端口预览栏"读取这里; AI 启动多端口项目后也可调用写入 (或直接写 ports.json).
+// GET    /:id/dev-ports            → { ports: DevPortEntry[] } (兼容旧 main_project_port.txt)
+// POST   /:id/dev-ports            → body.ports 数组 = 全量替换; 否则 body.{port,label,kind} = 单个 upsert
+// DELETE /:id/dev-ports/:port      → 删除单个端口
+router.get('/:id/dev-ports', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  res.json({ ports: readDevPorts(project) });
+});
+
+router.post('/:id/dev-ports', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  if (!project.bind_path) return res.status(400).json({ error: '项目未配置 bind_path' });
+  try {
+    let ports: DevPortEntry[];
+    if (Array.isArray(req.body?.ports)) {
+      // 全量替换: AI 一次写清所有端口 (清掉旧条目).
+      const seen = new Set<number>();
+      ports = [];
+      for (const item of req.body.ports) {
+        const entry = coerceDevPortEntry(item);
+        if (!entry || seen.has(entry.port)) continue;
+        seen.add(entry.port);
+        ports.push(entry);
+      }
+    } else {
+      // 单个 upsert: 按 port 合并进现有列表.
+      const entry = coerceDevPortEntry(req.body);
+      if (!entry) return res.status(400).json({ error: '端口必须是 1-65535 的整数' });
+      ports = readDevPorts(project).filter(p => p.port !== entry.port);
+      ports.push(entry);
+    }
+    writeDevPorts(project, ports);
+    res.json({ ports });
+  } catch (e) {
+    return res.status(500).json({ error: (e as Error).message || '保存开发端口失败' });
+  }
+});
+
+router.delete('/:id/dev-ports/:port', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  if (!project.bind_path) return res.status(400).json({ error: '项目未配置 bind_path' });
+  const port = normalizeProjectPort(req.params.port);
+  if (port === null) return res.status(400).json({ error: '端口必须是 1-65535 的整数' });
+  try {
+    const ports = readDevPorts(project).filter(p => p.port !== port);
+    writeDevPorts(project, ports);
+    res.json({ ports });
+  } catch (e) {
+    return res.status(500).json({ error: (e as Error).message || '删除开发端口失败' });
   }
 });
 
