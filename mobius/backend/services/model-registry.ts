@@ -176,14 +176,42 @@ function dynamicCodexEntryFor(modelOrKey: any): any {
   }
 }
 
+function dynamicHarnessEntryFor(modelOrKey: any): any {
+  if (!modelAccess || typeof modelAccess.findHarnessModel !== 'function') return null
+  const m = modelAccess.findHarnessModel(modelOrKey, { includeSecret: true })
+  if (!m || !m.enabled || !m.secret_value) return null
+  const useProxy = modelUseProxy(m.session_model, m.use_proxy === true)
+  return {
+    key: m.session_model,
+    value: m.session_model,
+    sessionModelValue: m.session_model,
+    model: m.model,
+    label: m.label,
+    title: m.label,
+    sub: 'DeepSeek Harness',
+    backend: 'deepseek-harness',
+    imported: true,
+    useProxy,
+    settingsPath: null,
+    harnessProvider: m.provider,
+    harnessBaseUrl: m.base_url,
+    harnessSecretValue: m.secret_value,
+    harnessMaxTokens: m.max_tokens,
+    harnessRuntimeVersion: m.runtime_version,
+  }
+}
+
 function resolveSessionModel(modelOrKey: any): any {
-  // 1) 管理员导入的 codex 模型: 优先匹配 (key 或 'codex:<key>').
+  // 1) DeepSeek Harness 使用独立前缀, 优先解析.
+  const harness = dynamicHarnessEntryFor(modelOrKey)
+  if (harness) return harness
+  // 2) 管理员导入的 codex 模型: 优先匹配 (key 或 'codex:<key>').
   const codex = dynamicCodexEntryFor(modelOrKey)
   if (codex) return codex
-  // 2) 管理员导入的 Claude Code 模型.
+  // 3) 管理员导入的 Claude Code 模型.
   const dynamic = dynamicEntryFor(modelOrKey)
   if (dynamic) return dynamic
-  // 3) 内置模型必须有明确配置文件.
+  // 4) 内置模型必须有明确配置文件.
   const builtin = builtinEntryFor(modelOrKey)
   if (builtin) return builtin
   return null
@@ -212,6 +240,7 @@ function backendNameForSessionModel(modelOrKey: any): any {
   // 按模型名前缀兜底选 backend; 仍无法判断时回退默认 backend.
   // 真正启动会话的 launchOptionsForSession 仍会抛错, 这里只解决"读已有会话".
   const k = String(modelOrKey || '')
+  if (k.startsWith('deepseek-harness:')) return 'deepseek-harness'
   if (k.startsWith('codex:') || k === 'codex' || k === 'gpt-5.5') return 'tmux-codex'
   if (k.startsWith('claude-code:') || k.startsWith('claude-') || k === 'opus') return 'tmux-claude-code'
   return DEFAULT_AGENT_BACKEND
@@ -227,6 +256,10 @@ function isImportedClaudeCodeModel(modelOrKey: any): boolean {
 
 function isImportedCodexModel(modelOrKey: any): boolean {
   return !!dynamicCodexEntryFor(modelOrKey)
+}
+
+function isImportedHarnessModel(modelOrKey: any): boolean {
+  return !!dynamicHarnessEntryFor(modelOrKey)
 }
 
 function listSessionModelOptions(): any[] {
@@ -270,6 +303,12 @@ function listSessionModelOptions(): any[] {
         .filter((m: any) => !builtinClaudeSessionModel || m.key !== builtinClaudeSessionModel)
     : []
 
+  const harnessDynamics = ma && typeof ma.listHarnessModels === 'function'
+    ? ma.listHarnessModels({ enabledOnly: true })
+        .map((m: any) => dynamicHarnessEntryFor(m.session_model))
+        .filter(Boolean)
+    : []
+
   let builtinCodex = builtins.filter((m) => m.key === 'codex')
   if (builtinCodexSeed) {
     if (builtinCodexSeed.enabled === false) {
@@ -299,7 +338,7 @@ function listSessionModelOptions(): any[] {
     }
   }
 
-  const ordered = applyDisplayOrder([...builtinCodex, ...codexDynamics, ...claudeDynamics, ...builtinClaude])
+  const ordered = applyDisplayOrder([...builtinCodex, ...codexDynamics, ...harnessDynamics, ...claudeDynamics, ...builtinClaude])
   return ordered.map((m) => ({
     key: m.key,
     value: m.value,
@@ -321,6 +360,21 @@ function launchOptionsForSession(session: any): any {
   const resolved = resolveSessionModel(session?.model)
   if (!resolved) {
     throw new Error(`模型未配置或配置文件缺失: ${session?.model || DEFAULT_MODEL_KEY}`)
+  }
+  if (resolved.backend === 'deepseek-harness') {
+    return {
+      backend: 'deepseek-harness',
+      model: resolved.model,
+      harnessProvider: resolved.harnessProvider,
+      harnessBaseUrl: resolved.harnessBaseUrl,
+      harnessSecretValue: resolved.harnessSecretValue,
+      harnessMaxTokens: resolved.harnessMaxTokens,
+      harnessRuntimeVersion: resolved.harnessRuntimeVersion,
+      useProxy: resolved.useProxy,
+      forceNoProxy: false,
+      imported: true,
+      label: resolved.label,
+    }
   }
   // 管理员导入的 codex 模型: 走 --profile + -m <codex_model> + 模型级 use_proxy.
   if (resolved.backend === 'tmux-codex' && resolved.imported) {
@@ -378,6 +432,7 @@ const modelRegistry = {
   labelForSessionModel,
   isImportedClaudeCodeModel,
   isImportedCodexModel,
+  isImportedHarnessModel,
   launchOptionsForSession,
 }
 
@@ -392,6 +447,7 @@ export {
   labelForSessionModel,
   isImportedClaudeCodeModel,
   isImportedCodexModel,
+  isImportedHarnessModel,
   launchOptionsForSession,
 }
 

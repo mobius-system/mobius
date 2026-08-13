@@ -25,7 +25,6 @@ import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { RemoteComputeMemoryModal } from './memories'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { AdvancedSessionActions } from './advanced-session-actions'
-import { DevPortsBar } from './dev-ports-bar'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { extensionAppUrlForProject } from '../services/extension-entry'
 import { isFireAndForgetSession } from '../services/session-start-policy'
@@ -4495,8 +4494,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
               title="拖拽调整宽度 · 双击恢复默认"
             />
           )}
-          {/* 端口预览栏: 项目注册了开发端口时常驻显示, 一点即开预览 (桌面端 AIMUX / Web 端 code-server proxy) */}
-          <DevPortsBar projectId={currentProjectId} className="px-3 pt-2" />
           {/* 输入区 */}
           <div className="mobius-chat-input-editor min-w-0 flex-shrink-0 p-3">
             <div>

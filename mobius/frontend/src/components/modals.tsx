@@ -1853,9 +1853,11 @@ const SESSION_MODEL_LABEL: Record<string, string> = {
 
 // 模型 → 后端渠道
 // 用来对照 /api/sessions/prompt-stats 中的渠道桶
-type PromptBackendKey = 'codex' | 'claude_code'
+type PromptBackendKey = 'codex' | 'claude_code' | 'deepseek_harness'
 function promptBackendKeyForOption(opt?: SessionModelOption | null): PromptBackendKey {
-  return opt?.backend === 'tmux-codex' ? 'codex' : 'claude_code'
+  if (opt?.backend === 'tmux-codex') return 'codex'
+  if (opt?.backend === 'deepseek-harness') return 'deepseek_harness'
+  return 'claude_code'
 }
 type ModelUsageLimit = {
   key: string
@@ -1896,10 +1898,13 @@ type PromptStats = {
   since: string
   codex: number
   claude_code: number
+  deepseek_harness: number
   codex_5min?: number
   claude_code_5min?: number
+  deepseek_harness_5min?: number
   codex_2min: number
   claude_code_2min: number
+  deepseek_harness_2min: number
   total: number
   active_tmux_window_count?: number
   active_windows_by_backend?: Partial<Record<PromptBackendKey, number>>
@@ -1909,6 +1914,7 @@ type PromptStats = {
 const PROMPT_BACKEND_LABEL: Record<PromptBackendKey, string> = {
   codex: 'Codex',
   claude_code: 'Claude Code',
+  deepseek_harness: 'DeepSeek Harness',
 }
 
 // 注入上下文语言: 决定首轮注入的「上下文」段落用中文还是英文. 默认中文.
