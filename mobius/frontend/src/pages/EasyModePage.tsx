@@ -307,7 +307,11 @@ export default function EasyModePage() {
     // 创建接口返回的对象可能不含项目/任务展示字段，立即重拉近期列表，避免用户等待
     // 下一轮 10 秒轮询才能在左栏看到新会话。
     api(`/api/tasks/recent?limit=${RECENT_SESSION_LIMIT}`)
-      .then(recent => setSessions(normalizeRecent(recent)))
+      .then(recent => setSessions(current => {
+        const next = normalizeRecent(recent)
+        if (!session?.session_id || next.some(item => item.session_id === session.session_id)) return next
+        return [session, ...next.filter(item => item.session_id !== session.session_id)].slice(0, RECENT_SESSION_LIMIT)
+      }))
       .catch(() => {
         if (session?.session_id) {
           setSessions(current => [session, ...current.filter(item => item.session_id !== session.session_id)].slice(0, RECENT_SESSION_LIMIT))
