@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Check,
+  CheckCircle2,
   ChevronDown,
   CircleDot,
   FlaskConical,
@@ -27,6 +28,7 @@ import { ChatArea } from '../components/chat'
 import { GlobalCreateRoot, type CreateKind } from '../components/global-create'
 import { ResizablePanel } from '../components/resizable-panel'
 import { Loading, TopNav, timeAgoPrecise } from '../components/shell'
+import { ToastCard } from '../components/toast-card'
 
 type RecentSession = {
   session_id: string
@@ -56,6 +58,7 @@ type ProjectOption = {
 type WorkView = 'recent' | 'running' | 'completed'
 
 const RECENT_SESSION_LIMIT = 50
+const CREATE_SUCCESS_TOAST_MS = 4000
 
 function normalizeRecent(value: unknown): RecentSession[] {
   return (Array.isArray(value) ? value : [])
@@ -127,6 +130,7 @@ export default function EasyModePage() {
   const [lookupFailedSessionId, setLookupFailedSessionId] = useState('')
   const [createKind, setCreateKind] = useState<CreateKind | null>(null)
   const [createIssueOverride, setCreateIssueOverride] = useState('')
+  const [createSuccessToast, setCreateSuccessToast] = useState<{ name: string } | null>(null)
   const projectFilterButtonRef = useRef<HTMLButtonElement | null>(null)
   const navigate = useNavigate()
   const layoutMode = useLayoutMode()
@@ -291,6 +295,25 @@ export default function EasyModePage() {
       setRefreshing(false)
     }
   }, 10_000, 10_000, { startImmediately: false }), [params.user, sessionParam])
+
+  useEffect(() => {
+    if (!createSuccessToast) return
+    const timer = window.setTimeout(() => setCreateSuccessToast(null), CREATE_SUCCESS_TOAST_MS)
+    return () => window.clearTimeout(timer)
+  }, [createSuccessToast])
+
+  const handleSessionCreated = (session: RecentSession) => {
+    setCreateSuccessToast({ name: session?.name || '新会话' })
+    // 创建接口返回的对象可能不含项目/任务展示字段，立即重拉近期列表，避免用户等待
+    // 下一轮 10 秒轮询才能在左栏看到新会话。
+    api(`/api/tasks/recent?limit=${RECENT_SESSION_LIMIT}`)
+      .then(recent => setSessions(normalizeRecent(recent)))
+      .catch(() => {
+        if (session?.session_id) {
+          setSessions(current => [session, ...current.filter(item => item.session_id !== session.session_id)].slice(0, RECENT_SESSION_LIMIT))
+        }
+      })
+  }
 
   // 全局搜索可以打开不在“最近 50 个”中的历史会话；刷新深链时也补拉该会话，
   // 避免 URL 中的有效 session 因近期列表未包含而被错误清除。
@@ -774,11 +797,22 @@ export default function EasyModePage() {
         <GlobalCreateRoot
           kind={createKind}
           ctx={{ projectId: createDefaultProjectId, issueId: createDefaultIssueId }}
+          sessionSuccessMode="toast"
+          onSessionCreated={handleSessionCreated}
           onClose={() => {
             setCreateKind(null)
             setCreateIssueOverride('')
           }}
           onNavigate={navigate}
+        />
+      )}
+      {createSuccessToast && (
+        <ToastCard
+          tone="success"
+          icon={<CheckCircle2 className="h-4 w-4" strokeWidth={2} />}
+          title="会话已创建并开始执行"
+          subtitle={createSuccessToast.name}
+          onClose={() => setCreateSuccessToast(null)}
         />
       )}
     </div>

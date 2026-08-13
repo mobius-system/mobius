@@ -8,7 +8,7 @@
 //   - 表单记忆持久化 (localStorage 草稿, 关闭后回填).
 //   - 动态数据刷新: 中途新建的 project/issue/research 可被下拉重新读到.
 //   - Research Agent: 前置 research_enabled 校验 + 主 Skill 关联锁定 / 冲突互斥禁用.
-//   - 创建成功 → 次级确认弹窗, 「跳转详情」新开浏览器 Tab.
+//   - 创建成功 → 标准模式保留次级确认弹窗；简易模式可由页面接管为 Toast.
 //
 // 不改动 modals.tsx 现有组件 (页面内创建流程零风险), 仅复用其底层 export.
 // =====================================================================
@@ -1188,7 +1188,7 @@ function saveLastSelection(snap: LastSessionSelection) {
   draftSave(LAST_SELECTION_KEY, snap, { minChars: 0 })
 }
 
-export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectId, defaultIssueId }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void; onNavigate?: (path: string) => void; defaultProjectId?: string; defaultIssueId?: string }) {
+export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectId, defaultIssueId, successMode = 'dialog' }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void; onNavigate?: (path: string) => void; defaultProjectId?: string; defaultIssueId?: string; successMode?: 'dialog' | 'external' }) {
   const { theme, user } = useStore()
   const dark = theme !== 'light'
   const userParam = user?.id
@@ -1383,8 +1383,13 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
         const requestId = `gc-start-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
         api(`/api/sessions/${s.session_id}/messages`, { method: 'POST', body: JSON.stringify({ content: startContent, request_id: requestId }) }).catch(() => {})
       }
-      // 已自动启动 → 弹"创建成功"提示 (查看 / 再创建一个 / 关闭), 不自动跳转.
       const detailUrl = s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/i/${issueId}?session=${s.session_id}` : undefined
+      // 简易模式由页面层用 Toast 反馈并刷新工作列表，创建层立即关闭；标准模式保留
+      // “查看 / 再创建一个 / 关闭”弹窗，避免改变既有快捷创建流程。
+      if (successMode === 'external') {
+        onDone(s, detailUrl)
+        return
+      }
       setSuccess({ sessionId: s?.session_id, detailUrl, name: name.trim() })
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
   }
@@ -1874,15 +1879,17 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
 }
 
 // 根调度: 4 类创建均走自定义单页表单 (CreateProjectForm / CreateIssueForm / CreateSessionForm / CreateResearchForm).
-// session / research agent 创建成功 → 经 onNavigate 在 SPA 内直接进入该 Session, 触发 ChatArea 的
-//   SessionStartModal 自动启动 (4s 倒计时自动执行), 不再走"成功弹窗 + 新开 Tab".
+// session: 标准模式由表单显示“查看 / 再创建一个 / 关闭”；简易模式由页面显示 Toast.
+// research agent 创建成功 → 经 onNavigate 在 SPA 内直接进入该 Session.
 // project / issue 创建成功 → 仍走次级确认弹窗, 「跳转详情」新开浏览器 Tab.
 // 传统「新建 Session · 第 1 步 / 共 2 步」菜单 (modals.tsx) 走自己的 onCreated/goToSession, 不受此处影响.
-export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate }: {
+export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate, sessionSuccessMode = 'dialog', onSessionCreated }: {
   kind: CreateKind | null
   ctx: { projectId?: string; issueId?: string; researchId?: string }
   onClose: () => void
   onNavigate?: (path: string) => void
+  sessionSuccessMode?: 'dialog' | 'toast'
+  onSessionCreated?: (entity: any, detailUrl?: string) => void
 }) {
   const [success, setSuccess] = useState<{ entity: any; detailUrl?: string; name: string } | null>(null)
 
@@ -1890,6 +1897,11 @@ export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate }: {
     return <CreateSuccessDialog kind={kind || 'project'} name={success.name} detailUrl={success.detailUrl} onClose={() => { setSuccess(null); onClose() }} />
   }
   const handleDone = (entity: any, detailUrl?: string) => {
+    if (kind === 'session' && sessionSuccessMode === 'toast') {
+      onSessionCreated?.(entity, detailUrl)
+      onClose()
+      return
+    }
     // session / research agent: SPA 内进入新建的 Session, 让既有自动启动机制接管 (跳过成功弹窗 + 新开 Tab).
     if ((kind === 'session' || kind === 'research') && detailUrl && onNavigate) {
       onNavigate(detailUrl)
@@ -1901,7 +1913,7 @@ export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate }: {
 
   if (kind === 'project') return <CreateProjectForm onClose={onClose} onDone={handleDone} />
   if (kind === 'issue') return <CreateIssueForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />
-  if (kind === 'session') return <CreateSessionForm onClose={onClose} onDone={handleDone} onNavigate={onNavigate} defaultProjectId={ctx.projectId} defaultIssueId={ctx.issueId} />
+  if (kind === 'session') return <CreateSessionForm onClose={onClose} onDone={handleDone} onNavigate={onNavigate} defaultProjectId={ctx.projectId} defaultIssueId={ctx.issueId} successMode={sessionSuccessMode === 'toast' ? 'external' : 'dialog'} />
   if (kind === 'research') return <CreateResearchForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />
   return null
 }
