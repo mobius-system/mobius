@@ -313,26 +313,62 @@ export function tuiAimuxIdentifier(hostname = os.hostname(), cwd = process.cwd()
 }
 
 /**
- * Build the reverse-connect command in one place. The TUI can launch AIMUX
- * through either a venv executable or bundled Python; both paths must request
- * a fully headless Windows shell or every remote command flashes a console and
- * steals keyboard focus from the TUI. Keep the old --silent-shell path
- * available for older AIMUX bundles; current bundles use the no-console v2
- * implementation (the historical spelling --slient-v2 is intentional).
+ * Build the reverse-connect command in one place. On Windows the bridge shells
+ * must run headless or every remote command flashes a console and steals
+ * keyboard focus from the TUI — but *which* flag asks for that depends on the
+ * installed aimux: `--silent-shell` landed in 0.1.18, the no-console
+ * `--slient-v2`/`--silent-v2` only in 0.1.22+. PyPI and cached bundles in the
+ * wild are often older, and hard-coding any one spelling makes Click reject the
+ * whole command ("No such option: --slient-v2") and the supervisor crash-loop.
+ * So the caller probes `reverse connect --help` once (see probeReverseConnectHelp
+ * + pickSilentFlag) and passes the flag aimux actually advertises; when nothing
+ * is supported we send nothing rather than crash.
  */
 export function reverseConnectArgs(
   server: string,
   identifier: string,
   token: string,
   platform: NodeJS.Platform = process.platform,
+  silentFlag: string | null = null,
 ): string[] {
   return [
     'reverse', 'connect', `${server.replace(/\/$/, '')}/aimux_bridge`,
     '--identifier', identifier,
     '--token', token,
     '--replace',
-    ...(platform === 'win32' ? ['--slient-v2'] : []),
+    ...(platform === 'win32' && silentFlag ? [silentFlag] : []),
   ]
+}
+
+/**
+ * Capture `aimux reverse connect --help` so we can see which console-hiding
+ * flags this particular build advertises. Returns '' on any failure (the
+ * caller then sends no silent flag and stays alive instead of crash-looping).
+ */
+export async function probeReverseConnectHelp(launcher: AimuxLauncher): Promise<string> {
+  const base = launcher.kind === 'exe'
+    ? { cmd: launcher.path, args: ['reverse', 'connect', '--help'] }
+    : { cmd: launcher.python, args: ['-m', 'aimux', 'reverse', 'connect', '--help'] }
+  try {
+    const r = await run(base.cmd, base.args)
+    return `${r.stdout}\n${r.stderr}`
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Pick the strongest console-hiding flag aimux advertised for Windows. Prefers
+ * the correctly-spelled --silent-v2 (future-proof if the historical --slient-v2
+ * typo alias is ever dropped), then the --slient-v2 alias, then --silent-shell.
+ * Returns null off-Windows or when the installed aimux supports none.
+ */
+export function pickSilentFlag(helpText: string, platform: NodeJS.Platform = process.platform): string | null {
+  if (platform !== 'win32') return null
+  if (/--silent-v2\b/.test(helpText)) return '--silent-v2'
+  if (/--slient-v2\b/.test(helpText)) return '--slient-v2'
+  if (/--silent-shell\b/.test(helpText)) return '--silent-shell'
+  return null
 }
 
 export async function probeAimuxBridgeConnection(
@@ -513,6 +549,10 @@ export class AimuxSupervisor {
 
 let supervisor: AimuxSupervisor | null = null
 let installing: Promise<void> | null = null
+// Resolved Windows console-hiding flag for the installed aimux (undefined =
+// not probed yet this process). Cached so reconnects reuse it without re-running
+// `aimux reverse connect --help`. See reverseConnectArgs for why this is probed.
+let cachedSilentFlag: string | null | undefined = undefined
 
 export async function startAimuxConnection(opts: { server: string; token: string; onStatus?: (s: AimuxStatus) => void }): Promise<void> {
   const onStatus = opts.onStatus ?? (() => {})
@@ -534,9 +574,18 @@ export async function startAimuxConnection(opts: { server: string; token: string
     if (!ready.ok || !ready.launcher) { logInstall(`startAimuxConnection giving up: ${ready.error}\n`); onStatus({ state: 'failed', phase: 'idle', detail: `${ready.error} · 日志: ${aimuxLogPath()}` }); return }
     const identifier = tuiAimuxIdentifier()
     const launcher = ready.launcher
+    // Windows only: ask the installed aimux which console-hiding flag it accepts
+    // before spawning, so a version mismatch (older PyPI/bundle aimux without
+    // --slient-v2) can't crash-loop the supervisor with "No such option".
+    if (WIN && cachedSilentFlag === undefined) {
+      const help = await probeReverseConnectHelp(launcher)
+      cachedSilentFlag = pickSilentFlag(help)
+      logInstall(`reverse-connect silent flag probe → ${cachedSilentFlag ?? '(none supported; sending no flag)'}\n`)
+    }
+    const silentFlag = cachedSilentFlag
     supervisor = new AimuxSupervisor({
       server: opts.server, token: opts.token, identifier, onStatus,
-      spawnProcess: () => spawnLauncher(launcher, reverseConnectArgs(opts.server, identifier, opts.token)),
+      spawnProcess: () => spawnLauncher(launcher, reverseConnectArgs(opts.server, identifier, opts.token, process.platform, silentFlag)),
     })
     supervisor.start()
   })().finally(() => { installing = null })
