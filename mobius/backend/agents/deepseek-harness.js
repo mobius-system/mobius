@@ -135,8 +135,6 @@ class DeepSeekHarnessBackend extends AgentBackend {
       const projected = projectHarnessEvent(params.event, entry)
       for (const value of projected) appendJsonl(entry.jsonlPath, value)
       if (params.event?.type === 'turn/end') {
-        entry.working = false
-        entry.pending = []
         const reason = params.event?.data?.reason
         if (reason?.kind === 'error') this._captureError(sessionId, new Error(reason.error?.message || 'DeepSeek Harness turn failed'))
       }
