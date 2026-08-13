@@ -587,46 +587,48 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
                 </div>
               </button>
 
-              {canUseAimuxPortForward && (
-                <>
-                  {autoPort !== null && (
-                    <button
-                      type="button"
-                      onClick={() => openAimuxPort(autoPort)}
-                      disabled={aimuxForwarding}
-                      className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-sky-500/10 hover:border-sky-500/30 disabled:cursor-not-allowed disabled:opacity-55"
-                      style={{ borderColor: 'var(--border-color)' }}
-                    >
-                      <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                        {aimuxForwarding ? <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" /> : <Cable className="w-3.5 h-3.5 text-sky-400" />}
-                        打开端口（AIMUX 自动）
-                      </div>
-                      <div className="mt-1 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>
-                        读取 main_project_port.txt：{autoPort}
-                      </div>
-                    </button>
-                  )}
-
+              <>
+                {autoPort !== null && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowManualInput(prev => !prev)
-                      setError('')
-                    }}
-                    disabled={aimuxForwarding}
+                    onClick={() => openAimuxPort(autoPort)}
+                    disabled={!canUseAimuxPortForward || aimuxForwarding}
+                    title={canUseAimuxPortForward ? '通过 AIMUX 自动映射项目端口' : '该功能需要桌面客户端'}
                     className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-sky-500/10 hover:border-sky-500/30 disabled:cursor-not-allowed disabled:opacity-55"
-                    style={{ borderColor: showManualInput ? 'rgba(56,189,248,0.55)' : 'var(--border-color)' }}
+                    style={{ borderColor: 'var(--border-color)' }}
                   >
                     <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
                       {aimuxForwarding ? <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" /> : <Cable className="w-3.5 h-3.5 text-sky-400" />}
-                      打开端口（AIMUX 手动）
+                      打开端口（AIMUX 自动）
                     </div>
-                    <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                      {showManualInput ? '在下方输入端口号' : '点击后输入端口号码'}
+                    <div className="mt-1 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>
+                      读取 main_project_port.txt：{autoPort}
                     </div>
                   </button>
+                )}
 
-                  {showManualInput && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!canUseAimuxPortForward) return
+                    setShowManualInput(prev => !prev)
+                    setError('')
+                  }}
+                  disabled={!canUseAimuxPortForward || aimuxForwarding}
+                  title={canUseAimuxPortForward ? '点击后输入端口号码' : '该功能需要桌面客户端'}
+                  className="w-full min-h-[58px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-sky-500/10 hover:border-sky-500/30 disabled:cursor-not-allowed disabled:opacity-55"
+                  style={{ borderColor: showManualInput ? 'rgba(56,189,248,0.55)' : 'var(--border-color)' }}
+                >
+                  <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {aimuxForwarding ? <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" /> : <Cable className="w-3.5 h-3.5 text-sky-400" />}
+                    打开端口（AIMUX 手动）
+                  </div>
+                  <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    {canUseAimuxPortForward ? (showManualInput ? '在下方输入端口号' : '点击后输入端口号码') : '该功能需要桌面客户端'}
+                  </div>
+                </button>
+
+                {showManualInput && canUseAimuxPortForward && (
                     <form
                       className="rounded-lg border border-sky-500/25 bg-sky-500/5 p-2.5 space-y-2"
                       onSubmit={event => {
@@ -672,8 +674,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
                       </div>
                     </form>
                   )}
-                </>
-              )}
+              </>
 
               {onRequestRunProject && (
                 <button
