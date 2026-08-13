@@ -575,6 +575,11 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
   const [popupDismissed, setPopupDismissed] = useState(false)
   const historyRef = useRef<string[]>([])
   const [histIdx, setHistIdx] = useState<number | null>(null)
+  // Idle Ctrl+C quits, but a single accidental press must not kill the session:
+  // the first press arms a 2s confirmation window, the second press exits.
+  const [confirmQuit, setConfirmQuit] = useState(false)
+  const confirmQuitRef = useRef(false)
+  const confirmQuitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const valueRef = useRef(value)
   const cursorRef = useRef(cursor)
   const pasteRef = useRef<ComposerPasteState>({
@@ -587,6 +592,8 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
     timer: null,
   })
   const { stdout } = useStdout()
+
+  useEffect(() => () => { if (confirmQuitTimer.current) clearTimeout(confirmQuitTimer.current) }, [])
 
   // Physical Backspace/Delete keys are owned by useDeleteKeyCapture from the
   // raw stdin bytes — Ink reports the Backspace key (\x7f) and the Delete key
@@ -785,7 +792,19 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
       }
       return
     }
-    if (key.ctrl && input === 'c') { typing ? void onStop() : onQuit(); return }
+    if (key.ctrl && input === 'c') {
+      if (typing) { void onStop(); return }
+      // Idle Ctrl+C exits, but guard against an accidental single press.
+      if (confirmQuitRef.current) { onQuit(); return }
+      confirmQuitRef.current = true
+      setConfirmQuit(true)
+      if (confirmQuitTimer.current) clearTimeout(confirmQuitTimer.current)
+      confirmQuitTimer.current = setTimeout(() => {
+        confirmQuitRef.current = false
+        setConfirmQuit(false)
+      }, 2000)
+      return
+    }
     // Physical Backspace/Delete keys are handled by useDeleteKeyCapture above
     // (raw stdin bytes distinguish them; Ink maps both to `key.delete`). Only
     // the unambiguous logical editing bindings stay here.
@@ -900,7 +919,9 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
           })}
         </Box>
         <Box justifyContent="space-between">
-          <Text dimColor>{(stdout.columns ?? 80) >= 72 ? 'Enter 发送 · Shift+Enter / Alt+Enter / Ctrl+J 换行' : 'Enter 发送 · Alt+Enter / Ctrl+J 换行'}</Text>
+          {confirmQuit
+            ? <Text color="yellowBright" bold>请再次按下Ctrl+C退出</Text>
+            : <Text dimColor>{(stdout.columns ?? 80) >= 72 ? 'Enter 发送 · Shift+Enter / Alt+Enter / Ctrl+J 换行' : 'Enter 发送 · Alt+Enter / Ctrl+J 换行'}</Text>}
           <Text dimColor>{wrapped.length > maxRows ? `${visualCursor + 1}/${wrapped.length} 行` : `${wrapped.length} 行`}</Text>
         </Box>
       </Box>
