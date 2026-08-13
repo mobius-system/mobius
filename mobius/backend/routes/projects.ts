@@ -256,6 +256,9 @@ function readDevPorts(project: any): DevPortEntry[] {
       if (fs.existsSync(filePath)) {
         const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
         if (parsed && Array.isArray(parsed.ports)) {
+          // ports.json 存在且格式正确 → 以它为准 (即使空数组也尊重, 不回落旧 txt):
+          // 用户主动清空 (DELETE 到空) 表示"不要端口了", 不该再暴露旧 txt 里残留的端口.
+          // 仅当 ports.json 文件完全不存在时才回落 main_project_port.txt (兼容旧部署).
           const seen = new Set<number>();
           const out: DevPortEntry[] = [];
           for (const item of parsed.ports) {
@@ -264,7 +267,7 @@ function readDevPorts(project: any): DevPortEntry[] {
             seen.add(entry.port);
             out.push(entry);
           }
-          if (out.length > 0) return out;
+          return out;
         }
       }
     } catch {
