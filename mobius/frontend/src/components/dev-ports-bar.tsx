@@ -201,7 +201,7 @@ export function DevPortsBar({ projectId, className, variant = 'bar' }: DevPortsB
 
         {showAddForm && (
           <form
-            className="mb-1 grid grid-cols-[minmax(72px,0.65fr)_minmax(100px,1fr)_auto] gap-1.5 rounded-lg border p-2"
+            className="mb-1 grid grid-cols-[minmax(0,1fr)_auto] gap-1.5 rounded-lg border p-2"
             style={{ borderColor: 'rgba(16,185,129,0.28)', background: 'rgba(16,185,129,0.05)' }}
             onSubmit={(event) => { event.preventDefault(); void handleAdd() }}
           >
@@ -222,13 +222,13 @@ export function DevPortsBar({ projectId, className, variant = 'bar' }: DevPortsB
               onChange={(event) => { setAddLabel(event.target.value); setError('') }}
               placeholder="服务名称"
               aria-label="服务名称"
-              className={`${inputCls} min-w-0 w-full font-sans`}
+              className={`${inputCls} col-span-2 row-start-2 min-w-0 w-full font-sans`}
               style={inputStyle}
             />
             <button
               type="submit"
               disabled={adding}
-              className="inline-flex h-7 min-w-12 items-center justify-center rounded-md bg-emerald-500 px-2 text-[10px] font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-60"
+              className="col-start-2 row-start-1 inline-flex h-7 min-w-12 items-center justify-center rounded-md bg-emerald-500 px-2 text-[10px] font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-60"
             >
               {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '登记'}
             </button>
