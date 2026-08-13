@@ -42,6 +42,7 @@ const router = express.Router();
 const BACKENDS = [
   { key: 'codex', backendName: 'tmux-codex', label: 'Codex' },
   { key: 'claude_code', backendName: 'tmux-claude-code', label: 'Claude Code' },
+  { key: 'deepseek_harness', backendName: 'deepseek-harness', label: 'DeepSeek Harness' },
 ];
 
 const BACKEND_ALIASES = new Map<string, typeof BACKENDS[number]>([
@@ -51,6 +52,9 @@ const BACKEND_ALIASES = new Map<string, typeof BACKENDS[number]>([
   ['claude-code', BACKENDS[1]],
   ['claude_code', BACKENDS[1]],
   ['tmux-claude-code', BACKENDS[1]],
+  ['deepseek-harness', BACKENDS[2]],
+  ['deepseek_harness', BACKENDS[2]],
+  ['harness', BACKENDS[2]],
 ]);
 
 interface RepoError extends Error {
@@ -793,6 +797,7 @@ router.get('/tmux', adminAuth, (req: express.Request, res: express.Response) => 
   const activeWindowsByBackend = {
     codex: backends.codex?.active_window_count || 0,
     claude_code: backends.claude_code?.active_window_count || 0,
+    deepseek_harness: backends.deepseek_harness?.active_window_count || 0,
   };
   res.json({
     window_hours: hours,
@@ -801,11 +806,15 @@ router.get('/tmux', adminAuth, (req: express.Request, res: express.Response) => 
     questions_by_backend: {
       codex: (promptStats.by_backend as any)['tmux-codex'] || 0,
       claude_code: (promptStats.by_backend as any)['tmux-claude-code'] || 0,
+      deepseek_harness: (promptStats.by_backend as any)['deepseek-harness'] || 0,
     },
-    questions_2min: ((promptStats2min.by_backend as any)['tmux-codex'] || 0) + ((promptStats2min.by_backend as any)['tmux-claude-code'] || 0),
+    questions_2min: ((promptStats2min.by_backend as any)['tmux-codex'] || 0)
+      + ((promptStats2min.by_backend as any)['tmux-claude-code'] || 0)
+      + ((promptStats2min.by_backend as any)['deepseek-harness'] || 0),
     questions_by_backend_2min: {
       codex: (promptStats2min.by_backend as any)['tmux-codex'] || 0,
       claude_code: (promptStats2min.by_backend as any)['tmux-claude-code'] || 0,
+      deepseek_harness: (promptStats2min.by_backend as any)['deepseek-harness'] || 0,
     },
     window_count: allWindows.filter((w) => w.tmux_open).length,
     active_tmux_window_count: allWindows.filter((w) => w.tui_agent_alive).length,
@@ -851,7 +860,9 @@ router.delete('/tmux/:backend/:sessionId', adminAuth, async (req: express.Reques
         const turnNum = (Messages.maxTurnFor(sessionId as any) || 0) + 1;
         Messages.insertSystem(
           sessionId as any,
-          `管理员已关闭后台 ${def.label} tmux window (window=${sessionId}, wasWorking=${wasWorking ? 'true' : 'false'}).`,
+          def.backendName === 'deepseek-harness'
+            ? `管理员已关闭后台 ${def.label} Runtime (session=${sessionId}, wasWorking=${wasWorking ? 'true' : 'false'}).`
+            : `管理员已关闭后台 ${def.label} tmux window (window=${sessionId}, wasWorking=${wasWorking ? 'true' : 'false'}).`,
           turnNum,
           '管理员关闭后台进程',
         );
@@ -1481,6 +1492,46 @@ router.delete('/model-access/codex/:key', adminAuth, (req: express.Request, res:
     // 同 Claude Code: 不再阻断删除, 仅在响应里附带受影响 active session 数.
     const usage = activeSessionUsageForModel(sessionModel);
     const ok = modelAccess.deleteCodexModel(key);
+    if (!ok) { res.status(404).json({ error: '模型配置不存在' }); return; }
+    res.json({ ok: true, affected_session_count: usage.count, session_model: sessionModel });
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
+  }
+});
+
+// ── DeepSeek Harness 模型接入 (独立 Node 22 runtime, secret 不回传) ──
+router.get('/model-access/deepseek-harness', adminAuth, (_req: express.Request, res: express.Response) => {
+  res.json(modelAccess.listHarnessModels());
+});
+
+router.post('/model-access/deepseek-harness', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    res.json(modelAccess.upsertHarnessModel(req.body || {}));
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
+  }
+});
+
+router.get('/model-access/deepseek-harness/:key', adminAuth, (req: express.Request, res: express.Response) => {
+  const row = modelAccess.findHarnessModel(req.params.key);
+  if (!row) { res.status(404).json({ error: '模型配置不存在' }); return; }
+  res.json(row);
+});
+
+router.put('/model-access/deepseek-harness/:key', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    res.json(modelAccess.upsertHarnessModel(req.body || {}, { existingKey: req.params.key as any }));
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
+  }
+});
+
+router.delete('/model-access/deepseek-harness/:key', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    const key = String(req.params.key || '');
+    const sessionModel = modelAccess.sessionModelForHarnessKey(key);
+    const usage = activeSessionUsageForModel(sessionModel);
+    const ok = modelAccess.deleteHarnessModel(key);
     if (!ok) { res.status(404).json({ error: '模型配置不存在' }); return; }
     res.json({ ok: true, affected_session_count: usage.count, session_model: sessionModel });
   } catch (e) {

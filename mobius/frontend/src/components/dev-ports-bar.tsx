@@ -29,17 +29,18 @@ function entryLabel(entry: DevPortEntry): string {
 type DevPortsBarProps = {
   projectId?: string | null
   className?: string
+  variant?: 'bar' | 'panel'
 }
 
 /**
- * 端口预览栏: 当项目注册了开发端口时, 在会话输入区上方常驻一排可点 chip.
+ * 项目开发端口入口。panel 用于会话资源页签，bar 保留为兼容布局。
  * 点击即打开该端口的预览 (桌面端 AIMUX forward / Web 端 code-server proxy).
  *
  * 解决"AI 起了 dev server 报告端口, 但用户在界面里无处可点、看不到渲染结果"的痛点.
  * 端口来源二选一: ① AI 启动服务后按协议写入 ports.json, 本组件低频轮询自动浮现;
  * ② 用户点 "+" 手动登记 (AI 用自然语言报告了端口、但没写文件时, 即时可用).
  */
-export function DevPortsBar({ projectId, className }: DevPortsBarProps) {
+export function DevPortsBar({ projectId, className, variant = 'bar' }: DevPortsBarProps) {
   const [ports, setPorts] = useState<DevPortEntry[]>([])
   const [vscodeWebUrl, setVscodeWebUrl] = useState('')
   const [loading, setLoading] = useState(false)
@@ -155,11 +156,142 @@ export function DevPortsBar({ projectId, className }: DevPortsBarProps) {
     load().finally(() => setLoading(false))
   }, [load])
 
-  // 无端口、不在加载、无错误、未展开添加表单: 不占位 (保持输入区整洁).
-  if (!projectId || (ports.length === 0 && !loading && !error && !showAddForm)) return null
+  // 旧横栏无内容时不占位；页签面板始终保留空状态，方便手动登记第一个端口.
+  if (!projectId || (variant === 'bar' && ports.length === 0 && !loading && !error && !showAddForm)) return null
 
   const inputCls = 'h-7 px-2 rounded-md border bg-[var(--bg-primary)] text-[12px] font-mono outline-none focus:border-emerald-500/60'
   const inputStyle = { borderColor: 'var(--border-color)', color: 'var(--text-primary)' }
+
+  if (variant === 'panel') {
+    return (
+      <div
+        className={`dev-ports-panel flex min-h-0 flex-1 flex-col ${className || ''}`}
+        data-testid="dev-ports-panel"
+      >
+        <div className="flex min-h-9 items-center gap-2 px-1 py-1">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <MonitorPlay className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
+            <span className="truncate text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>开发服务</span>
+            <span className="rounded border px-1.5 py-0.5 text-[9px]" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+              {ports.length}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowAddForm(value => !value)}
+            aria-expanded={showAddForm}
+            className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[10px] transition-colors hover:bg-emerald-500/10"
+            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
+          >
+            {showAddForm ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+            {showAddForm ? '取消' : '添加'}
+          </button>
+          <button
+            type="button"
+            onClick={handleManualRefresh}
+            disabled={loading}
+            title="刷新端口列表"
+            aria-label="刷新端口列表"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+            style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        {showAddForm && (
+          <form
+            className="mb-1 grid grid-cols-[minmax(72px,0.65fr)_minmax(100px,1fr)_auto] gap-1.5 rounded-lg border p-2"
+            style={{ borderColor: 'rgba(16,185,129,0.28)', background: 'rgba(16,185,129,0.05)' }}
+            onSubmit={(event) => { event.preventDefault(); void handleAdd() }}
+          >
+            <input
+              autoFocus
+              inputMode="numeric"
+              value={addPort}
+              disabled={adding}
+              onChange={(event) => { setAddPort(event.target.value); setError('') }}
+              placeholder="端口号"
+              aria-label="端口号"
+              className={`${inputCls} min-w-0 w-full`}
+              style={inputStyle}
+            />
+            <input
+              value={addLabel}
+              disabled={adding}
+              onChange={(event) => { setAddLabel(event.target.value); setError('') }}
+              placeholder="服务名称"
+              aria-label="服务名称"
+              className={`${inputCls} min-w-0 w-full font-sans`}
+              style={inputStyle}
+            />
+            <button
+              type="submit"
+              disabled={adding}
+              className="inline-flex h-7 min-w-12 items-center justify-center rounded-md bg-emerald-500 px-2 text-[10px] font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-60"
+            >
+              {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '登记'}
+            </button>
+          </form>
+        )}
+
+        {error && (
+          <div className="mb-1 rounded-md border border-red-400/20 bg-red-500/5 px-2 py-1.5 text-[10px] text-red-400" role="status">
+            {error}
+          </div>
+        )}
+
+        <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto py-1">
+          {loading && ports.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> 加载端口...
+            </div>
+          ) : ports.length === 0 ? (
+            <div className="rounded-lg border border-dashed px-3 py-5 text-center" style={{ borderColor: 'var(--border-color)' }}>
+              <MonitorPlay className="mx-auto mb-2 h-5 w-5 text-emerald-400/70" strokeWidth={1.7} />
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>暂无已登记端口</div>
+            </div>
+          ) : ports.map((entry) => {
+            const isOpening = openingPort === entry.port
+            const isRemoving = removingPort === entry.port
+            return (
+              <div
+                key={entry.port}
+                className="flex min-h-11 items-center gap-1 rounded-lg border px-1.5 py-1"
+                style={{ borderColor: 'rgba(16,185,129,0.22)', background: 'rgba(16,185,129,0.04)' }}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleOpen(entry.port)}
+                  disabled={isOpening || isRemoving}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-emerald-500/10 disabled:cursor-wait disabled:opacity-55"
+                  title={`打开 ${entryLabel(entry)} :${entry.port}`}
+                >
+                  <span className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-400">
+                    {isOpening ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>{entryLabel(entry)}</span>
+                    <span className="block font-mono text-[10px] text-emerald-400">localhost:{entry.port}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(entry.port)}
+                  disabled={isOpening || isRemoving}
+                  title="移除该端口"
+                  aria-label={`移除 ${entryLabel(entry)} 端口 ${entry.port}`}
+                  className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
+                >
+                  {isRemoving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen, Brain, Eye, GitBranch, Loader2, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
+import { BookOpen, Brain, Eye, GitBranch, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
 import { api } from '../store'
+import { DevPortsBar } from './dev-ports-bar'
 import { normalizeGithubSkillInput } from './skills'
 import { SkillMarketLink } from './skill-market-link'
 
@@ -308,18 +309,20 @@ interface SelectionSnapshotResponse {
 }
 
 // =====================================================================
-// 非精简模式 Skill/Memory 标签展开状态持久化 (localStorage).
+// 非精简模式会话资源标签展开状态持久化 (localStorage).
 // 用户主动关闭或切换 tab 后, 下次进入任意会话侧栏按记忆恢复, 而非每次回到默认.
 // 'closed' 表示用户主动收起两个 tab (区别于"从未设置"的缺失键 → 走 initialPanel 默认).
 // 仅在 persistActivePanel=true 时读写; 精简模式弹窗由用户点哪个按钮决定, 不持久化.
 // =====================================================================
 const ACTIVE_PANEL_STORAGE_KEY = 'mobius:skill-memory-active-panel'
 
-function readStoredActivePanel(): null | 'skill' | 'memory' | 'git' | undefined {
+type SessionResourcePanel = 'skill' | 'memory' | 'git' | 'ports'
+
+function readStoredActivePanel(): null | SessionResourcePanel | undefined {
   if (typeof window === 'undefined') return undefined
   try {
     const value = window.localStorage.getItem(ACTIVE_PANEL_STORAGE_KEY)
-    if (value === 'skill' || value === 'memory' || value === 'git') return value
+    if (value === 'skill' || value === 'memory' || value === 'git' || value === 'ports') return value
     if (value === 'closed') return null
     return undefined
   } catch {
@@ -327,7 +330,7 @@ function readStoredActivePanel(): null | 'skill' | 'memory' | 'git' | undefined 
   }
 }
 
-function writeStoredActivePanel(panel: null | 'skill' | 'memory' | 'git'): void {
+function writeStoredActivePanel(panel: null | SessionResourcePanel): void {
   if (typeof window === 'undefined') return
   try {
     window.localStorage.setItem(ACTIVE_PANEL_STORAGE_KEY, panel === null ? 'closed' : panel)
@@ -579,7 +582,7 @@ export function SessionSkillMemoryEditor({
 }: {
   sessionId?: string
   projectId?: string
-  initialPanel?: null | 'skill' | 'memory' | 'git'
+  initialPanel?: null | SessionResourcePanel
   persistActivePanel?: boolean
 }) {
   const [memories, setMemories] = useState<EditorItem[]>([])
@@ -594,7 +597,7 @@ export function SessionSkillMemoryEditor({
   const [gitError, setGitError] = useState('')
   const [gitRefreshKey, setGitRefreshKey] = useState(0)
   const [gitScanMeta, setGitScanMeta] = useState<{ cached: boolean; scannedAt: string }>({ cached: false, scannedAt: '' })
-  const [activePanel, setActivePanel] = useState<null | 'skill' | 'memory' | 'git'>(() => {
+  const [activePanel, setActivePanel] = useState<null | SessionResourcePanel>(() => {
     if (persistActivePanel) {
       const stored = readStoredActivePanel()
       if (stored !== undefined) return stored
@@ -602,7 +605,7 @@ export function SessionSkillMemoryEditor({
     return initialPanel
   })
   // 切换/收起 tab 时同步写回 localStorage (仅 persistActivePanel=true 的非精简侧栏).
-  const setActivePanelAndPersist = useCallback((next: null | 'skill' | 'memory' | 'git') => {
+  const setActivePanelAndPersist = useCallback((next: null | SessionResourcePanel) => {
     setActivePanel(next)
     if (persistActivePanel) writeStoredActivePanel(next)
   }, [persistActivePanel])
@@ -832,13 +835,14 @@ export function SessionSkillMemoryEditor({
   const skillActive = activePanel === 'skill'
   const memActive = activePanel === 'memory'
   const gitActive = activePanel === 'git'
+  const portsActive = activePanel === 'ports'
 
   return (
     <>
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
-            下划线 tab 样式: 三个 tab 紧挨成 tab 条, 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
-        <div className="grid grid-cols-3 items-stretch">
+            下划线 tab 样式: 四个 tab 紧挨成 tab 条, 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
+        <div className="grid grid-cols-4 items-stretch">
           <button
             type="button"
             onClick={() => setActivePanelAndPersist(activePanel === 'skill' ? null : 'skill')}
@@ -872,6 +876,17 @@ export function SessionSkillMemoryEditor({
             <span className="btn-label">Git</span>
             {gitSources.length > 0 && <span className="text-[9px] text-amber-300">{gitSources.length}</span>}
           </button>
+          <button
+            type="button"
+            onClick={() => setActivePanelAndPersist(portsActive ? null : 'ports')}
+            aria-pressed={portsActive}
+            data-tour="session-ports-toggle"
+            className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${portsActive ? 'border-emerald-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
+            style={{ color: portsActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
+          >
+            <MonitorPlay className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
+            <span className="btn-label">端口</span>
+          </button>
         </div>
 
         {/* 内联菜单: 直接占据 tab 下方剩余空间, 无独立背景/边框/圆角, 无缝融入侧栏 */}
@@ -881,10 +896,11 @@ export function SessionSkillMemoryEditor({
                 风格统一(虚线 border 区分其为操作入口, 其余为数据项). 添加成功后 reload() 立即
                 把新条目刷进下方列表, 用户可点"追加/强调"注入当前会话 (对后续对话生效). */}
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
-              {activePanel !== 'git' && <AddSkillMemoryBar kind={activePanel} onAdded={reload} />}
+              {(skillActive || memActive) && <AddSkillMemoryBar kind={activePanel} onAdded={reload} />}
               {skillActive ? renderList(skills, '暂无 Skill', 'skill')
                 : memActive ? renderList(memories, '暂无 Memory', 'memory')
-                  : (
+                  : portsActive ? <DevPortsBar projectId={projectId} variant="panel" />
+                    : (
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2 px-1 py-0.5">
                         <span className="min-w-0 flex-1 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
