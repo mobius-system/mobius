@@ -131,7 +131,7 @@
 }
 .mobius-light .synergy-poster::after { display: none; }
 .mobius-light .synergy-poster img {
-  filter: invert(1) hue-rotate(180deg) saturate(.9) contrast(.96) brightness(1.04);
+  filter: none;
 }
 
 .mobius-light .concept-card,
@@ -293,6 +293,7 @@
 .mobius-light .fleet-board,
 .mobius-light .blackboard,
 .mobius-light .agent-card,
+.mobius-light .research-card,
 .mobius-light .cluster-node,
 .mobius-light .cluster-core {
   background: #fff;
@@ -300,6 +301,18 @@
   border-color: #dce3ec;
   box-shadow: 0 8px 22px rgba(15, 23, 42, .08);
 }
+.mobius-light .research-card:hover {
+  background: linear-gradient(160deg, #f8fbff, #fbf8ff);
+}
+.mobius-light .research-body h4,
+.mobius-light .banner-title { color: #101828; }
+.mobius-light .research-body p,
+.mobius-light .banner-meta { color: #526071; }
+.mobius-light .research-icon .ic-cn { color: #475467; }
+.mobius-light .research-icon .ic-en,
+.mobius-light .research-card:nth-child(4n+2) .research-icon .ic-en,
+.mobius-light .research-card:nth-child(4n+3) .research-icon .ic-en,
+.mobius-light .research-card:nth-child(4n+4) .research-icon .ic-en { color: #2563eb; }
 
 .mobius-light .cluster-svg [fill="#05030f"],
 .mobius-light .cluster-svg [fill="#07071a"],
@@ -385,4 +398,18 @@
   .mobius-light .hero { min-height: 92vh; }
   .mobius-light .section-padded { padding-top: 6rem; padding-bottom: 6rem; }
   .mobius-light .synergy-poster { box-shadow: 0 16px 36px rgba(15, 23, 42, .1); }
+  .mobius-light .footer-keyword-card {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 88px;
+    width: auto;
+    max-width: none;
+    transform: translateY(6px);
+  }
+  .mobius-light .footer-keyword:hover .footer-keyword-card,
+  .mobius-light .footer-keyword:focus-visible .footer-keyword-card,
+  .mobius-light .footer-keyword:focus-within .footer-keyword-card {
+    transform: translateY(0);
+  }
 }
