@@ -214,9 +214,10 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     else if (key.pageDown) scrollRows(pageRows)
   }, { interactive: false })
 
-  const navigationHint = viewport.hasOlder
-    ? `${viewport.hasNewer ? '↑ 较早内容 · ↓ 较新内容' : '↑ 还有较早内容'} · 滚轮 3 行 · PageUp/PageDown ${pageRows} 行 · 拖动选中文本`
-    : `${viewport.hasNewer ? '已到最早 · ↓ 还有较新内容' : '全部内容'} · 滚轮 3 行 · PageUp/PageDown ${pageRows} 行 · 拖动选中文本`
+  const navigationPosition = viewport.hasOlder
+    ? (viewport.hasNewer ? '↑ 较早内容 · ' : '↑ 还有较早内容')
+    : (viewport.hasNewer ? '已到最早 · ' : '全部内容')
+  const navigationDetail = ` · 滚轮 3 行 · PageUp/PageDown ${pageRows} 行 · 拖动选中文本`
 
   // Mouse: wheel pages through history in small fixed steps, and a left-button
   // drag selects transcript text (tmux-style: the app owns the mouse, draws its
@@ -335,7 +336,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           : <CompactHeader ready={ready} sessionId={chat.sessionId} columns={terminal.columns} />}
 
         {!showWelcome
-          ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  {navigationHint}</Text></Box>
+          ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  {navigationPosition}{viewport.hasNewer ? <Text color="yellowBright">↓ 有新内容</Text> : null}{navigationDetail}</Text></Box>
           : null}
 
         <Box
