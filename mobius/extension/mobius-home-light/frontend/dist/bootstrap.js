@@ -9,14 +9,10 @@
       .replace('<html lang="zh-CN">', '<html lang="zh-CN" class="mobius-light">')
       .replace('<title>莫比乌斯 · Publication</title>', '<title>莫比乌斯 · 明亮版</title>')
       .replace(
-        './assets/mobius-synergy.svg',
-        '/extension/mobius-home-light/mobius-synergy-light.svg?v=1'
-      )
-      .replace(
         '<link rel="stylesheet" href="./styles.css" />',
         '<base href="/extension/mobius-home/" />\n' +
         '  <link rel="stylesheet" href="/extension/mobius-home/styles.css" />\n' +
-        '  <link rel="stylesheet" href="/extension/mobius-home-light/light.css?v=3" />'
+        '  <link rel="stylesheet" href="/extension/mobius-home-light/light.css?v=2" />'
       )
       .replace(
         '<script type="module" src="./main.js"></script>',
