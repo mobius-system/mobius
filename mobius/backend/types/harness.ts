@@ -72,6 +72,18 @@ export interface HarnessEstimateAcknowledgementV1 {
   shown_cost_usd_range: [number, number];
 }
 
+export interface HarnessStoredEstimateAcknowledgementV1 {
+  cost_range: [number, number];
+  duration_range: [number, number];
+  relative_to_single: number;
+}
+
+export interface HarnessRunCreatedEventPayloadV1 {
+  execution_mode: HarnessExecutionMode;
+  policy: HarnessRunPolicyV1;
+  acknowledged_estimate: HarnessStoredEstimateAcknowledgementV1 | null;
+}
+
 export interface HarnessCreateRunRequestV1 extends HarnessEstimateRequestV1 {
   request_id: string;
   acknowledged_estimate?: HarnessEstimateAcknowledgementV1;
