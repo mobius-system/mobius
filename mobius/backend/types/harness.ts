@@ -58,6 +58,8 @@ export interface HarnessRosterDraftMemberV1 {
 export interface HarnessEstimateRequestV1 {
   anchor_type: 'issue';
   issue_id: string;
+  session_name?: string;
+  language?: 'zh' | 'en';
   goal: string;
   execution_mode: HarnessExecutionMode;
   roster: {

@@ -61,6 +61,7 @@ const estimateSchema = {
   required: ['anchor_type', 'issue_id', 'goal', 'execution_mode', 'roster'],
   properties: {
     anchor_type: { const: 'issue' }, issue_id: { type: 'string', minLength: 1, maxLength: 128 },
+    session_name: { type: 'string', minLength: 1, maxLength: 500 }, language: { enum: ['zh', 'en'] },
     goal: { type: 'string', minLength: 1, maxLength: 12000 }, execution_mode: { enum: ['single', 'multi'] },
     roster: {
       type: 'object', additionalProperties: false, required: ['main_member_key', 'members'],

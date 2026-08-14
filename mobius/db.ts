@@ -845,6 +845,13 @@ function migrateHarnessSchema() {
   }
   const migrate = db.transaction(() => {
     db.exec(harnessSql);
+    const runCols = db.prepare('PRAGMA table_info(harness_runs)').all().map((column: any) => column.name);
+    if (!runCols.includes('session_name')) {
+      db.exec('ALTER TABLE harness_runs ADD COLUMN session_name TEXT');
+    }
+    if (!runCols.includes('language')) {
+      db.exec("ALTER TABLE harness_runs ADD COLUMN language TEXT NOT NULL DEFAULT 'zh' CHECK(language IN ('zh','en'))");
+    }
     const profiles = [
       { id: 'system-codex-readonly-v1', name: 'Codex Read-only', backend: 'codex', model: 'codex' },
       { id: 'system-claude-readonly-v1', name: 'Claude Code Read-only', backend: 'claude-code', model: 'opus' },

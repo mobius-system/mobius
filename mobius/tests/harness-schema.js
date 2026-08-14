@@ -55,6 +55,22 @@ assertRequestIdValidation(parseHarnessCreateRunRequest, {
   },
   request_id: 'schema-create-request',
 })
+const namedRun = parseHarnessCreateRunRequest({
+  anchor_type: 'issue',
+  issue_id: 'issue-schema',
+  session_name: 'Review deployment readiness',
+  language: 'en',
+  goal: 'Validate session metadata',
+  execution_mode: 'single',
+  roster: {
+    main_member_key: 'main',
+    members: [{ member_key: 'main', profile_id: 'system-codex-readonly-v1' }],
+  },
+  request_id: 'schema-named-create',
+})
+assert.equal(namedRun.session_name, 'Review deployment readiness')
+assert.equal(namedRun.language, 'en')
+assert.throws(() => parseHarnessCreateRunRequest({ ...namedRun, language: 'fr' }), HarnessSchemaError)
 assertRequestIdValidation(parseHarnessInternalCreateTask, {
   request_id: 'schema-task-request',
   assignee_member_id: 'member-schema',

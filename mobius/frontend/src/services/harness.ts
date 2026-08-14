@@ -1,4 +1,5 @@
 import { api } from '../store'
+import { pollRecursive } from './polling'
 
 export type HarnessExecutionMode = 'single' | 'multi'
 export type HarnessMemberRole = 'main' | 'worker' | 'evaluator'
@@ -32,6 +33,8 @@ export interface HarnessRosterMemberDraft {
 export interface HarnessRunDraft {
   anchor_type: 'issue'
   issue_id: string
+  session_name?: string
+  language?: 'zh' | 'en'
   goal: string
   execution_mode: HarnessExecutionMode
   roster: {
@@ -51,6 +54,8 @@ export interface HarnessEstimate {
 
 export interface HarnessRunRecord {
   id: string
+  session_name?: string | null
+  language?: 'zh' | 'en'
   goal: string
   execution_mode: HarnessExecutionMode
   status: string
@@ -100,6 +105,7 @@ export interface HarnessNodeSnapshot {
   node_type: 'root' | 'worker' | 'evaluator'
   status: string
   model: string
+  session_id?: string | null
   created_at: string
   started_at?: string | null
   completed_at?: string | null
@@ -179,4 +185,33 @@ export function getHarnessRun(runId: string, signal?: AbortSignal): Promise<Harn
 
 export function isHarnessRunTerminal(status: string): boolean {
   return ['completed', 'failed', 'cancelled'].includes(status)
+}
+
+export function waitForHarnessMainSession(runId: string, timeoutMs = 20_000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let stop = () => {}
+    const timeout = window.setTimeout(() => {
+      finish(() => reject(new Error('Harness Run 已创建，主会话仍在启动，请稍后从会话列表进入')))
+    }, timeoutMs)
+    const finish = (callback: () => void) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeout)
+      stop()
+      callback()
+    }
+    stop = pollRecursive(async (signal) => {
+      const snapshot = await getHarnessRun(runId, signal)
+      const mainSessionId = snapshot.nodes.find((node) => node.node_type === 'root')?.session_id
+      if (mainSessionId) {
+        finish(() => resolve(mainSessionId))
+        return
+      }
+      if (isHarnessRunTerminal(snapshot.run.status)) {
+        finish(() => reject(new Error('Harness Run 已结束，但没有生成主会话')))
+        return
+      }
+    }, 500, 5_000, { startImmediately: false })
+  })
 }

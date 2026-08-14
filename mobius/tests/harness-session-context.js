@@ -42,7 +42,11 @@ async function main() {
   })
 
   try {
-    const draft = rosterRequest(fixture, 'single')
+    const draft = {
+      ...rosterRequest(fixture, 'single'),
+      session_name: 'Named Harness session',
+      language: 'en',
+    }
     const roster = resolveRoster(fixture.userId, fixture.projectId, draft)
     const estimate = estimateHarnessRun(
       fixture.userId,
@@ -64,6 +68,9 @@ async function main() {
       nodeId: root.id,
       memberId: root.assignee_member_id,
     })
+    const createdSession = Sessions.findById(session.sessionId)
+    assert.equal(createdSession.name, draft.session_name)
+    assert.equal(createdSession.language, 'en')
     await executor.dispatch({
       runId: snapshot.run.id,
       nodeId: root.id,
