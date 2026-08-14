@@ -1137,8 +1137,9 @@ function scanSessionCronTasksFromTranscript(jsonlPath: string): Array<{ id: stri
   for (const line of raw.split('\n')) {
     if (!line) continue;
     // 廉价预过滤: 只解析可能相关的行, 避免对大转录逐行 JSON.parse.
+    // 注意回报措辞 job/task 两种格式混杂存在 (不同 CC 版本/路径), 必须都兼容.
     if (!line.includes('CronCreate') && !line.includes('CronDelete')
-      && !line.includes('Scheduled recurring job') && !line.includes('Scheduled one-shot job')) continue;
+      && !line.includes('Scheduled recurring') && !line.includes('Scheduled one-shot')) continue;
     let obj: any;
     try { obj = JSON.parse(line); } catch { continue; }
     const blocks = obj?.message?.content;
@@ -1156,7 +1157,7 @@ function scanSessionCronTasksFromTranscript(jsonlPath: string): Array<{ id: stri
       } else if (b.type === 'tool_use' && b.name === 'CronDelete') {
         if (b.input && b.input.id) deletedIds.add(String(b.input.id));
       } else if (b.type === 'tool_result' && typeof b.content === 'string' && b.tool_use_id) {
-        const m = b.content.match(/job ([0-9a-fA-F]{4,16})/);
+        const m = b.content.match(/(?:job|task) ([0-9a-fA-F]{4,16})/);
         if (m) jobIdByToolUse.set(String(b.tool_use_id), m[1]);
       }
     }
