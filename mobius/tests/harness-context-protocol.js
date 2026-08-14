@@ -45,6 +45,8 @@ try {
   assert.match(context.prompt, /<<'MOBIUS_JSON'/)
   assert.match(context.prompt, /Completion is a terminal action/)
   assert.match(context.prompt, /Never probe or test this endpoint with a minimal payload/)
+  assert.match(context.prompt, /any unresolved entry is an acceptance blocker and the server will fail the node/)
+  assert.match(context.prompt, /non-blocking limitations in risks/)
   assert.ok(!context.prompt.includes("--data-binary '{"), 'JSON request bodies must not rely on shell single-quote wrapping')
   assert.match(context.prompt, /prompt_enforced read_only/)
   assert.match(context.prompt, /MOBIUS_HARNESS_TOKEN/)

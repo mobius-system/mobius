@@ -66,6 +66,7 @@ try {
     VALUES (?, ?, ?, ?, 'test.event', ?, '{}')`)
   insertEvent.run(1, 'event_a_1', 'run_a', 'root_a', 'event_req_a_1')
   insertEvent.run(1, 'event_b_1', 'run_b', 'worker_b_node', 'event_req_b_1')
+  assert.throws(() => insertEvent.run(2, 'event_a_duplicate_request', 'run_a', 'root_a', 'event_req_a_1'), /UNIQUE constraint failed/)
   assert.throws(() => insertEvent.run(1, 'event_a_duplicate_seq', 'run_a', 'root_a', 'event_req_a_2'), /UNIQUE constraint failed/)
   assert.throws(() => insertEvent.run(2, 'event_cross_node', 'run_a', 'worker_b_node', 'event_req_a_3'), /FOREIGN KEY constraint failed/)
   assert.throws(
