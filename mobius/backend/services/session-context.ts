@@ -581,12 +581,14 @@ function stripContextItemBodies(sources: any): any {
     description: sk.description || '',
     research_role: sk.research_role || '',
     dirName: sk.dirName || null,
+    contributor_id: sk.contributor_id || null,
   } : sk;
   const mapMemory = (memory: any) => memory && typeof memory === 'object' ? {
     id: memory.id,
     scope: memory.scope,
     name: memory.name,
     description: memory.description || '',
+    contributor_id: memory.contributor_id || null,
   } : memory;
   return {
     ...sources,
@@ -751,6 +753,8 @@ function shapeSkillForContext(s: any): any {
     research_role: s.research_role || '',
     body: s.body || '',
     dirName: parsed ? parsed.dirName : null,
+    // 项目级 skill 的贡献者 (升级/安装人) — 供前端标记「由我升级, 可取消」
+    contributor_id: s.scope === 'project' ? (s.created_by || null) : null,
   };
 }
 
@@ -863,6 +867,7 @@ function gatherIssueSources(user: any, issue: any, sessionExclusions: any): any 
         name: m.name,
         description: m.description,
         body: m.body || '',
+        contributor_id: m.scope === 'project' ? (m.created_by || null) : null,
       }));
   } catch (e) {
     effectiveMemories = [];
@@ -924,6 +929,7 @@ function gatherResearchSources(user: any, research: any, sessionExclusions: any)
         name: m.name,
         description: m.description,
         body: m.body || '',
+        contributor_id: m.scope === 'project' ? (m.created_by || null) : null,
       }));
   } catch (e) {
     effectiveMemories = [];
