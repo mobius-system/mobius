@@ -1727,14 +1727,16 @@ type WizardItem = {
   dirName?: string | null
   research_role?: string
   body?: string
+  contributor_id?: string | null
 }
 
 interface WizardPreview {
   body: string
   sources: {
     skills?: WizardItem[]
-    memories?: { id: string; name: string; description?: string; scope: string }[]
+    memories?: { id: string; name: string; description?: string; scope: string; contributor_id?: string | null }[]
     forced_skill_conflicts?: { id: string; name: string }[]
+    user?: { id?: string; display_name?: string; role?: string } | null
   } | null
   defaults?: SelectionDefaults | null
 }
@@ -2247,6 +2249,11 @@ export function NewSessionModal({
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set())
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set())
   const [previewingSkill, setPreviewingSkill] = useState<WizardItem | null>(null)
+  // 用户级 ↔ 项目级 升级/取消升级 (Skill 与 Memory)
+  const [currentUserId, setCurrentUserId] = useState('')
+  const [scopeBusyId, setScopeBusyId] = useState('')
+  const [scopeNotice, setScopeNotice] = useState('')
+  const [cancelTarget, setCancelTarget] = useState<{ kind: 'skill' | 'memory'; item: WizardItem } | null>(null)
   const { theme } = useStore()
   const isDark = theme !== 'light'
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -2553,6 +2560,7 @@ export function NewSessionModal({
       const p0 = hasInheritedExclusions ? await fetchPreview(defaultSkillEx, defaultMemoryEx, { includeDefaults: true }) : pAll
       setAvailableMemories((pAll.sources?.memories || []) as WizardItem[])
       setAvailableSkills((pAll.sources?.skills || []) as WizardItem[])
+      setCurrentUserId(String(pAll.sources?.user?.id || ''))
       setForcedSkillConflicts((pAll.sources?.forced_skill_conflicts || []) as { id: string; name: string }[])
       setExcludedSkills(defaultSkillEx)
       setExcludedMemories(defaultMemoryEx)
@@ -2578,6 +2586,50 @@ export function NewSessionModal({
     next.has(id) ? next.delete(id) : next.add(id)
     setExcludedMemories(next)
     try { setPreview(await fetchPreview(excludedSkills, next)) } catch { /* 静默 */ }
+  }
+
+  // ---- 用户级 ↔ 项目级: 升级 / 取消升级 -------------------------------------
+  // 升级 = 把我的用户级条目快照复制到项目级 (原件保留); 取消 = 移除项目副本。
+  // 仅在有项目上下文时展示入口; 引导演示模式禁止变更, 避免污染演示项目。
+  const canScopeChange = !!projectId && !isGuidedDemo
+  const refreshWizardSources = async () => {
+    const p = await fetchPreview(excludedSkills, excludedMemories, { includeDefaults: true })
+    setCurrentUserId(String(p?.sources?.user?.id || currentUserId))
+    setAvailableSkills((p?.sources?.skills || []) as WizardItem[])
+    setAvailableMemories((p?.sources?.memories || []) as WizardItem[])
+    setForcedSkillConflicts((p?.sources?.forced_skill_conflicts || []) as { id: string; name: string }[])
+    setPreview(p)
+  }
+  const upgradeScopeItem = async (kind: 'skill' | 'memory', item: WizardItem) => {
+    if (!projectId) return
+    const busyId = `${kind}:${item.id}`
+    setScopeBusyId(busyId); setErr(''); setScopeNotice('')
+    try {
+      await api(kind === 'skill' ? `/api/skills/${encodeURIComponent(item.id)}/move` : `/api/memories/${encodeURIComponent(item.id)}/move`, {
+        method: 'POST',
+        body: JSON.stringify({ project_id: projectId }),
+      })
+      setScopeNotice(`已将「${item.name}」升级为项目级, 对项目成员可见`)
+      await refreshWizardSources()
+    } catch (e: any) {
+      setErr(e?.message || '升级失败')
+    } finally { setScopeBusyId('') }
+  }
+  const cancelUpgradeScopeItem = async () => {
+    if (!cancelTarget || !projectId) return
+    const { kind, item } = cancelTarget
+    const busyId = `${kind}:${item.id}`
+    setScopeBusyId(busyId); setErr(''); setScopeNotice('')
+    try {
+      await api(`/api/projects/${projectId}/${kind === 'skill' ? 'skills' : 'memories'}/${encodeURIComponent(item.id)}/cancel-upgrade`, {
+        method: 'POST',
+      })
+      setCancelTarget(null)
+      setScopeNotice(`已取消「${item.name}」的项目级升级, 你的用户级原件保留`)
+      await refreshWizardSources()
+    } catch (e: any) {
+      setErr(e?.message || '取消升级失败')
+    } finally { setScopeBusyId('') }
   }
 
   const submit = async () => {
@@ -2633,6 +2685,61 @@ export function NewSessionModal({
   const skillCheckedCount = availableSkills.filter(s => matchesRequiredSkill(s) || isChosenAgentSkill(s.id) || (!isMutuallyExclusiveAgentSkill(s.id) && !excludedSkills.has(s.id))).length
   const memoryCheckedCount = availableMemories.filter(m => !excludedMemories.has(m.id)).length
   const projectSkillCount = availableSkills.filter(s => s.scope === 'project').length
+  // 升级/取消升级 分组与匹配 (skill 按 dirName, memory 按名称)
+  const projectSkillItems = availableSkills.filter(s => s.scope === 'project')
+  const userSkillItems = availableSkills.filter(s => s.scope === 'user')
+  const otherSkillItems = availableSkills.filter(s => s.scope !== 'project' && s.scope !== 'user')
+  const projectSkillDirNames = new Set(projectSkillItems.map(s => s.dirName || s.name))
+  const projectMemoryNames = new Set(availableMemories.filter(m => m.scope === 'project').map(m => m.name))
+  const isUpgradedByMe = (item: WizardItem) => !!item.contributor_id && item.contributor_id === currentUserId
+  const skillUpgradeAction = (sk: WizardItem) => {
+    if (!canScopeChange || sk.scope !== 'user') return null
+    const upgraded = projectSkillDirNames.has(sk.dirName || sk.name)
+    if (upgraded) {
+      return <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'rgba(34,197,94,0.12)', color: isDark ? '#86efac' : '#15803d' }}>已升级</span>
+    }
+    const busy = scopeBusyId === `skill:${sk.id}`
+    return (
+      <button type="button" onClick={() => upgradeScopeItem('skill', sk)} disabled={!!scopeBusyId}
+        title="把这条用户级 Skill 复制升级为项目级, 对项目成员可见 (个人原件保留)"
+        className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+        style={{ color: isDark ? '#86efac' : '#15803d', borderColor: isDark ? 'rgba(34,197,94,0.35)' : 'rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)' }}>
+        {busy ? '升级中…' : '升级'}
+      </button>
+    )
+  }
+  const memoryUpgradeAction = (m: WizardItem, openCancel: (item: WizardItem) => void) => {
+    if (!canScopeChange) return null
+    if (m.scope === 'user') {
+      if (projectMemoryNames.has(m.name)) {
+        return <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'rgba(34,197,94,0.12)', color: isDark ? '#86efac' : '#15803d' }}>已升级</span>
+      }
+      const busy = scopeBusyId === `memory:${m.id}`
+      return (
+        <button type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); upgradeScopeItem('memory', m) }}
+          disabled={!!scopeBusyId}
+          title="把这条用户级 Memory 复制升级为项目级, 对项目成员可见 (个人原件保留)"
+          className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+          style={{ color: isDark ? '#86efac' : '#15803d', borderColor: isDark ? 'rgba(34,197,94,0.35)' : 'rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)' }}>
+          {busy ? '升级中…' : '升级'}
+        </button>
+      )
+    }
+    if (m.scope === 'project' && isUpgradedByMe(m)) {
+      return (
+        <button type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); openCancel(m) }}
+          disabled={!!scopeBusyId}
+          title="移除我升级产生的项目级副本 (用户级原件保留)"
+          className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+          style={{ color: isDark ? '#fca5a5' : '#b91c1c', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
+          取消升级
+        </button>
+      )
+    }
+    return null
+  }
   const pcTaskRequiresAimux = workMode === 'pc' || workMode === 'dual'
   const requiredSkillNames = [
     ...(requiredSessionSkill ? [requiredSessionSkill.label || requiredSessionSkill.dirName] : []),
@@ -3030,51 +3137,77 @@ export function NewSessionModal({
                     </div>
                     <div className="rounded-lg p-2.5 space-y-1.5 text-[11px]" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
                       {availableSkills.length === 0 && <p className="italic" style={{ color: isDark ? '#6b7280' : '#64748b' }}>无 (本 {isResearch ? '研究' : '任务'} 未启用任何 Skill)</p>}
-                      {availableSkills.map(sk => {
-                        const required = matchesRequiredSkill(sk)
-                        const locked = required || isChosenAgentSkill(sk.id)
-                        const mutuallyExclusive = isMutuallyExclusiveAgentSkill(sk.id)
-                        const checked = locked || (!mutuallyExclusive && !excludedSkills.has(sk.id))
-                        return (
-                          <div
-                            key={sk.id}
-                            data-tour={(sk.name === 'mobius-extension' || sk.dirName === 'mobius-extension') ? 'session-preview-mobius-extension-skill' : undefined}
-                            className="flex items-start gap-2 hover:bg-[var(--bg-card)] -mx-1 px-1 py-0.5 rounded"
-                          >
-                            <label className={`flex min-w-0 flex-1 items-start gap-2 ${locked ? 'cursor-default' : mutuallyExclusive ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                              <input type="checkbox" checked={checked} disabled={locked || mutuallyExclusive} onChange={() => toggleSkill(sk.id)}
-                                className="mt-0.5 accent-blue-500 cursor-pointer disabled:cursor-not-allowed" />
-                              <div className="min-w-0 flex-1" style={{ opacity: mutuallyExclusive ? 0.38 : checked ? 1 : 0.45 }}>
-                                <div className="truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{sk.name}</div>
-                                {sk.description && <div className="text-[10px] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{sk.description}</div>}
+                      {(() => {
+                        const renderSkillRow = (sk: WizardItem, showUpgrade: boolean) => {
+                          const required = matchesRequiredSkill(sk)
+                          const locked = required || isChosenAgentSkill(sk.id)
+                          const mutuallyExclusive = isMutuallyExclusiveAgentSkill(sk.id)
+                          const checked = locked || (!mutuallyExclusive && !excludedSkills.has(sk.id))
+                          return (
+                            <div
+                              key={sk.id}
+                              data-tour={(sk.name === 'mobius-extension' || sk.dirName === 'mobius-extension') ? 'session-preview-mobius-extension-skill' : undefined}
+                              className="flex items-start gap-2 hover:bg-[var(--bg-card)] -mx-1 px-1 py-0.5 rounded"
+                            >
+                              <label className={`flex min-w-0 flex-1 items-start gap-2 ${locked ? 'cursor-default' : mutuallyExclusive ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                                <input type="checkbox" checked={checked} disabled={locked || mutuallyExclusive} onChange={() => toggleSkill(sk.id)}
+                                  className="mt-0.5 accent-blue-500 cursor-pointer disabled:cursor-not-allowed" />
+                                <div className="min-w-0 flex-1" style={{ opacity: mutuallyExclusive ? 0.38 : checked ? 1 : 0.45 }}>
+                                  <div className="truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{sk.name}</div>
+                                  {sk.description && <div className="text-[10px] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{sk.description}</div>}
+                                </div>
+                              </label>
+                              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                                {locked && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)', color: isDark ? '#93c5fd' : '#1d4ed8' }}>{required ? '必选' : '主Skill'}</span>}
+                                {mutuallyExclusive && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)', color: isDark ? '#fca5a5' : '#dc2626' }}>互斥</span>}
+                                {sk.scope === 'project' && canScopeChange && isUpgradedByMe(sk) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCancelTarget({ kind: 'skill', item: sk })}
+                                    disabled={!!scopeBusyId}
+                                    title="移除我升级产生的项目级副本 (你的用户级原件保留)"
+                                    className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+                                    style={{ color: isDark ? '#fca5a5' : '#b91c1c', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
+                                    取消升级
+                                  </button>
+                                )}
+                                {showUpgrade && skillUpgradeAction(sk)}
+                                <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.1)', color: isDark ? '#c084fc' : '#7e22ce' }}>
+                                  {SCOPE_LABEL_WIZ[sk.scope] || sk.scope}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewingSkill(sk)}
+                                  className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                                  style={{ color: isDark ? '#93c5fd' : '#1d4ed8', borderColor: 'var(--input-border)' }}
+                                  title={`预览 ${sk.name} 的完整 SKILL.md`}
+                                  aria-label={`预览 ${sk.name} 的完整 SKILL.md`}
+                                >
+                                  <Eye className="h-3 w-3" strokeWidth={1.8} />
+                                  <span>预览</span>
+                                </button>
                               </div>
-                            </label>
-                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                              {locked && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)', color: isDark ? '#93c5fd' : '#1d4ed8' }}>{required ? '必选' : '主Skill'}</span>}
-                              {mutuallyExclusive && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)', color: isDark ? '#fca5a5' : '#dc2626' }}>互斥</span>}
-                              <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.1)', color: isDark ? '#c084fc' : '#7e22ce' }}>
-                                {SCOPE_LABEL_WIZ[sk.scope] || sk.scope}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setPreviewingSkill(sk)}
-                                className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)]"
-                                style={{ color: isDark ? '#93c5fd' : '#1d4ed8', borderColor: 'var(--input-border)' }}
-                                title={`预览 ${sk.name} 的完整 SKILL.md`}
-                                aria-label={`预览 ${sk.name} 的完整 SKILL.md`}
-                              >
-                                <Eye className="h-3 w-3" strokeWidth={1.8} />
-                                <span>预览</span>
-                              </button>
                             </div>
-                          </div>
-                        )
-                      })}
+                          )
+                        }
+                        const groupHeader = (label: string, count: number) => count > 0 ? (
+                          <div className="pt-1 pb-0.5 text-[10px] font-medium" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>{label} ({count})</div>
+                        ) : null
+                        return (<>
+                          {groupHeader('项目 Skill', projectSkillItems.length)}
+                          {projectSkillItems.map(sk => renderSkillRow(sk, false))}
+                          {groupHeader('用户 Skill', userSkillItems.length)}
+                          {userSkillItems.map(sk => renderSkillRow(sk, true))}
+                          {groupHeader('内置 / 其他', otherSkillItems.length)}
+                          {otherSkillItems.map(sk => renderSkillRow(sk, false))}
+                        </>)
+                      })()}
                       {availableSkills.length > 0 && !isResearch && (
                         <p className="pt-1 text-[10px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
                           {projectSkillCount > 0
                             ? `已读取当前项目的 ${projectSkillCount} 个项目级 Skill。创建后会固定为本 ${displayEntityLabel} 的快照。`
                             : `这里没有当前项目的项目级 Skill。其他项目里的 Skill 不会进入本 ${displayEntityLabel}；已有 ${displayEntityLabel} 也不会自动补入新添加的 Skill。`}
+                          {canScopeChange && ' 在「用户 Skill」分组点「升级」可把个人 Skill 复制为项目级供项目成员使用; 由你升级的条目可随时「取消升级」。'}
                         </p>
                       )}
                     </div>
@@ -3110,21 +3243,26 @@ export function NewSessionModal({
                             ? 'session-preview-logo-memory'
                             : undefined
                         return (
-                          <label
+                          <div
                             key={m.id}
                             data-tour={memoryTour}
-                            className="flex items-start gap-2 cursor-pointer hover:bg-[var(--bg-card)] -mx-1 px-1 py-0.5 rounded"
+                            className="flex items-start gap-2 hover:bg-[var(--bg-card)] -mx-1 px-1 py-0.5 rounded"
                           >
-                            <input type="checkbox" checked={checked} onChange={() => toggleMemory(m.id)}
-                              className="mt-0.5 accent-blue-500 cursor-pointer" />
-                            <div className="min-w-0 flex-1" style={{ opacity: checked ? 1 : 0.45 }}>
-                              <div className="truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{m.name}</div>
-                              {m.description && <div className="text-[10px] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{m.description}</div>}
+                            <label className="flex min-w-0 flex-1 items-start gap-2 cursor-pointer">
+                              <input type="checkbox" checked={checked} onChange={() => toggleMemory(m.id)}
+                                className="mt-0.5 accent-blue-500 cursor-pointer" />
+                              <div className="min-w-0 flex-1" style={{ opacity: checked ? 1 : 0.45 }}>
+                                <div className="truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{m.name}</div>
+                                {m.description && <div className="text-[10px] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{m.description}</div>}
+                              </div>
+                            </label>
+                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                              {memoryUpgradeAction(m, (item) => setCancelTarget({ kind: 'memory', item }))}
+                              <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)', color: isDark ? '#86efac' : '#15803d' }}>
+                                {SCOPE_LABEL_WIZ[m.scope] || m.scope}
+                              </span>
                             </div>
-                            <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)', color: isDark ? '#86efac' : '#15803d' }}>
-                              {SCOPE_LABEL_WIZ[m.scope] || m.scope}
-                            </span>
-                          </label>
+                          </div>
                         )
                       })}
                     </div>
@@ -3144,6 +3282,12 @@ export function NewSessionModal({
             </div>
 
             {err && <ErrBanner>{err}</ErrBanner>}
+            {scopeNotice && (
+              <div className="mb-2 rounded-lg border px-3 py-1.5 text-[12px]"
+                   style={{ background: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.3)', color: isDark ? '#86efac' : '#15803d' }}>
+                {scopeNotice}
+              </div>
+            )}
             <div className="flex gap-2">
               <button onClick={() => setStep(1)} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
               <button onClick={submit} disabled={loading}
@@ -3162,6 +3306,34 @@ export function NewSessionModal({
           isDark={isDark}
           onClose={() => setPreviewingSkill(null)}
         />
+      )}
+
+      {cancelTarget && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { if (!scopeBusyId) setCancelTarget(null) }} />
+          <div className="relative rounded-2xl p-5 shadow-2xl flex flex-col" style={{
+            width: 'min(460px, calc(100vw - 32px))',
+            background: 'var(--modal-bg)', border: '1px solid var(--border-color)',
+          }}>
+            <h3 className="text-[15px] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+              取消升级「{cancelTarget.item.name}」?
+            </h3>
+            <p className="text-[12px] mb-4 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+              项目级副本将被移除, 你的用户级原件保留。若副本在升级后被编辑过, 这些修改会一并丢弃;
+              已创建的 {displayEntityLabel} 不受影响, 仅影响之后新建的 {displayEntityLabel}。
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setCancelTarget(null)} disabled={!!scopeBusyId}
+                className="flex-1 h-8 rounded-lg text-[12px] border"
+                style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>保留项目级</button>
+              <button type="button" onClick={cancelUpgradeScopeItem} disabled={!!scopeBusyId}
+                className="flex-1 h-8 rounded-lg text-[12px] border transition-colors disabled:opacity-40"
+                style={{ color: '#fca5a5', borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.1)' }}>
+                {scopeBusyId ? '处理中…' : '确认取消升级'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showAgentSkillModal && (
