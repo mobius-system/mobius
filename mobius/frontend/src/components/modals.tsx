@@ -3207,7 +3207,7 @@ export function NewSessionModal({
                 )}
                 <div
                   data-tour="session-model-picker"
-                  className={`grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
+                  className={`grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : supportsHarnessRoster ? 'max-h-[15rem]' : 'max-h-[13.5rem]'}`}
                 >
                   {modelOptions.map(opt => {
                     const active = supportsHarnessRoster ? harnessModelKeys.includes(opt.key) : model === opt.key
