@@ -4,6 +4,7 @@ import type {
   HarnessEstimateRequestV1,
   HarnessNodeResultV1,
   HarnessProfileDefinitionV1,
+  HarnessRunCreatedEventPayloadV1,
   HarnessRunPolicyV1,
   HarnessTaskContractV1,
 } from '../types/harness';
@@ -152,6 +153,26 @@ const runPolicySchema = {
   },
 } as const;
 
+const storedEstimateAcknowledgementSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['cost_range', 'duration_range', 'relative_to_single'],
+  properties: {
+    cost_range: { type: 'array', minItems: 2, maxItems: 2, items: { type: 'number', minimum: 0 } },
+    duration_range: { type: 'array', minItems: 2, maxItems: 2, items: { type: 'number', minimum: 0 } },
+    relative_to_single: { type: 'number', exclusiveMinimum: 0 },
+  },
+} as const;
+
+const runCreatedEventPayloadSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['execution_mode', 'policy', 'acknowledged_estimate'],
+  properties: {
+    execution_mode: { enum: ['single', 'multi'] },
+    policy: runPolicySchema,
+    acknowledged_estimate: { anyOf: [{ type: 'null' }, storedEstimateAcknowledgementSchema] },
+  },
+} as const;
+
 const memberSnapshotSchema = {
   type: 'object', additionalProperties: false,
   required: ['member_key', 'profile_id', 'profile_version', 'definition'],
@@ -206,6 +227,7 @@ const validators = {
   profile: ajv.compile(profileSchema), estimate: ajv.compile(estimateSchema), create: ajv.compile(createSchema),
   task: ajv.compile(taskContractSchema), result: ajv.compile(resultSchema),
   runPolicy: ajv.compile(runPolicySchema), memberSnapshot: ajv.compile(memberSnapshotSchema),
+  runCreatedEventPayload: ajv.compile(runCreatedEventPayloadSchema),
   toolPolicy: ajv.compile(taskContractSchema.properties.tools), record: ajv.compile(recordSchema),
   internalCreateTask: ajv.compile(internalCreateTaskSchema), internalProgress: ajv.compile(internalProgressSchema),
   internalComplete: ajv.compile(internalCompleteSchema), internalFail: ajv.compile(internalFailSchema),
@@ -233,6 +255,7 @@ export const parseHarnessCreateRunRequest = (value: unknown) => parse<HarnessCre
 export const parseHarnessTaskContract = (value: unknown) => parse<HarnessTaskContractV1>(value, 'HarnessTaskContractV1', validators.task);
 export const parseHarnessNodeResult = (value: unknown) => parse<HarnessNodeResultV1>(value, 'HarnessNodeResultV1', validators.result);
 export const parseHarnessRunPolicy = (value: unknown) => parse<HarnessRunPolicyV1>(value, 'HarnessRunPolicyV1', validators.runPolicy);
+export const parseHarnessRunCreatedEventPayload = (value: unknown) => parse<HarnessRunCreatedEventPayloadV1>(value, 'HarnessRunCreatedEventPayloadV1', validators.runCreatedEventPayload);
 export const parseHarnessMemberSnapshot = (value: unknown) => parse<{ member_key: string; profile_id: string; profile_version: number; definition: HarnessProfileDefinitionV1 }>(value, 'HarnessMemberSnapshot', validators.memberSnapshot);
 export const parseHarnessToolPolicy = (value: unknown) => parse<HarnessTaskContractV1['tools']>(value, 'HarnessToolPolicy', validators.toolPolicy);
 export const parseHarnessRecord = (value: unknown) => parse<Record<string, unknown>>(value, 'HarnessRecord', validators.record);

@@ -14,6 +14,7 @@ import {
   parseHarnessNodeResult,
   parseHarnessProfile,
   parseHarnessRecord,
+  parseHarnessRunCreatedEventPayload,
   parseHarnessRunPolicy,
   parseHarnessTaskContract,
   parseHarnessToolPolicy,
@@ -183,23 +184,23 @@ function rootContract(goal: string, profile: ResolvedHarnessProfile, policy: Har
 
 export function createHarnessRun(userId: string, projectId: string, request: HarnessCreateRunRequestV1): AnyRow {
   const runId = deterministicRunId(userId, request.request_id);
-  const existing = db.prepare('SELECT * FROM harness_runs WHERE id = ?').get(runId) as AnyRow | undefined;
-  if (existing) return getHarnessRunSnapshot(runId)!;
-  const policy = normalizedPhase1Policy(request);
-  const members = resolveRoster(userId, projectId, request);
-  let acknowledgedEstimate: { cost_range: [number, number]; duration_range: [number, number]; relative_to_single: number } | null = null;
-  if (request.execution_mode === 'multi') {
-    if (!request.acknowledged_estimate) throw Object.assign(new Error('多 Harness 模式必须先查看并确认成本预估'), { status: 409, code: 'estimate_required' });
-    acknowledgedEstimate = verifyHarnessEstimate(userId, request, policy, request.acknowledged_estimate.estimate_id, request.acknowledged_estimate.shown_cost_usd_range);
-  }
-  const issue = db.prepare('SELECT id, project_id FROM issues WHERE id = ?').get(request.issue_id) as AnyRow | undefined;
-  if (!issue || issue.project_id !== projectId) throw inputError('Issue 不存在或不属于当前项目', 'issue_project_mismatch');
-  const memberRows = members.map((member, index) => ({ ...member, id: shortId('hm'), order: index }));
-  const main = memberRows.find((member) => member.role === 'main')!;
-  const rootNodeId = shortId('hn');
-  const dispatchId = shortId('hd');
-  const marker = `MOBIUS_HARNESS_DISPATCH[${dispatchId}]`;
   const transaction = db.transaction(() => {
+    const existing = db.prepare('SELECT id FROM harness_runs WHERE id = ?').get(runId) as AnyRow | undefined;
+    if (existing) return;
+    const policy = normalizedPhase1Policy(request);
+    const members = resolveRoster(userId, projectId, request);
+    let acknowledgedEstimate: { cost_range: [number, number]; duration_range: [number, number]; relative_to_single: number } | null = null;
+    if (request.execution_mode === 'multi') {
+      if (!request.acknowledged_estimate) throw Object.assign(new Error('多 Harness 模式必须先查看并确认成本预估'), { status: 409, code: 'estimate_required' });
+      acknowledgedEstimate = verifyHarnessEstimate(userId, request, policy, request.acknowledged_estimate.estimate_id, request.acknowledged_estimate.shown_cost_usd_range);
+    }
+    const issue = db.prepare('SELECT id, project_id FROM issues WHERE id = ?').get(request.issue_id) as AnyRow | undefined;
+    if (!issue || issue.project_id !== projectId) throw inputError('Issue 不存在或不属于当前项目', 'issue_project_mismatch');
+    const memberRows = members.map((member, index) => ({ ...member, id: shortId('hm'), order: index }));
+    const main = memberRows.find((member) => member.role === 'main')!;
+    const rootNodeId = shortId('hn');
+    const dispatchId = shortId('hd');
+    const marker = `MOBIUS_HARNESS_DISPATCH[${dispatchId}]`;
     db.prepare(`INSERT INTO harness_runs
       (id, owner_user_id, project_id, anchor_type, issue_id, goal, execution_mode, policy_json)
       VALUES (?, ?, ?, 'issue', ?, ?, ?, ?)`)
@@ -294,12 +295,13 @@ export function getHarnessRunSnapshot(runId: string): AnyRow | null {
   const events: AnyRow[] = (db.prepare('SELECT * FROM harness_events WHERE run_id = ? ORDER BY seq DESC LIMIT 100').all(runId) as AnyRow[]).reverse()
     .map((event) => ({ ...event, payload: parseJsonColumn(event.payload_json, 'harness_events.payload_json', parseHarnessRecord) }));
   const createdEvent = events.find((event) => event.type === 'run.created');
+  const createdPayload = createdEvent ? parseHarnessRunCreatedEventPayload(createdEvent.payload) : null;
   const parsedRun = parseRunRow(run);
   parsedRun.actual_cost_usd = Number(nodes.reduce((sum, node) => sum + Number(node.actual_cost_usd || 0), 0).toFixed(6));
   parsedRun.cost_telemetry_status = nodes.some((node) => node.cost_telemetry_status === 'reported')
     ? 'reported'
     : nodes.some((node) => node.cost_telemetry_status === 'zero_or_unreported') ? 'zero_or_unreported' : 'not_started';
-  parsedRun.acknowledged_estimate = createdEvent?.payload?.acknowledged_estimate || null;
+  parsedRun.acknowledged_estimate = createdPayload?.acknowledged_estimate || null;
   return { run: parsedRun, members, nodes, dependencies, dispatches, events };
 }
 

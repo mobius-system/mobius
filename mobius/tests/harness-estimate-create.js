@@ -55,6 +55,15 @@ try {
     (error) => error.code === 'invalid_harness_schema',
   )
   db.prepare('UPDATE harness_runs SET policy_json=? WHERE id=?').run(originalPolicy, first.run.id)
+  const createdEvent = db.prepare("SELECT event_id, payload_json FROM harness_events WHERE run_id=? AND type='run.created'").get(first.run.id)
+  const malformedCreatedPayload = JSON.parse(createdEvent.payload_json)
+  malformedCreatedPayload.acknowledged_estimate.cost_range = ['not-a-number', 1]
+  db.prepare('UPDATE harness_events SET payload_json=? WHERE event_id=?').run(JSON.stringify(malformedCreatedPayload), createdEvent.event_id)
+  assert.throws(
+    () => getHarnessRunSnapshot(first.run.id),
+    (error) => error.code === 'invalid_harness_schema',
+  )
+  db.prepare('UPDATE harness_events SET payload_json=? WHERE event_id=?').run(createdEvent.payload_json, createdEvent.event_id)
   console.log('harness Phase 1 estimate/create tests passed')
 } finally {
   cleanup(fs, db, tempRoot)
