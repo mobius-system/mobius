@@ -1131,6 +1131,11 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
                     持锁 session: {lock.sessionId || '-'} · pid: {lock.pid || '-'}{lock.acquiredAt ? ` · 接管于 ${formatFeatureTime(lock.acquiredAt)}` : ''}
                   </div>
                 )}
+                {data?.root && (
+                  <div className="mt-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }} title={String(data.root)}>
+                    读取目录{data?.worktree ? ' (worktree)' : ''}: {String(data.root)}
+                  </div>
+                )}
                 <div className="mt-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                   durable 任务持久化在 <code className="font-mono">.claude/scheduled_tasks.json</code>, 由持锁会话触发 (创建者 ≠ 触发者)。session-only 任务 (durable:false) 只存在于本会话内存、Claude 退出即消失, 从会话转录重建, 下方以「仅本会话」标记列出。
                 </div>
@@ -1543,7 +1548,7 @@ export function isSessionNameMuted(_agentStatus?: string | null) {
   return false
 }
 
-function runtimeStatusForSessionList(r: any) {
+export function runtimeStatusForSessionList(r: any) {
   if (r?.failed === true) return 'failed'
   if (r?.alive && r?.working) return 'running'
   if (r?.alive) return 'waiting'
