@@ -43,9 +43,12 @@ function curlCommand(input: { method?: 'GET' | 'POST'; path: string; body?: unkn
     '  --header "Authorization: Bearer ${MOBIUS_HARNESS_TOKEN}" \\',
   ];
   if (input.body !== undefined) {
-    command.push("  --header 'Content-Type: application/json' \\", `  --data-binary '${JSON.stringify(input.body)}' \\`);
+    command.push("  --header 'Content-Type: application/json' \\", '  --data-binary @- \\');
   }
-  command.push(`  '${apiBase()}${input.path}'`);
+  command.push(`  '${apiBase()}${input.path}'${input.body === undefined ? '' : " <<'MOBIUS_JSON'"}`);
+  if (input.body !== undefined) {
+    command.push(JSON.stringify(input.body, null, 2), 'MOBIUS_JSON');
+  }
   return command;
 }
 
@@ -89,7 +92,7 @@ function actionProtocol(input: {
     '```',
     '',
     '### Complete this node',
-    'The criterion_id values below exactly match this node Task Contract. Change scores or unresolved items when evidence does not justify success.',
+    'Completion is a terminal action. Call this endpoint exactly once, only after the full result is ready. Never probe or test this endpoint with a minimal payload. The criterion_id values below exactly match this node Task Contract. Change scores or unresolved items when evidence does not justify success.',
     '```bash',
     ...curlCommand({
       method: 'POST',

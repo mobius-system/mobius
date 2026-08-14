@@ -34,6 +34,10 @@ class MarkerRecoveryExecutor {
   }
 }
 
+class UnknownRecoveryExecutor extends MarkerRecoveryExecutor {
+  async reconcile() { return 'unknown' }
+}
+
 async function main() {
   try {
     const fixture = setup(db, tempRoot, 'recovery')
@@ -77,7 +81,30 @@ async function main() {
     db.prepare(`UPDATE harness_dispatches SET status='dispatching', lease_expires_at='2000-01-01T00:00:00.000Z' WHERE id=?`).run(absentClaim.dispatch.id)
     await reconcileExpiredHarnessDispatch(db.prepare('SELECT * FROM harness_dispatches WHERE id=?').get(absentClaim.dispatch.id), registry)
     assert.equal(db.prepare('SELECT status FROM harness_dispatches WHERE id=?').get(absentClaim.dispatch.id).status, 'failed')
+    assert.equal(db.prepare('SELECT status FROM harness_runs WHERE id=?').get(absentRun.run.id).status, 'failed')
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM harness_dispatches WHERE run_id=?').get(absentRun.run.id).count, 1)
+
+    const uncertainFixture = setup(db, tempRoot, 'recovery_uncertain')
+    const uncertainRun = createHarnessRun(uncertainFixture.userId, uncertainFixture.projectId, {
+      ...rosterRequest(uncertainFixture, 'single'), request_id: 'recovery-uncertain-create',
+    })
+    const uncertainClaim = claimNextHarnessDispatch('crashed-worker-3')
+    db.prepare(`UPDATE harness_dispatches SET status='dispatching',
+      lease_expires_at='2000-01-01T00:00:00.000Z' WHERE id=?`).run(uncertainClaim.dispatch.id)
+    const unknownRegistry = new HarnessExecutorRegistry()
+    unknownRegistry.register(new UnknownRecoveryExecutor())
+    const uncertainDispatch = db.prepare('SELECT * FROM harness_dispatches WHERE id=?').get(uncertainClaim.dispatch.id)
+    await reconcileExpiredHarnessDispatch(uncertainDispatch, unknownRegistry)
+    await reconcileExpiredHarnessDispatch(db.prepare('SELECT * FROM harness_dispatches WHERE id=?').get(uncertainClaim.dispatch.id), unknownRegistry)
+    assert.equal(db.prepare('SELECT status FROM harness_dispatches WHERE id=?').get(uncertainClaim.dispatch.id).status, 'uncertain')
+    const uncertainNode = db.prepare('SELECT status,failure_json FROM harness_nodes WHERE id=?').get(uncertainClaim.node.id)
+    assert.equal(uncertainNode.status, 'orphaned')
+    assert.equal(JSON.parse(uncertainNode.failure_json).category, 'uncertain_dispatch')
+    const failedRun = db.prepare('SELECT status,failure_json FROM harness_runs WHERE id=?').get(uncertainRun.run.id)
+    assert.equal(failedRun.status, 'failed')
+    assert.equal(JSON.parse(failedRun.failure_json).category, 'uncertain_dispatch')
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM harness_events WHERE run_id=? AND type='run.failed'").get(uncertainRun.run.id).count, 1)
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM harness_events WHERE run_id=? AND type='dispatch.uncertain'").get(uncertainRun.run.id).count, 1)
 
     console.log('harness Phase 1 recovery tests passed')
   } finally {

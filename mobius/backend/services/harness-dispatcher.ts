@@ -133,6 +133,7 @@ function finishDelivered(claim: ClaimedHarnessDispatch, executor: HarnessExecuto
 
 function failDispatch(claim: ClaimedHarnessDispatch, error: unknown, uncertain = false): void {
   const detail = error instanceof Error ? error.message : String(error);
+  const failureCategory = uncertain ? 'uncertain_dispatch' : 'backend';
   const transaction = db.transaction(() => {
     const dispatch = db.prepare('SELECT * FROM harness_dispatches WHERE id=?').get(claim.dispatch.id) as AnyRow | undefined;
     const node = db.prepare('SELECT * FROM harness_nodes WHERE id=?').get(claim.node.id) as AnyRow | undefined;
@@ -147,19 +148,19 @@ function failDispatch(claim: ClaimedHarnessDispatch, error: unknown, uncertain =
       db.prepare(`UPDATE harness_nodes SET status=?, failure_json=?, lease_owner=NULL, lease_expires_at=NULL,
         completed_at=CASE WHEN ?='failed' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE completed_at END,
         version=version+1 WHERE id=? AND status='starting'`)
-        .run(target, JSON.stringify({ category: uncertain ? 'uncertain_dispatch' : 'backend', reason: detail }), target, node.id);
+        .run(target, JSON.stringify({ category: failureCategory, reason: detail }), target, node.id);
       appendHarnessEvent({ runId: dispatch.run_id, type: `node.${target}`, fromNodeId: node.id,
-        payload: { node_id: node.id, reason: detail } });
-      if (target === 'failed' && node.node_type === 'root') {
+        payload: { node_id: node.id, category: failureCategory, reason: detail } });
+      if (node.node_type === 'root') {
         const run = db.prepare('SELECT * FROM harness_runs WHERE id=?').get(dispatch.run_id) as AnyRow;
         const runTransition = evaluateRunTransition({ from: run.status, to: 'failed', actor: 'system' });
         if (!runTransition.accepted) throw Object.assign(new Error(runTransition.reason), { code: runTransition.code });
         const runUpdated = db.prepare(`UPDATE harness_runs SET status='failed', failure_json=?, version=version+1,
           updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND version=?`)
-          .run(JSON.stringify({ category: 'backend', reason: detail }), run.id, run.version);
+          .run(JSON.stringify({ category: failureCategory, reason: detail }), run.id, run.version);
         if (runUpdated.changes !== 1) throw Object.assign(new Error('Run 版本冲突，无法记录根节点启动失败'), { code: 'version_conflict' });
         appendHarnessEvent({ runId: run.id, type: 'run.failed', fromNodeId: node.id,
-          payload: { category: 'backend', reason: detail } });
+          payload: { category: failureCategory, reason: detail } });
       }
     }
     appendHarnessEvent({ runId: dispatch.run_id, type: uncertain ? 'dispatch.uncertain' : 'dispatch.failed', fromNodeId: node.id,
