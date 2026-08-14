@@ -247,9 +247,10 @@ export function createHarnessRun(userId: string, projectId: string, request: Har
     const dispatchId = shortId('hd');
     const marker = `MOBIUS_HARNESS_DISPATCH[${dispatchId}]`;
     db.prepare(`INSERT INTO harness_runs
-      (id, owner_user_id, project_id, anchor_type, issue_id, goal, execution_mode, policy_json)
-      VALUES (?, ?, ?, 'issue', ?, ?, ?, ?)`)
-      .run(runId, userId, projectId, request.issue_id, request.goal.trim(), request.execution_mode, JSON.stringify(policy));
+      (id, owner_user_id, project_id, anchor_type, issue_id, session_name, language, goal, execution_mode, policy_json)
+      VALUES (?, ?, ?, 'issue', ?, ?, ?, ?, ?, ?)`)
+      .run(runId, userId, projectId, request.issue_id, request.session_name?.trim() || null,
+        request.language || 'zh', request.goal.trim(), request.execution_mode, JSON.stringify(policy));
     const insertMember = db.prepare(`INSERT INTO harness_run_members
       (id, run_id, profile_id, role, display_name, selection_order, config_snapshot_json)
       VALUES (?, ?, ?, ?, ?, ?, ?)`);
@@ -325,12 +326,16 @@ export function getHarnessRunSnapshot(runId: string): AnyRow | null {
     session_count: Number(row.session_count),
     actual_cost_usd: Number(row.actual_cost_usd),
   }]));
+  const sessionByNode = new Map((db.prepare(`SELECT node_id, session_id FROM harness_node_sessions
+    WHERE status = 'active' AND node_id IN (SELECT id FROM harness_nodes WHERE run_id = ?)
+    ORDER BY generation DESC`).all(runId) as AnyRow[]).map((row) => [row.node_id, row.session_id]));
   const nodes = (db.prepare('SELECT * FROM harness_nodes WHERE run_id = ? ORDER BY depth, created_at').all(runId) as AnyRow[])
     .map(parseNodeRow)
     .map((node) => {
       const telemetry = costByNode.get(node.id) || { session_count: 0, actual_cost_usd: 0 };
       return {
         ...node,
+        session_id: sessionByNode.get(node.id) || null,
         ...telemetry,
         cost_telemetry_status: telemetry.session_count === 0 ? 'not_started' : telemetry.actual_cost_usd > 0 ? 'reported' : 'zero_or_unreported',
       };

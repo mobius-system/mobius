@@ -57,6 +57,8 @@ export function estimateDigest(request: HarnessEstimateRequestV1, policy: Harnes
   return crypto.createHash('sha256').update(stable({
     anchor_type: request.anchor_type,
     issue_id: request.issue_id,
+    session_name: request.session_name?.trim() || null,
+    language: request.language || 'zh',
     goal: request.goal.trim(),
     execution_mode: request.execution_mode,
     roster: request.roster,

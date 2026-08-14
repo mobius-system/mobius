@@ -52,7 +52,11 @@ async function main() {
     assert.equal(invalid.response.status, 400)
     assert.equal(invalid.body.code, 'unique_main_required')
 
-    const draft = rosterRequest(fixture, 'multi')
+    const draft = {
+      ...rosterRequest(fixture, 'multi'),
+      session_name: 'Integrated Multi Harness session',
+      language: 'en',
+    }
     const estimate = await request('/api/harness-runs/estimate', { method: 'POST', body: JSON.stringify(draft) })
     assert.equal(estimate.response.status, 200)
     assert.ok(estimate.body.estimate_id)
@@ -70,6 +74,8 @@ async function main() {
     })
     assert.equal(created.response.status, 201, JSON.stringify(created.body))
     assert.equal(created.body.run.execution_mode, 'multi')
+    assert.equal(created.body.run.session_name, draft.session_name)
+    assert.equal(created.body.run.language, 'en')
     assert.equal(created.body.members.length, 2)
 
     const list = await request(`/api/harness-runs?issue_id=${fixture.issueId}`)
@@ -79,6 +85,8 @@ async function main() {
     const snapshot = await request(`/api/harness-runs/${created.body.run.id}`)
     assert.equal(snapshot.response.status, 200)
     assert.equal(snapshot.body.nodes[0].task_contract.workspace.mode, 'read_only')
+    assert.ok(Object.prototype.hasOwnProperty.call(snapshot.body.nodes[0], 'session_id'))
+    assert.equal(snapshot.body.nodes[0].session_id, null)
     assert.equal(snapshot.body.run.actual_cost_usd, 0)
     assert.equal(snapshot.body.run.cost_telemetry_status, 'not_started')
     assert.deepEqual(snapshot.body.run.acknowledged_estimate.cost_range, estimate.body.estimated_cost_usd_range)

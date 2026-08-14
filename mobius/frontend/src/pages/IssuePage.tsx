@@ -16,7 +16,6 @@ import { TruncatedText } from '../components/truncated-text'
 import { useEditorAvailability } from '../components/workspace/use-editor-availability'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/logo-review-demo'
-import { HarnessRosterPicker } from '../components/harness-roster-picker'
 
 const EditorPane = lazy(() => import('../components/workspace/editor-pane').then(m => ({ default: m.EditorPane })))
 const CodeConversationPane = lazy(() => import('../components/workspace/code-conversation-pane').then(m => ({ default: m.CodeConversationPane })))
@@ -654,9 +653,6 @@ export default function IssuePage() {
             sessions={sortedSessions}
             onNewSession={() => setShowNewSession(true)}
             projectId={projectId}
-            issueId={issueId}
-            issueTitle={issue?.title || ''}
-            issueDescription={issue?.description || ''}
           />
         )}
       </div>
@@ -710,13 +706,10 @@ function WorkspacePaneLoading({ label }: { label: string }) {
 // 会话卡片 (消除冗余). guided-demo / logo-review 的 tour 锚点已迁移到左侧
 // SessionRow (见 IssuePage 渲染处), demo 流程不破坏.
 // =====================================================================
-function SessionOverview({ sessions, onNewSession, projectId, issueId, issueTitle, issueDescription }: {
+function SessionOverview({ sessions, onNewSession, projectId }: {
   sessions: any[]
   onNewSession: () => void
   projectId: string
-  issueId: string
-  issueTitle: string
-  issueDescription: string
 }) {
   // 状态分类复用 agent_status 单一真相源 (与 AgentStatusDot 同源), 颜色语义一致.
   const stats = useMemo(() => {
@@ -781,14 +774,6 @@ function SessionOverview({ sessions, onNewSession, projectId, issueId, issueTitl
               </button>
             </div>
           </>
-        )}
-
-        {projectId && (
-          <HarnessRosterPicker
-            issueId={issueId}
-            projectId={projectId}
-            defaultGoal={[issueTitle, issueDescription].filter(Boolean).join('\n\n')}
-          />
         )}
 
         {projectId && (

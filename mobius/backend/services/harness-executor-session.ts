@@ -59,11 +59,13 @@ export class MobiusSessionHarnessExecutor implements HarnessExecutor {
         project_id: run.project_id,
         scope_type: 'issue',
         user_id: run.owner_user_id,
-        name: `Harness ${node.path} - ${member.display_name}`,
+        name: node.node_type === 'root' && run.session_name
+          ? run.session_name
+          : `${run.session_name || 'Harness'} · ${node.path} - ${member.display_name}`,
         description: `Main/Sub Harness node ${node.id}`,
         session_key: `harness:${run.id}:${node.id}:0`,
         model: profile.model,
-        language: 'zh',
+        language: run.language || 'zh',
       });
     }
     db.prepare(`INSERT OR IGNORE INTO harness_node_sessions
