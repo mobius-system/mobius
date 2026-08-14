@@ -1181,8 +1181,12 @@ router.get('/:id/features/scheduled-tasks', auth, (req: express.Request, res: ex
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
   auditSessionAccess(user, 'read_session_scheduled_tasks', session);
 
+  // 解析会话真实工作目录: worktree 会话 = bind_path/<branch> (TUI cwd 与 .claude/scheduled_tasks.json
+  // 都落在那里), 普通会话 = bind_path. 与 /features/files 同源走 resolveSessionWorkspace, 失败回退裸 bind_path.
+  const workspace = featureWorkspaceForSession(user, sessionId);
   const proj = session.project_id ? (Projects.findById(session.project_id) as any) : null;
-  const root = (proj && proj.bind_path) ? path.resolve(proj.bind_path) : null;
+  const root = workspace.workDir
+    || ((proj && proj.bind_path) ? path.resolve(proj.bind_path) : null);
   if (!root) {
     res.json({ session_id: sessionId, available: false, reason: 'no_bind_path', tasks: [], session_tasks: [], total: 0, lock: null, scheduler_alive: false });
     return;
@@ -1213,6 +1217,7 @@ router.get('/:id/features/scheduled-tasks', auth, (req: express.Request, res: ex
       session_id: sessionId,
       available: true,
       root,
+      worktree: workspace.workspace?.worktree === true,
       tasks,
       session_tasks: sessionTasks,
       total: tasks.length + sessionTasks.length,
