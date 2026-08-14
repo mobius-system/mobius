@@ -1,7 +1,13 @@
 /**
+<<<<<<< HEAD
+ * /model (= /config) flow — pick a model, then create a brand-new session in the
+ * CURRENT task (Issue) with that model. Launched from inside the chat; Esc at any
+ * point before the session is created cancels back to the conversation untouched.
+=======
  * /model flow — pick a model, then create a brand-new session in the CURRENT
  * task (Issue) with that model. Launched from inside the chat; Esc at any point
  * before the session is created cancels back to the conversation untouched.
+>>>>>>> gitlab-mobius/main
  *
  * The active Issue is intentionally NOT changed: /model only swaps the model and
  * starts a fresh session, keeping the current project/task context. Esc-cancel is
@@ -12,6 +18,18 @@
  *   updateIssuePreference — persist the chosen model on the active issue
  * The session body mirrors useChat.ensureSession() so the pc_client_metadata
  * (is_tui, aimux_id, local_path) matches lazily-created sessions exactly.
+<<<<<<< HEAD
+ */
+import React, { useEffect, useRef, useState } from 'react'
+import { Box, Text } from 'ink'
+import { Select, Spinner } from './primitives.js'
+import { MobiusClient } from '../api.js'
+import { cwd, updateIssuePreference, type IssuePreference } from '../config.js'
+import { tuiAimuxIdentifier } from '../aimux.js'
+import type { Issue, SessionModelOption } from '../types.js'
+
+export interface ConfigResult {
+=======
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * /config flow (ReconfigFlow) — full reconfiguration: (1) project → (2) issue →
@@ -33,6 +51,7 @@ import type { Issue, Project, SessionModelOption } from '../types.js'
 export interface ConfigResult {
   /** If set, the project was also changed (from /config full reflow). */
   project?: Project
+>>>>>>> gitlab-mobius/main
   issue: Issue
   prefs: IssuePreference
   sessionId: string
@@ -118,8 +137,13 @@ export function ConfigFlow({ client, issue, onDone }: {
               : <Select
                   items={models.map(o => ({
                     label: `${o.label}${o.key === defaultKey ? ' （默认）' : ''}`,
+<<<<<<< HEAD
+                    value: o.key,
+                    desc: o.sub,
+=======
                     desc: o.sub,
                     value: o.key,
+>>>>>>> gitlab-mobius/main
                   }))}
                   onSelect={key => void pickModel(key)}
                 />}
@@ -129,6 +153,8 @@ export function ConfigFlow({ client, issue, onDone }: {
     </Box>
   )
 }
+<<<<<<< HEAD
+=======
 
 // ── /config: full reconfigure (project → issue → model) ─────────────────────
 
@@ -401,3 +427,4 @@ export function ReconfigFlow({ client, onDone, onCancel }: {
     </Box>
   )
 }
+>>>>>>> gitlab-mobius/main

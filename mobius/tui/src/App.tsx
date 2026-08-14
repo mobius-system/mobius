@@ -127,6 +127,15 @@ export function App() {
     setRoute('chat')
   }
 
+<<<<<<< HEAD
+  // /model (= /config): swap task+model and start a brand-new session. App owns
+  // `ready`, so it folds the ConfigFlow result in and remounts Chat on the fresh
+  // session (resumeSessionId = the eagerly created session).
+  function onReconfigure(result: ConfigResult) {
+    if (!ready || !client) return
+    if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] reconfigure', result.issue.id, result.prefs.model, result.sessionId)
+    setReady({ project: ready.project, issue: result.issue, prefs: result.prefs })
+=======
   // /model or /config: swap task+model (and optionally project for /config)
   // and start a brand-new session. App owns `ready`, so it folds the result in
   // and remounts Chat on the fresh session (resumeSessionId = the eagerly
@@ -135,6 +144,7 @@ export function App() {
     if (!ready || !client) return
     if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] reconfigure', result.project?.id, result.issue.id, result.prefs.model, result.sessionId)
     setReady({ project: result.project || ready.project, issue: result.issue, prefs: result.prefs })
+>>>>>>> gitlab-mobius/main
     setResumeSessionId(result.sessionId)
     setChatKey(k => k + 1)
     setRoute('chat')
@@ -183,7 +193,10 @@ export function App() {
         onClear={onClear}
         onResume={onResume}
         onQuit={onQuit}
+<<<<<<< HEAD
+=======
         onLogout={() => { void onLogout() }}
+>>>>>>> gitlab-mobius/main
         onReconfigure={onReconfigure}
         onConfigCancel={onConfigCancel}
         aimuxStatus={aimuxStatus}
