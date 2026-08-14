@@ -85,6 +85,7 @@ export class MobiusSessionHarnessExecutor implements HarnessExecutor {
       content: prompt,
       requestId: input.requestId,
       source: 'harness.dispatch',
+      initialContextMode: 'provided',
     });
     return {
       delivered: true,

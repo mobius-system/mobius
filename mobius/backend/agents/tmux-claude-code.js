@@ -322,6 +322,14 @@ function normalizeUseProxy(value, fallback = true) {
   return !!fallback
 }
 
+function resolveClaudeProxyMode(useProxy, forceNoProxy = false, fallbackUseProxy = false) {
+  const forced = !!forceNoProxy
+  return {
+    forceNoProxy: forced,
+    useProxy: forced ? false : normalizeUseProxy(useProxy, fallbackUseProxy),
+  }
+}
+
 function proxyPrereqMissing() {
   const missing = []
   if (!fs.existsSync(PROXY_ENVS)) missing.push(`file: ${PROXY_ENVS}`)
@@ -822,16 +830,15 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       if (!this.runtime.has(sessionId) && agentSessionId) {
         const jp = jsonlPathOf(cwd, agentSessionId)
         const finalSettingsPath = settingsPath || null
-        const finalForceNoProxy = !!forceNoProxy || !!finalSettingsPath
-        const finalUseProxy = finalForceNoProxy ? false : normalizeUseProxy(useProxy, false)
+        const proxyMode = resolveClaudeProxyMode(useProxy, forceNoProxy)
         this.runtime.set(sessionId, {
-          agentSessionId, cwd, flagRoot: flagRoot || cwd, model: model || null, useProxy: finalUseProxy,
-          settingsPath: finalSettingsPath, forceNoProxy: finalForceNoProxy, displayName: displayName || null,
+          agentSessionId, cwd, flagRoot: flagRoot || cwd, model: model || null, useProxy: proxyMode.useProxy,
+          settingsPath: finalSettingsPath, forceNoProxy: proxyMode.forceNoProxy, displayName: displayName || null,
           jsonlPath: jp, startedAt: Date.now(), watch: null,
         })
         this._persistEntry(sessionId, {
-          agentSessionId, cwd, flagRoot: flagRoot || cwd, model, useProxy: finalUseProxy,
-          settingsPath: finalSettingsPath, forceNoProxy: finalForceNoProxy, displayName,
+          agentSessionId, cwd, flagRoot: flagRoot || cwd, model, useProxy: proxyMode.useProxy,
+          settingsPath: finalSettingsPath, forceNoProxy: proxyMode.forceNoProxy, displayName,
           jsonlPath: jp, startedAt: Date.now(),
         })
         this._ensureWatcher(sessionId)
@@ -860,17 +867,20 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       const finalCwd = cwd || persisted?.cwd
       const finalAgentSid = agentSessionId || persisted?.agentSessionId
       const finalSettingsPath = settingsPath || persisted?.settingsPath || null
-      const finalForceNoProxy = !!forceNoProxy || !!persisted?.forceNoProxy || !!finalSettingsPath
-      const finalUseProxy = finalForceNoProxy ? false : normalizeUseProxy(useProxy, persisted?.useProxy ?? false)
+      const proxyMode = resolveClaudeProxyMode(
+        useProxy,
+        forceNoProxy || persisted?.forceNoProxy,
+        persisted?.useProxy ?? false,
+      )
       if (!finalCwd) throw new Error(`session ${sessionId} 没活 window 且无 cwd, 无法 spawn`)
       await this._spawnWindow({
         sessionId,
         cwd: finalCwd,
         flagRoot: flagRoot || persisted?.flagRoot || finalCwd,
         model: model || persisted?.model,
-        useProxy: finalUseProxy,
+        useProxy: proxyMode.useProxy,
         settingsPath: finalSettingsPath,
-        forceNoProxy: finalForceNoProxy,
+        forceNoProxy: proxyMode.forceNoProxy,
         displayName: displayName || persisted?.displayName,
         agentSessionId: finalAgentSid,
         aimuxRemoteName,
@@ -981,10 +991,10 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       // settings 文件缺失时直接失败，避免 Claude 用默认配置悄悄启动。
       throw new Error(`Claude Code settings 文件不存在: ${finalSettingsPath}`)
     }
-    // 指定 settings 时强制不走代理；显式 forceNoProxy 也会关闭代理。
-    const finalForceNoProxy = !!forceNoProxy || !!finalSettingsPath
-    // 只有未强制关闭代理时才按调用参数归一化代理开关。
-    const finalUseProxy = finalForceNoProxy ? false : normalizeUseProxy(useProxy, false)
+    // Settings and proxy are independent: the proxy branch passes --settings too.
+    const proxyMode = resolveClaudeProxyMode(useProxy, forceNoProxy)
+    const finalForceNoProxy = proxyMode.forceNoProxy
+    const finalUseProxy = proxyMode.useProxy
     // 需要代理时先检查 proxychains 相关文件和命令是否可用。
     if (finalUseProxy) assertProxyAvailable()
 
@@ -1275,4 +1285,5 @@ module.exports = {
   findClaudeRealTimeInfo,
   detectDangerPermission,
   isCompactCompletionUserEvent,
+  resolveClaudeProxyMode,
 }

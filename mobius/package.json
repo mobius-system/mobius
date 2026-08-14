@@ -50,7 +50,8 @@
     "test:harness-recovery": "node --require tsx/cjs tests/harness-recovery.js",
     "test:harness-routes": "node --require tsx/cjs tests/harness-routes.js",
     "test:harness-context-protocol": "node --require tsx/cjs tests/harness-context-protocol.js",
-    "test:harness": "npm run test:harness-state-machine && npm run test:harness-context-boundary && npm run test:harness-executor && npm run test:harness-db-constraints && npm run test:harness-schema && npm run test:harness-estimate-create && npm run test:harness-access-control && npm run test:harness-internal-actions && npm run test:harness-orchestrator && npm run test:harness-recovery && npm run test:harness-routes && npm run test:harness-context-protocol",
+    "test:harness-session-context": "node --require tsx/cjs tests/harness-session-context.js",
+    "test:harness": "npm run test:harness-state-machine && npm run test:harness-context-boundary && npm run test:harness-executor && npm run test:harness-db-constraints && npm run test:harness-schema && npm run test:harness-estimate-create && npm run test:harness-access-control && npm run test:harness-internal-actions && npm run test:harness-orchestrator && npm run test:harness-recovery && npm run test:harness-routes && npm run test:harness-context-protocol && npm run test:harness-session-context",
     "test:self-test": "node tests/self-test.js",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",
     "start:tsx": "tsx server.js"
