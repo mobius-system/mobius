@@ -187,7 +187,7 @@ export async function deliverClaimedHarnessDispatch(claim: ClaimedHarnessDispatc
     });
     markDispatching.immediate();
     const context = buildHarnessContext(claim.node.id);
-    const prompt = `${context.prompt}\n\nUse the internal API token above for all Harness actions. Do not expose it in your final response.`;
+    const prompt = `${context.prompt}\n\nUse MOBIUS_HARNESS_TOKEN from the process environment for all Harness actions. Do not print or expose it.`;
     const outcome = await executor.dispatch({
       runId: claim.run.id,
       nodeId: claim.node.id,
@@ -195,6 +195,7 @@ export async function deliverClaimedHarnessDispatch(claim: ClaimedHarnessDispatc
       requestId: claim.dispatch.request_id,
       prompt,
       receiptMarker: claim.dispatch.receipt_marker,
+      scopedToken: context.token,
     });
     if (!outcome.delivered || outcome.evidence === 'unknown' || outcome.evidence === 'absent') {
       failDispatch(claim, outcome.detail || 'Executor could not confirm delivery', true);

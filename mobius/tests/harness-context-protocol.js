@@ -42,6 +42,8 @@ try {
   assert.match(context.prompt, /"request_id":"assign-<new-unique-id>"/)
   assert.match(context.prompt, /"workspace":\{"mode":"read_only"\}/)
   assert.match(context.prompt, /prompt_enforced read_only/)
+  assert.match(context.prompt, /MOBIUS_HARNESS_TOKEN/)
+  assert.ok(!context.prompt.includes(context.token), 'Harness context must not embed its scoped token')
   assert.ok(!context.prompt.includes('system-profile-not-selected'), 'Context must expose the locked snapshot, not unrelated profile catalog ids')
   assert.equal(isHarnessLoopbackAddress('127.0.0.1'), true)
   assert.equal(isHarnessLoopbackAddress('::1'), true)
@@ -54,6 +56,7 @@ try {
   assert.ok(!ablated.includes('## Exact internal action protocol'))
   assert.ok(!ablated.includes('## Forced System Skill'))
   assert.match(ablated, /## Task Contract/)
+  assert.ok(!ablated.includes(context.token), 'Ablated Harness context must not embed a scoped token')
   delete process.env.HARNESS_CONTEXT_PROTOCOL_ENABLED
   delete process.env.HARNESS_SYSTEM_SKILLS_ENABLED
   console.log('harness Phase 1 context protocol tests passed')

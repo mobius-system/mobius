@@ -86,6 +86,7 @@ export class MobiusSessionHarnessExecutor implements HarnessExecutor {
       requestId: input.requestId,
       source: 'harness.dispatch',
       initialContextMode: 'provided',
+      runtimeEnv: { MOBIUS_HARNESS_TOKEN: input.scopedToken },
     });
     return {
       delivered: true,

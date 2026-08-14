@@ -2,6 +2,7 @@ const assert = require('assert')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const { spawn } = require('child_process')
 const { DeepSeekHarnessBackend, resolveRuntimeCommand } = require('../backend/agents/deepseek-harness')
 
 async function waitFor(predicate, timeout = 3000) {
@@ -18,11 +19,16 @@ async function main() {
   const runtimeFile = path.join(root, 'runtime.json')
   const archiveFile = path.join(root, 'archive.json')
   const fakeRuntime = path.join(__dirname, 'fixtures', 'deepseek-harness-fake-runtime.js')
+  let capturedSpawnEnv = null
   const backend = new DeepSeekHarnessBackend({
     runtimeFile,
     archiveFile,
     sessionRoot: path.join(root, 'sessions'),
     runtimeOptions: { runtimeCommand: process.execPath, runtimeArgs: [fakeRuntime] },
+    spawn: (command, args, options) => {
+      capturedSpawnEnv = options.env
+      return spawn(command, args, options)
+    },
   })
   const sessionId = `harness-test-${Date.now()}`
   const cwd = path.join(root, 'workspace')
@@ -57,6 +63,7 @@ async function main() {
       prompt: 'hello',
       model: 'deepseek-test',
       harnessSecretValue: 'never-persist-this-secret',
+      runtimeEnv: { MOBIUS_HARNESS_TOKEN: 'never-persist-this-scoped-token' },
       mobiusJsonl: {
         source: 'test',
         kind: 'user_input',
@@ -68,11 +75,13 @@ async function main() {
     assert.equal(backend.isAlive(sessionId), true)
     assert.equal(backend.listSessions().length, 1)
     assert.equal(backend.isJobGoalAccomplished(sessionId), false)
+    assert.equal(capturedSpawnEnv.MOBIUS_HARNESS_TOKEN, 'never-persist-this-scoped-token')
     await waitFor(() => !backend.isWorking(sessionId))
     const history = backend.getHistory(sessionId)
     assert.equal(history.entries.some((entry) => entry.type === 'user' && entry.message?.content === 'hello'), true)
     assert.equal(history.entries.some((entry) => entry.type === 'assistant' && entry.message?.content?.[0]?.text === 'fake answer'), true)
     assert.equal(fs.readFileSync(runtimeFile, 'utf8').includes('never-persist-this-secret'), false)
+    assert.equal(fs.readFileSync(runtimeFile, 'utf8').includes('never-persist-this-scoped-token'), false)
 
     backend.emitter.on(`raw:${sessionId}`, sharedListener)
     unsubscribe = backend.getAgentRawThoughtStream(

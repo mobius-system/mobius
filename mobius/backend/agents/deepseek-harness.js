@@ -20,6 +20,7 @@ const {
 } = require('../utils/session-flags')
 const { recordPromptPaste } = require('../services/agent-prompt-events')
 const { MOBIUS_DATA_PATH } = require('../config')
+const { runtimeEnvEntries } = require('./runtime-env')
 
 const RUNTIME_FILE = path.join(MOBIUS_DATA_PATH, 'deepseek-harness-runtime.json')
 const ARCHIVE_FILE = path.join(MOBIUS_DATA_PATH, 'deepseek-harness-archive.json')
@@ -160,6 +161,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
       DSH_SESSION_ROOT: nativeRoot,
       DSH_MAX_TOKENS_AS_SUCCESS: 'false',
       DSH_SYSTEM_PROMPT: String(opts.systemPrompt || 'You are a coding agent operating inside Mobius.'),
+      ...Object.fromEntries(runtimeEnvEntries(opts.runtimeEnv)),
     }
     const child = this.spawn(command.command, command.args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
     const entry = {

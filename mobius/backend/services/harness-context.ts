@@ -37,10 +37,10 @@ function profileSnapshot(member: AnyRow): AnyRow {
   return parseJsonColumn(member.config_snapshot_json, 'harness_run_members.config_snapshot_json', parseHarnessMemberSnapshot);
 }
 
-function curlCommand(input: { token: string; method?: 'GET' | 'POST'; path: string; body?: unknown }): string[] {
+function curlCommand(input: { method?: 'GET' | 'POST'; path: string; body?: unknown }): string[] {
   const command = [
     `curl --silent --show-error --fail-with-body --request ${input.method || 'GET'} \\`,
-    `  --header 'Authorization: Bearer ${input.token}' \\`,
+    '  --header "Authorization: Bearer ${MOBIUS_HARNESS_TOKEN}" \\',
   ];
   if (input.body !== undefined) {
     command.push("  --header 'Content-Type: application/json' \\", `  --data-binary '${JSON.stringify(input.body)}' \\`);
@@ -54,10 +54,9 @@ function actionProtocol(input: {
   node: AnyRow;
   member: AnyRow;
   members: AnyRow[];
-  token: string;
   contract: AnyRow;
 }): string[] {
-  const { run, node, member, members, token, contract } = input;
+  const { run, node, member, members, contract } = input;
   const requestSuffix = '<new-unique-id>';
   const result = {
     schema_version: '1.1',
@@ -83,7 +82,6 @@ function actionProtocol(input: {
     '### Report progress',
     '```bash',
     ...curlCommand({
-      token,
       method: 'POST',
       path: `/nodes/${node.id}/progress`,
       body: { request_id: `progress-${requestSuffix}`, message: 'Replace with concrete progress.', percent: 50, detail: {} },
@@ -94,7 +92,6 @@ function actionProtocol(input: {
     'The criterion_id values below exactly match this node Task Contract. Change scores or unresolved items when evidence does not justify success.',
     '```bash',
     ...curlCommand({
-      token,
       method: 'POST',
       path: `/nodes/${node.id}/complete`,
       body: { request_id: `complete-${requestSuffix}`, result },
@@ -104,7 +101,6 @@ function actionProtocol(input: {
     '### Fail this node',
     '```bash',
     ...curlCommand({
-      token,
       method: 'POST',
       path: `/nodes/${node.id}/fail`,
       body: { request_id: `fail-${requestSuffix}`, reason: 'Replace with the concrete blocking reason.', category: 'contract', retryable: false },
@@ -117,13 +113,13 @@ function actionProtocol(input: {
       '',
       '### Read the locked roster',
       '```bash',
-      ...curlCommand({ token, path: `/runs/${run.id}/members` }),
+      ...curlCommand({ path: `/runs/${run.id}/members` }),
       '```',
       '',
       '### Read structured events with a cursor and long poll',
       'Set after_seq to the largest seq already processed. The server waits at most 30 seconds and returns an empty events array on timeout.',
       '```bash',
-      ...curlCommand({ token, path: `/runs/${run.id}/events?after_seq=0&wait_ms=30000` }),
+      ...curlCommand({ path: `/runs/${run.id}/events?after_seq=0&wait_ms=30000` }),
       '```',
     );
     if (run.execution_mode === 'multi' && firstSub) {
@@ -133,7 +129,6 @@ function actionProtocol(input: {
         'Use only a member_id from the locked roster. For a later pipeline node, replace dependencies with exactly the preceding Sub node id returned by this action.',
         '```bash',
         ...curlCommand({
-          token,
           method: 'POST',
           path: `/runs/${run.id}/nodes`,
           body: {
@@ -184,7 +179,7 @@ export function buildHarnessContext(nodeId: string): { prompt: string; token: st
     '',
     '## Internal API',
     `Endpoint: ${apiBase()}`,
-    `Authorization: Bearer ${token}`,
+    'Authorization: read MOBIUS_HARNESS_TOKEN from the process environment; never copy a bearer token from this prompt.',
     'Every POST must include a unique request_id. Replaying it returns the original result.',
     '',
   ];
@@ -201,7 +196,7 @@ export function buildHarnessContext(nodeId: string): { prompt: string; token: st
     base.push(`Parent node: ${node.parent_node_id || 'none'}`, 'You cannot access siblings or finalize the Run.', '');
   }
   if (componentEnabled('HARNESS_CONTEXT_PROTOCOL_ENABLED')) {
-    base.push(...actionProtocol({ run, node, member, members, token, contract }), '');
+    base.push(...actionProtocol({ run, node, member, members, contract }), '');
   }
   base.push('## Task Contract', JSON.stringify(contract, null, 2));
   if (componentEnabled('HARNESS_SYSTEM_SKILLS_ENABLED')) {
