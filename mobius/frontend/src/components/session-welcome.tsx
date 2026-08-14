@@ -847,33 +847,36 @@ export function SessionSkillMemoryEditor({
             type="button"
             onClick={() => setActivePanelAndPersist(activePanel === 'skill' ? null : 'skill')}
             aria-pressed={skillActive}
+            title="Skill"
+            aria-label="Skill"
             className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${skillActive ? 'border-blue-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
             style={{ color: skillActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
           >
             <Puzzle className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
-            <span className="btn-label">Skill</span>
           </button>
           <button
             type="button"
             onClick={() => setActivePanelAndPersist(activePanel === 'memory' ? null : 'memory')}
             aria-pressed={memActive}
             data-tour="session-memory-toggle"
+            title="Memory"
+            aria-label="Memory"
             className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${memActive ? 'border-cyan-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
             style={{ color: memActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
           >
             <Brain className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
-            <span className="btn-label">Memory</span>
           </button>
           <button
             type="button"
             onClick={() => setActivePanelAndPersist(gitActive ? null : 'git')}
             aria-pressed={gitActive}
             data-tour="session-git-toggle"
+            title="Git"
+            aria-label="Git"
             className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${gitActive ? 'border-amber-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
             style={{ color: gitActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
           >
             <GitBranch className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" strokeWidth={1.9} />
-            <span className="btn-label">Git</span>
             {gitSources.length > 0 && <span className="text-[9px] text-amber-300">{gitSources.length}</span>}
           </button>
           <button
@@ -881,11 +884,12 @@ export function SessionSkillMemoryEditor({
             onClick={() => setActivePanelAndPersist(portsActive ? null : 'ports')}
             aria-pressed={portsActive}
             data-tour="session-ports-toggle"
+            title="端口"
+            aria-label="端口"
             className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${portsActive ? 'border-emerald-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
             style={{ color: portsActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
           >
             <MonitorPlay className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
-            <span className="btn-label">端口</span>
           </button>
         </div>
 
