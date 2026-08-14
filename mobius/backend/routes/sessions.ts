@@ -93,6 +93,7 @@ function userOf(req: express.Request): AnyUser {
 const PROMPT_STATS_BACKENDS = [
   { key: 'codex', backendName: 'tmux-codex' },
   { key: 'claude_code', backendName: 'tmux-claude-code' },
+  { key: 'deepseek_harness', backendName: 'deepseek-harness' },
 ];
 
 function pidExists(pid: unknown): boolean {
@@ -148,11 +149,14 @@ router.get('/prompt-stats', auth, (req: express.Request, res: express.Response) 
     since: s.since,
     codex: byBackend['tmux-codex'] || 0,
     claude_code: byBackend['tmux-claude-code'] || 0,
+    deepseek_harness: byBackend['deepseek-harness'] || 0,
     codex_5min: byBackend5['tmux-codex'] || 0,
     claude_code_5min: byBackend5['tmux-claude-code'] || 0,
+    deepseek_harness_5min: byBackend5['deepseek-harness'] || 0,
     // Backward-compatible aliases for older frontends.
     codex_2min: byBackend5['tmux-codex'] || 0,
     claude_code_2min: byBackend5['tmux-claude-code'] || 0,
+    deepseek_harness_2min: byBackend5['deepseek-harness'] || 0,
     total: s.total,
     active_tmux_window_count: Object.values(activeWindows).reduce((sum, count) => sum + count, 0),
     active_windows_by_backend: activeWindows,

@@ -7,6 +7,7 @@ type SessionStatusChipProps = {
   working: boolean
   waiting: boolean
   done: boolean
+  alwaysShowLabel?: boolean
 }
 
 function SessionStatusChipInner({
@@ -16,6 +17,7 @@ function SessionStatusChipInner({
   working,
   waiting,
   done,
+  alwaysShowLabel = false,
 }: SessionStatusChipProps) {
   type Tone = 'gray' | 'red' | 'amber' | 'green' | 'sky' | 'emerald'
   let label = '空闲'
@@ -43,13 +45,13 @@ function SessionStatusChipInner({
     <span
       data-tour="session-status"
       aria-label={`会话状态：${label}`}
-      className={`group h-[22px] rounded-full flex-shrink-0 border border-transparent inline-flex items-center gap-0 px-0 transition-all duration-200 hover:gap-1.5 hover:px-2 ${t.text} ${t.hoverBg} ${t.hoverBorder}`}
+      className={`group h-[22px] rounded-full flex-shrink-0 border inline-flex items-center transition-all duration-200 ${alwaysShowLabel ? 'gap-1.5 px-2 border-[var(--border-color)]' : 'gap-0 px-0 border-transparent hover:gap-1.5 hover:px-2'} ${t.text} ${t.hoverBg} ${t.hoverBorder}`}
     >
       <span className="relative inline-flex w-1.5 h-1.5 flex-shrink-0">
         {pulse && <span className={`absolute inset-0 rounded-full ${t.dot} animate-ping opacity-75`} />}
         <span className={`relative inline-flex rounded-full w-1.5 h-1.5 ${t.dot}`} />
       </span>
-      <span className="max-w-0 overflow-hidden whitespace-nowrap text-[11px] opacity-0 transition-all duration-200 group-hover:max-w-16 group-hover:opacity-100">
+      <span className={`overflow-hidden whitespace-nowrap text-[11px] transition-all duration-200 ${alwaysShowLabel ? 'max-w-16 opacity-100' : 'max-w-0 opacity-0 group-hover:max-w-16 group-hover:opacity-100'}`}>
         {label}
       </span>
     </span>

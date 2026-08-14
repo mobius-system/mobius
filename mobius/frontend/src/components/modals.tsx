@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { ArrowLeft, ChevronDown, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
+import { ArrowLeft, Calculator, Check, ChevronDown, Crown, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, Users, X } from 'lucide-react'
 import { useStore, api, APP_DIR } from '../store'
 import { timeAgo } from './shell'
 import { SkillsManager } from './skills'
@@ -46,6 +46,15 @@ import {
 } from './project-page/utils'
 import { markFireAndForgetSession } from '../services/session-start-policy'
 import { pollRecursive } from '../services/polling'
+import {
+  createHarnessRun,
+  estimateHarnessRun,
+  listHarnessProfiles,
+  waitForHarnessMainSession,
+  type HarnessEstimate,
+  type HarnessProfile,
+  type HarnessRunDraft,
+} from '../services/harness'
 
 type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist'
 type IssueVisibility = 'inherit' | ProjectVisibility
@@ -1727,14 +1736,16 @@ type WizardItem = {
   dirName?: string | null
   research_role?: string
   body?: string
+  contributor_id?: string | null
 }
 
 interface WizardPreview {
   body: string
   sources: {
     skills?: WizardItem[]
-    memories?: { id: string; name: string; description?: string; scope: string }[]
+    memories?: { id: string; name: string; description?: string; scope: string; contributor_id?: string | null }[]
     forced_skill_conflicts?: { id: string; name: string }[]
+    user?: { id?: string; display_name?: string; role?: string } | null
   } | null
   defaults?: SelectionDefaults | null
 }
@@ -1853,9 +1864,32 @@ const SESSION_MODEL_LABEL: Record<string, string> = {
 
 // 模型 → 后端渠道
 // 用来对照 /api/sessions/prompt-stats 中的渠道桶
-type PromptBackendKey = 'codex' | 'claude_code'
+type PromptBackendKey = 'codex' | 'claude_code' | 'deepseek_harness'
 function promptBackendKeyForOption(opt?: SessionModelOption | null): PromptBackendKey {
-  return opt?.backend === 'tmux-codex' ? 'codex' : 'claude_code'
+  if (opt?.backend === 'tmux-codex') return 'codex'
+  if (opt?.backend === 'deepseek-harness') return 'deepseek_harness'
+  return 'claude_code'
+}
+
+function harnessBackendForOption(option: SessionModelOption): HarnessProfile['backend'] {
+  if (option.backend === 'tmux-codex') return 'codex'
+  if (option.backend === 'deepseek-harness') return 'deepseek-harness'
+  return 'claude-code'
+}
+
+function harnessMemberKey(profileId: string): string {
+  let hash = 2166136261
+  for (let index = 0; index < profileId.length; index += 1) {
+    hash = Math.imul(hash ^ profileId.charCodeAt(index), 16777619)
+  }
+  const suffix = profileId.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(-12)
+  return `member_${(hash >>> 0).toString(36)}_${suffix}`.slice(0, 32)
+}
+
+function harnessDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds} 秒`
+  const minutes = Math.round(seconds / 60)
+  return minutes < 60 ? `${minutes} 分钟` : `${(minutes / 60).toFixed(1)} 小时`
 }
 type ModelUsageLimit = {
   key: string
@@ -1896,10 +1930,13 @@ type PromptStats = {
   since: string
   codex: number
   claude_code: number
+  deepseek_harness: number
   codex_5min?: number
   claude_code_5min?: number
+  deepseek_harness_5min?: number
   codex_2min: number
   claude_code_2min: number
+  deepseek_harness_2min: number
   total: number
   active_tmux_window_count?: number
   active_windows_by_backend?: Partial<Record<PromptBackendKey, number>>
@@ -1909,6 +1946,7 @@ type PromptStats = {
 const PROMPT_BACKEND_LABEL: Record<PromptBackendKey, string> = {
   codex: 'Codex',
   claude_code: 'Claude Code',
+  deepseek_harness: 'DeepSeek Harness',
 }
 
 // 注入上下文语言: 决定首轮注入的「上下文」段落用中文还是英文. 默认中文.
@@ -2147,6 +2185,8 @@ export function NewSessionModal({
     excluded_memory_ids?: string[]
     chosen_agent_skill_id?: string
     selection_ready?: boolean
+    harness_model_keys?: string[]
+    harness_main_model_key?: string
   }>(DRAFT_KEY)
   const guidedDemo = readActiveGuidedDemo()
   const guidedDemoState = guidedDemo?.state
@@ -2158,7 +2198,7 @@ export function NewSessionModal({
     : (isExtensionProject
       ? { dirName: 'mobius-extension', name: 'mobius-extension', label: 'mobius-extension' }
       : requiredSkill)
-  const [step, setStep] = useState<1 | 2>(1)
+  const [step, setStep] = useState<1 | 2 | 3>(1)
   const [name, setName] = useState(() => isGuidedDemo
     ? (guidedDemoState?.sessionName || '')
     : (initialPreset?.name || initialDraft?.name || defaultName || formatDefaultSessionName(defaultNamePrefix)))
@@ -2213,6 +2253,20 @@ export function NewSessionModal({
     })
   }, [isPresetMode, initialPreset?.model, draftModelDeliberate, scopeLastModel, defaultModel, globalDefaultModel])
   const [model, setModel] = useState<ModelKey>(resolvedDefaultModel)
+  const supportsHarnessRoster = !isPresetMode && !isResearch && !!issueId && !!projectId
+    && !continueFromSessionId && !isGuidedDemo
+  const [harnessProfiles, setHarnessProfiles] = useState<HarnessProfile[]>([])
+  const [harnessProfilesLoading, setHarnessProfilesLoading] = useState(false)
+  const [harnessModelKeys, setHarnessModelKeys] = useState<string[]>(() => {
+    const saved = initialDraft?.harness_model_keys?.filter(Boolean).slice(0, 3)
+    return saved?.length ? saved : [resolvedDefaultModel]
+  })
+  const [harnessMainModelKey, setHarnessMainModelKey] = useState(
+    initialDraft?.harness_main_model_key || harnessModelKeys[0] || resolvedDefaultModel,
+  )
+  const [harnessEstimate, setHarnessEstimate] = useState<HarnessEstimate | null>(null)
+  const [createdHarnessRunId, setCreatedHarnessRunId] = useState('')
+  const harnessRosterTouchedRef = useRef(!!initialDraft?.harness_model_keys?.length)
   useEffect(() => {
     let alive = true
     fetchGlobalDefaultModel().then(v => { if (alive) setGlobalDefaultModel(v) })
@@ -2241,6 +2295,16 @@ export function NewSessionModal({
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set())
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set())
   const [previewingSkill, setPreviewingSkill] = useState<WizardItem | null>(null)
+  // 用户级 ↔ 项目级 升级/取消升级 (Skill 与 Memory)
+  const [currentUserId, setCurrentUserId] = useState('')
+  const [scopeBusyId, setScopeBusyId] = useState('')
+  const [scopeNotice, setScopeNotice] = useState('')
+  const [cancelTarget, setCancelTarget] = useState<{ kind: 'skill' | 'memory'; item: WizardItem } | null>(null)
+  // 项目级目录: resolver 会把与用户级同名的项目副本去重隐藏 (user 优先),
+  // 升级状态必须单独拉项目列表判断, 不能依赖 availableSkills。
+  const [scopeRefreshKey, setScopeRefreshKey] = useState(0)
+  const [projectSkillCatalog, setProjectSkillCatalog] = useState<any[]>([])
+  const [projectMemoryCatalog, setProjectMemoryCatalog] = useState<any[]>([])
   const { theme } = useStore()
   const isDark = theme !== 'light'
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -2276,6 +2340,46 @@ export function NewSessionModal({
   const selectedModelUsage = promptStats?.model_usage_limits?.models?.[model] || null
   const selectedTmuxUsage = selectedModelUsage?.usage?.tmuxWindows || null
   const selectedTmuxWarning = !!selectedTmuxUsage?.warning
+  const harnessProfileByModelKey = useMemo(() => {
+    const result = new Map<string, HarnessProfile>()
+    for (const option of modelOptions) {
+      const backend = harnessBackendForOption(option)
+      const modelValues = new Set(
+        [option.key, option.value, option.model].filter((value): value is string => !!value),
+      )
+      const profile = harnessProfiles.find((item) => item.backend === backend && modelValues.has(item.default_model))
+      if (profile) result.set(option.key, profile)
+    }
+    return result
+  }, [harnessProfiles, modelOptions])
+  const isMultiHarness = supportsHarnessRoster && harnessModelKeys.length > 1
+  const selectedHarnessOptions = useMemo(
+    () => harnessModelKeys.map((key) => modelOptions.find((option) => option.key === key)).filter(Boolean) as SessionModelOption[],
+    [harnessModelKeys, modelOptions],
+  )
+  const selectedHarnessProfiles = useMemo(
+    () => harnessModelKeys.map((key) => harnessProfileByModelKey.get(key)).filter(Boolean) as HarnessProfile[],
+    [harnessModelKeys, harnessProfileByModelKey],
+  )
+
+  const buildHarnessDraft = useCallback((): HarnessRunDraft => ({
+    anchor_type: 'issue',
+    issue_id: issueId || '',
+    session_name: name.trim(),
+    language,
+    excluded_skill_ids: Array.from(excludedSkills),
+    excluded_memory_ids: Array.from(excludedMemories),
+    goal: appendAttachmentsToDesc(submittedDescription, attachments).trim(),
+    execution_mode: 'multi',
+    roster: {
+      main_member_key: harnessMemberKey(harnessProfileByModelKey.get(harnessMainModelKey)?.id || ''),
+      members: selectedHarnessProfiles.map((profile) => ({
+        member_key: harnessMemberKey(profile.id),
+        profile_id: profile.id,
+        ...(profile.id !== harnessProfileByModelKey.get(harnessMainModelKey)?.id ? { purpose: 'worker' as const } : {}),
+      })),
+    },
+  }), [attachments, excludedMemories, excludedSkills, harnessMainModelKey, harnessProfileByModelKey, issueId, language, name, selectedHarnessProfiles, submittedDescription])
 
   useEffect(() => {
     let alive = true
@@ -2291,6 +2395,48 @@ export function NewSessionModal({
       .catch(() => { if (alive) setModelOptions(FALLBACK_SESSION_MODEL_CHOICES) })
     return () => { alive = false }
   }, [])
+
+  useEffect(() => {
+    if (!supportsHarnessRoster || !projectId) return
+    const controller = new AbortController()
+    setHarnessProfilesLoading(true)
+    listHarnessProfiles(projectId, controller.signal)
+      .then((rows) => setHarnessProfiles(Array.isArray(rows) ? rows : []))
+      .catch((cause: any) => {
+        if (cause?.name !== 'AbortError') setErr(cause?.message || 'Harness Agent 加载失败')
+      })
+      .finally(() => { if (!controller.signal.aborted) setHarnessProfilesLoading(false) })
+    return () => controller.abort()
+  }, [projectId, supportsHarnessRoster])
+
+  useEffect(() => {
+    if (!supportsHarnessRoster || harnessRosterTouchedRef.current) return
+    setHarnessModelKeys([model])
+    setHarnessMainModelKey(model)
+    setHarnessEstimate(null)
+  }, [model, supportsHarnessRoster])
+
+  useEffect(() => {
+    if (!supportsHarnessRoster || modelOptions.length === 0) return
+    const available = new Set(modelOptions.map((option) => option.key))
+    setHarnessModelKeys((current) => {
+      const next = current.filter((key) => available.has(key)).slice(0, 3)
+      if (next.length > 0) return next
+      return [modelOptions[0].key]
+    })
+  }, [modelOptions, supportsHarnessRoster])
+
+  useEffect(() => {
+    if (!supportsHarnessRoster || harnessModelKeys.length === 0) return
+    const nextMain = harnessModelKeys.includes(harnessMainModelKey) ? harnessMainModelKey : harnessModelKeys[0]
+    if (nextMain !== harnessMainModelKey) setHarnessMainModelKey(nextMain)
+    if (model !== nextMain) setModel(nextMain)
+  }, [harnessMainModelKey, harnessModelKeys, model, supportsHarnessRoster])
+
+  useEffect(() => {
+    setHarnessEstimate(null)
+    setCreatedHarnessRunId('')
+  }, [attachments, desc, excludedMemories, excludedSkills, harnessMainModelKey, harnessModelKeys, language, name])
 
   useEffect(() => {
     let alive = true
@@ -2314,10 +2460,12 @@ export function NewSessionModal({
         excluded_skill_ids: Array.from(excludedSkills),
         excluded_memory_ids: Array.from(excludedMemories),
         chosen_agent_skill_id: chosenAgentSkill?.id || '',
-        selection_ready: !!initialDraft?.selection_ready || step === 2 || !!preview,
+        selection_ready: !!initialDraft?.selection_ready || step >= 2 || !!preview,
+        harness_model_keys: supportsHarnessRoster ? harnessModelKeys : undefined,
+        harness_main_model_key: supportsHarnessRoster ? harnessMainModelKey : undefined,
       }, { minChars: 1 })
     }
-  }, [DRAFT_KEY, isGuidedDemo, isPresetMode, name, desc, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
+  }, [DRAFT_KEY, isGuidedDemo, isPresetMode, name, desc, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready, supportsHarnessRoster, harnessModelKeys, harnessMainModelKey])
 
   const modelUsageFor = useCallback((modelKey: ModelKey) => {
     return promptStats?.model_usage_limits?.models?.[modelKey] || null
@@ -2395,6 +2543,62 @@ export function NewSessionModal({
   const chooseModel = (nextModel: ModelKey) => {
     setModel(nextModel)
     modelUserTouchedRef.current = true
+    setErr('')
+  }
+
+  const toggleHarnessModel = (option: SessionModelOption) => {
+    if (!supportsHarnessRoster) {
+      chooseModel(option.key)
+      return
+    }
+    const selected = harnessModelKeys.includes(option.key)
+    if (selected && harnessModelKeys.length === 1) {
+      setErr('至少保留 1 个 Harness Agent')
+      return
+    }
+    if (!selected) {
+      if (harnessModelKeys.length >= 3) {
+        setErr('Multi Harness 最多选择 3 个 Harness Agent')
+        return
+      }
+      const nextKeys = [...harnessModelKeys, option.key]
+      if (nextKeys.length > 1) {
+        const unavailable = nextKeys.find((key) => !harnessProfileByModelKey.has(key))
+        if (unavailable) {
+          const unavailableOption = modelOptions.find((item) => item.key === unavailable)
+          setErr(`${unavailableOption?.title || unavailable} 暂无可用的 Harness Profile，不能加入 Multi Harness`)
+          return
+        }
+      }
+      harnessRosterTouchedRef.current = true
+      setHarnessModelKeys(nextKeys)
+      setHarnessEstimate(null)
+      setErr('')
+      return
+    }
+    const nextKeys = harnessModelKeys.filter((key) => key !== option.key)
+    const nextMain = option.key === harnessMainModelKey ? nextKeys[0] : harnessMainModelKey
+    harnessRosterTouchedRef.current = true
+    setHarnessModelKeys(nextKeys)
+    setHarnessMainModelKey(nextMain)
+    setModel(nextMain)
+    modelUserTouchedRef.current = true
+    setHarnessEstimate(null)
+    setErr('')
+  }
+
+  const chooseHarnessMain = (option: SessionModelOption) => {
+    if (!harnessModelKeys.includes(option.key)) return
+    const profile = harnessProfileByModelKey.get(option.key)
+    if (!profile?.definition.capabilities.can_main) {
+      setErr(`${option.title} 不能担任 Main Agent`)
+      return
+    }
+    harnessRosterTouchedRef.current = true
+    setHarnessMainModelKey(option.key)
+    setModel(option.key)
+    modelUserTouchedRef.current = true
+    setHarnessEstimate(null)
     setErr('')
   }
 
@@ -2485,7 +2689,26 @@ export function NewSessionModal({
   const goPreview = async () => {
     if (!name.trim()) { setErr(`请填写${isResearch ? ' ' : ''}${entityNameLabel}`); return }
     if (!deferPurpose && !desc.trim()) { setErr(`请填写${isResearch ? ' ' : ''}${entityPurposeLabel}`); return }
-    if (!isPresetMode && isModelQuotaBlocked(model)) {
+    if (isMultiHarness) {
+      const blockedOption = selectedHarnessOptions.find((option) => isModelQuotaBlocked(option.key))
+      if (blockedOption) {
+        setErr(modelQuotaError(blockedOption.key))
+        return
+      }
+      if (harnessProfilesLoading) {
+        setErr('Harness Agent 仍在加载，请稍候再试')
+        return
+      }
+      if (selectedHarnessProfiles.length !== harnessModelKeys.length) {
+        setErr('所选 Agent 中有成员缺少 Harness Profile，请调整阵容')
+        return
+      }
+      const mainProfile = harnessProfileByModelKey.get(harnessMainModelKey)
+      if (!mainProfile || !mainProfile.definition.capabilities.can_main) {
+        setErr('请选择一个可担任 Main 的 Harness Agent')
+        return
+      }
+    } else if (!isPresetMode && isModelQuotaBlocked(model)) {
       setErr(modelQuotaError(model))
       return
     }
@@ -2547,6 +2770,7 @@ export function NewSessionModal({
       const p0 = hasInheritedExclusions ? await fetchPreview(defaultSkillEx, defaultMemoryEx, { includeDefaults: true }) : pAll
       setAvailableMemories((pAll.sources?.memories || []) as WizardItem[])
       setAvailableSkills((pAll.sources?.skills || []) as WizardItem[])
+      setCurrentUserId(String(pAll.sources?.user?.id || ''))
       setForcedSkillConflicts((pAll.sources?.forced_skill_conflicts || []) as { id: string; name: string }[])
       setExcludedSkills(defaultSkillEx)
       setExcludedMemories(defaultMemoryEx)
@@ -2555,6 +2779,22 @@ export function NewSessionModal({
       setErr(e?.message || '加载预览失败')
       setStep(1)
     } finally { setPreviewLoading(false) }
+  }
+
+  const goHarnessConfirmation = async () => {
+    if (!isMultiHarness) return
+    setErr('')
+    setHarnessEstimate(null)
+    setStep(3)
+    setPreviewLoading(true)
+    try {
+      setHarnessEstimate(await estimateHarnessRun(buildHarnessDraft()))
+    } catch (cause: any) {
+      setErr(cause?.message || '无法生成 Multi Harness 预估')
+      setStep(2)
+    } finally {
+      setPreviewLoading(false)
+    }
   }
 
   // Step 2 内勾选状态变更 → 即时拉新 preview, 不阻塞 UI (lastSent 防竞态)
@@ -2574,8 +2814,67 @@ export function NewSessionModal({
     try { setPreview(await fetchPreview(excludedSkills, next)) } catch { /* 静默 */ }
   }
 
+  // ---- 用户级 ↔ 项目级: 升级 / 取消升级 -------------------------------------
+  // 升级 = 把我的用户级条目快照复制到项目级 (原件保留); 取消 = 移除项目副本。
+  // 仅在有项目上下文时展示入口; 引导演示模式禁止变更, 避免污染演示项目。
+  const canScopeChange = !!projectId && !isGuidedDemo
+  // 拉项目级 Skill/Memory 目录, 用于判断「已升级 / 可取消升级」(见上方注释)。
+  useEffect(() => {
+    if (!canScopeChange || !projectId) { setProjectSkillCatalog([]); setProjectMemoryCatalog([]); return }
+    let alive = true
+    Promise.all([
+      api(`/api/projects/${projectId}/skills`).catch(() => []),
+      api(`/api/projects/${projectId}/memories`).catch(() => []),
+    ]).then(([skills, memories]: any[]) => {
+      if (!alive) return
+      setProjectSkillCatalog(Array.isArray(skills) ? skills : [])
+      setProjectMemoryCatalog(Array.isArray(memories) ? memories : [])
+    })
+    return () => { alive = false }
+  }, [canScopeChange, projectId, scopeRefreshKey])
+  const refreshWizardSources = async () => {
+    const p = await fetchPreview(excludedSkills, excludedMemories, { includeDefaults: true })
+    setCurrentUserId(String(p?.sources?.user?.id || currentUserId))
+    setAvailableSkills((p?.sources?.skills || []) as WizardItem[])
+    setAvailableMemories((p?.sources?.memories || []) as WizardItem[])
+    setForcedSkillConflicts((p?.sources?.forced_skill_conflicts || []) as { id: string; name: string }[])
+    setPreview(p)
+    setScopeRefreshKey(k => k + 1)
+  }
+  const upgradeScopeItem = async (kind: 'skill' | 'memory', item: WizardItem) => {
+    if (!projectId) return
+    const busyId = `${kind}:${item.id}`
+    setScopeBusyId(busyId); setErr(''); setScopeNotice('')
+    try {
+      await api(kind === 'skill' ? `/api/skills/${encodeURIComponent(item.id)}/move` : `/api/memories/${encodeURIComponent(item.id)}/move`, {
+        method: 'POST',
+        body: JSON.stringify({ project_id: projectId }),
+      })
+      setScopeNotice(`已将「${item.name}」升级为项目级, 对项目成员可见`)
+      await refreshWizardSources()
+    } catch (e: any) {
+      setErr(e?.message || '升级失败')
+    } finally { setScopeBusyId('') }
+  }
+  const cancelUpgradeScopeItem = async () => {
+    if (!cancelTarget || !projectId) return
+    const { kind, item } = cancelTarget
+    const busyId = `${kind}:${item.id}`
+    setScopeBusyId(busyId); setErr(''); setScopeNotice('')
+    try {
+      await api(`/api/projects/${projectId}/${kind === 'skill' ? 'skills' : 'memories'}/${encodeURIComponent(item.id)}/cancel-upgrade`, {
+        method: 'POST',
+      })
+      setCancelTarget(null)
+      setScopeNotice(`已取消「${item.name}」的项目级升级, 你的用户级原件保留`)
+      await refreshWizardSources()
+    } catch (e: any) {
+      setErr(e?.message || '取消升级失败')
+    } finally { setScopeBusyId('') }
+  }
+
   const submit = async () => {
-    if (!isPresetMode && isModelQuotaBlocked(model)) {
+    if (!isPresetMode && !isMultiHarness && isModelQuotaBlocked(model)) {
       setErr(modelQuotaError(model))
       return
     }
@@ -2604,6 +2903,19 @@ export function NewSessionModal({
     }
     setLoading(true); setErr('')
     try {
+      if (isMultiHarness) {
+        if (!harnessEstimate) throw new Error('阵容预估已失效，请返回上一步重新确认')
+        let runId = createdHarnessRunId
+        if (!runId) {
+          const snapshot = await createHarnessRun(buildHarnessDraft(), harnessEstimate)
+          runId = snapshot.run.id
+          setCreatedHarnessRunId(runId)
+        }
+        const sessionId = await waitForHarnessMainSession(runId)
+        draftClear(DRAFT_KEY)
+        onCreated({ session_id: sessionId, harness_run_id: runId })
+        return
+      }
       const endpoint = isResearch ? `/api/researches/${researchId}/sessions` : `/api/issues/${issueId}/sessions`
       const s = await api(endpoint, {
         method: 'POST',
@@ -2627,12 +2939,102 @@ export function NewSessionModal({
   const skillCheckedCount = availableSkills.filter(s => matchesRequiredSkill(s) || isChosenAgentSkill(s.id) || (!isMutuallyExclusiveAgentSkill(s.id) && !excludedSkills.has(s.id))).length
   const memoryCheckedCount = availableMemories.filter(m => !excludedMemories.has(m.id)).length
   const projectSkillCount = availableSkills.filter(s => s.scope === 'project').length
+  // 升级/取消升级 分组与匹配: skill 按 id 里的 dirName, memory 按名称 (副本保留原名)。
+  const projectSkillItems = availableSkills.filter(s => s.scope === 'project')
+  const userSkillItems = availableSkills.filter(s => s.scope === 'user')
+  const otherSkillItems = availableSkills.filter(s => s.scope !== 'project' && s.scope !== 'user')
+  const scopeIdDir = (id: string) => {
+    const parts = String(id || '').split(':')
+    if (parts[0] === 'project') return parts.slice(3).join(':')
+    if (parts[0] === 'user') return parts.slice(2).join(':')
+    return null
+  }
+  // dirName → 我升级产生的项目副本 (catalog 行, 含项目 id)
+  const myUpgradedSkillByDir = new Map<string, any>()
+  const allUpgradedSkillDirs = new Set<string>()
+  for (const s of projectSkillCatalog) {
+    const dir = scopeIdDir(s.id)
+    if (!dir) continue
+    allUpgradedSkillDirs.add(dir)
+    if (String(s.created_by || '') === currentUserId) myUpgradedSkillByDir.set(dir, s)
+  }
+  const myUpgradedMemoryByName = new Map<string, any>()
+  const allUpgradedMemoryNames = new Set<string>()
+  for (const m of projectMemoryCatalog) {
+    allUpgradedMemoryNames.add(m.name)
+    if (String(m.created_by || '') === currentUserId) myUpgradedMemoryByName.set(m.name, m)
+  }
+  const isUpgradedByMe = (item: WizardItem) => !!item.contributor_id && item.contributor_id === currentUserId
+  const cancelUpgradeButton = (kind: 'skill' | 'memory', projectIdCopyId: string, name: string) => (
+    <button
+      type="button"
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCancelTarget({ kind, item: { id: projectIdCopyId, name, scope: 'project' } }) }}
+      disabled={!!scopeBusyId}
+      title="移除我升级产生的项目级副本 (你的用户级原件保留)"
+      className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+      style={{ color: isDark ? '#fca5a5' : '#b91c1c', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
+      取消升级
+    </button>
+  )
+  const upgradedChip = (label = '已升级') => (
+    <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'rgba(34,197,94,0.12)', color: isDark ? '#86efac' : '#15803d' }}>{label}</span>
+  )
+  const skillUpgradeAction = (sk: WizardItem) => {
+    if (!canScopeChange || sk.scope !== 'user') return null
+    const dir = sk.dirName || scopeIdDir(sk.id) || sk.name
+    const mine = myUpgradedSkillByDir.get(dir)
+    if (mine) {
+      return (<>
+        {upgradedChip()}
+        {cancelUpgradeButton('skill', mine.id, sk.name)}
+      </>)
+    }
+    if (allUpgradedSkillDirs.has(dir)) return upgradedChip('项目已有同名')
+    const busy = scopeBusyId === `skill:${sk.id}`
+    return (
+      <button type="button" onClick={() => upgradeScopeItem('skill', sk)} disabled={!!scopeBusyId}
+        title="把这条用户级 Skill 复制升级为项目级, 对项目成员可见 (个人原件保留)"
+        className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+        style={{ color: isDark ? '#86efac' : '#15803d', borderColor: isDark ? 'rgba(34,197,94,0.35)' : 'rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)' }}>
+        {busy ? '升级中…' : '升级'}
+      </button>
+    )
+  }
+  const memoryUpgradeAction = (m: WizardItem) => {
+    if (!canScopeChange) return null
+    if (m.scope === 'user') {
+      const mine = myUpgradedMemoryByName.get(m.name)
+      if (mine) {
+        return (<>
+          {upgradedChip()}
+          {cancelUpgradeButton('memory', mine.id, m.name)}
+        </>)
+      }
+      if (allUpgradedMemoryNames.has(m.name)) return upgradedChip('项目已有同名')
+      const busy = scopeBusyId === `memory:${m.id}`
+      return (
+        <button type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); upgradeScopeItem('memory', m) }}
+          disabled={!!scopeBusyId}
+          title="把这条用户级 Memory 复制升级为项目级, 对项目成员可见 (个人原件保留)"
+          className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+          style={{ color: isDark ? '#86efac' : '#15803d', borderColor: isDark ? 'rgba(34,197,94,0.35)' : 'rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)' }}>
+          {busy ? '升级中…' : '升级'}
+        </button>
+      )
+    }
+    if (m.scope === 'project' && isUpgradedByMe(m)) {
+      return cancelUpgradeButton('memory', m.id, m.name)
+    }
+    return null
+  }
   const pcTaskRequiresAimux = workMode === 'pc' || workMode === 'dual'
   const requiredSkillNames = [
     ...(requiredSessionSkill ? [requiredSessionSkill.label || requiredSessionSkill.dirName] : []),
     ...(pcTaskRequiresAimux ? ['mobius-aimux'] : []),
   ].filter(Boolean)
   const previewBodyText = typeof preview?.body === 'string' ? preview.body : ''
+  const totalSteps = isMultiHarness ? 3 : 2
 
   // 目的/描述输入框: preset 模板模式保留自带边框(裸); 正常创建模式下边框透明,
   // 交给 AttachmentComposer 的整合容器统一包边, 使附件芯片/上传按钮与输入框融为一体.
@@ -2669,7 +3071,11 @@ export function NewSessionModal({
     <div className={`fixed inset-0 ${modalZIndexClass} flex items-center justify-center`}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div data-tour="session-modal" className="relative rounded-2xl p-6 shadow-2xl flex flex-col" style={{
-        width: step === 2 ? 'min(1120px, calc(100vw - 32px))' : 'min(560px, calc(100vw - 32px))',
+        width: step === 2
+          ? 'min(1120px, calc(100vw - 32px))'
+          : step === 3
+            ? 'min(720px, calc(100vw - 32px))'
+            : 'min(560px, calc(100vw - 32px))',
         height: step === 2 ? 'min(760px, calc(100vh - 32px))' : undefined,
         maxHeight: 'calc(100vh - 32px)',
         background: 'var(--modal-bg)',
@@ -2682,7 +3088,7 @@ export function NewSessionModal({
           >
             <Loader2 className="h-9 w-9 animate-spin" style={{ color: '#60a5fa' }} strokeWidth={1.8} />
             <div className="text-[14px] font-medium" style={{ color: '#f1f5f9' }}>
-              {isPresetMode ? '正在保存预设，请稍候…' : '正在创建会话，请稍候…'}
+              {isPresetMode ? '正在保存预设，请稍候…' : isMultiHarness ? '正在创建 Multi Harness 主会话…' : '正在创建会话，请稍候…'}
             </div>
             {!isPresetMode && continueFromSessionId && (
               <div className="text-[11px]" style={{ color: '#cbd5e1' }}>正在生成转接记录并启动新会话，完成后自动进入</div>
@@ -2691,12 +3097,13 @@ export function NewSessionModal({
         )}
         <div className="flex items-center justify-between gap-3 mb-4">
           <h3 className="text-[15px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
-            {modalTitle || (isPresetMode ? '会话预设菜单' : `新建 ${displayEntityLabel}`)} · {step === 1 ? '第 1 步 / 共 2 步' : '第 2 步 / 共 2 步'}
+            {modalTitle || (isPresetMode ? '会话预设菜单' : `新建 ${displayEntityLabel}`)} · 第 {step} 步 / 共 {totalSteps} 步
           </h3>
           <div className="flex shrink-0 items-center gap-2">
             <div className="flex items-center gap-1.5">
-              <div className="w-6 h-1 rounded" style={{ background: step >= 1 ? '#3b82f6' : (isDark ? '#374151' : '#e5e7eb') }} />
-              <div className="w-6 h-1 rounded" style={{ background: step >= 2 ? '#3b82f6' : (isDark ? '#374151' : '#e5e7eb') }} />
+              {Array.from({ length: totalSteps }, (_, index) => (
+                <div key={index} className="w-6 h-1 rounded" style={{ background: step >= index + 1 ? '#3b82f6' : (isDark ? '#374151' : '#e5e7eb') }} />
+              ))}
             </div>
             <button
               type="button"
@@ -2716,7 +3123,9 @@ export function NewSessionModal({
             <p className="text-[12px] mb-3 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
               {isPresetMode
                 ? '这里只保存未来创建会话时要使用的参数，不会立即创建真正的会话。'
-                : `${displayEntityLabel} 创建后, 当前的 Skill 与 Memory 会作为快照定型, 之后修改不影响此 ${displayEntityLabel}.`}
+                : isMultiHarness
+                  ? `已自动启用 Multi Harness。Main 负责拆解和汇总，其余 Agent 以只读方式协作。`
+                  : `${displayEntityLabel} 创建后, 当前的 Skill 与 Memory 会作为快照定型, 之后修改不影响此 ${displayEntityLabel}.`}
               {requiredSkillNames.length > 0 && <span className="block mt-1">必选 Skill: {requiredSkillNames.join('、')}</span>}
             </p>
             <div className="flex-1 min-h-0 space-y-3 mb-4 overflow-y-auto overscroll-contain pr-1">
@@ -2795,14 +3204,26 @@ export function NewSessionModal({
               )}
               <div>
                 <div className="text-[12px] mb-1.5 flex items-center justify-between" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
-                  <span>模型（创建后不可更改）</span>
+                  <span>{supportsHarnessRoster ? 'Harness Agent（可选 1-3 个）' : '模型（创建后不可更改）'}</span>
+                  {supportsHarnessRoster && (
+                    <span className="tabular-nums">已选 {harnessModelKeys.length}/3</span>
+                  )}
                 </div>
+                {supportsHarnessRoster && (
+                  <div className="mb-2 text-[11px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                    选择 1 个时独立执行；选择 2-3 个后自动启用 Multi Harness。
+                  </div>
+                )}
                 <div
                   data-tour="session-model-picker"
-                  className={`grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
+                  className={supportsHarnessRoster
+                    // Harness Agent 选择: 固定三列 + 两行限高滚动, 不再用点击展开
+                    ? 'grid grid-cols-3 gap-2 max-h-[8.5rem] overflow-y-auto overscroll-contain pr-1'
+                    : `grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
                 >
                   {modelOptions.map(opt => {
-                    const active = model === opt.key
+                    const active = supportsHarnessRoster ? harnessModelKeys.includes(opt.key) : model === opt.key
+                    const isMain = supportsHarnessRoster && harnessMainModelKey === opt.key
                     const backendKey = promptBackendKeyForOption(opt)
                     const count5h = promptStats ? promptStats[backendKey] : null
                     const count5min = promptStats
@@ -2810,7 +3231,7 @@ export function NewSessionModal({
                       : null
                     const usage = promptStats?.model_usage_limits?.models?.[opt.key] || null
                     const quotaBlocked = !isPresetMode && !!usage?.blocked
-                    const blocked = quotaBlocked
+                    const blocked = quotaBlocked && !active
                     const tmuxUsage = usage?.usage?.tmuxWindows
                     const tmuxWarning = !!tmuxUsage?.warning
                     const quotaTitle = usage?.limit != null
@@ -2822,40 +3243,73 @@ export function NewSessionModal({
                     const badgeTitle = quotaBlocked
                       ? `${opt.title} ${quotaTitle}, 暂不可选`
                       : `${opt.title} 渠道最近 5 小时 ${count5h} 次提问 / 5 分钟 ${count5min} 次; ${quotaTitle}; ${tmuxTitle}`
-                    return (
-                      <button key={opt.key} type="button" disabled={blocked} title={badgeTitle} onClick={() => chooseModel(opt.key)}
-                        className="relative min-h-16 rounded-xl text-left px-3 py-2 transition-colors disabled:cursor-not-allowed"
-                        style={{
-                          background: active ? 'rgba(59,130,246,0.12)' : blocked ? 'rgba(239,68,68,0.08)' : 'var(--input-bg)',
-                          border: `1px solid ${active ? '#3b82f6' : blocked ? 'rgba(239,68,68,0.32)' : 'var(--input-border)'}`,
-                          color: isDark ? '#f1f5f9' : '#1e293b',
-                          opacity: blocked ? 0.58 : 1,
-                        }}>
-
-                        <div className="text-[13px] font-medium truncate">{opt.title || opt.label}</div>
-                        <div className="text-[11px] flex items-baseline gap-1.5 min-w-0" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                    const cardStyle = {
+                      background: active ? 'rgba(59,130,246,0.12)' : quotaBlocked ? 'rgba(239,68,68,0.08)' : 'var(--input-bg)',
+                      border: `1px solid ${active ? '#3b82f6' : quotaBlocked ? 'rgba(239,68,68,0.32)' : 'var(--input-border)'}`,
+                      color: isDark ? '#f1f5f9' : '#1e293b',
+                      opacity: quotaBlocked ? 0.58 : 1,
+                    }
+                    const cardBody = (
+                      <>
+                        {supportsHarnessRoster && (
+                          <span className="absolute right-2 top-2 inline-flex h-4 w-4 items-center justify-center rounded border"
+                            style={{ borderColor: active ? '#3b82f6' : 'var(--input-border)', background: active ? '#3b82f6' : 'transparent', color: '#fff' }}>
+                            {active && <Check className="h-3 w-3" strokeWidth={2.4} />}
+                          </span>
+                        )}
+                        <div className={`text-[13px] font-medium truncate ${supportsHarnessRoster ? 'pr-5' : ''}`}>{opt.title || opt.label}</div>
+                        <div className={`text-[11px] flex flex-wrap items-baseline gap-x-1.5 min-w-0 ${supportsHarnessRoster && active ? 'pr-16' : ''}`} style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
                           <span className="truncate">{opt.sub}</span>
-                          {!blocked && usage?.limit != null && (
+                          {!quotaBlocked && usage?.limit != null && (
                             <span className="font-medium whitespace-nowrap" style={{ color: quotaBlocked ? '#ef4444' : (isDark ? '#93c5fd' : '#2563eb') }}>
                               个人5h {usage.count}/{usage.limit} 次
                             </span>
                           )}
-                          {!blocked && tmuxWarning && (
+                          {!quotaBlocked && tmuxWarning && (
                             <span className="font-medium whitespace-nowrap" style={{ color: '#f59e0b' }}>
                               tmux {tmuxUsage?.count}/{tmuxUsage?.limit}
                             </span>
                           )}
-                          {blocked && (
+                          {quotaBlocked && (
                             <span className="font-medium whitespace-nowrap" style={{ color: '#ef4444' }}>
                               已达限额 · 暂不可选
                             </span>
                           )}
                         </div>
-                      </button>
+                      </>
+                    )
+                    if (!supportsHarnessRoster) {
+                      return (
+                        <button key={opt.key} type="button" disabled={blocked} title={badgeTitle} onClick={() => chooseModel(opt.key)}
+                          className="relative min-h-16 rounded-xl text-left px-3 py-2 transition-colors disabled:cursor-not-allowed"
+                          style={cardStyle}>
+                          {cardBody}
+                        </button>
+                      )
+                    }
+                    return (
+                      <div key={opt.key} className="relative h-16 overflow-hidden rounded-xl transition-colors" style={cardStyle}>
+                        <button type="button" disabled={blocked} title={badgeTitle} aria-pressed={active}
+                          onClick={() => toggleHarnessModel(opt)}
+                          className="relative h-full w-full px-3 py-2 text-left disabled:cursor-not-allowed">
+                          {cardBody}
+                        </button>
+                        {active && (
+                          <button type="button" onClick={() => chooseHarnessMain(opt)} disabled={isMain || quotaBlocked}
+                            className="absolute bottom-1.5 right-2 z-10 inline-flex h-5 items-center justify-center gap-1 rounded px-1.5 text-[9px] font-medium transition-colors disabled:cursor-default"
+                            style={{
+                              background: isMain ? 'rgba(245,158,11,0.12)' : 'transparent',
+                              color: isMain ? (isDark ? '#fcd34d' : '#b45309') : (isDark ? '#93c5fd' : '#1d4ed8'),
+                            }}>
+                            {isMain && <Crown className="h-3 w-3" strokeWidth={2} />}
+                            {isMain ? 'Main' : '设为 Main'}
+                          </button>
+                        )}
+                      </div>
                     )
                   })}
                 </div>
-                {hasCollapsedModelOverflow && !modelExpandedForSelection && (
+                {hasCollapsedModelOverflow && !supportsHarnessRoster && !modelExpandedForSelection && (
                   <button type="button" onClick={() => setModelGridManuallyExpanded(v => !v)}
                     className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
                     style={{
@@ -2974,6 +3428,86 @@ export function NewSessionModal({
           </>
         )}
 
+        {step === 3 && isMultiHarness && previewLoading && (
+          <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-3" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+            <Loader2 className="h-7 w-7 animate-spin" style={{ color: '#3b82f6' }} strokeWidth={1.8} />
+            <div className="text-[13px]">正在计算阵容预估…</div>
+          </div>
+        )}
+
+        {step === 3 && isMultiHarness && !previewLoading && harnessEstimate && (
+          <>
+            <div className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-1">
+              <div className="flex items-start gap-3 border-b pb-4" style={{ borderColor: 'var(--border-color)' }}>
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                  <Users className="h-5 w-5" strokeWidth={1.8} />
+                </span>
+                <div className="min-w-0">
+                  <h4 className="text-[14px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>确认 Multi Harness 阵容</h4>
+                  <p className="mt-1 text-[11px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                    Main Agent 负责拆解目标、调度成员并汇总结果；其余成员默认作为 Worker。
+                  </p>
+                </div>
+              </div>
+
+              <section>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h4 className="text-[12px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>执行阵容</h4>
+                  <span className="text-[11px] tabular-nums" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{selectedHarnessOptions.length} 个 Agent</span>
+                </div>
+                <div className="overflow-hidden rounded-lg border" style={{ borderColor: 'var(--input-border)' }}>
+                  {selectedHarnessOptions.map((option, index) => {
+                    const main = option.key === harnessMainModelKey
+                    return (
+                      <div key={option.key} className="flex min-h-12 items-center gap-3 px-3 py-2"
+                        style={{ borderTop: index > 0 ? '1px solid var(--input-border)' : undefined, background: main ? 'rgba(245,158,11,0.08)' : 'var(--input-bg)' }}>
+                        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold"
+                          style={{ background: main ? 'rgba(245,158,11,0.14)' : 'rgba(59,130,246,0.12)', color: main ? (isDark ? '#fcd34d' : '#b45309') : '#3b82f6' }}>
+                          {main ? <Crown className="h-4 w-4" strokeWidth={2} /> : index + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[12px] font-medium" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{option.title || option.label}</div>
+                          <div className="truncate text-[10px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{option.sub}</div>
+                        </div>
+                        <span className="shrink-0 rounded px-2 py-1 text-[10px] font-medium"
+                          style={{ background: main ? 'rgba(245,158,11,0.14)' : 'rgba(59,130,246,0.1)', color: main ? (isDark ? '#fcd34d' : '#b45309') : (isDark ? '#93c5fd' : '#1d4ed8') }}>
+                          {main ? 'Main' : 'Worker'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+
+              <section className="border-y py-4" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="flex items-center gap-3">
+                    <Calculator className="h-4 w-4 shrink-0" style={{ color: '#3b82f6' }} strokeWidth={1.8} />
+                    <div><div className="text-[10px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>预计时长</div><div className="text-[13px] font-semibold tabular-nums" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{harnessDuration(harnessEstimate.estimated_duration_seconds_range[0])} - {harnessDuration(harnessEstimate.estimated_duration_seconds_range[1])}</div></div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Calculator className="h-4 w-4 shrink-0" style={{ color: '#10b981' }} strokeWidth={1.8} />
+                    <div><div className="text-[10px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>预计成本</div><div className="text-[13px] font-semibold tabular-nums" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>${harnessEstimate.estimated_cost_usd_range[0].toFixed(2)} - ${harnessEstimate.estimated_cost_usd_range[1].toFixed(2)}</div></div>
+                  </div>
+                </div>
+              </section>
+
+              <div className="rounded-lg border px-3 py-2 text-[11px] leading-relaxed"
+                style={{ background: isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.05)', borderColor: isDark ? 'rgba(59,130,246,0.28)' : 'rgba(59,130,246,0.22)', color: isDark ? '#bfdbfe' : '#1d4ed8' }}>
+                当前 Multi Harness 以只读方式串行协作，不会直接修改工作区。创建后将自动进入 Main Agent 会话。
+              </div>
+            </div>
+            {err && <ErrBanner>{err}</ErrBanner>}
+            <div className="mt-4 flex gap-2">
+              <button onClick={() => setStep(2)} disabled={loading} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border disabled:opacity-40" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
+              <button onClick={submit} disabled={loading} data-tour="session-submit"
+                className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+                {loading ? '创建中...' : '确认阵容并创建'}
+              </button>
+            </div>
+          </>
+        )}
+
         {step === 2 && !preview && (
           <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
             <Loader2 className="h-7 w-7 animate-spin" style={{ color: '#3b82f6' }} strokeWidth={1.8} />
@@ -3024,51 +3558,77 @@ export function NewSessionModal({
                     </div>
                     <div className="rounded-lg p-2.5 space-y-1.5 text-[11px]" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
                       {availableSkills.length === 0 && <p className="italic" style={{ color: isDark ? '#6b7280' : '#64748b' }}>无 (本 {isResearch ? '研究' : '任务'} 未启用任何 Skill)</p>}
-                      {availableSkills.map(sk => {
-                        const required = matchesRequiredSkill(sk)
-                        const locked = required || isChosenAgentSkill(sk.id)
-                        const mutuallyExclusive = isMutuallyExclusiveAgentSkill(sk.id)
-                        const checked = locked || (!mutuallyExclusive && !excludedSkills.has(sk.id))
-                        return (
-                          <div
-                            key={sk.id}
-                            data-tour={(sk.name === 'mobius-extension' || sk.dirName === 'mobius-extension') ? 'session-preview-mobius-extension-skill' : undefined}
-                            className="flex items-start gap-2 hover:bg-[var(--bg-card)] -mx-1 px-1 py-0.5 rounded"
-                          >
-                            <label className={`flex min-w-0 flex-1 items-start gap-2 ${locked ? 'cursor-default' : mutuallyExclusive ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                              <input type="checkbox" checked={checked} disabled={locked || mutuallyExclusive} onChange={() => toggleSkill(sk.id)}
-                                className="mt-0.5 accent-blue-500 cursor-pointer disabled:cursor-not-allowed" />
-                              <div className="min-w-0 flex-1" style={{ opacity: mutuallyExclusive ? 0.38 : checked ? 1 : 0.45 }}>
-                                <div className="truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{sk.name}</div>
-                                {sk.description && <div className="text-[10px] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{sk.description}</div>}
+                      {(() => {
+                        const renderSkillRow = (sk: WizardItem, showUpgrade: boolean) => {
+                          const required = matchesRequiredSkill(sk)
+                          const locked = required || isChosenAgentSkill(sk.id)
+                          const mutuallyExclusive = isMutuallyExclusiveAgentSkill(sk.id)
+                          const checked = locked || (!mutuallyExclusive && !excludedSkills.has(sk.id))
+                          return (
+                            <div
+                              key={sk.id}
+                              data-tour={(sk.name === 'mobius-extension' || sk.dirName === 'mobius-extension') ? 'session-preview-mobius-extension-skill' : undefined}
+                              className="flex items-start gap-2 hover:bg-[var(--bg-card)] -mx-1 px-1 py-0.5 rounded"
+                            >
+                              <label className={`flex min-w-0 flex-1 items-start gap-2 ${locked ? 'cursor-default' : mutuallyExclusive ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                                <input type="checkbox" checked={checked} disabled={locked || mutuallyExclusive} onChange={() => toggleSkill(sk.id)}
+                                  className="mt-0.5 accent-blue-500 cursor-pointer disabled:cursor-not-allowed" />
+                                <div className="min-w-0 flex-1" style={{ opacity: mutuallyExclusive ? 0.38 : checked ? 1 : 0.45 }}>
+                                  <div className="truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{sk.name}</div>
+                                  {sk.description && <div className="text-[10px] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{sk.description}</div>}
+                                </div>
+                              </label>
+                              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                                {locked && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)', color: isDark ? '#93c5fd' : '#1d4ed8' }}>{required ? '必选' : '主Skill'}</span>}
+                                {mutuallyExclusive && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)', color: isDark ? '#fca5a5' : '#dc2626' }}>互斥</span>}
+                                {sk.scope === 'project' && canScopeChange && isUpgradedByMe(sk) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCancelTarget({ kind: 'skill', item: sk })}
+                                    disabled={!!scopeBusyId}
+                                    title="移除我升级产生的项目级副本 (你的用户级原件保留)"
+                                    className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+                                    style={{ color: isDark ? '#fca5a5' : '#b91c1c', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
+                                    取消升级
+                                  </button>
+                                )}
+                                {showUpgrade && skillUpgradeAction(sk)}
+                                <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.1)', color: isDark ? '#c084fc' : '#7e22ce' }}>
+                                  {SCOPE_LABEL_WIZ[sk.scope] || sk.scope}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewingSkill(sk)}
+                                  className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                                  style={{ color: isDark ? '#93c5fd' : '#1d4ed8', borderColor: 'var(--input-border)' }}
+                                  title={`预览 ${sk.name} 的完整 SKILL.md`}
+                                  aria-label={`预览 ${sk.name} 的完整 SKILL.md`}
+                                >
+                                  <Eye className="h-3 w-3" strokeWidth={1.8} />
+                                  <span>预览</span>
+                                </button>
                               </div>
-                            </label>
-                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                              {locked && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)', color: isDark ? '#93c5fd' : '#1d4ed8' }}>{required ? '必选' : '主Skill'}</span>}
-                              {mutuallyExclusive && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)', color: isDark ? '#fca5a5' : '#dc2626' }}>互斥</span>}
-                              <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.1)', color: isDark ? '#c084fc' : '#7e22ce' }}>
-                                {SCOPE_LABEL_WIZ[sk.scope] || sk.scope}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setPreviewingSkill(sk)}
-                                className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)]"
-                                style={{ color: isDark ? '#93c5fd' : '#1d4ed8', borderColor: 'var(--input-border)' }}
-                                title={`预览 ${sk.name} 的完整 SKILL.md`}
-                                aria-label={`预览 ${sk.name} 的完整 SKILL.md`}
-                              >
-                                <Eye className="h-3 w-3" strokeWidth={1.8} />
-                                <span>预览</span>
-                              </button>
                             </div>
-                          </div>
-                        )
-                      })}
+                          )
+                        }
+                        const groupHeader = (label: string, count: number) => count > 0 ? (
+                          <div className="pt-1 pb-0.5 text-[10px] font-medium" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>{label} ({count})</div>
+                        ) : null
+                        return (<>
+                          {groupHeader('项目 Skill', projectSkillItems.length)}
+                          {projectSkillItems.map(sk => renderSkillRow(sk, false))}
+                          {groupHeader('用户 Skill', userSkillItems.length)}
+                          {userSkillItems.map(sk => renderSkillRow(sk, true))}
+                          {groupHeader('内置 / 其他', otherSkillItems.length)}
+                          {otherSkillItems.map(sk => renderSkillRow(sk, false))}
+                        </>)
+                      })()}
                       {availableSkills.length > 0 && !isResearch && (
                         <p className="pt-1 text-[10px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
                           {projectSkillCount > 0
                             ? `已读取当前项目的 ${projectSkillCount} 个项目级 Skill。创建后会固定为本 ${displayEntityLabel} 的快照。`
                             : `这里没有当前项目的项目级 Skill。其他项目里的 Skill 不会进入本 ${displayEntityLabel}；已有 ${displayEntityLabel} 也不会自动补入新添加的 Skill。`}
+                          {canScopeChange && ' 在「用户 Skill」分组点「升级」可把个人 Skill 复制为项目级供项目成员使用; 由你升级的条目可随时「取消升级」。'}
                         </p>
                       )}
                     </div>
@@ -3104,21 +3664,26 @@ export function NewSessionModal({
                             ? 'session-preview-logo-memory'
                             : undefined
                         return (
-                          <label
+                          <div
                             key={m.id}
                             data-tour={memoryTour}
-                            className="flex items-start gap-2 cursor-pointer hover:bg-[var(--bg-card)] -mx-1 px-1 py-0.5 rounded"
+                            className="flex items-start gap-2 hover:bg-[var(--bg-card)] -mx-1 px-1 py-0.5 rounded"
                           >
-                            <input type="checkbox" checked={checked} onChange={() => toggleMemory(m.id)}
-                              className="mt-0.5 accent-blue-500 cursor-pointer" />
-                            <div className="min-w-0 flex-1" style={{ opacity: checked ? 1 : 0.45 }}>
-                              <div className="truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{m.name}</div>
-                              {m.description && <div className="text-[10px] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{m.description}</div>}
+                            <label className="flex min-w-0 flex-1 items-start gap-2 cursor-pointer">
+                              <input type="checkbox" checked={checked} onChange={() => toggleMemory(m.id)}
+                                className="mt-0.5 accent-blue-500 cursor-pointer" />
+                              <div className="min-w-0 flex-1" style={{ opacity: checked ? 1 : 0.45 }}>
+                                <div className="truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{m.name}</div>
+                                {m.description && <div className="text-[10px] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{m.description}</div>}
+                              </div>
+                            </label>
+                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                              {memoryUpgradeAction(m)}
+                              <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)', color: isDark ? '#86efac' : '#15803d' }}>
+                                {SCOPE_LABEL_WIZ[m.scope] || m.scope}
+                              </span>
                             </div>
-                            <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)', color: isDark ? '#86efac' : '#15803d' }}>
-                              {SCOPE_LABEL_WIZ[m.scope] || m.scope}
-                            </span>
-                          </label>
+                          </div>
                         )
                       })}
                     </div>
@@ -3138,12 +3703,20 @@ export function NewSessionModal({
             </div>
 
             {err && <ErrBanner>{err}</ErrBanner>}
+            {scopeNotice && (
+              <div className="mb-2 rounded-lg border px-3 py-1.5 text-[12px]"
+                   style={{ background: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.3)', color: isDark ? '#86efac' : '#15803d' }}>
+                {scopeNotice}
+              </div>
+            )}
             <div className="flex gap-2">
               <button onClick={() => setStep(1)} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
-              <button onClick={submit} disabled={loading}
-                data-tour="session-submit"
+              <button onClick={isMultiHarness ? goHarnessConfirmation : submit} disabled={loading || previewLoading}
+                data-tour={isMultiHarness ? 'session-roster-next' : 'session-submit'}
                 className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
-                {loading ? (isPresetMode ? '保存中...' : '创建中...') : (isPresetMode ? '保存预设' : '确认并创建')}
+                {isMultiHarness
+                  ? (previewLoading ? '正在计算阵容预估…' : '下一步 · 确认阵容')
+                  : loading ? (isPresetMode ? '保存中...' : '创建中...') : (isPresetMode ? '保存预设' : '确认并创建')}
               </button>
             </div>
           </>
@@ -3156,6 +3729,34 @@ export function NewSessionModal({
           isDark={isDark}
           onClose={() => setPreviewingSkill(null)}
         />
+      )}
+
+      {cancelTarget && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { if (!scopeBusyId) setCancelTarget(null) }} />
+          <div className="relative rounded-2xl p-5 shadow-2xl flex flex-col" style={{
+            width: 'min(460px, calc(100vw - 32px))',
+            background: 'var(--modal-bg)', border: '1px solid var(--border-color)',
+          }}>
+            <h3 className="text-[15px] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+              取消升级「{cancelTarget.item.name}」?
+            </h3>
+            <p className="text-[12px] mb-4 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+              项目级副本将被移除, 你的用户级原件保留。若副本在升级后被编辑过, 这些修改会一并丢弃;
+              已创建的 {displayEntityLabel} 不受影响, 仅影响之后新建的 {displayEntityLabel}。
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setCancelTarget(null)} disabled={!!scopeBusyId}
+                className="flex-1 h-8 rounded-lg text-[12px] border"
+                style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>保留项目级</button>
+              <button type="button" onClick={cancelUpgradeScopeItem} disabled={!!scopeBusyId}
+                className="flex-1 h-8 rounded-lg text-[12px] border transition-colors disabled:opacity-40"
+                style={{ color: '#fca5a5', borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.1)' }}>
+                {scopeBusyId ? '处理中…' : '确认取消升级'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showAgentSkillModal && (

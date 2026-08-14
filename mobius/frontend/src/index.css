@@ -5812,6 +5812,17 @@ body.mobius-resizing .mobius-resizable-handle {
   width: 6px;
   cursor: col-resize;
 }
+
+/* 会话资源侧栏由用户拖拽控制宽度，按组件实际宽度而非视口断点调整页签。
+   极窄时改为 2x2，避免 Skill / Memory / 端口标签被省略。 */
+.session-resource-editor {
+  container-type: inline-size;
+}
+@container (max-width: 260px) {
+  .session-resource-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 @media (max-width: 900px) {
   .mobius-chat-body {
     flex-direction: column;
@@ -5894,27 +5905,64 @@ body.mobius-resizing .mobius-resizable-handle {
   z-index: 20;
   bottom: 16px;
   left: 50%;
-  width: min(760px, calc(100% - 32px)) !important;
+  width: min(880px, calc(100% - 40px)) !important;
   min-height: 0;
   transform: translateX(-50%);
   border: 0 !important;
   background: transparent !important;
-  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.22));
+  filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.24));
 }
 /* 编辑器圆角框本身承担不透明底 + 毛玻璃，避免悬浮输入框透出背后滚动的 JSONL 内容
    (参考 ChatGPT 悬浮输入: 纯不透明背景 + 边框 + 阴影的清晰浮层)。
    外层 .mobius-chat-input 保持透明仅承载居中定位; 不透明 + blur 下放到此框。
    内联 background 是 var(--input-bg)(alpha≈0.03 近乎透明), 须 !important 覆盖。 */
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input [data-tour="session-chat-input"] {
-  background: color-mix(in srgb, var(--bg-secondary) 88%, transparent) !important;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  overflow: visible;
+  border-radius: 22px !important;
+  background: color-mix(in srgb, var(--bg-secondary) 94%, transparent) !important;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  box-shadow: 0 20px 54px rgba(0, 0, 0, .18), inset 0 1px 0 color-mix(in srgb, white 7%, transparent) !important;
+}
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-input textarea {
+  min-height: 72px !important;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.mobius-chat-body.mobius-chat-body--easy .easy-input-project-trigger:hover {
+  background: var(--bg-hover) !important;
+}
+.easy-input-project-menu {
+  transform-origin: left bottom;
+  animation: easy-project-menu-in .16s ease-out;
+}
+@keyframes easy-project-menu-in {
+  from { opacity: 0; transform: translateY(6px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .easy-input-project-menu { animation: none; }
 }
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input.mobius-chat-input--with-actions {
   width: min(944px, calc(100% - 32px)) !important;
   flex-direction: row;
   align-items: flex-end;
   gap: 8px;
+}
+
+/* 简易模式的低频会话工具改为标题栏按需展开。全局窄屏规则会隐藏
+   .mobius-chat-input-actions，这里为有明确替代入口的工具弹层恢复显示。 */
+.easy-session-context .easy-session-tools .mobius-chat-input-actions {
+  display: flex !important;
+}
+@media (max-width: 700px) {
+  .easy-session-context { padding-left: 10px; padding-right: 10px; gap: 6px; }
+  .easy-session-context [aria-label="当前会话上下文"] > span:not(:last-of-type),
+  .easy-session-context [aria-label="当前会话上下文"] > svg { display: none; }
+  .easy-session-context [aria-label="当前会话上下文"] strong { max-width: 120px; }
+  .easy-session-tools > [role="group"] { right: -58px; max-width: calc(100vw - 16px); overflow-x: auto; }
+  .easy-session-tools .advanced-session-actions--compact { width: 340px; }
+  [data-page="easy-mode"] input { font-size: 16px !important; }
 }
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input--with-actions .mobius-chat-input-editor {
   flex: 1 1 auto;

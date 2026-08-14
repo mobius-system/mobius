@@ -82,7 +82,7 @@ type AdminTmuxContext = {
 }
 
 type AdminTmuxWindow = {
-  backend_key: 'codex' | 'claude_code'
+  backend_key: 'codex' | 'claude_code' | 'deepseek_harness'
   backend_name: string
   backend_label: string
   session_id: string
@@ -116,7 +116,7 @@ type AdminTmuxWindow = {
 }
 
 type AdminTmuxBackend = {
-  key: 'codex' | 'claude_code'
+  key: 'codex' | 'claude_code' | 'deepseek_harness'
   backend_name: string
   label: string
   available: boolean
@@ -132,17 +132,18 @@ type AdminTmuxPayload = {
   window_hours: number
   since: string
   question_count: number
-  questions_by_backend: { codex: number; claude_code: number }
+  questions_by_backend: { codex: number; claude_code: number; deepseek_harness: number }
   questions_2min: number
-  questions_by_backend_2min: { codex: number; claude_code: number }
+  questions_by_backend_2min: { codex: number; claude_code: number; deepseek_harness: number }
   window_count: number
   active_tmux_window_count: number
-  active_windows_by_backend: { codex: number; claude_code: number }
+  active_windows_by_backend: { codex: number; claude_code: number; deepseek_harness: number }
   working_window_count: number
   closed_window_count: number
   backends: {
     codex: AdminTmuxBackend
     claude_code: AdminTmuxBackend
+    deepseek_harness: AdminTmuxBackend
   }
 }
 
@@ -1215,11 +1216,13 @@ function BackendSection({
   accent: string
   closingKey: string | null
   showClosedWindows: boolean
-  onCloseWindow: (backendKey: 'codex' | 'claude_code', sessionId: string) => void
+  onCloseWindow: (backendKey: 'codex' | 'claude_code' | 'deepseek_harness', sessionId: string) => void
 }) {
   const allWindows = backend?.windows || []
   const windows = showClosedWindows ? allWindows : allWindows.filter((win) => win.state !== 'closed')
   const hiddenClosedCount = showClosedWindows ? 0 : allWindows.length - windows.length
+  const isHarness = backend?.backend_name === 'deepseek-harness'
+  const instanceLabel = isHarness ? 'Runtime' : 'Tmux Window'
   return (
     <section className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]">
       <div className="flex min-h-12 items-center justify-between border-b border-[var(--border-color)] px-4">
@@ -1249,13 +1252,13 @@ function BackendSection({
       {!backend ? (
         <EmptyRows label="加载中" />
       ) : windows.length === 0 ? (
-        <EmptyRows label={hiddenClosedCount > 0 ? `已隐藏 ${hiddenClosedCount} 个 Closed window` : '当前没有 tmux window'} />
+        <EmptyRows label={hiddenClosedCount > 0 ? `已隐藏 ${hiddenClosedCount} 个已关闭实例` : `当前没有${isHarness ? '运行实例' : ' tmux window'}`} />
       ) : (
         <div className="overflow-x-auto">
           <table className="min-w-[1040px] w-full border-collapse">
             <thead>
               <tr className="border-b border-[var(--border-color)] bg-[var(--bg-primary)]">
-                {['状态', 'Tmux Window', '会话', '所属', '运行时', '活动', '5小时提问', '操作'].map((h) => (
+                {['状态', instanceLabel, '会话', '所属', '运行时', '活动', '5小时提问', '操作'].map((h) => (
                   <th key={h} className="px-4 py-2.5 text-left text-[12px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{h}</th>
                 ))}
               </tr>
@@ -1278,7 +1281,7 @@ function BackendSection({
                         {win.tmux_window_name}
                       </div>
                       <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                        index {win.tmux_window_index ?? '-'}
+                        {isHarness ? `PID ${win.pid || '-'}` : `index ${win.tmux_window_index ?? '-'}`}
                       </div>
                     </td>
                     <td className="px-4 py-3 align-top">
@@ -1366,16 +1369,20 @@ function BackendSection({
                     </td>
                     <td className="px-4 py-3 align-top">
                       <div className="text-[13px]" style={{ color: 'var(--text-primary)' }}>
-                        {win.tmux_open ? `PID ${win.pid || '-'}` : 'tmux 已关闭'}
+                        {win.tmux_open ? `PID ${win.pid || '-'}` : isHarness ? 'Runtime 已关闭' : 'tmux 已关闭'}
                       </div>
-                      <div className="mt-1 max-w-[180px] truncate text-[11px]" title={win.pane_current_command || ''} style={{ color: 'var(--text-muted)' }}>
-                        cmd {win.pane_current_command || '-'}
-                      </div>
+                      {!isHarness && (
+                        <div className="mt-1 max-w-[180px] truncate text-[11px]" title={win.pane_current_command || ''} style={{ color: 'var(--text-muted)' }}>
+                          cmd {win.pane_current_command || '-'}
+                        </div>
+                      )}
                       <div className="mt-1 max-w-[180px] truncate text-[11px]" title={win.agent_session_id || ''} style={{ color: 'var(--text-muted)' }}>
                         agent {compactId(win.agent_session_id)}
                       </div>
                       <div className="mt-1 text-[11px]" style={{ color: win.tui_agent_alive ? '#34d399' : 'var(--text-muted)' }}>
-                        {win.tui_agent_alive ? 'tui agent isAlive' : win.tmux_open ? 'tui agent not isAlive' : 'tmux not open'}
+                        {isHarness
+                          ? (win.tui_agent_alive ? 'Runtime 进程存活' : win.tmux_open ? 'Runtime 进程未响应' : 'Runtime 未运行')
+                          : (win.tui_agent_alive ? 'tui agent isAlive' : win.tmux_open ? 'tui agent not isAlive' : 'tmux not open')}
                       </div>
                     </td>
                     <td className="px-4 py-3 align-top">
@@ -1391,7 +1398,7 @@ function BackendSection({
                       {win.closable ? (
                         <button
                           type="button"
-                          title="关闭 tmux window"
+                          title={isHarness ? '关闭运行实例' : '关闭 tmux window'}
                           disabled={closing}
                           onClick={() => onCloseWindow(win.backend_key, win.session_id)}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-500/20 text-red-400 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
@@ -3050,7 +3057,33 @@ type CodexModelForm = {
   config_toml: string
 }
 
-type AdminModelsBackend = 'claude-code' | 'codex'
+type HarnessModelConfig = {
+  key: string
+  session_model: string
+  label: string
+  provider: string
+  model: string
+  base_url: string
+  secret_value_set: boolean
+  max_tokens: number | null
+  runtime_version: string
+  use_proxy: boolean
+  enabled: boolean
+}
+
+type HarnessModelForm = {
+  key: string
+  label: string
+  provider: string
+  model: string
+  base_url: string
+  secret_value: string
+  max_tokens: string
+  use_proxy: boolean
+  enabled: boolean
+}
+
+type AdminModelsBackend = 'claude-code' | 'codex' | 'deepseek-harness'
 
 function defaultClaudeSettings(model = 'MiniMax-M3') {
   return JSON.stringify({
@@ -3108,6 +3141,20 @@ function emptyCodexForm(): CodexModelForm {
   }
 }
 
+function emptyHarnessForm(): HarnessModelForm {
+  return {
+    key: 'deepseek',
+    label: 'DeepSeek Harness',
+    provider: 'deepseek-official',
+    model: 'deepseek-chat',
+    base_url: 'https://api.deepseek.com',
+    secret_value: '',
+    max_tokens: '8192',
+    use_proxy: false,
+    enabled: true,
+  }
+}
+
 function AdminModelsPanel() {
   const [backend, setBackend] = useState<AdminModelsBackend>('claude-code')
 
@@ -3121,7 +3168,9 @@ function AdminModelsPanel() {
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
             {backend === 'claude-code'
               ? '管理员导入的 Claude Code 模型走 --settings 直连, 不使用 proxychains'
-              : '管理员导入的 Codex 模型走 --profile <渠道>, 网络代理统一在系统设置按模型配置'}
+              : backend === 'codex'
+                ? '管理员导入的 Codex 模型走 --profile <渠道>, 网络代理统一在系统设置按模型配置'
+                : 'DeepSeek Harness 使用独立 Node 22 Runtime, 每个 Session 独立进程并保留原生会话'}
           </div>
         </div>
         <div className="inline-flex rounded-md border border-[var(--border-color)] p-0.5 text-[12px]"
@@ -3129,6 +3178,7 @@ function AdminModelsPanel() {
           {([
             ['claude-code', 'Claude Code'],
             ['codex', 'Codex'],
+            ['deepseek-harness', 'DeepSeek Harness'],
           ] as Array<[AdminModelsBackend, string]>).map(([k, label]) => {
             const active = backend === k
             return (
@@ -3146,7 +3196,11 @@ function AdminModelsPanel() {
         </div>
       </div>
 
-      {backend === 'claude-code' ? <ClaudeCodeModelsSubPanel /> : <CodexModelsSubPanel />}
+      {backend === 'claude-code'
+        ? <ClaudeCodeModelsSubPanel />
+        : backend === 'codex'
+          ? <CodexModelsSubPanel />
+          : <HarnessModelsSubPanel />}
     </section>
   )
 }
@@ -3645,6 +3699,242 @@ function CodexModelsSubPanel() {
             <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
               保存后可在新建 Session 弹窗选择该模型。Codex 启动时一律使用 <code>codex --profile &lt;渠道&gt;</code> 并 export 秘钥名。
             </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={startNew}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]">
+                <Plus className="h-3.5 w-3.5" />
+                新增
+              </button>
+              <button type="button" onClick={save} disabled={saving}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-3 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function HarnessModelsSubPanel() {
+  const [models, setModels] = useState<HarnessModelConfig[]>([])
+  const [form, setForm] = useState<HarnessModelForm>(() => emptyHarnessForm())
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const rows = await api('/api/admin/model-access/deepseek-harness') as HarnessModelConfig[]
+      setModels(Array.isArray(rows) ? rows : [])
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const startNew = () => {
+    setEditingKey(null)
+    setForm(emptyHarnessForm())
+    setError('')
+  }
+
+  const editModel = async (key: string) => {
+    setLoading(true)
+    try {
+      const row = await api(`/api/admin/model-access/deepseek-harness/${encodeURIComponent(key)}`) as HarnessModelConfig
+      setEditingKey(row.key)
+      setForm({
+        key: row.key,
+        label: row.label || row.key,
+        provider: row.provider || 'deepseek-official',
+        model: row.model || 'deepseek-chat',
+        base_url: row.base_url || 'https://api.deepseek.com',
+        secret_value: '',
+        max_tokens: row.max_tokens == null ? '' : String(row.max_tokens),
+        use_proxy: row.use_proxy === true,
+        enabled: row.enabled !== false,
+      })
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const payload = {
+        ...form,
+        max_tokens: form.max_tokens.trim() ? Number(form.max_tokens) : null,
+      }
+      const endpoint = editingKey
+        ? `/api/admin/model-access/deepseek-harness/${encodeURIComponent(editingKey)}`
+        : '/api/admin/model-access/deepseek-harness'
+      const row = await api(endpoint, {
+        method: editingKey ? 'PUT' : 'POST',
+        body: JSON.stringify(payload),
+      }) as HarnessModelConfig
+      setEditingKey(row.key)
+      setForm({
+        key: row.key,
+        label: row.label,
+        provider: row.provider,
+        model: row.model,
+        base_url: row.base_url,
+        secret_value: '',
+        max_tokens: row.max_tokens == null ? '' : String(row.max_tokens),
+        use_proxy: row.use_proxy === true,
+        enabled: row.enabled !== false,
+      })
+      await load()
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const remove = async (key: string) => {
+    const ok = window.confirm(`删除 DeepSeek Harness 模型 ${key}？\n若仍有会话正在使用此模型，这些会话将进入只读状态，需要更换模型后才能继续。`)
+    if (!ok) return
+    setLoading(true)
+    try {
+      const result: any = await api(`/api/admin/model-access/deepseek-harness/${encodeURIComponent(key)}`, { method: 'DELETE' })
+      if (editingKey === key) startNew()
+      await load()
+      setError('')
+      if (Number(result?.affected_session_count) > 0) {
+        window.alert(`已删除模型配置 ${key}。\n有 ${result.affected_session_count} 个会话正在使用此模型，需要更换模型后才能继续。`)
+      }
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const inputClass = 'h-9 w-full rounded-md border border-[var(--input-border)] bg-[var(--bg-card)] px-2 text-[12px] text-[var(--text-primary)] outline-none disabled:opacity-60'
+
+  return (
+    <div>
+      {error && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.72fr)_minmax(0,1.28fr)]">
+        <div className="min-h-[240px] rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] p-2">
+          <div className="mb-2 flex items-center justify-between px-1">
+            <span className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>Harness 模型</span>
+            {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--text-muted)]" />}
+          </div>
+          {models.length === 0 && !loading && (
+            <div className="rounded-md border border-dashed border-[var(--border-color)] px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>
+              暂无 Harness 模型
+            </div>
+          )}
+          <div className="space-y-1.5">
+            {models.map(row => {
+              const active = editingKey === row.key
+              return (
+                <div key={row.key} className="group flex items-start justify-between gap-2 rounded-md border px-2.5 py-2 transition-colors"
+                  style={{
+                    background: active ? 'rgba(59,130,246,0.10)' : 'transparent',
+                    borderColor: active ? 'rgba(59,130,246,0.35)' : 'var(--border-color)',
+                  }}>
+                  <button type="button" onClick={() => editModel(row.key)} className="min-w-0 flex-1 text-left">
+                    <div className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                      <Server className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" />
+                      <span className="truncate">{row.label}</span>
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      {row.session_model} · {row.model}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
+                      <span className="rounded border px-1.5 py-0.5" style={{ color: row.enabled ? '#16a34a' : 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+                        {row.enabled ? '启用' : '禁用'}
+                      </span>
+                      <span className="rounded border px-1.5 py-0.5" style={{ color: row.secret_value_set ? '#16a34a' : '#ef4444', borderColor: 'var(--border-color)' }}>
+                        {row.secret_value_set ? 'API Key 已设置' : 'API Key 缺失'}
+                      </span>
+                      <span className="rounded border px-1.5 py-0.5" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+                        {row.runtime_version}
+                      </span>
+                    </div>
+                  </button>
+                  <button type="button" title="删除" onClick={() => remove(row.key)}
+                    className="mt-0.5 inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] opacity-0 transition-colors hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] p-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h4 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{editingKey ? '编辑 Harness 模型' : '新增 Harness 模型'}</h4>
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Runtime 0.0.1-rc.5 · Node 22</div>
+            </div>
+            <label className="inline-flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+              <input type="checkbox" checked={form.enabled} onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} />
+              启用
+            </label>
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-2">
+            <label className="min-w-0">
+              <div className="mb-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>模型 Key</div>
+              <input value={form.key} disabled={!!editingKey} onChange={e => setForm(f => ({ ...f, key: e.target.value }))} placeholder="deepseek" className={inputClass} />
+            </label>
+            <label className="min-w-0">
+              <div className="mb-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>显示名称</div>
+              <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="DeepSeek Harness" className={inputClass} />
+            </label>
+            <label className="min-w-0">
+              <div className="mb-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>Provider</div>
+              <input value={form.provider} onChange={e => setForm(f => ({ ...f, provider: e.target.value }))} placeholder="deepseek-official" className={inputClass} />
+            </label>
+            <label className="min-w-0">
+              <div className="mb-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>模型名</div>
+              <input value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))} placeholder="deepseek-chat" className={inputClass} />
+            </label>
+            <label className="min-w-0 md:col-span-2">
+              <div className="mb-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>Base URL</div>
+              <input value={form.base_url} onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))} placeholder="https://api.deepseek.com" className={inputClass} />
+            </label>
+            <label className="min-w-0">
+              <div className="mb-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>{editingKey ? 'API Key（留空不改）' : 'API Key'}</div>
+              <input type="password" value={form.secret_value} onChange={e => setForm(f => ({ ...f, secret_value: e.target.value }))}
+                placeholder={editingKey ? '已保存则可留空' : 'sk-...'} autoComplete="new-password" className={inputClass} />
+            </label>
+            <label className="min-w-0">
+              <div className="mb-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>Max Tokens</div>
+              <input type="number" min="1" step="1" value={form.max_tokens} onChange={e => setForm(f => ({ ...f, max_tokens: e.target.value }))} placeholder="8192" className={inputClass} />
+            </label>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <label className="inline-flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+              <input type="checkbox" checked={form.use_proxy} onChange={e => setForm(f => ({ ...f, use_proxy: e.target.checked }))} />
+              使用系统模型代理
+            </label>
             <div className="flex gap-2">
               <button type="button" onClick={startNew}
                 className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]">
@@ -6161,18 +6451,21 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
     questions: data?.question_count ?? 0,
     codexQuestions: data?.questions_by_backend?.codex ?? 0,
     claudeQuestions: data?.questions_by_backend?.claude_code ?? 0,
+    harnessQuestions: data?.questions_by_backend?.deepseek_harness ?? 0,
     codexQuestions2min: data?.questions_by_backend_2min?.codex ?? 0,
     claudeQuestions2min: data?.questions_by_backend_2min?.claude_code ?? 0,
+    harnessQuestions2min: data?.questions_by_backend_2min?.deepseek_harness ?? 0,
     activeWindows: data?.active_tmux_window_count ?? 0,
     codexActiveWindows: data?.active_windows_by_backend?.codex ?? data?.backends?.codex?.active_window_count ?? 0,
     claudeActiveWindows: data?.active_windows_by_backend?.claude_code ?? data?.backends?.claude_code?.active_window_count ?? 0,
+    harnessActiveWindows: data?.active_windows_by_backend?.deepseek_harness ?? data?.backends?.deepseek_harness?.active_window_count ?? 0,
     windows: data?.window_count ?? 0,
     working: data?.working_window_count ?? 0,
     closed: data?.closed_window_count ?? 0,
   }), [data])
 
-  const closeWindow = async (backendKey: 'codex' | 'claude_code', sessionId: string) => {
-    const ok = window.confirm(`关闭 ${backendKey} window ${sessionId}？`)
+  const closeWindow = async (backendKey: 'codex' | 'claude_code' | 'deepseek_harness', sessionId: string) => {
+    const ok = window.confirm(`关闭 ${backendKey} 运行实例 ${sessionId}？`)
     if (!ok) return
     const key = `${backendKey}:${sessionId}`
     setClosingKey(key)
@@ -6280,7 +6573,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
 
           {activeTab === 'runtime' && (
             <>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
                 <StatTile
                   icon={<MessageSquare className="h-4 w-4 text-cyan-400" />}
                   label="5小时提问"
@@ -6300,6 +6593,12 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
                   sub="tmux-claude-code"
                 />
                 <StatTile
+                  icon={<Server className="h-4 w-4 text-emerald-400" />}
+                  label="Harness 提问"
+                  value={totals.harnessQuestions}
+                  sub="deepseek-harness"
+                />
+                <StatTile
                   icon={<Terminal className="h-4 w-4 text-sky-400" />}
                   label="Codex 2分钟"
                   value={totals.codexQuestions2min}
@@ -6310,6 +6609,12 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
                   label="Claude 2分钟"
                   value={totals.claudeQuestions2min}
                   sub="tmux-claude-code · 近2分钟"
+                />
+                <StatTile
+                  icon={<Server className="h-4 w-4 text-emerald-400" />}
+                  label="Harness 2分钟"
+                  value={totals.harnessQuestions2min}
+                  sub="deepseek-harness · 近2分钟"
                 />
                 <StatTile
                   icon={<Terminal className="h-4 w-4 text-sky-400" />}
@@ -6324,8 +6629,14 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
                   sub="当前 tmux-claude-code"
                 />
                 <StatTile
+                  icon={<Server className="h-4 w-4 text-emerald-400" />}
+                  label="Harness 活跃进程"
+                  value={totals.harnessActiveWindows}
+                  sub="当前 deepseek-harness"
+                />
+                <StatTile
                   icon={<Server className="h-4 w-4 text-amber-400" />}
-                  label="Agent Window"
+                  label="Agent 运行实例"
                   value={totals.windows}
                   sub={`活跃 ${totals.activeWindows} · 不含 hub root`}
                 />
@@ -6340,7 +6651,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2">
                 <div className="flex min-w-0 items-center gap-2 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
                   {showClosedWindows ? <Eye className="h-3.5 w-3.5 text-sky-400" /> : <EyeOff className="h-3.5 w-3.5 text-[var(--text-muted)]" />}
-                  <span>Closed 窗口</span>
+                  <span>已关闭实例</span>
                   <span className="rounded-md border border-[var(--border-color)] px-2 py-0.5 text-[11px]" style={{ color: 'var(--text-primary)' }}>
                     {totals.closed}
                   </span>
@@ -6352,7 +6663,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
                   activeColor="#0ea5e9"
                   className="inline-flex h-8 items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
                   style={{ color: 'var(--text-secondary)' }}
-                  title="显示或隐藏已关闭的 Codex / Claude Code 窗口">
+                  title="显示或隐藏已关闭的 Agent 运行实例">
                   显示已关闭
                 </ToggleSwitch>
               </div>
@@ -6369,6 +6680,14 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
                 title="Claude Code"
                 accent="#a78bfa"
                 backend={data?.backends?.claude_code}
+                closingKey={closingKey}
+                showClosedWindows={showClosedWindows}
+                onCloseWindow={closeWindow}
+              />
+              <BackendSection
+                title="DeepSeek Harness"
+                accent="#34d399"
+                backend={data?.backends?.deepseek_harness}
                 closingKey={closingKey}
                 showClosedWindows={showClosedWindows}
                 onCloseWindow={closeWindow}
