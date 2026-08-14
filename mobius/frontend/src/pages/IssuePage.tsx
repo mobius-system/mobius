@@ -657,7 +657,7 @@ export default function IssuePage() {
         )}
       </div>
 
-      {showNewSession && <NewSessionModal issueId={issueId} onClose={() => setShowNewSession(false)}
+      {showNewSession && <NewSessionModal issueId={issueId} projectId={projectId} onClose={() => setShowNewSession(false)}
         defaultNamePrefix={issue?.title || ''}
         defaultDescription={issue?.description || ''}
         defaultModel={project?.default_model ?? null}

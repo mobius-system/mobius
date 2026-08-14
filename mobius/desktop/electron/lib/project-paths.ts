@@ -5,6 +5,7 @@ import { app } from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { findExactProjectPath, findExactProjectRoot, type ProjectPathMatch } from "./project-path-matching";
 
 const FILE = (): string => path.join(app.getPath("userData"), "project-paths.json");
 
@@ -27,20 +28,9 @@ export function readSharedDir2Project(): Record<string, string> {
   }
 }
 
-/** Exact path first, then the nearest bound ancestor (useful for subfolders). */
+/** TUI stores the exact cwd that selected a project; ancestors are not project roots. */
 export function findSharedProjectForPath(rawPath: string): { projectId: string; root: string } | null {
-  const target = path.resolve(rawPath);
-  const map = readSharedDir2Project();
-  let best: { projectId: string; root: string } | null = null;
-  for (const [rawRoot, rawId] of Object.entries(map)) {
-    if (typeof rawId !== "string" || !rawId.trim()) continue;
-    const root = path.resolve(rawRoot);
-    const rel = path.relative(root, target);
-    if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) {
-      if (!best || root.length > best.root.length) best = { projectId: rawId.trim(), root };
-    }
-  }
-  return best;
+  return findExactProjectPath(rawPath, readSharedDir2Project(), path);
 }
 
 export function bindSharedProjectPath(rawPath: string, projectId: string): void {
@@ -73,6 +63,19 @@ function write(store: Store): void {
 }
 
 const key = (server: string, projectId: string): string => `${server}::${projectId}`;
+
+/** Electron local bindings use the same exact-path rule as the shared TUI map. */
+export function findLocalProjectForPath(server: string, rawPath: string): ProjectPathMatch | null {
+  const prefix = `${server}::`;
+  const mappings: ProjectPathMatch[] = [];
+  for (const [storedKey, value] of Object.entries(read())) {
+    if (!storedKey.startsWith(prefix) || !value?.path) continue;
+    const projectId = storedKey.slice(prefix.length);
+    if (projectId) mappings.push({ projectId, root: value.path });
+  }
+
+  return findExactProjectRoot(rawPath, mappings, path);
+}
 
 export function getProjectLocalPath(server: string, projectId: string): string | null {
   return read()[key(server, projectId)]?.path || null;

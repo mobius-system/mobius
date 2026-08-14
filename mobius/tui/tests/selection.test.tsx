@@ -33,8 +33,6 @@ function emitEntry(n: number) {
   const payload = { event: 'jsonl_entry', session_id: SID, entry: { type: 'assistant', uuid: `a-${n}`, message: { role: 'assistant', content: [{ type: 'text', text: `回答 ${n}` }] } } }
   sseController?.enqueue(enc.encode(`event: jsonl_entry\ndata: ${JSON.stringify(payload)}\n\n`))
 }
-<<<<<<< HEAD
-=======
 function emitAssistantText(text: string) {
   const payload = { event: 'jsonl_entry', session_id: SID, entry: { type: 'assistant', uuid: `a-${Date.now()}`, message: { role: 'assistant', content: [{ type: 'text', text }] } } }
   sseController?.enqueue(enc.encode(`event: jsonl_entry\ndata: ${JSON.stringify(payload)}\n\n`))
@@ -43,7 +41,6 @@ function emitUserText(text: string) {
   const payload = { event: 'jsonl_entry', session_id: SID, entry: { type: 'user', uuid: `u-${Date.now()}`, message: { role: 'user', content: [{ type: 'text', text }] } } }
   sseController?.enqueue(enc.encode(`event: jsonl_entry\ndata: ${JSON.stringify(payload)}\n\n`))
 }
->>>>>>> gitlab-mobius/main
 
 let pass = 0, fail = 0
 function ok(c: boolean, m: string) { c ? (pass++, console.log(`  ✓ ${m}`)) : (fail++, console.error(`  ✗ ${m}`)) }
@@ -142,11 +139,7 @@ async function main() {
     const row1 = lines.findIndex(l => l.includes('回答 1'))
     const row3 = lines.findIndex(l => l.includes('回答 3'))
     ok(row1 >= 0 && row3 >= 0, `found 回答 1 (row ${row1}) and 回答 3 (row ${row3}) in the transcript`)
-<<<<<<< HEAD
-    ok(!frame.includes('PageDown'), 'all entries fit — no paging hints at rest')
-=======
-    ok(frame.includes('全部内容') && !frame.includes('↑ 较早内容') && !frame.includes('↓ 还有较新内容'), 'all entries fit — navigation reports the complete transcript')
->>>>>>> gitlab-mobius/main
+    ok(frame.includes('全部内容') && !frame.includes('↑ 较早内容') && !frame.includes('↓ 有新内容'), 'all entries fit — navigation reports the complete transcript')
 
     // press on 回答 1 (col 4 → first content char), drag to 回答 3 (col beyond EOL)
     stdin.write(`\x1b[<0;5;${row1 + 1}M`)                 // left-button press (SGR 1-based)
@@ -169,8 +162,6 @@ async function main() {
     const after = strip(lastFrame() ?? '')
     ok(after.includes('已复制'), 'copy notice shown in the status row')
     ok(!after.includes('回答 3') || true, 'selection cleared after release (highlight gone)')
-<<<<<<< HEAD
-=======
 
     // A long user line wraps in the normal Ink renderer. The selection renderer
     // must keep exactly the same rows while the mouse moves through it.
@@ -215,7 +206,6 @@ async function main() {
       stdin.write(`\x1b[<0;30;${styledRow + 1}m`)
       await delay(80)
     }
->>>>>>> gitlab-mobius/main
   } finally {
     unmount()
     globalThis.fetch = realFetch

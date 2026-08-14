@@ -12,6 +12,7 @@
  */
 import {
   extractBashCalls as extractBashCallsFromHelpers,
+  isAimuxCommandToolUseName,
   isBashToolUseName,
 } from '../jsonl-bash-helpers'
 import type { BashCall } from '../jsonl-bash-helpers'
@@ -43,7 +44,7 @@ import type {
 } from './types'
 
 // re-export: 部分模块 (BashCall 类型 / block 级抽取 / 一行摘要) 直接复用 jsonl-bash-helpers 的实现.
-export { extractBashCallFromBlock, bashCallOneLineSummary, isBashToolUseName } from '../jsonl-bash-helpers'
+export { extractBashCallFromBlock, bashCallOneLineSummary, isAimuxCommandToolUseName, isBashToolUseName } from '../jsonl-bash-helpers'
 export type { BashCall } from '../jsonl-bash-helpers'
 
 // ── Write tool_use ──────────────────────────────────────────────────────
@@ -205,6 +206,17 @@ export function extractBashCalls(entry: AnyEntry): BashCall[] {
 
 export function isBashToolUse(entry: AnyEntry): boolean {
   return extractBashCalls(entry).length > 0
+}
+
+export function isAimuxCommandToolUse(entry: AnyEntry): boolean {
+  if (entry?.type !== 'assistant') return false
+  const content = entry?.message?.content
+  if (!Array.isArray(content)) return false
+  return content.some((block: any) => {
+    if (block?.type !== 'tool_use' || !isAimuxCommandToolUseName(block?.name)) return false
+    const input = block?.input
+    return !!input && typeof input === 'object' && [input.cmd, input.command, input.script].some((value) => typeof value === 'string' && value.length > 0)
+  })
 }
 
 // 该 entry 是否为 "assistant 发起的 Bash tool_use 且 input.command 包含 'start.py'"

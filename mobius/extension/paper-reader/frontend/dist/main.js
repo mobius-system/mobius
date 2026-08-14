@@ -9,7 +9,8 @@ const state = {
   conversation: [], conversationHasMore: false,
   anchor: null, selectedQuote: '', activeParagraph: null, editingNote: null, noteKind: 'insight',
   pdfUrl: null, currentView: 'text', activeSideTab: 'chat', headingObserver: null, saveScrollTimer: null,
-  panelSizes: { outline: 232, side: 480 }
+  panelSizes: { outline: 232, side: 480 }, uploadFile: null, uploadBusy: false,
+  parseJob: null, parseTimer: null, enhancedPrompted: false
 };
 const SUGGESTIONS = [
   '提炼这篇论文真正新增的算法机制',
@@ -235,7 +236,7 @@ function renderRecent() {
   }
   list.innerHTML = state.recent.slice(0, 20).map((paper) => `
     <button type="button" data-sid="${esc(paper.source_id)}">
-      <code>${esc(paper.arxiv_id || paper.source_id)}</code>
+      <code>${paper.origin === 'upload' ? '<i data-lucide="hard-drive-upload"></i> PDF' : esc(paper.arxiv_id || paper.source_id)}</code>
       <span>${esc(paper.title || '未命名论文')}</span>
       <i data-lucide="arrow-up-right"></i>
     </button>`).join('');
@@ -253,6 +254,192 @@ function showOpenDialog() {
     $('openInput').focus();
     $('openInput').select();
   });
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function selectUploadFile(file) {
+  if (!file) return;
+  if (!/\.pdf$/i.test(file.name || '') || (file.type && file.type !== 'application/pdf')) {
+    toast('请选择 PDF 文件', true);
+    return;
+  }
+  if (file.size > 50 * 1024 * 1024) {
+    toast('PDF 不能超过 50 MB', true);
+    return;
+  }
+  state.uploadFile = file;
+  $('pdfFileName').textContent = file.name;
+  $('pdfFileMeta').textContent = `${formatBytes(file.size)} · 将保存原始 PDF 并提取可检索全文`;
+  $('pdfDropzone').classList.add('has-file');
+}
+
+function resetUploadDialog() {
+  state.uploadFile = null;
+  state.uploadBusy = false;
+  $('uploadForm').reset();
+  $('pdfFileName').textContent = '选择或拖入一篇 PDF';
+  $('pdfFileMeta').textContent = '原始文件会永久保存在 Paper Reader；单文件不超过 50 MB';
+  $('pdfDropzone').classList.remove('has-file', 'is-dragging');
+  $('uploadProgress').hidden = true;
+  $('uploadProgress').classList.remove('is-error');
+  $('uploadSubmit').disabled = false;
+  $('uploadCancel').disabled = false;
+  $('uploadClose').disabled = false;
+  document.querySelectorAll('[data-upload-step]').forEach((item) => item.classList.remove('is-active', 'is-done'));
+}
+
+function showUploadDialog() {
+  if ($('openDialog').open) $('openDialog').close();
+  resetUploadDialog();
+  if (!$('uploadDialog').open) $('uploadDialog').showModal();
+  refreshIcons($('uploadDialog'));
+}
+
+function setUploadProgress(step, label, percent) {
+  const order = ['upload', 'persist', 'extract', 'index'];
+  const active = order.indexOf(step);
+  $('uploadProgress').hidden = false;
+  $('uploadProgressLabel').textContent = label;
+  $('uploadProgressPercent').textContent = `${percent}%`;
+  $('uploadProgressBar').style.width = `${percent}%`;
+  document.querySelectorAll('[data-upload-step]').forEach((item) => {
+    const index = order.indexOf(item.dataset.uploadStep);
+    item.classList.toggle('is-done', index < active || percent === 100);
+    item.classList.toggle('is-active', index === active && percent < 100);
+  });
+}
+
+async function finishOpeningPaper(paper, message = '论文已载入') {
+  renderPaper(paper);
+  await Promise.all([loadNotes(paper.source_id), loadComments(paper.source_id), loadRuns(paper.source_id, { restore: true })]);
+  switchPane('chat', false);
+  history.replaceState(null, '', `${location.pathname}?id=${encodeURIComponent(paper.source_id)}`);
+  const recent = await call({ action: 'list_recent_papers' }).catch(() => null);
+  if (recent?.items) { state.recent = recent.items; renderRecent(); }
+  setLoading('', false);
+  toast(message);
+  restoreReadingPosition(paper.source_id);
+  maybePromptEnhancedParse(paper);
+}
+
+function enhancedNeeded(paper) {
+  return paper?.origin === 'upload' && ['needs_enhanced_parse', 'needs_ocr'].includes(paper.extraction_status);
+}
+function renderEnhancedState(paper, job = state.parseJob) {
+  const card = $('enhancedCard');
+  const button = $('highPrecisionBtn');
+  const available = paper?.origin === 'upload' || Boolean(paper?.arxiv_id);
+  const uploaded = paper?.origin === 'upload';
+  button.hidden = !available;
+  button.disabled = Boolean(job && ['queued', 'running'].includes(job.status));
+  button.innerHTML = job && ['queued', 'running'].includes(job.status)
+    ? '<i data-lucide="loader-circle"></i><span>解析中…</span>'
+    : paper?.extraction_status === 'enhanced_ready'
+      ? '<i data-lucide="badge-check"></i><span>高精度已完成</span>'
+      : '<i data-lucide="scan-search"></i><span>高精度解析</span>';
+  if ((!uploaded && !job) || paper?.extraction_status === 'enhanced_ready') { card.hidden = true; refreshIcons(); return; }
+  card.hidden = false;
+  const reasons = (paper.quality_reasons || []).map((reason) => esc(reason)).join('；');
+  if (job && ['queued', 'running'].includes(job.status)) {
+    card.innerHTML = `<strong>高精度云解析正在进行</strong><p>${esc(job.stage || '正在处理论文版面、公式和表格')}。</p><div class="pr-enhanced-actions"><span class="pr-enhanced-progress">${Number(job.progress || 0)}% · ${esc(job.provider || 'doc2x')}</span><button class="pr-btn ghost sm" type="button" id="cancelEnhancedHint">后台运行中</button></div>`;
+  } else if (paper.extraction_status === 'needs_ocr') {
+    card.innerHTML = `<strong>本地解析没有得到足够正文</strong><p>原始 PDF 已保留。可以授权高精度云解析识别扫描文字、公式和表格。</p><div class="pr-enhanced-actions"><button class="pr-btn primary sm" type="button" data-enhanced-action="start">授权并开始</button><span class="pr-enhanced-progress">文件将发送给 Doc2X</span></div>`;
+  } else {
+    card.innerHTML = `<strong>检测到版面结构可能不可靠（评分 ${Number(paper.quality_score || 0)}/100）</strong><p>${reasons ? `风险：${reasons}。` : '双栏、公式或表格可能没有被可靠恢复。'} 建议用高精度解析后再让 Agent 分析。</p><div class="pr-enhanced-actions"><button class="pr-btn primary sm" type="button" data-enhanced-action="start">授权并开始高精度解析</button><span class="pr-enhanced-progress">原始 PDF 会发送给 Doc2X</span></div>`;
+  }
+  card.querySelector('[data-enhanced-action="start"]')?.addEventListener('click', () => startEnhancedParse());
+  refreshIcons(card); refreshIcons(button);
+}
+function maybePromptEnhancedParse(paper) {
+  renderEnhancedState(paper);
+  if (state.parseJob && ['queued', 'running'].includes(state.parseJob.status)) {
+    pollEnhancedParse();
+    return;
+  }
+  if (!enhancedNeeded(paper) || state.enhancedPrompted || state.parseJob) return;
+  const key = `pr-enhanced-prompt:${paper.source_id}:${paper.pdf_sha256 || paper.fetched_at || ''}`;
+  if (localStorage.getItem(key) === 'dismissed') return;
+  state.enhancedPrompted = true;
+  setTimeout(() => {
+    const accepted = window.confirm(`这篇 PDF 的本地版面解析质量较低（${Number(paper.quality_score || 0)}/100）。\n\n是否授权将原始 PDF 发送给 Doc2X，进行公式、表格和双栏结构的高精度解析？`);
+    if (accepted) startEnhancedParse(true);
+    else localStorage.setItem(key, 'dismissed');
+  }, 450);
+}
+async function startEnhancedParse(confirmed = false) {
+  if (!state.paper || (state.paper.origin !== 'upload' && !state.paper.arxiv_id)) return toast('当前论文没有可用的 PDF 来源', true);
+  if (state.parseJob && ['queued', 'running'].includes(state.parseJob.status)) return toast('高精度解析已经在后台运行');
+  if (!confirmed && !window.confirm('确认将这篇原始 PDF 发送给 Doc2X？匿名审稿稿件或敏感材料请先确认授权范围。')) return;
+  try {
+    const result = await call({ action: 'start_high_precision_parse', source_id: state.paper.source_id });
+    state.parseJob = result.job;
+    renderEnhancedState(state.paper, state.parseJob);
+    toast('已启动高精度解析，完成后会自动切换到新版本');
+    pollEnhancedParse();
+  } catch (error) { toast(`启动高精度解析失败：${error.message}`, true); }
+}
+function pollEnhancedParse() {
+  clearTimeout(state.parseTimer);
+  const tick = async () => {
+    if (!state.parseJob?.id) return;
+    try {
+      const result = await call({ action: 'poll_parse_job', job_id: state.parseJob.id });
+      state.parseJob = result.job;
+      renderEnhancedState(state.paper, state.parseJob);
+      if (result.completed && result.paper) {
+        state.parseJob = null;
+        await finishOpeningPaper(result.paper, '高精度解析完成，已切换到新版阅读索引');
+        return;
+      }
+      if (['failed'].includes(result.job?.status)) { toast(`高精度解析失败：${result.job.error || '未知错误'}`, true); return; }
+    } catch {}
+    state.parseTimer = setTimeout(tick, 3500);
+  };
+  tick();
+}
+
+async function uploadPdf(event) {
+  event.preventDefault();
+  if (state.uploadBusy) return;
+  const file = state.uploadFile || $('pdfFile').files?.[0];
+  if (!file) return toast('请先选择一篇 PDF', true);
+  state.uploadBusy = true;
+  $('uploadSubmit').disabled = true;
+  $('uploadCancel').disabled = true;
+  $('uploadClose').disabled = true;
+  setUploadProgress('upload', '正在上传原始 PDF', 8);
+  let extractTimer;
+  try {
+    const { extUpload } = await import('/extension/_sdk/ext.js');
+    const uploaded = await extUpload(file);
+    if (!uploaded?.ok || !uploaded.file?.stored_name) throw new Error(uploaded?.error || '上传失败');
+    setUploadProgress('persist', '正在校验文件并永久保存', 38);
+    extractTimer = setTimeout(() => setUploadProgress('extract', '正在按页提取正文、标题与章节', 58), 450);
+    const result = await call({
+      action: 'ingest_uploaded_pdf', stored_name: uploaded.file.stored_name, filename: uploaded.file.name || file.name,
+      title: $('uploadTitle').value.trim(), authors: $('uploadAuthors').value.trim()
+    });
+    clearTimeout(extractTimer);
+    setUploadProgress('index', '正在建立持久化阅读索引', 92);
+    await finishOpeningPaper(result.paper, result.duplicate ? '这篇 PDF 已存在，已恢复阅读记录' : 'PDF 已导入并持久化');
+    setUploadProgress('index', '导入完成', 100);
+    setTimeout(() => { if ($('uploadDialog').open) $('uploadDialog').close(); resetUploadDialog(); }, 550);
+  } catch (error) {
+    clearTimeout(extractTimer);
+    state.uploadBusy = false;
+    $('uploadSubmit').disabled = false;
+    $('uploadCancel').disabled = false;
+    $('uploadClose').disabled = false;
+    $('uploadProgressLabel').textContent = `导入失败：${error.message}`;
+    $('uploadProgress').classList.add('is-error');
+    toast(`导入失败：${error.message}`, true);
+  }
 }
 
 async function bootstrap() {
@@ -333,10 +520,10 @@ function uniqueHeadingId(text, index) {
 
 function buildOutline() {
   const list = $('outlineList');
-  const headings = [...$('paperBody').querySelectorAll('h2, h3')].filter((heading) => heading.textContent.trim());
+  const headings = [...$('paperBody').querySelectorAll('h2, h3, h4')].filter((heading) => heading.textContent.trim());
   headings.forEach((heading, index) => { heading.id = uniqueHeadingId(heading.textContent.trim(), index); });
   list.innerHTML = `<button class="is-active" type="button" data-target="paperTop" data-level="2"><span>开始阅读</span></button>` + headings.map((heading) => `
-    <button type="button" data-target="${esc(heading.id)}" data-level="${heading.tagName === 'H3' ? '3' : '2'}">
+    <button type="button" data-target="${esc(heading.id)}" data-level="${heading.tagName === 'H2' ? '2' : heading.tagName === 'H3' ? '3' : '4'}">
       <span>${esc(heading.textContent.trim().replace(/\s+/g, ' ').slice(0, 100))}</span>
     </button>`).join('');
   list.querySelectorAll('[data-target]').forEach((button) => button.addEventListener('click', () => {
@@ -358,16 +545,10 @@ async function openPaper(input) {
   if (!value) { toast('请输入 arXiv ID 或链接', true); return; }
   $('openInput').value = value;
   $('openDialog').close();
-  setLoading('正在获取并整理论文全文', true);
+  setLoading(value.startsWith('upload_') ? '正在恢复本地论文与阅读记录' : '正在获取并整理论文全文', true);
   try {
     const result = await call({ action: 'open_paper', arxiv_id: value });
-    renderPaper(result.paper);
-    await Promise.all([loadNotes(result.paper.source_id), loadComments(result.paper.source_id), loadRuns(result.paper.source_id, { restore: true })]);
-    switchPane('chat', false);
-    history.replaceState(null, '', `${location.pathname}?id=${encodeURIComponent(result.paper.source_id)}`);
-    setLoading('', false);
-    toast('论文已载入');
-    restoreReadingPosition(result.paper.source_id);
+    await finishOpeningPaper(result.paper);
   } catch (error) {
     setLoading('', false);
     toast(`打开失败：${error.message}`, true);
@@ -376,8 +557,10 @@ async function openPaper(input) {
 
 function renderPaper(paper) {
   state.paper = paper;
+  state.parseJob = paper.parse_job || null;
   state.anchor = null;
   state.activeParagraph = null;
+  if (state.pdfUrl?.startsWith('blob:')) URL.revokeObjectURL(state.pdfUrl);
   state.pdfUrl = null;
   state.currentView = 'text';
   $('readerEmpty').hidden = true;
@@ -387,23 +570,39 @@ function renderPaper(paper) {
   $('currentPaperMeta').hidden = false;
   $('readProgress').hidden = false;
   $('paperTitle').textContent = paper.title || '未命名论文';
-  $('paperAuthors').textContent = paper.authors || '作者信息不可用';
-  $('paperAbstract').textContent = paper.abstract || '摘要不可用';
-  $('paperArxiv').textContent = `ARXIV ${paper.arxiv_id || paper.source_id}`;
-  $('topPaperId').textContent = paper.arxiv_id || paper.source_id;
+  const uploaded = paper.origin === 'upload';
+  $('paperAuthors').textContent = paper.authors || (uploaded ? '作者信息未从 PDF 元数据中识别' : '作者信息不可用');
+  $('paperAbstract').textContent = paper.abstract || (uploaded ? 'PDF 中未自动识别出独立摘要；正文与原始 PDF 均已保留。' : '摘要不可用');
+  $('paperArxiv').textContent = uploaded ? `UPLOADED PDF${paper.page_count ? ` · ${paper.page_count} PAGES` : ''}` : `ARXIV ${paper.arxiv_id || paper.source_id}`;
+  $('paperStatus').textContent = uploaded ? (paper.extraction_status === 'needs_ocr' ? 'OCR REQUIRED' : 'LOCAL TEXT') : 'FULL TEXT';
+  if (uploaded && paper.extraction_status === 'enhanced_ready') $('paperStatus').textContent = 'HIGH PRECISION';
+  $('topPaperId').textContent = uploaded ? '本地 PDF' : (paper.arxiv_id || paper.source_id);
   $('topPaperTitle').textContent = paper.title || '';
   $('pdfTitle').textContent = paper.title || '';
-  $('paperLink').href = `https://arxiv.org/abs/${encodeURIComponent(paper.arxiv_id || paper.source_id)}`;
+  $('paperLink').hidden = uploaded;
+  if (!uploaded) $('paperLink').href = `https://arxiv.org/abs/${encodeURIComponent(paper.arxiv_id || paper.source_id)}`;
   $('anchorBar').hidden = true;
   const body = $('paperBody');
-  body.innerHTML = sanitizeFragment(paper.html || '<p>未取得全文 HTML，可以切换到 PDF 阅读。</p>');
-  normalizePaperDom(body, paper);
+  if (uploaded) {
+    const warning = paper.extraction_status === 'needs_ocr'
+      ? '<div class="pr-extract-warning"><strong>这是一份扫描型或低文本密度 PDF</strong><span>原始文件已永久保存并可直接阅读，但本地解析没有提取到足够正文。后续对话只能基于已提取文本，建议接入 OCR 后重新解析。</span></div>'
+      : '';
+    body.innerHTML = warning + (paper.document_markdown ? renderMd(paper.document_markdown) : '<p>尚未提取到正文，请切换到 PDF 阅读。</p>');
+    const titleKey = String(paper.title || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const duplicateTitle = [...body.querySelectorAll('h1, h2, h3, h4')].find((heading) => heading.textContent.replace(/\s+/g, ' ').trim().toLowerCase() === titleKey);
+    duplicateTitle?.remove();
+    enhanceRichContent(body);
+  } else {
+    body.innerHTML = sanitizeFragment(paper.html || '<p>未取得全文 HTML，可以切换到 PDF 阅读。</p>');
+    normalizePaperDom(body, paper);
+  }
   prepareParagraphs(body);
   buildOutline();
   $('transcript').innerHTML = '';
   renderChatEmpty();
   document.querySelectorAll('[data-view]').forEach((button) => button.classList.toggle('is-active', button.dataset.view === 'text'));
-  renderMath(body);
+  if (!uploaded) renderMath(body);
+  renderEnhancedState(paper);
   refreshIcons();
   updateProgress();
 }
@@ -431,7 +630,15 @@ async function setView(view) {
   $('pdfMsg').textContent = '正在加载 PDF…';
   try {
     const result = await call({ action: 'get_paper_pdf', source_id: state.paper.source_id });
-    if (result.too_large) {
+    if (result.stream_url) {
+      const token = localStorage.getItem('cc-token') || '';
+      const url = new URL(result.stream_url, location.origin);
+      if (token) url.searchParams.set('token', token);
+      state.pdfUrl = url.href;
+      $('pdfFrame').src = state.pdfUrl;
+      $('pdfFrame').hidden = false;
+      $('pdfMsg').hidden = true;
+    } else if (result.too_large) {
       $('pdfMsg').textContent = `PDF 大小约 ${Math.round(result.bytes / 1024 / 1024)} MB，请在新窗口中阅读。`;
       $('pdfExtLink').href = result.url;
       $('pdfExtLink').hidden = false;
@@ -1164,6 +1371,23 @@ function bind() {
   setupPanelResize();
   $('openCommand').addEventListener('click', showOpenDialog);
   $('emptyOpen').addEventListener('click', showOpenDialog);
+  $('emptyUpload').addEventListener('click', showUploadDialog);
+  $('openUpload').addEventListener('click', showUploadDialog);
+  $('highPrecisionBtn').addEventListener('click', () => startEnhancedParse(false));
+  $('uploadForm').addEventListener('submit', uploadPdf);
+  $('pdfFile').addEventListener('change', (event) => selectUploadFile(event.target.files?.[0]));
+  $('uploadClose').addEventListener('click', () => { if (!state.uploadBusy) $('uploadDialog').close(); });
+  $('uploadCancel').addEventListener('click', () => { if (!state.uploadBusy) $('uploadDialog').close(); });
+  $('uploadDialog').addEventListener('close', () => { if (!state.uploadBusy) resetUploadDialog(); });
+  ['dragenter', 'dragover'].forEach((name) => $('pdfDropzone').addEventListener(name, (event) => {
+    event.preventDefault();
+    if (!state.uploadBusy) $('pdfDropzone').classList.add('is-dragging');
+  }));
+  ['dragleave', 'drop'].forEach((name) => $('pdfDropzone').addEventListener(name, (event) => {
+    event.preventDefault();
+    $('pdfDropzone').classList.remove('is-dragging');
+  }));
+  $('pdfDropzone').addEventListener('drop', (event) => { if (!state.uploadBusy) selectUploadFile(event.dataTransfer?.files?.[0]); });
   $('openForm').addEventListener('submit', (event) => {
     event.preventDefault();
     if (event.submitter?.value === 'cancel') return $('openDialog').close();

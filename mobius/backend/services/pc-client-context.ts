@@ -93,22 +93,14 @@ function tuiBasePrompt(aimuxId: string, remotePath: string, language: ContextLan
       `I'm working in this remote machine as well, so when I say 'here', I mean remote path [${remotePath}] at ${aimuxId}. ` +
       `When I say 'local', I also mean ${aimuxId}. ` +
       `Only when I say 'mobius center/hub' do I mean the machine you are currently on. ` +
-<<<<<<< HEAD
-      `You operate this remote computer through the remote_* tools (remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping); ` +
-=======
       `You operate this remote computer through the remote_* MCP tools (remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping); ` +
->>>>>>> gitlab-mobius/main
       `these tools act directly on ${aimuxId} — the computer whose hostname is encoded in that identifier. ` +
       `In your text answer, do not mention 'aimux' or reveal that you are working remotely (although in fact you are working remotely).`
     : `你在远程机器 ${aimuxId}${remotePath} 上工作。` +
       `由于我也正在远程机器上操作，所以当我说“这里(here)”时，我指的是 ${aimuxId} 上的远程路径 [${remotePath}]；` +
       `当我说“本地(local)”时，我指的是 ${aimuxId}。` +
       `只有当我说“中枢(mobius center/hub)”时，才指现在你所处的机器。` +
-<<<<<<< HEAD
-      `你通过 remote_* 工具（remote_exec_command、remote_write_stdin、remote_apply_patch、remote_view_image、remote_ping）操作这台远程计算机；` +
-=======
       `你优先使用已注册的 MCP 工具（remote_exec_command、remote_write_stdin、remote_apply_patch、remote_view_image、remote_ping）操作这台远程计算机；` +
->>>>>>> gitlab-mobius/main
       `这些工具直接作用于 ${aimuxId} —— 该标识符编码了其主机名的那台计算机。` +
       `在你的文本回答中，不要提及“aimux”，也不要暴露你在远程工作（尽管实际上你在远程工作）。`;
 }
@@ -160,18 +152,6 @@ const MODE_PROMPTS: Record<ClientKind, Record<PcWorkMode, Record<ContextLanguage
     },
     pc: {
       en: (id, rp) =>
-<<<<<<< HEAD
-        `Use aimux to connect to the following remote machine to carry out all work, ` +
-        `and try to avoid modifying local code: ${id}${rp}`,
-      zh: (id, rp) => `使用aimux连接到以下远程机器执行所有工作，尽量不修改本地的代码： ${id}${rp}`,
-    },
-    dual: {
-      en: (id, rp) =>
-        `You are authorized to use aimux to connect to the following remote machine: ${id}. ` +
-        dualModeTail(id, rp, 'en'),
-      zh: (id, rp) =>
-        `你现在被授权使用aimux连接到以下远程机器： ${id}，` +
-=======
         `Use the registered remote_* MCP tools (backed by aimux) to connect to the following remote machine and carry out all work, ` +
         `and try to avoid modifying local code: ${id}${rp}`,
       zh: (id, rp) => `使用已注册的 remote_* MCP 工具（由 aimux 提供）连接到以下远程机器执行所有工作，尽量不修改本地的代码： ${id}${rp}`,
@@ -182,7 +162,6 @@ const MODE_PROMPTS: Record<ClientKind, Record<PcWorkMode, Record<ContextLanguage
         dualModeTail(id, rp, 'en'),
       zh: (id, rp) =>
         `你现在被授权使用已注册的 remote_* MCP 工具（由 aimux 提供）连接到以下远程机器： ${id}，` +
->>>>>>> gitlab-mobius/main
         dualModeTail(id, rp, 'zh'),
     },
   },

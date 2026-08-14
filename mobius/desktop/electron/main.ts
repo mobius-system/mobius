@@ -11,7 +11,7 @@ import { loadCreds, saveCreds, clearCreds, loadServerUrl, saveServerUrl, loadSer
 import { gatherHostInfo, type BootData } from "./lib/host-info";
 import { ensureAimux, upgradeAimux, getAimuxVersion, checkAimuxUpdate, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
 import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
-import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName, findSharedProjectForPath, bindSharedProjectPath } from "./lib/project-paths";
+import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName, findLocalProjectForPath, findSharedProjectForPath, bindSharedProjectPath } from "./lib/project-paths";
 import { ensureWindowsContextMenu, openPathArgument } from "./lib/windows-context-menu";
 import { FileOpError, validateNewName, assertNoSymlink, isDirEqualOrChild, copyEntryRecursive } from "./lib/project-file-ops";
 import { getAimuxEnabled, setAimuxEnabled, getLastRoute } from "./lib/desktop-settings";
@@ -190,13 +190,15 @@ async function fetchProjectName(server: string, projectId: string): Promise<stri
   }
 }
 
-/** Resolve a Windows Explorer path through the TUI-compatible ~/.mobius map. */
+/** Resolve a Windows Explorer path through Electron bindings or an exact TUI cwd mapping. */
 async function openRequestedPath(rawPath: string): Promise<void> {
   const candidate = String(rawPath || "").trim();
   if (!candidate || !tabManager || !creds) return;
   const target = resolve(candidate);
   let route = `/welcome?path=${encodeURIComponent(target)}`;
-  const match = findSharedProjectForPath(target);
+  const localMatch = findLocalProjectForPath(serverOrigin(), target);
+  const sharedMatch = localMatch ? null : findSharedProjectForPath(target);
+  const match = localMatch || sharedMatch;
   if (match) {
     try {
       const res = await fetch(`${serverOrigin()}/api/projects`, { headers: { Authorization: `Bearer ${creds.jwt}` } });
@@ -204,8 +206,6 @@ async function openRequestedPath(rawPath: string): Promise<void> {
       const projects: any[] = Array.isArray(data) ? data : (data?.projects || []);
       const project = projects.find((p) => String(p?.id || "") === match.projectId);
       if (project) {
-        // Import the TUI mapping into the legacy Electron store on first use.
-        setProjectLocalPath(serverOrigin(), match.projectId, match.root);
         route = `/u/${encodeURIComponent(creds.username)}/p/${encodeURIComponent(match.projectId)}`;
       }
     } catch { /* server unavailable: leave the welcome flow with the path */ }

@@ -261,6 +261,16 @@ function testMarkdownCodeRendering() {
 
   const unlabelled = renderMarkdownLines('```\necho $HOME\n```')
   ok(unlabelled.length === 1 && unlabelled[0].text === 'echo $HOME' && unlabelled[0].code, 'unlabelled code stays plain instead of being guessed as bash')
+
+  // HTML entity decoding — marked's lexer encodes ', ", <, >, & even when
+  // only tokenising, so the TUI renderer must decode them back.
+  const entities = renderMarkdownLines("What's \"cool\"? 1 < 2 & 3 > 1")
+  const entityText = entities.map(r => r.text).join('\n')
+  ok(entityText.includes("What's"), "&#39; decoded back to apostrophe")
+  ok(entityText.includes('"cool"'), "&quot; decoded back to double-quote")
+  ok(entityText.includes('1 < 2'), "&lt; decoded back to <")
+  ok(entityText.includes('3 > 1'), "&gt; decoded back to >")
+  ok(entityText.includes('& 3'), "&amp; decoded back to &")
 }
 
 function testFirstUserEntryDedupe() {
@@ -668,6 +678,54 @@ async function testComposerMultilinePaste() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// TEST 9b — Idle Ctrl+C requires a second press to quit (guards accidental exit)
+// ════════════════════════════════════════════════════════════════════════════
+async function testComposerCtrlCConfirm() {
+  console.log('\n[UI 9b] idle Ctrl+C asks for a confirming second press')
+  let quitCalled = 0
+  const { stdin, lastFrame, unmount } = render(
+    <Composer
+      onSubmit={() => {}}
+      onStop={() => {}}
+      onQuit={() => { quitCalled++ }}
+      typing={false}
+      commands={[]}
+    />,
+  )
+  await delay(20)
+  stdin.write('\x03') // Ctrl+C
+  await delay(20)
+  ok(quitCalled === 0, 'first Ctrl+C does not quit')
+  ok((lastFrame() ?? '').includes('请再次按下Ctrl+C退出'), 'first Ctrl+C shows the confirm prompt')
+  stdin.write('\x03') // second Ctrl+C within the window
+  await delay(20)
+  ok(quitCalled === 1, 'second Ctrl+C quits')
+  unmount()
+
+  // The confirmation window expires: a Ctrl+C after 2s must arm, not quit.
+  let lateQuit = 0
+  const late = render(
+    <Composer
+      onSubmit={() => {}}
+      onStop={() => {}}
+      onQuit={() => { lateQuit++ }}
+      typing={false}
+      commands={[]}
+    />,
+  )
+  await delay(20)
+  late.stdin.write('\x03')
+  await delay(2100) // let the 2s window lapse
+  late.stdin.write('\x03')
+  await delay(20)
+  ok(lateQuit === 0, 'Ctrl+C after the window lapses re-arms instead of quitting')
+  late.stdin.write('\x03')
+  await delay(20)
+  ok(lateQuit === 1, 'the re-armed second Ctrl+C quits')
+  late.unmount()
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // TEST 10 — Working text uses a moving multi-level brightness wave
 // ════════════════════════════════════════════════════════════════════════════
 function testWorkingShimmer() {
@@ -993,6 +1051,7 @@ async function main() {
   await testComposerDeleteKeys()
   await testCursorNavigationKeys()
   await testComposerMultilinePaste()
+  await testComposerCtrlCConfirm()
   testWorkingShimmer()
   testReasoningViews()
   testCustomToolCallViews()
