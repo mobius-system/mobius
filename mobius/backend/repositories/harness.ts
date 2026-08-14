@@ -87,6 +87,7 @@ function profileFromRow(row: AnyRow): ResolvedHarnessProfile {
 
 export function listVisibleHarnessProfiles(userId: string, projectId: string): ResolvedHarnessProfile[] {
   syncAvailableClaudeHarnessProfiles();
+  syncAvailableCodexHarnessProfiles();
   syncAvailableDeepSeekHarnessProfiles();
   const rows = db.prepare(`SELECT * FROM harness_profiles
     WHERE is_enabled = 1 AND (
@@ -121,6 +122,53 @@ function syncAvailableClaudeHarnessProfiles(): void {
       JSON.stringify({
         schema_version: '1.1',
         backend: 'claude-code',
+        model,
+        capabilities,
+        model_traits: {
+          needs_context_reset: false,
+          context_window_tokens: 0,
+          supports_auto_compaction: true,
+          calibrated: false,
+        },
+        skills: [],
+        tools: { allow: [], deny: [], capability_tags: [] },
+        cost_profile: { relative_cost_factor: 1 },
+        default_context_policy: {},
+        default_tool_policy: { workspace_mode: 'read_only' },
+      }),
+    );
+  }
+}
+
+function syncAvailableCodexHarnessProfiles(): void {
+  // 管理员导入的 Codex 渠道 (如 GPT-5.6-Sol/Terra) 也开放为系统 Harness Profile,
+  // 否则除内置 codex 外的 Codex 模型会报"暂无可用的 Harness Profile, 不能加入 Multi Harness".
+  // 内置 codex 已由 db.ts 的 system-codex-readonly-v1 覆盖 (default_model='codex'), 跳过避免重复.
+  const options = modelRegistry.listSessionModelOptions()
+    .filter((option: AnyRow) => option.backend === 'tmux-codex' && option.imported === true);
+  const insert = db.prepare(`INSERT OR IGNORE INTO harness_profiles
+    (id, scope, name, description, backend, default_model, capabilities_json, definition_json, version)
+    VALUES (?, 'system', ?, 'Configured Codex read-only profile', 'codex', ?, ?, ?, 1)`);
+  for (const option of options) {
+    const capabilities = {
+      can_main: true,
+      can_work: true,
+      can_evaluate: true,
+      supports_write: false,
+      supports_network: false,
+      supports_runtime_verification: false,
+      max_concurrency: 1,
+    };
+    const model = String(option.value || option.key);
+    const profileId = `system-codex-${crypto.createHash('sha256').update(model).digest('hex').slice(0, 16)}-v1`;
+    insert.run(
+      profileId,
+      String(option.label || 'Codex Read-only'),
+      model,
+      JSON.stringify(capabilities),
+      JSON.stringify({
+        schema_version: '1.1',
+        backend: 'codex',
         model,
         capabilities,
         model_traits: {

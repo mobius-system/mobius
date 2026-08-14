@@ -1,10 +1,11 @@
 import { Suspense, lazy, useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { Bot, Users, Trash2 } from 'lucide-react'
+import { Bot, Users, Trash2, ChevronDown } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
 import { ErrBanner, NewSessionModal, RenameSessionModal, RenameResearchModal } from '../components/modals'
-import { ChatArea, SessionRow, isSessionNameMuted } from '../components/chat'
+import { ChatArea, SessionRow, isSessionNameMuted, runtimeStatusForSessionList } from '../components/chat'
 import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
@@ -13,9 +14,13 @@ import { usePagination, PaginationControls } from '../components/pagination'
 import ResearchGraph from '../components/research-graph'
 import ResearchBlackboard from '../components/research-blackboard'
 import { useEditorAvailability } from '../components/workspace/use-editor-availability'
+import { SCENE_KIND_OPTIONS, AVATAR_KIND_OPTIONS } from '../components/research-agent-team-scene-options'
+import type { SceneKind, AvatarKind } from '../components/research-agent-team-scene-options'
 
 const ResearchAgentTeamModal = lazy(() => import('../components/research-agent-team-modal')
   .then(mod => ({ default: mod.ResearchAgentTeamModal })))
+const ResearchAgentTeamScene = lazy(() => import('../components/research-agent-team-scene')
+  .then(mod => ({ default: mod.ResearchAgentTeamScene })))
 const EditorPane = lazy(() => import('../components/workspace/editor-pane').then(mod => ({ default: mod.EditorPane })))
 const CodeConversationPane = lazy(() => import('../components/workspace/code-conversation-pane').then(mod => ({ default: mod.CodeConversationPane })))
 
@@ -142,20 +147,18 @@ export default function ResearchPage() {
     applySessionWorkspaceLayout(currentSession?.session_id || null)
   }, [currentSession?.session_id])
 
-  // 刷新 sessions 列表. 合并而非直接覆盖: 当前会话的 agent_status 由 ChatArea 2s 轮询
-  // 实时维护 (并写回 DB), 这里保留本地值, 避免周期刷新用 DB 滞后值覆盖 -> 当前会话小圆点
-  // 闪烁 (尤其点"终止"后的 3s 抑制窗内 DB 仍报 running). 其余会话取后端最新值.
+  // 刷新 sessions 列表. 合并而非直接覆盖: agent_status 的实时值由 ChatArea (当前会话,
+  // 2s) 与下方批量状态轮询 (其余会话, 4s/15s) 维护, 都比后端 agent-status-syncer 写回
+  // DB 的滞后值新鲜, 因此任何已有本地状态的会话都保留本地值, 避免周期刷新把它冲回去 ->
+  // 状态点/3D 机器人闪烁回跳. 列表其余字段 (名称/消息数等) 取后端最新值.
   const refreshSessions = useCallback(() => {
     return api(`/api/researches/${researchId}/sessions`).then((arr: any) => {
       const list = Array.isArray(arr) ? arr : []
       const store = useStore.getState()
-      const cur = store.currentSession
       const prevById = new Map((store.sessionsMap[researchId] || []).map((s: any) => [s.session_id, s]))
       const merged = list.map((s: any) => {
-        if (cur && s.session_id === cur.session_id) {
-          const local = prevById.get(s.session_id)
-          if (local && local.agent_status) return { ...s, agent_status: local.agent_status }
-        }
+        const local = prevById.get(s.session_id)
+        if (local && local.agent_status) return { ...s, agent_status: local.agent_status }
         return s
       })
       setSessionsMap(researchId, merged)
@@ -187,6 +190,50 @@ export default function ResearchPage() {
       document.removeEventListener('visibilitychange', onVis)
     }
   }, [researchId, refreshSessions])
+  // 批量状态轮询: 对 research 下所有非当前 session 并发拉 /api/sessions/:id/status,
+  // 让侧栏 3D 状态层实时反映各 Agent 是否在干活 (后端 agent-status-syncer 60s 重算写 DB 太粗,
+  // 列表刷新拿到的状态最多滞后一分钟). 自适应间隔: 任一 running 时 4s, 全闲 15s; 页面不可见暂停.
+  // 当前选中会话跳过 —— ChatArea 已有自己的 2s 状态轮询.
+  useEffect(() => {
+    if (!researchId) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const schedule = (delay: number) => { if (!cancelled) timer = setTimeout(poll, delay) }
+    const poll = async () => {
+      if (document.visibilityState !== 'visible') { schedule(5000); return }
+      const store = useStore.getState()
+      const list = store.sessionsMap[researchId] || []
+      const skipId = store.currentSession?.session_id
+      let anyRunning = false
+      await Promise.all(list.map(async (s: any) => {
+        if (s.session_id === skipId) return
+        try {
+          const r = await api(`/api/sessions/${s.session_id}/status`)
+          if (cancelled) return
+          const st = runtimeStatusForSessionList(r)
+          if (st === 'running') anyRunning = true
+          if (st !== s.agent_status) {
+            const cur = useStore.getState().sessionsMap[researchId] || []
+            setSessionsMap(researchId, cur.map((x: any) => x.session_id === s.session_id ? { ...x, agent_status: st } : x))
+          }
+        } catch { /* 单个会话失败不打断整轮 */ }
+      }))
+      if (!cancelled) schedule(anyRunning ? 4000 : 15000)
+    }
+    const onVis = () => {
+      if (cancelled || document.visibilityState !== 'visible') return
+      if (timer) { clearTimeout(timer); timer = null }
+      poll()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    schedule(3000)
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [researchId, setSessionsMap])
+
   const openCreateChoice = () => setShowCreateChoice(true)
 
   const goToSession = (sid: string) => {
@@ -336,6 +383,8 @@ export default function ResearchPage() {
               新Agent
             </button>
           </div>
+
+          <ResearchAgentStatusScene sessions={sortedSessions} selectedId={currentSession?.session_id || null} onSelect={goToSession} researchId={researchId} />
 
           <div ref={sessionListRef} className="flex-1 overflow-y-auto px-2 py-1" data-tour="research-agent-list">
             {sortedSessions.length === 0 ? (
@@ -515,6 +564,126 @@ export default function ResearchPage() {
         onClose={() => setDeletingSession(null)}
         onDelete={handleDeleteSession}
       />}
+    </div>
+  )
+}
+
+// ─── 侧栏 3D Agent 状态层 ─────────────────────────────────────────────────────
+// 偏好按 research 持久化 (场景/形象/高度/折叠). 常量来自 research-agent-team-scene-options
+// (不 import three.js), 3D 组件本体 lazy 加载, 保证 three.js 只在该层实际展开时才下载.
+type ScenePref = { sceneKind: SceneKind; avatarKind: AvatarKind; height: number; collapsed: boolean }
+const DEFAULT_SCENE_PREF: ScenePref = { sceneKind: 'space', avatarKind: 'robot', height: 248, collapsed: false }
+
+function scenePrefKey(researchId: string) { return `mobius:research-scene-pref:${researchId}` }
+
+function loadScenePref(researchId: string): ScenePref {
+  try {
+    const raw = localStorage.getItem(scenePrefKey(researchId))
+    if (raw) return { ...DEFAULT_SCENE_PREF, ...JSON.parse(raw) }
+  } catch { /* 损坏回落默认 */ }
+  return { ...DEFAULT_SCENE_PREF }
+}
+
+function saveScenePref(researchId: string, pref: ScenePref) {
+  try { localStorage.setItem(scenePrefKey(researchId), JSON.stringify(pref)) } catch { /* 忽略写入失败 */ }
+}
+
+function ResearchAgentStatusScene({ sessions, selectedId, onSelect, researchId }: {
+  sessions: any[]
+  selectedId: string | null
+  onSelect: (sid: string) => void
+  researchId: string
+}) {
+  const { theme } = useStore()
+  const [pref, setPref] = useState<ScenePref>(() => loadScenePref(researchId))
+
+  useEffect(() => { setPref(loadScenePref(researchId)) }, [researchId])
+
+  const update = useCallback((patch: Partial<ScenePref>) => {
+    setPref(cur => {
+      const next = { ...cur, ...patch }
+      saveScenePref(researchId, next)
+      return next
+    })
+  }, [researchId])
+
+  // sessions → 3D 场景 agent 映射: agent_status 是唯一真相源, 3D 只是可视化层.
+  const sceneAgents = useMemo(() => sessions.map(s => ({
+    id: s.session_id,
+    name: s.name || '未命名 Agent',
+    role: s.research_role === 'chief_researcher' ? 'chief_researcher' as const : 'research_assistant' as const,
+    modelLabel: s.model_label || '默认模型',
+    mainSkillName: `${s.message_count || 0} 条消息`,
+    locked: false,
+    status: s.agent_status || 'idle',
+  })), [sessions])
+
+  // 底部拖拽手柄: 向上拖增高 (150-560px). 拖拽期间实时 setPref (子树小, rerender 便宜),
+  // localStorage 只在松手时写一次.
+  const onHandlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const startY = e.clientY
+    const startH = pref.height
+    const onMove = (ev: PointerEvent) => {
+      const dy = startY - ev.clientY
+      const h = Math.min(560, Math.max(150, startH + dy))
+      setPref(cur => (cur.height === h ? cur : { ...cur, height: h }))
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      setPref(cur => { saveScenePref(researchId, cur); return cur })
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  const selectCls = 'h-6 rounded border text-[11px] px-1 max-w-[104px] truncate disabled:opacity-40'
+  const selectStyle = { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }
+
+  return (
+    <div className="border-b flex flex-col" style={{ borderColor: 'var(--border-color)' }}>
+      <div className="px-3 py-1.5 flex items-center gap-2">
+        <button onClick={() => update({ collapsed: !pref.collapsed })}
+          title={pref.collapsed ? '展开 Agent 状态层' : '折叠 Agent 状态层'}
+          className="flex items-center gap-1 text-[11px] font-medium hover:text-emerald-400 transition-colors shrink-0"
+          style={{ color: 'var(--text-muted)' }}>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${pref.collapsed ? '-rotate-90' : ''}`} />
+          Agent 状态
+        </button>
+        <span className="text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>{sessions.length} 机器人</span>
+        <div className="ml-auto flex items-center gap-1 min-w-0">
+          <select value={pref.sceneKind} disabled={pref.collapsed} title="切换场景"
+            onChange={e => update({ sceneKind: e.target.value as SceneKind })} className={selectCls} style={selectStyle}>
+            {SCENE_KIND_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <select value={pref.avatarKind} disabled={pref.collapsed} title="切换机器人形象"
+            onChange={e => update({ avatarKind: e.target.value as AvatarKind })} className={selectCls} style={selectStyle}>
+            {AVATAR_KIND_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+      </div>
+      {!pref.collapsed && sessions.length > 0 && (
+        <div className="relative px-1.5 pb-1" style={{ height: pref.height, touchAction: 'none' }}>
+          <Suspense fallback={
+            <div className="flex h-full items-center justify-center text-[11px] rounded-lg border"
+              style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+              正在加载 3D 状态层...
+            </div>
+          }>
+            <ResearchAgentTeamScene
+              agents={sceneAgents}
+              selectedId={selectedId}
+              onSelect={onSelect}
+              theme={theme}
+              sceneKind={pref.sceneKind}
+              avatarKind={pref.avatarKind}
+            />
+          </Suspense>
+          <div onPointerDown={onHandlePointerDown} title="拖动调整高度"
+            className="absolute left-2 right-2 bottom-0 h-[7px] cursor-row-resize hover:bg-emerald-500/30 transition-colors z-10" />
+        </div>
+      )}
     </div>
   )
 }

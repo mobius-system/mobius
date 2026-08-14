@@ -1137,8 +1137,9 @@ function scanSessionCronTasksFromTranscript(jsonlPath: string): Array<{ id: stri
   for (const line of raw.split('\n')) {
     if (!line) continue;
     // 廉价预过滤: 只解析可能相关的行, 避免对大转录逐行 JSON.parse.
+    // 注意回报措辞 job/task 两种格式混杂存在 (不同 CC 版本/路径), 必须都兼容.
     if (!line.includes('CronCreate') && !line.includes('CronDelete')
-      && !line.includes('Scheduled recurring job') && !line.includes('Scheduled one-shot job')) continue;
+      && !line.includes('Scheduled recurring') && !line.includes('Scheduled one-shot')) continue;
     let obj: any;
     try { obj = JSON.parse(line); } catch { continue; }
     const blocks = obj?.message?.content;
@@ -1156,7 +1157,7 @@ function scanSessionCronTasksFromTranscript(jsonlPath: string): Array<{ id: stri
       } else if (b.type === 'tool_use' && b.name === 'CronDelete') {
         if (b.input && b.input.id) deletedIds.add(String(b.input.id));
       } else if (b.type === 'tool_result' && typeof b.content === 'string' && b.tool_use_id) {
-        const m = b.content.match(/job ([0-9a-fA-F]{4,16})/);
+        const m = b.content.match(/(?:job|task) ([0-9a-fA-F]{4,16})/);
         if (m) jobIdByToolUse.set(String(b.tool_use_id), m[1]);
       }
     }
@@ -1181,8 +1182,12 @@ router.get('/:id/features/scheduled-tasks', auth, (req: express.Request, res: ex
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
   auditSessionAccess(user, 'read_session_scheduled_tasks', session);
 
+  // 解析会话真实工作目录: worktree 会话 = bind_path/<branch> (TUI cwd 与 .claude/scheduled_tasks.json
+  // 都落在那里), 普通会话 = bind_path. 与 /features/files 同源走 resolveSessionWorkspace, 失败回退裸 bind_path.
+  const workspace = featureWorkspaceForSession(user, sessionId);
   const proj = session.project_id ? (Projects.findById(session.project_id) as any) : null;
-  const root = (proj && proj.bind_path) ? path.resolve(proj.bind_path) : null;
+  const root = workspace.workDir
+    || ((proj && proj.bind_path) ? path.resolve(proj.bind_path) : null);
   if (!root) {
     res.json({ session_id: sessionId, available: false, reason: 'no_bind_path', tasks: [], session_tasks: [], total: 0, lock: null, scheduler_alive: false });
     return;
@@ -1213,6 +1218,7 @@ router.get('/:id/features/scheduled-tasks', auth, (req: express.Request, res: ex
       session_id: sessionId,
       available: true,
       root,
+      worktree: workspace.workspace?.worktree === true,
       tasks,
       session_tasks: sessionTasks,
       total: tasks.length + sessionTasks.length,
