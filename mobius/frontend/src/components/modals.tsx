@@ -3207,7 +3207,10 @@ export function NewSessionModal({
                 )}
                 <div
                   data-tour="session-model-picker"
-                  className={`grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
+                  className={supportsHarnessRoster
+                    // Harness Agent 选择: 固定两列 + 限高滚动, 不再用点击展开
+                    ? 'grid grid-cols-2 gap-2 max-h-[15.75rem] overflow-y-auto overscroll-contain pr-1'
+                    : `grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
                 >
                   {modelOptions.map(opt => {
                     const active = supportsHarnessRoster ? harnessModelKeys.includes(opt.key) : model === opt.key
@@ -3297,7 +3300,7 @@ export function NewSessionModal({
                     )
                   })}
                 </div>
-                {hasCollapsedModelOverflow && !modelExpandedForSelection && (
+                {hasCollapsedModelOverflow && !supportsHarnessRoster && !modelExpandedForSelection && (
                   <button type="button" onClick={() => setModelGridManuallyExpanded(v => !v)}
                     className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
                     style={{
