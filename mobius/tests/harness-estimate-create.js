@@ -16,7 +16,11 @@ const { estimateHarnessRun } = require('../backend/services/harness-estimator')
 
 try {
   const fixture = setup(db, tempRoot, 'estimate')
-  const draft = rosterRequest(fixture, 'multi')
+  const draft = {
+    ...rosterRequest(fixture, 'multi'),
+    excluded_skill_ids: ['skill-disabled'],
+    excluded_memory_ids: ['memory-disabled'],
+  }
   const roster = resolveRoster(fixture.userId, fixture.projectId, draft)
   const estimate = estimateHarnessRun(fixture.userId, draft, roster.map((member) => ({ id: member.profile.id, definition: member.profile.definition })))
   assert.ok(estimate.estimate_id)
@@ -39,12 +43,22 @@ try {
   assert.equal(first.members.length, 2)
   assert.equal(first.nodes.length, 1)
   assert.equal(first.dispatches.length, 1)
+  assert.deepEqual(JSON.parse(first.run.excluded_skill_ids), draft.excluded_skill_ids)
+  assert.deepEqual(JSON.parse(first.run.excluded_memory_ids), draft.excluded_memory_ids)
   assert.equal(getHarnessRunSnapshot(first.run.id).members[0].config_snapshot.profile_version, 1)
   assert.throws(
     () => createHarnessRun(fixture.userId, fixture.projectId, {
       ...request,
       request_id: 'changed-roster',
       goal: `${request.goal} changed`,
+    }),
+    (error) => error.code === 'estimate_mismatch',
+  )
+  assert.throws(
+    () => createHarnessRun(fixture.userId, fixture.projectId, {
+      ...request,
+      request_id: 'changed-context-selection',
+      excluded_skill_ids: ['different-skill'],
     }),
     (error) => error.code === 'estimate_mismatch',
   )

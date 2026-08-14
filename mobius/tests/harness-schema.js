@@ -60,6 +60,8 @@ const namedRun = parseHarnessCreateRunRequest({
   issue_id: 'issue-schema',
   session_name: 'Review deployment readiness',
   language: 'en',
+  excluded_skill_ids: ['skill-disabled'],
+  excluded_memory_ids: ['memory-disabled'],
   goal: 'Validate session metadata',
   execution_mode: 'single',
   roster: {
@@ -70,7 +72,10 @@ const namedRun = parseHarnessCreateRunRequest({
 })
 assert.equal(namedRun.session_name, 'Review deployment readiness')
 assert.equal(namedRun.language, 'en')
+assert.deepEqual(namedRun.excluded_skill_ids, ['skill-disabled'])
+assert.deepEqual(namedRun.excluded_memory_ids, ['memory-disabled'])
 assert.throws(() => parseHarnessCreateRunRequest({ ...namedRun, language: 'fr' }), HarnessSchemaError)
+assert.throws(() => parseHarnessCreateRunRequest({ ...namedRun, excluded_skill_ids: ['duplicate', 'duplicate'] }), HarnessSchemaError)
 assertRequestIdValidation(parseHarnessInternalCreateTask, {
   request_id: 'schema-task-request',
   assignee_member_id: 'member-schema',

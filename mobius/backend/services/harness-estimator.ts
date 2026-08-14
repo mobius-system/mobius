@@ -59,6 +59,8 @@ export function estimateDigest(request: HarnessEstimateRequestV1, policy: Harnes
     issue_id: request.issue_id,
     session_name: request.session_name?.trim() || null,
     language: request.language || 'zh',
+    excluded_skill_ids: request.excluded_skill_ids || [],
+    excluded_memory_ids: request.excluded_memory_ids || [],
     goal: request.goal.trim(),
     execution_mode: request.execution_mode,
     roster: request.roster,

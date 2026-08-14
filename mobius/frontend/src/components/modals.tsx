@@ -2198,7 +2198,7 @@ export function NewSessionModal({
     : (isExtensionProject
       ? { dirName: 'mobius-extension', name: 'mobius-extension', label: 'mobius-extension' }
       : requiredSkill)
-  const [step, setStep] = useState<1 | 2>(1)
+  const [step, setStep] = useState<1 | 2 | 3>(1)
   const [name, setName] = useState(() => isGuidedDemo
     ? (guidedDemoState?.sessionName || '')
     : (initialPreset?.name || initialDraft?.name || defaultName || formatDefaultSessionName(defaultNamePrefix)))
@@ -2367,6 +2367,8 @@ export function NewSessionModal({
     issue_id: issueId || '',
     session_name: name.trim(),
     language,
+    excluded_skill_ids: Array.from(excludedSkills),
+    excluded_memory_ids: Array.from(excludedMemories),
     goal: appendAttachmentsToDesc(submittedDescription, attachments).trim(),
     execution_mode: 'multi',
     roster: {
@@ -2377,7 +2379,7 @@ export function NewSessionModal({
         ...(profile.id !== harnessProfileByModelKey.get(harnessMainModelKey)?.id ? { purpose: 'worker' as const } : {}),
       })),
     },
-  }), [attachments, harnessMainModelKey, harnessProfileByModelKey, issueId, language, name, selectedHarnessProfiles, submittedDescription])
+  }), [attachments, excludedMemories, excludedSkills, harnessMainModelKey, harnessProfileByModelKey, issueId, language, name, selectedHarnessProfiles, submittedDescription])
 
   useEffect(() => {
     let alive = true
@@ -2434,7 +2436,7 @@ export function NewSessionModal({
   useEffect(() => {
     setHarnessEstimate(null)
     setCreatedHarnessRunId('')
-  }, [attachments, desc, harnessMainModelKey, harnessModelKeys, language, name])
+  }, [attachments, desc, excludedMemories, excludedSkills, harnessMainModelKey, harnessModelKeys, language, name])
 
   useEffect(() => {
     let alive = true
@@ -2458,7 +2460,7 @@ export function NewSessionModal({
         excluded_skill_ids: Array.from(excludedSkills),
         excluded_memory_ids: Array.from(excludedMemories),
         chosen_agent_skill_id: chosenAgentSkill?.id || '',
-        selection_ready: !!initialDraft?.selection_ready || step === 2 || !!preview,
+        selection_ready: !!initialDraft?.selection_ready || step >= 2 || !!preview,
         harness_model_keys: supportsHarnessRoster ? harnessModelKeys : undefined,
         harness_main_model_key: supportsHarnessRoster ? harnessMainModelKey : undefined,
       }, { minChars: 1 })
@@ -2706,20 +2708,7 @@ export function NewSessionModal({
         setErr('请选择一个可担任 Main 的 Harness Agent')
         return
       }
-      setErr('')
-      setStep(2)
-      setPreviewLoading(true)
-      try {
-        setHarnessEstimate(await estimateHarnessRun(buildHarnessDraft()))
-      } catch (cause: any) {
-        setErr(cause?.message || '无法生成 Multi Harness 预估')
-        setStep(1)
-      } finally {
-        setPreviewLoading(false)
-      }
-      return
-    }
-    if (!isPresetMode && isModelQuotaBlocked(model)) {
+    } else if (!isPresetMode && isModelQuotaBlocked(model)) {
       setErr(modelQuotaError(model))
       return
     }
@@ -2790,6 +2779,22 @@ export function NewSessionModal({
       setErr(e?.message || '加载预览失败')
       setStep(1)
     } finally { setPreviewLoading(false) }
+  }
+
+  const goHarnessConfirmation = async () => {
+    if (!isMultiHarness) return
+    setErr('')
+    setHarnessEstimate(null)
+    setStep(3)
+    setPreviewLoading(true)
+    try {
+      setHarnessEstimate(await estimateHarnessRun(buildHarnessDraft()))
+    } catch (cause: any) {
+      setErr(cause?.message || '无法生成 Multi Harness 预估')
+      setStep(2)
+    } finally {
+      setPreviewLoading(false)
+    }
   }
 
   // Step 2 内勾选状态变更 → 即时拉新 preview, 不阻塞 UI (lastSent 防竞态)
@@ -3029,6 +3034,7 @@ export function NewSessionModal({
     ...(pcTaskRequiresAimux ? ['mobius-aimux'] : []),
   ].filter(Boolean)
   const previewBodyText = typeof preview?.body === 'string' ? preview.body : ''
+  const totalSteps = isMultiHarness ? 3 : 2
 
   // 目的/描述输入框: preset 模板模式保留自带边框(裸); 正常创建模式下边框透明,
   // 交给 AttachmentComposer 的整合容器统一包边, 使附件芯片/上传按钮与输入框融为一体.
@@ -3066,9 +3072,11 @@ export function NewSessionModal({
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div data-tour="session-modal" className="relative rounded-2xl p-6 shadow-2xl flex flex-col" style={{
         width: step === 2
-          ? isMultiHarness ? 'min(720px, calc(100vw - 32px))' : 'min(1120px, calc(100vw - 32px))'
-          : 'min(560px, calc(100vw - 32px))',
-        height: step === 2 && !isMultiHarness ? 'min(760px, calc(100vh - 32px))' : undefined,
+          ? 'min(1120px, calc(100vw - 32px))'
+          : step === 3
+            ? 'min(720px, calc(100vw - 32px))'
+            : 'min(560px, calc(100vw - 32px))',
+        height: step === 2 ? 'min(760px, calc(100vh - 32px))' : undefined,
         maxHeight: 'calc(100vh - 32px)',
         background: 'var(--modal-bg)',
         border: '1px solid var(--border-color)',
@@ -3089,12 +3097,13 @@ export function NewSessionModal({
         )}
         <div className="flex items-center justify-between gap-3 mb-4">
           <h3 className="text-[15px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
-            {modalTitle || (isPresetMode ? '会话预设菜单' : `新建 ${displayEntityLabel}`)} · {step === 1 ? '第 1 步 / 共 2 步' : '第 2 步 / 共 2 步'}
+            {modalTitle || (isPresetMode ? '会话预设菜单' : `新建 ${displayEntityLabel}`)} · 第 {step} 步 / 共 {totalSteps} 步
           </h3>
           <div className="flex shrink-0 items-center gap-2">
             <div className="flex items-center gap-1.5">
-              <div className="w-6 h-1 rounded" style={{ background: step >= 1 ? '#3b82f6' : (isDark ? '#374151' : '#e5e7eb') }} />
-              <div className="w-6 h-1 rounded" style={{ background: step >= 2 ? '#3b82f6' : (isDark ? '#374151' : '#e5e7eb') }} />
+              {Array.from({ length: totalSteps }, (_, index) => (
+                <div key={index} className="w-6 h-1 rounded" style={{ background: step >= index + 1 ? '#3b82f6' : (isDark ? '#374151' : '#e5e7eb') }} />
+              ))}
             </div>
             <button
               type="button"
@@ -3413,20 +3422,20 @@ export function NewSessionModal({
               <button onClick={goPreview} disabled={previewLoading}
                 data-tour="session-preview-next"
                 className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
-                {previewLoading ? '加载预览...' : isMultiHarness ? '下一步 · 确认阵容' : '下一步 · 预览配置'}
+                {previewLoading ? '加载预览...' : '下一步 · 预览配置'}
               </button>
             </div>
           </>
         )}
 
-        {step === 2 && isMultiHarness && previewLoading && (
+        {step === 3 && isMultiHarness && previewLoading && (
           <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-3" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
             <Loader2 className="h-7 w-7 animate-spin" style={{ color: '#3b82f6' }} strokeWidth={1.8} />
             <div className="text-[13px]">正在计算阵容预估…</div>
           </div>
         )}
 
-        {step === 2 && isMultiHarness && !previewLoading && harnessEstimate && (
+        {step === 3 && isMultiHarness && !previewLoading && harnessEstimate && (
           <>
             <div className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-1">
               <div className="flex items-start gap-3 border-b pb-4" style={{ borderColor: 'var(--border-color)' }}>
@@ -3490,7 +3499,7 @@ export function NewSessionModal({
             </div>
             {err && <ErrBanner>{err}</ErrBanner>}
             <div className="mt-4 flex gap-2">
-              <button onClick={() => setStep(1)} disabled={loading} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border disabled:opacity-40" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
+              <button onClick={() => setStep(2)} disabled={loading} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border disabled:opacity-40" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
               <button onClick={submit} disabled={loading} data-tour="session-submit"
                 className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
                 {loading ? '创建中...' : '确认阵容并创建'}
@@ -3499,14 +3508,14 @@ export function NewSessionModal({
           </>
         )}
 
-        {step === 2 && !isMultiHarness && !preview && (
+        {step === 2 && !preview && (
           <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
             <Loader2 className="h-7 w-7 animate-spin" style={{ color: '#3b82f6' }} strokeWidth={1.8} />
             <div className="text-[13px]">正在加载预览配置…</div>
           </div>
         )}
 
-        {step === 2 && !isMultiHarness && preview && (
+        {step === 2 && preview && (
           <>
             <div data-tour="session-preview" className="flex-1 min-h-0 mb-4 overflow-y-auto xl:overflow-hidden pr-1 xl:pr-0">
               <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.92fr)_minmax(320px,1.08fr)] gap-4 xl:h-full xl:min-h-0 xl:overflow-hidden">
@@ -3702,10 +3711,12 @@ export function NewSessionModal({
             )}
             <div className="flex gap-2">
               <button onClick={() => setStep(1)} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
-              <button onClick={submit} disabled={loading}
-                data-tour="session-submit"
+              <button onClick={isMultiHarness ? goHarnessConfirmation : submit} disabled={loading || previewLoading}
+                data-tour={isMultiHarness ? 'session-roster-next' : 'session-submit'}
                 className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
-                {loading ? (isPresetMode ? '保存中...' : '创建中...') : (isPresetMode ? '保存预设' : '确认并创建')}
+                {isMultiHarness
+                  ? (previewLoading ? '正在计算阵容预估…' : '下一步 · 确认阵容')
+                  : loading ? (isPresetMode ? '保存中...' : '创建中...') : (isPresetMode ? '保存预设' : '确认并创建')}
               </button>
             </div>
           </>

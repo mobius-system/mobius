@@ -35,6 +35,8 @@ export interface HarnessRunDraft {
   issue_id: string
   session_name?: string
   language?: 'zh' | 'en'
+  excluded_skill_ids?: string[]
+  excluded_memory_ids?: string[]
   goal: string
   execution_mode: HarnessExecutionMode
   roster: {

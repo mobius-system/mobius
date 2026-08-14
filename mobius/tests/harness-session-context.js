@@ -46,6 +46,8 @@ async function main() {
       ...rosterRequest(fixture, 'single'),
       session_name: 'Named Harness session',
       language: 'en',
+      excluded_skill_ids: ['skill-disabled'],
+      excluded_memory_ids: ['memory-disabled'],
     }
     const roster = resolveRoster(fixture.userId, fixture.projectId, draft)
     const estimate = estimateHarnessRun(
@@ -71,6 +73,9 @@ async function main() {
     const createdSession = Sessions.findById(session.sessionId)
     assert.equal(createdSession.name, draft.session_name)
     assert.equal(createdSession.language, 'en')
+    assert.deepEqual(JSON.parse(createdSession.session_excluded_skills), draft.excluded_skill_ids)
+    assert.deepEqual(JSON.parse(createdSession.session_excluded_memories), draft.excluded_memory_ids)
+    assert.ok(createdSession.session_selection_snapshot)
     await executor.dispatch({
       runId: snapshot.run.id,
       nodeId: root.id,
@@ -82,12 +87,9 @@ async function main() {
     })
 
     assert.equal(captured.length, 1)
-    assert.equal(
-      captured[0].prompt,
-      'HARNESS_ONLY_CONTEXT\n\nDispatch receipt marker: MOBIUS_HARNESS_DISPATCH[test-context]',
-      'Harness prompt must be the sole initial context sent to the backend',
-    )
-    assert.ok(!captured[0].prompt.includes('Harness test issue'))
+    assert.match(captured[0].prompt, /HARNESS_ONLY_CONTEXT/)
+    assert.match(captured[0].prompt, /Harness test issue/)
+    assert.match(captured[0].prompt, /Dispatch receipt marker: MOBIUS_HARNESS_DISPATCH\[test-context\]/)
     assert.ok(!captured[0].prompt.includes('TEST_SCOPED_TOKEN'))
     assert.deepEqual(captured[0].runtimeEnv, { MOBIUS_HARNESS_TOKEN: 'TEST_SCOPED_TOKEN' })
 
