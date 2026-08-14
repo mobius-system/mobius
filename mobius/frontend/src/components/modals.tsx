@@ -4132,14 +4132,14 @@ const MOBILE_BUILDS: Array<{ label: string; sub: string; file: string; size: num
     sub: 'arm64-v8a · 大多数现代手机',
     file: `mobius-mobile-${MOBILE_VERSION}-android-arm64.apk`,
     size: 15433314,
-    sha256: '26628ebdaa838a092664789ae7e37a18176e2684ec540ad1e0c78db2fe2f9965',
+    sha256: '20cf95fc8a09697877085aad192cc56de214c4e81730c1ba1462991af4f26dc2',
   },
   {
     label: 'Android',
     sub: 'armeabi-v7a · 老旧手机',
     file: `mobius-mobile-${MOBILE_VERSION}-android-armeabi-v7a.apk`,
     size: 15441282,
-    sha256: '3803cae929e8d8cd6e28165556200213db14782d631d58f3cc4ea99832642761',
+    sha256: '2f2d5f691b6a88a5a44863b04350829e6cfb218603289deac842eb0961af3b4a',
   },
   {
     label: 'iOS',
