@@ -3208,8 +3208,8 @@ export function NewSessionModal({
                 <div
                   data-tour="session-model-picker"
                   className={supportsHarnessRoster
-                    // Harness Agent 选择: 固定四列 + 两行限高滚动, 不再用点击展开
-                    ? 'grid grid-cols-4 gap-2 max-h-[8.5rem] overflow-y-auto overscroll-contain pr-1'
+                    // Harness Agent 选择: 固定三列 + 两行限高滚动, 不再用点击展开
+                    ? 'grid grid-cols-3 gap-2 max-h-[8.5rem] overflow-y-auto overscroll-contain pr-1'
                     : `grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
                 >
                   {modelOptions.map(opt => {
