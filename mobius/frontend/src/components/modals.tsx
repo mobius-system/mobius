@@ -2254,6 +2254,11 @@ export function NewSessionModal({
   const [scopeBusyId, setScopeBusyId] = useState('')
   const [scopeNotice, setScopeNotice] = useState('')
   const [cancelTarget, setCancelTarget] = useState<{ kind: 'skill' | 'memory'; item: WizardItem } | null>(null)
+  // 项目级目录: resolver 会把与用户级同名的项目副本去重隐藏 (user 优先),
+  // 升级状态必须单独拉项目列表判断, 不能依赖 availableSkills。
+  const [scopeRefreshKey, setScopeRefreshKey] = useState(0)
+  const [projectSkillCatalog, setProjectSkillCatalog] = useState<any[]>([])
+  const [projectMemoryCatalog, setProjectMemoryCatalog] = useState<any[]>([])
   const { theme } = useStore()
   const isDark = theme !== 'light'
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -2592,6 +2597,20 @@ export function NewSessionModal({
   // 升级 = 把我的用户级条目快照复制到项目级 (原件保留); 取消 = 移除项目副本。
   // 仅在有项目上下文时展示入口; 引导演示模式禁止变更, 避免污染演示项目。
   const canScopeChange = !!projectId && !isGuidedDemo
+  // 拉项目级 Skill/Memory 目录, 用于判断「已升级 / 可取消升级」(见上方注释)。
+  useEffect(() => {
+    if (!canScopeChange || !projectId) { setProjectSkillCatalog([]); setProjectMemoryCatalog([]); return }
+    let alive = true
+    Promise.all([
+      api(`/api/projects/${projectId}/skills`).catch(() => []),
+      api(`/api/projects/${projectId}/memories`).catch(() => []),
+    ]).then(([skills, memories]: any[]) => {
+      if (!alive) return
+      setProjectSkillCatalog(Array.isArray(skills) ? skills : [])
+      setProjectMemoryCatalog(Array.isArray(memories) ? memories : [])
+    })
+    return () => { alive = false }
+  }, [canScopeChange, projectId, scopeRefreshKey])
   const refreshWizardSources = async () => {
     const p = await fetchPreview(excludedSkills, excludedMemories, { includeDefaults: true })
     setCurrentUserId(String(p?.sources?.user?.id || currentUserId))
@@ -2599,6 +2618,7 @@ export function NewSessionModal({
     setAvailableMemories((p?.sources?.memories || []) as WizardItem[])
     setForcedSkillConflicts((p?.sources?.forced_skill_conflicts || []) as { id: string; name: string }[])
     setPreview(p)
+    setScopeRefreshKey(k => k + 1)
   }
   const upgradeScopeItem = async (kind: 'skill' | 'memory', item: WizardItem) => {
     if (!projectId) return
@@ -2685,19 +2705,57 @@ export function NewSessionModal({
   const skillCheckedCount = availableSkills.filter(s => matchesRequiredSkill(s) || isChosenAgentSkill(s.id) || (!isMutuallyExclusiveAgentSkill(s.id) && !excludedSkills.has(s.id))).length
   const memoryCheckedCount = availableMemories.filter(m => !excludedMemories.has(m.id)).length
   const projectSkillCount = availableSkills.filter(s => s.scope === 'project').length
-  // 升级/取消升级 分组与匹配 (skill 按 dirName, memory 按名称)
+  // 升级/取消升级 分组与匹配: skill 按 id 里的 dirName, memory 按名称 (副本保留原名)。
   const projectSkillItems = availableSkills.filter(s => s.scope === 'project')
   const userSkillItems = availableSkills.filter(s => s.scope === 'user')
   const otherSkillItems = availableSkills.filter(s => s.scope !== 'project' && s.scope !== 'user')
-  const projectSkillDirNames = new Set(projectSkillItems.map(s => s.dirName || s.name))
-  const projectMemoryNames = new Set(availableMemories.filter(m => m.scope === 'project').map(m => m.name))
+  const scopeIdDir = (id: string) => {
+    const parts = String(id || '').split(':')
+    if (parts[0] === 'project') return parts.slice(3).join(':')
+    if (parts[0] === 'user') return parts.slice(2).join(':')
+    return null
+  }
+  // dirName → 我升级产生的项目副本 (catalog 行, 含项目 id)
+  const myUpgradedSkillByDir = new Map<string, any>()
+  const allUpgradedSkillDirs = new Set<string>()
+  for (const s of projectSkillCatalog) {
+    const dir = scopeIdDir(s.id)
+    if (!dir) continue
+    allUpgradedSkillDirs.add(dir)
+    if (String(s.created_by || '') === currentUserId) myUpgradedSkillByDir.set(dir, s)
+  }
+  const myUpgradedMemoryByName = new Map<string, any>()
+  const allUpgradedMemoryNames = new Set<string>()
+  for (const m of projectMemoryCatalog) {
+    allUpgradedMemoryNames.add(m.name)
+    if (String(m.created_by || '') === currentUserId) myUpgradedMemoryByName.set(m.name, m)
+  }
   const isUpgradedByMe = (item: WizardItem) => !!item.contributor_id && item.contributor_id === currentUserId
+  const cancelUpgradeButton = (kind: 'skill' | 'memory', projectIdCopyId: string, name: string) => (
+    <button
+      type="button"
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCancelTarget({ kind, item: { id: projectIdCopyId, name, scope: 'project' } }) }}
+      disabled={!!scopeBusyId}
+      title="移除我升级产生的项目级副本 (你的用户级原件保留)"
+      className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+      style={{ color: isDark ? '#fca5a5' : '#b91c1c', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
+      取消升级
+    </button>
+  )
+  const upgradedChip = (label = '已升级') => (
+    <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'rgba(34,197,94,0.12)', color: isDark ? '#86efac' : '#15803d' }}>{label}</span>
+  )
   const skillUpgradeAction = (sk: WizardItem) => {
     if (!canScopeChange || sk.scope !== 'user') return null
-    const upgraded = projectSkillDirNames.has(sk.dirName || sk.name)
-    if (upgraded) {
-      return <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'rgba(34,197,94,0.12)', color: isDark ? '#86efac' : '#15803d' }}>已升级</span>
+    const dir = sk.dirName || scopeIdDir(sk.id) || sk.name
+    const mine = myUpgradedSkillByDir.get(dir)
+    if (mine) {
+      return (<>
+        {upgradedChip()}
+        {cancelUpgradeButton('skill', mine.id, sk.name)}
+      </>)
     }
+    if (allUpgradedSkillDirs.has(dir)) return upgradedChip('项目已有同名')
     const busy = scopeBusyId === `skill:${sk.id}`
     return (
       <button type="button" onClick={() => upgradeScopeItem('skill', sk)} disabled={!!scopeBusyId}
@@ -2708,12 +2766,17 @@ export function NewSessionModal({
       </button>
     )
   }
-  const memoryUpgradeAction = (m: WizardItem, openCancel: (item: WizardItem) => void) => {
+  const memoryUpgradeAction = (m: WizardItem) => {
     if (!canScopeChange) return null
     if (m.scope === 'user') {
-      if (projectMemoryNames.has(m.name)) {
-        return <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'rgba(34,197,94,0.12)', color: isDark ? '#86efac' : '#15803d' }}>已升级</span>
+      const mine = myUpgradedMemoryByName.get(m.name)
+      if (mine) {
+        return (<>
+          {upgradedChip()}
+          {cancelUpgradeButton('memory', mine.id, m.name)}
+        </>)
       }
+      if (allUpgradedMemoryNames.has(m.name)) return upgradedChip('项目已有同名')
       const busy = scopeBusyId === `memory:${m.id}`
       return (
         <button type="button"
@@ -2727,16 +2790,7 @@ export function NewSessionModal({
       )
     }
     if (m.scope === 'project' && isUpgradedByMe(m)) {
-      return (
-        <button type="button"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); openCancel(m) }}
-          disabled={!!scopeBusyId}
-          title="移除我升级产生的项目级副本 (用户级原件保留)"
-          className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
-          style={{ color: isDark ? '#fca5a5' : '#b91c1c', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
-          取消升级
-        </button>
-      )
+      return cancelUpgradeButton('memory', m.id, m.name)
     }
     return null
   }
@@ -3257,7 +3311,7 @@ export function NewSessionModal({
                               </div>
                             </label>
                             <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                              {memoryUpgradeAction(m, (item) => setCancelTarget({ kind: 'memory', item }))}
+                              {memoryUpgradeAction(m)}
                               <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)', color: isDark ? '#86efac' : '#15803d' }}>
                                 {SCOPE_LABEL_WIZ[m.scope] || m.scope}
                               </span>

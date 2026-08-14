@@ -371,6 +371,40 @@ function canCreateSessionForResearch(user: any, researchOrId: any): boolean {
   return canReadResearch(user, researchOrId);
 }
 
+function harnessRunById(runOrId: any): any {
+  if (!runOrId) return null;
+  if (typeof runOrId === 'object') return runOrId;
+  try { return db.prepare('SELECT * FROM harness_runs WHERE id = ?').get(runOrId) || null; }
+  catch { return null; }
+}
+
+function canCreateHarnessRun(user: any, issueOrId: any): boolean {
+  const issue = issueById(issueOrId);
+  if (!issue || !user?.id || !canReadIssue(user, issue)) return false;
+  // Harness can spend more resources and delegate to several Sessions, so the
+  // legacy read-implies-create fallback is intentionally not reused here.
+  return projectAllowsReaderWrite(user, issue.project_id, 'can_run_session');
+}
+
+function canReadHarnessRun(user: any, runOrId: any): boolean {
+  const run = harnessRunById(runOrId);
+  if (!run || !user?.id) return false;
+  if (user.role === 'admin' || run.owner_user_id === user.id) return true;
+  return run.anchor_type === 'issue' ? canReadIssue(user, run.issue_id) : canReadResearch(user, run.research_id);
+}
+
+function canOperateHarnessRun(user: any, runOrId: any): boolean {
+  const run = harnessRunById(runOrId);
+  if (!run || !user?.id) return false;
+  if (user.role === 'admin' || run.owner_user_id === user.id) return true;
+  return canManageProject(user, run.project_id);
+}
+
+function canManageHarnessRun(user: any, runOrId: any): boolean {
+  const run = harnessRunById(runOrId);
+  return !!run && canManageProject(user, run.project_id);
+}
+
 function canReadSession(user: any, sessionOrId: any): boolean {
   const session = sessionById(sessionOrId);
   if (!session || !user?.id) return false;
@@ -519,6 +553,10 @@ export {
   canManageResearch,
   canCreateSessionForIssue,
   canCreateSessionForResearch,
+  canCreateHarnessRun,
+  canReadHarnessRun,
+  canOperateHarnessRun,
+  canManageHarnessRun,
   canReadSession,
   canOperateSession,
   canReadContextItem,
