@@ -50,6 +50,22 @@ function tmuxCommandString(args, opts = {}) {
   return `printf %s ${bashAnsiQuote(opts.input ?? '')} | ${command}`
 }
 
+function redactEnvironmentArgs(args, keys = []) {
+  const prefixes = new Set(
+    (Array.isArray(keys) ? keys : [])
+      .filter((key) => typeof key === 'string' && key)
+      .map((key) => `${key}=`),
+  )
+  if (prefixes.size === 0) return args
+  return args.map((arg) => {
+    const value = String(arg)
+    for (const prefix of prefixes) {
+      if (value.startsWith(prefix)) return `${prefix}***`
+    }
+    return arg
+  })
+}
+
 function agentTmuxServerExists() {
   // `tmux -L <socket> list-sessions` connects to the server: status 0 means a
   // server is already listening on the socket (even with zero sessions), while
@@ -118,7 +134,8 @@ function recordTmuxCommand(args, opts = {}) {
 
   try {
     fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true })
-    fs.appendFileSync(LOG_FILE, `${tmuxCommandString(args, opts)}\n`)
+    const safeArgs = redactEnvironmentArgs(args, opts.redactEnvironmentKeys)
+    fs.appendFileSync(LOG_FILE, `${tmuxCommandString(safeArgs, opts)}\n`)
   } catch (e) {
     if (!warned) {
       warned = true
@@ -131,14 +148,15 @@ function tmux(args, opts = {}) {
   ensureAgentTmuxServer()
   const effectiveArgs = ['-L', AGENT_TMUX_SOCKET, ...args]
   recordTmuxCommand(effectiveArgs, opts)
-  let result = spawnSync('tmux', effectiveArgs, { encoding: 'utf8', ...opts })
+  const { redactEnvironmentKeys: _redactEnvironmentKeys, ...spawnOpts } = opts
+  let result = spawnSync('tmux', effectiveArgs, { encoding: 'utf8', ...spawnOpts })
   const errorText = `${result.stderr || ''} ${result.error?.message || ''}`
   if (result.status !== 0 && /no server running|failed to connect to server/i.test(errorText)) {
     // The private server may have been killed externally after the one-time
     // initialization. Recreate/reconfigure it and retry the original action.
     serverReady = false
     ensureAgentTmuxServer()
-    result = spawnSync('tmux', effectiveArgs, { encoding: 'utf8', ...opts })
+    result = spawnSync('tmux', effectiveArgs, { encoding: 'utf8', ...spawnOpts })
   }
   return result
 }
@@ -164,6 +182,7 @@ module.exports = {
   agentTmuxServerExists,
   ensureAgentTmuxServer,
   log,
+  redactEnvironmentArgs,
   recordTmuxCommand,
   shouldRecordTmuxCommand,
   tmux,

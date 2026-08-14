@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import { AlertTriangle, Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
 import { ProjectUserContextWhitelist } from '../context-whitelist'
 import { HelpHint } from './help-hint'
 import { ToggleSwitch } from '../toggle-switch'
@@ -1009,15 +1009,18 @@ export function ProjectSettingsPanel({
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </div>
                 <div className="xl:col-span-2">
-                  <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>绑定路径</label>
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <input value={editBindPath} readOnly disabled={!canManageProject} placeholder="未绑定（限家目录下）"
+                  <label htmlFor={`project-bind-path-${project.id}`} className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>绑定路径</label>
+                  <div
+                    className="flex min-w-0 flex-wrap items-center gap-2 leading-[normal]"
+                    data-design-id="project-bind-path-actions"
+                  >
+                    <input id={`project-bind-path-${project.id}`} value={editBindPath} readOnly disabled={!canManageProject} placeholder="未绑定（限家目录下）"
                       onClick={() => { if (canManageProject) onOpenPathPicker() }}
-                      className="h-7 flex-1 max-w-[50%] min-w-0 px-3 rounded-lg text-[12px] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60 truncate"
+                      className="h-9 min-w-[240px] flex-[1_1_420px] px-3 rounded-lg text-[13px] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60 truncate"
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     <button type="button" onClick={onOpenPathPicker} disabled={!canManageProject}
-                      className="h-7 flex-shrink-0 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
-                      <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
+                      className="h-9 flex-shrink-0 px-2.5 sm:px-3 rounded-lg text-[12px] font-medium bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/25 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
+                      <FolderOpen className="h-4 w-4" strokeWidth={1.8} />
                       <span>选择路径</span>
                     </button>
                     {!!project.bind_path && editBindPath === (project.bind_path || '') && (
@@ -1026,7 +1029,7 @@ export function ProjectSettingsPanel({
                         projectId={project.id}
                         mode="direct"
                         showWorktreeOption={false}
-                        className="h-7 flex-shrink-0 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap"
+                        className="h-9 flex-shrink-0 px-2.5 sm:px-3 rounded-lg text-[12px] text-[var(--text-secondary)] bg-[var(--bg-card-hover)] hover:bg-blue-500/10 hover:text-blue-400 transition-colors border border-[var(--input-border)] flex items-center gap-1.5 whitespace-nowrap"
                       />
                     )}
                     {editBindPath && (
@@ -1039,9 +1042,9 @@ export function ProjectSettingsPanel({
                           setBindPathCopied(false)
                         }
                       }} title={bindPathCopied ? '已复制' : '复制路径'} aria-label={bindPathCopied ? '已复制' : '复制路径'}
-                        className={`h-7 w-9 flex-shrink-0 rounded-lg text-[12px] bg-[var(--bg-card-hover)] ${bindPathCopied ? 'text-emerald-400' : 'hover:bg-blue-500/10 hover:text-blue-400'} transition-colors border flex items-center justify-center`}
+                        className={`h-9 w-9 flex-shrink-0 rounded-lg text-[12px] bg-[var(--bg-card-hover)] ${bindPathCopied ? 'text-emerald-400' : 'hover:bg-blue-500/10 hover:text-blue-400'} transition-colors border flex items-center justify-center`}
                         style={{ color: bindPathCopied ? undefined : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
-                        {bindPathCopied ? <span className="font-medium">已复制</span> : <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />}
+                        {bindPathCopied ? <Check className="h-4 w-4" strokeWidth={2} /> : <Copy className="h-4 w-4" strokeWidth={1.8} />}
                       </button>
                     )}
                     {importDemoActiveForProject && uploadSampleDownloadUrl && (
@@ -1133,11 +1136,13 @@ export function ProjectSettingsPanel({
           {project.kind === 'extension' ? null : (
             <SettingsCard title="默认模型偏好" hint="本项目新建执行会话时默认套用的模型；不指定则跟随系统默认。">
               <div>
-                <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>默认模型</label>
+                <label htmlFor={`project-default-model-${project.id}`} className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>默认模型</label>
                 <select
+                  id={`project-default-model-${project.id}`}
                   value={editDefaultModel}
                   disabled={!canManageProject}
                   data-text-redaction-ignore="true"
+                  data-design-id="project-default-model-select"
                   onChange={e => setEditDefaultModel(e.target.value)}
                   className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}

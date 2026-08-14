@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { render } from 'ink-testing-library'
 import { AimuxStatusLine } from '../src/components/AimuxStatus.js'
-import { AimuxSupervisor, probeAimuxBridgeConnection, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, downloadBundleForTest, reverseConnectArgs, aimuxLogPath, bundleHealthCheckCode } from '../src/aimux.js'
+import { AimuxSupervisor, probeAimuxBridgeConnection, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, downloadBundleForTest, reverseConnectArgs, pickSilentFlag, aimuxLogPath, bundleHealthCheckCode, tuiAimuxIdentifier } from '../src/aimux.js'
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 let pass = 0, fail = 0
@@ -78,11 +78,11 @@ async function testBundleArchAndUrl() {
   const arch = bundleArch()
   ok(arch === 'linux-x64' || arch === 'win-x64' || arch === 'mac-x64', `bundleArch returns a supported arch on this host (${arch})`)
   const before = bundleUrl('linux-x64')
-  ok(before.includes('mobius-python-linux-x64-v2') && before.endsWith('.zip'), 'bundleUrl follows the fixed filename pattern')
+  ok(before.includes('mobius-python-linux-x64-v3') && before.endsWith('.zip'), 'bundleUrl follows the fixed filename pattern')
   const saved = process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL
   process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL = 'https://example.test/cdn/'
   try {
-    ok(bundleUrl('win-x64') === 'https://example.test/cdn/mobius-python-win-x64-v2.zip', 'MOBIUS_TUI_PYTHON_BUNDLE_URL overrides the CDN base and trims trailing slash')
+    ok(bundleUrl('win-x64') === 'https://example.test/cdn/mobius-python-win-x64-v3.zip', 'MOBIUS_TUI_PYTHON_BUNDLE_URL overrides the CDN base and trims trailing slash')
   } finally { if (saved === undefined) delete process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL; else process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL = saved }
 }
 
@@ -133,12 +133,41 @@ async function testSpawnLauncher() {
 }
 
 function testReverseConnectArgs() {
-  console.log('\n[AIMUX 6] reverse connect Windows shell visibility')
-  const win = reverseConnectArgs('https://mobius.test/', 'tui-win', 'jwt-test', 'win32')
-  const linux = reverseConnectArgs('https://mobius.test/', 'tui-linux', 'jwt-test', 'linux')
-  ok(win.includes('--silent-shell'), 'Windows reverse connection always requests hidden command shells')
-  ok(!linux.includes('--silent-shell'), 'non-Windows reverse connection does not receive the Windows-only flag')
-  ok(win[2] === 'https://mobius.test/aimux_bridge', 'reverse connection normalizes the bridge URL')
+  console.log('\n[AIMUX 6] reverse connect silent flag adapts to installed aimux')
+  // Old aimux (PyPI 0.1.20 / cached bundle 0.1.21): advertises only --silent-shell.
+  // Must NOT send the newer --slient-v2 it doesn't know — that is the crash-loop bug.
+  const oldWin = reverseConnectArgs('https://mobius.test/', 'tui-win', 'jwt-test', 'win32', '--silent-shell')
+  ok(oldWin.includes('--silent-shell'), 'old aimux gets the --silent-shell flag it supports')
+  ok(!oldWin.includes('--slient-v2') && !oldWin.includes('--silent-v2'), 'old aimux never gets the unsupported v2 flag (no crash-loop)')
+  // New aimux (0.1.22+): probe resolves the correctly-spelled --silent-v2.
+  const newWin = reverseConnectArgs('https://mobius.test/', 'tui-win', 'jwt-test', 'win32', '--silent-v2')
+  ok(newWin.includes('--silent-v2'), 'new aimux gets the no-console v2 flag')
+  // Probe found nothing supported (or pre-probe default): send nothing, stay alive.
+  const bareWin = reverseConnectArgs('https://mobius.test/', 'tui-win', 'jwt-test', 'win32', null)
+  ok(!bareWin.some(a => a === '--slient-v2' || a === '--silent-v2' || a === '--silent-shell'), 'unknown aimux gets no silent flag rather than crash-looping')
+  // Off-Windows: never any silent flag, regardless of what the probe found.
+  const linux = reverseConnectArgs('https://mobius.test/', 'tui-linux', 'jwt-test', 'linux', '--silent-v2')
+  ok(!linux.includes('--silent-v2') && !linux.includes('--silent-shell'), 'non-Windows never receives a Windows-only flag')
+  ok(oldWin[2] === 'https://mobius.test/aimux_bridge', 'reverse connection normalizes the bridge URL')
+}
+
+function testPickSilentFlag() {
+  console.log('\n[AIMUX 6b] pickSilentFlag reads what aimux advertises')
+  ok(pickSilentFlag('  --slient-v2, --silent-v2  Hide console.', 'win32') === '--silent-v2', 'prefers correct --silent-v2 spelling when both aliases are advertised')
+  ok(pickSilentFlag('  --slient-v2  Hide console.', 'win32') === '--slient-v2', 'falls back to the historical --slient-v2 alias')
+  ok(pickSilentFlag('  --silent-shell  Hide console.', 'win32') === '--silent-shell', 'old aimux advertising only --silent-shell')
+  ok(pickSilentFlag('Usage: aimux reverse connect ...', 'win32') === null, 'unsupported aimux → null (send nothing, avoid crash-loop)')
+  ok(pickSilentFlag('  --silent-v2  Hide console.', 'linux') === null, 'off-Windows → always null')
+}
+
+function testAimuxIdentifierScopesWorkspace() {
+  console.log('\n[AIMUX 6a] reverse client identifier workspace isolation')
+  const first = tuiAimuxIdentifier('same-host', '/work/project-a')
+  const firstAgain = tuiAimuxIdentifier('same-host', '/work/project-a')
+  const second = tuiAimuxIdentifier('same-host', '/work/project-b')
+  ok(first === firstAgain, 'identifier is stable for the same host and workspace')
+  ok(first !== second, 'different workspaces on one host do not replace each other')
+  ok(/^tui-same-host-[a-f0-9]{10}$/.test(first), 'identifier remains bridge-safe and recognizable')
 }
 
 function testBundleHealthCheck() {
@@ -146,7 +175,7 @@ function testBundleHealthCheck() {
   const win = bundleHealthCheckCode('win32')
   const linux = bundleHealthCheckCode('linux')
   ok(win.includes('aimux.bridge_client') && win.includes('win32_setctime'), 'Windows bundle probe imports the real bridge path and its platform dependency')
-  ok(win.includes("aimux.__version__ == '0.1.21'"), 'bundle probe rejects stale AIMUX versions')
+  ok(win.includes("aimux.__version__ == '0.1.23'"), 'bundle probe rejects stale AIMUX versions')
   ok(!linux.includes('win32_setctime'), 'non-Windows bundle probe does not require the Windows-only package')
 }
 
@@ -199,6 +228,8 @@ async function main() {
   await testBundleArchAndUrl()
   await testSpawnLauncher()
   testReverseConnectArgs()
+  testPickSilentFlag()
+  testAimuxIdentifierScopesWorkspace()
   testBundleHealthCheck()
   await testEnsureFromBundleReady()
   await testDownloadBundleStream()

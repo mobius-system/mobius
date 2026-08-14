@@ -59,11 +59,7 @@ export function nextCursorBoundary(text: string, cursor: number): number {
 }
 
 /** Backward-word boundary: skip trailing whitespace, then the word before it. */
-<<<<<<< HEAD
-function backwardWordBoundary(text: string, at: number): number {
-=======
 export function previousWordBoundary(text: string, at: number): number {
->>>>>>> gitlab-mobius/main
   let i = at
   while (i > 0 && /\s/.test(text[i - 1])) i--
   while (i > 0 && !/\s/.test(text[i - 1])) i--
@@ -71,11 +67,7 @@ export function previousWordBoundary(text: string, at: number): number {
 }
 
 /** Forward-word boundary: skip leading whitespace, then the word after it. */
-<<<<<<< HEAD
-function forwardWordBoundary(text: string, at: number): number {
-=======
 export function nextWordBoundary(text: string, at: number): number {
->>>>>>> gitlab-mobius/main
   let i = at
   while (i < text.length && /\s/.test(text[i])) i++
   while (i < text.length && !/\s/.test(text[i])) i++
@@ -101,20 +93,12 @@ export function applyDeleteIntent(
       return { text: text.slice(0, at) + text.slice(next), cursor: at }
     }
     case 'backward-word': {
-<<<<<<< HEAD
-      const start = backwardWordBoundary(text, at)
-=======
       const start = previousWordBoundary(text, at)
->>>>>>> gitlab-mobius/main
       if (start === at) return { text, cursor: at }
       return { text: text.slice(0, start) + text.slice(at), cursor: start }
     }
     case 'forward-word': {
-<<<<<<< HEAD
-      const end = forwardWordBoundary(text, at)
-=======
       const end = nextWordBoundary(text, at)
->>>>>>> gitlab-mobius/main
       if (end === at) return { text, cursor: at }
       return { text: text.slice(0, at) + text.slice(end), cursor: at }
     }

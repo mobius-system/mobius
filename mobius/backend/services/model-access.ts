@@ -1,5 +1,5 @@
 /**
- * model-access.ts — 管理员导入模型配置 (Claude Code + Codex).
+ * model-access.ts — 管理员导入模型配置 (Claude Code + Codex + DeepSeek Harness).
  *
  * Claude Code: settings JSON 原样写入 ~/.claude/settings-<key>.json
  * Codex: TOML 配置原样写入 ~/.codex/<channel>.config.toml (codex --profile 会加载它);
@@ -20,6 +20,7 @@ const CLAUDE_DIR = path.join(HOME, '.claude')
 const CODEX_DIR = path.join(HOME, '.codex')
 const SESSION_MODEL_PREFIX = 'claude-code:'
 const SESSION_MODEL_PREFIX_CODEX = 'codex:'
+const SESSION_MODEL_PREFIX_HARNESS = 'deepseek-harness:'
 // 内置 Claude Code (Opus) 的固定 key 与 settings 文件名. 与 model-registry.builtinClaudeSettingsPath()
 // 指向同一个 ~/.claude/mobiusdefault.settings.json, 使 seed 记录能被 model-registry 读回并接管其
 // 启用 / 显示名称 (对齐内置 Codex 的 profileKey 机制). 前端/后端已把该 key 视为"只能改不能删".
@@ -28,13 +29,15 @@ const BUILTIN_CLAUDE_SETTINGS_FILENAME = 'mobiusdefault.settings.json'
 // Codex 渠道就是 --profile 的 plain name, 业务约束为纯英文字母.
 const CODEX_CHANNEL_RE = /^[A-Za-z]+$/
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+const HARNESS_KEY_RE = /^[A-Za-z0-9_-]+$/
+const HARNESS_RUNTIME_VERSION = '0.0.1-rc.5'
 
 function nowIso(): string {
   return new Date().toISOString()
 }
 
-function defaultData(): { claudeCodeModels: any[]; codexModels: any[] } {
-  return { claudeCodeModels: [], codexModels: [] }
+function defaultData(): { claudeCodeModels: any[]; codexModels: any[]; harnessModels: any[] } {
+  return { claudeCodeModels: [], codexModels: [], harnessModels: [] }
 }
 
 function clone(obj: any): any {
@@ -69,6 +72,52 @@ function normalizeSecretValue(value: any): string {
   const secret = String(value || '').trim()
   if (!secret) throw new Error('秘钥值不能为空')
   return secret
+}
+
+function normalizeHarnessKey(value: any): string {
+  const key = normalizeKey(value)
+  if (key.length > 80) throw new Error('Harness 模型 Key 最多 80 个字符')
+  if (!HARNESS_KEY_RE.test(key)) throw new Error('Harness 模型 Key 只能包含字母、数字、下划线和横线')
+  return key
+}
+
+function normalizeHarnessProvider(value: any): string {
+  const provider = String(value || 'deepseek-official').trim()
+  if (!provider || provider.length > 80) throw new Error('Harness Provider 必须为 1-80 个字符')
+  return provider
+}
+
+function normalizeHarnessModel(value: any): string {
+  const model = String(value || '').trim()
+  if (!model) throw new Error('请填写 DeepSeek Harness 模型名')
+  if (model.length > 160) throw new Error('Harness 模型名最多 160 个字符')
+  return model
+}
+
+function normalizeHarnessBaseUrl(value: any): string {
+  const raw = String(value || 'https://api.deepseek.com').trim().replace(/\/$/, '')
+  let parsed: URL
+  try { parsed = new URL(raw) } catch { throw new Error('Harness Base URL 必须是合法的 http/https URL') }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Harness Base URL 仅支持 http/https')
+  return parsed.toString().replace(/\/$/, '')
+}
+
+function normalizeHarnessMaxTokens(value: any): number | null {
+  if (value === undefined || value === null || value === '') return null
+  const n = Number(value)
+  if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Harness Max Tokens 必须是正整数')
+  return n
+}
+
+function sessionModelForHarnessKey(key: string): string {
+  return `${SESSION_MODEL_PREFIX_HARNESS}${normalizeHarnessKey(key)}`
+}
+
+function keyFromHarnessSessionModel(model: any): string | null {
+  const value = String(model || '').trim()
+  if (!value.startsWith(SESSION_MODEL_PREFIX_HARNESS)) return null
+  try { return normalizeHarnessKey(value.slice(SESSION_MODEL_PREFIX_HARNESS.length)) }
+  catch { return null }
 }
 
 function settingsFilenameForKey(key: string): string {
@@ -190,7 +239,7 @@ function normalizeLabel(value: any, fallback: string): string {
   return label
 }
 
-function loadData(): { claudeCodeModels: any[]; codexModels: any[] } {
+function loadData(): { claudeCodeModels: any[]; codexModels: any[]; harnessModels: any[] } {
   if (!fs.existsSync(DATA_FILE)) return defaultData()
   try {
     const raw = fs.readFileSync(DATA_FILE, 'utf8')
@@ -237,6 +286,30 @@ function loadData(): { claudeCodeModels: any[]; codexModels: any[] } {
         })
       } catch (e) {
         console.warn(`[model-access] 跳过非法 codex 模型配置: ${e.message}`)
+      }
+    }
+    const harnessRows = Array.isArray(parsed?.harnessModels) ? parsed.harnessModels : []
+    for (const row of harnessRows) {
+      try {
+        const key = normalizeHarnessKey(row.key)
+        data.harnessModels.push({
+          key,
+          label: normalizeLabel(row.label, key),
+          provider: normalizeHarnessProvider(row.provider),
+          model: normalizeHarnessModel(row.model),
+          base_url: normalizeHarnessBaseUrl(row.base_url || row.baseUrl),
+          secret_value: String(row.secret_value || row.secretValue || '').trim(),
+          max_tokens: normalizeHarnessMaxTokens(row.max_tokens ?? row.maxTokens),
+          runtime_version: String(row.runtime_version || row.runtimeVersion || HARNESS_RUNTIME_VERSION).trim(),
+          enabled: row.enabled !== false,
+          use_proxy: row.use_proxy === true,
+          imported: true,
+          backend: 'deepseek-harness',
+          created_at: row.created_at || nowIso(),
+          updated_at: row.updated_at || row.created_at || nowIso(),
+        })
+      } catch (e) {
+        console.warn(`[model-access] 跳过非法 DeepSeek Harness 模型配置: ${e.message}`)
       }
     }
     seedBuiltinCodexIfNeeded(data)
@@ -722,12 +795,98 @@ function deleteCodexModel(keyOrSessionModel: any): boolean {
   return true
 }
 
+// ── DeepSeek Harness 模型 CRUD ───────────────────────────────────────────
+
+function publicHarnessModel(row: any, { includeSecret = false }: any = {}): any {
+  const key = normalizeHarnessKey(row.key)
+  const out: any = {
+    key,
+    session_model: sessionModelForHarnessKey(key),
+    label: row.label,
+    provider: row.provider,
+    model: row.model,
+    base_url: row.base_url,
+    secret_value_set: !!row.secret_value,
+    max_tokens: row.max_tokens ?? null,
+    runtime_version: row.runtime_version || HARNESS_RUNTIME_VERSION,
+    enabled: row.enabled !== false,
+    use_proxy: row.use_proxy === true,
+    imported: true,
+    backend: 'deepseek-harness',
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
+  }
+  if (includeSecret) out.secret_value = row.secret_value || ''
+  return out
+}
+
+function listHarnessModels({ enabledOnly = false, includeSecret = false }: any = {}): any[] {
+  return loadData().harnessModels
+    .filter((row) => !enabledOnly || row.enabled !== false)
+    .map((row) => publicHarnessModel(row, { includeSecret }))
+}
+
+function findHarnessModel(keyOrSessionModel: any, opts: any = {}): any {
+  let key
+  try { key = keyFromHarnessSessionModel(keyOrSessionModel) || normalizeHarnessKey(keyOrSessionModel) }
+  catch { return null }
+  const row = loadData().harnessModels.find((m) => m.key === key)
+  return row ? publicHarnessModel(row, opts) : null
+}
+
+function upsertHarnessModel(input: any, { existingKey = null }: any = {}): any {
+  const key = existingKey ? normalizeHarnessKey(existingKey) : normalizeHarnessKey(input?.key)
+  const data = loadData()
+  const idx = data.harnessModels.findIndex((m) => m.key === key)
+  const existing = idx >= 0 ? data.harnessModels[idx] : null
+  const rawSecret = input?.secret_value ?? input?.secretValue
+  const secretValue = String(rawSecret || '').trim() || existing?.secret_value || ''
+  if (!secretValue) throw new Error('请填写 DeepSeek API Key')
+  const hasMaxTokens = Object.prototype.hasOwnProperty.call(input || {}, 'max_tokens')
+    || Object.prototype.hasOwnProperty.call(input || {}, 'maxTokens')
+  const rawMaxTokens = input?.max_tokens ?? input?.maxTokens
+  const next = {
+    key,
+    label: normalizeLabel(input?.label ?? input?.name ?? existing?.label, key),
+    provider: normalizeHarnessProvider(input?.provider ?? existing?.provider),
+    model: normalizeHarnessModel(input?.model ?? input?.harness_model ?? existing?.model),
+    base_url: normalizeHarnessBaseUrl(input?.base_url ?? input?.baseUrl ?? existing?.base_url),
+    secret_value: normalizeSecretValue(secretValue),
+    max_tokens: normalizeHarnessMaxTokens(hasMaxTokens ? rawMaxTokens : existing?.max_tokens),
+    runtime_version: HARNESS_RUNTIME_VERSION,
+    enabled: typeof input?.enabled === 'boolean' ? input.enabled : (existing?.enabled ?? true),
+    use_proxy: typeof input?.use_proxy === 'boolean'
+      ? input.use_proxy
+      : (typeof input?.useProxy === 'boolean' ? input.useProxy : (existing?.use_proxy ?? false)),
+    imported: true,
+    backend: 'deepseek-harness',
+    created_at: existing?.created_at || nowIso(),
+    updated_at: nowIso(),
+  }
+  if (idx >= 0) data.harnessModels[idx] = next
+  else data.harnessModels.push(next)
+  data.harnessModels.sort((a, b) => a.key.localeCompare(b.key))
+  saveData(data)
+  return publicHarnessModel(next)
+}
+
+function deleteHarnessModel(keyOrSessionModel: any): boolean {
+  const key = keyFromHarnessSessionModel(keyOrSessionModel) || normalizeHarnessKey(keyOrSessionModel)
+  const data = loadData()
+  const before = data.harnessModels.length
+  data.harnessModels = data.harnessModels.filter((m) => m.key !== key)
+  if (data.harnessModels.length === before) return false
+  saveData(data)
+  return true
+}
+
 // Codex 模型不再自动 seed: picker 里的 Codex 默认项由 ``listSessionModelOptions``
 // 中的内置 ``codex`` 兜底; 管理员自定义 Codex 模型走管理中心的 Codex tab.
 
 export {
   SESSION_MODEL_PREFIX,
   SESSION_MODEL_PREFIX_CODEX,
+  SESSION_MODEL_PREFIX_HARNESS,
   listClaudeCodeModels,
   findClaudeCodeModel,
   upsertClaudeCodeModel,
@@ -749,4 +908,10 @@ export {
   keyFromCodexSessionModel,
   codexConfigPathForKey,
   displayCodexConfigPathForKey,
+  listHarnessModels,
+  findHarnessModel,
+  upsertHarnessModel,
+  deleteHarnessModel,
+  sessionModelForHarnessKey,
+  keyFromHarnessSessionModel,
 }

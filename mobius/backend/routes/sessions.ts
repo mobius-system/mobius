@@ -93,6 +93,7 @@ function userOf(req: express.Request): AnyUser {
 const PROMPT_STATS_BACKENDS = [
   { key: 'codex', backendName: 'tmux-codex' },
   { key: 'claude_code', backendName: 'tmux-claude-code' },
+  { key: 'deepseek_harness', backendName: 'deepseek-harness' },
 ];
 
 function pidExists(pid: unknown): boolean {
@@ -148,11 +149,14 @@ router.get('/prompt-stats', auth, (req: express.Request, res: express.Response) 
     since: s.since,
     codex: byBackend['tmux-codex'] || 0,
     claude_code: byBackend['tmux-claude-code'] || 0,
+    deepseek_harness: byBackend['deepseek-harness'] || 0,
     codex_5min: byBackend5['tmux-codex'] || 0,
     claude_code_5min: byBackend5['tmux-claude-code'] || 0,
+    deepseek_harness_5min: byBackend5['deepseek-harness'] || 0,
     // Backward-compatible aliases for older frontends.
     codex_2min: byBackend5['tmux-codex'] || 0,
     claude_code_2min: byBackend5['tmux-claude-code'] || 0,
+    deepseek_harness_2min: byBackend5['deepseek-harness'] || 0,
     total: s.total,
     active_tmux_window_count: Object.values(activeWindows).reduce((sum, count) => sum + count, 0),
     active_windows_by_backend: activeWindows,
@@ -176,12 +180,13 @@ router.get('/mention-targets', auth, (req: express.Request, res: express.Respons
   const user = userOf(req);
   const currentId = String(req.query.session_id || '').trim();
   const query = String(req.query.q || '').trim().slice(0, 200);
+  const normalizedSearch = query.replace(/^@?session=/i, '').trim().toLowerCase();
   const current = currentId ? Sessions.findById(currentId) as any : null;
   if (!current || !canOperateSession(user, current)) {
     res.status(404).json({ error: '当前 Session 不存在或无权访问' });
     return;
   }
-  const rows = Sessions.listMentionCandidates(query, query ? 600 : 300)
+  const rows = Sessions.listMentionCandidates(normalizedSearch, normalizedSearch ? 600 : 300)
     .filter((row: any) => row.session_id !== currentId && canReadSession(user, row));
   const targets = rows.map((row: any) => {
     const sameIssue = current.scope_type === row.scope_type
@@ -197,6 +202,8 @@ router.get('/mention-targets', auth, (req: express.Request, res: express.Respons
       name: row.name || row.session_id,
       description: row.description || '',
       model: row.model || null,
+      model_label: modelRegistry.labelForSessionModel(row.model) || row.model || '',
+      backend: modelRegistry.backendNameForSessionModel(row.model) || null,
       project_id: row.project_id || null,
       project_name: row.project_name || '',
       issue_id: row.issue_id || null,
@@ -213,6 +220,20 @@ router.get('/mention-targets', auth, (req: express.Request, res: express.Respons
       can_communicate: canOperateSession(user, row),
     };
   }).sort((a: any, b: any) => {
+    if (normalizedSearch) {
+      const rank = (item: any) => {
+        const sid = String(item.session_id || '').toLowerCase();
+        const name = String(item.name || '').toLowerCase();
+        if (sid === normalizedSearch) return 0;
+        if (name === normalizedSearch) return 1;
+        if (sid.startsWith(normalizedSearch)) return 2;
+        if (name.startsWith(normalizedSearch)) return 3;
+        return 4;
+      };
+      const ar = rank(a);
+      const br = rank(b);
+      if (ar !== br) return ar - br;
+    }
     const groupRank: Record<string, number> = { same_scope: 0, same_project: 1, other_project: 2 };
     const ga = groupRank[a.group] ?? 9;
     const gb = groupRank[b.group] ?? 9;

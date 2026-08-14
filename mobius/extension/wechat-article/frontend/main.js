@@ -42,6 +42,16 @@ function pollRecursive(fn, intervalMs) {
   (async () => { while (!stop) { try { await fn(); } catch (_) {} if (stop) return; await new Promise((r) => setTimeout(r, intervalMs)); } })();
   return () => { stop = true; };
 }
+// 内联线性图标（Lucide 风格，stroke=currentColor），避免用 emoji/字符充当图标
+const ICONS = {
+  radar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M12 3 15 9"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  dot: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg>',
+  circle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+};
+const icon = (name) => ICONS[name] || "";
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const safeUrl = (s) => /^https?:\/\//i.test(String(s || "")) ? String(s) : "#";
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
@@ -118,13 +128,13 @@ function render() {
   app.innerHTML = `
     <header class="topbar">
       <div class="brand">公众号图文生成</div>
-      <nav class="tabs">
-        <button id="tab-write" class="${state.tab === "write" ? "active" : ""}">选题 / 写作</button>
-        <button id="tab-list" class="${state.tab === "list" ? "active" : ""}">我的文章</button>
-        <button id="tab-settings" class="${state.tab === "settings" ? "active" : ""}">设置</button>
+      <nav class="tabs" aria-label="功能模块">
+        <button id="tab-write" class="${state.tab === "write" ? "active" : ""}" aria-current="${state.tab === "write" ? "page" : "false"}">选题 / 写作</button>
+        <button id="tab-list" class="${state.tab === "list" ? "active" : ""}" aria-current="${state.tab === "list" ? "page" : "false"}">我的文章</button>
+        <button id="tab-settings" class="${state.tab === "settings" ? "active" : ""}" aria-current="${state.tab === "settings" ? "page" : "false"}">设置</button>
       </nav>
       <div class="spacer"></div>
-      <button id="job-indicator" class="job-indicator" hidden></button>
+      <button id="job-indicator" class="job-indicator" hidden aria-label="后台任务状态"></button>
       <div class="pill">${cfg.wx_configured ? "微信已配置" : "微信未配置"} · ${cfg.crypto_available ? "加密就绪" : "缺主密钥"}</div>
     </header>
     <main id="view"></main>`;
@@ -146,9 +156,9 @@ function renderWrite() {
     <section class="card compose-shell">
       <div class="compose-head">
         <div><h2>新建一篇图文</h2><div class="stepper"><span class="active">1 发现热点</span><i></i><span class="${discovering ? "" : "active"}">2 确定角度</span><i></i><span>3 生成文章</span></div></div>
-        <div class="mode-switch" role="tablist">
-          <button id="mode-hotspot" class="${state.writeMode === "hotspot" ? "active" : ""}">从热点开始</button>
-          <button id="mode-manual" class="${state.writeMode === "manual" ? "active" : ""}">自定义主题</button>
+        <div class="mode-switch" role="group" aria-label="选题方式">
+          <button id="mode-hotspot" class="${state.writeMode === "hotspot" ? "active" : ""}" aria-pressed="${state.writeMode === "hotspot"}">从热点开始</button>
+          <button id="mode-manual" class="${state.writeMode === "manual" ? "active" : ""}" aria-pressed="${state.writeMode === "manual"}">自定义主题</button>
         </div>
       </div>
       <div id="compose-body"></div>
@@ -188,7 +198,7 @@ function hotspotProgressHtml() {
   ];
   const index = Math.max(0, stages.findIndex((x) => x[0] === st.phase));
   return `<div class="hotspot-progress"><div class="progress"><div class="bar"><i style="width:${pct}%"></i></div><div class="msg">${esc(st.message || "正在检索")}</div></div>
-    <div class="stage-list">${stages.map((x, i) => `<span class="${i < index ? "done" : i === index ? "active" : ""}">${i < index ? "✓" : i === index ? "●" : "○"} ${x[1]}</span>`).join("")}</div>
+    <div class="stage-list">${stages.map((x, i) => `<span class="${i < index ? "done" : i === index ? "active" : ""}">${i < index ? icon("check") : i === index ? icon("dot") : icon("circle")} ${esc(x[1])}</span>`).join("")}</div>
     <button id="btn-stop-hotspot" class="btn compact">取消检索</button></div>`;
 }
 function hotspotTagHtml(tag) {
@@ -197,7 +207,7 @@ function hotspotTagHtml(tag) {
 }
 function hotspotCardHtml(h) {
   const relevance = h.score_breakdown?.query_relevance;
-  return `<article class="hotspot-card ${state.hotspot.detail?.id === h.id ? "selected" : ""}" data-hotspot-id="${esc(h.id)}">
+  return `<article class="hotspot-card ${state.hotspot.detail?.id === h.id ? "selected" : ""}" data-hotspot-id="${esc(h.id)}" tabindex="0" role="button" aria-label="${esc(h.title)}，按 Enter 查看详情">
     <div class="hotspot-rank">#${h.rank || "—"}</div><div class="hotspot-card-body">
       <div class="hotspot-title-row"><h3>${esc(h.title)}</h3><span class="category-tag">${esc(h.category)}</span></div>
       <p>${esc(h.summary || "")}</p>
@@ -208,7 +218,7 @@ function hotspotCardHtml(h) {
   </article>`;
 }
 function hotspotDetailHtml(h) {
-  if (!h) return `<div class="hotspot-detail empty-detail"><div class="radar-mark">◎</div><h3>选择一个热点查看详情</h3><p>这里会展示事件时间、来源证据、写作角度与待核实问题。</p></div>`;
+  if (!h) return `<div class="hotspot-detail empty-detail"><div class="radar-mark">${icon("radar")}</div><h3>选择一个热点查看详情</h3><p>这里会展示事件时间、来源证据、写作角度与待核实问题。</p></div>`;
   const angles = h.angles || [], titles = h.title_candidates || [];
   return `<aside class="hotspot-detail">
     <div class="detail-head"><div><span class="category-tag">${esc(h.category)}</span><h3>${esc(h.title)}</h3></div><strong>${h.total_score || 0}<small>综合分</small></strong></div>
@@ -228,15 +238,15 @@ function renderHotspotDiscovery() {
   $("#compose-body").innerHTML = `<div class="hotspot-search">
     <div class="search-line"><div><label><span>关注方向（可留空查看全部 AI 热点）</span><input id="hotspot-query" type="text" value="${esc(hs.query)}" placeholder="例如：Agent、AI 编程、多模态、OpenAI"/></label></div>
       <label class="search-model"><span>分析模型</span><select id="hotspot-model"><option value="">默认</option>${modelOpts}</select></label>
-      <button id="btn-search-hotspot" class="primary" ${hs.activeJob ? "disabled" : ""}>${hs.activeJob ? "深度检索中…" : "开始深度检索"}</button></div>
+      <button id="btn-search-hotspot" class="primary" ${hs.activeJob ? "disabled" : ""}>${hs.activeJob ? "深度检索中…" : icon("search") + " 开始深度检索"}</button></div>
     <div class="filter-row"><b>时间</b>${[[24,"24 小时"],[72,"近 3 天"],[168,"近 7 天"]].map(([v,l]) => `<button data-hours="${v}" class="chip ${hs.windowHours === v ? "active" : ""}">${l}</button>`).join("")}
       <b>范围</b>${[["all","全部"],["domestic","国内"],["overseas","海外"]].map(([v,l]) => `<button data-region="${v}" class="chip ${hs.region === v ? "active" : ""}">${l}</button>`).join("")}</div>
     <div class="filter-row categories"><b>分类</b>${HOTSPOT_CATEGORIES.map((c) => `<button data-category="${esc(c)}" class="chip ${hs.categories.includes(c) ? "active" : ""}">${esc(c)}</button>`).join("")}</div>
-    ${hotspotProgressHtml()}${hotspotCoverageHtml(hs.search, hs.activeJob)}
+    <div id="hotspot-status">${hotspotProgressHtml()}${hotspotCoverageHtml(hs.search, hs.activeJob)}</div>
   </div>
   <div class="hotspot-toolbar"><div><b>相关热点</b><span>${hs.results.length ? `共 ${hs.results.length} 个独立事件` : "等待检索"}</span></div>
     <select id="hotspot-sort"><option value="recommended">综合推荐</option><option value="latest">最新发生</option><option value="fastest">传播最快</option><option value="match">最适合本账号</option></select></div>
-  <div class="hotspot-workspace"><div class="hotspot-list">${hs.results.length ? hs.results.map(hotspotCardHtml).join("") : `<div class="hotspot-empty"><div class="radar-mark">◎</div><h3>${hs.search ? "当前条件下没有发现热点" : "检索近 3 天 AI 最新热点"}</h3><p>${hs.search ? "可放宽分类、切换近 7 天或直接自定义主题。" : "将扫描官方、一手来源、中英文媒体与公众号，去重后归并为独立事件。"}</p></div>`}</div>${hotspotDetailHtml(hs.detail)}</div>`;
+  <div class="hotspot-workspace"><div class="hotspot-list">${hs.results.length ? hs.results.map(hotspotCardHtml).join("") : `<div class="hotspot-empty${hs.activeJob ? " searching" : ""}"><div class="radar-mark">${icon("radar")}</div><h3>${hs.activeJob ? "正在扫描多来源并归并事件" : hs.search ? "当前条件下没有发现热点" : "检索近 3 天 AI 最新热点"}</h3><p>${hs.activeJob ? "覆盖官方、一手来源、中英文媒体与公众号，去重后归并独立事件，稍候即在此呈现。" : hs.search ? "可放宽分类、切换近 7 天或直接自定义主题。" : "将扫描官方、一手来源、中英文媒体与公众号，去重后归并为独立事件。"}</p></div>`}</div>${hotspotDetailHtml(hs.detail)}</div>`;
   $("#hotspot-sort").value = hs.sort;
   $("#hotspot-query").oninput = (e) => { hs.query = e.target.value; };
   $$('[data-hours]').forEach((b) => b.onclick = () => { hs.windowHours = Number(b.dataset.hours); render(); });
@@ -244,12 +254,28 @@ function renderHotspotDiscovery() {
   $$('[data-category]').forEach((b) => b.onclick = () => { const c = b.dataset.category; hs.categories = hs.categories.includes(c) ? hs.categories.filter((x) => x !== c) : [...hs.categories, c]; render(); });
   $("#btn-search-hotspot").onclick = onHotspotSearch;
   $("#hotspot-sort").onchange = async (e) => { hs.sort = e.target.value; await loadHotspots(hs.search?.id); };
-  $$('[data-hotspot-id]').forEach((card) => card.onclick = (e) => { if (e.target.closest('[data-choose-id]')) return; hs.detail = hs.results.find((x) => x.id === card.dataset.hotspotId) || null; hs.selectedAngle = 0; hs.selectedTitle = 0; render(); });
+  const pickCard = (card) => { hs.detail = hs.results.find((x) => x.id === card.dataset.hotspotId) || null; hs.selectedAngle = 0; hs.selectedTitle = 0; render(); };
+  $$('[data-hotspot-id]').forEach((card) => {
+    card.onclick = (e) => { if (e.target.closest('[data-choose-id]')) return; pickCard(card); };
+    card.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickCard(card); } };
+  });
   $$('[data-choose-id]').forEach((b) => b.onclick = () => { hs.detail = hs.results.find((x) => x.id === b.dataset.chooseId) || null; hs.selectedAngle = 0; hs.selectedTitle = 0; render(); });
   $$('[data-angle-index]').forEach((b) => b.onclick = () => { hs.selectedAngle = Number(b.dataset.angleIndex); render(); });
   $$('[data-title-index]').forEach((b) => b.onclick = () => { hs.selectedTitle = Number(b.dataset.titleIndex); render(); });
   if ($("#btn-select-hotspot")) $("#btn-select-hotspot").onclick = onSelectHotspot;
   if ($("#btn-stop-hotspot")) $("#btn-stop-hotspot").onclick = onStopHotspot;
+}
+
+// 检索轮询期间只局部刷新进度/覆盖区，避免全量 render 抢走查询输入焦点、重置列表滚动
+function refreshHotspotStatus() {
+  const hs = state.hotspot;
+  const box = $("#hotspot-status");
+  if (box) {
+    box.innerHTML = `${hotspotProgressHtml()}${hotspotCoverageHtml(hs.search, hs.activeJob)}`;
+    if ($("#btn-stop-hotspot")) $("#btn-stop-hotspot").onclick = onStopHotspot;
+  }
+  const btn = $("#btn-search-hotspot");
+  if (btn) { btn.disabled = !!hs.activeJob; btn.innerHTML = hs.activeJob ? "深度检索中…" : icon("search") + " 开始深度检索"; }
 }
 
 function captureFormDraft() {
@@ -262,12 +288,17 @@ function captureFormDraft() {
 function openEvidenceModal(h) {
   $("#hotspot-evidence-modal")?.remove();
   const modal = document.createElement("div"); modal.id = "hotspot-evidence-modal"; modal.className = "modal-backdrop";
-  modal.innerHTML = `<div class="evidence-modal"><div class="modal-head"><div><span class="category-tag">${esc(h.category)}</span><h3>${esc(h.title)}</h3></div><button id="close-evidence-modal" aria-label="关闭">×</button></div>
+  modal.innerHTML = `<div class="evidence-modal"><div class="modal-head"><div><span class="category-tag">${esc(h.category)}</span><h3>${esc(h.title)}</h3></div><button id="close-evidence-modal" aria-label="关闭">${icon("close")}</button></div>
     <p>${esc(h.summary || "")}</p><h4>来源与证据</h4><div class="evidence-list">${(h.sources || []).map((s) => `<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noreferrer"><span class="tag ${esc(s.tier)}">${esc(s.tier)}</span><div><b>${esc(s.name)}</b><small>${s.official ? "一手来源" : "可信来源"} · ${fmtTime(s.published_at)}</small><em>${esc(s.title)}</em></div></a>`).join("")}</div>
     ${h.questions?.length ? `<h4>需要核实</h4><ul class="question-list">${h.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul>` : ""}</div>`;
   document.body.appendChild(modal);
-  $("#close-evidence-modal").onclick = () => modal.remove();
-  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  const closeBtn = $("#close-evidence-modal");
+  const close = () => { modal.remove(); document.removeEventListener("keydown", onKey); closeBtn.focus(); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  closeBtn.onclick = close;
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+  document.addEventListener("keydown", onKey);
+  closeBtn.focus();
 }
 function renderWriteForm() {
   const hasActiveJob = !!state.activeJob, d = state.formDraft;
@@ -326,7 +357,7 @@ function runHotspotPoll(jobId, { resumed = false } = {}) {
       toast(r.error || "热点检索任务无法恢复"); render(); return;
     }
     const st = r.status; hs.activeJob = { ...st, jobId };
-    if (state.tab === "write" && state.writeMode === "hotspot" && !state.selectedTopic) render();
+    if (state.tab === "write" && state.writeMode === "hotspot" && !state.selectedTopic) refreshHotspotStatus();
     if (["done", "failed", "cancelled"].includes(st.state)) {
       hs.pollStop?.(); hs.pollStop = null; hs.pollJobId = ""; hs.activeJob = null; localStorage.removeItem(HOTSPOT_JOB_STORAGE_KEY);
       if (st.state === "done") { await loadHotspots(st.searchId || hs.search?.id); toast(`检索完成：得到 ${st.resultCount || 0} 个独立热点`); }
@@ -549,7 +580,13 @@ function renderEditor() {
   $("#btn-push").onclick = onPush;
   $$("[data-cid]").forEach((b) => b.onclick = async () => {
     const r = await api("resolve_claim", { claim_id: b.dataset.cid });
-    if (r.ok) { const c = state.current.claims.find((x) => x.id === b.dataset.cid); if (c) c.resolved = 1; renderEditor(); }
+    if (!r.ok) return;
+    const c = state.current.claims.find((x) => x.id === b.dataset.cid);
+    if (c) c.resolved = 1;
+    // 外科式替换：只把按钮换成「已处理」标记，不重建编辑器，正文游标/滚动不动
+    const tag = document.createElement("span");
+    tag.className = "tag"; tag.textContent = "已处理";
+    b.replaceWith(tag);
   });
 }
 function updateLint() {

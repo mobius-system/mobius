@@ -761,4 +761,35 @@ projectScoped.post('/:id/move', auth, (req: express.Request, res: express.Respon
   res.json(shapeMemory(result.memory, user));
 });
 
+// 取消升级: 移除由「用户级 memory 升级为项目级」产生的项目副本, 用户级原件保留。
+// 语义与 skills 的 cancel-upgrade 一致 (moveMemory 也是快照复制):
+//   - 用户级原件仍在 → 删除项目副本 (mode=removed);
+//   - 原件已被删且请求者=贡献者本人 → 先复制回用户级再删项目副本 (mode=restored);
+//   - 原件已被删且请求者是管理员/项目负责人 → 仅删除项目副本。
+projectScoped.post('/:id/cancel-upgrade', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user as AccessUser;
+  const acc = ensureProjectAccess(req, res); if (!acc) return;
+  const m = Memories.findById(String(req.params.id));
+  if (!m || m.scope !== 'project' || m.owner_id !== String(req.params.projectId)) return res.status(404).json({ error: '未找到' });
+  if (!canManageContextItem(user, 'memory', m)) return res.status(403).json({ error: '无权取消此升级 (仅升级者本人、项目负责人或管理员)' });
+
+  const parts = String(m.id).split(':');
+  const slug = parts.slice(3).join(':');
+  const contributorId = String(m.created_by || (parts[1] || ''));
+  const userOriginal = slug ? Memories.findById(`user:${contributorId}:${slug}`) : null;
+
+  if (!userOriginal && contributorId === user.id) {
+    const result = Memories.move({
+      id: m.id, requesterUserId: user.id, isAdmin: user.role === 'admin',
+      targetScope: 'user', targetProjectId: null,
+    } as any);
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    Memories.delete(m.id);
+    return res.json({ ok: true, mode: 'restored', memory: shapeMemory(result.memory, user) });
+  }
+
+  Memories.delete(m.id);
+  return res.json({ ok: true, mode: 'removed', memory: userOriginal ? shapeMemory(userOriginal, user) : null });
+});
+
 export { router, projectScoped };

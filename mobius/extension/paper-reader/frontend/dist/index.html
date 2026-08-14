@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
-  <link rel="stylesheet" href="paper-reader.css?v=0.4.1">
+  <link rel="stylesheet" href="paper-reader.css?v=0.6.0">
 </head>
 <body>
   <div class="pr-loading" id="prLoading">
@@ -70,7 +70,10 @@
         <p class="pr-kicker">RESEARCH READER</p>
         <h1>打开论文，进入深度阅读</h1>
         <p>选择一篇论文开始阅读。</p>
-        <button class="pr-btn primary" id="emptyOpen" type="button"><i data-lucide="search"></i>打开论文</button>
+        <div class="pr-empty-actions">
+          <button class="pr-btn primary" id="emptyOpen" type="button"><i data-lucide="search"></i>打开 arXiv 论文</button>
+          <button class="pr-btn ghost" id="emptyUpload" type="button"><i data-lucide="upload"></i>导入本地 PDF</button>
+        </div>
       </div>
 
       <div class="pr-reader-toolbar" id="viewbar" hidden>
@@ -80,6 +83,7 @@
         </div>
         <div class="pr-reader-links">
           <a id="paperLink" target="_blank" rel="noopener"><i data-lucide="external-link"></i><span>arXiv</span></a>
+          <button class="pr-btn ghost sm pr-enhanced-trigger" id="highPrecisionBtn" type="button" hidden><i data-lucide="scan-search"></i><span>高精度解析</span></button>
           <a id="pdfExtLink" href="#" target="_blank" rel="noopener" hidden><i data-lucide="square-arrow-out-up-right"></i><span>新窗口</span></a>
         </div>
       </div>
@@ -93,6 +97,7 @@
             <summary><span>摘要</span><i data-lucide="chevron-down"></i></summary>
             <p id="paperAbstract"></p>
           </details>
+          <div class="pr-enhanced-card" id="enhancedCard" hidden></div>
         </header>
         <div class="pr-paper-body" id="paperBody"></div>
       </article>
@@ -200,14 +205,49 @@
         <div class="pr-recent" id="recentPapers"></div>
       </div>
       <div class="pr-command-foot">
-        <span><i data-lucide="corner-down-left"></i>打开论文</span>
-        <button class="pr-btn primary" id="openSubmit" value="default" type="submit">打开</button>
+        <button class="pr-btn ghost" id="openUpload" value="cancel" type="button"><i data-lucide="upload"></i>导入 PDF</button>
+        <div class="pr-command-submit"><span><i data-lucide="corner-down-left"></i>打开论文</span><button class="pr-btn primary" id="openSubmit" value="default" type="submit">打开</button></div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="pr-upload-dialog" id="uploadDialog">
+    <form class="pr-upload-shell" id="uploadForm">
+      <div class="pr-upload-head">
+        <div class="pr-upload-head-icon"><i data-lucide="file-up"></i></div>
+        <div><span>LOCAL PDF</span><strong>导入并持久化阅读</strong></div>
+        <button class="pr-icon-action" id="uploadClose" type="button" title="关闭" aria-label="关闭"><i data-lucide="x"></i></button>
+      </div>
+      <label class="pr-dropzone" id="pdfDropzone" for="pdfFile">
+        <input id="pdfFile" type="file" accept="application/pdf,.pdf" hidden>
+        <span class="pr-drop-icon"><i data-lucide="upload-cloud"></i></span>
+        <strong id="pdfFileName">选择或拖入一篇 PDF</strong>
+        <small id="pdfFileMeta">原始文件会永久保存在 Paper Reader；单文件不超过 50 MB</small>
+      </label>
+      <div class="pr-upload-fields">
+        <label><span>论文标题 <small>可选，留空则自动识别</small></span><input id="uploadTitle" type="text" maxlength="600" autocomplete="off" placeholder="自动从 PDF 首页识别"></label>
+        <label><span>作者 <small>可选</small></span><input id="uploadAuthors" type="text" maxlength="600" autocomplete="off" placeholder="例如：Author A; Author B"></label>
+      </div>
+      <div class="pr-upload-progress" id="uploadProgress" hidden>
+        <div class="pr-upload-progress-head"><span id="uploadProgressLabel">准备导入</span><b id="uploadProgressPercent">0%</b></div>
+        <div class="pr-upload-progress-track"><i id="uploadProgressBar"></i></div>
+        <ol>
+          <li data-upload-step="upload"><i></i><span>上传原始 PDF</span></li>
+          <li data-upload-step="persist"><i></i><span>校验并永久保存</span></li>
+          <li data-upload-step="extract"><i></i><span>按页提取正文与结构</span></li>
+          <li data-upload-step="index"><i></i><span>建立阅读索引</span></li>
+        </ol>
+      </div>
+      <div class="pr-upload-note"><i data-lucide="shield-check"></i><span>该入口只写入 Paper Reader，不会创建科研雷达来源或专题关联。扫描型 PDF 会保留原文件，并明确提示需要 OCR。</span></div>
+      <div class="pr-upload-actions">
+        <button class="pr-btn ghost" id="uploadCancel" type="button">取消</button>
+        <button class="pr-btn primary" id="uploadSubmit" type="submit"><i data-lucide="sparkles"></i>导入并阅读</button>
       </div>
     </form>
   </dialog>
 
   <div class="pr-toast" id="toast" role="status"></div>
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
-  <script type="module" src="main.js?v=0.4.1"></script>
+  <script type="module" src="main.js?v=0.6.0"></script>
 </body>
 </html>

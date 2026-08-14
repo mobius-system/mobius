@@ -468,7 +468,7 @@ export default function ResearchPage() {
           setShowTeamSession(true)
         }}
       />}
-      {showNewSession && <NewSessionModal researchId={researchId} existingSessions={sessions} entityLabel="研究智能体" onClose={() => setShowNewSession(false)}
+      {showNewSession && <NewSessionModal researchId={researchId} projectId={projectId} existingSessions={sessions} entityLabel="研究智能体" onClose={() => setShowNewSession(false)}
         defaultNamePrefix={research?.title || ''}
         defaultDescription={research?.description || ''}
         projectKind={project?.kind}

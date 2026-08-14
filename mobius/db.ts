@@ -27,6 +27,11 @@ fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const db: Database.Database = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+const configuredBusyTimeout = Number.parseInt(process.env.MOBIUS_DB_BUSY_TIMEOUT_MS || '5000', 10);
+const busyTimeoutMs = Number.isFinite(configuredBusyTimeout)
+  ? Math.max(100, Math.min(configuredBusyTimeout, 60_000))
+  : 5000;
+db.pragma(`busy_timeout = ${busyTimeoutMs}`);
 
 // ===== 共享表 bootstrap (transfer.md 阻塞 #1) =====
 // 空库(新机/容器)自建 users/projects/issues/sessions/messages/skills 等"共享表";
@@ -466,15 +471,58 @@ db.exec(`
     to_session_id TEXT NOT NULL,
     content TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','delivered','failed','rejected')),
+    -- delivery_state 描述消息是否已送入目标 Harness; status 保留兼容旧查询语义。
+    delivery_state TEXT NOT NULL DEFAULT 'queued' CHECK(delivery_state IN ('queued','delivered','failed','expired')),
+    -- decision 是目标 Agent 对外部消息的独立接收决策, 不等同于权限批准。
+    decision TEXT NOT NULL DEFAULT 'pending' CHECK(decision IN ('pending','accepted','held','refused','expired')),
+    wake_requested INTEGER NOT NULL DEFAULT 0,
     error TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     delivered_at TEXT,
+    accepted_at TEXT,
+    decision_at TEXT,
+    expires_at TEXT,
     FOREIGN KEY (channel_id) REFERENCES agent_bridge_channels(channel_id) ON DELETE CASCADE,
     UNIQUE(channel_id, request_id)
   );
   CREATE INDEX IF NOT EXISTS idx_agent_bridge_messages_channel
     ON agent_bridge_messages(channel_id, id);
 `);
+
+// agent_bridge_messages 扩展迁移: 旧库保留原 status 约束, 新字段承载 L5 投递/接收状态。
+(() => {
+  try {
+    const cols = db.prepare('PRAGMA table_info(agent_bridge_messages)').all().map((c: any) => c.name);
+    const migrations: Array<[string, string]> = [
+      ['delivery_state', "ALTER TABLE agent_bridge_messages ADD COLUMN delivery_state TEXT NOT NULL DEFAULT 'queued'"],
+      ['decision', "ALTER TABLE agent_bridge_messages ADD COLUMN decision TEXT NOT NULL DEFAULT 'pending'"],
+      ['wake_requested', "ALTER TABLE agent_bridge_messages ADD COLUMN wake_requested INTEGER NOT NULL DEFAULT 0"],
+      ['accepted_at', 'ALTER TABLE agent_bridge_messages ADD COLUMN accepted_at TEXT'],
+      ['decision_at', 'ALTER TABLE agent_bridge_messages ADD COLUMN decision_at TEXT'],
+      ['expires_at', 'ALTER TABLE agent_bridge_messages ADD COLUMN expires_at TEXT'],
+    ];
+    for (const [name, sql] of migrations) {
+      if (!cols.includes(name)) db.exec(sql);
+    }
+    db.exec(`
+      UPDATE agent_bridge_messages
+      SET delivery_state = CASE
+        WHEN status = 'delivered' THEN 'delivered'
+        WHEN status = 'failed' OR status = 'rejected' THEN 'failed'
+        ELSE 'queued'
+      END
+      WHERE delivery_state IS NULL OR delivery_state = ''
+         OR status IN ('delivered','failed','rejected');
+      UPDATE agent_bridge_messages
+      SET expires_at = datetime(created_at, '+1 day')
+      WHERE expires_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_agent_bridge_messages_target_state
+        ON agent_bridge_messages(to_session_id, delivery_state, decision, id);
+    `);
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️ agent_bridge_messages L5 状态迁移失败:', (e as Error).message);
+  }
+})();
 
 // 自检: 生产栈表存在(只读), 不动它们.
 // 注意: skills/memories 在 v1.7 起改为文件系统存储 (protected_data/), 不再是 SQLite 表, 故不查.
@@ -776,6 +824,93 @@ function migrateSessionsV2AgentStatusEnum() {
   }
 }
 migrateSessionsV2AgentStatusEnum();
+
+// ===== Main/Sub Harness core schema =====
+// schema.sql handles empty databases. Replaying only its Harness block here is
+// the explicit, idempotent migration path for existing databases. This runs
+// after the sessions_v2 rebuild migrations because those temporarily disable
+// connection-level foreign key enforcement.
+function migrateHarnessSchema() {
+  const marker = '-- ===== Harness core schema (Phase 0) =====';
+  const endMarker = '-- ===== End Harness core schema =====';
+  const schemaPath = path.join(__dirname, 'schema.sql');
+  const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+  const markerIndex = schemaSql.indexOf(marker);
+  if (markerIndex < 0) throw new Error('Harness schema marker is missing from schema.sql');
+  const endMarkerIndex = schemaSql.indexOf(endMarker, markerIndex);
+  if (endMarkerIndex < 0) throw new Error('Harness schema end marker is missing from schema.sql');
+  const harnessSql = schemaSql.slice(markerIndex, endMarkerIndex + endMarker.length);
+  if (Number(db.pragma('foreign_keys', { simple: true })) !== 1) {
+    throw new Error('Harness migration refused because PRAGMA foreign_keys is disabled');
+  }
+  const migrate = db.transaction(() => {
+    db.exec(harnessSql);
+    const runCols = db.prepare('PRAGMA table_info(harness_runs)').all().map((column: any) => column.name);
+    if (!runCols.includes('session_name')) {
+      db.exec('ALTER TABLE harness_runs ADD COLUMN session_name TEXT');
+    }
+    if (!runCols.includes('language')) {
+      db.exec("ALTER TABLE harness_runs ADD COLUMN language TEXT NOT NULL DEFAULT 'zh' CHECK(language IN ('zh','en'))");
+    }
+    if (!runCols.includes('excluded_skill_ids')) {
+      db.exec("ALTER TABLE harness_runs ADD COLUMN excluded_skill_ids TEXT NOT NULL DEFAULT '[]'");
+    }
+    if (!runCols.includes('excluded_memory_ids')) {
+      db.exec("ALTER TABLE harness_runs ADD COLUMN excluded_memory_ids TEXT NOT NULL DEFAULT '[]'");
+    }
+    const profiles = [
+      { id: 'system-codex-readonly-v1', name: 'Codex Read-only', backend: 'codex', model: 'codex' },
+      { id: 'system-claude-readonly-v1', name: 'Claude Code Read-only', backend: 'claude-code', model: 'opus' },
+    ];
+    const insertProfile = db.prepare(`
+      INSERT OR IGNORE INTO harness_profiles
+        (id, scope, name, description, backend, default_model, capabilities_json, definition_json, version)
+      VALUES (?, 'system', ?, 'Built-in conservative read-only profile', ?, ?, ?, ?, 1)
+    `);
+    for (const profile of profiles) {
+      const capabilities = {
+        can_main: true,
+        can_work: true,
+        can_evaluate: true,
+        supports_write: false,
+        supports_network: false,
+        supports_runtime_verification: false,
+        max_concurrency: 1,
+      };
+      insertProfile.run(
+        profile.id,
+        profile.name,
+        profile.backend,
+        profile.model,
+        JSON.stringify(capabilities),
+        JSON.stringify({
+          schema_version: '1.1',
+          backend: profile.backend,
+          model: profile.model,
+          capabilities,
+          model_traits: {
+            needs_context_reset: false,
+            context_window_tokens: 0,
+            supports_auto_compaction: false,
+            calibrated: false,
+          },
+          skills: [],
+          tools: { allow: [], deny: [], capability_tags: [] },
+          cost_profile: { relative_cost_factor: 1 },
+          default_context_policy: {},
+          default_tool_policy: { workspace_mode: 'read_only' },
+        }),
+      );
+    }
+  });
+  migrate();
+  const foreignKeys = Number(db.pragma('foreign_keys', { simple: true }));
+  if (foreignKeys !== 1) {
+    throw new Error('Harness migration requires PRAGMA foreign_keys = ON');
+  }
+  console.log(`[mobius/db] ✅ Harness schema ready (busy_timeout=${busyTimeoutMs}ms)`);
+}
+migrateHarnessSchema();
 
 // ===== sessions_v2 轻量迁移: 每个 Session 的注入上下文语言 =====
 // 存量 session 默认 'zh', 保持此前中文注入行为; 新建 Session 由前端/路由显式写入。
