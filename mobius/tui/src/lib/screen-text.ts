@@ -13,6 +13,10 @@
 import wrapAnsi from 'wrap-ansi'
 import { renderMarkdownLines } from '../markdown.js'
 import { toolLabel, viewsForEntry, type EntryView } from './entry-view.js'
+<<<<<<< HEAD
+import type { AnyEntry } from '../types.js'
+=======
+>>>>>>> gitlab-mobius/main
 
 // ── shared text helpers (mirrored from Chat.tsx, kept here to avoid a cycle) ─
 export function displayWidth(str: string): number {
@@ -102,6 +106,10 @@ export function headTailLines(text: string, width: number, maxLines: number): st
 export interface ScreenRows {
   /** Whether this view renders with a leading blank row (its Box has marginTop). */
   marginTop: boolean
+<<<<<<< HEAD
+  /** Full screen lines: prefix included, wrapped/truncated, plain text (no ANSI). */
+  rows: string[]
+=======
   /** Full screen rows: a plain layout/copy projection plus its styled ANSI text. */
   rows: ScreenRow[]
 }
@@ -125,6 +133,7 @@ export interface ScreenRow {
   /** Same row with Markdown/syntax ANSI styling preserved for terminal output. */
   styled: string
   tone: ScreenRowTone
+>>>>>>> gitlab-mobius/main
 }
 
 const textWidth = (columns: number) => Math.max(8, columns - 4)
@@ -134,6 +143,9 @@ const fullWidth = (columns: number) => Math.max(1, columns - 2) // root paddingX
 export function viewScreenRows(view: EntryView, columns: number): ScreenRows {
   const width = textWidth(columns)
   const full = fullWidth(columns)
+<<<<<<< HEAD
+  const fit = (rows: string[]): string[] => rows.map((r) => truncateText(r, full))
+=======
   const row = (styled: string, tone: ScreenRowTone = 'normal'): ScreenRow => ({
     plain: stripAnsi(styled),
     styled,
@@ -149,11 +161,24 @@ export function viewScreenRows(view: EntryView, columns: number): ScreenRows {
   const wrap = (styled: string, tone: ScreenRowTone = 'normal'): ScreenRow[] => (
     wrapAnsi(styled, full, { trim: false, hard: true }).split('\n').map(text => row(text, tone))
   )
+>>>>>>> gitlab-mobius/main
   switch (view.kind) {
     case 'skip':
       return { marginTop: false, rows: [] }
     case 'user': {
       const rows = view.text.split('\n').map((l, i) => (i === 0 ? `› ${l}` : `  ${l}`))
+<<<<<<< HEAD
+      return { marginTop: true, rows: fit(rows) }
+    }
+    case 'assistant': {
+      const md = renderMarkdownLines(view.text)
+      const rows: string[] = []
+      md.forEach((line, i) => {
+        const prefix = i === 0 ? '• ' : '  '
+        const fullLine = prefix + stripAnsi(line.text || ' ')
+        if (line.code) rows.push(truncateText(fullLine, full))
+        else rows.push(...wrapText(fullLine, full))
+=======
       return { marginTop: true, rows: fit(rows, 'user') }
     }
     case 'assistant': {
@@ -164,11 +189,42 @@ export function viewScreenRows(view: EntryView, columns: number): ScreenRows {
         const fullLine = prefix + (line.text || ' ')
         if (line.code) rows.push(...fit([fullLine]))
         else rows.push(...wrap(fullLine))
+>>>>>>> gitlab-mobius/main
       })
       return { marginTop: true, rows }
     }
     case 'tool_call': {
       const head = clampLines(`${toolLabel(view.toolName)} ${view.summary}`.trim(), width - 2, 1)[0]
+<<<<<<< HEAD
+      const rows = [`• ${head}`]
+      if (view.result) rows.push(`  └ ${clampLines(view.result.text, width - 4, 1)[0] || '(无输出)'}`)
+      return { marginTop: true, rows: fit(rows) }
+    }
+    case 'tool_result': {
+      const lines = headTailLines(view.text, width - 4, 5)
+      return { marginTop: false, rows: fit(lines.map((l, i) => `${i === 0 ? '  └ ' : '    '}${l}`)) }
+    }
+    case 'code_edit': {
+      const rows = [`✎ 编辑 ${view.filePath || '(未指定文件)'}`]
+      if (view.oldString) rows.push(...view.oldString.split('\n').map((l) => `  − ${l}`))
+      if (view.newString) rows.push(...view.newString.split('\n').map((l) => `  + ${l}`))
+      return { marginTop: true, rows: fit(rows) }
+    }
+    case 'write_file': {
+      const rows = [`✎ 写入 ${view.filePath || '(未指定文件)'}`]
+      rows.push(...view.content.split('\n').map((l) => `  + ${l}`))
+      return { marginTop: true, rows: fit(rows) }
+    }
+    case 'reasoning': {
+      const lines = clampLines(view.text, width - 4, 2)
+      return { marginTop: true, rows: fit(lines.map((l, i) => `${i === 0 ? '  ◇ ' : '    '}${l}`)) }
+    }
+    case 'system':
+      return { marginTop: false, rows: fit([`  ${clampLines(view.text, width - 2, 2)[0]}`]) }
+    case 'error': {
+      const rows = view.text.split('\n').map((l, i) => `${i === 0 ? '⚠ ' : '  '}${l}`)
+      return { marginTop: true, rows: fit(rows) }
+=======
       const rows = fit([`• ${head}`], 'tool')
       if (view.result) rows.push(...fit(
         [`  └ ${clampLines(view.result.text, width - 4, 1)[0] || '(无输出)'}`],
@@ -203,18 +259,28 @@ export function viewScreenRows(view: EntryView, columns: number): ScreenRows {
     case 'error': {
       const rows = view.text.split('\n').map((l, i) => `${i === 0 ? '⚠ ' : '  '}${l}`)
       return { marginTop: true, rows: fit(rows, 'error') }
+>>>>>>> gitlab-mobius/main
     }
     default:
       return { marginTop: false, rows: [] }
   }
 }
 
+<<<<<<< HEAD
+/** Flatten a whole entry (all its views) into screen lines, margins as ''. */
+export function entryScreenLines(views: EntryView[], columns: number): string[] {
+  const lines: string[] = []
+  for (const v of views) {
+    const { marginTop, rows } = viewScreenRows(v, columns)
+    if (marginTop) lines.push('')
+=======
 /** Flatten a whole entry into stable rows, with margins represented explicitly. */
 export function entryScreenRows(views: EntryView[], columns: number): ScreenRow[] {
   const lines: ScreenRow[] = []
   for (const v of views) {
     const { marginTop, rows } = viewScreenRows(v, columns)
     if (marginTop) lines.push({ plain: '', styled: '', tone: 'normal' })
+>>>>>>> gitlab-mobius/main
     lines.push(...rows)
   }
   return lines
@@ -234,6 +300,33 @@ export interface TranscriptGeometry {
  * (`flexShrink=0`); the middle column holds header + hint + transcript (flexGrow)
  * + tip + help. Margins that render as extra rows are counted explicitly.
  */
+<<<<<<< HEAD
+export function computeTranscriptGeometry(opts: {
+  viewportRows: number
+  composerRows: number
+  statusRows: number
+  activityRows: number
+  helpRows: number
+  showWelcome: boolean
+  welcomeRows: number
+  olderHintShown: boolean
+  tipShown: boolean
+}): TranscriptGeometry {
+  // The composer's reported height already includes its marginTop; the status
+  // area and working indicator rows are already folded into statusRows and
+  // activityRows. No extra +1 here — calibrated against the rendered frame.
+  const bottomH = opts.activityRows + opts.composerRows + opts.statusRows
+  const midH = opts.viewportRows - bottomH
+  const headerH = opts.showWelcome ? opts.welcomeRows : 1
+  const hintH = opts.olderHintShown ? 1 : 0
+  const tipH = opts.tipShown ? 2 : 0 // marginTop 1 + content 1
+  const helpH = opts.helpRows > 0 ? opts.helpRows + 1 : 0 // +1 marginTop
+  const boxTop = headerH + hintH + tipH + helpH
+  return { boxTop, boxH: Math.max(0, midH - boxTop) }
+}
+
+=======
+>>>>>>> gitlab-mobius/main
 // ── selection mapping ────────────────────────────────────────────────────────
 export interface SelPoint {
   entry: number // index into the fitted entries
@@ -246,6 +339,14 @@ export interface TranscriptModel {
   totalRows: number
 }
 
+<<<<<<< HEAD
+export function buildTranscriptModel(fittedEntries: AnyEntry[], columns: number): TranscriptModel {
+  const entries = fittedEntries.map((e) => entryScreenLines(viewsForEntry(e), columns))
+  return { entries, totalRows: entries.reduce((sum, l) => sum + l.length, 0) }
+}
+
+=======
+>>>>>>> gitlab-mobius/main
 /** Convert a screen (row, col) into a SelPoint, or null if outside the transcript. */
 export function screenToSelPoint(
   screenRow: number,
@@ -280,7 +381,11 @@ function charAtDisplayWidth(line: string, col: number): number {
     const w = displayWidth(ch)
     if (col < acc + w) return i
     acc += w
+<<<<<<< HEAD
+    i++
+=======
     i += ch.length
+>>>>>>> gitlab-mobius/main
   }
   return i
 }

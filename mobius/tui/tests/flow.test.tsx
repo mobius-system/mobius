@@ -158,6 +158,19 @@ async function main() {
     ok(await waitFor(lastFrame, '输入问题'), 'resumed into chat')
     snap('5-after-resume', lastFrame() ?? '')
 
+<<<<<<< HEAD
+    // ── /config opens the same flow; Esc cancels back to chat ────────────────
+    await delay(400)
+    stdin.write('/config'); await delay(300)
+    stdin.write('\r')
+    ok(await waitFor(lastFrame, '更换模型'), '/config opens the model-switch flow (alias of /model)')
+    stdin.write('\x1b'); await delay(300)
+    ok(await waitFor(lastFrame, '输入问题'), 'Esc cancels the config flow back to the conversation')
+
+    // ── /model switches model and starts a brand-new session ─────────────────
+    // No issue step — the current task is kept; pick a model and App remounts
+    // Chat on the eagerly created session.
+=======
     // ── /config: full reconfigure (project → issue → model) ──────────────
     // Unlike /model, /config walks through project, issue, AND model steps.
     await delay(400)
@@ -194,6 +207,7 @@ async function main() {
     // No issue/project step — the current task is kept; pick a model and App
     // remounts Chat on the eagerly created session.
     await delay(400)
+>>>>>>> gitlab-mobius/main
     stdin.write('/model'); await delay(300)
     stdin.write('\r')
     ok(await waitFor(lastFrame, '更换模型'), '/model opens the model picker directly')
@@ -201,6 +215,11 @@ async function main() {
     ok((lastFrame() ?? '').includes('当前任务: 命令行任务'), 'current task is kept (issue not changed)')
     ok(await waitFor(lastFrame, 'GPT-5.5'), 'model list rendered (Select mounted)')
     stdin.write('\r'); await delay(700)                             // pick codex → create session
+<<<<<<< HEAD
+    ok(await waitFor(lastFrame, '输入问题'), 'config flow creates a fresh session and returns to chat')
+    ok((lastFrame() ?? '').includes('?session=sess-1'), 'reconfigured chat is attached to the new session')
+    snap('6-after-model', lastFrame() ?? '')
+=======
     ok(await waitFor(lastFrame, '输入问题'), '/model creates a fresh session and returns to chat')
     ok((lastFrame() ?? '').includes('?session=sess-1'), '/model new session attached')
     snap('7-after-model', lastFrame() ?? '')
@@ -213,6 +232,7 @@ async function main() {
     ok(!fs.existsSync(path.join(TMP_HOME, 'login.json')), '/logout clears the persisted login token')
     ok((lastFrame() ?? '').includes('http://mock.local') && (lastFrame() ?? '').includes('tester'), '/logout keeps server and username available for the next login')
     snap('6-after-config', lastFrame() ?? '')
+>>>>>>> gitlab-mobius/main
   } finally {
     unmount()
     globalThis.fetch = realFetch

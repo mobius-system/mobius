@@ -3,6 +3,10 @@
  * Select (single-choice list + multi-choice with checkboxes), and a Spinner.
  */
 import React, { useEffect, useRef, useState } from 'react'
+<<<<<<< HEAD
+import { Box, Text, useInput, useStdout, useStdin } from 'ink'
+import { useDeleteKeyCapture, applyDeleteIntent } from '../lib/delete-keys.js'
+=======
 import { Box, Text, useInput, useStdout, useStdin, type Key } from 'ink'
 import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousWordBoundary, nextWordBoundary } from '../lib/delete-keys.js'
 import { useCursorKeyCapture } from '../lib/cursor-keys.js'
@@ -120,6 +124,7 @@ export function useStableInput(handler: InputHandler, options?: StableInputOptio
     return () => { interactiveHandlers.delete(stable) }
   }, [interactive, options?.isActive])
 }
+>>>>>>> gitlab-mobius/main
 
 /** Windows Terminal/ConPTY may expose Esc as a named key, a raw byte, or Ctrl+[. */
 export function isEscapeKeypress(input: string, key: { escape?: boolean; ctrl?: boolean }): boolean {
@@ -193,6 +198,8 @@ export function parseMouseEvents(input: string): MouseEventInfo[] {
   return out
 }
 
+<<<<<<< HEAD
+=======
 /** Collapse each contiguous wheel burst into one delta without reordering clicks. */
 export function coalesceMouseEvents(events: MouseEventInfo[]): MouseEventInfo[] {
   const out: MouseEventInfo[] = []
@@ -213,6 +220,7 @@ export function coalesceMouseEvents(events: MouseEventInfo[]): MouseEventInfo[] 
   return out
 }
 
+>>>>>>> gitlab-mobius/main
 /**
  * Enables terminal mouse tracking for the lifetime of the calling component and
  * forwards mouse events (wheel + left-button press/motion/release) to the given
@@ -249,7 +257,11 @@ export function useMouseEvents(handlers: {
       // A single read() chunk may carry several events and a sequence may be
       // split across chunks, so accumulate and re-scan.
       buf += String(chunk)
+<<<<<<< HEAD
+      for (const e of parseMouseEvents(buf)) {
+=======
       for (const e of coalesceMouseEvents(parseMouseEvents(buf))) {
+>>>>>>> gitlab-mobius/main
         if (e.kind === 'wheel') refs.current.onWheel?.(e.delta)
         else if (e.kind === 'press') refs.current.onPress?.(e.row, e.col)
         else if (e.kind === 'motion') refs.current.onMotion?.(e.row, e.col)
@@ -319,6 +331,10 @@ export function TextInput(props: TextInputProps) {
     const { text, cursor: nextCursor } = applyDeleteIntent(valueRef.current, cursorRef.current, intent)
     edit(text, nextCursor)
   })
+<<<<<<< HEAD
+
+  useInput((input, key) => {
+=======
   useCursorKeyCapture(focused, (intent) => {
     const current = valueRef.current
     const at = clampCursor(current, cursorRef.current)
@@ -329,6 +345,7 @@ export function TextInput(props: TextInputProps) {
   })
 
   useStableInput((input, key) => {
+>>>>>>> gitlab-mobius/main
     if (isMouseInput(input)) return
     if (key.return) { props.onSubmit?.(); return }
     if (key.upArrow) { props.onArrowUp?.(); return }
@@ -340,6 +357,19 @@ export function TextInput(props: TextInputProps) {
     if (key.ctrl && input === 'w') {
       const { text, cursor: nextCursor } = applyDeleteIntent(value, cursor, 'backward-word')
       edit(text, nextCursor)
+<<<<<<< HEAD
+      return
+    }
+    if (key.ctrl && input === 'h') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(value, cursor, 'backward')
+      edit(text, nextCursor)
+      return
+    }
+    if (key.ctrl && input === 'd') {
+      const { text, cursor: nextCursor } = applyDeleteIntent(value, cursor, 'forward')
+      edit(text, nextCursor)
+=======
+>>>>>>> gitlab-mobius/main
       return
     }
     if (key.ctrl && input === 'h') {
