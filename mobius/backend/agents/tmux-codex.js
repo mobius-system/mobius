@@ -1248,8 +1248,6 @@ class TmuxCodexBackend extends AgentBackend {
       // 标记当前进程运行在受控沙箱环境中。
       'export IS_SANDBOX=1',
     ]
-    // profile 有 env_key 时，把秘钥导出到 Codex 进程环境里。
-    if (secretEnvKey) cmdLines.push(`export ${secretEnvKey}=${shellQuote(secretValue)}`)
     // 按代理开关决定是否加载代理环境并套 proxychains。
     if (finalUseProxy) {
       // 加载代理相关环境变量。
@@ -1266,14 +1264,17 @@ class TmuxCodexBackend extends AgentBackend {
     // 提前写入项目可信状态，减少 TUI 启动时的交互弹窗。
     ensureProjectTrusted(cwd)
 
-    // Harness scoped credentials are attached only to this window. They are not
-    // embedded in the shell command or persisted in the backend runtime files.
-    const runtimeEntries = runtimeEnvEntries(runtimeEnv)
-    const runtimeArgs = runtimeEntries.flatMap(([key, value]) => ['-e', `${key}=${value}`])
+    // Sensitive values are attached only to this window. They are not embedded
+    // in the shell command or persisted in the backend runtime files.
+    const windowEnvEntries = [
+      ...runtimeEnvEntries(runtimeEnv),
+      ...(secretEnvKey ? [[secretEnvKey, secretValue]] : []),
+    ]
+    const runtimeArgs = windowEnvEntries.flatMap(([key, value]) => ['-e', `${key}=${value}`])
     // 在 hub session 下创建后台 tmux window，并在 cwd 中执行 bash -lc cmd。
     const r = tmux(
       ['new-window', '-d', ...runtimeArgs, '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', cmd],
-      { redactEnvironmentKeys: runtimeEntries.map(([key]) => key) },
+      { redactEnvironmentKeys: windowEnvEntries.map(([key]) => key) },
     )
     // tmux 创建失败时把 stderr 带出，方便定位命令层问题。
     if (r.status !== 0) throw new Error(`tmux new-window failed: ${r.stderr}`)
