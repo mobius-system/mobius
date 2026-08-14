@@ -24,13 +24,16 @@ type SessionModelOption = {
 }
 
 // 模型 → 后端渠道 (对照 /api/sessions/prompt-stats 的渠道桶)
-type PromptBackendKey = 'codex' | 'claude_code'
+type PromptBackendKey = 'codex' | 'claude_code' | 'deepseek_harness'
 function promptBackendKeyForOption(opt?: SessionModelOption | null): PromptBackendKey {
-  return opt?.backend === 'tmux-codex' ? 'codex' : 'claude_code'
+  if (opt?.backend === 'tmux-codex') return 'codex'
+  if (opt?.backend === 'deepseek-harness') return 'deepseek_harness'
+  return 'claude_code'
 }
 const PROMPT_BACKEND_LABEL: Record<PromptBackendKey, string> = {
   codex: 'Codex',
   claude_code: 'Claude Code',
+  deepseek_harness: 'DeepSeek Harness',
 }
 
 type LimitUsageState = {
@@ -56,10 +59,13 @@ type ModelUsageLimits = {
 type PromptStats = {
   codex: number
   claude_code: number
+  deepseek_harness: number
   codex_5min?: number
   claude_code_5min?: number
+  deepseek_harness_5min?: number
   codex_2min: number
   claude_code_2min: number
+  deepseek_harness_2min: number
   active_windows_by_backend?: Partial<Record<PromptBackendKey, number>>
   model_usage_limits?: ModelUsageLimits
 }

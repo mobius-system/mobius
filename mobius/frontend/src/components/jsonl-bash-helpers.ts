@@ -13,6 +13,14 @@ export type BashCall = {
   commandSource: 'command' | 'cmd' | 'script'
 }
 
+// AIMUX 通过 MCP 暴露的远程命令工具。它仍然执行 shell 命令，但语义是把任务交给
+// 已连接的协作算力，因此卡片标题需要与本机 Bash / exec_command 区分。
+export function isAimuxCommandToolUseName(name: unknown): boolean {
+  if (typeof name !== 'string') return false
+  const normalized = name.toLowerCase()
+  return normalized.startsWith('mcp__aimux__') && normalized.endsWith('exec_command')
+}
+
 // Claude Code 官方 Bash 工具名是 'Bash', 不同代理实现里出现过 'bash'/'BASH' 大小写不一,
 // 一律按小写比较兼容. Codex 的等价工具叫 'exec_command' 但走 response_item.function_call,
 // 不进这条 assistant tool_use 路径, 这里不处理.
@@ -28,10 +36,10 @@ export function isBashToolUseName(name: unknown): boolean {
 //   - 个别 fork/早期版本: input.cmd
 //   - 部分把整段脚本塞进去的实现: input.script
 //
-// cwd 优先 input.cwd, 否则用 entry 顶层 cwd (会话级 cwd 兜底).
+// cwd 优先 input.workdir / input.cwd, 否则用 entry 顶层 cwd (会话级 cwd 兜底).
 // description 严格按 input.description 字符串, 不存在则留空 (上层渲染时跳过).
 export function extractBashCallFromBlock(block: any, entryCwd: string): BashCall | null {
-  if (!block || block.type !== 'tool_use' || !isBashToolUseName(block.name)) return null
+  if (!block || block.type !== 'tool_use' || (!isBashToolUseName(block.name) && !isAimuxCommandToolUseName(block.name))) return null
   const input = block?.input && typeof block.input === 'object' ? block.input : {}
   let command = ''
   let commandSource: BashCall['commandSource'] = 'command'
@@ -48,7 +56,9 @@ export function extractBashCallFromBlock(block: any, entryCwd: string): BashCall
     return null
   }
   const description = typeof input.description === 'string' ? input.description.trim() : ''
-  const inputCwd = typeof input.cwd === 'string' ? input.cwd.trim() : ''
+  const inputCwd = typeof input.workdir === 'string' ? input.workdir.trim()
+    : typeof input.cwd === 'string' ? input.cwd.trim()
+    : ''
   const cwd = inputCwd || entryCwd
   const id = typeof block.id === 'string' && block.id.length > 0 ? block.id : undefined
   return { id, description, cwd, command, commandSource }

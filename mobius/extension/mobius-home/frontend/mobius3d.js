@@ -3,8 +3,14 @@
 import * as THREE from 'three';
 
 const PALETTE_MAX = 6;
-const BRAND = ['#22d3ee', '#7dd3fc', '#8b5cf6', '#a78bfa', '#ec4899', '#f472b6'];
-const MUTED = ['#64748b', '#94a3b8', '#cbd5e1', '#7dd3fc', '#a78bfa', '#f472b6'];
+const LIGHT_MODE = Boolean(window.__MOBIUS_LIGHT__) || document.documentElement.classList.contains('mobius-light');
+const BRAND = LIGHT_MODE
+  ? ['#008aa4', '#2563eb', '#4f46e5', '#7c3aed', '#c0266d', '#e11d74']
+  : ['#22d3ee', '#7dd3fc', '#8b5cf6', '#a78bfa', '#ec4899', '#f472b6'];
+const MUTED = LIGHT_MODE
+  ? ['#64748b', '#7c8ca1', '#94a3b8', '#2879c7', '#635bdb', '#b42362']
+  : ['#64748b', '#94a3b8', '#cbd5e1', '#7dd3fc', '#a78bfa', '#f472b6'];
+const PARTICLE_BLEND = LIGHT_MODE ? THREE.NormalBlending : THREE.AdditiveBlending;
 
 const LOGO_VERTEX = /* glsl */`
 attribute float aU;
@@ -213,7 +219,7 @@ function makeLogoPointCloud(count, opts = {}) {
     },
     transparent: true,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    blending: PARTICLE_BLEND,
   });
 
   const points = new THREE.Points(geometry, material);
@@ -260,7 +266,7 @@ function makeLine(count, color, opacity = 0.7) {
     color,
     transparent: true,
     opacity,
-    blending: THREE.AdditiveBlending,
+    blending: PARTICLE_BLEND,
   });
   return new THREE.Line(geometry, material);
 }
@@ -313,7 +319,7 @@ function createStarField(count, spread = 8, colors = BRAND) {
       transparent: true,
       opacity: 0.55,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      blending: PARTICLE_BLEND,
     })
   );
 }
@@ -330,7 +336,7 @@ function addAura(scene, scale = 4.5, strength = 0.22) {
       },
       transparent: true,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      blending: PARTICLE_BLEND,
     })
   );
   aura.position.z = -0.9;
@@ -345,7 +351,7 @@ export class MiniScene {
     const height = Math.max(1, container.clientHeight);
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(opts.fog ?? 0x05030f, opts.fogDensity ?? 0.05);
+    this.scene.fog = new THREE.FogExp2(opts.fog ?? (LIGHT_MODE ? 0xffffff : 0x05030f), opts.fogDensity ?? (LIGHT_MODE ? 0.018 : 0.05));
     this.camera = new THREE.PerspectiveCamera(opts.fov ?? 42, width / height, 0.1, 100);
     this.camera.position.set(...(opts.cameraPos ?? [0, 0.2, 5.2]));
     this.camera.lookAt(...(opts.lookAt ?? [0, 0, 0]));
@@ -354,8 +360,8 @@ export class MiniScene {
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = opts.exposure ?? 1.15;
+    this.renderer.toneMapping = LIGHT_MODE ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = opts.exposure ?? (LIGHT_MODE ? 1 : 1.15);
     container.appendChild(this.renderer.domElement);
 
     this.callbacks = [];
@@ -420,7 +426,7 @@ export class MiniScene {
 export function initLogoBackdrop(canvas, variant = 'hero') {
   if (!canvas) return null;
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x02010a, 0.035);
+  scene.fog = new THREE.FogExp2(LIGHT_MODE ? 0xffffff : 0x02010a, LIGHT_MODE ? 0.012 : 0.035);
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
   camera.position.set(0, 2.6, variant === 'finale' ? 18 : 17);
   camera.lookAt(0, 0, 0);
@@ -428,10 +434,10 @@ export function initLogoBackdrop(canvas, variant = 'hero') {
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.08;
+  renderer.toneMapping = LIGHT_MODE ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = LIGHT_MODE ? 1 : 1.08;
 
-  const aura = addAura(scene, 16, variant === 'finale' ? 0.10 : 0.12);
+  const aura = addAura(scene, 16, LIGHT_MODE ? 0.035 : (variant === 'finale' ? 0.10 : 0.12));
   const stars = createStarField(variant === 'finale' ? 900 : 1100, 16, BRAND);
   scene.add(stars);
   const cloud = makeLogoPointCloud(variant === 'finale' ? 3600 : 4200, {
@@ -442,7 +448,7 @@ export function initLogoBackdrop(canvas, variant = 'hero') {
     breathSpeed: 0.9,
     breathStrength: 0.7,
     glow: 0.95,
-    alpha: 0.5,
+    alpha: LIGHT_MODE ? 0.82 : 0.5,
     edgeBias: 0.24,
     figureScale: 1,
     colors: BRAND,
@@ -542,7 +548,7 @@ export function initTorusOnly(container) {
       transparent: true,
       opacity: isOuter ? 0.96 : 0.78,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      blending: PARTICLE_BLEND,
     });
     return new THREE.Points(geo, mat);
   }
@@ -552,10 +558,10 @@ export function initTorusOnly(container) {
   group.add(outerCloud, innerCloud);
 
   // 旅行点：在外圈表面循环，体现"有尽头、回到原点"
-  const traveler = makeTraveler(0xfde047, 0.062);
+  const traveler = makeTraveler(LIGHT_MODE ? 0xd97706 : 0xfde047, 0.062);
   group.add(traveler);
 
-  const aura = addAura(mini.scene, 3.6, 0.14);
+  const aura = addAura(mini.scene, 3.6, LIGHT_MODE ? 0.035 : 0.14);
 
   mini.add((t) => {
     aura.material.uniforms.uTime.value = t;
@@ -589,11 +595,11 @@ export function initMobiusOnly(container) {
   group.add(cloud.points);
 
   // 旅行点：走完 4π 才回到原位（"没有尽头"的视觉隐喻）
-  const path = makeLine(96, 0xfde047, 0.85);
-  const traveler = makeTraveler(0xfde047, 0.058);
+  const path = makeLine(96, LIGHT_MODE ? 0xd97706 : 0xfde047, 0.85);
+  const traveler = makeTraveler(LIGHT_MODE ? 0xd97706 : 0xfde047, 0.058);
   group.add(path, traveler);
 
-  const aura = addAura(mini.scene, 3.6, 0.16);
+  const aura = addAura(mini.scene, 3.6, LIGHT_MODE ? 0.04 : 0.16);
 
   mini.add((t) => {
     cloud.uniforms.uTime.value = t;
@@ -639,12 +645,12 @@ export function initTrinityMobius(container, mode) {
   });
   group.add(cloud.points);
 
-  const aura = addAura(mini.scene, 3.2, isStars ? 0.1 : 0.12);
+  const aura = addAura(mini.scene, 3.2, LIGHT_MODE ? 0.035 : (isStars ? 0.1 : 0.12));
 
   // 仅 loop 模式保留旅行小球；dimension / stars 不要小球。
   let traveler = null;
   if (isLoop) {
-    traveler = makeTraveler(0xfde047, 0.05);
+    traveler = makeTraveler(LIGHT_MODE ? 0xd97706 : 0xfde047, 0.05);
     group.add(traveler);
   }
 
@@ -652,7 +658,7 @@ export function initTrinityMobius(container, mode) {
   if (isStars) {
     stars = createStarField(900, 3.8, BRAND);
     stars.material.size = 0.012;
-    stars.material.opacity = 0.42;
+    stars.material.opacity = LIGHT_MODE ? 0.26 : 0.42;
     mini.scene.add(stars);
   }
 
@@ -683,7 +689,7 @@ export function initTrinityMobius(container, mode) {
     if (stars) {
       stars.rotation.y = t * 0.05;
       stars.rotation.x = Math.sin(t * 0.2) * 0.08;
-      stars.material.opacity = 0.34 + 0.12 * Math.sin(t * 0.9);
+      stars.material.opacity = (LIGHT_MODE ? 0.18 : 0.34) + (LIGHT_MODE ? 0.07 : 0.12) * Math.sin(t * 0.9);
     }
   });
   return mini;

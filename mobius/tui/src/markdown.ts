@@ -12,6 +12,30 @@ import chalk from 'chalk'
 import { highlight, supportsLanguage } from 'cli-highlight'
 import { lexer, type Token, type Tokens } from 'marked'
 
+/**
+ * Decode HTML entities that marked's lexer injects into text tokens.
+ * marked encodes `' " < > &` as `&#39; &quot; &lt; &gt; &amp;` even when
+ * only lexing (not rendering to HTML).  The TUI renders to a terminal so
+ * we must reverse that encoding ourselves.
+ */
+const HTML_ENTITY_RE = /&(?:#(x?)([0-9a-fA-F]+)|(amp|lt|gt|quot|#39));/g
+function decodeHtmlEntities(s: string): string {
+  return s.replace(HTML_ENTITY_RE, (_, hex: string | undefined, num: string, named: string | undefined) => {
+    if (named) {
+      switch (named) {
+        case 'amp': return '&'
+        case 'lt': return '<'
+        case 'gt': return '>'
+        case 'quot': return '"'
+        case '#39': return "'"
+        default: return _
+      }
+    }
+    const code = parseInt(num, hex ? 16 : 10)
+    return String.fromCodePoint(code)
+  })
+}
+
 export interface RenderedMarkdownLine {
   text: string
   code: boolean
@@ -43,7 +67,7 @@ function renderInlineOne(t: Token): string {
   const anyT = t as any
   switch (t.type) {
     case 'text':
-      return anyT.tokens ? renderInline(anyT.tokens) : escapeAnsiReset(anyT.text)
+      return anyT.tokens ? renderInline(anyT.tokens) : escapeAnsiReset(decodeHtmlEntities(anyT.text))
     case 'strong':
       return chalk.bold(renderInline(anyT.tokens))
     case 'em':
@@ -51,20 +75,20 @@ function renderInlineOne(t: Token): string {
     case 'del':
       return chalk.dim.strikethrough(renderInline(anyT.tokens))
     case 'codespan':
-      return chalk.cyanBright(anyT.text)
+      return chalk.cyanBright(decodeHtmlEntities(anyT.text))
     case 'link': {
       const label = renderInline(anyT.tokens) || anyT.href
       return anyT.href && label !== anyT.href ? `${chalk.cyan(label)} (${chalk.dim.underline(anyT.href)})` : chalk.cyan(label)
     }
     case 'image':
-      return chalk.magentaBright(`[图片: ${anyT.href || anyT.text}]`)
+      return chalk.magentaBright(`[图片: ${anyT.href || decodeHtmlEntities(anyT.text)}]`)
     case 'br':
       return '\n'
     case 'escape':
     case 'html':
-      return anyT.text ?? ''
+      return anyT.text ? decodeHtmlEntities(anyT.text) : ''
     default:
-      return anyT.text ?? renderInline(anyT.tokens)
+      return anyT.text ? decodeHtmlEntities(anyT.text) : renderInline(anyT.tokens)
   }
 }
 
@@ -74,7 +98,7 @@ function escapeAnsiReset(s: string): string {
 }
 
 function renderTable(t: Tokens.Table): string {
-  const cell = (toks: any) => renderInline(toks?.tokens ?? [{ type: 'text', text: toks?.text ?? '' }])
+  const cell = (toks: any) => renderInline(toks?.tokens ?? [{ type: 'text', text: decodeHtmlEntities(toks?.text ?? '') }])
   const header = t.header.map((h) => cell(h)).join(' | ')
   const rows = t.rows.map((r) => r.map((c) => cell(c)).join(' | ')).join('\n')
   return chalk.bold(header) + '\n' + chalk.dim('-'.repeat(Math.min(header.length, 80))) + '\n' + rows
@@ -121,7 +145,7 @@ function renderBlock(t: Token): string {
     case 'paragraph':
       return renderInline(anyT.tokens)
     case 'code': {
-      return renderCode(anyT.text, anyT.lang)
+      return renderCode(decodeHtmlEntities(anyT.text), anyT.lang)
     }
     case 'blockquote': {
       const inner = (anyT.tokens as Token[]).map(renderBlock).join('\n')
@@ -142,9 +166,9 @@ function renderBlock(t: Token): string {
     case 'space':
       return ''
     case 'html':
-      return chalk.dim(anyT.text ?? '')
+      return chalk.dim(decodeHtmlEntities(anyT.text ?? ''))
     default:
-      return anyT.text ?? renderInline(anyT.tokens)
+      return anyT.text ? decodeHtmlEntities(anyT.text) : renderInline(anyT.tokens)
   }
 }
 
@@ -156,5 +180,5 @@ function renderListItemBody(item: any): string {
       .filter(Boolean)
       .join('\n')
   }
-  return item.text ?? ''
+  return item.text ? decodeHtmlEntities(item.text) : ''
 }

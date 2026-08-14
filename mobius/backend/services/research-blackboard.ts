@@ -270,6 +270,11 @@ async function deliverBlackboardBatchToSession({ researchId, session, records }:
     codexConfigPath: launch.codexConfigPath || undefined,
     codexSecretEnvKey: launch.codexSecretEnvKey || undefined,
     codexSecretValue: launch.codexSecretValue || undefined,
+    harnessProvider: launch.harnessProvider || undefined,
+    harnessBaseUrl: launch.harnessBaseUrl || undefined,
+    harnessSecretValue: launch.harnessSecretValue || undefined,
+    harnessMaxTokens: launch.harnessMaxTokens || undefined,
+    harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
     displayName: session.name || undefined,
     agentSessionId: session.claude_session_id || undefined,
   });

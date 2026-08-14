@@ -29,6 +29,7 @@ function resolveAimuxBin() {
 }
 
 const { AgentBackend } = require('./base')
+const { runtimeEnvEntries } = require('./runtime-env')
 const {
   appendMobiusPromptEntry,
   appendMobiusExternalEntry,
@@ -845,7 +846,7 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, initialPrompt, agentSessionId, aimuxRemoteName }) {
+  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, initialPrompt, agentSessionId, aimuxRemoteName, runtimeEnv }) {
     if (!sessionId || !cwd) throw new Error('createNewSession requires sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession requires initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd does not exist: ${cwd}`)
@@ -853,7 +854,7 @@ class TmuxCodexBackend extends AgentBackend {
     let spawnInfo = null
     let allowUpdatedThreadFallback = false
     if (!windowExists(sessionId)) {
-      spawnInfo = await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName })
+      spawnInfo = await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName, runtimeEnv })
     } else {
       await this._ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
       allowUpdatedThreadFallback = true
@@ -890,7 +891,7 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName }) {
+  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName, runtimeEnv }) {
     if (!sessionId) throw new Error('sessionId required')
     if (!prompt) throw new Error('prompt required')
 
@@ -918,6 +919,7 @@ class TmuxCodexBackend extends AgentBackend {
         displayName: displayName || persisted?.displayName,
         agentSessionId: finalAgentSid,
         aimuxRemoteName,
+        runtimeEnv,
       })
       cwd = finalCwd
       flagRoot = flagRoot || persisted?.flagRoot || finalCwd
@@ -1159,7 +1161,7 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   // 启动一个新的 Codex tmux 窗口，并返回用于后续绑定 rollout 的启动信息。
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName }) {
+  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName, runtimeEnv }) {
     // 确保承载 agent 窗口的 tmux hub session 已经存在。
     ensureHub()
     // 记录启动时间，后续会写入 runtime 和持久化状态。
@@ -1246,8 +1248,6 @@ class TmuxCodexBackend extends AgentBackend {
       // 标记当前进程运行在受控沙箱环境中。
       'export IS_SANDBOX=1',
     ]
-    // profile 有 env_key 时，把秘钥导出到 Codex 进程环境里。
-    if (secretEnvKey) cmdLines.push(`export ${secretEnvKey}=${shellQuote(secretValue)}`)
     // 按代理开关决定是否加载代理环境并套 proxychains。
     if (finalUseProxy) {
       // 加载代理相关环境变量。
@@ -1264,8 +1264,18 @@ class TmuxCodexBackend extends AgentBackend {
     // 提前写入项目可信状态，减少 TUI 启动时的交互弹窗。
     ensureProjectTrusted(cwd)
 
+    // Sensitive values are attached only to this window. They are not embedded
+    // in the shell command or persisted in the backend runtime files.
+    const windowEnvEntries = [
+      ...runtimeEnvEntries(runtimeEnv),
+      ...(secretEnvKey ? [[secretEnvKey, secretValue]] : []),
+    ]
+    const runtimeArgs = windowEnvEntries.flatMap(([key, value]) => ['-e', `${key}=${value}`])
     // 在 hub session 下创建后台 tmux window，并在 cwd 中执行 bash -lc cmd。
-    const r = tmux(['new-window', '-d', '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', cmd])
+    const r = tmux(
+      ['new-window', '-d', ...runtimeArgs, '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', cmd],
+      { redactEnvironmentKeys: windowEnvEntries.map(([key]) => key) },
+    )
     // tmux 创建失败时把 stderr 带出，方便定位命令层问题。
     if (r.status !== 0) throw new Error(`tmux new-window failed: ${r.stderr}`)
     // 记录启动参数，包含模型、代理、profile、秘钥环境变量和 resume 信息。

@@ -12,6 +12,7 @@
  */
 const { TmuxClaudeCodeBackend } = require('./tmux-claude-code')
 const { TmuxCodexBackend } = require('./tmux-codex')
+const { DeepSeekHarnessBackend } = require('./deepseek-harness')
 
 const singletons = {}
 
@@ -20,6 +21,7 @@ function get(name) {
     switch (name) {
       case 'tmux-claude-code': singletons[name] = new TmuxClaudeCodeBackend(); break
       case 'tmux-codex':       singletons[name] = new TmuxCodexBackend(); break
+      case 'deepseek-harness':  singletons[name] = new DeepSeekHarnessBackend(); break
       default: throw new Error(`unknown agent backend: ${name}`)
     }
   }

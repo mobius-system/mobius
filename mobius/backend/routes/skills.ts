@@ -810,4 +810,48 @@ projectScoped.post('/:id/move', auth, (req: express.Request, res: express.Respon
   res.json(shapeSkill(result.skill, user));
 });
 
+// 取消升级: 移除由「用户级 skill 升级为项目级」产生的项目副本, 用户级原件保留。
+// 语义 (与 moveSkill 的快照复制语义配套):
+//   - 用户级原件仍在 → 直接删除项目副本 (mode=removed);
+//   - 原件已被删且请求者=贡献者本人 → 先把项目副本复制回用户级再删项目副本 (mode=restored),
+//     避免"取消后两边都没了";
+//   - 原件已被删且请求者是管理员/项目负责人 → 仅删除项目副本。
+// 权限: canManageContextItem — 贡献者本人 / 项目负责人 / admin。
+projectScoped.post('/:id/cancel-upgrade', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user as { id: string; role: string; [k: string]: any };
+  const acc = ensureProjectAccess(req, res);
+  if (!acc) return;
+  const sk = Skills.findById(req.params.id);
+  if (!sk || sk.scope !== 'project' || sk.owner_id !== req.params.projectId) {
+    res.status(404).json({ error: '未找到' });
+    return;
+  }
+  if (!canManageContextItem(user, 'skill', sk)) {
+    res.status(403).json({ error: '无权取消此升级 (仅升级者本人、项目负责人或管理员)' });
+    return;
+  }
+
+  const parts = String(sk.id).split(':');
+  const dirName = parts.slice(3).join(':');
+  const contributorId = String(sk.created_by || (parts[1] || ''));
+  const userOriginal = dirName ? Skills.findById(`user:${contributorId}:${dirName}`) : null;
+
+  if (!userOriginal && contributorId === user.id) {
+    const result = Skills.move({
+      id: sk.id, requesterUserId: user.id, isAdmin: user.role === 'admin',
+      targetScope: 'user', targetProjectId: null,
+    });
+    if (!result.ok) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    Skills.delete(sk.id);
+    res.json({ ok: true, mode: 'restored', skill: shapeSkill(result.skill, user) });
+    return;
+  }
+
+  Skills.delete(sk.id);
+  res.json({ ok: true, mode: 'removed', skill: userOriginal ? shapeSkill(userOriginal, user) : null });
+});
+
 export { router, projectScoped };

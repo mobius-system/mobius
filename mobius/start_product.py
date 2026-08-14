@@ -51,6 +51,8 @@ BACKUP_PUBLIC_DIR = BUILD_DIR / "public.previous"
 SERVER_TMP_VERSION = HERE / "server_tmp_version.js"
 PM2_ECOSYSTEM = HERE / "ecosystem.config.js"
 OTHER_VERSION_ROOT = Path(os.environ.get("MOBIUS_OTHER_VERSION_ROOT", "/tmp/mobius-system-other-versions"))
+DEEPSEEK_HARNESS_RUNTIME_DIR = HERE / "deepseek-harness-runtime"
+DEFAULT_DEEPSEEK_HARNESS_NODE = Path.home() / ".nvm" / "versions" / "node" / "v22.22.2" / "bin" / "node"
 
 
 def parse_args() -> argparse.Namespace:
@@ -208,6 +210,44 @@ def ensure_aimux_bridge_venv() -> None:
     run(["bash", str(HERE / "scripts" / "setup-aimux-bridge.sh")], cwd=HERE)
 
 
+def deepseek_harness_node() -> Path:
+    configured = (os.environ.get("DEEPSEEK_HARNESS_NODE") or "").strip()
+    return Path(configured).expanduser() if configured else DEFAULT_DEEPSEEK_HARNESS_NODE
+
+
+def ensure_deepseek_harness_runtime() -> None:
+    """Install the isolated Node 22 Harness runtime only when its dependencies are absent."""
+    node = deepseek_harness_node()
+    if not node.is_file():
+        raise ConfigError(
+            "DeepSeek Harness requires Node 22.19+ or 24+. "
+            "Set DEEPSEEK_HARNESS_NODE to a compatible Node executable."
+        )
+    version_result = run([str(node), "-p", "process.versions.node"], capture=True)
+    raw_version = version_result.stdout.strip()
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", raw_version)
+    if not match:
+        raise ConfigError(f"unable to parse DeepSeek Harness Node version: {raw_version}")
+    major, minor, _patch = (int(part) for part in match.groups())
+    if not (major >= 24 or (major == 22 and minor >= 19)):
+        raise ConfigError(
+            f"DeepSeek Harness Node {raw_version} is unsupported; use Node 22.19+ or 24+."
+        )
+
+    runtime_bin = DEEPSEEK_HARNESS_RUNTIME_DIR / "node_modules" / ".bin" / "dsh-jsonrpc-agent"
+    if runtime_bin.is_file():
+        return
+    npm = node.with_name("npm")
+    if not npm.is_file():
+        raise ConfigError(f"npm not found next to DeepSeek Harness Node: {npm}")
+    print("=== installing DeepSeek Harness runtime dependencies ===", flush=True)
+    install_env = dict(os.environ)
+    install_env["PATH"] = f"{node.parent}{os.pathsep}{install_env.get('PATH', '')}"
+    run([str(npm), "ci"], cwd=DEEPSEEK_HARNESS_RUNTIME_DIR, env=install_env)
+    if not runtime_bin.is_file():
+        raise ConfigError(f"DeepSeek Harness runtime install did not create {runtime_bin}")
+
+
 def reload_backend(entrypoint: Path = HERE / "pm2-entrypoint.js") -> None:
     print()
     print(f"=== [3/4] reload product backend with PM2 :{os.environ['MOBIUS_PORT']} ===", flush=True)
@@ -266,6 +306,10 @@ def prepare_other_version_worktree(commit_hash: str) -> Path:
     copy_if_exists(REPO_ROOT / ".env.default", worktree / ".env.default")
     symlink_dependency_dir(HERE / "node_modules", worktree / "mobius" / "node_modules")
     symlink_dependency_dir(HERE / "frontend" / "node_modules", worktree / "mobius" / "frontend" / "node_modules")
+    symlink_dependency_dir(
+        DEEPSEEK_HARNESS_RUNTIME_DIR / "node_modules",
+        worktree / "mobius" / "deepseek-harness-runtime" / "node_modules",
+    )
     return worktree
 
 
@@ -291,6 +335,7 @@ def write_tmp_version_entrypoint(worktree: Path, commit_hash: str) -> None:
 def deploy_other_version(raw_hash: str) -> None:
     commit_hash = resolve_other_version_hash(raw_hash)
     print(f"=== [other-version] build Mobius from {commit_hash} ===")
+    ensure_deepseek_harness_runtime()
     worktree = prepare_other_version_worktree(commit_hash)
     mobius_dir = worktree / "mobius"
     staging_dir = mobius_dir / ".build" / "public.next"
@@ -313,6 +358,7 @@ def deploy_other_version(raw_hash: str) -> None:
 
 def build_and_start_current_tree() -> None:
     clear_tmp_version_entrypoint()
+    ensure_deepseek_harness_runtime()
     staging_dir = build_frontend()
     promote_frontend_build(staging_dir)
     ensure_aimux_bridge_runtime_env()

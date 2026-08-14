@@ -9,6 +9,8 @@
 //   - 接入已有项目 / 创建全新项目 -> 页面 2 (项目创建菜单) -> 页面 3 (创建第一个任务)
 //   - 导入零散文件随便聊聊 -> 检查 let-us-chat 项目: 无则页面 2, 有则直进页面 3 (导入文件随便聊聊)
 //   - 进入已创建项目 -> 项目列表 (星标 + 最近 session 排序), 选定进项目页
+// Explorer 未记录路径: 先选择“创建全新项目”或“复用已有项目”。创建时以文件夹名预填项目名；
+//   复用时选择已有项目，把当前路径精准绑定到该项目后直接进入，沿用项目 Skill / Memory。
 //
 // 页面 2 (project): 项目创建菜单。【下一步】= 同名项目检查 (有则跳项目页结束) -> 建项目 -> 绑本地路径 ->
 //   自动建 issue ([demo issue] / [a random chat]) -> 页面 3。
@@ -26,7 +28,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   History, FolderInput, Plus, FileText, FolderOpen, ChevronLeft, ChevronDown,
   ChevronRight, FolderOpen as FolderBrowse, Dices, Loader2, Sparkles, Star, Search,
-  RefreshCw, LogOut, Trash2, Network,
+  RefreshCw, LogOut, Trash2, Network, FolderPlus, Library,
 } from 'lucide-react'
 import { useStore, api } from '../store'
 import { MobiusLogo } from '../components/mobius-logo'
@@ -41,6 +43,7 @@ import {
 } from '../components/global-create'
 import { type Attachment, appendAttachmentsToDesc } from '../components/attachments'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
+import { localFolderName } from '../services/local-path'
 
 // --- 桌面端 bridge (preload 注入 window.mobiusDesktop) ---
 interface BootData {
@@ -140,7 +143,7 @@ interface SessionCtx {
   projectDefaultModel?: string | null
 }
 
-type Step = 'menu' | 'project' | 'session' | 'projectList'
+type Step = 'menu' | 'pathChoice' | 'project' | 'session' | 'projectList' | 'pathProjectList'
 
 export default function Welcome() {
   const { user, theme } = useStore()
@@ -158,6 +161,8 @@ export default function Welcome() {
   const [sessionCtx, setSessionCtx] = useState<SessionCtx | null>(null)
   const [checking, setChecking] = useState(false)
   const [checkErr, setCheckErr] = useState('')
+  const [reuseBusyProjectId, setReuseBusyProjectId] = useState('')
+  const [reuseErr, setReuseErr] = useState('')
   const requestedPath = (() => {
     try { return new URLSearchParams(location.search).get('path') || '' } catch { return '' }
   })()
@@ -168,18 +173,48 @@ export default function Welcome() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Explorer's "在 Mobius 桌面端打开" fallback enters the same guided
-  // project flow as the welcome page, with the selected folder prefilled.
+  // Explorer's "在 Mobius 桌面端打开" fallback first asks whether this
+  // unrecorded path should become a new project or reuse an existing project.
   useEffect(() => {
     if (!isDesktop || !requestedPath || flow || step !== 'menu') return
-    setFlow(FLOW.connect)
-    setStep('project')
+    setStep('pathChoice')
   }, [isDesktop, requestedPath, flow, step])
 
   if (!user) return null
 
   // ---- 菜单选项 ----
   const startFlow = (mode: FlowMode) => { setFlow(FLOW[mode]); setStep('project'); setCheckErr('') }
+
+  const leaveRequestedPathFlow = () => {
+    setFlow(null)
+    setReuseErr('')
+    setStep('menu')
+    navigate('/welcome', { replace: true })
+  }
+
+  const startNewProjectFromPath = () => {
+    setFlow(FLOW.connect)
+    setReuseErr('')
+    setStep('project')
+  }
+
+  const reuseExistingProject = async (project: any) => {
+    if (!requestedPath || !project?.id || reuseBusyProjectId) return
+    if (!md?.confirmProjectPath) {
+      setReuseErr('当前桌面客户端不支持本机路径绑定，请更新 Mobius Desktop 后重试。')
+      return
+    }
+    setReuseBusyProjectId(String(project.id))
+    setReuseErr('')
+    try {
+      const result = await md.confirmProjectPath(String(project.id), requestedPath)
+      if (!result?.ok) throw new Error(result?.error || '路径绑定失败')
+      navigate(`/u/${project.created_by || user.id}/p/${project.id}`)
+    } catch (e) {
+      setReuseErr((e as Error)?.message || '路径绑定失败')
+      setReuseBusyProjectId('')
+    }
+  }
 
   // import: 菜单点击时检查 let-us-chat 是否已存在
   const startImport = async () => {
@@ -209,8 +244,10 @@ export default function Welcome() {
   if (step === 'project' && flow) {
     return (
       <WelcomeProject
-        flow={flow} dark={dark} isDesktop={isDesktop} desktopPath={boot?.desktopPath} initialLocalPath={requestedPath}
-        onBack={() => { setStep('menu'); setCheckErr('') }}
+        flow={flow} dark={dark} isDesktop={isDesktop} desktopPath={boot?.desktopPath}
+        initialLocalPath={requestedPath} initialName={requestedPath ? localFolderName(requestedPath) : ''}
+        alwaysCreateNew={!!requestedPath}
+        onBack={() => { setStep(requestedPath ? 'pathChoice' : 'menu'); setCheckErr('') }}
         onIntoSession={(ctx) => { setSessionCtx(ctx); setStep('session') }}
       />
     )
@@ -225,6 +262,30 @@ export default function Welcome() {
   }
   if (step === 'projectList') {
     return <WelcomeProjectList dark={dark} onBack={() => setStep('menu')} onPick={p => navigate(`/u/${p.created_by || user.id}/p/${p.id}`)} />
+  }
+  if (step === 'pathProjectList') {
+    return (
+      <WelcomeProjectList
+        dark={dark}
+        title="选择要复用的 Mobius 项目"
+        description="当前文件夹会成为所选项目在这台电脑上的工作路径，并复用该项目已有的技能与记忆。"
+        selectedPath={requestedPath}
+        error={reuseErr}
+        busyProjectId={reuseBusyProjectId}
+        onBack={() => { setReuseErr(''); setStep('pathChoice') }}
+        onPick={reuseExistingProject}
+      />
+    )
+  }
+  if (step === 'pathChoice') {
+    return (
+      <WelcomePathChoice
+        path={requestedPath}
+        onBack={leaveRequestedPathFlow}
+        onCreateNew={startNewProjectFromPath}
+        onReuseExisting={() => { setReuseErr(''); setStep('pathProjectList') }}
+      />
+    )
   }
 
   // ---- 页面 1: 欢迎菜单 ----
@@ -338,6 +399,80 @@ export default function Welcome() {
 }
 
 // =====================================================================
+// 页面: Explorer 未记录路径的归属选择
+// =====================================================================
+function WelcomePathChoice({ path, onBack, onCreateNew, onReuseExisting }: {
+  path: string
+  onBack: () => void
+  onCreateNew: () => void
+  onReuseExisting: () => void
+}) {
+  const choices = [
+    {
+      key: 'new',
+      icon: FolderPlus,
+      title: '创建一个全新的 Mobius 项目',
+      desc: '根据当前路径及其中内容建立新项目，文件夹名称会作为默认项目名。',
+      detail: '新项目会拥有独立的任务、技能与记忆',
+      onClick: onCreateNew,
+    },
+    {
+      key: 'reuse',
+      icon: Library,
+      title: '复用一个已有的 Mobius 项目',
+      desc: '选择现有项目，把当前路径设为它在这台电脑上的工作目录。',
+      detail: '沿用所选项目已有的技能、记忆与上下文',
+      onClick: onReuseExisting,
+    },
+  ]
+
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center relative overflow-hidden select-none px-4 py-10"
+      style={{ background: 'var(--bg-secondary)' }}>
+      <main className="w-full max-w-[680px] relative z-10" aria-labelledby="path-choice-title">
+        <div className="flex items-start gap-3 mb-5">
+          <button type="button" onClick={onBack}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/70"
+            style={{ color: 'var(--text-muted)' }} aria-label="返回欢迎页" title="返回欢迎页">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div className="min-w-0 pt-0.5">
+            <h1 id="path-choice-title" className="text-[20px] font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>如何使用这个文件夹？</h1>
+            <p className="mt-1 text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>这个路径尚未关联 Mobius 项目。请选择它接下来的归属。</p>
+          </div>
+        </div>
+
+        <div className="mb-4 flex items-center gap-2 rounded-xl px-3.5 py-3" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
+          <FolderOpen className="h-4 w-4 shrink-0" style={{ color: 'var(--text-secondary)' }} aria-hidden="true" />
+          <code className="min-w-0 flex-1 truncate text-[12px]" style={{ color: 'var(--text-secondary)' }} title={path}>{path}</code>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {choices.map(choice => {
+            const Icon = choice.icon
+            return (
+              <button key={choice.key} type="button" onClick={choice.onClick}
+                className="group min-h-[192px] min-w-0 whitespace-normal rounded-2xl border border-[var(--border-color)] bg-[var(--modal-bg)] p-5 text-left transition-[background-color,border-color,box-shadow] duration-200 hover:border-blue-500/40 hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/70 focus-visible:ring-offset-2"
+                style={{ '--tw-ring-offset-color': 'var(--bg-secondary)' } as React.CSSProperties}>
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--bg-hover)] text-blue-500 transition-colors duration-200 group-hover:bg-blue-500/10">
+                  <Icon className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+                </span>
+                <span className="mt-5 flex min-w-0 items-center justify-between gap-3">
+                  <span className="min-w-0 text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{choice.title}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 opacity-40 transition-transform duration-200 group-hover:translate-x-0.5" style={{ color: 'var(--text-muted)' }} aria-hidden="true" />
+                </span>
+                <span className="mt-2 block text-[12px] leading-5" style={{ color: 'var(--text-secondary)' }}>{choice.desc}</span>
+                <span className="mt-3 block border-t pt-3 text-[11px] leading-4" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>{choice.detail}</span>
+              </button>
+            )
+          })}
+        </div>
+      </main>
+    </div>
+  )
+}
+
+// =====================================================================
 // 工具: 确保某项目下有指定标题的 issue (有则复用, 无则建), 返回 issueId
 // =====================================================================
 async function ensureIssue(projectId: string, title: string): Promise<string | null> {
@@ -357,18 +492,20 @@ async function ensureIssue(projectId: string, title: string): Promise<string | n
 // =====================================================================
 // 页面 2: 项目创建菜单 (接入/创建/导入共用, 【下一步】)
 // =====================================================================
-function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, onBack, onIntoSession }: {
+function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, initialName, alwaysCreateNew = false, onBack, onIntoSession }: {
   flow: FlowConfig
   dark: boolean
   isDesktop: boolean
   desktopPath?: string
   initialLocalPath?: string
+  initialName?: string
+  alwaysCreateNew?: boolean
   onBack: () => void
   onIntoSession: (ctx: SessionCtx) => void
 }) {
   const { user } = useStore()
 
-  const [name, setName] = useState(flow.nameDefault)
+  const [name, setName] = useState(initialName || flow.nameDefault)
   const [localPath, setLocalPath] = useState(initialLocalPath || '')
   const [localPathTouched, setLocalPathTouched] = useState(!!initialLocalPath)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -410,7 +547,7 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
     setLoading(true); setErr('')
     try {
       // (2) 同名项目检查 (connect/new): 有则跳项目页结束。import 不查 (菜单已查过)。
-      if (flow.mode !== 'import') {
+      if (flow.mode !== 'import' && !alwaysCreateNew) {
         const r = await api('/api/projects') as any
         const list: any[] = Array.isArray(r) ? r : (r?.projects || [])
         const same = list.find(p => p?.created_by === user?.id && String(p?.name || '').toLowerCase() === name.trim().toLowerCase())
@@ -802,10 +939,15 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
 // =====================================================================
 // 页面: 进入已创建项目 (项目列表, 星标 + 最近 session 排序)
 // =====================================================================
-function WelcomeProjectList({ dark, onBack, onPick }: {
+function WelcomeProjectList({ dark, onBack, onPick, title = '进入已创建的项目', description, selectedPath, error, busyProjectId = '' }: {
   dark: boolean
   onBack: () => void
   onPick: (p: any) => void
+  title?: string
+  description?: string
+  selectedPath?: string
+  error?: string
+  busyProjectId?: string
 }) {
   const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [])
   const [q, setQ] = useState('')
@@ -832,12 +974,23 @@ function WelcomeProjectList({ dark, onBack, onPick }: {
       <div className="w-full max-w-[640px] relative z-10">
         <div className="flex items-center gap-2 mb-5">
           <button type="button" onClick={onBack}
-            className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-hover)]"
-            style={{ color: 'var(--text-muted)' }} title="返回">
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/70"
+            style={{ color: 'var(--text-muted)' }} aria-label="返回" title="返回">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>进入已创建的项目</h1>
+          <div className="min-w-0 pt-0.5">
+            <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h1>
+            {description && <p className="mt-1 text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>{description}</p>}
+          </div>
         </div>
+
+        {selectedPath && (
+          <div className="mb-3 flex items-center gap-2 rounded-xl px-3.5 py-3" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
+            <FolderOpen className="h-4 w-4 shrink-0" style={{ color: 'var(--text-secondary)' }} aria-hidden="true" />
+            <code className="min-w-0 flex-1 truncate text-[12px]" style={{ color: 'var(--text-secondary)' }} title={selectedPath}>{selectedPath}</code>
+          </div>
+        )}
+        {error && <div className="mb-3"><ErrBanner>{error}</ErrBanner></div>}
 
         <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
           <div className="px-3 py-2.5 border-b" style={{ borderColor: 'var(--border-color)' }}>
@@ -853,11 +1006,12 @@ function WelcomeProjectList({ dark, onBack, onPick }: {
           )}
           <div className="max-h-[52vh] overflow-y-auto">
             {filtered.map((p, i) => (
-              <button key={p.id} type="button" onClick={() => onPick(p)}
-                className={`group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] ${i > 0 ? 'border-t' : ''}`}
+              <button key={p.id} type="button" onClick={() => onPick(p)} disabled={!!busyProjectId}
+                aria-label={busyProjectId === String(p.id) ? `正在绑定 ${p.name}` : `选择项目 ${p.name}`}
+                className={`group flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/70 disabled:cursor-wait disabled:opacity-55 ${i > 0 ? 'border-t' : ''}`}
                 style={i > 0 ? { borderColor: 'var(--border-color)' } : undefined}>
                 <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: 'var(--bg-hover)', color: 'var(--text-secondary)' }}>
-                  <FolderOpen className="h-4 w-4" strokeWidth={1.9} />
+                  {busyProjectId === String(p.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" strokeWidth={1.9} />}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">

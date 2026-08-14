@@ -19,6 +19,7 @@ type AdvancedInteractionBtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   buttonClassName?: string
   iconClassName?: string
   motion?: 'tilt' | 'breathe'
+  displayLabel?: boolean
 }
 
 export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInteractionBtnProps>(function AdvancedInteractionBtn({
@@ -31,6 +32,7 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
   disabled,
   iconClassName,
   motion = 'tilt',
+  displayLabel = false,
   onBlur,
   onFocus,
   onMouseEnter,
@@ -38,6 +40,9 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
   ...props
 }, forwardedRef) {
   const tooltipText = tooltip || label
+  // 菜单模式已经展示完整文字标签，再弹出同义 tooltip 会遮挡相邻操作，
+  // 也会让浅色 tooltip 看起来像一块突兀的白色浮层。纯图标按钮仍保留提示。
+  const hasTooltip = !displayLabel
   const tooltipId = useId()
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const tooltipRef = useRef<HTMLDivElement | null>(null)
@@ -92,10 +97,11 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
   }, [tooltipOpen, tooltipPos, updateTooltipPosition])
 
   const showTooltip = useCallback(() => {
+    if (!hasTooltip) return
     // 不预设位置: 先 setTooltipOpen(true), tooltip 以 tooltipPos===null (visibility:hidden) 渲染,
     // useLayoutEffect 测到实测宽高后调 updateTooltipPosition 得到经四向 clamp 的最终坐标, 再可见. 这样宽 tooltip 不会溢出视口.
     setTooltipOpen(true)
-  }, [])
+  }, [hasTooltip])
 
   const hideTooltip = useCallback(() => {
     setTooltipOpen(false)
@@ -119,7 +125,7 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
         type={props.type || 'button'}
         disabled={disabled}
         aria-label={label}
-        aria-describedby={tooltipOpen ? tooltipId : undefined}
+        aria-describedby={hasTooltip && tooltipOpen ? tooltipId : undefined}
         onMouseEnter={(event) => {
           onMouseEnter?.(event)
           showTooltip()
@@ -136,11 +142,12 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
           onBlur?.(event)
           hideTooltip()
         }}
-        className={`group/advanced-interaction relative inline-flex ${buttonClassName || 'h-7 w-full rounded-md'} min-w-0 items-center justify-center bg-transparent px-0 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]} ${className}`}
+        className={`group/advanced-interaction relative inline-flex ${buttonClassName || (displayLabel ? 'min-h-9 w-full rounded-md px-2 py-1.5' : 'h-7 w-full rounded-md px-0')} min-w-0 items-center ${displayLabel ? 'justify-start gap-2 text-left' : 'justify-center'} bg-transparent transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]} ${className}`}
       >
         <span className={`inline-flex ${iconClassName || 'h-4 w-4'} items-center justify-center transition-transform ${motion === 'breathe' ? 'duration-300 ease-out group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:scale-110' : 'duration-200 group-hover/advanced-interaction:-translate-y-0.5 group-hover/advanced-interaction:rotate-[-8deg] group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:-translate-y-0.5 group-focus-visible/advanced-interaction:rotate-[-8deg] group-focus-visible/advanced-interaction:scale-110'}`}>
           {icon}
         </span>
+        {displayLabel && <span className="min-w-0 flex-1 truncate text-[11px] font-medium leading-4">{label}</span>}
       </button>
       {tooltipOpen && typeof document !== 'undefined'
         ? createPortal(

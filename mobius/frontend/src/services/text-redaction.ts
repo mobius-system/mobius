@@ -569,8 +569,10 @@ export function startTextRedactionRuntime() {
     applyMaskScan(document.body)
   }
 
-  // ── 文本框 mask: textarea / 文本 input 的 value 命中关键词时, 整框视觉模糊. ──
+  // ── 单行文本 input 的 mask: value 命中关键词时, 整框视觉模糊(原始"小尺寸密钥输入框"意图). ──
   // 不改 value (避免污染表单提交), 只用 CSS filter: blur().
+  // textarea 不参与自动模糊: 它是拥有者编辑面(会话输入/规划/知识/待办等), 整框模糊=拥有者自己
+  // 看不清, 与脱敏"展示给观众"的初衷相悖. 需要刻意模糊多行内容改用单行 type=password 或拆分字段.
   const MASKABLE_INPUT_TYPES = new Set(['text', 'search', 'url', 'email', 'tel', 'number', ''])
 
   function ensureMaskStyleElement() {
@@ -597,7 +599,9 @@ export function startTextRedactionRuntime() {
     if (!(element instanceof HTMLElement)) return false
     if (element.closest(TEXT_REDACTION_IGNORE_SELECTOR)) return false
     const tag = element.tagName.toUpperCase()
-    if (tag === 'TEXTAREA') return true
+    // textarea = 拥有者编辑面, 模糊整框会让拥有者自己看不清(会话输入粘贴大段文字即此 bug).
+    // 自动模糊只针对单行文本 input(原始"小尺寸密钥输入框"意图); type=password 由浏览器原生遮罩, 不在此列.
+    if (tag === 'TEXTAREA') return false
     if (tag === 'INPUT') {
       const type = (element.getAttribute('type') || '').toLowerCase()
       return MASKABLE_INPUT_TYPES.has(type)
@@ -632,7 +636,7 @@ export function startTextRedactionRuntime() {
     const scope = root === document.body ? document.body : (root as Element)
     if (!(scope instanceof Element)) return
     const candidates = scope.querySelectorAll<HTMLElement>(
-      'textarea, input[type="text"], input[type="search"], input[type="url"], input[type="email"], input[type="tel"], input[type="number"], input:not([type])',
+      'input[type="text"], input[type="search"], input[type="url"], input[type="email"], input[type="tel"], input[type="number"], input:not([type])',
     )
     candidates.forEach(applyMaskToElement)
     if (isMaskableElement(scope)) applyMaskToElement(scope)

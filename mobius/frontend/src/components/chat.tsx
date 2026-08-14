@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -2180,11 +2180,25 @@ function RemoteFileMentionDrawer({
 // layout: 'default' = 现有 68/32 横向分栏; 'stacked' = 强制纵向堆叠 (历史在上、输入在下),
 // 用于「代码对话」模式的窄右栏. 仅切换 .mobius-chat-body 上的修饰类 (见 index.css),
 // 不触碰任何 SSE / 草稿 / Stop / Send / Agent 状态逻辑. 向后兼容 (默认 default).
-export function ChatArea({ layout = 'default', onNewSession }: {
+type EasyProjectOption = {
+  id: string
+  name: string
+  count?: number
+  runningCount?: number
+}
+
+export function ChatArea({ layout = 'default', onNewSession, easyProjectControl }: {
   layout?: 'default' | 'stacked' | 'easy'
   onNewSession?: () => void
+  easyProjectControl?: {
+    selectedProjectId?: string
+    selectedProjectName?: string
+    projects: EasyProjectOption[]
+    onSelectProject: (projectId: string | null) => void
+    onCreateProject: () => void
+  }
 } = {}) {
-  const { currentSession, currentTask, currentIssue, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
+  const { currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
   const navigate = useNavigate()
   // 搜索结果跳转: URL 带 ?match=<uuid>&ts=<iso> 时, 把命中条目交给 JsonlView 滚到所属卡片.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -2206,6 +2220,9 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [inputExpanded, setInputExpanded] = useState(false)
   const [inputMenuOpen, setInputMenuOpen] = useState(false)
+  const [easyToolsOpen, setEasyToolsOpen] = useState(false)
+  const [easyProjectMenuOpen, setEasyProjectMenuOpen] = useState(false)
+  const [easyProjectQuery, setEasyProjectQuery] = useState('')
   const [inputFocused, setInputFocused] = useState(false)
   // 每个 session 维持一份附件列表 (粘贴 / 拖放 / 上传按钮三路共用).
   // 切 session 时不清空, 让用户在哪儿留下就在哪儿见.
@@ -2214,6 +2231,10 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const inputMenuRef = useRef<HTMLDivElement | null>(null)
   const inputMenuButtonRef = useRef<HTMLButtonElement | null>(null)
+  const easyToolsRef = useRef<HTMLDivElement | null>(null)
+  const easyToolsPanelRef = useRef<HTMLDivElement | null>(null)
+  const easyProjectMenuRef = useRef<HTMLDivElement | null>(null)
+  const easyProjectButtonRef = useRef<HTMLButtonElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLDivElement>(null)
@@ -2224,6 +2245,58 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     startWidth: number
     currentWidth: number
   } | null>(null)
+
+  useEffect(() => {
+    if (!easyToolsOpen) return
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!easyToolsRef.current?.contains(event.target as Node)) setEasyToolsOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setEasyToolsOpen(false)
+    }
+    window.requestAnimationFrame(() => {
+      easyToolsPanelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+    })
+    document.addEventListener('mousedown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [easyToolsOpen])
+
+  useEffect(() => {
+    if (!easyProjectMenuOpen) return
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!easyProjectMenuRef.current?.contains(event.target as Node)) setEasyProjectMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setEasyProjectMenuOpen(false)
+      easyProjectButtonRef.current?.focus()
+    }
+    document.addEventListener('mousedown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [easyProjectMenuOpen])
+
+  useEffect(() => {
+    setEasyProjectMenuOpen(false)
+    setEasyProjectQuery('')
+  }, [currentSession?.session_id])
+
+  const easyFilteredProjects = useMemo(() => {
+    const query = easyProjectQuery.trim().toLocaleLowerCase('zh-CN')
+    if (!query) return easyProjectControl?.projects || []
+    return (easyProjectControl?.projects || []).filter(project => (
+      project.name.toLocaleLowerCase('zh-CN').includes(query)
+      || project.id.toLocaleLowerCase('zh-CN').includes(query)
+    ))
+  }, [easyProjectControl?.projects, easyProjectQuery])
 
   // 右栏宽度不放进 React inline style：拖动时直接写 DOM，避免每个 mousemove
   // 都重渲染 JSONL 与输入区两棵重子树；松手时才提交一次 state 并持久化比例。
@@ -2327,6 +2400,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
       })
       if (voiceStopTimerRef.current !== null) window.clearTimeout(voiceStopTimerRef.current)
       if (voiceTickTimerRef.current !== null) window.clearInterval(voiceTickTimerRef.current)
+      if (bridgeQueueNoticeTimerRef.current !== null) window.clearTimeout(bridgeQueueNoticeTimerRef.current)
       const recorder = mediaRecorderRef.current
       try {
         if (recorder && recorder.state !== 'inactive') recorder.stop()
@@ -2387,6 +2461,8 @@ export function ChatArea({ layout = 'default', onNewSession }: {
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [stopFeedbackActive, setStopFeedbackActive] = useState(false)
   const stopFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [bridgeQueueNotice, setBridgeQueueNotice] = useState<string | null>(null)
+  const bridgeQueueNoticeTimerRef = useRef<number | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
@@ -2411,6 +2487,9 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     })
   }, [])
   const sessionId = currentSession?.session_id || currentTask?.task_id || ''
+  useEffect(() => {
+    setEasyToolsOpen(false)
+  }, [sessionId])
   const currentProjectId = (currentIssue as any)?.project_id || (currentSession as any)?.project_id || (currentTask as any)?.project_id || ''
   const currentIssueId = (currentSession as any)?.issue_id || (currentIssue as any)?.id || ''
   const currentResearchId = (currentSession as any)?.research_id || (currentTask as any)?.research_id || ''
@@ -3782,7 +3861,18 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     // 要等后端 POST /messages 返回才清空, 体感是"字过了一会儿才消失".
     clearSessionInputDraft(sentSessionId, sentInput)
     postSessionMessage({ content, inputText: text, requestId, urgent, mentions: mentionPayload })
-      .then(() => {
+      .then((resp) => {
+        const queued = Array.isArray(resp?.external_messages_queued)
+          ? resp.external_messages_queued.filter((item: any) => item?.delivery === 'queued')
+          : []
+        if (queued.length > 0 && selectedAgentMention) {
+          setBridgeQueueNotice(`已通知 ${selectedAgentMention.name}，等待对方空闲后投递`)
+          if (bridgeQueueNoticeTimerRef.current !== null) window.clearTimeout(bridgeQueueNoticeTimerRef.current)
+          bridgeQueueNoticeTimerRef.current = window.setTimeout(() => {
+            setBridgeQueueNotice(null)
+            bridgeQueueNoticeTimerRef.current = null
+          }, 5000)
+        }
         setEditingMsg(null)
         clearAttachments()
         setSelectedAgentMention(null)
@@ -3838,11 +3928,17 @@ export function ChatArea({ layout = 'default', onNewSession }: {
       setLastSendError('当前没有可发送指令的会话')
       return
     }
+    // mainProjectPortPath 是旧的单端口 txt 路径; 新协议改为写同目录下的多端口 ports.json,
+    // 供"端口预览栏"显示前端/后端等多个可点 chip. 保留入参名以兼容 ProjectPortEntryButton 调用.
+    const portsJsonPath = mainProjectPortPath
+      ? mainProjectPortPath.replace(/main_project_port\.txt$/, 'ports.json')
+      : ''
     const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
     const hostHint = hostname
       ? `如果是 Vite 项目，你需要向 server.allowedHosts 中添加 ${hostname}；如果是其他更新颖的前端框架，如果有必要，也需要将 ${hostname} 加白。`
       : '如果是 Vite 项目，你需要向 server.allowedHosts 中添加当前前端访问 hostname；如果是其他更新颖的前端框架，如果有必要，也需要将当前 hostname 加白。'
-    const content = `[这条消息来自系统而不是用户] 如果当前项目是一个有对外端口服务的项目，请现在开始在合适的端口运行项目（自行选择合适运行模式），等待运行成功后，将端口号码写入 ${mainProjectPortPath}。${hostHint}`
+    const target = portsJsonPath || '<项目bind_path>/.mobius/port_forward/ports.json'
+    const content = `[这条消息来自系统而不是用户] 如果当前项目是一个有对外端口服务的项目，请现在开始运行项目的全部服务（自行选择合适的端口与运行模式），等待每个服务都启动成功后，把所有对外可访问的端口写入 ${target}。文件格式必须是 JSON：{"ports":[{"port":8080,"label":"前端","kind":"frontend"},{"port":28000,"label":"后端","kind":"backend"}]}，每个端口一项，port 为整数（必填），label 是中文短标签（如 前端/后端/认证中心/API/数据库），kind 是英文小写（frontend/backend/api/db/admin/auth 等）。前端、后端以及任何对外可访问的服务端口都要写全，不要只写一个。${hostHint}`
     setRunProjectPrompt(content)
   }, [sessionId])
 
@@ -3982,7 +4078,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
     </div>
   )
 
-  const renderAdvancedSessionActions = (variant: 'default' | 'compact') => (
+  const renderAdvancedSessionActions = (variant: 'default' | 'compact' | 'menu') => (
     <AdvancedSessionActions
       variant={variant}
       sessionId={currentSession?.session_id || sessionId}
@@ -4119,7 +4215,75 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           onAnnounce={(body) => { handleAnnouncePc(body); setCooperablePcOpen(false) }}
         />
       )}
-      {/* 简易模式把会话上下文收进左侧近期会话列表，右侧仅保留 JSONL 和输入。 */}
+      {layout === 'easy' && (
+        <div className="easy-session-context flex h-11 flex-shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }} data-testid="easy-session-context">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <SessionStatusChip
+              connected={connectionStatus === 'connected'}
+              failed={backendJobFailed === true}
+              pending={!!pendingSendAt}
+              working={!!(backendAlive && backendWorking)}
+              waiting={!!(backendAlive && !backendWorking)}
+              done={backendJobDone === true && !backendAlive}
+              alwaysShowLabel
+            />
+            <div className="flex min-w-0 items-center gap-1.5 text-[12px]" aria-label="当前会话上下文">
+              <span className="max-w-[180px] truncate font-medium" style={{ color: 'var(--text-secondary)' }} title={projectForSession?.name || currentProjectId}>
+                {projectForSession?.name || currentProjectId || '项目'}
+              </span>
+              <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+              <span className="max-w-[220px] truncate" style={{ color: 'var(--text-secondary)' }} title={(currentResearch as any)?.title || (currentIssue as any)?.title || ''}>
+                {(currentResearch as any)?.title || (currentIssue as any)?.title || '任务'}
+              </span>
+              <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+              <strong className="min-w-0 truncate font-semibold" style={{ color: 'var(--text-primary)' }} title={currentSession?.name || currentTask?.name || sessionId}>
+                {currentSession?.name || currentTask?.name || sessionId}
+              </strong>
+            </div>
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <div className="easy-session-tools relative" ref={easyToolsRef}>
+              <button
+                type="button"
+                onClick={() => setEasyToolsOpen(value => !value)}
+                aria-controls="easy-session-tools-panel"
+                aria-expanded={easyToolsOpen}
+                className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                style={{ borderColor: 'var(--border-color)', color: easyToolsOpen ? 'var(--text-primary)' : 'var(--text-secondary)', background: easyToolsOpen ? 'var(--bg-active)' : undefined }}
+              >
+                <Wrench className="h-3.5 w-3.5" />
+                <span>工具</span>
+              </button>
+              {easyToolsOpen && (
+                <div ref={easyToolsPanelRef} id="easy-session-tools-panel" role="group" aria-label="当前会话工具" className="absolute right-0 top-9 z-50 rounded-xl p-1 shadow-2xl" style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }} onKeyDown={(event) => {
+                  if (event.key !== 'Escape') return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setEasyToolsOpen(false)
+                }} onClick={() => {
+                  setEasyToolsOpen(false)
+                }}>
+                  <div className="px-2 pb-2 pt-1 text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>当前会话工具</div>
+                  {renderAdvancedSessionActions('menu')}
+                </div>
+              )}
+            </div>
+            <HeaderActionButton
+              tone="red"
+              title="终止当前智能体正在执行的操作"
+              disabled={!sessionId}
+              aria-live="polite"
+              onClick={handleStopSession}
+              className={`session-stop-button ${stopFeedbackActive ? 'session-stop-button--active' : ''}`}
+            >
+              <span className="session-stop-button__square inline-block h-1.5 w-1.5 rounded-sm bg-current opacity-90" />
+              <span>{stopFeedbackActive ? '已触发' : '停止'}</span>
+            </HeaderActionButton>
+          </div>
+        </div>
+      )}
+
+      {/* 标准模式保留完整会话标题栏；简易模式使用上方轻量上下文与监督栏。 */}
       {layout !== 'easy' && <div data-tour="session-chat-header" className="h-9 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="min-w-0 flex items-center gap-2">
@@ -4235,6 +4399,15 @@ export function ChatArea({ layout = 'default', onNewSession }: {
         </div>
       )}
 
+      {bridgeQueueNotice && (
+        <div className="pointer-events-none fixed right-4 top-16 z-[80] max-w-[min(360px,calc(100vw-2rem))]">
+          <div className="flex items-center gap-2 rounded-lg border border-blue-400/30 bg-[var(--bg-card)] px-3 py-2 text-[12px] font-medium text-[var(--text-primary)] shadow-xl">
+            <Clock className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
+            <span className="min-w-0 break-words">{bridgeQueueNotice}</span>
+          </div>
+        </div>
+      )}
+
       {lastSendError && (
         <div className="mx-5 mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px] text-red-300 bg-red-500/10 border-red-500/25 flex-shrink-0">
           <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4309,7 +4482,7 @@ export function ChatArea({ layout = 'default', onNewSession }: {
         />
 
         {/* 右侧: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽。 */}
-        <div ref={chatInputRef} className={`mobius-chat-input relative flex flex-shrink-0 flex-col border-l${layout === 'easy' && !isPlanningSession ? ' mobius-chat-input--with-actions' : ''}`} style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+        <div ref={chatInputRef} className="mobius-chat-input relative flex flex-shrink-0 flex-col border-l" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
           {layout === 'default' && (
             <div
               ref={chatSplitHandleRef}
@@ -4457,6 +4630,109 @@ export function ChatArea({ layout = 'default', onNewSession }: {
               />
             </div>
             <div className="relative flex items-end gap-2 px-3 pb-3 pt-0">
+              {layout === 'easy' && easyProjectControl && (
+                <div className="easy-input-project-row relative mr-auto flex min-w-0 items-center" ref={easyProjectMenuRef}>
+                  <button
+                    ref={easyProjectButtonRef}
+                    type="button"
+                    onClick={() => setEasyProjectMenuOpen(value => !value)}
+                    aria-haspopup="menu"
+                    aria-expanded={easyProjectMenuOpen}
+                    className="easy-input-project-trigger inline-flex h-8 max-w-[320px] min-w-0 cursor-pointer items-center gap-2 rounded-full px-3 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                    style={{ background: 'var(--bg-active)', color: 'var(--text-primary)' }}
+                    title={easyProjectControl.selectedProjectName || '所有项目'}
+                  >
+                    <FolderOpen className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
+                    <span className="min-w-0 truncate">{easyProjectControl.selectedProjectName || '所有项目'}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${easyProjectMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {easyProjectMenuOpen && (
+                    <div
+                      role="menu"
+                      aria-label="选择项目"
+                      className="easy-input-project-menu absolute bottom-11 left-0 z-40 w-[360px] max-w-[calc(100vw-48px)] overflow-hidden rounded-2xl p-2 shadow-2xl"
+                      style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
+                    >
+                      <label className="flex h-10 items-center gap-2 rounded-xl px-3" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
+                        <Search className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
+                        <input
+                          value={easyProjectQuery}
+                          onChange={event => setEasyProjectQuery(event.target.value)}
+                          placeholder="搜索项目"
+                          aria-label="搜索项目"
+                          autoFocus
+                          className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[13px] outline-none placeholder:text-[var(--text-muted)]"
+                          style={{ color: 'var(--text-primary)' }}
+                        />
+                        {easyProjectQuery && (
+                          <button type="button" onClick={() => setEasyProjectQuery('')} className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-[var(--bg-hover)]" aria-label="清空项目搜索">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </label>
+
+                      <div className="mt-2 max-h-[260px] overflow-y-auto">
+                        {easyFilteredProjects.length === 0 ? (
+                          <div className="px-3 py-7 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>没有匹配的项目</div>
+                        ) : easyFilteredProjects.map(project => {
+                          const active = project.id === easyProjectControl.selectedProjectId
+                          return (
+                            <button
+                              key={project.id}
+                              type="button"
+                              role="menuitemradio"
+                              aria-checked={active}
+                              onClick={() => {
+                                easyProjectControl.onSelectProject(project.id)
+                                setEasyProjectMenuOpen(false)
+                                setEasyProjectQuery('')
+                              }}
+                              className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                              style={{ background: active ? 'var(--bg-active)' : undefined, color: 'var(--text-primary)' }}
+                            >
+                              <FolderOpen className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
+                              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{project.name}</span>
+                              {project.runningCount ? <span className="text-[10px] text-amber-400">运行 {project.runningCount}</span> : null}
+                              {active && <Check className="h-4 w-4 flex-shrink-0" strokeWidth={2} />}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-color)' }}>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setEasyProjectMenuOpen(false)
+                            easyProjectControl.onCreateProject()
+                          }}
+                          className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] font-semibold transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                          style={{ color: 'var(--text-primary)' }}
+                        >
+                          <FolderPlus className="h-4 w-4" strokeWidth={1.8} />
+                          新建项目
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            easyProjectControl.onSelectProject(null)
+                            setEasyProjectMenuOpen(false)
+                            setEasyProjectQuery('')
+                          }}
+                          className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          <X className="h-4 w-4" strokeWidth={1.8} />
+                          不限项目
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="relative">
                 <AdvancedInteractionBtn
                   ref={inputMenuButtonRef}
@@ -4584,9 +4860,6 @@ export function ChatArea({ layout = 'default', onNewSession }: {
           </div>
         </div>
       </div>
-          {/* 简易模式把同一组高级会话操作紧凑放到输入框左侧。 */}
-          {layout === 'easy' && !isPlanningSession && renderAdvancedSessionActions('compact')}
-
           {/* 标准/堆叠布局的下方操作区: 普通会话展示快捷按钮 + Skill/Memory 快照;
               规划模式展示项目知识编辑器。简易模式不重复挂载隐藏侧区，避免端口按钮重复请求。 */}
           {layout !== 'easy' && (isPlanningSession && currentProjectId ? (
