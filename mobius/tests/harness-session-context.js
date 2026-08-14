@@ -90,10 +90,10 @@ async function main() {
     assert.throws(() => runtimeEnvEntries({ MOBIUS_HARNESS_TOKEN: 'x'.repeat(8193) }), /Invalid runtime environment value/)
     assert.deepEqual(
       redactEnvironmentArgs(
-        ['new-window', '-e', 'MOBIUS_HARNESS_TOKEN=secret-value', '-n', 'test-window'],
-        ['MOBIUS_HARNESS_TOKEN'],
+        ['new-window', '-e', 'MOBIUS_HARNESS_TOKEN=secret-value', '-e', 'MODEL_API_KEY=model-secret', '-n', 'test-window'],
+        ['MOBIUS_HARNESS_TOKEN', 'MODEL_API_KEY'],
       ),
-      ['new-window', '-e', 'MOBIUS_HARNESS_TOKEN=***', '-n', 'test-window'],
+      ['new-window', '-e', 'MOBIUS_HARNESS_TOKEN=***', '-e', 'MODEL_API_KEY=***', '-n', 'test-window'],
     )
 
     Sessions.insert({
