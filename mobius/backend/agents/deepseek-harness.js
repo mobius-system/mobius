@@ -91,7 +91,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
     entry.watcher = watchMergedJsonl({
       path: jsonlPath,
       startSentinel,
-      onEntry: (raw) => { try { this._emitRaw(sessionId, JSON.parse(raw)) } catch {} },
+      onEntry: (entry) => this._emitRaw(sessionId, entry),
       onError: (error) => this._captureError(sessionId, error),
     })
   }
@@ -314,7 +314,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
     const watcher = watchMergedJsonl({
       path: jsonlPath,
       startSentinel: opts.fromSentinel,
-      onEntry: (raw) => { try { listener(JSON.parse(raw)) } catch {} },
+      onEntry: (entry) => listener(entry),
     })
     return () => watcher.stop?.()
   }

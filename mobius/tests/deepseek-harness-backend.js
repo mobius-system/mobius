@@ -27,6 +27,10 @@ async function main() {
   const sessionId = `harness-test-${Date.now()}`
   const cwd = path.join(root, 'workspace')
   const flagRoot = path.join(root, 'project')
+  const sharedEntries = []
+  const streamedEntries = []
+  const sharedListener = (entry) => sharedEntries.push(entry)
+  let unsubscribe = null
   fs.mkdirSync(cwd)
   fs.mkdirSync(flagRoot)
   try {
@@ -70,6 +74,12 @@ async function main() {
     assert.equal(history.entries.some((entry) => entry.type === 'assistant' && entry.message?.content?.[0]?.text === 'fake answer'), true)
     assert.equal(fs.readFileSync(runtimeFile, 'utf8').includes('never-persist-this-secret'), false)
 
+    backend.emitter.on(`raw:${sessionId}`, sharedListener)
+    unsubscribe = backend.getAgentRawThoughtStream(
+      sessionId,
+      (entry) => streamedEntries.push(entry),
+      { fromSentinel: history.sentinel },
+    )
     await backend.noPauseCurrentAndQueueQueryAtSession({
       sessionId, cwd, flagRoot, prompt: 'follow up', model: 'deepseek-test',
       mobiusJsonl: {
@@ -81,6 +91,12 @@ async function main() {
       },
     })
     await waitFor(() => !backend.isWorking(sessionId))
+    const receivedFollowUp = (entries) => (
+      entries.some((entry) => entry.type === 'user' && entry.message?.content === 'follow up')
+      && entries.some((entry) => entry.type === 'assistant' && entry.message?.content?.[0]?.text === 'fake answer')
+    )
+    await waitFor(() => receivedFollowUp(sharedEntries))
+    await waitFor(() => receivedFollowUp(streamedEntries))
     assert.equal(backend.getHistory(sessionId).entries.filter((entry) => entry.type === 'assistant').length, 2)
     assert.equal(backend.getHistory(sessionId).entries.filter((entry) => entry.type === 'user').length, 2)
 
@@ -93,6 +109,8 @@ async function main() {
     assert.equal(backend.listSessions().length, 0)
     assert.equal(backend.isJobGoalAccomplished(sessionId), true)
   } finally {
+    unsubscribe?.()
+    backend.emitter.off(`raw:${sessionId}`, sharedListener)
     await backend.terminateSession(sessionId).catch(() => {})
     fs.rmSync(root, { recursive: true, force: true })
   }

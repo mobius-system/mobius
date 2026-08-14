@@ -66,6 +66,8 @@ export type ExternalSessionEvent = {
   token: string;
 };
 
+type InitialContextMode = 'session' | 'provided';
+
 function readPendingTransferPaths(sessionId: any): PendingTransferPaths | null {
   try {
     const row = db.prepare(`
@@ -203,6 +205,7 @@ async function runSessionMessage({
   logger = console,
   urgent = false,
   externalEvent = null,
+  initialContextMode = 'session',
 }: {
   user?: any;
   sessionId?: any;
@@ -216,12 +219,21 @@ async function runSessionMessage({
   logger?: any;
   urgent?: boolean;
   externalEvent?: ExternalSessionEvent | null;
+  initialContextMode?: InitialContextMode;
 } = {}): Promise<any> {
   const normalizedSessionId = String(sessionId || '').trim();
   const normalizedContent = typeof content === 'string' ? content : '';
   const normalizedRequestId = typeof requestId === 'string' ? requestId : null;
   const normalizedInputText = hasInputText ? String(inputText || '') : '';
   const isExternalEvent = !!externalEvent;
+
+  if (initialContextMode === 'provided' && source !== 'harness.dispatch') {
+    throw httpError(
+      'provided initial context 仅允许 Harness 内部 dispatch 使用',
+      403,
+      'initial_context_mode_forbidden',
+    );
+  }
 
   if (!user?.id) throw httpError('用户不可用', 401);
 
@@ -326,7 +338,11 @@ async function runSessionMessage({
     content: string;
     messageId?: number;
   }> = [];
-  if (!isExternalEvent && Messages.countUserMessagesFor(normalizedSessionId) <= 1) {
+  if (
+    !isExternalEvent
+    && initialContextMode === 'session'
+    && Messages.countUserMessagesFor(normalizedSessionId) <= 1
+  ) {
     const ctx = buildSessionContext(user, normalizedSessionId);
     if (workDir && ctx.sources?.skills?.length > 0) {
       try { syncSkillsToWorkspace(workDir, ctx.sources.skills); }
