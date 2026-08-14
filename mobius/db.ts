@@ -852,6 +852,12 @@ function migrateHarnessSchema() {
     if (!runCols.includes('language')) {
       db.exec("ALTER TABLE harness_runs ADD COLUMN language TEXT NOT NULL DEFAULT 'zh' CHECK(language IN ('zh','en'))");
     }
+    if (!runCols.includes('excluded_skill_ids')) {
+      db.exec("ALTER TABLE harness_runs ADD COLUMN excluded_skill_ids TEXT NOT NULL DEFAULT '[]'");
+    }
+    if (!runCols.includes('excluded_memory_ids')) {
+      db.exec("ALTER TABLE harness_runs ADD COLUMN excluded_memory_ids TEXT NOT NULL DEFAULT '[]'");
+    }
     const profiles = [
       { id: 'system-codex-readonly-v1', name: 'Codex Read-only', backend: 'codex', model: 'codex' },
       { id: 'system-claude-readonly-v1', name: 'Claude Code Read-only', backend: 'claude-code', model: 'opus' },

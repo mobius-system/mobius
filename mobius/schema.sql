@@ -530,6 +530,8 @@ CREATE TABLE IF NOT EXISTS harness_runs (
   research_id TEXT,
   session_name TEXT,
   language TEXT NOT NULL DEFAULT 'zh' CHECK(language IN ('zh','en')),
+  excluded_skill_ids TEXT NOT NULL DEFAULT '[]',
+  excluded_memory_ids TEXT NOT NULL DEFAULT '[]',
   goal TEXT NOT NULL,
   execution_mode TEXT NOT NULL CHECK(execution_mode IN ('single','multi')),
   status TEXT NOT NULL DEFAULT 'created' CHECK(status IN ('created','planning','running','waiting_input','verifying','synthesizing','completed','failed','cancelling','cancelled')),

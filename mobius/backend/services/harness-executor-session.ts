@@ -4,6 +4,7 @@ import { Sessions } from '../repositories/sessions';
 import { Users } from '../repositories/users';
 import { parseHarnessMemberSnapshot, parseJsonColumn } from './harness-schema';
 import { runSessionMessage } from './session-message-runner';
+import { buildSessionSelectionSnapshot } from './session-context';
 import type {
   HarnessDispatchInput,
   HarnessDispatchOutcome,
@@ -16,6 +17,15 @@ type AnyRow = Record<string, any>;
 
 function deterministicSessionId(nodeId: string): string {
   return `hs_${crypto.createHash('sha256').update(nodeId).digest('hex').slice(0, 20)}`;
+}
+
+function storedIdList(value: unknown): string[] {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item.length > 0) : [];
+  } catch {
+    return [];
+  }
 }
 
 function nodeExecutionRows(nodeId: string): { run: AnyRow; node: AnyRow; member: AnyRow } {
@@ -53,6 +63,10 @@ export class MobiusSessionHarnessExecutor implements HarnessExecutor {
     const sessionId = deterministicSessionId(node.id);
     const currentSession = Sessions.findById(sessionId);
     if (!currentSession) {
+      const owner = Users.findAuthById(run.owner_user_id);
+      if (!owner) throw Object.assign(new Error('Harness Run 所有者不可用'), { code: 'harness_owner_missing' });
+      const excludedSkillIds = storedIdList(run.excluded_skill_ids);
+      const excludedMemoryIds = storedIdList(run.excluded_memory_ids);
       Sessions.insert({
         session_id: sessionId,
         issue_id: run.issue_id,
@@ -64,6 +78,14 @@ export class MobiusSessionHarnessExecutor implements HarnessExecutor {
           : `${run.session_name || 'Harness'} · ${node.path} - ${member.display_name}`,
         description: `Main/Sub Harness node ${node.id}`,
         session_key: `harness:${run.id}:${node.id}:0`,
+        excluded_skill_ids: excludedSkillIds,
+        excluded_memory_ids: excludedMemoryIds,
+        selection_snapshot: buildSessionSelectionSnapshot(
+          owner,
+          run.issue_id,
+          excludedSkillIds,
+          excludedMemoryIds,
+        ),
         model: profile.model,
         language: run.language || 'zh',
       });
@@ -87,7 +109,7 @@ export class MobiusSessionHarnessExecutor implements HarnessExecutor {
       content: prompt,
       requestId: input.requestId,
       source: 'harness.dispatch',
-      initialContextMode: 'provided',
+      initialContextMode: 'session',
       runtimeEnv: { MOBIUS_HARNESS_TOKEN: input.scopedToken },
     });
     return {

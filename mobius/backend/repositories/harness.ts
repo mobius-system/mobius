@@ -247,10 +247,12 @@ export function createHarnessRun(userId: string, projectId: string, request: Har
     const dispatchId = shortId('hd');
     const marker = `MOBIUS_HARNESS_DISPATCH[${dispatchId}]`;
     db.prepare(`INSERT INTO harness_runs
-      (id, owner_user_id, project_id, anchor_type, issue_id, session_name, language, goal, execution_mode, policy_json)
-      VALUES (?, ?, ?, 'issue', ?, ?, ?, ?, ?, ?)`)
+      (id, owner_user_id, project_id, anchor_type, issue_id, session_name, language,
+       excluded_skill_ids, excluded_memory_ids, goal, execution_mode, policy_json)
+      VALUES (?, ?, ?, 'issue', ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(runId, userId, projectId, request.issue_id, request.session_name?.trim() || null,
-        request.language || 'zh', request.goal.trim(), request.execution_mode, JSON.stringify(policy));
+        request.language || 'zh', JSON.stringify(request.excluded_skill_ids || []),
+        JSON.stringify(request.excluded_memory_ids || []), request.goal.trim(), request.execution_mode, JSON.stringify(policy));
     const insertMember = db.prepare(`INSERT INTO harness_run_members
       (id, run_id, profile_id, role, display_name, selection_order, config_snapshot_json)
       VALUES (?, ?, ?, ?, ?, ?, ?)`);
