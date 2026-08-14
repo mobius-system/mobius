@@ -46,6 +46,17 @@ class DatabaseFakeExecutor extends FakeHarnessExecutor {
   }
 }
 
+class FailingStartExecutor extends FakeHarnessExecutor {
+  constructor() {
+    super({ providesDeliveryConfirmation: true })
+    this.kind = 'fake-failing-start'
+  }
+
+  async startSession() {
+    throw new Error('configured backend is unavailable')
+  }
+}
+
 async function main() {
   try {
     const fixture = setup(db, tempRoot, 'orchestrator')
@@ -83,6 +94,18 @@ async function main() {
     assert.equal(db.prepare('SELECT status FROM harness_runs WHERE id=?').get(snapshot.run.id).status, 'completed')
     assert.equal(claimNextHarnessDispatch('test-worker'), null)
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM harness_dispatches WHERE run_id=?').get(snapshot.run.id).count, 1)
+
+    const failedFixture = setup(db, tempRoot, 'orchestrator_failed_start')
+    const failedRun = createHarnessRun(failedFixture.userId, failedFixture.projectId, {
+      ...rosterRequest(failedFixture, 'single'), request_id: 'orchestrator-failed-start-create',
+    })
+    const failedClaim = claimNextHarnessDispatch('test-worker-failed-start')
+    const failingRegistry = new HarnessExecutorRegistry()
+    failingRegistry.register(new FailingStartExecutor())
+    await deliverClaimedHarnessDispatch(failedClaim, failingRegistry)
+    assert.equal(db.prepare('SELECT status FROM harness_nodes WHERE id=?').get(failedClaim.node.id).status, 'failed')
+    assert.equal(db.prepare('SELECT status FROM harness_runs WHERE id=?').get(failedRun.run.id).status, 'failed')
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM harness_events WHERE run_id=? AND type='run.failed'").get(failedRun.run.id).count, 1)
 
     console.log('harness Phase 1 orchestrator tests passed')
   } finally {
