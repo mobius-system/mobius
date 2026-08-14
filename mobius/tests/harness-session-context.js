@@ -19,6 +19,8 @@ const { Sessions } = require('../backend/repositories/sessions')
 const modelRegistry = require('../backend/services/model-registry').default
 const agents = require('../backend/agents')
 const { resolveClaudeProxyMode } = require('../backend/agents/tmux-claude-code')
+const { runtimeEnvEntries } = require('../backend/agents/runtime-env')
+const { redactEnvironmentArgs } = require('../backend/agents/tmux-operation-log')
 
 async function main() {
   assert.deepEqual(resolveClaudeProxyMode(true, false), { forceNoProxy: false, useProxy: true })
@@ -69,6 +71,7 @@ async function main() {
       requestId: 'session-context-dispatch',
       prompt: 'HARNESS_ONLY_CONTEXT',
       receiptMarker: 'MOBIUS_HARNESS_DISPATCH[test-context]',
+      scopedToken: 'TEST_SCOPED_TOKEN',
     })
 
     assert.equal(captured.length, 1)
@@ -78,6 +81,20 @@ async function main() {
       'Harness prompt must be the sole initial context sent to the backend',
     )
     assert.ok(!captured[0].prompt.includes('Harness test issue'))
+    assert.ok(!captured[0].prompt.includes('TEST_SCOPED_TOKEN'))
+    assert.deepEqual(captured[0].runtimeEnv, { MOBIUS_HARNESS_TOKEN: 'TEST_SCOPED_TOKEN' })
+
+    assert.deepEqual(runtimeEnvEntries({ MOBIUS_HARNESS_TOKEN: 'token-value' }), [['MOBIUS_HARNESS_TOKEN', 'token-value']])
+    assert.throws(() => runtimeEnvEntries({ lower_case: 'value' }), /Invalid runtime environment key/)
+    assert.throws(() => runtimeEnvEntries({ MOBIUS_HARNESS_TOKEN: 'bad\0value' }), /Invalid runtime environment value/)
+    assert.throws(() => runtimeEnvEntries({ MOBIUS_HARNESS_TOKEN: 'x'.repeat(8193) }), /Invalid runtime environment value/)
+    assert.deepEqual(
+      redactEnvironmentArgs(
+        ['new-window', '-e', 'MOBIUS_HARNESS_TOKEN=secret-value', '-n', 'test-window'],
+        ['MOBIUS_HARNESS_TOKEN'],
+      ),
+      ['new-window', '-e', 'MOBIUS_HARNESS_TOKEN=***', '-n', 'test-window'],
+    )
 
     Sessions.insert({
       session_id: 'ordinary-session-context-test',
@@ -112,6 +129,17 @@ async function main() {
         initialContextMode: 'provided',
       }),
       (error) => error.status === 403 && error.category === 'initial_context_mode_forbidden',
+    )
+
+    await assert.rejects(
+      runSessionMessage({
+        user: fixture.user,
+        sessionId: 'ordinary-session-context-test',
+        content: 'RUNTIME_ENV_BYPASS_ATTEMPT',
+        source: 'http.session.messages',
+        runtimeEnv: { MOBIUS_HARNESS_TOKEN: 'forbidden' },
+      }),
+      (error) => error.status === 403 && error.category === 'runtime_env_forbidden',
     )
 
     console.log('harness session context isolation tests passed')

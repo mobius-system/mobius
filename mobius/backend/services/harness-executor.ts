@@ -13,6 +13,7 @@ export interface HarnessDispatchInput {
   requestId: string;
   prompt: string;
   receiptMarker: string;
+  scopedToken: string;
 }
 
 export type HarnessDeliveryEvidence = 'observed' | 'inferred' | 'absent' | 'unknown';
