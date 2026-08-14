@@ -92,7 +92,7 @@ function actionProtocol(input: {
     '```',
     '',
     '### Complete this node',
-    'Completion is a terminal action. Call this endpoint exactly once, only after the full result is ready. Never probe or test this endpoint with a minimal payload. The criterion_id values below exactly match this node Task Contract. Change scores or unresolved items when evidence does not justify success.',
+    'Completion is a terminal action. Call this endpoint exactly once, only after the full result is ready. Never probe or test this endpoint with a minimal payload. The criterion_id values below exactly match this node Task Contract. Change scores when evidence does not justify success. For status=succeeded, unresolved must be []; any unresolved entry is an acceptance blocker and the server will fail the node. Put non-blocking limitations in risks and future improvements in recommended_followups.',
     '```bash',
     ...curlCommand({
       method: 'POST',
