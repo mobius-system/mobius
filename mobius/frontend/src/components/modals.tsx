@@ -3207,7 +3207,7 @@ export function NewSessionModal({
                 )}
                 <div
                   data-tour="session-model-picker"
-                  className={`grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : supportsHarnessRoster ? 'max-h-[15rem]' : 'max-h-[13.5rem]'}`}
+                  className={`grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
                 >
                   {modelOptions.map(opt => {
                     const active = supportsHarnessRoster ? harnessModelKeys.includes(opt.key) : model === opt.key
@@ -3246,7 +3246,7 @@ export function NewSessionModal({
                           </span>
                         )}
                         <div className={`text-[13px] font-medium truncate ${supportsHarnessRoster ? 'pr-5' : ''}`}>{opt.title || opt.label}</div>
-                        <div className="text-[11px] flex flex-wrap items-baseline gap-x-1.5 min-w-0" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                        <div className={`text-[11px] flex flex-wrap items-baseline gap-x-1.5 min-w-0 ${supportsHarnessRoster && active ? 'pr-16' : ''}`} style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
                           <span className="truncate">{opt.sub}</span>
                           {!quotaBlocked && usage?.limit != null && (
                             <span className="font-medium whitespace-nowrap" style={{ color: quotaBlocked ? '#ef4444' : (isDark ? '#93c5fd' : '#2563eb') }}>
@@ -3276,22 +3276,21 @@ export function NewSessionModal({
                       )
                     }
                     return (
-                      <div key={opt.key} className="relative flex min-h-20 flex-col overflow-hidden rounded-xl transition-colors" style={cardStyle}>
+                      <div key={opt.key} className="relative h-16 overflow-hidden rounded-xl transition-colors" style={cardStyle}>
                         <button type="button" disabled={blocked} title={badgeTitle} aria-pressed={active}
                           onClick={() => toggleHarnessModel(opt)}
-                          className="relative min-h-16 flex-1 px-3 py-2 text-left disabled:cursor-not-allowed">
+                          className="relative h-full w-full px-3 py-2 text-left disabled:cursor-not-allowed">
                           {cardBody}
                         </button>
                         {active && (
                           <button type="button" onClick={() => chooseHarnessMain(opt)} disabled={isMain || quotaBlocked}
-                            className="flex h-7 items-center justify-center gap-1 border-t px-2 text-[10px] font-medium transition-colors disabled:cursor-default"
+                            className="absolute bottom-1.5 right-2 z-10 inline-flex h-5 items-center justify-center gap-1 rounded px-1.5 text-[9px] font-medium transition-colors disabled:cursor-default"
                             style={{
-                              borderColor: isMain ? 'rgba(245,158,11,0.35)' : 'var(--input-border)',
                               background: isMain ? 'rgba(245,158,11,0.12)' : 'transparent',
                               color: isMain ? (isDark ? '#fcd34d' : '#b45309') : (isDark ? '#93c5fd' : '#1d4ed8'),
                             }}>
                             {isMain && <Crown className="h-3 w-3" strokeWidth={2} />}
-                            {isMain ? 'Main Agent' : '设为 Main'}
+                            {isMain ? 'Main' : '设为 Main'}
                           </button>
                         )}
                       </div>
