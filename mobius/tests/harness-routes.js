@@ -43,6 +43,8 @@ async function main() {
     assert.equal(profiles.response.status, 200)
     assert.ok(profiles.body.some((profile) => profile.backend === 'codex'))
     assert.ok(profiles.body.some((profile) => profile.backend === 'claude-code'))
+    assert.ok(profiles.body.filter((profile) => profile.backend === 'claude-code')
+      .every((profile) => profile.default_model === profile.definition.model))
 
     const invalid = await request('/api/harness-runs/estimate', {
       method: 'POST', body: JSON.stringify({ ...rosterRequest(fixture, 'single'), roster: { main_member_key: 'missing', members: rosterRequest(fixture, 'single').roster.members } }),

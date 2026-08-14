@@ -86,12 +86,57 @@ function profileFromRow(row: AnyRow): ResolvedHarnessProfile {
 }
 
 export function listVisibleHarnessProfiles(userId: string, projectId: string): ResolvedHarnessProfile[] {
+  syncAvailableClaudeHarnessProfiles();
   syncAvailableDeepSeekHarnessProfiles();
   const rows = db.prepare(`SELECT * FROM harness_profiles
     WHERE is_enabled = 1 AND (
       scope = 'system' OR (scope = 'project' AND project_id = ?) OR (scope = 'user' AND owner_user_id = ?)
     ) ORDER BY CASE scope WHEN 'system' THEN 0 WHEN 'project' THEN 1 ELSE 2 END, name ASC`).all(projectId, userId) as AnyRow[];
   return rows.map(profileFromRow);
+}
+
+function syncAvailableClaudeHarnessProfiles(): void {
+  const options = modelRegistry.listSessionModelOptions()
+    .filter((option: AnyRow) => option.backend === 'tmux-claude-code');
+  const insert = db.prepare(`INSERT OR IGNORE INTO harness_profiles
+    (id, scope, name, description, backend, default_model, capabilities_json, definition_json, version)
+    VALUES (?, 'system', ?, 'Configured Claude Code read-only profile', 'claude-code', ?, ?, ?, 1)`);
+  for (const option of options) {
+    const capabilities = {
+      can_main: true,
+      can_work: true,
+      can_evaluate: true,
+      supports_write: false,
+      supports_network: false,
+      supports_runtime_verification: false,
+      max_concurrency: 1,
+    };
+    const model = String(option.value || option.key);
+    const profileId = `system-claude-${crypto.createHash('sha256').update(model).digest('hex').slice(0, 16)}-v1`;
+    insert.run(
+      profileId,
+      String(option.label || 'Claude Code Read-only'),
+      model,
+      JSON.stringify(capabilities),
+      JSON.stringify({
+        schema_version: '1.1',
+        backend: 'claude-code',
+        model,
+        capabilities,
+        model_traits: {
+          needs_context_reset: false,
+          context_window_tokens: 0,
+          supports_auto_compaction: true,
+          calibrated: false,
+        },
+        skills: [],
+        tools: { allow: [], deny: [], capability_tags: [] },
+        cost_profile: { relative_cost_factor: 1 },
+        default_context_policy: {},
+        default_tool_policy: { workspace_mode: 'read_only' },
+      }),
+    );
+  }
 }
 
 function syncAvailableDeepSeekHarnessProfiles(): void {
