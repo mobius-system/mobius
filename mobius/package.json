@@ -38,6 +38,11 @@
     "test:deepseek-harness-backend": "node --require tsx/cjs tests/deepseek-harness-backend.js",
     "test:deepseek-harness-model-access": "node --require tsx/cjs tests/deepseek-harness-model-access.js",
     "test:deepseek-harness-runtime": "\"${DEEPSEEK_HARNESS_NODE:?set DEEPSEEK_HARNESS_NODE to a Node 22.19+ or 24+ executable}\" tests/deepseek-harness-runtime-smoke.mjs",
+    "test:harness-state-machine": "node --require tsx/cjs tests/harness-state-machine.js",
+    "test:harness-context-boundary": "node --require tsx/cjs tests/harness-context-boundary.js",
+    "test:harness-executor": "node --require tsx/cjs tests/harness-executor.js",
+    "test:harness-db-constraints": "node --require tsx/cjs tests/harness-db-constraints.js",
+    "test:harness": "npm run test:harness-state-machine && npm run test:harness-context-boundary && npm run test:harness-executor && npm run test:harness-db-constraints",
     "test:self-test": "node tests/self-test.js",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",
     "start:tsx": "tsx server.js"

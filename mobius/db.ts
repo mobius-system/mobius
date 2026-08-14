@@ -27,6 +27,11 @@ fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const db: Database.Database = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+const configuredBusyTimeout = Number.parseInt(process.env.MOBIUS_DB_BUSY_TIMEOUT_MS || '5000', 10);
+const busyTimeoutMs = Number.isFinite(configuredBusyTimeout)
+  ? Math.max(100, Math.min(configuredBusyTimeout, 60_000))
+  : 5000;
+db.pragma(`busy_timeout = ${busyTimeoutMs}`);
 
 // ===== 共享表 bootstrap (transfer.md 阻塞 #1) =====
 // 空库(新机/容器)自建 users/projects/issues/sessions/messages/skills 等"共享表";
@@ -819,6 +824,80 @@ function migrateSessionsV2AgentStatusEnum() {
   }
 }
 migrateSessionsV2AgentStatusEnum();
+
+// ===== Main/Sub Harness core schema =====
+// schema.sql handles empty databases. Replaying only its Harness block here is
+// the explicit, idempotent migration path for existing databases. This runs
+// after the sessions_v2 rebuild migrations because those temporarily disable
+// connection-level foreign key enforcement.
+function migrateHarnessSchema() {
+  const marker = '-- ===== Harness core schema (Phase 0) =====';
+  const endMarker = '-- ===== End Harness core schema =====';
+  const schemaPath = path.join(__dirname, 'schema.sql');
+  const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+  const markerIndex = schemaSql.indexOf(marker);
+  if (markerIndex < 0) throw new Error('Harness schema marker is missing from schema.sql');
+  const endMarkerIndex = schemaSql.indexOf(endMarker, markerIndex);
+  if (endMarkerIndex < 0) throw new Error('Harness schema end marker is missing from schema.sql');
+  const harnessSql = schemaSql.slice(markerIndex, endMarkerIndex + endMarker.length);
+  if (Number(db.pragma('foreign_keys', { simple: true })) !== 1) {
+    throw new Error('Harness migration refused because PRAGMA foreign_keys is disabled');
+  }
+  const migrate = db.transaction(() => {
+    db.exec(harnessSql);
+    const profiles = [
+      { id: 'system-codex-readonly-v1', name: 'Codex Read-only', backend: 'codex', model: 'codex' },
+      { id: 'system-claude-readonly-v1', name: 'Claude Code Read-only', backend: 'claude-code', model: 'opus' },
+    ];
+    const insertProfile = db.prepare(`
+      INSERT OR IGNORE INTO harness_profiles
+        (id, scope, name, description, backend, default_model, capabilities_json, definition_json, version)
+      VALUES (?, 'system', ?, 'Built-in conservative read-only profile', ?, ?, ?, ?, 1)
+    `);
+    for (const profile of profiles) {
+      const capabilities = {
+        can_main: true,
+        can_work: true,
+        can_evaluate: true,
+        supports_write: false,
+        supports_network: false,
+        supports_runtime_verification: false,
+        max_concurrency: 1,
+      };
+      insertProfile.run(
+        profile.id,
+        profile.name,
+        profile.backend,
+        profile.model,
+        JSON.stringify(capabilities),
+        JSON.stringify({
+          schema_version: '1.1',
+          backend: profile.backend,
+          model: profile.model,
+          capabilities,
+          model_traits: {
+            needs_context_reset: false,
+            context_window_tokens: 0,
+            supports_auto_compaction: false,
+            calibrated: false,
+          },
+          skills: [],
+          tools: { allow: [], deny: [], capability_tags: [] },
+          cost_profile: { relative_cost_factor: 1 },
+          default_context_policy: {},
+          default_tool_policy: { workspace_mode: 'read_only' },
+        }),
+      );
+    }
+  });
+  migrate();
+  const foreignKeys = Number(db.pragma('foreign_keys', { simple: true }));
+  if (foreignKeys !== 1) {
+    throw new Error('Harness migration requires PRAGMA foreign_keys = ON');
+  }
+  console.log(`[mobius/db] ✅ Harness schema ready (busy_timeout=${busyTimeoutMs}ms)`);
+}
+migrateHarnessSchema();
 
 // ===== sessions_v2 轻量迁移: 每个 Session 的注入上下文语言 =====
 // 存量 session 默认 'zh', 保持此前中文注入行为; 新建 Session 由前端/路由显式写入。
