@@ -99,6 +99,12 @@ const designerEyeRoutes = require('./backend/routes/designer-eye/router');
 const extRoutes = require('./backend/routes/ext');
 const aimuxRoutes = require('./backend/routes/aimux');
 const aimuxBridgeProxy = require('./backend/routes/aimux-bridge-proxy');
+const {
+  profilesRouter: harnessProfilesRouter,
+  runsRouter: harnessRunsRouter,
+  internalRouter: harnessInternalRouter,
+} = require('./backend/routes/harnesses');
+const { startHarnessOrchestrator } = require('./backend/services/harness-orchestrator');
 // 黑客帝国数字雨: /api/token_stream 反代到本机 token-proxy (server.ts).
 const { router: tokenStreamProxyRouter } = require('./backend/routes/token-stream-proxy');
 const extensionRegistry = require('./backend/services/extension-registry');
@@ -132,6 +138,9 @@ app.use('/api/memories', memoryJsonParser, memoriesRoutes);
 app.use('/api/admin/designer-eye', designerEyeRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/aimux', aimuxRoutes);
+app.use('/api/harness-profiles', harnessProfilesRouter);
+app.use('/api/harness-runs', harnessRunsRouter);
+app.use('/api/harness-internal', harnessInternalRouter);
 // /api/token_stream → 本机 token-proxy (数字雨 token 环形缓冲, SSE live tail).
 app.use('/api/token_stream', tokenStreamProxyRouter);
 // /aimux_bridge/* → 内置 aimux bridge broker (127.0.0.1:AIMUX_BRIDGE_PORT).
@@ -157,6 +166,10 @@ app.use('/_next', extRoutes.unprefixedNextRouter);
 // 放在所有 /api/<具体> 之后: 那些已先匹配响应, 不会落到这里.
 app.use('/api', filesRoutes);
 app.use('/api/health', healthRoutes);
+
+// Harness uses an immediate kick plus an unref'ed adaptive recovery scan.
+// All process/model dispatch happens after its SQLite claim transaction commits.
+startHarnessOrchestrator();
 
 // ===== code-server 反向代理(v1.9 主栈, 从旧 gateway 移植) =====
 // /code-server/<userId>__<projectId>/* → per-(user, project) lazy spawn 的 code-server 进程
