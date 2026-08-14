@@ -138,11 +138,18 @@ export function verifySubmittedHarnessNode(nodeId: string): void {
     const toSynthesizing = evaluateRunTransition({ from: 'verifying', to: 'synthesizing', actor: 'orchestrator' });
     const toCompleted = evaluateRunTransition({ from: 'synthesizing', to: 'completed', actor: 'orchestrator' });
     if (!toSynthesizing.accepted || !toCompleted.accepted) throw new Error('Run finalize 状态机拒绝合法转换');
-    db.prepare(`UPDATE harness_runs SET status='completed', final_result_json=?, completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
-      updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), version=version+3 WHERE id=? AND version=?`)
-      .run(JSON.stringify(decision.result), run.id, run.version);
+    const verifyingUpdate = db.prepare(`UPDATE harness_runs SET status='verifying', version=version+1,
+      updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND version=?`).run(run.id, run.version);
+    if (verifyingUpdate.changes !== 1) throw Object.assign(new Error('Run finalize 进入 verifying 时发生版本冲突'), { code: 'version_conflict' });
     appendHarnessEvent({ runId: run.id, type: 'run.verifying', fromNodeId: node.id, payload: {} });
+    const synthesizingUpdate = db.prepare(`UPDATE harness_runs SET status='synthesizing', version=version+1,
+      updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND version=?`).run(run.id, run.version + 1);
+    if (synthesizingUpdate.changes !== 1) throw Object.assign(new Error('Run finalize 进入 synthesizing 时发生版本冲突'), { code: 'version_conflict' });
     appendHarnessEvent({ runId: run.id, type: 'run.synthesizing', fromNodeId: node.id, payload: {} });
+    const completedUpdate = db.prepare(`UPDATE harness_runs SET status='completed', final_result_json=?,
+      completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+      version=version+1 WHERE id=? AND version=?`).run(JSON.stringify(decision.result), run.id, run.version + 2);
+    if (completedUpdate.changes !== 1) throw Object.assign(new Error('Run finalize 进入 completed 时发生版本冲突'), { code: 'version_conflict' });
     appendHarnessEvent({ runId: run.id, type: 'run.completed', fromNodeId: node.id, payload: { final_result: decision.result } });
   });
   transaction.immediate();
