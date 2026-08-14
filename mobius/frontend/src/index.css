@@ -5813,16 +5813,6 @@ body.mobius-resizing .mobius-resizable-handle {
   cursor: col-resize;
 }
 
-/* 会话资源侧栏由用户拖拽控制宽度，按组件实际宽度而非视口断点调整页签。
-   极窄时改为 2x2，避免 Skill / Memory / 端口标签被省略。 */
-.session-resource-editor {
-  container-type: inline-size;
-}
-@container (max-width: 260px) {
-  .session-resource-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 @media (max-width: 900px) {
   .mobius-chat-body {
     flex-direction: column;

@@ -841,8 +841,8 @@ export function SessionSkillMemoryEditor({
     <>
       <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2">
         {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
-            下划线 tab 样式: 四个 tab 紧挨成 tab 条, 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
-        <div className="session-resource-tabs grid grid-cols-4 items-stretch">
+            四个 tab 始终保持单行并等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
+        <div className="session-resource-tabs grid grid-cols-[repeat(4,minmax(0,1fr))] items-stretch">
           <button
             type="button"
             onClick={() => setActivePanelAndPersist(activePanel === 'skill' ? null : 'skill')}
