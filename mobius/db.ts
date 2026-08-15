@@ -447,6 +447,8 @@ db.exec(`
     owner_user_id TEXT NOT NULL,
     source_session_id TEXT NOT NULL,
     target_session_id TEXT NOT NULL,
+    batch_id TEXT,
+    thread_id TEXT,
     mode TEXT NOT NULL DEFAULT 'bidirectional' CHECK(mode = 'bidirectional'),
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','closed','expired','exhausted')),
     max_messages INTEGER NOT NULL DEFAULT 100,
@@ -469,6 +471,9 @@ db.exec(`
     request_id TEXT NOT NULL,
     from_session_id TEXT NOT NULL,
     to_session_id TEXT NOT NULL,
+    batch_id TEXT,
+    thread_id TEXT,
+    in_reply_to_message_id INTEGER,
     content TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','delivered','failed','rejected')),
     -- delivery_state 描述消息是否已送入目标 Harness; status 保留兼容旧查询语义。
@@ -492,6 +497,14 @@ db.exec(`
 // agent_bridge_messages 扩展迁移: 旧库保留原 status 约束, 新字段承载 L5 投递/接收状态。
 (() => {
   try {
+    const channelCols = db.prepare('PRAGMA table_info(agent_bridge_channels)').all().map((c: any) => c.name);
+    const channelMigrations: Array<[string, string]> = [
+      ['batch_id', 'ALTER TABLE agent_bridge_channels ADD COLUMN batch_id TEXT'],
+      ['thread_id', 'ALTER TABLE agent_bridge_channels ADD COLUMN thread_id TEXT'],
+    ];
+    for (const [name, sql] of channelMigrations) {
+      if (!channelCols.includes(name)) db.exec(sql);
+    }
     const cols = db.prepare('PRAGMA table_info(agent_bridge_messages)').all().map((c: any) => c.name);
     const migrations: Array<[string, string]> = [
       ['delivery_state', "ALTER TABLE agent_bridge_messages ADD COLUMN delivery_state TEXT NOT NULL DEFAULT 'queued'"],
@@ -500,6 +513,9 @@ db.exec(`
       ['accepted_at', 'ALTER TABLE agent_bridge_messages ADD COLUMN accepted_at TEXT'],
       ['decision_at', 'ALTER TABLE agent_bridge_messages ADD COLUMN decision_at TEXT'],
       ['expires_at', 'ALTER TABLE agent_bridge_messages ADD COLUMN expires_at TEXT'],
+      ['batch_id', 'ALTER TABLE agent_bridge_messages ADD COLUMN batch_id TEXT'],
+      ['thread_id', 'ALTER TABLE agent_bridge_messages ADD COLUMN thread_id TEXT'],
+      ['in_reply_to_message_id', 'ALTER TABLE agent_bridge_messages ADD COLUMN in_reply_to_message_id INTEGER'],
     ];
     for (const [name, sql] of migrations) {
       if (!cols.includes(name)) db.exec(sql);
@@ -518,6 +534,10 @@ db.exec(`
       WHERE expires_at IS NULL;
       CREATE INDEX IF NOT EXISTS idx_agent_bridge_messages_target_state
         ON agent_bridge_messages(to_session_id, delivery_state, decision, id);
+      CREATE INDEX IF NOT EXISTS idx_agent_bridge_channels_batch
+        ON agent_bridge_channels(batch_id, thread_id, status);
+      CREATE INDEX IF NOT EXISTS idx_agent_bridge_messages_digest
+        ON agent_bridge_messages(to_session_id, batch_id, thread_id, delivery_state, id);
     `);
   } catch (e) {
     console.warn('[mobius/db] ⚠️ agent_bridge_messages L5 状态迁移失败:', (e as Error).message);
