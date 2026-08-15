@@ -3053,7 +3053,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   const [remoteFileDrawerOpen, setRemoteFileDrawerOpen] = useState(false)
   const remoteMentionRangeRef = useRef<{ start: number; end: number } | null>(null)
   const [mentionQuery, setMentionQuery] = useState('')
-  const [selectedAgentMention, setSelectedAgentMention] = useState<{
+  const [selectedAgentMentions, setSelectedAgentMentions] = useState<Array<{
     sessionId: string
     name: string
     mode: AgentMentionMode
@@ -3061,7 +3061,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     scopeType?: 'issue' | 'research' | null
     scopeTitle?: string
     contextAt?: string | null
-  } | null>(null)
+  }>>([])
   // IME 合成状态守卫: macOS 系统拼音输入法打字母时(合成进行中)按回车, 本意是确认候选字/上屏
   // 字母, 不应触发发送. Chromium on macOS 合成中的 keydown(Enter) 其 isComposing===true,
   // 但原代码 onKeyDown 没检查 isComposing, 直接 preventDefault+send() 抢在 IME 前面发送了
@@ -3113,7 +3113,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     const nextValue = `${currentValue.slice(0, start)}${absolutePath}${trailingSpace}${suffix}`
     const caret = start + absolutePath.length + trailingSpace.length
     setInput(nextValue)
-    setSelectedAgentMention(null)
     remoteMentionRangeRef.current = null
     setMentionQuery('')
     setRemoteFileDrawerOpen(false)
@@ -3138,14 +3137,19 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     const nextValue = `${currentValue.slice(0, start)}${label}${trailingSpace}${suffix}`
     const caret = start + label.length + trailingSpace.length
     setInput(nextValue)
-    setSelectedAgentMention({
-      sessionId: agent.session_id,
-      name: agent.name || agent.session_id,
-      mode,
-      projectName: agent.project_name,
-      scopeType: agent.scope_type || null,
-      scopeTitle: agent.scope_type === 'research' ? agent.research_title : agent.issue_title,
-      contextAt: agent.last_active || null,
+    setSelectedAgentMentions((current) => {
+      const selected = {
+        sessionId: agent.session_id,
+        name: agent.name || agent.session_id,
+        mode,
+        projectName: agent.project_name,
+        scopeType: agent.scope_type || null,
+        scopeTitle: agent.scope_type === 'research' ? agent.research_title : agent.issue_title,
+        contextAt: agent.last_active || null,
+      }
+      const existingIndex = current.findIndex((item) => item.sessionId === agent.session_id)
+      if (existingIndex < 0) return [...current, selected]
+      return current.map((item, index) => index === existingIndex ? selected : item)
     })
     remoteMentionRangeRef.current = null
     setMentionQuery('')
@@ -3163,7 +3167,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   useEffect(() => {
     remoteMentionRangeRef.current = null
     setMentionQuery('')
-    setSelectedAgentMention(null)
+    setSelectedAgentMentions([])
     setRemoteFileDrawerOpen(false)
   }, [sessionId])
   const loadHistoryRef = useRef<() => void>(() => {})
@@ -3839,23 +3843,21 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     const sentSessionId = sessionId
     const sentInput = input
     const requestId = makeSendRequestId()
-    const mentionPayload = selectedAgentMention
-      ? [{
+    const mentionPayload = selectedAgentMentions.map((mention) => ({
           kind: 'agent',
-          session_id: selectedAgentMention.sessionId,
-          mode: selectedAgentMention.mode,
-          name: selectedAgentMention.name,
-        }]
-      : []
-    const optimisticSessionMentions = selectedAgentMention ? [{
-      session_id: selectedAgentMention.sessionId,
-      name: selectedAgentMention.name,
-      mode: selectedAgentMention.mode,
-      project_name: selectedAgentMention.projectName,
-      scope_type: selectedAgentMention.scopeType,
-      scope_title: selectedAgentMention.scopeTitle,
-      context_at: selectedAgentMention.contextAt || new Date().toISOString(),
-    }] : []
+          session_id: mention.sessionId,
+          mode: mention.mode,
+          name: mention.name,
+        }))
+    const optimisticSessionMentions = selectedAgentMentions.map((mention) => ({
+      session_id: mention.sessionId,
+      name: mention.name,
+      mode: mention.mode,
+      project_name: mention.projectName,
+      scope_type: mention.scopeType,
+      scope_title: mention.scopeTitle,
+      context_at: mention.contextAt || new Date().toISOString(),
+    }))
     setLastSendError('')
     addMessage({ role: 'user', content, session_mentions: optimisticSessionMentions })
     pendingUrgentRef.current = urgent
@@ -3870,8 +3872,11 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
         const queued = Array.isArray(resp?.external_messages_queued)
           ? resp.external_messages_queued.filter((item: any) => item?.delivery === 'queued')
           : []
-        if (queued.length > 0 && selectedAgentMention) {
-          setBridgeQueueNotice(`已通知 ${selectedAgentMention.name}，等待对方空闲后投递`)
+        if (queued.length > 0) {
+          const queuedIds = new Set(queued.map((item: any) => String(item.target_session_id || '')))
+          const queuedNames = selectedAgentMentions.filter((item) => queuedIds.has(item.sessionId)).map((item) => item.name)
+          const targetLabel = queuedNames.length <= 2 ? queuedNames.join('、') : `${queuedNames.slice(0, 2).join('、')} 等 ${queuedNames.length} 个 Session`
+          setBridgeQueueNotice(`已通知 ${targetLabel || `${queued.length} 个 Session`}，等待目标空闲后投递`)
           if (bridgeQueueNoticeTimerRef.current !== null) window.clearTimeout(bridgeQueueNoticeTimerRef.current)
           bridgeQueueNoticeTimerRef.current = window.setTimeout(() => {
             setBridgeQueueNotice(null)
@@ -3880,13 +3885,13 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
         }
         setEditingMsg(null)
         clearAttachments()
-        setSelectedAgentMention(null)
+        setSelectedAgentMentions([])
         inputRef.current?.focus()
         setTimeout(() => loadHistoryRef.current(), 500)
       })
       .catch(() => { inputRef.current?.focus() })
       .finally(() => setMessageSubmitting(false))
-  }, [input, replyTo, sessionId, addMessage, attachments, anyUploading, messageSubmitting, clearAttachments, postSessionMessage, clearSessionInputDraft, voiceState, selectedAgentMention])
+  }, [input, replyTo, sessionId, addMessage, attachments, anyUploading, messageSubmitting, clearAttachments, postSessionMessage, clearSessionInputDraft, voiceState, selectedAgentMentions])
 
   const sendProjectKnowledgePrompt = useCallback(async () => {
     if (!sessionId || projectKnowledgeSending) return
@@ -4579,24 +4584,26 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                   ))}
                 </div>
               )}
-              {selectedAgentMention && (
-                <div className="mb-2 flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: 'rgba(59,130,246,0.25)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-primary)' }}>
-                  <Bot className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
-                  <span className="min-w-0 flex-1 truncate">
-                    @{selectedAgentMention.name}
-                  </span>
-                  <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'rgba(59,130,246,0.22)', color: 'var(--text-muted)' }}>
-                    {selectedAgentMention.mode === 'bidirectional' ? '双向' : '只读'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedAgentMention(null)}
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-card-hover)]"
-                    style={{ color: 'var(--text-muted)' }}
-                    aria-label="移除智能体 @ 目标"
-                  >
-                    <X className="h-3.5 w-3.5" strokeWidth={1.8} />
-                  </button>
+              {selectedAgentMentions.length > 0 && (
+                <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                  {selectedAgentMentions.map((mention) => (
+                    <div key={mention.sessionId} className="flex min-w-0 max-w-full items-center gap-2 rounded-md border px-2 py-1.5 text-[12px]" style={{ borderColor: 'rgba(59,130,246,0.25)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-primary)' }}>
+                      <Bot className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
+                      <span className="max-w-48 truncate">@{mention.name}</span>
+                      <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'rgba(59,130,246,0.22)', color: 'var(--text-muted)' }}>
+                        {mention.mode === 'bidirectional' ? '双向' : '只读'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAgentMentions((current) => current.filter((item) => item.sessionId !== mention.sessionId))}
+                        className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--bg-card-hover)]"
+                        style={{ color: 'var(--text-muted)' }}
+                        aria-label={`移除智能体 ${mention.name}`}
+                      >
+                        <X className="h-3.5 w-3.5" strokeWidth={1.8} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
               <textarea ref={inputRef} value={input} onChange={handleChatInputChange}

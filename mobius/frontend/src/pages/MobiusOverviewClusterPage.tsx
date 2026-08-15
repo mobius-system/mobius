@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { api, useStore } from '../store'
 import { TopNav, timeAgoPrecise } from '../components/shell'
+import { pollRecursive } from '../services/polling'
 
 type TimeRangeKey = '24h' | '48h' | '72h' | '7d' | '30d'
 type ClusterMode = 'project' | 'creator'
@@ -40,6 +41,15 @@ type ClusterModel = {
   parentClusters: ParentCluster[]
   projectClusters: ProjectCluster[]
   creatorClusters: CreatorCluster[]
+}
+
+type BridgeEdge = {
+  source_session_id: string
+  target_session_id: string
+  channel_ids: string[]
+  accepted: boolean
+  queued_count: number
+  last_active?: string
 }
 
 type ClusterSession = {
@@ -1767,6 +1777,7 @@ export default function MobiusOverviewClusterPage() {
   })
   const [timeRange, setTimeRange] = useState<TimeRangeKey>('24h')
   const [graphDataByProject, setGraphDataByProject] = useState<Record<string, ProjectGraphData>>({})
+  const [bridgeEdges, setBridgeEdges] = useState<BridgeEdge[]>([])
   const [loadingIds, setLoadingIds] = useState<Set<string>>(() => new Set())
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Selection | null>(null)
@@ -1776,6 +1787,7 @@ export default function MobiusOverviewClusterPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const modelRef = useRef<ClusterModel>({ mode: clusterMode, nodes: [], parentClusters: [], projectClusters: [], creatorClusters: [] })
+  const bridgeEdgesRef = useRef<BridgeEdge[]>([])
   const selectedRef = useRef<Selection | null>(null)
   const didInitialFitRef = useRef(false)
   const pendingAutoFitRef = useRef(true)
@@ -1832,6 +1844,17 @@ export default function MobiusOverviewClusterPage() {
       .then((arr: any[]) => setProjects(sortByRecent(arr || [])))
       .catch((e: any) => setError(e?.message || '项目加载失败'))
   }, [setProjects])
+
+  useEffect(() => {
+    return pollRecursive(async (signal) => {
+      try {
+        const result: any = await api('/api/agent-bridge/edges', { signal })
+        setBridgeEdges(Array.isArray(result?.edges) ? result.edges : [])
+      } catch (e: any) {
+        if (e?.name !== 'AbortError') setError(e?.message || '通信关系加载失败')
+      }
+    }, 10_000, 10_000)
+  }, [])
 
   const candidateProjects = useMemo(
     () => sortByRecent((projects || []).filter((project: any) => (
@@ -2009,6 +2032,31 @@ export default function MobiusOverviewClusterPage() {
       ctx.stroke()
     })
 
+    const nodeById = new Map(nodes.map((node) => [node.id, node]))
+    bridgeEdgesRef.current.forEach((edge) => {
+      const source = nodeById.get(edge.source_session_id)
+      const target = nodeById.get(edge.target_session_id)
+      if (!source || !target) return
+      ctx.save()
+      ctx.beginPath()
+      ctx.moveTo(source.x, source.y)
+      ctx.lineTo(target.x, target.y)
+      ctx.lineWidth = (edge.accepted ? 1.8 : 1.25) / zoomRef.current
+      ctx.strokeStyle = edge.accepted ? 'rgba(34,197,94,0.68)' : 'rgba(148,163,184,0.48)'
+      ctx.setLineDash(edge.accepted ? [] : [5 / zoomRef.current, 5 / zoomRef.current])
+      ctx.stroke()
+      if (edge.queued_count > 0) {
+        const midX = (source.x + target.x) / 2
+        const midY = (source.y + target.y) / 2
+        ctx.setLineDash([])
+        ctx.beginPath()
+        ctx.arc(midX, midY, 3.5 / zoomRef.current, 0, Math.PI * 2)
+        ctx.fillStyle = 'rgba(250,204,21,0.9)'
+        ctx.fill()
+      }
+      ctx.restore()
+    })
+
     if (zoomRef.current > 0.35) {
       if (mode === 'creator') {
         creatorClusters.forEach((cluster) => {
@@ -2079,6 +2127,11 @@ export default function MobiusOverviewClusterPage() {
   useEffect(() => {
     selectedRef.current = selected
   }, [selected])
+
+  useEffect(() => {
+    bridgeEdgesRef.current = bridgeEdges
+    draw()
+  }, [bridgeEdges, draw])
 
   useEffect(() => {
     const previous = modelRef.current

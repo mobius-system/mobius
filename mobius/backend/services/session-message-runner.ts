@@ -13,6 +13,7 @@ import { aimuxRemoteNameFromMeta } from './pc-client-context';
 import {
   buildBidirectionalMentionPrompt,
   externalSessionWakePrompt,
+  externalSessionDigestWakePrompt,
   closeAgentBridgeChannel,
   createAgentBridgeChannel,
   buildReadOnlyMentionPrompt,
@@ -29,6 +30,7 @@ import {
   safeWriteFailedFlag,
 } from '../utils/session-flags';
 import { db } from '../../db';
+import { randomUUID } from 'crypto';
 
 function httpError(message: string, status: number = 500, category: string = ''): Error {
   const err = new Error(message) as Error & { status?: number; category?: string };
@@ -64,6 +66,14 @@ export type ExternalSessionEvent = {
   sourceSessionName?: string;
   targetSessionId: string;
   token: string;
+  batchId?: string | null;
+  threadId?: string | null;
+  messages?: Array<{
+    messageId: number;
+    channelId: string;
+    sourceSessionId: string;
+    sourceSessionName?: string;
+  }>;
 };
 
 type InitialContextMode = 'session' | 'provided';
@@ -113,7 +123,7 @@ function resolveSessionJsonlPath(session: any, sessionId: string): string | null
 
 function normalizeAgentMentions(mentions: any, content: string = ''): NormalizedAgentMention[] {
   if (!Array.isArray(mentions)) return [];
-  const seen = new Set<string>();
+  const indexBySession = new Map<string, number>();
   const output: NormalizedAgentMention[] = [];
   for (const raw of mentions) {
     if (!raw || typeof raw !== 'object') continue;
@@ -124,9 +134,12 @@ function normalizeAgentMentions(mentions: any, content: string = ''): Normalized
     const mode = String(raw.mode || raw.mention_mode || raw.agent_mode || '').trim() === 'bidirectional'
       ? 'bidirectional'
       : 'read_only';
-    const key = `${sessionId}:${mode}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const existingIndex = indexBySession.get(sessionId);
+    if (existingIndex != null) {
+      if (mode === 'bidirectional') output[existingIndex] = { sessionId, mode };
+      continue;
+    }
+    indexBySession.set(sessionId, output.length);
     output.push({ sessionId, mode });
   }
   // 支持从别的页面直接复制 `session=<id>`，也支持 `@session=<id>`。
@@ -135,8 +148,8 @@ function normalizeAgentMentions(mentions: any, content: string = ''): Normalized
   for (const raw of copiedIds) {
     const match = raw.match(/session=([A-Za-z0-9_-]{4,128})/i);
     const sessionId = match?.[1]?.trim();
-    if (!sessionId || seen.has(`${sessionId}:read_only`)) continue;
-    seen.add(`${sessionId}:read_only`);
+    if (!sessionId || indexBySession.has(sessionId)) continue;
+    indexBySession.set(sessionId, output.length);
     output.push({ sessionId, mode: 'read_only' });
   }
   return output;
@@ -264,8 +277,9 @@ async function runSessionMessage({
   if (!isExternalEvent && !normalizedContent.trim() && normalizedAttachments.length === 0) {
     throw httpError('content 不能为空', 400);
   }
+  const externalMessageIds = externalEvent?.messages?.map((message) => message.messageId) || (externalEvent ? [externalEvent.messageId] : []);
   const displayContent = isExternalEvent
-    ? `[外部 Session 通知 ${externalEvent?.messageId || ''}]`
+    ? `[外部 Session 通知 ${externalMessageIds.filter(Boolean).join(', ')}]`
     : normalizedContent.trim()
     ? normalizedContent
     : sessionContentWithAttachments('', normalizedAttachments);
@@ -324,12 +338,23 @@ async function runSessionMessage({
       targetSessionId: externalEvent?.targetSessionId,
       messageId: externalEvent?.messageId,
       channelId: externalEvent?.channelId,
+      batchId: externalEvent?.batchId || null,
+      threadId: externalEvent?.threadId || null,
+      externalMessages: externalEvent?.messages || null,
     } : {}),
     timestamp: new Date().toISOString(),
   };
 
   let finalContent = isExternalEvent
-    ? externalSessionWakePrompt({
+    ? externalEvent!.messages && externalEvent!.messages.length > 1
+      ? externalSessionDigestWakePrompt({
+          messages: externalEvent!.messages,
+          targetSession: sess,
+          token: externalEvent!.token,
+          batchId: externalEvent!.batchId,
+          threadId: externalEvent!.threadId,
+        })
+      : externalSessionWakePrompt({
         messageId: externalEvent!.messageId,
         sourceSession: { session_id: externalEvent!.sourceSessionId, name: externalEvent!.sourceSessionName },
         targetSession: sess,
@@ -343,7 +368,11 @@ async function runSessionMessage({
     channelId: string;
     content: string;
     messageId?: number;
+    batchId: string;
   }> = [];
+  const mentionBatchId = normalizedMentions.some((mention) => mention.mode === 'bidirectional')
+    ? `abatch_${randomUUID().replace(/-/g, '').slice(0, 24)}`
+    : null;
   if (
     !isExternalEvent
     && initialContextMode === 'session'
@@ -404,6 +433,8 @@ async function runSessionMessage({
         ownerUserId: user.id,
         sourceSessionId: normalizedSessionId,
         targetSessionId: targetSession.session_id,
+        batchId: mentionBatchId,
+        threadId: mentionBatchId,
       });
       const token = mintAgentBridgeToken({
         owner_user_id: user.id,
@@ -434,6 +465,7 @@ async function runSessionMessage({
         mode: mention.mode,
         channelId: channel.channelId,
         content: normalizedContent.trim() || displayContent,
+        batchId: mentionBatchId!,
       });
     }
   }
@@ -489,6 +521,8 @@ async function runSessionMessage({
         fromSessionId: normalizedSessionId,
         toSessionId: kickoff.targetSession.session_id,
         content: kickoff.content,
+        batchId: kickoff.batchId,
+        threadId: kickoff.batchId,
       });
       kickoff.messageId = queued.id;
     }
@@ -503,6 +537,7 @@ async function runSessionMessage({
         channel_id: kickoff.channelId,
         target_session_id: kickoff.targetSession.session_id,
         delivery: 'queued',
+        batch_id: kickoff.batchId,
       })),
     };
   } catch (e) {
