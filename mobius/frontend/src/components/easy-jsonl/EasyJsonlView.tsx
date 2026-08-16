@@ -155,6 +155,16 @@ export default function EasyJsonlView({
   const displayTotal = typeof total === 'number' && total > entries.length ? total : entries.length
   const hasRemoteMore = typeof total === 'number' && total > entries.length
   const targetHandledRef = useRef('')
+  const contextLoadAttemptRef = useRef('')
+
+  useEffect(() => {
+    if (!compactInjectedContext || initialLoading || loadingMore || !hasRemoteMore || !onLoadMore || easyRounds.length > 0) return
+    const attemptKey = `${displayTotal}:${entries.length}`
+    if (contextLoadAttemptRef.current === attemptKey) return
+    contextLoadAttemptRef.current = attemptKey
+    setShowAll(true)
+    onLoadMore()
+  }, [compactInjectedContext, initialLoading, loadingMore, hasRemoteMore, onLoadMore, easyRounds.length, displayTotal, entries.length])
 
   useEffect(() => {
     const targetKey = `${scrollToEntryUuid || ''}:${scrollToMatchTs || ''}`
