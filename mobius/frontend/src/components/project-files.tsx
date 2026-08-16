@@ -161,34 +161,28 @@ export interface DevPortEntry {
   kind: string
 }
 
-// 统一的端口预览入口, 供 DevPortsBar 与 ProjectPortEntryButton 复用.
-// 桌面端优先 AIMUX port forward (映射到本机真 127.0.0.1, 体验最好); Web 端走
-// code-server proxy 反代. 桌面端若桥不可用, 回落 code-server proxy.
-export async function openPortPreview(
+// 通过 AIMUX 端口映射打开一个开发端口, 与 ProjectPortEntryButton 对话框里的
+// "打开端口（AIMUX 自动）"同一条链路 (desktopBridge.startAimuxPortForward →
+// 新窗口打开映射 URL). Web 端 vscode proxy 反代打不开端口, 是死路, 不做回落.
+export async function openAimuxForwardPort(
   port: number,
-  ctx: { vscodeWebUrl: string; desktopBridge?: any }
+  desktopBridge?: any
 ): Promise<{ ok: boolean; error?: string }> {
-  const { vscodeWebUrl, desktopBridge } = ctx
-  const canAimux = !!desktopBridge?.isDesktop && typeof desktopBridge?.startAimuxPortForward === 'function'
-  if (canAimux) {
-    try {
-      const result = await desktopBridge.startAimuxPortForward(port)
-      if (result?.ok && result?.url) {
-        window.open(result.url, '_blank', 'noopener,noreferrer')
-        window.alert('请注意，Mobius桌面端退出时，端口映射会自动失效')
-        return { ok: true }
-      }
-      // AIMUX 失败 → 落到 code-server proxy (若可用), 避免桌面端用户彻底打不开
-    } catch {
-      // 落到 code-server proxy
+  const canUseAimuxPortForward = !!desktopBridge?.isDesktop && typeof desktopBridge?.startAimuxPortForward === 'function'
+  if (!canUseAimuxPortForward) {
+    return { ok: false, error: '该功能需要桌面客户端' }
+  }
+  try {
+    const result = await desktopBridge.startAimuxPortForward(port)
+    if (!result?.ok || !result?.url) {
+      return { ok: false, error: result?.error || 'AIMUX port forward 启动失败' }
     }
+    window.open(result.url, '_blank', 'noopener,noreferrer')
+    window.alert('请注意，Mobius桌面端退出时，端口映射会自动失效')
+    return { ok: true }
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'AIMUX port forward 启动失败' }
   }
-  const url = buildCodeServerProxyUrl(vscodeWebUrl, port)
-  if (!url) {
-    return { ok: false, error: canAimux ? '端口预览不可用（AIMUX 与 VSCode Web 均不可用）' : '端口预览不可用：项目未配置 VSCode Web' }
-  }
-  window.open(url, '_blank', 'noopener,noreferrer')
-  return { ok: true }
 }
 
 // =====================================================================
