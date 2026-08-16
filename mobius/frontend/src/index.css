@@ -5987,6 +5987,10 @@ body.mobius-resizing .mobius-resizable-handle {
   background: var(--bg-secondary) !important;
 }
 
+#root:has([data-page="codex-session-pilot"]) > .assistant-fab {
+  display: none !important;
+}
+
 [data-page="codex-session-pilot"] .easy-session-context {
   height: 48px;
   padding-inline: 12px;
