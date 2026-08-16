@@ -39,7 +39,6 @@ export type EasyJsonlViewProps = {
   scrollToMatchTs?: string | null
   onScrollResolved?: () => void
   onScrollUnresolved?: () => void
-  compactInjectedContext?: boolean
   onRoundCountChange?: (count: number) => void
   expandAllSignal?: number
 }
@@ -143,7 +142,6 @@ export default function EasyJsonlView({
   scrollToMatchTs,
   onScrollResolved,
   onScrollUnresolved,
-  compactInjectedContext = false,
   onRoundCountChange,
   expandAllSignal = 0,
 }: EasyJsonlViewProps) {
@@ -152,14 +150,10 @@ export default function EasyJsonlView({
   const windowOffset = entries.length - recent.length
   const visibleItems = useMemo(() => mergeBashToolResultItems(recent, windowOffset).filter(item => !isHiddenJsonlNoiseEntry(item.entry)), [recent, windowOffset])
   const { rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
-  const easyRounds = useMemo(
-    () => buildEasyJsonlRounds(rounds, { compactInjectedContext }),
-    [rounds, compactInjectedContext],
-  )
+  const easyRounds = useMemo(() => buildEasyJsonlRounds(rounds), [rounds])
   const displayTotal = typeof total === 'number' && total > entries.length ? total : entries.length
   const hasRemoteMore = typeof total === 'number' && total > entries.length
   const targetHandledRef = useRef('')
-  const contextLoadAttemptRef = useRef('')
 
   useEffect(() => {
     onRoundCountChange?.(easyRounds.length)
@@ -168,15 +162,6 @@ export default function EasyJsonlView({
   useEffect(() => {
     if (expandAllSignal > 0) setShowAll(true)
   }, [expandAllSignal])
-
-  useEffect(() => {
-    if (!compactInjectedContext || initialLoading || loadingMore || !hasRemoteMore || !onLoadMore || easyRounds.length > 0) return
-    const attemptKey = `${displayTotal}:${entries.length}`
-    if (contextLoadAttemptRef.current === attemptKey) return
-    contextLoadAttemptRef.current = attemptKey
-    setShowAll(true)
-    onLoadMore()
-  }, [compactInjectedContext, initialLoading, loadingMore, hasRemoteMore, onLoadMore, easyRounds.length, displayTotal, entries.length])
 
   useEffect(() => {
     const targetKey = `${scrollToEntryUuid || ''}:${scrollToMatchTs || ''}`
