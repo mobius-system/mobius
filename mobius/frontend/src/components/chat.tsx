@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, AtSign, ArrowLeft, ArrowLeftRight, Search, Clock } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, AtSign, ArrowLeft, ArrowLeftRight, Search, Clock, Sparkles } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -2431,6 +2431,8 @@ export function ChatArea({ layout = 'default', codexStyle = false, onBack, onNew
   const [jsonlPath, setJsonlPath] = useState<string | null>(null)
   const [jsonlInitialLoading, setJsonlInitialLoading] = useState(false)
   const [jsonlLoadingMore, setJsonlLoadingMore] = useState<boolean>(false)
+  const [easyRoundCount, setEasyRoundCount] = useState(0)
+  const [easyExpandAllSignal, setEasyExpandAllSignal] = useState(0)
   const pendingJsonlEntriesRef = useRef<any[]>([])
   const pendingJsonlTotalIncrementRef = useRef(0)
   const pendingJsonlFlushTimerRef = useRef<number | null>(null)
@@ -2496,7 +2498,12 @@ export function ChatArea({ layout = 'default', codexStyle = false, onBack, onNew
   const sessionId = currentSession?.session_id || currentTask?.task_id || ''
   useEffect(() => {
     setEasyToolsOpen(false)
+    setEasyRoundCount(0)
+    setEasyExpandAllSignal(0)
   }, [sessionId])
+  const handleEasyRoundCountChange = useCallback((count: number) => {
+    setEasyRoundCount(previous => previous === count ? previous : count)
+  }, [])
   const currentProjectId = (currentIssue as any)?.project_id || (currentSession as any)?.project_id || (currentTask as any)?.project_id || ''
   const currentIssueId = (currentSession as any)?.issue_id || (currentIssue as any)?.id || ''
   const currentResearchId = (currentSession as any)?.research_id || (currentTask as any)?.research_id || ''
@@ -4264,6 +4271,28 @@ export function ChatArea({ layout = 'default', codexStyle = false, onBack, onNew
                 {currentSession?.name || currentTask?.name || sessionId}
               </strong>
             </div>
+            <div className="easy-session-summary" aria-label="简易对话摘要">
+              <Sparkles className="easy-session-summary__icon" aria-hidden="true" />
+              <span className="easy-session-summary__label">简易对话</span>
+              <small>{easyRoundCount} 轮</small>
+              {(jsonlTotal > jsonlEntries.length || (jsonlEntries.length > 200 && easyExpandAllSignal === 0)) && (
+                <button
+                  type="button"
+                  className="easy-session-summary__action"
+                  disabled={jsonlLoadingMore}
+                  onClick={() => {
+                    setEasyExpandAllSignal(value => value + 1)
+                    if (jsonlTotal > jsonlEntries.length) handleLoadAllJsonl()
+                  }}
+                  title={jsonlLoadingMore ? '正在加载全部对话' : jsonlTotal > jsonlEntries.length ? `加载全部对话（${jsonlTotal} 条）` : `展开全部对话（${jsonlEntries.length} 条）`}
+                >
+                  {jsonlLoadingMore ? '加载中…' : jsonlTotal > jsonlEntries.length ? `加载全部 · ${jsonlTotal}` : `展开全部 · ${jsonlEntries.length}`}
+                </button>
+              )}
+              {jsonlEntries.length > 200 && easyExpandAllSignal > 0 && (
+                <span className="easy-session-summary__complete">已加载全部</span>
+              )}
+            </div>
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
             {onNewSession && (
@@ -4514,6 +4543,8 @@ export function ChatArea({ layout = 'default', codexStyle = false, onBack, onNew
           scrollToMatchTs={matchTs}
           onMatchScrollResolved={onMatchScrollResolved}
           onMatchScrollUnresolved={handleLoadAllJsonl}
+          onEasyRoundCountChange={handleEasyRoundCountChange}
+          easyExpandAllSignal={easyExpandAllSignal}
           variant={layout === 'easy' ? 'easy' : 'standard'}
           compactInjectedContext={codexStyle}
         />
