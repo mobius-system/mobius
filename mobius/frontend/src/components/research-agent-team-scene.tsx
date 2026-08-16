@@ -404,21 +404,10 @@ function makeLabelTexture(agent: ResearchTeamSceneAgent, selected: boolean, them
   ctx.fillStyle = palette.labelSkill
   ctx.fillText(truncateText(agent.mainSkillName || '完全自定义', 28), 38, 130)
 
-  // 状态行文案/颜色: 状态优先于选中/角色默认色, 让人一眼分辨谁在干活/谁挂了.
-  let status = ''
-  let statusColor = selected ? '#38bdf8' : '#10b981'
-  if (agent.locked) {
-    status = '已创建 · 锁定'
-  } else {
-    const st = agent.status || ''
-    if (st === 'failed') { status = '● 任务失败'; statusColor = '#ef4444' }
-    else if (st === 'running') { status = '● 执行中'; statusColor = '#22c55e' }
-    else if (st === 'completed') { status = '已完成'; statusColor = theme === 'light' ? '#15803d' : '#4ade80' }
-    else if (st) { status = '待命中'; statusColor = palette.labelMuted }
-  }
+  const status = agent.locked ? '已创建 · 锁定' : agent.status || ''
   if (status) {
     ctx.font = `700 18px ${LABEL_FONT_FAMILY}`
-    ctx.fillStyle = statusColor
+    ctx.fillStyle = status.includes('失败') ? '#ef4444' : selected ? '#38bdf8' : '#10b981'
     ctx.fillText(truncateText(status, 18), 38, 156)
   }
 
@@ -1227,10 +1216,6 @@ function glassMat(color: number, selected: boolean): MeshPhysicalMaterial {
 
 function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected: boolean, theme: SceneProps['theme'], avatarKind: AvatarKind = 'robot', phase = 0): AvatarBuild {
   const bodyColor = agent.locked ? LOCKED_COLOR : color
-  // 状态驱动动效: running 脉冲/浮动/呼吸, failed 红色警示闪烁, 其余静止.
-  const status = agent.locked ? '' : agent.status || ''
-  const isRunning = status === 'running'
-  const isFailed = status === 'failed'
   const glow = new Color(bodyColor)
   const bodyMat = new MeshStandardMaterial({
     color: bodyColor, roughness: 0.38, metalness: 0.36,
@@ -1241,7 +1226,7 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
     emissive: glow.clone().multiplyScalar(selected ? 0.05 : 0.018),
   })
   const panelMat = new MeshBasicMaterial({ color: selected ? 0xdbeafe : bodyColor, transparent: true, opacity: selected ? 0.84 : 0.62 })
-  const glowMat = new MeshBasicMaterial({ color: isFailed ? 0xef4444 : (selected ? 0x38bdf8 : bodyColor), transparent: true, opacity: selected ? 0.4 : 0.16, depthWrite: false, blending: AdditiveBlending })
+  const glowMat = new MeshBasicMaterial({ color: selected ? 0x38bdf8 : bodyColor, transparent: true, opacity: selected ? 0.4 : 0.16, depthWrite: false, blending: AdditiveBlending })
   const visorMat = new MeshStandardMaterial({
     color: selected ? 0x38bdf8 : 0x0ea5e9, roughness: 0.22, metalness: 0.3,
     emissive: new Color(selected ? 0x38bdf8 : 0x0ea5e9).multiplyScalar(selected ? 0.6 : 0.35),
@@ -1394,28 +1379,8 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
   }
 
   setAgentId(group, agent.id)
-  // 状态驱动 animate: 由组件帧循环统一调用. failed=红闪警示; running=光圈脉冲+身体浮动+
-  // 发光呼吸+形象内置自旋/摆动(updaters); 其余状态不返回任何动画, 静止精致.
-  const padMat = pad.material as MeshBasicMaterial
-  const ringMat = ring.material as MeshBasicMaterial
-  const animate = (t: number) => {
-    if (isFailed) {
-      const blink = 0.25 + Math.abs(Math.sin(t * 3.2)) * 0.55
-      padMat.opacity = blink
-      ringMat.opacity = blink
-      return
-    }
-    if (!isRunning) return
-    const pulse = 0.5 + Math.sin(t * 2.4) * 0.5
-    padMat.opacity = 0.18 + pulse * 0.32
-    ringMat.opacity = 0.3 + pulse * 0.4
-    const s = 1 + Math.sin(t * 2.4) * 0.07
-    pad.scale.set(s, s, 0.48)
-    pivot.position.y = Math.sin(t * 1.6) * 0.06
-    bodyMat.emissiveIntensity = 1 + Math.sin(t * 2.4) * 0.9
-    for (const fn of updaters) fn(t)
-  }
-  return { group, clickable, animate }
+  // avatar 禁止乱动: 关闭漂浮 + 所有自旋/摆动, 形象保持静止.
+  return { group, clickable }
 }
 
 // "+" 占位槽: emerald 光圈/虚线感圆环 + 3D 十字(立在 xy 平面, 从相机侧 +z 看是完整加号). 点击触发 onAdd.
@@ -1700,7 +1665,7 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
   const deletableSelected = agents.find(a => a.id === selectedId && !a.locked && a.role !== 'chief_researcher') || null
 
   return (
-    <div className="relative h-full min-h-[150px] overflow-hidden rounded-lg border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+    <div className="relative h-full min-h-[360px] overflow-hidden rounded-lg border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
       <div ref={hostRef} className="absolute inset-0" />
       {agents.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center text-[13px]" style={{ color: 'var(--text-muted)' }}>
