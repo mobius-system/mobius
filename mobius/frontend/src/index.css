@@ -5981,6 +5981,66 @@ body.mobius-resizing .mobius-resizable-handle {
   }
 }
 
+/* Only session 629329f3 receives this Codex-style shell pilot (IssuePage owns the scope marker). */
+[data-page="codex-session-pilot"] {
+  min-height: 100dvh;
+  background: var(--bg-secondary) !important;
+}
+
+#root:has([data-page="codex-session-pilot"]) > .assistant-fab {
+  display: none !important;
+}
+
+[data-page="codex-session-pilot"] .easy-session-context {
+  height: 48px;
+  padding-inline: 12px;
+  background: var(--bg-primary) !important;
+}
+
+[data-page="codex-session-pilot"] .easy-session-context [aria-label="当前会话上下文"] strong {
+  max-width: min(42vw, 520px);
+  font-size: 13px;
+}
+
+[data-page="codex-session-pilot"] .mobius-chat-history {
+  background: var(--bg-secondary);
+}
+
+[data-page="codex-session-pilot"] .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input {
+  bottom: 14px;
+  width: min(812px, calc(100% - 32px)) !important;
+  filter: drop-shadow(0 12px 28px rgba(0, 0, 0, .16));
+}
+
+[data-page="codex-session-pilot"] .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input [data-tour="session-chat-input"] {
+  border-radius: 12px !important;
+  background: var(--bg-primary) !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 0 0 1px var(--border-color), 0 12px 30px rgba(0, 0, 0, .12) !important;
+}
+
+[data-page="codex-session-pilot"] .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input textarea {
+  min-height: 62px !important;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+@media (max-width: 700px) {
+  [data-page="codex-session-pilot"] .easy-session-context {
+    padding-inline: 8px;
+  }
+
+  [data-page="codex-session-pilot"] .easy-session-context [aria-label="当前会话上下文"] strong {
+    max-width: 38vw;
+  }
+
+  [data-page="codex-session-pilot"] .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input {
+    bottom: 8px;
+    width: calc(100% - 16px) !important;
+  }
+}
+
 /* =====================================================================
    全局「+」新建菜单 (.global-create-modal) — 窄屏移动端基本适配
    CreateModalShell 已用 flex-col + max-h + overflow-y-auto; 这里补窄屏细节.

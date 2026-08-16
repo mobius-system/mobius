@@ -3,14 +3,19 @@ const assert = require('node:assert/strict')
 const { db } = require('../db')
 const {
   buildBidirectionalMentionPrompt,
+  closeAgentBridgeChannel,
   createAgentBridgeChannel,
   decideAgentBridgeMessage,
   expireAgentBridgeMessages,
+  externalSessionDigestWakePrompt,
   externalSessionContext,
   externalSessionWakePrompt,
   findAgentBridgeMessage,
+  groupPendingAgentBridgeMessages,
+  listActiveAgentBridgeEdges,
   mintAgentBridgeToken,
   recordAgentBridgeMessage,
+  tokenAllowsMessage,
   verifyAgentBridgeToken,
 } = require('../backend/services/agent-mention-bridge')
 const { buildMobiusExternalEntry } = require('../backend/services/mobius-jsonl')
@@ -36,6 +41,23 @@ assert.match(wake, /"from_session_id":"target-1"/)
 assert.match(wake, /"to_session_id":"source-1"/)
 assert.match(wake, /不得把消息正文.*Memory/)
 assert.doesNotMatch(wake, /ignore safety/)
+
+const digestWake = externalSessionDigestWakePrompt({
+  messages: [
+    { messageId: 101, channelId: 'channel-1', sourceSessionId: 'source-1', sourceSessionName: 'Source One' },
+    { messageId: 102, channelId: 'channel-2', sourceSessionId: 'source-2', sourceSessionName: 'Source Two' },
+  ],
+  targetSession: { session_id: 'target-1', name: 'Target' },
+  token: 'digest-token',
+  batchId: 'batch-1',
+  threadId: 'thread-1',
+})
+assert.match(digestWake, /一组待处理通知/)
+assert.match(digestWake, /消息数量: 2/)
+assert.match(digestWake, /message_id=101; channel_id=channel-1/)
+assert.match(digestWake, /message_id=102; channel_id=channel-2/)
+assert.match(digestWake, /不可信外部资料/)
+assert.match(digestWake, /批量操作仍逐条|服务端仍逐条/)
 
 const sourcePrompt = buildBidirectionalMentionPrompt({
   perspective: 'source',
@@ -76,10 +98,34 @@ const scopedToken = mintAgentBridgeToken({
 })
 assert.equal(verifyAgentBridgeToken(scopedToken).actor_session_id, 'target-1')
 
+const digestToken = mintAgentBridgeToken({
+  owner_user_id: 'user-1', source_session_id: 'source-1', target_session_id: 'target-1',
+  actor_session_id: 'target-1', channel_id: 'channel-1', channel_ids: ['channel-1', 'channel-2'],
+  message_ids: [101, 102], batch_id: 'batch-1', scope: 'digest', mode: 'bidirectional',
+})
+const verifiedDigest = verifyAgentBridgeToken(digestToken)
+assert.equal(tokenAllowsMessage(verifiedDigest, { id: 101, channel_id: 'channel-1' }), true)
+assert.equal(tokenAllowsMessage(verifiedDigest, { id: 103, channel_id: 'channel-1' }), false)
+assert.equal(tokenAllowsMessage(verifiedDigest, { id: 101, channel_id: 'channel-3' }), false)
+
+const grouped = groupPendingAgentBridgeMessages([
+  { id: 1, to_session_id: 'target-a', batch_id: 'batch-a', thread_id: 'thread-a', delivery_state: 'queued' },
+  { id: 2, to_session_id: 'target-a', batch_id: 'batch-a', thread_id: 'thread-a', delivery_state: 'queued' },
+  { id: 3, to_session_id: 'target-b', batch_id: 'batch-a', thread_id: 'thread-a', delivery_state: 'queued' },
+  { id: 4, to_session_id: 'target-a', batch_id: 'batch-b', thread_id: 'thread-b', delivery_state: 'queued' },
+  { id: 5, to_session_id: 'target-a', delivery_state: 'queued' },
+], 20)
+assert.deepEqual(grouped.map((items) => items.map((item) => item.id)), [[1, 2], [3], [4], [5]])
+assert.equal(groupPendingAgentBridgeMessages(Array.from({ length: 23 }, (_, index) => ({
+  id: index + 1, to_session_id: 'target-a', batch_id: 'batch-a', thread_id: 'thread-a', delivery_state: 'queued',
+})), 20).length, 2)
+
 const bridgeColumns = new Set(db.prepare('PRAGMA table_info(agent_bridge_messages)').all().map((row) => row.name))
-for (const name of ['delivery_state', 'decision', 'wake_requested', 'expires_at']) {
+for (const name of ['delivery_state', 'decision', 'wake_requested', 'expires_at', 'batch_id', 'thread_id', 'in_reply_to_message_id']) {
   assert.equal(bridgeColumns.has(name), true, `missing bridge column ${name}`)
 }
+const channelColumns = new Set(db.prepare('PRAGMA table_info(agent_bridge_channels)').all().map((row) => row.name))
+for (const name of ['batch_id', 'thread_id']) assert.equal(channelColumns.has(name), true, `missing channel column ${name}`)
 
 const sessions = db.prepare(`
   SELECT session_id, user_id FROM sessions_v2
@@ -93,6 +139,8 @@ if (sessions.length > 0) {
     sourceSessionId: source.session_id,
     targetSessionId: target.session_id,
     maxMessages: 5,
+    batchId: 'test-batch',
+    threadId: 'test-thread',
   })
   try {
     const recorded = recordAgentBridgeMessage({
@@ -106,6 +154,16 @@ if (sessions.length > 0) {
     assert.equal(queued.delivery_state, 'queued')
     assert.equal(queued.decision, 'pending')
     assert.ok(queued.expires_at)
+    assert.equal(queued.batch_id, 'test-batch')
+    assert.equal(queued.thread_id, 'test-thread')
+
+    const edges = listActiveAgentBridgeEdges(source.user_id, [source.session_id, target.session_id])
+    assert.equal(edges.some((edge) => edge.channel_ids.includes(channel.channelId)), true)
+    const peerRows = db.prepare(`
+      SELECT COUNT(*) AS count FROM agent_bridge_channels
+      WHERE batch_id = ? AND source_session_id = ? AND target_session_id = ?
+    `).get('test-batch', target.session_id, target.session_id)
+    assert.equal(Number(peerRows.count), 0, 'batch must not create target-to-target channels')
 
     const held = decideAgentBridgeMessage({
       id: recorded.id,
@@ -121,6 +179,22 @@ if (sessions.length > 0) {
     })
     assert.equal(accepted.decision, 'accepted')
     assert.ok(accepted.accepted_at)
+    assert.equal(listActiveAgentBridgeEdges(source.user_id).find((edge) => edge.channel_ids.includes(channel.channelId)).accepted, true)
+
+    const refusedChannel = createAgentBridgeChannel({
+      ownerUserId: source.user_id, sourceSessionId: source.session_id, targetSessionId: target.session_id,
+      batchId: 'refused-batch', threadId: 'refused-batch',
+    })
+    try {
+      const refusedMessage = recordAgentBridgeMessage({
+        channelId: refusedChannel.channelId, requestId: `refuse-${Date.now()}`,
+        fromSessionId: source.session_id, toSessionId: target.session_id, content: 'refuse me',
+      })
+      decideAgentBridgeMessage({ id: refusedMessage.id, decidingSessionId: target.session_id, decision: 'refuse' })
+      assert.equal(listActiveAgentBridgeEdges(source.user_id).some((edge) => edge.channel_ids.includes(refusedChannel.channelId)), false)
+    } finally {
+      db.prepare('DELETE FROM agent_bridge_channels WHERE channel_id = ?').run(refusedChannel.channelId)
+    }
 
     const expiring = recordAgentBridgeMessage({
       channelId: channel.channelId,
@@ -134,6 +208,9 @@ if (sessions.length > 0) {
     const expired = findAgentBridgeMessage(expiring.id)
     assert.equal(expired.delivery_state, 'expired')
     assert.equal(expired.decision, 'expired')
+
+    closeAgentBridgeChannel(channel.channelId)
+    assert.equal(listActiveAgentBridgeEdges(source.user_id).some((edge) => edge.channel_ids.includes(channel.channelId)), false)
   } finally {
     db.prepare('DELETE FROM agent_bridge_channels WHERE channel_id = ?').run(channel.channelId)
   }
