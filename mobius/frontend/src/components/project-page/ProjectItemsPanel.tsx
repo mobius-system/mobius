@@ -390,12 +390,15 @@ function IssueList({
             onToggleStar={onToggleIssueStar}
           />
         ))}
-        <CreateItemCard
-          kind="issue"
-          compact={compact}
-          disabled={!canCreateIssue}
-          onClick={onCreateIssue}
-        />
+        {/* 创建卡片只在最后一页显示 (无分页时单页即末页) */}
+        {pagination.page >= pagination.totalPages && (
+          <CreateItemCard
+            kind="issue"
+            compact={compact}
+            disabled={!canCreateIssue}
+            onClick={onCreateIssue}
+          />
+        )}
       </div>
       {pagination.totalItems > pagination.pageSize && <ProjectPaginationControls pagination={pagination} compact itemLabel="任务" />}
     </div>
@@ -521,12 +524,15 @@ function ResearchList({
           onToggleStatus={onToggleResearchStatus}
         />
       ))}
-      <CreateItemCard
-        kind="research"
-        compact={compact}
-        disabled={!canCreateResearch}
-        onClick={onCreateResearch}
-      />
+      {/* 创建卡片只在最后一页显示 (无分页时单页即末页) */}
+      {pagination.page >= pagination.totalPages && (
+        <CreateItemCard
+          kind="research"
+          compact={compact}
+          disabled={!canCreateResearch}
+          onClick={onCreateResearch}
+        />
+      )}
       </div>
       {pagination.totalItems > pagination.pageSize && <ProjectPaginationControls pagination={pagination} compact itemLabel="研究" />}
     </div>
