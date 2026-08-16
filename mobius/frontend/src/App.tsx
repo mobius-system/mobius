@@ -206,17 +206,57 @@ function AssistantTaskDoneToast() {
   const notifiedRef = useRef<Set<string>>(new Set())
   // 待展示队列: 一次只弹一条; 多个任务在同一轮询窗口内同时完成时按到达顺序依次弹出, 不丢
   const queueRef = useRef<AssistantTaskDoneEntry[]>([])
+  // 浏览器 Notification 权限只请求一次; denied 后不再骚扰
+  const notifPermissionAskedRef = useRef(false)
 
   const showEntry = useCallback((e: AssistantTaskDoneEntry | null) => {
     entryRef.current = e
     setEntry(e)
   }, [])
 
+  // 后台标签页: 用浏览器系统级 Notification 提醒(网页内 ToastCard 用户根本看不到)。
+  // 需要权限; 点击通知聚焦窗口并深链到对应会话。
+  const notifyInBackground = useCallback((e: AssistantTaskDoneEntry) => {
+    if (typeof Notification === 'undefined') return
+    if (Notification.permission === 'denied') return
+    if (Notification.permission !== 'granted') {
+      if (notifPermissionAskedRef.current) return
+      notifPermissionAskedRef.current = true
+      // 权限请求必须由用户手势触发才可靠; 后台自动弹的 requestPermission 多数浏览器会忽略。
+      // 这里仍尝试一次(部分浏览器允许), 被忽略也不影响 — 用户下次可见时操作会再触发。
+      void Notification.requestPermission().then(() => {})
+      return
+    }
+    const isResearch = e.scopeType === 'research'
+    const containerId = isResearch ? e.researchId : e.issueId
+    const openUrl = e.projectId && containerId
+      ? `/u/${user?.id || ''}/p/${e.projectId}/${isResearch ? 'r' : 'i'}/${containerId}?session=${encodeURIComponent(e.sessionId)}`
+      : null
+    try {
+      const n = new Notification(
+        e.failed ? '小莫任务失败' : '小莫已完成任务',
+        {
+          body: e.name,
+          tag: `mobius-task-${e.sessionId}`, // 同 session 去重, 系统层不堆叠
+        },
+      )
+      n.onclick = () => {
+        window.focus()
+        if (openUrl) navigate(openUrl)
+        n.close()
+      }
+      // 失败常驻到用户处理; 成功 8s 自动收
+      if (!e.failed) setTimeout(() => n.close(), ASSISTANT_TASK_SUCCESS_DURATION_MS)
+    } catch {
+      /* 某些环境(无 SW 的 http 等)构造会抛, 忽略 */
+    }
+  }, [user, navigate])
+
   useEffect(() => {
     if (!user) return
     const stop = pollRecursive(async (signal) => {
-      // 标签页不可见时跳过, 复用 chat.tsx 轮询惯例, 避免后台无谓请求堆积
-      if (document.visibilityState !== 'visible') return
+      // 后台不再跳过: 跳过就无法察觉任务完成(需求: 不可见时走浏览器 Notification)。
+      // 后台标签页浏览器会节流 setTimeout, 轮询自然放缓, 不会请求堆积。
       let recent: any[] = []
       try {
         recent = await api('/api/tasks/recent?limit=50', { signal }) as any[]
@@ -226,6 +266,7 @@ function AssistantTaskDoneToast() {
       if (!Array.isArray(recent)) return
       // 用 window.location.search 实时取当前会话, 避免把 location 放进依赖导致每次导航重启轮询
       const currentSessionId = new URLSearchParams(window.location.search).get('session')
+      const visible = document.visibilityState === 'visible'
       for (const s of recent) {
         const sid = String(s?.session_id || '')
         if (!sid) continue
@@ -237,7 +278,7 @@ function AssistantTaskDoneToast() {
         // 仅在 进行中→终态 的跳变、且未提醒过、且不是当前正查看的会话 时入队
         if (wasActive && terminal && !notifiedRef.current.has(sid) && sid !== currentSessionId) {
           notifiedRef.current.add(sid)
-          queueRef.current.push({
+          const item: AssistantTaskDoneEntry = {
             sessionId: sid,
             name: String(s?.name || '未命名任务'),
             scopeType: String(s?.scope_type || 'issue'),
@@ -245,16 +286,22 @@ function AssistantTaskDoneToast() {
             issueId: s?.issue_id ?? null,
             researchId: s?.research_id ?? null,
             failed: status === 'failed',
-          })
+          }
+          // 可见 → 网页内 ToastCard(队列依次弹); 不可见 → 浏览器系统通知(即发, 不占网页队列)
+          if (visible) {
+            queueRef.current.push(item)
+          } else {
+            notifyInBackground(item)
+          }
         }
       }
       // 当前没在展示且队列有积压 → 取下一条
-      if (!entryRef.current && queueRef.current.length > 0) {
+      if (visible && !entryRef.current && queueRef.current.length > 0) {
         showEntry(queueRef.current.shift() as AssistantTaskDoneEntry)
       }
     }, ASSISTANT_TASK_POLL_MS)
     return () => stop()
-  }, [user, showEntry])
+  }, [user, showEntry, notifyInBackground])
 
   // 成功自动消失; 失败常驻到用户手动关闭(失败值得多看一眼)。消失后上面 effect 会自动取下一条。
   useEffect(() => {
@@ -262,6 +309,18 @@ function AssistantTaskDoneToast() {
     const t = window.setTimeout(() => showEntry(null), ASSISTANT_TASK_SUCCESS_DURATION_MS)
     return () => window.clearTimeout(t)
   }, [entry, showEntry])
+
+  // 可见期间入队但还没来得及展示、用户就切走的条目: 切到后台瞬间把积压队列转成系统通知, 不丢提醒。
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== 'hidden') return
+      while (queueRef.current.length > 0) {
+        notifyInBackground(queueRef.current.shift() as AssistantTaskDoneEntry)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [notifyInBackground])
 
   if (!entry || !user) return null
 
