@@ -1548,7 +1548,7 @@ export function isSessionNameMuted(_agentStatus?: string | null) {
   return false
 }
 
-export function runtimeStatusForSessionList(r: any) {
+function runtimeStatusForSessionList(r: any) {
   if (r?.failed === true) return 'failed'
   if (r?.alive && r?.working) return 'running'
   if (r?.alive) return 'waiting'
