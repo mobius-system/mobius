@@ -574,6 +574,10 @@ type GitSource = {
   cache_expires_at?: number
 }
 
+// 资源 tab 图标的悬浮动效, 模仿 advanced-interaction-btn 的 tilt:
+// 悬浮/键盘聚焦时图标上移 0.5、旋转 -8°、放大 1.1 (transition-transform duration-200)。
+const RESOURCE_TAB_ICON_HOVER = 'inline-flex flex-shrink-0 items-center justify-center transition-transform duration-200 group-hover/resource-tab:-translate-y-0.5 group-hover/resource-tab:rotate-[-8deg] group-hover/resource-tab:scale-110 group-focus-visible/resource-tab:-translate-y-0.5 group-focus-visible/resource-tab:rotate-[-8deg] group-focus-visible/resource-tab:scale-110'
+
 export function SessionSkillMemoryEditor({
   sessionId,
   projectId,
@@ -849,10 +853,12 @@ export function SessionSkillMemoryEditor({
             aria-pressed={skillActive}
             title="Skill"
             aria-label="Skill"
-            className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${skillActive ? 'border-blue-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
+            className={`group/resource-tab min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${skillActive ? 'border-blue-400 font-medium' : 'border-transparent hover:bg-blue-500/10'}`}
             style={{ color: skillActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
           >
-            <Puzzle className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
+            <span className={RESOURCE_TAB_ICON_HOVER}>
+              <Puzzle className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />
+            </span>
           </button>
           <button
             type="button"
@@ -861,10 +867,12 @@ export function SessionSkillMemoryEditor({
             data-tour="session-memory-toggle"
             title="Memory"
             aria-label="Memory"
-            className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${memActive ? 'border-cyan-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
+            className={`group/resource-tab min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${memActive ? 'border-cyan-400 font-medium' : 'border-transparent hover:bg-cyan-500/10'}`}
             style={{ color: memActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
           >
-            <Brain className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
+            <span className={RESOURCE_TAB_ICON_HOVER}>
+              <Brain className="h-3.5 w-3.5 text-cyan-400" strokeWidth={1.9} />
+            </span>
           </button>
           <button
             type="button"
@@ -873,10 +881,12 @@ export function SessionSkillMemoryEditor({
             data-tour="session-git-toggle"
             title="Git"
             aria-label="Git"
-            className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${gitActive ? 'border-amber-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
+            className={`group/resource-tab min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-all duration-150 inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${gitActive ? 'border-amber-400 font-medium' : 'border-transparent hover:bg-amber-500/10'}`}
             style={{ color: gitActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
           >
-            <GitBranch className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" strokeWidth={1.9} />
+            <span className={RESOURCE_TAB_ICON_HOVER}>
+              <GitBranch className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.9} />
+            </span>
             {gitSources.length > 0 && <span className="text-[9px] text-amber-300">{gitSources.length}</span>}
           </button>
           <button
@@ -886,10 +896,12 @@ export function SessionSkillMemoryEditor({
             data-tour="session-ports-toggle"
             title="端口"
             aria-label="端口"
-            className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${portsActive ? 'border-emerald-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
+            className={`group/resource-tab min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-all duration-150 inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${portsActive ? 'border-emerald-400 font-medium' : 'border-transparent hover:bg-emerald-500/10'}`}
             style={{ color: portsActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
           >
-            <MonitorPlay className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
+            <span className={RESOURCE_TAB_ICON_HOVER}>
+              <MonitorPlay className="h-3.5 w-3.5 text-emerald-400" strokeWidth={1.9} />
+            </span>
           </button>
         </div>
 
