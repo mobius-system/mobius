@@ -31,6 +31,7 @@ type SessionJsonlPanelProps = {
   onMatchScrollResolved?: () => void
   onMatchScrollUnresolved?: () => void
   variant?: 'standard' | 'easy'
+  compactInjectedContext?: boolean
 }
 
 function SessionJsonlPanelInner({
@@ -59,6 +60,7 @@ function SessionJsonlPanelInner({
   onMatchScrollResolved,
   onMatchScrollUnresolved,
   variant = 'standard',
+  compactInjectedContext = false,
 }: SessionJsonlPanelProps) {
   const effectiveTotal = jsonlTotal > loadedJsonlCount
     ? jsonlTotal - (loadedJsonlCount - visibleJsonl.length)
@@ -92,6 +94,7 @@ function SessionJsonlPanelInner({
                   scrollToMatchTs={scrollToMatchTs}
                   onScrollResolved={onMatchScrollResolved}
                   onScrollUnresolved={onMatchScrollUnresolved}
+                  compactInjectedContext={compactInjectedContext}
                 />
               </Suspense>
             ) : (
