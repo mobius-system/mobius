@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { ArrowLeft, Calculator, Check, ChevronDown, Crown, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, Users, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
 import { useStore, api, APP_DIR } from '../store'
 import { timeAgo } from './shell'
 import { SkillsManager } from './skills'
@@ -46,15 +46,6 @@ import {
 } from './project-page/utils'
 import { markFireAndForgetSession } from '../services/session-start-policy'
 import { pollRecursive } from '../services/polling'
-import {
-  createHarnessRun,
-  estimateHarnessRun,
-  listHarnessProfiles,
-  waitForHarnessMainSession,
-  type HarnessEstimate,
-  type HarnessProfile,
-  type HarnessRunDraft,
-} from '../services/harness'
 
 type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist'
 type IssueVisibility = 'inherit' | ProjectVisibility
@@ -1871,26 +1862,6 @@ function promptBackendKeyForOption(opt?: SessionModelOption | null): PromptBacke
   return 'claude_code'
 }
 
-function harnessBackendForOption(option: SessionModelOption): HarnessProfile['backend'] {
-  if (option.backend === 'tmux-codex') return 'codex'
-  if (option.backend === 'deepseek-harness') return 'deepseek-harness'
-  return 'claude-code'
-}
-
-function harnessMemberKey(profileId: string): string {
-  let hash = 2166136261
-  for (let index = 0; index < profileId.length; index += 1) {
-    hash = Math.imul(hash ^ profileId.charCodeAt(index), 16777619)
-  }
-  const suffix = profileId.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(-12)
-  return `member_${(hash >>> 0).toString(36)}_${suffix}`.slice(0, 32)
-}
-
-function harnessDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds} 秒`
-  const minutes = Math.round(seconds / 60)
-  return minutes < 60 ? `${minutes} 分钟` : `${(minutes / 60).toFixed(1)} 小时`
-}
 type ModelUsageLimit = {
   key: string
   model?: string
@@ -2185,8 +2156,6 @@ export function NewSessionModal({
     excluded_memory_ids?: string[]
     chosen_agent_skill_id?: string
     selection_ready?: boolean
-    harness_model_keys?: string[]
-    harness_main_model_key?: string
   }>(DRAFT_KEY)
   const guidedDemo = readActiveGuidedDemo()
   const guidedDemoState = guidedDemo?.state
@@ -2253,20 +2222,6 @@ export function NewSessionModal({
     })
   }, [isPresetMode, initialPreset?.model, draftModelDeliberate, scopeLastModel, defaultModel, globalDefaultModel])
   const [model, setModel] = useState<ModelKey>(resolvedDefaultModel)
-  const supportsHarnessRoster = !isPresetMode && !isResearch && !!issueId && !!projectId
-    && !continueFromSessionId && !isGuidedDemo
-  const [harnessProfiles, setHarnessProfiles] = useState<HarnessProfile[]>([])
-  const [harnessProfilesLoading, setHarnessProfilesLoading] = useState(false)
-  const [harnessModelKeys, setHarnessModelKeys] = useState<string[]>(() => {
-    const saved = initialDraft?.harness_model_keys?.filter(Boolean).slice(0, 3)
-    return saved?.length ? saved : [resolvedDefaultModel]
-  })
-  const [harnessMainModelKey, setHarnessMainModelKey] = useState(
-    initialDraft?.harness_main_model_key || harnessModelKeys[0] || resolvedDefaultModel,
-  )
-  const [harnessEstimate, setHarnessEstimate] = useState<HarnessEstimate | null>(null)
-  const [createdHarnessRunId, setCreatedHarnessRunId] = useState('')
-  const harnessRosterTouchedRef = useRef(!!initialDraft?.harness_model_keys?.length)
   useEffect(() => {
     let alive = true
     fetchGlobalDefaultModel().then(v => { if (alive) setGlobalDefaultModel(v) })
@@ -2340,47 +2295,6 @@ export function NewSessionModal({
   const selectedModelUsage = promptStats?.model_usage_limits?.models?.[model] || null
   const selectedTmuxUsage = selectedModelUsage?.usage?.tmuxWindows || null
   const selectedTmuxWarning = !!selectedTmuxUsage?.warning
-  const harnessProfileByModelKey = useMemo(() => {
-    const result = new Map<string, HarnessProfile>()
-    for (const option of modelOptions) {
-      const backend = harnessBackendForOption(option)
-      const modelValues = new Set(
-        [option.key, option.value, option.model].filter((value): value is string => !!value),
-      )
-      const profile = harnessProfiles.find((item) => item.backend === backend && modelValues.has(item.default_model))
-      if (profile) result.set(option.key, profile)
-    }
-    return result
-  }, [harnessProfiles, modelOptions])
-  const isMultiHarness = supportsHarnessRoster && harnessModelKeys.length > 1
-  const selectedHarnessOptions = useMemo(
-    () => harnessModelKeys.map((key) => modelOptions.find((option) => option.key === key)).filter(Boolean) as SessionModelOption[],
-    [harnessModelKeys, modelOptions],
-  )
-  const selectedHarnessProfiles = useMemo(
-    () => harnessModelKeys.map((key) => harnessProfileByModelKey.get(key)).filter(Boolean) as HarnessProfile[],
-    [harnessModelKeys, harnessProfileByModelKey],
-  )
-
-  const buildHarnessDraft = useCallback((): HarnessRunDraft => ({
-    anchor_type: 'issue',
-    issue_id: issueId || '',
-    session_name: name.trim(),
-    language,
-    excluded_skill_ids: Array.from(excludedSkills),
-    excluded_memory_ids: Array.from(excludedMemories),
-    goal: appendAttachmentsToDesc(submittedDescription, attachments).trim(),
-    execution_mode: 'multi',
-    roster: {
-      main_member_key: harnessMemberKey(harnessProfileByModelKey.get(harnessMainModelKey)?.id || ''),
-      members: selectedHarnessProfiles.map((profile) => ({
-        member_key: harnessMemberKey(profile.id),
-        profile_id: profile.id,
-        ...(profile.id !== harnessProfileByModelKey.get(harnessMainModelKey)?.id ? { purpose: 'worker' as const } : {}),
-      })),
-    },
-  }), [attachments, excludedMemories, excludedSkills, harnessMainModelKey, harnessProfileByModelKey, issueId, language, name, selectedHarnessProfiles, submittedDescription])
-
   useEffect(() => {
     let alive = true
     api('/api/sessions/model-options')
@@ -2395,48 +2309,6 @@ export function NewSessionModal({
       .catch(() => { if (alive) setModelOptions(FALLBACK_SESSION_MODEL_CHOICES) })
     return () => { alive = false }
   }, [])
-
-  useEffect(() => {
-    if (!supportsHarnessRoster || !projectId) return
-    const controller = new AbortController()
-    setHarnessProfilesLoading(true)
-    listHarnessProfiles(projectId, controller.signal)
-      .then((rows) => setHarnessProfiles(Array.isArray(rows) ? rows : []))
-      .catch((cause: any) => {
-        if (cause?.name !== 'AbortError') setErr(cause?.message || 'Harness Agent 加载失败')
-      })
-      .finally(() => { if (!controller.signal.aborted) setHarnessProfilesLoading(false) })
-    return () => controller.abort()
-  }, [projectId, supportsHarnessRoster])
-
-  useEffect(() => {
-    if (!supportsHarnessRoster || harnessRosterTouchedRef.current) return
-    setHarnessModelKeys([model])
-    setHarnessMainModelKey(model)
-    setHarnessEstimate(null)
-  }, [model, supportsHarnessRoster])
-
-  useEffect(() => {
-    if (!supportsHarnessRoster || modelOptions.length === 0) return
-    const available = new Set(modelOptions.map((option) => option.key))
-    setHarnessModelKeys((current) => {
-      const next = current.filter((key) => available.has(key)).slice(0, 3)
-      if (next.length > 0) return next
-      return [modelOptions[0].key]
-    })
-  }, [modelOptions, supportsHarnessRoster])
-
-  useEffect(() => {
-    if (!supportsHarnessRoster || harnessModelKeys.length === 0) return
-    const nextMain = harnessModelKeys.includes(harnessMainModelKey) ? harnessMainModelKey : harnessModelKeys[0]
-    if (nextMain !== harnessMainModelKey) setHarnessMainModelKey(nextMain)
-    if (model !== nextMain) setModel(nextMain)
-  }, [harnessMainModelKey, harnessModelKeys, model, supportsHarnessRoster])
-
-  useEffect(() => {
-    setHarnessEstimate(null)
-    setCreatedHarnessRunId('')
-  }, [attachments, desc, excludedMemories, excludedSkills, harnessMainModelKey, harnessModelKeys, language, name])
 
   useEffect(() => {
     let alive = true
@@ -2461,11 +2333,9 @@ export function NewSessionModal({
         excluded_memory_ids: Array.from(excludedMemories),
         chosen_agent_skill_id: chosenAgentSkill?.id || '',
         selection_ready: !!initialDraft?.selection_ready || step >= 2 || !!preview,
-        harness_model_keys: supportsHarnessRoster ? harnessModelKeys : undefined,
-        harness_main_model_key: supportsHarnessRoster ? harnessMainModelKey : undefined,
       }, { minChars: 1 })
     }
-  }, [DRAFT_KEY, isGuidedDemo, isPresetMode, name, desc, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready, supportsHarnessRoster, harnessModelKeys, harnessMainModelKey])
+  }, [DRAFT_KEY, isGuidedDemo, isPresetMode, name, desc, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
 
   const modelUsageFor = useCallback((modelKey: ModelKey) => {
     return promptStats?.model_usage_limits?.models?.[modelKey] || null
@@ -2543,62 +2413,6 @@ export function NewSessionModal({
   const chooseModel = (nextModel: ModelKey) => {
     setModel(nextModel)
     modelUserTouchedRef.current = true
-    setErr('')
-  }
-
-  const toggleHarnessModel = (option: SessionModelOption) => {
-    if (!supportsHarnessRoster) {
-      chooseModel(option.key)
-      return
-    }
-    const selected = harnessModelKeys.includes(option.key)
-    if (selected && harnessModelKeys.length === 1) {
-      setErr('至少保留 1 个 Harness Agent')
-      return
-    }
-    if (!selected) {
-      if (harnessModelKeys.length >= 3) {
-        setErr('Multi Harness 最多选择 3 个 Harness Agent')
-        return
-      }
-      const nextKeys = [...harnessModelKeys, option.key]
-      if (nextKeys.length > 1) {
-        const unavailable = nextKeys.find((key) => !harnessProfileByModelKey.has(key))
-        if (unavailable) {
-          const unavailableOption = modelOptions.find((item) => item.key === unavailable)
-          setErr(`${unavailableOption?.title || unavailable} 暂无可用的 Harness Profile，不能加入 Multi Harness`)
-          return
-        }
-      }
-      harnessRosterTouchedRef.current = true
-      setHarnessModelKeys(nextKeys)
-      setHarnessEstimate(null)
-      setErr('')
-      return
-    }
-    const nextKeys = harnessModelKeys.filter((key) => key !== option.key)
-    const nextMain = option.key === harnessMainModelKey ? nextKeys[0] : harnessMainModelKey
-    harnessRosterTouchedRef.current = true
-    setHarnessModelKeys(nextKeys)
-    setHarnessMainModelKey(nextMain)
-    setModel(nextMain)
-    modelUserTouchedRef.current = true
-    setHarnessEstimate(null)
-    setErr('')
-  }
-
-  const chooseHarnessMain = (option: SessionModelOption) => {
-    if (!harnessModelKeys.includes(option.key)) return
-    const profile = harnessProfileByModelKey.get(option.key)
-    if (!profile?.definition.capabilities.can_main) {
-      setErr(`${option.title} 不能担任 Main Agent`)
-      return
-    }
-    harnessRosterTouchedRef.current = true
-    setHarnessMainModelKey(option.key)
-    setModel(option.key)
-    modelUserTouchedRef.current = true
-    setHarnessEstimate(null)
     setErr('')
   }
 
@@ -2689,26 +2503,7 @@ export function NewSessionModal({
   const goPreview = async () => {
     if (!name.trim()) { setErr(`请填写${isResearch ? ' ' : ''}${entityNameLabel}`); return }
     if (!deferPurpose && !desc.trim()) { setErr(`请填写${isResearch ? ' ' : ''}${entityPurposeLabel}`); return }
-    if (isMultiHarness) {
-      const blockedOption = selectedHarnessOptions.find((option) => isModelQuotaBlocked(option.key))
-      if (blockedOption) {
-        setErr(modelQuotaError(blockedOption.key))
-        return
-      }
-      if (harnessProfilesLoading) {
-        setErr('Harness Agent 仍在加载，请稍候再试')
-        return
-      }
-      if (selectedHarnessProfiles.length !== harnessModelKeys.length) {
-        setErr('所选 Agent 中有成员缺少 Harness Profile，请调整阵容')
-        return
-      }
-      const mainProfile = harnessProfileByModelKey.get(harnessMainModelKey)
-      if (!mainProfile || !mainProfile.definition.capabilities.can_main) {
-        setErr('请选择一个可担任 Main 的 Harness Agent')
-        return
-      }
-    } else if (!isPresetMode && isModelQuotaBlocked(model)) {
+    if (!isPresetMode && isModelQuotaBlocked(model)) {
       setErr(modelQuotaError(model))
       return
     }
@@ -2779,22 +2574,6 @@ export function NewSessionModal({
       setErr(e?.message || '加载预览失败')
       setStep(1)
     } finally { setPreviewLoading(false) }
-  }
-
-  const goHarnessConfirmation = async () => {
-    if (!isMultiHarness) return
-    setErr('')
-    setHarnessEstimate(null)
-    setStep(3)
-    setPreviewLoading(true)
-    try {
-      setHarnessEstimate(await estimateHarnessRun(buildHarnessDraft()))
-    } catch (cause: any) {
-      setErr(cause?.message || '无法生成 Multi Harness 预估')
-      setStep(2)
-    } finally {
-      setPreviewLoading(false)
-    }
   }
 
   // Step 2 内勾选状态变更 → 即时拉新 preview, 不阻塞 UI (lastSent 防竞态)
@@ -2874,7 +2653,7 @@ export function NewSessionModal({
   }
 
   const submit = async () => {
-    if (!isPresetMode && !isMultiHarness && isModelQuotaBlocked(model)) {
+    if (!isPresetMode && isModelQuotaBlocked(model)) {
       setErr(modelQuotaError(model))
       return
     }
@@ -2903,19 +2682,6 @@ export function NewSessionModal({
     }
     setLoading(true); setErr('')
     try {
-      if (isMultiHarness) {
-        if (!harnessEstimate) throw new Error('阵容预估已失效，请返回上一步重新确认')
-        let runId = createdHarnessRunId
-        if (!runId) {
-          const snapshot = await createHarnessRun(buildHarnessDraft(), harnessEstimate)
-          runId = snapshot.run.id
-          setCreatedHarnessRunId(runId)
-        }
-        const sessionId = await waitForHarnessMainSession(runId)
-        draftClear(DRAFT_KEY)
-        onCreated({ session_id: sessionId, harness_run_id: runId })
-        return
-      }
       const endpoint = isResearch ? `/api/researches/${researchId}/sessions` : `/api/issues/${issueId}/sessions`
       const s = await api(endpoint, {
         method: 'POST',
@@ -3034,7 +2800,7 @@ export function NewSessionModal({
     ...(pcTaskRequiresAimux ? ['mobius-aimux'] : []),
   ].filter(Boolean)
   const previewBodyText = typeof preview?.body === 'string' ? preview.body : ''
-  const totalSteps = isMultiHarness ? 3 : 2
+  const totalSteps = 2
 
   // 目的/描述输入框: preset 模板模式保留自带边框(裸); 正常创建模式下边框透明,
   // 交给 AttachmentComposer 的整合容器统一包边, 使附件芯片/上传按钮与输入框融为一体.
@@ -3073,9 +2839,7 @@ export function NewSessionModal({
       <div data-tour="session-modal" className="relative rounded-2xl p-6 shadow-2xl flex flex-col" style={{
         width: step === 2
           ? 'min(1120px, calc(100vw - 32px))'
-          : step === 3
-            ? 'min(720px, calc(100vw - 32px))'
-            : 'min(560px, calc(100vw - 32px))',
+          : 'min(560px, calc(100vw - 32px))',
         height: step === 2 ? 'min(760px, calc(100vh - 32px))' : undefined,
         maxHeight: 'calc(100vh - 32px)',
         background: 'var(--modal-bg)',
@@ -3088,7 +2852,7 @@ export function NewSessionModal({
           >
             <Loader2 className="h-9 w-9 animate-spin" style={{ color: '#60a5fa' }} strokeWidth={1.8} />
             <div className="text-[14px] font-medium" style={{ color: '#f1f5f9' }}>
-              {isPresetMode ? '正在保存预设，请稍候…' : isMultiHarness ? '正在创建 Multi Harness 主会话…' : '正在创建会话，请稍候…'}
+              {isPresetMode ? '正在保存预设，请稍候…' : '正在创建会话，请稍候…'}
             </div>
             {!isPresetMode && continueFromSessionId && (
               <div className="text-[11px]" style={{ color: '#cbd5e1' }}>正在生成转接记录并启动新会话，完成后自动进入</div>
@@ -3123,9 +2887,7 @@ export function NewSessionModal({
             <p className="text-[12px] mb-3 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
               {isPresetMode
                 ? '这里只保存未来创建会话时要使用的参数，不会立即创建真正的会话。'
-                : isMultiHarness
-                  ? `已自动启用 Multi Harness。Main 负责拆解和汇总，其余 Agent 以只读方式协作。`
-                  : `${displayEntityLabel} 创建后, 当前的 Skill 与 Memory 会作为快照定型, 之后修改不影响此 ${displayEntityLabel}.`}
+                : `${displayEntityLabel} 创建后, 当前的 Skill 与 Memory 会作为快照定型, 之后修改不影响此 ${displayEntityLabel}.`}
               {requiredSkillNames.length > 0 && <span className="block mt-1">必选 Skill: {requiredSkillNames.join('、')}</span>}
             </p>
             <div className="flex-1 min-h-0 space-y-3 mb-4 overflow-y-auto overscroll-contain pr-1">
@@ -3204,26 +2966,14 @@ export function NewSessionModal({
               )}
               <div>
                 <div className="text-[12px] mb-1.5 flex items-center justify-between" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
-                  <span>{supportsHarnessRoster ? 'Harness Agent（可选 1-3 个）' : '模型（创建后不可更改）'}</span>
-                  {supportsHarnessRoster && (
-                    <span className="tabular-nums">已选 {harnessModelKeys.length}/3</span>
-                  )}
+                  <span>模型（创建后不可更改）</span>
                 </div>
-                {supportsHarnessRoster && (
-                  <div className="mb-2 text-[11px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
-                    选择 1 个时独立执行；选择 2-3 个后自动启用 Multi Harness。
-                  </div>
-                )}
                 <div
                   data-tour="session-model-picker"
-                  className={supportsHarnessRoster
-                    // Harness Agent 选择: 固定三列 + 两行限高滚动, 不再用点击展开
-                    ? 'grid grid-cols-3 gap-2 max-h-[8.5rem] overflow-y-auto overscroll-contain pr-1'
-                    : `grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
+                  className={`grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
                 >
                   {modelOptions.map(opt => {
-                    const active = supportsHarnessRoster ? harnessModelKeys.includes(opt.key) : model === opt.key
-                    const isMain = supportsHarnessRoster && harnessMainModelKey === opt.key
+                    const active = model === opt.key
                     const backendKey = promptBackendKeyForOption(opt)
                     const count5h = promptStats ? promptStats[backendKey] : null
                     const count5min = promptStats
@@ -3251,14 +3001,8 @@ export function NewSessionModal({
                     }
                     const cardBody = (
                       <>
-                        {supportsHarnessRoster && (
-                          <span className="absolute right-2 top-2 inline-flex h-4 w-4 items-center justify-center rounded border"
-                            style={{ borderColor: active ? '#3b82f6' : 'var(--input-border)', background: active ? '#3b82f6' : 'transparent', color: '#fff' }}>
-                            {active && <Check className="h-3 w-3" strokeWidth={2.4} />}
-                          </span>
-                        )}
-                        <div className={`text-[13px] font-medium truncate ${supportsHarnessRoster ? 'pr-5' : ''}`}>{opt.title || opt.label}</div>
-                        <div className={`text-[11px] flex flex-wrap items-baseline gap-x-1.5 min-w-0 ${supportsHarnessRoster && active ? 'pr-16' : ''}`} style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                        <div className="text-[13px] font-medium truncate">{opt.title || opt.label}</div>
+                        <div className="text-[11px] flex flex-wrap items-baseline gap-x-1.5 min-w-0" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
                           <span className="truncate">{opt.sub}</span>
                           {!quotaBlocked && usage?.limit != null && (
                             <span className="font-medium whitespace-nowrap" style={{ color: quotaBlocked ? '#ef4444' : (isDark ? '#93c5fd' : '#2563eb') }}>
@@ -3278,38 +3022,16 @@ export function NewSessionModal({
                         </div>
                       </>
                     )
-                    if (!supportsHarnessRoster) {
-                      return (
-                        <button key={opt.key} type="button" disabled={blocked} title={badgeTitle} onClick={() => chooseModel(opt.key)}
-                          className="relative min-h-16 rounded-xl text-left px-3 py-2 transition-colors disabled:cursor-not-allowed"
-                          style={cardStyle}>
-                          {cardBody}
-                        </button>
-                      )
-                    }
                     return (
-                      <div key={opt.key} className="relative h-16 overflow-hidden rounded-xl transition-colors" style={cardStyle}>
-                        <button type="button" disabled={blocked} title={badgeTitle} aria-pressed={active}
-                          onClick={() => toggleHarnessModel(opt)}
-                          className="relative h-full w-full px-3 py-2 text-left disabled:cursor-not-allowed">
-                          {cardBody}
-                        </button>
-                        {active && (
-                          <button type="button" onClick={() => chooseHarnessMain(opt)} disabled={isMain || quotaBlocked}
-                            className="absolute bottom-1.5 right-2 z-10 inline-flex h-5 items-center justify-center gap-1 rounded px-1.5 text-[9px] font-medium transition-colors disabled:cursor-default"
-                            style={{
-                              background: isMain ? 'rgba(245,158,11,0.12)' : 'transparent',
-                              color: isMain ? (isDark ? '#fcd34d' : '#b45309') : (isDark ? '#93c5fd' : '#1d4ed8'),
-                            }}>
-                            {isMain && <Crown className="h-3 w-3" strokeWidth={2} />}
-                            {isMain ? 'Main' : '设为 Main'}
-                          </button>
-                        )}
-                      </div>
+                      <button key={opt.key} type="button" disabled={blocked} title={badgeTitle} onClick={() => chooseModel(opt.key)}
+                        className="relative min-h-16 rounded-xl text-left px-3 py-2 transition-colors disabled:cursor-not-allowed"
+                        style={cardStyle}>
+                        {cardBody}
+                      </button>
                     )
                   })}
                 </div>
-                {hasCollapsedModelOverflow && !supportsHarnessRoster && !modelExpandedForSelection && (
+                {hasCollapsedModelOverflow && !modelExpandedForSelection && (
                   <button type="button" onClick={() => setModelGridManuallyExpanded(v => !v)}
                     className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
                     style={{
@@ -3423,86 +3145,6 @@ export function NewSessionModal({
                 data-tour="session-preview-next"
                 className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
                 {previewLoading ? '加载预览...' : '下一步 · 预览配置'}
-              </button>
-            </div>
-          </>
-        )}
-
-        {step === 3 && isMultiHarness && previewLoading && (
-          <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-3" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
-            <Loader2 className="h-7 w-7 animate-spin" style={{ color: '#3b82f6' }} strokeWidth={1.8} />
-            <div className="text-[13px]">正在计算阵容预估…</div>
-          </div>
-        )}
-
-        {step === 3 && isMultiHarness && !previewLoading && harnessEstimate && (
-          <>
-            <div className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-1">
-              <div className="flex items-start gap-3 border-b pb-4" style={{ borderColor: 'var(--border-color)' }}>
-                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
-                  <Users className="h-5 w-5" strokeWidth={1.8} />
-                </span>
-                <div className="min-w-0">
-                  <h4 className="text-[14px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>确认 Multi Harness 阵容</h4>
-                  <p className="mt-1 text-[11px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
-                    Main Agent 负责拆解目标、调度成员并汇总结果；其余成员默认作为 Worker。
-                  </p>
-                </div>
-              </div>
-
-              <section>
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <h4 className="text-[12px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>执行阵容</h4>
-                  <span className="text-[11px] tabular-nums" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{selectedHarnessOptions.length} 个 Agent</span>
-                </div>
-                <div className="overflow-hidden rounded-lg border" style={{ borderColor: 'var(--input-border)' }}>
-                  {selectedHarnessOptions.map((option, index) => {
-                    const main = option.key === harnessMainModelKey
-                    return (
-                      <div key={option.key} className="flex min-h-12 items-center gap-3 px-3 py-2"
-                        style={{ borderTop: index > 0 ? '1px solid var(--input-border)' : undefined, background: main ? 'rgba(245,158,11,0.08)' : 'var(--input-bg)' }}>
-                        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold"
-                          style={{ background: main ? 'rgba(245,158,11,0.14)' : 'rgba(59,130,246,0.12)', color: main ? (isDark ? '#fcd34d' : '#b45309') : '#3b82f6' }}>
-                          {main ? <Crown className="h-4 w-4" strokeWidth={2} /> : index + 1}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-[12px] font-medium" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{option.title || option.label}</div>
-                          <div className="truncate text-[10px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{option.sub}</div>
-                        </div>
-                        <span className="shrink-0 rounded px-2 py-1 text-[10px] font-medium"
-                          style={{ background: main ? 'rgba(245,158,11,0.14)' : 'rgba(59,130,246,0.1)', color: main ? (isDark ? '#fcd34d' : '#b45309') : (isDark ? '#93c5fd' : '#1d4ed8') }}>
-                          {main ? 'Main' : 'Worker'}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </section>
-
-              <section className="border-y py-4" style={{ borderColor: 'var(--border-color)' }}>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="flex items-center gap-3">
-                    <Calculator className="h-4 w-4 shrink-0" style={{ color: '#3b82f6' }} strokeWidth={1.8} />
-                    <div><div className="text-[10px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>预计时长</div><div className="text-[13px] font-semibold tabular-nums" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{harnessDuration(harnessEstimate.estimated_duration_seconds_range[0])} - {harnessDuration(harnessEstimate.estimated_duration_seconds_range[1])}</div></div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Calculator className="h-4 w-4 shrink-0" style={{ color: '#10b981' }} strokeWidth={1.8} />
-                    <div><div className="text-[10px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>预计成本</div><div className="text-[13px] font-semibold tabular-nums" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>${harnessEstimate.estimated_cost_usd_range[0].toFixed(2)} - ${harnessEstimate.estimated_cost_usd_range[1].toFixed(2)}</div></div>
-                  </div>
-                </div>
-              </section>
-
-              <div className="rounded-lg border px-3 py-2 text-[11px] leading-relaxed"
-                style={{ background: isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.05)', borderColor: isDark ? 'rgba(59,130,246,0.28)' : 'rgba(59,130,246,0.22)', color: isDark ? '#bfdbfe' : '#1d4ed8' }}>
-                当前 Multi Harness 以只读方式串行协作，不会直接修改工作区。创建后将自动进入 Main Agent 会话。
-              </div>
-            </div>
-            {err && <ErrBanner>{err}</ErrBanner>}
-            <div className="mt-4 flex gap-2">
-              <button onClick={() => setStep(2)} disabled={loading} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border disabled:opacity-40" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
-              <button onClick={submit} disabled={loading} data-tour="session-submit"
-                className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
-                {loading ? '创建中...' : '确认阵容并创建'}
               </button>
             </div>
           </>
@@ -3711,12 +3353,10 @@ export function NewSessionModal({
             )}
             <div className="flex gap-2">
               <button onClick={() => setStep(1)} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
-              <button onClick={isMultiHarness ? goHarnessConfirmation : submit} disabled={loading || previewLoading}
-                data-tour={isMultiHarness ? 'session-roster-next' : 'session-submit'}
+              <button onClick={submit} disabled={loading || previewLoading}
+                data-tour="session-submit"
                 className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
-                {isMultiHarness
-                  ? (previewLoading ? '正在计算阵容预估…' : '下一步 · 确认阵容')
-                  : loading ? (isPresetMode ? '保存中...' : '创建中...') : (isPresetMode ? '保存预设' : '确认并创建')}
+                {loading ? (isPresetMode ? '保存中...' : '创建中...') : (isPresetMode ? '保存预设' : '确认并创建')}
               </button>
             </div>
           </>

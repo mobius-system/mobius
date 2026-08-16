@@ -23,6 +23,8 @@ const CodeConversationPane = lazy(() => import('../components/workspace/code-con
 const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
 const SESSION_SIDEBAR_PAGE_SIZE = 16  // sidebar 会话列表每页 16, 超过即分页
 const RECENT_SESSION_LIMIT = 50
+// 单会话试验：先在当前自迭代 Session 验证 Codex 风格的轻量会话壳，避免影响其他会话。
+const CODEX_SESSION_PILOT_ID = '629329f3'
 
 type SessionListMode = 'issue' | 'recent'
 
@@ -78,6 +80,7 @@ export default function IssuePage() {
   const projectId = params.project || ''
   const issueId = params.issue || ''
   const sessionParam = search.get('session') || ''
+  const codexSessionPilot = sessionParam === CODEX_SESSION_PILOT_ID
   const autoOpenNewSession = search.get('newSession') === '1'
 
   // ===== 「代码对话」模式: 左 code-server 编辑器 + 右 Session 对话 =====
@@ -357,11 +360,15 @@ export default function IssuePage() {
   }, [sidebarPagination.page, sessionListMode])
 
   return (
-    <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
-      <TopNav />
+    <div
+      className="flex flex-col h-screen"
+      style={{ background: 'var(--bg-primary)' }}
+      data-page={codexSessionPilot ? 'codex-session-pilot' : undefined}
+    >
+      {!codexSessionPilot && <TopNav />}
       <div className="flex flex-1 min-h-0">
         {/* 左侧 sidebar — 仅「会话模式」可见; contents 让内部 ResizablePanel 仍是 flex 直接子元素 (会话模式零回归) */}
-        <div className={(useEditorChat || useCodeConversation) ? 'hidden' : 'contents'}>
+        <div className={(codexSessionPilot || useEditorChat || useCodeConversation) ? 'hidden' : 'contents'}>
         <ResizablePanel
           storageKey="mobius:ui:sidebar:issue-sessions"
           defaultWidth={288}
@@ -586,7 +593,7 @@ export default function IssuePage() {
             editorMounted 首次进入后置 true, 此后切回会话模式仅 hidden 保活 iframe (不卸载/不重连 WS);
             {!isMobile && ...} 避免 ResizablePanel side=left 在窄屏 portal 成抽屉. 该 {editorMounted && ...}
             表达式恒占一个 React 子槽位 → ChatArea 兄弟索引恒定 → 切换布局时 ChatArea 不重挂. */}
-        {editorMounted && !isMobile && (
+        {editorMounted && !isMobile && !codexSessionPilot && (
           <div className={useEditorChat ? 'contents' : 'hidden'}>
             <ResizablePanel
               storageKey={`mobius:ui:split:editor-chat:${projectId}`}
@@ -616,7 +623,7 @@ export default function IssuePage() {
 
         {/* 中+左: 「代码对话 v2」三栏主体 (文件浏览器 + 代码浏览). 右侧 ChatArea 由下方渲染.
             v2Mounted 保活文件树展开/选中状态; 切回会话/v1 仅 hidden. */}
-        {v2Mounted && !isMobile && (
+        {v2Mounted && !isMobile && !codexSessionPilot && (
           <div className={useCodeConversation ? 'contents' : 'hidden'}>
             <Suspense
               fallback={
@@ -643,8 +650,10 @@ export default function IssuePage() {
               - 否则 → SessionOverview */}
         {currentSession ? (
           <ChatArea
-            layout={(useEditorChat || useCodeConversation) ? 'stacked' : 'default'}
-            onNewSession={(useEditorChat || useCodeConversation) ? () => setShowNewSession(true) : undefined}
+            layout={codexSessionPilot ? 'easy' : (useEditorChat || useCodeConversation) ? 'stacked' : 'default'}
+            codexStyle={codexSessionPilot}
+            onBack={codexSessionPilot ? goToOverview : undefined}
+            onNewSession={(codexSessionPilot || useEditorChat || useCodeConversation) ? () => setShowNewSession(true) : undefined}
           />
         ) : sessionParam ? (
           <Loading text="正在加载会话..." />
