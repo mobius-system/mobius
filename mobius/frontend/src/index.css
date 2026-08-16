@@ -5945,6 +5945,43 @@ body.mobius-resizing .mobius-resizable-handle {
 .easy-session-context .easy-session-tools .mobius-chat-input-actions {
   display: flex !important;
 }
+.easy-session-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-shrink: 0;
+  padding-left: 10px;
+  border-left: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.easy-session-summary__icon { width: 14px; height: 14px; flex-shrink: 0; color: var(--accent-primary); }
+.easy-session-summary__label { font-weight: 650; color: var(--text-primary); }
+.easy-session-summary small,
+.easy-session-summary__complete { color: var(--text-muted); font-size: 10px; }
+.easy-session-summary__action {
+  min-height: 26px;
+  max-width: 150px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: color-mix(in srgb, var(--bg-card-hover) 72%, transparent);
+  color: var(--text-secondary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color .18s ease, color .18s ease, border-color .18s ease;
+}
+.easy-session-summary__action:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent-primary) 45%, var(--border-color));
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--bg-card-hover));
+  color: var(--text-primary);
+}
+.easy-session-summary__action:disabled { cursor: wait; opacity: .55; }
 @media (max-width: 700px) {
   .easy-session-context { padding-left: 10px; padding-right: 10px; gap: 6px; }
   .easy-session-context [aria-label="当前会话上下文"] > span:not(:last-of-type),
@@ -5952,6 +5989,9 @@ body.mobius-resizing .mobius-resizable-handle {
   .easy-session-context [aria-label="当前会话上下文"] strong { max-width: 120px; }
   .easy-session-tools > [role="group"] { right: -58px; max-width: calc(100vw - 16px); overflow-x: auto; }
   .easy-session-tools .advanced-session-actions--compact { width: 340px; }
+  .easy-session-summary { margin-left: 2px; padding-left: 7px; gap: 4px; }
+  .easy-session-summary__label { display: none; }
+  .easy-session-summary__action { max-width: 112px; padding-inline: 7px; }
   [data-page="easy-mode"] input { font-size: 16px !important; }
 }
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input--with-actions .mobius-chat-input-editor {
