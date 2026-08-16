@@ -651,6 +651,7 @@ export default function IssuePage() {
         {currentSession ? (
           <ChatArea
             layout={codexSessionPilot ? 'easy' : (useEditorChat || useCodeConversation) ? 'stacked' : 'default'}
+            codexStyle={codexSessionPilot}
             onBack={codexSessionPilot ? goToOverview : undefined}
             onNewSession={(codexSessionPilot || useEditorChat || useCodeConversation) ? () => setShowNewSession(true) : undefined}
           />

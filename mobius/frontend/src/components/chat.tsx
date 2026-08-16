@@ -2192,8 +2192,9 @@ type EasyProjectOption = {
   runningCount?: number
 }
 
-export function ChatArea({ layout = 'default', onBack, onNewSession, easyProjectControl }: {
+export function ChatArea({ layout = 'default', codexStyle = false, onBack, onNewSession, easyProjectControl }: {
   layout?: 'default' | 'stacked' | 'easy'
+  codexStyle?: boolean
   onBack?: () => void
   onNewSession?: () => void
   easyProjectControl?: {
@@ -4514,6 +4515,7 @@ export function ChatArea({ layout = 'default', onBack, onNewSession, easyProject
           onMatchScrollResolved={onMatchScrollResolved}
           onMatchScrollUnresolved={handleLoadAllJsonl}
           variant={layout === 'easy' ? 'easy' : 'standard'}
+          compactInjectedContext={codexStyle}
         />
 
         {/* 右侧: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽。 */}

@@ -39,6 +39,7 @@ export type EasyJsonlViewProps = {
   scrollToMatchTs?: string | null
   onScrollResolved?: () => void
   onScrollUnresolved?: () => void
+  compactInjectedContext?: boolean
 }
 
 function activityIcon(kind: EasyActivityKind) {
@@ -140,13 +141,17 @@ export default function EasyJsonlView({
   scrollToMatchTs,
   onScrollResolved,
   onScrollUnresolved,
+  compactInjectedContext = false,
 }: EasyJsonlViewProps) {
   const [showAll, setShowAll] = useState(false)
   const recent = useMemo(() => entries.slice(-(showAll ? entries.length : EASY_INITIAL_WINDOW_SIZE)), [entries, showAll])
   const windowOffset = entries.length - recent.length
   const visibleItems = useMemo(() => mergeBashToolResultItems(recent, windowOffset).filter(item => !isHiddenJsonlNoiseEntry(item.entry)), [recent, windowOffset])
   const { rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
-  const easyRounds = useMemo(() => buildEasyJsonlRounds(rounds), [rounds])
+  const easyRounds = useMemo(
+    () => buildEasyJsonlRounds(rounds, { compactInjectedContext }),
+    [rounds, compactInjectedContext],
+  )
   const displayTotal = typeof total === 'number' && total > entries.length ? total : entries.length
   const hasRemoteMore = typeof total === 'number' && total > entries.length
   const targetHandledRef = useRef('')
