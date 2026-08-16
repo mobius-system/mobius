@@ -91,7 +91,7 @@ type ProjectSettingsPanelProps = {
   hideHeaderTabs?: boolean
 }
 
-export type SettingsPane = 'settings' | 'versions' | 'architecture' | 'todos' | 'members' | 'package' | 'assistant'
+export type SettingsPane = 'settings' | 'context' | 'versions' | 'architecture' | 'todos' | 'members' | 'package' | 'assistant'
 
 const PROJECT_VISIBILITY_OPTIONS: Array<{ value: 'private' | 'public'; label: string; description: string }> = [
   { value: 'private', label: '私有', description: '只有项目成员（含创建者与项目管理员）能看到本项目。' },
@@ -571,7 +571,7 @@ export function ProjectSettingsPanel({
   const PaneKey = `mobius:project:pane:${project?.id || ''}`
   const paneInit = (): SettingsPane => {
     const v = typeof localStorage !== 'undefined' ? localStorage.getItem(PaneKey) : null
-    return v && (['settings','versions','architecture','todos','members','package','assistant'] as const).includes(v as SettingsPane) ? v as SettingsPane : 'settings'
+    return v && (['settings','context','versions','architecture','todos','members','package','assistant'] as const).includes(v as SettingsPane) ? v as SettingsPane : 'settings'
   }
   // 受控模式 (设计师之眼侧边栏): 父层接管 activePane; 否则维持原有内部状态.
   const [internalPane, setInternalPane] = useState<SettingsPane>(paneInit)
@@ -869,6 +869,8 @@ export function ProjectSettingsPanel({
     const arr: OverflowTab[] = [
       { key: 'settings', label: '项目设置', active: activePane === 'settings', dataTour: 'project-settings-tab' },
     ]
+    // 项目级记忆/技能管理器已从「项目设置」页内移出, 独立成「记忆技能」页并紧跟其后.
+    arr.push({ key: 'context', label: '记忆技能', active: activePane === 'context', dataTour: 'project-context-tab' })
     // 项目成员设置紧跟「项目设置」之后、版本追踪之前 (所有项目, 含拓展应用).
     arr.push({ key: 'members', label: '项目成员', active: activePane === 'members' })
     arr.push(
@@ -956,6 +958,17 @@ export function ProjectSettingsPanel({
         ) : activePane === 'package' ? (
           <div className="p-3 w-full">
             <ProjectPackagePanel projectId={project.id} />
+          </div>
+        ) : activePane === 'context' ? (
+          <div className="w-full min-w-0 p-3 space-y-4">
+            {/* 项目级记忆/技能管理器 (原嵌在「项目设置」页中部, 要翻过基本设置等卡片才能看到,
+                故按用户要求独立成「记忆技能」页, 放在「项目设置」下面). */}
+            <div style={embeddedSettingsCardStyle}>
+              <SkillsManager scope="project" projectId={project.id} />
+            </div>
+            <div className="pt-2" style={embeddedSettingsCardStyle}>
+              <MemoriesManager scope="project" projectId={project.id} />
+            </div>
           </div>
         ) : activePane === 'versions' ? (
           <GitTrackingPanel
@@ -1168,12 +1181,7 @@ export function ProjectSettingsPanel({
             <span className="text-[11px]" style={{ color: metaSaveStatusColor }}>{metaSaveStatus}</span>
           </div> */}
 
-          <div className="pt-2" style={embeddedSettingsCardStyle}>
-            <SkillsManager scope="project" projectId={project.id} />
-          </div>
-          <div className="pt-2" style={embeddedSettingsCardStyle}>
-            <MemoriesManager scope="project" projectId={project.id} />
-          </div>
+          {/* 项目级 Skill/Memory 管理器已移至「记忆技能」独立页 (见 activePane === 'context' 分支). */}
           <div className="pt-2" style={embeddedSettingsCardStyle}>
             <ProjectUserContextWhitelist projectId={project.id} />
           </div>
