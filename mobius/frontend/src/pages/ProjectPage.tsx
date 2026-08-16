@@ -10,6 +10,7 @@ import {
 } from '../components/modals'
 import {
   Boxes,
+  Brain,
   ClipboardList,
   FlaskConical,
   GitBranch,
@@ -148,7 +149,7 @@ export default function ProjectPage() {
   const SettingsPaneKey = `mobius:project:pane:${projectId || ''}`
   const settingsPaneInit = (): SettingsPane => {
     const v = typeof localStorage !== 'undefined' ? localStorage.getItem(SettingsPaneKey) : null
-    return v && (['settings', 'versions', 'architecture', 'todos', 'members', 'package', 'assistant'] as const).includes(v as SettingsPane)
+    return v && (['settings', 'context', 'versions', 'architecture', 'todos', 'members', 'package', 'assistant'] as const).includes(v as SettingsPane)
       ? v as SettingsPane
       : 'settings'
   }
@@ -165,6 +166,7 @@ export default function ProjectPage() {
     `flex items-center gap-2 h-9 px-3 rounded-lg text-[13px] transition-colors ${active ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-hover)]'}`
   const SETTINGS_NAV_META: Record<string, { label: string; icon: ReactNode }> = {
     settings: { label: '项目设置', icon: <Settings className="w-4 h-4" strokeWidth={1.8} /> },
+    context: { label: '记忆技能', icon: <Brain className="w-4 h-4" strokeWidth={1.8} /> },
     members: { label: '项目成员', icon: <Users className="w-4 h-4" strokeWidth={1.8} /> },
     versions: { label: '版本追踪', icon: <GitBranch className="w-4 h-4" strokeWidth={1.8} /> },
     architecture: { label: '系统剖析', icon: <Boxes className="w-4 h-4" strokeWidth={1.8} /> },
