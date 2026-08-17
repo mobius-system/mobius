@@ -119,21 +119,38 @@
       <h2>渲染</h2>
       <label class="row">
         <span class="row-label">光点大小</span>
-        <input id="dotSizeInput" type="range"><b id="dotSizeInputVal" class="row-val">1.20</b>
+        <input id="dotSizeInput" type="range"><b id="dotSizeInputVal" class="row-val">0.30</b>
       </label>
       <label class="row">
         <span class="row-label">外晕强度</span>
         <input id="glowInput" type="range"><b id="glowInputVal" class="row-val">0.85</b>
       </label>
       <label class="row">
+        <span class="row-label">背景主题</span>
+        <select id="themeSelect">
+          <option value="dark">暗色 (默认)</option>
+          <option value="light">亮色 (白底)</option>
+          <option value="custom">自定义 (取色器)</option>
+        </select>
+      </label>
+      <label class="row" id="bgCustomColorRow" style="display:none;">
+        <span class="row-label">背景颜色</span>
+        <input id="bgColorInput" type="color" value="#ffffff">
+      </label>
+      <label class="row">
         <span class="row-label">背景亮度</span>
-        <input id="bgInput" type="range"><b id="bgInputVal" class="row-val">0.04</b>
+        <input id="bgInput" type="range" min="0" max="1" step="0.01"><b id="bgInputVal" class="row-val">0.04</b>
       </label>
     </div>
 
     <div class="panel-section">
       <h2>预设</h2>
       <select id="presetSelect"></select>
+      <div class="row" id="presetSaveRow" style="display:none; margin-top:6px;">
+        <input id="presetNameInput" type="text" placeholder="预设名称" maxlength="64" style="flex:1; min-width:0;">
+        <button id="presetSaveConfirm" class="btn small">保存</button>
+        <button id="presetSaveCancel" class="btn small">取消</button>
+      </div>
       <div class="row">
         <button id="loadPresetBtn" class="btn small">加载</button>
         <button id="savePresetBtn" class="btn small">保存当前</button>

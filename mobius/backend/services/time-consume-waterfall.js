@@ -1,9 +1,9 @@
 const fs = require('fs')
 const path = require('path')
 
-const { mobiusJsonlPathOf, readMergedJsonlHistory } = require('./mobius-jsonl')
+const { mobiusJsonlPathOf } = require('./mobius-jsonl')
 
-const TIME_CONSUME_WATERFALL_VERSION = 2
+const TIME_CONSUME_WATERFALL_VERSION = 5
 const MIN_STEP_MS = 1000
 
 function timeConsumeWaterfallCachePathOf(jsonlPath) {
@@ -73,97 +73,109 @@ function parseEntryTimestampMs(entry) {
   return null
 }
 
-function normalizeText(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim()
+function normalizeCallId(value) {
+  return value == null ? null : String(value)
 }
 
-function joinContentText(content) {
-  if (typeof content === 'string') return normalizeText(content)
-  if (!Array.isArray(content)) return ''
-  return normalizeText(content.map((block) => {
-    if (!block || typeof block !== 'object') return ''
-    if (block.type === 'text' || block.type === 'thinking' || block.type === 'reasoning') {
-      return block.text ?? block.thinking ?? block.reasoning ?? ''
-    }
-    return ''
-  }).filter(Boolean).join(' '))
+function callIdOfPayload(payload) {
+  return normalizeCallId(payload?.call_id || payload?.id || payload?.tool_call_id || payload?.tool_use_id)
 }
 
-function classifyEntry(entry) {
-  if (!entry || typeof entry !== 'object') return { kind: 'other', label: '其他' }
+function callNameOfPayload(payload) {
+  return String(payload?.name || payload?.tool_name || payload?.action?.type || 'tool')
+}
 
-  if (entry.type === 'error') return { kind: 'error', label: '错误' }
-  if (entry.type === 'system') return { kind: 'system', label: '系统' }
-  if (entry.type === 'attachment') return { kind: 'attachment', label: '附件' }
+function contentBlocks(entry) {
+  const content = entry?.message?.content || entry?.payload?.content
+  return Array.isArray(content) ? content : []
+}
 
-  if (entry.type === 'user') {
-    const content = entry?.message?.content
-    if (Array.isArray(content) && content.some((block) => block?.type === 'tool_result')) {
-      return { kind: 'tool_result', label: '工具结果' }
+function eventsFromEntry(entry, lineNo = null, source = 'history') {
+  const tsMs = parseEntryTimestampMs(entry)
+  if (!Number.isFinite(tsMs)) return []
+  const base = { tsMs, lineNo, source }
+  const events = []
+
+  if (entry?.type === 'event_msg') {
+    const payload = entry.payload || {}
+    if (payload.type === 'task_started') events.push({ ...base, type: 'model_start' })
+    if (payload.type === 'task_complete' || payload.type === 'turn/end') events.push({ ...base, type: 'model_end' })
+    if (payload.type === 'agent_message') events.push({ ...base, type: 'model_observed' })
+    if (payload.type === 'patch_apply_end' || payload.type === 'web_search_end') {
+      events.push({
+        ...base,
+        type: 'tool_end',
+        callId: callIdOfPayload(payload),
+        toolName: callNameOfPayload(payload),
+      })
     }
-    return { kind: 'user', label: '用户' }
+    return events
   }
 
-  if (entry.type === 'assistant') {
-    const content = entry?.message?.content
-    if (Array.isArray(content)) {
-      if (content.some((block) => block?.type === 'tool_use')) return { kind: 'tool_use', label: '工具调用' }
-      if (content.some((block) => block?.type === 'thinking' || block?.type === 'reasoning')) {
-        return { kind: 'thinking', label: '思考' }
+  if (entry?.type === 'response_item') {
+    const payload = entry.payload || {}
+    if (payload.type === 'message') {
+      if (payload.role === 'user') events.push({ ...base, type: 'user_start' })
+      if (payload.role === 'assistant') events.push({ ...base, type: 'model_observed' })
+    }
+    if (payload.type === 'reasoning') events.push({ ...base, type: 'model_observed' })
+    if (payload.type === 'function_call' || payload.type === 'custom_tool_call') {
+      events.push({
+        ...base,
+        type: 'tool_start',
+        callId: callIdOfPayload(payload),
+        toolName: callNameOfPayload(payload),
+      })
+    }
+    if (payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') {
+      events.push({
+        ...base,
+        type: 'tool_end',
+        callId: callIdOfPayload(payload),
+        toolName: callNameOfPayload(payload),
+      })
+    }
+    return events
+  }
+
+  if (entry?.type === 'assistant') {
+    const blocks = contentBlocks(entry)
+    if (blocks.some((block) => block?.type === 'text' || block?.type === 'thinking' || block?.type === 'reasoning')) {
+      events.push({ ...base, type: 'model_observed' })
+    }
+    for (const block of blocks) {
+      if (block?.type === 'tool_use') {
+        events.push({
+          ...base,
+          type: 'tool_start',
+          callId: normalizeCallId(block.id || block.call_id),
+          toolName: callNameOfPayload(block),
+        })
       }
     }
-    return { kind: 'assistant', label: '智能体' }
+    if (!events.length) events.push({ ...base, type: 'model_observed' })
+    return events
   }
 
-  if (entry.type === 'event_msg') {
-    const payloadType = entry?.payload?.type || ''
-    if (payloadType === 'user_message') return { kind: 'user', label: '用户' }
-    if (payloadType === 'agent_message') return { kind: 'assistant', label: '智能体' }
-    if (payloadType === 'turn/end') return { kind: 'turn_end', label: '轮次结束' }
-    if (payloadType === 'error') return { kind: 'error', label: '错误' }
-    return { kind: `event:${payloadType || 'other'}`, label: '事件' }
-  }
-
-  if (entry.type === 'response_item') {
-    const payloadType = entry?.payload?.type || ''
-    if (payloadType === 'message') {
-      return entry?.payload?.role === 'user'
-        ? { kind: 'user', label: '用户' }
-        : { kind: 'assistant', label: '智能体' }
+  if (entry?.type === 'user') {
+    const blocks = contentBlocks(entry)
+    const toolResults = blocks.filter((block) => block?.type === 'tool_result')
+    if (toolResults.length) {
+      for (const block of toolResults) {
+        events.push({
+          ...base,
+          type: 'tool_end',
+          callId: normalizeCallId(block.tool_use_id || block.call_id || block.id),
+          toolName: 'tool',
+        })
+      }
+      return events
     }
-    if (payloadType === 'reasoning') return { kind: 'thinking', label: '思考' }
-    if (payloadType === 'function_call' || payloadType === 'custom_tool_call') {
-      return { kind: 'tool_use', label: '工具调用' }
-    }
-    if (payloadType === 'function_call_output' || payloadType === 'custom_tool_call_output') {
-      return { kind: 'tool_result', label: '工具结果' }
-    }
-    return { kind: `response:${payloadType || 'other'}`, label: '响应' }
+    events.push({ ...base, type: 'user_start' })
+    return events
   }
 
-  return { kind: 'other', label: '其他' }
-}
-
-function isUserStartEvent(event) {
-  return event?.kind === 'user'
-}
-
-function isTurnEndEvent(event) {
-  return event?.kind === 'turn_end'
-}
-
-function normalizeEvent(entry, lineNo = null, source = 'history') {
-  const tsMs = parseEntryTimestampMs(entry)
-  if (!Number.isFinite(tsMs)) return null
-  const { kind, label } = classifyEntry(entry)
-  return {
-    tsMs,
-    ts: new Date(tsMs).toISOString(),
-    kind,
-    label,
-    lineNo,
-    source,
-  }
+  return events
 }
 
 function createEmptyCache(jsonlPath, nowMs) {
@@ -176,107 +188,184 @@ function createEmptyCache(jsonlPath, nowMs) {
     sourceSizes: currentSourceSizes(jsonlPath),
     totalMs: 0,
     segments: [],
-    lastEvent: null,
-    active: false,
+    modelStartMs: null,
+    modelStartOffsetMs: null,
+    modelLastObservedMs: null,
+    activeTools: {},
+    toolPhaseStartMs: null,
+    toolPhaseStartOffsetMs: null,
   }
 }
 
-function finalizeSegment(state, nextEvent, nowMs) {
-  if (!state.lastEvent) return
-  const start = state.lastEvent.tsMs
-  const end = nextEvent ? nextEvent.tsMs : nowMs
+function addSegment(state, segment) {
+  const start = Number(segment.startAtMs)
+  const end = Number(segment.endAtMs)
   const durationMs = end - start
-  if (durationMs < MIN_STEP_MS) {
-    state.lastEvent = nextEvent || null
-    return
-  }
-
+  if (!Number.isFinite(durationMs) || durationMs < MIN_STEP_MS) return
   if (state.startAtMs == null) state.startAtMs = start
-  const segment = {
-    kind: state.lastEvent.kind,
-    label: state.lastEvent.label,
-    startAtMs: start,
-    endAtMs: end,
-    startOffsetMs: state.totalMs,
+  const startOffsetMs = Math.max(0, Number(segment.startOffsetMs) || 0)
+  state.segments.push({
+    ...segment,
     durationMs,
-    lineNo: state.lastEvent.lineNo,
-    source: state.lastEvent.source,
-    open: !nextEvent,
-  }
-  state.segments.push(segment)
-  state.totalMs += durationMs
-  state.lastEvent = nextEvent || null
+    startOffsetMs,
+    open: false,
+  })
+  state.totalMs = Math.max(state.totalMs, startOffsetMs + durationMs)
 }
 
-function absorbEventMeta(state, event, nowMs) {
+function closeModelSegment(state, endMs, event) {
+  if (state.modelStartMs == null) return
+  const safeEndMs = endMs == null
+    ? state.modelLastObservedMs
+    : (Number.isFinite(Number(endMs)) ? Number(endMs) : state.modelLastObservedMs)
+  if (safeEndMs != null) {
+    addSegment(state, {
+      kind: 'model',
+      label: '模型推理',
+      startAtMs: state.modelStartMs,
+      endAtMs: safeEndMs,
+      startOffsetMs: state.modelStartOffsetMs || 0,
+      lineNo: event?.lineNo ?? null,
+      source: event?.source ?? null,
+    })
+  }
+  state.modelStartMs = null
+  state.modelStartOffsetMs = null
+  state.modelLastObservedMs = null
+}
+
+function startModelSegment(state, startMs) {
+  if (state.modelStartMs == null && Object.keys(state.activeTools || {}).length === 0) {
+    state.modelStartMs = startMs
+    state.modelStartOffsetMs = state.totalMs
+    state.modelLastObservedMs = null
+  }
+}
+
+function absorbEventMeta(state, event) {
   if (!event) return
+  if (state.startAtMs != null && event.tsMs < state.startAtMs) return
 
-  if (isUserStartEvent(event)) {
-    state.active = true
-    state.lastEvent = event
-    if (state.startAtMs == null) state.startAtMs = event.tsMs
-    state.lastLineCount += 1
-    return
-  }
-
-  if (isTurnEndEvent(event)) {
-    if (state.active && state.lastEvent) {
-      finalizeSegment(state, event, nowMs)
+  if (event.type === 'user_start') {
+    if (state.modelStartMs != null && state.modelLastObservedMs != null) {
+      closeModelSegment(state, state.modelLastObservedMs, event)
+    } else {
+      state.modelStartMs = null
+      state.modelStartOffsetMs = null
+      state.modelLastObservedMs = null
     }
-    state.active = false
-    state.lastEvent = null
-    state.lastLineCount += 1
+    startModelSegment(state, event.tsMs)
     return
   }
 
-  if (!state.active) {
-    state.active = true
-    state.lastEvent = event
-    if (state.startAtMs == null) state.startAtMs = event.tsMs
-    state.lastLineCount += 1
+  if (event.type === 'model_start') {
+    if (state.modelStartMs != null && state.modelLastObservedMs != null) {
+      closeModelSegment(state, state.modelLastObservedMs, event)
+    }
+    state.modelStartMs = event.tsMs
+    state.modelStartOffsetMs = state.totalMs
+    state.modelLastObservedMs = null
     return
   }
 
-  finalizeSegment(state, event, nowMs)
-  if (state.startAtMs == null) state.startAtMs = event.tsMs
-  state.lastEvent = event
-  state.lastLineCount += 1
+  if (event.type === 'model_observed') {
+    startModelSegment(state, event.tsMs)
+    state.modelLastObservedMs = event.tsMs
+    return
+  }
+
+  if (event.type === 'tool_start') {
+    closeModelSegment(state, event.tsMs, event)
+    if (Object.keys(state.activeTools || {}).length === 0) {
+      state.toolPhaseStartMs = event.tsMs
+      state.toolPhaseStartOffsetMs = state.totalMs
+    }
+    const callId = event.callId || `anonymous:${event.source || 'history'}:${event.lineNo || event.tsMs}`
+    const phaseStartMs = state.toolPhaseStartMs == null ? event.tsMs : state.toolPhaseStartMs
+    const phaseStartOffsetMs = state.toolPhaseStartOffsetMs == null ? state.totalMs : state.toolPhaseStartOffsetMs
+    state.activeTools = state.activeTools || {}
+    state.activeTools[callId] = {
+      callId,
+      toolName: event.toolName || 'tool',
+      startAtMs: event.tsMs,
+      startOffsetMs: phaseStartOffsetMs + Math.max(0, event.tsMs - phaseStartMs),
+      lineNo: event.lineNo ?? null,
+      source: event.source ?? null,
+    }
+    return
+  }
+
+  if (event.type === 'tool_end') {
+    const callId = event.callId
+    const active = callId ? state.activeTools?.[callId] : null
+    if (active) {
+      addSegment(state, {
+        kind: 'tool',
+        label: '工具调用',
+        startAtMs: active.startAtMs,
+        endAtMs: event.tsMs,
+        startOffsetMs: active.startOffsetMs,
+        lineNo: active.lineNo,
+        source: active.source,
+        toolName: active.toolName,
+      })
+      delete state.activeTools[callId]
+    }
+    if (Object.keys(state.activeTools || {}).length === 0) {
+      state.toolPhaseStartMs = null
+      state.toolPhaseStartOffsetMs = null
+      startModelSegment(state, event.tsMs)
+    }
+    return
+  }
+
+  if (event.type === 'model_end') {
+    closeModelSegment(state, event.tsMs, event)
+  }
 }
 
 function absorbEvents(state, events, nowMs) {
   const ordered = [...events]
-    .map((entry, index) => ({
-      raw: entry,
-      meta: normalizeEvent(entry, index + 1, entry?.mobius?.backend || 'history'),
-    }))
-    .filter((item) => item.meta)
+    .flatMap((entry, index) => {
+      const source = entry?.mobius?.backend || 'history'
+      return eventsFromEntry(entry, index + 1, source).map((meta, order) => ({ meta, order }))
+    })
     .sort((a, b) => {
       if (a.meta.tsMs !== b.meta.tsMs) return a.meta.tsMs - b.meta.tsMs
       const sa = a.meta.source || ''
       const sb = b.meta.source || ''
       if (sa !== sb) return sa === 'primary' ? -1 : 1
-      return a.meta.lineNo - b.meta.lineNo
+      if (a.meta.lineNo !== b.meta.lineNo) return a.meta.lineNo - b.meta.lineNo
+      return a.order - b.order
     })
 
   for (const item of ordered) {
-    absorbEventMeta(state, item.meta, nowMs)
+    absorbEventMeta(state, item.meta)
   }
+  state.lastLineCount += events.length
 
   return state
 }
 
 function responseFromState(state, nowMs, jsonlPath, mutated) {
-  const segments = state.segments.map((segment) => ({
-    kind: segment.kind,
-    label: segment.label,
-    start_at: new Date(segment.startAtMs).toISOString(),
-    end_at: new Date(segment.endAtMs).toISOString(),
-    start_offset_ms: segment.startOffsetMs,
-    duration_ms: segment.durationMs,
-    line_no: segment.lineNo,
-    source: segment.source,
-    open: !!segment.open,
-  }))
+  const segments = [...state.segments]
+    .sort((a, b) => {
+      if (a.startOffsetMs !== b.startOffsetMs) return a.startOffsetMs - b.startOffsetMs
+      if (a.startAtMs !== b.startAtMs) return a.startAtMs - b.startAtMs
+      return a.endAtMs - b.endAtMs
+    })
+    .map((segment) => ({
+      kind: segment.kind,
+      label: segment.label,
+      start_at: new Date(segment.startAtMs).toISOString(),
+      end_at: new Date(segment.endAtMs).toISOString(),
+      start_offset_ms: segment.startOffsetMs,
+      duration_ms: segment.durationMs,
+      line_no: segment.lineNo,
+      source: segment.source,
+      tool_name: segment.toolName || null,
+      open: !!segment.open,
+    }))
 
   return {
     session_id: state.sessionId || null,
@@ -308,11 +397,10 @@ function rebuildStateFromHistory(backend, sessionId, jsonlPath, nowMs) {
   state.sessionId = sessionId
   state.sourceSizes = currentSourceSizes(jsonlPath)
   absorbEvents(state, entries, nowMs)
-  if (state.startAtMs == null && state.lastEvent) state.startAtMs = state.lastEvent.tsMs
   return state
 }
 
-function readAppendedEntries(jsonlPath, startSize, source = 'primary') {
+function readAppendedEntries(jsonlPath, startSize) {
   if (!jsonlPath || !fs.existsSync(jsonlPath)) return []
   let stat
   try {
@@ -347,28 +435,33 @@ function readAppendedEntries(jsonlPath, startSize, source = 'primary') {
 function appendFromDisk(state, jsonlPath, nowMs) {
   const currentSizes = currentSourceSizes(jsonlPath)
   const previousSizes = state.sourceSizes || { primary: 0, mobius: 0 }
-  const primaryEntries = readAppendedEntries(jsonlPath, previousSizes.primary, 'primary')
+  const primaryEntries = readAppendedEntries(jsonlPath, previousSizes.primary)
   const mobiusPath = mobiusJsonlPathOf(jsonlPath)
-  const mobiusEntries = readAppendedEntries(mobiusPath, previousSizes.mobius, 'mobius')
-  const newEntries = [...primaryEntries, ...mobiusEntries]
+  const mobiusEntries = readAppendedEntries(mobiusPath, previousSizes.mobius)
+  const newEntries = [
+    ...primaryEntries.map((entry) => ({ entry, source: 'primary' })),
+    ...mobiusEntries.map((entry) => ({ entry, source: 'mobius' })),
+  ]
   if (!newEntries.length) {
     state.sourceSizes = currentSizes
     return state
   }
   const normalized = newEntries
-    .map((entry) => ({ entry, meta: normalizeEvent(entry, null, entry?.mobius?.backend === 'mobius' ? 'mobius' : 'primary') }))
-    .filter((item) => item.meta)
+    .flatMap(({ entry, source }) => {
+      return eventsFromEntry(entry, null, source).map((meta, order) => ({ meta, order }))
+    })
     .sort((a, b) => {
       if (a.meta.tsMs !== b.meta.tsMs) return a.meta.tsMs - b.meta.tsMs
       const sa = a.meta.source || ''
       const sb = b.meta.source || ''
       if (sa !== sb) return sa === 'primary' ? -1 : 1
-      return 0
+      return a.order - b.order
     })
 
   for (const item of normalized) {
-    absorbEventMeta(state, item.meta, nowMs)
+    absorbEventMeta(state, item.meta)
   }
+  state.lastLineCount += newEntries.length
   state.sourceSizes = currentSizes
   return state
 }
@@ -472,8 +565,12 @@ function clearTimeConsumeWaterfallForBackend(backend, sessionId, opts = {}) {
     sourceSizes: currentSourceSizes(jsonlPath),
     totalMs: 0,
     segments: [],
-    lastEvent: null,
-    active: false,
+    modelStartMs: null,
+    modelStartOffsetMs: null,
+    modelLastObservedMs: null,
+    activeTools: {},
+    toolPhaseStartMs: null,
+    toolPhaseStartOffsetMs: null,
   }
   saveCache(cachePath, reset)
   return responseFromState(reset, nowMs, jsonlPath, true)
