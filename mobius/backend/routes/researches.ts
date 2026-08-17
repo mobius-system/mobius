@@ -7,6 +7,7 @@ import { Researches } from '../repositories/researches';
 import { Projects } from '../repositories/projects';
 import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
+import { SessionPendingMentions } from '../repositories/session-pending-mentions';
 // @ts-ignore — service 仍是 .js
 import modelRegistry from '../services/model-registry';
 // @ts-ignore — service 仍是 .js
@@ -332,6 +333,7 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
     }
     throw e;
   }
+  const pendingMentions = SessionPendingMentions.save(sessionId, req.body?.mentions);
 
   const displayRole = role === 'chief_researcher' ? 'chief_researcher' : 'research_assistant';
   if (!suppressJoinNotice) {
@@ -410,9 +412,11 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
           inputText: startContent,
           hasInputText: true,
           requestId: `continue-${sourceSession.session_id}-${Date.now()}` as any,
+          mentions: pendingMentions,
           source: 'http.research_session.continue_with_model',
           logger: console,
         } as any);
+        if (pendingMentions.length > 0) SessionPendingMentions.clear(sessionId);
       } catch (e) {
         const err = e as any;
         console.warn(`[researches] auto start continued session failed (${sessionId}): ${(e as Error).message}`);

@@ -46,6 +46,11 @@ import {
 } from './project-page/utils'
 import { markFireAndForgetSession } from '../services/session-start-policy'
 import { pollRecursive } from '../services/polling'
+import {
+  SessionMentionPicker,
+  sessionMentionPayload,
+  type SessionMentionSelection,
+} from './session-mention-picker'
 
 type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist'
 type IssueVisibility = 'inherit' | ProjectVisibility
@@ -2156,6 +2161,7 @@ export function NewSessionModal({
     excluded_memory_ids?: string[]
     chosen_agent_skill_id?: string
     selection_ready?: boolean
+    mentions?: SessionMentionSelection[]
   }>(DRAFT_KEY)
   const guidedDemo = readActiveGuidedDemo()
   const guidedDemoState = guidedDemo?.state
@@ -2194,6 +2200,9 @@ export function NewSessionModal({
   const [desc, setDesc] = useState(isGuidedDemo
     ? (guidedDemoState?.sessionDescription || '')
     : (initialPreset?.description || initialDraft?.desc || defaultDescription || ''))
+  const [selectedMentions, setSelectedMentions] = useState<SessionMentionSelection[]>(
+    Array.isArray(initialDraft?.mentions) ? initialDraft.mentions : [],
+  )
   const [deferPurpose, setDeferPurpose] = useState(false)
   const [role, setRole] = useState<'chief_researcher' | 'research_assistant'>(
     initialPreset?.role || initialDraft?.role || (isResearch && !chiefExists ? 'chief_researcher' : 'research_assistant')
@@ -2333,9 +2342,10 @@ export function NewSessionModal({
         excluded_memory_ids: Array.from(excludedMemories),
         chosen_agent_skill_id: chosenAgentSkill?.id || '',
         selection_ready: !!initialDraft?.selection_ready || step >= 2 || !!preview,
+        mentions: selectedMentions,
       }, { minChars: 1 })
     }
-  }, [DRAFT_KEY, isGuidedDemo, isPresetMode, name, desc, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
+  }, [DRAFT_KEY, isGuidedDemo, isPresetMode, name, desc, selectedMentions, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
 
   const modelUsageFor = useCallback((modelKey: ModelKey) => {
     return promptStats?.model_usage_limits?.models?.[modelKey] || null
@@ -2687,6 +2697,7 @@ export function NewSessionModal({
         method: 'POST',
         body: JSON.stringify({
           name, description: appendAttachmentsToDesc(submittedDescription, attachments), model, role, language,
+          mentions: sessionMentionPayload(selectedMentions),
           excluded_skill_ids: Array.from(excludedSkills),
           excluded_memory_ids: Array.from(excludedMemories),
           continue_from_session_id: continueFromSessionId || undefined,
@@ -2916,6 +2927,18 @@ export function NewSessionModal({
                 <AttachmentComposer attachments={attachments} setAttachments={setAttachments} projectId={projectId} dark={isDark}>
                   {descTextarea}
                 </AttachmentComposer>
+              )}
+              {!isPresetMode && (
+                <SessionMentionPicker
+                  value={desc}
+                  onValueChange={value => { setDesc(value); setErr('') }}
+                  selected={selectedMentions}
+                  onSelectedChange={setSelectedMentions}
+                  projectId={projectId}
+                  issueId={issueId}
+                  researchId={researchId}
+                  disabled={!issueId && !researchId}
+                />
               )}
               {isResearch && (
                 <div>

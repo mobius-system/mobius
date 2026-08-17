@@ -7,7 +7,9 @@ import { Sessions } from '../repositories/sessions';
 import { Conversations } from '../repositories/conversations';
 import { isAssistantSession } from '../services/assistant-session';
 import { Issues } from '../repositories/issues';
+import { Researches } from '../repositories/researches';
 import { Messages } from '../repositories/messages';
+import { SessionPendingMentions } from '../repositories/session-pending-mentions';
 // @ts-ignore — bridge instance 仍是 .js
 import { bridge } from '../bridge/instance';
 // @ts-ignore — service 仍是 .js
@@ -69,6 +71,7 @@ import {
   canCreateSessionForIssue,
   canOperateSession,
   canReadIssue,
+  canReadResearch,
   canReadSession,
 } from '../services/access-control';
 // flag 路径约定单一来源 (与 backend / scanner 一致): <仓库根>/.imac/flags/<sid>/{running,failed}.flag
@@ -184,11 +187,32 @@ router.get('/default-model', auth, (_req: express.Request, res: express.Response
 router.get('/mention-targets', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const currentId = String(req.query.session_id || '').trim();
+  const issueId = String(req.query.issue_id || '').trim();
+  const researchId = String(req.query.research_id || '').trim();
   const query = String(req.query.q || '').trim().slice(0, 200);
   const normalizedSearch = query.replace(/^@?session=/i, '').trim().toLowerCase();
-  const current = currentId ? Sessions.findById(currentId) as any : null;
-  if (!current || !canOperateSession(user, current)) {
-    res.status(404).json({ error: '当前 Session 不存在或无权访问' });
+  let current = currentId ? Sessions.findById(currentId) as any : null;
+  if (currentId) {
+    if (!current || !canOperateSession(user, current)) {
+      res.status(404).json({ error: '当前 Session 不存在或无权访问' });
+      return;
+    }
+  } else if (issueId) {
+    const issue = Issues.findById(issueId) as any;
+    if (!issue || !canReadIssue(user, issue)) {
+      res.status(404).json({ error: '当前 Issue 不存在或无权访问' });
+      return;
+    }
+    current = { scope_type: 'issue', issue_id: issueId, project_id: issue.project_id };
+  } else if (researchId) {
+    const research = Researches.findById(researchId) as any;
+    if (!research || !canReadResearch(user, research)) {
+      res.status(404).json({ error: '当前 Research 不存在或无权访问' });
+      return;
+    }
+    current = { scope_type: 'research', research_id: researchId, project_id: research.project_id };
+  } else {
+    res.status(400).json({ error: '请提供当前 Session、Issue 或 Research' });
     return;
   }
   const rows = Sessions.listMentionCandidates(normalizedSearch, normalizedSearch ? 600 : 300)
@@ -248,7 +272,7 @@ router.get('/mention-targets', auth, (req: express.Request, res: express.Respons
     if (ar !== br) return ar - br;
     return new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime();
   }).slice(0, 120);
-  res.json({ query, current_session_id: currentId, targets, total: targets.length });
+  res.json({ query, current_session_id: currentId || null, targets, total: targets.length });
 });
 
 function findSessionReadable(id: string, user: AnyUser): AnySession | null {
@@ -1608,6 +1632,11 @@ router.post('/:id/messages', auth, async (req: express.Request, res: express.Res
   const requestId = typeof req.body?.request_id === 'string' ? req.body.request_id : null;
   const hasInputText = Object.prototype.hasOwnProperty.call(req.body || {}, 'input_text');
   const inputText = hasInputText ? String(req.body.input_text || '') : '';
+  const pendingMentions = SessionPendingMentions.find(sessionId);
+  const directMentions = Array.isArray(req.body?.mentions) ? req.body.mentions : [];
+  const effectiveMentions = pendingMentions.length > 0
+    ? [...pendingMentions, ...directMentions]
+    : directMentions;
 
   try {
     const result = await runSessionMessage({
@@ -1618,11 +1647,12 @@ router.post('/:id/messages', auth, async (req: express.Request, res: express.Res
       hasInputText,
       requestId,
       attachments: req.body?.attachments,
-      mentions: req.body?.mentions,
+      mentions: effectiveMentions,
       source: 'http.session.messages',
       logger: console,
       urgent: req.body?.urgent === true,
     } as any);
+    if (pendingMentions.length > 0) SessionPendingMentions.clear(sessionId);
     auditSessionAccess(user, 'send_session_message', Sessions.findById(sessionId) as any);
     // 1v1 推送钩子: agent 回复 settle 后, 若用户此时离线(无 SSE) → 远程推送.
     try {
@@ -1844,6 +1874,7 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     pc_client_metadata: pcClientMetadata,
     name_human_edited: nameHumanEdited,
   } as any);
+  const pendingMentions = SessionPendingMentions.save(sessionId, req.body?.mentions);
   if (sourceSession && transferResult?.paths?.full) {
     try {
       Messages.insertSystem(
@@ -1925,9 +1956,12 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
         inputText: startContent,
         hasInputText: true,
         requestId: `continue-${sourceSession.session_id}-${Date.now()}` as any,
+        mentions: pendingMentions,
         source: 'http.session.continue_with_model',
         logger: console,
-      } as any).catch((e) => {
+      } as any).then(() => {
+        if (pendingMentions.length > 0) SessionPendingMentions.clear(sessionId);
+      }).catch((e) => {
         console.warn(`[sessions] auto start continued session failed (${sessionId}): ${(e as Error).message}`);
         // 早期失败(workspace 不可用 / model 被移除) runSessionMessage 内部未清 flag, 补清预写的 running.flag.
         if (startFlagRoot) {

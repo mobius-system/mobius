@@ -401,6 +401,18 @@ db.exec(`
   );
 `);
 
+// 新建 Session 时用户明确选择的 @ 目标，在首条人类消息成功提交前暂存于此。
+// 这是一次性通信状态，不进入 Session context snapshot / Memory / Knowledge；成功消费后立即删除。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS session_pending_mentions (
+    session_id TEXT PRIMARY KEY,
+    mentions_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    FOREIGN KEY (session_id) REFERENCES sessions_v2(session_id) ON DELETE CASCADE
+  );
+`);
+
 // messages_v2 轻量迁移: 持久化 Session @ 来源等 UI 元数据。
 (() => {
   try {

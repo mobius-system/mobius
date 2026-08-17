@@ -26,6 +26,11 @@ import { ExpandableTextarea } from './expandable-textarea'
 import { type Attachment, newAttId, formatFileSize, uploadAttachmentFile, appendAttachmentsToDesc } from './attachments'
 import { TopNavActionElement } from './top-nav-action'
 import {
+  SessionMentionPicker,
+  sessionMentionPayload,
+  type SessionMentionSelection,
+} from './session-mention-picker'
+import {
   Plus, ChevronDown, FolderPlus, CircleDot, MessagesSquare, FlaskConical,
   X, Eye, RefreshCw, Paperclip, Image as ImageIcon, Trash2,
   CheckCircle2, ExternalLink, Lock, Ban, Search, Dices, FolderOpen, History, Upload,
@@ -1200,6 +1205,9 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   // 会话名称是否被人类用户手动编辑过. false → 当前是占位/自动生成, 更换目标任务时跟随重生成; true → 用户权威, 不覆盖.
   const nameUserTouchedRef = useRef<boolean>(!!d.name_touched)
   const [desc, setDesc] = useState(d.desc || '')
+  const [selectedMentions, setSelectedMentions] = useState<SessionMentionSelection[]>(
+    Array.isArray(d.mentions) ? d.mentions : [],
+  )
   // 模型默认值: 仅由 (当前 issue 上次所选 > 项目默认 > 全局默认) 三级决定.
   // 不再从全局草稿 (gc:new-session) 读/写 model —— 那会把"上次所选"泄漏到其他 issue/项目/新项目.
   // "当前 issue 上次所选"取自该 issue 最近一次 Session 的 model (session-selection-defaults 回传),
@@ -1329,8 +1337,8 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   useEffect(() => {
     // 注意: 刻意不持久化 model —— 顶栏草稿是全局的 (不绑 issue), 写入 model 会把"上次所选"泄漏到
     // 其他 issue/项目/新项目. 模型默认完全由 (当前 issue 上次所选 > 项目默认 > 全局默认) 即时计算.
-    draftSave(DRAFT_KEY, { projectId, issueId, name, name_touched: nameUserTouchedRef.current, desc, language, excluded_skills: Array.from(excludedSkills), excluded_memories: Array.from(excludedMemories), selection_ready: selectionReady }, { minChars: 0 })
-  }, [projectId, issueId, name, desc, language, excludedSkills, excludedMemories, selectionReady])
+    draftSave(DRAFT_KEY, { projectId, issueId, name, name_touched: nameUserTouchedRef.current, desc, mentions: selectedMentions, language, excluded_skills: Array.from(excludedSkills), excluded_memories: Array.from(excludedMemories), selection_ready: selectionReady }, { minChars: 0 })
+  }, [projectId, issueId, name, desc, selectedMentions, language, excludedSkills, excludedMemories, selectionReady])
 
   const toggle = (set: Set<string>, id: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
     const n = new Set(set); n.has(id) ? n.delete(id) : n.add(id); setter(n)
@@ -1361,6 +1369,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
         : Array.from(excludedSkills)
       const s = await api(`/api/issues/${issueId}/sessions`, { method: 'POST', body: JSON.stringify({
         name, description: finalDesc, model, language,
+        mentions: sessionMentionPayload(selectedMentions),
         excluded_skill_ids: excludedSkillIds, excluded_memory_ids: Array.from(excludedMemories),
         // 用户手填过名称 → 标记 name_touched, 后端置 name_human_edited=1, AI 标题生成器不再覆盖此名.
         name_touched: nameUserTouchedRef.current,
@@ -1381,7 +1390,11 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
       const startContent = [name.trim(), finalDesc].filter(Boolean).join('\n\n')
       if (s?.session_id && startContent) {
         const requestId = `gc-start-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-        api(`/api/sessions/${s.session_id}/messages`, { method: 'POST', body: JSON.stringify({ content: startContent, request_id: requestId }) }).catch(() => {})
+        api(`/api/sessions/${s.session_id}/messages`, { method: 'POST', body: JSON.stringify({
+          content: startContent,
+          request_id: requestId,
+          mentions: sessionMentionPayload(selectedMentions),
+        }) }).catch(() => {})
       }
       const detailUrl = s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/i/${issueId}?session=${s.session_id}` : undefined
       // 简易模式由页面层用 Toast 反馈并刷新工作列表，创建层立即关闭；标准模式保留
@@ -1405,7 +1418,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
           // 重置为"未手动编辑", 让名称按当前目标任务重新自动生成 (带新时间戳); 保留项目/任务/模型/语言/Skill·Memory.
           nameUserTouchedRef.current = false
           setName(selectedIssue ? formatDefaultSessionName(selectedIssue.title) : SESSION_NAME_PLACEHOLDER)
-          setDesc(''); setAttachments([]); setErr(''); setSuccess(null)
+          setDesc(''); setSelectedMentions([]); setAttachments([]); setErr(''); setSuccess(null)
         }}
         onClose={onClose}
         dark={dark}
@@ -1487,6 +1500,15 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
         />
       </SelectShell>
       <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个会话完成什么" attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
+      <SessionMentionPicker
+        value={desc}
+        onValueChange={v => { setDesc(v); setErr('') }}
+        selected={selectedMentions}
+        onSelectedChange={setSelectedMentions}
+        projectId={projectId || undefined}
+        issueId={issueId || undefined}
+        disabled={!issueId}
+      />
       {isDesktop && (
         <PcTaskModeSection projectId={projectId || undefined} isDark={dark} onModeChange={setWorkMode} onPathChange={setPcPath} />
       )}
@@ -1554,6 +1576,9 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const [researchId, setResearchId] = useState(d.researchId || '')
   const [name, setName] = useState(d.name || '')
   const [desc, setDesc] = useState(d.desc || '')
+  const [selectedMentions, setSelectedMentions] = useState<SessionMentionSelection[]>(
+    Array.isArray(d.mentions) ? d.mentions : [],
+  )
   const [role, setRole] = useState<'chief_researcher' | 'research_assistant'>(d.role || 'research_assistant')
   // 角色默认值 (对齐 NewSessionModal): 若该 Research 尚无 chief_researcher 且用户未手动选过角色(也无草稿) → 默认首席.
   const roleUserTouchedRef = useRef(!!d.role)
@@ -1650,8 +1675,8 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
 
   useEffect(() => {
     // 刻意不持久化 model (全局草稿会泄漏, 详见 CreateSessionForm). 模型默认即时按三级链路计算.
-    draftSave(DRAFT_KEY, { projectId, researchId, name, desc, role, language }, { minChars: 0 })
-  }, [projectId, researchId, name, desc, role, language])
+    draftSave(DRAFT_KEY, { projectId, researchId, name, desc, mentions: selectedMentions, role, language }, { minChars: 0 })
+  }, [projectId, researchId, name, desc, selectedMentions, role, language])
 
   // 主 Skill 关联锁定 / 冲突互斥 (复用 NewSessionModal 的 normalizeSkillExclusions 思路)
   const isMainSkill = useCallback((id: string) => !!chosenMainSkill && chosenMainSkill.id === id, [chosenMainSkill])
@@ -1691,6 +1716,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
       const finalDesc = appendAttachmentsToDesc(desc.trim() || name, attachments)
       const s = await api(`/api/researches/${researchId}/sessions`, { method: 'POST', body: JSON.stringify({
         name, description: finalDesc, role, model, language,
+        mentions: sessionMentionPayload(selectedMentions),
         excluded_skill_ids: Array.from(excludedSkills), excluded_memory_ids: Array.from(excludedMemories),
         suppress_join_notice: true,
       }) })
@@ -1751,6 +1777,15 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
         <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="给这个 Agent 起个名字" autoFocus dark={dark} />
       </div>
       <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个 Agent 研究什么" attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
+      <SessionMentionPicker
+        value={desc}
+        onValueChange={v => { setDesc(v); setErr('') }}
+        selected={selectedMentions}
+        onSelectedChange={setSelectedMentions}
+        projectId={projectId || undefined}
+        researchId={researchId || undefined}
+        disabled={!researchId}
+      />
       <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
       <div>
         <SectionLabel hint="注入上下文语言">语言</SectionLabel>
