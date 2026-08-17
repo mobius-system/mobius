@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ExternalLink, Loader2, MonitorPlay, Plus, RefreshCw, X } from 'lucide-react'
 import { api } from '../store'
 import { pollRecursive } from '../services/polling'
-import { openPortPreview, type DevPortEntry } from './project-files'
+import { openAimuxForwardPort, type DevPortEntry } from './project-files'
 
 // kind → 中文标签. 仅当端口条目没有自定义 label 时使用.
 const KIND_LABELS: Record<string, string> = {
@@ -34,7 +34,8 @@ type DevPortsBarProps = {
 
 /**
  * 项目开发端口入口。panel 用于会话资源页签，bar 保留为兼容布局。
- * 点击即打开该端口的预览 (桌面端 AIMUX forward / Web 端 code-server proxy).
+ * 点击端口条目通过与「进入项目端口」一致的 AIMUX 端口映射打开 (桌面端
+ * startAimuxPortForward → 新窗口). Web 端 vscode proxy 反代打不开端口, 不做.
  *
  * 解决"AI 起了 dev server 报告端口, 但用户在界面里无处可点、看不到渲染结果"的痛点.
  * 端口来源二选一: ① AI 启动服务后按协议写入 ports.json, 本组件低频轮询自动浮现;
@@ -42,7 +43,6 @@ type DevPortsBarProps = {
  */
 export function DevPortsBar({ projectId, className, variant = 'bar' }: DevPortsBarProps) {
   const [ports, setPorts] = useState<DevPortEntry[]>([])
-  const [vscodeWebUrl, setVscodeWebUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [openingPort, setOpeningPort] = useState<number | null>(null)
@@ -56,16 +56,11 @@ export function DevPortsBar({ projectId, className, variant = 'bar' }: DevPortsB
   const load = useCallback(async (signal?: AbortSignal) => {
     if (!projectId) {
       setPorts([])
-      setVscodeWebUrl('')
       return
     }
     try {
-      const [files, data] = await Promise.all([
-        api(`/api/projects/${projectId}/files?path=/`, signal ? { signal } : undefined),
-        api(`/api/projects/${projectId}/dev-ports`, signal ? { signal } : undefined),
-      ])
+      const data = await api(`/api/projects/${projectId}/dev-ports`, signal ? { signal } : undefined)
       if (signal?.aborted) return
-      setVscodeWebUrl(files?.vscode_web_url || '')
       const seen = new Set<number>()
       const deduped = (Array.isArray(data?.ports) ? data.ports as DevPortEntry[] : [])
         .filter((p) => {
@@ -98,16 +93,17 @@ export function DevPortsBar({ projectId, className, variant = 'bar' }: DevPortsB
     return stop
   }, [projectId, load])
 
+  // 与「进入项目端口」对话框的 AIMUX 打开同一条链路; Web 端无 AIMUX 桥时提示需要桌面客户端.
   const handleOpen = useCallback(async (port: number) => {
     setOpeningPort(port)
     setError('')
     try {
-      const r = await openPortPreview(port, { vscodeWebUrl, desktopBridge })
+      const r = await openAimuxForwardPort(port, desktopBridge)
       if (!r.ok) setError(r.error || '打开端口失败')
     } finally {
       setOpeningPort(null)
     }
-  }, [vscodeWebUrl, desktopBridge])
+  }, [desktopBridge])
 
   const handleAdd = useCallback(async () => {
     const portText = addPort.trim()

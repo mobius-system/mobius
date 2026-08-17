@@ -48,11 +48,12 @@
   grid-template-columns: 34px minmax(0, 1fr);
   gap: 12px;
   max-height: 500px;
-  padding: 15px 17px;
-  border: 1px solid color-mix(in srgb, var(--easy-accent) 26%, var(--border-color));
-  border-radius: 17px;
-  background: linear-gradient(145deg, var(--easy-surface-strong), var(--easy-surface));
-  box-shadow: 0 12px 34px rgba(0, 0, 0, .09);
+  padding: 14px 16px 14px 15px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--easy-accent) 72%, var(--border-color));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--easy-surface) 88%, var(--bg-primary));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent), 0 8px 24px rgba(0, 0, 0, .07);
 }
 .easy-jsonl-prompt__avatar {
   display: grid;
@@ -60,12 +61,13 @@
   width: 34px;
   height: 34px;
   border-radius: 11px;
-  background: color-mix(in srgb, var(--easy-accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--easy-accent) 34%, var(--border-color));
+  background: color-mix(in srgb, var(--easy-accent) 10%, transparent);
   color: var(--easy-accent);
 }
 .easy-jsonl-prompt__avatar svg { width: 17px; height: 17px; }
-.easy-jsonl-prompt__meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
-.easy-jsonl-prompt__meta strong { font-size: 11px; letter-spacing: .03em; color: var(--easy-accent); }
+.easy-jsonl-prompt__meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; }
+.easy-jsonl-prompt__meta strong { font-size: 10px; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; color: var(--easy-accent); }
 .easy-jsonl-prompt__meta time { font-size: 10px; color: var(--easy-muted); }
 .easy-jsonl-prompt p {
   max-height: 440px;
@@ -75,8 +77,9 @@
   scrollbar-gutter: stable;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 14px;
-  line-height: 1.65;
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 .easy-jsonl-rail { position: relative; margin: 16px 0 17px 25px; padding-left: 28px; }
@@ -155,9 +158,9 @@
   .easy-jsonl-toolbar { border-radius: 12px; }
   .easy-jsonl-round { padding-bottom: 26px; }
   .easy-jsonl-round + .easy-jsonl-round { padding-top: 24px; }
-  .easy-jsonl-prompt { grid-template-columns: 28px minmax(0, 1fr); gap: 9px; padding: 12px; border-radius: 14px; }
-  .easy-jsonl-prompt__avatar { width: 28px; height: 28px; border-radius: 9px; }
-  .easy-jsonl-prompt p { font-size: 13px; }
+  .easy-jsonl-prompt { grid-template-columns: 28px minmax(0, 1fr); gap: 9px; padding: 11px 11px 11px 10px; border-radius: 9px; }
+  .easy-jsonl-prompt__avatar { width: 28px; height: 28px; border-radius: 8px; }
+  .easy-jsonl-prompt p { font-size: 13px; line-height: 1.58; }
   .easy-jsonl-rail { margin-left: 15px; padding-left: 23px; }
   .easy-jsonl-activity__node, .easy-jsonl-live > span { left: -23px; }
   .easy-jsonl-activity__copy { display: block; }

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { BookOpen, Brain, Eye, GitBranch, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
 import { api } from '../store'
 import { DevPortsBar } from './dev-ports-bar'
@@ -574,6 +575,133 @@ type GitSource = {
   cache_expires_at?: number
 }
 
+// 资源 tab 图标的悬浮动效, 模仿 advanced-interaction-btn 的 tilt:
+// 悬浮/键盘聚焦时图标上移 0.5、旋转 -8°、放大 1.1 (transition-transform duration-200)。
+const RESOURCE_TAB_ICON_HOVER = 'inline-flex flex-shrink-0 items-center justify-center transition-transform duration-200 group-hover/resource-tab:-translate-y-0.5 group-hover/resource-tab:rotate-[-8deg] group-hover/resource-tab:scale-110 group-focus-visible/resource-tab:-translate-y-0.5 group-focus-visible/resource-tab:rotate-[-8deg] group-focus-visible/resource-tab:scale-110'
+
+// 资源 tab 按钮: 文字提示沿用 advanced-interaction-btn 的自定义 tooltip —— mouseenter 即时弹出,
+// 替代原生 title (浏览器自带约 1s 延迟); 定位 (下方优先 + 视口 clamp) 与样式与高级交互按钮同款。
+function ResourceTabButton({
+  label,
+  icon,
+  active,
+  activeClass,
+  idleClass,
+  onClick,
+  dataTour,
+  badge,
+}: {
+  label: string
+  icon: ReactNode
+  active: boolean
+  activeClass: string
+  idleClass: string
+  onClick: () => void
+  dataTour?: string
+  badge?: ReactNode
+}) {
+  const tooltipId = useId()
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const tooltipRef = useRef<HTMLDivElement | null>(null)
+  const [tooltipOpen, setTooltipOpen] = useState(false)
+  // tooltipPos 为 null 时 tooltip 以 visibility:hidden 渲染并测量; 测量后得到经视口 clamp 的最终坐标, 再可见.
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number; placement: 'top' | 'bottom' } | null>(null)
+
+  const updateTooltipPosition = useCallback(() => {
+    const button = buttonRef.current
+    if (!button || typeof window === 'undefined') return
+    const rect = button.getBoundingClientRect()
+    const gap = 8
+    const margin = 8
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const tip = tooltipRef.current
+    const tw = tip ? tip.offsetWidth : 0
+    const th = tip ? tip.offsetHeight : 0
+    const approxH = th || 30
+    const placement = rect.bottom + gap + approxH <= vh - margin ? 'bottom' : (rect.top - gap - approxH >= margin ? 'top' : 'bottom')
+    const top = placement === 'bottom'
+      ? Math.min(rect.bottom + gap, vh - margin - approxH)
+      : Math.max(margin, rect.top - gap - approxH)
+    const center = rect.left + rect.width / 2
+    const minCenter = margin + tw / 2
+    const maxCenter = vw - margin - tw / 2
+    const left = tw > 0 ? Math.min(Math.max(center, minCenter), maxCenter) : Math.min(Math.max(center, margin), vw - margin)
+    setTooltipPos({ left, top, placement })
+  }, [])
+
+  useEffect(() => {
+    if (!tooltipOpen) return
+    updateTooltipPosition()
+    window.addEventListener('resize', updateTooltipPosition)
+    window.addEventListener('scroll', updateTooltipPosition, true)
+    return () => {
+      window.removeEventListener('resize', updateTooltipPosition)
+      window.removeEventListener('scroll', updateTooltipPosition, true)
+    }
+  }, [tooltipOpen, updateTooltipPosition])
+
+  useLayoutEffect(() => {
+    if (tooltipOpen && tooltipPos === null) {
+      updateTooltipPosition()
+    }
+  }, [tooltipOpen, tooltipPos, updateTooltipPosition])
+
+  const hideTooltip = useCallback(() => {
+    setTooltipOpen(false)
+    setTooltipPos(null)
+  }, [])
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        aria-label={label}
+        aria-describedby={tooltipOpen ? tooltipId : undefined}
+        {...(dataTour ? { 'data-tour': dataTour } : {})}
+        onMouseEnter={() => setTooltipOpen(true)}
+        onMouseLeave={hideTooltip}
+        onFocus={() => setTooltipOpen(true)}
+        onBlur={hideTooltip}
+        className={`group/resource-tab min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${active ? activeClass : idleClass}`}
+        style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}
+      >
+        <span className={RESOURCE_TAB_ICON_HOVER}>{icon}</span>
+        {badge}
+      </button>
+      {tooltipOpen && typeof document !== 'undefined'
+        ? createPortal(
+          <div
+            ref={tooltipRef}
+            id={tooltipId}
+            role="tooltip"
+            // tooltipPos 为 null = 首帧渲染用于测量, visibility:hidden 保持布局以读 offsetWidth/Height, 测量完成后再可见.
+            className="pointer-events-none fixed z-[1000] max-w-[220px] whitespace-nowrap rounded-md border border-[var(--border-color)] bg-[var(--modal-bg)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] shadow-xl"
+            style={
+              tooltipPos
+                ? {
+                  left: tooltipPos.left,
+                  top: tooltipPos.top,
+                  transform: tooltipPos.placement === 'bottom'
+                    ? 'translate(-50%, 0)'
+                    : 'translate(-50%, -100%)',
+                  visibility: 'visible',
+                }
+                : { left: 0, top: 0, visibility: 'hidden' }
+            }
+          >
+            {label}
+          </div>,
+          document.body,
+        )
+        : null}
+    </>
+  )
+}
+
 export function SessionSkillMemoryEditor({
   sessionId,
   projectId,
@@ -843,54 +971,42 @@ export function SessionSkillMemoryEditor({
         {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
             四个 tab 始终保持单行并等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
         <div className="session-resource-tabs grid grid-cols-[repeat(4,minmax(0,1fr))] items-stretch">
-          <button
-            type="button"
+          <ResourceTabButton
+            label="Skill"
+            icon={<Puzzle className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
+            active={skillActive}
+            activeClass="border-blue-400 font-medium"
+            idleClass="border-transparent hover:bg-blue-500/10"
             onClick={() => setActivePanelAndPersist(activePanel === 'skill' ? null : 'skill')}
-            aria-pressed={skillActive}
-            title="Skill"
-            aria-label="Skill"
-            className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${skillActive ? 'border-blue-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
-            style={{ color: skillActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
-          >
-            <Puzzle className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
-          </button>
-          <button
-            type="button"
+          />
+          <ResourceTabButton
+            label="Memory"
+            icon={<Brain className="h-3.5 w-3.5 text-cyan-400" strokeWidth={1.9} />}
+            active={memActive}
+            activeClass="border-cyan-400 font-medium"
+            idleClass="border-transparent hover:bg-cyan-500/10"
             onClick={() => setActivePanelAndPersist(activePanel === 'memory' ? null : 'memory')}
-            aria-pressed={memActive}
-            data-tour="session-memory-toggle"
-            title="Memory"
-            aria-label="Memory"
-            className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${memActive ? 'border-cyan-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
-            style={{ color: memActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
-          >
-            <Brain className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setActivePanelAndPersist(gitActive ? null : 'git')}
-            aria-pressed={gitActive}
-            data-tour="session-git-toggle"
-            title="Git"
-            aria-label="Git"
-            className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${gitActive ? 'border-amber-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
-            style={{ color: gitActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
-          >
-            <GitBranch className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" strokeWidth={1.9} />
-            {gitSources.length > 0 && <span className="text-[9px] text-amber-300">{gitSources.length}</span>}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActivePanelAndPersist(portsActive ? null : 'ports')}
-            aria-pressed={portsActive}
-            data-tour="session-ports-toggle"
-            title="端口"
-            aria-label="端口"
-            className={`min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-colors inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${portsActive ? 'border-emerald-400 font-medium' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}
-            style={{ color: portsActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
-          >
-            <MonitorPlay className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
-          </button>
+            dataTour="session-memory-toggle"
+          />
+          <ResourceTabButton
+            label="Git"
+            icon={<GitBranch className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.9} />}
+            active={gitActive}
+            activeClass="border-amber-400 font-medium"
+            idleClass="border-transparent hover:bg-amber-500/10"
+            onClick={() => setActivePanelAndPersist(activePanel === 'git' ? null : 'git')}
+            dataTour="session-git-toggle"
+            badge={gitSources.length > 0 ? <span className="text-[9px] text-amber-300">{gitSources.length}</span> : undefined}
+          />
+          <ResourceTabButton
+            label="端口"
+            icon={<MonitorPlay className="h-3.5 w-3.5 text-emerald-400" strokeWidth={1.9} />}
+            active={portsActive}
+            activeClass="border-emerald-400 font-medium"
+            idleClass="border-transparent hover:bg-emerald-500/10"
+            onClick={() => setActivePanelAndPersist(activePanel === 'ports' ? null : 'ports')}
+            dataTour="session-ports-toggle"
+          />
         </div>
 
         {/* 内联菜单: 直接占据 tab 下方剩余空间, 无独立背景/边框/圆角, 无缝融入侧栏 */}
