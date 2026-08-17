@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { BookOpen, Brain, Eye, GitBranch, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
+import { BookOpen, Brain, Clock3, Eye, GitBranch, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
 import { api } from '../store'
 import { DevPortsBar } from './dev-ports-bar'
 import { normalizeGithubSkillInput } from './skills'
 import { SkillMarketLink } from './skill-market-link'
+
+const TimeConsumePanel = lazy(() => import('./time-consume-panel'))
 
 const AUTO_CONFIRM_SECONDS = 4
 
@@ -317,13 +319,13 @@ interface SelectionSnapshotResponse {
 // =====================================================================
 const ACTIVE_PANEL_STORAGE_KEY = 'mobius:skill-memory-active-panel'
 
-type SessionResourcePanel = 'skill' | 'memory' | 'git' | 'ports'
+type SessionResourcePanel = 'skill' | 'memory' | 'git' | 'ports' | 'time'
 
 function readStoredActivePanel(): null | SessionResourcePanel | undefined {
   if (typeof window === 'undefined') return undefined
   try {
     const value = window.localStorage.getItem(ACTIVE_PANEL_STORAGE_KEY)
-    if (value === 'skill' || value === 'memory' || value === 'git' || value === 'ports') return value
+    if (value === 'skill' || value === 'memory' || value === 'git' || value === 'ports' || value === 'time') return value
     if (value === 'closed') return null
     return undefined
   } catch {
@@ -964,13 +966,15 @@ export function SessionSkillMemoryEditor({
   const memActive = activePanel === 'memory'
   const gitActive = activePanel === 'git'
   const portsActive = activePanel === 'ports'
+  const timeActive = activePanel === 'time'
+  const resourceKind: 'skill' | 'memory' | null = skillActive ? 'skill' : memActive ? 'memory' : null
 
   return (
     <>
       <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2">
         {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
-            四个 tab 始终保持单行并等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
-        <div className="session-resource-tabs grid grid-cols-[repeat(4,minmax(0,1fr))] items-stretch">
+            五个 tab 始终保持单行并等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
+        <div className="session-resource-tabs grid grid-cols-[repeat(5,minmax(0,1fr))] items-stretch">
           <ResourceTabButton
             label="Skill"
             icon={<Puzzle className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
@@ -1007,6 +1011,15 @@ export function SessionSkillMemoryEditor({
             onClick={() => setActivePanelAndPersist(activePanel === 'ports' ? null : 'ports')}
             dataTour="session-ports-toggle"
           />
+          <ResourceTabButton
+            label="耗时"
+            icon={<Clock3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />}
+            active={timeActive}
+            activeClass="border-sky-400 font-medium"
+            idleClass="border-transparent hover:bg-sky-500/10"
+            onClick={() => setActivePanelAndPersist(activePanel === 'time' ? null : 'time')}
+            dataTour="session-time-toggle"
+          />
         </div>
 
         {/* 内联菜单: 直接占据 tab 下方剩余空间, 无独立背景/边框/圆角, 无缝融入侧栏 */}
@@ -1016,10 +1029,15 @@ export function SessionSkillMemoryEditor({
                 风格统一(虚线 border 区分其为操作入口, 其余为数据项). 添加成功后 reload() 立即
                 把新条目刷进下方列表, 用户可点"追加/强调"注入当前会话 (对后续对话生效). */}
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
-              {(skillActive || memActive) && <AddSkillMemoryBar kind={activePanel} onAdded={reload} />}
+              {resourceKind && <AddSkillMemoryBar kind={resourceKind} onAdded={reload} />}
               {skillActive ? renderList(skills, '暂无 Skill', 'skill')
                 : memActive ? renderList(memories, '暂无 Memory', 'memory')
                   : portsActive ? <DevPortsBar projectId={projectId} variant="panel" />
+                    : timeActive ? (
+                      <Suspense fallback={<div className="py-6 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>正在加载耗时面板...</div>}>
+                        <TimeConsumePanel sessionId={sessionId} />
+                      </Suspense>
+                    )
                     : (
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2 px-1 py-0.5">
