@@ -45,6 +45,11 @@ import {
 // @ts-ignore — service 仍是 .js
 import { readSessionInputs } from '../services/session-inputs';
 // @ts-ignore — service 仍是 .js
+import {
+  clearTimeConsumeWaterfallForBackend,
+  timeConsumeWaterfallFromBackend,
+} from '../services/time-consume-waterfall';
+// @ts-ignore — service 仍是 .js
 import * as sessionFeatures from '../services/session-features';
 // @ts-ignore — service 仍是 .js
 import { runSessionMessage } from '../services/session-message-runner';
@@ -922,6 +927,48 @@ router.get('/:id/jsonl-history', auth, (req: express.Request, res: express.Respo
     return;
   } catch (e) {
     console.warn(`[sessions/jsonl-history] failed (${id}): ${(e as Error).message}`);
+    res.status(500).json({ error: (e as Error).message || String(e) });
+    return;
+  }
+});
+
+router.get('/:id/time-consume-waterfall', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'read_session_time_consume_waterfall', session);
+
+  const backend = backendForSession(session);
+  try {
+    const result = typeof backend?.get_time_consume_waterfall === 'function'
+      ? backend.get_time_consume_waterfall(id, {})
+      : timeConsumeWaterfallFromBackend(backend, id, {});
+    res.json(result);
+    return;
+  } catch (e) {
+    console.warn(`[sessions/time-consume-waterfall] failed (${id}): ${(e as Error).message}`);
+    res.status(500).json({ error: (e as Error).message || String(e) });
+    return;
+  }
+});
+
+router.post('/:id/time-consume-waterfall/clear', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionOperable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'clear_session_time_consume_waterfall', session);
+
+  const backend = backendForSession(session);
+  try {
+    const result = typeof backend?.clear_time_consume_waterfall === 'function'
+      ? backend.clear_time_consume_waterfall(id, {})
+      : clearTimeConsumeWaterfallForBackend(backend, id, {});
+    res.json(result);
+    return;
+  } catch (e) {
+    console.warn(`[sessions/time-consume-waterfall/clear] failed (${id}): ${(e as Error).message}`);
     res.status(500).json({ error: (e as Error).message || String(e) });
     return;
   }

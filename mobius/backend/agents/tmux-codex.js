@@ -35,6 +35,10 @@ const {
   readMergedJsonlHistory,
   watchMergedJsonl,
 } = require('../services/mobius-jsonl')
+const {
+  timeConsumeWaterfallFromBackend,
+  clearTimeConsumeWaterfallForBackend,
+} = require('../services/time-consume-waterfall')
 const { recordPromptPaste } = require('../services/agent-prompt-events')
 const {
   runningFlagPathOf,
@@ -802,6 +806,14 @@ class TmuxCodexBackend extends AgentBackend {
     }
     const r = readMergedJsonlHistory(jsonlPath, opts)
     return { entries: r.entries, total: r.total, totalApproximate: r.totalApproximate, truncated: r.truncated, sentinel: r.sentinel }
+  }
+
+  get_time_consume_waterfall(sessionId, opts = {}) {
+    return timeConsumeWaterfallFromBackend(this, sessionId, opts)
+  }
+
+  clear_time_consume_waterfall(sessionId, opts = {}) {
+    return clearTimeConsumeWaterfallForBackend(this, sessionId, opts)
   }
 
   getAgentRawThoughtStream(sessionId, listener, opts = {}) {

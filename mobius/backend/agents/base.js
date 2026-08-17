@@ -17,6 +17,8 @@
  *
  * 可选 (默认空实现, 子类按需 override):
  *   getHistory(sessionId) → { entries, sentinel }
+ *   get_time_consume_waterfall(sessionId, opts) → any
+ *   clear_time_consume_waterfall(sessionId, opts) → any
  *   getSessionTitle(sessionId, opts) → string|null
  *   getAgentRawThoughtStream(sessionId, listener, opts) → Unsubscribe
  *   isJobGoalAccomplished(sessionId) → boolean
@@ -114,6 +116,14 @@ class AgentBackend {
    */
   getHistory(_sessionId, _opts = {}) {
     return { entries: [], sentinel: null }
+  }
+
+  get_time_consume_waterfall(_sessionId, _opts = {}) {
+    return null
+  }
+
+  clear_time_consume_waterfall(_sessionId, _opts = {}) {
+    return null
   }
 
   // Best-effort utility: scan known history entries for an explicit agent title event.
