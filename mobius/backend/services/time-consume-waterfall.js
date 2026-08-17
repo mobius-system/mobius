@@ -3,7 +3,7 @@ const path = require('path')
 
 const { mobiusJsonlPathOf, readMergedJsonlHistory } = require('./mobius-jsonl')
 
-const TIME_CONSUME_WATERFALL_VERSION = 1
+const TIME_CONSUME_WATERFALL_VERSION = 2
 const MIN_STEP_MS = 1000
 
 function timeConsumeWaterfallCachePathOf(jsonlPath) {
@@ -119,7 +119,7 @@ function classifyEntry(entry) {
     const payloadType = entry?.payload?.type || ''
     if (payloadType === 'user_message') return { kind: 'user', label: '用户' }
     if (payloadType === 'agent_message') return { kind: 'assistant', label: '智能体' }
-    if (payloadType === 'turn/end') return { kind: 'assistant', label: '智能体' }
+    if (payloadType === 'turn/end') return { kind: 'turn_end', label: '轮次结束' }
     if (payloadType === 'error') return { kind: 'error', label: '错误' }
     return { kind: `event:${payloadType || 'other'}`, label: '事件' }
   }
@@ -142,6 +142,14 @@ function classifyEntry(entry) {
   }
 
   return { kind: 'other', label: '其他' }
+}
+
+function isUserStartEvent(event) {
+  return event?.kind === 'user'
+}
+
+function isTurnEndEvent(event) {
+  return event?.kind === 'turn_end'
 }
 
 function normalizeEvent(entry, lineNo = null, source = 'history') {
@@ -169,6 +177,7 @@ function createEmptyCache(jsonlPath, nowMs) {
     totalMs: 0,
     segments: [],
     lastEvent: null,
+    active: false,
   }
 }
 
@@ -188,7 +197,7 @@ function finalizeSegment(state, nextEvent, nowMs) {
     label: state.lastEvent.label,
     startAtMs: start,
     endAtMs: end,
-    startOffsetMs: start - state.startAtMs,
+    startOffsetMs: state.totalMs,
     durationMs,
     lineNo: state.lastEvent.lineNo,
     source: state.lastEvent.source,
@@ -197,6 +206,41 @@ function finalizeSegment(state, nextEvent, nowMs) {
   state.segments.push(segment)
   state.totalMs += durationMs
   state.lastEvent = nextEvent || null
+}
+
+function absorbEventMeta(state, event, nowMs) {
+  if (!event) return
+
+  if (isUserStartEvent(event)) {
+    state.active = true
+    state.lastEvent = event
+    if (state.startAtMs == null) state.startAtMs = event.tsMs
+    state.lastLineCount += 1
+    return
+  }
+
+  if (isTurnEndEvent(event)) {
+    if (state.active && state.lastEvent) {
+      finalizeSegment(state, event, nowMs)
+    }
+    state.active = false
+    state.lastEvent = null
+    state.lastLineCount += 1
+    return
+  }
+
+  if (!state.active) {
+    state.active = true
+    state.lastEvent = event
+    if (state.startAtMs == null) state.startAtMs = event.tsMs
+    state.lastLineCount += 1
+    return
+  }
+
+  finalizeSegment(state, event, nowMs)
+  if (state.startAtMs == null) state.startAtMs = event.tsMs
+  state.lastEvent = event
+  state.lastLineCount += 1
 }
 
 function absorbEvents(state, events, nowMs) {
@@ -215,10 +259,7 @@ function absorbEvents(state, events, nowMs) {
     })
 
   for (const item of ordered) {
-    finalizeSegment(state, item.meta, nowMs)
-    if (!state.startAtMs) state.startAtMs = item.meta.tsMs
-    state.lastEvent = item.meta
-    state.lastLineCount += 1
+    absorbEventMeta(state, item.meta, nowMs)
   }
 
   return state
@@ -237,32 +278,13 @@ function responseFromState(state, nowMs, jsonlPath, mutated) {
     open: !!segment.open,
   }))
 
-  if (state.lastEvent) {
-    const endMs = nowMs
-    const durationMs = endMs - state.lastEvent.tsMs
-    if (durationMs >= MIN_STEP_MS) {
-      const startAtMs = state.startAtMs == null ? state.lastEvent.tsMs : state.startAtMs
-      segments.push({
-        kind: state.lastEvent.kind,
-        label: state.lastEvent.label,
-        start_at: new Date(state.lastEvent.tsMs).toISOString(),
-        end_at: new Date(endMs).toISOString(),
-        start_offset_ms: state.lastEvent.tsMs - startAtMs,
-        duration_ms: durationMs,
-        line_no: state.lastEvent.lineNo,
-        source: state.lastEvent.source,
-        open: true,
-      })
-    }
-  }
-
   return {
     session_id: state.sessionId || null,
     jsonl_path: jsonlPath || null,
     start_at: state.startAtMs == null ? null : new Date(state.startAtMs).toISOString(),
     updated_at: new Date(nowMs).toISOString(),
     ignored_under_ms: MIN_STEP_MS,
-    total_ms: state.totalMs + (state.lastEvent ? Math.max(0, nowMs - state.lastEvent.tsMs) : 0),
+    total_ms: state.totalMs,
     line_count: state.lastLineCount,
     segments,
     cache: {
@@ -345,10 +367,7 @@ function appendFromDisk(state, jsonlPath, nowMs) {
     })
 
   for (const item of normalized) {
-    finalizeSegment(state, item.meta, nowMs)
-    if (!state.startAtMs) state.startAtMs = item.meta.tsMs
-    state.lastEvent = item.meta
-    state.lastLineCount += 1
+    absorbEventMeta(state, item.meta, nowMs)
   }
   state.sourceSizes = currentSizes
   return state
@@ -454,6 +473,7 @@ function clearTimeConsumeWaterfallForBackend(backend, sessionId, opts = {}) {
     totalMs: 0,
     segments: [],
     lastEvent: null,
+    active: false,
   }
   saveCache(cachePath, reset)
   return responseFromState(reset, nowMs, jsonlPath, true)

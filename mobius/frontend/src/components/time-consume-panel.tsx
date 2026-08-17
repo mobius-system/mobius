@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BarChart3, Clock3, RefreshCw, Trash2 } from 'lucide-react'
+import { BarChart3, Clock3, PieChart, RefreshCw, Trash2 } from 'lucide-react'
 import { api } from '../store'
 import { pollRecursive } from '../services/polling'
 
@@ -33,6 +33,8 @@ type TimeConsumeWaterfallResponse = {
     mutated?: boolean
   } | null
 }
+
+type TimeConsumeView = 'waterfall' | 'pie'
 
 const KIND_LABELS: Record<string, string> = {
   assistant: '智能体',
@@ -101,6 +103,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
+  const [view, setView] = useState<TimeConsumeView>('waterfall')
 
   const load = useCallback(async (signal?: AbortSignal, showSpinner = false) => {
     if (!sessionId) {
@@ -255,21 +258,47 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
         </div>
       ) : (
         <>
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(240px,0.9fr)]">
+          <div className="flex items-center justify-between gap-2">
+            <div className="inline-flex h-7 rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.025)' }}>
+              {([
+                { key: 'waterfall' as const, label: '瀑布', icon: BarChart3 },
+                { key: 'pie' as const, label: '占比', icon: PieChart },
+              ]).map((item) => {
+                const Icon = item.icon
+                const active = view === item.key
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setView(item.key)}
+                    aria-pressed={active}
+                    className="inline-flex min-w-[62px] items-center justify-center gap-1 rounded px-2 text-[10.5px] transition-colors"
+                    style={{
+                      color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                      background: active ? 'rgba(56,189,248,0.14)' : 'transparent',
+                    }}
+                  >
+                    <Icon className="h-3.5 w-3.5" strokeWidth={1.9} />
+                    {item.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="text-right text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              <div>总计 {formatDuration(totalMs)}</div>
+              <div>{segments.length} 段 · {data?.line_count || 0} 行</div>
+            </div>
+          </div>
+
+          {view === 'waterfall' ? (
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                    <BarChart3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />
-                    <span>瀑布</span>
-                  </div>
-                  <div className="mt-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    {data?.start_at ? `起点 ${formatClock(data.start_at)}` : '未设置起点'}
-                  </div>
+              <div className="mb-2 min-w-0">
+                <div className="flex items-center gap-2 text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                  <BarChart3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />
+                  <span>瀑布</span>
                 </div>
-                <div className="text-right text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                  <div>总计 {formatDuration(totalMs)}</div>
-                  <div>{segments.length} 段 · {data?.line_count || 0} 行</div>
+                <div className="mt-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  {data?.start_at ? `起点 ${formatClock(data.start_at)}` : '未设置起点'}
                 </div>
               </div>
               <div className="relative h-24 overflow-hidden rounded-md border" style={{ borderColor: 'var(--border-color)', background: 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))' }}>
@@ -324,14 +353,14 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                 })}
               </div>
             </div>
-
+          ) : (
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
               <div className="mb-2 flex items-center gap-2 text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                <Clock3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />
+                <PieChart className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />
                 <span>占比</span>
               </div>
               <div className="flex items-center justify-center">
-                <svg viewBox="0 0 120 120" className="h-40 w-40" aria-label="耗时占比图">
+                <svg viewBox="0 0 120 120" className="h-44 w-44" aria-label="耗时占比图">
                   <circle cx={pieCenter} cy={pieCenter} r={pieRadius} fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
                   {pieSlices.length === 0 ? (
                     <circle cx={pieCenter} cy={pieCenter} r={pieRadius} fill="rgba(255,255,255,0.05)" />
@@ -375,7 +404,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                 ))}
               </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </div>
