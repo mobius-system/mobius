@@ -14,13 +14,14 @@ const MAX_POINTS = 30000;
 const MIN_POINTS = 200;
 const DEFAULT_POINT_COUNT = 4500;
 const PALETTE_MAX = 6;     // 着色器 uniform 数组最大长度
-const PALETTE_DEFAULT = 'aurora';
+const PALETTE_DEFAULT = 'cyxx';
 
 const PALETTES = {
   aurora:    ['#22d3ee', '#7dd3fc', '#a78bfa', '#f472b6', '#34d399'],
   sunset:    ['#fef3c7', '#fb923c', '#f43f5e', '#7f1d1d'],
   galaxy:    ['#1e1b4b', '#4c1d95', '#7c3aed', '#ec4899', '#fde68a'],
   mono:      ['#94a3b8', '#cbd5e1', '#e2e8f0', '#ffffff'],
+  cyxx:      ['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'],
   cyanmagen: ['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'],
   fire:      ['#fef3c7', '#fde047', '#f97316', '#dc2626', '#7f1d1d'],
   mint:      ['#022c22', '#10b981', '#5eead4', '#a7f3d0'],
@@ -51,10 +52,14 @@ const state = {
   flowSpeed: 0.10,
   breathSpeed: 1.0,
   breathStrength: 0.65,
+  // 背景主题: dark / light / custom (C 选项: 主题 + 亮度 + 自定义取色器)
+  theme: 'dark',            // 'dark' | 'light' | 'custom'
+  bgColor: '#ffffff',      // 仅 custom 主题用
+  bgBrightness: 0.04,      // 0..1, 控制星云光晕强度
   // 视图
   autoRotate: 'off',
   // 渲染
-  dotSize: 1.2,
+  dotSize: 0.3,
   glow: 0.85,
   background: 0.04,
   // 内部
@@ -229,7 +234,7 @@ void main() {
   vec3 c1 = vec3(0.04, 0.03, 0.10);
   vec3 c2 = vec3(0.10, 0.05, 0.20);
   vec3 col = mix(c1, c2, n);
-  gl_FragColor = vec4(col * uBrightness, 1.0);
+  gl_FragColor = vec4(col * uBrightness, uBrightness);
 }
 `;
 
@@ -239,12 +244,22 @@ void main() {
 function init() {
   scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x000208, 0.012);
+  // 背景色: 跟着主题 (dark 用深蓝, light/custom 用浅灰白)
+  // 关键: 把背景画在 scene 里 (而不是 setClearColor), 保证画布**有内容**
+  // 这样即使 alpha:8 / 画布强制不透明, 背景也始终在
+  const initBg = state.theme === 'dark' ? new THREE.Color(0, 0.008, 0.032) : new THREE.Color(0.952, 0.952, 0.952);
+  scene.background = initBg;
 
   const w = window.innerWidth, h = window.innerHeight;
   camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 5000);
   camera.position.set(0, 4.8, 25);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    powerPreference: 'high-performance',
+    alpha: true,           // canvas 透明 (透出 body 背景)
+    premultipliedAlpha: true,
+  });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(w, h);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -282,7 +297,9 @@ function init() {
   rebuildPointCloud();
 
   // 全局拖尾 / 暗背景
-  renderer.setClearColor(0x000208, 1);
+  // alpha=0 让 canvas 完全透明, 透出 body 颜色
+  // 暗色主题 body 黑底, 亮色主题 body 浅灰白, 走 body 背景而不是 WebGL clear
+  renderer.setClearColor(0x000000, 0);
 
   // 视角重置按钮
   $('resetViewBtn').addEventListener('click', resetView);
@@ -618,11 +635,25 @@ function bindControls() {
   // 渲染
   bindRange('dotSizeInput', 'dotSize', (v) => v.toFixed(2), { min: 0.2, max: 4.0, step: 0.05 });
   bindRange('glowInput', 'glow', (v) => v.toFixed(2), { min: 0, max: 2.0, step: 0.05 });
-  bindRange('bgInput', 'background', (v) => v.toFixed(2), { min: 0, max: 0.3, step: 0.005, extra: () => {
-    // 背景亮度同步到 renderer clear
-    renderer.setClearColor(new THREE.Color(state.background, state.background, state.background * 1.4), 1);
-    if (nebulaMat) nebulaMat.uniforms.uBrightness.value = state.background;
-  }});
+  // 背景亮度 (0..1, 替代旧的 0..0.3)
+  bindRange('bgInput', 'bgBrightness', (v) => v.toFixed(2), { min: 0, max: 1, step: 0.01, extra: () => applyBackground() });
+  // 主题下拉 (dark / light / custom)
+  const themeSel = $('themeSelect');
+  themeSel.value = state.theme;
+  themeSel.addEventListener('change', () => {
+    state.theme = themeSel.value;
+    $('bgCustomColorRow').style.display = (state.theme === 'custom') ? 'flex' : 'none';
+    applyBackground();
+  });
+  // 自定义背景色取色器
+  const bgColorInp = $('bgColorInput');
+  bgColorInp.value = state.bgColor;
+  bgColorInp.addEventListener('input', () => {
+    state.bgColor = bgColorInp.value;
+    applyBackground();
+  });
+  // 初始化时按主题显示/隐藏取色器行
+  $('bgCustomColorRow').style.display = (state.theme === 'custom') ? 'flex' : 'none';
 
   // 预设
   $('savePresetBtn').addEventListener('click', onSavePreset);
@@ -631,6 +662,13 @@ function bindControls() {
     // 选中改变不自动加载, 避免误操作
   });
   $('loadPresetBtn').addEventListener('click', onLoadPreset);
+  // inline 输入框 (避免 prompt 弹窗被拒)
+  $('presetSaveConfirm')?.addEventListener('click', onSavePresetConfirm);
+  $('presetSaveCancel')?.addEventListener('click', hidePresetNameInput);
+  $('presetNameInput')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') onSavePresetConfirm();
+    else if (e.key === 'Escape') hidePresetNameInput();
+  });
 
   refreshCustomRow();
 }
@@ -701,15 +739,32 @@ async function listPresets() {
   }
 }
 
-async function onSavePreset() {
-  const name = prompt('预设名称 (1-64 字符):', state.palette + '-' + state.twist + 'x');
-  if (!name) return;
+function showPresetNameInput() {
+  const row = $('presetSaveRow');
+  if (!row) return;
+  row.style.display = 'flex';
+  const input = $('presetNameInput');
+  if (input) {
+    input.value = `${state.palette}-${state.twist}x`;
+    setTimeout(() => input.focus(), 30);
+  }
+}
+function hidePresetNameInput() {
+  const row = $('presetSaveRow');
+  if (row) row.style.display = 'none';
+  const input = $('presetNameInput');
+  if (input) input.value = '';
+}
+async function onSavePresetConfirm() {
+  const input = $('presetNameInput');
+  const name = (input && input.value || '').trim();
+  if (!name) return showToast('名称不能为空');
   if (!/^[\w一-鿿\-\. ]{1,64}$/u.test(name)) {
     return showToast('名称只能含字母/数字/_/-/. /中文, ≤64 字符');
   }
   const data = {
     ...state,
-    pointCount: state.pointCount, // 显式保留, 加载时不会因 slider 抖动而误重建
+    pointCount: state.pointCount,
   };
   delete data.identity;
   delete data.displayName;
@@ -719,10 +774,19 @@ async function onSavePreset() {
     const resp = await extCall({ action: 'save_preset', name, data });
     if (!resp || !resp.ok) throw new Error((resp && resp.error) || 'save failed');
     showToast(`已保存预设「${name}」`);
+    hidePresetNameInput();
     await listPresets();
+    // 选中新保存的预设
+    const sel = $('presetSelect');
+    if (sel) sel.value = name;
   } catch (e) {
     showToast('保存失败: ' + (e.message || e));
   }
+}
+
+async function onSavePreset() {
+  // 第一步: 显示 inline 输入框, 不依赖浏览器原生 prompt (某些场景会拒弹窗)
+  showPresetNameInput();
 }
 
 async function onLoadPreset() {
@@ -741,6 +805,13 @@ async function onLoadPreset() {
     reflectStateToUI();
     syncUniforms();
     rebuildPointCloud();
+    applyBackground();
+    // 主题下拉同步 (从保存里恢复)
+    if ($('themeSelect')) $('themeSelect').value = state.theme;
+    if ($('bgColorInput')) $('bgColorInput').value = state.bgColor;
+    if ($('bgCustomColorRow')) {
+      $('bgCustomColorRow').style.display = (state.theme === 'custom') ? 'flex' : 'none';
+    }
     showToast(`已加载「${name}」`);
   } catch (e) {
     showToast('加载失败: ' + (e.message || e));
@@ -759,6 +830,74 @@ async function onDeletePreset() {
     await listPresets();
   } catch (e) {
     showToast('删除失败: ' + (e.message || e));
+  }
+}
+
+// ============== 背景主题应用 (C 选项: dark/light/custom + 亮度) ==============
+function applyBackground() {
+  if (!renderer) return;
+  // 根据 theme 计算 RGB (0-1)
+  let r, g, b;
+  if (state.theme === 'dark') {
+    // 暗色: 深蓝 (0x000208 之类), 不受 bgBrightness 影响 (保留原观感)
+    r = 0; g = 0.008; b = 0.032;
+  } else if (state.theme === 'light') {
+    // 亮色: 接近白, bgBrightness 控制从灰到纯白
+    const v = 0.95 + state.bgBrightness * 0.05; // 0.95..1.0
+    r = g = b = v;
+  } else {
+    // custom: 直接 hex 解析 RGB, bgBrightness 作为"亮度"覆盖
+    const hex = state.bgColor.replace('#', '');
+    r = parseInt(hex.slice(0, 2), 16) / 255;
+    g = parseInt(hex.slice(2, 4), 16) / 255;
+    b = parseInt(hex.slice(4, 6), 16) / 255;
+    // bgBrightness 0 → 黑色, 1 → 保持原色
+    r *= state.bgBrightness;
+    g *= state.bgBrightness;
+    b *= state.bgBrightness;
+  }
+  // WebGL clear:
+  //  - 暗色 → 实心黑 (alpha=1) 由 canvas 自身画背景
+  //  - 亮色/custom → 透明 (alpha=0) 让 body 颜色透出
+  const clearAlpha = (state.theme === 'dark') ? 1 : 0;
+  renderer.setClearColor(new THREE.Color(r, g, b), clearAlpha);
+  // 关键: scene.background 也跟着改 (Three.js 每帧先画这个做底色)
+  // 这是最稳的方案: 不依赖 WebGL clear 行为, 也不依赖 alpha buffer
+  if (typeof scene !== 'undefined' && scene) {
+    scene.background = new THREE.Color(r, g, b);
+  }
+
+  // CSS body 背景同步 (WebGL canvas 透明, 暗色 canvas 画黑, 亮色 body 画背景)
+  // 亮色/custom 用实色; 暗色 body 也是黑, 但 canvas 已画黑, 二选一都行
+  const cssHex = '#' + new THREE.Color(r, g, b).getHexString();
+  document.documentElement.style.setProperty('--bg-0', cssHex);
+  // 双保险: 直接给 body + #stage + canvas 设 inline style (有些 CSS 优先级可能盖过变量)
+  document.body.style.setProperty('background', cssHex, 'important');
+  const stageEl = document.getElementById('stage');
+  if (stageEl) stageEl.style.setProperty('background', cssHex, 'important');
+  // 三保险: 直接给 canvas 本身设 background-color (canvas 是 WebGL, inline background 在 clear 透出时透出)
+  if (renderer && renderer.domElement) {
+    if (renderer && renderer.domElement) { renderer.domElement.style.setProperty('background', cssHex, 'important'); } else if (renderer.domElement) { renderer.domElement.style.setProperty('background', cssHex, 'important'); }
+  }
+
+  console.log('[bg]', state.theme, 'r='+r.toFixed(3), 'g='+g.toFixed(3), 'b='+b.toFixed(3),
+              'clearAlpha='+clearAlpha,
+              'bodyBg='+getComputedStyle(document.body).backgroundColor,
+              'stageBg='+(stageEl ? getComputedStyle(stageEl).backgroundColor : 'n/a'),
+              'canvasW='+renderer.domElement.width,
+              'canvasH='+renderer.domElement.height);
+  // 星云 uBrightness: 暗色主题才生效, 亮色/custom 给 0
+  if (nebulaMat) {
+    nebulaMat.uniforms.uBrightness.value = (state.theme === 'dark') ? state.bgBrightness : 0;
+  }
+  // 主动 clear 一次让新背景立即生效 (WebGL 状态只在 clear 时才用)
+  // 同时清深度缓冲, 避免切换主题后粒子残影
+  if (typeof renderer.clear === 'function') {
+    renderer.clear(true, true, true);
+    // 立即渲染一帧让新背景显示出来, 不必等下一帧
+    if (typeof scene !== 'undefined' && scene && typeof camera !== 'undefined' && camera) {
+      renderer.render(scene, camera);
+    }
   }
 }
 
@@ -782,8 +921,8 @@ function reflectStateToUI() {
   $('dotSizeInputVal').textContent = (+state.dotSize).toFixed(2);
   $('glowInput').value = String(state.glow);
   $('glowInputVal').textContent = (+state.glow).toFixed(2);
-  $('bgInput').value = String(state.background);
-  $('bgInputVal').textContent = (+state.background).toFixed(2);
+  $('bgInput').value = String(state.bgBrightness);
+  $('bgInputVal').textContent = (+state.bgBrightness).toFixed(2);
   $('paletteInput').value = state.palette;
   $('autoRotateInput').value = state.autoRotate;
   renderer.setClearColor(new THREE.Color(state.background, state.background, state.background * 1.4), 1);
@@ -821,6 +960,7 @@ clock = performance.now();
 init();
 bindControls();
 loadIdentity();
+applyBackground();   // 主题初始化: dark/light/custom + 亮度
 listPresets();
 syncUniforms();
 restorePanelState();

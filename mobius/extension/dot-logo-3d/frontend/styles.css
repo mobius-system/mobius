@@ -18,7 +18,7 @@
 
 html, body {
   margin: 0; padding: 0; height: 100%;
-  background: #000;
+  background: var(--bg-0, #000);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   overflow: hidden;
@@ -29,8 +29,12 @@ html, body {
   position: fixed;
   inset: 0;
   z-index: 0;
+  background: var(--bg-0, #000);  /* 跟随主题, 切亮色时画布后层也变 */
 }
-#stage canvas { display: block; }
+#stage canvas {
+  display: block;
+  background: var(--bg-0, #000);  /* 兜底: canvas 元素本身也跟主题, 任何覆盖都失效 */
+}
 
 /* ============ top bar ============ */
 .topbar {
