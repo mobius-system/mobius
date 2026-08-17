@@ -1007,13 +1007,65 @@ async function runProjectFormSegment() {
   return launchDriver(steps)
 }
 
+// 项目级记忆/技能管理器已从「项目设置」页移到其下方的「记忆技能」独立页 (tab data-tour=project-context-tab).
+// 下载按钮仍留在「项目设置」页, 上传/导入步骤在「记忆技能」页; 引导跨页衔接用与 addAdminTabStep 相同的
+// "高亮 tab → 下一步点它 → 轮询等目标挂载 → moveNext" 链式 step.
+function addContextPaneSwitchStep(steps: DriveStep[], waitSelector: string) {
+  addStepIfPresent(steps, '[data-tour="project-context-tab"]', {
+    popover: {
+      title: '打开「记忆技能」页',
+      description: guideParagraphs(
+        '项目记忆和项目方法放在「项目设置」下面的「记忆技能」独立页。',
+        '点下一步切过去继续。'
+      ),
+      nextBtnText: '切到这里看',
+      side: 'right',
+      align: 'start',
+    } as any,
+  } as any)
+  const lastStep = steps[steps.length - 1] as any
+  if (lastStep) {
+    lastStep.popover = {
+      ...(lastStep.popover as any),
+      onNextClick: (_element: any, _step: any, opts: { driver: Driver }) => {
+        clickSwitchThenMoveNext(opts, '[data-tour="project-context-tab"]', waitSelector)
+      },
+    }
+  }
+}
+
+// 上传/导入按钮要等「记忆技能」页挂载后才存在, 不能走 addImmediateActionStepIfPresent 的即时 has() 守卫;
+// 改为无条件 push + "点击即销毁引导"的 onNextClick (等价原 (selector, selector, true, false) 调用).
+function addContextPaneUploadStep(
+  steps: DriveStep[],
+  selector: string,
+  popover: { title: string; description: any; doneBtnText: string },
+) {
+  pushStepAlways(steps, selector, {
+    popover: {
+      ...popover,
+      side: 'bottom',
+      align: 'center',
+      onNextClick: (_element: Element | undefined, _step: DriveStep, opts: { driver: Driver }) => {
+        clickIfPresent(selector)
+        preserveActiveOnDestroy = true
+        opts.driver.destroy()
+        lastRunKey = ''
+      },
+    },
+  } as any)
+}
+
 async function runContextSetupProjectSegment(demo: ActiveGuidedDemo) {
   const state = contextSetupState(demo.state)
 
   await waitForElement('[data-tour="project-settings-panel"]')
+  // 记忆/技能管理器已移入「记忆技能」独立页, 下载按钮仍在「项目设置」页:
+  // 先确保落在「项目设置」页 (与 runProjectCleanupSegment 同款 tab 预点击), 再等下载按钮.
+  clickIfPresent('[data-tour="project-settings-tab"]')
   await waitForAnyElement([
-    '[data-tour="project-skill-manager"]',
-    '[data-tour="project-memory-manager"]',
+    '[data-tour="project-context-memory-download"]',
+    '[data-tour="project-context-skill-download"]',
   ], 1800)
 
   const steps: DriveStep[] = []
@@ -1054,7 +1106,9 @@ async function runContextSetupProjectSegment(demo: ActiveGuidedDemo) {
         align: 'center',
       },
     })
-    addStepIfPresent(steps, '[data-tour="project-memory-manager"]', {
+    // 切到「记忆技能」页再讲记忆管理器 (管理器已不在「项目设置」页内).
+    addContextPaneSwitchStep(steps, '[data-tour="project-memory-manager"]')
+    pushStepAlways(steps, '[data-tour="project-memory-manager"]', {
       popover: {
         title: '上传项目知识',
         description: guideParagraphs(
@@ -1065,34 +1119,19 @@ async function runContextSetupProjectSegment(demo: ActiveGuidedDemo) {
         align: 'start',
       },
     })
-    addImmediateActionStepIfPresent(steps, '[data-tour="project-memory-upload-knowledge"]', {
-      popover: {
-        title: '选择项目知识文件',
-        description: guideParagraphs(
-          '点击后选择刚下载的项目知识文件。',
-          '文件上传并同步成功后，下一步才会继续。'
-        ),
-        doneBtnText: '选择文件',
-        side: 'bottom',
-        align: 'center',
-      },
-    }, '[data-tour="project-memory-upload-knowledge"]', true, false)
+    addContextPaneUploadStep(steps, '[data-tour="project-memory-upload-knowledge"]', {
+      title: '选择项目知识文件',
+      description: guideParagraphs(
+        '点击后选择刚下载的项目知识文件。',
+        '文件上传并同步成功后，下一步才会继续。'
+      ),
+      doneBtnText: '选择文件',
+    })
     return launchDriver(steps)
   }
 
   if (!state.skillImportedAt) {
-    addStepIfPresent(steps, '[data-tour="project-memory-manager"]', {
-      popover: {
-        title: '项目知识已就绪',
-        description: guideParagraphs(
-          `这里已经有「${state.memoryName}」。`,
-          '刚才上传的项目知识已经可用了。',
-          '下一步导入一份项目方法。'
-        ),
-        side: 'right',
-        align: 'start',
-      },
-    })
+    // 下载按钮在「项目设置」页, 管理器在「记忆技能」页: 先下载, 再切页讲记忆回顾与方法导入.
     addClickNextStepIfPresent(steps, '[data-tour="project-context-skill-download"]', {
       popover: {
         title: '下载方法文件',
@@ -1105,7 +1144,20 @@ async function runContextSetupProjectSegment(demo: ActiveGuidedDemo) {
         align: 'center',
       },
     })
-    addStepIfPresent(steps, '[data-tour="project-skill-manager"]', {
+    addContextPaneSwitchStep(steps, '[data-tour="project-memory-manager"]')
+    pushStepAlways(steps, '[data-tour="project-memory-manager"]', {
+      popover: {
+        title: '项目知识已就绪',
+        description: guideParagraphs(
+          `这里已经有「${state.memoryName}」。`,
+          '刚才上传的项目知识已经可用了。',
+          '下一步导入一份项目方法。'
+        ),
+        side: 'right',
+        align: 'start',
+      },
+    })
+    pushStepAlways(steps, '[data-tour="project-skill-manager"]', {
       popover: {
         title: '上传项目方法',
         description: guideParagraphs(
@@ -1117,18 +1169,14 @@ async function runContextSetupProjectSegment(demo: ActiveGuidedDemo) {
         align: 'start',
       },
     })
-    addImmediateActionStepIfPresent(steps, '[data-tour="project-skill-upload-file"]', {
-      popover: {
-        title: '选择方法文件',
-        description: guideParagraphs(
-          '点击后选择刚下载的方法文件。',
-          '导入成功后，路线会继续到任务单区域。'
-        ),
-        doneBtnText: '选择文件',
-        side: 'bottom',
-        align: 'center',
-      },
-    }, '[data-tour="project-skill-upload-file"]', true, false)
+    addContextPaneUploadStep(steps, '[data-tour="project-skill-upload-file"]', {
+      title: '选择方法文件',
+      description: guideParagraphs(
+        '点击后选择刚下载的方法文件。',
+        '导入成功后，路线会继续到任务单区域。'
+      ),
+      doneBtnText: '选择文件',
+    })
     return launchDriver(steps)
   }
 
