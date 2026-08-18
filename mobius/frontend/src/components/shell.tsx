@@ -10,7 +10,7 @@ import { AdminPanel, type AdminPanelTab } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Bot, Check, ChevronDown, ChevronRight, CircleDot, CircleQuestionMark, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { pollRecursive } from '../services/polling'
@@ -19,6 +19,7 @@ import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
 import { setLayoutMode, useLayoutMode } from '../services/layout-mode'
+import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入)。三平台 (Win/Linux/mac) 统一: 顶栏右侧渲染
@@ -168,6 +169,7 @@ type RecentSession = {
   research_title?: string | null
   scope_type?: 'issue' | 'research'
   agent_status?: string
+  status?: string
   message_count?: number
   last_active?: string
 }
@@ -492,6 +494,14 @@ function projectChipStyle(active: boolean): React.CSSProperties {
       }
 }
 
+function recentSessionStatus(session: RecentSession) {
+  if (session.agent_status === 'running') return { label: '执行中', color: '#f59e0b', bg: 'rgba(245,158,11,.10)' }
+  if (session.agent_status === 'pending') return { label: '启动中', color: '#fbbf24', bg: 'rgba(251,191,36,.10)' }
+  if (session.agent_status === 'waiting') return { label: '待命', color: '#38bdf8', bg: 'rgba(56,189,248,.10)' }
+  if (session.agent_status === 'completed' || session.status === 'completed') return { label: '已完成', color: '#34d399', bg: 'rgba(52,211,153,.10)' }
+  return { label: '空闲', color: 'var(--text-muted)', bg: 'var(--bg-card)' }
+}
+
 function RecentSessionsPanel({
   open,
   userId,
@@ -510,6 +520,7 @@ function RecentSessionsPanel({
   const [error, setError] = useState('')
   // 按项目快速筛选: null = 全部。面板每次打开都是新挂载, 默认回到「全部」。
   const [selectedProject, setSelectedProject] = useState<string | null>(null)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
 
   // 从已加载会话里聚合出可选项目 (按最近活跃排序, 带会话数), 仅用于筛选 chips。
   const projects = useMemo(() => {
@@ -533,6 +544,7 @@ function RecentSessionsPanel({
   const visibleSessions = effectiveProject
     ? sessions.filter(s => s.project_id === effectiveProject)
     : sessions
+  const visibleGroups = useMemo(() => buildRecentSessionTreeGroups(visibleSessions), [visibleSessions])
 
   useEffect(() => {
     if (!open) return
@@ -575,6 +587,15 @@ function RecentSessionsPanel({
   }, [open, userId])
 
   if (!open) return null
+
+  const toggleGroup = (groupKey: string) => {
+    setCollapsedGroups(current => {
+      const next = new Set(current)
+      if (next.has(groupKey)) next.delete(groupKey)
+      else next.add(groupKey)
+      return next
+    })
+  }
 
   return (
     <div
@@ -631,53 +652,82 @@ function RecentSessionsPanel({
         ) : visibleSessions.length === 0 ? (
           <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无近期会话</div>
         ) : (
-          visibleSessions.map(session => {
-            const to = recentSessionPath(userId, session)
-            const active = session.session_id === activeSessionId
-            const isResearch = session.scope_type === 'research'
-            const subject = isResearch
-              ? (session.research_title || session.research_id || '研究')
-              : (session.issue_title || session.issue_id || '任务')
-            const project = session.project_name || session.project_id || '项目'
-            const statusColor = session.agent_status === 'running'
-              ? '#f59e0b'
-              : (active ? 'var(--accent-primary)' : 'var(--text-muted)')
+          <div aria-label="按项目与任务分组的近期活跃会话" data-testid="normal-recent-session-tree">
+            {visibleGroups.map(group => {
+              const collapsed = collapsedGroups.has(group.key)
+              const isResearch = group.scopeType === 'research'
+              const groupContainsCurrent = group.sessions.some(session => session.session_id === activeSessionId)
+              const groupDomId = `normal-recent-session-group-${encodeURIComponent(group.key).replace(/%/g, '-')}`
+              return (
+                <section key={group.key} className="mb-1" data-testid="normal-recent-session-group" data-project-id={group.projectId} data-subject-id={group.subjectId} data-scope-type={group.scopeType}>
+                  <button
+                    type="button"
+                    aria-expanded={!collapsed}
+                    aria-controls={groupDomId}
+                    onClick={() => toggleGroup(group.key)}
+                    className="flex min-h-9 w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                    style={{ background: groupContainsCurrent ? 'color-mix(in srgb, var(--bg-active) 58%, transparent)' : undefined }}
+                    title={`${group.projectName} / ${group.subjectTitle}`}
+                  >
+                    {collapsed
+                      ? <ChevronRight className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                      : <ChevronDown className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
+                    <span className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md" style={{ background: isResearch ? 'rgba(168,85,247,0.12)' : 'rgba(59,130,246,0.12)', color: isResearch ? '#c084fc' : '#60a5fa' }}>
+                      {isResearch ? <FlaskConical className="h-3 w-3" /> : <CircleDot className="h-3 w-3" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[9px] leading-3" style={{ color: 'var(--text-muted)' }}>{group.projectName}</span>
+                      <span className="block truncate text-[11px] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>{group.subjectTitle}</span>
+                    </span>
+                    <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
+                      <span className="text-[8px] font-medium" style={{ color: isResearch ? '#c084fc' : '#60a5fa' }}>{isResearch ? '研究' : '任务'}</span>
+                      <span className="text-[8px] tabular-nums" style={{ color: group.activeCount ? '#fbbf24' : 'var(--text-muted)' }}>
+                        {group.activeCount ? `${group.activeCount} 活跃` : `${group.sessions.length} ${isResearch ? '智能体' : '会话'}`}
+                      </span>
+                    </span>
+                  </button>
 
-            return (
-              <LinklessRouteButton
-                key={session.session_id}
-                to={to}
-                newTab
-                onClick={onPick}
-                title={session.name || session.session_id}
-                className={`flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors ${to ? 'hover:bg-[var(--bg-hover)]' : 'cursor-default opacity-60'}`}
-                style={{ background: active ? 'var(--bg-active)' : undefined }}
-              >
-                <span className="mt-1 inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md" style={{ background: isResearch ? 'rgba(168,85,247,0.14)' : 'rgba(59,130,246,0.14)', color: isResearch ? '#c084fc' : '#60a5fa' }}>
-                  {isResearch ? <FlaskConical className="h-3 w-3" /> : <CircleDot className="h-3 w-3" />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate text-[12px] font-medium leading-5" style={{ color: 'var(--text-primary)' }}>
-                      {session.name || session.session_id}
-                    </span>
-                    <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: statusColor }} />
-                  </span>
-                  <span className="block truncate text-[10px] leading-4" style={{ color: 'var(--text-secondary)' }}>
-                    {project} / {subject}
-                  </span>
-                  <span className="mt-0.5 flex items-center gap-2 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
-                    <span>{timeAgoPrecise(session.last_active || '')}</span>
-                    <span className="inline-flex items-center gap-1">
-                      <MessageSquare className="h-3 w-3" />
-                      {session.message_count || 0}
-                    </span>
-                  </span>
-                </span>
-                {active && <Check className="mt-1 h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />}
-              </LinklessRouteButton>
-            )
-          })
+                  <div id={groupDomId} hidden={collapsed} className="relative ml-[18px] border-l pl-1.5" style={{ borderColor: groupContainsCurrent ? 'color-mix(in srgb, var(--accent-primary) 38%, var(--border-color))' : 'var(--border-color)' }}>
+                    {group.sessions.map(session => {
+                      const to = recentSessionPath(userId, session)
+                      const active = session.session_id === activeSessionId
+                      const status = recentSessionStatus(session)
+                      return (
+                        <LinklessRouteButton
+                          key={session.session_id}
+                          to={to}
+                          newTab
+                          onClick={onPick}
+                          title={session.name || session.session_id}
+                          className={`relative mt-0.5 flex min-h-9 w-full items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors ${to ? 'hover:bg-[var(--bg-hover)]' : 'cursor-default opacity-60'}`}
+                          style={{ borderColor: active ? 'color-mix(in srgb, var(--accent-primary) 42%, var(--border-color))' : 'transparent', background: active ? 'var(--bg-active)' : undefined }}
+                          data-session-id={session.session_id}
+                          aria-current={active ? 'true' : undefined}
+                        >
+                          <span className="absolute -left-2 top-1/2 w-1.5 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
+                          <span className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md" style={{ background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
+                            {isResearch ? <Bot className="h-3 w-3" /> : <MessageSquare className="h-3 w-3" />}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex min-w-0 items-center gap-1">
+                              <span className="flex-shrink-0 rounded px-1 py-0.5 text-[8px] font-medium leading-3" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>{isResearch ? '智能体' : '会话'}</span>
+                              <span className="min-w-0 flex-1 truncate text-[10px] font-medium leading-4" style={{ color: 'var(--text-primary)' }}>{session.name || session.session_id}</span>
+                            </span>
+                            <span className="mt-0.5 flex items-center gap-1.5 text-[8px] leading-3" style={{ color: 'var(--text-muted)' }}>
+                              <span>{timeAgoPrecise(session.last_active || '')}</span>
+                              <span className="inline-flex items-center gap-0.5"><MessageSquare className="h-2.5 w-2.5" />{session.message_count || 0}</span>
+                            </span>
+                          </span>
+                          <span className="flex-shrink-0 rounded-full px-1 py-0.5 text-[8px] font-medium leading-3" style={{ color: status.color, background: status.bg }}>{status.label}</span>
+                          {active && <Check className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />}
+                        </LinklessRouteButton>
+                      )
+                    })}
+                  </div>
+                </section>
+              )
+            })}
+          </div>
         )}
       </div>
     </div>
