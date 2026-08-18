@@ -323,34 +323,25 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                 <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed" style={{ borderColor: 'rgba(255,255,255,0.10)' }} />
                 <div className="absolute inset-x-0 top-0 h-full">
                   {timelineSegments.map((segment) => {
-                    const color = KIND_COLORS[segment.kind] || KIND_COLORS.other
                     const onModelTrack = segment.kind === 'model'
                     return (
                       <div
                         key={`${segment.start_at}-${segment.line_no ?? 'n'}-${segment.kind}`}
-                        className="absolute overflow-hidden rounded-md border border-white/10 shadow-sm"
+                        className="absolute overflow-hidden rounded-sm border"
                         title={`${segment.label} · ${formatDuration(segment.duration_ms)} · ${segment.start_at} → ${segment.end_at}`}
                         style={{
                           left: `${segment.startPercent}%`,
-                          top: onModelTrack ? '14px' : 'calc(50% + 4px)',
-                          height: onModelTrack ? 'calc(25% - 4px)' : 'calc(50% - 8px)',
+                          top: onModelTrack ? 'calc(25% - 10px)' : 'calc(75% - 10px)',
+                          height: 'calc(25% - 4px)',
                           width: `${Math.max(segment.widthPercent, 0.45)}%`,
                           minWidth: 4,
+                          borderColor: onModelTrack ? 'rgba(125,211,252,0.24)' : 'rgba(196,181,253,0.24)',
                           background: onModelTrack
-                            ? 'linear-gradient(90deg, rgba(2,132,199,0.72) 0%, rgba(34,211,238,0.96) 48%, rgba(56,189,248,0.88) 74%, rgba(186,230,253,0.72) 100%)'
-                            : `linear-gradient(180deg, ${color}cc, ${color}88)`,
-                          boxShadow: onModelTrack
-                            ? 'inset 0 1px 0 rgba(255,255,255,0.28), 0 2px 8px rgba(14,165,233,0.24)'
-                            : undefined,
+                            ? 'linear-gradient(180deg, rgba(56,189,248,0.88) 0%, rgba(2,132,199,0.74) 100%)'
+                            : 'linear-gradient(180deg, rgba(167,139,250,0.88) 0%, rgba(124,58,237,0.74) 100%)',
+                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14)',
                         }}
-                      >
-                        {!onModelTrack && (
-                          <div className="px-1 py-1 text-[9px] font-medium text-white/95">
-                            <div className="truncate">{segment.label}</div>
-                            <div className="truncate text-white/75">{formatDuration(segment.duration_ms)}</div>
-                          </div>
-                        )}
-                      </div>
+                      />
                     )
                   })}
                 </div>
