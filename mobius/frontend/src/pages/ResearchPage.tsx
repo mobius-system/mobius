@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Bot, Users, Trash2 } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
-import { ErrBanner, NewSessionModal, RenameSessionModal, RenameResearchModal } from '../components/modals'
+import { ErrBanner, NewSessionModal, RenameSessionModal, RenameResearchModal, NewResearchLeaderModal } from '../components/modals'
 import { ChatArea, SessionRow, isSessionNameMuted } from '../components/chat'
 import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
@@ -67,6 +67,7 @@ export default function ResearchPage() {
   const [authorizingTeam, setAuthorizingTeam] = useState(false)
   const [teamNotice, setTeamNotice] = useState('')
   const [showCreateChoice, setShowCreateChoice] = useState(false)
+  const [showLeaderModal, setShowLeaderModal] = useState(false)
   const [showNewSession, setShowNewSession] = useState(false)
   const [showTeamSession, setShowTeamSession] = useState(false)
   const [teamModalMode, setTeamModalMode] = useState<'single' | 'team'>('team')
@@ -115,6 +116,15 @@ export default function ResearchPage() {
     }, 5000, 10_000, { startImmediately: true })
     return poll
   }, [researchId])
+
+  // 仿 Issue 的 "?newSession=1": 创建 Research 时勾选"立即创建 Leader"后自动打开 Leader 配置.
+  useEffect(() => {
+    if (search.get('newLeader') !== '1' || !researchId) return
+    const next = new URLSearchParams(search)
+    next.delete('newLeader')
+    setSearch(next, { replace: true })
+    setShowLeaderModal(true)
+  }, [search, setSearch, researchId])
 
   useEffect(() => {
     const cur = useStore.getState().currentSession
@@ -203,24 +213,28 @@ export default function ResearchPage() {
   }, [researchId, refreshSessions])
   const openCreateChoice = () => setShowCreateChoice(true)
 
-  // 团队是否已建立 = 是否存在任何 Assistant (Chief 随 Research 创建必然存在, 不算).
+  // 团队是否已建立 = 是否存在任何 Assistant; Research 创建本身不再自带 Leader.
   const assistantCount = useMemo(
     () => sessions.filter((s: any) => s.research_role !== 'chief_researcher').length,
     [sessions],
   )
+  const hasLeader = useMemo(
+    () => sessions.some((s: any) => s.research_role === 'chief_researcher'),
+    [sessions],
+  )
   // 新建入口统一为一条链路:
-  // - chief_led 且团队未建立 -> 授权 Chief 创建团队
-  // - custom 且团队未建立   -> 搭建团队选择 (单个 / 团队向导)
+  // - 还没有任何 Agent -> 组队方式二选一: AI-Leader 自动组队 / 人工自定义组队
+  // - 已有 Leader 还没有 Assistant -> 授权 Leader 创建团队
   // - 团队已建立 (任何模式) -> 只剩一个选项: 直接新建单个 Agent, 复用自定义界面
   const openNewAgent = () => {
-    if (research?.mode === 'chief_led' && assistantCount === 0) { authorizeChiefTeam(); return }
-    if (assistantCount === 0) { openCreateChoice(); return }
+    if (assistantCount === 0 && !hasLeader) { openCreateChoice(); return }
+    if (assistantCount === 0 && hasLeader) { authorizeChiefTeam(); return }
     setTeamModalMode('single')
     setShowTeamSession(true)
   }
-  const newAgentLabel = research?.mode === 'chief_led' && assistantCount === 0
-    ? (authorizingTeam ? '授权中' : '创建团队')
-    : (assistantCount === 0 ? '搭建团队' : '新Agent')
+  const newAgentLabel = assistantCount > 0
+    ? '新Agent'
+    : (hasLeader ? (authorizingTeam ? '授权中' : '创建团队') : '组建团队')
 
   const goToSession = (sid: string) => {
     const next = new URLSearchParams(search)
@@ -517,17 +531,30 @@ export default function ResearchPage() {
 
       {showCreateChoice && <ResearchAgentCreateChoiceModal
         onClose={() => setShowCreateChoice(false)}
-        onSingle={() => {
+        onAiLeader={() => {
           setShowCreateChoice(false)
-          setTeamModalMode('single')
-          setShowTeamSession(true)
+          // 已有 Leader -> 直接进入授权; 还没有 -> 先装配 Leader.
+          if (hasLeader) authorizeChiefTeam()
+          else setShowLeaderModal(true)
         }}
-        onTeam={() => {
+        onCustom={() => {
           setShowCreateChoice(false)
+          // 人工自定义组队: 切换 mode 后直接打开团队向导.
+          api(`/api/researches/${researchId}`, { method: 'PATCH', body: JSON.stringify({ mode: 'custom' }) })
+            .then((updated: any) => { if (updated && !updated.error) { setResearchState(updated); setCurrentResearch(updated) } })
+            .catch(() => {})
           setTeamModalMode('team')
           setShowTeamSession(true)
         }}
       />}
+      {showLeaderModal && research && <NewResearchLeaderModal research={research}
+        onClose={() => setShowLeaderModal(false)}
+        onCreated={(leaderSession: any, updatedResearch: any) => {
+          setShowLeaderModal(false)
+          if (updatedResearch) { setResearchState(updatedResearch); setCurrentResearch(updatedResearch) }
+          refreshSessions()
+          if (leaderSession?.session_id) goToSession(leaderSession.session_id)
+        }} />}
       {showNewSession && <NewSessionModal researchId={researchId} projectId={projectId} existingSessions={sessions} entityLabel="研究智能体" onClose={() => setShowNewSession(false)}
         defaultNamePrefix={research?.title || ''}
         defaultDescription={research?.description || ''}
@@ -759,10 +786,10 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
   )
 }
 
-function ResearchAgentCreateChoiceModal({ onClose, onSingle, onTeam }: {
+function ResearchAgentCreateChoiceModal({ onClose, onAiLeader, onCustom }: {
   onClose: () => void
-  onSingle: () => void
-  onTeam: () => void
+  onAiLeader: () => void
+  onCustom: () => void
 }) {
   const { theme } = useStore()
   const isDark = theme !== 'light'
@@ -779,8 +806,8 @@ function ResearchAgentCreateChoiceModal({ onClose, onSingle, onTeam }: {
         style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)' }}>
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-[15px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>搭建研究团队</h3>
-            <p className="mt-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>团队还没建立。先创建一个 Agent，或一次配置整个团队；之后随时可以再补建单个 Agent。</p>
+            <h3 className="text-[15px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>选择组队方式</h3>
+            <p className="mt-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>研究还没有任何 Agent。选择 AI-Leader 自动组队，或人工自定义组队。</p>
           </div>
           <button onClick={onClose} className="rounded-lg px-2 py-1 text-[12px] hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-muted)' }}>
             关闭
@@ -788,27 +815,27 @@ function ResearchAgentCreateChoiceModal({ onClose, onSingle, onTeam }: {
         </div>
 
         <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-          <button onClick={onSingle}
+          <button onClick={onAiLeader}
             className="min-w-0 rounded-xl border p-4 text-left whitespace-normal transition-colors hover:border-blue-500/40 hover:bg-blue-500/5"
             style={optionStyle}>
             <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400">
               <Bot className="h-5 w-5" strokeWidth={1.8} />
             </div>
-            <div className="min-w-0 whitespace-normal break-words text-[14px] font-semibold">先创建一个 Agent</div>
+            <div className="min-w-0 whitespace-normal break-words text-[14px] font-semibold">AI-Leader 自动组队</div>
             <div className="mt-1 min-w-0 whitespace-normal break-words text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              单独配置名称、目的、模型、Skill 和 Memory，创建后立即启动。
+              先创建一个 AI Leader 与你讨论方案，授权后由它自动招募整个团队。
             </div>
           </button>
 
-          <button onClick={onTeam}
+          <button onClick={onCustom}
             className="min-w-0 rounded-xl border p-4 text-left whitespace-normal transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/5"
             style={optionStyle}>
             <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
               <Users className="h-5 w-5" strokeWidth={1.8} />
             </div>
-            <div className="min-w-0 whitespace-normal break-words text-[14px] font-semibold">配置 Agent 团队</div>
+            <div className="min-w-0 whitespace-normal break-words text-[14px] font-semibold">人工自定义组队</div>
             <div className="mt-1 min-w-0 whitespace-normal break-words text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              一次配置多名 Agent 并批量启动；已有的 Agent 会进入列表并锁定。
+              团队成员由你逐个指定创建，不需要 Leader；之后随时可以再补建单个 Agent。
             </div>
           </button>
         </div>

@@ -943,7 +943,11 @@ export default function ProjectPage() {
           }
         }} />}
       {showNewResearch && <NewResearchModal projectId={projectId} onClose={() => setShowNewResearch(false)}
-        onCreated={(research: any) => { setShowNewResearch(false); refreshResearches(); navigate(`/u/${userParam}/p/${projectId}/r/${research.id}`) }} />}
+        onCreated={(research: any, options?: { createLeader?: boolean }) => {
+          setShowNewResearch(false); refreshResearches()
+          // 仿 Issue 的"立即创建第一个会话": 立即创建 Leader 时进入 Research 自动打开 Leader 配置.
+          navigate(`/u/${userParam}/p/${projectId}/r/${research.id}${options?.createLeader ? '?newLeader=1' : ''}`)
+        }} />}
       {editingIssue && <RenameIssueModal issue={editingIssue} onClose={() => setEditingIssue(null)}
         onRenamed={() => { setEditingIssue(null); refreshIssues() }} />}
       {editingResearch && <RenameResearchModal research={editingResearch} onClose={() => setEditingResearch(null)}

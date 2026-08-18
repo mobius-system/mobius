@@ -320,7 +320,28 @@ projectScoped.post('/', auth, async (req: express.Request, res: express.Response
     return;
   }
   if (!req.body?.chief || typeof req.body.chief !== 'object') {
-    res.status(400).json({ error: '创建 Research 必须完整配置并启动唯一 Chief', code: 'chief_config_required' });
+    // Research 本身默认不创建任何 Agent; Chief (Leader) 可在此立即创建, 也可稍后从团队入口补建.
+    const researchId = uuid().slice(0, 8);
+    Researches.insert({
+      id: researchId,
+      project_id: String(req.params.projectId),
+      title,
+      description,
+      created_by: user.id,
+      mode,
+      assistant_limit: assistantLimit,
+      visibility: normalizeVisibility(req.body?.visibility, 'inherit', true) as any,
+    });
+    recordAdminAuditIfCrossUser(user, 'create_research', 'project', project.id, project.created_by);
+    if (req.body?.visibility !== undefined
+      || req.body?.allow_user_ids !== undefined || req.body?.allowUserIds !== undefined
+      || req.body?.allow_group_ids !== undefined || req.body?.allowGroupIds !== undefined) {
+      setResourcePolicy('research', researchId, { ...researchAccessBody(req.body), createdBy: user.id });
+    }
+    res.json({
+      ...shapeResearchForUser(Researches.findById(researchId), user),
+      chief_session: null,
+    });
     return;
   }
   const researchId = uuid().slice(0, 8);
@@ -391,6 +412,53 @@ router.get('/:id/team', auth, (req: express.Request, res: express.Response) => {
   if (!research || !canReadResearch(user, research)) { res.status(404).json({ error: '未找到' }); return; }
   const state = teamState(String(req.params.id));
   res.json(state);
+});
+
+// 为已存在的 Research 补建唯一 Leader (Chief): "AI-Leader 自动组队"路径的起点.
+// Research 创建本身不建 Agent; 用户从这里 (或创建 Research 时的"立即创建 Leader") 装配 Leader.
+router.post('/:id/leader', auth, async (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
+  const researchId = String(req.params.id);
+  const research = Researches.findById(researchId) as any;
+  if (!research || !canManageResearch(user, research)) { res.status(404).json({ error: '未找到' }); return; }
+  if (Sessions.findChiefForResearch(researchId)) {
+    res.status(409).json({ error: '当前 Research 已存在 Leader (Chief)', code: 'leader_exists' });
+    return;
+  }
+  if (!req.body || typeof req.body !== 'object' || !req.body.initial_prompt) {
+    res.status(400).json({ error: '创建 Leader 必须提供初始 Prompt', code: 'leader_config_required' });
+    return;
+  }
+  try {
+    const leaderSession = await createStartedResearchSession({
+      user,
+      research,
+      role: 'chief_researcher',
+      config: req.body,
+      requestId: `leader-init-${researchId}`,
+    });
+    Researches.updateMode(researchId, 'chief_led');
+    appendBlackboardRecord({
+      researchId,
+      author: 'HR',
+      content: `Leader 已加入并启动: session_id=${leaderSession.session_id}, name=${leaderSession.name}`,
+      metadata: {
+        event: 'session_joined',
+        session_id: leaderSession.session_id,
+        role: 'chief_researcher',
+        name: leaderSession.name,
+        source: 'leader_provision',
+      },
+    });
+    res.json({
+      ok: true,
+      leader_session: withSessionProxyState(leaderSession),
+      research: shapeResearchForUser(Researches.findById(researchId), user),
+    });
+  } catch (e) {
+    const err = e as any;
+    res.status(err.status || 500).json({ error: err.message || 'Leader 创建或启动失败', code: err.code, usage: err.usage });
+  }
 });
 
 router.post('/:id/team/authorize', auth, async (req: express.Request, res: express.Response) => {
@@ -741,6 +809,10 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
       res.status(err.status || 400).json({ error: err.message, code: err.code });
       return;
     }
+  }
+  // 组队方式可后置切换: "AI-Leader 自动组队"(chief_led) / "人工自定义组队"(custom).
+  if (req.body?.mode !== undefined) {
+    Researches.updateMode(String(req.params.id), normalizeResearchMode(req.body.mode));
   }
   if (visibility !== undefined) {
     const nextVisibility = normalizeVisibility(visibility, 'inherit', true);
