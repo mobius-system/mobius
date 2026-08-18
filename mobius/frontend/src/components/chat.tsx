@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, AtSign, ArrowLeft, ArrowLeftRight, Search, Clock } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock, Sparkles } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -2192,10 +2192,8 @@ type EasyProjectOption = {
   runningCount?: number
 }
 
-export function ChatArea({ layout = 'default', codexStyle = false, onBack, onNewSession, easyProjectControl }: {
+export function ChatArea({ layout = 'default', onNewSession, easyProjectControl }: {
   layout?: 'default' | 'stacked' | 'easy'
-  codexStyle?: boolean
-  onBack?: () => void
   onNewSession?: () => void
   easyProjectControl?: {
     selectedProjectId?: string
@@ -2431,6 +2429,8 @@ export function ChatArea({ layout = 'default', codexStyle = false, onBack, onNew
   const [jsonlPath, setJsonlPath] = useState<string | null>(null)
   const [jsonlInitialLoading, setJsonlInitialLoading] = useState(false)
   const [jsonlLoadingMore, setJsonlLoadingMore] = useState<boolean>(false)
+  const [easyRoundCount, setEasyRoundCount] = useState(0)
+  const [easyExpandAllSignal, setEasyExpandAllSignal] = useState(0)
   const pendingJsonlEntriesRef = useRef<any[]>([])
   const pendingJsonlTotalIncrementRef = useRef(0)
   const pendingJsonlFlushTimerRef = useRef<number | null>(null)
@@ -2496,7 +2496,12 @@ export function ChatArea({ layout = 'default', codexStyle = false, onBack, onNew
   const sessionId = currentSession?.session_id || currentTask?.task_id || ''
   useEffect(() => {
     setEasyToolsOpen(false)
+    setEasyRoundCount(0)
+    setEasyExpandAllSignal(0)
   }, [sessionId])
+  const handleEasyRoundCountChange = useCallback((count: number) => {
+    setEasyRoundCount(previous => previous === count ? previous : count)
+  }, [])
   const currentProjectId = (currentIssue as any)?.project_id || (currentSession as any)?.project_id || (currentTask as any)?.project_id || ''
   const currentIssueId = (currentSession as any)?.issue_id || (currentIssue as any)?.id || ''
   const currentResearchId = (currentSession as any)?.research_id || (currentTask as any)?.research_id || ''
@@ -4229,18 +4234,6 @@ export function ChatArea({ layout = 'default', codexStyle = false, onBack, onNew
       )}
       {layout === 'easy' && (
         <div className="easy-session-context flex h-11 flex-shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }} data-testid="easy-session-context">
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              className="easy-session-back inline-flex h-8 w-8 flex-shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
-              style={{ color: 'var(--text-secondary)' }}
-              title="返回会话列表"
-              aria-label="返回会话列表"
-            >
-              <ArrowLeft className="h-4 w-4" strokeWidth={1.8} />
-            </button>
-          )}
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <SessionStatusChip
               connected={connectionStatus === 'connected'}
@@ -4264,20 +4257,30 @@ export function ChatArea({ layout = 'default', codexStyle = false, onBack, onNew
                 {currentSession?.name || currentTask?.name || sessionId}
               </strong>
             </div>
+            <div className="easy-session-summary" aria-label="简易对话摘要">
+              <Sparkles className="easy-session-summary__icon" aria-hidden="true" />
+              <span className="easy-session-summary__label">简易对话</span>
+              <small>{easyRoundCount} 轮</small>
+              {(jsonlTotal > jsonlEntries.length || (jsonlEntries.length > 200 && easyExpandAllSignal === 0)) && (
+                <button
+                  type="button"
+                  className="easy-session-summary__action"
+                  disabled={jsonlLoadingMore}
+                  onClick={() => {
+                    setEasyExpandAllSignal(value => value + 1)
+                    if (jsonlTotal > jsonlEntries.length) handleLoadAllJsonl()
+                  }}
+                  title={jsonlLoadingMore ? '正在加载全部对话' : jsonlTotal > jsonlEntries.length ? `加载全部对话（${jsonlTotal} 条）` : `展开全部对话（${jsonlEntries.length} 条）`}
+                >
+                  {jsonlLoadingMore ? '加载中…' : jsonlTotal > jsonlEntries.length ? `加载全部 · ${jsonlTotal}` : `展开全部 · ${jsonlEntries.length}`}
+                </button>
+              )}
+              {jsonlEntries.length > 200 && easyExpandAllSignal > 0 && (
+                <span className="easy-session-summary__complete">已加载全部</span>
+              )}
+            </div>
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
-            {onNewSession && (
-              <button
-                type="button"
-                onClick={onNewSession}
-                className="easy-session-new inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
-                style={{ color: 'var(--text-secondary)' }}
-                title="新建会话"
-                aria-label="新建会话"
-              >
-                <Plus className="h-4 w-4" strokeWidth={1.8} />
-              </button>
-            )}
             <div className="easy-session-tools relative" ref={easyToolsRef}>
               <button
                 type="button"
@@ -4514,8 +4517,9 @@ export function ChatArea({ layout = 'default', codexStyle = false, onBack, onNew
           scrollToMatchTs={matchTs}
           onMatchScrollResolved={onMatchScrollResolved}
           onMatchScrollUnresolved={handleLoadAllJsonl}
+          onEasyRoundCountChange={handleEasyRoundCountChange}
+          easyExpandAllSignal={easyExpandAllSignal}
           variant={layout === 'easy' ? 'easy' : 'standard'}
-          compactInjectedContext={codexStyle}
         />
 
         {/* 右侧: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽。 */}

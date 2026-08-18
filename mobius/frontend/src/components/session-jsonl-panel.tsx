@@ -30,8 +30,9 @@ type SessionJsonlPanelProps = {
   scrollToMatchTs?: string | null
   onMatchScrollResolved?: () => void
   onMatchScrollUnresolved?: () => void
+  onEasyRoundCountChange?: (count: number) => void
+  easyExpandAllSignal?: number
   variant?: 'standard' | 'easy'
-  compactInjectedContext?: boolean
 }
 
 function SessionJsonlPanelInner({
@@ -59,8 +60,9 @@ function SessionJsonlPanelInner({
   scrollToMatchTs,
   onMatchScrollResolved,
   onMatchScrollUnresolved,
+  onEasyRoundCountChange,
+  easyExpandAllSignal,
   variant = 'standard',
-  compactInjectedContext = false,
 }: SessionJsonlPanelProps) {
   const effectiveTotal = jsonlTotal > loadedJsonlCount
     ? jsonlTotal - (loadedJsonlCount - visibleJsonl.length)
@@ -94,7 +96,8 @@ function SessionJsonlPanelInner({
                   scrollToMatchTs={scrollToMatchTs}
                   onScrollResolved={onMatchScrollResolved}
                   onScrollUnresolved={onMatchScrollUnresolved}
-                  compactInjectedContext={compactInjectedContext}
+                  onRoundCountChange={onEasyRoundCountChange}
+                  expandAllSignal={easyExpandAllSignal}
                 />
               </Suspense>
             ) : (

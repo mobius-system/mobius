@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CircleDot, ChevronDown, FlaskConical, MessageSquare, MessageSquarePlus, Plus } from 'lucide-react'
+import { Bot, CircleDot, ChevronDown, ChevronRight, FlaskConical, MessageSquare, MessageSquarePlus, Plus } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo, timeAgoPrecise } from '../components/shell'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
@@ -16,6 +16,7 @@ import { TruncatedText } from '../components/truncated-text'
 import { useEditorAvailability } from '../components/workspace/use-editor-availability'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/logo-review-demo'
+import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 
 const EditorPane = lazy(() => import('../components/workspace/editor-pane').then(m => ({ default: m.EditorPane })))
 const CodeConversationPane = lazy(() => import('../components/workspace/code-conversation-pane').then(m => ({ default: m.CodeConversationPane })))
@@ -23,8 +24,6 @@ const CodeConversationPane = lazy(() => import('../components/workspace/code-con
 const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
 const SESSION_SIDEBAR_PAGE_SIZE = 16  // sidebar 会话列表每页 16, 超过即分页
 const RECENT_SESSION_LIMIT = 50
-// 单会话试验：先在当前自迭代 Session 验证 Codex 风格的轻量会话壳，避免影响其他会话。
-const CODEX_SESSION_PILOT_ID = '629329f3'
 
 type SessionListMode = 'issue' | 'recent'
 
@@ -80,7 +79,6 @@ export default function IssuePage() {
   const projectId = params.project || ''
   const issueId = params.issue || ''
   const sessionParam = search.get('session') || ''
-  const codexSessionPilot = sessionParam === CODEX_SESSION_PILOT_ID
   const autoOpenNewSession = search.get('newSession') === '1'
 
   // ===== 「代码对话」模式: 左 code-server 编辑器 + 右 Session 对话 =====
@@ -123,6 +121,7 @@ export default function IssuePage() {
   const [recentSessionsLoading, setRecentSessionsLoading] = useState(false)
   const [recentSessionsError, setRecentSessionsError] = useState('')
   const [recentReloadVersion, setRecentReloadVersion] = useState(0)
+  const [collapsedRecentGroups, setCollapsedRecentGroups] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
     if (!autoOpenNewSession || !issue) return
@@ -304,6 +303,20 @@ export default function IssuePage() {
 
   const onSelectSession = (s: any) => goToSession(s.session_id)
 
+  const recentSessionGroups = useMemo(
+    () => buildRecentSessionTreeGroups(recentSessions),
+    [recentSessions],
+  )
+
+  const toggleRecentGroup = (groupKey: string) => {
+    setCollapsedRecentGroups(current => {
+      const next = new Set(current)
+      if (next.has(groupKey)) next.delete(groupKey)
+      else next.add(groupKey)
+      return next
+    })
+  }
+
   // 引导式 Demo 旧路径依赖手动点 [完成] 推进 tour. 现在 [完成] 已移除, 改成
   // session list 刷新时检测 job_accomplished=true (running.flag 已删) 的 demo
   // session, 自动写入 sessionCompletedAt 推进 tour. 防抖: useEffect 依赖 sessions,
@@ -363,12 +376,11 @@ export default function IssuePage() {
     <div
       className="flex flex-col h-screen"
       style={{ background: 'var(--bg-primary)' }}
-      data-page={codexSessionPilot ? 'codex-session-pilot' : undefined}
     >
-      {!codexSessionPilot && <TopNav />}
+      <TopNav />
       <div className="flex flex-1 min-h-0">
         {/* 左侧 sidebar — 仅「会话模式」可见; contents 让内部 ResizablePanel 仍是 flex 直接子元素 (会话模式零回归) */}
-        <div className={(codexSessionPilot || useEditorChat || useCodeConversation) ? 'hidden' : 'contents'}>
+        <div className={(useEditorChat || useCodeConversation) ? 'hidden' : 'contents'}>
         <ResizablePanel
           storageKey="mobius:ui:sidebar:issue-sessions"
           defaultWidth={288}
@@ -526,54 +538,98 @@ export default function IssuePage() {
               </div>
             ) : recentSessions.length === 0 ? (
               <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无近期会话</div>
-            ) : recentSessions.map((session) => {
-              const target = recentSessionTarget(userParam, session)
-              const active = session.session_id === sessionParam
-              const isResearch = session.scope_type === 'research'
-              const subject = isResearch
-                ? (session.research_title || session.research_id || '研究')
-                : (session.issue_title || session.issue_id || '任务')
-              return (
-                <button
-                  key={session.session_id}
-                  type="button"
-                  onClick={() => { if (target) navigate(target) }}
-                  disabled={!target}
-                  title={session.name || session.session_id}
-                  className="mb-1 flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:opacity-50"
-                  style={{
-                    borderColor: active ? 'color-mix(in srgb, var(--accent-primary) 42%, var(--border-color))' : 'transparent',
-                    background: active ? 'var(--bg-active)' : undefined,
-                  }}
-                  data-session-id={session.session_id}
-                  aria-current={active ? 'true' : undefined}
-                >
-                  <span className="mt-0.5 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md"
-                    style={{
-                      background: isResearch ? 'rgba(168,85,247,0.14)' : 'rgba(59,130,246,0.14)',
-                      color: isResearch ? '#c084fc' : '#60a5fa',
-                    }}>
-                    {isResearch ? <FlaskConical className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5">
-                      <span className="min-w-0 flex-1 truncate text-[11px] font-medium leading-[13px]" style={{ color: 'var(--text-primary)' }}>
-                        {session.name || session.session_id}
-                      </span>
-                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
-                        style={{ background: session.agent_status === 'running' ? '#f59e0b' : 'var(--text-muted)' }} />
-                    </span>
-                    <span className="block truncate text-[10px] leading-[12px]" style={{ color: 'var(--text-secondary)' }}>
-                      {session.project_name || session.project_id || '项目'} / {subject}
-                    </span>
-                    <span className="mt-0.5 flex items-center gap-2 text-[10px] leading-[12px]" style={{ color: 'var(--text-muted)' }}>
-                      <span>{timeAgoPrecise(session.last_active || '')}</span>
-                      <span className="inline-flex items-center gap-1"><MessageSquare className="h-3 w-3" />{session.message_count || 0}</span>
-                    </span>
-                  </span>
-                </button>
-              )
-            })}
+            ) : (
+              <div aria-label="按项目与任务分组的近期会话" data-testid="issue-recent-session-tree">
+                {recentSessionGroups.map(group => {
+                  const collapsed = collapsedRecentGroups.has(group.key)
+                  const isResearch = group.scopeType === 'research'
+                  const groupContainsCurrent = group.sessions.some(session => session.session_id === sessionParam)
+                  const groupDomId = `issue-recent-session-group-${encodeURIComponent(group.key).replace(/%/g, '-')}`
+                  return (
+                    <section
+                      key={group.key}
+                      className="mb-1.5"
+                      data-testid="issue-recent-session-group"
+                      data-project-id={group.projectId}
+                      data-subject-id={group.subjectId}
+                      data-scope-type={group.scopeType}
+                    >
+                      <button
+                        type="button"
+                        aria-expanded={!collapsed}
+                        aria-controls={groupDomId}
+                        onClick={() => toggleRecentGroup(group.key)}
+                        className="flex min-h-9 w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                        style={{ background: groupContainsCurrent ? 'color-mix(in srgb, var(--bg-active) 58%, transparent)' : undefined }}
+                        title={`${group.projectName} / ${group.subjectTitle}`}
+                      >
+                        {collapsed
+                          ? <ChevronRight className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                          : <ChevronDown className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
+                        <span className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md" style={{ background: isResearch ? 'rgba(168,85,247,0.12)' : 'rgba(59,130,246,0.12)', color: isResearch ? '#c084fc' : '#60a5fa' }}>
+                          {isResearch ? <FlaskConical className="h-3 w-3" /> : <CircleDot className="h-3 w-3" />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[9px] leading-3" style={{ color: 'var(--text-muted)' }}>{group.projectName}</span>
+                          <span className="block truncate text-[11px] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>{group.subjectTitle}</span>
+                        </span>
+                        <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
+                          <span className="text-[8px] font-medium" style={{ color: isResearch ? '#c084fc' : '#60a5fa' }}>{isResearch ? '研究' : '任务'}</span>
+                          <span className="text-[8px] tabular-nums" style={{ color: group.activeCount ? '#fbbf24' : 'var(--text-muted)' }}>
+                            {group.activeCount ? `${group.activeCount} 活跃` : `${group.sessions.length} ${isResearch ? '智能体' : '会话'}`}
+                          </span>
+                        </span>
+                      </button>
+
+                      <div id={groupDomId} hidden={collapsed} className="relative ml-[18px] border-l pl-1.5" style={{ borderColor: groupContainsCurrent ? 'color-mix(in srgb, var(--accent-primary) 38%, var(--border-color))' : 'var(--border-color)' }}>
+                        {group.sessions.map(session => {
+                          const target = recentSessionTarget(userParam, session)
+                          const active = session.session_id === sessionParam
+                          const status = session.agent_status === 'running'
+                            ? { label: '执行中', color: '#f59e0b', bg: 'rgba(245,158,11,.10)' }
+                            : session.agent_status === 'pending'
+                              ? { label: '启动中', color: '#fbbf24', bg: 'rgba(251,191,36,.10)' }
+                              : session.agent_status === 'waiting'
+                                ? { label: '待命', color: '#38bdf8', bg: 'rgba(56,189,248,.10)' }
+                                : session.agent_status === 'completed' || session.status === 'completed'
+                                  ? { label: '已完成', color: '#34d399', bg: 'rgba(52,211,153,.10)' }
+                                  : { label: '空闲', color: 'var(--text-muted)', bg: 'var(--bg-card)' }
+                          return (
+                            <button
+                              key={session.session_id}
+                              type="button"
+                              onClick={() => { if (target) navigate(target) }}
+                              disabled={!target}
+                              title={session.name || session.session_id}
+                              className="relative mt-0.5 flex min-h-9 w-full items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:opacity-50"
+                              style={{ borderColor: active ? 'color-mix(in srgb, var(--accent-primary) 42%, var(--border-color))' : 'transparent', background: active ? 'var(--bg-active)' : undefined }}
+                              data-session-id={session.session_id}
+                              aria-current={active ? 'true' : undefined}
+                            >
+                              <span className="absolute -left-2 top-1/2 w-1.5 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
+                              <span className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md" style={{ background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
+                                {isResearch ? <Bot className="h-3 w-3" /> : <MessageSquare className="h-3 w-3" />}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="flex min-w-0 items-center gap-1">
+                                  <span className="flex-shrink-0 rounded px-1 py-0.5 text-[8px] font-medium leading-3" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>{isResearch ? '智能体' : '会话'}</span>
+                                  <span className="min-w-0 flex-1 truncate text-[10px] font-medium leading-4" style={{ color: 'var(--text-primary)' }}>{session.name || session.session_id}</span>
+                                </span>
+                                <span className="mt-0.5 flex items-center gap-1.5 text-[8px] leading-3" style={{ color: 'var(--text-muted)' }}>
+                                  <span>{timeAgoPrecise(session.last_active || '')}</span>
+                                  <span className="inline-flex items-center gap-0.5"><MessageSquare className="h-2.5 w-2.5" />{session.message_count || 0}</span>
+                                </span>
+                              </span>
+                              <span className="flex-shrink-0 rounded-full px-1 py-0.5 text-[8px] font-medium leading-3" style={{ color: status.color, background: status.bg }}>{status.label}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  )
+                })}
+              </div>
+            )}
           </div>
           {sessionListMode === 'issue' && (
             <PaginationControls
@@ -593,7 +649,7 @@ export default function IssuePage() {
             editorMounted 首次进入后置 true, 此后切回会话模式仅 hidden 保活 iframe (不卸载/不重连 WS);
             {!isMobile && ...} 避免 ResizablePanel side=left 在窄屏 portal 成抽屉. 该 {editorMounted && ...}
             表达式恒占一个 React 子槽位 → ChatArea 兄弟索引恒定 → 切换布局时 ChatArea 不重挂. */}
-        {editorMounted && !isMobile && !codexSessionPilot && (
+        {editorMounted && !isMobile && (
           <div className={useEditorChat ? 'contents' : 'hidden'}>
             <ResizablePanel
               storageKey={`mobius:ui:split:editor-chat:${projectId}`}
@@ -623,7 +679,7 @@ export default function IssuePage() {
 
         {/* 中+左: 「代码对话 v2」三栏主体 (文件浏览器 + 代码浏览). 右侧 ChatArea 由下方渲染.
             v2Mounted 保活文件树展开/选中状态; 切回会话/v1 仅 hidden. */}
-        {v2Mounted && !isMobile && !codexSessionPilot && (
+        {v2Mounted && !isMobile && (
           <div className={useCodeConversation ? 'contents' : 'hidden'}>
             <Suspense
               fallback={
@@ -650,10 +706,8 @@ export default function IssuePage() {
               - 否则 → SessionOverview */}
         {currentSession ? (
           <ChatArea
-            layout={codexSessionPilot ? 'easy' : (useEditorChat || useCodeConversation) ? 'stacked' : 'default'}
-            codexStyle={codexSessionPilot}
-            onBack={codexSessionPilot ? goToOverview : undefined}
-            onNewSession={(codexSessionPilot || useEditorChat || useCodeConversation) ? () => setShowNewSession(true) : undefined}
+            layout={(useEditorChat || useCodeConversation) ? 'stacked' : 'default'}
+            onNewSession={(useEditorChat || useCodeConversation) ? () => setShowNewSession(true) : undefined}
           />
         ) : sessionParam ? (
           <Loading text="正在加载会话..." />

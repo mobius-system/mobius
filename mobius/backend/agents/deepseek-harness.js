@@ -12,6 +12,10 @@ const {
   readMergedJsonlHistory,
 } = require('../services/mobius-jsonl')
 const {
+  timeConsumeWaterfallFromBackend,
+  clearTimeConsumeWaterfallForBackend,
+} = require('../services/time-consume-waterfall')
+const {
   safeWriteRunningFlag,
   safeRemoveRunningFlag,
   safeRemoveFlagDir,
@@ -307,6 +311,14 @@ class DeepSeekHarnessBackend extends AgentBackend {
   getHistory(sessionId, opts = {}) {
     const jsonlPath = this._resolveJsonlPath(sessionId)
     return jsonlPath ? readMergedJsonlHistory(jsonlPath, opts) : { entries: [], sentinel: null }
+  }
+
+  get_time_consume_waterfall(sessionId, opts = {}) {
+    return timeConsumeWaterfallFromBackend(this, sessionId, opts)
+  }
+
+  clear_time_consume_waterfall(sessionId, opts = {}) {
+    return clearTimeConsumeWaterfallForBackend(this, sessionId, opts)
   }
   getAgentRawThoughtStream(sessionId, listener, opts = {}) {
     const jsonlPath = this._resolveJsonlPath(sessionId)

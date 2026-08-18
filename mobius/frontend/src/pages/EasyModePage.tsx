@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
+  Bot,
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   CircleDot,
   FlaskConical,
   FolderOpen,
@@ -17,6 +19,7 @@ import {
 import { useStore, api } from '../store'
 import { useLayoutMode, buildNormalModeTargetUrl } from '../services/layout-mode'
 import { pollRecursive } from '../services/polling'
+import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 import {
   EMPTY_PROJECT_HIERARCHY_SEARCH,
   hierarchyHitLabel,
@@ -83,12 +86,6 @@ function projectChipStyle(active: boolean): CSSProperties {
       }
 }
 
-function sessionSubject(session: RecentSession) {
-  return session.scope_type === 'research'
-    ? (session.research_title || session.research_id || '研究')
-    : (session.issue_title || session.issue_id || '任务')
-}
-
 function sessionStatus(session: RecentSession) {
   if (session.agent_status === 'running') return { label: '执行中', color: '#f59e0b', bg: 'rgba(245,158,11,.10)' }
   if (session.agent_status === 'pending') return { label: '启动中', color: '#fbbf24', bg: 'rgba(251,191,36,.10)' }
@@ -132,6 +129,7 @@ export default function EasyModePage() {
   const [createIssueOverride, setCreateIssueOverride] = useState('')
   const [createSuccessToast, setCreateSuccessToast] = useState<{ name: string } | null>(null)
   const [projectSuccessToast, setProjectSuccessToast] = useState<{ name: string } | null>(null)
+  const [collapsedSessionGroups, setCollapsedSessionGroups] = useState<Set<string>>(() => new Set())
   const projectFilterButtonRef = useRef<HTMLButtonElement | null>(null)
   const navigate = useNavigate()
   const layoutMode = useLayoutMode()
@@ -177,11 +175,10 @@ export default function EasyModePage() {
   const projectSessions = effectiveProject
     ? sessions.filter(session => session.project_id === effectiveProject)
     : sessions
-  const runningCount = projectSessions.filter(session => session.agent_status === 'running').length
-  const completedCount = projectSessions.filter(session => session.agent_status === 'completed' || session.status === 'completed').length
   const visibleSessions = useMemo(() => (
     projectSessions.filter(session => sessionMatchesView(session, workView))
   ), [projectSessions, workView])
+  const visibleSessionGroups = useMemo(() => buildRecentSessionTreeGroups(visibleSessions), [visibleSessions])
   const normalizedSessionQuery = sessionQuery.trim().slice(0, 200)
   const activeHierarchySearch = hierarchySearch.query === normalizedSessionQuery
     ? hierarchySearch
@@ -360,7 +357,8 @@ export default function EasyModePage() {
       ? sessions.filter(session => session.project_id === effectiveProject)
       : sessions
     const candidates = projectCandidates.filter(session => sessionMatchesView(session, workView))
-    const selected = candidates.find(session => session.session_id === sessionParam) || candidates[0] || null
+    const orderedCandidates = buildRecentSessionTreeGroups(candidates).flatMap(group => group.sessions)
+    const selected = orderedCandidates.find(session => session.session_id === sessionParam) || orderedCandidates[0] || null
     if (!selected) {
       if (sessionParam) {
         const next = new URLSearchParams(search)
@@ -418,7 +416,10 @@ export default function EasyModePage() {
     const next = new URLSearchParams(search)
     if (projectId) next.set('project', projectId)
     else next.delete('project')
-    const first = sessions.find(session => (!projectId || session.project_id === projectId) && sessionMatchesView(session, workView))
+    const matchingSessions = sessions.filter(session => (
+      (!projectId || session.project_id === projectId) && sessionMatchesView(session, workView)
+    ))
+    const first = buildRecentSessionTreeGroups(matchingSessions)[0]?.sessions[0]
     if (first) next.set('session', first.session_id)
     else next.delete('session')
     setSearch(next)
@@ -427,14 +428,13 @@ export default function EasyModePage() {
     setSessionQuery('')
   }
 
-  const selectWorkView = (view: WorkView) => {
-    const next = new URLSearchParams(search)
-    if (view === 'recent') next.delete('view')
-    else next.set('view', view)
-    const first = projectSessions.find(session => sessionMatchesView(session, view))
-    if (first) next.set('session', first.session_id)
-    else next.delete('session')
-    setSearch(next)
+  const toggleSessionGroup = (groupKey: string) => {
+    setCollapsedSessionGroups(current => {
+      const next = new Set(current)
+      if (next.has(groupKey)) next.delete(groupKey)
+      else next.add(groupKey)
+      return next
+    })
   }
 
   const openCreateSession = (issueId = '') => {
@@ -536,28 +536,6 @@ export default function EasyModePage() {
                 </button>
               )}
             </label>
-
-            {!normalizedSessionQuery && <div className="mt-2 grid grid-cols-3 gap-1" aria-label="工作状态筛选">
-              {([
-                ['recent', '最近', projectSessions.length],
-                ['running', '执行中', runningCount],
-                ['completed', '已完成', completedCount],
-              ] as Array<[WorkView, string, number]>).map(([value, label, count]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => selectWorkView(value)}
-                  aria-pressed={workView === value}
-                  className="flex h-8 items-center justify-center gap-1 rounded-md text-[11px] font-medium transition-colors focus-visible:ring-2 focus-visible:ring-blue-500/50"
-                  style={{
-                    color: workView === value ? 'var(--text-primary)' : 'var(--text-muted)',
-                    background: workView === value ? 'var(--bg-active)' : 'transparent',
-                  }}
-                >
-                  <span>{label}</span><span className="text-[10px] opacity-70">{count}</span>
-                </button>
-              ))}
-            </div>}
 
             {!normalizedSessionQuery && <div className="mt-2 flex min-w-0 items-center gap-2">
               <div className="relative min-w-0 flex-1" data-testid="easy-project-filter">
@@ -731,53 +709,109 @@ export default function EasyModePage() {
                   </button>
                 )}
               </div>
-            ) : visibleSessions.map(session => {
-              const active = session.session_id === sessionParam && contextMatchesProject
-              const isResearch = session.scope_type === 'research'
-              const status = sessionStatus(session)
-              return (
-                <button
-                  key={session.session_id}
-                  type="button"
-                  onClick={() => selectSession(session)}
-                  className="mb-1 flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
-                  style={{
-                    borderColor: active ? 'color-mix(in srgb, var(--accent-primary) 42%, var(--border-color))' : 'transparent',
-                    background: active ? 'var(--bg-active)' : undefined,
-                  }}
-                  data-session-id={session.session_id}
-                  aria-current={active ? 'true' : undefined}
-                >
-                  <span
-                    className="mt-0.5 inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg"
-                    style={{
-                      background: isResearch ? 'rgba(168,85,247,0.14)' : 'rgba(59,130,246,0.14)',
-                      color: isResearch ? '#c084fc' : '#60a5fa',
-                    }}
-                  >
-                    {isResearch ? <FlaskConical className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5">
-                      <span className="min-w-0 flex-1 truncate text-[12px] font-medium leading-5" style={{ color: 'var(--text-primary)' }}>
-                        {session.name || session.session_id}
-                      </span>
-                      <span className="flex-shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium" style={{ color: status.color, background: status.bg }}>
-                        {status.label}
-                      </span>
-                    </span>
-                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-secondary)' }}>
-                      {session.project_name || session.project_id || '项目'} / {sessionSubject(session)}
-                    </span>
-                    <span className="mt-0.5 flex items-center gap-2 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
-                      <span>{timeAgoPrecise(session.last_active || '')}</span>
-                      <span className="inline-flex items-center gap-1"><MessageSquare className="h-3 w-3" />{session.message_count || 0}</span>
-                    </span>
-                  </span>
-                  {active && <Check className="mt-1 h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />}
-                </button>
-              )
-            })}
+            ) : (
+              <div aria-label="按项目与任务分组的近期工作" data-testid="easy-session-tree">
+                {visibleSessionGroups.map(group => {
+                  const collapsed = collapsedSessionGroups.has(group.key)
+                  const isResearch = group.scopeType === 'research'
+                  const groupContainsCurrent = group.sessions.some(session => session.session_id === sessionParam) && contextMatchesProject
+                  const groupDomId = `easy-session-group-${encodeURIComponent(group.key).replace(/%/g, '-')}`
+                  return (
+                    <section
+                      key={group.key}
+                      className="mb-1.5"
+                      data-testid="easy-session-group"
+                      data-project-id={group.projectId}
+                      data-subject-id={group.subjectId}
+                      data-scope-type={group.scopeType}
+                    >
+                      <button
+                        type="button"
+                        aria-expanded={!collapsed}
+                        aria-controls={groupDomId}
+                        onClick={() => toggleSessionGroup(group.key)}
+                        className="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                        style={{ background: groupContainsCurrent ? 'color-mix(in srgb, var(--bg-active) 58%, transparent)' : undefined }}
+                        title={`${group.projectName} / ${group.subjectTitle}`}
+                      >
+                        {collapsed
+                          ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                          : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
+                        <span
+                          className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md"
+                          style={{
+                            background: isResearch ? 'rgba(168,85,247,0.12)' : 'rgba(59,130,246,0.12)',
+                            color: isResearch ? '#c084fc' : '#60a5fa',
+                          }}
+                        >
+                          {isResearch ? <FlaskConical className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>{group.projectName}</span>
+                          <span className="block truncate text-[12px] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>{group.subjectTitle}</span>
+                        </span>
+                        <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
+                          <span className="text-[9px] font-medium" style={{ color: isResearch ? '#c084fc' : '#60a5fa' }}>{isResearch ? '研究' : '任务'}</span>
+                          <span className="text-[9px] tabular-nums" style={{ color: group.activeCount ? '#fbbf24' : 'var(--text-muted)' }}>
+                            {group.activeCount ? `${group.activeCount} 活跃` : `${group.sessions.length} ${isResearch ? '智能体' : '会话'}`}
+                          </span>
+                        </span>
+                      </button>
+
+                      <div
+                        id={groupDomId}
+                        hidden={collapsed}
+                        className="relative ml-[22px] border-l pl-2"
+                        style={{ borderColor: groupContainsCurrent ? 'color-mix(in srgb, var(--accent-primary) 38%, var(--border-color))' : 'var(--border-color)' }}
+                      >
+                        {group.sessions.map(session => {
+                          const active = session.session_id === sessionParam && contextMatchesProject
+                          const status = sessionStatus(session)
+                          return (
+                            <button
+                              key={session.session_id}
+                              type="button"
+                              onClick={() => selectSession(session)}
+                              className="relative mt-0.5 flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                              style={{
+                                borderColor: active ? 'color-mix(in srgb, var(--accent-primary) 42%, var(--border-color))' : 'transparent',
+                                background: active ? 'var(--bg-active)' : undefined,
+                              }}
+                              data-session-id={session.session_id}
+                              aria-current={active ? 'true' : undefined}
+                              title={session.name || session.session_id}
+                            >
+                              <span className="absolute -left-2.5 top-1/2 w-2 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
+                              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md" style={{ background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
+                                {isResearch ? <Bot className="h-3.5 w-3.5" /> : <MessageSquare className="h-3.5 w-3.5" />}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                  <span className="flex-shrink-0 rounded px-1 py-0.5 text-[9px] font-medium leading-3" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>
+                                    {isResearch ? '智能体' : '会话'}
+                                  </span>
+                                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium leading-4" style={{ color: 'var(--text-primary)' }}>
+                                    {session.name || session.session_id}
+                                  </span>
+                                </span>
+                                <span className="mt-0.5 flex items-center gap-2 text-[9px] leading-3" style={{ color: 'var(--text-muted)' }}>
+                                  <span>{timeAgoPrecise(session.last_active || '')}</span>
+                                  <span className="inline-flex items-center gap-1"><MessageSquare className="h-2.5 w-2.5" />{session.message_count || 0}</span>
+                                </span>
+                              </span>
+                              <span className="flex-shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium" style={{ color: status.color, background: status.bg }}>
+                                {status.label}
+                              </span>
+                              {active && <Check className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </ResizablePanel>
 

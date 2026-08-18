@@ -39,7 +39,8 @@ export type EasyJsonlViewProps = {
   scrollToMatchTs?: string | null
   onScrollResolved?: () => void
   onScrollUnresolved?: () => void
-  compactInjectedContext?: boolean
+  onRoundCountChange?: (count: number) => void
+  expandAllSignal?: number
 }
 
 function activityIcon(kind: EasyActivityKind) {
@@ -141,30 +142,26 @@ export default function EasyJsonlView({
   scrollToMatchTs,
   onScrollResolved,
   onScrollUnresolved,
-  compactInjectedContext = false,
+  onRoundCountChange,
+  expandAllSignal = 0,
 }: EasyJsonlViewProps) {
   const [showAll, setShowAll] = useState(false)
   const recent = useMemo(() => entries.slice(-(showAll ? entries.length : EASY_INITIAL_WINDOW_SIZE)), [entries, showAll])
   const windowOffset = entries.length - recent.length
   const visibleItems = useMemo(() => mergeBashToolResultItems(recent, windowOffset).filter(item => !isHiddenJsonlNoiseEntry(item.entry)), [recent, windowOffset])
   const { rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
-  const easyRounds = useMemo(
-    () => buildEasyJsonlRounds(rounds, { compactInjectedContext }),
-    [rounds, compactInjectedContext],
-  )
+  const easyRounds = useMemo(() => buildEasyJsonlRounds(rounds), [rounds])
   const displayTotal = typeof total === 'number' && total > entries.length ? total : entries.length
   const hasRemoteMore = typeof total === 'number' && total > entries.length
   const targetHandledRef = useRef('')
-  const contextLoadAttemptRef = useRef('')
 
   useEffect(() => {
-    if (!compactInjectedContext || initialLoading || loadingMore || !hasRemoteMore || !onLoadMore || easyRounds.length > 0) return
-    const attemptKey = `${displayTotal}:${entries.length}`
-    if (contextLoadAttemptRef.current === attemptKey) return
-    contextLoadAttemptRef.current = attemptKey
-    setShowAll(true)
-    onLoadMore()
-  }, [compactInjectedContext, initialLoading, loadingMore, hasRemoteMore, onLoadMore, easyRounds.length, displayTotal, entries.length])
+    onRoundCountChange?.(easyRounds.length)
+  }, [easyRounds.length, onRoundCountChange])
+
+  useEffect(() => {
+    if (expandAllSignal > 0) setShowAll(true)
+  }, [expandAllSignal])
 
   useEffect(() => {
     const targetKey = `${scrollToEntryUuid || ''}:${scrollToMatchTs || ''}`
@@ -199,19 +196,6 @@ export default function EasyJsonlView({
 
   return (
     <div className="easy-jsonl-view" data-testid="easy-jsonl-view">
-      <div className="easy-jsonl-toolbar">
-        <span><Sparkles /> 简易对话</span>
-        <small>{easyRounds.length} 轮</small>
-        {hasRemoteMore && onLoadMore && (
-          <button type="button" disabled={!!loadingMore} onClick={() => { setShowAll(true); onLoadMore() }}>
-            {loadingMore ? '加载中…' : `加载全部 · ${displayTotal}`}
-          </button>
-        )}
-        {!hasRemoteMore && entries.length > EASY_INITIAL_WINDOW_SIZE && !showAll && (
-          <button type="button" onClick={() => setShowAll(true)}>展开全部 · {entries.length}</button>
-        )}
-      </div>
-
       <div className="easy-jsonl-rounds">
         {easyRounds.map((round, index) => {
           const isLast = index === easyRounds.length - 1
