@@ -36,19 +36,11 @@ One system to connect your team, AI agents, devices, and compute
 
 ## News
 
-**2026-08-09**
-- **Windows one-key install**: a single PowerShell command installs the Mobius TUI on a fresh Windows machine.
-
-**2026-08-02**
-- **Easy Mode**: an optional clutter-free layout (cross-project recent sessions + JSONL + floating input). First-time users choose between Easy and Normal mode and can switch anytime.
-- **TUI released**: connect to Mobius from any terminal with the TUI, and use Mobius the way you use Codex.
-
-**2026-07-26**
-- **Search improvements**: results stream in via SSE with case/whole-word matching; clicking a result jumps to the exact JSONL card.
-
-
-**2026-07-14**
-- **Code Conversation v2** workspace mode: a 3-pane layout (file browser + built-in CodeMirror editor with syntax highlighting and in-place saving + chat).
+- **2026-08-09** — **Windows one-key install**: a single PowerShell command installs the Mobius TUI on a fresh Windows machine.
+- **2026-08-02** — **Easy Mode**: an optional clutter-free layout (cross-project recent sessions + JSONL + floating input). First-time users choose between Easy and Normal mode and can switch anytime.
+- **2026-08-02** — **TUI released**: connect to Mobius from any terminal with the TUI, and use Mobius the way you use Codex.
+- **2026-07-26** — **Search improvements**: results stream in via SSE with case/whole-word matching; clicking a result jumps to the exact JSONL card.
+- **2026-07-14** — **Code Conversation v2** workspace mode: a 3-pane layout (file browser + built-in CodeMirror editor with syntax highlighting and in-place saving + chat).
 
 
 
