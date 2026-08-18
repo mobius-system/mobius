@@ -1714,6 +1714,49 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
     setLoading(true); setErr('')
     try {
       const finalDesc = appendAttachmentsToDesc(desc.trim() || name, attachments)
+      if (selectedResearch) {
+        if (role !== 'research_assistant') {
+          setErr('Research 的 Chief 会在创建 Research 时自动建立，不能从这里重复创建')
+          return
+        }
+        if (selectedResearch.mode === 'chief_led') {
+          setErr('当前 Research 为 Chief 主导模式，请先由用户授权 Chief，再由 Chief 创建 Assistant')
+          return
+        }
+        const selectedSkillIds = availSkills
+          .filter(sk => !excludedSkills.has(sk.id) && !isMutexSkill(sk.id))
+          .map(sk => sk.id)
+        const selectedMemoryIds = availMemories
+          .filter(memory => !excludedMemories.has(memory.id))
+          .map(memory => memory.id)
+        if (selectedSkillIds.length === 0) {
+          setErr('请至少选择一个 Skill')
+          return
+        }
+        const requestId = `gc-research-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        const s = await api(`/api/researches/${researchId}/team/manual-agents`, {
+          method: 'POST',
+          body: JSON.stringify({
+            request_id: requestId,
+            name: name.trim(),
+            purpose: finalDesc,
+            model,
+            language,
+            skill_ids: selectedSkillIds,
+            memory_ids: selectedMemoryIds,
+            memory_selection_confirmed: true,
+            initial_prompt: [name.trim(), finalDesc].filter(Boolean).join('\n\n'),
+            recruit_reason: '用户在自定义 Research 模式中明确创建该 Agent，当前任务需要其专长',
+            expected_outcome: finalDesc,
+            mentions: sessionMentionPayload(selectedMentions),
+          }),
+        })
+        if (s?.error) { setErr(s.error); return }
+        draftClear(DRAFT_KEY)
+        const detailUrl = s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/r/${researchId}?session=${s.session_id}` : undefined
+        onDone(s, detailUrl)
+        return
+      }
       const s = await api(`/api/researches/${researchId}/sessions`, { method: 'POST', body: JSON.stringify({
         name, description: finalDesc, role, model, language,
         mentions: sessionMentionPayload(selectedMentions),

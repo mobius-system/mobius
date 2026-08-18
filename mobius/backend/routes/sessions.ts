@@ -598,19 +598,24 @@ function researchSessionLeftContent(session: AnySession): string {
   return `Research Agent「${session.name || session.session_id}」已离开团队。session_id=${session.session_id}, role=${role}`;
 }
 
-function appendResearchSessionLeftNotice(session: AnySession, userId: string): any {
+function appendResearchSessionLeftNotice(session: AnySession, userId: string, handoffInput?: any): any {
   if (session.scope_type !== 'research' || !session.research_id) return null;
   const role = session.research_role === 'chief_researcher' ? 'chief_researcher' : 'research_assistant';
+  const removeReason = String(handoffInput?.remove_reason || '用户手工移除').trim();
+  const handoffSummary = String(handoffInput?.handoff_summary || session.description || '未提供明确交接内容，请 Chief 检查该 Agent 最近任务').trim();
   return appendBlackboardRecord({
     researchId: session.research_id,
     author: 'HR',
-    content: researchSessionLeftContent(session),
+    content: `${researchSessionLeftContent(session)}\n删除理由: ${removeReason}\n未完成任务与交接: ${handoffSummary}`,
     metadata: {
       event: 'session_left',
       session_id: session.session_id,
       role,
       name: session.name || '',
       deleted_by: userId || null,
+      remove_reason: removeReason,
+      handoff_summary: handoffSummary,
+      handoff_auto_derived: !handoffInput?.handoff_summary,
     },
   });
 }
@@ -621,12 +626,16 @@ router.delete('/:id', auth, async (req: express.Request, res: express.Response) 
   const user = userOf(req);
   const session = findSessionOperable(id, user);
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  if (session.scope_type === 'research' && session.research_role === 'chief_researcher') {
+    res.status(409).json({ error: 'Chief 不能作为普通 Research Agent 单独删除；请通过 Research 生命周期管理', code: 'chief_lifecycle_protected' });
+    return;
+  }
   auditSessionAccess(user, 'delete_session', session);
 
   const sid = id;
   let noticeResult: any = null;
-  if (session.scope_type === 'research' && shouldNotifyResearchPeers(req)) {
-    noticeResult = appendResearchSessionLeftNotice(session, user.id);
+  if (session.scope_type === 'research') {
+    noticeResult = appendResearchSessionLeftNotice(session, user.id, req.body);
     if (noticeResult?.error) { res.status(500).json({ error: noticeResult.error }); return; }
   }
 
@@ -664,10 +673,14 @@ router.delete('/:id/permanent', auth, async (req: express.Request, res: express.
   const user = userOf(req);
   const session = findSessionOperable(id, user);
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  if (session.scope_type === 'research' && session.research_role === 'chief_researcher') {
+    res.status(409).json({ error: 'Chief 不能作为普通 Research Agent 单独删除；请通过 Research 生命周期管理', code: 'chief_lifecycle_protected' });
+    return;
+  }
   auditSessionAccess(user, 'delete_session_permanent', session);
   let noticeResult: any = null;
-  if (session.scope_type === 'research' && shouldNotifyResearchPeers(req)) {
-    noticeResult = appendResearchSessionLeftNotice(session, user.id);
+  if (session.scope_type === 'research') {
+    noticeResult = appendResearchSessionLeftNotice(session, user.id, req.body);
     if (noticeResult?.error) { res.status(500).json({ error: noticeResult.error }); return; }
   }
   const closed = await closeBackgroundForDelete(session, id, '永久删除');

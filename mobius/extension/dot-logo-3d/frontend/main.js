@@ -12,21 +12,34 @@ import { extCall } from '/extension/_sdk/ext.js';
 // ============================================================
 const MAX_POINTS = 30000;
 const MIN_POINTS = 200;
-const DEFAULT_POINT_COUNT = 4500;
+const DEFAULT_POINT_COUNT = 6500;
 const PALETTE_MAX = 6;     // 着色器 uniform 数组最大长度
-const PALETTE_DEFAULT = 'cyxx';
+const PALETTE_DEFAULT = 'mobius-logo-soft';
+const MAX_BACKGROUND_IMAGE_BYTES = 20 * 1024 * 1024;
+const BACKGROUND_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
 const PALETTES = {
   aurora:    ['#22d3ee', '#7dd3fc', '#a78bfa', '#f472b6', '#34d399'],
   sunset:    ['#fef3c7', '#fb923c', '#f43f5e', '#7f1d1d'],
   galaxy:    ['#1e1b4b', '#4c1d95', '#7c3aed', '#ec4899', '#fde68a'],
   mono:      ['#94a3b8', '#cbd5e1', '#e2e8f0', '#ffffff'],
-  cyxx:      ['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'],
+  'mobius-logo': ['#45d7e8', '#5bc0f2', '#6f7af3', '#9c59ee', '#ee52d7'],
+  'mobius-logo-deep': ['#17b7d8', '#2c90f2', '#5d6bf4', '#8d4fec', '#e955d0'],
+  'mobius-logo-soft': ['#83e3ee', '#98cef5', '#a8a0f5', '#c08eed', '#f292df'],
+  'mobius-logo-bright': ['#1edcf0', '#39acf8', '#7377ff', '#b05cff', '#ff5acb'],
+  cyxx:      ['#00b8d9', '#2f6df6', '#7c4dff', '#c026d3', '#ff3b8f'],
   cyanmagen: ['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'],
   fire:      ['#fef3c7', '#fde047', '#f97316', '#dc2626', '#7f1d1d'],
   mint:      ['#022c22', '#10b981', '#5eead4', '#a7f3d0'],
   cyber:     ['#00ffd5', '#0095ff', '#7c3aed', '#ff2bd6'],
 };
+
+const LOGO_GRADIENT_PALETTES = new Set([
+  'mobius-logo',
+  'mobius-logo-deep',
+  'mobius-logo-soft',
+  'mobius-logo-bright',
+]);
 
 const TWIST_CHOICES = [
   { value: 1, label: '单扭 (经典莫比乌斯)' },
@@ -39,7 +52,7 @@ const TWIST_CHOICES = [
 // ============================================================
 const state = {
   // 形状
-  radius: 8.0,
+  radius: 8.5,
   width: 0.9,
   twist: 1,
   zScale: 1.0,
@@ -49,19 +62,27 @@ const state = {
   palette: PALETTE_DEFAULT,
   customColors: ['#7dd3fc', '#a78bfa', '#f472b6'],
   // 动画
-  flowSpeed: 0.10,
+  flowSpeed: 0.03,
   breathSpeed: 1.0,
   breathStrength: 0.65,
-  // 背景主题: dark / light / custom (C 选项: 主题 + 亮度 + 自定义取色器)
-  theme: 'dark',            // 'dark' | 'light' | 'custom'
+  // 背景主题: dark / light / custom / image
+  theme: 'image',
   bgColor: '#ffffff',      // 仅 custom 主题用
   bgBrightness: 0.04,      // 0..1, 控制星云光晕强度
+  backgroundImageRel: 'builtin/default-mobius-ring-bg.jpg',
+  backgroundImageName: '20260817-211011.jpg',
+  backgroundFit: 'cover',
+  backgroundImageBrightness: 0.91,
+  backgroundImageBlur: 0,
+  backgroundImageOverlay: 0,
   // 视图
   autoRotate: 'off',
   // 渲染
-  dotSize: 0.3,
-  glow: 0.85,
+  dotSize: 0.2,
+  glow: 0.5,
   background: 0.04,
+  logoFlowParticles: true,
+  svgTransparentBg: false,
   // 内部
   time: 0,
   paused: false,
@@ -74,12 +95,16 @@ const state = {
 // ============================================================
 const $ = (id) => document.getElementById(id);
 const stage = $('stage');
+const backgroundLayer = $('backgroundLayer');
 const toastEl = $('toast');
 
 let scene, camera, renderer, controls, clock;
 let pointCloud, pointGeometry, pointMaterial;
 let posAttr, uAttr, vAttr, phaseAttr, breathAttr, sizeAttr, colorTAttr;
 let starField, nebulaMat;
+let logoRibbon, logoRibbonGeometry, logoRibbonMaterial;
+let logoFlowCloud, logoFlowGeometry, logoFlowMaterial;
+let logoRibbonKey = '';
 let currentUniforms;
 let lastInteractAt = 0;
 let fpsAcc = 0, fpsFrames = 0, fpsLastT = 0;
@@ -108,6 +133,7 @@ uniform float uBreathStrength;
 
 uniform vec3  uColors[${PALETTE_MAX}];
 uniform int   uColorCount;
+uniform float uLogoGradientMode;
 
 varying vec3  vColor;
 varying float vBrightness;
@@ -168,7 +194,8 @@ void main() {
   float bright = (1.0 - uBreathStrength) + uBreathStrength * (0.5 + 0.5 * breath);
   vBrightness = bright;
 
-  vColor = samplePalette(aColorT);
+  float logoGradientT = clamp(0.5 + 0.5 * (pos.x / max(0.1, uRadius + uWidth)), 0.0, 1.0);
+  vColor = samplePalette(mix(aColorT, logoGradientT, uLogoGradientMode));
 
   // 屏幕空间尺寸: 远小近大, 叠加呼吸缩放
   float dist = max(0.1, -mvPos.z);
@@ -185,6 +212,7 @@ varying float vBrightness;
 
 uniform float uGlow;
 uniform float uAdditive;
+uniform float uReadableMode;
 
 void main() {
   vec2 uv = gl_PointCoord - 0.5;
@@ -195,9 +223,143 @@ void main() {
   float core = smoothstep(0.5, 0.18, d);
   float halo = pow(1.0 - d * 2.0, 2.5);
 
-  vec3 col = vColor * vBrightness * (core * 0.85 + uGlow * halo * 0.55);
+  float brightness = mix(vBrightness, 0.72 + 0.28 * vBrightness, uReadableMode);
+  vec3 col = vColor * brightness * (core * 0.85 + uGlow * halo * 0.55);
   float alpha = core + uGlow * halo * 0.6;
   gl_FragColor = vec4(col, alpha);
+}
+`;
+
+const LOGO_RIBBON_VERTEX = /* glsl */`
+attribute vec3 color;
+attribute float aLogoT;
+attribute float aFlowT;
+attribute float aRibbonEdge;
+
+varying vec3 vColor;
+varying float vLogoT;
+varying float vFlowT;
+varying float vRibbonEdge;
+varying vec3 vNormal;
+varying vec3 vViewDir;
+
+void main() {
+  vColor = color;
+  vLogoT = aLogoT;
+  vFlowT = aFlowT;
+  vRibbonEdge = aRibbonEdge;
+  vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+  vNormal = normalize(normalMatrix * normal);
+  vViewDir = normalize(-mvPos.xyz);
+  gl_Position = projectionMatrix * mvPos;
+}
+`;
+
+const LOGO_RIBBON_FRAGMENT = /* glsl */`
+precision highp float;
+
+uniform float uTime;
+uniform float uFlowSpeed;
+
+varying vec3 vColor;
+varying float vLogoT;
+varying float vFlowT;
+varying float vRibbonEdge;
+varying vec3 vNormal;
+varying vec3 vViewDir;
+
+void main() {
+  vec3 n = normalize(vNormal);
+  vec3 v = normalize(vViewDir);
+  vec3 lightDir = normalize(vec3(-0.35, 0.55, 0.76));
+  float diffuse = max(dot(n, lightDir), 0.0);
+  float rim = pow(1.0 - max(dot(n, v), 0.0), 2.2);
+  float edge = smoothstep(0.72, 1.0, vRibbonEdge);
+  float sweep = fract(vFlowT - uTime * uFlowSpeed * 1.6);
+  float head = smoothstep(0.02, 0.12, sweep) * (1.0 - smoothstep(0.12, 0.32, sweep));
+  float breath = 0.92 + 0.08 * sin(uTime * 1.35 + vLogoT * 6.2831853);
+  vec3 color = vColor * (0.56 + diffuse * 0.34 + rim * 0.16 + edge * 0.28 + head * 0.38) * breath;
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+const LOGO_FLOW_VERTEX = /* glsl */`
+attribute float aBaseU;
+attribute float aV;
+attribute float aPhase;
+attribute float aSize;
+
+uniform float uTime;
+uniform float uRadius;
+uniform float uWidth;
+uniform float uZScale;
+uniform float uDotSize;
+uniform float uFlowSpeed;
+uniform vec3  uColors[${PALETTE_MAX}];
+uniform int   uColorCount;
+
+varying vec3 vColor;
+varying float vAlpha;
+
+vec3 infinityCenter(float u) {
+  return vec3(
+    uRadius * sin(u),
+    0.52 * uRadius * sin(2.0 * u),
+    0.22 * uRadius * uZScale * cos(u)
+  );
+}
+
+vec3 infinityTangent(float u) {
+  return normalize(vec3(
+    uRadius * cos(u),
+    1.04 * uRadius * cos(2.0 * u),
+    -0.22 * uRadius * uZScale * sin(u)
+  ));
+}
+
+vec3 samplePalette(float t) {
+  float scaled = t * float(uColorCount - 1);
+  int idx = int(floor(scaled));
+  float f = fract(scaled);
+  if (idx < 0) idx = 0;
+  if (idx >= uColorCount - 1) return uColors[uColorCount - 1];
+  return mix(uColors[idx], uColors[idx + 1], f);
+}
+
+void main() {
+  float u = aBaseU + uTime * uFlowSpeed * 6.8 + aPhase * 0.018;
+  vec3 center = infinityCenter(u);
+  vec3 tangent = infinityTangent(u);
+  vec3 side = cross(vec3(0.0, 0.0, 1.0), tangent);
+  if (dot(side, side) < 0.0001) side = vec3(1.0, 0.0, 0.0);
+  side = normalize(side);
+  vec3 lift = normalize(cross(tangent, side));
+  vec3 pos = center + (side * aV + lift * sin(aPhase) * 0.18) * uWidth * 0.34;
+
+  float logoT = clamp(0.5 + 0.5 * (pos.x / max(0.1, uRadius + uWidth)), 0.0, 1.0);
+  vColor = samplePalette(logoT);
+  vAlpha = 0.56 + 0.36 * sin(uTime * 2.6 + aPhase);
+
+  vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
+  gl_Position = projectionMatrix * mvPos;
+  float dist = max(0.1, -mvPos.z);
+  gl_PointSize = aSize * uDotSize * (460.0 / dist);
+}
+`;
+
+const LOGO_FLOW_FRAGMENT = /* glsl */`
+precision highp float;
+
+varying vec3 vColor;
+varying float vAlpha;
+
+void main() {
+  vec2 uv = gl_PointCoord - 0.5;
+  float d = length(uv);
+  if (d > 0.5) discard;
+  float core = smoothstep(0.5, 0.12, d);
+  float halo = pow(max(0.0, 1.0 - d * 2.0), 2.0);
+  gl_FragColor = vec4(vColor * (0.95 + halo * 0.4), (core * 0.62 + halo * 0.22) * vAlpha);
 }
 `;
 
@@ -304,6 +466,7 @@ function init() {
   // 视角重置按钮
   $('resetViewBtn').addEventListener('click', resetView);
   $('pauseBtn').addEventListener('click', togglePause);
+  $('exportSvgBtn')?.addEventListener('click', exportSvg);
 
   // 参数面板折叠
   $('togglePanelBtn').addEventListener('click', togglePanel);
@@ -416,6 +579,8 @@ function rebuildPointCloud() {
       uBreathStrength: { value: state.breathStrength },
       uGlow: { value: state.glow },
       uAdditive: { value: 1.0 },
+      uReadableMode: { value: 0.0 },
+      uLogoGradientMode: { value: 0.0 },
       uColors: { value: padColors(colorVec3, PALETTE_MAX) },
       uColorCount: { value: colorVec3.length },
     },
@@ -428,6 +593,8 @@ function rebuildPointCloud() {
   pointCloud.frustumCulled = false;
   scene.add(pointCloud);
   currentUniforms = pointMaterial.uniforms;
+  syncParticleBlending();
+  syncLogoRibbonVisibility();
 }
 
 function padColors(arr, len) {
@@ -448,6 +615,194 @@ function currentPaletteColors() {
     return (state.customColors || []).filter(Boolean).slice(0, PALETTE_MAX);
   }
   return PALETTES[state.palette] || PALETTES.aurora;
+}
+
+function samplePaletteColor(colors, t) {
+  const palette = colors && colors.length ? colors : PALETTES[PALETTE_DEFAULT];
+  if (palette.length === 1) return new THREE.Color(palette[0]);
+  const x = Math.max(0, Math.min(1, t)) * (palette.length - 1);
+  const i = Math.max(0, Math.min(palette.length - 2, Math.floor(x)));
+  const f = x - i;
+  return new THREE.Color(palette[i]).lerp(new THREE.Color(palette[i + 1]), f);
+}
+
+function logoRibbonStateKey() {
+  return [
+    state.palette,
+    state.radius.toFixed(3),
+    state.width.toFixed(3),
+    state.zScale.toFixed(3),
+  ].join('|');
+}
+
+function disposeLogoRibbonMesh(mesh, geometry, material) {
+  if (mesh) scene.remove(mesh);
+  geometry && geometry.dispose();
+  material && material.dispose();
+}
+
+function applyLogoRibbonColors(geometry) {
+  const pos = geometry.getAttribute('position');
+  const colors = new Float32Array(pos.count * 3);
+  const logoT = new Float32Array(pos.count);
+  const palette = currentPaletteColors();
+  const denom = Math.max(0.1, state.radius + state.width);
+  for (let i = 0; i < pos.count; i++) {
+    const t = 0.5 + 0.5 * (pos.getX(i) / denom);
+    const color = samplePaletteColor(palette, t);
+    colors[i * 3 + 0] = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+    logoT[i] = Math.max(0, Math.min(1, t));
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute('aLogoT', new THREE.BufferAttribute(logoT, 1));
+}
+
+function infinityCenterPoint(u) {
+  return new THREE.Vector3(
+    state.radius * Math.sin(u),
+    0.52 * state.radius * Math.sin(2 * u),
+    0.22 * state.radius * state.zScale * Math.cos(u),
+  );
+}
+
+function infinityTangentPoint(u) {
+  return new THREE.Vector3(
+    state.radius * Math.cos(u),
+    1.04 * state.radius * Math.cos(2 * u),
+    -0.22 * state.radius * state.zScale * Math.sin(u),
+  ).normalize();
+}
+
+function logoRibbonPoint(u, v) {
+  const phi = Math.sin(u * 2.0) * 0.14;
+  const center = infinityCenterPoint(u);
+  const tangent = infinityTangentPoint(u);
+  let side = new THREE.Vector3(0, 0, 1).cross(tangent);
+  if (side.lengthSq() < 0.0001) side = new THREE.Vector3(1, 0, 0);
+  side.normalize();
+  const lift = new THREE.Vector3().crossVectors(tangent, side).normalize();
+  const crossingPinch = THREE.MathUtils.lerp(0.78, 1.0, THREE.MathUtils.smoothstep(Math.abs(Math.sin(u)), 0.18, 0.62));
+  const ribbonDir = side.multiplyScalar(Math.cos(phi)).add(lift.multiplyScalar(Math.sin(phi) * state.zScale)).normalize();
+  return center.add(ribbonDir.multiplyScalar(v * state.width * crossingPinch));
+}
+
+function buildLogoRibbonGeometry() {
+  const segmentsU = 420;
+  const segmentsV = 14;
+  const vertexCount = (segmentsU + 1) * (segmentsV + 1);
+  const positions = new Float32Array(vertexCount * 3);
+  const flowT = new Float32Array(vertexCount);
+  const edge = new Float32Array(vertexCount);
+  const indices = [];
+
+  for (let i = 0; i <= segmentsU; i++) {
+    const u = (i / segmentsU) * Math.PI * 2;
+    for (let j = 0; j <= segmentsV; j++) {
+      const v = -1 + (j / segmentsV) * 2;
+      const idx = i * (segmentsV + 1) + j;
+      const p = logoRibbonPoint(u, v);
+      positions[idx * 3 + 0] = p.x;
+      positions[idx * 3 + 1] = p.y;
+      positions[idx * 3 + 2] = p.z;
+      flowT[idx] = i / segmentsU;
+      edge[idx] = Math.abs(v);
+    }
+  }
+
+  for (let i = 0; i < segmentsU; i++) {
+    for (let j = 0; j < segmentsV; j++) {
+      const a = i * (segmentsV + 1) + j;
+      const b = (i + 1) * (segmentsV + 1) + j;
+      const c = (i + 1) * (segmentsV + 1) + j + 1;
+      const d = i * (segmentsV + 1) + j + 1;
+      indices.push(a, b, d, b, c, d);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('aFlowT', new THREE.BufferAttribute(flowT, 1));
+  geometry.setAttribute('aRibbonEdge', new THREE.BufferAttribute(edge, 1));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function rebuildLogoRibbon() {
+  disposeLogoRibbonMesh(logoRibbon, logoRibbonGeometry, logoRibbonMaterial);
+
+  logoRibbonGeometry = buildLogoRibbonGeometry();
+  applyLogoRibbonColors(logoRibbonGeometry);
+
+  logoRibbonMaterial = new THREE.ShaderMaterial({
+    vertexShader: LOGO_RIBBON_VERTEX,
+    fragmentShader: LOGO_RIBBON_FRAGMENT,
+    uniforms: {
+      uTime: { value: state.time },
+      uFlowSpeed: { value: state.flowSpeed },
+    },
+    transparent: false,
+    depthWrite: true,
+    side: THREE.DoubleSide,
+  });
+
+  logoRibbon = new THREE.Mesh(logoRibbonGeometry, logoRibbonMaterial);
+  logoRibbon.frustumCulled = false;
+  scene.add(logoRibbon);
+  rebuildLogoFlowParticles();
+  logoRibbonKey = logoRibbonStateKey();
+}
+
+function rebuildLogoFlowParticles() {
+  disposeLogoRibbonMesh(logoFlowCloud, logoFlowGeometry, logoFlowMaterial);
+
+  const count = 1100;
+  const pos = new Float32Array(count * 3);
+  const baseU = new Float32Array(count);
+  const v = new Float32Array(count);
+  const phase = new Float32Array(count);
+  const size = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    pos[i * 3 + 0] = 0;
+    pos[i * 3 + 1] = 0;
+    pos[i * 3 + 2] = 0;
+    baseU[i] = Math.random() * Math.PI * 2;
+    v[i] = (Math.random() * 2 - 1) * Math.pow(Math.random(), 0.42);
+    phase[i] = Math.random() * Math.PI * 2;
+    size[i] = 0.72 + Math.random() * 0.85;
+  }
+
+  logoFlowGeometry = new THREE.BufferGeometry();
+  logoFlowGeometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  logoFlowGeometry.setAttribute('aBaseU', new THREE.BufferAttribute(baseU, 1));
+  logoFlowGeometry.setAttribute('aV', new THREE.BufferAttribute(v, 1));
+  logoFlowGeometry.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+  logoFlowGeometry.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+
+  const palette = currentPaletteColors().map(hexToVec3);
+  logoFlowMaterial = new THREE.ShaderMaterial({
+    vertexShader: LOGO_FLOW_VERTEX,
+    fragmentShader: LOGO_FLOW_FRAGMENT,
+    uniforms: {
+      uTime: { value: state.time },
+      uRadius: { value: state.radius },
+      uWidth: { value: state.width },
+      uZScale: { value: state.zScale },
+      uDotSize: { value: state.dotSize },
+      uFlowSpeed: { value: state.flowSpeed },
+      uColors: { value: padColors(palette, PALETTE_MAX) },
+      uColorCount: { value: palette.length },
+    },
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  logoFlowCloud = new THREE.Points(logoFlowGeometry, logoFlowMaterial);
+  logoFlowCloud.frustumCulled = false;
+  scene.add(logoFlowCloud);
 }
 
 // ============================================================
@@ -481,6 +836,24 @@ function syncUniforms() {
     currentUniforms.uColorCount.value = vec3.length;
   }
   if (nebulaMat) nebulaMat.uniforms.uBrightness.value = state.background;
+  syncParticleBlending();
+  if (logoRibbonMaterial && logoRibbonMaterial.uniforms && logoRibbonMaterial.uniforms.uFlowSpeed) {
+    logoRibbonMaterial.uniforms.uFlowSpeed.value = state.flowSpeed;
+  }
+  if (logoFlowMaterial && logoFlowMaterial.uniforms) {
+    const flowPalette = currentPaletteColors().map(hexToVec3);
+    const padded = padColors(flowPalette, PALETTE_MAX);
+    logoFlowMaterial.uniforms.uRadius.value = state.radius;
+    logoFlowMaterial.uniforms.uWidth.value = state.width;
+    logoFlowMaterial.uniforms.uZScale.value = state.zScale;
+    logoFlowMaterial.uniforms.uDotSize.value = state.dotSize;
+    logoFlowMaterial.uniforms.uFlowSpeed.value = state.flowSpeed;
+    for (let i = 0; i < PALETTE_MAX; i++) {
+      logoFlowMaterial.uniforms.uColors.value[i] = padded[i];
+    }
+    logoFlowMaterial.uniforms.uColorCount.value = flowPalette.length;
+  }
+  syncLogoRibbonVisibility();
 }
 
 // ============================================================
@@ -510,6 +883,12 @@ function animate() {
 
   if (currentUniforms) currentUniforms.uTime.value = state.time;
   if (nebulaMat) nebulaMat.uniforms.uTime.value = state.time;
+  if (logoRibbonMaterial && logoRibbonMaterial.uniforms && logoRibbonMaterial.uniforms.uTime) {
+    logoRibbonMaterial.uniforms.uTime.value = state.time;
+  }
+  if (logoFlowMaterial && logoFlowMaterial.uniforms && logoFlowMaterial.uniforms.uTime) {
+    logoFlowMaterial.uniforms.uTime.value = state.time;
+  }
 
   renderer.render(scene, camera);
 
@@ -574,6 +953,71 @@ function showToast(text) {
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1600);
 }
 
+function extName() {
+  return window.__EXT_NAME__ || 'dot-logo-3d';
+}
+
+function authToken() {
+  return localStorage.getItem('cc-token') || '';
+}
+
+function assetUrl(rel) {
+  const clean = String(rel || '').replace(/^\/+/, '');
+  if (!clean) return '';
+  const encoded = clean.split('/').map(encodeURIComponent).join('/');
+  if (clean.startsWith('builtin/')) return `./${encoded}`;
+  const token = authToken();
+  return `/api/extensions/${encodeURIComponent(extName())}/user-asset/${encoded}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+}
+
+function validateBackgroundImage(file) {
+  if (!file) return '请选择图片';
+  if (!BACKGROUND_IMAGE_TYPES.has(file.type)) return '只支持 PNG / JPG / WebP 图片';
+  if (file.size > MAX_BACKGROUND_IMAGE_BYTES) return '图片不能超过 20MB';
+  return '';
+}
+
+function uploadBackgroundImage(file) {
+  return new Promise((resolve, reject) => {
+    const invalid = validateBackgroundImage(file);
+    if (invalid) {
+      reject(new Error(invalid));
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    const form = new FormData();
+    form.append('file', file);
+    xhr.open('POST', `/api/extensions/${encodeURIComponent(extName())}/upload`);
+    const token = authToken();
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.onload = () => {
+      let data = null;
+      try {
+        data = JSON.parse(xhr.responseText || '{}');
+      } catch {
+        reject(new Error('上传响应解析失败'));
+        return;
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && data && data.ok && data.file) {
+        const storedName = data.file.stored_name || String(data.file.path || '').split('/').pop();
+        if (!storedName) {
+          reject(new Error('上传结果缺少文件名'));
+          return;
+        }
+        resolve({
+          rel: `uploads/${storedName}`,
+          name: data.file.name || file.name,
+        });
+        return;
+      }
+      reject(new Error((data && data.error) || `上传失败 (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new Error('网络错误'));
+    xhr.send(form);
+  });
+}
+
 // ============================================================
 // UI 绑定
 // ============================================================
@@ -635,6 +1079,21 @@ function bindControls() {
   // 渲染
   bindRange('dotSizeInput', 'dotSize', (v) => v.toFixed(2), { min: 0.2, max: 4.0, step: 0.05 });
   bindRange('glowInput', 'glow', (v) => v.toFixed(2), { min: 0, max: 2.0, step: 0.05 });
+  const logoFlowParticlesInput = $('logoFlowParticlesInput');
+  if (logoFlowParticlesInput) {
+    logoFlowParticlesInput.checked = !!state.logoFlowParticles;
+    logoFlowParticlesInput.addEventListener('change', () => {
+      state.logoFlowParticles = !!logoFlowParticlesInput.checked;
+      syncLogoRibbonVisibility();
+    });
+  }
+  const svgTransparentBgInput = $('svgTransparentBgInput');
+  if (svgTransparentBgInput) {
+    svgTransparentBgInput.checked = !!state.svgTransparentBg;
+    svgTransparentBgInput.addEventListener('change', () => {
+      state.svgTransparentBg = !!svgTransparentBgInput.checked;
+    });
+  }
   // 背景亮度 (0..1, 替代旧的 0..0.3)
   bindRange('bgInput', 'bgBrightness', (v) => v.toFixed(2), { min: 0, max: 1, step: 0.01, extra: () => applyBackground() });
   // 主题下拉 (dark / light / custom)
@@ -642,7 +1101,7 @@ function bindControls() {
   themeSel.value = state.theme;
   themeSel.addEventListener('change', () => {
     state.theme = themeSel.value;
-    $('bgCustomColorRow').style.display = (state.theme === 'custom') ? 'flex' : 'none';
+    refreshBackgroundControls();
     applyBackground();
   });
   // 自定义背景色取色器
@@ -652,8 +1111,8 @@ function bindControls() {
     state.bgColor = bgColorInp.value;
     applyBackground();
   });
-  // 初始化时按主题显示/隐藏取色器行
-  $('bgCustomColorRow').style.display = (state.theme === 'custom') ? 'flex' : 'none';
+  bindImageBackgroundControls();
+  refreshBackgroundControls();
 
   // 预设
   $('savePresetBtn').addEventListener('click', onSavePreset);
@@ -721,6 +1180,109 @@ function refreshCustomRow() {
   });
 }
 
+function bindImageBackgroundControls() {
+  const input = $('backgroundImageInput');
+  $('selectBackgroundImageBtn')?.addEventListener('click', () => {
+    input?.click();
+  });
+  input?.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const invalid = validateBackgroundImage(file);
+    if (invalid) {
+      showToast(invalid);
+      input.value = '';
+      return;
+    }
+    try {
+      showToast('正在上传背景图片...');
+      const uploaded = await uploadBackgroundImage(file);
+      state.backgroundImageRel = uploaded.rel;
+      state.backgroundImageName = uploaded.name;
+      state.theme = 'image';
+      const themeSel = $('themeSelect');
+      if (themeSel) themeSel.value = state.theme;
+      reflectImageBackgroundToUI();
+      refreshBackgroundControls();
+      applyBackground();
+      showToast('背景图片已导入');
+    } catch (e) {
+      showToast('导入失败: ' + (e.message || e));
+    } finally {
+      input.value = '';
+    }
+  });
+
+  const fit = $('backgroundFitInput');
+  if (fit) {
+    fit.value = state.backgroundFit;
+    fit.addEventListener('change', () => {
+      state.backgroundFit = fit.value;
+      applyBackground();
+    });
+  }
+
+  bindRange('backgroundImageBrightnessInput', 'backgroundImageBrightness', (v) => `${Math.round(v * 100)}%`, {
+    min: 0.25,
+    max: 1.2,
+    step: 0.01,
+    extra: () => applyBackground(),
+  });
+  bindRange('backgroundImageBlurInput', 'backgroundImageBlur', (v) => `${Math.round(v)}px`, {
+    min: 0,
+    max: 24,
+    step: 1,
+    extra: () => applyBackground(),
+  });
+  bindRange('backgroundImageOverlayInput', 'backgroundImageOverlay', (v) => `${Math.round(v * 100)}%`, {
+    min: 0,
+    max: 0.8,
+    step: 0.01,
+    extra: () => applyBackground(),
+  });
+
+  $('clearBackgroundImageBtn')?.addEventListener('click', () => {
+    state.backgroundImageRel = '';
+    state.backgroundImageName = '';
+    if (state.theme === 'image') {
+      state.theme = 'dark';
+      const themeSel = $('themeSelect');
+      if (themeSel) themeSel.value = state.theme;
+    }
+    reflectImageBackgroundToUI();
+    refreshBackgroundControls();
+    applyBackground();
+    showToast('已清除背景图片');
+  });
+}
+
+function refreshBackgroundControls() {
+  const customRow = $('bgCustomColorRow');
+  if (customRow) customRow.style.display = (state.theme === 'custom') ? 'flex' : 'none';
+  const imageControls = $('backgroundImageControls');
+  if (imageControls) imageControls.style.display = (state.theme === 'image') ? 'block' : 'none';
+  reflectImageBackgroundToUI();
+}
+
+function reflectImageBackgroundToUI() {
+  const name = $('backgroundImageName');
+  if (name) name.textContent = state.backgroundImageName || (state.backgroundImageRel ? state.backgroundImageRel.split('/').pop() : '未选择');
+  const fit = $('backgroundFitInput');
+  if (fit) fit.value = state.backgroundFit;
+  const brightness = $('backgroundImageBrightnessInput');
+  if (brightness) brightness.value = String(state.backgroundImageBrightness);
+  const brightnessVal = $('backgroundImageBrightnessInputVal');
+  if (brightnessVal) brightnessVal.textContent = `${Math.round(state.backgroundImageBrightness * 100)}%`;
+  const blur = $('backgroundImageBlurInput');
+  if (blur) blur.value = String(state.backgroundImageBlur);
+  const blurVal = $('backgroundImageBlurInputVal');
+  if (blurVal) blurVal.textContent = `${Math.round(state.backgroundImageBlur)}px`;
+  const overlay = $('backgroundImageOverlayInput');
+  if (overlay) overlay.value = String(state.backgroundImageOverlay);
+  const overlayVal = $('backgroundImageOverlayInputVal');
+  if (overlayVal) overlayVal.textContent = `${Math.round(state.backgroundImageOverlay * 100)}%`;
+}
+
 // ============================================================
 // 预设 (后端持久化)
 // ============================================================
@@ -765,6 +1327,12 @@ async function onSavePresetConfirm() {
   const data = {
     ...state,
     pointCount: state.pointCount,
+    backgroundImageRel: state.backgroundImageRel,
+    backgroundImageName: state.backgroundImageName,
+    backgroundFit: state.backgroundFit,
+    backgroundImageBrightness: state.backgroundImageBrightness,
+    backgroundImageBlur: state.backgroundImageBlur,
+    backgroundImageOverlay: state.backgroundImageOverlay,
   };
   delete data.identity;
   delete data.displayName;
@@ -805,13 +1373,10 @@ async function onLoadPreset() {
     reflectStateToUI();
     syncUniforms();
     rebuildPointCloud();
-    applyBackground();
-    // 主题下拉同步 (从保存里恢复)
     if ($('themeSelect')) $('themeSelect').value = state.theme;
     if ($('bgColorInput')) $('bgColorInput').value = state.bgColor;
-    if ($('bgCustomColorRow')) {
-      $('bgCustomColorRow').style.display = (state.theme === 'custom') ? 'flex' : 'none';
-    }
+    refreshBackgroundControls();
+    applyBackground();
     showToast(`已加载「${name}」`);
   } catch (e) {
     showToast('加载失败: ' + (e.message || e));
@@ -834,17 +1399,108 @@ async function onDeletePreset() {
 }
 
 // ============== 背景主题应用 (C 选项: dark/light/custom + 亮度) ==============
+function imageBackgroundSize() {
+  if (state.backgroundFit === 'contain') return 'contain';
+  if (state.backgroundFit === 'stretch') return '100% 100%';
+  return 'cover';
+}
+
+function applyImageBackground() {
+  if (!backgroundLayer) return;
+  if (state.theme !== 'image' || !state.backgroundImageRel) {
+    backgroundLayer.classList.remove('is-active');
+    backgroundLayer.style.removeProperty('--bg-image');
+    return;
+  }
+  const url = assetUrl(state.backgroundImageRel);
+  backgroundLayer.style.setProperty('--bg-image', `url("${url.replace(/"/g, '\\"')}")`);
+  backgroundLayer.style.setProperty('--bg-image-fit', imageBackgroundSize());
+  backgroundLayer.style.setProperty('--bg-image-brightness', String(state.backgroundImageBrightness));
+  backgroundLayer.style.setProperty('--bg-image-blur', `${state.backgroundImageBlur}px`);
+  backgroundLayer.style.setProperty('--bg-image-overlay', String(state.backgroundImageOverlay));
+  backgroundLayer.style.setProperty('--bg-image-scale', state.backgroundImageBlur > 0 ? '1.045' : '1');
+  backgroundLayer.classList.add('is-active');
+}
+
+function syncStarFieldVisibility() {
+  if (!starField) return;
+  starField.visible = !(state.theme === 'image' && state.backgroundImageRel);
+}
+
+function usesReadableParticleBlending() {
+  return state.theme === 'light'
+    || (state.theme === 'image' && state.backgroundImageRel)
+    || (state.theme === 'custom' && state.bgBrightness > 0.45);
+}
+
+function usesLogoGradientPalette() {
+  return LOGO_GRADIENT_PALETTES.has(state.palette);
+}
+
+function syncLogoRibbonVisibility() {
+  if (!pointCloud) return;
+  const logoMode = usesLogoGradientPalette();
+  pointCloud.visible = !logoMode;
+  if (!logoMode) {
+    if (logoRibbon) logoRibbon.visible = false;
+    if (logoFlowCloud) logoFlowCloud.visible = false;
+    return;
+  }
+  if (!logoRibbon || logoRibbonKey !== logoRibbonStateKey()) {
+    rebuildLogoRibbon();
+  }
+  if (logoRibbon) logoRibbon.visible = true;
+  if (logoFlowCloud) logoFlowCloud.visible = logoMode && state.logoFlowParticles;
+}
+
+function syncParticleBlending() {
+  if (!pointMaterial) return;
+  const readable = usesReadableParticleBlending();
+  pointMaterial.blending = readable ? THREE.NormalBlending : THREE.AdditiveBlending;
+  if (currentUniforms && currentUniforms.uReadableMode) {
+    currentUniforms.uReadableMode.value = readable ? 1.0 : 0.0;
+  }
+  if (currentUniforms && currentUniforms.uLogoGradientMode) {
+    currentUniforms.uLogoGradientMode.value = usesLogoGradientPalette() ? 1.0 : 0.0;
+  }
+  pointMaterial.needsUpdate = true;
+}
+
 function applyBackground() {
   if (!renderer) return;
-  // 根据 theme 计算 RGB (0-1)
+  syncStarFieldVisibility();
+  syncParticleBlending();
+  if (state.theme === 'image' && state.backgroundImageRel) {
+    applyImageBackground();
+    renderer.setClearColor(new THREE.Color(0, 0, 0), 0);
+    if (typeof scene !== 'undefined' && scene) scene.background = null;
+    document.documentElement.style.setProperty('--bg-0', 'transparent');
+    document.body.style.setProperty('background', '#050c1c', 'important');
+    const stageEl = document.getElementById('stage');
+    if (stageEl) stageEl.style.setProperty('background', 'transparent', 'important');
+    if (renderer.domElement) renderer.domElement.style.setProperty('background', 'transparent', 'important');
+    if (nebulaMat) nebulaMat.uniforms.uBrightness.value = 0;
+    if (typeof renderer.clear === 'function') {
+      renderer.clear(true, true, true);
+      if (typeof scene !== 'undefined' && scene && typeof camera !== 'undefined' && camera) {
+        renderer.render(scene, camera);
+      }
+    }
+    return;
+  }
+  applyImageBackground();
+  // 根据 theme 计算 RGB (0-1)。图片模式未选图时用暗色兜底, 但保留图片控件。
+  const renderTheme = state.theme === 'image' ? 'dark' : state.theme;
   let r, g, b;
-  if (state.theme === 'dark') {
+  if (renderTheme === 'dark') {
     // 暗色: 深蓝 (0x000208 之类), 不受 bgBrightness 影响 (保留原观感)
     r = 0; g = 0.008; b = 0.032;
-  } else if (state.theme === 'light') {
-    // 亮色: 接近白, bgBrightness 控制从灰到纯白
-    const v = 0.95 + state.bgBrightness * 0.05; // 0.95..1.0
-    r = g = b = v;
+  } else if (renderTheme === 'light') {
+    // 亮色: cyxx 冰雾蓝, 避免纯白冲淡青蓝紫粉光点。
+    const t = Math.max(0, Math.min(1, state.bgBrightness));
+    r = 0.88 + t * 0.08;
+    g = 0.94 + t * 0.04;
+    b = 1.00;
   } else {
     // custom: 直接 hex 解析 RGB, bgBrightness 作为"亮度"覆盖
     const hex = state.bgColor.replace('#', '');
@@ -859,7 +1515,7 @@ function applyBackground() {
   // WebGL clear:
   //  - 暗色 → 实心黑 (alpha=1) 由 canvas 自身画背景
   //  - 亮色/custom → 透明 (alpha=0) 让 body 颜色透出
-  const clearAlpha = (state.theme === 'dark') ? 1 : 0;
+  const clearAlpha = (renderTheme === 'dark') ? 1 : 0;
   renderer.setClearColor(new THREE.Color(r, g, b), clearAlpha);
   // 关键: scene.background 也跟着改 (Three.js 每帧先画这个做底色)
   // 这是最稳的方案: 不依赖 WebGL clear 行为, 也不依赖 alpha buffer
@@ -876,19 +1532,11 @@ function applyBackground() {
   const stageEl = document.getElementById('stage');
   if (stageEl) stageEl.style.setProperty('background', cssHex, 'important');
   // 三保险: 直接给 canvas 本身设 background-color (canvas 是 WebGL, inline background 在 clear 透出时透出)
-  if (renderer && renderer.domElement) {
-    if (renderer && renderer.domElement) { renderer.domElement.style.setProperty('background', cssHex, 'important'); } else if (renderer.domElement) { renderer.domElement.style.setProperty('background', cssHex, 'important'); }
-  }
+  if (renderer.domElement) renderer.domElement.style.setProperty('background', cssHex, 'important');
 
-  console.log('[bg]', state.theme, 'r='+r.toFixed(3), 'g='+g.toFixed(3), 'b='+b.toFixed(3),
-              'clearAlpha='+clearAlpha,
-              'bodyBg='+getComputedStyle(document.body).backgroundColor,
-              'stageBg='+(stageEl ? getComputedStyle(stageEl).backgroundColor : 'n/a'),
-              'canvasW='+renderer.domElement.width,
-              'canvasH='+renderer.domElement.height);
   // 星云 uBrightness: 暗色主题才生效, 亮色/custom 给 0
   if (nebulaMat) {
-    nebulaMat.uniforms.uBrightness.value = (state.theme === 'dark') ? state.bgBrightness : 0;
+    nebulaMat.uniforms.uBrightness.value = (renderTheme === 'dark') ? state.bgBrightness : 0;
   }
   // 主动 clear 一次让新背景立即生效 (WebGL 状态只在 clear 时才用)
   // 同时清深度缓冲, 避免切换主题后粒子残影
@@ -925,8 +1573,126 @@ function reflectStateToUI() {
   $('bgInputVal').textContent = (+state.bgBrightness).toFixed(2);
   $('paletteInput').value = state.palette;
   $('autoRotateInput').value = state.autoRotate;
-  renderer.setClearColor(new THREE.Color(state.background, state.background, state.background * 1.4), 1);
+  const logoFlowParticlesInput = $('logoFlowParticlesInput');
+  if (logoFlowParticlesInput) logoFlowParticlesInput.checked = !!state.logoFlowParticles;
+  const svgTransparentBgInput = $('svgTransparentBgInput');
+  if (svgTransparentBgInput) svgTransparentBgInput.checked = !!state.svgTransparentBg;
+  if ($('themeSelect')) $('themeSelect').value = state.theme;
+  if ($('bgColorInput')) $('bgColorInput').value = state.bgColor;
+  reflectImageBackgroundToUI();
+  refreshBackgroundControls();
   refreshCustomRow();
+}
+
+// ============================================================
+// SVG 导出
+// ============================================================
+function svgPointFromU(u, width, height, scale) {
+  return {
+    x: width * 0.5 + state.radius * Math.sin(u) * scale,
+    y: height * 0.5 - 0.52 * state.radius * Math.sin(2 * u) * scale,
+  };
+}
+
+function buildSvgLogoPath(width, height, scale, segments = 320) {
+  const parts = [];
+  for (let i = 0; i <= segments; i++) {
+    const p = svgPointFromU((i / segments) * Math.PI * 2, width, height, scale);
+    parts.push(`${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`);
+  }
+  return parts.join(' ') + ' Z';
+}
+
+function colorToHex(color) {
+  return '#' + color.getHexString();
+}
+
+function buildSvgParticles(width, height, scale, count) {
+  if (!state.logoFlowParticles) return '';
+  const palette = currentPaletteColors();
+  const maxParticles = Math.max(120, Math.min(420, Math.round(count)));
+  const circles = [];
+  for (let i = 0; i < maxParticles; i++) {
+    const t = (i * 0.61803398875) % 1;
+    const u = t * Math.PI * 2;
+    const base = svgPointFromU(u, width, height, scale);
+    const jitter = Math.sin(i * 12.9898) * 0.5 + 0.5;
+    const angle = u + Math.PI * 0.5;
+    const offset = (jitter - 0.5) * state.width * scale * 0.64;
+    const x = base.x + Math.cos(angle) * offset;
+    const y = base.y - Math.sin(angle) * offset;
+    const color = colorToHex(samplePaletteColor(palette, 0.5 + 0.5 * (base.x - width * 0.5) / (state.radius * scale)));
+    const r = 0.9 + ((i * 37) % 17) / 17;
+    const opacity = 0.34 + (((i * 53) % 29) / 29) * 0.36;
+    circles.push(`<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="${color}" opacity="${opacity.toFixed(2)}"/>`);
+  }
+  return circles.join('\n    ');
+}
+
+function exportSvg() {
+  const width = 1600;
+  const height = 900;
+  const scale = 72;
+  const strokeWidth = Math.max(54, Math.min(132, state.width * scale * 1.48));
+  const palette = currentPaletteColors();
+  const stops = palette.map((color, idx) => {
+    const pct = palette.length <= 1 ? 0 : (idx / (palette.length - 1)) * 100;
+    return `<stop offset="${pct.toFixed(1)}%" stop-color="${escapeAttr(color)}"/>`;
+  }).join('\n      ');
+  const path = buildSvgLogoPath(width, height, scale);
+  const particles = buildSvgParticles(width, height, scale, state.pointCount * 0.055);
+  const backgroundRect = state.svgTransparentBg ? '' : '  <rect width="100%" height="100%" fill="url(#bgGlow)"/>';
+  const title = 'Mobius Ring Logo';
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="title desc">
+  <title id="title">${title}</title>
+  <desc id="desc">Exported from ${escapeHtml(location.href)} with the current Mobius ring palette and flow particles.</desc>
+  <defs>
+    <linearGradient id="mobiusGradient" x1="16%" y1="42%" x2="84%" y2="58%">
+      ${stops}
+    </linearGradient>
+    <radialGradient id="bgGlow" cx="50%" cy="46%" r="62%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="58%" stop-color="#f1eff7"/>
+      <stop offset="100%" stop-color="#dcd8ea"/>
+    </radialGradient>
+    <filter id="softShadow" x="-18%" y="-28%" width="136%" height="156%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#6370a8" flood-opacity="0.22"/>
+    </filter>
+    <style>
+      @keyframes mobiusDash {
+        from { stroke-dashoffset: 0; }
+        to { stroke-dashoffset: -1500; }
+      }
+      .flow-highlight {
+        animation: mobiusDash 5s linear infinite;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .flow-highlight { animation: none; }
+      }
+    </style>
+  </defs>
+${backgroundRect}
+  <g filter="url(#softShadow)">
+    <path d="${path}" fill="none" stroke="url(#mobiusGradient)" stroke-width="${strokeWidth.toFixed(1)}" stroke-linecap="round" stroke-linejoin="round"/>
+    <path class="flow-highlight" d="${path}" fill="none" stroke="url(#mobiusGradient)" stroke-width="${(strokeWidth * 0.42).toFixed(1)}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="210 1290" stroke-dashoffset="0" opacity="0.58">
+      <animate attributeName="stroke-dashoffset" values="0;-1500" dur="5s" repeatCount="indefinite"/>
+    </path>
+    ${particles}
+  </g>
+</svg>
+`;
+  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  a.href = url;
+  a.download = `mobius-ring-${stamp}.svg`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast('已导出 SVG');
 }
 
 // ============================================================
