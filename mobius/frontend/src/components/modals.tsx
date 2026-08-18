@@ -1657,7 +1657,7 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
             className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <label className="block text-[12px]" style={{ color: 'var(--text-secondary)' }}>
-            Assistant limit（AI-Leader 的招募上限，Leader 不占名额，默认 3；你本人后续补建不受此限）
+            Assistant limit（AI-Leader 的招募上限，Leader 不占名额，默认为3；真人用户后续补建不受此限）
             <input type="number" min={1} max={12} value={assistantLimit}
               onChange={e => { setAssistantLimit(Number(e.target.value)); setErr('') }}
               className="mt-1 w-full h-9 px-3 rounded-xl focus:outline-none"
@@ -1802,7 +1802,7 @@ export function RenameResearchModal({ research, onClose, onRenamed }: { research
             className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <label className="block text-[12px]" style={{ color: 'var(--text-secondary)' }}>
-            Assistant limit（1-12，Chief 的招募上限；你本人补建不受此限）
+            Assistant limit（1-12，AI-Leader 的招募上限；真人用户后续补建不受此限）
             <input type="number" min={1} max={12} value={assistantLimit} onChange={e => setAssistantLimit(Number(e.target.value))}
               className="mt-1 w-full h-9 px-3 rounded-xl text-[13px] focus:outline-none"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
