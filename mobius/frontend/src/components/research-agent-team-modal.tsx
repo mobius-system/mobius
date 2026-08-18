@@ -214,28 +214,9 @@ function buildInitialAgents({
     messageCount: Number(s.message_count || 0),
     status: s.agent_status === 'running' ? '执行中' : '已创建',
   }))
-  const hasChief = existingAgents.some(agent => agent.role === 'chief_researcher')
-  const output: TeamAgent[] = []
-
-  if (hasChief) {
-    output.push(...existingAgents)
-  } else {
-    const chiefPreset = DEFAULT_TEAM_PRESETS[0]
-    const mainSkill = findSkillByName(agentSkills, chiefPreset.skillName)
-    output.push({
-      id: makeLocalId(),
-      locked: false,
-      role: 'chief_researcher',
-      name: chiefPreset.name,
-      purpose: chiefPreset.purpose,
-      model: defaultModel,
-      language: 'zh',
-      mainSkillId: mainSkill?.id || '',
-      excludedSkillIds: normalizeSkillExclusions(defaultExcludedSkillIds, mainSkill?.id || '', agentSkills),
-      excludedMemoryIds: defaultExcludedMemoryIds,
-    })
-    output.push(...existingAgents)
-  }
+  // 人工自定义组队不再自动注入 Chief/Leader: 团队就是用户挑选的 Assistant 集合;
+  // 已存在的 Leader (locked) 只原样带入展示.
+  const output: TeamAgent[] = [...existingAgents]
 
   const assistantPresets = DEFAULT_TEAM_PRESETS.slice(1)
   let presetIndex = 0
@@ -478,20 +459,10 @@ export function ResearchAgentTeamModal({
       const first = nextAgents.find(a => !a.locked) || nextAgents[0]
       if (first) setEditingTarget({ agentId: first.id, field: 'purpose' })
     } else {
-      const hasChief = agents.some(a => a.role === 'chief_researcher')
       const nextAgents = [...agents]
-      if (!hasChief) {
-        const preset = DEFAULT_TEAM_PRESETS[0]
-        const ms = findSkillByName(agentSkills, preset.skillName)
-        nextAgents.unshift({
-          id: makeLocalId(), locked: false, role: 'chief_researcher', name: preset.name, purpose: preset.purpose,
-          model: defaultModelKey, language: 'zh', mainSkillId: ms?.id || '',
-          excludedSkillIds: normalizeSkillExclusions(defaultExcludedSkillIds, ms?.id || '', agentSkills),
-          excludedMemoryIds: defaultExcludedMemoryIds,
-        })
-      }
+      const fillPresets = DEFAULT_TEAM_PRESETS.slice(1)
       while (nextAgents.length < Math.min(3, assistantSoftLimit + 1, maxTeamSize)) {
-        const preset = DEFAULT_TEAM_PRESETS[nextAgents.length % DEFAULT_TEAM_PRESETS.length]
+        const preset = fillPresets[nextAgents.length % fillPresets.length]
         const ms = findSkillByName(agentSkills, preset.skillName)
         nextAgents.push({
           id: makeLocalId(), locked: false, role: preset.role, name: preset.name, purpose: preset.purpose,
@@ -586,11 +557,6 @@ export function ResearchAgentTeamModal({
   const submit = async () => {
     setErr('')
     setProgress([])
-    const hasChief = agents.some(agent => agent.role === 'chief_researcher')
-    if (!hasChief) {
-      setErr('团队必须包含一个 chief Agent')
-      return
-    }
     if (agents.filter(agent => agent.role === 'research_assistant').length > MAX_TEAM_SIZE) {
       setErr(`单支研究团队最多 ${MAX_TEAM_SIZE} 个 Assistant（绝对硬顶）`)
       return
