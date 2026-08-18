@@ -1719,10 +1719,6 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
           setErr('Research 的 Chief 会在创建 Research 时自动建立，不能从这里重复创建')
           return
         }
-        if (selectedResearch.mode === 'chief_led') {
-          setErr('当前 Research 为 Chief 主导模式，请先由用户授权 Chief，再由 Chief 创建 Assistant')
-          return
-        }
         const selectedSkillIds = availSkills
           .filter(sk => !excludedSkills.has(sk.id) && !isMutexSkill(sk.id))
           .map(sk => sk.id)

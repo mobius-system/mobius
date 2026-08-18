@@ -63,7 +63,6 @@ import { recordAdminAuditIfCrossUser } from '../services/admin-audit';
 import {
   RESEARCH_SESSION_TOKEN_HEADER,
   TEAM_TOKEN_HEADER,
-  activeAssistantCount,
   createChiefTeamToken,
   findActionByRequest,
   normalizeAssistantLimit,
@@ -451,10 +450,8 @@ router.post('/:id/team/manual-agents', auth, async (req: express.Request, res: e
   const user = (req as any).user;
   const research = Researches.findById(researchId) as any;
   if (!research || !canReadResearch(user, research)) { res.status(404).json({ error: '未找到' }); return; }
-  if (normalizeResearchMode(research.mode) !== 'custom') {
-    res.status(403).json({ error: 'Chief 主导模式只能由 Chief 创建 Assistant', code: 'chief_provision_required' });
-    return;
-  }
+  // 人类直接创建不区分模式: chief_led 下用户同样是团队的主人, 可直接补建 Assistant.
+  // limit / 建删震荡守卫只对 Chief 能力路径硬性执行, 人类路径只提醒.
   try {
     const requestId = requiredText(req.body?.request_id, 'request_id');
     const payload = {
@@ -465,13 +462,13 @@ router.post('/:id/team/manual-agents', auth, async (req: express.Request, res: e
       memory_ids: req.body?.memory_ids,
       memory_selection_confirmed: req.body?.memory_selection_confirmed,
       initial_prompt: requiredText(req.body?.initial_prompt, '初始 Prompt'),
-      recruit_reason: requiredText(req.body?.recruit_reason || '用户在自定义模式中明确创建该 Agent', '创建理由', 10),
+      recruit_reason: requiredText(req.body?.recruit_reason || '用户明确创建该 Agent，当前任务需要其专长', '创建理由', 10),
       expected_outcome: requiredText(req.body?.expected_outcome || req.body?.purpose, '预期产出'),
       replacement_of: req.body?.replacement_of ? String(req.body.replacement_of) : null,
       language: req.body?.language === 'en' ? 'en' : 'zh',
     };
     const actorSessionId = Sessions.findChiefForResearch(researchId)?.session_id || `user:${user.id}`;
-    const reserved: any = reserveRecruitment({ researchId, actorSessionId, requestId, payload });
+    const reserved: any = reserveRecruitment({ researchId, actorSessionId, requestId, payload, enforceLimit: false, enforceGuard: false });
     if (reserved.existing) {
       const existingSession = reserved.action.target_session_id ? Sessions.findById(reserved.action.target_session_id) : null;
       res.json({ ok: reserved.action.status === 'completed', idempotent: true, action: reserved.action, session: existingSession });
@@ -490,11 +487,17 @@ router.post('/:id/team/manual-agents', auth, async (req: express.Request, res: e
       const hr = appendBlackboardRecord({
         researchId,
         author: 'HR',
-        content: `新的 research_assistant 已由用户创建并收到初始任务: session_id=${created.session_id}, name=${created.name}`,
+        content: [
+          `新的 research_assistant 已由用户创建并收到初始任务: session_id=${created.session_id}, name=${created.name}`,
+          reserved.overLimit
+            ? `提醒: 当前存活 Assistant (${reserved.assistantCount}/${reserved.assistantLimit}) 已超过团队 limit；本条为用户指定创建，不受硬性限制。`
+            : '',
+        ].filter(Boolean).join('\n'),
         metadata: {
           event: 'session_joined', source: 'custom_team_provision', session_id: created.session_id,
           role: 'research_assistant', name: created.name, request_id: requestId,
           initial_prompt: payload.initial_prompt, recruit_reason: payload.recruit_reason,
+          over_limit: reserved.overLimit === true,
         },
       });
       if ((hr as any).error) throw new Error((hr as any).error);
@@ -799,10 +802,6 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
     return;
   }
   if (role === 'research_assistant') {
-    if (normalizeResearchMode((research as any).mode) === 'chief_led') {
-      res.status(403).json({ error: 'Chief 主导模式只能由 Chief 的受控团队能力创建 Assistant', code: 'chief_provision_required' });
-      return;
-    }
     // Research Agent 的正式创建必须经过统一团队链路，以便原子完成
     // limit 预留、初始 Prompt 启动、HR 通告和团队动作台账。保留
     // continue_from_session_id 作为旧 Session 转接的兼容路径。
@@ -811,12 +810,6 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
         error: 'Research Assistant 必须通过 /team/manual-agents 创建并立即启动',
         code: 'research_team_provision_required',
       });
-      return;
-    }
-    const assistantCount = activeAssistantCount(String(req.params.researchId));
-    const assistantLimit = normalizeAssistantLimit((research as any).assistant_limit);
-    if (assistantCount >= assistantLimit) {
-      res.status(409).json({ error: `当前存活 Assistant 已达到团队 limit (${assistantCount}/${assistantLimit})`, code: 'assistant_limit_reached' });
       return;
     }
   }
