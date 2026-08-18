@@ -21,7 +21,7 @@
 
 用法:
   GH_TOKEN=ghp_xxx python3 scripts/sync-desktop-builds.py --tag desktop-v0.0.22
-  python3 scripts/sync-desktop-builds.py --tag desktop-v0.0.22 --repo nutshellai-tech/mobius --dest mobius/desktop-builds
+  python3 scripts/sync-desktop-builds.py --tag desktop-v0.0.22 --repo mobius-system/mobius --dest mobius/desktop-builds
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import desktop_manifest as dm  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_REPO = "nutshellai-tech/mobius"
+DEFAULT_REPO = "mobius-system/mobius"
 DEFAULT_DEST = REPO_ROOT / "mobius" / "desktop-builds"
 
 

@@ -14,10 +14,10 @@ One system to connect your team, AI agents, devices, and compute
 </h3>
 
 <p align="center">
-  <a href="https://github.com/nutshellai-tech/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/nutshellai-tech/mobius?style=for-the-badge" /></a>
-  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange?style=for-the-badge" /></a>
+  <a href="https://github.com/mobius-system/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/mobius-system/mobius?style=for-the-badge" /></a>
+  <a href="https://github.com/mobius-system/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange?style=for-the-badge" /></a>
   <a href="https://mobius.nutshellai.cn/"><img alt="Website" src="https://img.shields.io/badge/website-000000?style=for-the-badge&logo=About.me&logoColor=white" /></a>
-  <a href="https://nutshellai-tech.github.io/mobius/en/"><img alt="Docs" src="https://img.shields.io/badge/docs-000000?style=for-the-badge&logo=readthedocs&logoColor=white" /></a>
+  <a href="https://mobius-system.github.io/mobius/en/"><img alt="Docs" src="https://img.shields.io/badge/docs-000000?style=for-the-badge&logo=readthedocs&logoColor=white" /></a>
 </p>
 
 </div>
@@ -60,7 +60,7 @@ Mobius rewrites itself from your input. Send a **change request**, a **screensho
   <img src="https://serve.nutshellai.cn/publish/auto/readme/can-do-agent-os.gif" alt="Self-evolving Agent OS demo" width="480" />
 </p>
 
-[View self-evolution examples](https://nutshellai-tech.github.io/mobius/self-evo-demo/)
+[View self-evolution examples](https://mobius-system.github.io/mobius/self-evo-demo/)
 
 ## Serve Every Scenario and Project
 
@@ -177,13 +177,13 @@ Mobius ships with built-in extensions and grows new ones from your needs — fin
 
 ## Quick Start
 
-Full deployment guide at [Docs](https://nutshellai-tech.github.io/mobius/en/).
+Full deployment guide at [Docs](https://mobius-system.github.io/mobius/en/).
 
 ### Containers (recommended)
 
 ```bash
 # 1. Clone the repo (tip: fork first, then clone — after self-evolution you can commit directly to your own repo)
-git clone https://github.com/nutshellai-tech/mobius.git && cd mobius
+git clone https://github.com/mobius-system/mobius.git && cd mobius
 
 # 2. Generate config (random keys/passwords; you may configure manually to skip this)
 python3 conf_prepare.py --docker && python3 conf_check.py --docker
@@ -206,7 +206,7 @@ sudo apt install tmux python3 git curl proxychains openssh-server build-essentia
 npm install -g @anthropic-ai/claude-code @openai/codex
 
 # 3. Clone the repo (tip: fork first, then clone — after self-evolution you can commit directly to your own repo)
-git clone https://github.com/nutshellai-tech/mobius.git && cd mobius
+git clone https://github.com/mobius-system/mobius.git && cd mobius
 
 # 4. Generate and check config (copies .env.default to .env with random passwords)
 python3 conf_prepare.py && python3 conf_check.py
@@ -234,9 +234,9 @@ What we are building next:
 Issues, plugins, docs, bug reports, use cases — all welcome. If you believe AI systems should evolve instead of being static tools, join us.
 
 <p align="center">
-  <a href="https://github.com/nutshellai-tech/mobius">GitHub</a>
+  <a href="https://github.com/mobius-system/mobius">GitHub</a>
   ·
   <a href="https://mobius.nutshellai.cn/">Website</a>
   ·
-  <a href="https://nutshellai-tech.github.io/mobius/en/">Docs</a>
+  <a href="https://mobius-system.github.io/mobius/en/">Docs</a>
 </p>

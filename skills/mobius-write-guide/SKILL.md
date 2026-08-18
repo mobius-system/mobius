@@ -283,7 +283,7 @@ proxychains -q git push github main
 | 图床域名（docs 用） | `serve.nutshellai.cn`（返回的是 `serve.gptacademic.cn`，换掉） |
 | docs 仓库 | `/home/tianyi/imac-test`（`docs/` + `mkdocs.yml` + `docs/requirements-docs.txt`） |
 | 远端 origin | `ssh://git@gitlab.agent-matrix.com:12340/nutshellai/mobius.git`（内网直连） |
-| 远端 github | `https://github.com/nutshellai-tech/mobius.git`（外网，push 走 `proxychains -q`） |
+| 远端 github | `https://github.com/mobius-system/mobius.git`（外网，push 走 `proxychains -q`） |
 | commit 邮箱/署名 | `mobius_os@163.com` / `Mobius OS`（已配） |
 
 ---

@@ -2,12 +2,12 @@
 # 本地预览: mkdocs serve   |   构建: mkdocs build
 
 site_name: Mobius
-site_url: https://nutshellai-tech.github.io/mobius/
+site_url: https://mobius-system.github.io/mobius/
 site_description: Mobius — A Self-Evolving Agent Operating System
 docs_dir: docs
 
-repo_url: https://github.com/nutshellai-tech/mobius
-repo_name: nutshellai-tech/mobius
+repo_url: https://github.com/mobius-system/mobius
+repo_name: mobius-system/mobius
 edit_uri: edit/main/docs/
 
 theme:
@@ -146,6 +146,6 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/nutshellai-tech/mobius
+      link: https://github.com/mobius-system/mobius
     - icon: fontawesome/solid/globe
       link: https://mobius.nutshellai.cn/

@@ -17,7 +17,7 @@ const https = require("node:https");
 
 const DESKTOP_BUILDS_DIR = path.join(__dirname, "..", "..", "desktop-builds");
 const GITHUB_API = "https://api.github.com";
-const REPO = "nutshellai-tech/mobius";
+const REPO = "mobius-system/mobius";
 
 /**
  * 下载单个文件 (支持自动跟随重定向, 幂等: size 一致跳过).
