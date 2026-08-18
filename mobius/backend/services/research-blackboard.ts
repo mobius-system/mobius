@@ -98,11 +98,12 @@ function normalizeWriteInput(input: any = {}): any {
   if (!content.trim()) return { error: 'content 不能为空' };
   if (content.length > MAX_CONTENT_LEN) return { error: `content 过长 (上限 ${MAX_CONTENT_LEN} 字符)` };
   const metadata = input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata)
-    ? input.metadata
-    : undefined;
+    ? { ...input.metadata }
+    : {};
   const legacySessionId = typeof input.session_id === 'string' && input.session_id.trim()
     ? input.session_id.trim()
     : null;
+  if (legacySessionId && !metadata.session_id) metadata.session_id = legacySessionId;
   return { author, legacySessionId, content, metadata };
 }
 
@@ -321,7 +322,7 @@ function applySessionDeliveryProgress(record: any, sessionId: string, errorMessa
   const normalized = normalizeDeliveryState(record);
   const targetIds = new Set(normalized.delivery.target_session_ids);
   const deliveredTo = new Set(normalized.delivery.delivered_to_session_ids);
-  if (sessionId) deliveredTo.add(sessionId);
+  if (sessionId && !errorMessage) deliveredTo.add(sessionId);
   const next: any = {
     ...record,
     delivered: false,

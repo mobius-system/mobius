@@ -157,40 +157,7 @@ function unique(values: string[]): string[] {
   return Array.from(new Set(values.map(value => value.trim()).filter(Boolean)))
 }
 
-const INJECTED_CONTEXT_START_MARKERS = [
-  '【以下信息描述了你正在协助的用户】',
-  '以下信息描述了你正在协助的用户',
-  '【The following describes the user you are assisting',
-  'The following describes the user you are assisting',
-]
-
-const INJECTED_CONTEXT_END_MARKERS = [
-  '【用户的问题】',
-  '## 用户的问题',
-  "【User's Question】",
-  "## User's Question",
-]
-
-function compactInjectedUserContext(prompt: string): string {
-  const start = INJECTED_CONTEXT_START_MARKERS
-    .map(marker => prompt.indexOf(marker))
-    .filter(index => index >= 0)
-    .sort((a, b) => a - b)[0]
-  if (start == null) return prompt
-
-  const end = INJECTED_CONTEXT_END_MARKERS
-    .map(marker => ({ index: prompt.indexOf(marker, start), marker }))
-    .filter(match => match.index >= 0)
-    .sort((a, b) => a.index - b.index)[0]
-  if (!end) return prompt
-
-  return prompt.slice(end.index + end.marker.length).trim() || prompt
-}
-
-export function buildEasyJsonlRounds(
-  rounds: Round[],
-  options: { compactInjectedContext?: boolean } = {},
-): EasyJsonlRound[] {
+export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
   return rounds.map((round) => {
     const buckets = new Map<EasyActivityKind, ActivityBucket>()
     const assistantMessages: Array<{ text: string; lineNo: number; index: number }> = []
@@ -281,9 +248,7 @@ export function buildEasyJsonlRounds(
     return {
       id: String(firstEntry?.uuid || firstEntry?.id || round.items[0]?.lineNo || round.roundNum),
       roundNum: round.roundNum,
-      userPrompt: options.compactInjectedContext
-        ? compactInjectedUserContext(easyUserText(firstEntry))
-        : easyUserText(firstEntry),
+      userPrompt: easyUserText(firstEntry),
       activities,
       assistantResponse: finalMessage?.text || '',
       lineNos,

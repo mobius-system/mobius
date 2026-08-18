@@ -7,7 +7,9 @@ import { Sessions } from '../repositories/sessions';
 import { Conversations } from '../repositories/conversations';
 import { isAssistantSession } from '../services/assistant-session';
 import { Issues } from '../repositories/issues';
+import { Researches } from '../repositories/researches';
 import { Messages } from '../repositories/messages';
+import { SessionPendingMentions } from '../repositories/session-pending-mentions';
 // @ts-ignore — bridge instance 仍是 .js
 import { bridge } from '../bridge/instance';
 // @ts-ignore — service 仍是 .js
@@ -45,6 +47,11 @@ import {
 // @ts-ignore — service 仍是 .js
 import { readSessionInputs } from '../services/session-inputs';
 // @ts-ignore — service 仍是 .js
+import {
+  clearTimeConsumeWaterfallForBackend,
+  timeConsumeWaterfallFromBackend,
+} from '../services/time-consume-waterfall';
+// @ts-ignore — service 仍是 .js
 import * as sessionFeatures from '../services/session-features';
 // @ts-ignore — service 仍是 .js
 import { runSessionMessage } from '../services/session-message-runner';
@@ -64,6 +71,7 @@ import {
   canCreateSessionForIssue,
   canOperateSession,
   canReadIssue,
+  canReadResearch,
   canReadSession,
 } from '../services/access-control';
 // flag 路径约定单一来源 (与 backend / scanner 一致): <仓库根>/.imac/flags/<sid>/{running,failed}.flag
@@ -179,11 +187,32 @@ router.get('/default-model', auth, (_req: express.Request, res: express.Response
 router.get('/mention-targets', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const currentId = String(req.query.session_id || '').trim();
+  const issueId = String(req.query.issue_id || '').trim();
+  const researchId = String(req.query.research_id || '').trim();
   const query = String(req.query.q || '').trim().slice(0, 200);
   const normalizedSearch = query.replace(/^@?session=/i, '').trim().toLowerCase();
-  const current = currentId ? Sessions.findById(currentId) as any : null;
-  if (!current || !canOperateSession(user, current)) {
-    res.status(404).json({ error: '当前 Session 不存在或无权访问' });
+  let current = currentId ? Sessions.findById(currentId) as any : null;
+  if (currentId) {
+    if (!current || !canOperateSession(user, current)) {
+      res.status(404).json({ error: '当前 Session 不存在或无权访问' });
+      return;
+    }
+  } else if (issueId) {
+    const issue = Issues.findById(issueId) as any;
+    if (!issue || !canReadIssue(user, issue)) {
+      res.status(404).json({ error: '当前 Issue 不存在或无权访问' });
+      return;
+    }
+    current = { scope_type: 'issue', issue_id: issueId, project_id: issue.project_id };
+  } else if (researchId) {
+    const research = Researches.findById(researchId) as any;
+    if (!research || !canReadResearch(user, research)) {
+      res.status(404).json({ error: '当前 Research 不存在或无权访问' });
+      return;
+    }
+    current = { scope_type: 'research', research_id: researchId, project_id: research.project_id };
+  } else {
+    res.status(400).json({ error: '请提供当前 Session、Issue 或 Research' });
     return;
   }
   const rows = Sessions.listMentionCandidates(normalizedSearch, normalizedSearch ? 600 : 300)
@@ -243,7 +272,7 @@ router.get('/mention-targets', auth, (req: express.Request, res: express.Respons
     if (ar !== br) return ar - br;
     return new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime();
   }).slice(0, 120);
-  res.json({ query, current_session_id: currentId, targets, total: targets.length });
+  res.json({ query, current_session_id: currentId || null, targets, total: targets.length });
 });
 
 function findSessionReadable(id: string, user: AnyUser): AnySession | null {
@@ -569,19 +598,24 @@ function researchSessionLeftContent(session: AnySession): string {
   return `Research Agent「${session.name || session.session_id}」已离开团队。session_id=${session.session_id}, role=${role}`;
 }
 
-function appendResearchSessionLeftNotice(session: AnySession, userId: string): any {
+function appendResearchSessionLeftNotice(session: AnySession, userId: string, handoffInput?: any): any {
   if (session.scope_type !== 'research' || !session.research_id) return null;
   const role = session.research_role === 'chief_researcher' ? 'chief_researcher' : 'research_assistant';
+  const removeReason = String(handoffInput?.remove_reason || '用户手工移除').trim();
+  const handoffSummary = String(handoffInput?.handoff_summary || session.description || '未提供明确交接内容，请 Chief 检查该 Agent 最近任务').trim();
   return appendBlackboardRecord({
     researchId: session.research_id,
     author: 'HR',
-    content: researchSessionLeftContent(session),
+    content: `${researchSessionLeftContent(session)}\n删除理由: ${removeReason}\n未完成任务与交接: ${handoffSummary}`,
     metadata: {
       event: 'session_left',
       session_id: session.session_id,
       role,
       name: session.name || '',
       deleted_by: userId || null,
+      remove_reason: removeReason,
+      handoff_summary: handoffSummary,
+      handoff_auto_derived: !handoffInput?.handoff_summary,
     },
   });
 }
@@ -592,12 +626,16 @@ router.delete('/:id', auth, async (req: express.Request, res: express.Response) 
   const user = userOf(req);
   const session = findSessionOperable(id, user);
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  if (session.scope_type === 'research' && session.research_role === 'chief_researcher') {
+    res.status(409).json({ error: 'Chief 不能作为普通 Research Agent 单独删除；请通过 Research 生命周期管理', code: 'chief_lifecycle_protected' });
+    return;
+  }
   auditSessionAccess(user, 'delete_session', session);
 
   const sid = id;
   let noticeResult: any = null;
-  if (session.scope_type === 'research' && shouldNotifyResearchPeers(req)) {
-    noticeResult = appendResearchSessionLeftNotice(session, user.id);
+  if (session.scope_type === 'research') {
+    noticeResult = appendResearchSessionLeftNotice(session, user.id, req.body);
     if (noticeResult?.error) { res.status(500).json({ error: noticeResult.error }); return; }
   }
 
@@ -635,10 +673,14 @@ router.delete('/:id/permanent', auth, async (req: express.Request, res: express.
   const user = userOf(req);
   const session = findSessionOperable(id, user);
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  if (session.scope_type === 'research' && session.research_role === 'chief_researcher') {
+    res.status(409).json({ error: 'Chief 不能作为普通 Research Agent 单独删除；请通过 Research 生命周期管理', code: 'chief_lifecycle_protected' });
+    return;
+  }
   auditSessionAccess(user, 'delete_session_permanent', session);
   let noticeResult: any = null;
-  if (session.scope_type === 'research' && shouldNotifyResearchPeers(req)) {
-    noticeResult = appendResearchSessionLeftNotice(session, user.id);
+  if (session.scope_type === 'research') {
+    noticeResult = appendResearchSessionLeftNotice(session, user.id, req.body);
     if (noticeResult?.error) { res.status(500).json({ error: noticeResult.error }); return; }
   }
   const closed = await closeBackgroundForDelete(session, id, '永久删除');
@@ -922,6 +964,48 @@ router.get('/:id/jsonl-history', auth, (req: express.Request, res: express.Respo
     return;
   } catch (e) {
     console.warn(`[sessions/jsonl-history] failed (${id}): ${(e as Error).message}`);
+    res.status(500).json({ error: (e as Error).message || String(e) });
+    return;
+  }
+});
+
+router.get('/:id/time-consume-waterfall', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'read_session_time_consume_waterfall', session);
+
+  const backend = backendForSession(session);
+  try {
+    const result = typeof backend?.get_time_consume_waterfall === 'function'
+      ? backend.get_time_consume_waterfall(id, {})
+      : timeConsumeWaterfallFromBackend(backend, id, {});
+    res.json(result);
+    return;
+  } catch (e) {
+    console.warn(`[sessions/time-consume-waterfall] failed (${id}): ${(e as Error).message}`);
+    res.status(500).json({ error: (e as Error).message || String(e) });
+    return;
+  }
+});
+
+router.post('/:id/time-consume-waterfall/clear', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionOperable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  auditSessionAccess(user, 'clear_session_time_consume_waterfall', session);
+
+  const backend = backendForSession(session);
+  try {
+    const result = typeof backend?.clear_time_consume_waterfall === 'function'
+      ? backend.clear_time_consume_waterfall(id, {})
+      : clearTimeConsumeWaterfallForBackend(backend, id, {});
+    res.json(result);
+    return;
+  } catch (e) {
+    console.warn(`[sessions/time-consume-waterfall/clear] failed (${id}): ${(e as Error).message}`);
     res.status(500).json({ error: (e as Error).message || String(e) });
     return;
   }
@@ -1561,6 +1645,11 @@ router.post('/:id/messages', auth, async (req: express.Request, res: express.Res
   const requestId = typeof req.body?.request_id === 'string' ? req.body.request_id : null;
   const hasInputText = Object.prototype.hasOwnProperty.call(req.body || {}, 'input_text');
   const inputText = hasInputText ? String(req.body.input_text || '') : '';
+  const pendingMentions = SessionPendingMentions.find(sessionId);
+  const directMentions = Array.isArray(req.body?.mentions) ? req.body.mentions : [];
+  const effectiveMentions = pendingMentions.length > 0
+    ? [...pendingMentions, ...directMentions]
+    : directMentions;
 
   try {
     const result = await runSessionMessage({
@@ -1571,11 +1660,12 @@ router.post('/:id/messages', auth, async (req: express.Request, res: express.Res
       hasInputText,
       requestId,
       attachments: req.body?.attachments,
-      mentions: req.body?.mentions,
+      mentions: effectiveMentions,
       source: 'http.session.messages',
       logger: console,
       urgent: req.body?.urgent === true,
     } as any);
+    if (pendingMentions.length > 0) SessionPendingMentions.clear(sessionId);
     auditSessionAccess(user, 'send_session_message', Sessions.findById(sessionId) as any);
     // 1v1 推送钩子: agent 回复 settle 后, 若用户此时离线(无 SSE) → 远程推送.
     try {
@@ -1797,6 +1887,7 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     pc_client_metadata: pcClientMetadata,
     name_human_edited: nameHumanEdited,
   } as any);
+  const pendingMentions = SessionPendingMentions.save(sessionId, req.body?.mentions);
   if (sourceSession && transferResult?.paths?.full) {
     try {
       Messages.insertSystem(
@@ -1878,9 +1969,12 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
         inputText: startContent,
         hasInputText: true,
         requestId: `continue-${sourceSession.session_id}-${Date.now()}` as any,
+        mentions: pendingMentions,
         source: 'http.session.continue_with_model',
         logger: console,
-      } as any).catch((e) => {
+      } as any).then(() => {
+        if (pendingMentions.length > 0) SessionPendingMentions.clear(sessionId);
+      }).catch((e) => {
         console.warn(`[sessions] auto start continued session failed (${sessionId}): ${(e as Error).message}`);
         // 早期失败(workspace 不可用 / model 被移除) runSessionMessage 内部未清 flag, 补清预写的 running.flag.
         if (startFlagRoot) {

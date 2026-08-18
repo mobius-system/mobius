@@ -33,6 +33,10 @@ const {
   readMergedJsonlHistory,
   watchMergedJsonl,
 } = require('../services/mobius-jsonl')
+const {
+  timeConsumeWaterfallFromBackend,
+  clearTimeConsumeWaterfallForBackend,
+} = require('../services/time-consume-waterfall')
 const { recordPromptPaste } = require('../services/agent-prompt-events')
 const {
   runningFlagPathOf,
@@ -762,6 +766,14 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     }
     const r = readMergedJsonlHistory(jsonlPath, opts)
     return { entries: r.entries, total: r.total, totalApproximate: r.totalApproximate, truncated: r.truncated, sentinel: r.sentinel }
+  }
+
+  get_time_consume_waterfall(sessionId, opts = {}) {
+    return timeConsumeWaterfallFromBackend(this, sessionId, opts)
+  }
+
+  clear_time_consume_waterfall(sessionId, opts = {}) {
+    return clearTimeConsumeWaterfallForBackend(this, sessionId, opts)
   }
 
   // 订阅 raw 流: opts.fromSentinel 指定字节 offset → 起独立 watcher 从那点 tail.

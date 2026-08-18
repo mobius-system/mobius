@@ -46,6 +46,11 @@ import {
 } from './project-page/utils'
 import { markFireAndForgetSession } from '../services/session-start-policy'
 import { pollRecursive } from '../services/polling'
+import {
+  SessionMentionPicker,
+  sessionMentionPayload,
+  type SessionMentionSelection,
+} from './session-mention-picker'
 
 type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist'
 type IssueVisibility = 'inherit' | ProjectVisibility
@@ -1604,25 +1609,70 @@ export function RenameIssueModal({ issue, onClose, onRenamed }: { issue: any; on
 // =====================================================================
 export function NewResearchModal({ projectId, onClose, onCreated }: { projectId: string; onClose: () => void; onCreated: (research: any) => void }) {
   const DRAFT_KEY = `new-research:${projectId}`
-  const initialDraft = draftLoad<{ title?: string; desc?: string; descTouched?: boolean }>(DRAFT_KEY)
+  const initialDraft = draftLoad<any>(DRAFT_KEY)
   const [title, setTitle] = useState(initialDraft?.title || '')
   const [desc, setDesc] = useState(initialDraft?.desc || '')
   const [descTouched, setDescTouched] = useState(!!initialDraft?.descTouched)
+  const [mode, setMode] = useState<'chief_led' | 'custom'>(initialDraft?.mode === 'custom' ? 'custom' : 'chief_led')
+  const [assistantLimit, setAssistantLimit] = useState(Number(initialDraft?.assistantLimit) || 3)
+  const [chiefName, setChiefName] = useState(initialDraft?.chiefName || '')
+  const [chiefPurpose, setChiefPurpose] = useState(initialDraft?.chiefPurpose || '')
+  const [chiefPrompt, setChiefPrompt] = useState(initialDraft?.chiefPrompt || '')
+  const [chiefPromptTouched, setChiefPromptTouched] = useState(!!initialDraft?.chiefPromptTouched)
+  const [chiefModel, setChiefModel] = useState(initialDraft?.chiefModel || 'codex')
+  const [chiefMemoryConfirmed, setChiefMemoryConfirmed] = useState(initialDraft?.chiefMemoryConfirmed !== false)
+  const [modelOptions, setModelOptions] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   const { theme } = useStore()
   const effectiveDesc = descTouched ? desc : title
+  const effectiveChiefName = chiefName.trim() || `${title.trim() || 'Research'} Chief`
+  const effectiveChiefPurpose = chiefPurpose.trim() || effectiveDesc.trim() || title.trim()
+  const effectiveChiefPrompt = chiefPromptTouched ? chiefPrompt : (effectiveDesc || title)
   useEffect(() => {
-    draftSave(DRAFT_KEY, { title, desc: descTouched ? desc : '', descTouched })
-  }, [DRAFT_KEY, title, desc, descTouched])
+    draftSave(DRAFT_KEY, {
+      title, desc: descTouched ? desc : '', descTouched, mode, assistantLimit,
+      chiefName, chiefPurpose, chiefPrompt: chiefPromptTouched ? chiefPrompt : '',
+      chiefPromptTouched, chiefModel, chiefMemoryConfirmed,
+    })
+  }, [DRAFT_KEY, title, desc, descTouched, mode, assistantLimit, chiefName, chiefPurpose, chiefPrompt, chiefPromptTouched, chiefModel, chiefMemoryConfirmed])
+  useEffect(() => {
+    let alive = true
+    api('/api/sessions/model-options').then((rows: any) => {
+      if (!alive) return
+      const list = Array.isArray(rows) ? rows : []
+      setModelOptions(list)
+      if (list.length > 0 && !list.some((item: any) => item.key === chiefModel)) setChiefModel(list[0].key)
+    }).catch(() => {})
+    return () => { alive = false }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const submit = async () => {
     if (!title.trim()) { setErr('请填写研究标题'); return }
+    if (!Number.isInteger(assistantLimit) || assistantLimit < 1 || assistantLimit > 12) { setErr('Assistant limit 必须是 1-12 的整数'); return }
+    if (!effectiveChiefPrompt.trim()) { setErr('请填写 Chief 初始 Prompt'); return }
+    if (!chiefMemoryConfirmed) { setErr('请明确确认 Chief 的 Memory 选择'); return }
     const submittedDescription = effectiveDesc.trim() || title.trim()
     setLoading(true); setErr('')
     try {
       const research = await api(`/api/projects/${projectId}/researches`, {
         method: 'POST',
-        body: JSON.stringify({ title, description: submittedDescription }),
+        body: JSON.stringify({
+          title,
+          description: submittedDescription,
+          mode,
+          assistant_limit: assistantLimit,
+          chief: {
+            name: effectiveChiefName,
+            purpose: effectiveChiefPurpose,
+            initial_prompt: effectiveChiefPrompt.trim(),
+            model: chiefModel,
+            language: 'zh',
+            skill_ids: ['research-chief-agent'],
+            memory_ids: [],
+            memory_selection_confirmed: chiefMemoryConfirmed,
+          },
+        }),
       })
       draftClear(DRAFT_KEY)
       onCreated(research)
@@ -1631,7 +1681,7 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <div className="relative w-[440px] rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+      <div className="relative w-[560px] max-h-[calc(100vh-32px)] overflow-y-auto rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建研究</h3>
         <div className="space-y-3 mb-4">
           <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setErr('') }}
@@ -1643,6 +1693,52 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
             overlayTitle="编辑研究描述"
             className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setMode('chief_led')}
+              className="rounded-xl border p-3 text-left" style={{ borderColor: mode === 'chief_led' ? '#10b981' : 'var(--input-border)', background: mode === 'chief_led' ? 'rgba(16,185,129,.10)' : 'var(--input-bg)' }}>
+              <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Chief 主导</div>
+              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>初始仅创建 Chief，讨论后由 Chief 招募。</div>
+            </button>
+            <button type="button" onClick={() => setMode('custom')}
+              className="rounded-xl border p-3 text-left" style={{ borderColor: mode === 'custom' ? '#3b82f6' : 'var(--input-border)', background: mode === 'custom' ? 'rgba(59,130,246,.10)' : 'var(--input-bg)' }}>
+              <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>自定义模式</div>
+              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>创建 Research 后由用户手工配置团队。</div>
+            </button>
+          </div>
+          <label className="block text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+            Assistant limit（Chief 不占名额，默认 3）
+            <input type="number" min={1} max={12} value={assistantLimit}
+              onChange={e => { setAssistantLimit(Number(e.target.value)); setErr('') }}
+              className="mt-1 w-full h-9 px-3 rounded-xl focus:outline-none"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          </label>
+          {(
+            <div className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-card)' }}>
+              <div className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>唯一 Chief 配置</div>
+              <input value={effectiveChiefName} onChange={e => { setChiefName(e.target.value); setErr('') }} placeholder="Chief 名称"
+                className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              <input value={effectiveChiefPurpose} onChange={e => { setChiefPurpose(e.target.value); setErr('') }} placeholder="Chief 职责"
+                className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              <select value={chiefModel} onChange={e => setChiefModel(e.target.value)}
+                className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}>
+                {(modelOptions.length > 0 ? modelOptions : [{ key: 'codex', label: 'Codex' }]).map((item: any) => (
+                  <option key={item.key} value={item.key}>{item.label || item.title || item.key}</option>
+                ))}
+              </select>
+              <div className="rounded-lg px-3 py-2 text-[11px]" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
+                Skill：research-chief-agent（Chief 必选）
+              </div>
+              <label className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                <input type="checkbox" checked={chiefMemoryConfirmed} onChange={e => setChiefMemoryConfirmed(e.target.checked)} />
+                明确选择：Chief 初始不加载额外 Memory
+              </label>
+              <ExpandableTextarea value={effectiveChiefPrompt} onValueChange={value => { setChiefPrompt(value); setChiefPromptTouched(true); setErr('') }}
+                placeholder="Chief 初始 Prompt / 初始研究任务"
+                overlayTitle="编辑 Chief 初始 Prompt"
+                className="w-full h-28 px-3 py-2 rounded-lg text-[12px] focus:outline-none resize-none"
+                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+            </div>
+          )}
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2">
@@ -1660,6 +1756,7 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
 export function RenameResearchModal({ research, onClose, onRenamed }: { research: any; onClose: () => void; onRenamed: (research: any) => void }) {
   const [title, setTitle] = useState(research.title)
   const [desc, setDesc] = useState(research.description || '')
+  const [assistantLimit, setAssistantLimit] = useState(Number(research.assistant_limit) || 3)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   const { theme } = useStore()
@@ -1667,7 +1764,7 @@ export function RenameResearchModal({ research, onClose, onRenamed }: { research
     if (!title.trim()) { setErr('请输入研究标题'); return }
     setLoading(true); setErr('')
     try {
-      const updated = await api(`/api/researches/${research.id}`, { method: 'PATCH', body: JSON.stringify({ title, description: desc }) })
+      const updated = await api(`/api/researches/${research.id}`, { method: 'PATCH', body: JSON.stringify({ title, description: desc, assistant_limit: assistantLimit }) })
       onRenamed(updated)
     } catch (e: any) { setErr(e?.message || '保存失败') } finally { setLoading(false) }
   }
@@ -1686,6 +1783,12 @@ export function RenameResearchModal({ research, onClose, onRenamed }: { research
             overlayTitle="编辑研究描述"
             className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
+          <label className="block text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+            Assistant limit（1-12，Chief 不占名额）
+            <input type="number" min={1} max={12} value={assistantLimit} onChange={e => setAssistantLimit(Number(e.target.value))}
+              className="mt-1 w-full h-9 px-3 rounded-xl text-[13px] focus:outline-none"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
+          </label>
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2">
@@ -2156,6 +2259,7 @@ export function NewSessionModal({
     excluded_memory_ids?: string[]
     chosen_agent_skill_id?: string
     selection_ready?: boolean
+    mentions?: SessionMentionSelection[]
   }>(DRAFT_KEY)
   const guidedDemo = readActiveGuidedDemo()
   const guidedDemoState = guidedDemo?.state
@@ -2194,6 +2298,9 @@ export function NewSessionModal({
   const [desc, setDesc] = useState(isGuidedDemo
     ? (guidedDemoState?.sessionDescription || '')
     : (initialPreset?.description || initialDraft?.desc || defaultDescription || ''))
+  const [selectedMentions, setSelectedMentions] = useState<SessionMentionSelection[]>(
+    Array.isArray(initialDraft?.mentions) ? initialDraft.mentions : [],
+  )
   const [deferPurpose, setDeferPurpose] = useState(false)
   const [role, setRole] = useState<'chief_researcher' | 'research_assistant'>(
     initialPreset?.role || initialDraft?.role || (isResearch && !chiefExists ? 'chief_researcher' : 'research_assistant')
@@ -2333,9 +2440,10 @@ export function NewSessionModal({
         excluded_memory_ids: Array.from(excludedMemories),
         chosen_agent_skill_id: chosenAgentSkill?.id || '',
         selection_ready: !!initialDraft?.selection_ready || step >= 2 || !!preview,
+        mentions: selectedMentions,
       }, { minChars: 1 })
     }
-  }, [DRAFT_KEY, isGuidedDemo, isPresetMode, name, desc, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
+  }, [DRAFT_KEY, isGuidedDemo, isPresetMode, name, desc, selectedMentions, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
 
   const modelUsageFor = useCallback((modelKey: ModelKey) => {
     return promptStats?.model_usage_limits?.models?.[modelKey] || null
@@ -2682,11 +2790,50 @@ export function NewSessionModal({
     }
     setLoading(true); setErr('')
     try {
-      const endpoint = isResearch ? `/api/researches/${researchId}/sessions` : `/api/issues/${issueId}/sessions`
+      if (isResearch) {
+        if (role !== 'research_assistant') {
+          setErr('Research 的 Chief 会在创建 Research 时自动建立，不能从这里重复创建')
+          return
+        }
+        const initialPrompt = [name.trim(), appendAttachmentsToDesc(submittedDescription, attachments)].filter(Boolean).join('\n\n')
+        const selectedSkillIds = availableSkills
+          .filter(sk => !excludedSkills.has(sk.id) && !isMutuallyExclusiveAgentSkill(sk.id))
+          .map(sk => sk.id)
+        const selectedMemoryIds = availableMemories
+          .filter(memory => !excludedMemories.has(memory.id))
+          .map(memory => memory.id)
+        if (!initialPrompt.trim()) { setErr('Research Agent 必须填写初始 Prompt'); return }
+        if (selectedSkillIds.length === 0) { setErr('请至少选择一个 Skill'); return }
+        const s = await api(`/api/researches/${researchId}/team/manual-agents`, {
+          method: 'POST',
+          body: JSON.stringify({
+            request_id: `research-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name: name.trim(),
+            purpose: submittedDescription.trim() || name.trim(),
+            model,
+            role,
+            language,
+            skill_ids: selectedSkillIds,
+            memory_ids: selectedMemoryIds,
+            memory_selection_confirmed: true,
+            initial_prompt: initialPrompt,
+            recruit_reason: '用户明确创建该 Research Agent，当前任务需要其专长',
+            expected_outcome: submittedDescription.trim() || name.trim(),
+            mentions: sessionMentionPayload(selectedMentions),
+            ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
+          }),
+        })
+        draftClear(DRAFT_KEY)
+        if (deferPurpose) markFireAndForgetSession(s?.session_id)
+        onCreated(s)
+        return
+      }
+      const endpoint = `/api/issues/${issueId}/sessions`
       const s = await api(endpoint, {
         method: 'POST',
         body: JSON.stringify({
           name, description: appendAttachmentsToDesc(submittedDescription, attachments), model, role, language,
+          mentions: sessionMentionPayload(selectedMentions),
           excluded_skill_ids: Array.from(excludedSkills),
           excluded_memory_ids: Array.from(excludedMemories),
           continue_from_session_id: continueFromSessionId || undefined,
@@ -2916,6 +3063,18 @@ export function NewSessionModal({
                 <AttachmentComposer attachments={attachments} setAttachments={setAttachments} projectId={projectId} dark={isDark}>
                   {descTextarea}
                 </AttachmentComposer>
+              )}
+              {!isPresetMode && (
+                <SessionMentionPicker
+                  value={desc}
+                  onValueChange={value => { setDesc(value); setErr('') }}
+                  selected={selectedMentions}
+                  onSelectedChange={setSelectedMentions}
+                  projectId={projectId}
+                  issueId={issueId}
+                  researchId={researchId}
+                  disabled={!issueId && !researchId}
+                />
               )}
               {isResearch && (
                 <div>
