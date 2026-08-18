@@ -18,19 +18,50 @@
 
 html, body {
   margin: 0; padding: 0; height: 100%;
-  background: #000;
+  background: var(--bg-0, #000);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
-#stage {
+.background-layer {
   position: fixed;
   inset: 0;
   z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  background-image: var(--bg-image, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: var(--bg-image-fit, cover);
+  filter: brightness(var(--bg-image-brightness, 1)) blur(var(--bg-image-blur, 0px));
+  transform: scale(var(--bg-image-scale, 1));
+  transition: opacity 0.18s ease, filter 0.18s ease;
 }
-#stage canvas { display: block; }
+.background-layer.is-active {
+  opacity: 1;
+}
+.background-layer::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  background:
+    radial-gradient(circle at 48% 42%, rgba(255, 255, 255, 0.08), transparent 34%),
+    linear-gradient(rgba(3, 12, 28, var(--bg-image-overlay, 0)), rgba(3, 12, 28, var(--bg-image-overlay, 0)));
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: var(--bg-0, #000);  /* 跟随主题, 切亮色时画布后层也变 */
+}
+#stage canvas {
+  display: block;
+  background: var(--bg-0, #000);  /* 兜底: canvas 元素本身也跟主题, 任何覆盖都失效 */
+}
 
 /* ============ top bar ============ */
 .topbar {
@@ -304,6 +335,33 @@ html, body {
 }
 .color-swatch::-webkit-color-swatch { border: none; border-radius: 3px; }
 .color-swatch::-webkit-color-swatch-wrapper { padding: 0; border-radius: 3px; }
+
+.image-bg-controls {
+  margin-top: 4px;
+}
+.image-upload-btn {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+.visually-hidden-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.image-bg-status-row {
+  align-items: center;
+}
+.image-bg-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
 
 .hint {
   font-size: 11px;

@@ -24,6 +24,8 @@ interface InsertArgs {
   title: string;
   description?: string | null;
   created_by: string;
+  mode?: 'custom' | 'chief_led';
+  assistant_limit?: number;
   visibility?: ResearchVisibility;
 }
 
@@ -72,10 +74,10 @@ const Researches = {
     `).all(query, query, Math.max(1, Math.min(Number(limit) || 1001, 5001))) as ResearchRow[];
   },
 
-  insert: ({ id, project_id, title, description, created_by, visibility }: InsertArgs) =>
+  insert: ({ id, project_id, title, description, created_by, mode, assistant_limit, visibility }: InsertArgs) =>
     db.prepare(
-      'INSERT INTO researches (id, project_id, title, description, created_by, status, visibility) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(id, project_id, title, description || '', created_by, 'active', visibility || 'inherit'),
+      'INSERT INTO researches (id, project_id, title, description, created_by, status, mode, assistant_limit, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, project_id, title, description || '', created_by, 'active', mode || 'custom', assistant_limit || 3, visibility || 'inherit'),
 
   updateTitle: (id: string, title: string) =>
     db.prepare('UPDATE researches SET title = ? WHERE id = ?').run(title, id),
@@ -85,6 +87,8 @@ const Researches = {
     db.prepare('UPDATE researches SET status = ? WHERE id = ?').run(status, id),
   updatePinned: (id: string, pinned: boolean) =>
     db.prepare('UPDATE researches SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, id),
+  updateAssistantLimit: (id: string, limit: number) =>
+    db.prepare('UPDATE researches SET assistant_limit = ? WHERE id = ?').run(limit, id),
   updateVisibility: (id: string, visibility: ResearchVisibility) =>
     db.prepare('UPDATE researches SET visibility = ? WHERE id = ?').run(visibility, id),
 

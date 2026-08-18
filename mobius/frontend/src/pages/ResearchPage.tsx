@@ -13,6 +13,7 @@ import { usePagination, PaginationControls } from '../components/pagination'
 import ResearchGraph from '../components/research-graph'
 import ResearchBlackboard from '../components/research-blackboard'
 import { useEditorAvailability } from '../components/workspace/use-editor-availability'
+import { pollRecursive } from '../services/polling'
 
 const ResearchAgentTeamModal = lazy(() => import('../components/research-agent-team-modal')
   .then(mod => ({ default: mod.ResearchAgentTeamModal })))
@@ -62,9 +63,13 @@ export default function ResearchPage() {
   const editorDefaultWidth = Math.max(editorMinWidth, Math.min(editorMaxWidth, Math.floor(viewportWidth * 0.6)))
 
   const [researchState, setResearchState] = useState<any>(null)
+  const [teamState, setTeamState] = useState<any>(null)
+  const [authorizingTeam, setAuthorizingTeam] = useState(false)
+  const [teamNotice, setTeamNotice] = useState('')
   const [showCreateChoice, setShowCreateChoice] = useState(false)
   const [showNewSession, setShowNewSession] = useState(false)
   const [showTeamSession, setShowTeamSession] = useState(false)
+  const [teamModalMode, setTeamModalMode] = useState<'single' | 'team'>('team')
   const [editingSession, setEditingSession] = useState<any>(null)
   const [deletingSession, setDeletingSession] = useState<any>(null)
   const [editingResearch, setEditingResearch] = useState(false)
@@ -100,6 +105,15 @@ export default function ResearchPage() {
       if (!cancelled) setSessionsLoaded(true)
     })
     return () => { cancelled = true }
+  }, [researchId])
+
+  useEffect(() => {
+    if (!researchId) return
+    const poll = pollRecursive(async (signal) => {
+      const state = await api(`/api/researches/${researchId}/team`, { signal })
+      setTeamState(state)
+    }, 5000, 10_000, { startImmediately: true })
+    return poll
   }, [researchId])
 
   useEffect(() => {
@@ -201,6 +215,25 @@ export default function ResearchPage() {
     next.delete('session')
     next.delete('view')
     setSearch(next, { replace: false })
+  }
+
+  const authorizeChiefTeam = async () => {
+    if (authorizingTeam) return
+    setAuthorizingTeam(true)
+    setTeamNotice('')
+    try {
+      const result = await api(`/api/researches/${researchId}/team/authorize`, {
+        method: 'POST',
+        body: JSON.stringify({ request_id: `team-authorize-${Date.now()}` }),
+      })
+      setTeamNotice('已授权 Chief。Chief 会按讨论方案判断并动态创建团队。')
+      setTeamState(await api(`/api/researches/${researchId}/team`))
+      if (result?.chief_session_id) goToSession(result.chief_session_id)
+    } catch (e: any) {
+      setTeamNotice(e?.message || '授权失败')
+    } finally {
+      setAuthorizingTeam(false)
+    }
   }
 
   const handleDeleteSession = async (notifyOthers: boolean) => {
@@ -330,10 +363,12 @@ export default function ResearchPage() {
               style={{ color: 'var(--text-muted)' }}>
               Research Agents ({sessions.length})
             </button>
-            <button onClick={openCreateChoice} title="新建研究智能体" data-tour="research-new-agent"
+            <button onClick={research?.mode === 'chief_led' ? authorizeChiefTeam : openCreateChoice}
+              disabled={authorizingTeam}
+              title={research?.mode === 'chief_led' ? '授权 Chief 创建团队' : '新建研究智能体'} data-tour="research-new-agent"
               className="h-6 px-2 flex items-center gap-1 rounded-md hover:bg-emerald-500/15 text-emerald-400 transition-colors text-[11px] shrink-0">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-              新Agent
+              {research?.mode === 'chief_led' ? (authorizingTeam ? '授权中' : '创建团队') : '新Agent'}
             </button>
           </div>
 
@@ -448,11 +483,15 @@ export default function ResearchPage() {
           <ResearchSessionOverview
             sessions={sortedSessions}
             onOpenSession={goToSession}
-            onNewSession={openCreateChoice}
+            onNewSession={research?.mode === 'chief_led' ? authorizeChiefTeam : openCreateChoice}
             onEdit={(s) => setEditingSession(s)}
             onDelete={(s) => setDeletingSession(s)}
             projectId={projectId}
             researchId={researchId}
+            research={research}
+            teamState={teamState}
+            teamNotice={teamNotice}
+            authorizingTeam={authorizingTeam}
           />
         )}
       </div>
@@ -461,10 +500,12 @@ export default function ResearchPage() {
         onClose={() => setShowCreateChoice(false)}
         onSingle={() => {
           setShowCreateChoice(false)
-          setShowNewSession(true)
+          setTeamModalMode('single')
+          setShowTeamSession(true)
         }}
         onTeam={() => {
           setShowCreateChoice(false)
+          setTeamModalMode('team')
           setShowTeamSession(true)
         }}
       />}
@@ -486,6 +527,8 @@ export default function ResearchPage() {
           <ResearchAgentTeamModal
             researchId={researchId}
             existingSessions={sortedSessions}
+            assistantLimit={research?.assistant_limit || 3}
+            initialMode={teamModalMode}
             defaultNamePrefix={research?.title || ''}
             defaultDescription={research?.description || ''}
             onClose={() => setShowTeamSession(false)}
@@ -528,7 +571,7 @@ function ResearchWorkspaceLoading({ label }: { label: string }) {
   )
 }
 
-function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit, onDelete, projectId, researchId }: {
+function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit, onDelete, projectId, researchId, research, teamState, teamNotice, authorizingTeam }: {
   sessions: any[]
   onOpenSession: (sid: string) => void
   onNewSession: () => void
@@ -536,6 +579,10 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
   onDelete: (s: any) => void
   projectId: string
   researchId: string
+  research: any
+  teamState: any
+  teamNotice: string
+  authorizingTeam: boolean
 }) {
   const [view, setView] = useState<'sessions' | 'blackboard' | 'graph'>('sessions')
 
@@ -572,11 +619,44 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
               共 {sessions.length} 个 Research Agent · 点击进入对话或新建 Research Agent
             </p>
           </div>
-          <button onClick={onNewSession}
+          <button onClick={onNewSession} disabled={authorizingTeam}
             className="h-9 px-4 rounded-lg text-[13px] text-white bg-emerald-500 hover:bg-emerald-600 transition-colors flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            新建 Research Agent
+            {research?.mode === 'chief_led' ? (authorizingTeam ? '授权中...' : '创建团队') : '新建 Research Agent'}
           </button>
+        </div>
+
+        <div className="mb-5 rounded-xl border p-4" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+          <div className="flex flex-wrap items-center gap-2 text-[12px]">
+            <span className="rounded-full px-2 py-1 font-medium" style={{ background: research?.mode === 'chief_led' ? 'rgba(16,185,129,.12)' : 'rgba(59,130,246,.12)', color: research?.mode === 'chief_led' ? '#10b981' : '#60a5fa' }}>
+              {research?.mode === 'chief_led' ? 'Chief 主导' : '自定义模式'}
+            </span>
+            <span style={{ color: 'var(--text-secondary)' }}>
+              存活 Assistant {teamState?.active_assistant_count ?? sessions.filter((s: any) => s.research_role === 'research_assistant').length}/{teamState?.assistant_limit ?? research?.assistant_limit ?? 3}
+            </span>
+            <span style={{ color: 'var(--text-muted)' }}>Chief 不占名额</span>
+            {teamState?.mutation_in_progress && <span className="text-amber-400">团队变更进行中</span>}
+          </div>
+          {teamNotice && <div className="mt-2 text-[11px] text-emerald-400">{teamNotice}</div>}
+          {Array.isArray(teamState?.actions) && teamState.actions.length > 0 && (
+            <div className="mt-3 border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="mb-2 text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>团队活动</div>
+              <div className="space-y-1.5">
+                {teamState.actions.slice(0, 6).map((action: any) => (
+                  <div key={action.id} className="flex items-start gap-2 text-[11px]">
+                    <span className={`mt-0.5 h-2 w-2 rounded-full ${action.status === 'completed' || action.status === 'authorized' ? 'bg-emerald-400' : action.status === 'failed' ? 'bg-red-400' : 'bg-amber-400 animate-pulse'}`} />
+                    <span className="w-20 flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
+                      {action.action_type === 'authorize' ? '用户授权' : action.action_type === 'recruit' ? '招募 Agent' : action.action_type === 'remove' ? 'Agent 离队' : action.action_type}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate" style={{ color: 'var(--text-muted)' }}>
+                      {action.payload?.name || action.target_session_id || action.request_id} · {action.status}
+                      {action.error ? ` · ${action.error}` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {sessions.length === 0 ? (
@@ -619,9 +699,11 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
                       <button onClick={(e) => { e.stopPropagation(); onEdit(s) }} className="p-1 rounded hover:bg-white/10" title="重命名">
                         <svg className="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                       </button>
-                      <button onClick={(e) => { e.stopPropagation(); onDelete(s) }} className="p-1 rounded hover:bg-red-500/10" title="删除">
-                        <Trash2 className="w-3.5 h-3.5 text-red-400" strokeWidth={1.8} />
-                      </button>
+                      {s.research_role !== 'chief_researcher' && (
+                        <button onClick={(e) => { e.stopPropagation(); onDelete(s) }} className="p-1 rounded hover:bg-red-500/10" title="删除">
+                          <Trash2 className="w-3.5 h-3.5 text-red-400" strokeWidth={1.8} />
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -718,7 +800,6 @@ function DeleteResearchAgentModal({ session, onClose, onDelete }: {
 }) {
   const { theme } = useStore()
   const isDark = theme !== 'light'
-  const [mode, setMode] = useState<'notify' | 'direct'>('notify')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   const agentName = session?.name || session?.session_id || '这个研究智能体'
@@ -727,19 +808,13 @@ function DeleteResearchAgentModal({ session, onClose, onDelete }: {
     setLoading(true)
     setErr('')
     try {
-      await onDelete(mode === 'notify')
+      await onDelete(true)
     } catch (e: any) {
       setErr(e?.message || '删除失败')
     } finally {
       setLoading(false)
     }
   }
-
-  const optionStyle = (active: boolean) => ({
-    background: active ? (isDark ? 'rgba(16,185,129,0.13)' : 'rgba(16,185,129,0.08)') : 'var(--input-bg)',
-    borderColor: active ? 'rgba(16,185,129,0.55)' : 'var(--input-border)',
-    color: 'var(--text-primary)',
-  })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -758,29 +833,11 @@ function DeleteResearchAgentModal({ session, onClose, onDelete }: {
           </div>
         </div>
 
-        <div className="space-y-2 mb-4">
-          <button type="button" disabled={loading} onClick={() => { setMode('notify'); setErr('') }}
-            className="w-full rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-50"
-            style={optionStyle(mode === 'notify')}>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[13px] font-medium">告知其他智能体</span>
-              <span className="h-3.5 w-3.5 rounded-full border" style={{ borderColor: mode === 'notify' ? '#10b981' : 'var(--input-border)', background: mode === 'notify' ? '#10b981' : 'transparent' }} />
-            </div>
-            <div className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              先由 HR 在黑板（Blackboard）写下该智能体已离开团队，再删除。
-            </div>
-          </button>
-          <button type="button" disabled={loading} onClick={() => { setMode('direct'); setErr('') }}
-            className="w-full rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-50"
-            style={optionStyle(mode === 'direct')}>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[13px] font-medium">直接删除</span>
-              <span className="h-3.5 w-3.5 rounded-full border" style={{ borderColor: mode === 'direct' ? '#10b981' : 'var(--input-border)', background: mode === 'direct' ? '#10b981' : 'transparent' }} />
-            </div>
-            <div className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              不写黑板记录，只删除这个 Research Agent。
-            </div>
-          </button>
+        <div className="mb-4 rounded-lg border px-3 py-2.5" style={{ background: isDark ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.06)', borderColor: 'rgba(16,185,129,0.45)' }}>
+          <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>由 HR 通告并交接</div>
+          <div className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            HR 会在 Blackboard 写入离队原因和任务交接，再关闭并删除这个 Research Agent。Research Agent 不允许静默离队。
+          </div>
         </div>
 
         {err && <ErrBanner>{err}</ErrBanner>}
@@ -793,7 +850,7 @@ function DeleteResearchAgentModal({ session, onClose, onDelete }: {
           </button>
           <button onClick={submit} disabled={loading}
             className="flex-1 h-9 rounded-xl text-[13px] text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-40">
-            {loading ? '删除中...' : (mode === 'notify' ? '写入并删除' : '直接删除')}
+            {loading ? '删除中...' : '由 HR 通告并删除'}
           </button>
         </div>
       </div>

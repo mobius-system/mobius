@@ -119,11 +119,10 @@ function resolveSessionJsonlPath(session: any, sessionId: string): string | null
   }
 }
 
-function normalizeAgentMentions(mentions: any, content: string = ''): NormalizedAgentMention[] {
-  if (!Array.isArray(mentions)) return [];
+export function normalizeAgentMentions(mentions: any, content: string = ''): NormalizedAgentMention[] {
   const indexBySession = new Map<string, number>();
   const output: NormalizedAgentMention[] = [];
-  for (const raw of mentions) {
+  for (const raw of Array.isArray(mentions) ? mentions : []) {
     if (!raw || typeof raw !== 'object') continue;
     const kind = String(raw.kind || raw.type || '').trim();
     if (kind !== 'agent') continue;
