@@ -6,7 +6,7 @@
 
 <div align="center">
 
-# <img src="https://serve.nutshellai.cn/publish/auto/readme/mobius-logo.svg" alt="" height="42" valign="middle" /> Mobius
+# <img src="logo.png" alt="Mobius logo" height="42" valign="middle" /> Mobius
 
 <h3>
 The first self-evolving open-source Agent OS<br />
