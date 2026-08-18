@@ -219,11 +219,51 @@ db.exec(`
     last_active TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     message_count INTEGER NOT NULL DEFAULT 0,
     pinned INTEGER NOT NULL DEFAULT 0,
+    mode TEXT NOT NULL DEFAULT 'custom' CHECK(mode IN ('custom','chief_led')),
+    assistant_limit INTEGER NOT NULL DEFAULT 3 CHECK(assistant_limit BETWEEN 1 AND 12),
     visibility TEXT NOT NULL DEFAULT 'inherit' CHECK(visibility IN ('inherit','private','team','public','allowlist')),
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
     FOREIGN KEY (created_by) REFERENCES users(id)
   );
 `);
+
+function migrateResearchTeamSchema() {
+  try {
+    const cols = db.prepare('PRAGMA table_info(researches)').all().map((c: any) => c.name);
+    if (!cols.includes('mode')) {
+      db.exec("ALTER TABLE researches ADD COLUMN mode TEXT NOT NULL DEFAULT 'custom' CHECK(mode IN ('custom','chief_led'))");
+      console.log('[mobius/db] migrate: researches.mode 已加');
+    }
+    if (!cols.includes('assistant_limit')) {
+      db.exec('ALTER TABLE researches ADD COLUMN assistant_limit INTEGER NOT NULL DEFAULT 3 CHECK(assistant_limit BETWEEN 1 AND 12)');
+      console.log('[mobius/db] migrate: researches.assistant_limit 已加');
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS research_team_actions (
+        id TEXT PRIMARY KEY,
+        research_id TEXT NOT NULL,
+        actor_session_id TEXT,
+        action_type TEXT NOT NULL,
+        target_session_id TEXT,
+        request_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        error TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        FOREIGN KEY (research_id) REFERENCES researches(id) ON DELETE CASCADE,
+        UNIQUE(research_id, request_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_research_team_actions_research
+        ON research_team_actions(research_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_research_team_actions_status
+        ON research_team_actions(research_id, status, action_type);
+    `);
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️ Research team schema 迁移失败:', (e as Error).message);
+  }
+}
+migrateResearchTeamSchema();
 
 // ===== 资源访问控制 =====
 // 老项目迁移成 public, 新建项目由 POST /api/projects 显式写入默认 private.
