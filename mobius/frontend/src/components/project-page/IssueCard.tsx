@@ -64,7 +64,6 @@ export function IssueCard({
         borderLeftWidth: activeSessionTotal > 0 ? 2 : 1,
       }}>
       <div className={`${compact ? 'px-3 py-2.5' : 'px-4 py-3'} border-b flex items-start gap-2`} style={{ borderColor: 'var(--border-color)' }}>
-        {!!issue.starred && <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: '#f59e0b' }} fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>}
         {!!issue.pinned && <svg className="w-3 h-3 mt-1 flex-shrink-0" style={{ color: '#38bdf8' }} fill="currentColor" viewBox="0 0 24 24"><path d="M16 3l5 5-3 1-2 4-3 1-3-3-3 1-2-2 6-6-1-3 3-3-3-2 4-1z" /></svg>}
         <svg className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: isCompleted ? '#22c55e' : '#60a5fa' }} fill={isCompleted ? '#22c55e' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
         <Link
@@ -73,9 +72,6 @@ export function IssueCard({
           className={`${compact ? 'text-[13px]' : 'text-[14px]'} min-w-0 font-semibold flex-1 hover:text-blue-400 transition-colors ${isCompleted ? 'line-through' : ''}`}
           style={{ color: isCompleted ? 'var(--text-muted)' : 'var(--text-primary)' }}>{issue.title}</Link>
         <div className="flex items-center gap-0.5 flex-shrink-0">
-          <button onClick={() => onToggleStar(issue)} className={`p-1 rounded hover:bg-white/10 transition-opacity ${issue.starred ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} title={issue.starred ? '取消收藏' : '收藏'}>
-            <svg className="w-3.5 h-3.5" style={{ color: issue.starred ? '#f59e0b' : 'var(--text-muted)' }} fill={issue.starred ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
-          </button>
           {canManage && <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <button onClick={() => onConfirm({ kind: isCompleted ? 'reopen' : 'complete', issue })} className="p-1 rounded hover:bg-white/10"
               title={isCompleted ? '重新打开' : '标记完成'}>
@@ -91,6 +87,9 @@ export function IssueCard({
               <svg className="w-3.5 h-3.5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
             </button>
           </div>}
+          <button onClick={() => onToggleStar(issue)} className={`p-1 rounded hover:bg-white/10 transition-opacity ${issue.starred ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} title={issue.starred ? '取消收藏' : '收藏'}>
+            <svg className="w-3.5 h-3.5" style={{ color: issue.starred ? '#f59e0b' : 'var(--text-muted)' }} fill={issue.starred ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+          </button>
         </div>
       </div>
 
