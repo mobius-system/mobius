@@ -47,7 +47,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.55;
 }
 
@@ -107,7 +107,7 @@
 .easy-jsonl-response__heading svg { width: 14px; height: 14px; }
 .easy-jsonl-response__heading > svg { width: 13px; height: 13px; margin-left: auto; color: #4ade80; }
 .easy-jsonl-response__heading strong { font-size: 12px; }
-.easy-jsonl-response .jsonl-compact-md { padding: 0; border-radius: 0; background: transparent; font-size: 14px; line-height: 1.72; }
+.easy-jsonl-response .jsonl-compact-md { padding: 0; border-radius: 0; background: transparent; font-size: 13px; line-height: 1.72; }
 .easy-jsonl-response .jsonl-compact-md p { margin: .45rem 0; }
 .easy-jsonl-response .jsonl-compact-md pre { max-height: 34rem; border-radius: 12px; }
 
@@ -128,13 +128,13 @@
   .easy-jsonl-round + .easy-jsonl-round { padding-top: 24px; }
   .easy-jsonl-prompt { grid-template-columns: 28px minmax(0, 1fr); gap: 9px; padding: 11px 11px 11px 10px; border-radius: 9px; }
   .easy-jsonl-prompt__avatar { width: 28px; height: 28px; border-radius: 8px; }
-  .easy-jsonl-prompt p { font-size: 13px; line-height: 1.58; }
+  .easy-jsonl-prompt p { font-size: 12px; line-height: 1.58; }
   .easy-jsonl-rail { margin-left: 15px; padding-left: 23px; }
   .easy-jsonl-activity__node, .easy-jsonl-live > span { left: -23px; }
   .easy-jsonl-activity__copy { display: block; }
   .easy-jsonl-activity__copy small { display: block; margin-top: 2px; }
   .easy-jsonl-response { margin-left: 4px; padding-left: 39px; padding-right: 2px; }
-  .easy-jsonl-response .jsonl-compact-md { font-size: 13px; }
+  .easy-jsonl-response .jsonl-compact-md { font-size: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
