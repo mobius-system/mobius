@@ -190,12 +190,14 @@ function buildInitialAgents({
   defaultExcludedSkillIds,
   defaultExcludedMemoryIds,
   defaultModel,
+  assistantSoftLimit,
 }: {
   existingSessions: ExistingSession[]
   agentSkills: AgentSkill[]
   defaultExcludedSkillIds: string[]
   defaultExcludedMemoryIds: string[]
   defaultModel: string
+  assistantSoftLimit: number
 }) {
   const existingAgents: TeamAgent[] = sortExistingSessions(existingSessions).map((s) => ({
     id: `existing-${s.session_id}`,
@@ -237,7 +239,7 @@ function buildInitialAgents({
 
   const assistantPresets = DEFAULT_TEAM_PRESETS.slice(1)
   let presetIndex = 0
-  while (output.length < Math.min(3, MAX_TEAM_SIZE) && presetIndex < assistantPresets.length) {
+  while (output.length < Math.min(3, assistantSoftLimit + 1, MAX_TEAM_SIZE) && presetIndex < assistantPresets.length) {
     const preset = assistantPresets[presetIndex++]
     const mainSkill = findSkillByName(agentSkills, preset.skillName)
     output.push({
@@ -280,7 +282,9 @@ export function ResearchAgentTeamModal({
 }) {
   const { theme } = useStore()
   const isDark = theme !== 'light'
-  const maxTeamSize = Math.min(MAX_TEAM_SIZE + 1, Math.max(1, Number(assistantLimit) || 3) + 1)
+  // limit 是给 Chief 的软约束: 人工指定创建超限只提醒不阻断; MAX_TEAM_SIZE 仍是绝对硬顶.
+  const assistantSoftLimit = Math.max(1, Number(assistantLimit) || 3)
+  const maxTeamSize = MAX_TEAM_SIZE + 1
   const [loadingConfig, setLoadingConfig] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState('')
@@ -312,6 +316,8 @@ export function ResearchAgentTeamModal({
     : ''
   const selectedFieldLabel = editingTarget?.field === 'name' ? '名称' : '目的'
   const agentSkillIds = useMemo(() => new Set(agentSkills.map(sk => sk.id)), [agentSkills])
+  const assistantTotal = agents.filter(agent => agent.role === 'research_assistant').length
+  const overSoftLimit = assistantTotal > assistantSoftLimit
 
   useEffect(() => {
     let alive = true
@@ -374,6 +380,7 @@ export function ResearchAgentTeamModal({
           defaultExcludedSkillIds: defaultSkillEx,
           defaultExcludedMemoryIds: defaultMemoryEx,
           defaultModel,
+          assistantSoftLimit,
         })
         const initialAgents = initialMode === 'single'
           ? [...builtInitialAgents.filter(agent => agent.locked), ...builtInitialAgents.filter(agent => !agent.locked).slice(0, 1)]
@@ -483,7 +490,7 @@ export function ResearchAgentTeamModal({
           excludedMemoryIds: defaultExcludedMemoryIds,
         })
       }
-      while (nextAgents.length < 3 && nextAgents.length < maxTeamSize) {
+      while (nextAgents.length < Math.min(3, assistantSoftLimit + 1, maxTeamSize)) {
         const preset = DEFAULT_TEAM_PRESETS[nextAgents.length % DEFAULT_TEAM_PRESETS.length]
         const ms = findSkillByName(agentSkills, preset.skillName)
         nextAgents.push({
@@ -584,8 +591,8 @@ export function ResearchAgentTeamModal({
       setErr('团队必须包含一个 chief Agent')
       return
     }
-    if (agents.length > maxTeamSize) {
-      setErr(`当前 limit 最多允许 ${Math.max(0, maxTeamSize - 1)} 个 Assistant（Chief 不占名额）`)
+    if (agents.filter(agent => agent.role === 'research_assistant').length > MAX_TEAM_SIZE) {
+      setErr(`单支研究团队最多 ${MAX_TEAM_SIZE} 个 Assistant（绝对硬顶）`)
       return
     }
     const invalid = agents.find(agent => !agent.locked && (!agent.name.trim() || !agent.purpose.trim()))
@@ -729,7 +736,8 @@ export function ResearchAgentTeamModal({
             <div>
               <div className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{mode === 'single' ? '创建单个研究智能体' : '创建研究智能体团队'}</div>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                {agents.filter(agent => agent.role === 'research_assistant').length}/{Math.max(0, maxTeamSize - 1)} 个 Assistant · Chief 不占名额
+                {assistantTotal} 个 Assistant · 建议 limit {assistantSoftLimit} · Chief 不占名额
+                {overSoftLimit && <span className="ml-1 text-amber-400">已超建议 limit，人工指定不受硬限，仅提醒</span>}
               </div>
             </div>
           </div>
@@ -778,7 +786,7 @@ export function ResearchAgentTeamModal({
                 })}
                 </div>
                 <button type="button" onClick={addAssistant} disabled={submitting || agents.length >= maxTeamSize}
-                  title={agents.length >= maxTeamSize ? '已达团队上限' : '添加 Agent'}
+                  title={agents.length >= maxTeamSize ? `已达绝对上限 ${MAX_TEAM_SIZE} 个 Assistant` : (overSoftLimit ? '已超过建议 limit，人工指定仍可继续添加' : '添加 Agent')}
                   className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 mb-2.5 text-[12px] font-medium transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                   style={{ borderColor: 'rgba(16,185,129,0.55)', background: isDark ? 'rgba(16,185,129,0.18)' : 'rgba(16,185,129,0.95)', color: isDark ? '#34d399' : '#ffffff' }}>
                   <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
@@ -901,6 +909,7 @@ export function ResearchAgentTeamModal({
                   <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
                     <CheckCircle2 className="h-4 w-4 text-emerald-400" strokeWidth={1.8} />
                     {mode === 'single' ? '单个 Agent 模式：创建并自动启动该 Agent。' : '团队模式：逐个创建并自动启动，已有 Agent 保持锁定。'}
+                    {overSoftLimit && <span className="text-amber-400">已超建议 limit ({assistantSoftLimit})，人工指定不受硬限。</span>}
                   </div>
                 )}
               </div>

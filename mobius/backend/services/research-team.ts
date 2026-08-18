@@ -251,7 +251,12 @@ const reserveRecruitment = db.transaction((input: {
   actorSessionId: string;
   requestId: string;
   payload: any;
+  // 人类直接指定创建时不硬性执行 limit/建删震荡守卫 (只提醒); Chief 能力路径保持硬性执行.
+  enforceLimit?: boolean;
+  enforceGuard?: boolean;
 }) => {
+  const enforceLimit = input.enforceLimit !== false;
+  const enforceGuard = input.enforceGuard !== false;
   const existing = findActionByRequest(input.researchId, input.requestId);
   if (existing) return { existing: true, action: existing };
   const research: any = db.prepare('SELECT assistant_limit FROM researches WHERE id = ?').get(input.researchId);
@@ -264,32 +269,45 @@ const reserveRecruitment = db.transaction((input: {
   if (busy) throw Object.assign(new Error('团队正在执行另一项变更，请等待完成'), { status: 409, code: 'team_mutation_in_progress' });
   const count = activeAssistantCount(input.researchId);
   const limit = normalizeAssistantLimit(research.assistant_limit);
+  let overLimit = false;
   if (count >= limit) {
-    throw Object.assign(new Error(`当前存活 Assistant 已达到团队 limit (${count}/${limit})`), { status: 409, code: 'assistant_limit_reached' });
+    if (enforceLimit) {
+      throw Object.assign(new Error(`当前存活 Assistant 已达到团队 limit (${count}/${limit})`), { status: 409, code: 'assistant_limit_reached' });
+    }
+    overLimit = true;
   }
   const fingerprint = teamFingerprint(input.payload);
-  const recentRemoval: any = db.prepare(`
-    SELECT * FROM research_team_actions
-    WHERE research_id = ? AND action_type = 'remove' AND status = 'completed'
-      AND created_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 minutes')
-    ORDER BY created_at DESC LIMIT 20
-  `).all(input.researchId).map(parseAction).find((action: any) => action.payload?.fingerprint === fingerprint);
-  if (recentRemoval && input.payload?.replacement_of !== recentRemoval.target_session_id) {
-    throw Object.assign(new Error('检测到刚移除的相同职责/任务配置；请提供 replacement_of 和新的替代理由，避免无效建删震荡'), {
-      status: 409,
-      code: 'team_change_guarded',
-      removed_session_id: recentRemoval.target_session_id,
-    });
+  if (enforceGuard) {
+    const recentRemoval: any = db.prepare(`
+      SELECT * FROM research_team_actions
+      WHERE research_id = ? AND action_type = 'remove' AND status = 'completed'
+        AND created_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 minutes')
+      ORDER BY created_at DESC LIMIT 20
+    `).all(input.researchId).map(parseAction).find((action: any) => action.payload?.fingerprint === fingerprint);
+    if (recentRemoval && input.payload?.replacement_of !== recentRemoval.target_session_id) {
+      throw Object.assign(new Error('检测到刚移除的相同职责/任务配置；请提供 replacement_of 和新的替代理由，避免无效建删震荡'), {
+        status: 409,
+        code: 'team_change_guarded',
+        removed_session_id: recentRemoval.target_session_id,
+      });
+    }
   }
   return {
     existing: false,
+    overLimit,
+    assistantCount: count,
+    assistantLimit: limit,
     action: recordTeamAction({
       researchId: input.researchId,
       actorSessionId: input.actorSessionId,
       actionType: 'recruit',
       requestId: input.requestId,
       status: 'reserved',
-      payload: { ...input.payload, fingerprint },
+      payload: {
+        ...input.payload,
+        fingerprint,
+        ...(overLimit ? { over_limit: true, assistant_count: count, assistant_limit: limit } : {}),
+      },
     }),
   };
 });

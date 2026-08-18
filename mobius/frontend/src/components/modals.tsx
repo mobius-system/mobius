@@ -1696,17 +1696,17 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setMode('chief_led')}
               className="rounded-xl border p-3 text-left" style={{ borderColor: mode === 'chief_led' ? '#10b981' : 'var(--input-border)', background: mode === 'chief_led' ? 'rgba(16,185,129,.10)' : 'var(--input-bg)' }}>
-              <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Chief 主导</div>
-              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>初始仅创建 Chief，讨论后由 Chief 招募。</div>
+              <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>从 Chief 出发 · AI 组队</div>
+              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>初始只有 Chief，讨论方案后授权 Chief 自动招募团队。</div>
             </button>
             <button type="button" onClick={() => setMode('custom')}
               className="rounded-xl border p-3 text-left" style={{ borderColor: mode === 'custom' ? '#3b82f6' : 'var(--input-border)', background: mode === 'custom' ? 'rgba(59,130,246,.10)' : 'var(--input-bg)' }}>
-              <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>自定义模式</div>
-              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>创建 Research 后由用户手工配置团队。</div>
+              <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>自定义 · 人工组队</div>
+              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>初始只有 Chief，团队成员由你逐个指定创建。</div>
             </button>
           </div>
           <label className="block text-[12px]" style={{ color: 'var(--text-secondary)' }}>
-            Assistant limit（Chief 不占名额，默认 3）
+            Assistant limit（Chief 的招募上限，Chief 不占名额，默认 3；你本人后续补建不受此限）
             <input type="number" min={1} max={12} value={assistantLimit}
               onChange={e => { setAssistantLimit(Number(e.target.value)); setErr('') }}
               className="mt-1 w-full h-9 px-3 rounded-xl focus:outline-none"
@@ -1784,7 +1784,7 @@ export function RenameResearchModal({ research, onClose, onRenamed }: { research
             className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <label className="block text-[12px]" style={{ color: 'var(--text-secondary)' }}>
-            Assistant limit（1-12，Chief 不占名额）
+            Assistant limit（1-12，Chief 的招募上限；你本人补建不受此限）
             <input type="number" min={1} max={12} value={assistantLimit} onChange={e => setAssistantLimit(Number(e.target.value))}
               className="mt-1 w-full h-9 px-3 rounded-xl text-[13px] focus:outline-none"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
