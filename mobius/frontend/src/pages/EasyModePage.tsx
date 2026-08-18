@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  Bot,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -782,9 +781,6 @@ export default function EasyModePage() {
                               title={session.name || session.session_id}
                             >
                               <span className="absolute -left-2.5 top-1/2 w-2 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
-                              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md" style={{ background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
-                                {isResearch ? <Bot className="h-3.5 w-3.5" /> : <MessageSquare className="h-3.5 w-3.5" />}
-                              </span>
                               <span className="min-w-0 flex-1">
                                 <span className="flex min-w-0 items-center gap-1.5">
                                   <span className="flex-shrink-0 rounded px-1 py-0.5 text-[9px] font-medium leading-3" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>
