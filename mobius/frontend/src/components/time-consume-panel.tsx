@@ -328,21 +328,28 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                     return (
                       <div
                         key={`${segment.start_at}-${segment.line_no ?? 'n'}-${segment.kind}`}
-                        className="absolute rounded-md border border-white/10 shadow-sm"
+                        className="absolute overflow-hidden rounded-md border border-white/10 shadow-sm"
                         title={`${segment.label} · ${formatDuration(segment.duration_ms)} · ${segment.start_at} → ${segment.end_at}`}
                         style={{
                           left: `${segment.startPercent}%`,
-                          top: onModelTrack ? '4px' : 'calc(50% + 4px)',
-                          height: 'calc(50% - 8px)',
+                          top: onModelTrack ? '14px' : 'calc(50% + 4px)',
+                          height: onModelTrack ? 'calc(25% - 4px)' : 'calc(50% - 8px)',
                           width: `${Math.max(segment.widthPercent, 0.45)}%`,
                           minWidth: 4,
-                          background: `linear-gradient(180deg, ${color}cc, ${color}88)`,
+                          background: onModelTrack
+                            ? 'linear-gradient(90deg, rgba(2,132,199,0.72) 0%, rgba(34,211,238,0.96) 48%, rgba(56,189,248,0.88) 74%, rgba(186,230,253,0.72) 100%)'
+                            : `linear-gradient(180deg, ${color}cc, ${color}88)`,
+                          boxShadow: onModelTrack
+                            ? 'inset 0 1px 0 rgba(255,255,255,0.28), 0 2px 8px rgba(14,165,233,0.24)'
+                            : undefined,
                         }}
                       >
-                        <div className="px-1 py-1 text-[9px] font-medium text-white/95">
-                          <div className="truncate">{segment.label}</div>
-                          <div className="truncate text-white/75">{formatDuration(segment.duration_ms)}</div>
-                        </div>
+                        {!onModelTrack && (
+                          <div className="px-1 py-1 text-[9px] font-medium text-white/95">
+                            <div className="truncate">{segment.label}</div>
+                            <div className="truncate text-white/75">{formatDuration(segment.duration_ms)}</div>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
