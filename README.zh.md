@@ -118,31 +118,6 @@ Mobius 在同一个任务网络里调度浏览器、终端、GPU 集群、嵌入
 
 通过 SSH、AIMUX 和可控代理访问你的资源：
 
-```mermaid
-flowchart TD
-  M["Mobius（小莫）"]
-
-  subgraph P["协议"]
-    SSH["SSH / SFTP"]
-    AIMUX["AIMUX"]
-    PROXY["可控代理"]
-  end
-
-  subgraph R["资源"]
-    GPU["GPU 算力集群"]
-    NX["嵌入式开发板"]
-    NAS["NAS / 对象存储 / 云存储"]
-    CLOUD["云服务器"]
-    PC["工作站"]
-    NET["Web / 开放文献"]
-  end
-
-  M --> SSH & AIMUX & PROXY
-  SSH --> GPU & NAS & CLOUD
-  AIMUX --> NX & PC
-  PROXY --> NET
-```
-
 <p align="center">
   <img src="https://github.com/user-attachments/assets/cd5ef0ba-1d38-4017-bf8a-e7b93d17fca0" alt="SSH 与 AIMUX 接入路径" width="480" />
 </p>
