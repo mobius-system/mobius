@@ -56,6 +56,20 @@ Mobius 会根据你的输入改写自身。发一个**修改需求**、一张**�
 
 
 
+## 全场景，全项目
+
+- **服务所有场景**——按手头任务切换到最顺手的界面
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/4c948e53-5c8e-4ae5-8eb3-d3ca035908c9" alt="界面布局切换：常规、Copilot、服务器协作、自动科研" width="480" />
+</p>
+
+- **统管所有项目**——在一个总览里看清每个智能体在为你做什么
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/7868ef41-068f-4316-ae6b-b17561a119ac" alt="项目总览仪表盘：智能体状态与任务进度" width="480" />
+</p>
+
+
+
 ## 自动科研
 
 Mobius 把多个智能体编排成一条自主科研流水线——读论文、抽取方法、跑实验、汇总结果。一个科研目标会变成一个多智能体系统，而非一次单轮问答。
@@ -128,6 +142,10 @@ flowchart TD
   AIMUX --> NX & PC
   PROXY --> NET
 ```
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/cd5ef0ba-1d38-4017-bf8a-e7b93d17fca0" alt="SSH 与 AIMUX 接入路径" width="480" />
+</p>
 
 
 

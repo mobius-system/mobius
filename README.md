@@ -46,7 +46,7 @@ One system to connect your team, AI agents, devices, and compute
 
 ## Self-Evolving
 
-Mobius rewrites itself from your input. Send a **change request**, a **screenshot**, or a **reference link** — Mobius turns them into real code, UI, plugins, or workflow updates, without interrupting your work. Each iteration replaces a plank on the Ship of Theseus, quietly in the background.
+Mobius rewrites itself from your input. Send a **change request**, a **screenshot**, or a **reference link** — Mobius turns them into real code, UI, plugins, or workflow updates, without interrupting your work. Each iteration quietly replaces another plank on the Ship of Theseus, in the background.
 
 <p align="center">
   <img src="https://serve.nutshellai.cn/publish/auto/readme/can-do-agent-os.gif" alt="Self-evolving Agent OS demo" width="480" />
@@ -56,14 +56,14 @@ Mobius rewrites itself from your input. Send a **change request**, a **screensho
 
 ## Serve Every Scenario and Project
 
-- Serve Every Scenario (toggle the most convienient interface, for all possible scenarios)
+- **Serve every scenario** — switch to the most convenient interface for the task at hand
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/4c948e53-5c8e-4ae5-8eb3-d3ca035908c9" alt="Self-evolving Agent OS demo" width="480" />
+  <img src="https://github.com/user-attachments/assets/4c948e53-5c8e-4ae5-8eb3-d3ca035908c9" alt="Interface layouts: regular, copilot, server co-op, and auto research" width="480" />
 </p>
 
-- Manage All Projects (project overview, where you can overwatch all agents working for you)
+- **Manage all projects** — one overview where you can watch every agent working for you
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/7868ef41-068f-4316-ae6b-b17561a119ac" alt="Self-evolving Agent OS demo" width="480" />
+  <img src="https://github.com/user-attachments/assets/7868ef41-068f-4316-ae6b-b17561a119ac" alt="Project overview dashboard with agent status and task progress" width="480" />
 </p>
 
 
@@ -79,7 +79,7 @@ Mobius orchestrates multiple agents into an autonomous research pipeline — rea
 
 ## XiaoMo
 
-XiaoMo is the natural-language interface to the entire system. Talk to it: create projects, split tasks, launch agents, track progress. Anything clickable, XiaoMo can do. Things the UI cannot do, XiaoMo handles too. Voice input, multi-device (Web, PC, Mobile), configurable reminders.
+XiaoMo is the natural-language interface to the entire system. Talk to it: create projects, split tasks, launch agents, track progress. Anything clickable, XiaoMo can do; things the UI cannot do, XiaoMo handles too. It supports voice input, multiple devices (Web, PC, mobile), and configurable reminders.
 
 <p align="center">
   <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo.jpg" alt="XiaoMo assistant interface" width="720" />
@@ -91,7 +91,7 @@ XiaoMo is the natural-language interface to the entire system. Talk to it: creat
   <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-app.jpg" alt="XiaoMo on mobile" width="720" />
 </p>
 
-**On your phone.** XiaoMo goes wherever you go — chat with your agents, track progress, and approve decisions from anywhere. The iOS and Android apps are fully available now.
+**On your phone.** XiaoMo goes wherever you go — chat with your agents, track progress, and approve decisions from anywhere. The iOS and Android apps are now fully available.
 
 <p align="center">
   <img src="https://serve.nutshellai.cn/publish/auto/readme/xiaomo-desktop-v2.png" alt="XiaoMo desktop app" width="720" />
@@ -99,7 +99,7 @@ XiaoMo is the natural-language interface to the entire system. Talk to it: creat
 
 **On your desktop.** A native app that turns your PC into a Mobius workstation — read and write local project files directly, enroll this machine as a controllable node, and run multi-tab workflows. Available now on Windows, macOS, and Linux.
 
-> The demos on this page were produced by XiaoMo itself, with zero human participation in recording.
+> The demos on this page were produced by XiaoMo itself, recorded with zero human involvement.
 
 
 
@@ -115,8 +115,33 @@ Mobius schedules browsers, terminals, GPU clusters, embedded boards, cloud serve
 
 Reach your resources through SSH, AIMUX, and controllable proxies:
 
+```mermaid
+flowchart TD
+  M["Mobius (XiaoMo)"]
+
+  subgraph P["Protocols"]
+    SSH["SSH / SFTP"]
+    AIMUX["AIMUX"]
+    PROXY["Controllable proxies"]
+  end
+
+  subgraph R["Resources"]
+    GPU["GPU clusters"]
+    NX["Embedded boards"]
+    NAS["NAS / object storage / cloud storage"]
+    CLOUD["Cloud servers"]
+    PC["Workstations"]
+    NET["Web / open literature"]
+  end
+
+  M --> SSH & AIMUX & PROXY
+  SSH --> GPU & NAS & CLOUD
+  AIMUX --> NX & PC
+  PROXY --> NET
+```
+
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/cd5ef0ba-1d38-4017-bf8a-e7b93d17fca0" alt="Team collaboration demo" width="480" />
+  <img src="https://github.com/user-attachments/assets/cd5ef0ba-1d38-4017-bf8a-e7b93d17fca0" alt="SSH and AIMUX access paths" width="480" />
 </p>
 
 
@@ -132,7 +157,7 @@ Human members, AI agents, tasks, and deliverables in one view. Leads see who is 
 
 ## Self-Incubating Extensions
 
-Mobius ships with built-in extensions and grows new ones from your needs — financial dashboards, PPT generators, research workbenches, live portals. Each extension comes with a frontend, backend handler, data directory, and invocation entry, ready to keep evolving.
+Mobius ships with built-in extensions and grows new ones from your needs — financial dashboards, PPT generators, research workbenches, live portals. Each extension comes with a frontend, backend handler, data directory, and an invocation entry point, ready to keep evolving.
 
 <p align="center">
   <img src="https://serve.nutshellai.cn/publish/auto/readme/can-do-extensions.gif" alt="Extensions demo" width="480" />
@@ -223,7 +248,7 @@ What we are building next:
 
 ### Contribution
 
-Issues, plugins, docs, bug reports, use cases — all welcome. If you believe AI systems should evolve instead of being static tools, join us.
+Issues, plugins, docs, bug reports, use cases — all welcome. If you believe AI systems should keep evolving instead of remaining static tools, join us.
 
 <p align="center">
   <a href="https://github.com/mobius-system/mobius">GitHub</a>
