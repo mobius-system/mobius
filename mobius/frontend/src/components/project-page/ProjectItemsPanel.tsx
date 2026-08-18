@@ -91,7 +91,7 @@ export function ProjectItemsPanel({
   const canRunExtension = project.kind === 'extension' && !!extensionName && !project.disabled
   const extensionRunUrl = extensionName ? `/extension/${extensionName}/` : ''
   const developmentLink = extensionName ? EXTENSION_DEVELOPMENT_LINKS[extensionName] : null
-  const compact = density === 'compact'
+  const listView = density === 'list'
   const activePagination = section === 'issues' ? issuePagination : researchPagination
   const showPagination = activePagination.totalItems > activePagination.pageSize
 
@@ -215,23 +215,23 @@ export function ProjectItemsPanel({
             aria-label="卡片显示密度">
             <button
               type="button"
-              onClick={() => onDensityChange('compact')}
-              aria-pressed={compact}
-              title="精简显示"
+              onClick={() => onDensityChange('detailed')}
+              aria-pressed={!listView}
+              title="卡片显示"
               className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors"
-              style={{ color: compact ? '#60a5fa' : 'var(--text-muted)', background: compact ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
-              <Rows3 className="h-3.5 w-3.5" strokeWidth={1.8} />
-              精简
+              style={{ color: !listView ? '#60a5fa' : 'var(--text-muted)', background: !listView ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
+              <LayoutList className="h-3.5 w-3.5" strokeWidth={1.8} />
+              详情
             </button>
             <button
               type="button"
-              onClick={() => onDensityChange('detailed')}
-              aria-pressed={!compact}
-              title="详情显示"
+              onClick={() => onDensityChange('list')}
+              aria-pressed={listView}
+              title="详情列表显示"
               className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors"
-              style={{ color: !compact ? '#60a5fa' : 'var(--text-muted)', background: !compact ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
-              <LayoutList className="h-3.5 w-3.5" strokeWidth={1.8} />
-              详情
+              style={{ color: listView ? '#60a5fa' : 'var(--text-muted)', background: listView ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
+              <Rows3 className="h-3.5 w-3.5" strokeWidth={1.8} />
+              列表
             </button>
           </div>
           <PrimaryActionButton onClick={() => section === 'issues' ? onCreateIssue() : onCreateResearch()}
@@ -257,7 +257,7 @@ export function ProjectItemsPanel({
           filter={filter}
           search={search}
           pagination={issuePagination}
-          compact={compact}
+          listView={listView}
           issuesLoading={issuesLoading}
           sessionSearchLoading={sessionSearchLoading}
           canCreateIssue={canCreateIssue}
@@ -285,7 +285,7 @@ export function ProjectItemsPanel({
           researchesLoading={researchesLoading}
           sessionSearchLoading={sessionSearchLoading}
           pagination={researchPagination}
-          compact={compact}
+          listView={listView}
           canCreateResearch={canCreateResearch}
           onCreateResearch={onCreateResearch}
           onEditResearch={onEditResearch}
@@ -306,7 +306,7 @@ type IssueListProps = {
   filter: ProjectFilter
   search: string
   pagination: ProjectIssuePagination
-  compact: boolean
+  listView: boolean
   issuesLoading?: boolean
   sessionSearchLoading?: boolean
   canCreateIssue: boolean
@@ -326,7 +326,7 @@ function IssueList({
   filter,
   search,
   pagination,
-  compact,
+  listView,
   issuesLoading = false,
   sessionSearchLoading = false,
   canCreateIssue,
@@ -352,17 +352,17 @@ function IssueList({
         <div className="text-center text-[12px]" role="status" style={{ color: 'var(--text-muted)' }}>
           {emptyMessage}
         </div>
-        <div className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 ${compact ? 'gap-2' : 'gap-3'}`}>
+        <div className={listView ? 'flex flex-col gap-2' : 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3'}>
           {showQuickPlanning && (
             <button onClick={onCreatePlanningIssue} disabled={!canCreateIssue}
-              className={`rounded-lg border border-dashed text-[13px] text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${compact ? 'h-[136px]' : 'h-[220px]'}`}
+              className={`rounded-lg border border-dashed text-[13px] text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${listView ? 'h-12 px-4' : 'h-[220px]'}`}
               style={{ borderColor: 'var(--border-color)' }}>
               创建交互式系统宏观规划
             </button>
           )}
           <CreateItemCard
             kind="issue"
-            compact={compact}
+            listView={listView}
             disabled={!canCreateIssue}
             onClick={onCreateIssue}
             dataTour="project-empty-create-issue"
@@ -374,7 +374,7 @@ function IssueList({
 
   return (
     <div className="space-y-3">
-      <div className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 ${compact ? 'gap-2' : 'gap-3'}`}>
+      <div className={listView ? 'flex flex-col gap-2' : 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3'}>
         {issues.map((issue: any) => (
           <IssueCard
             key={issue.id}
@@ -384,7 +384,7 @@ function IssueList({
             searchQuery={search}
             userParam={userParam}
             projectId={projectId}
-            compact={compact}
+            listView={listView}
             onEdit={onEditIssue}
             onConfirm={onIssueConfirm}
             onToggleStar={onToggleIssueStar}
@@ -394,7 +394,7 @@ function IssueList({
         {pagination.page >= pagination.totalPages && (
           <CreateItemCard
             kind="issue"
-            compact={compact}
+            listView={listView}
             disabled={!canCreateIssue}
             onClick={onCreateIssue}
           />
@@ -457,7 +457,7 @@ type ResearchListProps = {
   researchesLoading?: boolean
   sessionSearchLoading?: boolean
   pagination: ProjectIssuePagination
-  compact: boolean
+  listView: boolean
   canCreateResearch: boolean
   onCreateResearch: () => void
   onEditResearch: (research: any) => void
@@ -475,7 +475,7 @@ function ResearchList({
   researchesLoading = false,
   sessionSearchLoading = false,
   pagination,
-  compact,
+  listView,
   canCreateResearch,
   onCreateResearch,
   onEditResearch,
@@ -495,10 +495,10 @@ function ResearchList({
         <div className="text-center text-[12px]" role="status" style={{ color: 'var(--text-muted)' }}>
           {search.trim() || filter !== 'all' ? '没有匹配的研究或智能体' : '暂无研究'}
         </div>
-        <div className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 ${compact ? 'gap-2' : 'gap-3'}`}>
+        <div className={listView ? 'flex flex-col gap-2' : 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3'}>
           <CreateItemCard
             kind="research"
-            compact={compact}
+            listView={listView}
             disabled={!canCreateResearch}
             onClick={onCreateResearch}
           />
@@ -509,7 +509,7 @@ function ResearchList({
 
   return (
     <div className="space-y-3">
-      <div className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 ${compact ? 'gap-2' : 'gap-3'}`}>
+      <div className={listView ? 'flex flex-col gap-2' : 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3'}>
       {researches.map((research: any) => (
         <ResearchCard
           key={research.id}
@@ -519,7 +519,7 @@ function ResearchList({
           searchQuery={search}
           userParam={userParam}
           projectId={projectId}
-          compact={compact}
+          listView={listView}
           onEdit={onEditResearch}
           onToggleStatus={onToggleResearchStatus}
         />
@@ -528,7 +528,7 @@ function ResearchList({
       {pagination.page >= pagination.totalPages && (
         <CreateItemCard
           kind="research"
-          compact={compact}
+          listView={listView}
           disabled={!canCreateResearch}
           onClick={onCreateResearch}
         />
@@ -541,13 +541,13 @@ function ResearchList({
 
 type CreateItemCardProps = {
   kind: 'issue' | 'research'
-  compact: boolean
+  listView: boolean
   disabled: boolean
   onClick: () => void
   dataTour?: string
 }
 
-function CreateItemCard({ kind, compact, disabled, onClick, dataTour }: CreateItemCardProps) {
+function CreateItemCard({ kind, listView, disabled, onClick, dataTour }: CreateItemCardProps) {
   const isIssue = kind === 'issue'
   const label = isIssue ? '创建新任务' : '创建新研究'
   const accent = isIssue ? '#60a5fa' : '#34d399'
@@ -559,21 +559,25 @@ function CreateItemCard({ kind, compact, disabled, onClick, dataTour }: CreateIt
       disabled={disabled}
       data-tour={dataTour || (isIssue ? 'project-list-create-issue' : 'project-list-create-research')}
       aria-label={disabled ? `${label}（无权限）` : label}
-      className={`group flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-[var(--border-color-strong)] bg-[var(--bg-primary)] transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[var(--border-color-strong)] disabled:hover:bg-[var(--bg-primary)] ${isIssue ? 'hover:border-blue-400' : 'hover:border-emerald-400'} ${compact ? 'h-[136px]' : 'h-[220px]'}`}
+      className={`group flex items-center justify-center rounded-lg border border-dashed border-[var(--border-color-strong)] bg-[var(--bg-primary)] transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[var(--border-color-strong)] disabled:hover:bg-[var(--bg-primary)] ${isIssue ? 'hover:border-blue-400' : 'hover:border-emerald-400'} ${listView ? 'h-12 w-full flex-row gap-2' : 'h-[220px] flex-col gap-3'}`}
       style={{
         color: accent,
         '--tw-ring-color': accent,
         '--tw-ring-offset-color': 'var(--bg-secondary)',
       } as React.CSSProperties}
     >
-      <span
-        className="flex h-9 w-9 items-center justify-center rounded-full border transition-transform group-hover:scale-105"
-        style={{ borderColor: accent, background: 'var(--bg-card-hover)' }}
-        aria-hidden="true"
-      >
+      {listView ? (
         <Plus className="h-4 w-4" strokeWidth={2} />
-      </span>
-      <span className="text-[13px] font-medium">{label}</span>
+      ) : (
+        <span
+          className="flex h-9 w-9 items-center justify-center rounded-full border transition-transform group-hover:scale-105"
+          style={{ borderColor: accent, background: 'var(--bg-card-hover)' }}
+          aria-hidden="true"
+        >
+          <Plus className="h-4 w-4" strokeWidth={2} />
+        </span>
+      )}
+      <span className={`${listView ? 'text-[12px]' : 'text-[13px]'} font-medium`}>{label}</span>
     </button>
   )
 }
