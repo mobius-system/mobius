@@ -1218,7 +1218,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           </TopNavActionElement>
           <TopNavActionElement
             as="a"
-            href="https://github.com/nutshellai-tech/mobius.git"
+            href="https://github.com/mobius-system/mobius.git"
             target="_blank"
             rel="noopener noreferrer"
             title="GitHub"

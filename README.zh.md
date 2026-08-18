@@ -14,10 +14,10 @@
 </h3>
 
 <p align="center">
-  <a href="https://github.com/nutshellai-tech/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/nutshellai-tech/mobius?style=for-the-badge" /></a>
-  <a href="https://github.com/nutshellai-tech/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange?style=for-the-badge" /></a>
+  <a href="https://github.com/mobius-system/mobius/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/mobius-system/mobius?style=for-the-badge" /></a>
+  <a href="https://github.com/mobius-system/mobius"><img alt="Status" src="https://img.shields.io/badge/status-evolving-orange?style=for-the-badge" /></a>
   <a href="https://mobius.nutshellai.cn/"><img alt="Website" src="https://img.shields.io/badge/website-000000?style=for-the-badge&logo=About.me&logoColor=white" /></a>
-  <a href="https://nutshellai-tech.github.io/mobius/"><img alt="Docs" src="https://img.shields.io/badge/docs-000000?style=for-the-badge&logo=readthedocs&logoColor=white" /></a>
+  <a href="https://mobius-system.github.io/mobius/"><img alt="Docs" src="https://img.shields.io/badge/docs-000000?style=for-the-badge&logo=readthedocs&logoColor=white" /></a>
 </p>
 
 </div>
@@ -60,7 +60,7 @@ Mobius 会根据你的输入改写自身。发一个**修改需求**、一张**�
   <img src="https://serve.nutshellai.cn/publish/auto/readme/can-do-agent-os.gif" alt="自进化 Agent OS 演示" width="480" />
 </p>
 
-[查看自进化示例](https://nutshellai-tech.github.io/mobius/self-evo-demo/)
+[查看自进化示例](https://mobius-system.github.io/mobius/self-evo-demo/)
 
 
 
@@ -188,13 +188,13 @@ Mobius 自带内置拓展，并按你的需求生长出新的——金融看板�
 
 ## 快速开始
 
-完整部署指南见[文档](https://nutshellai-tech.github.io/mobius/)。
+完整部署指南见[文档](https://mobius-system.github.io/mobius/)。
 
 ### 容器（推荐）
 
 ```bash
 # 1. 克隆仓库（建议先 fork 再 clone，这样自进化后可以直接提交到自己的仓库）
-git clone https://github.com/nutshellai-tech/mobius.git && cd mobius
+git clone https://github.com/mobius-system/mobius.git && cd mobius
 
 # 2. 生成配置（随机密钥/密码；也可手动配置以跳过此步）
 python3 conf_prepare.py --docker && python3 conf_check.py --docker
@@ -217,7 +217,7 @@ sudo apt install tmux python3 git curl proxychains openssh-server build-essentia
 npm install -g @anthropic-ai/claude-code @openai/codex
 
 # 3. 克隆仓库（建议先 fork 再 clone，这样自进化后可以直接提交到自己的仓库）
-git clone https://github.com/nutshellai-tech/mobius.git && cd mobius
+git clone https://github.com/mobius-system/mobius.git && cd mobius
 
 # 4. 生成并校验配置（会把 .env.default 复制为 .env 并生成随机密码）
 python3 conf_prepare.py && python3 conf_check.py
@@ -245,9 +245,9 @@ python3 start.py
 Issue、插件、文档、Bug 报告、使用案例——皆欢迎。如果你认同 AI 系统应当持续进化、而非静态工具，欢迎加入我们。
 
 <p align="center">
-  <a href="https://github.com/nutshellai-tech/mobius">GitHub</a>
+  <a href="https://github.com/mobius-system/mobius">GitHub</a>
   ·
   <a href="https://mobius.nutshellai.cn/">Website</a>
   ·
-  <a href="https://nutshellai-tech.github.io/mobius/">Docs</a>
+  <a href="https://mobius-system.github.io/mobius/">Docs</a>
 </p>

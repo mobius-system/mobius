@@ -663,7 +663,7 @@ export function GuideHelpModal({ firstLogin = false, onClose }: GuideHelpModalPr
               >
                 <BookOpen className="w-3.5 h-3.5 flex-shrink-0" style={{ color: GUIDE_TONE }} />
                 <a
-                  href="https://nutshellai-tech.github.io/mobius/"
+                  href="https://mobius-system.github.io/mobius/"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-[12px] font-medium hover:underline"
