@@ -3926,19 +3926,28 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   }, [sessionId, projectKnowledgeSending, resolveProjectBindPath, addMessage, setTyping, postSessionMessage])
 
   // 桌面端「向当前 session 发送一条预制指令」的通用回调: 调用方 (告知本电脑的存在按钮 /
-  // aimux 工作模式切换菜单) 把拼好的消息内容传进来, 作为一条 user 消息发出. 复用
-  // postSessionMessage, 与"发送项目知识沉淀"同链路 (addMessage 立即显示 + setTyping + 轮询回写).
+  // aimux 工作模式切换菜单 / 声明可合作计算机) 把拼好的消息内容传进来, 作为一条 user 消息发出.
+  // 与正常 send() 同管道: pendingUrgentRef 重置 + messageSubmitting 撑住发送阶段黄字提示
+  // (正在发送/正在唤醒中) — 否则 poll 在空闲(!alive)/忙碌(working) 会话上会瞬间清掉
+  // pendingSendAt, 点击后长时间零反馈, 用户以为没起作用.
   const handleAnnouncePc = useCallback((content: string) => {
-    if (!sessionId || !content) return
+    if (!sessionId || !content) {
+      setLastSendError('当前没有可发送指令的会话')
+      return
+    }
+    if (messageSubmitting) return
     const requestId = makeSendRequestId()
     setLastSendError('')
     addMessage({ role: 'user', content })
+    pendingUrgentRef.current = false
     setPendingSendAt(Date.now())
+    setMessageSubmitting(true)
     setTyping(true)
     postSessionMessage({ content, inputText: content, requestId })
       .then(() => setTimeout(() => loadHistoryRef.current(), 500))
       .catch(() => {})
-  }, [sessionId, addMessage, setTyping, postSessionMessage])
+      .finally(() => setMessageSubmitting(false))
+  }, [sessionId, messageSubmitting, addMessage, setTyping, postSessionMessage])
 
   const sendRunProjectPortPrompt = useCallback((mainProjectPortPath: string) => {
     if (!sessionId) {
