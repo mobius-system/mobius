@@ -19,6 +19,7 @@ import {
 import { useStore, api } from '../store'
 import { useLayoutMode, buildNormalModeTargetUrl } from '../services/layout-mode'
 import { pollRecursive } from '../services/polling'
+import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 import {
   EMPTY_PROJECT_HIERARCHY_SEARCH,
   hierarchyHitLabel,
@@ -59,17 +60,6 @@ type ProjectOption = {
 
 type WorkView = 'recent' | 'running' | 'completed'
 
-type SessionTreeGroup = {
-  key: string
-  projectId: string
-  projectName: string
-  subjectId: string
-  subjectTitle: string
-  scopeType: 'issue' | 'research'
-  sessions: RecentSession[]
-  activeCount: number
-}
-
 const RECENT_SESSION_LIMIT = 50
 const CREATE_SUCCESS_TOAST_MS = 4000
 
@@ -96,12 +86,6 @@ function projectChipStyle(active: boolean): CSSProperties {
       }
 }
 
-function sessionSubject(session: RecentSession) {
-  return session.scope_type === 'research'
-    ? (session.research_title || session.research_id || '研究')
-    : (session.issue_title || session.issue_id || '任务')
-}
-
 function sessionStatus(session: RecentSession) {
   if (session.agent_status === 'running') return { label: '执行中', color: '#f59e0b', bg: 'rgba(245,158,11,.10)' }
   if (session.agent_status === 'pending') return { label: '启动中', color: '#fbbf24', bg: 'rgba(251,191,36,.10)' }
@@ -114,63 +98,6 @@ function sessionMatchesView(session: RecentSession, view: WorkView) {
   if (view === 'running') return session.agent_status === 'running'
   if (view === 'completed') return session.agent_status === 'completed' || session.status === 'completed'
   return true
-}
-
-function sessionActivityTime(session: RecentSession) {
-  const parsed = Date.parse(String(session.last_active || ''))
-  return Number.isFinite(parsed) ? parsed : -Infinity
-}
-
-function isActiveSession(session: RecentSession) {
-  return session.agent_status === 'running'
-    || session.agent_status === 'pending'
-    || session.agent_status === 'waiting'
-}
-
-function compareSessionsByActivity(a: RecentSession, b: RecentSession) {
-  const activeDiff = Number(isActiveSession(b)) - Number(isActiveSession(a))
-  if (activeDiff !== 0) return activeDiff
-
-  const timeDiff = sessionActivityTime(b) - sessionActivityTime(a)
-  if (timeDiff !== 0) return timeDiff
-
-  return String(a.name || a.session_id).localeCompare(String(b.name || b.session_id), 'zh-CN')
-}
-
-function buildSessionTreeGroups(sessions: RecentSession[]): SessionTreeGroup[] {
-  const groups = new Map<string, SessionTreeGroup>()
-  for (const session of sessions) {
-    const scopeType = session.scope_type === 'research' ? 'research' : 'issue'
-    const projectId = String(session.project_id || '')
-    const projectName = String(session.project_name || session.project_id || '项目')
-    const subjectId = String(scopeType === 'research' ? session.research_id || '' : session.issue_id || '')
-    const subjectTitle = String(sessionSubject(session))
-    // A session without a parent id must not be accidentally merged with another
-    // unnamed parent. Its own id keeps the fallback group stable and isolated.
-    const parentKey = subjectId || `${subjectTitle}:${session.session_id}`
-    const key = `${projectId}:${scopeType}:${parentKey}`
-    const group = groups.get(key) || {
-      key,
-      projectId,
-      projectName,
-      subjectId,
-      subjectTitle,
-      scopeType,
-      sessions: [],
-      activeCount: 0,
-    }
-    group.sessions.push(session)
-    if (isActiveSession(session)) group.activeCount += 1
-    groups.set(key, group)
-  }
-
-  return [...groups.values()]
-    .map(group => ({ ...group, sessions: [...group.sessions].sort(compareSessionsByActivity) }))
-    .sort((a, b) => (
-      compareSessionsByActivity(a.sessions[0], b.sessions[0])
-      || a.projectName.localeCompare(b.projectName, 'zh-CN')
-      || a.subjectTitle.localeCompare(b.subjectTitle, 'zh-CN')
-    ))
 }
 
 export default function EasyModePage() {
@@ -251,7 +178,7 @@ export default function EasyModePage() {
   const visibleSessions = useMemo(() => (
     projectSessions.filter(session => sessionMatchesView(session, workView))
   ), [projectSessions, workView])
-  const visibleSessionGroups = useMemo(() => buildSessionTreeGroups(visibleSessions), [visibleSessions])
+  const visibleSessionGroups = useMemo(() => buildRecentSessionTreeGroups(visibleSessions), [visibleSessions])
   const normalizedSessionQuery = sessionQuery.trim().slice(0, 200)
   const activeHierarchySearch = hierarchySearch.query === normalizedSessionQuery
     ? hierarchySearch
@@ -430,7 +357,7 @@ export default function EasyModePage() {
       ? sessions.filter(session => session.project_id === effectiveProject)
       : sessions
     const candidates = projectCandidates.filter(session => sessionMatchesView(session, workView))
-    const orderedCandidates = buildSessionTreeGroups(candidates).flatMap(group => group.sessions)
+    const orderedCandidates = buildRecentSessionTreeGroups(candidates).flatMap(group => group.sessions)
     const selected = orderedCandidates.find(session => session.session_id === sessionParam) || orderedCandidates[0] || null
     if (!selected) {
       if (sessionParam) {
@@ -492,7 +419,7 @@ export default function EasyModePage() {
     const matchingSessions = sessions.filter(session => (
       (!projectId || session.project_id === projectId) && sessionMatchesView(session, workView)
     ))
-    const first = buildSessionTreeGroups(matchingSessions)[0]?.sessions[0]
+    const first = buildRecentSessionTreeGroups(matchingSessions)[0]?.sessions[0]
     if (first) next.set('session', first.session_id)
     else next.delete('session')
     setSearch(next)

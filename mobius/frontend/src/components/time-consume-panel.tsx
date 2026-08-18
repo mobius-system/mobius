@@ -37,6 +37,8 @@ type TimeConsumeWaterfallResponse = {
 type TimeConsumeView = 'waterfall' | 'pie'
 
 const KIND_LABELS: Record<string, string> = {
+  model: '模型推理',
+  tool: '工具调用',
   assistant: '智能体',
   user: '用户',
   tool_use: '工具调用',
@@ -49,6 +51,8 @@ const KIND_LABELS: Record<string, string> = {
 }
 
 const KIND_COLORS: Record<string, string> = {
+  model: '#38bdf8',
+  tool: '#a78bfa',
   assistant: '#38bdf8',
   user: '#f59e0b',
   tool_use: '#a78bfa',
@@ -146,8 +150,12 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
 
   const segments = data?.segments || []
   const totalMs = useMemo(() => {
-    const fromSegments = segments.reduce((sum, segment) => sum + Math.max(0, Number(segment.duration_ms) || 0), 0)
-    return Math.max(Number(data?.total_ms) || 0, fromSegments)
+    const fromData = Number(data?.total_ms) || 0
+    if (fromData > 0) return fromData
+    return segments.reduce((max, segment) => {
+      const end = Math.max(0, Number(segment.start_offset_ms) || 0) + Math.max(0, Number(segment.duration_ms) || 0)
+      return Math.max(max, end)
+    }, 0)
   }, [data?.total_ms, segments])
 
   const pieSlices = useMemo(() => {

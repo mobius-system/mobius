@@ -262,6 +262,8 @@ export function ResearchAgentTeamModal({
   existingSessions,
   defaultNamePrefix,
   defaultDescription,
+  assistantLimit,
+  initialMode,
   onClose,
   onDone,
   onRefresh,
@@ -270,12 +272,15 @@ export function ResearchAgentTeamModal({
   existingSessions: ExistingSession[]
   defaultNamePrefix?: string
   defaultDescription?: string
+  assistantLimit?: number
+  initialMode?: 'single' | 'team'
   onClose: () => void
   onDone: (session: any) => void
   onRefresh: () => void
 }) {
   const { theme } = useStore()
   const isDark = theme !== 'light'
+  const maxTeamSize = Math.min(MAX_TEAM_SIZE + 1, Math.max(1, Number(assistantLimit) || 3) + 1)
   const [loadingConfig, setLoadingConfig] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState('')
@@ -290,7 +295,7 @@ export function ResearchAgentTeamModal({
   const [defaultExcludedMemoryIds, setDefaultExcludedMemoryIds] = useState<string[]>([])
   const [agents, setAgents] = useState<TeamAgent[]>([])
   const [editingTarget, setEditingTarget] = useState<EditingTarget | null>(null)
-  const [mode, setMode] = useState<'single' | 'team'>('team')
+  const [mode, setMode] = useState<'single' | 'team'>(initialMode || 'team')
   const [sceneKind, setSceneKind] = useState<SceneKind>('space')
   const [avatarKind, setAvatarKind] = useState<AvatarKind>('robot')
   const [selectionPanel, setSelectionPanel] = useState<SelectionPanel | null>(null)
@@ -363,16 +368,20 @@ export function ResearchAgentTeamModal({
           fallback: nextModels[0]?.key || DEFAULT_MODEL,
         })
         defaultModelRef.current = defaultModel
-        const initialAgents = buildInitialAgents({
+        const builtInitialAgents = buildInitialAgents({
           existingSessions,
           agentSkills: nextAgentSkills,
           defaultExcludedSkillIds: defaultSkillEx,
           defaultExcludedMemoryIds: defaultMemoryEx,
           defaultModel,
         })
+        const initialAgents = initialMode === 'single'
+          ? [...builtInitialAgents.filter(agent => agent.locked), ...builtInitialAgents.filter(agent => !agent.locked).slice(0, 1)]
+          : builtInitialAgents
+        const boundedInitialAgents = existingSessions.length === 0 ? initialAgents.slice(0, maxTeamSize) : initialAgents
         initializedRef.current = true
-        setAgents(initialAgents)
-        const firstEditable = initialAgents.find(agent => !agent.locked) || initialAgents[0] || null
+        setAgents(boundedInitialAgents)
+        const firstEditable = boundedInitialAgents.find(agent => !agent.locked) || boundedInitialAgents[0] || null
         setEditingTarget(firstEditable ? { agentId: firstEditable.id, field: 'purpose' } : null)
       } catch (e: any) {
         if (alive) setErr(e?.message || '加载团队创建配置失败')
@@ -382,7 +391,7 @@ export function ResearchAgentTeamModal({
     }
     load()
     return () => { alive = false }
-  }, [researchId])
+  }, [researchId, maxTeamSize, initialMode])
 
   useEffect(() => {
     if (!initializedRef.current) return
@@ -422,7 +431,7 @@ export function ResearchAgentTeamModal({
   }
 
   const addAssistant = () => {
-    if (agents.length >= MAX_TEAM_SIZE) return
+    if (agents.length >= maxTeamSize) return
     const index = agents.filter(agent => agent.role === 'research_assistant').length + 1
     const next: TeamAgent = {
       id: makeLocalId(),
@@ -474,7 +483,7 @@ export function ResearchAgentTeamModal({
           excludedMemoryIds: defaultExcludedMemoryIds,
         })
       }
-      while (nextAgents.length < 3 && nextAgents.length < MAX_TEAM_SIZE) {
+      while (nextAgents.length < 3 && nextAgents.length < maxTeamSize) {
         const preset = DEFAULT_TEAM_PRESETS[nextAgents.length % DEFAULT_TEAM_PRESETS.length]
         const ms = findSkillByName(agentSkills, preset.skillName)
         nextAgents.push({
@@ -575,14 +584,20 @@ export function ResearchAgentTeamModal({
       setErr('团队必须包含一个 chief Agent')
       return
     }
-    if (agents.length > MAX_TEAM_SIZE) {
-      setErr(`Agent 数量不能超过 ${MAX_TEAM_SIZE} 个`)
+    if (agents.length > maxTeamSize) {
+      setErr(`当前 limit 最多允许 ${Math.max(0, maxTeamSize - 1)} 个 Assistant（Chief 不占名额）`)
       return
     }
     const invalid = agents.find(agent => !agent.locked && (!agent.name.trim() || !agent.purpose.trim()))
     if (invalid) {
       setErr(`请补全「${invalid.name || '未命名 Agent'}」的名称和目的`)
       setEditingTarget({ agentId: invalid.id, field: !invalid.name.trim() ? 'name' : 'purpose' })
+      return
+    }
+    const missingSkill = agents.find(agent => !agent.locked && !selectedMainSkill(agent))
+    if (missingSkill) {
+      setErr(`请为「${missingSkill.name || '未命名 Agent'}」明确选择主 Skill`)
+      setEditingTarget({ agentId: missingSkill.id, field: 'purpose' })
       return
     }
 
@@ -599,25 +614,32 @@ export function ResearchAgentTeamModal({
       if (!agent.locked) {
         appendProgress(`创建 ${roleLabel(agent.role)}「${agent.name}」...`)
         try {
-          const created = await api(`/api/researches/${researchId}/sessions`, {
+          if (agent.role === 'chief_researcher') throw new Error('Chief 只能随 Research 创建，不能在团队向导中新增')
+          const initialPrompt = contentForStart(agent.name, description)
+          const created = await api(`/api/researches/${researchId}/team/manual-agents`, {
             method: 'POST',
             body: JSON.stringify({
               name: agent.name.trim(),
-              description,
-              role: agent.role,
+              purpose: description,
               model: agent.model,
               language: agent.language,
-              excluded_skill_ids: normalizeSkillExclusions(agent.excludedSkillIds, agent.mainSkillId, agentSkills),
-              excluded_memory_ids: agent.excludedMemoryIds,
-              suppress_join_notice: true,
+              skill_ids: availableSkills
+                .filter(item => !normalizeSkillExclusions(agent.excludedSkillIds, agent.mainSkillId, agentSkills).includes(item.id))
+                .map(item => item.id),
+              memory_ids: availableMemories.filter(item => !agent.excludedMemoryIds.includes(item.id)).map(item => item.id),
+              memory_selection_confirmed: true,
+              initial_prompt: initialPrompt,
+              recruit_reason: `用户在自定义模式中创建「${agent.name.trim()}」以完成：${agent.purpose.trim()}`,
+              expected_outcome: agent.purpose.trim(),
+              request_id: `manual-team-${agent.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             }),
           })
-          sessionId = created.session_id
+          sessionId = created.session?.session_id
           agent.sessionId = sessionId
           agent.locked = true
-          agent.messageCount = 0
-          agent.status = '已创建'
-          appendProgress(`已创建「${agent.name}」`)
+          agent.messageCount = 1
+          agent.status = '已启动'
+          appendProgress(`已创建并启动「${agent.name}」`)
         } catch (e: any) {
           const msg = `创建「${agent.name}」失败：${e?.message || '未知错误'}`
           errors.push(msg)
@@ -707,7 +729,7 @@ export function ResearchAgentTeamModal({
             <div>
               <div className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{mode === 'single' ? '创建单个研究智能体' : '创建研究智能体团队'}</div>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                {agents.length}/{MAX_TEAM_SIZE} 个 Agent · 逐个创建并自动启动
+                {agents.filter(agent => agent.role === 'research_assistant').length}/{Math.max(0, maxTeamSize - 1)} 个 Assistant · Chief 不占名额
               </div>
             </div>
           </div>
@@ -755,8 +777,8 @@ export function ResearchAgentTeamModal({
                   )
                 })}
                 </div>
-                <button type="button" onClick={addAssistant} disabled={submitting || agents.length >= MAX_TEAM_SIZE}
-                  title={agents.length >= MAX_TEAM_SIZE ? '已达团队上限' : '添加 Agent'}
+                <button type="button" onClick={addAssistant} disabled={submitting || agents.length >= maxTeamSize}
+                  title={agents.length >= maxTeamSize ? '已达团队上限' : '添加 Agent'}
                   className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 mb-2.5 text-[12px] font-medium transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                   style={{ borderColor: 'rgba(16,185,129,0.55)', background: isDark ? 'rgba(16,185,129,0.18)' : 'rgba(16,185,129,0.95)', color: isDark ? '#34d399' : '#ffffff' }}>
                   <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
@@ -865,7 +887,7 @@ export function ResearchAgentTeamModal({
                   sceneKind={sceneKind}
                   avatarKind={avatarKind}
                   onAdd={addAssistant}
-                  addDisabled={submitting || agents.length >= MAX_TEAM_SIZE}
+                  addDisabled={submitting || agents.length >= maxTeamSize}
                   onDelete={deleteAgent}
                 />
               </Suspense>
