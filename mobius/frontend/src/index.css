@@ -5000,36 +5000,6 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   contain-intrinsic-size: auto 180px;
 }
 
-/* Standard JSONL entries read as one continuous activity list: semantic color
-   stays in the status dot and label, while a single hairline separates rows. */
-.jsonl-entry-row {
-  border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--text-muted) 34%, transparent);
-  border-radius: 0;
-  box-shadow: none;
-  margin-bottom: 3px;
-  transition: border-color 140ms ease;
-}
-
-.jsonl-entry-row:hover {
-  background-image: linear-gradient(
-    color-mix(in srgb, var(--bg-card-hover) 42%, transparent),
-    color-mix(in srgb, var(--bg-card-hover) 42%, transparent)
-  );
-  border-bottom-color: color-mix(in srgb, var(--text-muted) 52%, transparent);
-}
-
-/* The generic card entrance includes an outline glow. List rows use motion
-   alone so their only visible boundary remains the separator. */
-.jsonl-entry-row.card-enter {
-  animation-name: jsonl-row-enter;
-}
-
-@keyframes jsonl-row-enter {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: none; }
-}
-
 /* 对话轮次标题：高度与折叠态 JSONL entry 卡片一致；Ctrl+Shift+K 在两套微纹理间切换。 */
 .round-group-trigger {
   position: relative;
