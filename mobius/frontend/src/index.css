@@ -5004,7 +5004,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
    stays in the status dot and label, while a single hairline separates rows. */
 .jsonl-entry-row {
   border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-color-strong) 82%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-muted) 34%, transparent);
   border-radius: 0;
   box-shadow: none;
   transition: border-color 140ms ease;
@@ -5015,7 +5015,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
     color-mix(in srgb, var(--bg-card-hover) 42%, transparent),
     color-mix(in srgb, var(--bg-card-hover) 42%, transparent)
   );
-  border-bottom-color: color-mix(in srgb, var(--border-color-strong) 100%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--text-muted) 52%, transparent);
 }
 
 /* The generic card entrance includes an outline glow. List rows use motion

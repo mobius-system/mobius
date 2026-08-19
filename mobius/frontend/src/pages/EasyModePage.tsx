@@ -28,6 +28,7 @@ import {
 } from '../services/project-hierarchy-search'
 import { ChatArea } from '../components/chat'
 import { GlobalCreateRoot, type CreateKind } from '../components/global-create'
+import { RecentSessionGroupList } from '../components/recent-session-group-list'
 import { ResizablePanel } from '../components/resizable-panel'
 import { Loading, TopNav, timeAgoPrecise } from '../components/shell'
 import { ToastCard } from '../components/toast-card'
@@ -757,11 +758,13 @@ export default function EasyModePage() {
                         </span>
                       </button>
 
-                      <div
+                      <RecentSessionGroupList
                         id={groupDomId}
                         hidden={collapsed}
                         className="relative ml-[22px] border-l pl-2"
                         style={{ borderColor: groupContainsCurrent ? 'color-mix(in srgb, var(--accent-primary) 38%, var(--border-color))' : 'var(--border-color)' }}
+                        groupLabel={group.subjectTitle}
+                        itemLabel={isResearch ? '智能体' : '会话'}
                       >
                         {group.sessions.map(session => {
                           const active = session.session_id === sessionParam && contextMatchesProject
@@ -802,7 +805,7 @@ export default function EasyModePage() {
                             </button>
                           )
                         })}
-                      </div>
+                      </RecentSessionGroupList>
                     </section>
                   )
                 })}

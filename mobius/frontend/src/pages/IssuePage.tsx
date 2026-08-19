@@ -13,6 +13,7 @@ import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
 import { TruncatedText } from '../components/truncated-text'
+import { RecentSessionGroupList } from '../components/recent-session-group-list'
 import { useEditorAvailability } from '../components/workspace/use-editor-availability'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/logo-review-demo'
@@ -581,7 +582,14 @@ export default function IssuePage() {
                         </span>
                       </button>
 
-                      <div id={groupDomId} hidden={collapsed} className="relative ml-[18px] border-l pl-1.5" style={{ borderColor: groupContainsCurrent ? 'color-mix(in srgb, var(--accent-primary) 38%, var(--border-color))' : 'var(--border-color)' }}>
+                      <RecentSessionGroupList
+                        id={groupDomId}
+                        hidden={collapsed}
+                        className="relative ml-[18px] border-l pl-1.5"
+                        style={{ borderColor: groupContainsCurrent ? 'color-mix(in srgb, var(--accent-primary) 38%, var(--border-color))' : 'var(--border-color)' }}
+                        groupLabel={group.subjectTitle}
+                        itemLabel={isResearch ? '智能体' : '会话'}
+                      >
                         {group.sessions.map(session => {
                           const target = recentSessionTarget(userParam, session)
                           const active = session.session_id === sessionParam
@@ -621,7 +629,7 @@ export default function IssuePage() {
                             </button>
                           )
                         })}
-                      </div>
+                      </RecentSessionGroupList>
                     </section>
                   )
                 })}
