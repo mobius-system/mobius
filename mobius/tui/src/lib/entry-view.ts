@@ -87,6 +87,31 @@ function entryUserText(entry: AnyEntry): string {
 
 const ENV_CONTEXT_RE = /<environment_context\b[^>]*>[\s\S]*?<\/environment_context>/gi
 
+// ── Claude Code 本地命令产物标签 (/compact 等) ─────────────────────────────
+// slash command 在 claude-code jsonl 里以 user 外壳 + 下列标签出现, 不是人类提问:
+//   <command-name>/compact</command-name> 等   命令回显 (噪声)
+//   <local-command-caveat>…</local-command-caveat>   "由本地命令产生" 提示 (噪声)
+//   <local-command-stdout>Compacted …</local-command-stdout>   命令输出 (压缩完成信号)
+// 对齐 web entry-extract.ts 的 extractLocalCommandParts (精简版), 渲染时不能把
+// 标签原文当用户消息显示.
+const LOCAL_COMMAND_TAG_PATTERN = /<(local-command-stdout|local-command-caveat|command-name|command-message|command-args)>\s*([\s\S]*?)<\/\1>/gi
+
+interface LocalCommandPart { tag: string; body: string }
+
+function extractLocalCommandParts(entry: AnyEntry): LocalCommandPart[] {
+  if (entry?.type !== 'user') return []
+  const text = entryUserText(entry)
+  if (!text || !text.includes('<')) return []
+  const parts: LocalCommandPart[] = []
+  LOCAL_COMMAND_TAG_PATTERN.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = LOCAL_COMMAND_TAG_PATTERN.exec(text))) {
+    const body = m[2].replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim()
+    parts.push({ tag: m[1].toLowerCase(), body })
+  }
+  return parts
+}
+
 /**
  * 整卡隐藏的噪声: 对齐 web entry-classify.ts isHiddenJsonlNoiseEntry 的 7 类
  *   - token_count         : codex 每轮 token 用量统计 (event_msg)
@@ -557,6 +582,21 @@ export function viewsForBlock(block: Block): EntryView[] {
         }
       }
       return out
+    }
+    // Claude Code 本地命令产物 (/compact 等): 命令回显/caveat 标签是噪声 → 整条
+    // 隐藏; local-command-stdout 渲染成 system 行, "Compacted …" 对齐 codex 的
+    // context_compacted 事件显示 "◇ 上下文已压缩"。
+    const localParts = extractLocalCommandParts(entry)
+    if (localParts.length > 0) {
+      const out: EntryView[] = []
+      for (const part of localParts) {
+        if (part.tag !== 'local-command-stdout' || !part.body) continue
+        const text = /^compacted\b/i.test(part.body)
+          ? `◇ 上下文已压缩 · ${part.body}`
+          : part.body
+        out.push({ kind: 'system', text: truncate(text, 160) })
+      }
+      return out.length ? out : [{ kind: 'skip' }]
     }
     const text = entryUserText(entry)
     return text ? [{ kind: 'user', text: stripUserFraming(text) }] : [{ kind: 'skip' }]

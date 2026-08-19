@@ -56,6 +56,7 @@ const STATUS_ROWS = 3
 
 const SLASH_COMMANDS = [
   { cmd: '/clear', desc: '清空当前对话，开启新会话' },
+  { cmd: '/compact', desc: '压缩当前会话上下文' },
   { cmd: '/resume', desc: '恢复一个历史会话' },
   { cmd: '/model', desc: '更换模型并开启新会话（保留当前任务）' },
   { cmd: '/config', desc: '重新选择项目、任务和模型' },
@@ -74,6 +75,8 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   const [modelLabel, setModelLabel] = useState<string | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
   const [reconfigOpen, setReconfigOpen] = useState(false)
+  // 本地命令错误 (如无会话时 /compact): 与 chat.error 分开, 下一次提交时清除。
+  const [slashError, setSlashError] = useState<string | null>(null)
   // Ink may deliver one final event to Composer while an async config picker is
   // replacing it. The shared ref lets that stale listener report "not handled"
   // so App can replay the key after the new Select mounts.
@@ -90,6 +93,19 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     const [name] = raw.trim().split(/\s+/)
     switch (name) {
       case '/clear': onClear(); return true
+      case '/compact': {
+        // 对齐 web sendCompactCommand: 把字面 '/compact' 作为消息发给后端, 由
+        // agent (claude-code 原生 slash command / codex) 自行执行上下文压缩。
+        // 尚无会话时没有可压缩的上文, 提示而不是新建空会话去发。
+        if (!chat.sessionId) {
+          setSlashError('当前没有可发送指令的会话')
+          return true
+        }
+        setShowHelp(false)
+        setRowAnchor(null)
+        void chat.send('/compact')
+        return true
+      }
       case '/resume': onResume(); return true
       case '/help': setShowHelp(s => !s); return true
       case '/model': setConfigOpen(true); return true
@@ -98,11 +114,12 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       case '/quit': case '/exit': onQuit(); return true
       default: return false
     }
-  }, [onClear, onResume, onQuit, onLogout])
+  }, [chat, onClear, onResume, onQuit, onLogout])
 
   const onSubmit = useCallback((text: string) => {
     const t = text.trim()
     if (!t) return
+    setSlashError(null)
     if (t.startsWith('/')) {
       if (!runSlash(t)) setShowHelp(true)
       return
@@ -160,7 +177,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     (entry) => rowsForEntry(entry),
   ), [transcriptEntries, rowsForEntry])
   const viewportRows = terminal.isTty ? Math.max(9, terminal.rows - 1) : terminal.rows
-  const activityRows = (chat.typing ? 2 : 0) + (chat.error ? 1 : 0)
+  const activityRows = (chat.typing ? 2 : 0) + (chat.error ? 1 : 0) + (slashError ? 1 : 0)
   const helpRows = showHelp ? SLASH_COMMANDS.length + 3 : 0
   // Conversation chrome is exactly two rows: compact header + navigation.
   const transcriptRows = Math.max(1, viewportRows - composerRows - STATUS_ROWS - activityRows - helpRows - 2)
@@ -366,6 +383,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       <Box flexDirection="column" flexShrink={0}>
         {chat.typing ? <WorkingIndicator firstQuery={firstQueryInFlight} /> : null}
         {chat.error ? <Text color="red">⚠ {chat.error}</Text> : null}
+        {slashError ? <Text color="red">⚠ {slashError}</Text> : null}
 
         <Composer
           onSubmit={onSubmit}
