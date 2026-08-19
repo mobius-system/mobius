@@ -5006,13 +5006,15 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   border: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border-color-strong) 82%, transparent);
   border-radius: 0;
-  background: transparent;
   box-shadow: none;
-  transition: background-color 140ms ease, border-color 140ms ease;
+  transition: border-color 140ms ease;
 }
 
 .jsonl-entry-row:hover {
-  background: color-mix(in srgb, var(--bg-card-hover) 58%, transparent);
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--bg-card-hover) 42%, transparent),
+    color-mix(in srgb, var(--bg-card-hover) 42%, transparent)
+  );
   border-bottom-color: color-mix(in srgb, var(--border-color-strong) 100%, transparent);
 }
 
