@@ -25,6 +25,8 @@ import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { RemoteComputeMemoryModal } from './memories'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { AdvancedSessionActions } from './advanced-session-actions'
+import { SessionGroupTree } from './session-group-tree'
+import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { extensionAppUrlForProject } from '../services/extension-entry'
 import { isFireAndForgetSession } from '../services/session-start-policy'
@@ -1653,8 +1655,11 @@ type MentionAgentSession = {
   scope_type?: 'issue' | 'research'
   last_active?: string
   message_count?: number
+  project_id?: string | null
   project_name?: string
+  issue_id?: string | null
   issue_title?: string
+  research_id?: string | null
   research_title?: string
   group?: 'same_scope' | 'same_project' | 'other_project'
   can_communicate?: boolean
@@ -1861,18 +1866,17 @@ function RemoteFileMentionDrawer({
     return agentSessions
   }, [agentSessions])
 
-  const compactAgents = activeTab === 'agents'
-  const agentPanelRef = useRef<HTMLElement | null>(null)
-  useEffect(() => {
-    if (!open || !compactAgents) return
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null
-      if (target && agentPanelRef.current?.contains(target)) return
-      onClose()
-    }
-    window.addEventListener('pointerdown', onPointerDown)
-    return () => window.removeEventListener('pointerdown', onPointerDown)
-  }, [open, compactAgents, onClose])
+  // 树状分组（项目 → 任务/研究 → 会话），与简易模式工作导航共享分组服务与渲染组件。
+  // 组间先按后端相关性（同 Scope → 同项目 → 其他项目）排序，同级内保持活跃度排序。
+  const agentGroups = useMemo(() => {
+    const rankOf = (agent: MentionAgentSession) => (
+      agent.group === 'same_scope' ? 0 : agent.group === 'same_project' ? 1 : 2
+    )
+    return buildRecentSessionTreeGroups(filteredAgents)
+      .map(group => ({ group, rank: group.sessions.reduce((min, agent) => Math.min(min, rankOf(agent)), 9) }))
+      .sort((a, b) => a.rank - b.rank)
+      .map(entry => entry.group)
+  }, [filteredAgents])
 
   if (!open) return null
   const selectedSource = sourceOptions.find(source => source.key === selectedSourceKey)
@@ -1883,22 +1887,17 @@ function RemoteFileMentionDrawer({
     : '选择文件，把绝对路径插入输入框'
 
   return (
-    <div className={compactAgents ? 'pointer-events-none fixed inset-0 z-[90]' : 'fixed inset-0 z-[90]'} role="dialog" aria-modal={!compactAgents} aria-label="选择 @ 目标">
-      {!compactAgents && <button
+    <div className="fixed inset-0 z-[90]" role="dialog" aria-modal="true" aria-label="选择 @ 目标">
+      <button
         type="button"
         className="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[1px]"
         aria-label="关闭 @ 弹层"
         onClick={onClose}
-      />}
+      />
       <aside
         data-testid="remote-file-mention-drawer"
-        ref={agentPanelRef}
-        className={compactAgents
-          ? 'pointer-events-auto absolute bottom-24 right-4 flex max-h-[min(64vh,520px)] w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-xl shadow-2xl transition-transform duration-150 ease-out sm:right-6'
-          : 'absolute inset-y-0 left-0 flex w-[420px] max-w-[calc(100vw-24px)] flex-col shadow-2xl transition-transform duration-200 ease-out'}
-        style={compactAgents
-          ? { background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }
-          : { background: 'var(--modal-bg)', borderRight: '1px solid var(--border-color)' }}
+        className="absolute inset-y-0 left-0 flex w-[460px] max-w-[calc(100vw-24px)] flex-col shadow-2xl transition-transform duration-200 ease-out"
+        style={{ background: 'var(--modal-bg)', borderRight: '1px solid var(--border-color)' }}
       >
         <div className="flex h-14 flex-shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: 'var(--border-color)' }}>
           <div className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400">
@@ -1920,8 +1919,11 @@ function RemoteFileMentionDrawer({
           </button>
         </div>
 
-        <div className="flex-shrink-0 border-b p-3" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="mb-2 flex items-center gap-2">
+        <div
+          className={activeTab === 'files' ? 'flex-shrink-0 border-b p-3' : 'flex min-h-0 flex-1 flex-col border-b p-3'}
+          style={{ borderColor: 'var(--border-color)' }}
+        >
+          <div className="mb-2 flex flex-shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() => setActiveTab('files')}
@@ -1999,9 +2001,9 @@ function RemoteFileMentionDrawer({
             </>
           ) : (
             <>
-              <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="mb-2 flex flex-shrink-0 items-center justify-between gap-2">
                 <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  {agentScopeUrl ? '按相关性排序的 Session' : '无可用范围'}
+                  {agentScopeUrl ? '按项目与任务分组的 Session' : '无可用范围'}
                 </span>
                 <div className="flex items-center gap-1 rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
                   <button
@@ -2030,7 +2032,7 @@ function RemoteFileMentionDrawer({
                   </button>
                 </div>
               </div>
-              <div className="mb-2 flex items-center gap-2">
+              <div className="mb-2 flex flex-shrink-0 items-center gap-2">
                 <label className="relative min-w-0 flex-1">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" strokeWidth={1.8} style={{ color: 'var(--text-muted)' }} />
                   <input
@@ -2080,52 +2082,57 @@ function RemoteFileMentionDrawer({
                       没有找到可 @ 的智能体。
                     </div>
                   ) : (
-                    <div className={`${compactAgents ? 'max-h-[260px]' : 'max-h-[calc(100vh-330px)]'} space-y-2 overflow-y-auto pr-1`}>
-                      {filteredAgents.map(agent => {
-                        const active = agent.agent_status === 'running'
-                        const modelLabel = sessionModelLabel(agent.model, agent.model_label)
-                        const relationLabel = agent.group === 'same_scope'
-                          ? (agent.scope_type === 'research' ? '同 Research' : '同 Issue')
-                          : agent.group === 'same_project' ? '同项目' : '其他项目'
-                        const selectedModeLabel = agentMode === 'bidirectional' && agent.can_communicate === false
-                          ? '只读权限' : agentMode === 'bidirectional' ? '开启交流' : '只读引用'
-                        return (
-                          <button
-                            key={agent.session_id}
-                            type="button"
-                            onClick={() => pickAgent(agent)}
-                            className="w-full rounded-lg border px-3 py-2 text-left transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
-                            style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className={`h-2.5 w-2.5 flex-shrink-0 rounded-full ${active ? 'bg-emerald-400' : 'bg-slate-400'}`} />
-                              <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {agent.name || agent.session_id}
+                    <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                      <SessionGroupTree
+                        groups={agentGroups}
+                        domIdPrefix="mention-agent-group"
+                        renderSession={agent => {
+                          const active = agent.agent_status === 'running'
+                          const modelLabel = sessionModelLabel(agent.model, agent.model_label)
+                          const relationLabel = agent.group === 'same_scope'
+                            ? (agent.scope_type === 'research' ? '同 Research' : '同 Issue')
+                            : agent.group === 'same_project' ? '同项目' : '其他项目'
+                          const selectedModeLabel = agentMode === 'bidirectional' && agent.can_communicate === false
+                            ? '只读权限' : agentMode === 'bidirectional' ? '开启交流' : '只读引用'
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => pickAgent(agent)}
+                              className="relative mt-0.5 flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
+                              title={`${agent.name || agent.session_id} · ${agent.session_id}`}
+                            >
+                              <span className="absolute -left-2.5 top-1/2 w-2 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
+                              <span className={`h-2 w-2 flex-shrink-0 rounded-full ${active ? 'bg-emerald-400' : 'bg-slate-400'}`} />
+                              <span className="min-w-0 flex-1">
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium leading-4" style={{ color: 'var(--text-primary)' }}>
+                                    {agent.name || agent.session_id}
+                                  </span>
+                                  {agent.last_active && <span className="flex-shrink-0 text-[9px] tabular-nums leading-3" style={{ color: 'var(--text-muted)' }}>{timeAgo(agent.last_active)}</span>}
+                                </span>
+                                <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1 text-[9px] leading-3" style={{ color: 'var(--text-muted)' }}>
+                                  <span className="max-w-[160px] truncate font-mono">{agent.session_id}</span>
+                                  <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{relationLabel}</span>
+                                  {modelLabel && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{modelLabel}</span>}
+                                  {agent.backend && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.backend}</span>}
+                                  {agent.research_role && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.research_role}</span>}
+                                </span>
+                                {agent.description && (
+                                  <span className="mt-1 line-clamp-2 block text-[10px] leading-4" style={{ color: 'var(--text-secondary)' }}>
+                                    {agent.description}
+                                  </span>
+                                )}
                               </span>
-                              <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-                                {selectedModeLabel}
+                              <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
+                                <span className="rounded border px-1.5 py-0.5 text-[9px] leading-3" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                                  {selectedModeLabel}
+                                </span>
                               </span>
-                            </div>
-                            <div className="mt-1 flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                              <span className="truncate">{agent.session_id}</span>
-                              <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{relationLabel}</span>
-                              {modelLabel && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{modelLabel}</span>}
-                              {agent.backend && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.backend}</span>}
-                              {agent.research_role && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.research_role}</span>}
-                            </div>
-                            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                              {agent.project_name && <span className="truncate">{agent.project_name}</span>}
-                              {(agent.research_title || agent.issue_title) && <span className="truncate">· {agent.research_title || agent.issue_title}</span>}
-                              {agent.last_active && <span className="ml-auto flex-shrink-0">{timeAgo(agent.last_active)}</span>}
-                            </div>
-                            {agent.description && (
-                              <div className="mt-1 line-clamp-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                                {agent.description}
-                              </div>
-                            )}
-                          </button>
-                        )
-                      })}
+                            </button>
+                          )
+                        }}
+                      />
                     </div>
                   )}
                 </>
