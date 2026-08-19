@@ -1686,7 +1686,6 @@ function RemoteFileMentionDrawer({
   researchId,
   currentSessionId,
   open,
-  query,
   onClose,
   onPickPath,
   onPickAgent,
@@ -1696,7 +1695,6 @@ function RemoteFileMentionDrawer({
   researchId?: string
   currentSessionId?: string
   open: boolean
-  query?: string
   onClose: () => void
   onPickPath: (path: string) => void
   onPickAgent?: (agent: MentionAgentSession, mode: AgentMentionMode) => void
@@ -1710,7 +1708,6 @@ function RemoteFileMentionDrawer({
   const [agentLoading, setAgentLoading] = useState(false)
   const [agentError, setAgentError] = useState('')
   const [agentMode, setAgentMode] = useState<AgentMentionMode>('read_only')
-  const [agentSearch, setAgentSearch] = useState('')
   const [dirs, setDirs] = useState<Record<string, DirState>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
 
@@ -1764,8 +1761,7 @@ function RemoteFileMentionDrawer({
     if (!open) return
     setActiveTab(currentSessionId ? 'agents' : 'files')
     setAgentMode('read_only')
-    setAgentSearch(String(query || '').trim())
-  }, [currentSessionId, open, query])
+  }, [currentSessionId, open])
 
   const loadAgentSessions = useCallback(async () => {
     if (!agentScopeUrl) {
@@ -1775,9 +1771,7 @@ function RemoteFileMentionDrawer({
     setAgentLoading(true)
     setAgentError('')
     try {
-      const normalizedQuery = String(agentSearch || '').trim()
-      const suffix = normalizedQuery ? `&q=${encodeURIComponent(normalizedQuery)}` : ''
-      const data = await api(`${agentScopeUrl}${suffix}`)
+      const data = await api(agentScopeUrl)
       const list = Array.isArray(data?.targets) ? data.targets as MentionAgentSession[] : []
       setAgentSessions(list.filter(item => item.session_id !== currentSessionId))
     } catch (error: any) {
@@ -1786,7 +1780,7 @@ function RemoteFileMentionDrawer({
     } finally {
       setAgentLoading(false)
     }
-  }, [agentScopeUrl, currentSessionId, agentSearch])
+  }, [agentScopeUrl, currentSessionId])
 
   useEffect(() => {
     if (!open) return
@@ -1795,9 +1789,8 @@ function RemoteFileMentionDrawer({
 
   useEffect(() => {
     if (!open || activeTab !== 'agents') return
-    const timer = window.setTimeout(() => { void loadAgentSessions() }, String(agentSearch || '').trim() ? 160 : 0)
-    return () => window.clearTimeout(timer)
-  }, [open, activeTab, loadAgentSessions, agentSearch])
+    void loadAgentSessions()
+  }, [open, activeTab, loadAgentSessions])
 
   useEffect(() => {
     if (!open) return
@@ -2036,24 +2029,13 @@ function RemoteFileMentionDrawer({
                 <label className="relative min-w-0 flex-1">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" strokeWidth={1.8} style={{ color: 'var(--text-muted)' }} />
                   <input
-                    value={agentSearch}
-                    onChange={(event) => setAgentSearch(event.target.value)}
-                    placeholder="搜索名称、Session ID、项目、Issue、消息或模型"
-                    className="h-8 w-full rounded-md border bg-transparent pl-8 pr-8 text-[11px] outline-none focus:ring-2 focus:ring-blue-500/40"
+                    value=""
+                    disabled
+                    placeholder="Session 搜索暂时不可用"
+                    className="h-8 w-full cursor-not-allowed rounded-md border bg-transparent pl-8 pr-3 text-[11px] opacity-60 outline-none"
                     style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}
-                    aria-label="搜索 Session"
+                    aria-label="Session 搜索暂时不可用"
                   />
-                  {agentSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setAgentSearch('')}
-                      className="absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded hover:bg-[var(--bg-card-hover)]"
-                      style={{ color: 'var(--text-muted)' }}
-                      aria-label="清空 Session 搜索"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
                 </label>
                 <button
                   type="button"
@@ -3066,7 +3048,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [remoteFileDrawerOpen, setRemoteFileDrawerOpen] = useState(false)
   const remoteMentionRangeRef = useRef<{ start: number; end: number } | null>(null)
-  const [mentionQuery, setMentionQuery] = useState('')
   const [selectedAgentMentions, setSelectedAgentMentions] = useState<Array<{
     sessionId: string
     name: string
@@ -3101,19 +3082,15 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     const caret = event.target.selectionStart ?? nextValue.length
     setInput(nextValue)
     const beforeCaret = nextValue.slice(0, caret)
-    const copiedSessionMatch = beforeCaret.match(/(?:^|\s)(@?session=([^\s]*)?)$/i)
-    const mentionMatch = copiedSessionMatch ? null : beforeCaret.match(/@([^\s@]*)$/)
-    if ((!mentionMatch && !copiedSessionMatch) || !sessionId) {
+    // The picker is an immediate @ action, not a type-ahead search. Once any
+    // character follows @, it closes and stays closed until another @ is typed.
+    if (!beforeCaret.endsWith('@') || !sessionId) {
       remoteMentionRangeRef.current = null
-      setMentionQuery('')
       setRemoteFileDrawerOpen(false)
       return
     }
-    const start = mentionMatch
-      ? beforeCaret.lastIndexOf('@')
-      : Math.max(0, beforeCaret.toLowerCase().lastIndexOf('session=') - (beforeCaret[beforeCaret.toLowerCase().lastIndexOf('session=') - 1] === '@' ? 1 : 0))
+    const start = caret - 1
     remoteMentionRangeRef.current = { start, end: caret }
-    setMentionQuery(mentionMatch ? (mentionMatch[1] || '') : (copiedSessionMatch?.[2] || ''))
     setRemoteFileDrawerOpen(true)
   }
 
@@ -3128,7 +3105,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     const caret = start + absolutePath.length + trailingSpace.length
     setInput(nextValue)
     remoteMentionRangeRef.current = null
-    setMentionQuery('')
     setRemoteFileDrawerOpen(false)
     requestAnimationFrame(() => {
       const textarea = inputRef.current
@@ -3166,7 +3142,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       return current.map((item, index) => index === existingIndex ? selected : item)
     })
     remoteMentionRangeRef.current = null
-    setMentionQuery('')
     setRemoteFileDrawerOpen(false)
     requestAnimationFrame(() => {
       const textarea = inputRef.current
@@ -3180,7 +3155,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
 
   useEffect(() => {
     remoteMentionRangeRef.current = null
-    setMentionQuery('')
     setSelectedAgentMentions([])
     setRemoteFileDrawerOpen(false)
   }, [sessionId])
@@ -4156,7 +4130,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
         researchId={(currentSession as any)?.research_id || (currentTask as any)?.research_id || undefined}
         currentSessionId={sessionId || undefined}
         open={remoteFileDrawerOpen}
-        query={mentionQuery}
         onClose={() => setRemoteFileDrawerOpen(false)}
         onPickPath={insertRemoteFilePath}
         onPickAgent={insertAgentMention}
