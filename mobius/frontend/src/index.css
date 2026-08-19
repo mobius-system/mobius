@@ -5007,6 +5007,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   border-bottom: 1px solid color-mix(in srgb, var(--text-muted) 34%, transparent);
   border-radius: 0;
   box-shadow: none;
+  margin-bottom: 3px;
   transition: border-color 140ms ease;
 }
 
