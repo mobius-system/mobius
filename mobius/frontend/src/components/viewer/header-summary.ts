@@ -293,7 +293,8 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
         if (isReadToolUseName(item.name)) {
           const call = extractReadCallFromBlock(item)
           if (call) {
-            parts.push(`Read · ${readCallOneLineSummary(call)}`)
+            const isImage = /\.(?:apng|avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i.test(call.filePath)
+            parts.push(`${isImage ? '图片读取' : 'Read'} · ${readCallOneLineSummary(call)}`)
             continue
           }
         }

@@ -300,6 +300,19 @@ export function extractReadCalls(entry: AnyEntry): ReadToolCall[] {
   return out
 }
 
+// 读取图片时，工具调用本身只给出 file_path，不会像 display_images 那样显式请求
+// 展示。为避免用户只看到“Read /tmp/foo.png”而无法检查图片，按浏览器可预览的扩展名
+// 派生图片卡。真正的 src 仍由 DisplayImages 经受鉴权的 /api/download 取得。
+const IMAGE_FILE_PATH_RE = /\.(?:apng|avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i
+
+export function entryReadImagePaths(entry: AnyEntry): string[] {
+  return Array.from(new Set(
+    extractReadCalls(entry)
+      .map((call) => call.filePath.trim())
+      .filter((filePath) => IMAGE_FILE_PATH_RE.test(filePath)),
+  ))
+}
+
 export function readCallOneLineSummary(call: ReadToolCall): string {
   const parts = [basename(call.filePath)]
   const range = [

@@ -64,4 +64,22 @@ const malformed = {
 assert.equal(extractors.extractCodeEdit(malformed), null)
 assert.equal(extractors.isAimuxRemoteApplyPatchToolUse(malformed), false)
 
+const imageReadEntry = {
+  type: 'assistant',
+  message: {
+    content: [{
+      type: 'tool_use',
+      id: 'call_image',
+      name: 'Read',
+      input: { file_path: '/tmp/wxc/_sv0.png' },
+    }],
+  },
+}
+assert.deepEqual(extractors.entryReadImagePaths(imageReadEntry), ['/tmp/wxc/_sv0.png'])
+assert.equal(summaries.buildHeaderSummary(imageReadEntry).full, '图片读取 · _sv0.png')
+assert.deepEqual(extractors.entryReadImagePaths({
+  ...imageReadEntry,
+  message: { content: [{ ...imageReadEntry.message.content[0], input: { file_path: '/tmp/wxc/notes.md' } }] },
+}), [])
+
 console.log('aimux patch card tests passed')

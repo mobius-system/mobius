@@ -1,6 +1,7 @@
 import type { AnyEntry, Round } from '../viewer/types'
 import {
   entryDisplayImages,
+  entryReadImagePaths,
   entryUserAttachmentImages,
   extractBashCalls,
   extractCodeEdit,
@@ -215,7 +216,7 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
         }
       }
 
-      const images = unique([...entryDisplayImages(entry), ...entryUserAttachmentImages(entry)])
+      const images = unique([...entryDisplayImages(entry), ...entryReadImagePaths(entry), ...entryUserAttachmentImages(entry)])
       if (images.length) add('image', '', item.lineNo, index, images)
 
       const error = errorText(entry)
