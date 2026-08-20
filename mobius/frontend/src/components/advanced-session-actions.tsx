@@ -1,5 +1,6 @@
-import { BookOpen, Brain, Clock, Cpu, FileDiff, GitBranch, History, Loader2, Network, Puzzle, RotateCcw, Share2, Terminal, Wand2 } from 'lucide-react'
+import { BookOpen, Brain, Clock, Cpu, FileDiff, GitBranch, History, Loader2, Network, Puzzle, RotateCcw, Terminal, Wand2 } from 'lucide-react'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
+import { RemoteAimuxMcpIcon } from './aimux-link-indicator'
 import { ProjectPortEntryButton } from './project-files'
 
 type AdvancedSessionActionsProps = {
@@ -149,7 +150,7 @@ export function AdvancedSessionActions({
           tooltip="声明可合作计算机 (勾选 aimux remote, 生成声明直接发给当前 agent, 不写 Memory)"
           accent="amber"
           displayLabel={menu}
-          icon={<Share2 className="h-4 w-4" strokeWidth={1.9} />}
+          icon={<RemoteAimuxMcpIcon className="h-4 w-4" />}
         />
         {researchId && onOpenResearchGraph ? (
           <AdvancedInteractionBtn
