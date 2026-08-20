@@ -638,7 +638,7 @@ router.delete('/:id', auth, async (req: express.Request, res: express.Response) 
 
   const sid = id;
   let noticeResult: any = null;
-  if (session.scope_type === 'research') {
+  if (session.scope_type === 'research' && shouldNotifyResearchPeers(req)) {
     noticeResult = appendResearchSessionLeftNotice(session, user.id, req.body);
     if (noticeResult?.error) { res.status(500).json({ error: noticeResult.error }); return; }
   }
@@ -683,7 +683,7 @@ router.delete('/:id/permanent', auth, async (req: express.Request, res: express.
   }
   auditSessionAccess(user, 'delete_session_permanent', session);
   let noticeResult: any = null;
-  if (session.scope_type === 'research') {
+  if (session.scope_type === 'research' && shouldNotifyResearchPeers(req)) {
     noticeResult = appendResearchSessionLeftNotice(session, user.id, req.body);
     if (noticeResult?.error) { res.status(500).json({ error: noticeResult.error }); return; }
   }
