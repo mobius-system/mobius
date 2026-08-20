@@ -1,8 +1,6 @@
 // 近期活跃会话数据层 — @ 目标选择抽屉与 Issue 侧栏「近期会话」共享。
-// 数据源 /api/tasks/recent (登录用户自己的近期会话, 含跨项目), 归一化 +
-// 树状分组复用 recent-session-tree 的 buildRecentSessionTreeGroups。
-import { buildRecentSessionTreeGroups, type RecentSessionTreeGroup } from './recent-session-tree'
-
+// 数据源 /api/tasks/recent (登录用户自己的近期会话, 含跨项目); 归一化后交
+// recent-session-tree 的 buildRecentSessionTreeGroups 做「项目 → 任务/研究 → 会话」分组。
 export const RECENT_SESSION_LIMIT = 50
 
 export type RecentSession = {
@@ -30,11 +28,7 @@ export function normalizeRecentSessions(value: unknown): RecentSession[] {
     .slice(0, RECENT_SESSION_LIMIT)
 }
 
-export function recentSessionGroupsOf(sessions: RecentSession[]): RecentSessionTreeGroup<RecentSession>[] {
-  return buildRecentSessionTreeGroups(sessions)
-}
-
-// 跳转到该会话所在路由 (与 IssuePage 侧栏近期会话一致: 有 issue/research 归属才可跳转)。
+// 跳转到该会话所在路由 (Issue 侧栏近期会话用: 有 issue/research 归属才可跳转)。
 export function recentSessionTarget(user: string, session: RecentSession) {
   if (!user || !session.project_id || !session.session_id) return ''
   const base = `/u/${encodeURIComponent(user)}/p/${encodeURIComponent(session.project_id)}`

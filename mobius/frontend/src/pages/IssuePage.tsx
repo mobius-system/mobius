@@ -18,51 +18,16 @@ import { useEditorAvailability } from '../components/workspace/use-editor-availa
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/logo-review-demo'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
+import { normalizeRecentSessions, recentSessionTarget, RECENT_SESSION_LIMIT, type RecentSession } from '../services/recent-sessions'
+import { RecentSessionRow } from '../components/recent-session-row'
 
 const EditorPane = lazy(() => import('../components/workspace/editor-pane').then(m => ({ default: m.EditorPane })))
 const CodeConversationPane = lazy(() => import('../components/workspace/code-conversation-pane').then(m => ({ default: m.CodeConversationPane })))
 
 const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
 const SESSION_SIDEBAR_PAGE_SIZE = 16  // sidebar 会话列表每页 16, 超过即分页
-const RECENT_SESSION_LIMIT = 50
 
 type SessionListMode = 'issue' | 'recent'
-
-type RecentSession = {
-  session_id: string
-  name?: string
-  project_id?: string | null
-  project_name?: string | null
-  issue_id?: string | null
-  issue_title?: string | null
-  research_id?: string | null
-  research_title?: string | null
-  scope_type?: 'issue' | 'research'
-  agent_status?: string
-  message_count?: number
-  last_active?: string
-  status?: string
-}
-
-function normalizeRecentSessions(value: unknown): RecentSession[] {
-  return (Array.isArray(value) ? value : [])
-    .filter((session: any) => session?.session_id && session?.status !== 'archived')
-    .sort((a: any, b: any) => (
-      new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime()
-    ))
-    .slice(0, RECENT_SESSION_LIMIT)
-}
-
-function recentSessionTarget(user: string, session: RecentSession) {
-  if (!user || !session.project_id || !session.session_id) return ''
-  const base = `/u/${encodeURIComponent(user)}/p/${encodeURIComponent(session.project_id)}`
-  const query = `?session=${encodeURIComponent(session.session_id)}`
-  if (session.scope_type === 'research' && session.research_id) {
-    return `${base}/r/${encodeURIComponent(session.research_id)}${query}`
-  }
-  if (session.issue_id) return `${base}/i/${encodeURIComponent(session.issue_id)}${query}`
-  return ''
-}
 
 // =====================================================================
 // Issue 处理页 /u/:user/p/:project/i/:issue?session=<id>
@@ -592,41 +557,14 @@ export default function IssuePage() {
                       >
                         {group.sessions.map(session => {
                           const target = recentSessionTarget(userParam, session)
-                          const active = session.session_id === sessionParam
-                          const status = session.agent_status === 'running'
-                            ? { label: '执行中', color: '#f59e0b', bg: 'rgba(245,158,11,.10)' }
-                            : session.agent_status === 'pending'
-                              ? { label: '启动中', color: '#fbbf24', bg: 'rgba(251,191,36,.10)' }
-                              : session.agent_status === 'waiting'
-                                ? { label: '待命', color: '#38bdf8', bg: 'rgba(56,189,248,.10)' }
-                                : session.agent_status === 'completed' || session.status === 'completed'
-                                  ? { label: '已完成', color: '#34d399', bg: 'rgba(52,211,153,.10)' }
-                                  : { label: '空闲', color: 'var(--text-muted)', bg: 'var(--bg-card)' }
                           return (
-                            <button
+                            <RecentSessionRow
                               key={session.session_id}
-                              type="button"
-                              onClick={() => { if (target) navigate(target) }}
+                              session={session}
+                              active={session.session_id === sessionParam}
                               disabled={!target}
-                              title={session.name || session.session_id}
-                              className="relative mt-0.5 flex min-h-9 w-full items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:opacity-50"
-                              style={{ borderColor: active ? 'color-mix(in srgb, var(--accent-primary) 42%, var(--border-color))' : 'transparent', background: active ? 'var(--bg-active)' : undefined }}
-                              data-session-id={session.session_id}
-                              aria-current={active ? 'true' : undefined}
-                            >
-                              <span className="absolute -left-2 top-1/2 w-1.5 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
-                              <span className="min-w-0 flex-1">
-                                <span className="flex min-w-0 items-center gap-1">
-                                  <span className="flex-shrink-0 rounded px-1 py-0.5 text-[8px] font-medium leading-3" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>{isResearch ? '智能体' : '会话'}</span>
-                                  <span className="min-w-0 flex-1 truncate text-[10px] font-medium leading-4" style={{ color: 'var(--text-primary)' }}>{session.name || session.session_id}</span>
-                                </span>
-                                <span className="mt-0.5 flex items-center gap-1.5 text-[8px] leading-3" style={{ color: 'var(--text-muted)' }}>
-                                  <span>{timeAgoPrecise(session.last_active || '')}</span>
-                                  <span className="inline-flex items-center gap-0.5"><MessageSquare className="h-2.5 w-2.5" />{session.message_count || 0}</span>
-                                </span>
-                              </span>
-                              <span className="flex-shrink-0 rounded-full px-1 py-0.5 text-[8px] font-medium leading-3" style={{ color: status.color, background: status.bg }}>{status.label}</span>
-                            </button>
+                              onClick={() => { if (target) navigate(target) }}
+                            />
                           )
                         })}
                       </RecentSessionGroupList>
