@@ -19,6 +19,13 @@ import { AimuxLinkIndicator } from './aimux-link-indicator'
 import { AnnouncePcButton } from './announce-pc-button'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { readJsonlCacheSync, readJsonlCacheFromIdb, writeJsonlCache } from '../services/session-jsonl-cache'
+import {
+  preloadSessionInputCache,
+  prependSessionInputCache,
+  readSessionInputCache,
+  refreshSessionInputCache,
+  type SessionInputEntry,
+} from '../services/session-input-cache'
 import { MobiusLogo } from './mobius-logo'
 import { PlanningEditor } from './planning-editor'
 import { KnowledgeEditorModal } from './knowledge-editor-modal'
@@ -177,16 +184,6 @@ type AttachmentImagePreview = {
   id: string
   name: string
   src: string
-}
-
-type SessionInputEntry = {
-  id: string
-  session_id?: string
-  input_text?: string
-  content?: string
-  created_at?: string
-  request_id?: string | null
-  turn_number?: number | null
 }
 
 type SessionFileFeature = {
@@ -483,14 +480,15 @@ function SessionInputReplayModal({ sessionId, onPick, onClose }: {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    const cached = readSessionInputCache(sessionId)
+    setLoading(!cached)
     setError('')
     setCopyError('')
-    setEntries([])
-    api(`/api/sessions/${sessionId}/inputs`)
-      .then((data: any) => {
+    setEntries(cached || [])
+    refreshSessionInputCache(sessionId)
+      .then((nextEntries) => {
         if (cancelled) return
-        setEntries(Array.isArray(data?.entries) ? data.entries : [])
+        setEntries(nextEntries)
       })
       .catch((e: any) => {
         if (cancelled) return
@@ -2843,7 +2841,8 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     entries: SessionInputEntry[]
     timer: ReturnType<typeof setTimeout> | null
     fetching: boolean
-  }>({ active: false, index: -1, entries: [], timer: null, fetching: false })
+    sessionId: string
+  }>({ active: false, index: -1, entries: [], timer: null, fetching: false, sessionId: '' })
 
   // 切换 session 时重置召回状态 (历史输入按 session 隔离).
   useEffect(() => {
@@ -2853,6 +2852,34 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     st.index = -1
     st.entries = []
     st.fetching = false
+    st.sessionId = sessionId
+    // 预取与 JSONL 历史加载并行执行，使首次 ArrowUp 通常只读内存缓存。
+    preloadSessionInputCache(sessionId)
+  }, [sessionId])
+
+  const startInputRecall = useCallback((entries: SessionInputEntry[]) => {
+    const recalledEntries = entries.filter((entry) => replayTextOf(entry).trim().length > 0)
+    if (recalledEntries.length === 0) return false
+    const st = inputRecallRef.current
+    st.entries = recalledEntries
+    st.index = 0
+    st.active = true
+    const text = replayTextOf(recalledEntries[0])
+    setInput(text)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) { el.focus(); try { el.setSelectionRange(text.length, text.length) } catch {} }
+    })
+    if (st.timer) clearTimeout(st.timer)
+    st.timer = setTimeout(() => {
+      const current = inputRecallRef.current
+      current.active = false
+      current.index = -1
+      current.timer = null
+    }, 2000)
+    return true
+  // setInput is session-scoped and intentionally recreated with the active draft.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
   const handleInputArrowUp = useCallback(async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -2883,37 +2910,26 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     const currentInput = inputRef.current?.value ?? ''
     if (currentInput.trim()) return
     if (!sessionId) return
+    e.preventDefault()
+    const cached = readSessionInputCache(sessionId)
+    if (cached) {
+      startInputRecall(cached)
+      return
+    }
     if (st.fetching) return
     st.fetching = true
-    e.preventDefault()
     try {
-      const data = await api(`/api/sessions/${sessionId}/inputs`)
-      const entries = (Array.isArray(data?.entries) ? data.entries : [])
-        .filter((en: SessionInputEntry) => replayTextOf(en).trim().length > 0)
-      if (entries.length === 0) return
-      st.entries = entries
-      st.index = 0
-      st.active = true
-      const text = replayTextOf(entries[0])
-      setInput(text)
-      requestAnimationFrame(() => {
-        const el = inputRef.current
-        if (el) { el.focus(); try { el.setSelectionRange(text.length, text.length) } catch {} }
-      })
-      if (st.timer) clearTimeout(st.timer)
-      st.timer = setTimeout(() => {
-        const cur = inputRecallRef.current
-        cur.active = false
-        cur.index = -1
-        cur.timer = null
-      }, 2000)
+      const entries = await refreshSessionInputCache(sessionId)
+      // 等待请求时 session 已切换或用户开始新输入时，绝不能覆盖当前编辑内容。
+      if (inputRecallRef.current.sessionId !== sessionId || (inputRef.current?.value || '').trim()) return
+      startInputRecall(entries)
     } catch {
       // 拉取失败则不进入召回序列, ↑ 维持普通作用.
     } finally {
-      st.fetching = false
+      if (inputRecallRef.current.sessionId === sessionId) st.fetching = false
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId])
+  }, [sessionId, startInputRecall])
 
   const attachments = attachmentsBySession[sessionId] || []
   const closeAttachmentImagePreview = useCallback(() => setAttachmentImagePreview(null), [])
@@ -3857,6 +3873,8 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     clearSessionInputDraft(sentSessionId, sentInput)
     postSessionMessage({ content, inputText: text, requestId, urgent, mentions: mentionPayload })
       .then((resp) => {
+        // 与后端异步写入 session_input_list.json 并行更新本地缓存，下一次 ↑ 立即可召回。
+        prependSessionInputCache(sentSessionId, text)
         const queued = Array.isArray(resp?.external_messages_queued)
           ? resp.external_messages_queued.filter((item: any) => item?.delivery === 'queued')
           : []
