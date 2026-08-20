@@ -1,8 +1,8 @@
 import { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CircleDot, ChevronDown, ChevronRight, FlaskConical, MessageSquare, MessageSquarePlus, Plus } from 'lucide-react'
+import { CircleDot, ChevronDown, ChevronRight, FlaskConical, MessageSquarePlus, Plus } from 'lucide-react'
 import { useStore, api } from '../store'
-import { TopNav, timeAgo, timeAgoPrecise } from '../components/shell'
+import { TopNav, timeAgo } from '../components/shell'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
 import { usePagination, PaginationControls } from '../components/pagination'
 import {
