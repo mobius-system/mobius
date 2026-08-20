@@ -45,6 +45,10 @@ import {
   normalizeSessionAttachments,
   sessionContentWithAttachments,
 } from '../services/session-attachments';
+import {
+  afterAssistantHumanInputQueued,
+  clearAssistantAutoCompactCount,
+} from '../services/assistant-auto-compact';
 import { db } from '../../db';
 
 const router = express.Router();
@@ -1572,6 +1576,19 @@ router.post('/messages', auth, async (req: express.Request, res: express.Respons
     }
 
     await startAssistantSession(req, session, question, requestId, project.bind_path, clientContext, attachments, content || question);
+    if (question.trim().startsWith('/compact')) {
+      clearAssistantAutoCompactCount(session.session_id);
+    } else {
+      await afterAssistantHumanInputQueued(session.session_id, async () => {
+        await startAssistantSession(
+          req,
+          session,
+          '/compact',
+          `assistant-auto-compact-${session.session_id}-${Date.now()}`,
+          project.bind_path,
+        );
+      });
+    }
     res.json({
       ok: true,
       created,
