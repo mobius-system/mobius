@@ -29,6 +29,7 @@ import { AimuxStatusLine, aimuxStatusText } from './AimuxStatus.js'
 import { isEscapeKeypress, isMouseInput, useMouseEvents, useStableInput } from './primitives.js'
 import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousCursorBoundary, nextCursorBoundary, previousWordBoundary, nextWordBoundary } from '../lib/delete-keys.js'
 import { useCursorKeyCapture } from '../lib/cursor-keys.js'
+import { usePaintFlushOnInput } from '../lib/paint-flush.js'
 
 interface ChatProps {
   client: MobiusClient
@@ -88,6 +89,9 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   const handlerRef = useRef<{ configOpen: boolean; reconfigOpen: boolean; sessionId: string | null }>({ configOpen: false, reconfigOpen: false, sessionId: null })
   handlerRef.current = { configOpen, reconfigOpen, sessionId: chat.sessionId }
   const terminal = useTerminalSize()
+  // Paint each keystroke immediately instead of waiting out Ink's 32ms render
+  // throttle — that dead window was the typing lag users felt.
+  usePaintFlushOnInput()
 
   const runSlash = useCallback((raw: string) => {
     const [name] = raw.trim().split(/\s+/)
