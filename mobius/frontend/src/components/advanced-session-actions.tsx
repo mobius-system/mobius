@@ -150,7 +150,7 @@ export function AdvancedSessionActions({
           tooltip="声明可合作计算机 (勾选 aimux remote, 生成声明直接发给当前 agent, 不写 Memory)"
           accent="amber"
           displayLabel={menu}
-          icon={<RemoteAimuxMcpIcon className="h-4 w-4" />}
+          icon={<RemoteAimuxMcpIcon className="h-4 w-4 scale-125" />}
         />
         {researchId && onOpenResearchGraph ? (
           <AdvancedInteractionBtn
