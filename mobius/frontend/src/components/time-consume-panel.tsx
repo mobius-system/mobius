@@ -109,7 +109,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
   const [error, setError] = useState('')
   const [view, setView] = useState<TimeConsumeView>('waterfall')
   const [timelineZoom, setTimelineZoom] = useState(1)
-  const [timelinePosition, setTimelinePosition] = useState(500)
+  const [timelinePosition, setTimelinePosition] = useState(1000)
 
   const load = useCallback(async (signal?: AbortSignal, showSpinner = false) => {
     if (!sessionId) {
@@ -140,7 +140,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
     let disposed = false
     setLoading(true)
     setTimelineZoom(1)
-    setTimelinePosition(500)
+    setTimelinePosition(1000)
     void load(undefined, false)
     const stop = pollRecursive((signal) => {
       if (disposed) return
