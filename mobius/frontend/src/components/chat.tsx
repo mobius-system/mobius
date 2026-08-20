@@ -15,7 +15,7 @@ import { SessionJsonlPanel } from './session-jsonl-panel'
 import { useVisibleJsonl } from './session-jsonl-filter'
 import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
-import { AimuxLinkIndicator } from './aimux-link-indicator'
+import { AimuxLinkIndicator, RemoteAimuxMcpIndicator } from './aimux-link-indicator'
 import { AnnouncePcButton } from './announce-pc-button'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { readJsonlCacheSync, readJsonlCacheFromIdb, writeJsonlCache } from '../services/session-jsonl-cache'
@@ -4426,6 +4426,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
               done={backendJobDone === true && !backendAlive}
             />
             <SessionTitle name={currentSession?.name || currentTask?.name} theme={theme} />
+            <RemoteAimuxMcpIndicator session={currentSession ?? currentTask} />
             {/* {currentModelLabel && (
               <span className="text-[10px] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"
                 title={`模型: ${currentModelLabel}`}

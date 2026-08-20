@@ -9,6 +9,8 @@
 // aimux 状态经 preload 暴露的 getAimuxStatus()/onAimuxStatus() 取得, 无需改桌面端。
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Server, Laptop, ArrowLeftRight, Check } from 'lucide-react'
+import { api } from '../store'
+import { pollRecursive } from '../services/polling'
 
 type AimuxState = 'stopped' | 'starting' | 'connected' | 'failed'
 
@@ -17,6 +19,7 @@ interface PcClientMeta {
   aimux_id?: string
   local_path?: string
   is_tui?: boolean
+  add_remote_aimux_mcp?: boolean
 }
 
 /** pc_client_metadata 在 DB 是 JSON 字符串, 详情端点返回字符串, 列表端点补列后也是字符串。 */
@@ -95,6 +98,68 @@ function sessionAimuxId(session: unknown): string {
   const meta = parsePcMeta((session as { pc_client_metadata?: unknown })?.pc_client_metadata)
   return meta?.aimux_id || ''
 }
+
+function remoteAimuxMcpId(session: unknown): string {
+  const meta = parsePcMeta((session as { pc_client_metadata?: unknown })?.pc_client_metadata)
+  if (meta?.add_remote_aimux_mcp !== true) return ''
+  return typeof meta.aimux_id === 'string' ? meta.aimux_id.trim() : ''
+}
+
+function RemoteAimuxMcpIndicatorInner({ session }: { session: unknown }) {
+  const aimuxId = remoteAimuxMcpId(session)
+  const [connected, setConnected] = useState(false)
+
+  useEffect(() => {
+    if (!aimuxId) {
+      setConnected(false)
+      return
+    }
+    let alive = true
+    const stop = pollRecursive(async (signal) => {
+      try {
+        const data = await api(`/aimux_bridge/api/remotes/${encodeURIComponent(aimuxId)}/connection`, { signal })
+        if (alive) setConnected(data?.identifier === aimuxId && data?.event_stream_connected === true)
+      } catch (error) {
+        if (alive && (error as Error)?.name !== 'AbortError') setConnected(false)
+      }
+    }, 5_000, 4_000)
+    return () => {
+      alive = false
+      stop()
+    }
+  }, [aimuxId])
+
+  if (!aimuxId) return null
+
+  const status = connected ? '正常' : '断开'
+  const label = `当前会话与设备${aimuxId}建立了协作链接，请保持桌面客户端或者终端客户端二者之一处于开启状态。当前链接状态：${status}。`
+
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      data-testid="remote-aimux-mcp-indicator"
+      data-connection-status={connected ? 'connected' : 'disconnected'}
+      className={`inline-flex h-5 w-5 flex-shrink-0 items-center justify-center transition-opacity ${connected ? 'opacity-100' : 'opacity-50'}`}
+    >
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 1024 1024"
+        width="16"
+        height="16"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M725.155704 395.090337c62.373583 0 113.106034-50.732451 113.106034-113.106034 0-62.373583-50.732451-113.106034-113.106034-113.106034-62.373583 0-113.127524 50.732451-113.127524 113.106034 0 12.33391 1.991354 24.209378 5.65786 35.33067L381.458875 425.63398c-20.660552-22.098297-50.051953-35.936467-82.614579-35.936467-62.373583 0-113.106034 50.753941-113.106034 113.128547 0 62.373583 50.732451 113.106034 113.106034 113.106034 26.367531 0 50.65775-9.067516 69.916373-24.246217L512.511653 694.582385c-6.690376 14.427594-10.432607 30.489408-10.432607 47.411823 0 62.373583 50.753941 113.127524 113.127524 113.127524 62.373583 0 113.106034-50.753941 113.106034-113.127524s-50.732451-113.106034-113.106034-113.106034c-29.278837 0-55.997362 11.17962-76.107375 29.493731L397.937175 557.337581c8.937556-16.176424 14.034645-34.759665 14.034645-54.513568 0-13.56904-2.403746-26.587542-6.804986-38.654368L640.08212 356.452341C660.833747 380.12039 691.279153 395.090337 725.155704 395.090337zM298.843272 571.030441c-37.59934 0-68.205405-30.606065-68.205405-68.205405 0-37.621852 30.606065-68.227917 68.205405-68.227917 23.815405 0 44.807509 12.273535 57.016575 30.818913 0.089028 0.140193 0.177032 0.281409 0.26913 0.419556 6.910387 10.665921 10.942213 23.361057 10.942213 36.989449C367.07119 540.424376 336.465125 571.030441 298.843272 571.030441zM615.20657 673.78778c37.59934 0 68.205405 30.606065 68.205405 68.205405 0 37.621852-30.606065 68.227917-68.205405 68.227917-37.621852 0-68.226894-30.606065-68.226894-68.227917 0-14.631232 4.649903-28.191062 12.528338-39.312354 0.360204-0.429789 0.711198-0.871857 1.042749-1.334391 0.164752-0.231267 0.299829-0.473791 0.455371-0.709151C573.48433 684.333974 593.132832 673.78778 615.20657 673.78778zM725.155704 213.777875c37.59934 0 68.205405 30.606065 68.205405 68.205405 0 37.59934-30.606065 68.205405-68.205405 68.205405-24.293289 0-45.64662-12.770861-57.738006-31.936363-0.479931-0.945535-1.01819-1.840928-1.608637-2.687202-5.641487-9.923-8.881274-21.378913-8.881274-33.58184C656.92881 244.38394 687.534875 213.777875 725.155704 213.777875z"
+          fill="#ff8b00"
+        />
+      </svg>
+    </span>
+  )
+}
+
+export const RemoteAimuxMcpIndicator = memo(RemoteAimuxMcpIndicatorInner)
 
 // pathClause: 有本机路径 → 反引号包裹的路径; 无 → 描述性占位。三种模式文案共用。
 function buildPathClause(localPath: string | null): string {
