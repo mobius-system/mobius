@@ -18,6 +18,7 @@ import {
   TYPE_THEME,
   DEFAULT_THEME,
   EDIT_TOOL_THEME,
+  AIMUX_PATCH_THEME,
   START_PY_THEME,
   BASH_TOOL_THEME,
   AIMUX_COMMAND_THEME,
@@ -47,6 +48,7 @@ import {
   extractPlanCard,
   extractMcpToolResult,
   isAimuxCommandToolUse,
+  isAimuxRemoteApplyPatchToolUse,
 } from './entry-extract'
 import {
   isEditToolUse,
@@ -241,6 +243,8 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
     ? ASSISTANT_RESPONSE_KEYWORD_THEME
     : isEditToolUse(entry)
     ? EDIT_TOOL_THEME
+    : isAimuxRemoteApplyPatchToolUse(entry)
+    ? AIMUX_PATCH_THEME
     : isAimuxCommandToolUse(entry)
     ? AIMUX_COMMAND_THEME
     : isStartPyToolUse(entry)

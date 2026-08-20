@@ -13,6 +13,7 @@
 import {
   extractBashCalls as extractBashCallsFromHelpers,
   isAimuxCommandToolUseName,
+  isAimuxRemoteApplyPatchToolUseName,
   isBashToolUseName,
 } from '../jsonl-bash-helpers'
 import type { BashCall } from '../jsonl-bash-helpers'
@@ -44,7 +45,7 @@ import type {
 } from './types'
 
 // re-export: 部分模块 (BashCall 类型 / block 级抽取 / 一行摘要) 直接复用 jsonl-bash-helpers 的实现.
-export { extractBashCallFromBlock, bashCallOneLineSummary, isAimuxCommandToolUseName, isBashToolUseName } from '../jsonl-bash-helpers'
+export { extractBashCallFromBlock, bashCallOneLineSummary, isAimuxCommandToolUseName, isAimuxRemoteApplyPatchToolUseName, isBashToolUseName } from '../jsonl-bash-helpers'
 export type { BashCall } from '../jsonl-bash-helpers'
 
 // ── Write tool_use ──────────────────────────────────────────────────────
@@ -131,6 +132,45 @@ function unifiedEditFile(filePath: string, unifiedDiff: string): UnifiedCodeEdit
   }
 }
 
+// remote_apply_patch 把标准 apply_patch 文本放在 input.input 中。它不是标准 unified
+// diff，但其内容段保留 @@ / + / - 语义，现有 CodeDiff 可以直接可靠呈现。
+export function extractAimuxRemoteApplyPatchFiles(block: any): UnifiedCodeEditFile[] {
+  if (!block || block?.type !== 'tool_use' || !isAimuxRemoteApplyPatchToolUseName(block?.name)) return []
+  const input = block?.input
+  const patch = typeof input?.input === 'string' ? input.input
+    : typeof input?.patch === 'string' ? input.patch
+      : ''
+  if (!patch.includes('*** Begin Patch') || !patch.includes('*** End Patch')) return []
+
+  const files: UnifiedCodeEditFile[] = []
+  let filePath = ''
+  let lines: string[] = []
+  const commitFile = () => {
+    if (!filePath || lines.length === 0) return
+    files.push(unifiedEditFile(filePath, lines.join('\n')))
+  }
+
+  for (const line of patch.split(/\r?\n/)) {
+    const target = /^\*\*\* (?:Update|Add|Delete) File: (.+)$/.exec(line)
+    if (target) {
+      commitFile()
+      filePath = target[1].trim()
+      lines = []
+      continue
+    }
+    if (line === '*** Begin Patch' || line === '*** End Patch' || line === '*** End of File') continue
+    if (filePath) lines.push(line)
+  }
+  commitFile()
+  return files
+}
+
+export function isAimuxRemoteApplyPatchToolUse(entry: AnyEntry): boolean {
+  if (entry?.type !== 'assistant') return false
+  const content = entry?.message?.content
+  return Array.isArray(content) && content.some((block: any) => extractAimuxRemoteApplyPatchFiles(block).length > 0)
+}
+
 export function extractCodeEdit(entry: AnyEntry): CodeEdit | null {
   const files: CodeEditFile[] = []
 
@@ -138,14 +178,18 @@ export function extractCodeEdit(entry: AnyEntry): CodeEdit | null {
     const c = entry?.message?.content
     if (Array.isArray(c)) {
       for (const block of c) {
-        if (block?.type !== 'tool_use' || block?.name !== 'Edit') continue
-        const input = block?.input
-        if (typeof input?.old_string !== 'string' || typeof input?.new_string !== 'string') continue
-        files.push(stringEditFile(
-          typeof input.file_path === 'string' ? input.file_path : '',
-          input.old_string,
-          input.new_string,
-        ))
+        if (block?.type !== 'tool_use') continue
+        if (block?.name === 'Edit') {
+          const input = block?.input
+          if (typeof input?.old_string !== 'string' || typeof input?.new_string !== 'string') continue
+          files.push(stringEditFile(
+            typeof input.file_path === 'string' ? input.file_path : '',
+            input.old_string,
+            input.new_string,
+          ))
+          continue
+        }
+        files.push(...extractAimuxRemoteApplyPatchFiles(block))
       }
     }
   }
