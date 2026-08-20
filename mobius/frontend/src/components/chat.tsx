@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
 import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock, Sparkles } from 'lucide-react'
@@ -34,6 +34,7 @@ import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { AdvancedSessionActions } from './advanced-session-actions'
 import { SessionGroupTree } from './session-group-tree'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
+import { normalizeRecentSessions, recentSessionGroupsOf, recentSessionTarget, type RecentSession } from '../services/recent-sessions'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { extensionAppUrlForProject } from '../services/extension-entry'
 import { isFireAndForgetSession } from '../services/session-start-policy'
@@ -1683,6 +1684,7 @@ function RemoteFileMentionDrawer({
   issueId,
   researchId,
   currentSessionId,
+  userParam,
   open,
   onClose,
   onPickPath,
@@ -1692,6 +1694,7 @@ function RemoteFileMentionDrawer({
   issueId?: string
   researchId?: string
   currentSessionId?: string
+  userParam: string
   open: boolean
   onClose: () => void
   onPickPath: (path: string) => void
@@ -1706,6 +1709,9 @@ function RemoteFileMentionDrawer({
   const [agentLoading, setAgentLoading] = useState(false)
   const [agentError, setAgentError] = useState('')
   const [agentMode, setAgentMode] = useState<AgentMentionMode>('read_only')
+  const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
+  const [recentLoading, setRecentLoading] = useState(false)
+  const [recentError, setRecentError] = useState('')
   const [dirs, setDirs] = useState<Record<string, DirState>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
 
@@ -1796,6 +1802,24 @@ function RemoteFileMentionDrawer({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [open, onClose])
+
+  // 近期活跃会话（跨项目，登录用户自己的），与 IssuePage 侧栏「近期会话」同数据源。
+  useEffect(() => {
+    if (!open || activeTab !== 'agents') return
+    const controller = new AbortController()
+    setRecentLoading(true)
+    setRecentError('')
+    api('/api/tasks/recent?limit=50', { signal: controller.signal })
+      .then((value: unknown) => setRecentSessions(normalizeRecentSessions(value)))
+      .catch((error: any) => {
+        if (error?.name === 'AbortError') return
+        setRecentError(error?.message || '近期会话加载失败')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRecentLoading(false)
+      })
+    return () => controller.abort()
+  }, [open, activeTab])
 
   const loadDir = useCallback(async (relPath: string) => {
     if (!projectId || !selectedSourceKey) return
@@ -2192,6 +2216,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
 } = {}) {
   const { currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
   const navigate = useNavigate()
+  const { user: userParam = '' } = useParams()
   // 搜索结果跳转: URL 带 ?match=<uuid>&ts=<iso> 时, 把命中条目交给 JsonlView 滚到所属卡片.
   const [searchParams, setSearchParams] = useSearchParams()
   const matchUuid = searchParams.get('match')
@@ -4147,6 +4172,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
         issueId={currentIssueId || undefined}
         researchId={(currentSession as any)?.research_id || (currentTask as any)?.research_id || undefined}
         currentSessionId={sessionId || undefined}
+        userParam={userParam}
         open={remoteFileDrawerOpen}
         onClose={() => setRemoteFileDrawerOpen(false)}
         onPickPath={insertRemoteFilePath}
