@@ -310,6 +310,21 @@ function AssistantTaskDoneToast() {
     return () => window.clearTimeout(t)
   }, [entry, showEntry])
 
+  // 权限请求需要用户手势: 首次任意点击页面时(且未拒绝过)请求一次通知权限。
+  // 后台自动 requestPermission 会被 Chrome 静默忽略 — 这是"收不到系统通知"的最常见原因。
+  useEffect(() => {
+    if (typeof Notification === 'undefined') return
+    if (Notification.permission !== 'default') return
+    const onClickOnce = () => {
+      if (Notification.permission === 'default') {
+        void Notification.requestPermission().then(() => {})
+      }
+      window.removeEventListener('click', onClickOnce)
+    }
+    window.addEventListener('click', onClickOnce)
+    return () => window.removeEventListener('click', onClickOnce)
+  }, [])
+
   // 可见期间入队但还没来得及展示、用户就切走的条目: 切到后台瞬间把积压队列转成系统通知, 不丢提醒。
   useEffect(() => {
     const onVisibility = () => {
