@@ -3920,7 +3920,7 @@ function manifestToRows(manifest: DesktopManifest): DesktopDownloadRow[] {
 // 移动端构建清单 — 镜像桌面 DESKTOP_BUILDS。
 // size / sha256 由 build.py --build-mobile 从 momo-mobile 拷 APK 后自动回填
 // (按各 ABI 的 file 行匹配更新); iOS 暂留空 (file='' → 显示「未上线」)。
-const MOBILE_VERSION = '0.1.7'
+const MOBILE_VERSION = '0.1.15'
 // iOS 走 TestFlight 公开邀请链接: build 上传后在 App Store Connect → TestFlight 开启"公开链接",
 // 把 https://testflight.apple.com/join/<CODE> 里的 <CODE> 填到下面 IOS_TESTFLIGHT_CODE。
 // 仍是占位时, iOS 行显示"未上线"; 填入真实 code 后自动变成 TestFlight 下载按钮。
@@ -3930,15 +3930,15 @@ const MOBILE_BUILDS: Array<{ label: string; sub: string; file: string; size: num
     label: 'Android',
     sub: 'arm64-v8a · 大多数现代手机',
     file: `mobius-mobile-${MOBILE_VERSION}-android-arm64.apk`,
-    size: 15433314,
-    sha256: '20cf95fc8a09697877085aad192cc56de214c4e81730c1ba1462991af4f26dc2',
+    size: 4991680,
+    sha256: 'a7b38ce8153e7a5c3c53a20a262042b7e648b8b8cc4a49f5e20931c04afa6757',
   },
   {
     label: 'Android',
     sub: 'armeabi-v7a · 老旧手机',
     file: `mobius-mobile-${MOBILE_VERSION}-android-armeabi-v7a.apk`,
-    size: 15441282,
-    sha256: '2f2d5f691b6a88a5a44863b04350829e6cfb218603289deac842eb0961af3b4a',
+    size: 4999648,
+    sha256: 'c2c4bffb648cc7e79fc6b86d256c965015506b9173b1354bcf3026f46434a3e1',
   },
   {
     label: 'iOS',
