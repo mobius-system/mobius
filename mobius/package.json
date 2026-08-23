@@ -10,6 +10,7 @@
     "test:access-control": "node --require tsx/cjs tests/access-control-policy.js",
     "test:user-isolation-v3": "node --require tsx/cjs tests/user-isolation-v3.js",
     "test:assistant-running-flag": "node --require tsx/cjs tests/assistant-running-flag.js",
+    "test:forgotten-flag-notify-timing": "node --require tsx/cjs tests/forgotten-flag-notify-timing.js",
     "test:assistant-tts-cache": "node --require tsx/cjs tests/assistant-tts-cache.js",
     "test:code-server-workspace": "node --require tsx/cjs tests/code-server-workspace.js",
     "test:native-file-menu": "node --require tsx/cjs tests/native-file-menu.js",

@@ -309,17 +309,31 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                   {data?.start_at ? `起点 ${formatClock(data.start_at)}` : '未设置起点'}
                 </div>
               </div>
+              <div className="mt-1.5 flex items-center gap-3 text-[9.5px]" style={{ color: 'var(--text-muted)' }}>
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: KIND_COLORS.model }} />
+                  模型推理 · 上轨
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: KIND_COLORS.tool }} />
+                  工具调用 · 下轨
+                </span>
+              </div>
               <div className="relative h-24 overflow-hidden rounded-md border" style={{ borderColor: 'var(--border-color)', background: 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))' }}>
+                <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed" style={{ borderColor: 'rgba(255,255,255,0.10)' }} />
                 <div className="absolute inset-x-0 top-0 h-full">
                   {timelineSegments.map((segment) => {
                     const color = KIND_COLORS[segment.kind] || KIND_COLORS.other
+                    const onModelTrack = segment.kind === 'model'
                     return (
                       <div
                         key={`${segment.start_at}-${segment.line_no ?? 'n'}-${segment.kind}`}
-                        className="absolute top-2 h-[calc(100%-16px)] rounded-md border border-white/10 shadow-sm"
+                        className="absolute rounded-md border border-white/10 shadow-sm"
                         title={`${segment.label} · ${formatDuration(segment.duration_ms)} · ${segment.start_at} → ${segment.end_at}`}
                         style={{
                           left: `${segment.startPercent}%`,
+                          top: onModelTrack ? '4px' : 'calc(50% + 4px)',
+                          height: 'calc(50% - 8px)',
                           width: `${Math.max(segment.widthPercent, 0.45)}%`,
                           minWidth: 4,
                           background: `linear-gradient(180deg, ${color}cc, ${color}88)`,

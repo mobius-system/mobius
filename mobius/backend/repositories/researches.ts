@@ -3,6 +3,7 @@ import type { ResearchRow } from '../types/rows';
 
 type ResearchVisibility = 'inherit' | 'private' | 'team' | 'public' | 'allowlist';
 type ResearchStatus = 'active' | 'completed';
+type ResearchMode = 'custom' | 'chief_led';
 
 interface ResearchWithProjectRow extends ResearchRow {
   project_name?: string;
@@ -89,6 +90,8 @@ const Researches = {
     db.prepare('UPDATE researches SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, id),
   updateAssistantLimit: (id: string, limit: number) =>
     db.prepare('UPDATE researches SET assistant_limit = ? WHERE id = ?').run(limit, id),
+  updateMode: (id: string, mode: ResearchMode) =>
+    db.prepare('UPDATE researches SET mode = ? WHERE id = ?').run(mode, id),
   updateVisibility: (id: string, visibility: ResearchVisibility) =>
     db.prepare('UPDATE researches SET visibility = ? WHERE id = ?').run(visibility, id),
 

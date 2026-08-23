@@ -60,6 +60,12 @@ import {
   isAssistantSession,
 } from './assistant-session';
 import { markAssistantInternalNotificationPrompt } from './assistant-internal-messages';
+import {
+  continuousInactiveMs,
+  flagKeyForMeta,
+  observeInactiveFlag,
+  observeWorkingFlag,
+} from './forgotten-flag-notify-timing';
 import agents from '../agents';
 
 const SCAN_INTERVAL_MS = 60 * 1000;           // 每 60 秒一轮
@@ -71,12 +77,13 @@ const SCANNER_STARTED_AT_MS = Date.now();
 // 前端预填用同一份). 项目可在设置里用 forgotten_flag_message 覆盖.
 
 // 防刷/首次提醒等待: 同一个 flag 实例按 running.flag 内的稳定 runId/startedAt
-// 识别, 避免自动提醒本身刷新文件 mtime 后把同一个任务误判成新 flag.
-// flag 刚创建且未到 init 时也只记日志、不自动发消息.
+// 识别. 首次等待从扫描器首次观察到 agent 停工时开始, 不从 flag 创建时间开始;
+// 否则长任务一结束就会因 flag 年龄已超过 init 而被立即催促.
 
 const LOG_DIR = BACKEND_WORKER_LOG_DIR;
 const LOG_FILE = path.join(LOG_DIR, 'scan_forgotten_running_flag.log');
-// 通知去重状态 (跨后端重启保留): { [sessionId]: { flagKey, flagMtimeMs, lastNotifiedAt, count } }
+// 通知去重状态 (跨后端重启保留):
+// { [sessionId]: { flagKey, flagMtimeMs, inactiveSince, lastNotifiedAt, count } }
 const NOTIFY_STATE_FILE = path.join(LOG_DIR, 'forgotten_flag_notify_state.json');
 // Session 生命周期回调状态 (跨后端重启保留): 记录已观察到的 running/failed flag 转换.
 const LIFECYCLE_STATE_FILE = path.join(LOG_DIR, 'session_lifecycle_callback_state.json');
@@ -556,15 +563,20 @@ async function maybeNotify(f: any): Promise<string> {
   const sid = s.session_id;
   const backend = backendForSession(s);
   const policy = notifyPolicyForSession(s);
-  const prev = notifyState[sid];
-  const flagKey = fm.runId || fm.startedAt || (fm.content ? `content:${fm.content}` : `mtime:${fm.mtimeMs || 'unknown'}`);
-  const sameFlag = !!prev && (
-    (prev.flagKey && prev.flagKey === flagKey) ||
-    (!prev.flagKey && fm.mtimeMs != null && prev.flagMtimeMs === fm.mtimeMs)
-  );
+  const nowMs = Date.now();
+  const observed = observeInactiveFlag(notifyState[sid], fm, nowMs);
+  const prev = observed.state;
+  const flagKey = flagKeyForMeta(fm);
+  const sameFlag = observed.sameFlag;
   const sentCount = sameFlag && prev ? (Number(prev.count) || 0) : 0;
   const delayMinutes = notifyDelayMinutesForCount(policy, sentCount);
   const delayMs = delayMinutes * 60 * 1000;
+
+  // 持久化连续停工的起点. 即使服务重启, 首次等待也不会退回 flag 年龄口径.
+  if (observed.startedNow) {
+    notifyState[sid] = prev;
+    saveNotifyState();
+  }
 
   // 0) tmux 窗口必须仍存活才发. 发送前重新确认 (而非沿用扫描时采的旧 isAlive,
   //    避免扫描→发送之间窗口刚死的竞态). 窗口不在 → 只记日志, 绝不发送.
@@ -579,17 +591,19 @@ async function maybeNotify(f: any): Promise<string> {
     return 'notify=skip (tmux 窗口已不存在, 仅记录; 不再 spawn 新窗口/创建新 session)';
   }
 
-  // 1) 首次提醒等待: flag 太新 → 只记日志, 不发 (防误伤刚启动的新会话).
-  if (!sameFlag && fm.ageSec != null && fm.ageSec * 1000 < delayMs) {
-    return `notify=skip (flag 太新 ${fm.ageSec}s < ${formatMinutes(delayMinutes)}min 首次等待, 仅记录)`;
+  // 1) 连续停工等待: 每次 agent 从 working 转为 idle 都重新起算. 这既约束首次
+  //    提醒, 也避免 agent 响应提醒后刚结束下一轮就立刻触发后续 backoff 提醒.
+  const inactiveMs = continuousInactiveMs(prev, nowMs);
+  if (inactiveMs < delayMs) {
+    return `notify=skip (agent 连续停工 ${Math.floor(inactiveMs / 1000)}s < ${formatMinutes(delayMinutes)}min 等待, 仅记录)`;
   }
 
   // 2) Patience / 冷却: 同一 flag 实例最多提醒 patience 次, 后续按 backoff 递增等待.
   if (sameFlag && sentCount >= policy.patience) {
     return `notify=skip (同一 flag 已达到 patience=${policy.patience} 次上限, 仅记录; 不改状态/不删 flag)`;
   }
-  if (sameFlag && (Date.now() - (prev.lastNotifiedAt || 0)) < delayMs) {
-    const mins = Math.round((Date.now() - prev.lastNotifiedAt) / 60000);
+  if (sameFlag && (nowMs - (Number(prev.lastNotifiedAt) || 0)) < delayMs) {
+    const mins = Math.round((nowMs - Number(prev.lastNotifiedAt)) / 60000);
     return `notify=skip (同一 flag 已于 ${mins}min 前通知过, 未到 ${formatMinutes(delayMinutes)}min backoff 间隔, 累计 ${sentCount}/${policy.patience} 次)`;
   }
 
@@ -652,8 +666,15 @@ async function maybeNotify(f: any): Promise<string> {
   }
 
   // 7) 更新去重状态并持久化.
-  const count = (sameFlag && prev ? prev.count : 0) + 1;
-  notifyState[sid] = { flagKey, flagMtimeMs: fm.mtimeMs, flagStartedAt: fm.startedAt || null, lastNotifiedAt: Date.now(), count };
+  const count = (sameFlag ? (Number(prev.count) || 0) : 0) + 1;
+  notifyState[sid] = {
+    ...prev,
+    flagKey,
+    flagMtimeMs: fm.mtimeMs,
+    flagStartedAt: fm.startedAt || null,
+    lastNotifiedAt: Date.now(),
+    count,
+  };
   saveNotifyState();
 
   return `notify=SENT (src=${msgSrc}, init=${policy.initMinutes}min, backoff=${policy.backoff}, patience=${policy.patience}, scope=${policy.scope}, flagKey=${JSON.stringify(flagKey)}, paste-到现有TUI, 第 ${count} 次, 字数=${message.length})`;
@@ -777,11 +798,20 @@ async function scanOnce(): Promise<void> {
         try { jobAccomplished = backend.isJobGoalAccomplished(s.session_id); } catch {}
       }
 
+      const fm = readFlagMeta(flagPath);
+      if (isWorking === true) {
+        const prevState = notifyState[s.session_id];
+        const nextState = observeWorkingFlag(prevState, fm);
+        if (nextState !== prevState) {
+          notifyState[s.session_id] = nextState;
+          saveNotifyState();
+        }
+      }
+
       // 命中条件: flag 还在 但 agent 已停工. jobAccomplished 只作辅助信息写进日志,
       // 不参与判定本身, 避免 backend 实现差异影响扫描一致性.
       // 推入 findings, 后面写诊断 + 发提醒.
       if (isWorking === false) {
-        const fm = readFlagMeta(flagPath);
         findings.push({ s, flagPath, isAlive, isWorking, jobAccomplished, fm });
       }
     }

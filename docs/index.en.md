@@ -4,7 +4,7 @@
 
 Mobius is — as far as we know — the world's first **self-evolving** open-source Agent operating system, an AI workbench that can continuously self-iterate according to personalized needs. Here, your role shifts from *AI user* to *Agent commander*: any number of development projects, any number of servers / PCs / embedded devices, any number of ordinary tasks (Issues) and research tasks (Research) — with a single sentence, an idea immediately takes root in the right place.
 
-- 🔗 Source: [nutshellai-tech/mobius](https://github.com/nutshellai-tech/mobius)
+- 🔗 Source: [mobius-system/mobius](https://github.com/mobius-system/mobius)
 - 🌐 Website: [mobius.nutshellai.cn](https://mobius.nutshellai.cn/)
 
 ## Quick Start

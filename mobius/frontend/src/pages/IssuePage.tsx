@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Bot, CircleDot, ChevronDown, ChevronRight, FlaskConical, MessageSquare, MessageSquarePlus, Plus } from 'lucide-react'
+import { CircleDot, ChevronDown, ChevronRight, FlaskConical, MessageSquare, MessageSquarePlus, Plus } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo, timeAgoPrecise } from '../components/shell'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
@@ -607,9 +607,6 @@ export default function IssuePage() {
                               aria-current={active ? 'true' : undefined}
                             >
                               <span className="absolute -left-2 top-1/2 w-1.5 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
-                              <span className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md" style={{ background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
-                                {isResearch ? <Bot className="h-3 w-3" /> : <MessageSquare className="h-3 w-3" />}
-                              </span>
                               <span className="min-w-0 flex-1">
                                 <span className="flex min-w-0 items-center gap-1">
                                   <span className="flex-shrink-0 rounded px-1 py-0.5 text-[8px] font-medium leading-3" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>{isResearch ? '智能体' : '会话'}</span>

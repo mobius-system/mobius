@@ -46,6 +46,20 @@ assert.throws(() => team.reserveRecruitment({
   payload: { name: 'A2', purpose: 'new', model: 'gpt-5.5', initial_prompt: 'task', skill_ids: [] },
 }), /limit/)
 
+// 人类直接指定创建 (manual-agents 路径): 超过 limit 不硬拒, 只在台账里记 over_limit 提醒.
+const manual = team.reserveRecruitment({
+  researchId: 'r1',
+  actorSessionId: 'chief1',
+  requestId: 'req-manual-over-limit',
+  payload: { name: 'A2', purpose: 'new', model: 'gpt-5.5', initial_prompt: 'task', skill_ids: [] },
+  enforceLimit: false,
+  enforceGuard: false,
+})
+assert.strictEqual(manual.existing, false)
+assert.strictEqual(manual.overLimit, true)
+assert.strictEqual(manual.action.payload.over_limit, true)
+run(`UPDATE research_team_actions SET status = 'completed' WHERE request_id = 'req-manual-over-limit'`)
+
 const columns = db.prepare('PRAGMA table_info(researches)').all().map(row => row.name)
 assert(columns.includes('mode'))
 assert(columns.includes('assistant_limit'))

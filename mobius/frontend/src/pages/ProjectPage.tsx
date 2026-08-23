@@ -46,8 +46,9 @@ import {
   parsePatienceInput,
 } from '../components/project-page/utils'
 
-const COMPACT_PAGE_SIZE = 10
 const DETAILED_PAGE_SIZE = 6
+const LIST_PAGE_SIZE = 12
+const SIDEBAR_INITIAL_PAGE_SIZE = 10
 const PROJECT_CARD_DENSITY_KEY = 'mobius:project:card-density'
 const PROJECT_META_AUTO_SAVE_DELAY_MS = 700
 
@@ -174,14 +175,14 @@ export default function ProjectPage() {
     package: { label: '打包下载', icon: <Package className="w-4 h-4" strokeWidth={1.8} /> },
   }
   const densityInit = (): ProjectCardDensity => {
-    // 默认固定为详情模式: 仅当用户显式存过「精简」时才回落 compact, 否则一律 detailed.
-    try { return localStorage.getItem(PROJECT_CARD_DENSITY_KEY) === 'compact' ? 'compact' : 'detailed' } catch { return 'detailed' }
+    // 显示密度: 详情卡片 / 详情列表. 旧「精简」密度已删除, 存量 compact 存量值一律回落 detailed.
+    try { return localStorage.getItem(PROJECT_CARD_DENSITY_KEY) === 'list' ? 'list' : 'detailed' } catch { return 'detailed' }
   }
   const [cardDensity, setCardDensity] = useState<ProjectCardDensity>(densityInit)
   useEffect(() => { try { localStorage.setItem(PROJECT_CARD_DENSITY_KEY, cardDensity) } catch {} }, [cardDensity])
-  const pageSize = cardDensity === 'compact' ? COMPACT_PAGE_SIZE : DETAILED_PAGE_SIZE
+  const pageSize = cardDensity === 'list' ? LIST_PAGE_SIZE : DETAILED_PAGE_SIZE
   // 左栏是独立的纵向列表，页容量按实际可用高度动态计算；右侧卡片继续使用密度页容量。
-  const [sidebarPageSize, setSidebarPageSize] = useState(COMPACT_PAGE_SIZE)
+  const [sidebarPageSize, setSidebarPageSize] = useState(SIDEBAR_INITIAL_PAGE_SIZE)
   const [sidebarIssuePage, setSidebarIssuePage] = useState(1)
   const [mainIssuePage, setMainIssuePage] = useState(1)
   const [researchPage, setResearchPage] = useState(1)
@@ -943,7 +944,11 @@ export default function ProjectPage() {
           }
         }} />}
       {showNewResearch && <NewResearchModal projectId={projectId} onClose={() => setShowNewResearch(false)}
-        onCreated={(research: any) => { setShowNewResearch(false); refreshResearches(); navigate(`/u/${userParam}/p/${projectId}/r/${research.id}`) }} />}
+        onCreated={(research: any, options?: { createLeader?: boolean }) => {
+          setShowNewResearch(false); refreshResearches()
+          // 仿 Issue 的"立即创建第一个会话": 立即创建 Leader 时进入 Research 自动打开 Leader 配置.
+          navigate(`/u/${userParam}/p/${projectId}/r/${research.id}${options?.createLeader ? '?newLeader=1' : ''}`)
+        }} />}
       {editingIssue && <RenameIssueModal issue={editingIssue} onClose={() => setEditingIssue(null)}
         onRenamed={() => { setEditingIssue(null); refreshIssues() }} />}
       {editingResearch && <RenameResearchModal research={editingResearch} onClose={() => setEditingResearch(null)}

@@ -1607,75 +1607,38 @@ export function RenameIssueModal({ issue, onClose, onRenamed }: { issue: any; on
 // =====================================================================
 // 新建 / 编辑 Research
 // =====================================================================
-export function NewResearchModal({ projectId, onClose, onCreated }: { projectId: string; onClose: () => void; onCreated: (research: any) => void }) {
+export function NewResearchModal({ projectId, onClose, onCreated }: { projectId: string; onClose: () => void; onCreated: (research: any, options?: { createLeader?: boolean }) => void }) {
   const DRAFT_KEY = `new-research:${projectId}`
   const initialDraft = draftLoad<any>(DRAFT_KEY)
   const [title, setTitle] = useState(initialDraft?.title || '')
   const [desc, setDesc] = useState(initialDraft?.desc || '')
   const [descTouched, setDescTouched] = useState(!!initialDraft?.descTouched)
-  const [mode, setMode] = useState<'chief_led' | 'custom'>(initialDraft?.mode === 'custom' ? 'custom' : 'chief_led')
   const [assistantLimit, setAssistantLimit] = useState(Number(initialDraft?.assistantLimit) || 3)
-  const [chiefName, setChiefName] = useState(initialDraft?.chiefName || '')
-  const [chiefPurpose, setChiefPurpose] = useState(initialDraft?.chiefPurpose || '')
-  const [chiefPrompt, setChiefPrompt] = useState(initialDraft?.chiefPrompt || '')
-  const [chiefPromptTouched, setChiefPromptTouched] = useState(!!initialDraft?.chiefPromptTouched)
-  const [chiefModel, setChiefModel] = useState(initialDraft?.chiefModel || 'codex')
-  const [chiefMemoryConfirmed, setChiefMemoryConfirmed] = useState(initialDraft?.chiefMemoryConfirmed !== false)
-  const [modelOptions, setModelOptions] = useState<any[]>([])
+  const [createLeader, setCreateLeader] = useState(initialDraft?.createLeader !== false)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   const { theme } = useStore()
   const effectiveDesc = descTouched ? desc : title
-  const effectiveChiefName = chiefName.trim() || `${title.trim() || 'Research'} Chief`
-  const effectiveChiefPurpose = chiefPurpose.trim() || effectiveDesc.trim() || title.trim()
-  const effectiveChiefPrompt = chiefPromptTouched ? chiefPrompt : (effectiveDesc || title)
   useEffect(() => {
-    draftSave(DRAFT_KEY, {
-      title, desc: descTouched ? desc : '', descTouched, mode, assistantLimit,
-      chiefName, chiefPurpose, chiefPrompt: chiefPromptTouched ? chiefPrompt : '',
-      chiefPromptTouched, chiefModel, chiefMemoryConfirmed,
-    })
-  }, [DRAFT_KEY, title, desc, descTouched, mode, assistantLimit, chiefName, chiefPurpose, chiefPrompt, chiefPromptTouched, chiefModel, chiefMemoryConfirmed])
-  useEffect(() => {
-    let alive = true
-    api('/api/sessions/model-options').then((rows: any) => {
-      if (!alive) return
-      const list = Array.isArray(rows) ? rows : []
-      setModelOptions(list)
-      if (list.length > 0 && !list.some((item: any) => item.key === chiefModel)) setChiefModel(list[0].key)
-    }).catch(() => {})
-    return () => { alive = false }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    draftSave(DRAFT_KEY, { title, desc: descTouched ? desc : '', descTouched, assistantLimit, createLeader })
+  }, [DRAFT_KEY, title, desc, descTouched, assistantLimit, createLeader])
   const submit = async () => {
     if (!title.trim()) { setErr('请填写研究标题'); return }
     if (!Number.isInteger(assistantLimit) || assistantLimit < 1 || assistantLimit > 12) { setErr('Assistant limit 必须是 1-12 的整数'); return }
-    if (!effectiveChiefPrompt.trim()) { setErr('请填写 Chief 初始 Prompt'); return }
-    if (!chiefMemoryConfirmed) { setErr('请明确确认 Chief 的 Memory 选择'); return }
     const submittedDescription = effectiveDesc.trim() || title.trim()
     setLoading(true); setErr('')
     try {
+      // Research 本身默认不创建任何 Agent; 组队方式 (AI-Leader / 人工自定义) 进入 Research 后再选.
       const research = await api(`/api/projects/${projectId}/researches`, {
         method: 'POST',
         body: JSON.stringify({
           title,
           description: submittedDescription,
-          mode,
           assistant_limit: assistantLimit,
-          chief: {
-            name: effectiveChiefName,
-            purpose: effectiveChiefPurpose,
-            initial_prompt: effectiveChiefPrompt.trim(),
-            model: chiefModel,
-            language: 'zh',
-            skill_ids: ['research-chief-agent'],
-            memory_ids: [],
-            memory_selection_confirmed: chiefMemoryConfirmed,
-          },
         }),
       })
       draftClear(DRAFT_KEY)
-      onCreated(research)
+      onCreated(research, { createLeader })
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
   }
   return (
@@ -1693,52 +1656,20 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
             overlayTitle="编辑研究描述"
             className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setMode('chief_led')}
-              className="rounded-xl border p-3 text-left" style={{ borderColor: mode === 'chief_led' ? '#10b981' : 'var(--input-border)', background: mode === 'chief_led' ? 'rgba(16,185,129,.10)' : 'var(--input-bg)' }}>
-              <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Chief 主导</div>
-              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>初始仅创建 Chief，讨论后由 Chief 招募。</div>
-            </button>
-            <button type="button" onClick={() => setMode('custom')}
-              className="rounded-xl border p-3 text-left" style={{ borderColor: mode === 'custom' ? '#3b82f6' : 'var(--input-border)', background: mode === 'custom' ? 'rgba(59,130,246,.10)' : 'var(--input-bg)' }}>
-              <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>自定义模式</div>
-              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>创建 Research 后由用户手工配置团队。</div>
-            </button>
-          </div>
           <label className="block text-[12px]" style={{ color: 'var(--text-secondary)' }}>
-            Assistant limit（Chief 不占名额，默认 3）
+            Assistant limit（AI-Leader 的招募上限，Leader 不占名额，默认为3；真人用户后续补建不受此限）
             <input type="number" min={1} max={12} value={assistantLimit}
               onChange={e => { setAssistantLimit(Number(e.target.value)); setErr('') }}
               className="mt-1 w-full h-9 px-3 rounded-xl focus:outline-none"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
           </label>
-          {(
-            <div className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-card)' }}>
-              <div className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>唯一 Chief 配置</div>
-              <input value={effectiveChiefName} onChange={e => { setChiefName(e.target.value); setErr('') }} placeholder="Chief 名称"
-                className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-              <input value={effectiveChiefPurpose} onChange={e => { setChiefPurpose(e.target.value); setErr('') }} placeholder="Chief 职责"
-                className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-              <select value={chiefModel} onChange={e => setChiefModel(e.target.value)}
-                className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}>
-                {(modelOptions.length > 0 ? modelOptions : [{ key: 'codex', label: 'Codex' }]).map((item: any) => (
-                  <option key={item.key} value={item.key}>{item.label || item.title || item.key}</option>
-                ))}
-              </select>
-              <div className="rounded-lg px-3 py-2 text-[11px]" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
-                Skill：research-chief-agent（Chief 必选）
-              </div>
-              <label className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                <input type="checkbox" checked={chiefMemoryConfirmed} onChange={e => setChiefMemoryConfirmed(e.target.checked)} />
-                明确选择：Chief 初始不加载额外 Memory
-              </label>
-              <ExpandableTextarea value={effectiveChiefPrompt} onValueChange={value => { setChiefPrompt(value); setChiefPromptTouched(true); setErr('') }}
-                placeholder="Chief 初始 Prompt / 初始研究任务"
-                overlayTitle="编辑 Chief 初始 Prompt"
-                className="w-full h-28 px-3 py-2 rounded-lg text-[12px] focus:outline-none resize-none"
-                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-            </div>
-          )}
+          <ToggleSwitch
+            checked={createLeader}
+            onChange={v => { setCreateLeader(v); setErr('') }}
+            className="flex items-start gap-3 text-[13px] leading-5"
+            style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
+            <span>立即创建 Leader（创建后自动打开 Leader 配置，走 AI-Leader 自动组队）</span>
+          </ToggleSwitch>
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2">
@@ -1746,6 +1677,93 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
           <button onClick={submit} disabled={loading}
             className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
             {loading ? '创建中...' : '创建'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 为已存在的 Research 装配唯一 Leader (Chief): "AI-Leader 自动组队"路径的起点.
+export function NewResearchLeaderModal({ research, onClose, onCreated }: { research: any; onClose: () => void; onCreated: (leaderSession: any, research: any) => void }) {
+  const [leaderName, setLeaderName] = useState(`${research?.title || 'Research'} Leader`)
+  const [leaderPurpose, setLeaderPurpose] = useState(research?.description || research?.title || '')
+  const [leaderPrompt, setLeaderPrompt] = useState(research?.description || research?.title || '')
+  const [leaderModel, setLeaderModel] = useState('codex')
+  const [memoryConfirmed, setMemoryConfirmed] = useState(true)
+  const [modelOptions, setModelOptions] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const { theme } = useStore()
+  useEffect(() => {
+    let alive = true
+    api('/api/sessions/model-options').then((rows: any) => {
+      if (!alive) return
+      const list = Array.isArray(rows) ? rows : []
+      setModelOptions(list)
+      if (list.length > 0 && !list.some((item: any) => item.key === leaderModel)) setLeaderModel(list[0].key)
+    }).catch(() => {})
+    return () => { alive = false }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const submit = async () => {
+    if (!leaderPrompt.trim()) { setErr('请填写 Leader 初始 Prompt'); return }
+    if (!memoryConfirmed) { setErr('请明确确认 Leader 的 Memory 选择'); return }
+    setLoading(true); setErr('')
+    try {
+      const result = await api(`/api/researches/${research.id}/leader`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: leaderName.trim(),
+          purpose: leaderPurpose.trim() || leaderName.trim(),
+          initial_prompt: leaderPrompt.trim(),
+          model: leaderModel,
+          language: 'zh',
+          skill_ids: ['research-chief-agent'],
+          memory_ids: [],
+          memory_selection_confirmed: memoryConfirmed,
+        }),
+      })
+      onCreated(result?.leader_session, result?.research)
+    } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative w-[560px] max-h-[calc(100vh-32px)] overflow-y-auto rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h3 className="text-[15px] font-semibold mb-1" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>创建 Leader · AI-Leader 自动组队</h3>
+        <p className="text-[12px] mb-4" style={{ color: 'var(--text-muted)' }}>Leader 会先与你讨论研究方案，获得你的授权后再自动招募团队。</p>
+        <div className="space-y-3 mb-4">
+          <input value={leaderName} onChange={e => { setLeaderName(e.target.value); setErr('') }}
+            placeholder="Leader 名称"
+            className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          <input value={leaderPurpose} onChange={e => { setLeaderPurpose(e.target.value); setErr('') }} placeholder="Leader 职责"
+            className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          <select value={leaderModel} onChange={e => setLeaderModel(e.target.value)}
+            className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}>
+            {(modelOptions.length > 0 ? modelOptions : [{ key: 'codex', label: 'Codex' }]).map((item: any) => (
+              <option key={item.key} value={item.key}>{item.label || item.title || item.key}</option>
+            ))}
+          </select>
+          <div className="rounded-lg px-3 py-2 text-[11px]" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
+            Skill：research-chief-agent（Leader 必选）
+          </div>
+          <label className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+            <input type="checkbox" checked={memoryConfirmed} onChange={e => setMemoryConfirmed(e.target.checked)} />
+            明确选择：Leader 初始不加载额外 Memory
+          </label>
+          <ExpandableTextarea value={leaderPrompt} onValueChange={setLeaderPrompt}
+            placeholder="Leader 初始 Prompt / 初始研究任务"
+            overlayTitle="编辑 Leader 初始 Prompt"
+            className="w-full h-28 px-3 py-2 rounded-lg text-[12px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+        </div>
+        {err && <ErrBanner>{err}</ErrBanner>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={submit} disabled={loading}
+            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            {loading ? '创建中...' : '创建并启动 Leader'}
           </button>
         </div>
       </div>
@@ -1784,7 +1802,7 @@ export function RenameResearchModal({ research, onClose, onRenamed }: { research
             className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <label className="block text-[12px]" style={{ color: 'var(--text-secondary)' }}>
-            Assistant limit（1-12，Chief 不占名额）
+            Assistant limit（1-12，AI-Leader 的招募上限；真人用户后续补建不受此限）
             <input type="number" min={1} max={12} value={assistantLimit} onChange={e => setAssistantLimit(Number(e.target.value))}
               className="mt-1 w-full h-9 px-3 rounded-xl text-[13px] focus:outline-none"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
