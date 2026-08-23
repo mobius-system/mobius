@@ -30,9 +30,8 @@ One system to connect your team, AI agents, devices, and compute
 
 > **Building a perfect AI system once and for all is like finding the end of a Mobius strip — impossible by design.**
 >
-> `git remote set-url origin https://github.com/mobius-system/mobius.git`
+> Mobius is the world's first **self-evolving** open-source Agent OS. Not a fixed toolbox — a growing productivity system that connects projects, teams, models, devices, compute, and apps into one traceable workspace.
 
----
 
 
 ## News
