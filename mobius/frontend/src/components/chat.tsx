@@ -4713,7 +4713,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                     <div key={mention.sessionId} className="flex min-w-0 max-w-full items-center gap-2 rounded-md border px-2 py-1.5 text-[12px]" style={{ borderColor: 'rgba(59,130,246,0.25)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-primary)' }}>
                       <Bot className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
                       <span className="max-w-48 truncate">@{mention.name}</span>
-                      <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'rgba(59,130,246,0.22)', color: 'var(--text-muted)' }}>
+                      <span className="whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'rgba(59,130,246,0.22)', color: 'var(--text-muted)' }}>
                         {mention.mode === 'bidirectional' ? '双向' : '只读'}
                       </span>
                       <button
