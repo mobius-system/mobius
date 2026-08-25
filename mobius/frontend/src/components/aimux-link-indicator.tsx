@@ -162,11 +162,11 @@ function RemoteAimuxMcpIndicatorInner({ session }: { session: unknown }) {
       title={label}
       data-testid="remote-aimux-mcp-indicator"
       data-connection-status={connected ? 'connected' : 'disconnected'}
-      className={`inline-flex min-h-5 flex-shrink-0 items-center gap-1 transition-colors ${connected ? 'text-green-400' : 'text-red-400'}`}
+      className={`group inline-flex min-h-5 flex-shrink-0 items-center gap-1 transition-colors ${connected ? 'text-green-400' : 'text-red-400'}`}
     >
       <RemoteAimuxMcpIcon className="h-4 w-4 flex-shrink-0" />
       {!connected && (
-        <span className="text-[10px] leading-4 text-red-400">
+        <span className="hidden text-[10px] leading-4 text-red-400 group-hover:inline">
           {disconnectedMessage}
         </span>
       )}
