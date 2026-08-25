@@ -42,7 +42,11 @@
     "test:deepseek-harness-runtime": "\"${DEEPSEEK_HARNESS_NODE:?set DEEPSEEK_HARNESS_NODE to a Node 22.19+ or 24+ executable}\" tests/deepseek-harness-runtime-smoke.mjs",
     "test:self-test": "node tests/self-test.js",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",
-    "start:tsx": "tsx server.js"
+    "start:tsx": "tsx server.js",
+    "test:easy-mode-switching": "node frontend/tests/easy-mode-switching.test.mjs",
+    "test:easy-in-session-density": "node frontend/tests/easy-in-session-density.test.mjs",
+    "test:easy-workspace-keepalive": "node frontend/tests/easy-workspace-keepalive.test.mjs",
+    "test:easy-toggle-entry": "node frontend/tests/easy-toggle-entry.test.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

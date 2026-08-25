@@ -18,7 +18,8 @@ import { useIsMobile } from './resizable-panel'
 import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
-import { setLayoutMode, useLayoutMode } from '../services/layout-mode'
+import { setLayoutMode, useLayoutMode, setSessionDensity, useSessionDensity } from '../services/layout-mode'
+import { LayoutModeToggle } from './layout-mode-toggle'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
@@ -787,7 +788,15 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const layoutMode = useLayoutMode()
+  const sessionDensity = useSessionDensity()
   const easyModeEnabled = layoutMode === 'easy_mode'
+  // 会话页内 (Issue/Research 且选中了会话) 的开关切换的是"呈现密度":
+  // 原地换 ChatArea 的 layout, 不导航不卸载 → 代码对话编辑器等工作区状态全保留.
+  // 非会话区域 (用户主页/项目页/easy_mode 页本身) 仍走全局 layout_mode 切换页面.
+  const inSessionContext = !!(params.issue || params.research) && !!currentSession
+  const sessionEasyEnabled = inSessionContext ? sessionDensity === 'easy' : easyModeEnabled
+  // 极简界面态: 会话页内看呈现密度, 其余页面看全局模式。驱动顶栏右上角的精简渲染。
+  const easyUI = sessionEasyEnabled
   const [showChangePw, setShowChangePw] = useState(false)
   const [showAimuxGuide, setShowAimuxGuide] = useState(false)
   const [showDesktopDownload, setShowDesktopDownload] = useState(false)
@@ -1166,23 +1175,27 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         {/* 中间弹性填充 spacer (整条顶栏已统一挂拖拽, 此处仅占位; 不再单独挂 DesktopDragHandle 以免重复触发)。 */}
         <div className="mobius-topnav-spacer flex-1 self-stretch" aria-hidden style={{ cursor: topnavDrag.enabled ? 'grab' : undefined }} />
 
-        {/* 右侧操作 */}
+        {/* 右侧操作。
+            极简界面态 (easyUI) 下精简为: 搜索 / 存储使用 / 极简⇄专家切换 / 管理中心入口 (+必要窗口控制);
+            专家界面保持完整功能。easyUI 判定: 会话页内看呈现密度, 其余页面看全局模式。 */}
         <div className="mobius-topnav-actions flex min-w-0 flex-shrink-0 items-center gap-1.5 xl:gap-2">
-          {rightExtra}
+          {!easyUI && rightExtra}
           {/* 桌面端 aimux 反向连接状态徽标 — 仅 Electron 检测到时渲染（搜索按钮左侧） */}
-          <AimuxStatusBadge />
+          {!easyUI && <AimuxStatusBadge />}
           {/* 桌面端项目本地路径绑定闸门 — 仅 Electron + 进入未绑定项目时弹窗（替代旧 Electron 注入 overlay） */}
           <ProjectPathBindGate projectId={projectParam} />
           {/* 新建下拉 — 全局 4 类创建 (项目 / Issue / Session / Research Agent) */}
-          <GlobalCreateMenu
-            open={showNewMenu}
-            onOpenChange={setShowNewMenu}
-            onPick={setCreateKind}
-            inProject={inProject}
-            currentProject={currentProject}
-          />
+          {!easyUI && (
+            <GlobalCreateMenu
+              open={showNewMenu}
+              onOpenChange={setShowNewMenu}
+              onPick={setCreateKind}
+              inProject={inProject}
+              currentProject={currentProject}
+            />
+          )}
           {/* 工作区布局切换 (会话 ↔ 代码对话) — 仅 Issue/Research 路由渲染, 桌面端可见 */}
-          <WorkspaceLayoutToggle />
+          {!easyUI && <WorkspaceLayoutToggle />}
           {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
           <TopNavActionElement
             type="button"
@@ -1195,42 +1208,66 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             {/* {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>} */}
           </TopNavActionElement>
           {/* 系统可视化入口 — 固定在搜索按钮右侧，沿用当前用户路由上下文。 */}
-          <TopNavActionElement
-            type="button"
-            onClick={() => navigate(`/u/${userParam}/mobius_overview_cluster`)}
-            title="系统可视化"
-            aria-label="前往系统可视化"
-            data-tour="top-overview-cluster"
-          >
-            <Sparkles className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-          </TopNavActionElement>
-          <TopNavActionElement
-            type="button"
-            onClick={() => setShowGuideHelp(true)}
-            title="帮助与引导"
-            data-tour="top-guide-help"
-            iconOnly
-          >
-            <CircleQuestionMark className="w-3.5 h-3.5" strokeWidth={2} />
-          </TopNavActionElement>
-          <TopNavActionElement
-            as="a"
-            href="https://github.com/mobius-system/mobius.git"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="GitHub"
-            aria-label="GitHub"
-            className="mobius-topnav-github"
-          >
-            <GithubIcon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-          </TopNavActionElement>
+          {!easyUI && (
+            <TopNavActionElement
+              type="button"
+              onClick={() => navigate(`/u/${userParam}/mobius_overview_cluster`)}
+              title="系统可视化"
+              aria-label="前往系统可视化"
+              data-tour="top-overview-cluster"
+            >
+              <Sparkles className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+            </TopNavActionElement>
+          )}
+          {!easyUI && (
+            <TopNavActionElement
+              type="button"
+              onClick={() => setShowGuideHelp(true)}
+              title="帮助与引导"
+              data-tour="top-guide-help"
+              iconOnly
+            >
+              <CircleQuestionMark className="w-3.5 h-3.5" strokeWidth={2} />
+            </TopNavActionElement>
+          )}
+          {!easyUI && (
+            <TopNavActionElement
+              as="a"
+              href="https://github.com/mobius-system/mobius.git"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="GitHub"
+              aria-label="GitHub"
+              className="mobius-topnav-github"
+            >
+              <GithubIcon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+            </TopNavActionElement>
+          )}
           {!IS_DESKTOP && (
             <div data-tour="top-system-status" className="mobius-topnav-status flex shrink-0 items-center gap-2">
+              {/* 存储使用: 极简态保留 (磁盘告警对所有人都重要); 内存/版本仅专家态。 */}
               <DiskIndicator />
-              <MemoryIndicator />
-              <VersionIndicator />
+              {!easyUI && <MemoryIndicator />}
+              {!easyUI && <VersionIndicator />}
             </div>
           )}
+          {/* 极简 ⇄ 专家 独立切换按钮 — 紧邻外观按钮左侧, 一击直达 */}
+          <LayoutModeToggle />
+          {/* 极简态的管理中心直达入口 (仅管理员可见; 专家态藏在用户菜单里) */}
+          {easyUI && user?.role === 'admin' && (
+            <TopNavActionElement
+              type="button"
+              onClick={() => window.openAdminOverlay?.()}
+              title="管理中心"
+              aria-label="管理中心"
+              data-testid="easy-admin-entry"
+            >
+              <Sliders className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+              <span className="text-[12px] font-medium whitespace-nowrap">管理</span>
+            </TopNavActionElement>
+          )}
+          {/* 外观按钮 — 极简态隐藏 (主题/调色盘属专家功能) */}
+          {!easyUI && (
           <div className="relative shrink-0" data-tour="top-theme-toggle">
             <TopNavActionElement
               type="button"
@@ -1353,12 +1390,19 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                   type="button"
                   role="switch"
                   aria-label="简易模式"
-                  aria-checked={easyModeEnabled}
+                  aria-checked={sessionEasyEnabled}
                   data-testid="easy-mode-switch"
                   onClick={() => {
+                    setShowThemeMenu(false)
+                    if (inSessionContext) {
+                      // 会话内原地切换: 只改呈现密度, 不动路由不动全局模式.
+                      // ChatArea 因 layout prop 变化重渲染, 但组件不卸载 →
+                      // SSE/草稿/代码对话 iframe 等全部保活.
+                      setSessionDensity(sessionDensity === 'easy' ? 'professional' : 'easy')
+                      return
+                    }
                     const nextEnabled = !easyModeEnabled
                     setLayoutMode(nextEnabled ? 'easy_mode' : 'normal_mode')
-                    setShowThemeMenu(false)
                     if (nextEnabled) {
                       // 标准页切到简易模式时携带当前会话的 ?session=, 让 EasyModePage 直接
                       // 选中同一会话, 而不是丢回简易主页从最近会话里重新挑一条.
@@ -1377,23 +1421,23 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                   <span className="min-w-0 flex-1">
                     <span className="block text-[12px] font-semibold leading-4">简易模式</span>
                     <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
-                      精简会话界面 · {easyModeEnabled ? '已开启' : '已关闭'}
+                      {inSessionContext ? '会话内原地切换 · ' : '精简会话界面 · '}{sessionEasyEnabled ? '已开启' : '已关闭'}
                     </span>
                   </span>
                   <span
                     className="relative h-5 w-9 shrink-0 rounded-full border transition-colors"
                     style={{
-                      background: easyModeEnabled ? 'color-mix(in srgb, var(--accent-primary) 28%, transparent)' : 'var(--input-bg)',
-                      borderColor: easyModeEnabled ? 'color-mix(in srgb, var(--accent-primary) 46%, var(--border-color))' : 'var(--border-color-strong)',
+                      background: sessionEasyEnabled ? 'color-mix(in srgb, var(--accent-primary) 28%, transparent)' : 'var(--input-bg)',
+                      borderColor: sessionEasyEnabled ? 'color-mix(in srgb, var(--accent-primary) 46%, var(--border-color))' : 'var(--border-color-strong)',
                     }}
                   >
                     <span
                       className="absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-transform"
                       style={{
                         left: 2,
-                        background: easyModeEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
-                        transform: easyModeEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
-                        boxShadow: easyModeEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
+                        background: sessionEasyEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
+                        transform: sessionEasyEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
+                        boxShadow: sessionEasyEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
                       }}
                     />
                   </span>
@@ -1454,8 +1498,10 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               </div>
             )}
           </div>
+          )}
 
-          {/* 用户菜单 */}
+          {/* 用户菜单 — 极简态隐藏 (改名/下载/改密等均属专家功能; 管理员另有直达入口) */}
+          {!easyUI && (
           <div className="relative" data-tour="top-user-menu">
             <TopNavActionElement
               type="button"
@@ -1527,6 +1573,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               </div>
             )}
           </div>
+          )}
           {/* 桌面端自绘窗口控制按钮 (三平台统一自绘; macOS 已改 frame:false 无原生交通灯) */}
           {IS_DESKTOP && <WindowControls />}
         </div>

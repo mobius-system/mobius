@@ -14,6 +14,7 @@ import ResearchGraph from '../components/research-graph'
 import ResearchBlackboard from '../components/research-blackboard'
 import { useEditorAvailability } from '../components/workspace/use-editor-availability'
 import { pollRecursive } from '../services/polling'
+import { useSessionDensity } from '../services/layout-mode'
 
 const ResearchAgentTeamModal = lazy(() => import('../components/research-agent-team-modal')
   .then(mod => ({ default: mod.ResearchAgentTeamModal })))
@@ -33,6 +34,8 @@ export default function ResearchPage() {
   const projectId = params.project || ''
   const researchId = params.research || ''
   const sessionParam = search.get('session') || ''
+  // 会话内呈现密度 (极简/专业): 原地切换 ChatArea 的 layout, 不导航不卸载 (与 IssuePage 一致).
+  const sessionDensity = useSessionDensity()
   const currentView = search.get('view')
   const showGraph = currentView === 'graph'
   const showBlackboard = currentView === 'blackboard'
@@ -507,7 +510,7 @@ export default function ResearchPage() {
           </main>
         ) : currentSession ? (
           <ChatArea
-            layout={(useEditorChat || useCodeConversation) ? 'stacked' : 'default'}
+            layout={(useEditorChat || useCodeConversation) ? 'stacked' : sessionDensity === 'easy' ? 'easy' : 'default'}
             onNewSession={(useEditorChat || useCodeConversation) ? openNewAgent : undefined}
           />
         ) : sessionParam ? (

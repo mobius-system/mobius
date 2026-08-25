@@ -17,6 +17,7 @@ import { useEditorAvailability } from '../components/workspace/use-editor-availa
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/logo-review-demo'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
+import { useSessionDensity } from '../services/layout-mode'
 
 const EditorPane = lazy(() => import('../components/workspace/editor-pane').then(m => ({ default: m.EditorPane })))
 const CodeConversationPane = lazy(() => import('../components/workspace/code-conversation-pane').then(m => ({ default: m.CodeConversationPane })))
@@ -80,6 +81,9 @@ export default function IssuePage() {
   const issueId = params.issue || ''
   const sessionParam = search.get('session') || ''
   const autoOpenNewSession = search.get('newSession') === '1'
+  // 会话内呈现密度 (极简/专业): 原地切换 ChatArea 的 layout, 不导航不卸载,
+  // 代码对话编辑器等工作区状态全部保留. 与全局 layout_mode (决定落在哪个页面) 解耦.
+  const sessionDensity = useSessionDensity()
 
   // ===== 「代码对话」模式: 左 code-server 编辑器 + 右 Session 对话 =====
   const isMobile = useIsMobile()
@@ -703,7 +707,7 @@ export default function IssuePage() {
               - 否则 → SessionOverview */}
         {currentSession ? (
           <ChatArea
-            layout={(useEditorChat || useCodeConversation) ? 'stacked' : 'default'}
+            layout={(useEditorChat || useCodeConversation) ? 'stacked' : sessionDensity === 'easy' ? 'easy' : 'default'}
             onNewSession={(useEditorChat || useCodeConversation) ? () => setShowNewSession(true) : undefined}
           />
         ) : sessionParam ? (
