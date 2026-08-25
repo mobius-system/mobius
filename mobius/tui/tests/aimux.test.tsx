@@ -175,7 +175,7 @@ function testBundleHealthCheck() {
   const win = bundleHealthCheckCode('win32')
   const linux = bundleHealthCheckCode('linux')
   ok(win.includes('aimux.bridge_client') && win.includes('win32_setctime'), 'Windows bundle probe imports the real bridge path and its platform dependency')
-  ok(win.includes("aimux.__version__ == '0.1.24'"), 'bundle probe rejects stale AIMUX versions')
+  ok(win.includes("aimux.__version__ == '0.1.25'"), 'bundle probe rejects stale AIMUX versions')
   ok(!linux.includes('win32_setctime'), 'non-Windows bundle probe does not require the Windows-only package')
 }
 
