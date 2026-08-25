@@ -109,6 +109,31 @@ async function runSelfTest(opts = {}) {
     });
   }
 
+  // —— 2026-08-25 新增端点冒烟(只读) ——
+  await check('会话 GET /api/tasks/recent', async () => {
+    const r = await G('/api/tasks/recent?limit=5');
+    if (!Array.isArray(r)) throw new Error('非数组');
+  });
+  await check('协作 GET /api/agent-bridge/edges', async () => {
+    await G('/api/agent-bridge/edges'); // 200 即可(空列表合法)
+  });
+  await check('耗时 GET /api/sessions/:id/turns', async () => {
+    const projects = await G('/api/projects');
+    const pid = (Array.isArray(projects) && projects.length > 0 && projects[0].id) ? projects[0].id : null;
+    if (!pid) throw new Error('无可用 project');
+    const issues = await G(`/api/projects/${pid}/issues`);
+    const iid = (Array.isArray(issues) && issues.length > 0 && issues[0].id) ? issues[0].id : null;
+    if (!iid) throw new Error('无可用 issue');
+    const sessions = await G(`/api/issues/${iid}/sessions/`);
+    const sid = (Array.isArray(sessions) && sessions.length > 0 && sessions[0].session_id) ? sessions[0].session_id : null;
+    if (!sid) throw new Error('无可用 session');
+    await G(`/api/sessions/${sid}/turns`);
+    await G(`/api/sessions/${sid}/time-consume-waterfall`);
+  });
+  await check('整合 GET /api/integration/conflicts', async () => {
+    await G('/api/integration/conflicts'); // 200 即可
+  });
+
   // —— SSE 流 (连接到第一个事件) ——
   await check('SSE GET /api/sessions/:id/events (首事件)', async () => {
     // 先获取任意 sessionId: projects → issues → sessions

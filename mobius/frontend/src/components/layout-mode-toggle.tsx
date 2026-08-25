@@ -8,6 +8,7 @@ import {
   useLayoutMode,
   useSessionDensity,
 } from '../services/layout-mode'
+import { buildEasyModeUrlFromContext } from '../services/easy-route-state'
 import { TopNavActionElement } from './top-nav-action'
 
 // =====================================================================
@@ -55,8 +56,13 @@ export function LayoutModeToggle() {
     const nextEnabled = layoutMode !== 'easy_mode'
     setLayoutMode(nextEnabled ? 'easy_mode' : 'normal_mode')
     if (nextEnabled) {
-      const sid = currentSession?.session_id
-      navigate(sid ? `/u/${userParam}/easy_mode?session=${encodeURIComponent(sid)}` : `/u/${userParam}/easy_mode`)
+      // research 会话跳 research 区带 agent, 其余带 session — 由统一 builder 构造。
+      navigate(buildEasyModeUrlFromContext({
+        user: userParam,
+        sessionId: currentSession?.session_id,
+        researchId: (currentSession as any)?.research_id,
+        scopeType: (currentSession as any)?.scope_type,
+      }))
     }
     // 关闭(极简→专业)时不在此导航: EasyModePage 的 layoutMode 同步 effect 持有完整
     // 上下文, 由它构造目标 Issue/Research 页 URL (见 shell.tsx 同款注释).
@@ -68,8 +74,12 @@ export function LayoutModeToggle() {
       if (inSessionContext) { if (!easyActive) setSessionDensity('easy'); return }
       if (layoutMode !== 'easy_mode') {
         setLayoutMode('easy_mode')
-        const sid = currentSession?.session_id
-        navigate(sid ? `/u/${userParam}/easy_mode?session=${encodeURIComponent(sid)}` : `/u/${userParam}/easy_mode`)
+        navigate(buildEasyModeUrlFromContext({
+          user: userParam,
+          sessionId: currentSession?.session_id,
+          researchId: (currentSession as any)?.research_id,
+          scopeType: (currentSession as any)?.scope_type,
+        }))
       }
       return
     }

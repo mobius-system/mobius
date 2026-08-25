@@ -109,7 +109,20 @@
 .easy-jsonl-response__heading strong { font-size: 12px; }
 .easy-jsonl-response .jsonl-compact-md { padding: 0; border-radius: 0; background: transparent; font-size: 13px; line-height: 1.72; }
 .easy-jsonl-response .jsonl-compact-md p { margin: .45rem 0; }
-.easy-jsonl-response .jsonl-compact-md pre { max-height: 34rem; border-radius: 12px; }
+.easy-jsonl-response .jsonl-compact-md pre { border-radius: 12px; }
+
+/* 最终回复正文 (conversation 变体): 复用 .prose-chat 排版, 这里只做尺寸与容器适配。
+   关键约束: 不设 line-clamp / max-height / overflow:hidden — 长回复必须自然撑开。 */
+.easy-jsonl-response .jsonl-compact-md--conversation { font-size: 13px; line-height: 1.72; }
+.easy-jsonl-response .jsonl-compact-md--conversation pre { max-width: 100%; overflow-x: auto; margin: .6em 0; }
+.easy-jsonl-response .jsonl-compact-md--conversation .jsonl-compact-md-table-wrap { max-width: 100%; overflow-x: auto; }
+.easy-jsonl-response .jsonl-compact-md--conversation h1,
+.easy-jsonl-response .jsonl-compact-md--conversation h2,
+.easy-jsonl-response .jsonl-compact-md--conversation h3,
+.easy-jsonl-response .jsonl-compact-md--conversation h4 { margin: .8em 0 .35em; line-height: 1.35; }
+.easy-jsonl-response .jsonl-compact-md--conversation h1 { font-size: 1.22em; }
+.easy-jsonl-response .jsonl-compact-md--conversation h2 { font-size: 1.12em; }
+.easy-jsonl-response .jsonl-compact-md--conversation h3 { font-size: 1.05em; }
 
 .easy-jsonl-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
 .easy-jsonl-gallery a { display: block; overflow: hidden; border-radius: 11px; border: 1px solid var(--easy-line); background: var(--bg-primary); }

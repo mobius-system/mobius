@@ -19,6 +19,7 @@ import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
 import { setLayoutMode, useLayoutMode, setSessionDensity, useSessionDensity } from '../services/layout-mode'
+import { buildEasyModeUrlFromContext } from '../services/easy-route-state'
 import { LayoutModeToggle } from './layout-mode-toggle'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 
@@ -1404,10 +1405,14 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                     const nextEnabled = !easyModeEnabled
                     setLayoutMode(nextEnabled ? 'easy_mode' : 'normal_mode')
                     if (nextEnabled) {
-                      // 标准页切到简易模式时携带当前会话的 ?session=, 让 EasyModePage 直接
-                      // 选中同一会话, 而不是丢回简易主页从最近会话里重新挑一条.
-                      const sid = currentSession?.session_id
-                      navigate(sid ? `/u/${userParam}/easy_mode?session=${encodeURIComponent(sid)}` : `/u/${userParam}/easy_mode`)
+                      // 标准页切到简易模式时携带当前会话, 让 EasyModePage 直接选中同一会话;
+                      // research 会话跳 research 区带 agent — 由统一 builder 构造。
+                      navigate(buildEasyModeUrlFromContext({
+                        user: userParam || '',
+                        sessionId: currentSession?.session_id,
+                        researchId: (currentSession as any)?.research_id,
+                        scopeType: (currentSession as any)?.scope_type,
+                      }))
                     }
                     // 关闭简易模式(简易→标准)时不在此导航: EasyModePage 的 layoutMode 同步 effect
                     // 持有完整上下文(currentSession + 已加载 sessions + URL ?session), 由它构造目标

@@ -10,6 +10,7 @@ import { pollRecursive } from './services/polling'
 import { DesktopTitleBar } from './components/window-controls'
 import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services/handle-stale-chunk'
 import { useLayoutMode } from './services/layout-mode'
+import { buildEasyModeUrlFromContext } from './services/easy-route-state'
 import { LayoutModeChoiceModal } from './components/layout-mode-choice-modal'
 
 const Login = lazyWithRetry(() => import('./pages/Login'))
@@ -197,6 +198,7 @@ type AssistantTaskDoneEntry = {
 function AssistantTaskDoneToast() {
   const { user } = useStore()
   const navigate = useNavigate()
+  const layoutMode = useLayoutMode()
   const [entry, setEntry] = useState<AssistantTaskDoneEntry | null>(null)
   // entryRef: 让轮询闭包读到最新"当前是否在展示", 不用把 entry 放进 effect 依赖(避免每次弹/收都重启轮询)
   const entryRef = useRef<AssistantTaskDoneEntry | null>(null)
@@ -339,12 +341,23 @@ function AssistantTaskDoneToast() {
 
   if (!entry || !user) return null
 
-  // 深链到该会话: issue 走 /i/:issue, research 走 /r/:research, 都带 ?session= 选中它
+  // 深链到该会话: 极简模式下跳极简工作台 (research → research 区带 agent, 其余带 session);
+  // 普通模式维持 issue 走 /i/:issue, research 走 /r/:research, 都带 ?session= 选中它。
   const isResearch = entry.scopeType === 'research'
   const containerId = isResearch ? entry.researchId : entry.issueId
-  const openUrl = entry.projectId && containerId
-    ? `/u/${user.id}/p/${entry.projectId}/${isResearch ? 'r' : 'i'}/${containerId}?session=${encodeURIComponent(entry.sessionId)}`
-    : null
+  const openUrl = layoutMode === 'easy_mode'
+    ? (entry.sessionId
+        ? buildEasyModeUrlFromContext({
+            user: user.id,
+            projectId: entry.projectId,
+            sessionId: entry.sessionId,
+            researchId: entry.researchId,
+            scopeType: entry.scopeType,
+          })
+        : null)
+    : entry.projectId && containerId
+      ? `/u/${user.id}/p/${entry.projectId}/${isResearch ? 'r' : 'i'}/${containerId}?session=${encodeURIComponent(entry.sessionId)}`
+      : null
 
   return (
     <ToastCard
@@ -367,13 +380,19 @@ function RootRedirect() {
   return <Navigate to={`/u/${user.id}`} replace />
 }
 
-// 简易模式只接管用户主页和 Issue 会话页。项目页、Research 页、管理页等保持原路由，
+// 简易模式接管用户主页、Issue 会话页和 Research 会话页（Research 必须一并接管，
+// 否则极简用户从 Toast/搜索/链接进入 /r/ 会逃回普通模式）。项目页、管理页等保持原路由，
 // /easy_mode 自身也不参与判断，避免重定向循环。
 function layoutModeTargetPath(pathname: string) {
   const userHome = pathname.match(/^\/u\/([^/]+)\/?$/)
   if (userHome) return { user: userHome[1] }
-  const issuePage = pathname.match(/^\/u\/([^/]+)\/p\/[^/]+\/i\/[^/]+\/?$/)
+  const issuePage = pathname.match(/^\/u\/([^/]+)\/p\/[^/]+\/i\/([^/]+)\/?$/)
   if (issuePage) return { user: issuePage[1] }
+  // Research 页: 记录 project + research + ?session=, 让重定向能构造带 Agent 的极简 URL。
+  const researchPage = pathname.match(/^\/u\/([^/]+)\/p\/([^/]+)\/r\/([^/]+)\/?$/)
+  if (researchPage) {
+    return { user: researchPage[1], projectId: researchPage[2], researchId: researchPage[3] }
+  }
   return null
 }
 
@@ -399,6 +418,24 @@ function AuthenticatedApp() {
     )
   }
   if (modeTarget && layoutMode === 'easy_mode') {
+    // Research 深链: 把 project/research/session 转成极简 research 区参数;
+    // 其余 (主页/Issue 页) 维持原行为 — Issue/Session 上下文由 EasyModePage 从
+    // ?session= 自行解析, 这里只保留原查询串。
+    if ('researchId' in modeTarget && modeTarget.researchId) {
+      const sessionParam = new URLSearchParams(location.search).get('session')
+      return (
+        <Navigate
+          to={buildEasyModeUrlFromContext({
+            user: modeTarget.user,
+            projectId: (modeTarget as any).projectId,
+            researchId: modeTarget.researchId,
+            sessionId: sessionParam,
+            scopeType: 'research',
+          })}
+          replace
+        />
+      )
+    }
     return <Navigate to={`/u/${modeTarget.user}/easy_mode${location.search}${location.hash}`} replace />
   }
   return (
