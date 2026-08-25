@@ -1887,11 +1887,11 @@ function RemoteFileMentionDrawer({
     setPendingAgent(null)
   }, [onPickAgent, pendingAgent])
 
-  // 近期会话 → @ 目标: /api/tasks/recent 不带 model/backend/can_communicate 等字段,
-  // 映射成 MentionAgentSession 后作为只读引用插入 (近期会话不一定是可操作目标).
+  // 近期会话 → @ 目标: /api/tasks/recent 字段较轻，先映射成 MentionAgentSession，
+  // 复用同一套模式选择弹窗；这些会话属于当前用户自己的近期 Session，可开启交流。
   const pickRecentSession = useCallback((session: RecentSession) => {
     if (!onPickAgent) return
-    onPickAgent({
+    setPendingAgent({
       session_id: session.session_id,
       name: session.name || session.session_id,
       description: '',
@@ -1904,9 +1904,9 @@ function RemoteFileMentionDrawer({
       issue_title: session.issue_title || '',
       research_id: session.research_id || null,
       research_title: session.research_title || '',
-    }, 'read_only')
-    onClose()
-  }, [onClose, onPickAgent])
+      can_communicate: true,
+    })
+  }, [onPickAgent])
 
   const filteredAgents = useMemo(() => {
     // 后端已按「精确搜索 → 同 Scope → 同项目 → 运行态 → 最近活跃」稳定排序；
@@ -2111,7 +2111,8 @@ function RemoteFileMentionDrawer({
                           session={session}
                           active={session.session_id === currentSessionId}
                           onClick={() => pickRecentSession(session)}
-                          title={`${session.name || session.session_id} · @ 插入为只读引用`}
+                          variant="mention"
+                          title={`${session.name || session.session_id} · @ 选择引用或交流方式`}
                         />
                       )}
                     />
