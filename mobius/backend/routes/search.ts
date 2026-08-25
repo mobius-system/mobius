@@ -12,7 +12,7 @@
 //
 // 性能边界 (用户主动触发, 非轮询; 仍要保护单 worker 事件循环):
 //   - 候选 session 上限 DEFAULT_CANDIDATES=200 (按 last_active 倒序), 可由 query 抬到 MAX_CANDIDATES.
-//   - 时间范围 range (默认 7d): 仅扫 created_at 在窗口内的 session, 缩小候选集.
+//   - 时间范围 range (默认 7d): 仅扫 last_active 在窗口内的 session, 缩小候选集.
 //   - 有界并发扫描 SCAN_CONCURRENCY=8, 重叠文件 I/O (await 让出事件循环时其它 worker 推进).
 //   - JSONL 按块流式读取, 不因文件体积截掉早期消息; 命中行才 JSON.parse 提取可读片段.
 //   - 单 session 命中片段上限 MAX_FRAGMENTS_PER_SESSION=3, 命中即提前结束该文件扫描.
