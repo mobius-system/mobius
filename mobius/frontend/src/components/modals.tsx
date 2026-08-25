@@ -2936,10 +2936,7 @@ export function NewSessionModal({
     if (m.scope === 'user') {
       const mine = myUpgradedMemoryByName.get(m.name)
       if (mine) {
-        return (<>
-          {upgradedChip()}
-          {cancelUpgradeButton('memory', mine.id, m.name)}
-        </>)
+        return upgradedChip()
       }
       if (allUpgradedMemoryNames.has(m.name)) return upgradedChip('项目已有同名')
       const busy = scopeBusyId === `memory:${m.id}`
@@ -2947,15 +2944,15 @@ export function NewSessionModal({
         <button type="button"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); upgradeScopeItem('memory', m) }}
           disabled={!!scopeBusyId}
-          title="把这条用户级 Memory 复制升级为项目级, 对项目成员可见 (个人原件保留)"
+          title="把这条用户级 Memory 复制转化为项目级, 对项目成员可见 (个人原件保留)"
           className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
           style={{ color: isDark ? '#86efac' : '#15803d', borderColor: isDark ? 'rgba(34,197,94,0.35)' : 'rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)' }}>
-          {busy ? '升级中…' : '升级'}
+          {busy ? '转化中…' : '转化'}
         </button>
       )
     }
     if (m.scope === 'project' && isUpgradedByMe(m)) {
-      return cancelUpgradeButton('memory', m.id, m.name)
+      return upgradedChip()
     }
     return null
   }
