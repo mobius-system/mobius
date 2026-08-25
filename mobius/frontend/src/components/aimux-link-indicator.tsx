@@ -152,7 +152,8 @@ function RemoteAimuxMcpIndicatorInner({ session }: { session: unknown }) {
   if (!aimuxId) return null
 
   const status = connected ? '正常' : '断开'
-  const label = `当前会话与设备${aimuxId}建立了协作链接，请保持桌面客户端或者终端客户端二者之一处于开启状态。当前链接状态：${status}。`
+  const disconnectedMessage = '虽然现在与目标机器连接断开，但依然可依托中枢继续执行任务。'
+  const label = `当前会话与设备${aimuxId}建立了协作链接，请保持桌面客户端或者终端客户端二者之一处于开启状态。当前链接状态：${status}。${connected ? '' : disconnectedMessage}`
 
   return (
     <span
@@ -161,9 +162,14 @@ function RemoteAimuxMcpIndicatorInner({ session }: { session: unknown }) {
       title={label}
       data-testid="remote-aimux-mcp-indicator"
       data-connection-status={connected ? 'connected' : 'disconnected'}
-      className={`inline-flex h-5 w-5 flex-shrink-0 items-center justify-center transition-opacity ${connected ? 'opacity-100' : 'opacity-50'}`}
+      className={`inline-flex min-h-5 flex-shrink-0 items-center gap-1 transition-colors ${connected ? 'text-green-400' : 'text-red-400'}`}
     >
-      <RemoteAimuxMcpIcon className="h-4 w-4 text-[#ff8b00]" />
+      <RemoteAimuxMcpIcon className="h-4 w-4 flex-shrink-0" />
+      {!connected && (
+        <span className="text-[10px] leading-4 text-red-400">
+          {disconnectedMessage}
+        </span>
+      )}
     </span>
   )
 }
