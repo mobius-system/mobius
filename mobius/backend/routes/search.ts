@@ -14,13 +14,14 @@
 //   - 候选 session 上限 DEFAULT_CANDIDATES=200 (按 last_active 倒序), 可由 query 抬到 MAX_CANDIDATES.
 //   - 时间范围 range (默认 7d): 仅扫 created_at 在窗口内的 session, 缩小候选集.
 //   - 有界并发扫描 SCAN_CONCURRENCY=8, 重叠文件 I/O (await 让出事件循环时其它 worker 推进).
-//   - 单 jsonl 文件读取上限 FILE_READ_CAP=1.5MB, 超过只读尾部; 整文件一次小写预判, 无命中直接跳过.
+//   - JSONL 按块流式读取, 不因文件体积截掉早期消息; 命中行才 JSON.parse 提取可读片段.
 //   - 单 session 命中片段上限 MAX_FRAGMENTS_PER_SESSION=3, 命中即提前结束该文件扫描.
 //   - 全局墙钟预算 SEARCH_BUDGET_MS=2 分钟, 超时返回已得部分 + truncated=true.
 //   - 匹配用「原始 JSONL 行小写子串」, 命中行才 JSON.parse 提取可读片段 — 不逐行 parse.
 // =====================================================================
 import express from 'express';
 import fs from 'fs';
+import { StringDecoder } from 'string_decoder';
 import { auth } from '../middleware/auth';
 import { db } from '../../db';
 // @ts-ignore — service 仍是 .js
@@ -46,7 +47,7 @@ const MIN_Q = 2;
 const MAX_Q = 200;
 const DEFAULT_CANDIDATES = 200;
 const MAX_CANDIDATES = 600;
-const FILE_READ_CAP = 1.5 * 1024 * 1024; // 1.5MB, 超过只读尾部
+const JSONL_READ_CHUNK_SIZE = 512 * 1024;
 const MAX_EXTRACTED_TEXT = 200 * 1024; // 单条消息展示文本上限；需覆盖长上下文里的命中窗口
 const MAX_FRAGMENTS_PER_SESSION = 3;
 const DEFAULT_LIMIT = 50;
@@ -129,24 +130,6 @@ interface Fragment {
 
 const fsp = fs.promises;
 
-// 读 jsonl: 超过 FILE_READ_CAP 只读尾部 (最近对话), 否则整文件. 失败返回 null.
-async function readJsonlTailOrFull(p: string): Promise<string | null> {
-  let stat: fs.Stats;
-  try { stat = await fsp.stat(p); } catch { return null; }
-  if (!stat.isFile() || stat.size === 0) return null;
-  try {
-    if (stat.size > FILE_READ_CAP) {
-      const handle = await fsp.open(p, 'r');
-      try {
-        const buf = Buffer.alloc(FILE_READ_CAP);
-        await handle.read(buf, 0, FILE_READ_CAP, stat.size - FILE_READ_CAP);
-        return buf.toString('utf8');
-      } finally { await handle.close(); }
-    }
-    return await fsp.readFile(p, 'utf8');
-  } catch { return null; }
-}
-
 // 匹配器: 把 "大小写敏感 / 全字匹配" 两种维度统一成一个 findIndex(text)->idx 接口.
 // - 子串 (默认): 大小写不敏感走 toLowerCase, 敏感走原样 indexOf.
 // - 全字: 用 lookbehind/lookahead 锚定词边界 (\w = [A-Za-z0-9_], CJK 视为边界), exec().index 即命中起点.
@@ -206,28 +189,46 @@ async function scanSession(sessionId: string, model: any, matcher: Matcher, maxF
   const frags: Fragment[] = [];
   for (const p of paths) {
     if (frags.length >= maxFragments) break;
-    const text = await readJsonlTailOrFull(p);
-    if (!text) continue;
-    // 整文件一次预判: 绝大多数文件不命中关键词, 一次匹配跳过, 避免逐行 parse 的开销.
-    // matcher.findIndex 对子串是 indexOf、对全字是 regex, 与逐行/提取后的判定同一口径, 不会漏判.
-    if (matcher.findIndex(text) < 0) continue;
-    const lines = text.split('\n');
-    for (const line of lines) {
-      if (frags.length >= maxFragments) break;
-      if (!line) continue;
-      // 廉价: 原始行先判命中, 不命中跳过 (不 parse).
-      if (matcher.findIndex(line) < 0) continue;
-      let entry: any;
-      try { entry = JSON.parse(line); } catch { continue; }
-      const ext = extractTextFromEntry(entry);
-      if (!ext) continue;
-      const mIdx = findSearchMatch(ext.text, matcher);
-      if (mIdx < 0) continue;
-      const snippet = windowAround(ext.text, mIdx, matcher.matchLen);
-      const key = ext.role + '|' + snippet.slice(0, 60);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      frags.push({ role: ext.role, snippet, timestamp: ext.timestamp, uuid: entryUuidOf(entry) });
+    let handle: fs.promises.FileHandle;
+    try { handle = await fsp.open(p, 'r'); } catch { continue; }
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile() || stat.size === 0) continue;
+      const buf = Buffer.alloc(JSONL_READ_CHUNK_SIZE);
+      const decoder = new StringDecoder('utf8');
+      let pending = '';
+      let position = 0;
+      const consumeLine = (line: string) => {
+        if (frags.length >= maxFragments || !line || matcher.findIndex(line) < 0) return;
+        let entry: any;
+        try { entry = JSON.parse(line); } catch { return; }
+        const ext = extractTextFromEntry(entry);
+        if (!ext) return;
+        const mIdx = findSearchMatch(ext.text, matcher);
+        if (mIdx < 0) return;
+        const snippet = windowAround(ext.text, mIdx, matcher.matchLen);
+        const key = ext.role + '|' + snippet.slice(0, 60);
+        if (seen.has(key)) return;
+        seen.add(key);
+        frags.push({ role: ext.role, snippet, timestamp: ext.timestamp, uuid: entryUuidOf(entry) });
+      };
+      while (frags.length < maxFragments && position < stat.size) {
+        const readSize = Math.min(buf.length, stat.size - position);
+        const { bytesRead } = await handle.read(buf, 0, readSize, position);
+        if (!bytesRead) break;
+        position += bytesRead;
+        pending += decoder.write(buf.subarray(0, bytesRead));
+        const lines = pending.split('\n');
+        pending = lines.pop() || '';
+        for (const line of lines) {
+          consumeLine(line);
+          if (frags.length >= maxFragments) break;
+        }
+      }
+      pending += decoder.end();
+      if (frags.length < maxFragments && pending) consumeLine(pending);
+    } finally {
+      await handle.close();
     }
   }
   return frags;
@@ -275,7 +276,7 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
   const limit = clampInt(req.query.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
   const maxFragments = clampInt(req.query.max_fragments, MAX_FRAGMENTS_PER_SESSION, 1, 5);
 
-  // 时间范围过滤 (默认 7 天内创建的会话): 缩小候选集以加速 JSONL 扫描.
+  // 时间范围过滤 (默认 7 天内活跃的会话): 缩小候选集以加速 JSONL 扫描.
   // 复用本库惯用法 (见 services/agent-prompt-events.ts): 用 SQLite strftime('now', 修饰符)
   // 直接算截止时刻, 与 created_at 同格式 (strftime('%Y-%m-%dT%H:%M:%fZ','now')), 字符串比较精确无精度漂移.
   // range: '1d' | '7d'(默认) | '30d' | 'all'; 未知值回落默认 7d.
@@ -290,7 +291,9 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
   const params: any[] = [];
   if (projectId) { conds.push('s.project_id = ?'); params.push(projectId); }
   if (rangeModifier) {
-    conds.push("s.created_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now', ?)");
+    // 会话创建时间可能很早, 但其 JSONL 仍会持续追加内容。按 last_active
+    // 过滤才能让近期更新的老会话参与默认搜索；极旧且无活跃时间的存量回落 created_at。
+    conds.push("COALESCE(s.last_active, s.created_at) >= strftime('%Y-%m-%dT%H:%M:%fZ','now', ?)");
     params.push(rangeModifier);
   }
   const whereSql = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
