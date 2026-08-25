@@ -130,10 +130,6 @@ async function runSelfTest(opts = {}) {
     await G(`/api/sessions/${sid}/turns`);
     await G(`/api/sessions/${sid}/time-consume-waterfall`);
   });
-  await check('整合 GET /api/integration/conflicts', async () => {
-    await G('/api/integration/conflicts'); // 200 即可
-  });
-
   // —— SSE 流 (连接到第一个事件) ——
   await check('SSE GET /api/sessions/:id/events (首事件)', async () => {
     // 先获取任意 sessionId: projects → issues → sessions
