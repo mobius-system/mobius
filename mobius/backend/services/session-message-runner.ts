@@ -6,6 +6,7 @@ import agents from '../agents';
 import { resolveSessionWorkspace } from './workspace';
 import { appendSessionInput } from './session-inputs';
 import { syncSkillsToWorkspace } from './session-skills-sync';
+import { storeBridgeToken, writeBridgeCliToWorkspace, type BridgeCredential } from './agent-bridge-cli';
 import { formatBackendSendFailure } from './session-errors';
 import { buildSessionTransferMarkdown, transferReferencePrompt } from './session-transfer';
 import { canOperateSession, canReadSession } from './access-control';
@@ -31,6 +32,7 @@ import {
 } from '../utils/session-flags';
 import { db } from '../../db';
 import { randomUUID } from 'crypto';
+import { HIDDEN_FOLDER_NAME } from '../config';
 
 function httpError(message: string, status: number = 500, category: string = ''): Error {
   const err = new Error(message) as Error & { status?: number; category?: string };
@@ -203,6 +205,22 @@ function buildMentionTransferMarkdown(user: any, sourceSession: any, targetSessi
   }
 }
 
+// 外部通知的桥接凭证: token 落服务端受限目录 (0600), workspace 写入无秘密 CLI.
+// prompt 里只出现 "bridge read 42" 级别的短指令, token 永不进 LLM 上下文.
+function stageBridgeCredential(token: string, channelId: string, workDir: string | null, suffix = ''): BridgeCredential | null {
+  const trimmed = String(token || '').trim();
+  if (!trimmed || !channelId) return null;
+  try {
+    const credential = storeBridgeToken(trimmed, channelId, suffix);
+    if (workDir) {
+      try { writeBridgeCliToWorkspace(workDir, HIDDEN_FOLDER_NAME); } catch {}
+    }
+    return credential;
+  } catch {
+    return null;
+  }
+}
+
 async function runSessionMessage({
   user,
   sessionId,
@@ -327,12 +345,20 @@ async function runSessionMessage({
     timestamp: new Date().toISOString(),
   };
 
+  const externalCredential = isExternalEvent
+    ? stageBridgeCredential(
+        externalEvent!.token,
+        String(externalEvent!.channelId || ''),
+        workDir,
+        externalEvent!.messages && externalEvent!.messages.length > 1 ? 'digest' : 'wake',
+      )
+    : null;
   let finalContent = isExternalEvent
     ? externalEvent!.messages && externalEvent!.messages.length > 1
       ? externalSessionDigestWakePrompt({
           messages: externalEvent!.messages,
           targetSession: sess,
-          token: externalEvent!.token,
+          credential: externalCredential,
           batchId: externalEvent!.batchId,
           threadId: externalEvent!.threadId,
         })
@@ -340,7 +366,7 @@ async function runSessionMessage({
         messageId: externalEvent!.messageId,
         sourceSession: { session_id: externalEvent!.sourceSessionId, name: externalEvent!.sourceSessionName },
         targetSession: sess,
-        token: externalEvent!.token,
+        credential: externalCredential,
       })
     : sessionContentWithAttachments(normalizedContent, normalizedAttachments);
   const bridgeKickoffs: Array<{
@@ -427,12 +453,13 @@ async function runSessionMessage({
         source_session_name: String(sess?.name || '').trim() || normalizedSessionId,
         target_session_name: String(targetSession?.name || '').trim() || targetSession.session_id,
       });
+      const sourceCredential = stageBridgeCredential(token, channel.channelId, workDir, 'src');
       finalContent = [
         finalContent,
         buildBidirectionalMentionPrompt({
           perspective: 'source',
           mode: mention.mode,
-          token,
+          credential: sourceCredential,
           sourceSession: sess,
           targetSession,
           transferMarkdown: sourceTransferMarkdown,
