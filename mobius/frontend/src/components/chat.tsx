@@ -2081,11 +2081,6 @@ function RemoteFileMentionDrawer({
                     )
                   })}
                 </div>
-                {agentListMode === 'scoped' && (
-                  <span className="flex-shrink-0 rounded-md border px-2 py-1.5 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-                    点击智能体选择模式
-                  </span>
-                )}
               </div>
               <div id="mention-agent-session-list" role="tabpanel" className="flex min-h-0 flex-1 flex-col">
               {agentListMode === 'recent' ? (
