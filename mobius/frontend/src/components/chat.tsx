@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock, Sparkles } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock, Sparkles, Eye, MessageCircle } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -1707,7 +1707,7 @@ function RemoteFileMentionDrawer({
   const [agentSessions, setAgentSessions] = useState<MentionAgentSession[]>([])
   const [agentLoading, setAgentLoading] = useState(false)
   const [agentError, setAgentError] = useState('')
-  const [agentMode, setAgentMode] = useState<AgentMentionMode>('read_only')
+  const [pendingAgent, setPendingAgent] = useState<MentionAgentSession | null>(null)
   // 智能体 tab 内的列表范围: 'recent' = 近期活跃会话 (跨项目); 'scoped' = 原同 Scope/同项目相关性列表。
   const [agentListMode, setAgentListMode] = useState<'recent' | 'scoped'>('recent')
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
@@ -1765,7 +1765,7 @@ function RemoteFileMentionDrawer({
   useEffect(() => {
     if (!open) return
     setActiveTab(currentSessionId ? 'agents' : 'files')
-    setAgentMode('read_only')
+    setPendingAgent(null)
   }, [currentSessionId, open])
 
   const loadAgentSessions = useCallback(async () => {
@@ -1799,10 +1799,14 @@ function RemoteFileMentionDrawer({
 
   useEffect(() => {
     if (!open) return
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (pendingAgent) setPendingAgent(null)
+      else onClose()
+    }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [open, onClose])
+  }, [open, onClose, pendingAgent])
 
   // 近期活跃会话（跨项目，登录用户自己的），与 IssuePage 侧栏「近期会话」同数据源。
   useEffect(() => {
@@ -1871,10 +1875,17 @@ function RemoteFileMentionDrawer({
 
   const pickAgent = useCallback((agent: MentionAgentSession) => {
     if (!onPickAgent) return
-    const mode = agentMode === 'bidirectional' && agent.can_communicate === false ? 'read_only' : agentMode
-    onPickAgent(agent, mode)
-    onClose()
-  }, [agentMode, onClose, onPickAgent])
+    setPendingAgent(agent)
+  }, [onPickAgent])
+
+  const confirmAgentMode = useCallback((mode: AgentMentionMode) => {
+    if (!pendingAgent || !onPickAgent) return
+    const resolvedMode = mode === 'bidirectional' && pendingAgent.can_communicate === false
+      ? 'read_only'
+      : mode
+    onPickAgent(pendingAgent, resolvedMode)
+    setPendingAgent(null)
+  }, [onPickAgent, pendingAgent])
 
   // 近期会话 → @ 目标: /api/tasks/recent 不带 model/backend/can_communicate 等字段,
   // 映射成 MentionAgentSession 后作为只读引用插入 (近期会话不一定是可操作目标).
@@ -2071,32 +2082,9 @@ function RemoteFileMentionDrawer({
                   })}
                 </div>
                 {agentListMode === 'scoped' && (
-                  <div className="flex flex-shrink-0 items-center gap-1 rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
-                    <button
-                      type="button"
-                      onClick={() => setAgentMode('read_only')}
-                      className="inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] transition-colors"
-                      style={{
-                        background: agentMode === 'read_only' ? 'rgba(59,130,246,0.12)' : 'transparent',
-                        color: agentMode === 'read_only' ? 'var(--text-primary)' : 'var(--text-muted)',
-                      }}
-                    >
-                      <Search className="h-3.5 w-3.5" strokeWidth={1.8} />
-                      只读引用
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAgentMode('bidirectional')}
-                      className="inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] transition-colors"
-                      style={{
-                        background: agentMode === 'bidirectional' ? 'rgba(59,130,246,0.12)' : 'transparent',
-                        color: agentMode === 'bidirectional' ? 'var(--text-primary)' : 'var(--text-muted)',
-                      }}
-                    >
-                      <ArrowLeftRight className="h-3.5 w-3.5" strokeWidth={1.8} />
-                      开启交流
-                    </button>
-                  </div>
+                  <span className="flex-shrink-0 rounded-md border px-2 py-1.5 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                    点击智能体选择模式
+                  </span>
                 )}
               </div>
               <div id="mention-agent-session-list" role="tabpanel" className="flex min-h-0 flex-1 flex-col">
@@ -2155,8 +2143,6 @@ function RemoteFileMentionDrawer({
                           const relationLabel = agent.group === 'same_scope'
                             ? (agent.scope_type === 'research' ? '同 Research' : '同 Issue')
                             : agent.group === 'same_project' ? '同项目' : '其他项目'
-                          const selectedModeLabel = agentMode === 'bidirectional' && agent.can_communicate === false
-                            ? '只读权限' : agentMode === 'bidirectional' ? '开启交流' : '只读引用'
                           return (
                             <button
                               type="button"
@@ -2189,7 +2175,7 @@ function RemoteFileMentionDrawer({
                               </span>
                               <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
                                 <span className="rounded border px-1.5 py-0.5 text-[9px] leading-3" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-                                  {selectedModeLabel}
+                                  选择模式
                                 </span>
                               </span>
                             </button>
@@ -2246,6 +2232,87 @@ function RemoteFileMentionDrawer({
           </div>
         )}
       </aside>
+      {pendingAgent && (
+        <div className="absolute inset-0 z-[95] flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="mention-agent-mode-title">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+            aria-label="取消选择智能体连接方式"
+            onClick={() => setPendingAgent(null)}
+          />
+          <div
+            className="relative w-full max-w-[430px] overflow-hidden rounded-2xl shadow-2xl"
+            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="min-w-0">
+                <div id="mention-agent-mode-title" className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  选择连接方式
+                </div>
+                <div className="mt-1 truncate text-[11px]" style={{ color: 'var(--text-muted)' }} title={pendingAgent.name || pendingAgent.session_id}>
+                  为「{pendingAgent.name || pendingAgent.session_id}」选择本次 @ 引用的权限
+                </div>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                style={{ color: 'var(--text-muted)' }}
+                aria-label="关闭连接方式选择"
+                onClick={() => setPendingAgent(null)}
+              >
+                <X className="h-4 w-4" strokeWidth={1.9} />
+              </button>
+            </div>
+            <div className="grid gap-3 p-4 sm:grid-cols-2">
+              <button
+                type="button"
+                className="group rounded-xl border p-3 text-left transition-colors hover:border-blue-400/60 hover:bg-blue-500/[0.06] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                style={{ borderColor: 'rgba(59,130,246,0.35)', background: 'rgba(59,130,246,0.06)' }}
+                onClick={() => confirmAgentMode('read_only')}
+              >
+                <div className="mb-3 flex h-16 items-center justify-center rounded-lg border border-blue-400/20 bg-blue-500/[0.05]" aria-hidden="true">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-400/15 text-blue-300"><Eye className="h-4 w-4" strokeWidth={1.8} /></div>
+                    <div className="h-px w-7 bg-blue-300/40" />
+                    <div className="h-7 w-7 rounded-md border border-blue-300/40" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  <Eye className="h-3.5 w-3.5 text-blue-300" strokeWidth={1.8} />
+                  只读引用
+                </div>
+                <div className="mt-1 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>带入对方上下文，只查看不发送消息。</div>
+              </button>
+              <button
+                type="button"
+                disabled={pendingAgent.can_communicate === false}
+                className="group rounded-xl border p-3 text-left transition-colors hover:border-emerald-400/60 hover:bg-emerald-500/[0.06] focus-visible:ring-2 focus-visible:ring-emerald-500/50 disabled:cursor-not-allowed disabled:opacity-45"
+                style={{ borderColor: 'rgba(52,211,153,0.35)', background: 'rgba(52,211,153,0.05)' }}
+                onClick={() => confirmAgentMode('bidirectional')}
+              >
+                <div className="mb-3 flex h-16 items-center justify-center rounded-lg border border-emerald-400/20 bg-emerald-500/[0.05]" aria-hidden="true">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300"><MessageCircle className="h-4 w-4" strokeWidth={1.8} /></div>
+                    <div className="flex w-7 flex-col gap-1"><div className="h-px w-full bg-emerald-300/60" /><div className="h-px w-full bg-emerald-300/35" /></div>
+                    <div className="h-7 w-7 rounded-md border border-emerald-300/40" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  <MessageCircle className="h-3.5 w-3.5 text-emerald-300" strokeWidth={1.8} />
+                  开启交流
+                </div>
+                <div className="mt-1 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                  允许当前会话向对方发送交流请求。{pendingAgent.can_communicate === false ? '该智能体不支持交流。' : ''}
+                </div>
+              </button>
+            </div>
+            <div className="border-t px-5 py-3 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+              你可以在输入框中的智能体标签上随时调整这次引用的方式。
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
