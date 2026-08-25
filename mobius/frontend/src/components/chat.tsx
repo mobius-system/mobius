@@ -3238,7 +3238,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     ? '编辑消息后按 Enter 重新发送...'
     : isNewConversation
       ? '今天有什么计划？'
-      : '发送指令（Shift+Enter 换行 · Ctrl/⌘+V 粘贴文件 · ↑键回溯）...'
+      : '发送指令（Shift+Enter 换行 · Ctrl/⌘+V 粘贴文件/截图 · ↑键回溯 · @引用文件/智能体）...'
 
   const handleChatInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const nextValue = event.target.value

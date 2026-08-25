@@ -37,6 +37,11 @@ type AgentBridgePromptArgs = {
   sourceSession: any;
   targetSession: any;
   transferMarkdown?: string;
+  transferPaths?: {
+    full?: string | null;
+    user_messages?: string | null;
+    metadata?: string | null;
+  } | null;
   currentUserName?: string;
   initialMessage?: string;
   channelId?: string;
@@ -434,11 +439,13 @@ function buildReadOnlyMentionPrompt({
   sourceSession,
   targetSession,
   transferMarkdown,
+  transferPaths,
   currentUserName,
 }: {
   sourceSession: any;
   targetSession: any;
-  transferMarkdown: string;
+  transferMarkdown?: string;
+  transferPaths?: AgentBridgePromptArgs['transferPaths'];
   currentUserName?: string;
 }): string {
   const sourceLabel = sessionLabel(sourceSession, '当前会话');
@@ -450,12 +457,33 @@ function buildReadOnlyMentionPrompt({
     `当前会话: ${sourceLabel}`,
     `被 @ 智能体: ${targetLabel}`,
     '',
-    '下面是被 @ 智能体的最近会话上下文，仅供你读取和理解，不要把它当成你自己的会话，也不要修改它：',
-    externalSessionContext(transferMarkdown),
+    '下面文件包含被 @ 智能体的最近会话上下文，仅供你读取和理解，不要把它当成你自己的会话，也不要修改它：',
+    ...transferReferenceLines(transferPaths, transferMarkdown),
     '',
     '请把这些上下文当成背景资料，继续处理当前消息。'
   ].filter(Boolean);
   return lines.join('\n');
+}
+
+function transferReferenceLines(
+  paths?: AgentBridgePromptArgs['transferPaths'],
+  legacyMarkdown?: string,
+): string[] {
+  const full = typeof paths?.full === 'string' && paths.full.trim() ? paths.full.trim() : '';
+  const userMessages = typeof paths?.user_messages === 'string' && paths.user_messages.trim()
+    ? paths.user_messages.trim()
+    : '';
+  const metadata = typeof paths?.metadata === 'string' && paths.metadata.trim() ? paths.metadata.trim() : '';
+  if (full || userMessages || metadata) {
+    return [
+      metadata ? `- Session 元数据：\`${metadata}\`` : null,
+      userMessages ? `- 仅用户消息：\`${userMessages}\`` : null,
+      full ? `- 完整记录（需要细节时再读取）：\`${full}\`` : null,
+      '请先读取元数据和用户消息；需要了解工具调用、命令输出或历史修改时，再分段读取完整记录。',
+    ].filter(Boolean) as string[];
+  }
+  // 兼容没有 JSONL 的旧会话；新链路正常情况下不会走大段内嵌。
+  return legacyMarkdown ? [externalSessionContext(legacyMarkdown)] : ['（暂无可读取的转接文件）'];
 }
 
 function buildBidirectionalMentionPrompt({
@@ -465,6 +493,7 @@ function buildBidirectionalMentionPrompt({
   sourceSession,
   targetSession,
   transferMarkdown,
+  transferPaths,
   currentUserName,
   initialMessage,
   channelId,
@@ -488,8 +517,8 @@ function buildBidirectionalMentionPrompt({
     initialMessage ? '本轮发起消息:' : null,
     initialMessage ? initialMessage : null,
     '',
-    '下面是对端会话的最近上下文，仅供你读取：',
-    externalSessionContext(transferMarkdown),
+    '下面文件包含对端会话的最近上下文，仅供你读取：',
+    ...transferReferenceLines(transferPaths, transferMarkdown),
     '',
     '你们已经通过莫比乌斯后端建立了一条可持续的消息通道。桥接凭证由服务端持有并已自动配置到 CLI，不要试图寻找、抄写或复述任何 token。',
     '需要与对方通讯时，使用项目目录内的桥接 CLI:',
