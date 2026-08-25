@@ -53,22 +53,13 @@ function protectMath(value) {
     code.push(match);
     return token;
   });
-  source = source.split('\n').map((line) => {
-    const formula = line.trim();
-    const isBareFormula = formula.length > 4 && formula.length < 500
-      && !/[\u3400-\u9fff]/u.test(formula)
-      && !/^(?:[#>|$]|\\\[|\\\(|\\begin\{|[-*+]\s|\d+\.\s|PRCODETOKEN)/.test(formula)
-      && formula.includes('=')
-      && /(?:_\{|\^\{|\\[A-Za-z]+|[ℓπθ∇∑]|\b(?:log|exp|KL|E)\b)/u.test(formula);
-    if (!isBareFormula) return line;
-    const token = `PRMATHTOKEN${math.length}END`;
-    math.push({ tex: formula, display: true });
-    return token;
-  }).join('\n');
+  // Extract explicit delimiters first. Otherwise a single-line equation inside
+  // $$...$$ can be replaced as bare math and the outer block will render that
+  // internal placeholder instead of the original TeX.
   const patterns = [
-    { re: /\\begin\{(equation\*?|align\*?|aligned|gather\*?|cases|split|multline\*?)\}[\s\S]*?\\end\{\1\}/g, display: true, unwrap: (match) => match },
     { re: /\$\$([\s\S]+?)\$\$/g, display: true, unwrap: (_match, body) => body },
     { re: /\\\[([\s\S]+?)\\\]/g, display: true, unwrap: (_match, body) => body },
+    { re: /\\begin\{(equation\*?|align\*?|aligned|gather\*?|cases|split|multline\*?)\}[\s\S]*?\\end\{\1\}/g, display: true, unwrap: (match) => match },
     { re: /\\\(([\s\S]+?)\\\)/g, display: false, unwrap: (_match, body) => body },
     { re: /(^|[^\\$])\$(?![\s$])([^$\n]*?\S)\$(?!\$)/gm, display: false, unwrap: (_match, prefix, body) => ({ prefix, body }) }
   ];
@@ -82,6 +73,18 @@ function protectMath(value) {
       return `${prefix}${token}`;
     });
   }
+  source = source.split('\n').map((line) => {
+    const formula = line.trim();
+    const isBareFormula = formula.length > 4 && formula.length < 500
+      && !/[\u3400-\u9fff]/u.test(formula)
+      && !/^(?:[#>|$]|\\\[|\\\(|\\begin\{|[-*+]\s|\d+\.\s|PR(?:CODE|MATH)TOKEN)/.test(formula)
+      && formula.includes('=')
+      && /(?:_\{|\^\{|\\[A-Za-z]+|[ℓπθ∇∑]|\b(?:log|exp|KL|E)\b)/u.test(formula);
+    if (!isBareFormula) return line;
+    const token = `PRMATHTOKEN${math.length}END`;
+    math.push({ tex: formula, display: true });
+    return token;
+  }).join('\n');
   source = source.replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>');
   source = source.replace(/([A-Za-z}\]ℓπθ])_([A-Za-z{ℓπθ])/gu, '$1\\_$2');
   source = source.replace(/PRCODETOKEN(\d+)END/g, (_match, index) => code[Number(index)] || '');
@@ -880,7 +883,19 @@ function renderConversation() {
   transcript.appendChild(marker);
   for (const turn of state.conversation) {
     if (turn.question) addMessage('user', turn.question, false, '');
-    if (turn.answer) addMessage('assistant', cleanStoredReply(turn.answer), false, turn.run_id);
+    if (turn.answer) {
+      addMessage('assistant', cleanStoredReply(turn.answer), false, turn.run_id, turn.model);
+      continue;
+    }
+    const pending = addMessage('assistant', '正在恢复 Agent 运行状态…', true, turn.run_id, turn.model);
+    if (turn.status === 'running') {
+      pollRun(turn.run_id, pending, { sessionId: turn.session_id, sessionUrl: turn.session_url });
+    } else {
+      pending.querySelector('.body').textContent = turn.error
+        ? `回答失败：${turn.error}`
+        : '回答尚未写回，可以稍后刷新重试。';
+      pending.classList.remove('pending');
+    }
   }
   transcript.scrollTop = transcript.scrollHeight;
   refreshIcons(marker);
@@ -1011,12 +1026,12 @@ async function distillMessageToNote(message, sourceRunId, button) {
   }
 }
 
-function addMessage(role, text, pending = false, runId = '') {
+function addMessage(role, text, pending = false, runId = '', modelLabel = '') {
   const transcript = $('transcript');
   transcript.querySelector('.pr-chat-empty')?.remove();
   const message = document.createElement('article');
   message.className = `pr-msg ${role}${pending ? ' pending' : ''}`;
-  const agentLabel = state.channels.find((channel) => channel.key === state.model)?.label || 'Assistant';
+  const agentLabel = modelLabel || state.channels.find((channel) => channel.key === state.model)?.label || 'Assistant';
   message.innerHTML = `<div class="role"><i>${role === 'user' ? '你' : 'AI'}</i><span>${role === 'user' ? '你的问题' : esc(agentLabel)}</span></div><div class="body">${role === 'assistant' ? renderMd(text) : esc(text).replace(/\n/g, '<br>')}</div>`;
   transcript.appendChild(message);
   if (role === 'assistant' && !pending) {

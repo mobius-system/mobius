@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
 import { TopNav } from '../components/shell'
 import {
-  NewIssueModal, RenameIssueModal, ConfirmModal,
+  NewIssueModal, ConfirmModal,
   NewProjectModal, DeleteProjectModal, PathPickerModal,
   NewResearchModal, RenameResearchModal,
 } from '../components/modals'
@@ -128,7 +128,6 @@ export default function ProjectPage() {
   const [showNewProject, setShowNewProject] = useState(false)
   const [showNewIssue, setShowNewIssue] = useState(false)
   const [showNewResearch, setShowNewResearch] = useState(false)
-  const [editingIssue, setEditingIssue] = useState<any>(null)
   const [editingResearch, setEditingResearch] = useState<any>(null)
   const [confirmAction, setConfirmAction] = useState<IssueConfirmAction | null>(null)
   const [showDelete, setShowDelete] = useState(false)
@@ -899,7 +898,6 @@ export default function ProjectPage() {
                   onCreateIssue={openNewIssue}
                   onCreatePlanningIssue={openNewPlanningIssue}
                   onCreateResearch={openNewResearch}
-                  onEditIssue={setEditingIssue}
                   onEditResearch={setEditingResearch}
                   onIssueConfirm={setConfirmAction}
                   onToggleResearchStatus={toggleResearchStatus}
@@ -949,8 +947,6 @@ export default function ProjectPage() {
           // 仿 Issue 的"立即创建第一个会话": 立即创建 Leader 时进入 Research 自动打开 Leader 配置.
           navigate(`/u/${userParam}/p/${projectId}/r/${research.id}${options?.createLeader ? '?newLeader=1' : ''}`)
         }} />}
-      {editingIssue && <RenameIssueModal issue={editingIssue} onClose={() => setEditingIssue(null)}
-        onRenamed={() => { setEditingIssue(null); refreshIssues() }} />}
       {editingResearch && <RenameResearchModal research={editingResearch} onClose={() => setEditingResearch(null)}
         onRenamed={() => { setEditingResearch(null); refreshResearches() }} />}
       {confirmAction && <ConfirmModal

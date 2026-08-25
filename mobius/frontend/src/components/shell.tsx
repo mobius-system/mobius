@@ -18,6 +18,7 @@ import { useIsMobile } from './resizable-panel'
 import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
+import { RecentSessionGroupList } from './recent-session-group-list'
 import { setLayoutMode, useLayoutMode } from '../services/layout-mode'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 
@@ -687,7 +688,14 @@ function RecentSessionsPanel({
                     </span>
                   </button>
 
-                  <div id={groupDomId} hidden={collapsed} className="relative ml-[18px] border-l pl-1.5" style={{ borderColor: groupContainsCurrent ? 'color-mix(in srgb, var(--accent-primary) 38%, var(--border-color))' : 'var(--border-color)' }}>
+                  <RecentSessionGroupList
+                    id={groupDomId}
+                    hidden={collapsed}
+                    className="relative ml-[18px] border-l pl-1.5"
+                    style={{ borderColor: groupContainsCurrent ? 'color-mix(in srgb, var(--accent-primary) 38%, var(--border-color))' : 'var(--border-color)' }}
+                    groupLabel={group.subjectTitle}
+                    itemLabel={isResearch ? '智能体' : '会话'}
+                  >
                     {group.sessions.map(session => {
                       const to = recentSessionPath(userId, session)
                       const active = session.session_id === activeSessionId
@@ -720,7 +728,7 @@ function RecentSessionsPanel({
                         </LinklessRouteButton>
                       )
                     })}
-                  </div>
+                  </RecentSessionGroupList>
                 </section>
               )
             })}

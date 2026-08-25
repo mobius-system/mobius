@@ -1570,6 +1570,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const { theme, user } = useStore()
   const dark = theme !== 'light'
   const userParam = user?.id
+  const isDesktop = typeof window !== 'undefined' && !!(window as any).mobiusDesktop?.isDesktop
   const DRAFT_KEY = 'gc:new-research-agent'
   const d = draftLoad<any>(DRAFT_KEY) || {}
   const [projectId, setProjectId] = useState(defaultProjectId || d.projectId || '')
@@ -1591,6 +1592,19 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
+  const [workMode, setWorkMode] = useState<'hub' | 'pc' | 'dual' | null>(isDesktop ? 'dual' : null)
+  const [aimuxId, setAimuxId] = useState<string | null>(null)
+  const [pcPath, setPcPath] = useState('')
+
+  useEffect(() => {
+    if (!isDesktop) return
+    const md: any = (window as any).mobiusDesktop
+    md.getBootData?.().then?.((boot: any) => {
+      setAimuxId(typeof boot?.aimuxIdentifier === 'string' && boot.aimuxIdentifier.trim()
+        ? boot.aimuxIdentifier.trim()
+        : null)
+    }).catch(() => setAimuxId(null))
+  }, [isDesktop])
 
   // 主 Skill 强制联动
   const [agentSkills, setAgentSkills] = useState<PickItem[]>([])         // research-agent-skills (可作主skill)
@@ -1711,9 +1725,17 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
     if (blockedReason) { setErr(blockedReason); return }
     if (!researchId) { setErr('请选择目标研究'); return }
     if (!name.trim()) { setErr('请填写 Agent 名称'); return }
+    if (isDesktop && !aimuxId) { setErr('AIMUX 连接异常，请检查连接后重试'); return }
     setLoading(true); setErr('')
     try {
       const finalDesc = appendAttachmentsToDesc(desc.trim() || name, attachments)
+      const pcClientMetadata = isDesktop ? {
+        work_mode: workMode || 'dual',
+        aimux_id: aimuxId,
+        local_path: pcPath || undefined,
+        is_tui: false,
+        add_remote_aimux_mcp: true,
+      } : null
       if (selectedResearch) {
         if (role !== 'research_assistant') {
           setErr('Research 的 Chief 会在创建 Research 时自动建立，不能从这里重复创建')
@@ -1745,6 +1767,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
             recruit_reason: '用户在自定义 Research 模式中明确创建该 Agent，当前任务需要其专长',
             expected_outcome: finalDesc,
             mentions: sessionMentionPayload(selectedMentions),
+            ...(pcClientMetadata ? { pc_client_metadata: pcClientMetadata } : {}),
           }),
         })
         if (s?.error) { setErr(s.error); return }
@@ -1758,6 +1781,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
         mentions: sessionMentionPayload(selectedMentions),
         excluded_skill_ids: Array.from(excludedSkills), excluded_memory_ids: Array.from(excludedMemories),
         suppress_join_notice: true,
+        ...(pcClientMetadata ? { pc_client_metadata: pcClientMetadata } : {}),
       }) })
       if (s?.error) { setErr(s.error); return }
       draftClear(DRAFT_KEY)
@@ -1825,6 +1849,9 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
         researchId={researchId || undefined}
         disabled={!researchId}
       />
+      {isDesktop && (
+        <PcTaskModeSection projectId={projectId || undefined} isDark={dark} onModeChange={setWorkMode} onPathChange={setPcPath} />
+      )}
       <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
       <div>
         <SectionLabel hint="注入上下文语言">语言</SectionLabel>

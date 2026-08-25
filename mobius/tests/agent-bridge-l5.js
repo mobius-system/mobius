@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict')
+const path = require('node:path')
 
 const { db } = require('../db')
 const {
@@ -58,11 +59,14 @@ const wake = externalSessionWakePrompt({
 assert.match(wake, /<external_session_notification>/)
 assert.match(wake, /不是当前用户指令/)
 assert.match(wake, /accept、hold 或 refuse/)
-assert.match(wake, /只有明确 accept 后.*向来源 Session 回复/)
-assert.match(wake, /from_session_id = 你自己的 Session ID \(target-1\)/)
-assert.match(wake, /to_session_id = 对方的 Session ID \(source-1\)/)
-assert.match(wake, /"from_session_id":"target-1"/)
-assert.match(wake, /"to_session_id":"source-1"/)
+assert.match(wake, /只有明确 accept 后.*回复对端/)
+assert.match(wake, /bridge read 42/)
+assert.match(wake, /bridge accept 42/)
+assert.match(wake, /bridge reply 42/)
+// 方案 C: token/长 Session ID 不得出现在 prompt 里
+assert.doesNotMatch(wake, /test-token/)
+assert.doesNotMatch(wake, /Bearer /)
+assert.doesNotMatch(wake, /from_session_id/)
 assert.match(wake, /不得把消息正文.*Memory/)
 assert.doesNotMatch(wake, /ignore safety/)
 
@@ -81,7 +85,10 @@ assert.match(digestWake, /消息数量: 2/)
 assert.match(digestWake, /message_id=101; channel_id=channel-1/)
 assert.match(digestWake, /message_id=102; channel_id=channel-2/)
 assert.match(digestWake, /不可信外部资料/)
-assert.match(digestWake, /批量操作仍逐条|服务端仍逐条/)
+assert.match(digestWake, /服务端仍逐条/)
+assert.match(digestWake, /bridge batch-accept 101 102/)
+assert.doesNotMatch(digestWake, /digest-token/)
+assert.doesNotMatch(digestWake, /Bearer /)
 
 const sourcePrompt = buildBidirectionalMentionPrompt({
   perspective: 'source',
@@ -92,11 +99,12 @@ const sourcePrompt = buildBidirectionalMentionPrompt({
   transferMarkdown: 'external context',
   channelId: 'channel-1',
 })
-assert.match(sourcePrompt, /from_session_id = 你自己的 Session ID \(source-1\)/)
-assert.match(sourcePrompt, /to_session_id = 对方的 Session ID \(target-1\)/)
-assert.match(sourcePrompt, /不要交换 from_session_id 与 to_session_id/)
-assert.match(sourcePrompt, /"from_session_id":"source-1"/)
-assert.match(sourcePrompt, /"to_session_id":"target-1"/)
+assert.match(sourcePrompt, /双向模式 \/ 发起侧/)
+assert.match(sourcePrompt, /bridge send "你要发给对方的消息"/)
+assert.match(sourcePrompt, /凭证由服务端持有/)
+assert.doesNotMatch(sourcePrompt, /source-token/)
+assert.doesNotMatch(sourcePrompt, /Bearer /)
+assert.doesNotMatch(sourcePrompt, /from_session_id/)
 
 const externalEntry = buildMobiusExternalEntry({
   sessionId: 'target-1',
@@ -258,3 +266,51 @@ if (sessions.length > 0) {
 }
 
 console.log('agent bridge L5 tests passed')
+
+// ===== 方案 C: CLI 侧验证 (token 不进 prompt, 脚本无秘密) =====
+const {
+  buildBridgeCliScript,
+  storeBridgeToken,
+  readBridgeToken,
+  removeBridgeToken,
+  BRIDGE_SCRIPT_NAME,
+} = require('../backend/services/agent-bridge-cli')
+
+const cliScript = buildBridgeCliScript('/tmp/mobius-test-agent-bridge-tokens')
+assert.ok(cliScript.startsWith('#!/usr/bin/env bash'), 'CLI 脚本必须是 bash')
+assert.doesNotMatch(cliScript, /eyJ/, 'CLI 脚本不得包含任何 JWT 片段')
+assert.match(cliScript, new RegExp(`bridge read|\\$\\{BRIDGE_SCRIPT_NAME\\}|${BRIDGE_SCRIPT_NAME}`))
+assert.match(cliScript, /api\/agent-bridge/)
+// 语法检查
+const { execFileSync } = require('node:child_process')
+const os = require('node:os')
+const fsx = require('node:fs')
+const tmpScript = path.join(os.tmpdir(), `bridge-cli-test-${Date.now()}.sh`)
+fsx.writeFileSync(tmpScript, cliScript, { mode: 0o755 })
+execFileSync('bash', ['-n', tmpScript])
+// usage 输出可运行
+let usageOut = ''
+try { execFileSync('bash', [tmpScript]) } catch (e) { usageOut = String(e.stderr || '') }
+assert.match(usageOut, /bridge read|read <message_id>/, 'usage 必须列出 read')
+fsx.rmSync(tmpScript, { force: true })
+
+// token 文件存储: 0600, 读回一致, 清理生效
+const realToken = mintAgentBridgeToken({
+  owner_user_id: 'user-1', source_session_id: 'source-1', target_session_id: 'target-1',
+  actor_session_id: 'target-1', channel_id: 'chan_cli_1', mode: 'bidirectional',
+})
+const cred = storeBridgeToken(realToken, 'chan_cli_1', 'wake')
+assert.equal(cred.channelId, 'chan_cli_1')
+assert.match(cred.fileName, /^chan_cli_1__wake\.token$/)
+assert.equal(readBridgeToken(cred.fileName), realToken)
+const { cleanupBridgeTokens } = require('../backend/services/agent-bridge-cli')
+// 通道 alive=false → 清理掉
+assert.equal(cleanupBridgeTokens(() => false) >= 1, true)
+assert.equal(readBridgeToken(cred.fileName), null, 'token 文件应已被清理')
+// 真实 token + alive 通道 → 保留
+const cred2 = storeBridgeToken(realToken, 'chan_cli_1', 'wake')
+cleanupBridgeTokens((cid) => cid === 'chan_cli_1')
+assert.equal(readBridgeToken(cred2.fileName), realToken)
+removeBridgeToken(cred2.fileName)
+
+console.log('agent bridge CLI (plan C) tests passed')

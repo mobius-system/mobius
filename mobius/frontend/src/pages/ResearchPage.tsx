@@ -851,6 +851,7 @@ function DeleteResearchAgentModal({ session, onClose, onDelete }: {
 }) {
   const { theme } = useStore()
   const isDark = theme !== 'light'
+  const [mode, setMode] = useState<'notify' | 'direct'>('notify')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   const agentName = session?.name || session?.session_id || '这个研究智能体'
@@ -859,13 +860,19 @@ function DeleteResearchAgentModal({ session, onClose, onDelete }: {
     setLoading(true)
     setErr('')
     try {
-      await onDelete(true)
+      await onDelete(mode === 'notify')
     } catch (e: any) {
       setErr(e?.message || '删除失败')
     } finally {
       setLoading(false)
     }
   }
+
+  const optionStyle = (active: boolean) => ({
+    background: active ? (isDark ? 'rgba(16,185,129,0.13)' : 'rgba(16,185,129,0.08)') : 'var(--input-bg)',
+    borderColor: active ? 'rgba(16,185,129,0.55)' : 'var(--input-border)',
+    color: 'var(--text-primary)',
+  })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -884,11 +891,29 @@ function DeleteResearchAgentModal({ session, onClose, onDelete }: {
           </div>
         </div>
 
-        <div className="mb-4 rounded-lg border px-3 py-2.5" style={{ background: isDark ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.06)', borderColor: 'rgba(16,185,129,0.45)' }}>
-          <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>由 HR 通告并交接</div>
-          <div className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            HR 会在 Blackboard 写入离队原因和任务交接，再关闭并删除这个 Research Agent。Research Agent 不允许静默离队。
-          </div>
+        <div className="space-y-2 mb-4">
+          <button type="button" disabled={loading} onClick={() => { setMode('notify'); setErr('') }}
+            className="w-full rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-50"
+            style={optionStyle(mode === 'notify')}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] font-medium">告知其他智能体</span>
+              <span className="h-3.5 w-3.5 rounded-full border" style={{ borderColor: mode === 'notify' ? '#10b981' : 'var(--input-border)', background: mode === 'notify' ? '#10b981' : 'transparent' }} />
+            </div>
+            <div className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              先由 HR 在黑板（Blackboard）写下该智能体已离开团队，再删除。
+            </div>
+          </button>
+          <button type="button" disabled={loading} onClick={() => { setMode('direct'); setErr('') }}
+            className="w-full rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-50"
+            style={optionStyle(mode === 'direct')}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] font-medium">直接删除</span>
+              <span className="h-3.5 w-3.5 rounded-full border" style={{ borderColor: mode === 'direct' ? '#10b981' : 'var(--input-border)', background: mode === 'direct' ? '#10b981' : 'transparent' }} />
+            </div>
+            <div className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              不通知 HR，也不写黑板记录，直接删除这个 Research Agent。
+            </div>
+          </button>
         </div>
 
         {err && <ErrBanner>{err}</ErrBanner>}
@@ -901,7 +926,7 @@ function DeleteResearchAgentModal({ session, onClose, onDelete }: {
           </button>
           <button onClick={submit} disabled={loading}
             className="flex-1 h-9 rounded-xl text-[13px] text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-40">
-            {loading ? '删除中...' : '由 HR 通告并删除'}
+            {loading ? '删除中...' : (mode === 'notify' ? '写入并删除' : '直接删除')}
           </button>
         </div>
       </div>

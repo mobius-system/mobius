@@ -44,7 +44,6 @@ type ProjectItemsPanelProps = {
   onCreateIssue: () => void
   onCreatePlanningIssue?: () => void
   onCreateResearch: () => void
-  onEditIssue: (issue: any) => void
   onEditResearch: (research: any) => void
   onIssueConfirm: (action: IssueConfirmAction) => void
   onToggleResearchStatus: (research: any, status: 'active' | 'completed') => void
@@ -79,7 +78,6 @@ export function ProjectItemsPanel({
   onCreateIssue,
   onCreatePlanningIssue,
   onCreateResearch,
-  onEditIssue,
   onEditResearch,
   onIssueConfirm,
   onToggleResearchStatus,
@@ -263,7 +261,6 @@ export function ProjectItemsPanel({
           canCreateIssue={canCreateIssue}
           onCreateIssue={onCreateIssue}
           onCreatePlanningIssue={onCreatePlanningIssue}
-          onEditIssue={onEditIssue}
           onIssueConfirm={onIssueConfirm}
           onToggleIssueStar={onToggleIssueStar}
         />
@@ -312,7 +309,6 @@ type IssueListProps = {
   canCreateIssue: boolean
   onCreateIssue: () => void
   onCreatePlanningIssue?: () => void
-  onEditIssue: (issue: any) => void
   onIssueConfirm: (action: IssueConfirmAction) => void
   onToggleIssueStar: (issue: any) => void
 }
@@ -332,7 +328,6 @@ function IssueList({
   canCreateIssue,
   onCreateIssue,
   onCreatePlanningIssue,
-  onEditIssue,
   onIssueConfirm,
   onToggleIssueStar,
 }: IssueListProps) {
@@ -385,7 +380,6 @@ function IssueList({
             userParam={userParam}
             projectId={projectId}
             listView={listView}
-            onEdit={onEditIssue}
             onConfirm={onIssueConfirm}
             onToggleStar={onToggleIssueStar}
           />

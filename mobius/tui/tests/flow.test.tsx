@@ -35,6 +35,7 @@ function ok(c: boolean, m: string) { c ? (pass++, console.log(`  ✓ ${m}`)) : (
 
 // ── mocked backend (precise URL matchers — substring overlaps broke an earlier draft) ─
 const PID = 'proj-1', IID = 'issue-1', SID = 'sess-1'
+let lastMessageBody: any = null
 function mockFetch(url: string, init?: RequestInit): Response {
   // SSE
   if (url.includes('/events')) {
@@ -56,6 +57,18 @@ function mockFetch(url: string, init?: RequestInit): Response {
     return json([{ session_id: SID, name: '历史会话一', last_active: new Date(Date.now() - 3600_000).toISOString(), message_count: 5, model: 'codex', issue_title: '命令行任务' }])
   }
   if (url.endsWith('/messages') && method === 'POST') {
+    lastMessageBody = JSON.parse(String(init?.body || '{}'))
+    // /compact turns come back as claude-code local-command artifacts (command
+    // echo + completion stdout) instead of an assistant reply.
+    if (String(lastMessageBody?.content || '').trim() === '/compact') {
+      setTimeout(() => {
+        emit('typing', { active: true })
+        emit('jsonl_entry', { session_id: SID, entry: { type: 'user', uuid: 'flow-cmd-echo', message: { role: 'user', content: '<command-name>/compact</command-name><command-message>compact</command-message><command-args></command-args><local-command-caveat>no need to respond</local-command-caveat>' } } })
+        emit('jsonl_entry', { session_id: SID, entry: { type: 'user', uuid: 'flow-cmd-done', message: { role: 'user', content: [{ type: 'text', text: '<local-command-stdout>Compacted. Your new context length is 8,840 tokens</local-command-stdout>' }] } } })
+        emit('typing', { active: false })
+      }, 200)
+      return json({ ok: true, session_id: SID, turn_number: 2 })
+    }
     setTimeout(() => {
       emit('typing', { active: true })
       emit('jsonl_entry', { session_id: SID, entry: { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '已收到，这是来自 TUI 的回复。' }] } } })
@@ -204,6 +217,14 @@ async function main() {
     ok(await waitFor(lastFrame, '输入问题'), '/model creates a fresh session and returns to chat')
     ok((lastFrame() ?? '').includes('?session=sess-1'), '/model new session attached')
     snap('7-after-model', lastFrame() ?? '')
+
+    // ── /compact: dispatch the literal command on the live session ────────
+    await delay(400)
+    stdin.write('/compact'); await delay(200)
+    stdin.write('\r')
+    ok(await waitFor(lastFrame, '上下文已压缩', 6000), '/compact renders the compact completion system line')
+    ok(lastMessageBody?.content === '/compact', '/compact posts the literal command to the session (web parity)')
+    snap('7b-after-compact', lastFrame() ?? '')
 
     // ── /logout ─────────────────────────────────────────────────────────────
     await delay(400)

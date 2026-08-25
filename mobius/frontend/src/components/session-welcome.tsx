@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { BookOpen, Brain, Clock3, Eye, GitBranch, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
+import { BookOpen, Brain, Clock3, Eye, GitBranch, GitFork, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
 import { api } from '../store'
 import { DevPortsBar } from './dev-ports-bar'
 import { normalizeGithubSkillInput } from './skills'
@@ -994,7 +994,7 @@ export function SessionSkillMemoryEditor({
           />
           <ResourceTabButton
             label="Git"
-            icon={<GitBranch className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.9} />}
+            icon={<GitFork className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.9} />}
             active={gitActive}
             activeClass="border-amber-400 font-medium"
             idleClass="border-transparent hover:bg-amber-500/10"
