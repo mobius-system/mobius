@@ -616,7 +616,7 @@ export default function UserPage() {
                     data-project-hierarchy-search
                     placeholder="搜索项目、任务或会话..."
                     className="h-8 w-full rounded-lg pl-8 pr-8 text-[12px] focus:outline-none focus:border-blue-500/30"
-                    style={{ background: 'var(--input-bg)', color: 'var(--text-primary)' }} />
+                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                   {hierarchySearchLoading ? (
                     <LoaderCircle className="absolute right-2.5 top-[9px] h-3.5 w-3.5 animate-spin" style={{ color: '#60a5fa' }} />
                   ) : search ? (
@@ -627,7 +627,7 @@ export default function UserPage() {
                     </button>
                   ) : null}
                 </div>
-                <div className="flex flex-wrap items-center gap-1 rounded-lg p-1" style={{ background: 'var(--input-bg)' }}>
+                <div className="flex flex-wrap items-center gap-1 rounded-lg border p-1" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
                   <button type="button" onClick={() => setProjectFilters([])} title="显示全部未屏蔽项目"
                     className={`h-7 rounded-md px-3 text-[11px] transition-colors ${projectFilters.length === 0 ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'}`}
                     style={projectFilters.length !== 0 ? { color: 'var(--text-muted)' } : undefined}>全部</button>
