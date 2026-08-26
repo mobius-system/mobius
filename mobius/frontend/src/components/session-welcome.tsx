@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { BookOpen, Brain, Clock3, Eye, GitBranch, GitFork, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Settings2, Upload, X } from 'lucide-react'
 import { api } from '../store'
 import { DevPortsBar } from './dev-ports-bar'
@@ -647,6 +647,8 @@ export function SessionSkillMemoryEditor({
   const [gitError, setGitError] = useState('')
   const [gitRefreshKey, setGitRefreshKey] = useState(0)
   const [gitScanMeta, setGitScanMeta] = useState<{ cached: boolean; scannedAt: string }>({ cached: false, scannedAt: '' })
+  const controlsRef = useRef<HTMLDivElement | null>(null)
+  const [controlColumns, setControlColumns] = useState(1)
   const [activePanel, setActivePanel] = useState<null | SessionResourcePanel>(() => {
     if (persistActivePanel) {
       const stored = readStoredActivePanel()
@@ -660,6 +662,29 @@ export function SessionSkillMemoryEditor({
     if (persistActivePanel) writeStoredActivePanel(next)
   }, [persistActivePanel])
   const buttonGroup = useUnifiedButtonGroup()
+
+  useLayoutEffect(() => {
+    const controls = controlsRef.current
+    if (!controls) return
+    const updateColumns = () => {
+      const buttonCount = controls.querySelectorAll(':scope > button').length
+      if (buttonCount === 0 || controls.clientWidth === 0) return
+      const gap = Number.parseFloat(window.getComputedStyle(controls).columnGap) || 6
+      const maxColumns = Math.max(1, Math.floor((controls.clientWidth + gap) / (36 + gap)))
+      const rows = Math.ceil(buttonCount / maxColumns)
+      const columns = Math.ceil(buttonCount / rows)
+      setControlColumns(previous => previous === columns ? previous : columns)
+    }
+    const resizeObserver = new ResizeObserver(updateColumns)
+    const mutationObserver = new MutationObserver(updateColumns)
+    resizeObserver.observe(controls)
+    mutationObserver.observe(controls, { childList: true })
+    updateColumns()
+    return () => {
+      resizeObserver.disconnect()
+      mutationObserver.disconnect()
+    }
+  }, [])
 
   useEffect(() => {
     if (activePanel && buttonGroup?.hiddenIds.has(activePanel)) setActivePanelAndPersist(null)
@@ -899,7 +924,13 @@ export function SessionSkillMemoryEditor({
     <>
       <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-3">
         {/* 所有会话操作共用一个流式按钮带。隐藏按钮或侧栏变窄时，浏览器按真实可用空间自动回填与换行。 */}
-        <div className="advanced-session-actions mobius-chat-input-actions session-resource-tabs flex flex-wrap content-start justify-center gap-1.5" data-testid="advanced-session-actions" aria-label="高级会话按钮组">
+        <div
+          ref={controlsRef}
+          className="advanced-session-actions mobius-chat-input-actions session-resource-tabs session-resource-tabs--balanced flex flex-wrap content-start justify-center gap-1.5"
+          style={{ '--session-control-columns': controlColumns } as CSSProperties}
+          data-testid="advanced-session-actions"
+          aria-label="高级会话按钮组"
+        >
           {leadingControls}
           <ResourceTabButton
             buttonId="skill"

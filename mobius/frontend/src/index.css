@@ -899,6 +899,12 @@ body::after {
 /* 让 root 上的应用层堆叠在底层流动层之上 */
 #root { position: relative; z-index: 1; }
 
+/* 会话控制带根据真实可用宽度计算目标列数：同一行按钮数量接近，最后一行居中。 */
+.session-resource-tabs--balanced > button {
+  flex: 0 0 calc((100% - (var(--session-control-columns) - 1) * 0.375rem) / var(--session-control-columns));
+  min-width: 0 !important;
+}
+
 /* 尊重用户的「减少动效」偏好 */
 @media (prefers-reduced-motion: reduce) {
   .mobius-bg-flow body::before,
