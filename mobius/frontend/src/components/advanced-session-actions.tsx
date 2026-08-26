@@ -146,7 +146,7 @@ export function AdvancedSessionActions({
             displayLabel={menu}
             icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
           />
-        ) : (
+        ) : variant !== 'default' ? (
           <AdvancedInteractionBtn
             onClick={onOpenKnowledge}
             disabled={!canOpenKnowledge}
@@ -156,7 +156,7 @@ export function AdvancedSessionActions({
             displayLabel={menu}
             icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
           />
-        )}
+        ) : null}
         <AdvancedInteractionBtn
           onClick={onSendProjectKnowledge}
           disabled={!canSendProjectKnowledge}

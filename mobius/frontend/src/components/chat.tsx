@@ -5070,6 +5070,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                   projectId={currentProjectId || undefined}
                   initialPanel="memory"
                   persistActivePanel
+                  onOpenKnowledge={currentProjectId && currentIssueId ? () => setKnowledgeEditorOpen(true) : undefined}
                 />
             </div>
           ))}
