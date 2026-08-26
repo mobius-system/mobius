@@ -18,6 +18,10 @@ import { buildSessionContext, buildSessionSelectionSnapshot, regenerateSessionSe
 import { audit } from '../repositories/audit';
 // @ts-ignore — service 仍是 .js
 import * as modelRegistry from '../services/model-registry';
+// @ts-ignore — CommonJS provider/catalog services are shared with startup and tmux backends.
+import providerCliDetection from '../services/provider-cli-detection.cjs';
+// @ts-ignore — CommonJS provider/catalog services are shared with startup and tmux backends.
+import codexModelCatalog from '../services/codex-model-catalog.cjs';
 // @ts-ignore — service 仍是 .js
 import { useProxyForSession, withSessionProxyState } from '../services/session-proxy-state';
 // @ts-ignore — service 仍是 .js
@@ -172,7 +176,18 @@ router.get('/prompt-stats', auth, (req: express.Request, res: express.Response) 
   });
 });
 
-router.get('/model-options', auth, (_req: express.Request, res: express.Response) => {
+router.get('/model-options', auth, async (_req: express.Request, res: express.Response) => {
+  // 正常请求只读启动时预热好的同步快照。若 PM2 的 7 秒 listen 预算先到，
+  // 首个请求等待同一个有硬超时的探测/目录 single-flight，避免前端一次性拿到
+  // 空数组后一直无法自动恢复；后续请求不会重复启动 app-server。
+  if (!providerCliDetection.getCachedProviderStatus('codex')) {
+    try {
+      await providerCliDetection.detectProvider('codex');
+      await codexModelCatalog.getCatalog();
+    } catch {
+      // 冷失败由 detector/catalog 的安全 fallback 表达，模型列表本身仍可正常返回。
+    }
+  }
   res.json(modelRegistry.listSessionModelOptions());
 });
 

@@ -3085,6 +3085,142 @@ type HarnessModelForm = {
 
 type AdminModelsBackend = 'claude-code' | 'codex' | 'deepseek-harness'
 
+type ProviderCliStatus = {
+  provider: 'codex' | 'claude'
+  installed: boolean
+  available: boolean
+  launchReady: boolean
+  launchMode: 'configured' | 'native' | null
+  configuredReady: boolean
+  nativeEnabled: boolean
+  nativeModelEnabled: boolean
+  nativeReady: boolean
+  binaryPath: string | null
+  version: string | null
+  authStatus: 'authenticated' | 'required' | 'unknown'
+  reason: string | null
+  checkedAt: string | null
+  candidates: string[]
+  modelCatalog?: {
+    models: Array<{
+      id: string
+      displayName: string
+      label: string
+      isDefault: boolean
+    }>
+    source: 'codex-app-server' | 'last-known-good' | 'compatibility-fallback'
+    fallback: boolean
+    checkedAt: string | null
+    reason: string | null
+  }
+}
+
+function ProviderCliStatusCard({ provider }: { provider: 'codex' | 'claude' }) {
+  const [status, setStatus] = useState<ProviderCliStatus | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [savingNative, setSavingNative] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = async (force = false) => {
+    setLoading(true)
+    try {
+      const rows = await api(`/api/admin/provider-cli-status${force ? '?force=1' : ''}`) as ProviderCliStatus[]
+      const next = Array.isArray(rows) ? rows.find(row => row.provider === provider) || null : null
+      setStatus(next)
+      setError(next ? '' : '未返回 CLI 检测结果')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load(false) }, [provider])
+
+  const setNativeEnabled = async (enabled: boolean) => {
+    setSavingNative(true)
+    try {
+      const result = await api(`/api/admin/provider-cli-native/${provider}`, {
+        method: 'PUT',
+        body: JSON.stringify({ enabled }),
+      }) as { status?: ProviderCliStatus }
+      if (result?.status) setStatus(result.status)
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSavingNative(false)
+    }
+  }
+
+  const authLabel = status?.authStatus === 'authenticated'
+    ? '已认证'
+    : status?.authStatus === 'required'
+      ? '需要登录'
+      : '认证未知'
+  const providerLabel = provider === 'codex' ? 'Codex CLI' : 'Claude Code CLI'
+  const catalog = provider === 'codex' ? status?.modelCatalog : null
+  const catalogDefault = catalog?.models.find(model => model.isDefault) || catalog?.models[0] || null
+
+  return (
+    <div className="mb-4 rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2.5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
+            <Terminal className="h-3.5 w-3.5 text-cyan-400" />
+            <span>{providerLabel}</span>
+            {status && (
+              <>
+                <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ color: status.installed ? '#16a34a' : '#ef4444', borderColor: 'var(--border-color)' }}>
+                  {status.installed ? '已安装' : '未安装'}
+                </span>
+                <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ color: status.authStatus === 'authenticated' ? '#16a34a' : status.authStatus === 'required' ? '#ef4444' : '#f59e0b', borderColor: 'var(--border-color)' }}>
+                  {authLabel}
+                </span>
+                <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ color: status.launchReady ? '#16a34a' : '#ef4444', borderColor: 'var(--border-color)' }}>
+                  {status.launchReady ? '可启动' : '不可启动'}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="mt-1 text-[11px]" style={{ color: status?.launchReady ? 'var(--text-muted)' : '#f59e0b' }}>
+            {error || status?.reason || (loading ? '正在检测本机 CLI…' : '尚未检测')}
+          </div>
+          {status?.binaryPath && (
+            <div className="mt-1 truncate font-mono text-[10px]" title={status.binaryPath} style={{ color: 'var(--text-muted)' }}>
+              {status.version ? `v${status.version} · ` : ''}{status.binaryPath}
+              {status.candidates.length > 1 ? ` · ${status.candidates.length} 个候选` : ''}
+            </div>
+          )}
+          {catalog && (
+            <div className="mt-1 text-[10px]" style={{ color: catalog.fallback ? '#f59e0b' : 'var(--text-muted)' }}>
+              已发现 {catalog.models.length} 个模型
+              {catalogDefault ? ` · 默认 ${catalogDefault.displayName || catalogDefault.id}` : ''}
+              {catalog.fallback ? ` · ${catalog.source === 'last-known-good' ? '沿用上次成功目录' : '兼容回退'}` : ''}
+              {catalog.reason ? ` · ${catalog.reason}` : ''}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {status && (
+            <label className="inline-flex h-8 items-center gap-2 rounded-md border border-[var(--border-color)] px-2.5 text-[11px] text-[var(--text-secondary)]">
+              <input type="checkbox" checked={status.nativeEnabled} disabled={savingNative}
+                onChange={e => setNativeEnabled(e.target.checked)} />
+              自动导入本机登录
+              {savingNative && <Loader2 className="h-3 w-3 animate-spin" />}
+            </label>
+          )}
+          <button type="button" onClick={() => load(true)} disabled={loading}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-60">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function defaultClaudeSettings(model = 'MiniMax-M3') {
   return JSON.stringify({
     env: {
@@ -3195,6 +3331,10 @@ function AdminModelsPanel() {
           })}
         </div>
       </div>
+
+      {backend !== 'deepseek-harness' && (
+        <ProviderCliStatusCard provider={backend === 'codex' ? 'codex' : 'claude'} />
+      )}
 
       {backend === 'claude-code'
         ? <ClaudeCodeModelsSubPanel />

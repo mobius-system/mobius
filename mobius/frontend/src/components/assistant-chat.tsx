@@ -252,9 +252,7 @@ const ASSISTANT_TTS_VOICE_FALLBACK: AssistantVoiceOption[] = [
   { id: 'en_male_tim_uranus_bigtts', label: 'Tim', language: 'en-US', gender: 'male', category: 'general', description: '英文通用男声' },
 ]
 
-const FALLBACK_CLONE_MODEL_OPTIONS: SessionModelOption[] = [
-  { key: 'codex', label: 'GPT-5.5 (Codex)', title: 'GPT-5.5 (Codex)', sub: '默认代码任务模型', backend: 'tmux-codex' },
-]
+const EMPTY_CLONE_MODEL_OPTIONS: SessionModelOption[] = []
 
 function MarkdownAnchor({ href, children, node: _node, ...props }: ComponentPropsWithoutRef<'a'> & { node?: unknown }) {
   return (
@@ -1748,7 +1746,7 @@ export function AssistantChat() {
   const [creatingClone, setCreatingClone] = useState(false)
   const [cloneModalOpen, setCloneModalOpen] = useState(false)
   const [cloneDraft, setCloneDraft] = useState<CloneDraft>({ task: '', model: 'codex', language: 'zh' })
-  const [cloneModelOptions, setCloneModelOptions] = useState<SessionModelOption[]>(FALLBACK_CLONE_MODEL_OPTIONS)
+  const [cloneModelOptions, setCloneModelOptions] = useState<SessionModelOption[]>(EMPTY_CLONE_MODEL_OPTIONS)
   const [cloneCreateErr, setCloneCreateErr] = useState('')
   const [pendingTurns, setPendingTurns] = useState<PendingAssistantTurn[]>([])
   const [clearCutoffs, setClearCutoffs] = useState<Record<string, string>>({})
@@ -2091,11 +2089,11 @@ export function AssistantChat() {
     let cancelled = false
     Promise.all([
       api('/api/assistant/tts/voices').catch(() => null),
-      api('/api/sessions/model-options').catch(() => FALLBACK_CLONE_MODEL_OPTIONS),
+      api('/api/sessions/model-options').catch(() => EMPTY_CLONE_MODEL_OPTIONS),
     ]).then(([voices, models]) => {
       if (cancelled) return
       setVoiceOptions(normalizeVoiceOptions((voices as any)?.voices))
-      const nextModels = Array.isArray(models) && models.length > 0 ? models as SessionModelOption[] : FALLBACK_CLONE_MODEL_OPTIONS
+      const nextModels = Array.isArray(models) ? models as SessionModelOption[] : EMPTY_CLONE_MODEL_OPTIONS
       setCloneModelOptions(nextModels)
       setCloneDraft(current => ({
         ...current,
@@ -2106,7 +2104,7 @@ export function AssistantChat() {
     }).catch(() => {
       if (cancelled) return
       setVoiceOptions(ASSISTANT_TTS_VOICE_FALLBACK)
-      setCloneModelOptions(FALLBACK_CLONE_MODEL_OPTIONS)
+      setCloneModelOptions(EMPTY_CLONE_MODEL_OPTIONS)
     })
     return () => {
       cancelled = true
@@ -3442,6 +3440,10 @@ export function AssistantChat() {
 
   const createCloneSession = useCallback(async () => {
     if (creatingClone || sending) return
+    if (!cloneModelOptions.some(option => option.key === cloneDraft.model)) {
+      setCloneCreateErr('模型目录尚未加载，请刷新后重试。')
+      return
+    }
     const task = cloneDraft.task.trim()
     if (!task) {
       setCloneCreateErr('请先填写分身任务。')
@@ -3493,7 +3495,7 @@ export function AssistantChat() {
     } finally {
       setCreatingClone(false)
     }
-  }, [clearInputDraft, cloneDraft, creatingClone, currentSnapshot?.session.model, input, refreshProjects, sending, sessions])
+  }, [clearInputDraft, cloneDraft, cloneModelOptions, creatingClone, currentSnapshot?.session.model, input, refreshProjects, sending, sessions])
 
   const openCurrentSession = useCallback(() => {
     if (!currentSessionUrl) return

@@ -2,7 +2,7 @@
  * model-access.ts — 管理员导入模型配置 (Claude Code + Codex + DeepSeek Harness).
  *
  * Claude Code: settings JSON 原样写入 ~/.claude/settings-<key>.json
- * Codex: TOML 配置原样写入 ~/.codex/<channel>.config.toml (codex --profile 会加载它);
+ * Codex: TOML 配置原样写入 $CODEX_HOME/<channel>.config.toml (codex --profile 会加载它);
  *        API key 不写 auth.json, 启动 tmux 时由 tmux-codex export env_key 对应的环境变量.
  *
  * 管理员写入的 Codex 秘钥值仅用于启动时 export, 普通用户只读启用后的模型选项.
@@ -17,7 +17,9 @@ import adminSettings from './admin-settings'
 const DATA_FILE = MODEL_ACCESS_PATH
 const HOME = os.homedir()
 const CLAUDE_DIR = path.join(HOME, '.claude')
-const CODEX_DIR = path.join(HOME, '.codex')
+// 与 tmux-codex / model-registry / Codex CLI 使用同一个 CODEX_HOME。不能在这里
+// 硬编码 ~/.codex，否则自定义 CODEX_HOME 的登录态和 profile 会被误判为缺失。
+const CODEX_DIR = process.env.CODEX_HOME || path.join(HOME, '.codex')
 const SESSION_MODEL_PREFIX = 'claude-code:'
 const SESSION_MODEL_PREFIX_CODEX = 'codex:'
 const SESSION_MODEL_PREFIX_HARNESS = 'deepseek-harness:'
@@ -31,13 +33,30 @@ const CODEX_CHANNEL_RE = /^[A-Za-z]+$/
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 const HARNESS_KEY_RE = /^[A-Za-z0-9_-]+$/
 const HARNESS_RUNTIME_VERSION = '0.0.1-rc.5'
+const NATIVE_PROVIDERS = new Set(['codex', 'claude'])
+
+type ModelAccessData = {
+  claudeCodeModels: any[]
+  codexModels: any[]
+  harnessModels: any[]
+  nativeProviders: Record<string, { enabled: boolean }>
+}
 
 function nowIso(): string {
   return new Date().toISOString()
 }
 
-function defaultData(): { claudeCodeModels: any[]; codexModels: any[]; harnessModels: any[] } {
-  return { claudeCodeModels: [], codexModels: [], harnessModels: [] }
+function defaultData(): ModelAccessData {
+  return {
+    claudeCodeModels: [],
+    codexModels: [],
+    harnessModels: [],
+    // 本机官方 CLI 自动导入默认开启；管理员第一次修改时才写入 MODEL_ACCESS_PATH。
+    nativeProviders: {
+      codex: { enabled: true },
+      claude: { enabled: true },
+    },
+  }
 }
 
 function clone(obj: any): any {
@@ -48,6 +67,12 @@ function normalizeKey(value: any): string {
   const key = String(value || '').trim()
   if (!key) throw new Error('模型 Key 不能为空')
   return key
+}
+
+function normalizeNativeProvider(value: any): 'codex' | 'claude' {
+  const provider = String(value || '').trim()
+  if (!NATIVE_PROVIDERS.has(provider)) throw new Error(`不支持的本机 Provider: ${provider || '(empty)'}`)
+  return provider as 'codex' | 'claude'
 }
 
 function normalizeCodexChannel(value: any): string {
@@ -154,7 +179,9 @@ function codexConfigPathForKey(key: string): string {
 }
 
 function displayCodexConfigPathForKey(key: string): string {
-  return `~/.codex/${codexConfigFilenameForKey(key)}`
+  return process.env.CODEX_HOME
+    ? path.join(CODEX_DIR, codexConfigFilenameForKey(key))
+    : `~/.codex/${codexConfigFilenameForKey(key)}`
 }
 
 function sessionModelForCodexKey(key: string): string {
@@ -239,12 +266,24 @@ function normalizeLabel(value: any, fallback: string): string {
   return label
 }
 
-function loadData(): { claudeCodeModels: any[]; codexModels: any[]; harnessModels: any[] } {
-  if (!fs.existsSync(DATA_FILE)) return defaultData()
+function loadData({ seedBuiltins = true }: { seedBuiltins?: boolean } = {}): ModelAccessData {
+  if (!fs.existsSync(DATA_FILE)) {
+    const data = defaultData()
+    // 专用配置存在时仍按旧路径优先，并 seed 出可由管理员控制的 enabled 记录。
+    if (seedBuiltins) {
+      seedBuiltinCodexIfNeeded(data)
+      seedBuiltinClaudeIfNeeded(data)
+    }
+    return data
+  }
   try {
     const raw = fs.readFileSync(DATA_FILE, 'utf8')
     const parsed = JSON.parse(raw)
     const data = defaultData()
+    for (const provider of NATIVE_PROVIDERS) {
+      const row = parsed?.nativeProviders?.[provider]
+      if (row && typeof row.enabled === 'boolean') data.nativeProviders[provider] = { enabled: row.enabled }
+    }
     const rows = Array.isArray(parsed?.claudeCodeModels) ? parsed.claudeCodeModels : []
     for (const row of rows) {
       try {
@@ -312,8 +351,10 @@ function loadData(): { claudeCodeModels: any[]; codexModels: any[]; harnessModel
         console.warn(`[model-access] 跳过非法 DeepSeek Harness 模型配置: ${e.message}`)
       }
     }
-    seedBuiltinCodexIfNeeded(data)
-    seedBuiltinClaudeIfNeeded(data)
+    if (seedBuiltins) {
+      seedBuiltinCodexIfNeeded(data)
+      seedBuiltinClaudeIfNeeded(data)
+    }
     return data
   } catch (e) {
     console.warn(`[model-access] 读取失败, 回退空配置: ${e.message}`)
@@ -325,7 +366,7 @@ function loadData(): { claudeCodeModels: any[]; codexModels: any[]; harnessModel
 // 这样前端 "系统配置 → 模型接入 → Codex" 就能列出并编辑这一条.
 // 仅在表里缺该 key 且 $CODEX_HOME/<profileKey>.config.toml 存在时执行; 解析后立即落盘,
 // 后续读取直接从 JSON 走, 不会再触发 seed. seed 失败 (TOML 缺字段) 只 warn, 不抛.
-function seedBuiltinCodexIfNeeded(data: { claudeCodeModels: any[]; codexModels: any[] }): void {
+function seedBuiltinCodexIfNeeded(data: ModelAccessData): void {
   const builtin = MODEL_OPTIONS && MODEL_OPTIONS.codex
   if (!builtin || !builtin.profileKey) return
   const key = builtin.profileKey
@@ -366,7 +407,7 @@ function seedBuiltinCodexIfNeeded(data: { claudeCodeModels: any[]; codexModels: 
 // "系统配置 → 模型接入 → Claude Code" 能列出并编辑它 (启用/屏蔽/改显示名), 对齐内置 Codex.
 // 仅在表里缺该 key 且 ~/.claude/mobiusdefault.settings.json 存在时执行; 解析后立即落盘,
 // 后续读取直接从 JSON 走, 不会再触发 seed. 文件不存在 (干净部署) → 不 seed, 不显示.
-function seedBuiltinClaudeIfNeeded(data: { claudeCodeModels: any[]; codexModels: any[] }): void {
+function seedBuiltinClaudeIfNeeded(data: ModelAccessData): void {
   const builtin = MODEL_OPTIONS && MODEL_OPTIONS.opus
   if (!builtin) return
   const key = BUILTIN_CLAUDE_KEY
@@ -408,6 +449,25 @@ function saveData(data: any): void {
   const tmp = `${DATA_FILE}.imac-tmp-${process.pid}-${Date.now()}`
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2))
   fs.renameSync(tmp, DATA_FILE)
+}
+
+// 本机官方登录态只被复用，不会读入/复制到 MODEL_ACCESS_PATH。这里仅持久化管理员
+// 是否允许自动导入该 Provider，且后端解析与启动都会再次检查，前端无法 fallback 绕过。
+function getNativeProvider(providerValue: any): { provider: 'codex' | 'claude'; enabled: boolean } {
+  const provider = normalizeNativeProvider(providerValue)
+  // Provider 探测属于只读路径，不能顺带 seed 配置或复制配置中的 api_key。
+  const data = loadData({ seedBuiltins: false })
+  return { provider, enabled: data.nativeProviders[provider]?.enabled !== false }
+}
+
+function setNativeProviderEnabled(providerValue: any, enabledValue: any): { provider: 'codex' | 'claude'; enabled: boolean } {
+  const provider = normalizeNativeProvider(providerValue)
+  if (typeof enabledValue !== 'boolean') throw new Error('enabled 必须是 boolean')
+  // 此 API 只持久化开关；不要因切换 native provider 而导入专用配置或凭据。
+  const data = loadData({ seedBuiltins: false })
+  data.nativeProviders[provider] = { enabled: enabledValue }
+  saveData(data)
+  return { provider, enabled: enabledValue }
 }
 
 function readSettingsJson(key: string): string {
@@ -595,8 +655,8 @@ function publicModel(row: any, { includeSettings = false }: any = {}): any {
   return out
 }
 
-function listClaudeCodeModels({ enabledOnly = false, includeSettings = false }: any = {}): any[] {
-  const rows = loadData().claudeCodeModels
+function listClaudeCodeModels({ enabledOnly = false, includeSettings = false, seedBuiltins = true }: any = {}): any[] {
+  const rows = loadData({ seedBuiltins }).claudeCodeModels
   return rows
     .filter((row) => !enabledOnly || row.enabled !== false)
     .map((row) => publicModel(row, { includeSettings }))
@@ -705,8 +765,8 @@ function publicCodexModel(row: any, { includeConfig = false, includeSecret = fal
   return out
 }
 
-function listCodexModels({ enabledOnly = false, includeConfig = false, includeSecret = false }: any = {}): any[] {
-  return loadData().codexModels
+function listCodexModels({ enabledOnly = false, includeConfig = false, includeSecret = false, seedBuiltins = true }: any = {}): any[] {
+  return loadData({ seedBuiltins }).codexModels
     .filter((row) => !enabledOnly || row.enabled !== false)
     .map((row) => publicCodexModel(row, { includeConfig, includeSecret }))
 }
@@ -908,6 +968,8 @@ export {
   keyFromCodexSessionModel,
   codexConfigPathForKey,
   displayCodexConfigPathForKey,
+  getNativeProvider,
+  setNativeProviderEnabled,
   listHarnessModels,
   findHarnessModel,
   upsertHarnessModel,

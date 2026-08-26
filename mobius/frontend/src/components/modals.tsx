@@ -1709,6 +1709,7 @@ export function NewResearchLeaderModal({ research, onClose, onCreated }: { resea
   const submit = async () => {
     if (!leaderPrompt.trim()) { setErr('请填写 Leader 初始 Prompt'); return }
     if (!memoryConfirmed) { setErr('请明确确认 Leader 的 Memory 选择'); return }
+    if (!modelOptions.some((item: any) => item.key === leaderModel)) { setErr('模型目录尚未加载，请刷新后重试'); return }
     setLoading(true); setErr('')
     try {
       const result = await api(`/api/researches/${research.id}/leader`, {
@@ -1741,7 +1742,7 @@ export function NewResearchLeaderModal({ research, onClose, onCreated }: { resea
             className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
           <select value={leaderModel} onChange={e => setLeaderModel(e.target.value)}
             className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}>
-            {(modelOptions.length > 0 ? modelOptions : [{ key: 'codex', label: 'Codex' }]).map((item: any) => (
+            {modelOptions.map((item: any) => (
               <option key={item.key} value={item.key}>{item.label || item.title || item.key}</option>
             ))}
           </select>
@@ -1966,12 +1967,9 @@ type SessionModelOption = {
 }
 const DEFAULT_SESSION_MODEL: ModelKey = 'codex'
 
-const FALLBACK_SESSION_MODEL_CHOICES: SessionModelOption[] = [
-]
-
 const SESSION_MODEL_LABEL: Record<string, string> = {
   opus: 'Opus',
-  codex: 'GPT-5.5 (Codex)',
+  codex: 'Codex',
 }
 
 // 模型 → 后端渠道
@@ -2397,11 +2395,11 @@ export function NewSessionModal({
   const [chosenAgentSkill, setChosenAgentSkill] = useState<AgentSkill | null>(null)
   // 全站 5h 提问量 (codex / claude_code) — 用于在模型按钮显示渠道负载与高负荷警告
   const [promptStats, setPromptStats] = useState<PromptStats | null>(null)
-  const [modelOptions, setModelOptions] = useState<SessionModelOption[]>(FALLBACK_SESSION_MODEL_CHOICES)
+  const [modelOptions, setModelOptions] = useState<SessionModelOption[]>([])
   const [modelGridManuallyExpanded, setModelGridManuallyExpanded] = useState(false)
   const modelGridColumns = useResponsiveModelColumns()
   const selectedModelOption = useMemo(
-    () => modelOptions.find(opt => opt.key === model) || modelOptions[0] || FALLBACK_SESSION_MODEL_CHOICES[0],
+    () => modelOptions.find(opt => opt.key === model) || modelOptions[0] || null,
     [modelOptions, model],
   )
   const collapsedModelVisibleCount = modelGridColumns * MODEL_PICKER_COLLAPSED_ROWS
@@ -2425,13 +2423,13 @@ export function NewSessionModal({
     api('/api/sessions/model-options')
       .then((arr: SessionModelOption[]) => {
         if (!alive) return
-        const options = Array.isArray(arr) && arr.length > 0 ? arr : FALLBACK_SESSION_MODEL_CHOICES
+        const options = Array.isArray(arr) ? arr : []
         setModelOptions(options)
         if (!options.some(opt => opt.key === model)) {
           setModel(options[0]?.key || DEFAULT_SESSION_MODEL)
         }
       })
-      .catch(() => { if (alive) setModelOptions(FALLBACK_SESSION_MODEL_CHOICES) })
+      .catch(() => { if (alive) setModelOptions([]) })
     return () => { alive = false }
   }, [])
 

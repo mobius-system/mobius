@@ -95,6 +95,7 @@ assets
 # Local external checkouts / machine-specific helpers
 /jsoncrack
 /jsoncrack-start.sh
+/examples/
 
 # 运行期秘钥 (claude/codex 登录态、代理配置) — 只本地存, 绝不提交
 deploy/secrets/*

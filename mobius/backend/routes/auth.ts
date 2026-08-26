@@ -1,7 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { JWT_SECRET, ENABLE_PASSWORD_LOGIN, BRANDING, HIDDEN_FOLDER_NAME, APP_DIR } from '../config';
+import { JWT_SECRET, ENABLE_LOGIN, AUTO_LOGIN_USER_ID, ENABLE_PASSWORD_LOGIN, BRANDING, HIDDEN_FOLDER_NAME, APP_DIR } from '../config';
 import { auth } from '../middleware/auth';
 import { Users } from '../repositories/users';
 import { db } from '../../db';
@@ -9,7 +9,10 @@ import { db } from '../../db';
 const router = express.Router();
 
 router.get('/config', (_req: express.Request, res: express.Response) => {
-  res.json({ password_required: ENABLE_PASSWORD_LOGIN });
+  res.json({
+    login_required: ENABLE_LOGIN,
+    password_required: ENABLE_LOGIN && ENABLE_PASSWORD_LOGIN,
+  });
 });
 
 // 全站品牌显示配置 (顶部 Logo / 系统名称 / Tab 标题). 由 .env 注入, 任何客户端
@@ -27,12 +30,14 @@ router.get('/branding', (_req: express.Request, res: express.Response) => {
 });
 
 router.post('/login', (req: express.Request, res: express.Response) => {
-  const { username, password } = (req.body || {}) as { username?: string; password?: string };
+  const submitted = (req.body || {}) as { username?: string; password?: string };
+  const username = ENABLE_LOGIN ? submitted.username : AUTO_LOGIN_USER_ID;
+  const password = submitted.password;
   if (!username) {
     res.status(400).json({ error: 'Missing credentials' });
     return;
   }
-  if (ENABLE_PASSWORD_LOGIN && !password) {
+  if (ENABLE_LOGIN && ENABLE_PASSWORD_LOGIN && !password) {
     res.status(400).json({ error: 'Missing credentials' });
     return;
   }
@@ -44,7 +49,7 @@ router.post('/login', (req: express.Request, res: express.Response) => {
     res.status(401).json({ error: 'User not found' });
     return;
   }
-  if (ENABLE_PASSWORD_LOGIN && !bcrypt.compareSync(password || '', user.password_hash)) {
+  if (ENABLE_LOGIN && ENABLE_PASSWORD_LOGIN && !bcrypt.compareSync(password || '', user.password_hash)) {
     res.status(401).json({ error: 'Wrong password' });
     return;
   }

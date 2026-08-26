@@ -76,8 +76,7 @@ const MAX_TEAM_SIZE = 12
 const DEFAULT_MODEL = 'codex'
 const ResearchAgentTeamScene = lazy(() => import('./research-agent-team-scene')
   .then(mod => ({ default: mod.ResearchAgentTeamScene })))
-const FALLBACK_MODEL_OPTIONS: SessionModelOption[] = [
-]
+const EMPTY_MODEL_OPTIONS: SessionModelOption[] = []
 const SCOPE_LABEL: Record<string, string> = { user: '用户级', project: '项目级', builtin: '内置' }
 
 const DEFAULT_TEAM_PRESETS = [
@@ -270,7 +269,7 @@ export function ResearchAgentTeamModal({
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState('')
   const [progress, setProgress] = useState<string[]>([])
-  const [modelOptions, setModelOptions] = useState<SessionModelOption[]>(FALLBACK_MODEL_OPTIONS)
+  const [modelOptions, setModelOptions] = useState<SessionModelOption[]>(EMPTY_MODEL_OPTIONS)
   // 全局默认模型偏好 (管理中心-系统设置): 团队各 agent 默认模型的末级兜底之前一级.
   const [globalDefaultModel, setGlobalDefaultModel] = useState('')
   const [agentSkills, setAgentSkills] = useState<AgentSkill[]>([])
@@ -307,7 +306,7 @@ export function ResearchAgentTeamModal({
       setErr('')
       try {
         const [models, preview, skills, globalDefault] = await Promise.all([
-          api('/api/sessions/model-options').catch(() => FALLBACK_MODEL_OPTIONS),
+          api('/api/sessions/model-options').catch(() => EMPTY_MODEL_OPTIONS),
           api(`/api/researches/${researchId}/context-preview`, {
             method: 'POST',
             body: JSON.stringify({
@@ -328,7 +327,7 @@ export function ResearchAgentTeamModal({
         if (!alive) return
         const defaults = preview?.defaults || null
         setGlobalDefaultModel(globalDefault || '')
-        const nextModels = Array.isArray(models) && models.length > 0 ? models : FALLBACK_MODEL_OPTIONS
+        const nextModels = Array.isArray(models) ? models : EMPTY_MODEL_OPTIONS
         const nextAgentSkills = Array.isArray(skills) ? skills : []
         const skillsAll = Array.isArray(preview?.sources?.skills) ? preview.sources.skills : []
         const memoriesAll = Array.isArray(preview?.sources?.memories) ? preview.sources.memories : []

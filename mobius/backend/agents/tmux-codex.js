@@ -14,6 +14,11 @@ const { spawnSync } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
+const {
+  resolveProviderExecutable,
+  resolveNativeProviderExecutable,
+} = require('../services/provider-cli-detection.cjs')
+const { buildCodexCliExec } = require('./provider-cli-command')
 
 // Resolve the aimux binary to spawn as a stdio MCP server (for TUI sessions).
 // Mirrors backend/services/aimux-remote.ts AIMUX_BIN_CANDIDATES (kept inline to
@@ -48,7 +53,7 @@ const {
   safeRemoveFlagDir,
 } = require('../utils/session-flags')
 const { MOBIUS_DATA_PATH } = require('../config')
-const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
+const { log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
 
 let Database = null
@@ -346,25 +351,6 @@ function findAsciiTailMarker(text) {
   }
   return tail.length >= 5 ? tail : null
 }
-
-// ── 启动时 preflight (模块加载时一次性, 缺失降级为警告) ────
-;(function preflight() {
-  const missing = []
-  for (const bin of ['tmux', 'codex']) {
-    if (spawnSync('which', [bin]).status !== 0) missing.push(`bin (PATH): ${bin}`)
-  }
-  if (!Database) missing.push('node module: better-sqlite3')
-  if (missing.length) {
-    console.warn('[tmux-codex] ⚠️  preflight 依赖不完整, codex 会话不可用 (不影响 claude-code):')
-    for (const m of missing) console.warn('   - ' + m)
-    return
-  }
-  const proxyMissing = proxyPrereqMissing()
-  if (proxyMissing.length) {
-    console.warn(`[tmux-codex] ⚠️  proxychains 依赖不完整; use_proxy=false 的会话仍可直连启动: ${proxyMissing.join(', ')}`)
-  }
-  log(`[tmux-codex] ✅ preflight pass (SOCKET=${AGENT_TMUX_SOCKET}, HUB=${HUB}, CODEX_HOME=${CODEX_HOME})`)
-})()
 
 function openStateDb() {
   if (!Database || !fs.existsSync(CODEX_STATE_DB)) return null
@@ -913,9 +899,13 @@ class TmuxCodexBackend extends AgentBackend {
       const finalCwd = cwd || persisted?.cwd
       const finalAgentSid = agentSessionId || persisted?.agentSessionId
       const finalUseProxy = normalizeUseProxy(useProxy, persisted?.useProxy ?? false)
-      const finalProfileKey = codexChannel || codexProfileKey || persisted?.codexProfileKey
-      const finalConfigPath = codexConfigPath || persisted?.codexConfigPath
-      const finalSecretEnvKey = codexSecretEnvKey || persisted?.codexSecretEnvKey
+      // 注册表为 native Codex 总会显式传 concrete model，同时不传任何 profile
+      // 参数。此时不能复用旧 runtime 遗留的 mobiusdefault profile，否则从
+      // profile 迁到 native 后窗口重建仍会错误加载已删除的配置。
+      const explicitNativeMode = !!model && !codexChannel && !codexProfileKey && !codexConfigPath
+      const finalProfileKey = explicitNativeMode ? null : (codexChannel || codexProfileKey || persisted?.codexProfileKey)
+      const finalConfigPath = explicitNativeMode ? null : (codexConfigPath || persisted?.codexConfigPath)
+      const finalSecretEnvKey = explicitNativeMode ? null : (codexSecretEnvKey || persisted?.codexSecretEnvKey)
       if (!finalCwd) throw new Error(`session ${sessionId} has no live window and no cwd`)
       spawnInfo = await this._spawnWindow({
         sessionId,
@@ -1172,6 +1162,11 @@ class TmuxCodexBackend extends AgentBackend {
 
   // 启动一个新的 Codex tmux 窗口，并返回用于后续绑定 rollout 的启动信息。
   async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName }) {
+    const nativeMode = !codexChannel && !codexProfileKey && !codexConfigPath
+    // native 启动时强制复核官方 status 与管理员开关；专用 profile 仍只要求 CLI 可执行。
+    const codexExecutable = nativeMode
+      ? await resolveNativeProviderExecutable('codex', { force: true })
+      : await resolveProviderExecutable('codex')
     // 确保承载 agent 窗口的 tmux hub session 已经存在。
     ensureHub()
     // 记录启动时间，后续会写入 runtime 和持久化状态。
@@ -1182,27 +1177,24 @@ class TmuxCodexBackend extends AgentBackend {
     const effFlagRoot = flagRoot || cwd
     // 未指定模型时使用 Codex backend 的默认模型。
     const finalModel = model || DEFAULT_MODEL
-    // codexChannel 优先，其次兼容旧的 codexProfileKey，并统一归一化。
-    const profileKey = normalizeCodexChannel(codexChannel || codexProfileKey)
-    // Codex profile 对应 $CODEX_HOME/<profile>.config.toml。
-    const expectedConfigPath = path.join(CODEX_HOME, `${profileKey}.config.toml`)
-    // 启动前确认 profile 配置文件存在。
-    if (!fs.existsSync(expectedConfigPath)) {
-      // 配置缺失时直接失败，避免 Codex 用错误 profile 启动。
-      throw new Error(`codex channel config missing: ${expectedConfigPath}`)
+    let profileKey = null
+    let expectedConfigPath = null
+    let secretEnvKey = null
+    let secretValue = ''
+    if (!nativeMode) {
+      // 专用配置路径保持原行为：profile 优先，并从 $CODEX_HOME 读取 env_key/api_key。
+      profileKey = normalizeCodexChannel(codexChannel || codexProfileKey)
+      expectedConfigPath = path.join(CODEX_HOME, `${profileKey}.config.toml`)
+      if (!fs.existsSync(expectedConfigPath)) {
+        throw new Error(`codex channel config missing: ${expectedConfigPath}`)
+      }
+      const configText = fs.readFileSync(expectedConfigPath, 'utf8')
+      const configEnvKey = tomlStringValue(configText, 'env_key')
+      secretEnvKey = configEnvKey ? normalizeSecretEnvKey(configEnvKey) : null
+      secretValue = secretEnvKey
+        ? resolveSecretValue(secretEnvKey, tomlStringValue(configText, 'api_key') || codexSecretValue)
+        : ''
     }
-    // 读取 profile 配置，用来解析 env_key 和可能内嵌的 api_key。
-    const configText = fs.readFileSync(expectedConfigPath, 'utf8')
-    // 从 TOML 中提取秘钥环境变量名。
-    const configEnvKey = tomlStringValue(configText, 'env_key')
-    // 对环境变量名做规范化，避免非法或空白值进入 export 命令。
-    const secretEnvKey = configEnvKey ? normalizeSecretEnvKey(configEnvKey) : null
-    // 如果 profile 指定了 env_key，就解析最终要注入 tmux 命令的秘钥值。
-    const secretValue = secretEnvKey
-      // 秘钥值优先取 TOML api_key，其次取调用方传入的 codexSecretValue，再交给 resolver 兜底。
-      ? resolveSecretValue(secretEnvKey, tomlStringValue(configText, 'api_key') || codexSecretValue)
-      // 没有 env_key 时不导出秘钥。
-      : ''
     // useProxy 与 profile 完全解耦: 只决定是否套 proxychains 网络层.
     // 把调用方的代理参数归一化成布尔值，默认不走代理。
     const finalUseProxy = normalizeUseProxy(useProxy, false)
@@ -1226,8 +1218,6 @@ class TmuxCodexBackend extends AgentBackend {
       }
     }
 
-    // 系统调用 codex 强制走 --profile: 加载 $CODEX_HOME/<channel>.config.toml,
-    // 并在 tmux 命令中 export TOML env_key 对应的秘钥环境变量.
     // 组装 Codex CLI 参数：模型、工作目录以及自动审批/沙箱绕过参数。
     const codexArgs = ['-m', finalModel, '-C', cwd, '--dangerously-bypass-approvals-and-sandbox']
     // TUI/Electron 会话 (add_remote_aimux_mcp + aimux_id): 注入 aimux stdio MCP server, 让 codex 经 MCP
@@ -1244,13 +1234,6 @@ class TmuxCodexBackend extends AgentBackend {
     }
     // resume 模式下把 thread id 追加给 codex resume 子命令。
     if (useResume) codexArgs.push(agentSessionId)
-    // Codex 新会话不需要子命令，resume 模式需要 "resume " 前缀。
-    const subcommand = useResume ? 'resume ' : ''
-    // 对每个 Codex 参数做 shell 转义后拼成命令行字符串。
-    const argStr = codexArgs.map(shellQuote).join(' ')
-    // profile 参数固定指向归一化后的 channel/profile。
-    const profileArg = `--profile ${shellQuote(profileKey)}`
-
     // 逐行构造 bash -lc 命令，最后用 && 串起来。
     const cmdLines = [
       // 清掉 VS Code 相关 IPC 环境，避免 CLI 误连到宿主 IDE。
@@ -1262,30 +1245,40 @@ class TmuxCodexBackend extends AgentBackend {
     if (finalUseProxy) {
       // 加载代理相关环境变量。
       cmdLines.push(`source ${shellQuote(PROXY_ENVS)}`)
-      // 通过 proxychains 启动 Codex，并传入 profile、子命令和参数。
-      cmdLines.push(`exec proxychains -q -f ${shellQuote(PROXY_CONF)} codex ${profileArg} ${subcommand}${argStr}`)
-    } else {
-      // 不走代理时直接启动 Codex。
-      cmdLines.push(`exec codex ${profileArg} ${subcommand}${argStr}`)
     }
+    // 始终使用检测到的绝对 executable；proxychains 只包裹该绝对路径。
+    cmdLines.push(buildCodexCliExec({
+      executable: codexExecutable,
+      useProxy: finalUseProxy,
+      proxyConfig: PROXY_CONF,
+      profileKey,
+      subcommand: useResume ? 'resume' : '',
+      codexArgs,
+    }))
     // 用 && 串联命令，确保任何前置步骤失败都会阻止后续 exec。
     const cmd = cmdLines.join(' && ')
 
     // 提前写入项目可信状态，减少 TUI 启动时的交互弹窗。
     ensureProjectTrusted(cwd)
 
-    // 渠道密钥只挂在当前窗口的环境上, 不嵌入 shell 命令、不落后端 runtime 文件.
-    const windowEnvEntries = secretEnvKey ? [[secretEnvKey, secretValue]] : []
+    // 显式固定 HOME/CODEX_HOME，避免复用中的 tmux server 保留旧环境。native 登录态仍由
+    // Codex 自己从该目录读取；Mobius 不读取、不复制 auth.json。
+    // 渠道密钥只挂在专用 profile 窗口环境上，不嵌入 shell 命令、不落 runtime 文件。
+    const windowEnvEntries = [
+      ['HOME', HOME],
+      ['CODEX_HOME', CODEX_HOME],
+      ...(secretEnvKey ? [[secretEnvKey, secretValue]] : []),
+    ]
     const runtimeArgs = windowEnvEntries.flatMap(([key, value]) => ['-e', `${key}=${value}`])
     // 在 hub session 下创建后台 tmux window，并在 cwd 中执行 bash -lc cmd。
     const r = tmux(
       ['new-window', '-d', ...runtimeArgs, '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', cmd],
-      { redactEnvironmentKeys: windowEnvEntries.map(([key]) => key) },
+      { redactEnvironmentKeys: secretEnvKey ? [secretEnvKey] : [] },
     )
     // tmux 创建失败时把 stderr 带出，方便定位命令层问题。
     if (r.status !== 0) throw new Error(`tmux new-window failed: ${r.stderr}`)
     // 记录启动参数，包含模型、代理、profile、秘钥环境变量和 resume 信息。
-    log(`[tmux-codex] started: window=${sessionId} cwd=${cwd} model=${finalModel} use_proxy=${finalUseProxy ? 1 : 0} profile-v2=${profileKey} secret_env=${secretEnvKey} config=${codexConfigPath || expectedConfigPath}${useResume ? ` resume=${agentSessionId}` : ''}`)
+    log(`[tmux-codex] started: window=${sessionId} cwd=${cwd} model=${finalModel} use_proxy=${finalUseProxy ? 1 : 0} mode=${nativeMode ? 'native' : 'profile'} profile-v2=${profileKey || '-'} secret_env=${secretEnvKey || '-'} config=${codexConfigPath || expectedConfigPath || '-'}${useResume ? ` resume=${agentSessionId}` : ''}`)
 
     // 设置等待 TUI ready 的截止时间。
     const deadline = Date.now() + READY_TIMEOUT_MS
@@ -1526,4 +1519,5 @@ module.exports = {
   runningFlagPathOf,
   failedFlagPathOf,
   findCodexRecentErrorInPane,
+  buildCodexCliExec,
 }
