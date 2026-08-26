@@ -905,6 +905,21 @@ body::after {
   .mobius-bg-flow body::after { animation: none; }
 }
 
+/* 状态文字的轻微明暗呼吸：保留原有语义色，只让进行中的状态更容易被注意到。 */
+@keyframes mobius-status-color-breathe {
+  0%, 100% { filter: brightness(.84); }
+  50% { filter: brightness(1.18); }
+}
+
+.mobius-status-color-breathe {
+  animation: mobius-status-color-breathe 1.8s ease-in-out infinite;
+  will-change: filter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobius-status-color-breathe { animation: none; }
+}
+
 /* ===== ChatGPT 风格主按钮: 主题反色 (暗色 → 白底黑字, 亮色 → 黑底白字) ===== */
 .btn-primary {
   background: var(--text-primary);
