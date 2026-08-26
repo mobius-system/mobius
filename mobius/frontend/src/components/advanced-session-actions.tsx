@@ -1,4 +1,4 @@
-import { BookOpen, Brain, Cpu, FileDiff, GitBranch, History, Loader2, Network, Puzzle, RotateCcw, Terminal, Wand2 } from 'lucide-react'
+import { BookOpen, Brain, Clock, Cpu, FileDiff, GitBranch, History, Loader2, Network, Puzzle, RotateCcw, Terminal, Wand2 } from 'lucide-react'
 import { RemoteAimuxMcpIcon } from './aimux-link-indicator'
 import { ProjectPortEntryButton } from './project-files'
 import { ButtonVisibilityMenu, UnifiedButton, UnifiedButtonGroup } from './unified-button-group'
@@ -10,12 +10,14 @@ type AdvancedSessionActionsProps = {
   researchId?: string | null
   vscodeSubPath?: string | null
   jsonlEntryCount: number
+  showJsonlMeta: boolean
   connectionReady: boolean
   projectKnowledgeSending: boolean
   variant?: 'default' | 'compact' | 'menu'
   onOpenFileChanges: () => void
   onOpenBashCommands: () => void
   onOpenInputReplay: () => void
+  onToggleJsonlMeta: () => void
   onRequestRunProject: (mainProjectPortPath: string) => void
   onOpenTerminal: () => void
   onOpenCooperablePc: () => void
@@ -41,12 +43,14 @@ export function AdvancedSessionActions({
   researchId,
   vscodeSubPath,
   jsonlEntryCount,
+  showJsonlMeta,
   connectionReady,
   projectKnowledgeSending,
   variant = 'default',
   onOpenFileChanges,
   onOpenBashCommands,
   onOpenInputReplay,
+  onToggleJsonlMeta,
   onRequestRunProject,
   onOpenTerminal,
   onOpenCooperablePc,
@@ -79,10 +83,11 @@ export function AdvancedSessionActions({
         { id: 'file-changes', label: '查看文件修改' },
         { id: 'bash-commands', label: '查看运行命令' },
         { id: 'input-replay', label: '回放输入' },
+        { id: 'jsonl-meta', label: '显示时间与序号' },
         { id: 'project-port', label: '进入项目端口' },
         { id: 'terminal', label: '打开终端' },
         { id: 'cooperable-pc', label: '可合作计算机' },
-        { id: 'knowledge', label: '查看当前知识' },
+        { id: 'knowledge', label: '查看当前项目知识/任务知识' },
         { id: 'send-knowledge', label: '项目知识沉淀到记忆' },
         { id: 'continue-model', label: '修改模型并继续' },
         { id: 'skill', label: 'Skill' },
@@ -90,7 +95,7 @@ export function AdvancedSessionActions({
         { id: 'git', label: 'Git' },
       ]} />
       {menu && <div className="px-1 text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>查看与工作</div>}
-      <div className={`grid ${menu ? 'grid-cols-2 gap-1' : 'grid-cols-4 gap-2'} items-stretch`}>
+      <div className={`grid ${menu ? 'grid-cols-[repeat(auto-fit,minmax(132px,1fr))] gap-1' : 'grid-cols-[repeat(auto-fit,minmax(36px,1fr))] gap-2'} items-stretch`}>
         <UnifiedButton
           kind="modal"
           buttonId="file-changes"
@@ -125,6 +130,18 @@ export function AdvancedSessionActions({
           displayLabel={menu}
           icon={<RotateCcw className="h-4 w-4" strokeWidth={1.9} />}
         />
+        <UnifiedButton
+          kind="normal"
+          buttonId="jsonl-meta"
+          onClick={onToggleJsonlMeta}
+          disabled={jsonlEntryCount === 0}
+          label={showJsonlMeta ? '隐藏时间与序号' : '显示时间与序号'}
+          tooltip={showJsonlMeta ? '隐藏 JSONL 卡片标题里的序号与时间前缀' : '在 JSONL 卡片标题里显示 #序号 与 MM-DD HH:MM:SS 时间前缀'}
+          accent="blue"
+          displayLabel={menu}
+          className={showJsonlMeta ? 'bg-blue-500/15' : ''}
+          icon={<Clock className="h-4 w-4" strokeWidth={1.9} />}
+        />
         <ProjectPortEntryButton
           buttonId="project-port"
           projectId={projectId}
@@ -139,7 +156,7 @@ export function AdvancedSessionActions({
       <div className="mx-1 h-px bg-[var(--border-color)] opacity-40" aria-hidden />
 
       {menu && <div className="px-1 text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>执行与上下文</div>}
-      <div className={`grid ${menu ? 'grid-cols-2 gap-1' : 'grid-cols-5 gap-2'} items-stretch`}>
+      <div className={`grid ${menu ? 'grid-cols-[repeat(auto-fit,minmax(132px,1fr))] gap-1' : 'grid-cols-[repeat(auto-fit,minmax(36px,1fr))] gap-2'} items-stretch`}>
         <UnifiedButton
           kind="modal"
           buttonId="terminal"
@@ -180,8 +197,8 @@ export function AdvancedSessionActions({
             buttonId="knowledge"
             onClick={onOpenKnowledge}
             disabled={!canOpenKnowledge}
-            label="查看当前知识"
-            tooltip="查看当前知识 (项目知识 / 本任务知识)"
+            label="查看当前项目知识/任务知识"
+            tooltip="查看当前项目知识/任务知识"
             accent="cyan"
             displayLabel={menu}
             icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
@@ -218,7 +235,7 @@ export function AdvancedSessionActions({
       {condensed && (
         <>
         {menu && <div className="px-1 text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>会话配置</div>}
-        <div className={`grid ${menu ? 'grid-cols-2 gap-1' : 'grid-cols-3 gap-2'} items-stretch`}>
+        <div className={`grid ${menu ? 'grid-cols-[repeat(auto-fit,minmax(132px,1fr))] gap-1' : 'grid-cols-[repeat(auto-fit,minmax(36px,1fr))] gap-2'} items-stretch`}>
           <UnifiedButton
             kind="modal"
             buttonId="skill"

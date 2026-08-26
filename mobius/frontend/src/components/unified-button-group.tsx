@@ -18,8 +18,9 @@ const ACCENT_CLASS: Record<UnifiedButtonAccent, string> = {
   amber: 'text-amber-400 hover:bg-amber-500/10',
 }
 
-export function UnifiedButtonGroup({ className = '', visibilityStorageKey, children, ...props }: HTMLAttributes<HTMLDivElement> & {
+export function UnifiedButtonGroup({ className = '', visibilityStorageKey, onVisibilityChange, children, ...props }: HTMLAttributes<HTMLDivElement> & {
   visibilityStorageKey?: string
+  onVisibilityChange?: (hiddenIds: Set<string>) => void
 }) {
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => {
     if (!visibilityStorageKey || typeof window === 'undefined') return new Set()
@@ -35,6 +36,10 @@ export function UnifiedButtonGroup({ className = '', visibilityStorageKey, child
     if (!visibilityStorageKey || typeof window === 'undefined') return
     window.localStorage.setItem(visibilityStorageKey, JSON.stringify([...hiddenIds]))
   }, [hiddenIds, visibilityStorageKey])
+
+  useEffect(() => {
+    onVisibilityChange?.(hiddenIds)
+  }, [hiddenIds, onVisibilityChange])
 
   const setHidden = useCallback((id: string, hidden: boolean) => {
     setHiddenIds((previous) => {

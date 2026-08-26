@@ -886,7 +886,13 @@ export function SessionSkillMemoryEditor({
 
   return (
     <>
-      <UnifiedButtonGroup className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2" visibilityStorageKey="mobius:session-resource-tabs:hidden">
+      <UnifiedButtonGroup
+        className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2"
+        visibilityStorageKey="mobius:session-resource-tabs:hidden"
+        onVisibilityChange={(hiddenIds) => {
+          if (activePanel && hiddenIds.has(activePanel)) setActivePanelAndPersist(null)
+        }}
+      >
         {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
             五个 tab 始终保持单行并等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
         <ButtonVisibilityMenu options={[
@@ -896,7 +902,7 @@ export function SessionSkillMemoryEditor({
           { id: 'ports', label: '端口' },
           { id: 'time', label: '耗时' },
         ]} />
-        <div className="session-resource-tabs grid grid-cols-[repeat(5,minmax(0,1fr))] items-stretch">
+        <div className="session-resource-tabs flex items-stretch [&>button]:w-auto [&>button]:flex-1">
           <ResourceTabButton
             buttonId="skill"
             label="Skill"
@@ -960,13 +966,13 @@ export function SessionSkillMemoryEditor({
               {memActive && onOpenKnowledge && (
                 <button
                   type="button"
-                  aria-label="查看当前知识"
+                  aria-label="查看当前项目知识/任务知识"
                   onClick={onOpenKnowledge}
                   className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5 text-[11px] transition-colors hover:bg-cyan-500/10"
                   style={{ borderColor: 'var(--border-color-strong)', color: '#22d3ee' }}
                 >
                   <BookOpen className="h-3.5 w-3.5" strokeWidth={1.9} />
-                  查看当前知识
+                  查看当前项目知识/任务知识
                 </button>
               )}
               {skillActive ? renderList(skills, '暂无 Skill', 'skill')

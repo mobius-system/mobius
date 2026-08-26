@@ -221,7 +221,6 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   // canPlan 覆盖计划视图: update_plan function_call 走可视化步骤卡片.
   const canPlan = !!planUpdate
   const isPatchApplyEvent = entry?.type === 'event_msg' && String(entry?.payload?.type || '').startsWith('patch_apply')
-  const isAssistantEndTurn = isAssistantEndTurnEntry(entry)
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
   // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > user /goal 设置信号 (gold) > user 其他本地命令产物 (gold) > assistant 只含 thinking 思考卡 (purple) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > AIMUX 协作执行 (teal) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
@@ -238,7 +237,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
     ? LOCAL_COMMAND_THEME
     : isThinkingOnlyAssistantEntry(entry)
     ? THINKING_ONLY_THEME
-    : isAssistantEndTurn
+    : isAssistantEndTurnEntry(entry)
     ? ASSISTANT_END_TURN_THEME
     : isAssistantResponseGoldKeyword(entry)
     ? ASSISTANT_RESPONSE_KEYWORD_THEME
@@ -293,9 +292,6 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   // 用户是否手动点过折叠/展开: 一旦手动操作, 自动展开就不再强制掀开 (字段模式除外).
   const userToggledRef = useRef(false)
   const [open, setOpen] = useState<boolean>(desiredOpen)
-  // "结束"是单独的终态卡片标签。时间只在它的标题悬浮时出现，避免常态重复占用扫描空间。
-  // 不依赖 Tailwind group-hover，使内嵌在 <summary> 的显示逻辑在所有样式构建产物中一致。
-  const [endTimestampHovered, setEndTimestampHovered] = useState(false)
 
   // 自动信号跟随 — ratchet (只掀开不折回; 字段模式保持折叠) + 尊重用户手动:
   //   · forceOpen (搜索): 非字段模式下即使用户曾手动折叠也强制掀开 (显式查看优先).
@@ -356,11 +352,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
       open={open}
       onToggle={(e) => { userToggledRef.current = true; setOpen((e.currentTarget as HTMLDetailsElement).open) }}
       className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm card-enter ${theme.border} ${theme.bg}`}>
-      <summary
-        className={`cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}
-        onMouseEnter={isAssistantEndTurn ? () => setEndTimestampHovered(true) : undefined}
-        onMouseLeave={isAssistantEndTurn ? () => setEndTimestampHovered(false) : undefined}
-      >
+      <summary className={`cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
         {showMeta && typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
         {showMeta && ts && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
         {toolStatus ? (
@@ -371,11 +363,6 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
           </span>
         )}
         <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>
-        {isAssistantEndTurn && ts && !showMeta && endTimestampHovered && (
-          <span className="flex-shrink-0 whitespace-nowrap font-mono text-[10px] text-[var(--text-muted)]">
-            {ts}
-          </span>
-        )}
         {canCode && (
           <span
             className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border-current/30 ${theme.text}`}
