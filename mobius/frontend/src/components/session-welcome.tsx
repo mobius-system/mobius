@@ -1,10 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { BookOpen, Brain, Clock3, Eye, GitBranch, GitFork, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
+import { BookOpen, Brain, Clock3, Eye, GitBranch, GitFork, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Settings2, Upload, X } from 'lucide-react'
 import { api } from '../store'
 import { DevPortsBar } from './dev-ports-bar'
 import { normalizeGithubSkillInput } from './skills'
 import { SkillMarketLink } from './skill-market-link'
-import { UnifiedButton, useUnifiedButtonGroup } from './unified-button-group'
+import { ButtonVisibilitySwitchList, type VisibilityOption, UnifiedButton, useUnifiedButtonGroup } from './unified-button-group'
 
 const TimeConsumePanel = lazy(() => import('./time-consume-panel'))
 
@@ -319,13 +319,13 @@ interface SelectionSnapshotResponse {
 // =====================================================================
 const ACTIVE_PANEL_STORAGE_KEY = 'mobius:skill-memory-active-panel'
 
-type SessionResourcePanel = 'skill' | 'memory' | 'git' | 'ports' | 'time'
+type SessionResourcePanel = 'skill' | 'memory' | 'git' | 'ports' | 'time' | 'display-settings'
 
 function readStoredActivePanel(): null | SessionResourcePanel | undefined {
   if (typeof window === 'undefined') return undefined
   try {
     const value = window.localStorage.getItem(ACTIVE_PANEL_STORAGE_KEY)
-    if (value === 'skill' || value === 'memory' || value === 'git' || value === 'ports' || value === 'time') return value
+    if (value === 'skill' || value === 'memory' || value === 'git' || value === 'ports' || value === 'time' || value === 'display-settings') return value
     if (value === 'closed') return null
     return undefined
   } catch {
@@ -589,7 +589,7 @@ function ResourceTabButton({
   dataTour,
   badge,
 }: {
-  buttonId: string
+  buttonId?: string
   label: string
   icon: ReactNode
   active: boolean
@@ -624,16 +624,16 @@ export function SessionSkillMemoryEditor({
   initialPanel = null,
   persistActivePanel = false,
   onOpenKnowledge,
-  trailingControl,
   leadingControls,
+  visibilityOptions = [],
 }: {
   sessionId?: string
   projectId?: string
   initialPanel?: null | SessionResourcePanel
   persistActivePanel?: boolean
   onOpenKnowledge?: () => void
-  trailingControl?: ReactNode
   leadingControls?: ReactNode
+  visibilityOptions?: VisibilityOption[]
 }) {
   const [memories, setMemories] = useState<EditorItem[]>([])
   const [skills, setSkills] = useState<EditorItem[]>([])
@@ -892,6 +892,7 @@ export function SessionSkillMemoryEditor({
   const gitActive = activePanel === 'git'
   const portsActive = activePanel === 'ports'
   const timeActive = activePanel === 'time'
+  const displaySettingsActive = activePanel === 'display-settings'
   const resourceKind: 'skill' | 'memory' | null = skillActive ? 'skill' : memActive ? 'memory' : null
 
   return (
@@ -950,7 +951,14 @@ export function SessionSkillMemoryEditor({
             onClick={() => setActivePanelAndPersist(activePanel === 'time' ? null : 'time')}
             dataTour="session-time-toggle"
           />
-          {trailingControl}
+          <ResourceTabButton
+            label="显示设置"
+            icon={<Settings2 className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
+            active={displaySettingsActive}
+            activeClass="border-blue-400/60 bg-blue-500/15 text-blue-100 shadow-sm"
+            idleClass="border-transparent"
+            onClick={() => setActivePanelAndPersist(activePanel === 'display-settings' ? null : 'display-settings')}
+          />
         </div>
 
         {/* 内联菜单: 直接占据 tab 下方剩余空间, 无独立背景/边框/圆角, 无缝融入侧栏 */}
@@ -981,6 +989,7 @@ export function SessionSkillMemoryEditor({
                         <TimeConsumePanel sessionId={sessionId} />
                       </Suspense>
                     )
+                    : displaySettingsActive ? <ButtonVisibilitySwitchList options={visibilityOptions} />
                     : (
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2 px-1 py-0.5">

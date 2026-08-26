@@ -32,7 +32,7 @@ import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { RemoteComputeMemoryModal } from './memories'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { AdvancedSessionActions } from './advanced-session-actions'
-import { ButtonVisibilityMenu, UnifiedButtonGroup } from './unified-button-group'
+import { UnifiedButtonGroup } from './unified-button-group'
 import { SessionGroupTree } from './session-group-tree'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 import { normalizeRecentSessions, type RecentSession } from '../services/recent-sessions'
@@ -5078,9 +5078,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                 persistActivePanel
                 leadingControls={renderAdvancedSessionActions('default')}
                 onOpenKnowledge={currentProjectId && currentIssueId ? () => setKnowledgeEditorOpen(true) : undefined}
-                trailingControl={<ButtonVisibilityMenu
-                  className="flex-none"
-                  options={[
+                visibilityOptions={[
                     { id: 'file-changes', label: '查看文件修改' },
                     { id: 'bash-commands', label: '查看运行命令' },
                     { id: 'input-replay', label: '回放输入' },
@@ -5097,7 +5095,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                     { id: 'ports', label: '端口' },
                     { id: 'time', label: '耗时' },
                   ]}
-                />}
               />
             </UnifiedButtonGroup>
           ))}
