@@ -3413,6 +3413,8 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       setVoiceState('idle')
       setLastSendError('')
       addMessage({ role: 'user', content: text })
+      // 先写入本地输入历史；即使随后 POST 因网络抖动失败，↑ 也能立即找回这段文字。
+      prependSessionInputCache(sessionId, text, requestId)
       setPendingSendAt(Date.now())
       setMessageSubmitting(true)
       setTyping(true)
@@ -4016,13 +4018,14 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     setPendingSendAt(Date.now())
     setMessageSubmitting(true)
     setTyping(true)
+    // 记录发送尝试而不是等待服务端成功回执。网络超时、响应丢失或后端暂时不可达时，
+    // 这条本地记录仍可通过 ↑ /“回放输入”召回，并在刷新页面后继续存在。
+    prependSessionInputCache(sentSessionId, text, requestId)
     // 发送瞬间立即清空输入框, 给用户即时反馈. 原来放在 .then() 里,
     // 要等后端 POST /messages 返回才清空, 体感是"字过了一会儿才消失".
     clearSessionInputDraft(sentSessionId, sentInput)
     postSessionMessage({ content, inputText: text, requestId, urgent, mentions: mentionPayload })
       .then((resp) => {
-        // 与后端异步写入 session_input_list.json 并行更新本地缓存，下一次 ↑ 立即可召回。
-        prependSessionInputCache(sentSessionId, text)
         const queued = Array.isArray(resp?.external_messages_queued)
           ? resp.external_messages_queued.filter((item: any) => item?.delivery === 'queued')
           : []
@@ -4043,7 +4046,13 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
         inputRef.current?.focus()
         setTimeout(() => loadHistoryRef.current(), 500)
       })
-      .catch(() => { inputRef.current?.focus() })
+      .catch(() => {
+        // 发送失败时保留原文，便于直接重试；若用户已开始编辑新内容则不覆盖。
+        if (inputRecallRef.current.sessionId === sentSessionId && !(inputRef.current?.value || '').trim()) {
+          setInput(sentInput)
+        }
+        inputRef.current?.focus()
+      })
       .finally(() => setMessageSubmitting(false))
   }, [input, replyTo, sessionId, addMessage, attachments, anyUploading, messageSubmitting, clearAttachments, postSessionMessage, clearSessionInputDraft, voiceState, selectedAgentMentions])
 

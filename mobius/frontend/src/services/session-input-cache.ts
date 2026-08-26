@@ -17,12 +17,67 @@ export type SessionInputEntry = {
 }
 
 const MAX_CACHED_SESSIONS = 128
+const MAX_PERSISTED_ENTRIES = 200
+const LOCAL_STORAGE_PREFIX = 'mobius:session-input-history:'
 const memoryCache = new Map<string, SessionInputEntry[]>()
 const inFlightRequests = new Map<string, Promise<SessionInputEntry[]>>()
 
-function remember(sessionId: string, entries: SessionInputEntry[]) {
+function entryKey(entry: SessionInputEntry): string {
+  if (entry.request_id) return `request:${entry.request_id}`
+  if (entry.id) return `id:${entry.id}`
+  return `fallback:${entry.created_at || ''}:${(entry.input_text || entry.content || '').trim()}`
+}
+
+function mergeEntries(...groups: SessionInputEntry[][]): SessionInputEntry[] {
+  const merged = new Map<string, SessionInputEntry>()
+  for (const group of groups) {
+    for (const entry of group) {
+      if (!entry || typeof entry !== 'object') continue
+      const key = entryKey(entry)
+      const previous = merged.get(key)
+      // Prefer the server entry when it fills in turn/request metadata for an
+      // optimistic local entry with the same request id.
+      merged.set(key, previous ? { ...previous, ...entry } : entry)
+    }
+  }
+  return Array.from(merged.values())
+    .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+}
+
+function localStorageKey(sessionId: string) {
+  return `${LOCAL_STORAGE_PREFIX}${sessionId}`
+}
+
+function readPersisted(sessionId: string): SessionInputEntry[] {
+  if (!sessionId || typeof localStorage === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(localStorageKey(sessionId))
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter(Boolean) as SessionInputEntry[] : []
+  } catch {
+    return []
+  }
+}
+
+function persist(sessionId: string, entries: SessionInputEntry[]) {
+  if (!sessionId || typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(localStorageKey(sessionId), JSON.stringify(entries.slice(0, MAX_PERSISTED_ENTRIES)))
+  } catch {
+    // Quota/private-mode failures must never affect sending or recall.
+  }
+}
+
+function remember(sessionId: string, entries: SessionInputEntry[], merge = true) {
+  const previous = memoryCache.get(sessionId) || []
+  const persisted = readPersisted(sessionId)
+  const next = merge
+    ? mergeEntries(entries, previous, persisted)
+    : mergeEntries(entries)
   memoryCache.delete(sessionId)
-  memoryCache.set(sessionId, entries)
+  memoryCache.set(sessionId, next)
+  persist(sessionId, next)
   while (memoryCache.size > MAX_CACHED_SESSIONS) {
     const oldestSessionId = memoryCache.keys().next().value
     if (!oldestSessionId) break
@@ -34,7 +89,12 @@ function remember(sessionId: string, entries: SessionInputEntry[]) {
 export function readSessionInputCache(sessionId: string): SessionInputEntry[] | null {
   if (!sessionId) return null
   const entries = memoryCache.get(sessionId)
-  if (!entries) return null
+  if (!entries) {
+    const persisted = readPersisted(sessionId)
+    if (persisted.length === 0) return null
+    remember(sessionId, persisted, false)
+    return persisted.slice()
+  }
   remember(sessionId, entries)
   return entries.slice()
 }
@@ -49,7 +109,7 @@ export function refreshSessionInputCache(sessionId: string): Promise<SessionInpu
     .then((data: any) => {
       const entries = Array.isArray(data?.entries) ? data.entries as SessionInputEntry[] : []
       remember(sessionId, entries)
-      return entries.slice()
+      return (memoryCache.get(sessionId) || entries).slice()
     })
     .finally(() => {
       inFlightRequests.delete(sessionId)
@@ -64,16 +124,17 @@ export function preloadSessionInputCache(sessionId: string): void {
 }
 
 /** POST 成功后立刻补入缓存，下一次 ArrowUp 无须等待输入历史文件再被读取。 */
-export function prependSessionInputCache(sessionId: string, inputText: string): void {
+export function prependSessionInputCache(sessionId: string, inputText: string, requestId?: string): void {
   const text = inputText.trim()
   if (!sessionId || !text) return
   const current = memoryCache.get(sessionId) || []
-  if (current.some((entry) => (entry.input_text || entry.content || '').trim() === text)) return
-  remember(sessionId, [{
-    id: `optimistic-input-${Date.now()}`,
+  const entry: SessionInputEntry = {
+    id: requestId ? `optimistic-input-${requestId}` : `optimistic-input-${Date.now()}`,
     session_id: sessionId,
     input_text: inputText,
     content: inputText,
     created_at: new Date().toISOString(),
-  }, ...current])
+    request_id: requestId || null,
+  }
+  remember(sessionId, [entry, ...current])
 }
