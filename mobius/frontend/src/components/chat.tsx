@@ -32,6 +32,7 @@ import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { RemoteComputeMemoryModal } from './memories'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { AdvancedSessionActions } from './advanced-session-actions'
+import { ButtonVisibilityMenu, UnifiedButtonGroup } from './unified-button-group'
 import { SessionGroupTree } from './session-group-tree'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 import { normalizeRecentSessions, type RecentSession } from '../services/recent-sessions'
@@ -5065,16 +5066,40 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
               <PlanningEditor projectId={currentProjectId} sessionId={sessionId} />
             </div>
           ) : (
-            <div className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0">
+            <UnifiedButtonGroup
+              className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0"
+              aria-label="会话统一按钮组"
+              visibilityStorageKey="mobius:session-sidebar-buttons:hidden"
+            >
               {renderAdvancedSessionActions('default')}
-                <SessionSkillMemoryEditor
-                  sessionId={currentSession?.session_id || sessionId}
-                  projectId={currentProjectId || undefined}
-                  initialPanel="memory"
-                  persistActivePanel
-                  onOpenKnowledge={currentProjectId && currentIssueId ? () => setKnowledgeEditorOpen(true) : undefined}
-                />
-            </div>
+              <SessionSkillMemoryEditor
+                sessionId={currentSession?.session_id || sessionId}
+                projectId={currentProjectId || undefined}
+                initialPanel="memory"
+                persistActivePanel
+                onOpenKnowledge={currentProjectId && currentIssueId ? () => setKnowledgeEditorOpen(true) : undefined}
+                trailingControl={<ButtonVisibilityMenu
+                  className="flex-none"
+                  options={[
+                    { id: 'file-changes', label: '查看文件修改' },
+                    { id: 'bash-commands', label: '查看运行命令' },
+                    { id: 'input-replay', label: '回放输入' },
+                    { id: 'jsonl-meta', label: '显示时间与序号' },
+                    { id: 'project-port', label: '进入项目端口' },
+                    { id: 'terminal', label: '打开终端' },
+                    { id: 'cooperable-pc', label: '可合作计算机' },
+                    { id: 'knowledge', label: '查看当前项目知识/任务知识' },
+                    { id: 'send-knowledge', label: '项目知识沉淀到记忆' },
+                    { id: 'continue-model', label: '修改模型并继续' },
+                    { id: 'skill', label: 'Skill' },
+                    { id: 'memory', label: 'Memory' },
+                    { id: 'git', label: 'Git' },
+                    { id: 'ports', label: '端口' },
+                    { id: 'time', label: '耗时' },
+                  ]}
+                />}
+              />
+            </UnifiedButtonGroup>
           ))}
         </div>
       </div>

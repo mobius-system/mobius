@@ -4,7 +4,7 @@ import { api } from '../store'
 import { DevPortsBar } from './dev-ports-bar'
 import { normalizeGithubSkillInput } from './skills'
 import { SkillMarketLink } from './skill-market-link'
-import { ButtonVisibilityMenu, UnifiedButton, UnifiedButtonGroup } from './unified-button-group'
+import { UnifiedButton, useUnifiedButtonGroup } from './unified-button-group'
 
 const TimeConsumePanel = lazy(() => import('./time-consume-panel'))
 
@@ -623,12 +623,14 @@ export function SessionSkillMemoryEditor({
   initialPanel = null,
   persistActivePanel = false,
   onOpenKnowledge,
+  trailingControl,
 }: {
   sessionId?: string
   projectId?: string
   initialPanel?: null | SessionResourcePanel
   persistActivePanel?: boolean
   onOpenKnowledge?: () => void
+  trailingControl?: ReactNode
 }) {
   const [memories, setMemories] = useState<EditorItem[]>([])
   const [skills, setSkills] = useState<EditorItem[]>([])
@@ -654,6 +656,11 @@ export function SessionSkillMemoryEditor({
     setActivePanel(next)
     if (persistActivePanel) writeStoredActivePanel(next)
   }, [persistActivePanel])
+  const buttonGroup = useUnifiedButtonGroup()
+
+  useEffect(() => {
+    if (activePanel && buttonGroup?.hiddenIds.has(activePanel)) setActivePanelAndPersist(null)
+  }, [activePanel, buttonGroup?.hiddenIds, setActivePanelAndPersist])
 
   useEffect(() => {
     if (activePanel !== 'git' || !projectId) return
@@ -886,22 +893,9 @@ export function SessionSkillMemoryEditor({
 
   return (
     <>
-      <UnifiedButtonGroup
-        className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2"
-        visibilityStorageKey="mobius:session-resource-tabs:hidden"
-        onVisibilityChange={(hiddenIds) => {
-          if (activePanel && hiddenIds.has(activePanel)) setActivePanelAndPersist(null)
-        }}
-      >
+      <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2">
         {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
             五个 tab 始终保持单行并等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
-        <ButtonVisibilityMenu options={[
-          { id: 'skill', label: 'Skill' },
-          { id: 'memory', label: 'Memory' },
-          { id: 'git', label: 'Git' },
-          { id: 'ports', label: '端口' },
-          { id: 'time', label: '耗时' },
-        ]} />
         <div className="session-resource-tabs flex items-stretch [&>button]:w-auto [&>button]:flex-1">
           <ResourceTabButton
             buttonId="skill"
@@ -953,6 +947,7 @@ export function SessionSkillMemoryEditor({
             onClick={() => setActivePanelAndPersist(activePanel === 'time' ? null : 'time')}
             dataTour="session-time-toggle"
           />
+          {trailingControl}
         </div>
 
         {/* 内联菜单: 直接占据 tab 下方剩余空间, 无独立背景/边框/圆角, 无缝融入侧栏 */}
@@ -1041,7 +1036,7 @@ export function SessionSkillMemoryEditor({
             </div>
           </div>
         )}
-      </UnifiedButtonGroup>
+      </div>
 
       {previewItem && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center px-4" role="dialog" aria-modal="true">

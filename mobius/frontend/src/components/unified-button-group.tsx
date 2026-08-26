@@ -57,12 +57,16 @@ export function UnifiedButtonGroup({ className = '', visibilityStorageKey, onVis
   )
 }
 
-export function ButtonVisibilityMenu({ options }: { options: VisibilityOption[] }) {
+export function useUnifiedButtonGroup() {
+  return useContext(ButtonGroupContext)
+}
+
+export function ButtonVisibilityMenu({ options, className = '' }: { options: VisibilityOption[]; className?: string }) {
   const context = useContext(ButtonGroupContext)
   const [open, setOpen] = useState(false)
   if (!context) return null
   return (
-    <div className="relative flex justify-end">
+    <div className={`relative flex justify-end ${className}`}>
       <UnifiedButton
         kind="normal"
         label="自定义显示按钮"
