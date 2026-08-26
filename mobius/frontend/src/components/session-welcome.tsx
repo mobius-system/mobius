@@ -606,6 +606,7 @@ function ResourceTabButton({
       label={label}
       tooltip={label}
       icon={icon}
+      accent={buttonId === 'git' ? 'amber' : buttonId === 'memory' ? 'cyan' : buttonId === 'ports' ? 'emerald' : buttonId === 'time' ? 'blue' : 'blue'}
       active={active}
       activeClassName={activeClass}
       inactiveClassName={idleClass}
@@ -624,6 +625,7 @@ export function SessionSkillMemoryEditor({
   persistActivePanel = false,
   onOpenKnowledge,
   trailingControl,
+  leadingControls,
 }: {
   sessionId?: string
   projectId?: string
@@ -631,6 +633,7 @@ export function SessionSkillMemoryEditor({
   persistActivePanel?: boolean
   onOpenKnowledge?: () => void
   trailingControl?: ReactNode
+  leadingControls?: ReactNode
 }) {
   const [memories, setMemories] = useState<EditorItem[]>([])
   const [skills, setSkills] = useState<EditorItem[]>([])
@@ -893,17 +896,17 @@ export function SessionSkillMemoryEditor({
 
   return (
     <>
-      <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2">
-        {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
-            五个 tab 始终保持单行并等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
-        <div className="session-resource-tabs flex items-stretch [&>button]:w-auto [&>button]:flex-1">
+      <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-3">
+        {/* 所有会话操作共用一个流式按钮带。隐藏按钮或侧栏变窄时，浏览器按真实可用空间自动回填与换行。 */}
+        <div className="advanced-session-actions mobius-chat-input-actions session-resource-tabs flex flex-wrap items-center gap-1.5" data-testid="advanced-session-actions" aria-label="高级会话按钮组">
+          {leadingControls}
           <ResourceTabButton
             buttonId="skill"
             label="Skill"
             icon={<Puzzle className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
             active={skillActive}
-            activeClass="border-blue-400 font-medium"
-            idleClass="border-transparent hover:bg-blue-500/10"
+            activeClass="border-blue-400/60 bg-blue-500/15 text-blue-200 shadow-sm"
+            idleClass="border-transparent"
             onClick={() => setActivePanelAndPersist(activePanel === 'skill' ? null : 'skill')}
           />
           <ResourceTabButton
@@ -911,8 +914,8 @@ export function SessionSkillMemoryEditor({
             label="Memory"
             icon={<Brain className="h-3.5 w-3.5 text-cyan-400" strokeWidth={1.9} />}
             active={memActive}
-            activeClass="border-cyan-400 font-medium"
-            idleClass="border-transparent hover:bg-cyan-500/10"
+            activeClass="border-cyan-400/60 bg-cyan-500/15 text-cyan-100 shadow-sm"
+            idleClass="border-transparent"
             onClick={() => setActivePanelAndPersist(activePanel === 'memory' ? null : 'memory')}
             dataTour="session-memory-toggle"
           />
@@ -921,8 +924,8 @@ export function SessionSkillMemoryEditor({
             label="Git"
             icon={<GitFork className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.9} />}
             active={gitActive}
-            activeClass="border-amber-400 font-medium"
-            idleClass="border-transparent hover:bg-amber-500/10"
+            activeClass="border-amber-400/60 bg-amber-500/15 text-amber-100 shadow-sm"
+            idleClass="border-transparent"
             onClick={() => setActivePanelAndPersist(activePanel === 'git' ? null : 'git')}
             dataTour="session-git-toggle"
             badge={gitSources.length > 0 ? <span className="text-[9px] text-amber-300">{gitSources.length}</span> : undefined}
@@ -932,8 +935,8 @@ export function SessionSkillMemoryEditor({
             label="端口"
             icon={<MonitorPlay className="h-3.5 w-3.5 text-emerald-400" strokeWidth={1.9} />}
             active={portsActive}
-            activeClass="border-emerald-400 font-medium"
-            idleClass="border-transparent hover:bg-emerald-500/10"
+            activeClass="border-emerald-400/60 bg-emerald-500/15 text-emerald-100 shadow-sm"
+            idleClass="border-transparent"
             onClick={() => setActivePanelAndPersist(activePanel === 'ports' ? null : 'ports')}
             dataTour="session-ports-toggle"
           />
@@ -942,8 +945,8 @@ export function SessionSkillMemoryEditor({
             label="耗时"
             icon={<Clock3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />}
             active={timeActive}
-            activeClass="border-sky-400 font-medium"
-            idleClass="border-transparent hover:bg-sky-500/10"
+            activeClass="border-sky-400/60 bg-sky-500/15 text-sky-100 shadow-sm"
+            idleClass="border-transparent"
             onClick={() => setActivePanelAndPersist(activePanel === 'time' ? null : 'time')}
             dataTour="session-time-toggle"
           />

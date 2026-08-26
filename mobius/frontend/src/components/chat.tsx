@@ -5067,16 +5067,16 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
             </div>
           ) : (
             <UnifiedButtonGroup
-              className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0"
+              className="mobius-chat-input-side flex min-h-0 flex-1 flex-col overflow-y-auto p-3 pt-0"
               aria-label="会话统一按钮组"
               visibilityStorageKey="mobius:session-sidebar-buttons:hidden"
             >
-              {renderAdvancedSessionActions('default')}
               <SessionSkillMemoryEditor
                 sessionId={currentSession?.session_id || sessionId}
                 projectId={currentProjectId || undefined}
                 initialPanel="memory"
                 persistActivePanel
+                leadingControls={renderAdvancedSessionActions('default')}
                 onOpenKnowledge={currentProjectId && currentIssueId ? () => setKnowledgeEditorOpen(true) : undefined}
                 trailingControl={<ButtonVisibilityMenu
                   className="flex-none"
