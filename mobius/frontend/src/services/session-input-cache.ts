@@ -73,7 +73,7 @@ function remember(sessionId: string, entries: SessionInputEntry[], merge = true)
   const previous = memoryCache.get(sessionId) || []
   const persisted = readPersisted(sessionId)
   const next = merge
-    ? mergeEntries(entries, previous, persisted)
+    ? mergeEntries(persisted, previous, entries)
     : mergeEntries(entries)
   memoryCache.delete(sessionId)
   memoryCache.set(sessionId, next)
@@ -123,7 +123,7 @@ export function preloadSessionInputCache(sessionId: string): void {
   void refreshSessionInputCache(sessionId).catch(() => {})
 }
 
-/** POST 成功后立刻补入缓存，下一次 ArrowUp 无须等待输入历史文件再被读取。 */
+/** 发送尝试时立刻补入缓存，下一次 ArrowUp 无须等待输入历史文件再被读取。 */
 export function prependSessionInputCache(sessionId: string, inputText: string, requestId?: string): void {
   const text = inputText.trim()
   if (!sessionId || !text) return
