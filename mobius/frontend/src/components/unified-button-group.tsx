@@ -64,20 +64,75 @@ export function useUnifiedButtonGroup() {
 export function ButtonVisibilityMenu({ options, className = '' }: { options: VisibilityOption[]; className?: string }) {
   const context = useContext(ButtonGroupContext)
   const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number; placement: 'top' | 'bottom' } | null>(null)
+
+  const updateMenuPosition = useCallback(() => {
+    const trigger = triggerRef.current
+    if (!trigger || typeof window === 'undefined') return
+    const rect = trigger.getBoundingClientRect()
+    const menuWidth = Math.min(224, window.innerWidth - 16)
+    const menuHeight = menuRef.current?.offsetHeight || 360
+    const margin = 8
+    const placement = rect.bottom + margin + menuHeight <= window.innerHeight - margin ? 'bottom' : 'top'
+    const left = Math.min(Math.max(rect.right - menuWidth, margin), window.innerWidth - menuWidth - margin)
+    const top = placement === 'bottom'
+      ? Math.min(rect.bottom + margin, window.innerHeight - margin - menuHeight)
+      : Math.max(margin, rect.top - margin - menuHeight)
+    setMenuPosition({ left, top, placement })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    updateMenuPosition()
+  }, [open, updateMenuPosition])
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (!triggerRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false)
+    }
+    window.addEventListener('resize', updateMenuPosition)
+    window.addEventListener('scroll', updateMenuPosition, true)
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition)
+      window.removeEventListener('scroll', updateMenuPosition, true)
+      document.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [open, updateMenuPosition])
+
   if (!context) return null
   return (
-    <div className={`relative flex justify-end ${className}`}>
+    <div className={`flex ${className}`}>
       <UnifiedButton
-        kind="normal"
+        ref={triggerRef}
+        kind="expand-tab"
         label="自定义显示按钮"
         tooltip="自定义显示按钮"
         icon={<Settings2 className="h-3.5 w-3.5" strokeWidth={1.9} />}
-        buttonClassName="h-9 w-9 rounded-md border border-[var(--border-color)] text-[var(--text-secondary)] transition-[background-color,border-color,transform,box-shadow] hover:-translate-y-px hover:border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] hover:shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/40"
+        accent="blue"
+        active={open}
+        activeClassName="border-blue-400/60 bg-blue-500/15 text-blue-200 shadow-sm"
+        inactiveClassName="border-transparent"
         onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
       />
-      {open && (
-        <div className="absolute right-0 top-7 z-50 w-52 rounded-md border p-2 shadow-xl" style={{ background: 'var(--menu-bg)', borderColor: 'var(--border-color)' }}>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={menuRef}
+          role="dialog"
+          aria-label="自定义显示按钮"
+          className="fixed z-[1000] w-56 max-w-[calc(100vw-16px)] rounded-lg border p-2 shadow-2xl"
+          style={{
+            left: menuPosition?.left ?? 8,
+            top: menuPosition?.top ?? 8,
+            visibility: menuPosition ? 'visible' : 'hidden',
+            background: 'var(--menu-bg)',
+            borderColor: 'var(--border-color)',
+          }}
+        >
           <div className="mb-1 flex items-center justify-between px-1 text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
             显示按钮
             <button type="button" aria-label="关闭自定义按钮菜单" onClick={() => setOpen(false)} className="rounded p-0.5 hover:bg-[var(--bg-card-hover)]"><X className="h-3.5 w-3.5" /></button>
@@ -94,7 +149,8 @@ export function ButtonVisibilityMenu({ options, className = '' }: { options: Vis
               />
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
