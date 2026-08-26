@@ -1,10 +1,10 @@
-import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { BookOpen, Brain, Clock3, Eye, GitBranch, GitFork, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
 import { api } from '../store'
 import { DevPortsBar } from './dev-ports-bar'
 import { normalizeGithubSkillInput } from './skills'
 import { SkillMarketLink } from './skill-market-link'
+import { ButtonVisibilityMenu, UnifiedButton, UnifiedButtonGroup } from './unified-button-group'
 
 const TimeConsumePanel = lazy(() => import('./time-consume-panel'))
 
@@ -577,13 +577,9 @@ type GitSource = {
   cache_expires_at?: number
 }
 
-// 资源 tab 图标的悬浮动效, 模仿 advanced-interaction-btn 的 tilt:
-// 悬浮/键盘聚焦时图标上移 0.5、旋转 -8°、放大 1.1 (transition-transform duration-200)。
-const RESOURCE_TAB_ICON_HOVER = 'inline-flex flex-shrink-0 items-center justify-center transition-transform duration-200 group-hover/resource-tab:-translate-y-0.5 group-hover/resource-tab:rotate-[-8deg] group-hover/resource-tab:scale-110 group-focus-visible/resource-tab:-translate-y-0.5 group-focus-visible/resource-tab:rotate-[-8deg] group-focus-visible/resource-tab:scale-110'
-
-// 资源 tab 按钮: 文字提示沿用 advanced-interaction-btn 的自定义 tooltip —— mouseenter 即时弹出,
-// 替代原生 title (浏览器自带约 1s 延迟); 定位 (下方优先 + 视口 clamp) 与样式与高级交互按钮同款。
+// 资源 tab 由 activePanel 单一状态控制：展开一个 Tab 时其余 Tab 必然收起。
 function ResourceTabButton({
+  buttonId,
   label,
   icon,
   active,
@@ -593,6 +589,7 @@ function ResourceTabButton({
   dataTour,
   badge,
 }: {
+  buttonId: string
   label: string
   icon: ReactNode
   active: boolean
@@ -602,105 +599,21 @@ function ResourceTabButton({
   dataTour?: string
   badge?: ReactNode
 }) {
-  const tooltipId = useId()
-  const buttonRef = useRef<HTMLButtonElement | null>(null)
-  const tooltipRef = useRef<HTMLDivElement | null>(null)
-  const [tooltipOpen, setTooltipOpen] = useState(false)
-  // tooltipPos 为 null 时 tooltip 以 visibility:hidden 渲染并测量; 测量后得到经视口 clamp 的最终坐标, 再可见.
-  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number; placement: 'top' | 'bottom' } | null>(null)
-
-  const updateTooltipPosition = useCallback(() => {
-    const button = buttonRef.current
-    if (!button || typeof window === 'undefined') return
-    const rect = button.getBoundingClientRect()
-    const gap = 8
-    const margin = 8
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    const tip = tooltipRef.current
-    const tw = tip ? tip.offsetWidth : 0
-    const th = tip ? tip.offsetHeight : 0
-    const approxH = th || 30
-    const placement = rect.bottom + gap + approxH <= vh - margin ? 'bottom' : (rect.top - gap - approxH >= margin ? 'top' : 'bottom')
-    const top = placement === 'bottom'
-      ? Math.min(rect.bottom + gap, vh - margin - approxH)
-      : Math.max(margin, rect.top - gap - approxH)
-    const center = rect.left + rect.width / 2
-    const minCenter = margin + tw / 2
-    const maxCenter = vw - margin - tw / 2
-    const left = tw > 0 ? Math.min(Math.max(center, minCenter), maxCenter) : Math.min(Math.max(center, margin), vw - margin)
-    setTooltipPos({ left, top, placement })
-  }, [])
-
-  useEffect(() => {
-    if (!tooltipOpen) return
-    updateTooltipPosition()
-    window.addEventListener('resize', updateTooltipPosition)
-    window.addEventListener('scroll', updateTooltipPosition, true)
-    return () => {
-      window.removeEventListener('resize', updateTooltipPosition)
-      window.removeEventListener('scroll', updateTooltipPosition, true)
-    }
-  }, [tooltipOpen, updateTooltipPosition])
-
-  useLayoutEffect(() => {
-    if (tooltipOpen && tooltipPos === null) {
-      updateTooltipPosition()
-    }
-  }, [tooltipOpen, tooltipPos, updateTooltipPosition])
-
-  const hideTooltip = useCallback(() => {
-    setTooltipOpen(false)
-    setTooltipPos(null)
-  }, [])
-
   return (
-    <>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={onClick}
-        aria-pressed={active}
-        aria-label={label}
-        aria-describedby={tooltipOpen ? tooltipId : undefined}
-        {...(dataTour ? { 'data-tour': dataTour } : {})}
-        onMouseEnter={() => setTooltipOpen(true)}
-        onMouseLeave={hideTooltip}
-        onFocus={() => setTooltipOpen(true)}
-        onBlur={hideTooltip}
-        className={`group/resource-tab min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${active ? activeClass : idleClass}`}
-        style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}
-      >
-        <span className={RESOURCE_TAB_ICON_HOVER}>{icon}</span>
-        {badge}
-      </button>
-      {tooltipOpen && typeof document !== 'undefined'
-        ? createPortal(
-          <div
-            ref={tooltipRef}
-            id={tooltipId}
-            role="tooltip"
-            // tooltipPos 为 null = 首帧渲染用于测量, visibility:hidden 保持布局以读 offsetWidth/Height, 测量完成后再可见.
-            className="pointer-events-none fixed z-[1000] max-w-[220px] whitespace-nowrap rounded-md border border-[var(--border-color)] bg-[var(--modal-bg)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] shadow-xl"
-            style={
-              tooltipPos
-                ? {
-                  left: tooltipPos.left,
-                  top: tooltipPos.top,
-                  transform: tooltipPos.placement === 'bottom'
-                    ? 'translate(-50%, 0)'
-                    : 'translate(-50%, -100%)',
-                  visibility: 'visible',
-                }
-                : { left: 0, top: 0, visibility: 'hidden' }
-            }
-          >
-            {label}
-          </div>,
-          document.body,
-        )
-        : null}
-    </>
+    <UnifiedButton
+      kind="expand-tab"
+      buttonId={buttonId}
+      label={label}
+      tooltip={label}
+      icon={icon}
+      active={active}
+      activeClassName={activeClass}
+      inactiveClassName={idleClass}
+      onClick={onClick}
+      badge={badge}
+      {...(dataTour ? { 'data-tour': dataTour } : {})}
+      style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}
+    />
   )
 }
 
@@ -973,11 +886,19 @@ export function SessionSkillMemoryEditor({
 
   return (
     <>
-      <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2">
+      <UnifiedButtonGroup className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2" visibilityStorageKey="mobius:session-resource-tabs:hidden">
         {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
             五个 tab 始终保持单行并等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
+        <ButtonVisibilityMenu options={[
+          { id: 'skill', label: 'Skill' },
+          { id: 'memory', label: 'Memory' },
+          { id: 'git', label: 'Git' },
+          { id: 'ports', label: '端口' },
+          { id: 'time', label: '耗时' },
+        ]} />
         <div className="session-resource-tabs grid grid-cols-[repeat(5,minmax(0,1fr))] items-stretch">
           <ResourceTabButton
+            buttonId="skill"
             label="Skill"
             icon={<Puzzle className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
             active={skillActive}
@@ -986,6 +907,7 @@ export function SessionSkillMemoryEditor({
             onClick={() => setActivePanelAndPersist(activePanel === 'skill' ? null : 'skill')}
           />
           <ResourceTabButton
+            buttonId="memory"
             label="Memory"
             icon={<Brain className="h-3.5 w-3.5 text-cyan-400" strokeWidth={1.9} />}
             active={memActive}
@@ -995,6 +917,7 @@ export function SessionSkillMemoryEditor({
             dataTour="session-memory-toggle"
           />
           <ResourceTabButton
+            buttonId="git"
             label="Git"
             icon={<GitFork className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.9} />}
             active={gitActive}
@@ -1005,6 +928,7 @@ export function SessionSkillMemoryEditor({
             badge={gitSources.length > 0 ? <span className="text-[9px] text-amber-300">{gitSources.length}</span> : undefined}
           />
           <ResourceTabButton
+            buttonId="ports"
             label="端口"
             icon={<MonitorPlay className="h-3.5 w-3.5 text-emerald-400" strokeWidth={1.9} />}
             active={portsActive}
@@ -1014,6 +938,7 @@ export function SessionSkillMemoryEditor({
             dataTour="session-ports-toggle"
           />
           <ResourceTabButton
+            buttonId="time"
             label="耗时"
             icon={<Clock3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />}
             active={timeActive}
@@ -1110,7 +1035,7 @@ export function SessionSkillMemoryEditor({
             </div>
           </div>
         )}
-      </div>
+      </UnifiedButtonGroup>
 
       {previewItem && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center px-4" role="dialog" aria-modal="true">

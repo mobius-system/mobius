@@ -607,8 +607,7 @@ export default function UserPage() {
               </div>
 
               {/* 搜索、筛选与屏蔽入口集中为一条紧凑工具栏，窄屏自动换行。 */}
-              <div className="mt-4 flex flex-col gap-3 rounded-xl p-3 sm:flex-row sm:items-center sm:flex-wrap lg:flex-nowrap"
-                style={{ background: 'color-mix(in srgb, var(--bg-primary) 42%, transparent)' }}>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap lg:flex-nowrap">
                 <div className="relative min-w-0 flex-1 sm:min-w-[240px]">
                   <Search className="absolute left-2.5 top-[9px] h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
                   <input value={search} onChange={e => setSearch(e.target.value)}
