@@ -1,4 +1,4 @@
-import { BookOpen, Brain, Clock, Cpu, FileDiff, GitBranch, History, Loader2, Network, Puzzle, RotateCcw, Terminal, Wand2 } from 'lucide-react'
+import { BookOpen, Brain, Cpu, FileDiff, GitBranch, History, Loader2, Network, Puzzle, RotateCcw, Terminal, Wand2 } from 'lucide-react'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { RemoteAimuxMcpIcon } from './aimux-link-indicator'
 import { ProjectPortEntryButton } from './project-files'
@@ -10,14 +10,12 @@ type AdvancedSessionActionsProps = {
   researchId?: string | null
   vscodeSubPath?: string | null
   jsonlEntryCount: number
-  showJsonlMeta: boolean
   connectionReady: boolean
   projectKnowledgeSending: boolean
   variant?: 'default' | 'compact' | 'menu'
   onOpenFileChanges: () => void
   onOpenBashCommands: () => void
   onOpenInputReplay: () => void
-  onToggleJsonlMeta: () => void
   onRequestRunProject: (mainProjectPortPath: string) => void
   onOpenTerminal: () => void
   onOpenCooperablePc: () => void
@@ -43,14 +41,12 @@ export function AdvancedSessionActions({
   researchId,
   vscodeSubPath,
   jsonlEntryCount,
-  showJsonlMeta,
   connectionReady,
   projectKnowledgeSending,
   variant = 'default',
   onOpenFileChanges,
   onOpenBashCommands,
   onOpenInputReplay,
-  onToggleJsonlMeta,
   onRequestRunProject,
   onOpenTerminal,
   onOpenCooperablePc,
@@ -79,7 +75,7 @@ export function AdvancedSessionActions({
       aria-label="高级会话按钮组"
     >
       {menu && <div className="px-1 text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>查看与工作</div>}
-      <div className={`grid ${menu ? 'grid-cols-2 gap-1' : 'grid-cols-5 gap-2'} items-stretch`}>
+      <div className={`grid ${menu ? 'grid-cols-2 gap-1' : 'grid-cols-4 gap-2'} items-stretch`}>
         <AdvancedInteractionBtn
           onClick={onOpenFileChanges}
           disabled={!hasSession}
@@ -107,17 +103,6 @@ export function AdvancedSessionActions({
           accent="blue"
           displayLabel={menu}
           icon={<RotateCcw className="h-4 w-4" strokeWidth={1.9} />}
-        />
-        <AdvancedInteractionBtn
-          onClick={onToggleJsonlMeta}
-          disabled={jsonlEntryCount === 0}
-          label={showJsonlMeta ? '隐藏时间与序号' : '显示时间与序号'}
-          tooltip={showJsonlMeta ? '隐藏 JSONL 卡片标题里的序号与时间前缀' : '在 JSONL 卡片标题里显示 #序号 与 MM-DD HH:MM:SS 时间前缀'}
-          accent="blue"
-          displayLabel={menu}
-          aria-pressed={showJsonlMeta}
-          className={showJsonlMeta ? 'bg-blue-500/15' : ''}
-          icon={<Clock className="h-4 w-4" strokeWidth={1.9} />}
         />
         <ProjectPortEntryButton
           projectId={projectId}

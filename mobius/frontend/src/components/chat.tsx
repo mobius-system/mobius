@@ -4259,13 +4259,11 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       researchId={(currentSession as any)?.research_id}
       vscodeSubPath={currentVscodeSubPath}
       jsonlEntryCount={jsonlEntries.length}
-      showJsonlMeta={showJsonlMeta}
       connectionReady={connectionStatus === 'connected'}
       projectKnowledgeSending={projectKnowledgeSending}
       onOpenFileChanges={() => setFileChangesOpen(true)}
       onOpenBashCommands={() => setBashCommandsOpen(true)}
       onOpenInputReplay={() => setInputReplayOpen(true)}
-      onToggleJsonlMeta={() => setShowJsonlMeta(value => !value)}
       onRequestRunProject={sendRunProjectPortPrompt}
       onOpenTerminal={() => setTerminalChoiceOpen(true)}
       onOpenCooperablePc={() => setCooperablePcOpen(true)}

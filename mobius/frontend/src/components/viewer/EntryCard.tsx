@@ -221,6 +221,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   // canPlan 覆盖计划视图: update_plan function_call 走可视化步骤卡片.
   const canPlan = !!planUpdate
   const isPatchApplyEvent = entry?.type === 'event_msg' && String(entry?.payload?.type || '').startsWith('patch_apply')
+  const isAssistantEndTurn = isAssistantEndTurnEntry(entry)
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
   // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > user /goal 设置信号 (gold) > user 其他本地命令产物 (gold) > assistant 只含 thinking 思考卡 (purple) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > AIMUX 协作执行 (teal) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
@@ -237,7 +238,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
     ? LOCAL_COMMAND_THEME
     : isThinkingOnlyAssistantEntry(entry)
     ? THINKING_ONLY_THEME
-    : isAssistantEndTurnEntry(entry)
+    : isAssistantEndTurn
     ? ASSISTANT_END_TURN_THEME
     : isAssistantResponseGoldKeyword(entry)
     ? ASSISTANT_RESPONSE_KEYWORD_THEME
@@ -352,7 +353,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
       open={open}
       onToggle={(e) => { userToggledRef.current = true; setOpen((e.currentTarget as HTMLDetailsElement).open) }}
       className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm card-enter ${theme.border} ${theme.bg}`}>
-      <summary className={`cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
+      <summary className={`group cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
         {showMeta && typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
         {showMeta && ts && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
         {toolStatus ? (
@@ -363,6 +364,11 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
           </span>
         )}
         <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>
+        {isAssistantEndTurn && ts && !showMeta && (
+          <span className="invisible w-0 flex-shrink-0 overflow-hidden whitespace-nowrap font-mono text-[10px] text-[var(--text-muted)] opacity-0 transition-[width,opacity] duration-150 group-hover:visible group-hover:w-[94px] group-hover:opacity-100">
+            {ts}
+          </span>
+        )}
         {canCode && (
           <span
             className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border-current/30 ${theme.text}`}
