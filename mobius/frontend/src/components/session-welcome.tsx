@@ -585,7 +585,6 @@ const RESOURCE_TAB_ICON_HOVER = 'inline-flex flex-shrink-0 items-center justify-
 // 替代原生 title (浏览器自带约 1s 延迟); 定位 (下方优先 + 视口 clamp) 与样式与高级交互按钮同款。
 function ResourceTabButton({
   label,
-  ariaLabel,
   icon,
   active,
   activeClass,
@@ -595,7 +594,6 @@ function ResourceTabButton({
   badge,
 }: {
   label: string
-  ariaLabel?: string
   icon: ReactNode
   active: boolean
   activeClass: string
@@ -663,7 +661,7 @@ function ResourceTabButton({
         type="button"
         onClick={onClick}
         aria-pressed={active}
-        aria-label={ariaLabel || label}
+        aria-label={label}
         aria-describedby={tooltipOpen ? tooltipId : undefined}
         {...(dataTour ? { 'data-tour': dataTour } : {})}
         onMouseEnter={() => setTooltipOpen(true)}
@@ -977,8 +975,8 @@ export function SessionSkillMemoryEditor({
     <>
       <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2">
         {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
-            知识入口存在时六个 tab 等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
-        <div className={`session-resource-tabs grid ${onOpenKnowledge ? 'grid-cols-[repeat(6,minmax(0,1fr))]' : 'grid-cols-[repeat(5,minmax(0,1fr))]'} items-stretch`}>
+            五个 tab 始终保持单行并等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
+        <div className="session-resource-tabs grid grid-cols-[repeat(5,minmax(0,1fr))] items-stretch">
           <ResourceTabButton
             label="Skill"
             icon={<Puzzle className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
@@ -996,17 +994,6 @@ export function SessionSkillMemoryEditor({
             onClick={() => setActivePanelAndPersist(activePanel === 'memory' ? null : 'memory')}
             dataTour="session-memory-toggle"
           />
-          {onOpenKnowledge && (
-            <ResourceTabButton
-              label="知识"
-              ariaLabel="查看当前知识"
-              icon={<BookOpen className="h-3.5 w-3.5 text-cyan-400" strokeWidth={1.9} />}
-              active={false}
-              activeClass="border-cyan-400 font-medium"
-              idleClass="border-transparent hover:bg-cyan-500/10"
-              onClick={onOpenKnowledge}
-            />
-          )}
           <ResourceTabButton
             label="Git"
             icon={<GitFork className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.9} />}
@@ -1045,6 +1032,18 @@ export function SessionSkillMemoryEditor({
                 把新条目刷进下方列表, 用户可点"追加/强调"注入当前会话 (对后续对话生效). */}
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
               {resourceKind && <AddSkillMemoryBar kind={resourceKind} onAdded={reload} />}
+              {memActive && onOpenKnowledge && (
+                <button
+                  type="button"
+                  aria-label="查看当前知识"
+                  onClick={onOpenKnowledge}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5 text-[11px] transition-colors hover:bg-cyan-500/10"
+                  style={{ borderColor: 'var(--border-color-strong)', color: '#22d3ee' }}
+                >
+                  <BookOpen className="h-3.5 w-3.5" strokeWidth={1.9} />
+                  查看当前知识
+                </button>
+              )}
               {skillActive ? renderList(skills, '暂无 Skill', 'skill')
                 : memActive ? renderList(memories, '暂无 Memory', 'memory')
                   : portsActive ? <DevPortsBar projectId={projectId} variant="panel" />
