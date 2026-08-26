@@ -1,8 +1,8 @@
 /**
- * Session 输入回放的短生命周期缓存。
+ * Session 输入回放缓存：内存加 localStorage 持久化。
  *
  * 输入历史通常来自项目文件和数据库的合并结果；首次 ArrowUp 若临时请求会明显滞后。
- * 这里保留当前页面生命周期内最近访问的 session，并合并同一 session 的并发请求。
+ * 这里保留最近访问的 session，并合并同一 session 的远程历史、本地历史和并发请求。
  */
 import { api } from '../store'
 
