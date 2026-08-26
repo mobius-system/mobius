@@ -216,36 +216,47 @@ def deepseek_harness_node() -> Path:
 
 
 def ensure_deepseek_harness_runtime() -> None:
-    """Install the isolated Node 22 Harness runtime only when its dependencies are absent."""
+    """Install the isolated Node 22 Harness runtime only when its dependencies are absent.
+
+    Non-fatal on purpose: the DeepSeek Harness backend is on-demand (only used when a
+    deepseek-harness model is configured via model-access). A missing or incompatible
+    Node 22 runtime must not block the whole product from starting.
+    """
     node = deepseek_harness_node()
     if not node.is_file():
-        raise ConfigError(
-            "DeepSeek Harness requires Node 22.19+ or 24+. "
-            "Set DEEPSEEK_HARNESS_NODE to a compatible Node executable."
+        print(
+            f"[warn] DeepSeek Harness runtime node not found: {node}; channel unavailable. "
+            "Set DEEPSEEK_HARNESS_NODE to a Node 22.19+/24+ executable to enable it.",
+            flush=True,
         )
+        return
     version_result = run([str(node), "-p", "process.versions.node"], capture=True)
     raw_version = version_result.stdout.strip()
     match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", raw_version)
     if not match:
-        raise ConfigError(f"unable to parse DeepSeek Harness Node version: {raw_version}")
+        print(f"[warn] unable to parse DeepSeek Harness Node version: {raw_version}; channel unavailable.", flush=True)
+        return
     major, minor, _patch = (int(part) for part in match.groups())
     if not (major >= 24 or (major == 22 and minor >= 19)):
-        raise ConfigError(
-            f"DeepSeek Harness Node {raw_version} is unsupported; use Node 22.19+ or 24+."
+        print(
+            f"[warn] DeepSeek Harness Node {raw_version} is unsupported (need 22.19+ or 24+); channel unavailable.",
+            flush=True,
         )
+        return
 
     runtime_bin = DEEPSEEK_HARNESS_RUNTIME_DIR / "node_modules" / ".bin" / "dsh-jsonrpc-agent"
     if runtime_bin.is_file():
         return
     npm = node.with_name("npm")
     if not npm.is_file():
-        raise ConfigError(f"npm not found next to DeepSeek Harness Node: {npm}")
+        print(f"[warn] npm not found next to DeepSeek Harness Node: {npm}; skipping runtime install.", flush=True)
+        return
     print("=== installing DeepSeek Harness runtime dependencies ===", flush=True)
     install_env = dict(os.environ)
     install_env["PATH"] = f"{node.parent}{os.pathsep}{install_env.get('PATH', '')}"
     run([str(npm), "ci"], cwd=DEEPSEEK_HARNESS_RUNTIME_DIR, env=install_env)
     if not runtime_bin.is_file():
-        raise ConfigError(f"DeepSeek Harness runtime install did not create {runtime_bin}")
+        print(f"[warn] DeepSeek Harness runtime install did not create {runtime_bin}; channel unavailable.", flush=True)
 
 
 def reload_backend(entrypoint: Path = HERE / "pm2-entrypoint.js") -> None:
