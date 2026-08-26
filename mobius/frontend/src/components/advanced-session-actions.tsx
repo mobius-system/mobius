@@ -1,7 +1,7 @@
 import { BookOpen, Brain, Cpu, FileDiff, GitBranch, History, Loader2, Network, Puzzle, RotateCcw, Terminal, Wand2 } from 'lucide-react'
-import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { RemoteAimuxMcpIcon } from './aimux-link-indicator'
 import { ProjectPortEntryButton } from './project-files'
+import { ButtonVisibilityMenu, UnifiedButton, UnifiedButtonGroup } from './unified-button-group'
 
 type AdvancedSessionActionsProps = {
   sessionId?: string | null
@@ -67,16 +67,33 @@ export function AdvancedSessionActions({
   const canSendProjectKnowledge = jsonlEntryCount > 0 && !!projectId && connectionReady && !projectKnowledgeSending
 
   return (
-    <div
+    <UnifiedButtonGroup
       className={`advanced-session-actions mobius-chat-input-actions flex flex-col gap-1.5${condensed ? ` advanced-session-actions--compact ${compact ? 'w-[176px]' : 'w-[336px] max-w-[calc(100vw-24px)]'} flex-none rounded-lg border p-2 shadow-sm` : ''}`}
       style={condensed ? { background: 'var(--input-bg)', borderColor: 'var(--border-color)' } : undefined}
       data-testid="advanced-session-actions"
       data-variant={variant}
       aria-label="高级会话按钮组"
+      visibilityStorageKey="mobius:session-actions:hidden"
     >
+      <ButtonVisibilityMenu options={[
+        { id: 'file-changes', label: '查看文件修改' },
+        { id: 'bash-commands', label: '查看运行命令' },
+        { id: 'input-replay', label: '回放输入' },
+        { id: 'project-port', label: '进入项目端口' },
+        { id: 'terminal', label: '打开终端' },
+        { id: 'cooperable-pc', label: '可合作计算机' },
+        { id: 'knowledge', label: '查看当前知识' },
+        { id: 'send-knowledge', label: '项目知识沉淀到记忆' },
+        { id: 'continue-model', label: '修改模型并继续' },
+        { id: 'skill', label: 'Skill' },
+        { id: 'memory', label: 'Memory' },
+        { id: 'git', label: 'Git' },
+      ]} />
       {menu && <div className="px-1 text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>查看与工作</div>}
       <div className={`grid ${menu ? 'grid-cols-2 gap-1' : 'grid-cols-4 gap-2'} items-stretch`}>
-        <AdvancedInteractionBtn
+        <UnifiedButton
+          kind="modal"
+          buttonId="file-changes"
           onClick={onOpenFileChanges}
           disabled={!hasSession}
           label="查看文件修改"
@@ -85,7 +102,9 @@ export function AdvancedSessionActions({
           displayLabel={menu}
           icon={<FileDiff className="h-4 w-4" strokeWidth={1.9} />}
         />
-        <AdvancedInteractionBtn
+        <UnifiedButton
+          kind="modal"
+          buttonId="bash-commands"
           onClick={onOpenBashCommands}
           disabled={!hasSession}
           data-tour="session-bash-commands"
@@ -95,7 +114,9 @@ export function AdvancedSessionActions({
           displayLabel={menu}
           icon={<History className="h-4 w-4" strokeWidth={1.9} />}
         />
-        <AdvancedInteractionBtn
+        <UnifiedButton
+          kind="modal"
+          buttonId="input-replay"
           onClick={onOpenInputReplay}
           disabled={!hasSession}
           label="回放输入"
@@ -105,6 +126,7 @@ export function AdvancedSessionActions({
           icon={<RotateCcw className="h-4 w-4" strokeWidth={1.9} />}
         />
         <ProjectPortEntryButton
+          buttonId="project-port"
           projectId={projectId}
           subPath={vscodeSubPath}
           label="进入项目端口"
@@ -118,7 +140,9 @@ export function AdvancedSessionActions({
 
       {menu && <div className="px-1 text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>执行与上下文</div>}
       <div className={`grid ${menu ? 'grid-cols-2 gap-1' : 'grid-cols-5 gap-2'} items-stretch`}>
-        <AdvancedInteractionBtn
+        <UnifiedButton
+          kind="modal"
+          buttonId="terminal"
           onClick={onOpenTerminal}
           disabled={!hasSession}
           label="打开终端"
@@ -127,7 +151,9 @@ export function AdvancedSessionActions({
           displayLabel={menu}
           icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
         />
-        <AdvancedInteractionBtn
+        <UnifiedButton
+          kind="modal"
+          buttonId="cooperable-pc"
           onClick={onOpenCooperablePc}
           data-tour="session-cooperable-pc"
           disabled={!hasSession}
@@ -138,7 +164,9 @@ export function AdvancedSessionActions({
           icon={<RemoteAimuxMcpIcon className="h-4 w-4 scale-125" />}
         />
         {researchId && onOpenResearchGraph ? (
-          <AdvancedInteractionBtn
+          <UnifiedButton
+            kind="normal"
+            buttonId="knowledge"
             onClick={onOpenResearchGraph}
             label="Research Graph"
             tooltip="跳转到 Research Graph"
@@ -147,7 +175,9 @@ export function AdvancedSessionActions({
             icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
           />
         ) : variant !== 'default' ? (
-          <AdvancedInteractionBtn
+          <UnifiedButton
+            kind="modal"
+            buttonId="knowledge"
             onClick={onOpenKnowledge}
             disabled={!canOpenKnowledge}
             label="查看当前知识"
@@ -157,7 +187,9 @@ export function AdvancedSessionActions({
             icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
           />
         ) : null}
-        <AdvancedInteractionBtn
+        <UnifiedButton
+          kind="normal"
+          buttonId="send-knowledge"
           onClick={onSendProjectKnowledge}
           disabled={!canSendProjectKnowledge}
           label="项目知识沉淀到记忆"
@@ -168,7 +200,9 @@ export function AdvancedSessionActions({
             ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.9} />
             : <Wand2 className="h-4 w-4" strokeWidth={1.9} />}
         />
-        <AdvancedInteractionBtn
+        <UnifiedButton
+          kind="modal"
+          buttonId="continue-model"
           onClick={onContinueWithModel}
           disabled={!canContinue}
           label="修改模型并继续"
@@ -185,7 +219,9 @@ export function AdvancedSessionActions({
         <>
         {menu && <div className="px-1 text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>会话配置</div>}
         <div className={`grid ${menu ? 'grid-cols-2 gap-1' : 'grid-cols-3 gap-2'} items-stretch`}>
-          <AdvancedInteractionBtn
+          <UnifiedButton
+            kind="modal"
+            buttonId="skill"
             onClick={onOpenSkill}
             disabled={!hasSession}
             label="Skill"
@@ -200,7 +236,9 @@ export function AdvancedSessionActions({
               </>
             )}
           />
-          <AdvancedInteractionBtn
+          <UnifiedButton
+            kind="modal"
+            buttonId="memory"
             onClick={onOpenMemory}
             disabled={!hasSession}
             label="Memory"
@@ -215,7 +253,9 @@ export function AdvancedSessionActions({
               </>
             )}
           />
-          <AdvancedInteractionBtn
+          <UnifiedButton
+            kind="modal"
+            buttonId="git"
             onClick={onOpenGit}
             disabled={!hasSession || !projectId}
             label="Git"
@@ -233,6 +273,6 @@ export function AdvancedSessionActions({
         </div>
         </>
       )}
-    </div>
+    </UnifiedButtonGroup>
   )
 }
