@@ -51,7 +51,7 @@ function SessionStatusChipInner({
         {pulse && <span className={`absolute inset-0 rounded-full ${t.dot} animate-ping opacity-75`} />}
         <span className={`relative inline-flex rounded-full w-1.5 h-1.5 ${t.dot}`} />
       </span>
-      <span className={`overflow-hidden whitespace-nowrap text-[11px] transition-all duration-200 ${alwaysShowLabel ? 'max-w-16 opacity-100' : 'max-w-0 opacity-0 group-hover:max-w-16 group-hover:opacity-100'} ${pulse ? 'mobius-status-color-breathe' : ''}`}>
+      <span className={`overflow-hidden whitespace-nowrap text-[11px] transition-all duration-200 ${alwaysShowLabel ? 'max-w-16 opacity-100' : 'max-w-0 opacity-0 group-hover:max-w-16 group-hover:opacity-100'} ${pulse ? 'mobius-status-marquee' : ''}`}>
         {label}
       </span>
     </span>

@@ -68,11 +68,11 @@ function AimuxStatusBadgeInner() {
     >
       <span className="relative inline-flex h-2 w-2 items-center justify-center">
         <span
-          className={meta.pulse ? 'mobius-status-color-breathe' : ''}
+          className={meta.pulse ? 'animate-pulse' : ''}
           style={{ width: 8, height: 8, borderRadius: 9999, background: meta.color, boxShadow: `0 0 4px ${meta.color}99` }}
         />
       </span>
-      <span className={`text-[12px] font-medium ${meta.pulse ? 'mobius-status-color-breathe' : ''}`}>{meta.label}</span>
+      <span className={`text-[12px] font-medium ${meta.pulse ? 'mobius-status-marquee' : ''}`}>{meta.label}</span>
     </TopNavActionElement>
   )
 }

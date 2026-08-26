@@ -905,19 +905,38 @@ body::after {
   .mobius-bg-flow body::after { animation: none; }
 }
 
-/* 状态文字的轻微明暗呼吸：保留原有语义色，只让进行中的状态更容易被注意到。 */
-@keyframes mobius-status-color-breathe {
-  0%, 100% { filter: brightness(.84); }
-  50% { filter: brightness(1.18); }
+/* 状态文字走马灯高光：文案和布局保持不动，仅让高光沿文字横向扫过。 */
+@keyframes mobius-status-marquee {
+  0% { background-position: 180% 50%; }
+  100% { background-position: -80% 50%; }
 }
 
-.mobius-status-color-breathe {
-  animation: mobius-status-color-breathe 1.8s ease-in-out infinite;
-  will-change: filter;
+.mobius-status-marquee {
+  --mobius-status-color: currentColor;
+  color: transparent;
+  background-image: linear-gradient(
+    105deg,
+    var(--mobius-status-color) 0%,
+    var(--mobius-status-color) 35%,
+    color-mix(in srgb, var(--mobius-status-color) 35%, white) 50%,
+    var(--mobius-status-color) 65%,
+    var(--mobius-status-color) 100%
+  );
+  background-size: 240% 100%;
+  background-position: 180% 50%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: mobius-status-marquee 2.4s linear infinite;
+  will-change: background-position;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mobius-status-color-breathe { animation: none; }
+  .mobius-status-marquee {
+    animation: none;
+    color: var(--mobius-status-color);
+    -webkit-text-fill-color: var(--mobius-status-color);
+  }
 }
 
 /* ===== ChatGPT 风格主按钮: 主题反色 (暗色 → 白底黑字, 亮色 → 黑底白字) ===== */
