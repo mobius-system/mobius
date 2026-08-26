@@ -899,7 +899,7 @@ export function SessionSkillMemoryEditor({
     <>
       <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-3">
         {/* 所有会话操作共用一个流式按钮带。隐藏按钮或侧栏变窄时，浏览器按真实可用空间自动回填与换行。 */}
-        <div className="advanced-session-actions mobius-chat-input-actions session-resource-tabs flex flex-wrap items-center gap-1.5" data-testid="advanced-session-actions" aria-label="高级会话按钮组">
+        <div className="advanced-session-actions mobius-chat-input-actions session-resource-tabs grid grid-cols-[repeat(auto-fit,minmax(38px,1fr))] items-stretch gap-1.5 [&>button]:!w-full" data-testid="advanced-session-actions" aria-label="高级会话按钮组">
           {leadingControls}
           <ResourceTabButton
             buttonId="skill"

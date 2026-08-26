@@ -88,8 +88,6 @@ type UnifiedButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type' |
   accent?: UnifiedButtonAccent
   tooltip?: string
   displayLabel?: boolean
-  /** 视觉标签可比无障碍标签更短，例如“显示设置”保留完整 aria-label。 */
-  visibleLabel?: string
   active?: boolean
   checked?: boolean
   onCheckedChange?: (next: boolean) => void
@@ -103,7 +101,7 @@ type UnifiedButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type' |
 
 /** 统一的弹窗、展开 Tab、布尔开关和普通命令按钮。 */
 export const UnifiedButton = forwardRef<HTMLButtonElement, UnifiedButtonProps>(function UnifiedButton({
-  kind = 'normal', buttonId, icon, label, visibleLabel, accent = 'emerald', tooltip, displayLabel = false,
+  kind = 'normal', buttonId, icon, label, accent = 'emerald', tooltip, displayLabel = false,
   active = false, checked = false, onCheckedChange, activeClassName = '', inactiveClassName = '',
   buttonClassName, iconClassName, badge, motion = 'tilt', className = '', disabled, onClick,
   onBlur, onFocus, onMouseEnter, onMouseLeave, ...props
@@ -116,7 +114,6 @@ export const UnifiedButton = forwardRef<HTMLButtonElement, UnifiedButtonProps>(f
   const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number; placement: 'top' | 'bottom' } | null>(null)
   const isTab = kind === 'expand-tab'
   const isSwitch = kind === 'boolean-switch'
-  const renderedLabel = visibleLabel || label
   const showTooltip = !!(tooltip || label) && (isTab || !displayLabel) && !isSwitch
 
   const updateTooltipPosition = useCallback(() => {
@@ -153,7 +150,7 @@ export const UnifiedButton = forwardRef<HTMLButtonElement, UnifiedButtonProps>(f
   if (buttonId && group?.hiddenIds.has(buttonId)) return null
 
   const defaultClassName = isTab
-    ? `group/unified-button inline-flex h-9 min-w-[62px] flex-none items-center justify-center gap-1.5 overflow-hidden rounded-md border px-2 text-center text-[12px] leading-snug transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-px hover:border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]}`
+    ? `group/unified-button inline-flex h-9 w-9 min-w-0 flex-none items-center justify-center gap-1 overflow-hidden rounded-md border px-1 text-center text-[12px] leading-snug transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-px hover:border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]}`
     : isSwitch
       ? 'group/unified-button inline-flex min-h-7 min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-40'
       : `group/unified-button relative inline-flex min-w-0 items-center ${displayLabel ? 'min-h-9 w-full justify-start gap-2 rounded-md px-2 py-1.5 text-left' : 'h-9 w-9 flex-none justify-center rounded-md px-0'} bg-transparent transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-px hover:bg-[var(--bg-card-hover)] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]}`
@@ -184,7 +181,7 @@ export const UnifiedButton = forwardRef<HTMLButtonElement, UnifiedButtonProps>(f
       >
         {isSwitch ? <><span className="min-w-0 flex-1 truncate">{label}</span><span aria-hidden="true" className="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors" style={{ background: checked ? 'var(--accent-primary)' : 'var(--input-border)' }}><span className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform" style={{ transform: checked ? 'translateX(18px)' : 'translateX(2px)' }} /></span></> : <>
           {icon && <span className={`inline-flex ${iconClassName || 'h-4 w-4'} flex-shrink-0 items-center justify-center transition-transform ${iconMotion}`}>{icon}</span>}
-          {(displayLabel || isTab) && <span className="min-w-0 truncate text-[11px] font-medium leading-4">{renderedLabel}</span>}
+          {displayLabel && <span className="min-w-0 flex-1 truncate text-[11px] font-medium leading-4">{label}</span>}
           {badge}
         </>}
       </button>
