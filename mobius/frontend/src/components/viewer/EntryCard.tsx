@@ -293,6 +293,9 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   // 用户是否手动点过折叠/展开: 一旦手动操作, 自动展开就不再强制掀开 (字段模式除外).
   const userToggledRef = useRef(false)
   const [open, setOpen] = useState<boolean>(desiredOpen)
+  // "结束"是单独的终态卡片标签。时间只在它的标题悬浮时出现，避免常态重复占用扫描空间。
+  // 不依赖 Tailwind group-hover，使内嵌在 <summary> 的显示逻辑在所有样式构建产物中一致。
+  const [endTimestampHovered, setEndTimestampHovered] = useState(false)
 
   // 自动信号跟随 — ratchet (只掀开不折回; 字段模式保持折叠) + 尊重用户手动:
   //   · forceOpen (搜索): 非字段模式下即使用户曾手动折叠也强制掀开 (显式查看优先).
@@ -353,7 +356,11 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
       open={open}
       onToggle={(e) => { userToggledRef.current = true; setOpen((e.currentTarget as HTMLDetailsElement).open) }}
       className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm card-enter ${theme.border} ${theme.bg}`}>
-      <summary className={`group cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
+      <summary
+        className={`cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}
+        onMouseEnter={isAssistantEndTurn ? () => setEndTimestampHovered(true) : undefined}
+        onMouseLeave={isAssistantEndTurn ? () => setEndTimestampHovered(false) : undefined}
+      >
         {showMeta && typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
         {showMeta && ts && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
         {toolStatus ? (
@@ -364,8 +371,8 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
           </span>
         )}
         <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>
-        {isAssistantEndTurn && ts && !showMeta && (
-          <span className="invisible w-0 flex-shrink-0 overflow-hidden whitespace-nowrap font-mono text-[10px] text-[var(--text-muted)] opacity-0 transition-[width,opacity] duration-150 group-hover:visible group-hover:w-[94px] group-hover:opacity-100">
+        {isAssistantEndTurn && ts && !showMeta && endTimestampHovered && (
+          <span className="flex-shrink-0 whitespace-nowrap font-mono text-[10px] text-[var(--text-muted)]">
             {ts}
           </span>
         )}
