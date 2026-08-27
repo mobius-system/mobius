@@ -232,3 +232,11 @@ Issues, plugins, docs, bug reports, use cases — all welcome. If you believe AI
   ·
   <a href="https://mobius-system.github.io/mobius/en/">Docs</a>
 </p>
+
+## Acknowledgments
+
+Special thanks to these projects and communities:
+
+- [Codex](https://github.com/openai/codex) — an AI coding agent
+- [LINUX DO](https://linux.do/) — a lively Linux & tech community
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/) — LLM self-improvement infrastructure
