@@ -225,6 +225,14 @@ What we are building next:
 
 Issues, plugins, docs, bug reports, use cases — all welcome. If you believe AI systems should keep evolving instead of remaining static tools, join us.
 
+### Join the WeChat group
+
+Scan the QR code below to join the Mobius WeChat group and connect with the team and community.
+
+<p align="center">
+  <img src="https://serve.nutshellai.cn/publish/auto/tutorial/wechat-group-qr.png" alt="WeChat group QR code" width="240" />
+</p>
+
 <p align="center">
   <a href="https://github.com/mobius-system/mobius">GitHub</a>
   ·

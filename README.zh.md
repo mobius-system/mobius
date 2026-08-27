@@ -236,6 +236,14 @@ Mobius 还会按你的需求孵化新的拓展：金融看板、PPT 生成器、
 
 Issue、插件、文档、Bug 报告、使用案例，皆欢迎。如果你相信 AI 系统应当持续进化，而不是停留在静态工具，欢迎加入我们。
 
+### 加入微信群
+
+扫描下方二维码，加入 Mobius 微信群，和团队及社区交流。
+
+<p align="center">
+  <img src="https://serve.nutshellai.cn/publish/auto/tutorial/wechat-group-qr.png" alt="微信群二维码" width="240" />
+</p>
+
 <p align="center">
   <a href="https://github.com/mobius-system/mobius">GitHub</a>
   ·
