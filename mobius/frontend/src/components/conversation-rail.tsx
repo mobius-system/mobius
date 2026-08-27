@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { MessageSquare, Plus, Search } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { MessageSquare, Plus, Search, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../store'
 import { logUiEvent } from '../services/ui-observability'
@@ -33,11 +33,12 @@ function groupFor(dateValue?: string): ConversationGroup {
   return '更早'
 }
 
-function statusLabel(item: ConversationRailItem) {
-  if (item.agent_status === 'running' || item.agent_status === 'pending') return '进行中'
-  if (item.agent_status === 'waiting') return '等待'
-  if (item.agent_status === 'failed' || item.status === 'failed') return '失败'
-  return ''
+function statusMeta(item: ConversationRailItem) {
+  if (item.agent_status === 'failed' || item.status === 'failed') return { label: '失败', color: '#f87171' }
+  if (item.agent_status === 'running') return { label: '进行中', color: '#38bdf8' }
+  if (item.agent_status === 'pending' || item.agent_status === 'waiting') return { label: '等待', color: '#f59e0b' }
+  if (item.agent_status === 'completed' || item.status === 'completed') return { label: '完成', color: '#4ade80' }
+  return null
 }
 
 export function conversationPath(userId: string, item: ConversationRailItem) {
@@ -65,6 +66,45 @@ export function ConversationRail({
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const drawerSearchRef = useRef<HTMLInputElement | null>(null)
+  const drawerTriggerRef = useRef<HTMLElement | null>(null)
+
+  const closeDrawer = () => {
+    setDrawerOpen(false)
+    window.requestAnimationFrame(() => drawerTriggerRef.current?.focus())
+  }
+
+  useEffect(() => {
+    const openDrawer = () => {
+      drawerTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      setDrawerOpen(true)
+      window.requestAnimationFrame(() => drawerSearchRef.current?.focus())
+    }
+    window.addEventListener('mobius:open-history', openDrawer)
+    return () => window.removeEventListener('mobius:open-history', openDrawer)
+  }, [])
+
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeDrawer()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [drawerOpen])
+
+  useEffect(() => {
+    const wideViewport = window.matchMedia('(min-width: 1280px)')
+    const syncDrawer = () => {
+      if (wideViewport.matches) setDrawerOpen(false)
+    }
+    wideViewport.addEventListener('change', syncDrawer)
+    return () => wideViewport.removeEventListener('change', syncDrawer)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -103,21 +143,35 @@ export function ConversationRail({
     if (!path) return
     logUiEvent('history_opened', { session_id: item.session_id, project_id: item.project_id })
     onOpenConversation?.(item)
+    setDrawerOpen(false)
     navigate(path)
   }
 
-  return (
-    <aside className="flex h-full w-[272px] flex-shrink-0 flex-col border-r" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }} aria-label="最近会话">
+  const renderRail = (drawer = false) => (
+    <aside
+      className={`flex h-full w-[272px] flex-shrink-0 flex-col border-r ${drawer ? 'relative z-10 max-w-[calc(100vw-32px)] shadow-lg' : ''}`}
+      style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
+      aria-label="最近会话"
+    >
+      {drawer && (
+        <div className="flex h-10 items-center justify-between border-b px-3" style={{ borderColor: 'var(--border-color)' }}>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>历史会话</span>
+          <button type="button" onClick={closeDrawer} aria-label="关闭历史会话"
+            className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       <div className="space-y-2 border-b p-3" style={{ borderColor: 'var(--border-color)' }}>
-        <button type="button" onClick={onNewConversation}
-          className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border text-[13px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+        <button type="button" onClick={() => { setDrawerOpen(false); onNewConversation() }}
+          className="flex h-8 w-full items-center justify-center gap-2 rounded-md border text-[12px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
           style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
           <Plus className="h-4 w-4" /> 新会话
         </button>
         <label className="relative block">
-          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
-          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索会话"
-            className="h-9 w-full rounded-lg pl-8 pr-3 text-[12px] outline-none focus:border-blue-500/40"
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+          <input ref={drawer ? drawerSearchRef : undefined} value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索会话"
+            className="h-8 w-full rounded-md pl-8 pr-3 text-[12px] outline-none focus:border-blue-500/40"
             style={{ color: 'var(--text-primary)', background: 'var(--input-bg)', border: '1px solid var(--input-border)' }} />
         </label>
       </div>
@@ -134,17 +188,22 @@ export function ConversationRail({
             <div className="space-y-0.5">
               {group.items.map(item => {
                 const active = item.session_id === activeSessionId
-                const status = statusLabel(item)
+                const status = statusMeta(item)
                 return (
                   <button key={item.session_id} type="button" onClick={() => openConversation(item)}
-                    className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-[var(--bg-hover)]"
+                    className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-[var(--bg-hover)]"
                     style={{ background: active ? 'var(--bg-active)' : undefined }} aria-current={active ? 'page' : undefined}>
                     <MessageSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: active ? 'var(--accent-primary)' : 'var(--text-muted)' }} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{item.name || '未命名会话'}</span>
                       <span className="mt-0.5 block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{item.project_name || '未命名项目'}</span>
                     </span>
-                    {status && <span className="flex-shrink-0 text-[9px]" style={{ color: status === '失败' ? '#f87171' : '#f59e0b' }}>{status}</span>}
+                    {status && (
+                      <span className="flex flex-shrink-0 items-center gap-1 text-[9px]" style={{ color: status.color }}>
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: status.color }} />
+                        {status.label}
+                      </span>
+                    )}
                   </button>
                 )
               })}
@@ -153,5 +212,17 @@ export function ConversationRail({
         ))}
       </div>
     </aside>
+  )
+
+  return (
+    <>
+      <div className="hidden h-full xl:block">{renderRail()}</div>
+      {drawerOpen && (
+        <div className="fixed inset-x-0 bottom-0 top-[52px] z-[60] xl:hidden" role="dialog" aria-modal="true" aria-label="历史会话">
+          <button type="button" className="absolute inset-0 bg-black/35" onClick={closeDrawer} aria-label="关闭历史会话" />
+          {renderRail(true)}
+        </div>
+      )}
+    </>
   )
 }

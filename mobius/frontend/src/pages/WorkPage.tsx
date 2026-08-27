@@ -87,16 +87,14 @@ export default function WorkPage() {
 
   return (
     <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)' }}>
-      <TopNav />
+      <TopNav showHistory />
       <div className="flex min-h-0 flex-1">
-        <div className="hidden h-full md:block">
-          <ConversationRail
-            userId={userId}
-            activeSessionId={sessionId}
-            projectId={context?.projectId}
-            onNewConversation={startNewConversation}
-          />
-        </div>
+        <ConversationRail
+          userId={userId}
+          activeSessionId={sessionId}
+          projectId={context?.projectId}
+          onNewConversation={startNewConversation}
+        />
         {error ? (
           <main className="flex min-w-0 flex-1 items-center justify-center p-6" style={{ background: 'var(--bg-secondary)' }}>
             <div className="max-w-md text-center">

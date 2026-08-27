@@ -10,9 +10,10 @@ type DesktopPageActionsProps = {
   onZoomOut: () => void
   onWelcome: () => void
   onSystemVisualization: () => void
+  visualizationPath: string
 }
 
-export function DesktopPageActions({ onBack, onReload, onZoomIn, onZoomOut, onWelcome, onSystemVisualization }: DesktopPageActionsProps) {
+export function DesktopPageActions({ onBack, onReload, onZoomIn, onZoomOut, onWelcome, onSystemVisualization, visualizationPath }: DesktopPageActionsProps) {
   const elementRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
@@ -49,7 +50,7 @@ export function DesktopPageActions({ onBack, onReload, onZoomIn, onZoomOut, onWe
     '--mobius-page-actions-color': 'var(--text-primary)',
   } as CSSProperties
 
-  return <mobius-desktop-page-actions ref={elementRef} style={style} back-fallback="/" welcome-path="/welcome" visualization-path="/u/fuqingxu/mobius_overview_cluster" />
+  return <mobius-desktop-page-actions ref={elementRef} style={style} back-fallback="/" welcome-path="/welcome" visualization-path={visualizationPath} />
 }
 
 declare global {

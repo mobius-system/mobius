@@ -120,12 +120,12 @@ function EmptyConversationComposer({
 
   return (
     <main className="flex min-w-0 flex-1 items-center justify-center overflow-y-auto p-5" style={{ background: 'var(--bg-secondary)' }}>
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-[880px]">
         <div className="mb-5 text-center">
-          <h1 className="text-[20px] font-semibold" style={{ color: 'var(--text-primary)' }}>开始一个会话</h1>
+          <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>开始一个会话</h1>
           <p className="mt-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>{issueTitle ? `当前项目上下文 · ${issueTitle}` : '描述你想完成的事'}</p>
         </div>
-        <div className="rounded-2xl border p-3" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+        <div className="rounded-lg border p-3" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
           <textarea ref={inputRef} autoFocus value={prompt} rows={5} placeholder="描述你的任务…"
             onChange={event => { setPrompt(event.target.value); setCheckpoint(null); setError('') }}
             onKeyDown={event => {
@@ -137,13 +137,13 @@ function EmptyConversationComposer({
             className="w-full resize-none bg-transparent px-2 py-1 text-[14px] leading-6 outline-none" style={{ color: 'var(--text-primary)' }} />
           <div className="mt-2 flex justify-end border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
             <button type="button" onClick={() => void submit()} disabled={!prompt.trim() || sending}
-              className="flex h-9 items-center gap-2 rounded-lg px-4 text-[12px] font-medium btn-primary disabled:opacity-40">
+              className="flex h-8 items-center gap-2 rounded-md px-4 text-[12px] font-medium btn-primary disabled:opacity-40">
               <Send className="h-3.5 w-3.5" /> {sending ? '正在开始…' : '发送'}
             </button>
           </div>
         </div>
         {error && (
-          <div className="mt-3 flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-[12px]" style={{ color: '#f87171', background: 'rgba(248,113,113,.08)' }}>
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-md px-3 py-2 text-[12px]" style={{ color: '#f87171', background: 'rgba(248,113,113,.08)' }}>
             <span>{error}</span>
             <button type="button" onClick={() => void submit()} disabled={sending} className="flex-shrink-0 underline disabled:opacity-50">重试当前阶段</button>
           </div>
@@ -249,17 +249,15 @@ export default function IssuePage() {
 
   return (
     <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)' }}>
-      <TopNav />
+      <TopNav showHistory />
       <div className="flex min-h-0 flex-1">
-        <div className="hidden h-full md:block">
-          <ConversationRail
-            userId={userParam}
-            activeSessionId={sessionParam}
-            projectId={projectId}
-            onNewConversation={showEmpty}
-            refreshKey={refreshKey}
-          />
-        </div>
+        <ConversationRail
+          userId={userParam}
+          activeSessionId={sessionParam}
+          projectId={projectId}
+          onNewConversation={showEmpty}
+          refreshKey={refreshKey}
+        />
         {currentSession ? (
           <ChatArea layout="easy" />
         ) : sessionParam ? (

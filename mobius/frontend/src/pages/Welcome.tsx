@@ -295,7 +295,7 @@ export default function Welcome() {
     { key: 'new', icon: Plus, title: '创建一个全新项目', desc: '从零开始一个新项目, 本地路径自动生成', onClick: () => startFlow('new') },
     { key: 'import', icon: FileText, title: '导入一些零散文件，随便聊聊', desc: '丢几个文件进来, 和小莫自由对话', onClick: () => void startImport(), busy: checking },
     { key: 'enter', icon: FolderOpen, title: '进入已创建的 Mobius 项目', desc: '浏览我已有的项目列表', onClick: () => setStep('projectList') },
-    { key: 'visualization', icon: Network, title: '系统可视化', desc: '查看 Mobius 系统集群与运行状态', onClick: () => navigate('/u/fuqingxu/mobius_overview_cluster') },
+    { key: 'visualization', icon: Network, title: '系统可视化', desc: '查看 Mobius 系统集群与运行状态', onClick: () => navigate(`/u/${encodeURIComponent(user.id)}/mobius_overview_cluster`) },
   ]
 
   const machineLines: string[] = []

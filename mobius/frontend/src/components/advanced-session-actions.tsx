@@ -84,7 +84,7 @@ export function AdvancedSessionActions({
           disabled={!hasSession}
           label="查看文件修改"
           tooltip="查看当前会话所有文件修改"
-          accent="blue"
+          accent="neutral"
           displayLabel={menu}
           icon={<FileDiff className="h-4 w-4" strokeWidth={1.9} />}
         />
@@ -94,7 +94,7 @@ export function AdvancedSessionActions({
           data-tour="session-bash-commands"
           label="查看运行命令"
           tooltip="查看当前会话运行的所有Bash命令"
-          accent="emerald"
+          accent="neutral"
           displayLabel={menu}
           icon={<History className="h-4 w-4" strokeWidth={1.9} />}
         />
@@ -103,7 +103,7 @@ export function AdvancedSessionActions({
           disabled={!hasSession}
           label="回放输入"
           tooltip="回放输入"
-          accent="blue"
+          accent="neutral"
           displayLabel={menu}
           icon={<RotateCcw className="h-4 w-4" strokeWidth={1.9} />}
         />
@@ -112,7 +112,7 @@ export function AdvancedSessionActions({
           disabled={jsonlEntryCount === 0}
           label={showJsonlMeta ? '隐藏时间与序号' : '显示时间与序号'}
           tooltip={showJsonlMeta ? '隐藏 JSONL 卡片标题里的序号与时间前缀' : '在 JSONL 卡片标题里显示 #序号 与 MM-DD HH:MM:SS 时间前缀'}
-          accent="blue"
+          accent="neutral"
           displayLabel={menu}
           aria-pressed={showJsonlMeta}
           className={showJsonlMeta ? 'bg-blue-500/15' : ''}
@@ -137,7 +137,7 @@ export function AdvancedSessionActions({
           disabled={!hasSession}
           label="打开终端"
           tooltip="打开当前会话终端"
-          accent="emerald"
+          accent="neutral"
           displayLabel={menu}
           icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
         />
@@ -147,7 +147,7 @@ export function AdvancedSessionActions({
           disabled={!hasSession}
           label="可合作计算机"
           tooltip="声明可合作计算机 (勾选 aimux remote, 生成声明直接发给当前 agent, 不写 Memory)"
-          accent="amber"
+          accent="neutral"
           displayLabel={menu}
           icon={<Share2 className="h-4 w-4" strokeWidth={1.9} />}
         />
@@ -156,7 +156,7 @@ export function AdvancedSessionActions({
             onClick={onOpenResearchGraph}
             label="Research Graph"
             tooltip="跳转到 Research Graph"
-            accent="cyan"
+            accent="neutral"
             displayLabel={menu}
             icon={<Network className="h-4 w-4" strokeWidth={1.9} />}
           />
@@ -166,7 +166,7 @@ export function AdvancedSessionActions({
             disabled={!canOpenKnowledge}
             label="查看当前知识"
             tooltip="查看当前知识 (项目知识 / 本任务知识)"
-            accent="cyan"
+            accent="neutral"
             displayLabel={menu}
             icon={<BookOpen className="h-4 w-4" strokeWidth={1.9} />}
           />
@@ -176,7 +176,7 @@ export function AdvancedSessionActions({
           disabled={!canSendProjectKnowledge}
           label="项目知识沉淀到记忆"
           tooltip={projectKnowledgeSending ? '正在发送项目知识沉淀指令...' : '请智能体整理并更新项目级与任务级可复用知识'}
-          accent="violet"
+          accent="neutral"
           displayLabel={menu}
           icon={projectKnowledgeSending
             ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.9} />
@@ -187,7 +187,7 @@ export function AdvancedSessionActions({
           disabled={!canContinue}
           label="修改模型并继续"
           tooltip="修改模型并继续"
-          accent="violet"
+          accent="neutral"
           displayLabel={menu}
           icon={<Cpu className="h-4 w-4" strokeWidth={1.9} />}
         />
@@ -204,7 +204,7 @@ export function AdvancedSessionActions({
             disabled={!hasSession}
             label="Skill"
             tooltip="查看当前会话 Skill"
-            accent="blue"
+            accent="neutral"
             displayLabel={menu}
             iconClassName={menu ? undefined : 'h-4 w-auto gap-1.5'}
             icon={menu ? <Puzzle className="h-4 w-4" strokeWidth={1.9} /> : (
@@ -219,7 +219,7 @@ export function AdvancedSessionActions({
             disabled={!hasSession}
             label="Memory"
             tooltip="查看当前会话 Memory"
-            accent="cyan"
+            accent="neutral"
             displayLabel={menu}
             iconClassName={menu ? undefined : 'h-4 w-auto gap-1.5'}
             icon={menu ? <Brain className="h-4 w-4" strokeWidth={1.9} /> : (
@@ -234,7 +234,7 @@ export function AdvancedSessionActions({
             disabled={!hasSession || !projectId}
             label="Git"
             tooltip="查看当前项目 Git 仓库"
-            accent="amber"
+            accent="neutral"
             displayLabel={menu}
             iconClassName={menu ? undefined : 'h-4 w-auto gap-1.5'}
             icon={menu ? <GitBranch className="h-4 w-4" strokeWidth={1.9} /> : (

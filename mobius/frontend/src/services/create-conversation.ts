@@ -53,6 +53,8 @@ async function projectDefaults(projectId: string): Promise<any | null> {
 export async function createDefaultConversation(args: {
   projectId: string
   prompt: string
+  /** 用户显式选择的模型/Harness 组合；缺省时继续沿用项目与系统默认链。 */
+  model?: string
   checkpoint?: ConversationCreationCheckpoint | null
 }): Promise<CreatedConversation> {
   const prompt = args.prompt.trim()
@@ -105,7 +107,8 @@ export async function createDefaultConversation(args: {
       const sourceSession = sourceSessionId
         ? await api(`/api/tasks/${encodeURIComponent(sourceSessionId)}`).catch(() => null)
         : null
-      const model = defaults.model || defaults.project_default_model || project?.default_model || undefined
+      const requestedModel = String(args.model || '').trim()
+      const model = requestedModel || defaults.model || defaults.project_default_model || project?.default_model || undefined
       const language = normalizedLanguage(defaults.language)
         || normalizedLanguage(sourceSession?.language)
         || normalizedLanguage(project?.default_language)

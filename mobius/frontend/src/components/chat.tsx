@@ -4099,9 +4099,9 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
   if (!currentSession && !currentTask) return (
     <div className="flex-1 flex items-center justify-center" style={{ background: 'var(--bg-secondary)' }}>
       <div className="text-center max-w-md">
-        <MobiusLogo size={72} className="mx-auto mb-6" />
-        <h2 className="text-2xl font-bold mb-2" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>Mobius 莫比乌斯</h2>
-        <p className="text-[14px] leading-relaxed" style={{ color: theme !== 'light' ? '#6b7280' : '#64748b' }}>从左侧选择会话或新建会话开始对话</p>
+        <MobiusLogo size={40} className="mx-auto mb-4" />
+        <h2 className="mb-1 text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>开始工作</h2>
+        <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>选择历史会话，或新建会话后描述目标。</p>
       </div>
     </div>
   )
@@ -4298,14 +4298,14 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                 onClick={() => setEasyToolsOpen(value => !value)}
                 aria-controls="easy-session-tools-panel"
                 aria-expanded={easyToolsOpen}
-                className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
                 style={{ borderColor: 'var(--border-color)', color: easyToolsOpen ? 'var(--text-primary)' : 'var(--text-secondary)', background: easyToolsOpen ? 'var(--bg-active)' : undefined }}
               >
                 <Wrench className="h-3.5 w-3.5" />
                 <span>工具</span>
               </button>
               {easyToolsOpen && (
-                <div ref={easyToolsPanelRef} id="easy-session-tools-panel" role="group" aria-label="当前会话工具" className="absolute right-0 top-9 z-50 rounded-xl p-1 shadow-2xl" style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }} onKeyDown={(event) => {
+                <div ref={easyToolsPanelRef} id="easy-session-tools-panel" role="group" aria-label="当前会话工具" className="absolute right-0 top-9 z-50 rounded-lg p-1 shadow-lg" style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }} onKeyDown={(event) => {
                   if (event.key !== 'Escape') return
                   event.preventDefault()
                   event.stopPropagation()
@@ -4317,7 +4317,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                   <button
                     type="button"
                     onClick={() => { setEasyToolsOpen(false); void copySessionLink() }}
-                    className="mb-1 flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]"
+                    className="mb-1 flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]"
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     {sessionLinkCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -4582,11 +4582,11 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
           )}
           <div
             data-tour="session-chat-input"
-            className="relative rounded-lg transition-all focus-within:ring-2 focus-within:ring-blue-500/15"
+            className="relative rounded-lg transition-colors focus-within:ring-2 focus-within:ring-blue-500/15"
             style={{
               background: 'var(--input-bg)',
               border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)'}`,
-              boxShadow: inputFocused
+              boxShadow: layout === 'easy' ? 'none' : inputFocused
                 ? (theme !== 'light'
                   ? '0 4px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.02) inset'
                   : '0 4px 20px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.6) inset')
@@ -4605,9 +4605,9 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
               setInputFocused(false)
             }}>
             {isDraggingFile && (
-              <div className="absolute inset-0 z-20 p-1 pointer-events-none" style={{ background: 'var(--input-bg)', borderRadius: 14 }}>
-                <div className="flex h-full items-center justify-center rounded-[14px] border border-dashed border-blue-500/55"
-                  style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.08), rgba(59,130,246,0.18))' }}>
+              <div className="pointer-events-none absolute inset-0 z-20 p-1" style={{ background: 'var(--input-bg)', borderRadius: 8 }}>
+                <div className="flex h-full items-center justify-center rounded-md border border-dashed border-blue-500/55"
+                  style={{ background: 'var(--bg-active)' }}>
                   <div className="text-[12px] font-medium text-blue-400">松开以添加文件</div>
                 </div>
               </div>
@@ -4615,11 +4615,13 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
             <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileInputChange} />
             <div className="px-3 pt-3 pb-2.5">
               {!modelAvailable && (
-                <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-500/45 bg-amber-500/10 px-3 py-2 text-[12px] leading-snug" style={{ color: 'var(--text-primary)' }}>
+                <div className="mb-2 flex items-center gap-2 rounded-md border px-3 py-2 text-[12px] leading-snug"
+                  style={{ color: 'var(--text-primary)', borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
                   <span className="flex-1">因之前使用的模型被管理员移除，本次会话不能继续，如需继续，请点击“修改模型并继续”。</span>
                   <button type="button" onClick={() => setContinueModalOpen(true)}
                     disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
-                    className="btn-label shrink-0 rounded-md bg-amber-500 px-2.5 py-1 text-[12px] font-medium text-black hover:bg-amber-400">
+                    className="btn-label h-8 shrink-0 rounded-md border px-2.5 text-[12px] font-medium hover:bg-[var(--bg-hover)]"
+                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
                     修改模型并继续
                   </button>
                 </div>
@@ -4640,10 +4642,10 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
               {selectedAgentMentions.length > 0 && (
                 <div className="mb-2 flex flex-wrap items-center gap-1.5">
                   {selectedAgentMentions.map((mention) => (
-                    <div key={mention.sessionId} className="flex min-w-0 max-w-full items-center gap-2 rounded-md border px-2 py-1.5 text-[12px]" style={{ borderColor: 'rgba(59,130,246,0.25)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-primary)' }}>
-                      <Bot className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
+                    <div key={mention.sessionId} className="flex min-w-0 max-w-full items-center gap-2 rounded-md border px-2 py-1.5 text-[12px]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+                      <Bot className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} strokeWidth={1.8} />
                       <span className="max-w-48 truncate">@{mention.name}</span>
-                      <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'rgba(59,130,246,0.22)', color: 'var(--text-muted)' }}>
+                      <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
                         {mention.mode === 'bidirectional' ? '双向' : '只读'}
                       </span>
                       <button
@@ -4703,7 +4705,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                     onClick={() => setEasyProjectMenuOpen(value => !value)}
                     aria-haspopup="menu"
                     aria-expanded={easyProjectMenuOpen}
-                    className="easy-input-project-trigger inline-flex h-8 max-w-[320px] min-w-0 cursor-pointer items-center gap-2 rounded-full px-3 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                    className="easy-input-project-trigger inline-flex h-8 max-w-[320px] min-w-0 cursor-pointer items-center gap-2 rounded-md px-3 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
                     style={{ background: 'var(--bg-active)', color: 'var(--text-primary)' }}
                     title={easyProjectControl.selectedProjectName || '所有项目'}
                   >
@@ -4716,10 +4718,10 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                     <div
                       role="menu"
                       aria-label="选择项目"
-                      className="easy-input-project-menu absolute bottom-11 left-0 z-40 w-[360px] max-w-[calc(100vw-48px)] overflow-hidden rounded-2xl p-2 shadow-2xl"
+                      className="easy-input-project-menu absolute bottom-11 left-0 z-40 w-[360px] max-w-[calc(100vw-48px)] overflow-hidden rounded-lg p-2 shadow-lg"
                       style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
                     >
-                      <label className="flex h-10 items-center gap-2 rounded-xl px-3" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
+                      <label className="flex h-8 items-center gap-2 rounded-md px-3" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
                         <Search className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
                         <input
                           value={easyProjectQuery}
@@ -4753,7 +4755,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                                 setEasyProjectMenuOpen(false)
                                 setEasyProjectQuery('')
                               }}
-                              className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                              className="flex min-h-9 w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
                               style={{ background: active ? 'var(--bg-active)' : undefined, color: 'var(--text-primary)' }}
                             >
                               <FolderOpen className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
@@ -4773,7 +4775,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                             setEasyProjectMenuOpen(false)
                             easyProjectControl.onCreateProject()
                           }}
-                          className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] font-semibold transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                          className="flex min-h-9 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[13px] font-semibold transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
                           style={{ color: 'var(--text-primary)' }}
                         >
                           <FolderPlus className="h-4 w-4" strokeWidth={1.8} />
@@ -4787,7 +4789,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                             setEasyProjectMenuOpen(false)
                             setEasyProjectQuery('')
                           }}
-                          className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                          className="flex min-h-9 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
                           style={{ color: 'var(--text-secondary)' }}
                         >
                           <X className="h-4 w-4" strokeWidth={1.8} />
@@ -4806,9 +4808,9 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                   aria-expanded={inputMenuOpen}
                   label="更多输入功能"
                   tooltip="更多输入功能"
-                  accent="blue"
+                  accent="neutral"
                   motion="breathe"
-                  buttonClassName="h-7 w-7 rounded-full"
+                  buttonClassName="h-8 w-8 rounded-md"
                   iconClassName="h-[17px] w-[17px]"
                   style={{
                     color: theme !== 'light' ? '#d1d5db' : '#374151',
@@ -4821,7 +4823,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                   <div
                     ref={inputMenuRef}
                     role="menu"
-                    className="absolute bottom-11 left-0 z-30 min-w-[200px] rounded-lg shadow-xl py-1"
+                    className="absolute bottom-11 left-0 z-30 min-w-[200px] rounded-lg py-1 shadow-lg"
                     style={{
                       background: 'var(--menu-bg)',
                       border: '1px solid var(--border-color)',
@@ -4855,15 +4857,15 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                 aria-pressed={voiceState === 'recording'}
                 label={voiceTip}
                 tooltip={voiceTip}
-                accent="cyan"
+                accent="neutral"
                 motion="breathe"
-                buttonClassName="h-7 w-7 rounded-full"
+                buttonClassName="h-8 w-8 rounded-md"
                 iconClassName="h-[17px] w-[17px]"
                 className={`assistant-session-input__voice assistant-session-input__voice--${voiceState}`}
                 style={{
-                  color: voiceState === 'recording' ? '#f87171' : (voiceState === 'transcribing' ? '#38bdf8' : (theme !== 'light' ? '#d1d5db' : '#374151')),
-                  border: `1px solid ${voiceState === 'recording' ? 'rgba(248,113,113,0.34)' : (voiceState === 'transcribing' ? 'rgba(56,189,248,0.34)' : (theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'))}`,
-                  background: voiceState === 'recording' ? 'rgba(239,68,68,0.13)' : (voiceState === 'transcribing' ? 'rgba(14,165,233,0.12)' : undefined),
+                  color: voiceState === 'recording' || voiceState === 'transcribing' ? '#38bdf8' : (theme !== 'light' ? '#d1d5db' : '#374151'),
+                  border: `1px solid ${voiceState === 'recording' || voiceState === 'transcribing' ? 'rgba(56,189,248,0.34)' : (theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)')}`,
+                  background: voiceState === 'recording' || voiceState === 'transcribing' ? 'rgba(14,165,233,0.12)' : undefined,
                 }}
                 icon={voiceState === 'recording' ? (
                   <Square className="w-[17px] h-[17px]" fill="currentColor" />
@@ -4889,9 +4891,9 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                       data-tour="session-chat-send-urgent"
                       label="加急发送"
                       tooltip="发送（加急）— 打断当前输出并立即发送"
-                      accent="amber"
+                      accent="neutral"
                       motion="breathe"
-                      buttonClassName="h-7 w-7 rounded-full"
+                      buttonClassName="h-8 w-8 rounded-md"
                       iconClassName="h-[17px] w-[17px]"
                       style={{
                         color: theme !== 'light' ? '#d1d5db' : '#374151',
@@ -4903,9 +4905,9 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                       data-tour="session-chat-send"
                       label="发送"
                       tooltip={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
-                      accent="emerald"
+                      accent="neutral"
                       motion="breathe"
-                      buttonClassName="h-7 w-7 rounded-full"
+                      buttonClassName="h-8 w-8 rounded-md"
                       iconClassName="h-[18px] w-[18px]"
                       className="transition-all active:scale-95 hover:brightness-95"
                       style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}

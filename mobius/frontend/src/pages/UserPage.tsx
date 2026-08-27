@@ -36,6 +36,7 @@ import {
   createDefaultConversation,
   type ConversationCreationCheckpoint,
 } from '../services/create-conversation'
+import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { logUiEvent } from '../services/ui-observability'
 import {
   effectiveProjectCardBorderTheme,
@@ -60,6 +61,27 @@ const PROJECT_FILTERS: Array<{ key: ProjectFilterKey; label: string; title: stri
 
 // /u/:user 主区项目卡片每页显示数量; 超过即分页, 避免一次性渲染过多卡片.
 const PROJECT_PAGE_SIZE = 16
+
+type HomeModelOption = {
+  key: string
+  label?: string
+  title?: string
+  sub?: string
+  backend?: string
+  is_default?: boolean
+}
+
+function homeModelOptionLabel(option: HomeModelOption) {
+  const model = String(option.title || option.label || option.key).trim()
+  const harness = option.backend === 'tmux-codex'
+    ? 'Codex'
+    : option.backend === 'tmux-claude-code'
+      ? 'Claude Code'
+      : option.backend === 'deepseek-harness'
+        ? 'DeepSeek Harness'
+        : String(option.sub || option.backend || '').trim()
+  return harness ? `${model} · ${harness}` : model
+}
 
 // =====================================================================
 // 项目汇总页 /u/:user
@@ -249,26 +271,26 @@ function MinimalProjectCreate({ onCreated }: { onCreated: (project: any) => void
 
   return (
     <main className="flex min-w-0 flex-1 items-center justify-center overflow-y-auto p-6" style={{ background: 'var(--bg-secondary)' }}>
-      <form onSubmit={submit} className="w-full max-w-md rounded-2xl border p-6" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+      <form onSubmit={submit} className="w-full max-w-md rounded-lg border p-5" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
         <div className="mb-5">
-          <h1 className="text-[20px] font-semibold" style={{ color: 'var(--text-primary)' }}>创建第一个项目</h1>
+          <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>创建第一个项目</h1>
           <p className="mt-1 text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>给项目起个名字，随后就可以直接告诉 Mobius 你想完成什么。</p>
         </div>
         <label className="block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
           项目名称
           <input autoFocus value={name} onChange={event => { setName(event.target.value); setError('') }} maxLength={80}
-            className="mt-1.5 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-blue-500/50"
+            className="mt-1.5 h-8 w-full rounded-md px-3 text-[13px] outline-none focus:border-blue-500/50"
             style={{ color: 'var(--text-primary)', background: 'var(--input-bg)', border: '1px solid var(--input-border)' }} />
         </label>
         <label className="mt-4 block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
           本地目录 <span className="font-normal" style={{ color: 'var(--text-muted)' }}>（可选）</span>
           <input value={localPath} onChange={event => { setLocalPath(event.target.value); setError('') }} placeholder="留空则在默认工作目录创建"
-            className="mt-1.5 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-blue-500/50"
+            className="mt-1.5 h-8 w-full rounded-md px-3 text-[13px] outline-none focus:border-blue-500/50"
             style={{ color: 'var(--text-primary)', background: 'var(--input-bg)', border: '1px solid var(--input-border)' }} />
         </label>
-        {error && <div className="mt-3 rounded-lg px-3 py-2 text-[12px]" style={{ color: '#f87171', background: 'rgba(248,113,113,.08)' }}>{error}</div>}
-        <button type="submit" disabled={loading} className="mt-5 h-10 w-full rounded-lg text-[13px] font-medium btn-primary disabled:opacity-60">
-          {loading ? '正在创建…' : '创建项目'}
+        {error && <div className="mt-3 rounded-md px-3 py-2 text-[12px]" style={{ color: '#f87171', background: 'rgba(248,113,113,.08)' }}>{error}</div>}
+        <button type="submit" disabled={loading} className="mt-5 h-8 w-full rounded-md text-[12px] font-medium btn-primary disabled:opacity-60">
+          {loading ? '正在创建…' : '创建第一个项目'}
         </button>
         <button type="button" onClick={() => navigate('/welcome')} className="mt-3 w-full text-center text-[11px] hover:underline" style={{ color: 'var(--text-muted)' }}>
           连接已有本地项目或导入资料
@@ -289,12 +311,18 @@ function HomeSurface() {
   const userParam = params.user || user?.id || ''
   const [loadingProjects, setLoadingProjects] = useState(true)
   const [selectedProjectId, setSelectedProjectId] = useState('')
+  const [modelOptions, setModelOptions] = useState<HomeModelOption[]>([])
+  const [modelOptionsLoaded, setModelOptionsLoaded] = useState(false)
+  const [modelOptionsError, setModelOptionsError] = useState('')
+  const [globalDefaultModel, setGlobalDefaultModel] = useState('')
+  const [selectedModel, setSelectedModel] = useState('')
   const [prompt, setPrompt] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const modelUserTouchedRef = useRef(false)
 
   useEffect(() => {
     logUiEvent('home_arrived', { user_id: userParam })
@@ -330,7 +358,32 @@ function HomeSurface() {
     return () => { cancelled = true }
   }, [setProjects])
 
+  useEffect(() => {
+    let cancelled = false
+    setModelOptionsLoaded(false)
+    api('/api/sessions/model-options')
+      .then((result: any) => {
+        if (cancelled) return
+        setModelOptions(Array.isArray(result) ? result : [])
+        setModelOptionsError('')
+      })
+      .catch((reason: any) => {
+        if (cancelled) return
+        setModelOptions([])
+        setModelOptionsError(reason?.message || '模型与 Harness 组合加载失败')
+      })
+      .finally(() => { if (!cancelled) setModelOptionsLoaded(true) })
+    fetchGlobalDefaultModel().then((model) => {
+      if (!cancelled) setGlobalDefaultModel(model)
+    })
+    return () => { cancelled = true }
+  }, [])
+
   const usableProjects = useMemo(() => projects.filter((project: any) => project.kind !== 'extension' && !project.hidden && !project.disabled), [projects])
+  const selectedProject = useMemo(
+    () => usableProjects.find((project: any) => project.id === selectedProjectId) || null,
+    [selectedProjectId, usableProjects],
+  )
   useEffect(() => {
     const requestedProjectId = homeSearch.get('project') || ''
     if (requestedProjectId && usableProjects.some((project: any) => project.id === requestedProjectId)) {
@@ -345,9 +398,25 @@ function HomeSurface() {
   }, [usableProjects, currentProject?.id, selectedProjectId, homeSearch])
 
   useEffect(() => {
-    const selected = usableProjects.find((project: any) => project.id === selectedProjectId) || null
-    setCurrentProject(selected)
-  }, [selectedProjectId, usableProjects, setCurrentProject])
+    setCurrentProject(selectedProject)
+  }, [selectedProject, setCurrentProject])
+
+  useEffect(() => {
+    modelUserTouchedRef.current = false
+    setSelectedModel('')
+  }, [selectedProjectId])
+
+  useEffect(() => {
+    if (modelUserTouchedRef.current || modelOptions.length === 0) return
+    const preferred = resolveDefaultModelKey({
+      projectDefaultModel: selectedProject?.default_model,
+      globalDefaultModel,
+    })
+    const available = modelOptions.find(option => option.key === preferred)
+      || modelOptions.find(option => option.is_default)
+      || modelOptions[0]
+    setSelectedModel(available?.key || '')
+  }, [selectedProjectId, selectedProject?.default_model, globalDefaultModel, modelOptions])
 
   const onProjectCreated = (project: any) => {
     setProjects(sortProjectsForDisplay([project, ...projects.filter((item: any) => item.id !== project.id)]))
@@ -364,14 +433,24 @@ function HomeSurface() {
 
   const send = async () => {
     if (!selectedProjectId || !prompt.trim() || sending) return
+    if (!selectedModel) {
+      setSendError(modelOptionsError || (modelOptionsLoaded ? '暂无可用的模型与 Harness 组合' : '模型与 Harness 组合仍在加载，请稍候'))
+      return
+    }
     setSending(true)
     setSendError('')
     try {
-      const created = await createDefaultConversation({ projectId: selectedProjectId, prompt, checkpoint })
+      const created = await createDefaultConversation({
+        projectId: selectedProjectId,
+        prompt,
+        model: selectedModel,
+        checkpoint,
+      })
       logUiEvent('first_message_submitted', {
         project_id: selectedProjectId,
         issue_id: created.issueId,
         session_id: created.sessionId,
+        model: selectedModel,
       })
       setHistoryRefreshKey(key => key + 1)
       navigate(`/u/${userParam}/s/${encodeURIComponent(created.sessionId)}`)
@@ -389,23 +468,21 @@ function HomeSurface() {
 
   return (
     <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)' }}>
-      <TopNav />
+      <TopNav showHistory />
       <div className="flex min-h-0 flex-1">
-        <div className="hidden h-full md:block">
-          <ConversationRail userId={userParam} onNewConversation={prepareNewConversation} refreshKey={historyRefreshKey} />
-        </div>
+        <ConversationRail userId={userParam} onNewConversation={prepareNewConversation} refreshKey={historyRefreshKey} />
         {loadingProjects ? (
           <main className="flex min-w-0 flex-1 items-center justify-center" style={{ color: 'var(--text-muted)', background: 'var(--bg-secondary)' }}>加载项目…</main>
         ) : usableProjects.length === 0 ? (
           <MinimalProjectCreate onCreated={onProjectCreated} />
         ) : (
           <main className="min-w-0 flex-1 overflow-y-auto p-5 sm:p-8" style={{ background: 'var(--bg-secondary)' }}>
-            <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center py-8">
+            <div className="mx-auto flex min-h-full w-full max-w-[880px] flex-col justify-center py-8">
               <div className="mb-6 text-center">
-                <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>想让 Mobius 做什么？</h1>
+                <h1 className="text-[20px] font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>想让 Mobius 做什么？</h1>
                 <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>描述目标即可，任务详情和会话会自动创建。</p>
               </div>
-              <div className="rounded-2xl border p-3 shadow-sm" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+              <div className="rounded-lg border p-3" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
                 <textarea ref={composerRef} autoFocus value={prompt} onChange={event => onPromptChange(event.target.value)}
                   onKeyDown={event => {
                     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -416,28 +493,62 @@ function HomeSurface() {
                   placeholder="描述你的任务…" rows={5}
                   className="w-full resize-none bg-transparent px-2 py-1 text-[14px] leading-6 outline-none"
                   style={{ color: 'var(--text-primary)' }} />
-                <div className="mt-2 flex items-center justify-between gap-3 border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
-                  <label className="flex min-w-0 items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    <Folder className="h-3.5 w-3.5 flex-shrink-0" />
-                    <select value={selectedProjectId} onChange={event => {
-                      const nextProjectId = event.target.value
-                      setSelectedProjectId(nextProjectId)
-                      setHomeSearch(nextProjectId ? { project: nextProjectId } : {}, { replace: true })
-                      setCheckpoint(null)
-                      setSendError('')
-                    }}
-                      className="max-w-[260px] truncate bg-transparent text-[12px] outline-none" style={{ color: 'var(--text-secondary)' }}>
-                      {usableProjects.map((project: any) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                    </select>
-                  </label>
-                  <button type="button" onClick={() => void send()} disabled={!prompt.trim() || sending}
-                    className="flex h-9 items-center gap-2 rounded-lg px-4 text-[12px] font-medium btn-primary disabled:opacity-40">
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                    <label className="flex h-8 min-w-0 items-center gap-2 rounded-md border px-2 text-[11px]" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+                      <Folder className="h-3.5 w-3.5 flex-shrink-0" />
+                      <select value={selectedProjectId} onChange={event => {
+                        const nextProjectId = event.target.value
+                        setSelectedProjectId(nextProjectId)
+                        setHomeSearch(nextProjectId ? { project: nextProjectId } : {}, { replace: true })
+                        setCheckpoint(null)
+                        setSendError('')
+                      }}
+                        aria-label="项目"
+                        className="h-full max-w-[220px] truncate bg-transparent text-[12px] outline-none" style={{ color: 'var(--text-secondary)' }}>
+                        {usableProjects.map((project: any) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                      </select>
+                    </label>
+                    <label
+                      className="flex h-8 min-w-0 items-center gap-2 rounded-md border px-2 text-[11px]"
+                      style={{
+                        color: modelOptionsError ? '#f87171' : 'var(--text-muted)',
+                        borderColor: modelOptionsError ? 'rgba(248,113,113,.45)' : 'var(--border-color)',
+                      }}
+                      title={modelOptionsError || '选择创建会话时使用的模型与 Harness 组合'}
+                    >
+                      <Brain className="h-3.5 w-3.5 flex-shrink-0" />
+                      <select
+                        value={selectedModel}
+                        onChange={event => {
+                          modelUserTouchedRef.current = true
+                          setSelectedModel(event.target.value)
+                          setSendError('')
+                        }}
+                        disabled={!modelOptionsLoaded || modelOptions.length === 0 || sending || !!checkpoint?.sessionId}
+                        aria-label="模型与 Harness 组合"
+                        className="h-full max-w-[300px] truncate bg-transparent text-[12px] outline-none disabled:cursor-not-allowed"
+                        style={{ color: modelOptionsError ? '#f87171' : 'var(--text-secondary)' }}
+                      >
+                        {!selectedModel && (
+                          <option value="" disabled>
+                            {!modelOptionsLoaded ? '正在加载模型组合…' : modelOptionsError || '暂无可用模型组合'}
+                          </option>
+                        )}
+                        {modelOptions.map(option => (
+                          <option key={option.key} value={option.key}>{homeModelOptionLabel(option)}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <button type="button" onClick={() => void send()} disabled={!prompt.trim() || !selectedModel || sending}
+                    className="flex h-8 items-center gap-2 rounded-md px-4 text-[12px] font-medium btn-primary disabled:opacity-40">
                     <Send className="h-3.5 w-3.5" /> {sending ? '正在开始…' : '发送'}
                   </button>
                 </div>
               </div>
               {sendError && (
-                <div className="mt-3 flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-[12px]" style={{ color: '#f87171', background: 'rgba(248,113,113,.08)' }}>
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-md px-3 py-2 text-[12px]" style={{ color: '#f87171', background: 'rgba(248,113,113,.08)' }}>
                   <span>{sendError}</span>
                   <button type="button" onClick={() => void send()} disabled={sending} className="flex-shrink-0 underline disabled:opacity-50">重试当前阶段</button>
                 </div>
@@ -453,7 +564,7 @@ function HomeSurface() {
                       setSelectedProjectId(project.id)
                       setHomeSearch({ project: project.id }, { replace: true })
                     }}
-                      className="min-w-0 rounded-lg border px-3 py-3 text-left transition-colors hover:bg-[var(--bg-hover)]"
+                      className="min-w-0 rounded-md border px-3 py-3 text-left transition-colors hover:bg-[var(--bg-hover)]"
                       style={{ borderColor: project.id === selectedProjectId ? 'var(--accent-primary)' : 'var(--border-color)', background: 'var(--bg-primary)' }}>
                       <span className="block truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{project.name}</span>
                       <span className="mt-1 block text-[10px]" style={{ color: 'var(--text-muted)' }}>最近活跃 {timeAgo(project.last_session_activity_at || project.last_active)}</span>

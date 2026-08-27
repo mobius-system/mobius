@@ -6,6 +6,7 @@
 // 主题自适应: 图标色 var(--text-primary), hover 用 var(--bg-hover), 关闭键 hover 红 (#e81123)。
 import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from 'react'
+import { useStore } from '../store'
 import { DesktopPageActions } from './desktop-page-actions'
 
 type Bridge = {
@@ -73,6 +74,7 @@ export function DesktopDragHandle({ className = '', 'aria-hidden': ariaHidden }:
 // thickMinimize (默认 false = 主界面原样 1.1px 细线): 仅 /welcome 的 DesktopTitleBar 传 true,
 // 高 DPI 下把最小化横线加粗到 1.8px 可见。作用严格局限调用方, 不影响 shell 主界面 (未传参)。
 export function WindowControls({ thickMinimize = false }: { thickMinimize?: boolean } = {}) {
+  const userId = useStore(state => state.user?.id || '')
   const [maximized, setMaximized] = useState(false)
   useEffect(() => {
     const md = getBridge()
@@ -83,6 +85,9 @@ export function WindowControls({ thickMinimize = false }: { thickMinimize?: bool
   }, [])
   const md = getBridge()
   if (!md?.windowMinimize) return null
+  const visualizationPath = userId
+    ? `/u/${encodeURIComponent(userId)}/mobius_overview_cluster`
+    : '/'
 
   const btnBase: CSSProperties = {
     width: 38,
@@ -107,7 +112,8 @@ export function WindowControls({ thickMinimize = false }: { thickMinimize?: bool
         onZoomIn={() => md.windowZoomIn?.().catch(() => {})}
         onZoomOut={() => md.windowZoomOut?.().catch(() => {})}
         onWelcome={() => window.location.assign('/welcome')}
-        onSystemVisualization={() => window.location.assign('/u/fuqingxu/mobius_overview_cluster')}
+        onSystemVisualization={() => window.location.assign(visualizationPath)}
+        visualizationPath={visualizationPath}
       />
       <button type="button" title="最小化" aria-label="最小化"
         style={btnBase}

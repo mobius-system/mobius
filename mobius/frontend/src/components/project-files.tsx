@@ -442,7 +442,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
       disabled={disabled}
       label={buttonLabel}
       tooltip={title}
-      accent="emerald"
+      accent="neutral"
       className={className}
       displayLabel={advancedDisplayLabel}
       icon={loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MonitorPlay className="h-4 w-4" />}
