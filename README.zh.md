@@ -243,3 +243,11 @@ Issue、插件、文档、Bug 报告、使用案例，皆欢迎。如果你相�
   ·
   <a href="https://mobius-system.github.io/mobius/">Docs</a>
 </p>
+
+### 致谢
+
+特别感谢以下项目与社区：
+
+- [Codex](https://github.com/openai/codex) —— AI 编程智能体
+- [LINUX DO](https://linux.do/) —— 活跃的 Linux 与技术社区
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/) —— 大模型自进化基础设施
