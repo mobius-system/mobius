@@ -18,6 +18,7 @@ const userPageSource = readSource('src/pages/UserPage.tsx')
 const workPageSource = readSource('src/pages/WorkPage.tsx')
 const issuePageSource = readSource('src/pages/IssuePage.tsx')
 const cssSource = readSource('src/index.css')
+const tasksRouteSource = readSource('../backend/routes/tasks.ts')
 
 function sourceBetween(source, startMarker, endMarker, label) {
   const start = source.indexOf(startMarker)
@@ -101,6 +102,18 @@ assert.match(cssSource, /\.mobius-chat-input\.mobius-chat-input--with-actions \{
 // 历史和复制链接统一生成 /u/:user/s/:session。
 assert.match(railSource, /return `\/u\/\$\{userId\}\/s\/\$\{encodeURIComponent\(item\.session_id\)\}`/, 'ConversationRail 必须生成会话短路由')
 assert.match(chatSource, /const path = `\/u\/\$\{encodeURIComponent\(user\.id\)\}\/s\/\$\{encodeURIComponent\(activeSessionId\)\}`/, '复制会话链接必须生成当前用户的会话短路由')
+
+// 历史轨只保留「项目文件夹 → 会话」两层，projectId 仅用于焦点而不得过滤其他项目。
+assert.match(railSource, /type ProjectFolder = \{[\s\S]*projectId: string[\s\S]*projectName: string[\s\S]*items: ConversationRailItem\[\][\s\S]*runningCount: number/, 'ConversationRail 必须建立项目文件夹结构')
+assert.match(railSource, /const itemProjectId = item\.project_id \|\| ''/, '会话必须按 project_id 归入项目文件夹')
+assert.match(railSource, /const itemProjectName = itemProjectId \? \(item\.project_name \|\| '未命名项目'\) : '未命名项目'/, '文件夹必须使用 project_name，无 project_id 时归入「未命名项目」')
+assert.match(railSource, /aria-expanded=\{expanded\} aria-controls=\{folderPanelId\}/, '项目文件夹必须可展开和折叠')
+assert.match(railSource, /mobius:ui:conversation-rail:collapsed/, '项目文件夹折叠状态必须持久化')
+assert.match(railSource, /folder\.projectName\.toLowerCase\(\)\.includes\(normalizedQuery\)[\s\S]*item\.name/, '搜索必须同时匹配项目名和会话名')
+assert.doesNotMatch(railSource, /今天|昨天|更早/, '项目文件夹不得再按日期分组')
+assert.doesNotMatch(railSource, /(?:items|projectFolders)\.filter\([\s\S]{0,180}item\.project_id\s*(?:===|!==)\s*projectId/, 'projectId 不得再过滤会话列表')
+assert.doesNotMatch(railSource, /\{item\.project_name \|\| '未命名项目'\}/, '会话行不得重复显示项目副标题')
+assert.match(tasksRouteSource, /req\.query\.limit \|\| 12[\s\S]*Math\.min\(100,/, '/api/tasks/recent 必须保留默认 12，并允许最多 100 条')
 
 // 三个默认页面的新会话空态最终都汇入 create-conversation orchestration。
 assert.match(userPageSource, /from '\.\.\/services\/create-conversation'/, 'UserPage 必须使用统一 create-conversation 服务')

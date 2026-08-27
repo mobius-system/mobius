@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MessageSquare, Plus, Search, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, MessageSquare, Plus, Search, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../store'
 import { logUiEvent } from '../services/ui-observability'
+
+const COLLAPSED_PROJECTS_STORAGE_KEY = 'mobius:ui:conversation-rail:collapsed'
+const UNNAMED_PROJECT_KEY = '__unnamed_project__'
 
 export type ConversationRailItem = {
   session_id: string
@@ -19,18 +22,35 @@ export type ConversationRailItem = {
   last_active?: string
 }
 
-type ConversationGroup = '今天' | '昨天' | '更早'
+type ProjectFolder = {
+  projectId: string
+  projectName: string
+  items: ConversationRailItem[]
+  runningCount: number
+}
 
-function groupFor(dateValue?: string): ConversationGroup {
-  const date = dateValue ? new Date(dateValue) : null
-  if (!date || Number.isNaN(date.getTime())) return '更早'
-  const now = new Date()
-  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const startValue = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
-  const days = Math.round((startToday - startValue) / 86_400_000)
-  if (days <= 0) return '今天'
-  if (days === 1) return '昨天'
-  return '更早'
+type ProjectCollapseState = Record<string, boolean>
+
+function lastActiveTime(item?: ConversationRailItem) {
+  const timestamp = item?.last_active ? new Date(item.last_active).getTime() : 0
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
+
+function projectFolderKey(projectId: string) {
+  return projectId || UNNAMED_PROJECT_KEY
+}
+
+function loadProjectCollapseState(): ProjectCollapseState {
+  if (typeof window === 'undefined') return {}
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(COLLAPSED_PROJECTS_STORAGE_KEY) || '{}')
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'),
+    )
+  } catch {
+    return {}
+  }
 }
 
 function statusMeta(item: ConversationRailItem) {
@@ -67,6 +87,7 @@ export function ConversationRail({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [projectCollapseState, setProjectCollapseState] = useState<ProjectCollapseState>(loadProjectCollapseState)
   const drawerSearchRef = useRef<HTMLInputElement | null>(null)
   const drawerTriggerRef = useRef<HTMLElement | null>(null)
 
@@ -122,21 +143,68 @@ export function ConversationRail({
     return () => { cancelled = true }
   }, [refreshKey, userId])
 
-  const visibleItems = useMemo(() => {
-    const normalized = query.trim().toLowerCase()
-    return items.filter(item => {
-      if (projectId && item.project_id !== projectId) return false
-      if (!normalized) return true
-      return [item.name, item.project_name, item.session_id]
-        .some(value => String(value || '').toLowerCase().includes(normalized))
-    })
-  }, [items, projectId, query])
+  const projectFolders = useMemo(() => {
+    const folders = new Map<string, ProjectFolder>()
+    const sortedItems = [...items].sort((left, right) => lastActiveTime(right) - lastActiveTime(left))
 
-  const grouped = useMemo(() => {
-    const groups: Record<ConversationGroup, ConversationRailItem[]> = { 今天: [], 昨天: [], 更早: [] }
-    visibleItems.forEach(item => groups[groupFor(item.last_active)].push(item))
-    return (['今天', '昨天', '更早'] as ConversationGroup[]).map(label => ({ label, items: groups[label] })).filter(group => group.items.length)
-  }, [visibleItems])
+    sortedItems.forEach(item => {
+      const itemProjectId = item.project_id || ''
+      const itemProjectName = itemProjectId ? (item.project_name || '未命名项目') : '未命名项目'
+      const folderKey = projectFolderKey(itemProjectId)
+      const folder = folders.get(folderKey) || {
+        projectId: itemProjectId,
+        projectName: itemProjectName,
+        items: [],
+        runningCount: 0,
+      }
+      folder.items.push(item)
+      if (item.agent_status === 'running') folder.runningCount += 1
+      folders.set(folderKey, folder)
+    })
+
+    return Array.from(folders.values()).sort(
+      (left, right) => lastActiveTime(right.items[0]) - lastActiveTime(left.items[0]),
+    )
+  }, [items])
+
+  const normalizedQuery = query.trim().toLowerCase()
+  const visibleFolders = useMemo(() => {
+    if (!normalizedQuery) return projectFolders
+    return projectFolders.flatMap(folder => {
+      const projectMatches = folder.projectName.toLowerCase().includes(normalizedQuery)
+      const matchingItems = projectMatches
+        ? folder.items
+        : folder.items.filter(item => String(item.name || '未命名会话').toLowerCase().includes(normalizedQuery))
+      return matchingItems.length ? [{ ...folder, items: matchingItems }] : []
+    })
+  }, [normalizedQuery, projectFolders])
+
+  const folderIsExpanded = (folder: ProjectFolder) => {
+    if (normalizedQuery) return true
+    const containsActiveSession = Boolean(activeSessionId)
+      && folder.items.some(item => item.session_id === activeSessionId)
+    if (containsActiveSession) return true
+    const storedCollapseState = projectCollapseState[projectFolderKey(folder.projectId)]
+    if (storedCollapseState !== undefined) return !storedCollapseState
+    return Boolean(projectId) && folder.projectId === projectId
+  }
+
+  const toggleFolder = (folder: ProjectFolder) => {
+    const containsActiveSession = Boolean(activeSessionId)
+      && folder.items.some(item => item.session_id === activeSessionId)
+    if (normalizedQuery || containsActiveSession) return
+    const folderKey = projectFolderKey(folder.projectId)
+    const nextCollapsed = folderIsExpanded(folder)
+    setProjectCollapseState(current => {
+      const next = { ...current, [folderKey]: nextCollapsed }
+      try {
+        window.localStorage.setItem(COLLAPSED_PROJECTS_STORAGE_KEY, JSON.stringify(next))
+      } catch {
+        // localStorage 不可用时，折叠状态仅在当前页面生效。
+      }
+      return next
+    })
+  }
 
   const openConversation = (item: ConversationRailItem) => {
     const path = conversationPath(userId, item)
@@ -180,36 +248,65 @@ export function ConversationRail({
           <div className="px-2 py-5 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中…</div>
         ) : error ? (
           <div className="px-2 py-5 text-center text-[12px]" style={{ color: '#f87171' }}>{error}</div>
-        ) : grouped.length === 0 ? (
+        ) : visibleFolders.length === 0 ? (
           <div className="px-2 py-5 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无会话</div>
-        ) : grouped.map(group => (
-          <section key={group.label} className="mb-4">
-            <h2 className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{group.label}</h2>
-            <div className="space-y-0.5">
-              {group.items.map(item => {
-                const active = item.session_id === activeSessionId
-                const status = statusMeta(item)
+        ) : (
+          <div>
+            <h2 className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>项目</h2>
+            <div className="space-y-1">
+              {visibleFolders.map(folder => {
+                const folderKey = projectFolderKey(folder.projectId)
+                const expanded = folderIsExpanded(folder)
+                const focused = Boolean(projectId) && folder.projectId === projectId
+                const folderPanelId = `conversation-folder-${drawer ? 'drawer' : 'desktop'}-${encodeURIComponent(folderKey)}`
                 return (
-                  <button key={item.session_id} type="button" onClick={() => openConversation(item)}
-                    className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-[var(--bg-hover)]"
-                    style={{ background: active ? 'var(--bg-active)' : undefined }} aria-current={active ? 'page' : undefined}>
-                    <MessageSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: active ? 'var(--accent-primary)' : 'var(--text-muted)' }} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{item.name || '未命名会话'}</span>
-                      <span className="mt-0.5 block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{item.project_name || '未命名项目'}</span>
-                    </span>
-                    {status && (
-                      <span className="flex flex-shrink-0 items-center gap-1 text-[9px]" style={{ color: status.color }}>
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: status.color }} />
-                        {status.label}
+                  <section key={folderKey}>
+                    <button type="button" onClick={() => toggleFolder(folder)}
+                      aria-expanded={expanded} aria-controls={folderPanelId}
+                      className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
+                      style={{ background: focused ? 'var(--bg-active)' : undefined }}>
+                      {expanded
+                        ? <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                        : <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
+                      <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: focused ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
+                      <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                        {folder.projectName}
                       </span>
+                      {folder.runningCount > 0 && (
+                        <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: '#38bdf8' }}
+                          title={`${folder.runningCount} 个运行中会话`} aria-label={`${folder.runningCount} 个运行中会话`} />
+                      )}
+                    </button>
+                    {expanded && (
+                      <div id={folderPanelId} className="mt-0.5 space-y-0.5">
+                        {folder.items.map(item => {
+                          const active = item.session_id === activeSessionId
+                          const status = statusMeta(item)
+                          return (
+                            <button key={item.session_id} type="button" onClick={() => openConversation(item)}
+                              className="flex w-full min-w-0 items-center gap-2 rounded-md py-1.5 pl-7 pr-2 text-left transition-colors hover:bg-[var(--bg-hover)]"
+                              style={{ background: active ? 'var(--bg-active)' : undefined }} aria-current={active ? 'page' : undefined}>
+                              <MessageSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: active ? 'var(--accent-primary)' : 'var(--text-muted)' }} />
+                              <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                                {item.name || '未命名会话'}
+                              </span>
+                              {status && (
+                                <span className="flex flex-shrink-0 items-center gap-1 text-[9px]" style={{ color: status.color }}>
+                                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: status.color }} />
+                                  {status.label}
+                                </span>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
                     )}
-                  </button>
+                  </section>
                 )
               })}
             </div>
-          </section>
-        ))}
+          </div>
+        )}
       </div>
     </aside>
   )
