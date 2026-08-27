@@ -196,7 +196,7 @@ export function WebTerminalModal({ sessionId, mode = 'cwd', onClose }: { session
               sid: {sessionId.slice(0, 8)}
             </span>
           )}
-          <span className="ml-auto flex items-center gap-1.5 text-[11px]" style={{ color: sm.color }}>
+          <span className={`ml-auto flex items-center gap-1.5 text-[11px] ${(status === 'connecting' || status === 'reconnecting') ? 'mobius-status-marquee' : ''}`} style={{ color: sm.color }}>
             <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: sm.color }} />
             {sm.label}
           </span>

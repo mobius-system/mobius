@@ -12,7 +12,7 @@ import { Search } from 'lucide-react'
 import type { AnyEntry, BashToolResult, JsonlViewItem, Round, RoundItem } from './types'
 import type { ResolvedCallMap } from './tool-status'
 import { groupExploreItems, type ExploreRenderItem } from './explore-group'
-import { entryDisplayImages, entryUserAttachmentImages } from './entry-extract'
+import { entryDisplayImages, entryReadImagePaths, entryUserAttachmentImages } from './entry-extract'
 import { buildHeaderSummary } from './header-summary'
 import { JsonEntryCard } from './EntryCard'
 import { DisplayImagesCard } from './DisplayImages'
@@ -31,13 +31,15 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
   resolvedMap?: ResolvedCallMap | null
 }) {
   const displayImages = entryDisplayImages(entry)
+  const readImages = entryReadImagePaths(entry)
   const attachmentImages = entryUserAttachmentImages(entry)
-  const imgs = Array.from(new Set([...displayImages, ...attachmentImages]))
-  const sourceLabel = displayImages.length > 0 && attachmentImages.length > 0
-    ? 'display_images / 附件图片'
-    : attachmentImages.length > 0
-      ? '附件图片'
-      : 'display_images'
+  const imgs = Array.from(new Set([...displayImages, ...readImages, ...attachmentImages]))
+  const labels = [
+    displayImages.length > 0 ? 'display_images' : '',
+    readImages.length > 0 ? '读取图片' : '',
+    attachmentImages.length > 0 ? '附件图片' : '',
+  ].filter(Boolean)
+  const sourceLabel = labels.join(' / ') || '图片'
   return (
     <>
       <JsonEntryCard entry={entry} lineNo={lineNo} forceOpen={forceOpen} parentOrderedCollapse={parentOrderedCollapse} showMeta={showMeta} bashResults={bashResults} readResults={readResults} resolvedMap={resolvedMap} />

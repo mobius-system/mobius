@@ -1036,6 +1036,99 @@ async function testSendRetries502() {
   } finally { restoreFetch() }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 16 — /compact slash command dispatch + compact artifact rendering
+// ════════════════════════════════════════════════════════════════════════════
+async function testCompactSlash() {
+  console.log('\n[UI 16] /compact slash command')
+  // (a) unit: claude-code compact artifacts in the jsonl project cleanly.
+  const echo = viewsForEntry({
+    type: 'user',
+    message: { role: 'user', content: '<command-name>/compact</command-name><command-message>compact</command-message><command-args></command-args><local-command-caveat>claude-3-5 prompted</local-command-caveat>' },
+  } as any)
+  ok(echo.length === 1 && echo[0].kind === 'skip', 'compact command echo (tag soup) is skipped, not shown as user text')
+  const done = viewsForEntry({
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'text', text: '<local-command-stdout>Compacted. Your new context length is 9,241 tokens</local-command-stdout>' }] },
+  } as any)
+  ok(done.length === 1 && done[0].kind === 'system' && (done[0] as any).text.includes('上下文已压缩'), 'compact completion stdout renders as a 上下文已压缩 system line')
+  ok(done[0].kind === 'system' && (done[0] as any).text.includes('9,241 tokens'), 'compact completion keeps the token count detail')
+  const goal = viewsForEntry({
+    type: 'user',
+    message: { role: 'user', content: '<local-command-stdout>Goal set: ship the TUI</local-command-stdout>' },
+  } as any)
+  ok(goal.length === 1 && goal[0].kind === 'system' && (goal[0] as any).text === 'Goal set: ship the TUI' && !(goal[0] as any).text.includes('上下文已压缩'), 'non-compact local-command stdout shows its body without the compact marker')
+
+  const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
+  const ready: ReadyState = {
+    project: { id: 'p1', name: '测试项目' },
+    issue: { id: 'i1', project_id: 'p1', title: '测试任务' },
+    prefs: { model: 'codex', language: 'zh', excluded_skill_ids: [], excluded_memory_ids: [] },
+  }
+
+  // (b) no session yet → /compact refuses instead of creating an empty session.
+  let posted: any = null
+  installMock((url, init) => {
+    if (url.includes('/events')) {
+      return new Response(new RS({ start(c: any) { sseController = c; c.enqueue(enc.encode('event: subscribed\ndata: {"event":"subscribed","session":{}}\n\n')) } }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }
+    if (url.endsWith('/messages') && init?.method === 'POST') { posted = JSON.parse(String(init.body || '{}')); return jsonResponse({ ok: true, session_id: 's1', turn_number: 1 }) }
+    if (url.includes('/sessions') && init?.method === 'POST') return jsonResponse({ session_id: 's1' })
+    return jsonResponse({ error: 'no mock' }, 404)
+  })
+  try {
+    const { stdin, lastFrame, unmount } = render(
+      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
+    )
+    await delay(40)
+    stdin.write('/comp'); await delay(60)
+    ok((lastFrame() ?? '').includes('/compact') && (lastFrame() ?? '').includes('压缩当前会话上下文'), '/compact appears in the slash autocomplete list')
+    stdin.write('act'); await delay(40)
+    stdin.write('\r'); await delay(120)
+    const refused = lastFrame() ?? ''
+    unmount()
+    ok(refused.includes('当前没有可发送指令的会话'), '/compact without a session shows the guidance error')
+    ok(posted === null, '/compact without a session dispatches nothing')
+  } finally { restoreFetch() }
+
+  // (c) with a live session → literal '/compact' is POSTed like the web client,
+  //     and the streamed compact artifacts render as one system line.
+  posted = null
+  installMock((url, init) => {
+    if (url.includes('/events')) {
+      return new Response(new RS({ start(c: any) { sseController = c; c.enqueue(enc.encode('event: subscribed\ndata: {"event":"subscribed","session":{}}\n\n')) } }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }
+    if (url.endsWith('/messages') && init?.method === 'POST') {
+      posted = JSON.parse(String(init.body || '{}'))
+      setTimeout(() => {
+        emit('typing', { active: true })
+        emit('jsonl_entry', { session_id: 's1', entry: { type: 'user', uuid: 'cmd-echo', message: { role: 'user', content: '<command-name>/compact</command-name><command-message>compact</command-message><command-args></command-args><local-command-caveat>caveat</local-command-caveat>' } } })
+        emit('jsonl_entry', { session_id: 's1', entry: { type: 'user', uuid: 'cmd-done', message: { role: 'user', content: [{ type: 'text', text: '<local-command-stdout>Compacted. Your new context length is 8,840 tokens</local-command-stdout>' }] } } })
+        emit('typing', { active: false })
+      }, 120)
+      return jsonResponse({ ok: true, session_id: 's1', turn_number: 2 })
+    }
+    if (url.endsWith('/api/sessions/s1/status')) return jsonResponse({ session_id: 's1', alive: true, working: false })
+    return jsonResponse({ error: 'no mock' }, 404)
+  })
+  try {
+    const { stdin, lastFrame, unmount } = render(
+      <ChatScreen client={client} ready={ready} webUserId="u" resumeSessionId="s1" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
+    )
+    await delay(120)
+    stdin.write('/compact'); await delay(40)
+    stdin.write('\r')
+    ok(await waitFor(lastFrame, '上下文已压缩', 4000), 'compact completion renders the 上下文已压缩 system line')
+    await delay(80)
+    const out = lastFrame() ?? ''
+    unmount()
+    ok(posted?.content === '/compact', 'the literal /compact command is POSTed to the session (web parity)')
+    ok(out.includes('8,840 tokens'), 'compact system line keeps the token detail')
+    ok(!out.includes('<command-name>'), 'raw local-command tags never leak into the transcript')
+    ok(!out.includes('当前没有可发送指令的会话'), 'no error line once a session exists')
+  } finally { restoreFetch() }
+}
+
 async function main() {
   await testLogin()
   await testChat()
@@ -1060,6 +1153,7 @@ async function main() {
   await testChatSseReconnects()
   await testIdleCompletedSessionReopensSseOnSend()
   await testSendRetries502()
+  await testCompactSlash()
   // cleanup temp home
   try { fs.rmSync(TMP_HOME, { recursive: true, force: true }) } catch { /* ignore */ }
   console.log(`\n==== UI RESULT: ${pass} passed, ${fail} failed ====\n`)

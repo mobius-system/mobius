@@ -607,21 +607,20 @@ export default function UserPage() {
               </div>
 
               {/* 搜索、筛选与屏蔽入口集中为一条紧凑工具栏，窄屏自动换行。 */}
-              <div className="mt-4 flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:flex-wrap lg:flex-nowrap"
-                style={{ background: 'color-mix(in srgb, var(--bg-primary) 42%, transparent)', borderColor: 'var(--border-color)' }}>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap lg:flex-nowrap">
                 <div className="relative min-w-0 flex-1 sm:min-w-[240px]">
-                  <Search className="absolute left-2.5 top-[9px] h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
+                  <Search className="absolute left-2.5 top-3 h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
                   <input value={search} onChange={e => setSearch(e.target.value)}
                     maxLength={200}
                     data-project-hierarchy-search
                     placeholder="搜索项目、任务或会话..."
-                    className="h-8 w-full rounded-lg pl-8 pr-8 text-[12px] focus:outline-none focus:border-blue-500/30"
+                    className="h-[38px] w-full rounded-lg pl-8 pr-8 text-[12px] focus:outline-none focus:border-blue-500/30"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                   {hierarchySearchLoading ? (
-                    <LoaderCircle className="absolute right-2.5 top-[9px] h-3.5 w-3.5 animate-spin" style={{ color: '#60a5fa' }} />
+                    <LoaderCircle className="absolute right-2.5 top-3 h-3.5 w-3.5 animate-spin" style={{ color: '#60a5fa' }} />
                   ) : search ? (
                     <button type="button" aria-label="清空搜索" title="清空搜索" onClick={() => setSearch('')}
-                      className="absolute right-1.5 top-1 flex h-6 w-6 items-center justify-center rounded-md hover:bg-[var(--bg-hover)]"
+                      className="absolute right-1.5 top-[7px] flex h-6 w-6 items-center justify-center rounded-md hover:bg-[var(--bg-hover)]"
                       style={{ color: 'var(--text-muted)' }}>
                       <X className="h-3.5 w-3.5" />
                     </button>

@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock, Sparkles } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock, Sparkles, Eye, MessageCircle } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -15,16 +15,28 @@ import { SessionJsonlPanel } from './session-jsonl-panel'
 import { useVisibleJsonl } from './session-jsonl-filter'
 import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
-import { AimuxLinkIndicator } from './aimux-link-indicator'
+import { AimuxLinkIndicator, RemoteAimuxMcpIndicator } from './aimux-link-indicator'
 import { AnnouncePcButton } from './announce-pc-button'
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { readJsonlCacheSync, readJsonlCacheFromIdb, writeJsonlCache } from '../services/session-jsonl-cache'
+import {
+  preloadSessionInputCache,
+  prependSessionInputCache,
+  readSessionInputCache,
+  refreshSessionInputCache,
+  type SessionInputEntry,
+} from '../services/session-input-cache'
 import { MobiusLogo } from './mobius-logo'
 import { PlanningEditor } from './planning-editor'
 import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { RemoteComputeMemoryModal } from './memories'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { AdvancedSessionActions } from './advanced-session-actions'
+import { UnifiedButtonGroup } from './unified-button-group'
+import { SessionGroupTree } from './session-group-tree'
+import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
+import { normalizeRecentSessions, type RecentSession } from '../services/recent-sessions'
+import { RecentSessionRow } from './recent-session-row'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { extensionAppUrlForProject } from '../services/extension-entry'
 import { isFireAndForgetSession } from '../services/session-start-policy'
@@ -175,16 +187,6 @@ type AttachmentImagePreview = {
   id: string
   name: string
   src: string
-}
-
-type SessionInputEntry = {
-  id: string
-  session_id?: string
-  input_text?: string
-  content?: string
-  created_at?: string
-  request_id?: string | null
-  turn_number?: number | null
 }
 
 type SessionFileFeature = {
@@ -481,14 +483,15 @@ function SessionInputReplayModal({ sessionId, onPick, onClose }: {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    const cached = readSessionInputCache(sessionId)
+    setLoading(!cached)
     setError('')
     setCopyError('')
-    setEntries([])
-    api(`/api/sessions/${sessionId}/inputs`)
-      .then((data: any) => {
+    setEntries(cached || [])
+    refreshSessionInputCache(sessionId)
+      .then((nextEntries) => {
         if (cancelled) return
-        setEntries(Array.isArray(data?.entries) ? data.entries : [])
+        setEntries(nextEntries)
       })
       .catch((e: any) => {
         if (cancelled) return
@@ -1653,8 +1656,11 @@ type MentionAgentSession = {
   scope_type?: 'issue' | 'research'
   last_active?: string
   message_count?: number
+  project_id?: string | null
   project_name?: string
+  issue_id?: string | null
   issue_title?: string
+  research_id?: string | null
   research_title?: string
   group?: 'same_scope' | 'same_project' | 'other_project'
   can_communicate?: boolean
@@ -1681,7 +1687,6 @@ function RemoteFileMentionDrawer({
   researchId,
   currentSessionId,
   open,
-  query,
   onClose,
   onPickPath,
   onPickAgent,
@@ -1691,7 +1696,6 @@ function RemoteFileMentionDrawer({
   researchId?: string
   currentSessionId?: string
   open: boolean
-  query?: string
   onClose: () => void
   onPickPath: (path: string) => void
   onPickAgent?: (agent: MentionAgentSession, mode: AgentMentionMode) => void
@@ -1704,8 +1708,12 @@ function RemoteFileMentionDrawer({
   const [agentSessions, setAgentSessions] = useState<MentionAgentSession[]>([])
   const [agentLoading, setAgentLoading] = useState(false)
   const [agentError, setAgentError] = useState('')
-  const [agentMode, setAgentMode] = useState<AgentMentionMode>('read_only')
-  const [agentSearch, setAgentSearch] = useState('')
+  const [pendingAgent, setPendingAgent] = useState<MentionAgentSession | null>(null)
+  // 智能体 tab 内的列表范围: 'recent' = 近期活跃会话 (跨项目); 'scoped' = 原同 Scope/同项目相关性列表。
+  const [agentListMode, setAgentListMode] = useState<'recent' | 'scoped'>('recent')
+  const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
+  const [recentLoading, setRecentLoading] = useState(false)
+  const [recentError, setRecentError] = useState('')
   const [dirs, setDirs] = useState<Record<string, DirState>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
 
@@ -1758,9 +1766,8 @@ function RemoteFileMentionDrawer({
   useEffect(() => {
     if (!open) return
     setActiveTab(currentSessionId ? 'agents' : 'files')
-    setAgentMode('read_only')
-    setAgentSearch(String(query || '').trim())
-  }, [currentSessionId, open, query])
+    setPendingAgent(null)
+  }, [currentSessionId, open])
 
   const loadAgentSessions = useCallback(async () => {
     if (!agentScopeUrl) {
@@ -1770,9 +1777,7 @@ function RemoteFileMentionDrawer({
     setAgentLoading(true)
     setAgentError('')
     try {
-      const normalizedQuery = String(agentSearch || '').trim()
-      const suffix = normalizedQuery ? `&q=${encodeURIComponent(normalizedQuery)}` : ''
-      const data = await api(`${agentScopeUrl}${suffix}`)
+      const data = await api(agentScopeUrl)
       const list = Array.isArray(data?.targets) ? data.targets as MentionAgentSession[] : []
       setAgentSessions(list.filter(item => item.session_id !== currentSessionId))
     } catch (error: any) {
@@ -1781,7 +1786,7 @@ function RemoteFileMentionDrawer({
     } finally {
       setAgentLoading(false)
     }
-  }, [agentScopeUrl, currentSessionId, agentSearch])
+  }, [agentScopeUrl, currentSessionId])
 
   useEffect(() => {
     if (!open) return
@@ -1790,16 +1795,37 @@ function RemoteFileMentionDrawer({
 
   useEffect(() => {
     if (!open || activeTab !== 'agents') return
-    const timer = window.setTimeout(() => { void loadAgentSessions() }, String(agentSearch || '').trim() ? 160 : 0)
-    return () => window.clearTimeout(timer)
-  }, [open, activeTab, loadAgentSessions, agentSearch])
+    void loadAgentSessions()
+  }, [open, activeTab, loadAgentSessions])
 
   useEffect(() => {
     if (!open) return
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (pendingAgent) setPendingAgent(null)
+      else onClose()
+    }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [open, onClose])
+  }, [open, onClose, pendingAgent])
+
+  // 近期活跃会话（跨项目，登录用户自己的），与 IssuePage 侧栏「近期会话」同数据源。
+  useEffect(() => {
+    if (!open || activeTab !== 'agents') return
+    const controller = new AbortController()
+    setRecentLoading(true)
+    setRecentError('')
+    api('/api/tasks/recent?limit=50', { signal: controller.signal })
+      .then((value: unknown) => setRecentSessions(normalizeRecentSessions(value)))
+      .catch((error: any) => {
+        if (error?.name === 'AbortError') return
+        setRecentError(error?.message || '近期会话加载失败')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRecentLoading(false)
+      })
+    return () => controller.abort()
+  }, [open, activeTab])
 
   const loadDir = useCallback(async (relPath: string) => {
     if (!projectId || !selectedSourceKey) return
@@ -1850,10 +1876,38 @@ function RemoteFileMentionDrawer({
 
   const pickAgent = useCallback((agent: MentionAgentSession) => {
     if (!onPickAgent) return
-    const mode = agentMode === 'bidirectional' && agent.can_communicate === false ? 'read_only' : agentMode
-    onPickAgent(agent, mode)
-    onClose()
-  }, [agentMode, onClose, onPickAgent])
+    setPendingAgent(agent)
+  }, [onPickAgent])
+
+  const confirmAgentMode = useCallback((mode: AgentMentionMode) => {
+    if (!pendingAgent || !onPickAgent) return
+    const resolvedMode = mode === 'bidirectional' && pendingAgent.can_communicate === false
+      ? 'read_only'
+      : mode
+    onPickAgent(pendingAgent, resolvedMode)
+    setPendingAgent(null)
+  }, [onPickAgent, pendingAgent])
+
+  // 近期会话 → @ 目标: /api/tasks/recent 字段较轻，先映射成 MentionAgentSession，
+  // 复用同一套模式选择弹窗；这些会话属于当前用户自己的近期 Session，可开启交流。
+  const pickRecentSession = useCallback((session: RecentSession) => {
+    if (!onPickAgent) return
+    setPendingAgent({
+      session_id: session.session_id,
+      name: session.name || session.session_id,
+      description: '',
+      agent_status: session.agent_status,
+      scope_type: session.scope_type,
+      last_active: session.last_active,
+      project_id: session.project_id || null,
+      project_name: session.project_name || '',
+      issue_id: session.issue_id || null,
+      issue_title: session.issue_title || '',
+      research_id: session.research_id || null,
+      research_title: session.research_title || '',
+      can_communicate: true,
+    })
+  }, [onPickAgent])
 
   const filteredAgents = useMemo(() => {
     // 后端已按「精确搜索 → 同 Scope → 同项目 → 运行态 → 最近活跃」稳定排序；
@@ -1861,18 +1915,19 @@ function RemoteFileMentionDrawer({
     return agentSessions
   }, [agentSessions])
 
-  const compactAgents = activeTab === 'agents'
-  const agentPanelRef = useRef<HTMLElement | null>(null)
-  useEffect(() => {
-    if (!open || !compactAgents) return
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null
-      if (target && agentPanelRef.current?.contains(target)) return
-      onClose()
-    }
-    window.addEventListener('pointerdown', onPointerDown)
-    return () => window.removeEventListener('pointerdown', onPointerDown)
-  }, [open, compactAgents, onClose])
+  // 树状分组（项目 → 任务/研究 → 会话），与简易模式工作导航共享分组服务与渲染组件。
+  // 组间先按后端相关性（同 Scope → 同项目 → 其他项目）排序，同级内保持活跃度排序。
+  const agentGroups = useMemo(() => {
+    const rankOf = (agent: MentionAgentSession) => (
+      agent.group === 'same_scope' ? 0 : agent.group === 'same_project' ? 1 : 2
+    )
+    return buildRecentSessionTreeGroups(filteredAgents)
+      .map(group => ({ group, rank: group.sessions.reduce((min, agent) => Math.min(min, rankOf(agent)), 9) }))
+      .sort((a, b) => a.rank - b.rank)
+      .map(entry => entry.group)
+  }, [filteredAgents])
+
+  const recentGroups = useMemo(() => buildRecentSessionTreeGroups(recentSessions), [recentSessions])
 
   if (!open) return null
   const selectedSource = sourceOptions.find(source => source.key === selectedSourceKey)
@@ -1883,22 +1938,17 @@ function RemoteFileMentionDrawer({
     : '选择文件，把绝对路径插入输入框'
 
   return (
-    <div className={compactAgents ? 'pointer-events-none fixed inset-0 z-[90]' : 'fixed inset-0 z-[90]'} role="dialog" aria-modal={!compactAgents} aria-label="选择 @ 目标">
-      {!compactAgents && <button
+    <div className="fixed inset-0 z-[90]" role="dialog" aria-modal="true" aria-label="选择 @ 目标">
+      <button
         type="button"
         className="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[1px]"
         aria-label="关闭 @ 弹层"
         onClick={onClose}
-      />}
+      />
       <aside
         data-testid="remote-file-mention-drawer"
-        ref={agentPanelRef}
-        className={compactAgents
-          ? 'pointer-events-auto absolute bottom-24 right-4 flex max-h-[min(64vh,520px)] w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-xl shadow-2xl transition-transform duration-150 ease-out sm:right-6'
-          : 'absolute inset-y-0 left-0 flex w-[420px] max-w-[calc(100vw-24px)] flex-col shadow-2xl transition-transform duration-200 ease-out'}
-        style={compactAgents
-          ? { background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }
-          : { background: 'var(--modal-bg)', borderRight: '1px solid var(--border-color)' }}
+        className="absolute inset-y-0 left-0 flex w-[460px] max-w-[calc(100vw-24px)] flex-col shadow-2xl transition-transform duration-200 ease-out"
+        style={{ background: 'var(--modal-bg)', borderRight: '1px solid var(--border-color)' }}
       >
         <div className="flex h-14 flex-shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: 'var(--border-color)' }}>
           <div className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400">
@@ -1920,8 +1970,11 @@ function RemoteFileMentionDrawer({
           </button>
         </div>
 
-        <div className="flex-shrink-0 border-b p-3" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="mb-2 flex items-center gap-2">
+        <div
+          className={activeTab === 'files' ? 'flex-shrink-0 border-b p-3' : 'flex min-h-0 flex-1 flex-col border-b p-3'}
+          style={{ borderColor: 'var(--border-color)' }}
+        >
+          <div className="mb-2 flex flex-shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() => setActiveTab('files')}
@@ -1998,73 +2051,70 @@ function RemoteFileMentionDrawer({
               )}
             </>
           ) : (
-            <>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  {agentScopeUrl ? '按相关性排序的 Session' : '无可用范围'}
-                </span>
-                <div className="flex items-center gap-1 rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
-                  <button
-                    type="button"
-                    onClick={() => setAgentMode('read_only')}
-                    className="inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] transition-colors"
-                    style={{
-                      background: agentMode === 'read_only' ? 'rgba(59,130,246,0.12)' : 'transparent',
-                      color: agentMode === 'read_only' ? 'var(--text-primary)' : 'var(--text-muted)',
-                    }}
-                  >
-                    <Search className="h-3.5 w-3.5" strokeWidth={1.8} />
-                    只读引用
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAgentMode('bidirectional')}
-                    className="inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] transition-colors"
-                    style={{
-                      background: agentMode === 'bidirectional' ? 'rgba(59,130,246,0.12)' : 'transparent',
-                      color: agentMode === 'bidirectional' ? 'var(--text-primary)' : 'var(--text-muted)',
-                    }}
-                  >
-                    <ArrowLeftRight className="h-3.5 w-3.5" strokeWidth={1.8} />
-                    开启交流
-                  </button>
+            <div className="flex min-h-0 flex-1 flex-col">
+              {/* 智能体 tab 内的范围切换 — 与 IssuePage 侧栏「任务会话 / 近期会话」同一交互模式 (role=tablist)。 */}
+              <div className="mb-2 flex flex-shrink-0 items-center gap-1.5" data-testid="mention-agent-scope-switcher">
+                <div className="flex min-w-0 flex-1 rounded-md p-0.5" role="tablist" aria-label="Session 列表范围"
+                     style={{ background: 'var(--bg-secondary)' }}>
+                  {([
+                    ['recent', '近期会话'],
+                    ['scoped', '相关智能体'],
+                  ] as const).map(([mode, label]) => {
+                    const active = agentListMode === mode
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        aria-controls="mention-agent-session-list"
+                        onClick={() => setAgentListMode(mode)}
+                        className="min-w-0 flex-1 truncate rounded px-1 py-1.5 text-[11px] font-medium leading-none transition-colors hover:text-[var(--text-primary)]"
+                        style={{
+                          color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                          background: active ? 'var(--bg-active)' : 'transparent',
+                          boxShadow: active ? '0 1px 2px rgba(0,0,0,0.14)' : undefined,
+                        }}
+                        title={label}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
-              <div className="mb-2 flex items-center gap-2">
-                <label className="relative min-w-0 flex-1">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" strokeWidth={1.8} style={{ color: 'var(--text-muted)' }} />
-                  <input
-                    value={agentSearch}
-                    onChange={(event) => setAgentSearch(event.target.value)}
-                    placeholder="搜索名称、Session ID、项目、Issue、消息或模型"
-                    className="h-8 w-full rounded-md border bg-transparent pl-8 pr-8 text-[11px] outline-none focus:ring-2 focus:ring-blue-500/40"
-                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}
-                    aria-label="搜索 Session"
-                  />
-                  {agentSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setAgentSearch('')}
-                      className="absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded hover:bg-[var(--bg-card-hover)]"
-                      style={{ color: 'var(--text-muted)' }}
-                      aria-label="清空 Session 搜索"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
-                </label>
-                <button
-                  type="button"
-                  onClick={() => void loadAgentSessions()}
-                  disabled={agentLoading}
-                  className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  <RefreshCw className={`h-3 w-3 ${agentLoading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
-                  <span className="sr-only">刷新</span>
-                </button>
-              </div>
-              {agentLoading && agentSessions.length === 0 ? (
+              <div id="mention-agent-session-list" role="tabpanel" className="flex min-h-0 flex-1 flex-col">
+              {agentListMode === 'recent' ? (
+                recentLoading && recentSessions.length === 0 ? (
+                  <div className="flex h-16 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                    <Loader2 className="h-4 w-4 animate-spin" />加载近期会话…
+                  </div>
+                ) : recentError ? (
+                  <div className="rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                    近期会话加载失败：{recentError}
+                  </div>
+                ) : recentGroups.length === 0 ? (
+                  <div className="rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                    暂无近期会话。
+                  </div>
+                ) : (
+                  <div className="min-h-0 flex-1 overflow-y-auto pr-1" aria-label="按项目与任务分组的近期会话" data-testid="mention-recent-session-tree">
+                    <SessionGroupTree
+                      groups={recentGroups}
+                      domIdPrefix="mention-recent-group"
+                      renderSession={session => (
+                        <RecentSessionRow
+                          session={session}
+                          active={session.session_id === currentSessionId}
+                          onClick={() => pickRecentSession(session)}
+                          variant="mention"
+                          title={`${session.name || session.session_id} · @ 选择引用或交流方式`}
+                        />
+                      )}
+                    />
+                  </div>
+                )
+              ) : agentLoading && agentSessions.length === 0 ? (
                 <div className="flex h-16 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
                   <Loader2 className="h-4 w-4 animate-spin" />加载智能体…
                 </div>
@@ -2080,57 +2130,61 @@ function RemoteFileMentionDrawer({
                       没有找到可 @ 的智能体。
                     </div>
                   ) : (
-                    <div className={`${compactAgents ? 'max-h-[260px]' : 'max-h-[calc(100vh-330px)]'} space-y-2 overflow-y-auto pr-1`}>
-                      {filteredAgents.map(agent => {
-                        const active = agent.agent_status === 'running'
-                        const modelLabel = sessionModelLabel(agent.model, agent.model_label)
-                        const relationLabel = agent.group === 'same_scope'
-                          ? (agent.scope_type === 'research' ? '同 Research' : '同 Issue')
-                          : agent.group === 'same_project' ? '同项目' : '其他项目'
-                        const selectedModeLabel = agentMode === 'bidirectional' && agent.can_communicate === false
-                          ? '只读权限' : agentMode === 'bidirectional' ? '开启交流' : '只读引用'
-                        return (
-                          <button
-                            key={agent.session_id}
-                            type="button"
-                            onClick={() => pickAgent(agent)}
-                            className="w-full rounded-lg border px-3 py-2 text-left transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
-                            style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className={`h-2.5 w-2.5 flex-shrink-0 rounded-full ${active ? 'bg-emerald-400' : 'bg-slate-400'}`} />
-                              <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {agent.name || agent.session_id}
+                    <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                      <SessionGroupTree
+                        groups={agentGroups}
+                        domIdPrefix="mention-agent-group"
+                        renderSession={agent => {
+                          const active = agent.agent_status === 'running'
+                          const modelLabel = sessionModelLabel(agent.model, agent.model_label)
+                          const relationLabel = agent.group === 'same_scope'
+                            ? (agent.scope_type === 'research' ? '同 Research' : '同 Issue')
+                            : agent.group === 'same_project' ? '同项目' : '其他项目'
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => pickAgent(agent)}
+                              className="relative mt-0.5 flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
+                              title={`${agent.name || agent.session_id} · ${agent.session_id}`}
+                            >
+                              <span className="absolute -left-2.5 top-1/2 w-2 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
+                              <span className={`h-2 w-2 flex-shrink-0 rounded-full ${active ? 'bg-emerald-400' : 'bg-slate-400'}`} />
+                              <span className="min-w-0 flex-1">
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium leading-4" style={{ color: 'var(--text-primary)' }}>
+                                    {agent.name || agent.session_id}
+                                  </span>
+                                  {agent.last_active && <span className="flex-shrink-0 text-[9px] tabular-nums leading-3" style={{ color: 'var(--text-muted)' }}>{timeAgo(agent.last_active)}</span>}
+                                </span>
+                                <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1 text-[9px] leading-3" style={{ color: 'var(--text-muted)' }}>
+                                  <span className="max-w-[160px] truncate font-mono">{agent.session_id}</span>
+                                  <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{relationLabel}</span>
+                                  {modelLabel && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{modelLabel}</span>}
+                                  {agent.backend && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.backend}</span>}
+                                  {agent.research_role && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.research_role}</span>}
+                                </span>
+                                {agent.description && (
+                                  <span className="mt-1 line-clamp-2 block text-[10px] leading-4" style={{ color: 'var(--text-secondary)' }}>
+                                    {agent.description}
+                                  </span>
+                                )}
                               </span>
-                              <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-                                {selectedModeLabel}
+                              <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
+                                <span className="rounded border px-1.5 py-0.5 text-[9px] leading-3" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                                  选择模式
+                                </span>
                               </span>
-                            </div>
-                            <div className="mt-1 flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                              <span className="truncate">{agent.session_id}</span>
-                              <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{relationLabel}</span>
-                              {modelLabel && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{modelLabel}</span>}
-                              {agent.backend && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.backend}</span>}
-                              {agent.research_role && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.research_role}</span>}
-                            </div>
-                            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                              {agent.project_name && <span className="truncate">{agent.project_name}</span>}
-                              {(agent.research_title || agent.issue_title) && <span className="truncate">· {agent.research_title || agent.issue_title}</span>}
-                              {agent.last_active && <span className="ml-auto flex-shrink-0">{timeAgo(agent.last_active)}</span>}
-                            </div>
-                            {agent.description && (
-                              <div className="mt-1 line-clamp-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                                {agent.description}
-                              </div>
-                            )}
-                          </button>
-                        )
-                      })}
+                            </button>
+                          )
+                        }}
+                      />
                     </div>
                   )}
                 </>
               )}
-            </>
+              </div>
+            </div>
           )}
         </div>
 
@@ -2175,6 +2229,87 @@ function RemoteFileMentionDrawer({
           </div>
         )}
       </aside>
+      {pendingAgent && (
+        <div className="absolute inset-0 z-[95] flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="mention-agent-mode-title">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+            aria-label="取消选择智能体连接方式"
+            onClick={() => setPendingAgent(null)}
+          />
+          <div
+            className="relative w-full max-w-[430px] overflow-hidden rounded-2xl shadow-2xl"
+            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="min-w-0">
+                <div id="mention-agent-mode-title" className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  选择连接方式
+                </div>
+                <div className="mt-1 truncate text-[11px]" style={{ color: 'var(--text-muted)' }} title={pendingAgent.name || pendingAgent.session_id}>
+                  为「{pendingAgent.name || pendingAgent.session_id}」选择本次 @ 引用的权限
+                </div>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                style={{ color: 'var(--text-muted)' }}
+                aria-label="关闭连接方式选择"
+                onClick={() => setPendingAgent(null)}
+              >
+                <X className="h-4 w-4" strokeWidth={1.9} />
+              </button>
+            </div>
+            <div className="grid gap-3 p-4 sm:grid-cols-2">
+              <button
+                type="button"
+                className="group rounded-xl border p-3 text-left transition-colors hover:border-blue-400/60 hover:bg-blue-500/[0.06] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                style={{ borderColor: 'rgba(59,130,246,0.35)', background: 'rgba(59,130,246,0.06)' }}
+                onClick={() => confirmAgentMode('read_only')}
+              >
+                <div className="mb-3 flex h-16 items-center justify-center rounded-lg border border-blue-400/20 bg-blue-500/[0.05]" aria-hidden="true">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-400/15 text-blue-300"><Eye className="h-4 w-4" strokeWidth={1.8} /></div>
+                    <div className="h-px w-7 bg-blue-300/40" />
+                    <div className="h-7 w-7 rounded-md border border-blue-300/40" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  <Eye className="h-3.5 w-3.5 text-blue-300" strokeWidth={1.8} />
+                  只读引用
+                </div>
+                <div className="mt-1 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>带入对方上下文，只查看不发送消息。</div>
+              </button>
+              <button
+                type="button"
+                disabled={pendingAgent.can_communicate === false}
+                className="group rounded-xl border p-3 text-left transition-colors hover:border-emerald-400/60 hover:bg-emerald-500/[0.06] focus-visible:ring-2 focus-visible:ring-emerald-500/50 disabled:cursor-not-allowed disabled:opacity-45"
+                style={{ borderColor: 'rgba(52,211,153,0.35)', background: 'rgba(52,211,153,0.05)' }}
+                onClick={() => confirmAgentMode('bidirectional')}
+              >
+                <div className="mb-3 flex h-16 items-center justify-center rounded-lg border border-emerald-400/20 bg-emerald-500/[0.05]" aria-hidden="true">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300"><MessageCircle className="h-4 w-4" strokeWidth={1.8} /></div>
+                    <div className="flex w-7 flex-col gap-1"><div className="h-px w-full bg-emerald-300/60" /><div className="h-px w-full bg-emerald-300/35" /></div>
+                    <div className="h-7 w-7 rounded-md border border-emerald-300/40" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  <MessageCircle className="h-3.5 w-3.5 text-emerald-300" strokeWidth={1.8} />
+                  开启交流
+                </div>
+                <div className="mt-1 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                  允许当前会话向对方发送交流请求。{pendingAgent.can_communicate === false ? '该智能体不支持交流。' : ''}
+                </div>
+              </button>
+            </div>
+            <div className="border-t px-5 py-3 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+              你可以在输入框中的智能体标签上随时调整这次引用的方式。
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2854,7 +2989,8 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     entries: SessionInputEntry[]
     timer: ReturnType<typeof setTimeout> | null
     fetching: boolean
-  }>({ active: false, index: -1, entries: [], timer: null, fetching: false })
+    sessionId: string
+  }>({ active: false, index: -1, entries: [], timer: null, fetching: false, sessionId: '' })
 
   // 切换 session 时重置召回状态 (历史输入按 session 隔离).
   useEffect(() => {
@@ -2864,6 +3000,34 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     st.index = -1
     st.entries = []
     st.fetching = false
+    st.sessionId = sessionId
+    // 预取与 JSONL 历史加载并行执行，使首次 ArrowUp 通常只读内存缓存。
+    preloadSessionInputCache(sessionId)
+  }, [sessionId])
+
+  const startInputRecall = useCallback((entries: SessionInputEntry[]) => {
+    const recalledEntries = entries.filter((entry) => replayTextOf(entry).trim().length > 0)
+    if (recalledEntries.length === 0) return false
+    const st = inputRecallRef.current
+    st.entries = recalledEntries
+    st.index = 0
+    st.active = true
+    const text = replayTextOf(recalledEntries[0])
+    setInput(text)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) { el.focus(); try { el.setSelectionRange(text.length, text.length) } catch {} }
+    })
+    if (st.timer) clearTimeout(st.timer)
+    st.timer = setTimeout(() => {
+      const current = inputRecallRef.current
+      current.active = false
+      current.index = -1
+      current.timer = null
+    }, 2000)
+    return true
+  // setInput is session-scoped and intentionally recreated with the active draft.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
   const handleInputArrowUp = useCallback(async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -2894,37 +3058,26 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     const currentInput = inputRef.current?.value ?? ''
     if (currentInput.trim()) return
     if (!sessionId) return
+    e.preventDefault()
+    const cached = readSessionInputCache(sessionId)
+    if (cached) {
+      startInputRecall(cached)
+      return
+    }
     if (st.fetching) return
     st.fetching = true
-    e.preventDefault()
     try {
-      const data = await api(`/api/sessions/${sessionId}/inputs`)
-      const entries = (Array.isArray(data?.entries) ? data.entries : [])
-        .filter((en: SessionInputEntry) => replayTextOf(en).trim().length > 0)
-      if (entries.length === 0) return
-      st.entries = entries
-      st.index = 0
-      st.active = true
-      const text = replayTextOf(entries[0])
-      setInput(text)
-      requestAnimationFrame(() => {
-        const el = inputRef.current
-        if (el) { el.focus(); try { el.setSelectionRange(text.length, text.length) } catch {} }
-      })
-      if (st.timer) clearTimeout(st.timer)
-      st.timer = setTimeout(() => {
-        const cur = inputRecallRef.current
-        cur.active = false
-        cur.index = -1
-        cur.timer = null
-      }, 2000)
+      const entries = await refreshSessionInputCache(sessionId)
+      // 等待请求时 session 已切换或用户开始新输入时，绝不能覆盖当前编辑内容。
+      if (inputRecallRef.current.sessionId !== sessionId || (inputRef.current?.value || '').trim()) return
+      startInputRecall(entries)
     } catch {
       // 拉取失败则不进入召回序列, ↑ 维持普通作用.
     } finally {
-      st.fetching = false
+      if (inputRecallRef.current.sessionId === sessionId) st.fetching = false
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId])
+  }, [sessionId, startInputRecall])
 
   const attachments = attachmentsBySession[sessionId] || []
   const closeAttachmentImagePreview = useCallback(() => setAttachmentImagePreview(null), [])
@@ -3059,7 +3212,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [remoteFileDrawerOpen, setRemoteFileDrawerOpen] = useState(false)
   const remoteMentionRangeRef = useRef<{ start: number; end: number } | null>(null)
-  const [mentionQuery, setMentionQuery] = useState('')
   const [selectedAgentMentions, setSelectedAgentMentions] = useState<Array<{
     sessionId: string
     name: string
@@ -3087,26 +3239,22 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     ? '编辑消息后按 Enter 重新发送...'
     : isNewConversation
       ? '今天有什么计划？'
-      : '发送指令（Shift+Enter 换行 · Ctrl/⌘+V 粘贴文件 · ↑键回溯）...'
+      : '发送指令（Shift+Enter 换行 · Ctrl/⌘+V 粘贴文件/截图 · ↑键回溯 · @引用文件/智能体）...'
 
   const handleChatInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const nextValue = event.target.value
     const caret = event.target.selectionStart ?? nextValue.length
     setInput(nextValue)
     const beforeCaret = nextValue.slice(0, caret)
-    const copiedSessionMatch = beforeCaret.match(/(?:^|\s)(@?session=([^\s]*)?)$/i)
-    const mentionMatch = copiedSessionMatch ? null : beforeCaret.match(/@([^\s@]*)$/)
-    if ((!mentionMatch && !copiedSessionMatch) || !sessionId) {
+    // The picker is an immediate @ action, not a type-ahead search. Once any
+    // character follows @, it closes and stays closed until another @ is typed.
+    if (!beforeCaret.endsWith('@') || !sessionId) {
       remoteMentionRangeRef.current = null
-      setMentionQuery('')
       setRemoteFileDrawerOpen(false)
       return
     }
-    const start = mentionMatch
-      ? beforeCaret.lastIndexOf('@')
-      : Math.max(0, beforeCaret.toLowerCase().lastIndexOf('session=') - (beforeCaret[beforeCaret.toLowerCase().lastIndexOf('session=') - 1] === '@' ? 1 : 0))
+    const start = caret - 1
     remoteMentionRangeRef.current = { start, end: caret }
-    setMentionQuery(mentionMatch ? (mentionMatch[1] || '') : (copiedSessionMatch?.[2] || ''))
     setRemoteFileDrawerOpen(true)
   }
 
@@ -3121,7 +3269,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     const caret = start + absolutePath.length + trailingSpace.length
     setInput(nextValue)
     remoteMentionRangeRef.current = null
-    setMentionQuery('')
     setRemoteFileDrawerOpen(false)
     requestAnimationFrame(() => {
       const textarea = inputRef.current
@@ -3159,7 +3306,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       return current.map((item, index) => index === existingIndex ? selected : item)
     })
     remoteMentionRangeRef.current = null
-    setMentionQuery('')
     setRemoteFileDrawerOpen(false)
     requestAnimationFrame(() => {
       const textarea = inputRef.current
@@ -3173,7 +3319,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
 
   useEffect(() => {
     remoteMentionRangeRef.current = null
-    setMentionQuery('')
     setSelectedAgentMentions([])
     setRemoteFileDrawerOpen(false)
   }, [sessionId])
@@ -3268,6 +3413,8 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       setVoiceState('idle')
       setLastSendError('')
       addMessage({ role: 'user', content: text })
+      // 先写入本地输入历史；即使随后 POST 因网络抖动失败，↑ 也能立即找回这段文字。
+      prependSessionInputCache(sessionId, text, requestId)
       setPendingSendAt(Date.now())
       setMessageSubmitting(true)
       setTyping(true)
@@ -3871,6 +4018,9 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     setPendingSendAt(Date.now())
     setMessageSubmitting(true)
     setTyping(true)
+    // 记录发送尝试而不是等待服务端成功回执。网络超时、响应丢失或后端暂时不可达时，
+    // 这条本地记录仍可通过 ↑ /“回放输入”召回，并在刷新页面后继续存在。
+    prependSessionInputCache(sentSessionId, text, requestId)
     // 发送瞬间立即清空输入框, 给用户即时反馈. 原来放在 .then() 里,
     // 要等后端 POST /messages 返回才清空, 体感是"字过了一会儿才消失".
     clearSessionInputDraft(sentSessionId, sentInput)
@@ -3896,7 +4046,13 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
         inputRef.current?.focus()
         setTimeout(() => loadHistoryRef.current(), 500)
       })
-      .catch(() => { inputRef.current?.focus() })
+      .catch(() => {
+        // 发送失败时保留原文，便于直接重试；若用户已开始编辑新内容则不覆盖。
+        if (inputRecallRef.current.sessionId === sentSessionId && !(inputRef.current?.value || '').trim()) {
+          setInput(sentInput)
+        }
+        inputRef.current?.focus()
+      })
       .finally(() => setMessageSubmitting(false))
   }, [input, replyTo, sessionId, addMessage, attachments, anyUploading, messageSubmitting, clearAttachments, postSessionMessage, clearSessionInputDraft, voiceState, selectedAgentMentions])
 
@@ -3926,19 +4082,28 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   }, [sessionId, projectKnowledgeSending, resolveProjectBindPath, addMessage, setTyping, postSessionMessage])
 
   // 桌面端「向当前 session 发送一条预制指令」的通用回调: 调用方 (告知本电脑的存在按钮 /
-  // aimux 工作模式切换菜单) 把拼好的消息内容传进来, 作为一条 user 消息发出. 复用
-  // postSessionMessage, 与"发送项目知识沉淀"同链路 (addMessage 立即显示 + setTyping + 轮询回写).
+  // aimux 工作模式切换菜单 / 声明可合作计算机) 把拼好的消息内容传进来, 作为一条 user 消息发出.
+  // 与正常 send() 同管道: pendingUrgentRef 重置 + messageSubmitting 撑住发送阶段黄字提示
+  // (正在发送/正在唤醒中) — 否则 poll 在空闲(!alive)/忙碌(working) 会话上会瞬间清掉
+  // pendingSendAt, 点击后长时间零反馈, 用户以为没起作用.
   const handleAnnouncePc = useCallback((content: string) => {
-    if (!sessionId || !content) return
+    if (!sessionId || !content) {
+      setLastSendError('当前没有可发送指令的会话')
+      return
+    }
+    if (messageSubmitting) return
     const requestId = makeSendRequestId()
     setLastSendError('')
     addMessage({ role: 'user', content })
+    pendingUrgentRef.current = false
     setPendingSendAt(Date.now())
+    setMessageSubmitting(true)
     setTyping(true)
     postSessionMessage({ content, inputText: content, requestId })
       .then(() => setTimeout(() => loadHistoryRef.current(), 500))
       .catch(() => {})
-  }, [sessionId, addMessage, setTyping, postSessionMessage])
+      .finally(() => setMessageSubmitting(false))
+  }, [sessionId, messageSubmitting, addMessage, setTyping, postSessionMessage])
 
   const sendRunProjectPortPrompt = useCallback((mainProjectPortPath: string) => {
     if (!sessionId) {
@@ -4140,7 +4305,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
         researchId={(currentSession as any)?.research_id || (currentTask as any)?.research_id || undefined}
         currentSessionId={sessionId || undefined}
         open={remoteFileDrawerOpen}
-        query={mentionQuery}
         onClose={() => setRemoteFileDrawerOpen(false)}
         onPickPath={insertRemoteFilePath}
         onPickAgent={insertAgentMention}
@@ -4335,6 +4499,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
               done={backendJobDone === true && !backendAlive}
             />
             <SessionTitle name={currentSession?.name || currentTask?.name} theme={theme} />
+            <RemoteAimuxMcpIndicator session={currentSession ?? currentTask} />
             {/* {currentModelLabel && (
               <span className="text-[10px] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"
                 title={`模型: ${currentModelLabel}`}
@@ -4621,7 +4786,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                     <div key={mention.sessionId} className="flex min-w-0 max-w-full items-center gap-2 rounded-md border px-2 py-1.5 text-[12px]" style={{ borderColor: 'rgba(59,130,246,0.25)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-primary)' }}>
                       <Bot className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
                       <span className="max-w-48 truncate">@{mention.name}</span>
-                      <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'rgba(59,130,246,0.22)', color: 'var(--text-muted)' }}>
+                      <span className="whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'rgba(59,130,246,0.22)', color: 'var(--text-muted)' }}>
                         {mention.mode === 'bidirectional' ? '双向' : '只读'}
                       </span>
                       <button
@@ -4897,7 +5062,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                 )
               })()}
             </div>
-            <div className="pointer-events-none absolute bottom-3 right-3 z-10 max-w-[55%] truncate text-right text-[10px]" style={{ color: sendingHint ? '#facc15' : 'var(--text-muted)' }}>
+            <div className={`pointer-events-none absolute bottom-3 right-3 z-10 max-w-[55%] truncate text-right text-[10px] ${sendingHint ? 'mobius-status-marquee' : ''}`} style={{ color: sendingHint ? '#facc15' : 'var(--text-muted)' }}>
               {sendingHint ?? ''}
             </div>
           </div>
@@ -4910,15 +5075,37 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
               <PlanningEditor projectId={currentProjectId} sessionId={sessionId} />
             </div>
           ) : (
-            <div className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0">
-              {renderAdvancedSessionActions('default')}
-                <SessionSkillMemoryEditor
-                  sessionId={currentSession?.session_id || sessionId}
-                  projectId={currentProjectId || undefined}
-                  initialPanel="memory"
-                  persistActivePanel
-                />
-            </div>
+            <UnifiedButtonGroup
+              className="mobius-chat-input-side flex min-h-0 flex-1 flex-col overflow-y-auto p-3 pt-0"
+              aria-label="会话统一按钮组"
+              visibilityStorageKey="mobius:session-sidebar-buttons:hidden"
+            >
+              <SessionSkillMemoryEditor
+                sessionId={currentSession?.session_id || sessionId}
+                projectId={currentProjectId || undefined}
+                initialPanel="memory"
+                persistActivePanel
+                leadingControls={renderAdvancedSessionActions('default')}
+                onOpenKnowledge={currentProjectId && currentIssueId ? () => setKnowledgeEditorOpen(true) : undefined}
+                visibilityOptions={[
+                    { id: 'file-changes', label: '查看文件修改' },
+                    { id: 'bash-commands', label: '查看运行命令' },
+                    { id: 'input-replay', label: '回放输入' },
+                    { id: 'jsonl-meta', label: '显示时间与序号' },
+                    { id: 'project-port', label: '进入项目端口' },
+                    { id: 'terminal', label: '打开终端' },
+                    { id: 'cooperable-pc', label: '可合作计算机' },
+                    { id: 'knowledge', label: '查看当前项目知识/任务知识' },
+                    { id: 'send-knowledge', label: '项目知识沉淀到记忆' },
+                    { id: 'continue-model', label: '修改模型并继续' },
+                    { id: 'skill', label: 'Skill' },
+                    { id: 'memory', label: 'Memory' },
+                    { id: 'git', label: 'Git' },
+                    { id: 'ports', label: '端口' },
+                    { id: 'time', label: '耗时' },
+                  ]}
+              />
+            </UnifiedButtonGroup>
           ))}
         </div>
       </div>

@@ -10,6 +10,7 @@
     "test:access-control": "node --require tsx/cjs tests/access-control-policy.js",
     "test:user-isolation-v3": "node --require tsx/cjs tests/user-isolation-v3.js",
     "test:assistant-running-flag": "node --require tsx/cjs tests/assistant-running-flag.js",
+    "test:assistant-auto-compact": "node --require tsx/cjs tests/assistant-auto-compact.js",
     "test:forgotten-flag-notify-timing": "node --require tsx/cjs tests/forgotten-flag-notify-timing.js",
     "test:assistant-tts-cache": "node --require tsx/cjs tests/assistant-tts-cache.js",
     "test:code-server-workspace": "node --require tsx/cjs tests/code-server-workspace.js",
@@ -42,7 +43,8 @@
     "test:deepseek-harness-runtime": "\"${DEEPSEEK_HARNESS_NODE:?set DEEPSEEK_HARNESS_NODE to a Node 22.19+ or 24+ executable}\" tests/deepseek-harness-runtime-smoke.mjs",
     "test:self-test": "node tests/self-test.js",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",
-    "start:tsx": "tsx server.js"
+    "start:tsx": "tsx server.js",
+    "test:leader-mode-timing": "node --require tsx/cjs tests/leader-mode-timing.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

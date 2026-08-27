@@ -1,10 +1,10 @@
-import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
-import { BookOpen, Brain, Clock3, Eye, GitBranch, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { BookOpen, Brain, Clock3, Eye, GitBranch, GitFork, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Settings2, Upload, X } from 'lucide-react'
 import { api } from '../store'
 import { DevPortsBar } from './dev-ports-bar'
 import { normalizeGithubSkillInput } from './skills'
 import { SkillMarketLink } from './skill-market-link'
+import { ButtonVisibilitySwitchList, type VisibilityOption, UnifiedButton, useUnifiedButtonGroup } from './unified-button-group'
 
 const TimeConsumePanel = lazy(() => import('./time-consume-panel'))
 
@@ -319,13 +319,13 @@ interface SelectionSnapshotResponse {
 // =====================================================================
 const ACTIVE_PANEL_STORAGE_KEY = 'mobius:skill-memory-active-panel'
 
-type SessionResourcePanel = 'skill' | 'memory' | 'git' | 'ports' | 'time'
+type SessionResourcePanel = 'skill' | 'memory' | 'git' | 'ports' | 'time' | 'display-settings'
 
 function readStoredActivePanel(): null | SessionResourcePanel | undefined {
   if (typeof window === 'undefined') return undefined
   try {
     const value = window.localStorage.getItem(ACTIVE_PANEL_STORAGE_KEY)
-    if (value === 'skill' || value === 'memory' || value === 'git' || value === 'ports' || value === 'time') return value
+    if (value === 'skill' || value === 'memory' || value === 'git' || value === 'ports' || value === 'time' || value === 'display-settings') return value
     if (value === 'closed') return null
     return undefined
   } catch {
@@ -577,13 +577,9 @@ type GitSource = {
   cache_expires_at?: number
 }
 
-// 资源 tab 图标的悬浮动效, 模仿 advanced-interaction-btn 的 tilt:
-// 悬浮/键盘聚焦时图标上移 0.5、旋转 -8°、放大 1.1 (transition-transform duration-200)。
-const RESOURCE_TAB_ICON_HOVER = 'inline-flex flex-shrink-0 items-center justify-center transition-transform duration-200 group-hover/resource-tab:-translate-y-0.5 group-hover/resource-tab:rotate-[-8deg] group-hover/resource-tab:scale-110 group-focus-visible/resource-tab:-translate-y-0.5 group-focus-visible/resource-tab:rotate-[-8deg] group-focus-visible/resource-tab:scale-110'
-
-// 资源 tab 按钮: 文字提示沿用 advanced-interaction-btn 的自定义 tooltip —— mouseenter 即时弹出,
-// 替代原生 title (浏览器自带约 1s 延迟); 定位 (下方优先 + 视口 clamp) 与样式与高级交互按钮同款。
+// 资源 tab 由 activePanel 单一状态控制：展开一个 Tab 时其余 Tab 必然收起。
 function ResourceTabButton({
+  buttonId,
   label,
   icon,
   active,
@@ -593,6 +589,7 @@ function ResourceTabButton({
   dataTour,
   badge,
 }: {
+  buttonId?: string
   label: string
   icon: ReactNode
   active: boolean
@@ -602,105 +599,22 @@ function ResourceTabButton({
   dataTour?: string
   badge?: ReactNode
 }) {
-  const tooltipId = useId()
-  const buttonRef = useRef<HTMLButtonElement | null>(null)
-  const tooltipRef = useRef<HTMLDivElement | null>(null)
-  const [tooltipOpen, setTooltipOpen] = useState(false)
-  // tooltipPos 为 null 时 tooltip 以 visibility:hidden 渲染并测量; 测量后得到经视口 clamp 的最终坐标, 再可见.
-  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number; placement: 'top' | 'bottom' } | null>(null)
-
-  const updateTooltipPosition = useCallback(() => {
-    const button = buttonRef.current
-    if (!button || typeof window === 'undefined') return
-    const rect = button.getBoundingClientRect()
-    const gap = 8
-    const margin = 8
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    const tip = tooltipRef.current
-    const tw = tip ? tip.offsetWidth : 0
-    const th = tip ? tip.offsetHeight : 0
-    const approxH = th || 30
-    const placement = rect.bottom + gap + approxH <= vh - margin ? 'bottom' : (rect.top - gap - approxH >= margin ? 'top' : 'bottom')
-    const top = placement === 'bottom'
-      ? Math.min(rect.bottom + gap, vh - margin - approxH)
-      : Math.max(margin, rect.top - gap - approxH)
-    const center = rect.left + rect.width / 2
-    const minCenter = margin + tw / 2
-    const maxCenter = vw - margin - tw / 2
-    const left = tw > 0 ? Math.min(Math.max(center, minCenter), maxCenter) : Math.min(Math.max(center, margin), vw - margin)
-    setTooltipPos({ left, top, placement })
-  }, [])
-
-  useEffect(() => {
-    if (!tooltipOpen) return
-    updateTooltipPosition()
-    window.addEventListener('resize', updateTooltipPosition)
-    window.addEventListener('scroll', updateTooltipPosition, true)
-    return () => {
-      window.removeEventListener('resize', updateTooltipPosition)
-      window.removeEventListener('scroll', updateTooltipPosition, true)
-    }
-  }, [tooltipOpen, updateTooltipPosition])
-
-  useLayoutEffect(() => {
-    if (tooltipOpen && tooltipPos === null) {
-      updateTooltipPosition()
-    }
-  }, [tooltipOpen, tooltipPos, updateTooltipPosition])
-
-  const hideTooltip = useCallback(() => {
-    setTooltipOpen(false)
-    setTooltipPos(null)
-  }, [])
-
   return (
-    <>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={onClick}
-        aria-pressed={active}
-        aria-label={label}
-        aria-describedby={tooltipOpen ? tooltipId : undefined}
-        {...(dataTour ? { 'data-tour': dataTour } : {})}
-        onMouseEnter={() => setTooltipOpen(true)}
-        onMouseLeave={hideTooltip}
-        onFocus={() => setTooltipOpen(true)}
-        onBlur={hideTooltip}
-        className={`group/resource-tab min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${active ? activeClass : idleClass}`}
-        style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}
-      >
-        <span className={RESOURCE_TAB_ICON_HOVER}>{icon}</span>
-        {badge}
-      </button>
-      {tooltipOpen && typeof document !== 'undefined'
-        ? createPortal(
-          <div
-            ref={tooltipRef}
-            id={tooltipId}
-            role="tooltip"
-            // tooltipPos 为 null = 首帧渲染用于测量, visibility:hidden 保持布局以读 offsetWidth/Height, 测量完成后再可见.
-            className="pointer-events-none fixed z-[1000] max-w-[220px] whitespace-nowrap rounded-md border border-[var(--border-color)] bg-[var(--modal-bg)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] shadow-xl"
-            style={
-              tooltipPos
-                ? {
-                  left: tooltipPos.left,
-                  top: tooltipPos.top,
-                  transform: tooltipPos.placement === 'bottom'
-                    ? 'translate(-50%, 0)'
-                    : 'translate(-50%, -100%)',
-                  visibility: 'visible',
-                }
-                : { left: 0, top: 0, visibility: 'hidden' }
-            }
-          >
-            {label}
-          </div>,
-          document.body,
-        )
-        : null}
-    </>
+    <UnifiedButton
+      kind="expand-tab"
+      buttonId={buttonId}
+      label={label}
+      tooltip={label}
+      icon={icon}
+      accent={buttonId === 'git' ? 'amber' : buttonId === 'memory' ? 'cyan' : buttonId === 'ports' ? 'emerald' : buttonId === 'time' ? 'blue' : 'blue'}
+      active={active}
+      activeClassName={activeClass}
+      inactiveClassName={idleClass}
+      onClick={onClick}
+      badge={badge}
+      {...(dataTour ? { 'data-tour': dataTour } : {})}
+      style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}
+    />
   )
 }
 
@@ -709,11 +623,17 @@ export function SessionSkillMemoryEditor({
   projectId,
   initialPanel = null,
   persistActivePanel = false,
+  onOpenKnowledge,
+  leadingControls,
+  visibilityOptions = [],
 }: {
   sessionId?: string
   projectId?: string
   initialPanel?: null | SessionResourcePanel
   persistActivePanel?: boolean
+  onOpenKnowledge?: () => void
+  leadingControls?: ReactNode
+  visibilityOptions?: VisibilityOption[]
 }) {
   const [memories, setMemories] = useState<EditorItem[]>([])
   const [skills, setSkills] = useState<EditorItem[]>([])
@@ -727,6 +647,8 @@ export function SessionSkillMemoryEditor({
   const [gitError, setGitError] = useState('')
   const [gitRefreshKey, setGitRefreshKey] = useState(0)
   const [gitScanMeta, setGitScanMeta] = useState<{ cached: boolean; scannedAt: string }>({ cached: false, scannedAt: '' })
+  const controlsRef = useRef<HTMLDivElement | null>(null)
+  const [controlColumns, setControlColumns] = useState(1)
   const [activePanel, setActivePanel] = useState<null | SessionResourcePanel>(() => {
     if (persistActivePanel) {
       const stored = readStoredActivePanel()
@@ -739,6 +661,34 @@ export function SessionSkillMemoryEditor({
     setActivePanel(next)
     if (persistActivePanel) writeStoredActivePanel(next)
   }, [persistActivePanel])
+  const buttonGroup = useUnifiedButtonGroup()
+
+  useLayoutEffect(() => {
+    const controls = controlsRef.current
+    if (!controls) return
+    const updateColumns = () => {
+      const buttonCount = controls.querySelectorAll(':scope > button').length
+      if (buttonCount === 0 || controls.clientWidth === 0) return
+      const gap = Number.parseFloat(window.getComputedStyle(controls).columnGap) || 6
+      const maxColumns = Math.max(1, Math.floor((controls.clientWidth + gap) / (36 + gap)))
+      const rows = Math.ceil(buttonCount / maxColumns)
+      const columns = Math.ceil(buttonCount / rows)
+      setControlColumns(previous => previous === columns ? previous : columns)
+    }
+    const resizeObserver = new ResizeObserver(updateColumns)
+    const mutationObserver = new MutationObserver(updateColumns)
+    resizeObserver.observe(controls)
+    mutationObserver.observe(controls, { childList: true })
+    updateColumns()
+    return () => {
+      resizeObserver.disconnect()
+      mutationObserver.disconnect()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activePanel && buttonGroup?.hiddenIds.has(activePanel)) setActivePanelAndPersist(null)
+  }, [activePanel, buttonGroup?.hiddenIds, setActivePanelAndPersist])
 
   useEffect(() => {
     if (activePanel !== 'git' || !projectId) return
@@ -967,58 +917,78 @@ export function SessionSkillMemoryEditor({
   const gitActive = activePanel === 'git'
   const portsActive = activePanel === 'ports'
   const timeActive = activePanel === 'time'
+  const displaySettingsActive = activePanel === 'display-settings'
   const resourceKind: 'skill' | 'memory' | null = skillActive ? 'skill' : memActive ? 'memory' : null
 
   return (
     <>
-      <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2">
-        {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
-            五个 tab 始终保持单行并等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
-        <div className="session-resource-tabs grid grid-cols-[repeat(5,minmax(0,1fr))] items-stretch">
+      <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-3">
+        {/* 所有会话操作共用一个流式按钮带。隐藏按钮或侧栏变窄时，浏览器按真实可用空间自动回填与换行。 */}
+        <div
+          ref={controlsRef}
+          className="advanced-session-actions mobius-chat-input-actions session-resource-tabs session-resource-tabs--balanced flex flex-wrap content-start justify-center gap-1.5"
+          style={{ '--session-control-columns': controlColumns } as CSSProperties}
+          data-testid="advanced-session-actions"
+          aria-label="高级会话按钮组"
+        >
+          {leadingControls}
           <ResourceTabButton
+            buttonId="skill"
             label="Skill"
             icon={<Puzzle className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
             active={skillActive}
-            activeClass="border-blue-400 font-medium"
-            idleClass="border-transparent hover:bg-blue-500/10"
+            activeClass="border-blue-400/60 bg-blue-500/15 text-blue-200 shadow-sm"
+            idleClass="border-transparent"
             onClick={() => setActivePanelAndPersist(activePanel === 'skill' ? null : 'skill')}
           />
           <ResourceTabButton
+            buttonId="memory"
             label="Memory"
             icon={<Brain className="h-3.5 w-3.5 text-cyan-400" strokeWidth={1.9} />}
             active={memActive}
-            activeClass="border-cyan-400 font-medium"
-            idleClass="border-transparent hover:bg-cyan-500/10"
+            activeClass="border-cyan-400/60 bg-cyan-500/15 text-cyan-100 shadow-sm"
+            idleClass="border-transparent"
             onClick={() => setActivePanelAndPersist(activePanel === 'memory' ? null : 'memory')}
             dataTour="session-memory-toggle"
           />
           <ResourceTabButton
+            buttonId="git"
             label="Git"
-            icon={<GitBranch className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.9} />}
+            icon={<GitFork className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.9} />}
             active={gitActive}
-            activeClass="border-amber-400 font-medium"
-            idleClass="border-transparent hover:bg-amber-500/10"
+            activeClass="border-amber-400/60 bg-amber-500/15 text-amber-100 shadow-sm"
+            idleClass="border-transparent"
             onClick={() => setActivePanelAndPersist(activePanel === 'git' ? null : 'git')}
             dataTour="session-git-toggle"
             badge={gitSources.length > 0 ? <span className="text-[9px] text-amber-300">{gitSources.length}</span> : undefined}
           />
           <ResourceTabButton
+            buttonId="ports"
             label="端口"
             icon={<MonitorPlay className="h-3.5 w-3.5 text-emerald-400" strokeWidth={1.9} />}
             active={portsActive}
-            activeClass="border-emerald-400 font-medium"
-            idleClass="border-transparent hover:bg-emerald-500/10"
+            activeClass="border-emerald-400/60 bg-emerald-500/15 text-emerald-100 shadow-sm"
+            idleClass="border-transparent"
             onClick={() => setActivePanelAndPersist(activePanel === 'ports' ? null : 'ports')}
             dataTour="session-ports-toggle"
           />
           <ResourceTabButton
+            buttonId="time"
             label="耗时"
             icon={<Clock3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />}
             active={timeActive}
-            activeClass="border-sky-400 font-medium"
-            idleClass="border-transparent hover:bg-sky-500/10"
+            activeClass="border-sky-400/60 bg-sky-500/15 text-sky-100 shadow-sm"
+            idleClass="border-transparent"
             onClick={() => setActivePanelAndPersist(activePanel === 'time' ? null : 'time')}
             dataTour="session-time-toggle"
+          />
+          <ResourceTabButton
+            label="显示设置"
+            icon={<Settings2 className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
+            active={displaySettingsActive}
+            activeClass="border-blue-400/60 bg-blue-500/15 text-blue-100 shadow-sm"
+            idleClass="border-transparent"
+            onClick={() => setActivePanelAndPersist(activePanel === 'display-settings' ? null : 'display-settings')}
           />
         </div>
 
@@ -1030,6 +1000,18 @@ export function SessionSkillMemoryEditor({
                 把新条目刷进下方列表, 用户可点"追加/强调"注入当前会话 (对后续对话生效). */}
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
               {resourceKind && <AddSkillMemoryBar kind={resourceKind} onAdded={reload} />}
+              {memActive && onOpenKnowledge && (
+                <button
+                  type="button"
+                  aria-label="查看当前项目知识/任务知识"
+                  onClick={onOpenKnowledge}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5 text-[11px] transition-colors hover:bg-cyan-500/10"
+                  style={{ borderColor: 'var(--border-color-strong)', color: '#22d3ee' }}
+                >
+                  <BookOpen className="h-3.5 w-3.5" strokeWidth={1.9} />
+                  查看当前项目知识/任务知识
+                </button>
+              )}
               {skillActive ? renderList(skills, '暂无 Skill', 'skill')
                 : memActive ? renderList(memories, '暂无 Memory', 'memory')
                   : portsActive ? <DevPortsBar projectId={projectId} variant="panel" />
@@ -1038,6 +1020,7 @@ export function SessionSkillMemoryEditor({
                         <TimeConsumePanel sessionId={sessionId} />
                       </Suspense>
                     )
+                    : displaySettingsActive ? <ButtonVisibilitySwitchList options={visibilityOptions} />
                     : (
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2 px-1 py-0.5">

@@ -899,10 +899,50 @@ body::after {
 /* 让 root 上的应用层堆叠在底层流动层之上 */
 #root { position: relative; z-index: 1; }
 
+/* 会话控制带根据真实可用宽度计算目标列数：同一行按钮数量接近，最后一行居中。 */
+.session-resource-tabs--balanced > button {
+  flex: 0 0 calc((100% - (var(--session-control-columns) - 1) * 0.375rem) / var(--session-control-columns));
+  min-width: 0 !important;
+}
+
 /* 尊重用户的「减少动效」偏好 */
 @media (prefers-reduced-motion: reduce) {
   .mobius-bg-flow body::before,
   .mobius-bg-flow body::after { animation: none; }
+}
+
+/* 状态文字走马灯高光：文案和布局保持不动，仅让高光沿文字横向扫过。 */
+@keyframes mobius-status-marquee {
+  0% { background-position: 180% 50%; }
+  100% { background-position: -80% 50%; }
+}
+
+.mobius-status-marquee {
+  --mobius-status-color: currentColor;
+  color: transparent;
+  background-image: linear-gradient(
+    105deg,
+    var(--mobius-status-color) 0%,
+    var(--mobius-status-color) 35%,
+    color-mix(in srgb, var(--mobius-status-color) 35%, white) 50%,
+    var(--mobius-status-color) 65%,
+    var(--mobius-status-color) 100%
+  );
+  background-size: 240% 100%;
+  background-position: 180% 50%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: mobius-status-marquee 2.4s linear infinite;
+  will-change: background-position;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobius-status-marquee {
+    animation: none;
+    color: var(--mobius-status-color);
+    -webkit-text-fill-color: var(--mobius-status-color);
+  }
 }
 
 /* ===== ChatGPT 风格主按钮: 主题反色 (暗色 → 白底黑字, 亮色 → 黑底白字) ===== */

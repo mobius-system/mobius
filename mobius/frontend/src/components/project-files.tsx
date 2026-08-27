@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { Cable, Copy, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorPlay, Play, RefreshCw, Upload } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
-import { AdvancedInteractionBtn } from './advanced-interaction-btn'
+import { UnifiedButton } from './unified-button-group'
 
 // =====================================================================
 // ProjectFilesCard — 浏览项目 bind_path 下的文件树.
@@ -361,6 +361,7 @@ export function OpenInVSCodeButton({
 }
 
 type ProjectPortEntryButtonProps = {
+  buttonId?: string
   projectId?: string | null
   subPath?: string | null
   className?: string
@@ -370,7 +371,7 @@ type ProjectPortEntryButtonProps = {
   onRequestRunProject?: (mainProjectPortPath: string) => void
 }
 
-export function ProjectPortEntryButton({ projectId, subPath, className, label, triggerVariant = 'default', advancedDisplayLabel = false, onRequestRunProject }: ProjectPortEntryButtonProps) {
+export function ProjectPortEntryButton({ buttonId, projectId, subPath, className, label, triggerVariant = 'default', advancedDisplayLabel = false, onRequestRunProject }: ProjectPortEntryButtonProps) {
   const [bindPath, setBindPath] = useState('')
   const [vscodeWebUrl, setVscodeWebUrl] = useState('')
   const [autoPort, setAutoPort] = useState<number | null>(null)
@@ -437,7 +438,9 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
   const buttonClassName = className || 'h-7 px-2.5 text-[11px] border border-emerald-500/20 text-emerald-400 rounded-xl hover:bg-emerald-500/10 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-45 disabled:cursor-not-allowed'
   const buttonLabel = label || '进入项目端口'
   const renderAdvancedTrigger = (disabled: boolean, title: string, onClick?: () => void) => (
-    <AdvancedInteractionBtn
+    <UnifiedButton
+      kind="modal"
+      buttonId={buttonId}
       onClick={onClick}
       disabled={disabled}
       label={buttonLabel}

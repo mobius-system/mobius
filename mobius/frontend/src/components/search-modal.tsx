@@ -91,7 +91,7 @@ function relativeTime(iso: string | null): string {
   return new Date(iso).toLocaleDateString('zh-CN')
 }
 
-// 时间范围过滤选项: 默认仅扫描 7 天内创建的会话以加速搜索 (后端按 created_at 过滤候选集).
+// 时间范围过滤选项: 默认仅扫描 7 天内活跃的会话以加速搜索 (后端按 last_active 过滤候选集).
 type RangeKey = '1d' | '7d' | '30d' | 'all'
 const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
   { value: '1d', label: '1天内' },
@@ -285,7 +285,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
               background: wholeWord ? 'rgba(96,165,250,0.12)' : 'transparent',
             }}
           >W</button>
-          {/* 时间范围过滤 (默认 7 天内创建的会话): 缩小候选集加速扫描 */}
+          {/* 时间范围过滤 (默认 7 天内活跃的会话): 缩小候选集加速扫描 */}
           <select
             value={range}
             onChange={e => setRange(e.target.value as RangeKey)}
@@ -321,7 +321,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
             <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
               <FileSearch className="w-7 h-7" style={{ color: 'var(--text-muted)' }} />
               <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>输入关键词搜索会话内容</p>
-              <p className="text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{range === 'all' ? '扫描全部会话' : `仅扫描 ${rangeLabel}创建的会话`}，命中片段会高亮显示</p>
+              <p className="text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{range === 'all' ? '扫描全部会话' : `仅扫描 ${rangeLabel}内活跃的会话`}，命中片段会高亮显示</p>
             </div>
           ) : results.length === 0 ? (
             <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">

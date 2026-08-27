@@ -430,14 +430,24 @@ router.post('/:id/leader', auth, async (req: express.Request, res: express.Respo
     return;
   }
   try {
-    const leaderSession = await createStartedResearchSession({
-      user,
-      research,
-      role: 'chief_researcher',
-      config: req.body,
-      requestId: `leader-init-${researchId}`,
-    });
+    // mode 必须在会话启动【之前】置为 chief_led: Leader 的首条 bootstrap 上下文
+    // (buildSessionContext → Chief 团队管理能力段) 是在 createStartedResearchSession
+    // 内部构建的, 那时读到的还是旧 mode. 先改 mode, 创建失败再回滚.
+    const previousMode = normalizeResearchMode(research.mode);
     Researches.updateMode(researchId, 'chief_led');
+    let leaderSession: any;
+    try {
+      leaderSession = await createStartedResearchSession({
+        user,
+        research,
+        role: 'chief_researcher',
+        config: req.body,
+        requestId: `leader-init-${researchId}`,
+      });
+    } catch (e) {
+      Researches.updateMode(researchId, previousMode);
+      throw e;
+    }
     appendBlackboardRecord({
       researchId,
       author: 'HR',

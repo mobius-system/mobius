@@ -6,8 +6,9 @@ import agents from '../agents';
 import { resolveSessionWorkspace } from './workspace';
 import { appendSessionInput } from './session-inputs';
 import { syncSkillsToWorkspace } from './session-skills-sync';
+import { storeBridgeToken, writeBridgeCliToWorkspace, type BridgeCredential } from './agent-bridge-cli';
 import { formatBackendSendFailure } from './session-errors';
-import { buildSessionTransferMarkdown, transferReferencePrompt } from './session-transfer';
+import { buildSessionTransferMarkdown, transferReferencePrompt, writeSessionTransferBundle } from './session-transfer';
 import { canOperateSession, canReadSession } from './access-control';
 import { aimuxRemoteNameFromMeta } from './pc-client-context';
 import {
@@ -19,6 +20,7 @@ import {
   buildReadOnlyMentionPrompt,
   mintAgentBridgeToken,
   recordAgentBridgeMessage,
+  updateAgentBridgeMessage,
   type AgentMentionMode,
 } from './agent-mention-bridge';
 import {
@@ -31,6 +33,7 @@ import {
 } from '../utils/session-flags';
 import { db } from '../../db';
 import { randomUUID } from 'crypto';
+import { HIDDEN_FOLDER_NAME } from '../config';
 
 function httpError(message: string, status: number = 500, category: string = ''): Error {
   const err = new Error(message) as Error & { status?: number; category?: string };
@@ -178,18 +181,27 @@ function sessionMentionMetadata(user: any, currentSessionId: string, mentions: N
   }).filter(Boolean);
 }
 
-function buildMentionTransferMarkdown(user: any, sourceSession: any, targetSessionId: string, logger: any): string {
+function buildMentionTransfer(user: any, sourceSession: any, targetSession: any, logger: any): {
+  markdown: string;
+  paths: { full?: string | null; user_messages?: string | null; metadata?: string | null } | null;
+} {
   const jsonlPath = resolveSessionJsonlPath(sourceSession, sourceSession.session_id);
   if (jsonlPath) {
     try {
-      const transfer = buildSessionTransferMarkdown({
-        sourceSession,
-        targetSessionId,
-        jsonlPath,
-        maxTextChars: 12_000,
-        maxTotalChars: 120_000,
-      });
-      if (transfer?.markdown) return String(transfer.markdown || '').trimEnd();
+      const targetWorkspace = resolveSessionWorkspace(user, targetSession.session_id);
+      const bindPath = targetWorkspace.projectRoot || targetWorkspace.workDir;
+      if (bindPath) {
+        const bundle = writeSessionTransferBundle({
+          bindPath,
+          sourceSession,
+          targetSessionId: targetSession.session_id,
+          jsonlPath,
+          directoryName: 'agent_mentions',
+        });
+        return { markdown: '', paths: bundle?.paths || null };
+      }
+      const transfer = buildSessionTransferMarkdown({ sourceSession, targetSessionId: targetSession.session_id, jsonlPath, maxTextChars: 4000, maxTotalChars: 12000 });
+      if (transfer?.markdown) return { markdown: String(transfer.markdown || '').trimEnd(), paths: null };
     } catch (e) {
       logger?.warn?.(`[sessions/messages] build mention transfer failed (${sourceSession.session_id}): ${e.message}`);
     }
@@ -197,9 +209,25 @@ function buildMentionTransferMarkdown(user: any, sourceSession: any, targetSessi
 
   try {
     const ctx = buildSessionContext(user, sourceSession.session_id);
-    return String(ctx?.body || '').trimEnd();
+    return { markdown: String(ctx?.body || '').trimEnd(), paths: null };
   } catch {
-    return '';
+    return { markdown: '', paths: null };
+  }
+}
+
+// 外部通知的桥接凭证: token 落服务端受限目录 (0600), workspace 写入无秘密 CLI.
+// prompt 里只出现 "bridge read 42" 级别的短指令, token 永不进 LLM 上下文.
+function stageBridgeCredential(token: string, channelId: string, workDir: string | null, suffix = ''): BridgeCredential | null {
+  const trimmed = String(token || '').trim();
+  if (!trimmed || !channelId) return null;
+  try {
+    const credential = storeBridgeToken(trimmed, channelId, suffix);
+    if (workDir) {
+      try { writeBridgeCliToWorkspace(workDir, HIDDEN_FOLDER_NAME); } catch {}
+    }
+    return credential;
+  } catch {
+    return null;
   }
 }
 
@@ -327,12 +355,20 @@ async function runSessionMessage({
     timestamp: new Date().toISOString(),
   };
 
+  const externalCredential = isExternalEvent
+    ? stageBridgeCredential(
+        externalEvent!.token,
+        String(externalEvent!.channelId || ''),
+        workDir,
+        externalEvent!.messages && externalEvent!.messages.length > 1 ? 'digest' : 'wake',
+      )
+    : null;
   let finalContent = isExternalEvent
     ? externalEvent!.messages && externalEvent!.messages.length > 1
       ? externalSessionDigestWakePrompt({
           messages: externalEvent!.messages,
           targetSession: sess,
-          token: externalEvent!.token,
+          credential: externalCredential,
           batchId: externalEvent!.batchId,
           threadId: externalEvent!.threadId,
         })
@@ -340,7 +376,7 @@ async function runSessionMessage({
         messageId: externalEvent!.messageId,
         sourceSession: { session_id: externalEvent!.sourceSessionId, name: externalEvent!.sourceSessionName },
         targetSession: sess,
-        token: externalEvent!.token,
+        credential: externalCredential,
       })
     : sessionContentWithAttachments(normalizedContent, normalizedAttachments);
   const bridgeKickoffs: Array<{
@@ -395,15 +431,16 @@ async function runSessionMessage({
         ? canReadSession(user, targetSession)
         : canOperateSession(user, targetSession);
       if (!canUseTarget) continue;
-      const sourceTransferMarkdown = buildMentionTransferMarkdown(user, targetSession, normalizedSessionId, logger);
-      if (!sourceTransferMarkdown) continue;
+      const sourceTransfer = buildMentionTransfer(user, targetSession, sess, logger);
+      if (!sourceTransfer.markdown && !sourceTransfer.paths) continue;
       if (mention.mode === 'read_only') {
         finalContent = [
           finalContent,
           buildReadOnlyMentionPrompt({
             sourceSession: sess,
             targetSession,
-            transferMarkdown: sourceTransferMarkdown,
+            transferMarkdown: sourceTransfer.markdown,
+            transferPaths: sourceTransfer.paths,
             currentUserName: user?.display_name || user?.id,
           }),
         ].filter(Boolean).join('\n\n');
@@ -427,15 +464,17 @@ async function runSessionMessage({
         source_session_name: String(sess?.name || '').trim() || normalizedSessionId,
         target_session_name: String(targetSession?.name || '').trim() || targetSession.session_id,
       });
+      const sourceCredential = stageBridgeCredential(token, channel.channelId, workDir, 'src');
       finalContent = [
         finalContent,
         buildBidirectionalMentionPrompt({
           perspective: 'source',
           mode: mention.mode,
-          token,
+          credential: sourceCredential,
           sourceSession: sess,
           targetSession,
-          transferMarkdown: sourceTransferMarkdown,
+          transferMarkdown: sourceTransfer.markdown,
+          transferPaths: sourceTransfer.paths,
           currentUserName: user?.display_name || user?.id,
           channelId: channel.channelId,
         }),
@@ -452,6 +491,20 @@ async function runSessionMessage({
   }
 
   try {
+    // 先把双向 @ 的首条消息原子落入收件箱，再启动源 Agent。
+    // 旧顺序在 dispatch 成功后才写库；spawn/网络异常会留下“用户已发送但对端根本收不到”的窗口。
+    for (const kickoff of bridgeKickoffs) {
+      const queued = recordAgentBridgeMessage({
+        channelId: kickoff.channelId,
+        requestId: `initial-${normalizedRequestId || `${normalizedSessionId}-${Date.now()}`}`,
+        fromSessionId: normalizedSessionId,
+        toSessionId: kickoff.targetSession.session_id,
+        content: kickoff.content,
+        batchId: kickoff.batchId,
+        threadId: kickoff.batchId,
+      });
+      kickoff.messageId = queued.id;
+    }
     const dispatchOpts = {
       sessionId: normalizedSessionId,
       prompt: finalContent,
@@ -494,18 +547,6 @@ async function runSessionMessage({
         logger?.warn?.(`[sessions/messages] save agent session id: ${e.message}`);
       }
     }
-    for (const kickoff of bridgeKickoffs) {
-      const queued = recordAgentBridgeMessage({
-        channelId: kickoff.channelId,
-        requestId: `initial-${normalizedRequestId || `${normalizedSessionId}-${Date.now()}`}`,
-        fromSessionId: normalizedSessionId,
-        toSessionId: kickoff.targetSession.session_id,
-        content: kickoff.content,
-        batchId: kickoff.batchId,
-        threadId: kickoff.batchId,
-      });
-      kickoff.messageId = queued.id;
-    }
     return {
       ok: true,
       session_id: normalizedSessionId,
@@ -522,6 +563,9 @@ async function runSessionMessage({
     };
   } catch (e) {
     for (const kickoff of bridgeKickoffs) {
+      if (kickoff.messageId) {
+        try { updateAgentBridgeMessage(kickoff.messageId, 'failed', (e as Error).message || '源 Session 启动失败'); } catch {}
+      }
       try { closeAgentBridgeChannel(kickoff.channelId); } catch {}
     }
     const { userMessage: detail, rawMessage } = formatBackendSendFailure(e);
