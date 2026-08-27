@@ -214,10 +214,13 @@ python3 start.py
 
 ## Roadmap
 
-What we are building next:
+### Done
 
-- **Mobile App** — XiaoMo and full Agent control on iOS and Android
-- **Desktop App** — a native connector that brings PC devices (Windows, macOS, Linux) into Mobius
+- ✅ **Mobile App** — XiaoMo and full Agent control on iOS and Android
+- ✅ **Desktop App** — a native connector that brings PC devices (Windows, macOS, Linux) into Mobius
+
+### Building next
+
 - **Extension Market** — discover, share, and install community-built extensions
 - **i18n & Multi-language** — localize the interface and documentation into more languages
 
