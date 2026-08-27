@@ -337,6 +337,7 @@ export default function ResearchPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a8 8 0 10-13.856 0M12 6v6l4 2" />
               </svg>
               <div className="flex-1 min-w-0">
+                <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>高级研究工作台</span>
                 <button onClick={goToOverview}
                   className={`block w-full text-left text-[13px] font-semibold leading-tight hover:text-emerald-400 transition-colors truncate ${research?.status === 'completed' ? 'line-through' : ''}`}
                   style={{ color: research?.status === 'completed' ? 'var(--text-muted)' : 'var(--text-primary)' }}

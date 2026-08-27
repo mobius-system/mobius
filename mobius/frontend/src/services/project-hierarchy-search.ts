@@ -55,8 +55,5 @@ export function hierarchyHitUrl(project: any, hit: ProjectHierarchyHit): string 
   const base = `/u/${encodeURIComponent(project.created_by || '')}/p/${encodeURIComponent(project.id || '')}`
   if (hit.kind === 'issue') return `${base}/i/${encodeURIComponent(hit.id)}`
   if (hit.kind === 'research') return `${base}/r/${encodeURIComponent(hit.id)}`
-  if (hit.kind === 'research_agent') {
-    return `${base}/r/${encodeURIComponent(hit.parent_id || '')}?session=${encodeURIComponent(hit.id)}`
-  }
-  return `${base}/i/${encodeURIComponent(hit.parent_id || '')}?session=${encodeURIComponent(hit.id)}`
+  return `/u/${encodeURIComponent(project.created_by || '')}/s/${encodeURIComponent(hit.id)}`
 }

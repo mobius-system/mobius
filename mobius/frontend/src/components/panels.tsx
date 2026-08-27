@@ -1268,8 +1268,8 @@ function BackendSection({
                 const ctx = win.context
                 const subject = ctx?.subject
                 const sessionHref =
-                  ctx?.user?.id && ctx.project?.id && subject?.id && ctx.session_id
-                    ? `/u/${ctx.user.id}/p/${ctx.project.id}/${subject.type === 'research' ? 'r' : 'i'}/${subject.id}?session=${ctx.session_id}`
+                  ctx?.user?.id && ctx.session_id
+                    ? `/u/${encodeURIComponent(ctx.user.id)}/s/${encodeURIComponent(ctx.session_id)}`
                     : null
                 const closeKey = `${win.backend_key}:${win.session_id}`
                 const closing = closingKey === closeKey

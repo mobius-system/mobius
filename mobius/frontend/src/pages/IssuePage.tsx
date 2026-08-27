@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CircleDot, ChevronDown, ChevronRight, FlaskConical, MessageSquare, MessageSquarePlus, Plus } from 'lucide-react'
+import { CircleDot, ChevronDown, ChevronRight, FlaskConical, MessageSquare, MessageSquarePlus, Plus, Send } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo, timeAgoPrecise } from '../components/shell'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
@@ -17,6 +17,13 @@ import { useEditorAvailability } from '../components/workspace/use-editor-availa
 import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/logo-review-demo'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
+import { ConversationRail } from '../components/conversation-rail'
+import {
+  ConversationCreationError,
+  createDefaultConversation,
+  type ConversationCreationCheckpoint,
+} from '../services/create-conversation'
+import { logUiEvent } from '../services/ui-observability'
 
 const EditorPane = lazy(() => import('../components/workspace/editor-pane').then(m => ({ default: m.EditorPane })))
 const CodeConversationPane = lazy(() => import('../components/workspace/code-conversation-pane').then(m => ({ default: m.CodeConversationPane })))
@@ -63,12 +70,209 @@ function recentSessionTarget(user: string, session: RecentSession) {
   return ''
 }
 
-// =====================================================================
-// Issue 处理页 /u/:user/p/:project/i/:issue?session=<id>
-// 左侧 sidebar：当前 issue 元数据 + sessions 清单（顶部"+ 新会话"）
-// 右侧：?session=<id> 时是 ChatArea；否则是 SessionOverview
-// =====================================================================
+function EmptyConversationComposer({
+  projectId,
+  issueId,
+  issueTitle,
+  onCreated,
+}: {
+  projectId: string
+  issueId: string
+  issueTitle?: string
+  onCreated: (sessionId: string) => void
+}) {
+  const [prompt, setPrompt] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
+  const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    const focus = () => inputRef.current?.focus()
+    window.addEventListener('mobius:new-conversation', focus)
+    return () => window.removeEventListener('mobius:new-conversation', focus)
+  }, [])
+
+  const submit = async () => {
+    if (!prompt.trim() || sending) return
+    setSending(true)
+    setError('')
+    const initialCheckpoint = checkpoint || {
+      projectId,
+      issueId,
+      requestId: `issue-start-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    }
+    try {
+      const created = await createDefaultConversation({ projectId, prompt, checkpoint: initialCheckpoint })
+      logUiEvent('first_message_submitted', { project_id: projectId, issue_id: issueId, session_id: created.sessionId, source: 'issue' })
+      onCreated(created.sessionId)
+    } catch (reason) {
+      if (reason instanceof ConversationCreationError) {
+        setCheckpoint(reason.checkpoint)
+        setError(reason.message)
+      } else {
+        setError(reason instanceof Error ? reason.message : '创建会话失败')
+      }
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <main className="flex min-w-0 flex-1 items-center justify-center overflow-y-auto p-5" style={{ background: 'var(--bg-secondary)' }}>
+      <div className="w-full max-w-2xl">
+        <div className="mb-5 text-center">
+          <h1 className="text-[20px] font-semibold" style={{ color: 'var(--text-primary)' }}>开始一个会话</h1>
+          <p className="mt-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>{issueTitle ? `当前项目上下文 · ${issueTitle}` : '描述你想完成的事'}</p>
+        </div>
+        <div className="rounded-2xl border p-3" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+          <textarea ref={inputRef} autoFocus value={prompt} rows={5} placeholder="描述你的任务…"
+            onChange={event => { setPrompt(event.target.value); setCheckpoint(null); setError('') }}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault()
+                void submit()
+              }
+            }}
+            className="w-full resize-none bg-transparent px-2 py-1 text-[14px] leading-6 outline-none" style={{ color: 'var(--text-primary)' }} />
+          <div className="mt-2 flex justify-end border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
+            <button type="button" onClick={() => void submit()} disabled={!prompt.trim() || sending}
+              className="flex h-9 items-center gap-2 rounded-lg px-4 text-[12px] font-medium btn-primary disabled:opacity-40">
+              <Send className="h-3.5 w-3.5" /> {sending ? '正在开始…' : '发送'}
+            </button>
+          </div>
+        </div>
+        {error && (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-[12px]" style={{ color: '#f87171', background: 'rgba(248,113,113,.08)' }}>
+            <span>{error}</span>
+            <button type="button" onClick={() => void submit()} disabled={sending} className="flex-shrink-0 underline disabled:opacity-50">重试当前阶段</button>
+          </div>
+        )}
+      </div>
+    </main>
+  )
+}
+
+// 默认任务页只承担“会话轨 + 会话时间线”。旧的任务概览、项目文件卡和
+// 两套会话树仍保留在本文件的 LegacyIssuePage 中，但不进入默认渲染路径。
 export default function IssuePage() {
+  const params = useParams()
+  const navigate = useNavigate()
+  const [search, setSearch] = useSearchParams()
+  const {
+    projects, setProjects, setCurrentProject, setCurrentIssue, setCurrentResearch,
+    sessionsMap, setSessionsMap, currentSession, setCurrentSession, setCurrentTask,
+  } = useStore()
+  const userParam = params.user || ''
+  const projectId = params.project || ''
+  const issueId = params.issue || ''
+  const sessionParam = search.get('session') || ''
+  const [issue, setIssue] = useState<any>(null)
+  const [sessionsLoaded, setSessionsLoaded] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const sessions = useMemo<any[]>(() => sessionsMap[issueId] || [], [sessionsMap, issueId])
+
+  useEffect(() => {
+    setCurrentResearch(null)
+    if (!projects.length) {
+      api('/api/projects').then((value: any) => setProjects(Array.isArray(value) ? value : (value?.projects || []))).catch(() => {})
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    const project = projects.find((item: any) => item.id === projectId)
+    if (project) setCurrentProject(project)
+  }, [projects, projectId, setCurrentProject])
+
+  useEffect(() => {
+    if (!issueId) return
+    let cancelled = false
+    setSessionsLoaded(false)
+    Promise.all([
+      api(`/api/issues/${issueId}`).then((value: any) => {
+        if (cancelled || value?.error) return
+        setIssue(value)
+        setCurrentIssue(value)
+      }),
+      api(`/api/issues/${issueId}/sessions`).then((value: any) => {
+        if (!cancelled) setSessionsMap(issueId, Array.isArray(value) ? value : [])
+      }),
+    ]).catch(() => {}).finally(() => { if (!cancelled) setSessionsLoaded(true) })
+    return () => { cancelled = true }
+  }, [issueId, refreshKey, setCurrentIssue, setSessionsMap])
+
+  useEffect(() => {
+    const current = useStore.getState().currentSession
+    if (!sessionParam) {
+      if (current) { setCurrentSession(null); setCurrentTask(null) }
+      return
+    }
+    if (current?.session_id === sessionParam) return
+    const fromList = sessions.find((session: any) => session.session_id === sessionParam)
+    if (fromList) {
+      setCurrentSession(fromList)
+      setCurrentTask(fromList)
+      return
+    }
+    let cancelled = false
+    api(`/api/tasks/${sessionParam}`).then((session: any) => {
+      if (cancelled) return
+      if (session?.session_id === sessionParam) {
+        setCurrentSession(session)
+        setCurrentTask(session)
+      } else if (sessionsLoaded) {
+        const next = new URLSearchParams(search)
+        next.delete('session')
+        setSearch(next, { replace: true })
+      }
+    }).catch(() => {
+      if (!cancelled && sessionsLoaded) {
+        const next = new URLSearchParams(search)
+        next.delete('session')
+        setSearch(next, { replace: true })
+      }
+    })
+    return () => { cancelled = true }
+  }, [sessionParam, sessions, sessionsLoaded, search, setSearch, setCurrentSession, setCurrentTask])
+
+  const showEmpty = () => {
+    const next = new URLSearchParams(search)
+    next.delete('session')
+    setSearch(next)
+    window.setTimeout(() => window.dispatchEvent(new CustomEvent('mobius:new-conversation')), 40)
+  }
+
+  const onCreated = (sessionId: string) => {
+    setRefreshKey(key => key + 1)
+    navigate(`/u/${userParam}/s/${encodeURIComponent(sessionId)}`)
+  }
+
+  return (
+    <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)' }}>
+      <TopNav />
+      <div className="flex min-h-0 flex-1">
+        <div className="hidden h-full md:block">
+          <ConversationRail
+            userId={userParam}
+            activeSessionId={sessionParam}
+            projectId={projectId}
+            onNewConversation={showEmpty}
+            refreshKey={refreshKey}
+          />
+        </div>
+        {currentSession ? (
+          <ChatArea layout="easy" />
+        ) : sessionParam ? (
+          <Loading text="正在加载会话..." />
+        ) : (
+          <EmptyConversationComposer projectId={projectId} issueId={issueId} issueTitle={issue?.title} onCreated={onCreated} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function LegacyIssuePage() {
   const params = useParams()
   const [search, setSearch] = useSearchParams()
   const navigate = useNavigate()

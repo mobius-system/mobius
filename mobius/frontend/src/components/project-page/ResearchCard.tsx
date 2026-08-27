@@ -120,7 +120,7 @@ export function ResearchCard({
         ) : (
           <div className="space-y-1">
             {previewSessions.map((s: any) => (
-              <Link key={s.session_id} to={`/u/${userParam}/p/${projectId}/r/${research.id}?session=${s.session_id}`}
+              <Link key={s.session_id} to={`/u/${encodeURIComponent(userParam)}/s/${encodeURIComponent(s.session_id)}`}
                 data-project-card-session-match={showingSessionMatches ? s.session_id : undefined}
                 className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors">
                 {s.agent_status === 'running' ? <div className="pulse-green" /> : <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/70 flex-shrink-0" />}

@@ -10,7 +10,7 @@ import { AdminPanel, type AdminPanelTab } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, ChevronRight, CircleDot, CircleQuestionMark, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, CircleDot, CircleQuestionMark, FlaskConical, History, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { pollRecursive } from '../services/polling'
@@ -18,8 +18,9 @@ import { useIsMobile } from './resizable-panel'
 import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
-import { setLayoutMode, useLayoutMode } from '../services/layout-mode'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
+import { SettingsPanel } from './settings-panel'
+import { logUiEvent } from '../services/ui-observability'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入)。三平台 (Win/Linux/mac) 统一: 顶栏右侧渲染
@@ -430,16 +431,8 @@ function NavSwitcherPanel({
 }
 
 function recentSessionPath(userId: string | undefined, session: RecentSession) {
-  if (!userId || !session.session_id || !session.project_id) return ''
-  const base = `/u/${encodeURIComponent(userId)}/p/${encodeURIComponent(session.project_id)}`
-  const qs = `?session=${encodeURIComponent(session.session_id)}`
-  if (session.scope_type === 'research' && session.research_id) {
-    return `${base}/r/${encodeURIComponent(session.research_id)}${qs}`
-  }
-  if (session.issue_id) {
-    return `${base}/i/${encodeURIComponent(session.issue_id)}${qs}`
-  }
-  return ''
+  if (!userId || !session.session_id) return ''
+  return `/u/${encodeURIComponent(userId)}/s/${encodeURIComponent(session.session_id)}`
 }
 
 // 近期会话本地缓存 (stale-while-revalidate): 打开下拉先秒显本地缓存, 后台静默刷新。
@@ -738,6 +731,156 @@ function RecentSessionsPanel({
 // =====================================================================
 export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const {
+    user, currentProject, currentSession, branding, logout, setMobileNavOpen,
+  } = useStore()
+  const params = useParams()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const isMobile = useIsMobile()
+  const topnavDrag = useDesktopWindowDrag()
+  const [showSearch, setShowSearch] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showChangePw, setShowChangePw] = useState(false)
+  const userParam = params.user || user?.id
+  const projectParam = params.project
+  const projectName = currentProject?.name || projectParam
+  void rightExtra
+
+  const isPointerOnInteractive = (event: { target: EventTarget | null; nativeEvent: Event }): boolean => {
+    const selector = 'button, a, input, select, textarea, [role="button"], [role="menuitem"], mobius-desktop-page-actions'
+    if ((event.target as Element | null)?.closest?.(selector)) return true
+    return event.nativeEvent.composedPath().some(element => element instanceof Element && !!element.matches?.(selector))
+  }
+  const onTopNavPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!topnavDrag.enabled || isPointerOnInteractive(event)) return
+    topnavDrag.startDrag(event)
+  }
+  const onTopNavDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!topnavDrag.enabled || isPointerOnInteractive(event)) return
+    topnavDrag.toggleMaximize()
+  }
+
+  const openSettings = () => {
+    logUiEvent('settings_opened', { path: location.pathname })
+    setShowUserMenu(false)
+    setShowSettings(true)
+  }
+
+  const startNewConversation = () => {
+    const eventName = 'mobius:new-conversation'
+    if (location.pathname === `/u/${userParam}` || location.pathname === `/u/${userParam}/`) {
+      window.dispatchEvent(new CustomEvent(eventName))
+      return
+    }
+    const inheritedProjectId = projectParam || currentSession?.project_id || currentProject?.id
+    const projectQuery = inheritedProjectId ? `?project=${encodeURIComponent(inheritedProjectId)}` : ''
+    navigate(`/u/${userParam}${projectQuery}`)
+    window.setTimeout(() => window.dispatchEvent(new CustomEvent(eventName)), 80)
+  }
+
+  useEffect(() => {
+    if (!showUserMenu) return
+    const close = () => setShowUserMenu(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [showUserMenu])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const modifier = event.metaKey || event.ctrlKey
+      if (!modifier) return
+      if (event.key.toLowerCase() === 'k') { event.preventDefault(); setShowSearch(true) }
+      if (event.key.toLowerCase() === 'n') { event.preventDefault(); startNewConversation() }
+      if (event.key === ',') { event.preventDefault(); openSettings() }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  })
+
+  useEffect(() => {
+    const baseName = branding.systemNameZh || 'Mobius'
+    document.title = projectName ? `${projectName} - ${baseName}` : baseName
+  }, [branding.systemNameZh, projectName])
+
+  return (
+    <>
+      <header
+        className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-2 sm:px-3"
+        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}
+        onPointerDown={onTopNavPointerDown}
+        onDoubleClick={onTopNavDoubleClick}
+      >
+        {isMobile && (
+          <button type="button" onClick={() => setMobileNavOpen(true)} aria-label="打开导航" title="打开导航"
+            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-muted)' }}>
+            <Menu className="h-4 w-4" />
+          </button>
+        )}
+        <LinklessRouteButton to={userParam ? `/u/${userParam}` : '/'} aria-label="Mobius 主页" title="Mobius 主页"
+          className="flex h-8 items-center gap-2 rounded-lg px-1.5 hover:bg-[var(--bg-hover)]">
+          <MobiusLogo className="h-6 w-6" />
+        </LinklessRouteButton>
+        <LinklessRouteButton
+          to={userParam ? `/u/${userParam}` : '/'}
+          aria-label="回到主页"
+          title="回到主页"
+          className="mobius-topnav-userlink max-w-[140px] truncate text-[12px] font-medium hover:text-blue-400"
+          style={{ color: 'var(--text-secondary)' }}
+        >
+          {user?.display_name || userParam || '主页'}
+        </LinklessRouteButton>
+        {projectParam && (
+          <>
+            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>/</span>
+            <LinklessRouteButton to={`/u/${userParam}/p/${projectParam}`} title="打开项目详情"
+              className="max-w-[220px] truncate rounded-lg px-2 py-1 text-[12px] hover:bg-[var(--bg-hover)]"
+              style={{ color: 'var(--text-secondary)' }}>
+              {projectName}
+            </LinklessRouteButton>
+          </>
+        )}
+        <div className="flex-1" />
+        <button type="button" onClick={() => setShowSearch(true)} aria-label="搜索" title="搜索"
+          className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+          <Search className="h-3.5 w-3.5" /><span className="hidden sm:inline">搜索</span>
+        </button>
+        <button type="button" onClick={startNewConversation} aria-label="新会话" title="新会话"
+          className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-medium btn-primary">
+          <Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">新会话</span>
+        </button>
+        <button type="button" onClick={openSettings} aria-label="设置/更多" title="设置/更多"
+          className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+          <Sliders className="h-4 w-4" />
+        </button>
+        <div className="relative">
+          <button type="button" onClick={event => { event.stopPropagation(); setShowUserMenu(value => !value) }} aria-label="账户" title="账户"
+            className="flex h-8 w-8 items-center justify-center rounded-full border hover:bg-[var(--bg-hover)]"
+            style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+            <UserRound className="h-4 w-4" />
+          </button>
+          {showUserMenu && (
+            <div className="absolute right-0 top-10 z-50 w-44 rounded-lg border p-1 shadow-xl" onClick={event => event.stopPropagation()}
+              style={{ background: 'var(--menu-bg)', borderColor: 'var(--border-color)' }}>
+              <div className="truncate px-3 py-2 text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>{user?.display_name || user?.id}</div>
+              <button type="button" onClick={openSettings} className="h-8 w-full rounded-md px-3 text-left text-[12px] hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>设置/更多</button>
+              <button type="button" onClick={() => { setShowUserMenu(false); setShowChangePw(true) }} className="h-8 w-full rounded-md px-3 text-left text-[12px] hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>修改密码</button>
+              <button type="button" onClick={() => { setShowUserMenu(false); logout(); navigate('/') }} className="h-8 w-full rounded-md px-3 text-left text-[12px] hover:bg-red-500/10" style={{ color: '#ef4444' }}>退出登录</button>
+            </div>
+          )}
+        </div>
+        {IS_DESKTOP && <WindowControls />}
+      </header>
+      {showSearch && <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} />}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+      {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
+      <OverlayPanels />
+    </>
+  )
+}
+
+function LegacyTopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
+  const {
     user,
     theme,
     toggleTheme,
@@ -786,8 +929,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const params = useParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const layoutMode = useLayoutMode()
-  const easyModeEnabled = layoutMode === 'easy_mode'
   const [showChangePw, setShowChangePw] = useState(false)
   const [showAimuxGuide, setShowAimuxGuide] = useState(false)
   const [showDesktopDownload, setShowDesktopDownload] = useState(false)
@@ -1345,55 +1486,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                         background: assistantBubbleEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
                         transform: assistantBubbleEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
                         boxShadow: assistantBubbleEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
-                      }}
-                    />
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-label="简易模式"
-                  aria-checked={easyModeEnabled}
-                  data-testid="easy-mode-switch"
-                  onClick={() => {
-                    const nextEnabled = !easyModeEnabled
-                    setLayoutMode(nextEnabled ? 'easy_mode' : 'normal_mode')
-                    setShowThemeMenu(false)
-                    if (nextEnabled) {
-                      // 标准页切到简易模式时携带当前会话的 ?session=, 让 EasyModePage 直接
-                      // 选中同一会话, 而不是丢回简易主页从最近会话里重新挑一条.
-                      const sid = currentSession?.session_id
-                      navigate(sid ? `/u/${userParam}/easy_mode?session=${encodeURIComponent(sid)}` : `/u/${userParam}/easy_mode`)
-                    }
-                    // 关闭简易模式(简易→标准)时不在此导航: EasyModePage 的 layoutMode 同步 effect
-                    // 持有完整上下文(currentSession + 已加载 sessions + URL ?session), 由它构造目标
-                    // Issue/Research 页. 本 TopNav 闭包里的 currentSession 在会话刚进入未就绪时为 null,
-                    // 在这里直接构造 URL 会粗暴回到用户首页.
-                  }}
-                  className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  <LayoutPanelTop className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[12px] font-semibold leading-4">简易模式</span>
-                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
-                      精简会话界面 · {easyModeEnabled ? '已开启' : '已关闭'}
-                    </span>
-                  </span>
-                  <span
-                    className="relative h-5 w-9 shrink-0 rounded-full border transition-colors"
-                    style={{
-                      background: easyModeEnabled ? 'color-mix(in srgb, var(--accent-primary) 28%, transparent)' : 'var(--input-bg)',
-                      borderColor: easyModeEnabled ? 'color-mix(in srgb, var(--accent-primary) 46%, var(--border-color))' : 'var(--border-color-strong)',
-                    }}
-                  >
-                    <span
-                      className="absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-transform"
-                      style={{
-                        left: 2,
-                        background: easyModeEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
-                        transform: easyModeEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
-                        boxShadow: easyModeEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
                       }}
                     />
                   </span>

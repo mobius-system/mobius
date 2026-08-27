@@ -767,6 +767,10 @@ export default function ProjectPage() {
             className="border-r flex flex-col"
             style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
             <div className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto p-2">
+              <div className="mb-1 rounded-lg px-3 py-2" aria-label="项目详情">
+                <span className="block text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>项目详情</span>
+                <strong className="mt-0.5 block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{project.name}</strong>
+              </div>
               <button type="button" onClick={() => { setRightView('items'); setSection('issues') }}
                 className={navCls(rightView === 'items' && section === 'issues')}
                 style={rightView === 'items' && section === 'issues' ? undefined : { color: 'var(--text-secondary)' }}
@@ -938,7 +942,7 @@ export default function ProjectPage() {
           refreshIssues()
           // 规划模式: 后端已自动创建 Session, 直接跳到 Session 页面.
           if (options?.planningSessionId) {
-            navigate(`/u/${userParam}/p/${projectId}/i/${iss.id}?session=${options.planningSessionId}`)
+            navigate(`/u/${encodeURIComponent(userParam)}/s/${encodeURIComponent(options.planningSessionId)}`)
           } else {
             navigate(`/u/${userParam}/p/${projectId}/i/${iss.id}${options?.createFirstSession ? '?newSession=1' : ''}`)
           }

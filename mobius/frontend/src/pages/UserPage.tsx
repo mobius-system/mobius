@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Activity,
   Brain,
@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  Send,
   Settings,
   Sparkles,
   Star,
@@ -29,6 +30,13 @@ import { SkillsManager } from '../components/skills'
 import { MemoriesManager } from '../components/memories'
 import { ResizablePanel } from '../components/resizable-panel'
 import { SearchMatchText } from '../components/search-match-text'
+import { ConversationRail } from '../components/conversation-rail'
+import {
+  ConversationCreationError,
+  createDefaultConversation,
+  type ConversationCreationCheckpoint,
+} from '../services/create-conversation'
+import { logUiEvent } from '../services/ui-observability'
 import {
   effectiveProjectCardBorderTheme,
   projectCardHeaderStyle,
@@ -190,7 +198,278 @@ function HierarchyHitRow({
   )
 }
 
-export default function UserPage() {
+function defaultProjectPath(workDir: string | null | undefined, name: string) {
+  const root = String(workDir || '').trim().replace(/\/+$/, '')
+  if (!root) return ''
+  const slug = name.trim().toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 36) || 'project'
+  return `${root}/${slug}-${Date.now().toString(36)}`
+}
+
+function MinimalProjectCreate({ onCreated }: { onCreated: (project: any) => void }) {
+  const { user } = useStore()
+  const navigate = useNavigate()
+  const [name, setName] = useState('')
+  const [localPath, setLocalPath] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!name.trim()) { setError('请输入项目名称'); return }
+    const bindPath = localPath.trim() || defaultProjectPath(user?.work_dir, name)
+    if (!bindPath) { setError('当前账号没有默认工作目录，请填写本地目录'); return }
+    setLoading(true)
+    setError('')
+    try {
+      const project = await api('/api/projects', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: name.trim(),
+          description: '',
+          bindPath,
+          bindPathManual: !!localPath.trim(),
+          visibility: 'private',
+          defaultUseWorktree: false,
+          researchEnabled: false,
+          members: [],
+        }),
+      })
+      if (!project?.id) throw new Error(project?.error || '服务未返回项目 ID')
+      logUiEvent('project_created', { project_id: project.id, source: 'home' })
+      onCreated(project)
+    } catch (reason: any) {
+      setError(reason?.message || '创建项目失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <main className="flex min-w-0 flex-1 items-center justify-center overflow-y-auto p-6" style={{ background: 'var(--bg-secondary)' }}>
+      <form onSubmit={submit} className="w-full max-w-md rounded-2xl border p-6" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+        <div className="mb-5">
+          <h1 className="text-[20px] font-semibold" style={{ color: 'var(--text-primary)' }}>创建第一个项目</h1>
+          <p className="mt-1 text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>给项目起个名字，随后就可以直接告诉 Mobius 你想完成什么。</p>
+        </div>
+        <label className="block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+          项目名称
+          <input autoFocus value={name} onChange={event => { setName(event.target.value); setError('') }} maxLength={80}
+            className="mt-1.5 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-blue-500/50"
+            style={{ color: 'var(--text-primary)', background: 'var(--input-bg)', border: '1px solid var(--input-border)' }} />
+        </label>
+        <label className="mt-4 block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+          本地目录 <span className="font-normal" style={{ color: 'var(--text-muted)' }}>（可选）</span>
+          <input value={localPath} onChange={event => { setLocalPath(event.target.value); setError('') }} placeholder="留空则在默认工作目录创建"
+            className="mt-1.5 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-blue-500/50"
+            style={{ color: 'var(--text-primary)', background: 'var(--input-bg)', border: '1px solid var(--input-border)' }} />
+        </label>
+        {error && <div className="mt-3 rounded-lg px-3 py-2 text-[12px]" style={{ color: '#f87171', background: 'rgba(248,113,113,.08)' }}>{error}</div>}
+        <button type="submit" disabled={loading} className="mt-5 h-10 w-full rounded-lg text-[13px] font-medium btn-primary disabled:opacity-60">
+          {loading ? '正在创建…' : '创建项目'}
+        </button>
+        <button type="button" onClick={() => navigate('/welcome')} className="mt-3 w-full text-center text-[11px] hover:underline" style={{ color: 'var(--text-muted)' }}>
+          连接已有本地项目或导入资料
+        </button>
+      </form>
+    </main>
+  )
+}
+
+function HomeSurface() {
+  const params = useParams()
+  const navigate = useNavigate()
+  const [homeSearch, setHomeSearch] = useSearchParams()
+  const {
+    user, projects, setProjects, currentProject, setCurrentProject,
+    setCurrentIssue, setCurrentResearch, setCurrentSession, setCurrentTask,
+  } = useStore()
+  const userParam = params.user || user?.id || ''
+  const [loadingProjects, setLoadingProjects] = useState(true)
+  const [selectedProjectId, setSelectedProjectId] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState('')
+  const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
+  const composerRef = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    logUiEvent('home_arrived', { user_id: userParam })
+    setCurrentIssue(null)
+    setCurrentResearch(null)
+    setCurrentSession(null)
+    setCurrentTask(null)
+  }, [userParam])
+
+  const prepareNewConversation = () => {
+    setPrompt('')
+    setSendError('')
+    setCheckpoint(null)
+    window.setTimeout(() => composerRef.current?.focus(), 0)
+  }
+
+  useEffect(() => {
+    window.addEventListener('mobius:new-conversation', prepareNewConversation)
+    return () => window.removeEventListener('mobius:new-conversation', prepareNewConversation)
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadingProjects(true)
+    api('/api/projects?all=true')
+      .then((result: any) => {
+        if (cancelled) return
+        const list = sortProjectsForDisplay(Array.isArray(result) ? result : (result?.projects || []))
+        setProjects(list)
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingProjects(false) })
+    return () => { cancelled = true }
+  }, [setProjects])
+
+  const usableProjects = useMemo(() => projects.filter((project: any) => project.kind !== 'extension' && !project.hidden && !project.disabled), [projects])
+  useEffect(() => {
+    const requestedProjectId = homeSearch.get('project') || ''
+    if (requestedProjectId && usableProjects.some((project: any) => project.id === requestedProjectId)) {
+      if (selectedProjectId !== requestedProjectId) setSelectedProjectId(requestedProjectId)
+      return
+    }
+    if (selectedProjectId && usableProjects.some((project: any) => project.id === selectedProjectId)) return
+    const next = currentProject && usableProjects.some((project: any) => project.id === currentProject.id)
+      ? currentProject.id
+      : usableProjects[0]?.id || ''
+    setSelectedProjectId(next)
+  }, [usableProjects, currentProject?.id, selectedProjectId, homeSearch])
+
+  useEffect(() => {
+    const selected = usableProjects.find((project: any) => project.id === selectedProjectId) || null
+    setCurrentProject(selected)
+  }, [selectedProjectId, usableProjects, setCurrentProject])
+
+  const onProjectCreated = (project: any) => {
+    setProjects(sortProjectsForDisplay([project, ...projects.filter((item: any) => item.id !== project.id)]))
+    setSelectedProjectId(project.id)
+    setCurrentProject(project)
+    window.setTimeout(() => composerRef.current?.focus(), 60)
+  }
+
+  const onPromptChange = (value: string) => {
+    setPrompt(value)
+    setSendError('')
+    setCheckpoint(null)
+  }
+
+  const send = async () => {
+    if (!selectedProjectId || !prompt.trim() || sending) return
+    setSending(true)
+    setSendError('')
+    try {
+      const created = await createDefaultConversation({ projectId: selectedProjectId, prompt, checkpoint })
+      logUiEvent('first_message_submitted', {
+        project_id: selectedProjectId,
+        issue_id: created.issueId,
+        session_id: created.sessionId,
+      })
+      setHistoryRefreshKey(key => key + 1)
+      navigate(`/u/${userParam}/s/${encodeURIComponent(created.sessionId)}`)
+    } catch (reason) {
+      if (reason instanceof ConversationCreationError) {
+        setCheckpoint(reason.checkpoint)
+        setSendError(reason.message)
+      } else {
+        setSendError(reason instanceof Error ? reason.message : '创建会话失败')
+      }
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)' }}>
+      <TopNav />
+      <div className="flex min-h-0 flex-1">
+        <div className="hidden h-full md:block">
+          <ConversationRail userId={userParam} onNewConversation={prepareNewConversation} refreshKey={historyRefreshKey} />
+        </div>
+        {loadingProjects ? (
+          <main className="flex min-w-0 flex-1 items-center justify-center" style={{ color: 'var(--text-muted)', background: 'var(--bg-secondary)' }}>加载项目…</main>
+        ) : usableProjects.length === 0 ? (
+          <MinimalProjectCreate onCreated={onProjectCreated} />
+        ) : (
+          <main className="min-w-0 flex-1 overflow-y-auto p-5 sm:p-8" style={{ background: 'var(--bg-secondary)' }}>
+            <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center py-8">
+              <div className="mb-6 text-center">
+                <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>想让 Mobius 做什么？</h1>
+                <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>描述目标即可，任务详情和会话会自动创建。</p>
+              </div>
+              <div className="rounded-2xl border p-3 shadow-sm" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+                <textarea ref={composerRef} autoFocus value={prompt} onChange={event => onPromptChange(event.target.value)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                      event.preventDefault()
+                      void send()
+                    }
+                  }}
+                  placeholder="描述你的任务…" rows={5}
+                  className="w-full resize-none bg-transparent px-2 py-1 text-[14px] leading-6 outline-none"
+                  style={{ color: 'var(--text-primary)' }} />
+                <div className="mt-2 flex items-center justify-between gap-3 border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
+                  <label className="flex min-w-0 items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    <Folder className="h-3.5 w-3.5 flex-shrink-0" />
+                    <select value={selectedProjectId} onChange={event => {
+                      const nextProjectId = event.target.value
+                      setSelectedProjectId(nextProjectId)
+                      setHomeSearch(nextProjectId ? { project: nextProjectId } : {}, { replace: true })
+                      setCheckpoint(null)
+                      setSendError('')
+                    }}
+                      className="max-w-[260px] truncate bg-transparent text-[12px] outline-none" style={{ color: 'var(--text-secondary)' }}>
+                      {usableProjects.map((project: any) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                    </select>
+                  </label>
+                  <button type="button" onClick={() => void send()} disabled={!prompt.trim() || sending}
+                    className="flex h-9 items-center gap-2 rounded-lg px-4 text-[12px] font-medium btn-primary disabled:opacity-40">
+                    <Send className="h-3.5 w-3.5" /> {sending ? '正在开始…' : '发送'}
+                  </button>
+                </div>
+              </div>
+              {sendError && (
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-[12px]" style={{ color: '#f87171', background: 'rgba(248,113,113,.08)' }}>
+                  <span>{sendError}</span>
+                  <button type="button" onClick={() => void send()} disabled={sending} className="flex-shrink-0 underline disabled:opacity-50">重试当前阶段</button>
+                </div>
+              )}
+              <section className="mt-10">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-[13px] font-semibold" style={{ color: 'var(--text-secondary)' }}>最近项目</h2>
+                  <button type="button" onClick={() => navigate(`/u/${userParam}?view=projects`)} className="text-[11px] hover:underline" style={{ color: 'var(--text-muted)' }}>全部项目 →</button>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {usableProjects.slice(0, 3).map((project: any) => (
+                    <button key={project.id} type="button" onClick={() => {
+                      setSelectedProjectId(project.id)
+                      setHomeSearch({ project: project.id }, { replace: true })
+                    }}
+                      className="min-w-0 rounded-lg border px-3 py-3 text-left transition-colors hover:bg-[var(--bg-hover)]"
+                      style={{ borderColor: project.id === selectedProjectId ? 'var(--accent-primary)' : 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                      <span className="block truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{project.name}</span>
+                      <span className="mt-1 block text-[10px]" style={{ color: 'var(--text-muted)' }}>最近活跃 {timeAgo(project.last_session_activity_at || project.last_active)}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </main>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AllProjectsView() {
   const params = useParams()
   const navigate = useNavigate()
   const {
@@ -205,6 +484,8 @@ export default function UserPage() {
   const USER_VIEWS: UserView[] = ['projects', 'memory', 'skills', 'data', 'monitor', 'config']
   const [activeView, setActiveView] = useState<UserView>(() => {
     try {
+      const requested = new URLSearchParams(window.location.search).get('panel')
+      if ((USER_VIEWS as string[]).includes(requested || '')) return requested as UserView
       const v = localStorage.getItem('mobius:ui:user-page:view')
       return (USER_VIEWS as string[]).includes(v as string) ? (v as UserView) : 'projects'
     } catch { return 'projects' }
@@ -1078,4 +1359,9 @@ function PlaceholderView({ icon, title, desc }: { icon: ReactNode; title: string
       </div>
     </div>
   )
+}
+
+export default function UserPage() {
+  const [searchParams] = useSearchParams()
+  return searchParams.get('view') === 'projects' ? <AllProjectsView /> : <HomeSurface />
 }

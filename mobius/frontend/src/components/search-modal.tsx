@@ -225,14 +225,12 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
   // 优先用片段 uuid (claude entry.uuid / codex entry.id), 缺失则用 timestamp 区间兜底 (见 JsonlView).
   const openSession = (r: SearchResult, frag?: Fragment) => {
     const first = frag || r.fragments[0]
-    const base = `/u/${user?.id}/p/${r.project_id}`
-    const mid = r.scope_type === 'research' ? `/r/${r.research_id}` : `/i/${r.issue_id}`
-    let url = `${base}${mid}?session=${r.session_id}`
+    let url = `/u/${encodeURIComponent(user?.id || '')}/s/${encodeURIComponent(r.session_id)}`
     if (first) {
       const parts: string[] = []
       if (first.uuid) parts.push(`match=${encodeURIComponent(first.uuid)}`)
       if (first.timestamp) parts.push(`ts=${encodeURIComponent(first.timestamp)}`)
-      if (parts.length) url += '&' + parts.join('&')
+      if (parts.length) url += '?' + parts.join('&')
     }
     onNavigate(url)
     onClose()

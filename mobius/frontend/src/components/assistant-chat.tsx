@@ -1176,8 +1176,8 @@ function needsPolling(snapshot: AssistantSnapshot) {
 
 function sessionPageUrl(userId?: string, snapshot?: AssistantSnapshot | null) {
   const session = snapshot?.session
-  if (!userId || !session?.session_id || !session.project_id || !session.issue_id) return ''
-  return `/u/${encodeURIComponent(userId)}/p/${encodeURIComponent(session.project_id)}/i/${encodeURIComponent(session.issue_id)}/?session=${encodeURIComponent(session.session_id)}`
+  if (!userId || !session?.session_id) return ''
+  return `/u/${encodeURIComponent(userId)}/s/${encodeURIComponent(session.session_id)}`
 }
 
 function formatTime(raw?: string | null) {

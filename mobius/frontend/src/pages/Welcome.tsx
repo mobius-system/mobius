@@ -835,7 +835,9 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
       if (remaining > 0) await new Promise(r => window.setTimeout(r, remaining))
       window.clearInterval(timer); setProgress(100)
       const sid = s?.session_id
-      navigate(`/u/${user?.id}/p/${projectId}/i/${issueId}${sid ? `?session=${sid}` : ''}`)
+      navigate(sid
+        ? `/u/${encodeURIComponent(user?.id || '')}/s/${encodeURIComponent(sid)}`
+        : `/u/${encodeURIComponent(user?.id || '')}/p/${encodeURIComponent(projectId)}/i/${encodeURIComponent(issueId)}`)
     } catch (e) {
       window.clearInterval(timer); setSubmitting(false); setErr((e as Error)?.message || '创建失败')
     }

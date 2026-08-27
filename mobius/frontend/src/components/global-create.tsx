@@ -1396,7 +1396,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
           mentions: sessionMentionPayload(selectedMentions),
         }) }).catch(() => {})
       }
-      const detailUrl = s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/i/${issueId}?session=${s.session_id}` : undefined
+      const detailUrl = s?.session_id && userParam ? `/u/${encodeURIComponent(userParam)}/s/${encodeURIComponent(s.session_id)}` : undefined
       // 简易模式由页面层用 Toast 反馈并刷新工作列表，创建层立即关闭；标准模式保留
       // “查看 / 再创建一个 / 关闭”弹窗，避免改变既有快捷创建流程。
       if (successMode === 'external') {
@@ -1749,7 +1749,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
         })
         if (s?.error) { setErr(s.error); return }
         draftClear(DRAFT_KEY)
-        const detailUrl = s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/r/${researchId}?session=${s.session_id}` : undefined
+        const detailUrl = s?.session_id && userParam ? `/u/${encodeURIComponent(userParam)}/s/${encodeURIComponent(s.session_id)}` : undefined
         onDone(s, detailUrl)
         return
       }
@@ -1761,7 +1761,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
       }) })
       if (s?.error) { setErr(s.error); return }
       draftClear(DRAFT_KEY)
-      onDone(s, s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/r/${researchId}?session=${s.session_id}` : undefined)
+      onDone(s, s?.session_id && userParam ? `/u/${encodeURIComponent(userParam)}/s/${encodeURIComponent(s.session_id)}` : undefined)
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
   }
 
@@ -1901,53 +1901,23 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
   open: boolean; onOpenChange: (v: boolean) => void; onPick: (kind: CreateKind) => void
   inProject: boolean; currentProject: any
 }) {
-  // 移动端 (≤ 断点): 触发按钮只留 [+] 图标, 隐藏「新建」文字与下拉箭头, 极简化顶栏.
+  // 默认全局动作只有“新会话”。项目、任务与研究创建器继续由各高级页面
+  // 通过 GlobalCreateRoot 调用，不再在顶栏组成四选一菜单。
   const isMobile = useIsMobile()
-  useEffect(() => {
-    if (!open) return
-    const close = () => onOpenChange(false)
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, [open, onOpenChange])
-
-  // Research Agent 入口始终可点 — 表单内由用户自行选择 Project + Research,
-  // 即使当前所在项目未启用 Research, 也可在表单里切换到其他项目.
-  const canPick = (kind: CreateKind): boolean => {
-    if (kind === 'issue') return inProject ? currentProject?.can_create_issue !== false : true
-    return true
-  }
+  void open
+  void inProject
+  void currentProject
 
   return (
     <div className="relative" data-tour="top-create">
       <TopNavActionElement
         type="button"
-        onClick={(e: any) => { e.stopPropagation(); onOpenChange(!open) }}
-        title="新建" aria-label="新建" aria-haspopup="menu" aria-expanded={open}
+        onClick={(e: any) => { e.stopPropagation(); onOpenChange(false); onPick('session') }}
+        title="新会话" aria-label="新会话"
         className="mobius-create-trigger gap-1">
         <Plus className="w-3.5 h-3.5" strokeWidth={2} />
-        {/* {!isMobile && <span className="text-[12px] font-medium">新建</span>} */}
-        {!isMobile && <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />}
+        {!isMobile && <span className="text-[12px] font-medium">新会话</span>}
       </TopNavActionElement>
-      {open && (
-        <div className="absolute right-0 top-9 z-50 min-w-[200px] rounded-lg shadow-xl py-1"
-          style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
-          onClick={e => e.stopPropagation()}>
-          {MENU_ITEMS.map(item => {
-            const Icon = item.icon
-            const ok = canPick(item.kind)
-            return (
-              <button key={item.kind} type="button"
-                disabled={!ok}
-                onClick={() => { if (ok) { onOpenChange(false); onPick(item.kind) } }}
-                className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                style={{ color: 'var(--text-primary)' }}>
-                <Icon className="w-3.5 h-3.5 flex-shrink-0" />
-                <span>{item.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }

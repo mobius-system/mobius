@@ -16,7 +16,6 @@ import {
   X,
 } from 'lucide-react'
 import { useStore, api } from '../store'
-import { useLayoutMode, buildNormalModeTargetUrl } from '../services/layout-mode'
 import { pollRecursive } from '../services/polling'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 import {
@@ -131,7 +130,6 @@ export default function EasyModePage() {
   const [collapsedSessionGroups, setCollapsedSessionGroups] = useState<Set<string>>(() => new Set())
   const projectFilterButtonRef = useRef<HTMLButtonElement | null>(null)
   const navigate = useNavigate()
-  const layoutMode = useLayoutMode()
   const sessionParam = search.get('session') || ''
   const projectParam = search.get('project') || ''
   const workView = (['recent', 'running', 'completed'].includes(search.get('view') || '')
@@ -236,26 +234,6 @@ export default function EasyModePage() {
       controller.abort()
     }
   }, [normalizedSessionQuery])
-
-  useEffect(() => {
-    if (!layoutMode || layoutMode === 'easy_mode') return
-    if (loading) return
-    const ctx = currentSession
-      || (sessionParam ? sessions.find(session => session.session_id === sessionParam) : null)
-      || sessions[0]
-      || null
-    navigate(
-      buildNormalModeTargetUrl({
-        user: params.user,
-        projectId: ctx?.project_id,
-        issueId: ctx?.issue_id,
-        researchId: ctx?.research_id,
-        scopeType: ctx?.scope_type ?? null,
-        sessionId: ctx?.session_id || sessionParam || undefined,
-      }),
-      { replace: true },
-    )
-  }, [layoutMode, params.user, navigate, currentSession, sessions, sessionParam, loading])
 
   useEffect(() => {
     const controller = new AbortController()

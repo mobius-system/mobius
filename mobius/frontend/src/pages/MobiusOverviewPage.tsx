@@ -161,11 +161,8 @@ function getNodePath(userParam: string, node: GraphNode) {
   if (node.kind === 'project') return base
   if (node.kind === 'issue') return `${base}/i/${encodeURIComponent(node.id)}`
   if (node.kind === 'research') return `${base}/r/${encodeURIComponent(node.id)}`
-  if (node.source?.scope_type === 'research' && node.source?.research_id) {
-    return `${base}/r/${encodeURIComponent(node.source.research_id)}?session=${encodeURIComponent(node.id)}`
-  }
-  if (node.source?.issue_id) {
-    return `${base}/i/${encodeURIComponent(node.source.issue_id)}?session=${encodeURIComponent(node.id)}`
+  if (node.source?.scope_type === 'research' || node.source?.issue_id) {
+    return `/u/${encodeURIComponent(userParam)}/s/${encodeURIComponent(node.id)}`
   }
   return ''
 }

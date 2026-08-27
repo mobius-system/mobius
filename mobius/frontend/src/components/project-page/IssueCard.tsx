@@ -156,7 +156,7 @@ export function IssueCard({
               const isLogoReviewSession = isLogoReviewIssue && String(s.name || '').includes(LOGO_REVIEW_SESSION_NAME)
               const showDescription = showingSessionMatches && textMatchesProjectSearch(s.description, searchQuery)
               return (
-                <Link key={s.session_id} to={`/u/${userParam}/p/${projectId}/i/${issue.id}?session=${s.session_id}`}
+                <Link key={s.session_id} to={`/u/${encodeURIComponent(userParam)}/s/${encodeURIComponent(s.session_id)}`}
                   data-tour={isLogoReviewSession ? 'logo-review-session-link' : undefined}
                   data-project-card-session-match={showingSessionMatches ? s.session_id : undefined}
                   className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors">

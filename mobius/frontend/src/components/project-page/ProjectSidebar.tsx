@@ -147,7 +147,7 @@ export function ProjectSidebar({
               {sessionMatches.slice(0, 3).map((session) => {
                 const showDescription = textMatchesProjectSearch(session.description, search)
                 return (
-                  <Link key={session.session_id} to={`/u/${userParam}/p/${projectId}/i/${iss.id}?session=${session.session_id}`}
+                  <Link key={session.session_id} to={`/u/${encodeURIComponent(userParam)}/s/${encodeURIComponent(session.session_id)}`}
                     data-project-session-match={session.session_id}
                     className="ml-6 flex min-h-8 items-center gap-2 rounded-md border-l-2 border-blue-500/25 px-2 py-1 transition-colors hover:bg-[var(--bg-card-hover)]"
                     title={session.description || session.name}>

@@ -1,5 +1,5 @@
 import { Component, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { ToastCard } from './components/toast-card'
 import { useStore, api } from './store'
@@ -9,13 +9,11 @@ import { applyCustomThemeToRoot, loadActiveCustomThemeId, loadCustomThemes } fro
 import { pollRecursive } from './services/polling'
 import { DesktopTitleBar } from './components/window-controls'
 import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services/handle-stale-chunk'
-import { useLayoutMode } from './services/layout-mode'
-import { LayoutModeChoiceModal } from './components/layout-mode-choice-modal'
 
 const Login = lazyWithRetry(() => import('./pages/Login'))
 const Welcome = lazyWithRetry(() => import('./pages/Welcome'))
 const UserPage = lazyWithRetry(() => import('./pages/UserPage'))
-const EasyModePage = lazyWithRetry(() => import('./pages/EasyModePage'))
+const WorkPage = lazyWithRetry(() => import('./pages/WorkPage'))
 const MobiusOverviewPage = lazyWithRetry(() => import('./pages/MobiusOverviewPage'))
 const MobiusOverviewClusterPage = lazyWithRetry(() => import('./pages/MobiusOverviewClusterPage'))
 const ProjectPage = lazyWithRetry(() => import('./pages/ProjectPage'))
@@ -227,10 +225,8 @@ function AssistantTaskDoneToast() {
       void Notification.requestPermission().then(() => {})
       return
     }
-    const isResearch = e.scopeType === 'research'
-    const containerId = isResearch ? e.researchId : e.issueId
-    const openUrl = e.projectId && containerId
-      ? `/u/${user?.id || ''}/p/${e.projectId}/${isResearch ? 'r' : 'i'}/${containerId}?session=${encodeURIComponent(e.sessionId)}`
+    const openUrl = e.sessionId
+      ? `/u/${user?.id || ''}/s/${encodeURIComponent(e.sessionId)}`
       : null
     try {
       const n = new Notification(
@@ -264,8 +260,11 @@ function AssistantTaskDoneToast() {
         return // 网络抖动/超时忽略, 下一轮再来(pollRecursive 外层也有兜底)
       }
       if (!Array.isArray(recent)) return
-      // 用 window.location.search 实时取当前会话, 避免把 location 放进依赖导致每次导航重启轮询
-      const currentSessionId = new URLSearchParams(window.location.search).get('session')
+      // 短路由不再把 session 放在 query 中；兼容旧长链时仍保留 query 回退。
+      const shortRouteMatch = window.location.pathname.match(/\/u\/[^/]+\/s\/([^/]+)/)
+      let shortRouteSessionId = ''
+      try { shortRouteSessionId = shortRouteMatch?.[1] ? decodeURIComponent(shortRouteMatch[1]) : '' } catch {}
+      const currentSessionId = shortRouteSessionId || new URLSearchParams(window.location.search).get('session')
       const visible = document.visibilityState === 'visible'
       for (const s of recent) {
         const sid = String(s?.session_id || '')
@@ -324,11 +323,9 @@ function AssistantTaskDoneToast() {
 
   if (!entry || !user) return null
 
-  // 深链到该会话: issue 走 /i/:issue, research 走 /r/:research, 都带 ?session= 选中它
-  const isResearch = entry.scopeType === 'research'
-  const containerId = isResearch ? entry.researchId : entry.issueId
-  const openUrl = entry.projectId && containerId
-    ? `/u/${user.id}/p/${entry.projectId}/${isResearch ? 'r' : 'i'}/${containerId}?session=${encodeURIComponent(entry.sessionId)}`
+  // 完成提醒统一打开 Session 短路由，由 WorkPage 还原 Issue/Research 上下文。
+  const openUrl = entry.sessionId
+    ? `/u/${user.id}/s/${encodeURIComponent(entry.sessionId)}`
     : null
 
   return (
@@ -352,20 +349,34 @@ function RootRedirect() {
   return <Navigate to={`/u/${user.id}`} replace />
 }
 
-// 简易模式只接管用户主页和 Issue 会话页。项目页、Research 页、管理页等保持原路由，
-// /easy_mode 自身也不参与判断，避免重定向循环。
-function layoutModeTargetPath(pathname: string) {
-  const userHome = pathname.match(/^\/u\/([^/]+)\/?$/)
-  if (userHome) return { user: userHome[1] }
-  const issuePage = pathname.match(/^\/u\/([^/]+)\/p\/[^/]+\/i\/[^/]+\/?$/)
-  if (issuePage) return { user: issuePage[1] }
-  return null
+function EasyModeCompatibility() {
+  const params = useParams()
+  const location = useLocation()
+  const { user } = useStore()
+  const search = new URLSearchParams(location.search)
+  const sessionId = search.get('session')
+  const userId = params.user || user?.id || ''
+  search.delete('session')
+  const suffix = search.toString() ? `?${search.toString()}` : ''
+  return sessionId
+    ? <Navigate to={`/u/${userId}/s/${encodeURIComponent(sessionId)}${suffix}${location.hash}`} replace />
+    : <Navigate to={`/u/${userId}${suffix}${location.hash}`} replace />
+}
+
+function IssueRouteCompatibility() {
+  const params = useParams()
+  const location = useLocation()
+  const search = new URLSearchParams(location.search)
+  const sessionId = search.get('session')
+  if (!sessionId) return <IssuePage />
+  search.delete('session')
+  const suffix = search.toString() ? `?${search.toString()}` : ''
+  return <Navigate to={`/u/${params.user || ''}/s/${encodeURIComponent(sessionId)}${suffix}${location.hash}`} replace />
 }
 
 function AuthenticatedApp() {
   const { user, assistantBubbleEnabled } = useStore()
   const location = useLocation()
-  const layoutMode = useLayoutMode()
 
   useEffect(() => startTextRedactionRuntime(), [])
 
@@ -373,18 +384,6 @@ function AuthenticatedApp() {
   // 兼容旧链接：根路径或未匹配路由 → 默认进我的项目页
   if (location.pathname === '/' || location.pathname === '') {
     return <Navigate to={`/u/${user.id}`} replace />
-  }
-  const modeTarget = layoutModeTargetPath(location.pathname)
-  if (modeTarget && !layoutMode) {
-    return (
-      <>
-        <RouteFallback />
-        <LayoutModeChoiceModal />
-      </>
-    )
-  }
-  if (modeTarget && layoutMode === 'easy_mode') {
-    return <Navigate to={`/u/${modeTarget.user}/easy_mode${location.search}${location.hash}`} replace />
   }
   return (
     <>
@@ -394,11 +393,13 @@ function AuthenticatedApp() {
             <Route path="/" element={<RootRedirect />} />
             <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
             <Route path="/u/:user" element={<UserPage />} />
-            <Route path="/u/:user/easy_mode" element={<EasyModePage />} />
+            <Route path="/easy_mode" element={<EasyModeCompatibility />} />
+            <Route path="/u/:user/easy_mode" element={<EasyModeCompatibility />} />
+            <Route path="/u/:user/s/:session" element={<WorkPage />} />
             <Route path="/u/:user/mobius_overview" element={<MobiusOverviewPage />} />
             <Route path="/u/:user/mobius_overview_cluster" element={<MobiusOverviewClusterPage />} />
             <Route path="/u/:user/p/:project" element={<ProjectPage />} />
-            <Route path="/u/:user/p/:project/i/:issue" element={<IssuePage />} />
+            <Route path="/u/:user/p/:project/i/:issue" element={<IssueRouteCompatibility />} />
             <Route path="/u/:user/p/:project/r/:research" element={<ResearchPage />} />
             <Route path="*" element={<RootRedirect />} />
           </Routes>

@@ -482,9 +482,11 @@ export function GuideHelpModal({ firstLogin = false, onClose }: GuideHelpModalPr
       }
       if (kind === 'logo-review') {
         const patch = await buildLogoReviewPatch()
-        const targetPath = patch.issueId
-          ? `/u/${user.id}/p/${LOGO_REVIEW_PROJECT_ID}/i/${patch.issueId}${patch.sessionId ? `?session=${patch.sessionId}` : ''}`
-          : `/u/${user.id}/p/${LOGO_REVIEW_PROJECT_ID}`
+        const targetPath = patch.sessionId
+          ? `/u/${encodeURIComponent(user.id)}/s/${encodeURIComponent(patch.sessionId)}`
+          : patch.issueId
+            ? `/u/${encodeURIComponent(user.id)}/p/${encodeURIComponent(LOGO_REVIEW_PROJECT_ID)}/i/${encodeURIComponent(patch.issueId)}`
+            : `/u/${encodeURIComponent(user.id)}/p/${encodeURIComponent(LOGO_REVIEW_PROJECT_ID)}`
         onClose({ rememberNoAuto: true, started: true })
         navigate(targetPath)
         window.setTimeout(() => startLogoReviewDemoTour(patch), location.pathname === targetPath ? 80 : 260)

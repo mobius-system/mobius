@@ -11,7 +11,7 @@ import type { ProjectSessionMatchMap } from '../../services/project-session-sear
 const EXTENSION_DEVELOPMENT_LINKS: Record<string, { label: string; href: string; description: string }> = {
   'finance-news-wall': {
     label: '继续开发金融新闻墙',
-    href: '/u/alice/p/9a533442/i/baf5d4dd?session=4921f111',
+    href: '/u/alice/s/4921f111',
     description: '打开原来的开发任务和会话，继续修改金融新闻墙代码。',
   },
 }

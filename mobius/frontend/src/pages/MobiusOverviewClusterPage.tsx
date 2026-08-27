@@ -343,10 +343,7 @@ function getSelectionPath(userParam: string, selection: Selection | null) {
   if (selection.kind === 'issue') return `${base}/i/${encodeURIComponent(selection.id)}`
   if (selection.kind === 'research') return `${base}/r/${encodeURIComponent(selection.id)}`
   if (isSessionSelection(selection)) {
-    if (selection.session.parentKind === 'research') {
-      return `${base}/r/${encodeURIComponent(selection.session.parentId)}?session=${encodeURIComponent(selection.id)}`
-    }
-    return `${base}/i/${encodeURIComponent(selection.session.parentId)}?session=${encodeURIComponent(selection.id)}`
+    return `/u/${encodeURIComponent(creatorId || userParam)}/s/${encodeURIComponent(selection.id)}`
   }
   return ''
 }

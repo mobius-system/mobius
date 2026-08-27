@@ -1245,6 +1245,7 @@ function ChatHeaderOverflowMenu({
   autoUrgentOnEnter, onToggleAutoUrgentOnEnter,
   onStop, canStop,
   onViewScheduledTasks,
+  onCopySessionLink, sessionLinkCopied,
 }: {
   jsonlCount: number
   minorCount: number
@@ -1258,6 +1259,8 @@ function ChatHeaderOverflowMenu({
   onStop: () => void
   canStop: boolean
   onViewScheduledTasks: () => void
+  onCopySessionLink: () => void
+  sessionLinkCopied: boolean
 }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -1311,6 +1314,10 @@ function ChatHeaderOverflowMenu({
           <button className={itemClass}
             onClick={() => { setOpen(false); onViewScheduledTasks() }}>
             <span>查看定时任务</span>
+          </button>
+          <button className={itemClass} disabled={!canStop}
+            onClick={() => { setOpen(false); onCopySessionLink() }}>
+            <span>{sessionLinkCopied ? '会话链接已复制' : '复制会话链接'}</span>
           </button>
           <button className={itemClass} disabled={jsonlCount === 0}
             onClick={() => { setOpen(false); onToggleShowJsonlMeta() }}>
@@ -2182,7 +2189,7 @@ function RemoteFileMentionDrawer({
 // =====================================================================
 // 主对话区（基于 currentSession）
 // =====================================================================
-// layout: 'default' = 现有 68/32 横向分栏; 'stacked' = 强制纵向堆叠 (历史在上、输入在下),
+// 默认使用低干扰工作台形态；'default' 仅保留给旧高级页兼容，'stacked' 用于窄工具栏。
 // 用于「代码对话」模式的窄右栏. 仅切换 .mobius-chat-body 上的修饰类 (见 index.css),
 // 不触碰任何 SSE / 草稿 / Stop / Send / Agent 状态逻辑. 向后兼容 (默认 default).
 type EasyProjectOption = {
@@ -2192,7 +2199,7 @@ type EasyProjectOption = {
   runningCount?: number
 }
 
-export function ChatArea({ layout = 'default', onNewSession, easyProjectControl }: {
+export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: {
   layout?: 'default' | 'stacked' | 'easy'
   onNewSession?: () => void
   easyProjectControl?: {
@@ -2203,7 +2210,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     onCreateProject: () => void
   }
 } = {}) {
-  const { currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
+  const { user, currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
   const navigate = useNavigate()
   // 搜索结果跳转: URL 带 ?match=<uuid>&ts=<iso> 时, 把命中条目交给 JsonlView 滚到所属卡片.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -2226,6 +2233,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   const [inputExpanded, setInputExpanded] = useState(false)
   const [inputMenuOpen, setInputMenuOpen] = useState(false)
   const [easyToolsOpen, setEasyToolsOpen] = useState(false)
+  const [sessionLinkCopied, setSessionLinkCopied] = useState(false)
   const [easyProjectMenuOpen, setEasyProjectMenuOpen] = useState(false)
   const [easyProjectQuery, setEasyProjectQuery] = useState('')
   const [inputFocused, setInputFocused] = useState(false)
@@ -2250,6 +2258,17 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     startWidth: number
     currentWidth: number
   } | null>(null)
+
+  const copySessionLink = useCallback(async () => {
+    const activeSessionId = currentSession?.session_id || currentTask?.session_id
+    if (!user?.id || !activeSessionId) return
+    const path = `/u/${encodeURIComponent(user.id)}/s/${encodeURIComponent(activeSessionId)}`
+    const link = typeof window === 'undefined' ? path : new URL(path, window.location.origin).toString()
+    if (await copyTextToClipboard(link)) {
+      setSessionLinkCopied(true)
+      window.setTimeout(() => setSessionLinkCopied(false), 1500)
+    }
+  }, [user?.id, currentSession?.session_id, currentTask?.session_id])
 
   useEffect(() => {
     if (!easyToolsOpen) return
@@ -3983,16 +4002,8 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     }
     setCurrentSession(created)
     setCurrentTask(created as any)
-    // 用 react-router navigate 更新 ?session=: 必须让 IssuePage 的 URL 真理源 effect
-    // (依赖 useSearchParams 的 sessionParam) 感知到新会话. 旧实现用 window.history.pushState
-    // 改 URL, react-router 不感知 → sessionParam 仍是旧值 → sessions 变化触发该 effect 重跑时
-    // 用旧 sessionParam 把 setCurrentSession 覆盖回旧会话, 表现为"不跳转".
-    try {
-      const url = new URL(window.location.href)
-      url.searchParams.set('session', created.session_id)
-      navigate(url.pathname + url.search + url.hash)
-    } catch {}
-  }, [currentIssueId, sessionsMap, setCurrentSession, setCurrentTask, setSessionsMap, navigate])
+    if (user?.id) navigate(`/u/${encodeURIComponent(user.id)}/s/${encodeURIComponent(created.session_id)}`)
+  }, [currentIssueId, sessionsMap, setCurrentSession, setCurrentTask, setSessionsMap, navigate, user?.id])
 
   // 由"开始执行?"弹窗的「立即执行!」按钮触发: 自动用 Session 元数据
   // (name / description) 拼成第一条消息发出去, 不需要用户再输入.
@@ -4257,9 +4268,9 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                 {currentSession?.name || currentTask?.name || sessionId}
               </strong>
             </div>
-            <div className="easy-session-summary" aria-label="简易对话摘要">
+            <div className="easy-session-summary" aria-label="会话摘要">
               <Sparkles className="easy-session-summary__icon" aria-hidden="true" />
-              <span className="easy-session-summary__label">简易对话</span>
+              <span className="easy-session-summary__label">会话</span>
               <small>{easyRoundCount} 轮</small>
               {(jsonlTotal > jsonlEntries.length || (jsonlEntries.length > 200 && easyExpandAllSignal === 0)) && (
                 <button
@@ -4303,6 +4314,15 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                   setEasyToolsOpen(false)
                 }}>
                   <div className="px-2 pb-2 pt-1 text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>当前会话工具</div>
+                  <button
+                    type="button"
+                    onClick={() => { setEasyToolsOpen(false); void copySessionLink() }}
+                    className="mb-1 flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {sessionLinkCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    <span>{sessionLinkCopied ? '会话链接已复制' : '复制会话链接'}</span>
+                  </button>
                   {renderAdvancedSessionActions('menu')}
                 </div>
               )}
@@ -4322,7 +4342,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
         </div>
       )}
 
-      {/* 标准模式保留完整会话标题栏；简易模式使用上方轻量上下文与监督栏。 */}
+      {/* 旧高级布局保留完整会话标题栏；默认工作台使用上方轻量上下文与监督栏。 */}
       {layout !== 'easy' && <div data-tour="session-chat-header" className="h-9 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="min-w-0 flex items-center gap-2">
@@ -4423,6 +4443,8 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
             onStop={handleStopSession}
             canStop={!!sessionId}
             onViewScheduledTasks={() => setScheduledTasksOpen(true)}
+            onCopySessionLink={() => { void copySessionLink() }}
+            sessionLinkCopied={sessionLinkCopied}
           />
         </div>
       </div>}
