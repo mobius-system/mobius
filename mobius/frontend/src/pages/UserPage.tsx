@@ -316,6 +316,7 @@ function HomeSurface() {
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [projectQuery, setProjectQuery] = useState('')
   const [showNewProject, setShowNewProject] = useState(false)
   const [lastRememberedProjectId, setLastRememberedProjectId] = useState(readLastHomeProjectId)
   const [lastRememberedModel, setLastRememberedModel] = useState(readLastHomeModel)
@@ -327,6 +328,7 @@ function HomeSurface() {
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const projectMenuRef = useRef<HTMLDivElement | null>(null)
   const projectMenuButtonRef = useRef<HTMLButtonElement | null>(null)
+  const projectSearchRef = useRef<HTMLInputElement | null>(null)
   const invalidateComposerCheckpoint = useCallback(() => {
     setSendError('')
     setCheckpoint(null)
@@ -388,6 +390,7 @@ function HomeSurface() {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       setProjectMenuOpen(false)
+      setProjectQuery('')
       projectMenuButtonRef.current?.focus()
     }
     document.addEventListener('pointerdown', closeOnOutsidePointer)
@@ -396,6 +399,14 @@ function HomeSurface() {
       document.removeEventListener('pointerdown', closeOnOutsidePointer)
       document.removeEventListener('keydown', closeOnEscape)
     }
+  }, [projectMenuOpen])
+
+  useEffect(() => {
+    if (!projectMenuOpen) {
+      setProjectQuery('')
+      return
+    }
+    window.requestAnimationFrame(() => projectSearchRef.current?.focus())
   }, [projectMenuOpen])
 
   useEffect(() => {
@@ -413,6 +424,15 @@ function HomeSurface() {
   }, [setProjects])
 
   const usableProjects = useMemo(() => projects.filter((project: any) => project.kind !== 'extension' && !project.hidden && !project.disabled), [projects])
+  const filteredProjects = useMemo(() => {
+    const query = projectQuery.trim().toLowerCase()
+    if (!query) return usableProjects
+    return usableProjects.filter((project: any) => (
+      String(project.name || '').toLowerCase().includes(query)
+      || String(project.description || '').toLowerCase().includes(query)
+      || String(project.id || '').toLowerCase().includes(query)
+    ))
+  }, [projectQuery, usableProjects])
   const selectedProject = useMemo(
     () => usableProjects.find((project: any) => project.id === selectedProjectId) || null,
     [selectedProjectId, usableProjects],
@@ -595,8 +615,45 @@ function HomeSurface() {
                           className="workbench-popover absolute left-0 top-[calc(100%+8px)] z-40 w-[300px] max-w-[calc(100vw-48px)] overflow-hidden p-2"
                           style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}
                         >
-                          <div className="max-h-[240px] overflow-y-auto">
-                            {usableProjects.map((project: any) => {
+                          <div role="search" className="flex h-9 items-center gap-2 rounded-[var(--radius-control)] px-3" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
+                            <Search className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.8} aria-hidden="true" />
+                            <input
+                              ref={projectSearchRef}
+                              value={projectQuery}
+                              onChange={event => setProjectQuery(event.target.value)}
+                              onKeyDown={event => {
+                                if (event.key === 'Escape') {
+                                  event.preventDefault()
+                                  setProjectMenuOpen(false)
+                                  setProjectQuery('')
+                                  projectMenuButtonRef.current?.focus()
+                                }
+                              }}
+                              placeholder="搜索项目名称、描述或 ID"
+                              aria-label="搜索项目"
+                              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] outline-none placeholder:text-[var(--text-muted)]"
+                              style={{ color: 'var(--text-primary)' }}
+                            />
+                            {projectQuery && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setProjectQuery('')
+                                  projectSearchRef.current?.focus()
+                                }}
+                                className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[var(--radius-control)] hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                                aria-label="清空项目搜索"
+                                title="清空搜索"
+                                style={{ color: 'var(--text-muted)' }}
+                              >
+                                <X className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                            )}
+                          </div>
+                          <div className="mt-2 max-h-[240px] overflow-y-auto">
+                            {filteredProjects.length === 0 ? (
+                              <div className="px-3 py-7 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>没有匹配的项目</div>
+                            ) : filteredProjects.map((project: any) => {
                               const active = project.id === selectedProjectId
                               return (
                                 <button
@@ -622,6 +679,7 @@ function HomeSurface() {
                               role="menuitem"
                               onClick={() => {
                                 setProjectMenuOpen(false)
+                                setProjectQuery('')
                                 setShowNewProject(true)
                               }}
                               className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left text-[12px] font-semibold transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus-ring)]"

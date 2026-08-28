@@ -175,7 +175,6 @@ function hasCommandLikeLeadingToken(path: string) {
 export function isUnambiguousFileCandidate(raw: string, context: FileCandidateContext = 'text') {
   const value = trimWrappingPunctuation(raw)
   if (!value || value.startsWith('#') || (!/^file:\/\//i.test(value) && value.includes('://')) || /^https?:\/\//i.test(value) || /^mailto:/i.test(value) || /^thread:/i.test(value)) return false
-
   let locationValue = value
   if (/^file:\/\//i.test(value)) {
     const parsed = parseFileUrl(value)

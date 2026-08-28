@@ -145,13 +145,19 @@ test('keeps shell commands as code instead of bogus file targets', () => {
   for (const command of [
     'python3 start.py',
     'python scripts/start.py',
+    'node server.js',
     'git diff src/components/chat.tsx',
     'cat /tmp/output.log',
+    'cat src/config.ts',
   ]) {
     assert.equal(parseFileTarget(command, { context: 'inline-code' }), null)
   }
+  assert.ok(parseFileTarget('start.py', { context: 'inline-code' }))
+  assert.ok(parseFileTarget('src/config.ts', { context: 'inline-code' }))
   assert.ok(parseFileTarget('docs/My Guide.md', { context: 'inline-code' }))
   assert.ok(parseFileTarget('./My File.ts', { context: 'inline-code' }))
+  assert.ok(parseFileTarget('file:///repo/My%20File.ts', { context: 'inline-code' }))
+  assert.ok(parseFileTarget('/repo/My File.ts', { context: 'trusted' }))
 })
 
 test('remark file targets skips fenced code and converts inline code', () => {
@@ -159,13 +165,15 @@ test('remark file targets skips fenced code and converts inline code', () => {
     type: 'root',
     children: [
       { type: 'paragraph', children: [{ type: 'inlineCode', value: 'src/a.ts#L2-L4' }] },
+      { type: 'paragraph', children: [{ type: 'inlineCode', value: 'python3 start.py' }] },
       { type: 'code', value: 'src/inside-fence.ts:9' },
     ],
   }
   remarkFileTargets()(tree)
   assert.equal(tree.children[0].children[0].type, 'link')
   assert.match(tree.children[0].children[0].data.hProperties['data-file-target'], /%22endLine%22%3A4/)
-  assert.equal(tree.children[1].type, 'code')
+  assert.equal(tree.children[1].children[0].type, 'inlineCode')
+  assert.equal(tree.children[2].type, 'code')
 })
 
 test('remark file targets leaves an inline shell command intact', () => {
