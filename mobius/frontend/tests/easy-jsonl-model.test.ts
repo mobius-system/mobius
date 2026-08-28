@@ -232,7 +232,8 @@ assert.equal(failedRow.type, 'row')
 if (failedRow.type === 'row') {
   assert.equal(failedRow.activity.state, 'error')
   assert.equal(failedRow.activity.defaultExpanded, true)
-  assert.match(failedRow.activity.outputTail || '', /^…\nline 9/)
+  assert.match(failedRow.activity.outputTail || '', /^line 1/)
+  assert.match(failedRow.activity.outputTail || '', /line 24$/)
 }
 
 const failedBurstRound = buildEasyJsonlRounds([{
