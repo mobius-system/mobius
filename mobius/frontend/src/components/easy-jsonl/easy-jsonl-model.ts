@@ -202,6 +202,8 @@ function compactText(value: unknown, limit = 220): string {
 
 function toolInputObject(block: any): any {
   if (block?.input && typeof block.input === 'object') return block.input
+  const fromPayload = functionCallInput(block?.payload)
+  if (Object.keys(fromPayload).length) return fromPayload
   const raw = block?.payload?.arguments ?? block?.input
   if (typeof raw !== 'string') return {}
   try { return JSON.parse(raw) } catch { return {} }
@@ -218,7 +220,11 @@ function genericToolDetail(block: any): string {
 }
 
 function isExploreTool(name: string): boolean {
-  return /(?:^|__)(?:read|glob|grep|search|websearch|web_search|list|find)/i.test(name)
+  return /(?:^|__)(?:read|glob|grep|search|websearch|web_search|web__run|list|find)/i.test(name)
+}
+
+function looksLikeToolSource(text: string): boolean {
+  return /(?:const\s+\w+\s*=\s*)?await\s+tools\.\w+\s*\(/.test(text) || /^(?:tools\.)?\w+\s*\(\s*\{/.test(text)
 }
 
 function isCommandTool(name: string): boolean {
@@ -277,7 +283,7 @@ function commandBinary(command: string): string {
 
 function commandHeadline(command: string): string {
   const cleaned = cleanCommand(command)
-  if (!cleaned) return '命令'
+  if (!cleaned || looksLikeToolSource(cleaned)) return '命令'
   const name = commandBinary(cleaned)
   if (/^curl$/i.test(name)) {
     const method = /\s-X\s+(\w+)/i.exec(cleaned)?.[1]?.toUpperCase()
@@ -307,6 +313,7 @@ function commandTitle(command: string): string {
 
 function commandDetails(command: string, cwd?: string): string[] {
   const cleaned = cleanCommand(command)
+  if (!cleaned || looksLikeToolSource(cleaned)) return unique([cwd ? `cwd · ${cwd}` : ''])
   const headline = commandHeadline(command)
   return unique([
     cleaned && cleaned !== headline ? cleaned : '',
@@ -327,7 +334,8 @@ function burstDefaultExpanded(toolCount: number, hasError: boolean): boolean {
 }
 
 function prettyCommandOutput(value: string): string {
-  const stripped = stripExecEnvelope(value)
+  const envelope = parseMcpResultEnvelope(value)
+  const stripped = stripExecEnvelope(envelope ? envelope.output : value)
   const trimmed = stripped.trim()
   if (!trimmed) return ''
   try {
@@ -345,7 +353,7 @@ function prettyCommandOutput(value: string): string {
   }
 }
 
-function limitedOutputTail(value: string, maxLines = 16, maxChars = 2600): string | undefined {
+function limitedOutputTail(value: string, maxLines = 160, maxChars = 16000): string | undefined {
   const normalized = prettyCommandOutput(value)
   if (!normalized) return undefined
   const lines = normalized.split('\n')
