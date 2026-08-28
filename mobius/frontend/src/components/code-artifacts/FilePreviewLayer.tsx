@@ -11,9 +11,10 @@ import {
 import { createPortal } from 'react-dom'
 import { Copy, ExternalLink, FileDiff, Loader2, Quote, RefreshCw, X } from 'lucide-react'
 import { api } from '../../store'
-import { buildVscodeUrl } from '../project-files'
+import { buildVscodeUrl, fileIcon } from '../project-files'
 import { useWorkbenchShellSlot } from '../workbench-shell'
 import { codeLanguageFromPath, copyCodeText } from './CodeBlock'
+import { highlightFileLines } from './highlight-file-lines'
 import { safeToolPathLabel, sanitizeToolError } from '../session-tool-context'
 import { FileWorkspaceTree } from './FileWorkspaceTree'
 import {
@@ -354,9 +355,12 @@ export function FilePreviewLayer({
   }, [error, loading, selectedRange, suspended, targetRange])
 
   const language = codeLanguageFromPath(data?.path || resolvedPath || activeRequest.target.path)
+  const highlightedLines = useMemo(
+    () => data && !data.binary ? highlightFileLines(data.content, language) : [],
+    [data, language],
+  )
   const currentPath = data?.path || resolvedPath || safeToolPathLabel(activeRequest.target.path)
   const crumbs = filePathSegments(currentPath)
-  const headerRange = selectedRange || (targetRange ? { start: targetRange.start, end: targetRange.end } : null)
   const editorFilePath = absoluteFilePath(meta, data, resolvedPath)
   const editorUrl = meta?.vscodeWebUrl && meta.vscodeWorkspacePath && editorFilePath
     ? buildVscodeUrl(meta.vscodeWebUrl, meta.vscodeWorkspacePath, editorFilePath)
@@ -366,6 +370,13 @@ export function FilePreviewLayer({
     // 未经项目 API 解析的绝对路径不回显也不复制；成功解析后复制项目相对路径。
     const copyPath = resolvedPath || safeToolPathLabel(activeRequest.target.path)
     if (!await copyCodeText(copyPath)) return
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1400)
+  }
+
+  const handleCopyContent = async () => {
+    if (!data?.content || data.binary) return
+    if (!await copyCodeText(data.content)) return
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1400)
   }
@@ -431,37 +442,55 @@ export function FilePreviewLayer({
         aria-hidden={suspended || undefined}
         aria-labelledby="code-artifact-preview-title"
       >
-        <div className="code-artifact-preview__tabs" role="tablist" aria-label="已打开文件">
-          {tabs.map(tab => {
-            const key = workspaceTabKey(tab.target)
-            const label = formatFileTarget(tab.target)
-            const selected = key === activeKey
-            return (
-              <div key={key} className={`code-artifact-preview__tab${selected ? ' is-active' : ''}`}>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  className="code-artifact-preview__tab-button"
-                  title={label.title}
-                  onClick={() => setActiveKey(key)}
-                >
-                  {label.basename}
-                </button>
-                <button
-                  type="button"
-                  className="code-artifact-preview__tab-close"
-                  aria-label={`关闭 ${label.basename}`}
-                  onClick={() => closeTab(key)}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            )
-          })}
-        </div>
-        <header className="code-artifact-preview__header">
-          <div className="min-w-0 flex-1">
+        <div className="code-artifact-preview__chrome">
+          <div className="code-artifact-preview__tabs" role="tablist" aria-label="已打开文件">
+            {tabs.map(tab => {
+              const key = workspaceTabKey(tab.target)
+              const label = formatFileTarget(tab.target)
+              const selected = key === activeKey
+              return (
+                <div key={key} className={`code-artifact-preview__tab${selected ? ' is-active' : ''}`}>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    className="code-artifact-preview__tab-button"
+                    title={label.title}
+                    onClick={() => setActiveKey(key)}
+                  >
+                    <span aria-hidden="true">{fileIcon(label.basename, 'file')}</span>
+                    {label.basename}
+                  </button>
+                  <button
+                    type="button"
+                    className="code-artifact-preview__tab-close"
+                    aria-label={`关闭 ${label.basename}`}
+                    onClick={() => closeTab(key)}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )
+            })}
+            <div className="code-artifact-preview__tab-actions">
+              <button type="button" className="code-artifact-preview__icon-button" onClick={() => void handleCopyContent()} disabled={loading || !!error || !!data?.binary} title={copied ? '已复制' : '复制文件内容'} aria-label={copied ? '已复制' : '复制文件内容'}>
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" className="code-artifact-preview__icon-button" onClick={insertReference} disabled={loading || !!error || !!data?.binary || !selectedRange} title={selectedRange ? `引用 ${lineRangeLabel(selectedRange)} 到 Composer` : '先选代码行再引用到 Composer'} aria-label="引用到 Composer">
+                <Quote className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" className="code-artifact-preview__icon-button" onClick={viewDiff} disabled={loading || !!error} title="查看本会话修改" aria-label="查看本会话修改">
+                <FileDiff className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" className="code-artifact-preview__icon-button" onClick={openEditor} disabled={!editorAvailable} title={editorTitle} aria-label="在编辑器打开">
+                <ExternalLink className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" className="code-artifact-preview__icon-button" onClick={closeWorkspace} title="关闭文件工作台" aria-label="关闭文件工作台">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+          <header className="code-artifact-preview__header">
             <h2 id="code-artifact-preview-title" ref={headingRef} tabIndex={-1} className="sr-only">
               {currentPath}
             </h2>
@@ -479,37 +508,12 @@ export function FilePreviewLayer({
                 </span>
               ))}
             </nav>
-            <div className="code-artifact-preview__meta" aria-label="文件预览信息">
-              <span>{language}</span>
-              <span>{lineRangeLabel(headerRange)}</span>
-              {data?.truncated && <span className="code-artifact-preview__meta--warning">truncated</span>}
-              {!loading && data && <span>{data.binary ? 'binary' : `${lines.length} lines`}</span>}
-            </div>
-          </div>
-        </header>
-
-        <div className="code-artifact-preview__toolbar">
-          <button type="button" className="code-artifact-preview__action code-artifact-preview__action--primary" onClick={insertReference} disabled={loading || !!error || !!data?.binary || !selectedRange}>
-            <Quote className="h-3.5 w-3.5" />
-            引用到 Composer
-          </button>
-          <button type="button" className="code-artifact-preview__action" onClick={viewDiff} disabled={loading || !!error}>
-            <FileDiff className="h-3.5 w-3.5" />
-            查看本会话修改
-          </button>
-          <button type="button" className="code-artifact-preview__action" onClick={openEditor} disabled={!editorAvailable} title={editorTitle}>
-            <ExternalLink className="h-3.5 w-3.5" />
-            在编辑器打开
-          </button>
-          <button type="button" className="code-artifact-preview__action code-artifact-preview__close" onClick={closeWorkspace}>
-            <X className="h-3.5 w-3.5" />
-            关闭
-          </button>
-          {!loading && !error && !data?.binary && (
-            <span className="code-artifact-preview__selection-status" aria-live="polite">
-              {selectedRange ? `已选 ${lineRangeLabel(selectedRange)} · 可 Shift+点击或拖选` : '点击、Shift+点击或拖选代码行'}
+            <span className="sr-only" aria-live="polite">
+              {!loading && !error && !data?.binary
+                ? selectedRange ? `已选 ${lineRangeLabel(selectedRange)}` : '点击、Shift+点击或拖选代码行'
+                : ''}
             </span>
-          )}
+          </header>
         </div>
 
         {data?.truncated && (
@@ -553,8 +557,8 @@ export function FilePreviewLayer({
             <div className="code-artifact-preview__state">这是二进制文件，内部预览不显示其内容。</div>
           )}
           {!loading && !error && data && !data.binary && (
-            <div className="code-artifact-preview__lines" role="listbox" aria-label={`${data.name} 文件内容`} aria-multiselectable="true">
-              {lines.map((line, index) => {
+            <div className="code-artifact-preview__lines" data-code-artifact-highlighted role="listbox" aria-label={`${data.name} 文件内容`} aria-multiselectable="true">
+              {lines.map((_line, index) => {
                 const lineNumber = index + 1
                 const targeted = !!targetRange && lineNumber >= targetRange.start && lineNumber <= targetRange.end
                 const selected = !!selectedRange && lineNumber >= selectedRange.start && lineNumber <= selectedRange.end
@@ -572,7 +576,7 @@ export function FilePreviewLayer({
                     onPointerEnter={event => extendSelection(lineNumber, event)}
                   >
                     <span className="code-artifact-preview__line-number" aria-hidden="true">{lineNumber}</span>
-                    <code>{line || ' '}</code>
+                    <code dangerouslySetInnerHTML={{ __html: highlightedLines[index] || ' ' }} />
                   </div>
                 )
               })}

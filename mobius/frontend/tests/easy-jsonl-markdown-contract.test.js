@@ -5,11 +5,10 @@ const read = relative => fs.readFileSync(new URL(relative, import.meta.url), 'ut
 const viewSource = read('../src/components/easy-jsonl/EasyJsonlView.tsx')
 const cssSource = read('../src/components/easy-jsonl/easy-jsonl.css')
 
-assert.match(
-  viewSource,
-  /<JsonlCompactMarkdown text=\{round\.userPrompt \|\| '继续处理当前任务'\} \/>/,
-  'EasyJsonlView 必须用 JsonlCompactMarkdown 渲染 userPrompt',
-)
+assert.match(viewSource, /splitEasyUserPrompt/, 'EasyJsonlView 必须先拆出用户自己输入再渲染')
+assert.match(viewSource, /<JsonlCompactMarkdown text=\{visible\} \/>/, '用户自己输入必须用 JsonlCompactMarkdown 渲染')
+assert.match(viewSource, /<JsonlCompactMarkdown text="继续处理当前任务" \/>/, '空用户任务必须保留占位文案')
+assert.match(viewSource, /contextOpen \? <JsonlCompactMarkdown text=\{hidden\}/, '系统注入内容必须折叠，展开后才渲染')
 
 const promptMarkdownRule = cssSource.match(/\.easy-jsonl-prompt \.jsonl-compact-md\s*\{([^}]*)\}/)?.[1] || ''
 assert.match(promptMarkdownRule, /padding:\s*0/, '用户任务 Markdown 不得增加内层内边距')

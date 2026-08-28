@@ -8,40 +8,26 @@
   color: var(--text-primary);
 }
 
-.easy-jsonl-rounds { width: min(920px, 100%); margin: 0 auto; }
-.easy-jsonl-round { position: relative; padding-bottom: 36px; }
-.easy-jsonl-round + .easy-jsonl-round { padding-top: 32px; border-top: 1px solid var(--easy-line); }
+.easy-jsonl-rounds { width: min(880px, 100%); margin: 0 auto; }
+.easy-jsonl-round { position: relative; padding-bottom: 16px; }
+.easy-jsonl-round + .easy-jsonl-round { padding-top: 16px; border-top: 1px solid var(--easy-line); }
 
 .easy-jsonl-prompt {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 12px;
-  max-height: 500px;
-  padding: 14px 16px 14px 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: fit-content;
+  max-width: 100%;
+  margin-left: auto;
+  padding: 10px 12px;
   border: 1px solid var(--border-default);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-card) 72%, var(--surface-raised));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-strong) 5%, transparent);
+  background: var(--surface-card);
 }
-.easy-jsonl-prompt__avatar {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 1px solid var(--border-default);
-  background: var(--surface-control);
-  color: var(--text-secondary);
-}
-.easy-jsonl-prompt__avatar svg { width: 17px; height: 17px; }
-.easy-jsonl-prompt__meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; }
-.easy-jsonl-prompt__meta strong { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
-.easy-jsonl-prompt__meta time { font-size: 10px; color: var(--text-muted); }
 .easy-jsonl-prompt .jsonl-compact-md {
   max-height: 440px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   padding: 0;
   border-radius: 0;
   background: transparent;
@@ -49,18 +35,56 @@
   font-size: 14px;
   line-height: 1.55;
 }
+.easy-jsonl-prompt .jsonl-compact-md p { margin: .12rem 0; }
+.easy-jsonl-prompt__context {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.easy-jsonl-prompt:not(.easy-jsonl-prompt--system-only) .easy-jsonl-prompt__context {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--easy-line);
+}
+.easy-jsonl-prompt__context-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-end;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--easy-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.easy-jsonl-prompt__context-toggle:hover { color: var(--text-secondary); }
+.easy-jsonl-prompt__context-chevron {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  transition: transform .18s ease;
+}
+.easy-jsonl-prompt__context-toggle[aria-expanded="true"] .easy-jsonl-prompt__context-chevron {
+  transform: rotate(180deg);
+}
+.easy-jsonl-prompt--system-only { padding: 6px 10px; }
+.easy-jsonl-prompt--system-only.is-expanded { width: 100%; }
 
-.easy-jsonl-rail { position: relative; margin: 16px 0 17px 25px; padding-left: 28px; }
-.easy-jsonl-rail::before { content: ''; position: absolute; left: 8px; top: 10px; bottom: 12px; width: 1px; background: var(--easy-line); }
-.easy-jsonl-activity, .easy-jsonl-live { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 38px; }
+.easy-jsonl-rail { position: relative; margin: 12px 0 12px 17px; padding-left: 24px; }
+.easy-jsonl-rail::before { content: ''; position: absolute; left: 8px; top: 8px; bottom: 8px; width: 1px; background: var(--easy-line); }
+.easy-jsonl-activity, .easy-jsonl-live { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 30px; }
 .easy-jsonl-activity__node, .easy-jsonl-live > span {
   position: absolute;
-  left: -28px;
-  top: 7px;
+  left: -24px;
+  top: 6px;
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border: 1px solid var(--easy-line);
   border-radius: 50%;
   background: var(--bg-secondary);
@@ -72,12 +96,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
   min-width: 0;
   border: 0;
-  border-radius: 10px;
-  padding: 7px 9px;
+  border-radius: 8px;
+  padding: 5px 8px;
   background: transparent;
   color: inherit;
   text-align: left;
@@ -94,7 +118,7 @@
 .easy-jsonl-activity__detail li { color: var(--text-secondary); font-family: 'JetBrains Mono','Cascadia Code',monospace; font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; }
 .easy-jsonl-activity--error .easy-jsonl-activity__detail { border-color: var(--status-danger-border); background: var(--status-danger-soft); }
 
-.easy-jsonl-live { grid-template-columns: minmax(0, 1fr); padding: 7px 9px; }
+.easy-jsonl-live { grid-template-columns: minmax(0, 1fr); padding: 5px 8px; }
 .easy-jsonl-live > span { color: var(--status-running); border-color: var(--status-running-border); }
 .easy-jsonl-live > div { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .easy-jsonl-live strong { font-size: 12px; color: var(--status-running); }
@@ -102,23 +126,14 @@
 
 .easy-jsonl-response {
   position: relative;
-  margin: 16px 0 0;
-  padding: 16px 18px;
-  border: 1px solid var(--border-default);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-card) 72%, var(--surface-raised));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-strong) 5%, transparent);
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
-.easy-jsonl-round.has-error .easy-jsonl-response {
-  border-color: var(--status-danger-border);
-  background: color-mix(in srgb, var(--status-danger-soft) 55%, var(--surface-card));
-}
-.easy-jsonl-response__heading { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: var(--text-secondary); }
-.easy-jsonl-response__heading > span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--border-default); border-radius: 50%; background: var(--surface-control); color: var(--text-secondary); }
-.easy-jsonl-response__heading svg { width: 14px; height: 14px; }
-.easy-jsonl-response__heading > svg { width: 13px; height: 13px; margin-left: auto; color: var(--status-success); }
-.easy-jsonl-response__heading strong { font-size: 12px; font-weight: 600; }
-.easy-jsonl-response .jsonl-compact-md { padding: 0; border-radius: 0; background: transparent; color: var(--text-primary); font-size: 14px; line-height: 1.6; }
+.easy-jsonl-response .jsonl-compact-md { padding: 0; border-radius: 0; background: transparent; color: var(--text-primary); font-size: 14px; line-height: 1.55; }
 .easy-jsonl-response .jsonl-compact-md p { margin: .45rem 0; }
 .easy-jsonl-response .jsonl-compact-md pre { max-height: 34rem; border-radius: 12px; }
 .easy-jsonl-response .jsonl-compact-md .prose-pre-wrap > pre { margin: 0; border-top: 0; border-radius: 0 0 12px 12px; }
@@ -136,16 +151,16 @@
 @keyframes easy-jsonl-shimmer { to { background-position: -220% 0; } }
 
 @media (max-width: 700px) {
-  .easy-jsonl-round { padding-bottom: 26px; }
-  .easy-jsonl-round + .easy-jsonl-round { padding-top: 24px; }
-  .easy-jsonl-prompt { grid-template-columns: 28px minmax(0, 1fr); gap: 9px; padding: 11px 11px 11px 10px; }
-  .easy-jsonl-prompt__avatar { width: 28px; height: 28px; }
+  .easy-jsonl-round { padding-bottom: 12px; }
+  .easy-jsonl-round + .easy-jsonl-round { padding-top: 12px; }
+  .easy-jsonl-prompt { max-width: 100%; padding: 10px 12px; }
+  .easy-jsonl-prompt--system-only { padding: 6px 10px; }
   .easy-jsonl-prompt .jsonl-compact-md { font-size: 14px; line-height: 1.55; }
-  .easy-jsonl-rail { margin-left: 15px; padding-left: 23px; }
+  .easy-jsonl-rail { margin-left: 8px; padding-left: 22px; }
   .easy-jsonl-activity__node, .easy-jsonl-live > span { left: -23px; }
   .easy-jsonl-activity__copy { display: block; }
   .easy-jsonl-activity__copy small { display: block; margin-top: 2px; }
-  .easy-jsonl-response { padding: 14px; }
+  .easy-jsonl-response { padding: 0; }
   .easy-jsonl-response .jsonl-compact-md { font-size: 14px; }
 }
 

@@ -37,6 +37,88 @@ export type EasyJsonlRound = {
   hasError: boolean
 }
 
+export type EasyUserPromptParts = {
+  visible: string
+  hidden: string
+  hiddenKind: 'none' | 'session-context' | 'system-prompt'
+}
+
+const USER_QUESTION_MARKERS = [
+  /(?:^|\n)\s*【?\s*##\s*用户的问题\s*】?\s*(?:\r?\n|$)/,
+  /(?:^|\n)\s*【用户的问题】\s*(?:\r?\n|$)/,
+  /(?:^|\n)\s*【?\s*##\s*User'?s Question\s*】?\s*(?:\r?\n|$)/i,
+  /(?:^|\n)\s*【User'?s Question】\s*(?:\r?\n|$)/i,
+]
+
+const SYSTEM_ONLY_PREFIXES = [
+  'Mobius Main/Sub Harness Context',
+  'Harness result notification',
+  'Dispatch receipt marker',
+  '以下信息描述了你正在协助的用户',
+  '【以下信息描述了你正在协助的用户】',
+  'The following describes the user you are assisting',
+  '【The following describes the user you are assisting',
+  'Forced System Skill',
+  '必要 Skill',
+  'Required Skills',
+  '持久 Memory',
+  'Persistent Memory',
+  '<environment_context>',
+  '[A message that comes from the system, not the user]',
+]
+
+function normalizePromptStart(text: string): string {
+  return text.trimStart().replace(/^(?:#{1,6}\s+)+/, '')
+}
+
+function looksLikeInjectedPrompt(text: string): boolean {
+  if (!text.trim()) return false
+  const start = normalizePromptStart(text)
+  return SYSTEM_ONLY_PREFIXES.some(prefix => start.startsWith(prefix))
+}
+
+function findUserQuestionMarker(text: string): { index: number; length: number } | null {
+  let best: { index: number; length: number } | null = null
+  for (const marker of USER_QUESTION_MARKERS) {
+    const match = text.match(marker)
+    if (match && match.index != null && (!best || match.index < best.index)) {
+      best = { index: match.index, length: match[0].length }
+    }
+  }
+  return best
+}
+
+/** 把 wrapUserMessage / Harness / Skill 注入从用户自己输入里拆出来，供界面默认折叠。 */
+export function splitEasyUserPrompt(text: string): EasyUserPromptParts {
+  const raw = String(text || '').replace(/\r\n/g, '\n')
+  if (!raw.trim()) return { visible: '', hidden: '', hiddenKind: 'none' }
+
+  const marker = findUserQuestionMarker(raw)
+  if (marker) {
+    const before = raw.slice(0, marker.index).replace(/(?:\n+---\s*)+$/g, '').trim()
+    const after = raw.slice(marker.index + marker.length).trim()
+    if (after && before && !looksLikeInjectedPrompt(after)) {
+      return {
+        visible: after,
+        hidden: before,
+        hiddenKind: looksLikeInjectedPrompt(before) ? 'system-prompt' : 'session-context',
+      }
+    }
+    if (after && !before && !looksLikeInjectedPrompt(after)) {
+      return { visible: after, hidden: '', hiddenKind: 'none' }
+    }
+    if (before || looksLikeInjectedPrompt(after) || looksLikeInjectedPrompt(raw)) {
+      return { visible: '', hidden: raw.trim(), hiddenKind: 'system-prompt' }
+    }
+  }
+
+  if (looksLikeInjectedPrompt(raw)) {
+    return { visible: '', hidden: raw.trim(), hiddenKind: 'system-prompt' }
+  }
+
+  return { visible: raw.trim(), hidden: '', hiddenKind: 'none' }
+}
+
 type ActivityBucket = {
   kind: EasyActivityKind
   firstIndex: number

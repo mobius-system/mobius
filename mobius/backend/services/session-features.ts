@@ -327,9 +327,14 @@ function toPosix(value: any): string {
   return String(value || '').split(path.sep).join('/');
 }
 
-function pathExists(abs: string | null): boolean {
+function pathExists(abs: string | null, cache?: Map<string, boolean>): boolean {
   if (!abs) return false;
-  try { return fs.existsSync(abs); } catch { return false; }
+  const hit = cache?.get(abs);
+  if (hit !== undefined) return hit;
+  let exists = false;
+  try { exists = fs.existsSync(abs); } catch { exists = false; }
+  cache?.set(abs, exists);
+  return exists;
 }
 
 // Codex / 沙箱常用 /workspace/<project>/file；映射回当前 workDir 或 gitRoot。
@@ -350,15 +355,20 @@ function remapSandboxAbsolutePath(original: string, workDir: string | null, gitR
 
 // summarize 会把嵌套工作区文件收成 gitRoot 相对路径；git-diff 再解析时必须仍对 gitRoot
 // 拼接。若一律用 workDir 当 base，会出现 local_data/workspace/... 被叠两次后 ENOENT。
-function resolveFeatureAbsolutePath(original: string, workDir: string | null, gitRoot: string | null): string {
+function resolveFeatureAbsolutePath(
+  original: string,
+  workDir: string | null,
+  gitRoot: string | null,
+  existsCache?: Map<string, boolean>,
+): string {
   const sandbox = remapSandboxAbsolutePath(original, workDir, gitRoot);
   if (sandbox) return sandbox;
   if (path.isAbsolute(original)) return path.resolve(original);
 
   const workAbs = workDir ? path.resolve(workDir, original) : null;
   const gitAbs = gitRoot ? path.resolve(gitRoot, original) : null;
-  const workOk = !!(workAbs && workDir && isWithinPath(workDir, workAbs) && pathExists(workAbs));
-  const gitOk = !!(gitAbs && gitRoot && isWithinPath(gitRoot, gitAbs) && pathExists(gitAbs));
+  const workOk = !!(workAbs && workDir && isWithinPath(workDir, workAbs) && pathExists(workAbs, existsCache));
+  const gitOk = !!(gitAbs && gitRoot && isWithinPath(gitRoot, gitAbs) && pathExists(gitAbs, existsCache));
   if (gitOk && !workOk) return gitAbs as string;
   if (workOk) return workAbs as string;
 
@@ -370,12 +380,12 @@ function resolveFeatureAbsolutePath(original: string, workDir: string | null, gi
   return workAbs || gitAbs || path.resolve(original);
 }
 
-function normalizeFeaturePath(rawPath: any, workspace: any = {}): any {
+function normalizeFeaturePath(rawPath: any, workspace: any = {}, existsCache?: Map<string, boolean>): any {
   const original = stringValue(rawPath);
   if (!original) return null;
   const workDir = workspace.workDir ? path.resolve(workspace.workDir) : null;
   const gitRoot = workspace.gitRoot ? path.resolve(workspace.gitRoot) : null;
-  const abs = resolveFeatureAbsolutePath(original, workDir, gitRoot);
+  const abs = resolveFeatureAbsolutePath(original, workDir, gitRoot, existsCache);
 
   let rel = null;
   let outside = false;
@@ -399,9 +409,18 @@ function normalizeFeaturePath(rawPath: any, workspace: any = {}): any {
 
 function summarizeFileChanges(features: any[], workspace: any = {}): any[] {
   const byKey = new Map();
+  const existsCache = new Map<string, boolean>();
+  const normalizedCache = new Map<string, any>();
+  const workspaceKey = `${workspace.workDir || ''}\0${workspace.gitRoot || ''}`;
   for (const feature of features) {
     if (feature?.feature_type !== 'file_change') continue;
-    const normalized = normalizeFeaturePath(feature.file_path, workspace);
+    const original = stringValue(feature.file_path);
+    const cacheKey = `${workspaceKey}\0${original}`;
+    let normalized = normalizedCache.get(cacheKey);
+    if (normalized === undefined) {
+      normalized = normalizeFeaturePath(original, workspace, existsCache);
+      normalizedCache.set(cacheKey, normalized);
+    }
     if (!normalized) continue;
     const key = normalized.relative_path || normalized.original;
     const current = byKey.get(key) || {

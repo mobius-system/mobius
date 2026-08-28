@@ -8,6 +8,8 @@ import {
   workspaceTabKey,
   filePathSegments,
 } from '../src/components/code-artifacts/file-target'
+import { highlightFileLines, highlightLanguageId, splitHighlightedHtml } from '../src/components/code-artifacts/highlight-file-lines'
+import { codeLanguageFromPath } from '../src/components/code-artifacts/CodeBlock'
 import { findFileTargetsInText, remarkFileTargets } from '../src/components/code-artifacts/remark-file-targets'
 import { EditorState } from '@codemirror/state'
 import { editorSelectionForLocation } from '../src/components/workspace/code-mirror-editor'
@@ -173,6 +175,40 @@ test('file breadcrumbs keep folder and file segments', () => {
   assert.equal(crumbs.at(-1)?.name, 'aimux-bridge-proxy.ts')
   assert.equal(crumbs.at(-1)?.isFile, true)
   assert.equal(crumbs[0]?.path, 'mobius')
+})
+
+test('highlights python keywords without leaking raw tags', () => {
+  const lines = highlightFileLines('import os\n# note\nname = "mobius"\n', 'python')
+  assert.match(lines[0], /hljs-keyword/)
+  assert.match(lines[1], /hljs-comment/)
+  assert.match(lines[2], /hljs-string/)
+  assert.doesNotMatch(lines.join(''), /<script/)
+})
+
+test('highlights common languages and text formats from path', () => {
+  assert.equal(codeLanguageFromPath('src/a.ts'), 'typescript')
+  assert.equal(codeLanguageFromPath('app.go'), 'go')
+  assert.equal(codeLanguageFromPath('Dockerfile'), 'dockerfile')
+  assert.equal(codeLanguageFromPath('Makefile'), 'makefile')
+  assert.equal(codeLanguageFromPath('.env'), 'ini')
+  assert.equal(codeLanguageFromPath('schema.proto'), 'protobuf')
+  assert.equal(highlightLanguageId('typescript'), 'typescript')
+  assert.equal(highlightLanguageId('dockerfile'), 'dockerfile')
+  assert.equal(highlightLanguageId('text'), '')
+  assert.match(highlightFileLines('const x: string = "ok"', 'typescript').join(''), /hljs-keyword|hljs-string/)
+  assert.match(highlightFileLines('{ "ok": true }', 'json').join(''), /hljs-number|hljs-literal|hljs-attr/)
+  assert.match(highlightFileLines('FROM node:20\nCOPY . .', 'dockerfile').join(''), /hljs-keyword/)
+  assert.match(highlightFileLines('name: mobius\ncount: 1', 'yaml').join(''), /hljs-attr|hljs-number|hljs-string/)
+  assert.match(highlightFileLines('# title\n\nHello `code`', 'markdown').join(''), /hljs-section|hljs-code/)
+  assert.equal(highlightFileLines('<script>alert(1)</script>', 'text')[0], '&lt;script&gt;alert(1)&lt;/script&gt;')
+})
+
+test('splits highlighted HTML across line-spanning spans', () => {
+  const lines = splitHighlightedHtml('<span class="hljs-comment">one\ntwo</span>')
+  assert.equal(lines.length, 2)
+  assert.match(lines[0], /hljs-comment/)
+  assert.match(lines[1], /hljs-comment/)
+  assert.match(lines[0], /<\/span>$/)
 })
 
 console.log('code file target tests passed')

@@ -1066,7 +1066,16 @@ function featureWorkspaceForSession(user: AnyUser, sessionId: string): {
   const workspace = resolveSessionWorkspace(user, sessionId);
   if (workspace.error) return { workspace, workDir: null, gitRoot: null, error: workspace.error };
   let gitRoot: string | null = null;
-  try { gitRoot = gitTopLevel(workspace.workDir) as any; } catch {}
+  try {
+    gitRoot = gitTopLevel(workspace.workDir) as any;
+  } catch (e) {
+    return {
+      workspace,
+      workDir: workspace.workDir as any,
+      gitRoot: null,
+      error: (e as Error).message || '检测 Git 仓库超时，请稍后重试',
+    };
+  }
   return { workspace, workDir: workspace.workDir as any, gitRoot, error: null };
 }
 

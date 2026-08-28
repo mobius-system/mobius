@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
-  Bot,
-  CheckCircle2,
   ChevronDown,
   CircleEllipsis,
   FilePenLine,
@@ -12,7 +10,6 @@ import {
   Search,
   Sparkles,
   TerminalSquare,
-  UserRound,
   Wrench,
 } from 'lucide-react'
 import JsonlCompactMarkdown from '../jsonl-compact-markdown'
@@ -21,7 +18,7 @@ import type { AnyEntry, JsonlViewItem } from '../viewer/types'
 import { mergeBashToolResultItems } from '../viewer/entry-extract'
 import { isHiddenJsonlNoiseEntry } from '../viewer/entry-classify'
 import { buildRounds } from '../viewer/rounds'
-import { buildEasyJsonlRounds, type EasyActivity, type EasyActivityKind } from './easy-jsonl-model'
+import { buildEasyJsonlRounds, splitEasyUserPrompt, type EasyActivity, type EasyActivityKind } from './easy-jsonl-model'
 import './easy-jsonl.css'
 
 const EASY_INITIAL_WINDOW_SIZE = 200
@@ -97,11 +94,37 @@ function EasyActivityItem({ activity }: { activity: EasyActivity }) {
   )
 }
 
-function formatRoundTime(value?: string) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+function EasyUserPrompt({ text }: { text: string }) {
+  const parts = useMemo(() => splitEasyUserPrompt(text), [text])
+  const [contextOpen, setContextOpen] = useState(false)
+  const visible = parts.visible
+  const hidden = parts.hidden
+  const systemOnly = !visible && !!hidden
+
+  return (
+    <article
+      className={`easy-jsonl-prompt${systemOnly ? ' easy-jsonl-prompt--system-only' : ''}${systemOnly && contextOpen ? ' is-expanded' : ''}`}
+      aria-label="用户任务"
+    >
+      {visible ? <JsonlCompactMarkdown text={visible} /> : null}
+      {!visible && !hidden ? <JsonlCompactMarkdown text="继续处理当前任务" /> : null}
+      {hidden ? (
+        <div className="easy-jsonl-prompt__context">
+          <button
+            type="button"
+            className="easy-jsonl-prompt__context-toggle"
+            aria-expanded={contextOpen}
+            aria-label={contextOpen ? '收起系统上下文' : '展开系统上下文'}
+            onClick={() => setContextOpen(value => !value)}
+          >
+            <span>系统上下文</span>
+            <ChevronDown className="easy-jsonl-prompt__context-chevron" />
+          </button>
+          {contextOpen ? <JsonlCompactMarkdown text={hidden} /> : null}
+        </div>
+      ) : null}
+    </article>
+  )
 }
 
 function EasySkeleton() {
@@ -207,16 +230,7 @@ export default function EasyJsonlView({
               data-easy-round-id={round.id}
               data-testid="easy-jsonl-round"
             >
-              <header className="easy-jsonl-prompt">
-                <span className="easy-jsonl-prompt__avatar"><UserRound /></span>
-                <div>
-                  <div className="easy-jsonl-prompt__meta">
-                    <strong>你的任务</strong>
-                    <time>{formatRoundTime(round.startedAt)}</time>
-                  </div>
-                  <JsonlCompactMarkdown text={round.userPrompt || '继续处理当前任务'} />
-                </div>
-              </header>
+              <EasyUserPrompt text={round.userPrompt} />
 
               {(round.activities.length > 0 || roundWorking) && (
                 <div className="easy-jsonl-rail" aria-label="执行过程">
@@ -231,12 +245,7 @@ export default function EasyJsonlView({
               )}
 
               {round.assistantResponse && (
-                <article className="easy-jsonl-response">
-                  <div className="easy-jsonl-response__heading">
-                    <span><Bot /></span>
-                    <strong>回复</strong>
-                    {!roundWorking && <CheckCircle2 />}
-                  </div>
+                <article className="easy-jsonl-response" aria-label="助手回复">
                   <JsonlCompactMarkdown text={round.assistantResponse} />
                 </article>
               )}

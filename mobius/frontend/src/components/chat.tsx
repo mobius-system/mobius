@@ -11,6 +11,7 @@ import { GitChangesViewer } from './code-git/GitChangesViewer'
 import { DiffRows as UnifiedDiffRows, parseUnifiedDiff, unifiedDiffNoHunkMessage } from './code-git/DiffRows'
 import {
   GIT_DIFF_MODE_LABELS,
+  SESSION_FEATURE_FILES_TIMEOUT_MS,
   sessionFileMatches,
   type GitDiffMode,
   type SessionFileFeature,
@@ -2475,6 +2476,8 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
   const [toolFilesLoading, setToolFilesLoading] = useState(false)
   const [toolFilesError, setToolFilesError] = useState('')
   const [toolWorkspaceError, setToolWorkspaceError] = useState('')
+  const toolFilesRequestTokenRef = useRef(0)
+  const toolFilesAbortRef = useRef<AbortController | null>(null)
   const [selectedToolFilePath, setSelectedToolFilePath] = useState('')
   const [toolDiff, setToolDiff] = useState<SessionGitDiff | null>(null)
   const [toolDiffMode, setToolDiffMode] = useState<GitDiffMode>('unstaged')
@@ -2521,6 +2524,9 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
   }, [])
   const sessionId = currentSession?.session_id || currentTask?.task_id || ''
   useLayoutEffect(() => {
+    toolFilesRequestTokenRef.current += 1
+    toolFilesAbortRef.current?.abort()
+    toolFilesAbortRef.current = null
     setEasyToolsOpen(false)
     setEasyRoundCount(0)
     setEasyExpandAllSignal(0)
@@ -2534,6 +2540,7 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
     setTerminalDockOpen(false)
     setToolFiles([])
     setToolFilesReady(false)
+    setToolFilesLoading(false)
     setToolFilesError('')
     setToolWorkspaceError('')
     setSelectedToolFilePath('')
@@ -2631,11 +2638,17 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
 
   const loadToolFiles = useCallback(async () => {
     if (!sessionId) return
+    toolFilesAbortRef.current?.abort()
+    const controller = new AbortController()
+    toolFilesAbortRef.current = controller
+    const token = ++toolFilesRequestTokenRef.current
+    const timeout = window.setTimeout(() => controller.abort(), SESSION_FEATURE_FILES_TIMEOUT_MS)
     setToolFilesReady(false)
     setToolFilesLoading(true)
     setToolFilesError('')
     try {
-      const data = await api(`/api/sessions/${sessionId}/features/files`)
+      const data = await api(`/api/sessions/${sessionId}/features/files`, { signal: controller.signal })
+      if (token !== toolFilesRequestTokenRef.current) return
       const nextFiles = Array.isArray(data?.files) ? data.files : []
       setToolFiles(nextFiles)
       setToolWorkspaceError(typeof data?.workspace_error === 'string'
@@ -2648,9 +2661,14 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
         return matched?.path || requested
       })
     } catch (reason: any) {
+      if (token !== toolFilesRequestTokenRef.current) return
       setToolFiles([])
-      setToolFilesError(sanitizeToolError(reason, '读取文件修改清单失败'))
+      setToolFilesError(controller.signal.aborted
+        ? '扫描超时，请稍后重试'
+        : sanitizeToolError(reason, '读取文件修改清单失败'))
     } finally {
+      window.clearTimeout(timeout)
+      if (token !== toolFilesRequestTokenRef.current) return
       setToolFilesLoading(false)
       setToolFilesReady(true)
     }

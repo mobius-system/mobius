@@ -16,13 +16,51 @@ import type { CodeArtifactTarget } from './file-target'
 type CopySource = string | (() => string)
 
 const PATH_LANGUAGE: Record<string, string> = {
-  bash: 'shell', c: 'c', cc: 'cpp', cjs: 'javascript', cpp: 'cpp', cs: 'csharp', css: 'css',
-  csv: 'csv', cxx: 'cpp', go: 'go', h: 'c', hpp: 'cpp', html: 'html', java: 'java',
-  js: 'javascript', json: 'json', jsonl: 'jsonl', jsx: 'jsx', kt: 'kotlin', kts: 'kotlin',
-  md: 'markdown', mdx: 'mdx', mjs: 'javascript', php: 'php', proto: 'protobuf', py: 'python',
-  rb: 'ruby', rs: 'rust', scss: 'scss', sh: 'shell', sql: 'sql', swift: 'swift', toml: 'toml',
-  ts: 'typescript', tsx: 'tsx', txt: 'text', vue: 'vue', xml: 'xml', yaml: 'yaml', yml: 'yaml',
-  zsh: 'shell',
+  adoc: 'markdown', asm: 'x86asm', awk: 'awk', bash: 'shell', bat: 'dos', c: 'c',
+  cc: 'cpp', cjs: 'javascript', cmake: 'cmake', cmd: 'dos', coffee: 'coffeescript',
+  conf: 'ini', cpp: 'cpp', cs: 'csharp', css: 'css', csv: 'csv', cts: 'typescript',
+  cxx: 'cpp', dart: 'dart', diff: 'diff', dockerfile: 'dockerfile', elm: 'elm',
+  env: 'ini', erl: 'erlang', ex: 'elixir', exs: 'elixir', f90: 'fortran',
+  f95: 'fortran', fs: 'fsharp', go: 'go', gradle: 'gradle', graphql: 'graphql',
+  groovy: 'groovy', gql: 'graphql', h: 'c', hbs: 'handlebars', hpp: 'cpp',
+  hs: 'haskell', htm: 'html', html: 'html', http: 'http', ini: 'ini',
+  java: 'java', jl: 'julia', js: 'javascript', json: 'json', json5: 'json',
+  jsonc: 'json', jsonl: 'jsonl', jsx: 'jsx', kt: 'kotlin', kts: 'kotlin',
+  less: 'less', ll: 'llvm', log: 'log', lua: 'lua', m: 'objectivec',
+  mak: 'makefile', markdown: 'markdown', matlab: 'matlab', md: 'markdown',
+  mdx: 'mdx', mjs: 'javascript', mk: 'makefile', mm: 'objectivec',
+  mts: 'typescript', nginx: 'nginx', nim: 'nim', objc: 'objectivec',
+  patch: 'diff', php: 'php', pl: 'perl', pm: 'perl', properties: 'properties',
+  proto: 'protobuf', ps1: 'powershell', psm1: 'powershell', py: 'python',
+  r: 'r', rb: 'ruby', rs: 'rust', s: 'x86asm', scala: 'scala', scss: 'scss',
+  sh: 'shell', sql: 'sql', styl: 'stylus', svg: 'xml', swift: 'swift',
+  t: 'perl', tex: 'latex', toml: 'toml', ts: 'typescript', tsx: 'tsx',
+  txt: 'text', vb: 'vbnet', vim: 'vim', vue: 'vue', wasm: 'wasm',
+  xhtml: 'html', xml: 'xml', yaml: 'yaml', yml: 'yaml', zsh: 'shell',
+}
+
+const BASENAME_LANGUAGE: Record<string, string> = {
+  '.bashrc': 'shell',
+  '.bash_profile': 'shell',
+  '.dockerignore': 'text',
+  '.editorconfig': 'ini',
+  '.env': 'ini',
+  '.env.example': 'ini',
+  '.env.local': 'ini',
+  '.gitconfig': 'ini',
+  '.gitignore': 'text',
+  '.npmrc': 'ini',
+  '.zshrc': 'shell',
+  'cmakelists.txt': 'cmake',
+  dockerfile: 'dockerfile',
+  gemfile: 'ruby',
+  gnumakefile: 'makefile',
+  jenkinsfile: 'groovy',
+  makefile: 'makefile',
+  'nginx.conf': 'nginx',
+  procfile: 'text',
+  rakefile: 'ruby',
+  vagrantfile: 'ruby',
 }
 
 export function normalizeCodeLanguage(value?: string | null) {
@@ -37,8 +75,9 @@ export function codeLanguageFromClassName(className?: string | null) {
 
 export function codeLanguageFromPath(path?: string | null) {
   const cleanPath = String(path || '').split(/[?#]/, 1)[0]
-  const basename = cleanPath.split(/[\\/]/).pop() || ''
-  const extension = basename.includes('.') ? basename.slice(basename.lastIndexOf('.') + 1).toLocaleLowerCase() : ''
+  const basename = (cleanPath.split(/[\\/]/).pop() || '').toLocaleLowerCase()
+  if (BASENAME_LANGUAGE[basename]) return BASENAME_LANGUAGE[basename]
+  const extension = basename.includes('.') ? basename.slice(basename.lastIndexOf('.') + 1) : basename
   return PATH_LANGUAGE[extension] || 'text'
 }
 

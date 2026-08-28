@@ -57,6 +57,8 @@ export const GIT_DIFF_MODE_LABELS: Record<GitDiffMode, string> = {
   staged: '已暂存',
 }
 
+export const SESSION_FEATURE_FILES_TIMEOUT_MS = 15_000
+
 export function normalizedSessionFilePath(value: string) {
   return String(value || '').trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '')
 }

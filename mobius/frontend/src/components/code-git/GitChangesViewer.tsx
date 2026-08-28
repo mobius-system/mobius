@@ -25,6 +25,7 @@ import {
 import { GitHistoryList } from './GitHistoryList'
 import {
   GIT_DIFF_MODE_LABELS,
+  SESSION_FEATURE_FILES_TIMEOUT_MS,
   formatSessionFeatureTime,
   normalizedSessionFilePath,
   sessionFileMatches,
@@ -122,6 +123,8 @@ export function GitChangesViewer({
   const lastInitialPathRef = useRef<string | null | undefined>(undefined)
   const commitRequestTokenRef = useRef(0)
   const commitFileRequestTokenRef = useRef(0)
+  const filesRequestTokenRef = useRef(0)
+  const filesAbortRef = useRef<AbortController | null>(null)
 
   const history = useGitHistory({
     projectId,
@@ -179,12 +182,18 @@ export function GitChangesViewer({
       setLoading(false)
       return
     }
+    filesAbortRef.current?.abort()
+    const controller = new AbortController()
+    filesAbortRef.current = controller
+    const token = ++filesRequestTokenRef.current
+    const timeout = window.setTimeout(() => controller.abort(), SESSION_FEATURE_FILES_TIMEOUT_MS)
     setLoading(true)
     setError('')
     const applyInitialPath = lastInitialPathRef.current !== initialPath
     lastInitialPathRef.current = initialPath
     try {
-      const data = await api(`/api/sessions/${sessionId}/features/files`)
+      const data = await api(`/api/sessions/${sessionId}/features/files`, { signal: controller.signal })
+      if (token !== filesRequestTokenRef.current) return
       const nextFiles: SessionFileFeature[] = Array.isArray(data?.files) ? data.files : []
       setFiles(nextFiles)
       setWorkspaceError(typeof data?.workspace_error === 'string'
@@ -212,17 +221,26 @@ export function GitChangesViewer({
         return nextPath
       })
     } catch (reason: any) {
-      setError(sanitizeToolError(reason, '读取文件修改清单失败'))
+      if (token !== filesRequestTokenRef.current) return
+      setError(controller.signal.aborted
+        ? '扫描超时，请稍后重试'
+        : sanitizeToolError(reason, '读取文件修改清单失败'))
       setFiles([])
       setSelectedPath('')
       setInitialPathMissing(false)
     } finally {
-      setLoading(false)
+      window.clearTimeout(timeout)
+      if (token === filesRequestTokenRef.current) setLoading(false)
     }
   }, [initialPath, sessionId])
 
   useEffect(() => {
     void loadFiles()
+    return () => {
+      filesRequestTokenRef.current += 1
+      filesAbortRef.current?.abort()
+      filesAbortRef.current = null
+    }
   }, [loadFiles])
 
   useEffect(() => {

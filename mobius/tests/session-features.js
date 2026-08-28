@@ -191,11 +191,14 @@ assert.strictEqual(runGit(projectRoot, ['rev-parse', 'HEAD']).trim(), headBefore
 const nestedWorkDir = path.join(projectRoot, 'local_data', 'workspace', 'admin', 'garden');
 fs.mkdirSync(nestedWorkDir, { recursive: true });
 fs.writeFileSync(path.join(nestedWorkDir, 'note.md'), 'research note\n');
-const nestedFiles = summarizeFileChanges([{
+const duplicateChanges = Array.from({ length: 8 }, (_, index) => ({
   feature_type: 'file_change',
   file_path: 'note.md',
-  timestamp: '2026-06-14T00:00:04.000Z',
-}], { workDir: nestedWorkDir, gitRoot: projectRoot });
+  timestamp: `2026-06-14T00:00:0${index}.000Z`,
+  source: 'codex.patch_apply_end',
+}));
+const nestedFiles = summarizeFileChanges(duplicateChanges, { workDir: nestedWorkDir, gitRoot: projectRoot });
+assert.strictEqual(nestedFiles[0].count, 8, 'same path must keep change count after existence cache');
 assert.deepStrictEqual(nestedFiles.map((file) => file.display_path), ['local_data/workspace/admin/garden/note.md']);
 const nestedDiff = gitDiffForFiles(nestedWorkDir, [nestedFiles[0].path], 'unstaged');
 assert.strictEqual(nestedDiff.diffs.length, 1);
@@ -216,6 +219,25 @@ assert.strictEqual(missingNested.diffs[0].ok, false);
 assert.match(missingNested.diffs[0].error, /当前工作区已找不到这个文件/);
 
 const sessionsRouteSource = fs.readFileSync(path.join(__dirname, '../backend/routes/sessions.ts'), 'utf8');
+const workspaceSource = fs.readFileSync(path.join(__dirname, '../backend/services/workspace.ts'), 'utf8');
+const sessionFeaturesSource = fs.readFileSync(path.join(__dirname, '../backend/services/session-features.ts'), 'utf8');
+assert.match(workspaceSource, /timeout:\s*5000/, 'gitTopLevel must time out instead of hanging spawnSync');
+assert.match(workspaceSource, /GIT_TIMEOUT|检测 Git 仓库超时/, 'git probe timeout must become a retryable error');
+assert.match(sessionFeaturesSource, /existsCache[\s\S]*normalizedCache/, 'summarizeFileChanges must cache path existence and normalization');
+assert.doesNotMatch(sessionFeaturesSource, /highlightAuto|git status|git add|git commit/, 'feature summarize must not scan the whole repo or write git');
+
+const filesRouteStart = sessionsRouteSource.indexOf("router.get('/:id/features/files'");
+const filesRouteEnd = sessionsRouteSource.indexOf("\n});", filesRouteStart);
+const filesRoute = sessionsRouteSource.slice(filesRouteStart, filesRouteEnd + 5);
+assert.match(filesRoute, /scanSessionFeatures\(jsonlPath\)/, 'files feature route must scan Session JSONL only');
+assert.match(filesRoute, /summarizeFileChanges\(scanned\.entries/, 'files feature route must summarize JSONL file features');
+assert.doesNotMatch(filesRoute, /gitDiffForFiles|git status|git add|git commit/, 'files list must not run git status/diff or write git');
+assert.match(
+  sessionsRouteSource,
+  /gitTopLevel\(workspace\.workDir\)[\s\S]*error: \(e as Error\)\.message/,
+  'git probe timeout must surface as workspace_error, not be swallowed',
+);
+
 const gitDiffRouteStart = sessionsRouteSource.indexOf("router.get('/:id/features/git-diff'");
 const gitDiffRouteEnd = sessionsRouteSource.indexOf("\n});", gitDiffRouteStart);
 const gitDiffRoute = sessionsRouteSource.slice(gitDiffRouteStart, gitDiffRouteEnd + 5);
