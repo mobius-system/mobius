@@ -70,7 +70,9 @@ export function HomeModelHarnessSelect({
     if (!projectId || options.length === 0) return
     if (userTouchedProjectRef.current === projectId && options.some(option => option.key === value)) return
     const preferred = resolveDefaultModelKey({ scopeLastModel: lastRememberedModel, projectDefaultModel, globalDefaultModel })
+    const fallbackPreferred = resolveDefaultModelKey({ projectDefaultModel, globalDefaultModel })
     const next = options.find(option => option.key === preferred)
+      || options.find(option => option.key === fallbackPreferred)
       || options.find(option => option.is_default)
       || options[0]
     if (next?.key && next.key !== value) onChange(next.key)

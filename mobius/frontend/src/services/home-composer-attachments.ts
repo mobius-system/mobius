@@ -25,7 +25,11 @@ export function isImageFile(file: File): boolean {
 
 function appendUniqueFile(target: File[], seen: Set<File>, signatures: Set<string>, file: File | null) {
   if (!file || seen.has(file)) return
-  const signature = [file.name, file.size, file.type, file.lastModified].join('\u0000')
+  // A single clipboard image is exposed through both DataTransfer.files and
+  // DataTransfer.items in some browsers. Calling getAsFile() may create a new
+  // File with a different lastModified value, so that timestamp cannot be part
+  // of the identity used to merge the two clipboard views.
+  const signature = [file.name, file.size, file.type].join('\u0000')
   if (signatures.has(signature)) return
   seen.add(file)
   signatures.add(signature)

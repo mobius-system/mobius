@@ -17,6 +17,7 @@ assert.match(homeSource, /disabled=\{!canRequestSend \|\| !selectedModel \|\| se
 assert.match(selectorSource, /api\('\/api\/sessions\/model-options'\)/, '组合选项必须来自统一模型目录接口')
 assert.match(selectorSource, /tmux-codex[\s\S]*Codex[\s\S]*tmux-claude-code[\s\S]*Claude Code[\s\S]*deepseek-harness[\s\S]*DeepSeek Harness/, '选择器必须明确展示对应 Harness')
 assert.match(selectorSource, /resolveDefaultModelKey\(\{ scopeLastModel: lastRememberedModel, projectDefaultModel, globalDefaultModel \}\)/, '选择器必须优先恢复上次模型，再遵循项目与系统默认')
+assert.match(selectorSource, /const fallbackPreferred = resolveDefaultModelKey\(\{ projectDefaultModel, globalDefaultModel \}\)[\s\S]*options\.find\(option => option\.key === fallbackPreferred\)/, '上次模型不可用时必须继续走项目与系统默认链')
 assert.match(createSource, /const requestedModel = String\(args\.model \|\| ''\)\.trim\(\)[\s\S]*const model = requestedModel \|\|/, '创建服务必须优先采用首页显式选择')
 
 console.log('home model and harness selector contract test passed')
