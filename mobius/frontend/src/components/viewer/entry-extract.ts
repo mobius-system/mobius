@@ -565,6 +565,8 @@ function parseCustomToolInput(raw: any): Record<string, any> | null {
     const patterns = [
       /(?:^|[,{])\s*(cmd|command|script|workdir|cwd|query|search_query|pattern|path|url)\s*:\s*"((?:\\.|[^"\\])*)"/g,
       /(?:^|[,{])\s*(cmd|command|script|workdir|cwd|query|search_query|pattern|path|url)\s*:\s*'((?:\\.|[^'\\])*)'/g,
+      /(?:^|[,{])\s*(query|search_query)\s*:\s*\[\s*"((?:\\.|[^"\\])*)"/g,
+      /(?:^|[,{])\s*(query|search_query)\s*:\s*\[\s*'((?:\\.|[^'\\])*)'/g,
     ]
     for (const fieldPattern of patterns) {
       let field: RegExpExecArray | null
