@@ -576,7 +576,7 @@ assert.match(railSource, /folder\.projectName\.toLowerCase\(\)\.includes\(normal
 assert.match(railSource, /item\.session_id[\s\S]*includes\(normalizedQuery\)/, '搜索必须支持直接匹配 session id')
 assert.match(railSource, /function relativeActivityTime[\s\S]*lastActiveTime\(item\)/, '会话行必须显示相对活跃时间')
 assert.match(railSource, /pollRecursive\([\s\S]*\/api\/tasks\/recent\?limit=100/, '会话轨必须轮询更新运行状态')
-assert.match(railSource, /containsActiveSession \|\| folder\.runningCount > 0\) return true/, '活动或运行中的项目文件夹必须保持展开')
+assert.match(railSource, /storedCollapseState !== undefined\) return !storedCollapseState[\s\S]*containsActiveSession \|\| folder\.runningCount > 0\) return true/, '项目文件夹必须优先尊重用户折叠选择，未保存选择时再自动展开活动项目')
 assert.doesNotMatch(railSource, /type (?:TimeBucket|ConversationTimeGroup)|group\w*ByTimeBucket/, '项目文件夹不得再额外套日期分组')
 assert.doesNotMatch(railSource, /(?:items|projectFolders)\.filter\([\s\S]{0,180}item\.project_id\s*(?:===|!==)\s*projectId/, 'projectId 不得再过滤会话列表')
 assert.doesNotMatch(railSource, /\{item\.project_name \|\| '未命名项目'\}/, '会话行不得重复显示项目副标题')
