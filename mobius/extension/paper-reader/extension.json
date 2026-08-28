@@ -1,9 +1,0 @@
-{
-  "name": "paper-reader",
-  "display_name": "论文阅读器",
-  "description": "沉浸式论文精读工作台：支持 arXiv 与本地 PDF 持久化导入、全文 Agent 问答、实时运行进度和富文本研究笔记。",
-  "version": "0.6.1",
-  "icon": "favicon.svg",
-  "schedule": [],
-  "project": { "sync": true, "default_hidden": false }
-}
