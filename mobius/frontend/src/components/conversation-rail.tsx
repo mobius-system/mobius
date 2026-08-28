@@ -290,11 +290,11 @@ export function ConversationRail({
 
   const renderRail = (drawer = false) => (
     <aside
-      className={`conversation-rail relative flex h-full min-h-0 w-[280px] flex-shrink-0 flex-col overflow-hidden ${drawer ? 'z-10 max-w-[calc(100vw-32px)] shadow-lg' : ''}`}
+      className={`conversation-rail relative flex h-full min-h-0 max-h-full w-[280px] flex-shrink-0 flex-col overflow-hidden ${drawer ? 'z-10 max-w-[calc(100vw-32px)] shadow-lg' : ''}`}
       style={{ width: 'var(--rail-width)', background: 'var(--surface-sidebar)' }}
       aria-label="最近会话"
     >
-      <div data-rail-slot="header" className="p-2">
+      <div data-rail-slot="header" className="flex-shrink-0 p-2">
         <div className="flex items-center gap-1">
           <button type="button" onClick={openHome} aria-label="回到 Home" title="回到 Home"
             className="workbench-control-md inline-flex min-w-0 flex-1 items-center gap-2 px-2 text-left hover:bg-[var(--surface-control-hover)]"
@@ -323,7 +323,7 @@ export function ConversationRail({
         </div>
       </div>
 
-      <div data-rail-slot="search" className={`${searchOpen ? 'block' : 'hidden'} border-b p-2`} style={{ borderColor: 'var(--border-default)' }}>
+      <div data-rail-slot="search" className={`${searchOpen ? 'block' : 'hidden'} flex-shrink-0 border-b p-2`} style={{ borderColor: 'var(--border-default)' }}>
         <label className="relative block">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
           <input
@@ -416,7 +416,7 @@ export function ConversationRail({
         )}
       </div>
 
-      <div data-rail-slot="bottom" className="relative p-2">
+      <div data-rail-slot="bottom" className="relative flex-shrink-0 p-2">
         {accountMenuOpen && (
           <div className="workbench-popover absolute bottom-11 left-2 right-2 border p-1" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-overlay)' }}>
             <div className="truncate px-2 py-2 text-[11px]" style={{ color: 'var(--text-primary)' }}>{user?.display_name || user?.id || userId}</div>
@@ -441,7 +441,7 @@ export function ConversationRail({
 
   return (
     <>
-      <div className="hidden h-full min-h-0 overflow-hidden xl:block">{renderRail()}</div>
+      <div className="hidden h-full min-h-0 max-h-full overflow-hidden xl:block">{renderRail()}</div>
       {drawerOpen && (
         <div className="workbench-layer-drawer fixed inset-x-0 bottom-0 top-[44px] xl:hidden" style={{ top: 'var(--workbench-topbar-height)' }} role="dialog" aria-modal="true" aria-label="历史会话">
           <button type="button" className="absolute inset-0" style={{ background: 'var(--surface-scrim)' }} onClick={closeDrawer} aria-label="关闭历史会话" />

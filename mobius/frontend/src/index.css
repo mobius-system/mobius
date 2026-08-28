@@ -1181,6 +1181,7 @@ label,
   display: grid;
   grid-template-columns: var(--rail-width) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
   overflow: hidden;
   background: var(--surface-sidebar);
 }
@@ -1188,6 +1189,8 @@ label,
 .workbench-shell__workspace {
   display: grid;
   grid-template-rows: var(--workbench-topbar-height) minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1211,6 +1214,8 @@ label,
 
 .workbench-shell__content {
   display: flex;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
