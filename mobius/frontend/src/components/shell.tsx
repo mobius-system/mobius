@@ -9,7 +9,7 @@ import { ProjectPathBindGate } from './project-path-bind-gate'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, ChevronRight, CircleDot, CircleQuestionMark, FlaskConical, History, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, CircleDot, CircleQuestionMark, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { pollRecursive } from '../services/polling'
@@ -25,6 +25,7 @@ import {
   projectPath,
   sessionPath,
 } from '../services/workbench-navigation'
+import { buildNormalModeTargetUrl, setLayoutMode, useLayoutMode } from '../services/layout-mode'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入)。三平台 (Win/Linux/mac) 统一: 顶栏右侧渲染
@@ -733,13 +734,14 @@ function RecentSessionsPanel({
 // 包含：Mobius logo、面包屑（user/project/issue）、搜索、主题切换、用户菜单
 // 管理员通过弹层（覆盖右侧主区域）
 // =====================================================================
-export function TopNav({ rightExtra, showHistory = false }: { rightExtra?: React.ReactNode; showHistory?: boolean } = {}) {
+export function WorkbenchTopNav({ rightExtra, showHistory = false }: { rightExtra?: React.ReactNode; showHistory?: boolean } = {}) {
   const {
-    user, currentProject, currentSession, branding, logout,
+    user, currentProject, currentIssue, currentResearch, currentSession, branding, logout,
   } = useStore()
   const params = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const layoutMode = useLayoutMode()
   const topnavDrag = useDesktopWindowDrag()
   const [showSearch, setShowSearch] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -758,6 +760,25 @@ export function TopNav({ rightExtra, showHistory = false }: { rightExtra?: React
   const projectContextId = projectParam || sessionProjectId || (!params.session ? currentProject?.id : undefined)
   const projectName = currentProject && currentProject.id === projectContextId ? currentProject.name : projectContextId
   void rightExtra
+
+  const switchLayoutMode = () => {
+    const nextMode = layoutMode === 'easy_mode' ? 'normal_mode' : 'easy_mode'
+    setLayoutMode(nextMode)
+    if (nextMode === 'normal_mode') {
+      navigate(buildNormalModeTargetUrl({
+        user: userParam,
+        projectId: (currentSession as any)?.project_id || projectContextId,
+        issueId: (currentSession as any)?.issue_id || currentIssue?.id,
+        researchId: (currentSession as any)?.research_id || currentResearch?.id,
+        scopeType: (currentSession as any)?.scope_type === 'research' || (currentSession as any)?.research_id ? 'research' : 'issue',
+        sessionId: currentSession?.session_id,
+      }))
+      return
+    }
+    navigate(currentSession?.session_id
+      ? sessionPath(userParam || '', currentSession.session_id)
+      : homePath(userParam || ''))
+  }
 
   const isPointerOnInteractive = (event: { target: EventTarget | null; nativeEvent: Event }): boolean => {
     const selector = 'button, a, input, select, textarea, [role="button"], [role="menuitem"], mobius-desktop-page-actions'
@@ -892,6 +913,13 @@ export function TopNav({ rightExtra, showHistory = false }: { rightExtra?: React
           style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
           <Plus className="h-3.5 w-3.5" /><span className={`hidden sm:inline ${showHistory ? 'xl:hidden' : ''}`}>新会话</span>
         </button>
+        <button type="button" onClick={switchLayoutMode} aria-label="切换到常规模式" title="切换到常规模式"
+          data-testid="layout-mode-switch"
+          className="workbench-control-md flex items-center gap-1.5 px-2.5 text-[12px] hover:bg-[var(--surface-control-hover)]"
+          style={{ color: 'var(--text-secondary)' }}>
+          <LayoutPanelTop className="h-3.5 w-3.5" />
+          <span className="hidden lg:inline">常规</span>
+        </button>
         <button ref={settingsButtonRef} type="button" onClick={event => openSettings(event.currentTarget)} aria-label="设置/更多" title="设置/更多"
           className="workbench-control-md flex w-8 items-center justify-center hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>
           <Sliders className="h-4 w-4" />
@@ -921,7 +949,7 @@ export function TopNav({ rightExtra, showHistory = false }: { rightExtra?: React
   )
 }
 
-function LegacyTopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
+export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const {
     user,
     theme,
@@ -971,6 +999,8 @@ function LegacyTopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const params = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const layoutMode = useLayoutMode()
+  const easyModeEnabled = layoutMode === 'easy_mode'
   const [showChangePw, setShowChangePw] = useState(false)
   const [showAimuxGuide, setShowAimuxGuide] = useState(false)
   const [showDesktopDownload, setShowDesktopDownload] = useState(false)
@@ -1072,6 +1102,26 @@ function LegacyTopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const issueParam = params.issue
   const researchParam = params.research
   const activeSessionId = new URLSearchParams(location.search).get('session') || undefined
+
+  const switchLayoutMode = () => {
+    const nextMode = easyModeEnabled ? 'normal_mode' : 'easy_mode'
+    setLayoutMode(nextMode)
+    setShowThemeMenu(false)
+    if (nextMode === 'normal_mode') {
+      navigate(buildNormalModeTargetUrl({
+        user: userParam,
+        projectId: (currentSession as any)?.project_id || projectParam,
+        issueId: (currentSession as any)?.issue_id || issueParam,
+        researchId: (currentSession as any)?.research_id || researchParam,
+        scopeType: (currentSession as any)?.scope_type === 'research' || (currentSession as any)?.research_id || researchParam ? 'research' : 'issue',
+        sessionId: currentSession?.session_id || activeSessionId,
+      }))
+      return
+    }
+    navigate(currentSession?.session_id
+      ? sessionPath(userParam || '', currentSession.session_id)
+      : homePath(userParam || ''))
+  }
 
   const projectName = currentProject?.name || projectParam
   const issueTitle = currentIssue?.title || issueParam
@@ -1535,6 +1585,40 @@ function LegacyTopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                         background: assistantBubbleEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
                         transform: assistantBubbleEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
                         boxShadow: assistantBubbleEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
+                      }}
+                    />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="简易模式"
+                  aria-checked={easyModeEnabled}
+                  data-testid="easy-mode-switch"
+                  onClick={switchLayoutMode}
+                  className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  <LayoutPanelTop className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12px] font-semibold leading-4">简易模式</span>
+                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                      精简会话界面 · {easyModeEnabled ? '已开启' : '已关闭'}
+                    </span>
+                  </span>
+                  <span
+                    className="relative h-5 w-9 shrink-0 rounded-full border transition-colors"
+                    style={{
+                      background: easyModeEnabled ? 'color-mix(in srgb, var(--accent-primary) 28%, transparent)' : 'var(--input-bg)',
+                      borderColor: easyModeEnabled ? 'color-mix(in srgb, var(--accent-primary) 46%, var(--border-color))' : 'var(--border-color-strong)',
+                    }}
+                  >
+                    <span
+                      className="absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-transform"
+                      style={{
+                        left: 2,
+                        background: easyModeEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
+                        transform: easyModeEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
                       }}
                     />
                   </span>

@@ -11,6 +11,8 @@ import { DesktopTitleBar } from './components/window-controls'
 import { WorkbenchShell } from './components/workbench-shell'
 import { AdminOverlayHost } from './components/admin-overlay'
 import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services/handle-stale-chunk'
+import { buildNormalModeTargetUrl, useLayoutMode } from './services/layout-mode'
+import { LayoutModeChoiceModal } from './components/layout-mode-choice-modal'
 import {
   homePath,
   legacySessionRedirect,
@@ -23,6 +25,7 @@ const Login = lazyWithRetry(() => import('./pages/Login'))
 const Welcome = lazyWithRetry(() => import('./pages/Welcome'))
 const UserPage = lazyWithRetry(() => import('./pages/UserPage'))
 const WorkPage = lazyWithRetry(() => import('./pages/WorkPage'))
+const EasyModePage = lazyWithRetry(() => import('./pages/EasyModePage'))
 const MobiusOverviewPage = lazyWithRetry(() => import('./pages/MobiusOverviewPage'))
 const MobiusOverviewClusterPage = lazyWithRetry(() => import('./pages/MobiusOverviewClusterPage'))
 const ProjectPage = lazyWithRetry(() => import('./pages/ProjectPage'))
@@ -431,14 +434,10 @@ function WorkbenchRouteLayout() {
 }
 
 function EasyModeCompatibility() {
-  const params = useParams()
   const location = useLocation()
   const { user } = useStore()
-  const userId = params.user || user?.id || ''
-  const redirect = legacySessionRedirect(userId, location.search, location.hash)
-  return redirect
-    ? <Navigate to={redirect} replace />
-    : <Navigate to={`${homePath(userId)}${location.search}${location.hash}`} replace />
+  const userId = user?.id || ''
+  return <Navigate to={`/u/${encodeURIComponent(userId)}/easy_mode${location.search}${location.hash}`} replace />
 }
 
 function IssueRouteCompatibility() {
@@ -448,10 +447,58 @@ function IssueRouteCompatibility() {
   return redirect ? <Navigate to={redirect} replace /> : <IssuePage />
 }
 
+// 与 origin/main 保持一致：只有用户首页和 Issue 页需要在首次访问时选择模式。
+// 项目、Research、Overview 等高级页不受简易模式接管。
+function layoutModeTargetPath(pathname: string) {
+  const userHome = pathname.match(/^\/u\/([^/]+)\/?$/)
+  if (userHome) return { user: userHome[1] }
+  const issuePage = pathname.match(/^\/u\/([^/]+)\/p\/[^/]+\/i\/[^/]+\/?$/)
+  if (issuePage) return { user: issuePage[1] }
+  return null
+}
+
+function NormalSessionRedirect() {
+  const params = useParams()
+  const { currentSession } = useStore()
+  const userId = params.user || ''
+  const sessionId = params.session || ''
+  const [target, setTarget] = useState('')
+
+  useEffect(() => {
+    if (!sessionId) {
+      setTarget(homePath(userId))
+      return
+    }
+    let cancelled = false
+    const resolveTarget = (session: any) => {
+      if (cancelled) return
+      setTarget(buildNormalModeTargetUrl({
+        user: userId,
+        projectId: session?.project_id,
+        issueId: session?.issue_id,
+        researchId: session?.research_id,
+        scopeType: session?.scope_type === 'research' || session?.research_id ? 'research' : 'issue',
+        sessionId,
+      }))
+    }
+    if (currentSession?.session_id === sessionId) {
+      resolveTarget(currentSession)
+      return () => { cancelled = true }
+    }
+    api(`/api/tasks/${encodeURIComponent(sessionId)}`)
+      .then(resolveTarget)
+      .catch(() => { if (!cancelled) setTarget(homePath(userId)) })
+    return () => { cancelled = true }
+  }, [currentSession, sessionId, userId])
+
+  return target ? <Navigate to={target} replace /> : <RouteFallback />
+}
+
 function AuthenticatedApp() {
   const { user, assistantBubbleEnabled } = useStore()
   const location = useLocation()
   const clientRuntime = detectClientRuntime()
+  const layoutMode = useLayoutMode()
 
   useEffect(() => startTextRedactionRuntime(), [])
 
@@ -460,26 +507,52 @@ function AuthenticatedApp() {
   if (location.pathname === '/' || location.pathname === '') {
     return <Navigate to={homePath(user.id)} replace />
   }
+  const modeTarget = layoutModeTargetPath(location.pathname)
+  if (modeTarget && !layoutMode) {
+    return (
+      <>
+        <RouteFallback />
+        <LayoutModeChoiceModal />
+      </>
+    )
+  }
   return (
     <>
       <StaleChunkErrorBoundary>
         <Suspense fallback={<RouteFallback />}>
-          <Routes>
-            <Route path="/" element={<RootRedirect />} />
-            <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
-            <Route path="/u/:user" element={<WorkbenchRouteLayout />}>
-              <Route index element={<UserPage />} />
-              <Route path="s/:session" element={<WorkPage />} />
-              <Route path="p/:project/i/:issue" element={<IssueRouteCompatibility />} />
-            </Route>
-            <Route path="/easy_mode" element={<EasyModeCompatibility />} />
-            <Route path="/u/:user/easy_mode" element={<EasyModeCompatibility />} />
-            <Route path="/u/:user/mobius_overview" element={<MobiusOverviewPage />} />
-            <Route path="/u/:user/mobius_overview_cluster" element={<MobiusOverviewClusterPage />} />
-            <Route path="/u/:user/p/:project" element={<ProjectPage />} />
-            <Route path="/u/:user/p/:project/r/:research" element={<ResearchPage />} />
-            <Route path="*" element={<RootRedirect />} />
-          </Routes>
+          {layoutMode === 'easy_mode' ? (
+            <Routes>
+              <Route path="/" element={<RootRedirect />} />
+              <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
+              <Route path="/u/:user" element={<WorkbenchRouteLayout />}>
+                <Route index element={<UserPage />} />
+                <Route path="s/:session" element={<WorkPage />} />
+                <Route path="p/:project/i/:issue" element={<IssueRouteCompatibility />} />
+              </Route>
+              <Route path="/easy_mode" element={<EasyModeCompatibility />} />
+              <Route path="/u/:user/easy_mode" element={<EasyModePage />} />
+              <Route path="/u/:user/mobius_overview" element={<MobiusOverviewPage />} />
+              <Route path="/u/:user/mobius_overview_cluster" element={<MobiusOverviewClusterPage />} />
+              <Route path="/u/:user/p/:project" element={<ProjectPage />} />
+              <Route path="/u/:user/p/:project/r/:research" element={<ResearchPage />} />
+              <Route path="*" element={<RootRedirect />} />
+            </Routes>
+          ) : (
+            <Routes>
+              <Route path="/" element={<RootRedirect />} />
+              <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
+              <Route path="/easy_mode" element={<EasyModeCompatibility />} />
+              <Route path="/u/:user/easy_mode" element={<EasyModePage />} />
+              <Route path="/u/:user" element={<UserPage />} />
+              <Route path="/u/:user/s/:session" element={<NormalSessionRedirect />} />
+              <Route path="/u/:user/mobius_overview" element={<MobiusOverviewPage />} />
+              <Route path="/u/:user/mobius_overview_cluster" element={<MobiusOverviewClusterPage />} />
+              <Route path="/u/:user/p/:project" element={<ProjectPage />} />
+              <Route path="/u/:user/p/:project/i/:issue" element={<IssuePage />} />
+              <Route path="/u/:user/p/:project/r/:research" element={<ResearchPage />} />
+              <Route path="*" element={<RootRedirect />} />
+            </Routes>
+          )}
         </Suspense>
       </StaleChunkErrorBoundary>
       <SelfIterationToast />

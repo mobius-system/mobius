@@ -26,6 +26,7 @@ import {
   type ConversationCreationCheckpoint,
 } from '../services/create-conversation'
 import { logUiEvent } from '../services/ui-observability'
+import { useLayoutMode } from '../services/layout-mode'
 import {
   focusWorkbenchTarget,
   navigateToWorkbench,
@@ -160,7 +161,7 @@ function EmptyConversationComposer({
 
 // 默认任务页只承担“会话轨 + 会话时间线”。旧的任务概览、项目文件卡和
 // 两套会话树仍保留在本文件的 LegacyIssuePage 中，但不进入默认渲染路径。
-export default function IssuePage() {
+function EasyIssuePage() {
   const params = useParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -279,7 +280,7 @@ export default function IssuePage() {
   )
 }
 
-function LegacyIssuePage() {
+export function LegacyIssuePage() {
   const params = useParams()
   const [search, setSearch] = useSearchParams()
   const navigate = useNavigate()
@@ -1158,4 +1159,9 @@ function SessionSwitcher({ sessions, currentId, onPick }: {
       )}
     </div>
   )
+}
+
+export default function IssuePage() {
+  const layoutMode = useLayoutMode()
+  return layoutMode === 'easy_mode' ? <EasyIssuePage /> : <LegacyIssuePage />
 }

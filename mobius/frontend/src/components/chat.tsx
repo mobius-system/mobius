@@ -2170,7 +2170,7 @@ type WorkspaceEditorControl = {
   supportsFileLocation?: boolean
 }
 
-export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive = true, toolOrigin = 'session', onNewSession, easyProjectControl, workspaceEditor }: {
+export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeActive = true, toolOrigin = 'session', onNewSession, easyProjectControl, workspaceEditor }: {
   layout?: 'default' | 'stacked' | 'easy'
   chrome?: 'inline' | 'shell'
   shellChromeActive?: boolean
@@ -5262,7 +5262,16 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
           )}
           <div
             data-tour="session-chat-input"
-            className="workbench-composer relative transition-colors"
+            className={layout === 'easy'
+              ? 'workbench-composer relative transition-colors'
+              : 'relative rounded-lg transition-all focus-within:ring-2 focus-within:ring-blue-500/15'}
+            style={layout === 'easy' ? undefined : {
+              background: 'var(--input-bg)',
+              border: '1px solid var(--input-border)',
+              boxShadow: theme !== 'light'
+                ? '0 2px 12px rgba(0,0,0,0.35)'
+                : '0 2px 12px rgba(0,0,0,0.06)',
+            }}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -5359,7 +5368,7 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
                 style={{
                   height: layout === 'easy' ? easyComposerLayout.height : inputHeight,
                   minHeight: layout === 'easy' ? easyComposerLayout.minHeight : 60,
-                  maxHeight: layout === 'easy' ? easyComposerLayout.maxHeight : undefined,
+                  maxHeight: layout === 'easy' ? easyComposerLayout.maxHeight : '70vh',
                   overflowY: layout === 'easy' ? easyComposerLayout.overflowY : 'auto',
                   color: 'var(--text-primary)',
                 }}

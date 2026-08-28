@@ -32,6 +32,7 @@ import { SkillsManager } from '../components/skills'
 import { MemoriesManager } from '../components/memories'
 import { ResizablePanel } from '../components/resizable-panel'
 import { SearchMatchText } from '../components/search-match-text'
+import { useLayoutMode } from '../services/layout-mode'
 import { useComposerInputLayout, useComposerMobileLayout } from '../components/useComposerInputLayout'
 import { HomeModelHarnessSelect } from '../components/home-model-harness-select'
 import {
@@ -535,7 +536,7 @@ function HomeSurface() {
         )
 }
 
-function AllProjectsView() {
+export function AllProjectsView() {
   const params = useParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -1433,5 +1434,8 @@ function PlaceholderView({ icon, title, desc }: { icon: ReactNode; title: string
 
 export default function UserPage() {
   const [searchParams] = useSearchParams()
-  return searchParams.get('view') === 'projects' ? <AllProjectsView /> : <HomeSurface />
+  const layoutMode = useLayoutMode()
+  return layoutMode === 'easy_mode' && searchParams.get('view') !== 'projects'
+    ? <HomeSurface />
+    : <AllProjectsView />
 }

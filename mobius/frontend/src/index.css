@@ -217,7 +217,6 @@ label,
   --primary: var(--accent-primary);
 
   --chrome-height: 44px;
-  --workbench-topbar-height: 38px;
   --rail-width: 280px;
   --tool-drawer-width: 230px;
   --file-preview-width: clamp(520px, 48vw, 820px);
@@ -1171,6 +1170,11 @@ label,
 .workbench-modal {
   border-radius: var(--radius-modal);
   box-shadow: var(--shadow-overlay);
+}
+
+.mobius-workbench,
+[data-page="easy-mode"] {
+  --workbench-topbar-height: 38px;
 }
 
 .workbench-shell {

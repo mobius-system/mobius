@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { useStore, api } from '../store'
+import { buildNormalModeTargetUrl, useLayoutMode } from '../services/layout-mode'
 import { pollRecursive } from '../services/polling'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 import {
@@ -28,7 +29,7 @@ import {
 import { ChatArea } from '../components/chat'
 import { GlobalCreateRoot, type CreateKind } from '../components/global-create'
 import { ResizablePanel } from '../components/resizable-panel'
-import { Loading, TopNav, timeAgoPrecise } from '../components/shell'
+import { Loading, WorkbenchTopNav, timeAgoPrecise } from '../components/shell'
 import { ToastCard } from '../components/toast-card'
 
 type RecentSession = {
@@ -130,6 +131,7 @@ export default function EasyModePage() {
   const [collapsedSessionGroups, setCollapsedSessionGroups] = useState<Set<string>>(() => new Set())
   const projectFilterButtonRef = useRef<HTMLButtonElement | null>(null)
   const navigate = useNavigate()
+  const layoutMode = useLayoutMode()
   const sessionParam = search.get('session') || ''
   const projectParam = search.get('project') || ''
   const workView = (['recent', 'running', 'completed'].includes(search.get('view') || '')
@@ -234,6 +236,22 @@ export default function EasyModePage() {
       controller.abort()
     }
   }, [normalizedSessionQuery])
+
+  useEffect(() => {
+    if (!layoutMode || layoutMode === 'easy_mode' || loading) return
+    const ctx = currentSession
+      || (sessionParam ? sessions.find(session => session.session_id === sessionParam) : null)
+      || sessions[0]
+      || null
+    navigate(buildNormalModeTargetUrl({
+      user: params.user,
+      projectId: ctx?.project_id,
+      issueId: ctx?.issue_id,
+      researchId: ctx?.research_id,
+      scopeType: ctx?.scope_type ?? null,
+      sessionId: ctx?.session_id || sessionParam || undefined,
+    }), { replace: true })
+  }, [layoutMode, params.user, navigate, currentSession, sessions, sessionParam, loading])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -471,7 +489,7 @@ export default function EasyModePage() {
 
   return (
     <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)' }} data-page="easy-mode">
-      <TopNav />
+      <WorkbenchTopNav />
       <div className="flex min-h-0 flex-1">
         <ResizablePanel
           storageKey="mobius:ui:sidebar:easy-mode-recent"

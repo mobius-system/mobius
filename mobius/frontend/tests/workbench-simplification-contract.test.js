@@ -33,10 +33,12 @@ const windowControlsSource = readSource('src/components/window-controls.tsx')
 const welcomeSource = readSource('src/pages/Welcome.tsx')
 const userPageSource = readSource('src/pages/UserPage.tsx')
 const workPageSource = readSource('src/pages/WorkPage.tsx')
+const easyModePageSource = readSource('src/pages/EasyModePage.tsx')
 const issuePageSource = readSource('src/pages/IssuePage.tsx')
 const researchPageSource = readSource('src/pages/ResearchPage.tsx')
 const projectPageSource = readSource('src/pages/ProjectPage.tsx')
 const navigationSource = readSource('src/services/workbench-navigation.ts')
+const layoutModeSource = readSource('src/services/layout-mode.ts')
 const cssSource = readSource('src/index.css')
 const easyJsonlCssSource = readSource('src/components/easy-jsonl/easy-jsonl.css')
 const easyJsonlViewSource = readSource('src/components/easy-jsonl/EasyJsonlView.tsx')
@@ -49,17 +51,23 @@ function sourceBetween(source, startMarker, endMarker, label) {
   return source.slice(start, end)
 }
 
-const defaultTopNavSource = sourceBetween(
+const workbenchTopNavSource = sourceBetween(
   shellSource,
+  'export function WorkbenchTopNav',
   'export function TopNav',
-  'function LegacyTopNav',
-  '默认 TopNav',
+  '简易模式 TopNav',
 )
-const defaultIssuePageSource = sourceBetween(
+const easyIssuePageSource = sourceBetween(
   issuePageSource,
-  'export default function IssuePage',
-  'function LegacyIssuePage',
-  '默认 IssuePage',
+  'function EasyIssuePage',
+  'export function LegacyIssuePage',
+  '简易 IssuePage',
+)
+const legacyIssuePageSource = sourceBetween(
+  issuePageSource,
+  'export function LegacyIssuePage',
+  'function WorkspacePaneLoading',
+  '常规 IssuePage',
 )
 const emptyIssueComposerSource = sourceBetween(
   issuePageSource,
@@ -78,6 +86,18 @@ const workbenchRouteLayoutSource = sourceBetween(
   'function WorkbenchRouteLayout',
   'function EasyModeCompatibility',
   '共享工作台路由层',
+)
+const easyModeRoutesSource = sourceBetween(
+  appSource,
+  "layoutMode === 'easy_mode' ? (",
+  '          ) : (',
+  '简易模式路由',
+)
+const normalModeRoutesSource = sourceBetween(
+  appSource,
+  '          ) : (\n            <Routes>',
+  '          )}\n        </Suspense>',
+  '常规模式路由',
 )
 const issueCompatibilitySource = sourceBetween(
   appSource,
@@ -249,16 +269,26 @@ assert.match(easyJsonlCssSource, /\.easy-jsonl-activity, \.easy-jsonl-live \{[^}
 assert.match(easyJsonlCssSource, /\.easy-jsonl-activity__summary \{[\s\S]*padding:\s*5px 10px 5px 28px/, '折叠活动摘要必须使用 Codex 式芯片内边距')
 assert.doesNotMatch(easyJsonlCssSource, /#22c55e|#4ade80/i, '简易时间线不得硬编码完成态绿色')
 
-// P0/P1：默认入口与短路由，不再要求用户选择布局模式。
-assert.doesNotMatch(appSource, /LayoutModeChoiceModal/, 'App.tsx 不得再调用或挂载布局模式选择弹窗')
-assert.match(appSource, /<Route path="\/u\/:user" element=\{<WorkbenchRouteLayout \/>\}>[\s\S]*<Route path="s\/:session" element=\{<WorkPage \/>\} \/>/, 'App.tsx 必须在共享工作台路由层挂载统一会话短路由')
+// 双模式入口：首次选择、简易工作台与常规工作台必须各走自己的渲染路径。
+assert.match(appSource, /modeTarget && !layoutMode[\s\S]*<LayoutModeChoiceModal \/>/, '首页或 Issue 缺 layout_mode 时必须挂载布局模式选择弹窗')
+assert.match(easyModeRoutesSource, /<Route path="\/u\/:user" element=\{<WorkbenchRouteLayout \/>\}>[\s\S]*<Route path="s\/:session" element=\{<WorkPage \/>\} \/>/, '简易模式必须在共享工作台路由层挂载会话短路由')
+assert.match(easyModeRoutesSource, /<Route path="\/u\/:user\/easy_mode" element=\{<EasyModePage \/>\} \/>/, '简易模式必须把用户 easy_mode 路由挂到 EasyModePage')
+assert.match(normalModeRoutesSource, /<Route path="\/u\/:user" element=\{<UserPage \/>\} \/>/, '常规模式用户首页必须直接渲染 UserPage')
+assert.match(normalModeRoutesSource, /<Route path="\/u\/:user\/p\/:project\/i\/:issue" element=\{<IssuePage \/>\} \/>/, '常规模式 Issue 必须直接渲染模式感知的 IssuePage')
+assert.match(normalModeRoutesSource, /<Route path="\/u\/:user\/s\/:session" element=\{<NormalSessionRedirect \/>\} \/>/, '常规模式短会话必须先还原到 Issue 或 Research URL')
+assert.doesNotMatch(normalModeRoutesSource, /WorkbenchRouteLayout|WorkbenchShell|WorkPage|IssueRouteCompatibility/, '常规模式的 User、Issue、Session 不得进入精简工作台壳')
+assert.match(appSource, /function NormalSessionRedirect\([\s\S]*buildNormalModeTargetUrl\([\s\S]*sessionId/, '常规短会话重定向必须使用 buildNormalModeTargetUrl 并保留 session')
 assert.match(appSource, /<Route path="\/easy_mode" element=\{<EasyModeCompatibility \/>\} \/>/, 'App.tsx 必须保留根 easy_mode 兼容入口')
-assert.match(appSource, /<Route path="\/u\/:user\/easy_mode" element=\{<EasyModeCompatibility \/>\} \/>/, 'App.tsx 必须保留用户 easy_mode 兼容入口')
-assert.match(easyCompatibilitySource, /legacySessionRedirect\(userId, location\.search, location\.hash\)[\s\S]*<Navigate to=\{redirect\}/, 'easy_mode 的 session 参数必须通过 canonical helper 跳转到统一短路由')
-assert.match(issueCompatibilitySource, /legacySessionRedirect\(params\.user \|\| '', location\.search, location\.hash\)/, 'Issue 兼容路由必须通过 canonical helper 读取旧 session 参数')
-assert.match(issueCompatibilitySource, /return redirect \? <Navigate to=\{redirect\} replace \/> : <IssuePage \/>/, '没有 session 的旧 Issue 路由必须继续渲染默认 IssuePage')
-assert.doesNotMatch(appSource, /EasyModePage/, 'App.tsx 不得重新引用 EasyModePage')
-assert.doesNotMatch(appSource, /LegacyIssuePage/, 'App.tsx 不得把 LegacyIssuePage 挂回默认路由')
+assert.match(easyCompatibilitySource, /\/u\/\$\{encodeURIComponent\(userId\)\}\/easy_mode\$\{location\.search\}\$\{location\.hash\}/, '根 easy_mode 必须兼容跳到用户 EasyModePage 并保留查询与 hash')
+assert.match(issueCompatibilitySource, /legacySessionRedirect\(params\.user \|\| '', location\.search, location\.hash\)/, '简易 Issue 兼容路由必须把旧 session 参数转成会话短路由')
+assert.match(issueCompatibilitySource, /return redirect \? <Navigate to=\{redirect\} replace \/> : <IssuePage \/>/, '简易 Issue 没有 session 时必须继续渲染模式感知的 IssuePage')
+
+for (const exportedApi of ['LAYOUT_MODE_CHANGE_EVENT', 'setLayoutMode', 'useLayoutMode', 'buildNormalModeTargetUrl']) {
+  assert.match(layoutModeSource, new RegExp(`export (?:const|function) ${exportedApi}`), `layout-mode.ts 必须导出 ${exportedApi}`)
+}
+assert.match(layoutModeSource, /LAYOUT_MODE_STORAGE_KEY = 'layout_mode'/, '布局模式存储 key 不得变化')
+assert.match(issuePageSource, /export default function IssuePage\([\s\S]*layoutMode === 'easy_mode' \? <EasyIssuePage \/> : <LegacyIssuePage \/>/, 'IssuePage 必须按模式切换简易实现与 LegacyIssuePage')
+assert.match(userPageSource, /layoutMode === 'easy_mode'[\s\S]*<HomeSurface \/>[\s\S]*<AllProjectsView \/>/, 'UserPage 必须让简易模式进入 HomeSurface、常规模式进入项目列表')
 
 // Web 默认首页是当前用户主页；Welcome 只保留显式路由和设置中的连接/导入入口。
 assert.match(appSource, /return <Navigate to=\{homePath\(user\.id\)\} replace \/>/, '根路径必须通过 canonical helper 跳转到当前用户主页')
@@ -266,12 +296,14 @@ assert.match(appSource, /<Route path="\/welcome"/, 'Welcome 兼容路由必须�
 assert.doesNotMatch(appSource, /<Navigate to=[^>]*\/welcome/, '默认 Web 导航不得自动跳转到 Welcome')
 assert.match(settingsSource, /label="连接 \/ 导入向导"[\s\S]*go\('\/welcome', true\)/, 'Welcome 必须从设置高级区作为连接/导入次级入口可达')
 
-// P0-S1/S2：默认工作台使用 36–40px 单层 chrome，账户与 Settings 固定在 Rail bottom。
+// 简易工作台使用 36–40px 单层 chrome，且变量不能污染常规页面。
 for (const label of ['历史', '搜索', '新会话']) {
   assert.match(workbenchShellSource, new RegExp(`aria-label="${label}"`), `共享主壳必须提供「${label}」入口`)
 }
 const workbenchTopbarHeight = Number(cssSource.match(/--workbench-topbar-height:\s*(\d+)px;/)?.[1])
-assert.ok(workbenchTopbarHeight >= 36 && workbenchTopbarHeight <= 40, '共享主壳顶栏必须保持在 36–40px')
+assert.ok(workbenchTopbarHeight >= 36 && workbenchTopbarHeight <= 40, '简易主壳顶栏必须保持在 36–40px')
+assert.doesNotMatch(rootThemeSource, /--workbench-topbar-height/, '38px 工作台顶栏变量不得成为正常模式的全局默认')
+assert.match(cssSource, /\.mobius-workbench,[\s\S]*\[data-page="easy-mode"\][\s\S]*--workbench-topbar-height:\s*38px/, '38px 顶栏变量必须只挂在简易工作台或 EasyModePage 作用域')
 assert.match(cssSource, /--rail-width:\s*280px;/, '桌面 Rail 默认宽度必须是 280px')
 assert.doesNotMatch(homeSurfaceSource, /<TopNav|<ConversationRail/, 'Home 不得再手写 TopNav + ConversationRail 外壳')
 assert.doesNotMatch(workPageSource, /<TopNav|<ConversationRail/, 'Session 不得再手写 TopNav + ConversationRail 外壳')
@@ -280,14 +312,16 @@ for (const slot of ['header', 'search', 'body', 'bottom']) {
 }
 assert.match(railSource, /data-rail-slot="bottom"[\s\S]*aria-label="账户"[\s\S]*aria-label="设置"/, '账户与设置必须位于 Rail bottom')
 assert.match(workbenchShellSource, /returnFocusRef=\{settingsReturnFocusRef\}/, 'Settings 关闭后必须恢复 Rail 触发焦点')
-assert.equal((shellSource.match(/<LegacyTopNav\b/g) || []).length, 0, 'LegacyTopNav 可以保留定义，但不得被任何默认表面挂载')
+assert.match(workbenchTopNavSource, /setLayoutMode\(nextMode\)[\s\S]*buildNormalModeTargetUrl[\s\S]*切换到常规模式/, '简易 TopNav 切到常规模式时必须按会话上下文构造目标 URL')
+assert.match(shellSource, /export function TopNav[\s\S]*data-testid="easy-mode-switch"/, '常规完整 TopNav 必须恢复简易/常规切换')
+assert.match(easyModePageSource, /<WorkbenchTopNav \/>/, 'EasyModePage 必须使用简易工作台 TopNav')
 
-// Home / Session / 默认 Issue 必须是同一父路由下的 Main slot，页面自身不能重建壳。
-assert.match(appSource, /<Route path="\/u\/:user" element=\{<WorkbenchRouteLayout \/>\}>[\s\S]*<Route index element=\{<UserPage \/>\} \/>[\s\S]*<Route path="s\/:session" element=\{<WorkPage \/>\} \/>[\s\S]*<Route path="p\/:project\/i\/:issue" element=\{<IssueRouteCompatibility \/>\} \/>/, 'Home、Session、默认 Issue 必须挂在同一个持久化父路由下')
+// 简易 Home / Session / Issue 必须是同一父路由下的 Main slot，页面自身不能重建壳。
+assert.match(easyModeRoutesSource, /<Route path="\/u\/:user" element=\{<WorkbenchRouteLayout \/>\}>[\s\S]*<Route index element=\{<UserPage \/>\} \/>[\s\S]*<Route path="s\/:session" element=\{<WorkPage \/>\} \/>[\s\S]*<Route path="p\/:project\/i\/:issue" element=\{<IssueRouteCompatibility \/>\} \/>/, '简易 Home、Session、Issue 必须挂在同一个持久化父路由下')
 assert.equal((workbenchRouteLayoutSource.match(/<WorkbenchShell\b/g) || []).length, 1, '共享路由层只能创建一个 WorkbenchShell 实例')
 assert.match(workbenchRouteLayoutSource, /<WorkbenchShell[\s\S]*<Suspense fallback=\{<WorkbenchMainFallback \/>\}>[\s\S]*<Outlet \/>[\s\S]*<\/WorkbenchShell>/, 'WorkbenchShell 必须持有稳定 chrome，只由 Outlet 替换 Main slot')
 assert.match(workbenchRouteLayoutSource, /<Suspense fallback=\{<WorkbenchMainFallback \/>\}>[\s\S]*<Outlet \/>/, '懒加载页面时必须保留主壳，只替换 Main slot fallback')
-for (const [label, source] of [['Home', homeSurfaceSource], ['Session', workPageSource], ['Issue', defaultIssuePageSource]]) {
+for (const [label, source] of [['Home', homeSurfaceSource], ['Session', workPageSource], ['Issue', easyIssuePageSource]]) {
   assert.doesNotMatch(source, /<WorkbenchShell/, `${label} 页面自身不得重建 WorkbenchShell`)
 }
 assert.match(workbenchShellSource, /<ConversationRail[\s\S]*workbench-shell__topbar[\s\S]*workbench-shell__main[\s\S]*workbench-shell__preview[\s\S]*workbench-shell__right[\s\S]*workbench-shell__dock/, 'WorkbenchShell 必须按 sidebar/topbar/main/preview/right/dock 组合')
@@ -296,6 +330,12 @@ for (const slot of ['Topbar', 'Preview', 'Right', 'Dock']) {
   assert.match(workbenchShellSource, new RegExp(`const set${slot}Target = useCallback`), `WorkbenchShell ${slot} 槽位必须使用稳定 callback ref`)
 }
 assert.match(workPageSource, /data-workbench-chat-host[\s\S]*data-workbench-editor-host[\s\S]*data-workbench-chat-instance="primary"[\s\S]*hidden=\{!activeSessionLoaded\}[\s\S]*<ChatArea[\s\S]*layout="easy"[\s\S]*chrome="shell"[\s\S]*shellChromeActive=\{activeSessionLoaded\}[\s\S]*workspaceEditor=/, '默认 Session 必须把按需编辑器宿主与唯一 easy ChatArea 放在稳定槽位，并在加载期隐藏 shell chrome')
+assert.match(easyModePageSource, /<ChatArea[\s\S]*layout="easy"/, 'EasyModePage 必须显式使用 easy ChatArea')
+assert.match(easyIssuePageSource, /<ChatArea layout="easy"/, '简易 Issue 必须显式使用 easy ChatArea')
+assert.match(legacyIssuePageSource, /layout=\{\(useEditorChat \|\| useCodeConversation\) \? 'stacked' : 'default'\}/, '常规 Issue 必须只使用 default / stacked ChatArea')
+assert.match(chatSource, /export function ChatArea\(\{ layout = 'default'/, 'ChatArea 默认布局必须恢复为 default')
+assert.match(chatSource, /variant=\{layout === 'easy' \? 'easy' : 'standard'\}/, '只有 easy ChatArea 可以使用 easy JSONL，常规布局必须使用 standard')
+assert.match(chatSource, /layout === 'easy' && shellChromeActive[\s\S]*WorkbenchShellPortal slot="topbar"/, 'WorkbenchShellPortal 的薄会话顶栏必须受 layout === easy 门槛保护')
 assert.match(easySessionChromeSource, /workbench-session-topbar[\s\S]*data-testid="easy-session-context"/, '默认 Session 会话头必须进入共享薄 shell topbar')
 assert.match(easySessionChromeSource, /aria-label="工具"[\s\S]*aria-controls=\{chrome === 'shell' \? 'session-tool-drawer'[\s\S]*<Wrench/, '默认 Session 只保留一个无文字 Tool Drawer 控制器')
 assert.match(easySessionChromeSource, /aria-label="当前会话标题"[\s\S]*currentSession\?\.name \|\| currentTask\?\.name \|\| sessionId/, '默认 Session 顶栏主信息只能是会话标题')
@@ -318,7 +358,7 @@ assert.match(composerInputLayoutSource, /scrollHeight > maxHeight \? 'auto' : 'h
 assert.match(chatSource, /useComposerInputLayout\(\{[\s\S]*textareaRef: inputRef,[\s\S]*value: input,[\s\S]*expanded: inputExpanded,[\s\S]*enabled: layout === 'easy'/, 'easy Session Composer 必须使用共享输入高度策略')
 assert.match(chatSource, /data-composer-expand-toggle[\s\S]*inputExpanded \? <ChevronDown[\s\S]*<ChevronUp/, 'easy Session Composer 必须提供内联 chevron 展开/收起按钮')
 assert.match(chatSource, /\{inputExpanded && layout !== 'easy' && \(/, '长文本 modal 只能保留给非 easy 布局')
-assert.doesNotMatch(chatSource, /maxHeight:\s*'70vh'/, 'easy Composer 不得再使用 70vh 高度路径')
+assert.match(chatSource, /maxHeight: layout === 'easy' \? easyComposerLayout\.maxHeight : '70vh'/, 'easy Composer 必须使用动态高度，常规 Composer 必须保留原 70vh 上限')
 assert.match(homeSurfaceSource, /useComposerInputLayout\(\{[\s\S]*textareaRef: composerRef,[\s\S]*value: prompt,[\s\S]*expanded: composerExpanded,[\s\S]*isMobile: isComposerMobile/, 'Home Composer 必须复用共享输入高度策略')
 assert.match(homeSurfaceSource, /const \[composerExpanded, setComposerExpanded\] = useState\(false\)/, 'Home Composer 必须默认折叠，避免空态触发 180px 展开下限')
 assert.match(homeSurfaceSource, /data-home-composer-expand-toggle[\s\S]*ChevronDown[\s\S]*ChevronUp/, 'Home Composer 必须提供内联 chevron 展开/收起按钮')
@@ -330,6 +370,7 @@ assert.doesNotMatch(homeSendButtonSource, /btn-primary|px-4/, 'Home 发送不得
 assert.match(homeRecentProjectsSource, /borderColor: project\.id === selectedProjectId \? 'var\(--border-strong\)'[\s\S]*background: project\.id === selectedProjectId \? 'var\(--surface-active\)'/, 'Home 最近项目选中态必须使用中性强边框与 active 表面')
 assert.doesNotMatch(homeRecentProjectsSource, /--accent-primary|--accent-border/, 'Home 最近项目不得使用整圈 accent 边框')
 assert.doesNotMatch(chatSource, /data-tour="session-chat-input"\s*className="workbench-composer[^"]*"\s*style=/, 'Session Composer 不得用内联表面覆盖共享 .workbench-composer')
+assert.match(chatSource, /className=\{layout === 'easy'[\s\S]*\? 'workbench-composer[\s\S]*: 'relative rounded-lg[\s\S]*style=\{layout === 'easy' \? undefined/, '胶囊 workbench-composer 必须只作用于 easy，常规布局保留原输入框表面')
 assert.doesNotMatch(cssSource, /\.mobius-chat-body\.mobius-chat-body--easy \.mobius-chat-input textarea \{[\s\S]*?min-height:\s*72px\s*!important;/, 'CSS 不得用 72px !important 覆盖 easy Composer 动态高度')
 assert.match(chatSource, /inert[\s\S]*data-workbench-chat-layer/, '隐藏的 Chat layer 必须 inert')
 assert.match(chatSource, /data-workbench-diff-layer[\s\S]*centerMode === 'diff'/, '选文件必须在中心切换 Diff layer')
@@ -339,7 +380,7 @@ assert.match(chatSource, /useLayoutEffect\(\(\) => \{[\s\S]*setActiveToolTab\('f
 assert.match(navigationSource, /prepareWorkbenchObjectNavigation[\s\S]*exitWorkbenchCenterTool\(\)[\s\S]*clearWorkbenchObjectSelection\(\)/, '对象导航必须按 exitCenterTool → clearObjectSelection 顺序执行')
 assert.match(userPageSource, /selectHomeProject[\s\S]*prepareWorkbenchObjectNavigation\(\)[\s\S]*requestAnimationFrame/, 'Home 选 Project 后必须回 Chat 语义并恢复焦点')
 assert.doesNotMatch(workPageSource, /prepareWorkbenchObjectNavigation/, 'WorkPage 新会话不得与 WorkbenchShell 重复执行对象导航清理')
-assert.doesNotMatch(defaultIssuePageSource, /prepareWorkbenchObjectNavigation/, 'Issue 新会话不得与 WorkbenchShell 重复执行对象导航清理')
+assert.doesNotMatch(easyIssuePageSource, /prepareWorkbenchObjectNavigation/, 'Issue 新会话不得与 WorkbenchShell 重复执行对象导航清理')
 assert.doesNotMatch(homeSurfaceSource, /<main\b/, 'WorkbenchShell 内的 Home 不得嵌套 main landmark')
 assert.doesNotMatch(minimalProjectCreateSource, /<main\b/, 'WorkbenchShell 内的项目创建空态不得嵌套 main landmark')
 assert.doesNotMatch(workPageSource, /<main\b/, 'WorkbenchShell 内的 Session 不得嵌套 main landmark')
@@ -465,7 +506,7 @@ assert.doesNotMatch(filePreviewSource, /code-artifact-layer__backdrop/, '文件�
 assert.doesNotMatch(cssSource, /code-artifact-layer__backdrop/, '文件预览样式不得保留全屏 blur backdrop')
 assert.match(sessionToolContextSource, /isAbsoluteToolPath[\s\S]*return basename[\s\S]*sanitizeToolError/, '对象上下文必须在项目 API 确认前隐藏绝对路径')
 assert.match(workPageSource, /readWorkbenchSourceSurface\(location\.state\) \|\| 'session'[\s\S]*toolOrigin=\{sessionToolOrigin\}/, '短 Session 路由必须继承 Issue / Research 来源语义')
-assert.match(defaultIssuePageSource, /sourceSurface: 'issue'[\s\S]*toolOrigin="issue"/, 'Issue 入口必须携带 Issue 来源上下文')
+assert.match(easyIssuePageSource, /sourceSurface: 'issue'[\s\S]*toolOrigin="issue"/, 'Issue 入口必须携带 Issue 来源上下文')
 assert.match(researchPageSource, /sourceSurface: 'research'[\s\S]*toolOrigin="research"/, 'Research 入口必须携带 Research 来源上下文')
 assert.match(gitChangesViewerSource, />变更<|\? '变更' : '历史'/, 'GitChangesViewer 左侧必须提供变更 / 历史切换')
 assert.match(gitChangesViewerSource, /git-history\/\$\{selectedCommit\.hash\}\/diff[\s\S]*URLSearchParams\(\{ file: selectedCommitFile\.path \}\)/, 'commit 必须先加载文件列表，再请求单文件 diff')
@@ -538,8 +579,8 @@ assert.match(workPageSource, /readWorkbenchFocusTarget\(location\.state\) \|\| '
 assert.match(userPageSource, /addEventListener\('mobius:new-conversation', prepareNewConversation\)/, '首页 Composer 必须接收 WorkPage 的统一新会话事件')
 
 // 默认 Issue 只呈现会话轨、时间线或 Composer；统计卡和项目文件只允许留在 Legacy 区域。
-assert.doesNotMatch(defaultIssuePageSource, /SessionOverview|OverviewStatCard|ProjectFilesCard/, '默认 IssuePage 不得渲染统计卡或 ProjectFilesCard')
-assert.match(defaultIssuePageSource, /<ChatArea layout="easy" chrome="shell" toolOrigin="issue" \/>[\s\S]*<EmptyConversationComposer/, '默认 IssuePage 必须保持共享 Main slot 下的简化会话面并标记 Issue 来源')
+assert.doesNotMatch(easyIssuePageSource, /SessionOverview|OverviewStatCard|ProjectFilesCard/, '简易 IssuePage 不得渲染统计卡或 ProjectFilesCard')
+assert.match(easyIssuePageSource, /<ChatArea layout="easy" chrome="shell" toolOrigin="issue" \/>[\s\S]*<EmptyConversationComposer/, '简易 IssuePage 必须保持共享 Main slot 下的简化会话面并标记 Issue 来源')
 
 // 固定账号不能重新进入桌面或 Welcome 的系统可视化入口。
 for (const [label, source] of [
