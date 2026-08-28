@@ -14,6 +14,7 @@ import {
   LoaderCircle,
   MessageSquare,
   MoreHorizontal,
+  Paperclip,
   Plus,
   Search,
   Send,
@@ -293,6 +294,122 @@ function MinimalProjectCreate({ onCreated }: { onCreated: (project: any) => void
   )
 }
 
+// =====================================================================
+// 首页 Composer 附件 (粘贴 / 拖放 / 选择 三入口, 与会话页 chat.tsx 同构)
+// 上传走 /api/upload?project_id=... (落到所选项目 bind_path 下, agent 可直接读);
+// 发送时把已上传附件拼成 [附件] 块前缀, 与会话页发送格式一致.
+// =====================================================================
+type HomeAttachmentStatus = 'uploading' | 'done' | 'error'
+type HomeAttachment = {
+  id: string
+  name: string
+  size: number
+  kind: 'image' | 'file'
+  sourceFile: File
+  previewUrl?: string
+  status: HomeAttachmentStatus
+  remotePath?: string
+  error?: string
+}
+
+const HOME_ATTACHMENT_MAX_COUNT = 6
+const HOME_FILE_MAX_BYTES = 25 * 1024 * 1024
+const HOME_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+
+let _homeAttSeq = 0
+function makeHomeAttachmentId() {
+  _homeAttSeq += 1
+  return `home-att-${Date.now()}-${_homeAttSeq}`
+}
+
+function homeAttachmentKindOf(file: File): 'image' | 'file' {
+  return file.type.startsWith('image/') ? 'image' : 'file'
+}
+
+function homeAttachmentUploadError(file: File): string {
+  const kind = homeAttachmentKindOf(file)
+  if (kind === 'image' && file.size > HOME_IMAGE_MAX_BYTES) return '图片不能超过 10MB'
+  if (kind === 'file' && file.size > HOME_FILE_MAX_BYTES) return '文件不能超过 25MB'
+  return ''
+}
+
+function homeFormatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
+}
+
+function homeFileExtBadge(name: string): string {
+  const ext = (name.split('.').pop() || '').toLowerCase()
+  if (!ext || ext === name.toLowerCase()) return 'FILE'
+  return ext.slice(0, 4).toUpperCase()
+}
+
+// 与 chat.tsx 的 uploadAttachmentFile 一致: FormData 不能带默认 JSON Content-Type.
+async function uploadHomeAttachment(file: File, projectId?: string): Promise<{ path: string; name: string; size: number }> {
+  const token = localStorage.getItem('cc-token') || ''
+  const form = new FormData()
+  form.append('file', file, file.name || 'file')
+  const url = projectId ? `/api/upload?project_id=${encodeURIComponent(projectId)}` : '/api/upload'
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  })
+  const data = await res.json().catch(() => ({} as any))
+  if (!res.ok) throw new Error(data?.error || `上传失败 (HTTP ${res.status})`)
+  return { path: data.path, name: data.name, size: data.size }
+}
+
+// 输入框内的紧凑附件芯片 (缩略图/短标签 + 上传状态 + 悬停移除), 与会话页 AttachmentChip 同款.
+function HomeAttachmentChip({ att, onRemove, onRetry }: {
+  att: HomeAttachment
+  onRemove: () => void
+  onRetry: () => void
+}) {
+  const isImage = att.kind === 'image' && att.previewUrl
+  return (
+    <div className="group relative flex flex-shrink-0 items-center gap-1" title={`${att.name}${att.size ? ` · ${homeFormatFileSize(att.size)}` : ''}`}>
+      {isImage ? (
+        <div className="home-attachment-thumb relative h-11 w-11 overflow-hidden rounded-[var(--radius-control)]" style={{ background: 'var(--surface-control)', border: '1px solid var(--border-strong)' }}>
+          <img src={att.previewUrl} alt={att.name} className="h-full w-full object-cover" />
+          {att.status === 'uploading' && (
+            <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'var(--surface-scrim)' }}>
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--text-on-accent)' }} />
+            </div>
+          )}
+          {att.status === 'error' && (
+            <div className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold" style={{ color: 'var(--status-danger-foreground)', background: 'var(--status-danger)' }} title={att.error}>失败</div>
+          )}
+        </div>
+      ) : (
+        <div className="home-attachment-thumb relative flex h-11 items-center gap-1.5 rounded-[var(--radius-control)] px-2" style={{ background: 'var(--surface-control)', border: '1px solid var(--border-strong)' }}>
+          <Paperclip className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+          <span className="max-w-[92px] truncate text-[11px]" style={{ color: 'var(--text-secondary)' }}>{att.name}</span>
+          {att.status === 'uploading' && <LoaderCircle className="h-3 w-3 animate-spin" style={{ color: 'var(--text-muted)' }} />}
+          {att.status === 'error' && (
+            <span className="text-[10px] font-semibold" style={{ color: 'var(--status-danger)' }} title={att.error}>失败</span>
+          )}
+        </div>
+      )}
+      {att.status === 'error' && (
+        <button type="button" onClick={onRetry} title={`${att.error || '上传失败'}，点击重试`}
+          className="workbench-control-sm inline-flex items-center border px-1.5 text-[10px] font-medium transition-colors hover:bg-[var(--status-danger-soft)]"
+          style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)' }}>
+          重试
+        </button>
+      )}
+      <button type="button" onClick={onRemove} title="移除" aria-label={`移除附件 ${att.name}`}
+        className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full opacity-0 shadow transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+        style={{ color: 'var(--text-primary)', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}>
+        <X className="h-2.5 w-2.5" strokeWidth={3} />
+      </button>
+    </div>
+  )
+}
+
 function HomeSurface() {
   const params = useParams()
   const navigate = useNavigate()
@@ -309,6 +426,9 @@ function HomeSurface() {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
+  const [attachments, setAttachments] = useState<HomeAttachment[]>([])
+  const [dragOverComposer, setDragOverComposer] = useState(false)
+  const homeFileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const [composerExpanded, setComposerExpanded] = useState(false)
   const isComposerMobile = useComposerMobileLayout()
@@ -331,6 +451,10 @@ function HomeSurface() {
     setPrompt('')
     setSendError('')
     setCheckpoint(null)
+    setAttachments(prev => {
+      prev.forEach(a => { if (a.previewUrl) { try { URL.revokeObjectURL(a.previewUrl) } catch {} } })
+      return []
+    })
     window.setTimeout(() => composerRef.current?.focus(), 0)
   }
 
@@ -338,6 +462,14 @@ function HomeSurface() {
     window.addEventListener('mobius:new-conversation', prepareNewConversation)
     return () => window.removeEventListener('mobius:new-conversation', prepareNewConversation)
   })
+
+  // 卸载时释放附件缩略图的 ObjectURL, 防止泄漏.
+  useEffect(() => () => {
+    setAttachments(prev => {
+      prev.forEach(a => { if (a.previewUrl) { try { URL.revokeObjectURL(a.previewUrl) } catch {} } })
+      return prev
+    })
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -388,18 +520,110 @@ function HomeSurface() {
     setCheckpoint(null)
   }
 
+  // ---- 附件: 粘贴 / 拖放 / 选择 三入口共用 enqueue ----
+  const readyHomeAttachments = attachments.filter(a => a.status === 'done' && a.remotePath)
+  const homeAnyUploading = attachments.some(a => a.status === 'uploading')
+
+  const startHomeAttachmentUpload = (att: HomeAttachment) => {
+    uploadHomeAttachment(att.sourceFile, selectedProjectId)
+      .then(res => setAttachments(prev => prev.map(a =>
+        a.id === att.id ? { ...a, status: 'done', remotePath: res.path, size: res.size || a.size } : a
+      )))
+      .catch(err => setAttachments(prev => prev.map(a =>
+        a.id === att.id ? { ...a, status: 'error', error: err?.message || '上传失败' } : a
+      )))
+  }
+
+  const enqueueHomeFiles = (files: FileList | File[]) => {
+    const candidates = Array.from(files || []).filter(Boolean)
+    if (candidates.length === 0) return
+    setAttachments(prev => {
+      const remainingSlots = Math.max(0, HOME_ATTACHMENT_MAX_COUNT - prev.length)
+      const accepted = candidates.slice(0, remainingSlots)
+      const rejectedCount = candidates.length - accepted.length
+      if (rejectedCount > 0) setSendError(`最多一次添加 ${HOME_ATTACHMENT_MAX_COUNT} 个附件，已忽略 ${rejectedCount} 个。`)
+      const added: HomeAttachment[] = accepted.map(file => {
+        const kind = homeAttachmentKindOf(file)
+        const validationError = homeAttachmentUploadError(file)
+        return {
+          id: makeHomeAttachmentId(),
+          name: file.name || (kind === 'image' ? 'image' : 'file'),
+          size: file.size || 0,
+          kind,
+          sourceFile: file,
+          previewUrl: kind === 'image' ? URL.createObjectURL(file) : undefined,
+          status: validationError ? 'error' : 'uploading',
+          error: validationError || undefined,
+        }
+      })
+      added.filter(a => a.status === 'uploading').forEach(startHomeAttachmentUpload)
+      return [...prev, ...added]
+    })
+  }
+
+  // ChatGPT 式粘贴: 剪贴板里有文件就吃掉默认行为转成附件, 否则让文字正常粘进输入框.
+  // 同时认 files + items 两条路 (Chrome/Edge on macOS 可能只塞一条).
+  const handleHomeComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
+    const cd = event.clipboardData
+    if (!cd) return
+    const files: File[] = []
+    if (cd.files && cd.files.length > 0) {
+      for (let i = 0; i < cd.files.length; i += 1) files.push(cd.files[i])
+    } else if (cd.items && cd.items.length > 0) {
+      for (let i = 0; i < cd.items.length; i += 1) {
+        const item = cd.items[i]
+        if (item.kind === 'file') {
+          const f = item.getAsFile()
+          if (f) files.push(f)
+        }
+      }
+    }
+    if (files.length > 0) {
+      event.preventDefault()
+      enqueueHomeFiles(files)
+    }
+  }
+
+  const removeHomeAttachment = (id: string) => {
+    setAttachments(prev => {
+      const target = prev.find(a => a.id === id)
+      if (target?.previewUrl) { try { URL.revokeObjectURL(target.previewUrl) } catch {} }
+      return prev.filter(a => a.id !== id)
+    })
+  }
+
+  const retryHomeAttachment = (id: string) => {
+    const target = attachments.find(a => a.id === id)
+    if (!target || target.status !== 'error') return
+    // 尺寸超限等本地校验失败重试也无济于事, 直接提示用户移除.
+    if (target.error && /不能超过/.test(target.error)) return
+    setAttachments(prev => prev.map(a => a.id === id ? { ...a, status: 'uploading', error: undefined } : a))
+    startHomeAttachmentUpload(target)
+  }
+
   const send = async () => {
-    if (!selectedProjectId || !prompt.trim() || sending) return
+    if (homeAnyUploading) {
+      setSendError('附件仍在上传，请稍候…')
+      return
+    }
+    if (!selectedProjectId || sending) return
+    if (!prompt.trim() && readyHomeAttachments.length === 0) return
     if (!selectedModel) {
       setSendError('模型与 Harness 组合仍在加载或暂无可用组合')
       return
     }
     setSending(true)
     setSendError('')
+    // 与会话页 chat.tsx 发送格式一致: [附件] 块在最前, 用户文本在后.
+    const attachLines = readyHomeAttachments.map(a =>
+      a.kind === 'image' ? `- [图片] ${a.remotePath}` : `- [文件] ${a.remotePath}`
+    )
+    const attachBlock = attachLines.length > 0 ? `[附件]\n${attachLines.join('\n')}` : ''
+    const composedPrompt = [attachBlock, prompt].filter(Boolean).join('\n\n')
     try {
       const created = await createDefaultConversation({
         projectId: selectedProjectId,
-        prompt,
+        prompt: composedPrompt,
         model: selectedModel,
         checkpoint,
       })
@@ -444,7 +668,50 @@ function HomeSurface() {
                 <h1 className="text-[20px] font-semibold tracking-tight" style={{ color: 'var(--text-strong)' }}>想让 Mobius 做什么？</h1>
                 <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>描述目标即可，任务详情和会话会自动创建。</p>
               </div>
-              <div className="workbench-composer px-3 py-2.5">
+              <div
+                className="workbench-composer relative px-3 py-2.5"
+                onPaste={handleHomeComposerPaste}
+                onDragOver={event => {
+                  if (event.dataTransfer?.types?.includes('Files')) {
+                    event.preventDefault()
+                    setDragOverComposer(true)
+                  }
+                }}
+                onDragLeave={event => {
+                  if (event.currentTarget === event.target) setDragOverComposer(false)
+                }}
+                onDrop={event => {
+                  setDragOverComposer(false)
+                  const files = event.dataTransfer?.files
+                  if (!files || files.length === 0) return
+                  event.preventDefault()
+                  enqueueHomeFiles(files)
+                }}>
+                {dragOverComposer && (
+                  <div className="pointer-events-none absolute inset-0 z-20 p-1" style={{ background: 'var(--surface-control)', borderRadius: 'var(--radius-panel)' }}>
+                    <div className="flex h-full items-center justify-center rounded-[var(--radius-control)] border border-dashed"
+                      style={{ background: 'var(--surface-active)', borderColor: 'var(--accent-border)' }}>
+                      <div className="text-[12px] font-medium" style={{ color: 'var(--accent-primary)' }}>松开以添加附件</div>
+                    </div>
+                  </div>
+                )}
+                <input ref={homeFileInputRef} type="file" multiple className="hidden"
+                  onChange={event => {
+                    if (event.target.files?.length) enqueueHomeFiles(event.target.files)
+                    event.target.value = ''
+                  }} />
+                {attachments.length > 0 && (
+                  <div className="mb-1.5 flex max-h-24 flex-wrap items-start gap-1.5 overflow-y-auto pb-1">
+                    {attachments.map(att => (
+                      <HomeAttachmentChip
+                        key={att.id}
+                        att={att}
+                        onRemove={() => removeHomeAttachment(att.id)}
+                        onRetry={() => retryHomeAttachment(att.id)}
+                      />
+                    ))}
+                  </div>
+                )}
                 <textarea ref={composerRef} data-workbench-composer autoFocus value={prompt} onChange={event => onPromptChange(event.target.value)}
                   onKeyDown={event => {
                     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -452,7 +719,7 @@ function HomeSurface() {
                       void send()
                     }
                   }}
-                  placeholder="描述你的任务…"
+                  placeholder="描述你的任务… 可直接粘贴截图"
                   className="w-full resize-none bg-transparent px-2 py-1 text-[14px] leading-[1.5] outline-none"
                   style={{
                     height: homeComposerLayout.height,
@@ -482,6 +749,20 @@ function HomeSurface() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      aria-label="添加附件"
+                      title="添加图片或文件 (可粘贴截图)"
+                      onClick={() => homeFileInputRef.current?.click()}
+                      className="workbench-control-md inline-flex w-[var(--control-height-md)] items-center justify-center border transition-colors hover:bg-[var(--surface-control-hover)]"
+                      style={{
+                        color: 'var(--text-secondary)',
+                        borderColor: 'var(--border-default)',
+                        background: 'var(--surface-control)',
+                      }}
+                    >
+                      <Paperclip className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
                       data-home-composer-expand-toggle
                       aria-label={composerExpanded ? '收起输入框' : '展开输入框'}
                       aria-pressed={composerExpanded}
@@ -499,7 +780,7 @@ function HomeSurface() {
                     >
                       {composerExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                     </button>
-                    <button type="button" onClick={() => void send()} disabled={!prompt.trim() || !selectedModel || sending}
+                    <button type="button" onClick={() => void send()} disabled={(!prompt.trim() && readyHomeAttachments.length === 0) || !selectedModel || sending}
                       aria-label={sending ? '正在开始会话' : '发送'}
                       title={sending ? '正在开始会话' : '发送'}
                       className="home-composer-send inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-0 p-0 disabled:opacity-40">

@@ -228,10 +228,62 @@ body.is-resizing iframe { pointer-events: none; }
 .pr-pbadge:hover { color: var(--blue); border-color: var(--blue); }
 
 /* PDF */
-.pr-pdfview { width: 100%; max-width: 1180px; margin: 0 auto; padding-top: 24px; }
-.pr-pdf-head { min-height: 34px; display: flex; align-items: center; color: var(--ink-2); font-size: 13px; }
-.pr-pdfview iframe { width: 100%; height: calc(100vh - 150px); min-height: 620px; display: block; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.pr-pdfview { width: 100%; max-width: 1440px; margin: 0 auto; padding-top: 12px; }
+.pr-pdf-head {
+  min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  color: var(--ink-2); font-size: 12px;
+}
+.pr-pdf-head > strong { min-width: 0; max-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-pdf-tools, .pr-pdf-zoom, .pr-pdf-pages-nav { display: flex; align-items: center; }
+.pr-pdf-tools { min-width: 0; gap: 10px; }
+.pr-pdf-zoom, .pr-pdf-pages-nav { height: 34px; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.pr-pdf-tool {
+  width: 28px; height: 28px; display: inline-grid; place-items: center; flex: 0 0 auto; padding: 0;
+  border: 0; border-radius: 4px; color: var(--muted); background: transparent; cursor: pointer;
+}
+.pr-pdf-tool:hover:not(:disabled), .pr-pdf-tool.is-active { color: var(--blue); background: var(--blue-soft); }
+.pr-pdf-tool:disabled { color: var(--line-strong); cursor: default; }
+.pr-pdf-tool svg { width: 14px; height: 14px; }
+.pr-pdf-divider { width: 1px; height: 18px; margin: 0 2px; background: var(--line); }
+.pr-pdf-zoom select {
+  width: 94px; height: 28px; padding: 0 20px 0 7px; border: 0; outline: 0; color: var(--ink-2);
+  background: var(--paper); font-size: 10px; font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.pr-pdf-pages-nav label { height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 4px; color: var(--faint); font-size: 10px; }
+.pr-pdf-pages-nav input {
+  width: 36px; height: 24px; padding: 0 3px; border: 0; border-radius: 3px; outline: 0;
+  color: var(--ink); background: #f2f4f6; text-align: center; font-size: 10px; font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+.pr-pdf-pages-nav input::-webkit-inner-spin-button, .pr-pdf-pages-nav input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.pr-pdf-pages-nav b { min-width: 18px; color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.pr-pdf-stage {
+  width: 100%; height: calc(100vh - var(--topbar-h) - 126px); min-height: 520px; position: relative;
+  overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable both-edges; touch-action: pan-x pan-y;
+  border: 1px solid var(--line-strong); border-radius: var(--radius); outline: 0; background: #e7e9ed;
+  box-shadow: inset 0 1px 3px rgba(23,27,34,.08);
+}
+.pr-pdf-stage:focus-visible { border-color: #95a9dc; box-shadow: inset 0 1px 3px rgba(23,27,34,.08), 0 0 0 2px rgba(36,87,214,.14); }
+.pr-pdf-stage.is-hand { cursor: grab; }
+.pr-pdf-stage.is-dragging { cursor: grabbing; user-select: none; }
+.pr-pdf-pages { width: max-content; min-width: 100%; min-height: 100%; padding: 24px; }
+.pr-pdf-page {
+  position: relative; margin: 0 auto 22px; background: #fff; box-shadow: 0 2px 11px rgba(20,24,31,.18);
+  transition: width .12s ease, height .12s ease;
+}
+.pr-pdf-page:last-child { margin-bottom: 0; }
+.pr-pdf-page-surface { position: relative; overflow: hidden; background: #fff; transition: width .12s ease, height .12s ease; }
+.pr-pdf-page canvas { width: 100%; height: 100%; display: block; background: #fff; }
+.pr-pdf-page:not(.is-rendered) .pr-pdf-page-surface { background: linear-gradient(110deg, #fff 22%, #f4f5f7 38%, #fff 54%); background-size: 220% 100%; animation: pdf-page-loading 1.3s ease-in-out infinite; }
+.pr-pdf-page.is-render-error .pr-pdf-page-surface { background: #fff7f6; }
+.pr-pdf-page-surface > span {
+  min-width: 22px; height: 20px; position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center;
+  padding: 0 5px; border-radius: 3px; color: #6f747d; background: rgba(244,245,247,.9); font-family: var(--mono); font-size: 8px;
+  opacity: .72; pointer-events: none;
+}
 .pr-pdfmsg { margin-top: 24px; padding: 32px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--muted); background: var(--panel); text-align: center; }
+.pr-pdfmsg.is-error { color: var(--danger); border-color: #e4aaa6; background: #fff8f7; }
+@keyframes pdf-page-loading { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 
 /* Research side panel */
 .pr-side {
@@ -510,6 +562,9 @@ body.is-resizing iframe { pointer-events: none; }
   .pr-side .pr-panel-close { display: inline-grid; }
   .pr-resizer-side { display: none; }
   .pr-reader-toolbar { top: var(--topbar-h); }
+  .pr-pdf-head > strong { display: none; }
+  .pr-pdf-tools { width: 100%; justify-content: space-between; }
+  .pr-pdf-stage { height: calc(100vh - var(--topbar-h) - 124px); }
   .pr-paper { padding-top: 38px; }
   .pr-paper-head h1 { font-size: 30px; line-height: 39px; }
   .pr-pbadge { right: 0; top: -25px; }
@@ -533,6 +588,15 @@ body.is-resizing iframe { pointer-events: none; }
   .pr-paper-body h3 { font-size: 17px; line-height: 25px; }
   .pr-paper-body table { min-width: 620px; }
   .pr-paper-body .ltx_table, .pr-paper-body .ltx_tabular { width: 100%; overflow-x: auto; }
+  .pr-pdfview { padding-top: 8px; }
+  .pr-pdf-head { min-height: 44px; gap: 6px; }
+  .pr-pdf-tools { gap: 5px; }
+  .pr-pdf-zoom select { width: 78px; }
+  .pr-pdf-divider, #pdfHandToggle { display: none; }
+  .pr-pdf-pages-nav label { padding-inline: 1px; }
+  .pr-pdf-stage { height: calc(100dvh - var(--topbar-h) - 116px); min-height: 400px; }
+  .pr-pdf-pages { padding: 14px; }
+  .pr-pdf-page { margin-bottom: 14px; }
   .pr-side { width: 100vw; }
   .pr-mobile-dock {
     height: 58px; position: fixed; left: 12px; right: 12px; bottom: max(10px, env(safe-area-inset-bottom)); z-index: 95;

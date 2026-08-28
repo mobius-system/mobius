@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
-  <link rel="stylesheet" href="paper-reader.css?v=0.6.1">
+  <link rel="stylesheet" href="paper-reader.css?v=0.7.0">
 </head>
 <body>
   <div class="pr-loading" id="prLoading">
@@ -103,8 +103,36 @@
       </article>
 
       <div class="pr-pdfview" id="pdfView" hidden>
-        <div class="pr-pdf-head"><strong id="pdfTitle"></strong></div>
-        <iframe id="pdfFrame" title="论文 PDF"></iframe>
+        <div class="pr-pdf-head">
+          <strong id="pdfTitle"></strong>
+          <div class="pr-pdf-tools" role="toolbar" aria-label="PDF 阅读工具">
+            <div class="pr-pdf-zoom">
+              <button class="pr-pdf-tool is-active" id="pdfHandToggle" type="button" title="拖拽浏览 (H)" aria-label="拖拽浏览" aria-pressed="true"><i data-lucide="hand"></i></button>
+              <span class="pr-pdf-divider"></span>
+              <button class="pr-pdf-tool" id="pdfZoomOut" type="button" title="缩小 (-)" aria-label="缩小"><i data-lucide="zoom-out"></i></button>
+              <select id="pdfZoomSelect" title="缩放比例" aria-label="缩放比例">
+                <option value="fit">适合宽度</option>
+                <option value="0.75">75%</option>
+                <option value="1">100%</option>
+                <option value="1.25">125%</option>
+                <option value="1.5">150%</option>
+                <option value="2">200%</option>
+                <option value="2.5">250%</option>
+                <option id="pdfZoomCustom" value="custom" hidden></option>
+              </select>
+              <button class="pr-pdf-tool" id="pdfZoomIn" type="button" title="放大 (+)" aria-label="放大"><i data-lucide="zoom-in"></i></button>
+              <button class="pr-pdf-tool" id="pdfFitWidth" type="button" title="适合宽度 (0)" aria-label="适合宽度"><i data-lucide="scan"></i></button>
+            </div>
+            <div class="pr-pdf-pages-nav">
+              <button class="pr-pdf-tool" id="pdfPrevPage" type="button" title="上一页" aria-label="上一页"><i data-lucide="chevron-up"></i></button>
+              <label><input id="pdfPageInput" type="number" min="1" value="1" inputmode="numeric" aria-label="当前页"><span>/</span><b id="pdfPageCount">0</b></label>
+              <button class="pr-pdf-tool" id="pdfNextPage" type="button" title="下一页" aria-label="下一页"><i data-lucide="chevron-down"></i></button>
+            </div>
+          </div>
+        </div>
+        <div class="pr-pdf-stage is-hand" id="pdfStage" tabindex="0" aria-label="PDF 连续阅读区" hidden>
+          <div class="pr-pdf-pages" id="pdfPages"></div>
+        </div>
         <div class="pr-pdfmsg" id="pdfMsg" hidden></div>
       </div>
     </section>
@@ -248,6 +276,6 @@
 
   <div class="pr-toast" id="toast" role="status"></div>
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
-  <script type="module" src="main.js?v=0.6.1"></script>
+  <script type="module" src="main.js?v=0.7.0"></script>
 </body>
 </html>

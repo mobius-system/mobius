@@ -503,7 +503,7 @@ assert.match(tasksRouteSource, /req\.query\.limit \|\| 12[\s\S]*Math\.min\(100,/
 
 // 三个默认页面的新会话空态最终都汇入 create-conversation orchestration。
 assert.match(userPageSource, /from '\.\.\/services\/create-conversation'/, 'UserPage 必须使用统一 create-conversation 服务')
-assert.match(userPageSource, /createDefaultConversation\(\{[\s\S]{0,320}projectId: selectedProjectId,[\s\S]{0,320}prompt,[\s\S]{0,320}checkpoint/, '首页发送必须调用统一 create-conversation 服务')
+assert.match(userPageSource, /createDefaultConversation\(\{[\s\S]{0,320}projectId: selectedProjectId,[\s\S]{0,320}prompt: (?:composedPrompt|prompt),[\s\S]{0,320}checkpoint/, '首页发送必须调用统一 create-conversation 服务')
 assert.match(homeSurfaceSource, /<HomeModelHarnessSelect[\s\S]*value=\{selectedModel\}/, '默认 Home 必须提供模型与 Harness 组合选择')
 assert.match(homeSurfaceSource, /createDefaultConversation\(\{[\s\S]*model: selectedModel/, '默认 Home 必须把所选组合传给会话创建服务')
 assert.match(homeSurfaceSource, /usableProjects\.slice\(0, 3\)/, '默认 Home 最多展示 3 个最近项目')
