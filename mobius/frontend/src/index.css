@@ -1231,6 +1231,13 @@ label,
   overflow: hidden;
 }
 
+/* 切换历史会话时旧 Chat 需要保活，但不能继续参与 flex 布局。Tailwind 的
+   .flex 会覆盖浏览器/Preflight 对 [hidden] 的普通 display:none 声明，导致旧
+   Chat 与加载占位短暂并排后再跳宽；在会话槽位内明确提升隐藏规则优先级。 */
+.workbench-session-chat__surface[hidden] {
+  display: none !important;
+}
+
 .workbench-session-editor[data-open="true"] {
   display: flex;
   width: clamp(440px, 52%, 720px);
