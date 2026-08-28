@@ -34,3 +34,11 @@ test('Home 持久化并按要求恢复上次项目和模型', () => {
   assert.match(homeSource, /lastRememberedModel=\{lastRememberedModel\}/)
   assert.doesNotMatch(homeSource, /setSelectedModel\(''\)/)
 })
+
+test('Home 项目选择菜单提供新建项目入口并复用创建弹窗', () => {
+  assert.match(homeSource, /aria-haspopup="menu"[\s\S]*aria-label="选择项目"/)
+  assert.match(homeSource, /role="menuitemradio"[\s\S]*aria-checked=\{active\}/)
+  assert.match(homeSource, /role="menuitem"[\s\S]*setShowNewProject\(true\)[\s\S]*新建项目/)
+  assert.match(homeSource, /showNewProject[\s\S]*<NewProjectModal[\s\S]*onCreated=\{onProjectCreated\}/)
+  assert.match(homeSource, /event\.key !== 'Escape'[\s\S]*projectMenuButtonRef\.current\?\.focus\(\)/)
+})

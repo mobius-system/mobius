@@ -3,6 +3,8 @@ import { useLocation, useParams, useNavigate, useSearchParams } from 'react-rout
 import {
   Activity,
   Brain,
+  Check,
+  ChevronDown,
   CircleDot,
   Database,
   Eye,
@@ -312,6 +314,8 @@ function HomeSurface() {
   const [loadingProjects, setLoadingProjects] = useState(true)
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [showNewProject, setShowNewProject] = useState(false)
   const [lastRememberedProjectId, setLastRememberedProjectId] = useState(readLastHomeProjectId)
   const [lastRememberedModel, setLastRememberedModel] = useState(readLastHomeModel)
   const [prompt, setPrompt] = useState('')
@@ -319,6 +323,8 @@ function HomeSurface() {
   const [sendError, setSendError] = useState('')
   const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const projectMenuRef = useRef<HTMLDivElement | null>(null)
+  const projectMenuButtonRef = useRef<HTMLButtonElement | null>(null)
   const invalidateComposerCheckpoint = useCallback(() => {
     setSendError('')
     setCheckpoint(null)
@@ -372,6 +378,24 @@ function HomeSurface() {
   }, [prepareNewConversation])
 
   useEffect(() => {
+    if (!projectMenuOpen) return
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!projectMenuRef.current?.contains(event.target as Node)) setProjectMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setProjectMenuOpen(false)
+      projectMenuButtonRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [projectMenuOpen])
+
+  useEffect(() => {
     let cancelled = false
     setLoadingProjects(true)
     api('/api/projects?all=true')
@@ -407,6 +431,7 @@ function HomeSurface() {
   }, [selectedProject, setCurrentProject])
 
   const onProjectCreated = (project: any) => {
+    setShowNewProject(false)
     setProjects(sortProjectsForDisplay([project, ...projects.filter((item: any) => item.id !== project.id)]))
     setSelectedProjectId(project.id)
     setLastRememberedProjectId(project.id)
@@ -465,6 +490,7 @@ function HomeSurface() {
 
   const selectHomeProject = (nextProjectId: string) => {
     prepareWorkbenchObjectNavigation()
+    setProjectMenuOpen(false)
     setSelectedProjectId(nextProjectId)
     setLastRememberedProjectId(nextProjectId)
     rememberLastHomeProjectId(nextProjectId)
@@ -539,14 +565,67 @@ function HomeSurface() {
                   }} />
                 <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t pt-2" style={{ borderColor: 'color-mix(in srgb, var(--border-default) 72%, transparent)' }}>
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                    <label className="home-composer-project-select workbench-control-md flex min-w-0 items-center gap-2 px-2.5 text-[11px]" style={{ color: 'var(--text-muted)', background: 'var(--surface-control)' }}>
-                      <Folder className="h-3.5 w-3.5 flex-shrink-0" />
-                      <select value={selectedProjectId} onChange={event => selectHomeProject(event.target.value)}
-                        aria-label="项目"
-                        className="h-full max-w-[220px] truncate bg-transparent text-[12px] outline-none" style={{ color: 'var(--text-secondary)' }}>
-                        {usableProjects.map((project: any) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                      </select>
-                    </label>
+                    <div ref={projectMenuRef} className="relative min-w-0">
+                      <button
+                        ref={projectMenuButtonRef}
+                        type="button"
+                        onClick={() => setProjectMenuOpen(open => !open)}
+                        aria-haspopup="menu"
+                        aria-expanded={projectMenuOpen}
+                        className="home-composer-project-select workbench-control-md flex min-w-0 max-w-[260px] items-center gap-2 px-2.5 text-[12px] transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                        style={{ color: 'var(--text-secondary)', background: 'var(--surface-control)' }}
+                        title={selectedProject?.name || '选择项目'}
+                      >
+                        <Folder className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="min-w-0 flex-1 truncate">{selectedProject?.name || '选择项目'}</span>
+                        <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${projectMenuOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                      </button>
+                      {projectMenuOpen && (
+                        <div
+                          role="menu"
+                          aria-label="选择项目"
+                          className="workbench-popover absolute left-0 top-[calc(100%+8px)] z-40 w-[300px] max-w-[calc(100vw-48px)] overflow-hidden p-2"
+                          style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}
+                        >
+                          <div className="max-h-[240px] overflow-y-auto">
+                            {usableProjects.map((project: any) => {
+                              const active = project.id === selectedProjectId
+                              return (
+                                <button
+                                  key={project.id}
+                                  type="button"
+                                  role="menuitemradio"
+                                  aria-checked={active}
+                                  onClick={() => selectHomeProject(project.id)}
+                                  className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus-ring)]"
+                                  style={{ color: active ? 'var(--accent-primary)' : 'var(--text-primary)', background: active ? 'var(--surface-active)' : undefined }}
+                                  title={project.name}
+                                >
+                                  <Folder className="h-3.5 w-3.5 flex-shrink-0" />
+                                  <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{project.name}</span>
+                                  {active && <Check className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} aria-hidden="true" />}
+                                </button>
+                              )
+                            })}
+                          </div>
+                          <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-default)' }}>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                setProjectMenuOpen(false)
+                                setShowNewProject(true)
+                              }}
+                              className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left text-[12px] font-semibold transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus-ring)]"
+                              style={{ color: 'var(--text-primary)' }}
+                            >
+                              <Plus className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} aria-hidden="true" />
+                              新建项目
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     <HomeModelHarnessSelect
                       projectId={selectedProjectId}
                       userId={user?.id || userParam}
@@ -601,6 +680,12 @@ function HomeSurface() {
                 </div>
               </section>
             </div>
+            {showNewProject && (
+              <NewProjectModal
+                onClose={() => setShowNewProject(false)}
+                onCreated={onProjectCreated}
+              />
+            )}
           </div>
         )
 }

@@ -23,6 +23,7 @@ import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal } from './session-welcome'
 import { NewSessionModal } from './modals'
+import { LayoutModeSwitch } from './layout-mode-switch'
 import { FileTreeLevel, OpenInVSCodeButton, type DirState, type Entry } from './project-files'
 import { WebTerminalModal, WebTerminalSurface, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
@@ -4650,6 +4651,21 @@ export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeAct
         >
           {currentSession?.name || currentTask?.name || sessionId}
         </strong>
+      </div>
+      {/* 会话顶栏接管工作台全局顶栏时，保留内容搜索与布局切换两个高频入口。 */}
+      <HeaderActionButton
+        tone="neutral"
+        data-tour="session-header-search"
+        data-testid="session-header-search"
+        title="搜索所有会话内容"
+        aria-label="搜索所有会话内容"
+        onClick={() => window.dispatchEvent(new CustomEvent('mobius:open-search'))}
+        icon={<Search className="h-3.5 w-3.5" strokeWidth={2} />}
+      >
+        <span className="hidden sm:inline">搜索</span>
+      </HeaderActionButton>
+      <div data-tour="session-header-layout-mode" data-testid="session-header-layout-mode" className="flex-shrink-0">
+        <LayoutModeSwitch />
       </div>
       {(jsonlTotal > jsonlEntries.length || (jsonlEntries.length > 200 && easyExpandAllSignal === 0)) && (
         <button

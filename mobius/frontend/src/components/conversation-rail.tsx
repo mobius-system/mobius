@@ -241,12 +241,14 @@ export function ConversationRail({
 
   const folderIsExpanded = (folder: ProjectFolder) => {
     if (normalizedQuery) return true
+    // 用户明确折叠后，尊重该选择，即使项目包含当前或运行中的会话。
     const storedCollapseState = projectCollapseState[projectFolderKey(folder.projectId)]
     if (storedCollapseState !== undefined) return !storedCollapseState
     return true
   }
 
   const toggleFolder = (folder: ProjectFolder) => {
+    // 搜索结果需要保持可见；其它情况下允许用户收起任何项目，包括当前会话所属项目。
     if (normalizedQuery) return
     const folderKey = projectFolderKey(folder.projectId)
     const nextCollapsed = folderIsExpanded(folder)
