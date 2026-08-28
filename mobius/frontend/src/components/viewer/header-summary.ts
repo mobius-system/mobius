@@ -27,6 +27,7 @@ import {
   extractBashCallFromBlock,
   bashCallOneLineSummary,
   isAimuxCommandToolUseName,
+  extractAimuxRemoteApplyPatchFiles,
   isBashToolUseName,
   extractPlanUpdate,
   extractTaskReminder,
@@ -276,6 +277,12 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
     for (const item of msg.content) {
       if (item.type === 'text') parts.push(String(item.text || ''))
       else if (item.type === 'tool_use') {
+        const aimuxPatchFiles = extractAimuxRemoteApplyPatchFiles(item)
+        if (aimuxPatchFiles.length > 0) {
+          const files = aimuxPatchFiles.map(file => basename(file.filePath)).join(', ')
+          parts.push(files ? `协作编辑 · ${files}` : '协作编辑')
+          continue
+        }
         if (item.name === 'Write') {
           const writeSummary = summarizeWriteToolInput(item?.input)
           if (writeSummary) {
@@ -286,7 +293,8 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
         if (isReadToolUseName(item.name)) {
           const call = extractReadCallFromBlock(item)
           if (call) {
-            parts.push(`Read · ${readCallOneLineSummary(call)}`)
+            const isImage = /\.(?:apng|avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i.test(call.filePath)
+            parts.push(`${isImage ? '图片读取' : 'Read'} · ${readCallOneLineSummary(call)}`)
             continue
           }
         }

@@ -211,22 +211,6 @@ export function SessionMentionPicker({
   return (
     <div ref={rootRef} className="relative" data-testid="session-mention-picker">
       <div className="flex flex-wrap items-center gap-1.5">
-        <button
-          ref={triggerRef}
-          type="button"
-          disabled={disabled || !hasScope}
-          onClick={() => {
-            typedMentionRef.current = null
-            setQuery('')
-            setOpen((current) => !current)
-          }}
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition-colors hover:bg-blue-500/10 disabled:cursor-not-allowed disabled:opacity-45"
-          style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)', background: 'var(--input-bg)' }}
-          title={hasScope ? '引用或联系其他 Session；也可以直接在描述末尾输入 @' : '请先选择目标任务或研究'}
-        >
-          <AtSign className="h-3.5 w-3.5" strokeWidth={1.9} />
-          关联 Session
-        </button>
         {selected.map((item) => (
           <div
             key={item.sessionId}

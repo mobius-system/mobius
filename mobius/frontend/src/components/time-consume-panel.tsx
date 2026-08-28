@@ -108,6 +108,8 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [view, setView] = useState<TimeConsumeView>('waterfall')
+  const [timelineZoom, setTimelineZoom] = useState(1)
+  const [timelinePosition, setTimelinePosition] = useState(1000)
 
   const load = useCallback(async (signal?: AbortSignal, showSpinner = false) => {
     if (!sessionId) {
@@ -137,6 +139,8 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
   useEffect(() => {
     let disposed = false
     setLoading(true)
+    setTimelineZoom(1)
+    setTimelinePosition(1000)
     void load(undefined, false)
     const stop = pollRecursive((signal) => {
       if (disposed) return
@@ -182,14 +186,32 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
 
   const timelineSegments = useMemo(() => {
     if (!totalMs) return []
+    const visibleDuration = totalMs / timelineZoom
+    const maxWindowStart = Math.max(0, totalMs - visibleDuration)
+    const windowStart = maxWindowStart * timelinePosition / 1000
+    const windowEnd = windowStart + visibleDuration
     return segments
-      .map((segment) => ({
-        ...segment,
-        startPercent: Math.max(0, Number(segment.start_offset_ms) || 0) / totalMs * 100,
-        widthPercent: Math.max(0, Number(segment.duration_ms) || 0) / totalMs * 100,
-      }))
+      .map((segment) => {
+        const segmentStart = Math.max(0, Number(segment.start_offset_ms) || 0)
+        const segmentEnd = segmentStart + Math.max(0, Number(segment.duration_ms) || 0)
+        const clippedStart = Math.max(segmentStart, windowStart)
+        const clippedEnd = Math.min(segmentEnd, windowEnd)
+        return {
+          ...segment,
+          startPercent: (clippedStart - windowStart) / visibleDuration * 100,
+          widthPercent: Math.max(0, clippedEnd - clippedStart) / visibleDuration * 100,
+        }
+      })
       .filter((segment) => segment.widthPercent > 0)
-  }, [segments, totalMs])
+  }, [segments, timelinePosition, timelineZoom, totalMs])
+
+  const timelineWindow = useMemo(() => {
+    if (!totalMs) return { start: 0, end: 0 }
+    const duration = totalMs / timelineZoom
+    const maxStart = Math.max(0, totalMs - duration)
+    const start = maxStart * timelinePosition / 1000
+    return { start, end: Math.min(totalMs, start + duration) }
+  }, [timelinePosition, timelineZoom, totalMs])
 
   const handleClear = useCallback(async () => {
     if (!sessionId || refreshing) return
@@ -323,56 +345,74 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                 <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed" style={{ borderColor: 'rgba(255,255,255,0.10)' }} />
                 <div className="absolute inset-x-0 top-0 h-full">
                   {timelineSegments.map((segment) => {
-                    const color = KIND_COLORS[segment.kind] || KIND_COLORS.other
                     const onModelTrack = segment.kind === 'model'
                     return (
                       <div
                         key={`${segment.start_at}-${segment.line_no ?? 'n'}-${segment.kind}`}
-                        className="absolute rounded-md border border-white/10 shadow-sm"
+                        className="absolute overflow-hidden rounded-sm border"
                         title={`${segment.label} · ${formatDuration(segment.duration_ms)} · ${segment.start_at} → ${segment.end_at}`}
                         style={{
                           left: `${segment.startPercent}%`,
-                          top: onModelTrack ? '4px' : 'calc(50% + 4px)',
-                          height: 'calc(50% - 8px)',
+                          top: onModelTrack ? 'calc(25% - 10px)' : 'calc(75% - 10px)',
+                          height: 'calc(25% - 4px)',
                           width: `${Math.max(segment.widthPercent, 0.45)}%`,
                           minWidth: 4,
-                          background: `linear-gradient(180deg, ${color}cc, ${color}88)`,
+                          borderColor: onModelTrack ? 'rgba(125,211,252,0.24)' : 'rgba(196,181,253,0.24)',
+                          background: onModelTrack
+                            ? 'linear-gradient(180deg, rgba(56,189,248,0.88) 0%, rgba(2,132,199,0.74) 100%)'
+                            : 'linear-gradient(180deg, rgba(167,139,250,0.88) 0%, rgba(124,58,237,0.74) 100%)',
+                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14)',
                         }}
-                      >
-                        <div className="px-1 py-1 text-[9px] font-medium text-white/95">
-                          <div className="truncate">{segment.label}</div>
-                          <div className="truncate text-white/75">{formatDuration(segment.duration_ms)}</div>
-                        </div>
-                      </div>
+                      />
                     )
                   })}
                 </div>
               </div>
+              <div className="mt-1 flex items-center justify-between text-[9px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                <span>+{formatDuration(timelineWindow.start)}</span>
+                <span>+{formatDuration(timelineWindow.end)}</span>
+              </div>
 
-              <div className="mt-3 max-h-80 space-y-1 overflow-y-auto pr-1">
-                {segments.map((segment) => {
-                  const color = KIND_COLORS[segment.kind] || KIND_COLORS.other
-                  return (
-                    <div
-                      key={`${segment.start_at}-${segment.line_no ?? 'n'}-${segment.kind}-row`}
-                      className="rounded-md border px-2.5 py-2"
-                      style={{ borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ background: color }} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 text-[11px]">
-                            <span className="truncate font-medium" style={{ color: 'var(--text-primary)' }}>{segment.label}</span>
-                            <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--text-muted)' }}>{formatDuration(segment.duration_ms)}</span>
-                          </div>
-                          <div className="mt-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                            {segment.start_at} → {segment.end_at}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+              <div
+                className="mt-3 space-y-2.5 border-t pt-2.5"
+                style={{ borderColor: 'var(--border-color)' }}
+                data-design-id="time-window-controls"
+              >
+                <label className="grid grid-cols-[68px_minmax(0,1fr)_38px] items-center gap-2">
+                  <span className="text-[10.5px]" style={{ color: 'var(--text-secondary)' }}>时间缩放</span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="16"
+                    step="0.5"
+                    value={timelineZoom}
+                    onChange={(event) => setTimelineZoom(Number(event.target.value))}
+                    className="h-4 w-full cursor-pointer accent-sky-400"
+                    aria-label="时间缩放"
+                    aria-valuetext={`${timelineZoom.toFixed(timelineZoom % 1 === 0 ? 0 : 1)} 倍`}
+                  />
+                  <output className="text-right text-[10px] tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                    {timelineZoom.toFixed(timelineZoom % 1 === 0 ? 0 : 1)}×
+                  </output>
+                </label>
+                <label className="grid grid-cols-[68px_minmax(0,1fr)_38px] items-center gap-2">
+                  <span className="text-[10.5px]" style={{ color: 'var(--text-secondary)' }}>时间定位</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1000"
+                    step="1"
+                    value={timelinePosition}
+                    onChange={(event) => setTimelinePosition(Number(event.target.value))}
+                    disabled={timelineZoom === 1}
+                    className="h-4 w-full cursor-pointer accent-violet-400 disabled:cursor-not-allowed disabled:opacity-35"
+                    aria-label="时间定位"
+                    aria-valuetext={`当前窗口从会话开始后 ${formatDuration(timelineWindow.start)} 到 ${formatDuration(timelineWindow.end)}`}
+                  />
+                  <output className="text-right text-[10px] tabular-nums" style={{ color: timelineZoom === 1 ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                    {timelineZoom === 1 ? '全段' : `${Math.round(timelinePosition / 10)}%`}
+                  </output>
+                </label>
               </div>
             </div>
           ) : (

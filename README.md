@@ -214,16 +214,27 @@ python3 start.py
 
 ## Roadmap
 
-What we are building next:
+### Done
 
-- **Mobile App** — XiaoMo and full Agent control on iOS and Android
-- **Desktop App** — a native connector that brings PC devices (Windows, macOS, Linux) into Mobius
+- ✅ **Mobile App** — XiaoMo and full Agent control on iOS and Android
+- ✅ **Desktop App** — a native connector that brings PC devices (Windows, macOS, Linux) into Mobius
+
+### Building next
+
 - **Extension Market** — discover, share, and install community-built extensions
 - **i18n & Multi-language** — localize the interface and documentation into more languages
 
 ### Contribution
 
 Issues, plugins, docs, bug reports, use cases — all welcome. If you believe AI systems should keep evolving instead of remaining static tools, join us.
+
+### Join the WeChat group
+
+Scan the QR code below to join the Mobius WeChat group and connect with the team and community.
+
+<p align="center">
+  <img src="https://serve.nutshellai.cn/publish/auto/tutorial/wechat-group-qr.png" alt="WeChat group QR code" width="240" />
+</p>
 
 <p align="center">
   <a href="https://github.com/mobius-system/mobius">GitHub</a>
@@ -232,3 +243,11 @@ Issues, plugins, docs, bug reports, use cases — all welcome. If you believe AI
   ·
   <a href="https://mobius-system.github.io/mobius/en/">Docs</a>
 </p>
+
+## Acknowledgments
+
+Special thanks to these projects and communities:
+
+- [Codex](https://github.com/openai/codex) — an AI coding agent
+- [LINUX DO](https://linux.do/) — a lively Linux & tech community
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/) — LLM self-improvement infrastructure

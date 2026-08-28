@@ -18,6 +18,7 @@ import {
   TYPE_THEME,
   DEFAULT_THEME,
   EDIT_TOOL_THEME,
+  AIMUX_PATCH_THEME,
   START_PY_THEME,
   BASH_TOOL_THEME,
   AIMUX_COMMAND_THEME,
@@ -47,6 +48,7 @@ import {
   extractPlanCard,
   extractMcpToolResult,
   isAimuxCommandToolUse,
+  isAimuxRemoteApplyPatchToolUse,
 } from './entry-extract'
 import {
   isEditToolUse,
@@ -122,15 +124,17 @@ function ToolStatusIcon({ status }: { status: ToolStatus }) {
 
 /**
  * 单卡 open 的"系统期望值" — 所有展开/折叠条件合并到此一处判定, 优先级 (高 → 低):
- *   ① forceOpen       搜索命中        — 用户显式查看, 压过一切 (即使用户曾手动折叠也掀开).
- *   ② parentOrderedCollapse    forgotten-flag  — 默认折叠; 被 ① 压过, 但压过 ③④ (命中即折, 即使满足本地展开条件).
- *   ③ 本地展开条件     patch_apply / 计划(canPlan) / 纯文本卡(可精简·可图片·error 类型, 且非代码卡).
- *   ④ toolError       工具失败        — "折叠不藏错误"; 被 ② 抑制.
- *   ⑤ 兜底            折叠.
+ *   ① 字段模式       始终默认折叠 — 字段树不能被任何自动展开信号掀开.
+ *   ② forceOpen       搜索命中        — 用户显式查看, 压过 parentOrderedCollapse.
+ *   ③ parentOrderedCollapse    forgotten-flag  — 默认折叠; 压过本地展开条件.
+ *   ④ 本地展开条件     patch_apply / 计划(canPlan) / 纯文本卡(可精简·可图片·error 类型, 且非代码卡).
+ *   ⑤ toolError       工具失败        — "折叠不藏错误"; 被 ①抑制.
+ *   ⑥ 兜底            折叠.
  * 这是"系统期望"的单向判定; 实际 open 还受用户手动 onToggle 锁定 (见下方 userToggledRef).
- * 自动信号只"掀开"(ratchet, 不自动折回) — 折叠仅来自初值 ② 或用户手动.
+ * 自动信号只"掀开"(ratchet, 不自动折回) — 字段模式保持折叠, 其它折叠仅来自初值 ③ 或用户手动.
  */
 function resolveDesiredOpen(opts: {
+  mode: CardMode
   forceOpen: boolean
   parentOrderedCollapse: boolean
   isPatchApply: boolean
@@ -141,6 +145,7 @@ function resolveDesiredOpen(opts: {
   isErrorType: boolean
   toolError: boolean
 }): boolean {
+  if (opts.mode === 'field') return false       // 字段模式永远不自动展开, 压过其它规则
   if (opts.forceOpen) return true       // ① 搜索命中
   if (opts.parentOrderedCollapse) return false   // ② forgotten-flag
   // ③ 本地展开条件: patch_apply / 计划 / 纯文本卡(可精简·可图片·error 类型, 且非代码卡)
@@ -238,6 +243,8 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
     ? ASSISTANT_RESPONSE_KEYWORD_THEME
     : isEditToolUse(entry)
     ? EDIT_TOOL_THEME
+    : isAimuxRemoteApplyPatchToolUse(entry)
+    ? AIMUX_PATCH_THEME
     : isAimuxCommandToolUse(entry)
     ? AIMUX_COMMAND_THEME
     : isStartPyToolUse(entry)
@@ -260,9 +267,9 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   const [mode, setMode] = useState<CardMode>(canPlan ? 'plan' : canCode ? 'code' : canImage ? 'image' : canCompact ? 'compact' : 'field')
 
   // 卡片展开态受控于本地 state, 跨父组件重渲染 (实时轮询追加 entry) 保持不变.
-  // 展开优先级集中在上方的 resolveDesiredOpen: forceOpen(搜索) > parentOrderedCollapse(forgotten-flag) >
-  // localExpand(本地展开条件) > toolError(工具失败) > 兜底折叠. 用户手动折叠 → onToggle 写回 state,
-  // 此后重渲染不再强制掀开 (forceOpen 除外 — 搜索是用户显式查看).
+  // 展开优先级集中在上方的 resolveDesiredOpen: field(字段模式) > forceOpen(搜索) >
+  // parentOrderedCollapse(forgotten-flag) > localExpand(本地展开条件) > toolError(工具失败) > 兜底折叠.
+  // 用户手动折叠 → onToggle 写回 state, 此后重渲染不再强制掀开 (字段模式也不会被自动掀开).
   const tourTarget = jsonEntryTourTarget(entry)
 
   // 工具调用状态: 由 "该 tool_use 的结果是否已落地" 推导 (running = 已发起未回结果).
@@ -270,6 +277,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
 
   // 系统期望 open — 所有展开/折叠条件集中在上方的 resolveDesiredOpen 判定.
   const desiredOpen = resolveDesiredOpen({
+    mode,
     forceOpen,
     parentOrderedCollapse,
     isPatchApply: isPatchApplyEvent,
@@ -281,15 +289,15 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
     toolError: toolStatus === 'error',
   })
 
-  // 用户是否手动点过折叠/展开: 一旦手动操作, 自动展开就不再强制掀开 (forceOpen 除外).
+  // 用户是否手动点过折叠/展开: 一旦手动操作, 自动展开就不再强制掀开 (字段模式除外).
   const userToggledRef = useRef(false)
   const [open, setOpen] = useState<boolean>(desiredOpen)
 
-  // 自动信号跟随 — ratchet (只掀开不折回; 折叠仅来自初值 parentOrderedCollapse 或用户手动) + 尊重用户手动:
-  //   · forceOpen (搜索): 即使用户曾手动折叠也强制掀开 (显式查看优先, 对齐"轮次先展开、卡片后挂载"的延迟挂载).
+  // 自动信号跟随 — ratchet (只掀开不折回; 字段模式保持折叠) + 尊重用户手动:
+  //   · forceOpen (搜索): 非字段模式下即使用户曾手动折叠也强制掀开 (显式查看优先).
   //   · 其它信号: 用户手动操作过则锁定不动.
   useEffect(() => {
-    if (forceOpen) { setOpen(true); return }
+    if (forceOpen && mode !== 'field') { setOpen(true); return }
     if (!userToggledRef.current && desiredOpen) setOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forceOpen, desiredOpen])

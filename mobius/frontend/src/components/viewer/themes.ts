@@ -32,6 +32,10 @@ export const DEFAULT_THEME: CardTheme = { dot: 'bg-gray-500', border: 'border-gr
 // 边框/底色比常规 type 稍重一点, 方便在长列表里一眼扫到文件改动.
 export const EDIT_TOOL_THEME: CardTheme = { dot: 'bg-indigo-400', border: 'border-indigo-500/20', bg: 'bg-indigo-500/[0.07]', text: 'text-indigo-300', label: '编辑' }
 
+// AIMUX remote_apply_patch: 在协作计算机上应用的文件修改。与本地 Edit 保持代码差异视图，
+// 但以 teal 标明执行位置，避免用户误以为修改发生在当前机器。
+export const AIMUX_PATCH_THEME: CardTheme = { dot: 'bg-teal-400', border: 'border-teal-500/25', bg: 'bg-teal-500/[0.08]', text: 'text-teal-200', label: '协作编辑' }
+
 // 特例: assistant 里带 name:"Bash" 且 input.command 包含 "start.py" 的 tool_use 卡片 —
 // 用 gold (yellow), 提示这是触发了产品构建的 shell 调用, 在长列表里一眼可扫.
 // 用 yellow 与 system/turn 的 amber 拉开, 避免和已有暖色调混淆.

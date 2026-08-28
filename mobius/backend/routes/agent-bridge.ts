@@ -7,6 +7,8 @@ import agents from '../agents';
 import { canOperateSession } from '../services/access-control';
 import { auth } from '../middleware/auth';
 import { db } from '../../db';
+import { cleanupBridgeTokens } from '../services/agent-bridge-cli';
+import { findAgentBridgeChannel as _findChannelForCleanup } from '../services/agent-mention-bridge';
 import {
   closeAgentBridgeChannel,
   decideAgentBridgeMessage,
@@ -127,6 +129,13 @@ function startAgentBridgeDeliveryScheduler(): NodeJS.Timeout | null {
       for (const messages of groupPendingAgentBridgeMessages(pending, 20)) {
         await deliverBridgeMessages(messages.map((message) => Number(message.id)));
       }
+      // 顺带清理已过期/关闭通道遗留的服务端 token 文件 (零残留).
+      try {
+        cleanupBridgeTokens((channelId) => {
+          const channel = _findChannelForCleanup(channelId);
+          return !!channel && channel.status === 'active';
+        });
+      } catch {}
     } catch (e) {
       console.warn(`[agent-bridge] pending delivery scan failed: ${(e as Error).message}`);
     } finally {

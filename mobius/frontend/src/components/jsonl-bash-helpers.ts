@@ -21,6 +21,12 @@ export function isAimuxCommandToolUseName(name: unknown): boolean {
   return normalized.startsWith('mcp__aimux__') && normalized.endsWith('exec_command')
 }
 
+// AIMUX 远程补丁工具的输入是 apply_patch 格式文本，和远程命令不同：它应进入
+// 代码差异卡片，而不是被当作命令或通用 JSON 工具调用渲染。
+export function isAimuxRemoteApplyPatchToolUseName(name: unknown): boolean {
+  return typeof name === 'string' && name.toLowerCase() === 'mcp__aimux__remote_apply_patch'
+}
+
 // Claude Code 官方 Bash 工具名是 'Bash', 不同代理实现里出现过 'bash'/'BASH' 大小写不一,
 // 一律按小写比较兼容. Codex 的等价工具叫 'exec_command' 但走 response_item.function_call,
 // 不进这条 assistant tool_use 路径, 这里不处理.

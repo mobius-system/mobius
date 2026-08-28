@@ -59,6 +59,10 @@ import {
 import * as sessionFeatures from '../services/session-features';
 // @ts-ignore — service 仍是 .js
 import { runSessionMessage } from '../services/session-message-runner';
+import {
+  afterAssistantHumanInputQueued,
+  clearAssistantAutoCompactCount,
+} from '../services/assistant-auto-compact';
 // 消息推送钩子: 1v1 assistant 回复 settle 后, 若用户离线(无 SSE)则远程推送
 import * as presence from '../services/user-presence';
 import { pushToUser as pushToUserExt, isEnabled as isExtPushEnabled } from '../services/extension-push';
@@ -649,7 +653,7 @@ router.delete('/:id', auth, async (req: express.Request, res: express.Response) 
 
   const sid = id;
   let noticeResult: any = null;
-  if (session.scope_type === 'research') {
+  if (session.scope_type === 'research' && shouldNotifyResearchPeers(req)) {
     noticeResult = appendResearchSessionLeftNotice(session, user.id, req.body);
     if (noticeResult?.error) { res.status(500).json({ error: noticeResult.error }); return; }
   }
@@ -694,7 +698,7 @@ router.delete('/:id/permanent', auth, async (req: express.Request, res: express.
   }
   auditSessionAccess(user, 'delete_session_permanent', session);
   let noticeResult: any = null;
-  if (session.scope_type === 'research') {
+  if (session.scope_type === 'research' && shouldNotifyResearchPeers(req)) {
     noticeResult = appendResearchSessionLeftNotice(session, user.id, req.body);
     if (noticeResult?.error) { res.status(500).json({ error: noticeResult.error }); return; }
   }
@@ -1691,6 +1695,25 @@ router.post('/:id/messages', auth, async (req: express.Request, res: express.Res
       logger: console,
       urgent: req.body?.urgent === true,
     } as any);
+    if (req.body?.assistant_human_input === true) {
+      const isCompactCommand = String(inputText || content).trim().startsWith('/compact');
+      if (isCompactCommand) {
+        clearAssistantAutoCompactCount(sessionId);
+      } else {
+        await afterAssistantHumanInputQueued(sessionId, async () => {
+          await runSessionMessage({
+            user,
+            sessionId,
+            content: '/compact',
+            inputText: '/compact',
+            hasInputText: true,
+            requestId: `assistant-auto-compact-${sessionId}-${Date.now()}`,
+            source: 'assistant.auto-compact',
+            logger: console,
+          } as any);
+        });
+      }
+    }
     if (pendingMentions.length > 0) SessionPendingMentions.clear(sessionId);
     auditSessionAccess(user, 'send_session_message', Sessions.findById(sessionId) as any);
     // 1v1 推送钩子: agent 回复 settle 后, 若用户此时离线(无 SSE) → 远程推送.

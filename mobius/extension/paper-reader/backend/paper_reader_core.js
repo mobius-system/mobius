@@ -907,8 +907,9 @@ function listConversation(e, t) {
   for (const run of rows) {
     const question = conversationQuestion(e, run);
     const answer = conversationAnswer(e, run);
-    if (!question || !answer) continue;
+    if (!question) continue;
     items.push({ run_id: run.id, status: run.status, model: run.model_label, question, answer,
+      session_id: run.session_id || "", session_url: run.session_url || "", error: run.error || "",
       created_at: run.created_at, updated_at: run.updated_at, summary: run.summary || "" });
   }
   const hasMore = items.length > lim;

@@ -72,7 +72,7 @@ function AimuxStatusBadgeInner() {
           style={{ width: 8, height: 8, borderRadius: 9999, background: meta.color, boxShadow: `0 0 4px ${meta.color}99` }}
         />
       </span>
-      <span className="text-[12px] font-medium">{meta.label}</span>
+      <span className={`text-[12px] font-medium ${meta.pulse ? 'mobius-status-marquee' : ''}`}>{meta.label}</span>
     </TopNavActionElement>
   )
 }

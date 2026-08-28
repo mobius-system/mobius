@@ -35,7 +35,7 @@ function JsonlInitialSkeleton() {
           <span className="absolute inset-0 rounded-full border-2 border-[var(--text-muted)] opacity-20" />
           <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-[var(--text-muted)] animate-spin" />
         </span>
-        <span>正在加载会话数据...</span>
+        <span className="mobius-status-marquee">正在加载会话数据...</span>
       </div>
       <div className="space-y-2" aria-hidden="true">
         {Array.from({ length: 6 }).map((_, index) => (
@@ -353,7 +353,7 @@ export function JsonlView({
               <span className="absolute inset-0 rounded-full border-2 border-amber-300/20" />
               <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-amber-300 animate-spin" />
             </span>
-            <span className="font-medium">{emptyLoadingText}</span>
+            <span className="font-medium mobius-status-marquee">{emptyLoadingText}</span>
           </div>
         </div>
       )

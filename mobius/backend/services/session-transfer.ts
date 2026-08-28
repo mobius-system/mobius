@@ -470,7 +470,18 @@ function buildSessionTransferMarkdown({
   });
 }
 
-function writeSessionTransferBundle({ bindPath, sourceSession, targetSessionId, jsonlPath }: any): any {
+function safePathSegment(value: any, fallback: string): string {
+  const normalized = String(value || '').trim();
+  return /^[A-Za-z0-9_-]+$/.test(normalized) ? normalized : fallback;
+}
+
+function writeSessionTransferBundle({
+  bindPath,
+  sourceSession,
+  targetSessionId,
+  jsonlPath,
+  directoryName = 'change_model',
+}: any): any {
   if (!bindPath || !sourceSession?.session_id || !targetSessionId) {
     throw new Error('创建 Session 转接文件缺少 bindPath、sourceSession 或 targetSessionId');
   }
@@ -481,7 +492,18 @@ function writeSessionTransferBundle({ bindPath, sourceSession, targetSessionId, 
 
   const generatedAt = new Date().toISOString();
   const data = extractSessionTransferData({ jsonlPath, maxTextChars: null });
-  const dir = path.join(path.resolve(bindPath), HIDDEN_FOLDER_NAME, 'change_model', String(targetSessionId));
+  const transferDir = safePathSegment(directoryName, 'change_model');
+  // 更换模型继续沿用历史路径；跨 Agent 引用按 source/target 分目录，避免
+  // 同一目标 Session 连续 @ 多个来源时相互覆盖转接文件。
+  const dir = transferDir === 'change_model'
+    ? path.join(path.resolve(bindPath), HIDDEN_FOLDER_NAME, transferDir, String(targetSessionId))
+    : path.join(
+      path.resolve(bindPath),
+      HIDDEN_FOLDER_NAME,
+      transferDir,
+      safePathSegment(sourceSession.session_id, 'source'),
+      safePathSegment(targetSessionId, 'target'),
+    );
   fs.mkdirSync(dir, { recursive: true });
   const paths: TransferPaths = {
     full: path.join(dir, 'full.md'),

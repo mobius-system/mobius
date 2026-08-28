@@ -3367,6 +3367,7 @@ export function AssistantChat() {
             input_text: text,
             request_id: requestId,
             attachments: promptAttachments,
+            assistant_human_input: true,
           }),
         })
         snapshot = await api(`/api/assistant/sessions/${encodeURIComponent(baselineSnapshot.session.session_id)}`) as AssistantSnapshot
@@ -3507,6 +3508,7 @@ export function AssistantChat() {
           content: clonePromptTemplate(task, cloneName),
           input_text: task,
           request_id: requestId,
+          assistant_human_input: true,
         }),
       })
       const snapshot = await api(`/api/assistant/sessions/${encodeURIComponent(sessionId)}`) as AssistantSnapshot
