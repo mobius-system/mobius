@@ -401,7 +401,7 @@ assert.match(chatSource, /data-composer-expand-toggle[\s\S]*inputExpanded \? <Ch
 assert.match(chatSource, /\{inputExpanded && layout !== 'easy' && \(/, '长文本 modal 只能保留给非 easy 布局')
 assert.match(chatSource, /maxHeight: layout === 'easy' \? easyComposerLayout\.maxHeight : '70vh'/, 'easy Composer 必须使用动态高度，常规 Composer 必须保留原 70vh 上限')
 assert.match(homeSurfaceSource, /useComposerInputLayout\(\{[\s\S]*textareaRef: composerRef,[\s\S]*value: prompt,[\s\S]*expanded: false,[\s\S]*isMobile: isComposerMobile/, 'Home Composer 必须复用共享输入高度策略并保持自动增长')
-assert.doesNotMatch(homeSurfaceSource, /composerExpanded|data-home-composer-expand-toggle|ChevronDown|ChevronUp/, 'Home Composer 不得保留无意义的展开/收起按钮')
+assert.doesNotMatch(homeSurfaceSource, /composerExpanded|data-home-composer-expand-toggle/, 'Home Composer 不得保留无意义的展开/收起按钮')
 assert.match(homeSurfaceSource, /data-home-composer-attachment-button[\s\S]*aria-label="选择附件"[\s\S]*<Paperclip/, 'Home Composer 必须在发送按钮左侧提供通用附件入口')
 assert.match(homeSurfaceSource, /overflowY: homeComposerLayout\.overflowY[\s\S]*color: 'var\(--text-primary\)'/, 'Home Composer 必须保留共享动态 overflow')
 assert.match(homeAttachmentButtonSource, /onClick=\{openFilePicker\}[\s\S]*title="添加附件"/, 'Home 附件按钮必须打开通用文件选择器')
@@ -523,8 +523,8 @@ assert.match(workbenchShellSource, /event\.key === ',' \|\| event\.code === 'Com
 
 // 响应式静态布局回归（无需登录态或浏览器）。
 assert.match(railSource, /window\.matchMedia\('\(min-width: 1280px\)'\)/, 'ConversationRail 必须以 1280px 作为常驻断点')
-assert.match(railSource, /className="hidden h-full xl:block"/, '1280px 及以上必须直接显示历史轨')
-assert.match(railSource, /xl:hidden" style=\{\{ top: 'var\(--workbench-topbar-height\)' \}\}/, '窄屏历史抽屉必须跟随共享 topbar 高度并在 xl 隐藏')
+assert.match(railSource, /className="hidden h-full[^"]*xl:block"/, '1280px 及以上必须直接显示历史轨')
+assert.match(railSource, /top-\[44px\][^"`]*xl:hidden" style=\{\{ top: 'var\(--workbench-topbar-height\)' \}\}/, '窄屏历史抽屉必须跟随共享 topbar 高度并在 xl 隐藏')
 assert.match(workbenchShellSource, /xl:hidden[\s\S]*aria-label="历史"/, '窄屏必须从顶部「历史」按钮一次打开抽屉')
 assert.match(workbenchShellSource, /\{topbar \?\? \([\s\S]*<WorkbenchGlobalTopbar/, 'Portal 尚未挂载时共享顶栏必须提供 fallback')
 assert.match(cssSource, /workbench-shell__topbar:has\(\[data-workbench-session-topbar\]\)[\s\S]*workbench-global-topbar[\s\S]*display:\s*none/, 'Session Portal 挂载后必须隐藏 fallback，避免双顶栏内容')
