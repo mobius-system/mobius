@@ -213,10 +213,10 @@ function genericToolDetail(block: any): string {
   const name = String(block?.name || '工具')
   const payload = block?.payload
   const command = payload ? functionCallCommand(payload) : null
-  if (command) return `${name} · ${compactText(command, 160)}`
+  if (command && !looksLikeToolSource(command)) return commandTitle(command)
   const input = toolInputObject(block)
-  const hint = input.query || input.pattern || input.path || input.file_path || input.command || input.url || ''
-  return hint ? `${name} · ${compactText(hint, 160)}` : name
+  const hint = input.search_query || input.query || input.pattern || input.path || input.file_path || input.command || input.url || ''
+  return hint ? compactText(String(hint), 72) : name
 }
 
 function isExploreTool(name: string): boolean {
@@ -607,23 +607,26 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
           }), 1, callId)
           return
         }
-        if (isExploreTool(name)) {
-          const query = String(input.query || input.pattern || input.file_path || input.path || input.url || '').trim()
-          const searching = /(?:grep|search|find)/i.test(name)
-          append(makeActivity('explore', `${searching ? '正在搜索' : '正在读取'}${query ? ` ${compactText(query, 140)}` : ''}`, item.lineNo, {
-            details: query ? [query] : [],
+        const query = String(input.search_query || input.query || input.pattern || input.file_path || input.path || input.url || '').trim()
+        const innerName = String(input.__toolName || name)
+        if (isExploreTool(name) || isExploreTool(innerName) || !!input.search_query) {
+          const searching = /(?:grep|search|find|web__?run)/i.test(innerName) || !!input.search_query
+          append(makeActivity('explore', `${searching ? '正在搜索' : '正在读取'}${query ? ` ${compactText(query, 72)}` : ''}`, item.lineNo, {
+            details: [],
           }), 1, callId)
           return
         }
-        if (isCommandTool(name)) {
-          const command = functionCallCommand(block?.payload || sourceEntry?.payload) || input.cmd || input.command || genericToolDetail(block)
-          append(makeActivity('command', commandTitle(command), item.lineNo, {
-            details: commandDetails(command),
-          }), 1, callId)
-          return
+        if (isCommandTool(name) || isCommandTool(innerName)) {
+          const command = functionCallCommand(block?.payload || sourceEntry?.payload) || input.cmd || input.command || ''
+          if (command && !looksLikeToolSource(command)) {
+            append(makeActivity('command', commandTitle(command), item.lineNo, {
+              details: commandDetails(command),
+            }), 1, callId)
+            return
+          }
         }
         append(makeActivity(isPlanTool(name) ? 'plan' : 'tool', genericToolDetail(block), item.lineNo, {
-          details: Object.keys(input).length ? [compactText(JSON.stringify(input), 360)] : [],
+          details: [],
         }), 1, callId)
       }
 
