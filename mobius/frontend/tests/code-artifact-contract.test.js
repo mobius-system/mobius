@@ -94,6 +94,7 @@ assert.doesNotMatch(preview, /VSCode[^'"`\n]*(?:跳行|定位到)/, 'external VS
 assert.match(preview, /event\.stopImmediatePropagation\(\)/, 'preview Escape must stop at the top layer')
 assert.match(preview, /trigger\?\.isConnected[\s\S]*fallbackFocusRef/, 'preview must restore its trigger or message-container fallback')
 assert.match(styles, /@media \(max-width: 767px\)[\s\S]*height: min\(88dvh, 880px\)/, 'narrow preview must become a bottom sheet')
+assert.match(styles, /@media \(max-width: 767px\)[\s\S]*\.workbench-shell__preview:has\(\[data-code-artifact-preview\]\)[\s\S]*min-width:\s*0[\s\S]*max-width:\s*100%[\s\S]*flex:\s*0 0 100%/, 'narrow preview must clear the desktop pane width constraints')
 assert.match(styles, /scroll-margin-block: 4\.5rem/, 'target rows must clear the sticky preview chrome')
 assert.match(styles, /\.code-artifact-preview \.hljs-keyword/, 'preview syntax colors must reuse the shared syntax tokens')
 assert.match(styles, /\.code-artifact-preview__image[\s\S]*object-fit:\s*contain/, 'image previews must preserve aspect ratio within the available pane')

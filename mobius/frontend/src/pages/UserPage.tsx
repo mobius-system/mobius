@@ -549,6 +549,7 @@ function HomeSurface() {
                     </label>
                     <HomeModelHarnessSelect
                       projectId={selectedProjectId}
+                      userId={user?.id || userParam}
                       lastRememberedModel={lastRememberedModel}
                       projectDefaultModel={selectedProject?.default_model}
                       value={selectedModel}

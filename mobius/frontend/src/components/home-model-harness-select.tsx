@@ -3,6 +3,27 @@ import { Brain } from 'lucide-react'
 import { api } from '../store'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 
+const LAST_SELECTION_STORAGE_PREFIX = 'mobius:home-model-harness:last:'
+
+function readLastSelection(userId: string): string {
+  if (!userId || typeof localStorage === 'undefined') return ''
+  try {
+    const raw = localStorage.getItem(LAST_SELECTION_STORAGE_PREFIX + userId)
+    return typeof raw === 'string' && raw.trim() ? raw.trim() : ''
+  } catch {
+    return ''
+  }
+}
+
+function writeLastSelection(userId: string, modelKey: string) {
+  if (!userId || !modelKey || typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(LAST_SELECTION_STORAGE_PREFIX + userId, modelKey)
+  } catch {
+    // localStorage 不可用时仅保留当前页面内的选择。
+  }
+}
+
 type HomeModelOption = {
   key: string
   label?: string
@@ -27,6 +48,7 @@ function optionLabel(option: HomeModelOption) {
 
 export function HomeModelHarnessSelect({
   projectId,
+  userId,
   lastRememberedModel,
   projectDefaultModel,
   value,
@@ -34,6 +56,7 @@ export function HomeModelHarnessSelect({
   disabled = false,
 }: {
   projectId: string
+  userId?: string
   lastRememberedModel?: string
   projectDefaultModel?: string | null
   value: string
@@ -69,14 +92,15 @@ export function HomeModelHarnessSelect({
   useEffect(() => {
     if (!projectId || options.length === 0) return
     if (userTouchedProjectRef.current === projectId && options.some(option => option.key === value)) return
-    const preferred = resolveDefaultModelKey({ scopeLastModel: lastRememberedModel, projectDefaultModel, globalDefaultModel })
+    const userRememberedModel = readLastSelection(userId || '')
+    const preferred = resolveDefaultModelKey({ scopeLastModel: userRememberedModel || lastRememberedModel, projectDefaultModel, globalDefaultModel })
     const fallbackPreferred = resolveDefaultModelKey({ projectDefaultModel, globalDefaultModel })
     const next = options.find(option => option.key === preferred)
       || options.find(option => option.key === fallbackPreferred)
       || options.find(option => option.is_default)
       || options[0]
     if (next?.key && next.key !== value) onChange(next.key)
-  }, [globalDefaultModel, lastRememberedModel, onChange, options, projectDefaultModel, projectId, value])
+  }, [globalDefaultModel, lastRememberedModel, onChange, options, projectDefaultModel, projectId, userId, value])
 
   const selectedLabel = useMemo(
     () => options.find(option => option.key === value),
@@ -100,6 +124,7 @@ export function HomeModelHarnessSelect({
         value={value}
         onChange={event => {
           userTouchedProjectRef.current = projectId
+          writeLastSelection(userId || '', event.target.value)
           onChange(event.target.value)
         }}
         disabled={disabled || !optionsLoaded || options.length === 0}
