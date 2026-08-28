@@ -2327,9 +2327,10 @@ type EasyProjectOption = {
   runningCount?: number
 }
 
-export function ChatArea({ layout = 'default', onNewSession, easyProjectControl }: {
+export function ChatArea({ layout = 'default', onNewSession, onNewProject, easyProjectControl }: {
   layout?: 'default' | 'stacked' | 'easy'
   onNewSession?: () => void
+  onNewProject?: () => void
   easyProjectControl?: {
     selectedProjectId?: string
     selectedProjectName?: string
@@ -4552,6 +4553,18 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
               icon={<Plus className="h-3.5 w-3.5" strokeWidth={2} />}
             >
               <span>新会话</span>
+            </HeaderActionButton>
+          )}
+          {onNewProject && (
+            <HeaderActionButton
+              tone="blue"
+              data-tour="session-header-new-project"
+              title="新建项目"
+              className="hidden md:inline-flex"
+              onClick={onNewProject}
+              icon={<FolderPlus className="h-3.5 w-3.5" strokeWidth={1.9} />}
+            >
+              <span>新项目</span>
             </HeaderActionButton>
           )}
           {extensionAppUrl && (
