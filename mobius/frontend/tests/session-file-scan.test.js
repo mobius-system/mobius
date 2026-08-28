@@ -13,10 +13,10 @@ const autoScanEffect = chatSource.slice(effectStart, effectEnd)
 
 assert.match(
   autoScanEffect,
-  /if \(toolFilesReady \|\| toolFilesLoading\) return[\s\S]*?void loadToolFiles\(\)/,
-  'an empty completed result must not trigger another automatic scan',
+  /if \(toolFilesReady \|\| toolFilesLoading \|\| toolFilesError\) return[\s\S]*?void loadToolFiles\(\)/,
+  'an empty completed result or reported error must not trigger another automatic scan',
 )
-assert.match(autoScanEffect, /\[[^\]]*toolFilesLoading[^\]]*toolFilesReady[^\]]*\]/, 'the effect must react to readiness changes')
+assert.match(autoScanEffect, /\[[^\]]*toolFilesError[^\]]*toolFilesLoading[^\]]*toolFilesReady[^\]]*\]/, 'the effect must react to readiness and error changes')
 assert.doesNotMatch(autoScanEffect, /toolFiles\.length \|\| toolFilesLoading/, 'file count cannot represent whether the first scan completed')
 
 console.log('session-file-scan ok')
