@@ -571,6 +571,7 @@ function renderPaper(paper) {
   state.anchor = null;
   state.activeParagraph = null;
   state.currentView = 'text';
+  document.body.classList.remove('is-pdf-view');
   $('readerEmpty').hidden = true;
   $('viewbar').hidden = false;
   $('paper').hidden = false;
@@ -963,6 +964,7 @@ async function loadPdfDocument(url) {
 
 async function setView(view) {
   state.currentView = view;
+  document.body.classList.toggle('is-pdf-view', view === 'pdf');
   document.querySelectorAll('[data-view]').forEach((button) => button.classList.toggle('is-active', button.dataset.view === view));
   if (view === 'text') {
     $('paper').hidden = false;

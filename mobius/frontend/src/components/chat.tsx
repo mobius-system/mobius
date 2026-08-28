@@ -2676,9 +2676,11 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
 
   useEffect(() => {
     if (!toolDrawerOpen || (activeToolTab !== 'files' && activeToolTab !== 'diff')) return
-    if (toolFiles.length || toolFilesLoading || toolFilesError) return
+    // 空列表也是一次有效的扫描结果。若只用 files.length 判断，空 Session 会在
+    // loading 结束后立刻再次请求，形成永不结束的“扫描中…”循环。
+    if (toolFilesReady || toolFilesLoading || toolFilesError) return
     void loadToolFiles()
-  }, [activeToolTab, loadToolFiles, toolDrawerOpen, toolFiles.length, toolFilesError, toolFilesLoading])
+  }, [activeToolTab, loadToolFiles, toolDrawerOpen, toolFilesError, toolFilesLoading, toolFilesReady])
 
   const selectedToolFile = useMemo(
     () => toolFiles.find(file => sessionFileMatches(file, selectedToolFilePath)) || null,
@@ -4066,7 +4068,7 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
     }
   }, [currentSession?.session_id, currentTask?.task_id, flushPendingJsonlEntries, jsonlLoadingMore, jsonlTotal, jsonlEntries.length])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const sid = currentSession?.session_id || currentTask?.task_id
     if (!sid) return
     clearPendingJsonlEntries()

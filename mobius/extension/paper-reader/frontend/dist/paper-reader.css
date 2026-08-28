@@ -160,6 +160,7 @@ body.is-resizing iframe { pointer-events: none; }
   max-width: var(--paper-w); height: 54px; position: sticky; top: var(--topbar-h); z-index: 25; display: flex; align-items: center; justify-content: space-between;
   margin: 0 auto; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--line); backdrop-filter: blur(12px);
 }
+body.is-pdf-view .pr-reader-toolbar { position: relative; top: auto; }
 .pr-segmented { height: 32px; display: inline-flex; align-items: center; padding: 3px; border-radius: var(--radius); background: #eef0f3; }
 .pr-segmented button { height: 26px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; border-radius: 4px; color: var(--muted); background: transparent; cursor: pointer; font-size: 11px; font-weight: 600; }
 .pr-segmented button svg { width: 14px; height: 14px; }

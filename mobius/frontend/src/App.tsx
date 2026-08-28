@@ -9,6 +9,7 @@ import { applyCustomThemeToRoot, loadActiveCustomThemeId, loadCustomThemes } fro
 import { pollRecursive } from './services/polling'
 import { DesktopTitleBar } from './components/window-controls'
 import { WorkbenchShell } from './components/workbench-shell'
+import type { ConversationRailItem } from './components/conversation-rail'
 import { AdminOverlayHost } from './components/admin-overlay'
 import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services/handle-stale-chunk'
 import {
@@ -375,7 +376,13 @@ function WorkbenchRouteLayout() {
   const params = useParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const { currentIssue, currentProject, currentSession } = useStore()
+  const {
+    currentIssue,
+    currentProject,
+    currentSession,
+    setCurrentSession,
+    setCurrentTask,
+  } = useStore()
   const userId = params.user || ''
   const search = new URLSearchParams(location.search)
   const sessionRouteMatch = location.pathname.match(/^\/u\/[^/]+\/s\/([^/]+)\/?$/)
@@ -407,6 +414,14 @@ function WorkbenchRouteLayout() {
     window.setTimeout(() => window.dispatchEvent(new CustomEvent('mobius:new-conversation')), 80)
   }, [isIssueRoute, location.pathname, location.search, navigate, projectId, userId])
 
+  const openConversation = useCallback((session: ConversationRailItem) => {
+    // The rail already owns enough session context to start cache/SSE restoration.
+    // WorkPage refreshes this optimistic snapshot from the detail endpoint in parallel.
+    if (useStore.getState().currentSession?.session_id === session.session_id) return
+    setCurrentSession(session as any)
+    setCurrentTask(session as any)
+  }, [setCurrentSession, setCurrentTask])
+
   if (advancedHome) {
     return (
       <Suspense fallback={<RouteFallback />}>
@@ -421,6 +436,7 @@ function WorkbenchRouteLayout() {
       activeSessionId={activeSessionId}
       projectId={projectId}
       onNewConversation={startNewConversation}
+      onOpenConversation={openConversation}
       topbarTitle={topbarTitle}
     >
       <Suspense fallback={<WorkbenchMainFallback />}>

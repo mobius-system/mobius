@@ -154,7 +154,7 @@ const menuActionsSource = sourceBetween(
 const toolDrawerContentSource = sourceBetween(
   chatSource,
   'const toolDrawerContent = (() => {',
-  '  return (\n    <div className="flex-1 flex flex-col h-full min-w-0"',
+  '  return (\n    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"',
   'Tool Drawer 当前 tab 内容',
 )
 const sessionFilesDrawerSource = sourceBetween(
@@ -295,6 +295,10 @@ for (const slot of ['Topbar', 'Preview', 'Right', 'Dock']) {
   assert.match(workbenchShellSource, new RegExp(`const set${slot}Target = useCallback`), `WorkbenchShell ${slot} 槽位必须使用稳定 callback ref`)
 }
 assert.match(workPageSource, /data-workbench-chat-host[\s\S]*data-workbench-editor-host[\s\S]*data-workbench-chat-instance="primary"[\s\S]*hidden=\{!activeSessionLoaded\}[\s\S]*<ChatArea[\s\S]*layout="easy"[\s\S]*chrome="shell"[\s\S]*shellChromeActive=\{activeSessionLoaded\}[\s\S]*workspaceEditor=/, '默认 Session 必须把按需编辑器宿主与唯一 easy ChatArea 放在稳定槽位，并在加载期隐藏 shell chrome')
+assert.match(workPageSource, /className=\{`\$\{activeSessionLoaded \? 'flex' : 'hidden'\}/, '历史会话详情加载期间必须用显式 display 类隐藏旧 Chat，不能让 flex 覆盖 HTML hidden 后形成左右分栏')
+assert.match(workbenchRouteLayoutSource, /openConversation[\s\S]*currentSession\?\.session_id === session\.session_id[\s\S]*setCurrentSession\(session as any\)[\s\S]*setCurrentTask\(session as any\)[\s\S]*onOpenConversation=\{openConversation\}/, '点击历史会话必须立即使用 Rail 摘要启动恢复，并避免精简摘要覆盖当前 Session 完整详情')
+assert.match(workPageSource, /\.catch\(\(reason: any\) => \{[\s\S]*currentSession\?\.session_id === sessionId[\s\S]*setCurrentSession\(null\)[\s\S]*setCurrentTask\(null\)[\s\S]*setError/, '乐观打开的 Session 详情失败后必须清理对应摘要并显示错误态')
+assert.match(chatSource, /useLayoutEffect\(\(\) => \{\n    const sid = currentSession\?\.session_id \|\| currentTask\?\.task_id[\s\S]*freshHistoryReceivedRef\.current = false[\s\S]*readJsonlCacheSync\(sid\)[\s\S]*connectEventStream\(sid\)/, '切换 Session 必须在绘制前清理旧历史并恢复同步缓存，避免旧内容闪现')
 assert.match(easySessionChromeSource, /workbench-session-topbar[\s\S]*data-testid="easy-session-context"/, '默认 Session 会话头必须进入 44px shell topbar')
 assert.match(easySessionChromeSource, /aria-controls=\{chrome === 'shell' \? 'session-tool-drawer'[\s\S]*<span>\{chrome === 'shell'/, '默认 Session 只保留一个 Tool Drawer 控制器')
 assert.match(sessionToolDrawerSource, /id="session-tool-drawer"/, 'Tool Drawer 控制器必须指向真实抽屉元素')
@@ -367,6 +371,7 @@ assert.match(chatSource, /setToolFilesLoading\(false\)[\s\S]*setToolFilesError\(
 assert.match(chatSource, /toolFilesRequestTokenRef[\s\S]*toolFilesAbortRef[\s\S]*AbortController/, '文件扫描必须用请求序号取消旧请求')
 assert.match(chatSource, /SESSION_FEATURE_FILES_TIMEOUT_MS[\s\S]*features\/files[\s\S]*扫描超时，请稍后重试/, '文件扫描超时后必须结束 spinner 并给出可重试错误')
 assert.match(chatSource, /token !== toolFilesRequestTokenRef\.current[\s\S]*setToolFilesLoading\(false\)/, '迟到的旧扫描结果不得覆盖新 Session 状态')
+assert.match(chatSource, /if \(toolFilesReady \|\| toolFilesLoading \|\| toolFilesError\) return[\s\S]*void loadToolFiles\(\)/, '空文件扫描结果必须以 ready 状态停止自动重扫')
 assert.doesNotMatch(filesToolContentSource, /本次改动|showDiffHint|更多会话动作/, 'Files tab 不得显示 Diff 提示、改动标题或高级动作目录')
 assert.doesNotMatch(sessionToolDrawerSource, /navigate\(|useNavigate|stage|unstage|commit|push/, 'Tool Drawer 不得改路由或新增 Git 写操作')
 assert.match(chatSource, /openToolTab\('terminal'\)[\s\S]*WebTerminalSurface[\s\S]*terminalDockOpen/, 'Terminal 必须直接进入 Drawer，并可展开到底坞')
@@ -402,6 +407,9 @@ assert.match(chatSource, /activeToolTab === 'editor'[\s\S]*data-workbench-editor
 assert.doesNotMatch(toolDrawerContentSource, /<details|更多会话动作|renderAdvancedSessionActions\('menu'\)/, 'Files / Diff 与其他 tab 内容不得在底部倾倒完整会话动作目录')
 assert.match(sessionToolDrawerSource, /aria-label="更多会话动作"[\s\S]*session-tool-drawer__overflow/, 'Tool Drawer 必须在 header 提供更多会话动作 overflow')
 assert.match(chatSource, /overflow=\{renderAdvancedSessionActions\('overflow'\)\}/, 'Tool Drawer header 必须接入精简 overflow variant')
+const toolDrawerOverflowRule = cssSource.match(/\.session-tool-drawer__overflow\s*\{([^}]*)\}/)?.[1] || ''
+assert.match(toolDrawerOverflowRule, /background:\s*var\(--surface-overlay/, 'Tool Drawer overflow 必须使用不透明 overlay 表面，不能透出下层扫描状态')
+assert.doesNotMatch(toolDrawerOverflowRule, /background:\s*var\(--surface-control/, 'Tool Drawer overflow 不得使用半透明 control 表面')
 for (const group of ['继续方式', '运行与协作', '知识', 'Research']) {
   assert.match(overflowActionsSource, new RegExp(`ToolMenuGroup label="${group}"`), `overflow 必须包含「${group}」任务组`)
   assert.match(overflowActionsSource, new RegExp(`ToolMenuGroup label="${group}"[^>]* flat>`), `overflow 的「${group}」必须使用扁平分组`)
@@ -435,7 +443,7 @@ assert.match(workbenchShellSource, /event\.key === ',' \|\| event\.code === 'Com
 
 // 响应式静态布局回归（无需登录态或浏览器）。
 assert.match(railSource, /window\.matchMedia\('\(min-width: 1280px\)'\)/, 'ConversationRail 必须以 1280px 作为常驻断点')
-assert.match(railSource, /className="hidden h-full xl:block"/, '1280px 及以上必须直接显示历史轨')
+assert.match(railSource, /className="hidden h-full[^"]*xl:block"/, '1280px 及以上必须直接显示历史轨')
 assert.match(railSource, /top-\[44px\][^"`]*xl:hidden/, '窄屏历史抽屉必须位于 44px Header 下并在 xl 隐藏')
 assert.match(workbenchShellSource, /xl:hidden[\s\S]*aria-label="历史"/, '窄屏必须从顶部「历史」按钮一次打开抽屉')
 assert.match(workbenchShellSource, /\{topbar \?\? \([\s\S]*<WorkbenchGlobalTopbar/, 'Portal 尚未挂载时共享顶栏必须提供 fallback')
