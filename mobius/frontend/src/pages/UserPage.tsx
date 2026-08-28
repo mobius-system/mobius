@@ -370,6 +370,7 @@ function HomeSurface() {
     setPrompt('')
     setSendError('')
     setCheckpoint(null)
+    setSubmissionQueued(false)
     clearAttachments()
     window.setTimeout(() => composerRef.current?.focus(), 0)
   }, [clearAttachments])

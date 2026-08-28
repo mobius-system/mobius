@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CircleDot, ChevronDown, ChevronRight, FlaskConical, MessageSquare, MessageSquarePlus, Plus, Send } from 'lucide-react'
+import { CheckCircle2, CircleDot, ChevronDown, ChevronRight, FlaskConical, MessageSquare, MessageSquarePlus, Plus, Send } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo, timeAgoPrecise } from '../components/shell'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
@@ -89,6 +89,7 @@ function EmptyConversationComposer({
 }) {
   const [prompt, setPrompt] = useState('')
   const [sending, setSending] = useState(false)
+  const [submissionQueued, setSubmissionQueued] = useState(false)
   const [error, setError] = useState('')
   const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -101,8 +102,11 @@ function EmptyConversationComposer({
 
   const submit = async () => {
     if (!prompt.trim() || sending) return
+    const submittedPrompt = prompt
     setSending(true)
+    setSubmissionQueued(true)
     setError('')
+    setPrompt('')
     const initialCheckpoint = checkpoint || {
       projectId,
       issueId,
@@ -113,6 +117,8 @@ function EmptyConversationComposer({
       logUiEvent('first_message_submitted', { project_id: projectId, issue_id: issueId, session_id: created.sessionId, source: 'issue' })
       onCreated(created.sessionId)
     } catch (reason) {
+      setPrompt(previous => previous || submittedPrompt)
+      setSubmissionQueued(false)
       if (reason instanceof ConversationCreationError) {
         setCheckpoint(reason.checkpoint)
         setError(reason.message)
@@ -132,7 +138,7 @@ function EmptyConversationComposer({
           <p className="mt-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>{issueTitle ? `当前项目上下文 · ${issueTitle}` : '描述你想完成的事'}</p>
         </div>
         <div className="rounded-lg border p-3" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
-          <textarea ref={inputRef} autoFocus value={prompt} rows={5} placeholder="描述你的任务…"
+          <textarea ref={inputRef} autoFocus value={prompt} rows={5} disabled={sending} placeholder="描述你的任务…"
             onChange={event => { setPrompt(event.target.value); setCheckpoint(null); setError('') }}
             onKeyDown={event => {
               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -144,10 +150,16 @@ function EmptyConversationComposer({
           <div className="mt-2 flex justify-end border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
             <button type="button" onClick={() => void submit()} disabled={!prompt.trim() || sending}
               className="flex h-8 items-center gap-2 rounded-md px-4 text-[12px] font-medium btn-primary disabled:opacity-40">
-              <Send className="h-3.5 w-3.5" /> {sending ? '正在开始…' : '发送'}
+              {submissionQueued ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} {submissionQueued ? '已提交' : '发送'}
             </button>
           </div>
         </div>
+        {submissionQueued && (
+          <div className="mt-2 flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }} role="status" aria-live="polite">
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: 'var(--status-running)' }} aria-hidden="true" />
+            已提交，正在打开会话…
+          </div>
+        )}
         {error && (
           <div className="workbench-status-danger mt-3 flex items-center justify-between gap-3 rounded-md px-3 py-2 text-[12px]">
             <span>{error}</span>
