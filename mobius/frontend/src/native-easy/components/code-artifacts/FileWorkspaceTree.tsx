@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Search } from 'lucide-react'
 import { api } from '../../store'
 import { FileTreeLevel, type DirState, type Entry } from '../project-files'
 import { targetFromTrustedPath } from './file-target'
@@ -112,14 +113,17 @@ export function FileWorkspaceTree({
 
   return (
     <aside className="code-artifact-preview__tree" data-code-artifact-tree aria-label="项目文件">
-      <input
-        type="search"
-        className="code-artifact-preview__tree-filter"
-        placeholder="筛选文件…"
-        value={query}
-        onChange={event => setQuery(event.target.value)}
-        aria-label="筛选文件"
-      />
+      <label className="code-artifact-preview__tree-filter-wrap">
+        <Search aria-hidden="true" strokeWidth={1.8} />
+        <input
+          type="search"
+          className="code-artifact-preview__tree-filter"
+          placeholder="筛选文件…"
+          value={query}
+          onChange={event => setQuery(event.target.value)}
+          aria-label="筛选文件"
+        />
+      </label>
       <div className="code-artifact-preview__tree-list">
         <FileTreeLevel
           relPath="/"

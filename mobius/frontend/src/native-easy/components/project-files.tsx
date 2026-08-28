@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
-import { Cable, Copy, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorPlay, Play, RefreshCw, Upload } from 'lucide-react'
+import { Cable, ChevronRight, Copy, ExternalLink, File, FileCode2, FileImage, FileJson, FilePlus2, FileTerminal, FileText, FolderPlus, Loader2, MonitorPlay, Play, RefreshCw, Upload } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { stripFileTargetLocation } from './code-artifacts/file-target'
@@ -64,16 +64,21 @@ function formatSize(n: number | null) {
 export { formatSize }
 
 export function fileIcon(name: string, type: 'dir' | 'file') {
-  if (type === 'dir') return '📁'
+  if (type === 'dir') return null
   const ext = name.split('.').pop()?.toLowerCase() || ''
-  const m: Record<string, string> = {
-    ts: '🔷', tsx: '🔷', js: '🟡', jsx: '🟡', py: '🐍', go: '🔵', rs: '🦀',
-    md: '📝', json: '📋', yaml: '📋', yml: '📋', toml: '📋',
-    sh: '⚙️', bash: '⚙️', css: '🎨', html: '🌐', sql: '🗄️',
-    png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', svg: '🖼️',
-    txt: '📄', log: '📄',
-  }
-  return m[ext] || '📄'
+  const Icon = ['ts', 'tsx', 'js', 'jsx', 'go', 'rs', 'css', 'html', 'sql'].includes(ext)
+    ? FileCode2
+    : ['json', 'yaml', 'yml', 'toml'].includes(ext)
+      ? FileJson
+      : ['md', 'txt', 'log'].includes(ext)
+        ? FileText
+        : ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)
+          ? FileImage
+          : ['sh', 'bash', 'zsh', 'fish'].includes(ext)
+            ? FileTerminal
+            : File
+  const kind = ['md', 'txt', 'log'].includes(ext) ? 'text' : ['json', 'yaml', 'yml', 'toml'].includes(ext) ? 'data' : ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext) ? 'image' : 'code'
+  return <Icon className={`mobius-file-tree-icon mobius-file-tree-icon--${kind}`} aria-hidden="true" strokeWidth={1.7} />
 }
 
 function fileTourTarget(name: string) {
@@ -1158,7 +1163,7 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
       }
     : undefined
   return (
-    <div onDragOver={onLevelDragOver} onDrop={onLevelDrop}>
+    <div className={depth > 0 ? 'mobius-file-tree-level' : undefined} onDragOver={onLevelDragOver} onDrop={onLevelDrop}>
       {entries.map(entry => {
         const childPath = relPath === '/' ? `/${entry.name}` : `${relPath}/${entry.name}`
         const isOpen = expanded.has(childPath)
@@ -1169,14 +1174,11 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
               {isRenaming ? (
                 // 重命名时不能把 <input> 嵌进 <button>, 改渲染 div 行。
                 <div
-                  className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[12px]"
-                  style={{ paddingLeft: `${depth * 16 + 8}px`, color: 'var(--text-primary)' }}
+                  className="mobius-file-tree-row w-full text-left flex items-center gap-1.5 px-2 py-1.5 rounded text-[13px]"
+                  style={{ paddingLeft: '8px', color: 'var(--text-primary)' }}
                   onContextMenu={ctxHandler(entry, childPath)}
                 >
-                  <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                  <span className="flex-shrink-0">{fileIcon(entry.name, 'dir')}</span>
+                  <ChevronRight className={`h-4 w-4 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} style={{ color: 'var(--text-muted)' }} strokeWidth={1.7} aria-hidden="true" />
                   {renderRenameInput?.({ entry, relPath: childPath, parentRelPath: relPath })}
                 </div>
               ) : (
@@ -1190,12 +1192,11 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
                     onDrop={(e) => onDirDrop(e, childPath)}
                     onClick={() => onToggleDir(childPath)}
                     onContextMenu={ctxHandler(entry, childPath)}
-                    className={`min-w-0 flex-1 text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[12px] ${dragOverRel === childPath ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
-                    style={{ paddingLeft: `${depth * 16 + 8}px`, color: 'var(--text-primary)', background: dragOverRel === childPath ? 'color-mix(in srgb, var(--accent-primary) 20%, transparent)' : undefined, outline: dragOverRel === childPath ? '1px solid color-mix(in srgb, var(--accent-primary) 55%, transparent)' : undefined, outlineOffset: '-1px' }}>
-                    <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                    <span className="flex-shrink-0">{fileIcon(entry.name, 'dir')}</span>
+                    className={`mobius-file-tree-row min-w-0 flex-1 text-left flex items-center gap-1.5 px-2 py-1.5 rounded transition-colors text-[13px] ${dragOverRel === childPath ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
+                    style={{ paddingLeft: '8px', color: 'var(--text-primary)', background: dragOverRel === childPath ? 'color-mix(in srgb, var(--accent-primary) 20%, transparent)' : undefined, outline: dragOverRel === childPath ? '1px solid color-mix(in srgb, var(--accent-primary) 55%, transparent)' : undefined, outlineOffset: '-1px' }}
+                    aria-expanded={isOpen}
+                    aria-label={`${isOpen ? '折叠' : '展开'}目录 ${entry.name}`}>
+                    <ChevronRight className={`h-4 w-4 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} style={{ color: 'var(--text-muted)' }} strokeWidth={1.7} aria-hidden="true" />
                     <span className="truncate">{entry.name}</span>
                   </button>
                   {onCopyPath && (
@@ -1240,8 +1241,8 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
           return (
             <div
               key={childPath}
-              className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[12px]"
-              style={{ paddingLeft: `${depth * 16 + 8 + 14}px`, color: 'var(--text-primary)' }}
+              className="mobius-file-tree-row w-full text-left flex items-center gap-1.5 px-2 py-1.5 rounded text-[13px]"
+              style={{ paddingLeft: '30px', color: 'var(--text-primary)' }}
               onContextMenu={ctxHandler(entry, childPath)}
             >
               <span className="flex-shrink-0">{fileIcon(entry.name, 'file')}</span>
@@ -1260,13 +1261,10 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
               disabled={!vscodeReady}
               aria-current={selected || undefined}
               title={vscodeReady ? actionLabel : '未配置 VSCode Web'}
-              className={`min-w-0 flex-1 text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[12px] disabled:cursor-default ${selected ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
-              style={{ paddingLeft: `${depth * 16 + 8 + 14}px`, color: vscodeReady ? 'var(--text-primary)' : 'var(--text-muted)', background: selected ? 'color-mix(in srgb, var(--accent-primary) 16%, transparent)' : undefined }}>
+              className={`mobius-file-tree-row min-w-0 flex-1 text-left flex items-center gap-1.5 px-2 py-1.5 rounded transition-colors text-[13px] disabled:cursor-default ${selected ? 'mobius-file-tree-row--selected' : 'hover:bg-[var(--bg-card-hover)]'}`}
+              style={{ paddingLeft: '30px', color: vscodeReady ? 'var(--text-primary)' : 'var(--text-muted)', background: selected ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : undefined }}>
               <span className="flex-shrink-0">{fileIcon(entry.name, 'file')}</span>
               <span className="truncate flex-1">{entry.name}</span>
-              {entry.size !== null && (
-                <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{formatSize(entry.size)}</span>
-              )}
             </button>
             {onCopyPath && (
               <button

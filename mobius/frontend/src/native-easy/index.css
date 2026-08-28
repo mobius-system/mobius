@@ -7585,6 +7585,35 @@ body.mobius-resizing .mobius-resizable-handle {
   color: var(--text-muted);
 }
 
+/* Codex-style project tree: quiet rows, deliberate hierarchy, no decorative emoji. */
+.mobius-file-tree-level {
+  position: relative;
+  margin-left: 18px;
+  padding-left: 12px;
+  border-left: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+}
+.mobius-file-tree-row {
+  min-height: 30px;
+  line-height: 1.35;
+  cursor: pointer;
+  outline: none;
+}
+.mobius-file-tree-row:hover { color: var(--text-primary); }
+.mobius-file-tree-row:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--accent-primary) 78%, transparent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent-primary) 9%, transparent);
+}
+.mobius-file-tree-row--selected {
+  outline: 1px solid color-mix(in srgb, var(--accent-primary) 74%, transparent);
+  outline-offset: -1px;
+}
+.mobius-file-tree-icon { width: 15px; height: 15px; flex: 0 0 15px; }
+.mobius-file-tree-icon--code { color: color-mix(in srgb, var(--accent-primary) 76%, var(--text-primary)); }
+.mobius-file-tree-icon--data { color: #d6a85d; }
+.mobius-file-tree-icon--text { color: #8fb4d8; }
+.mobius-file-tree-icon--image { color: #a996d6; }
+
 /* ===================================================================== */
 /* 代码对话 Markdown WYSIWYG 编辑器 (.cc-wysiwyg)                         */
 /* 复用全局 .prose-chat 排版; 这里只补 Tiptap/ProseMirror 编辑态特有的:    */
@@ -7762,14 +7791,35 @@ body.mobius-resizing .mobius-resizable-handle {
 }
 .code-artifact-preview__tree-filter {
   flex: none;
-  margin: 0.45rem 0.5rem 0.2rem;
-  padding: 0.28rem 0.5rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.35rem 0.15rem;
   color: var(--text-primary);
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-control, 6px);
-  font-size: 0.68rem;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 0.8rem;
 }
+.code-artifact-preview__tree-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: none;
+  min-height: 2rem;
+  margin: 0.45rem 0.55rem 0.35rem;
+  padding: 0 0.55rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+.code-artifact-preview__tree-filter-wrap:focus-within {
+  border-color: color-mix(in srgb, var(--accent-primary) 62%, var(--border-default));
+  background: color-mix(in srgb, var(--accent-primary) 4%, transparent);
+}
+.code-artifact-preview__tree-filter-wrap > svg { width: 0.9rem; height: 0.9rem; flex: 0 0 auto; }
+.code-artifact-preview__tree-filter::placeholder { color: var(--text-muted); opacity: .78; }
 .code-artifact-preview__tree-list {
   min-height: 0;
   flex: 1;
