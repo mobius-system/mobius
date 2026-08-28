@@ -72,11 +72,12 @@ function SessionJsonlPanelInner({
     : undefined
 
   return (
-    <div data-tour="session-jsonl-view" className="mobius-chat-history flex min-w-0 flex-1 flex-col">
+    <div data-tour="session-jsonl-view" className="mobius-chat-history flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <div
-        className="flex-1 overflow-y-auto relative"
+        className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
         ref={chatContainerRef}
-        tabIndex={-1}
+        tabIndex={0}
+        role="region"
         aria-label="会话消息"
         onScroll={(e) => {
           const el = e.currentTarget

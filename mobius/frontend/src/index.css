@@ -1180,6 +1180,7 @@ label,
 .workbench-shell {
   display: grid;
   grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   background: var(--surface-sidebar);
 }

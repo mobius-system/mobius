@@ -186,7 +186,7 @@ export default function WorkPage() {
           hidden={!activeSessionLoaded}
           aria-hidden={!activeSessionLoaded}
           {...(!activeSessionLoaded ? { inert: '' } : {}) as any}
-          className="workbench-session-chat__surface flex min-h-0 min-w-0 flex-1"
+          className="workbench-session-chat__surface flex min-h-0 min-w-0 flex-1 overflow-hidden"
         >
           <ChatArea
             layout="easy"

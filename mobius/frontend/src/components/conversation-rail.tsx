@@ -290,7 +290,7 @@ export function ConversationRail({
 
   const renderRail = (drawer = false) => (
     <aside
-      className={`conversation-rail relative flex h-full w-[280px] flex-shrink-0 flex-col ${drawer ? 'z-10 max-w-[calc(100vw-32px)] shadow-lg' : ''}`}
+      className={`conversation-rail relative flex h-full min-h-0 w-[280px] flex-shrink-0 flex-col overflow-hidden ${drawer ? 'z-10 max-w-[calc(100vw-32px)] shadow-lg' : ''}`}
       style={{ width: 'var(--rail-width)', background: 'var(--surface-sidebar)' }}
       aria-label="最近会话"
     >
@@ -441,7 +441,7 @@ export function ConversationRail({
 
   return (
     <>
-      <div className="hidden h-full xl:block">{renderRail()}</div>
+      <div className="hidden h-full min-h-0 overflow-hidden xl:block">{renderRail()}</div>
       {drawerOpen && (
         <div className="workbench-layer-drawer fixed inset-x-0 bottom-0 top-[44px] xl:hidden" style={{ top: 'var(--workbench-topbar-height)' }} role="dialog" aria-modal="true" aria-label="历史会话">
           <button type="button" className="absolute inset-0" style={{ background: 'var(--surface-scrim)' }} onClick={closeDrawer} aria-label="关闭历史会话" />

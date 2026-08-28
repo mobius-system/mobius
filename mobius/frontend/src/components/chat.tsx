@@ -4836,7 +4836,7 @@ export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeAct
   })()
 
   return (
-    <div className="flex-1 flex flex-col h-full min-w-0" style={{ background: 'var(--surface-messages)' }}>
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden" style={{ background: 'var(--surface-messages)' }}>
       <RemoteFileMentionDrawer
         projectId={currentProjectId}
         issueId={currentIssueId || undefined}
@@ -5176,7 +5176,7 @@ export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeAct
           layout='stacked' 时附加 mobius-chat-body--stacked, 与视口无关地强制纵向堆叠 (代码对话模式). */}
       <div
         ref={chatBodyRef}
-        className={`workbench-center-layer mobius-chat-body flex-1 flex min-h-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}
+        className={`workbench-center-layer mobius-chat-body flex min-h-0 flex-1 overflow-hidden${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}
         hidden={layout === 'easy' && chrome === 'shell' && centerMode === 'diff'}
         aria-hidden={layout === 'easy' && chrome === 'shell' && centerMode === 'diff'}
         {...(layout === 'easy' && chrome === 'shell' && centerMode === 'diff' ? { inert: '' } : {}) as any}
