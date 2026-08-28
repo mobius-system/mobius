@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CircleDot, ChevronDown, ChevronRight, FlaskConical, FolderPlus, MessageSquarePlus, Plus } from 'lucide-react'
+import { CircleDot, ChevronDown, ChevronRight, FlaskConical, MessageSquarePlus, Plus } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
@@ -8,7 +8,6 @@ import { usePagination, PaginationControls } from '../components/pagination'
 import {
   NewSessionModal, RenameSessionModal, RenameIssueModal, ConfirmModal,
 } from '../components/modals'
-import { GlobalCreateRoot } from '../components/global-create'
 import { ChatArea, SessionRow } from '../components/chat'
 import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
@@ -79,7 +78,6 @@ export default function IssuePage() {
     return cached || issueState
   }, [issuesMap, projectId, issueId, issueState])
   const [showNewSession, setShowNewSession] = useState(false)
-  const [showNewProject, setShowNewProject] = useState(false)
   const [editingSession, setEditingSession] = useState<any>(null)
   const [editingIssue, setEditingIssue] = useState(false)
   const [deletingSession, setDeletingSession] = useState<any>(null)
@@ -653,7 +651,6 @@ export default function IssuePage() {
           <ChatArea
             layout={(useEditorChat || useCodeConversation) ? 'stacked' : 'default'}
             onNewSession={(useEditorChat || useCodeConversation) ? () => setShowNewSession(true) : undefined}
-            onNewProject={() => setShowNewProject(true)}
           />
         ) : sessionParam ? (
           <Loading text="正在加载会话..." />
@@ -661,7 +658,6 @@ export default function IssuePage() {
           <SessionOverview
             sessions={sortedSessions}
             onNewSession={() => setShowNewSession(true)}
-            onNewProject={() => setShowNewProject(true)}
             projectId={projectId}
           />
         )}
@@ -677,14 +673,6 @@ export default function IssuePage() {
           refreshSessions()
           goToSession(s.session_id)
         }} />}
-      {showNewProject && (
-        <GlobalCreateRoot
-          kind="project"
-          ctx={{}}
-          onClose={() => setShowNewProject(false)}
-          onNavigate={navigate}
-        />
-      )}
       {editingSession && <RenameSessionModal session={editingSession} onClose={() => setEditingSession(null)}
         onRenamed={(updated: any) => {
           setEditingSession(null)
@@ -724,10 +712,9 @@ function WorkspacePaneLoading({ label }: { label: string }) {
 // 会话卡片 (消除冗余). guided-demo / logo-review 的 tour 锚点已迁移到左侧
 // SessionRow (见 IssuePage 渲染处), demo 流程不破坏.
 // =====================================================================
-function SessionOverview({ sessions, onNewSession, onNewProject, projectId }: {
+function SessionOverview({ sessions, onNewSession, projectId }: {
   sessions: any[]
   onNewSession: () => void
-  onNewProject: () => void
   projectId: string
 }) {
   // 状态分类复用 agent_status 单一真相源 (与 AgentStatusDot 同源), 颜色语义一致.
@@ -761,22 +748,12 @@ function SessionOverview({ sessions, onNewSession, onNewProject, projectId }: {
         {sessions.length === 0 ? (
           <div className="rounded-2xl border-dashed border-2 p-12 text-center" style={{ borderColor: 'var(--border-color)' }}>
             <div className="text-[14px] mb-3" style={{ color: 'var(--text-muted)' }}>当前任务还没有会话</div>
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <button onClick={onNewSession}
-                data-tour="issue-empty-create-session"
-                className="h-10 px-4 rounded-xl text-[13px] btn-primary transition-colors inline-flex items-center gap-2 shadow-lg shadow-black/10">
-                <MessageSquarePlus className="h-4 w-4" strokeWidth={2} />
-                创建第一个Session
-              </button>
-              <button onClick={onNewProject}
-                data-tour="issue-empty-create-project"
-                title="新建项目"
-                className="h-10 px-4 rounded-xl text-[13px] border transition-colors inline-flex items-center gap-2"
-                style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-primary)' }}>
-                <FolderPlus className="h-4 w-4" strokeWidth={1.9} />
-                新建项目
-              </button>
-            </div>
+            <button onClick={onNewSession}
+              data-tour="issue-empty-create-session"
+              className="h-10 px-4 rounded-xl text-[13px] btn-primary transition-colors inline-flex items-center gap-2 shadow-lg shadow-black/10">
+              <MessageSquarePlus className="h-4 w-4" strokeWidth={2} />
+              创建第一个Session
+            </button>
           </div>
         ) : (
           <>
@@ -795,22 +772,12 @@ function SessionOverview({ sessions, onNewSession, onNewProject, projectId }: {
                 <div className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>开启一次智能体执行</div>
                 <div className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>从左侧选择已有会话进入对话，或新建会话</div>
               </div>
-              <div className="flex flex-wrap items-center justify-end gap-2 flex-shrink-0">
-                <button onClick={onNewSession}
-                  data-tour="issue-overview-create-session"
-                  className="h-10 px-4 rounded-xl text-[13px] btn-primary transition-colors inline-flex items-center gap-2 shadow-lg shadow-black/10">
-                  <MessageSquarePlus className="h-4 w-4" strokeWidth={2} />
-                  新建会话
-                </button>
-                <button onClick={onNewProject}
-                  data-tour="issue-overview-create-project"
-                  title="新建项目"
-                  className="h-10 px-4 rounded-xl text-[13px] border transition-colors inline-flex items-center gap-2 hover:bg-[var(--bg-hover)]"
-                  style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-primary)' }}>
-                  <FolderPlus className="h-4 w-4" strokeWidth={1.9} />
-                  新建项目
-                </button>
-              </div>
+              <button onClick={onNewSession}
+                data-tour="issue-overview-create-session"
+                className="h-10 px-4 rounded-xl text-[13px] btn-primary transition-colors inline-flex items-center gap-2 shadow-lg shadow-black/10 flex-shrink-0">
+                <MessageSquarePlus className="h-4 w-4" strokeWidth={2} />
+                新建会话
+              </button>
             </div>
           </>
         )}
