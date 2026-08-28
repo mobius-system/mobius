@@ -162,6 +162,10 @@ function pathSegmentCount(path: string) {
 export function isUnambiguousFileCandidate(raw: string, context: FileCandidateContext = 'text') {
   const value = trimWrappingPunctuation(raw)
   if (!value || value.startsWith('#') || (!/^file:\/\//i.test(value) && value.includes('://')) || /^https?:\/\//i.test(value) || /^mailto:/i.test(value) || /^thread:/i.test(value)) return false
+  // A message candidate must describe one path. Unencoded whitespace usually
+  // means the inline code is a command (for example, `python3 start.py`).
+  // Trusted tool output can still carry real paths that contain spaces.
+  if (context !== 'trusted' && /\s/.test(value)) return false
 
   let locationValue = value
   if (/^file:\/\//i.test(value)) {
