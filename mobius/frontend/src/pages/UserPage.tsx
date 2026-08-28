@@ -3,6 +3,7 @@ import { useLocation, useParams, useNavigate, useSearchParams } from 'react-rout
 import {
   Activity,
   Brain,
+  CheckCircle2,
   Check,
   ChevronDown,
   CircleDot,
@@ -320,6 +321,7 @@ function HomeSurface() {
   const [lastRememberedModel, setLastRememberedModel] = useState(readLastHomeModel)
   const [prompt, setPrompt] = useState('')
   const [sending, setSending] = useState(false)
+  const [submissionQueued, setSubmissionQueued] = useState(false)
   const [sendError, setSendError] = useState('')
   const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
@@ -458,8 +460,11 @@ function HomeSurface() {
       setSendError('模型与 Harness 组合仍在加载或暂无可用组合')
       return
     }
+    const submittedPrompt = prompt
     setSending(true)
+    setSubmissionQueued(true)
     setSendError('')
+    setPrompt('')
     try {
       const created = await createDefaultConversation({
         projectId: selectedProjectId,
@@ -477,6 +482,8 @@ function HomeSurface() {
       window.dispatchEvent(new CustomEvent('mobius:refresh-conversation-rail'))
       navigateToWorkbenchObject(navigate, sessionNavigation(userParam, created.sessionId))
     } catch (reason) {
+      setPrompt(previous => previous || submittedPrompt)
+      setSubmissionQueued(false)
       if (reason instanceof ConversationCreationError) {
         setCheckpoint(reason.checkpoint)
         setSendError(reason.message)
@@ -547,7 +554,7 @@ function HomeSurface() {
                   onChange={handleFileInputChange}
                 />
                 <HomeComposerAttachments attachments={attachments} onRemove={removeAttachment} onRetry={retryAttachment} />
-                <textarea ref={composerRef} data-workbench-composer autoFocus value={prompt} onChange={event => onPromptChange(event.target.value)}
+                <textarea ref={composerRef} data-workbench-composer autoFocus value={prompt} disabled={sending} onChange={event => onPromptChange(event.target.value)}
                   onKeyDown={event => {
                     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                       event.preventDefault()
@@ -652,11 +659,17 @@ function HomeSurface() {
                       aria-label={sending ? '正在开始会话' : anyUploading ? '附件仍在上传' : '发送'}
                       title={sending ? '正在开始会话' : anyUploading ? '附件仍在上传，请稍候' : '发送'}
                       className="home-composer-send inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-0 p-0 disabled:opacity-40">
-                      {sending ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                      {submissionQueued ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
                     </button>
                   </div>
                 </div>
               </div>
+              {submissionQueued && (
+                <div className="mt-2 flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }} role="status" aria-live="polite">
+                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: 'var(--status-running)' }} aria-hidden="true" />
+                  已提交，正在打开会话…
+                </div>
+              )}
               {sendError && (
                 <div className="workbench-status-danger mt-3 flex items-center justify-between gap-3 rounded-[var(--radius-control)] border px-3 py-2 text-[12px]">
                   <span>{sendError}</span>
