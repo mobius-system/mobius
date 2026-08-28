@@ -134,7 +134,7 @@ function TodoRow({ todo, canManage, busy, onUpdate, onDelete }: TodoRowProps) {
             disabled={busy}
             title="删除待办"
             aria-label="删除待办"
-            className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors hover:bg-[var(--status-danger-soft)] hover:text-[var(--status-danger)] disabled:cursor-not-allowed disabled:opacity-50"
             style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} /> : <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />}
@@ -270,7 +270,7 @@ export function ProjectTodosPanel({ projectId, canManage }: ProjectTodosPanelPro
           type="button"
           onClick={loadTodos}
           disabled={loading}
-          className="h-8 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 disabled:opacity-50"
+          className="h-8 px-3 rounded-lg text-[12px] bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors border border-[var(--accent-border)] disabled:opacity-50"
         >
           {loading ? '刷新中...' : '刷新'}
         </button>
@@ -301,7 +301,7 @@ export function ProjectTodosPanel({ projectId, canManage }: ProjectTodosPanelPro
             type="button"
             onClick={addTodo}
             disabled={creating || !newTitle.trim()}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-blue-500/20 bg-blue-500/15 px-3 text-[12px] text-blue-400 transition-colors hover:bg-blue-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--accent-border)] bg-[var(--surface-active)] px-3 text-[12px] text-[var(--accent-primary)] transition-colors hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} /> : <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />}
             添加
@@ -310,7 +310,7 @@ export function ProjectTodosPanel({ projectId, canManage }: ProjectTodosPanelPro
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+        <div className="workbench-status-danger rounded-lg border px-3 py-2 text-[12px]">
           {error}
         </div>
       )}

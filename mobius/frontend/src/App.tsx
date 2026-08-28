@@ -1,5 +1,5 @@
 import { Component, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { ToastCard } from './components/toast-card'
 import { useStore, api } from './store'
@@ -8,13 +8,23 @@ import { THEME_NAMES } from './theme'
 import { applyCustomThemeToRoot, loadActiveCustomThemeId, loadCustomThemes } from './services/custom-themes'
 import { pollRecursive } from './services/polling'
 import { DesktopTitleBar } from './components/window-controls'
+import { WorkbenchShell } from './components/workbench-shell'
+import { AdminOverlayHost } from './components/admin-overlay'
 import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services/handle-stale-chunk'
-import { useLayoutMode } from './services/layout-mode'
+import { buildNormalModeTargetUrl, useLayoutMode } from './services/layout-mode'
 import { LayoutModeChoiceModal } from './components/layout-mode-choice-modal'
+import {
+  homePath,
+  legacySessionRedirect,
+  navigateToWorkbench,
+  sessionNavigation,
+} from './services/workbench-navigation'
+import { detectClientRuntime } from './services/client-distribution'
 
 const Login = lazyWithRetry(() => import('./pages/Login'))
 const Welcome = lazyWithRetry(() => import('./pages/Welcome'))
 const UserPage = lazyWithRetry(() => import('./pages/UserPage'))
+const WorkPage = lazyWithRetry(() => import('./pages/WorkPage'))
 const EasyModePage = lazyWithRetry(() => import('./pages/EasyModePage'))
 const MobiusOverviewPage = lazyWithRetry(() => import('./pages/MobiusOverviewPage'))
 const MobiusOverviewClusterPage = lazyWithRetry(() => import('./pages/MobiusOverviewClusterPage'))
@@ -227,10 +237,8 @@ function AssistantTaskDoneToast() {
       void Notification.requestPermission().then(() => {})
       return
     }
-    const isResearch = e.scopeType === 'research'
-    const containerId = isResearch ? e.researchId : e.issueId
-    const openUrl = e.projectId && containerId
-      ? `/u/${user?.id || ''}/p/${e.projectId}/${isResearch ? 'r' : 'i'}/${containerId}?session=${encodeURIComponent(e.sessionId)}`
+    const openTarget = e.sessionId
+      ? sessionNavigation(user?.id || '', e.sessionId)
       : null
     try {
       const n = new Notification(
@@ -242,7 +250,7 @@ function AssistantTaskDoneToast() {
       )
       n.onclick = () => {
         window.focus()
-        if (openUrl) navigate(openUrl)
+        if (openTarget) navigateToWorkbench(navigate, openTarget)
         n.close()
       }
       // 失败常驻到用户处理; 成功 8s 自动收
@@ -264,8 +272,11 @@ function AssistantTaskDoneToast() {
         return // 网络抖动/超时忽略, 下一轮再来(pollRecursive 外层也有兜底)
       }
       if (!Array.isArray(recent)) return
-      // 用 window.location.search 实时取当前会话, 避免把 location 放进依赖导致每次导航重启轮询
-      const currentSessionId = new URLSearchParams(window.location.search).get('session')
+      // 短路由不再把 session 放在 query 中；兼容旧长链时仍保留 query 回退。
+      const shortRouteMatch = window.location.pathname.match(/\/u\/[^/]+\/s\/([^/]+)/)
+      let shortRouteSessionId = ''
+      try { shortRouteSessionId = shortRouteMatch?.[1] ? decodeURIComponent(shortRouteMatch[1]) : '' } catch {}
+      const currentSessionId = shortRouteSessionId || new URLSearchParams(window.location.search).get('session')
       const visible = document.visibilityState === 'visible'
       for (const s of recent) {
         const sid = String(s?.session_id || '')
@@ -324,11 +335,9 @@ function AssistantTaskDoneToast() {
 
   if (!entry || !user) return null
 
-  // 深链到该会话: issue 走 /i/:issue, research 走 /r/:research, 都带 ?session= 选中它
-  const isResearch = entry.scopeType === 'research'
-  const containerId = isResearch ? entry.researchId : entry.issueId
-  const openUrl = entry.projectId && containerId
-    ? `/u/${user.id}/p/${entry.projectId}/${isResearch ? 'r' : 'i'}/${containerId}?session=${encodeURIComponent(entry.sessionId)}`
+  // 完成提醒统一打开 Session 短路由，由 WorkPage 还原 Issue/Research 上下文。
+  const openTarget = entry.sessionId
+    ? sessionNavigation(user.id, entry.sessionId)
     : null
 
   return (
@@ -339,8 +348,8 @@ function AssistantTaskDoneToast() {
         : <CheckCircle2 className="h-4 w-4" strokeWidth={2} />}
       title={entry.failed ? '小莫任务失败' : '小莫已完成任务'}
       subtitle={entry.name}
-      actionLabel={openUrl ? '查看' : undefined}
-      onAction={openUrl ? () => navigate(openUrl) : undefined}
+      actionLabel={openTarget ? '查看' : undefined}
+      onAction={openTarget ? () => navigateToWorkbench(navigate, openTarget) : undefined}
       onClose={() => showEntry(null)}
     />
   )
@@ -349,11 +358,97 @@ function AssistantTaskDoneToast() {
 function RootRedirect() {
   const { user } = useStore()
   if (!user) return null
-  return <Navigate to={`/u/${user.id}`} replace />
+  return <Navigate to={homePath(user.id)} replace />
 }
 
-// 简易模式只接管用户主页和 Issue 会话页。项目页、Research 页、管理页等保持原路由，
-// /easy_mode 自身也不参与判断，避免重定向循环。
+function WorkbenchMainFallback() {
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center" role="status" aria-label="正在加载">
+      <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+    </div>
+  )
+}
+
+function decodeWorkbenchPathSegment(value: string | undefined) {
+  if (!value) return ''
+  try { return decodeURIComponent(value) } catch { return '' }
+}
+
+function WorkbenchRouteLayout() {
+  const params = useParams()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { currentIssue, currentProject, currentSession } = useStore()
+  const userId = params.user || ''
+  const search = new URLSearchParams(location.search)
+  const sessionRouteMatch = location.pathname.match(/^\/u\/[^/]+\/s\/([^/]+)\/?$/)
+  const issueRouteMatch = location.pathname.match(/^\/u\/[^/]+\/p\/([^/]+)\/i\/([^/]+)\/?$/)
+  const isHomeRoute = location.pathname === homePath(userId)
+  const isIssueRoute = !!issueRouteMatch
+  const advancedHome = isHomeRoute && search.get('view') === 'projects'
+  const activeSessionId = decodeWorkbenchPathSegment(sessionRouteMatch?.[1]) || search.get('session') || ''
+  const sessionProjectId = currentSession?.session_id === activeSessionId
+    ? String((currentSession as any)?.project_id || '')
+    : ''
+  const routeProjectId = decodeWorkbenchPathSegment(issueRouteMatch?.[1])
+  const projectId = routeProjectId || sessionProjectId || search.get('project') || currentProject?.id || ''
+  const topbarTitle = activeSessionId
+    ? 'Session'
+    : isIssueRoute
+      ? currentIssue?.title || 'Issue'
+      : 'Home'
+
+  const startNewConversation = useCallback(() => {
+    if (isIssueRoute) {
+      const next = new URLSearchParams(location.search)
+      next.delete('session')
+      const suffix = next.toString()
+      navigate(`${location.pathname}${suffix ? `?${suffix}` : ''}`)
+    } else {
+      navigate(homePath(userId, { projectId }))
+    }
+    window.setTimeout(() => window.dispatchEvent(new CustomEvent('mobius:new-conversation')), 80)
+  }, [isIssueRoute, location.pathname, location.search, navigate, projectId, userId])
+
+  if (advancedHome) {
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <Outlet />
+      </Suspense>
+    )
+  }
+
+  return (
+    <WorkbenchShell
+      userId={userId}
+      activeSessionId={activeSessionId}
+      projectId={projectId}
+      onNewConversation={startNewConversation}
+      topbarTitle={topbarTitle}
+    >
+      <Suspense fallback={<WorkbenchMainFallback />}>
+        <Outlet />
+      </Suspense>
+    </WorkbenchShell>
+  )
+}
+
+function EasyModeCompatibility() {
+  const location = useLocation()
+  const { user } = useStore()
+  const userId = user?.id || ''
+  return <Navigate to={`/u/${encodeURIComponent(userId)}/easy_mode${location.search}${location.hash}`} replace />
+}
+
+function IssueRouteCompatibility() {
+  const params = useParams()
+  const location = useLocation()
+  const redirect = legacySessionRedirect(params.user || '', location.search, location.hash)
+  return redirect ? <Navigate to={redirect} replace /> : <IssuePage />
+}
+
+// 与 origin/main 保持一致：只有用户首页和 Issue 页需要在首次访问时选择模式。
+// 项目、Research、Overview 等高级页不受简易模式接管。
 function layoutModeTargetPath(pathname: string) {
   const userHome = pathname.match(/^\/u\/([^/]+)\/?$/)
   if (userHome) return { user: userHome[1] }
@@ -362,9 +457,47 @@ function layoutModeTargetPath(pathname: string) {
   return null
 }
 
+function NormalSessionRedirect() {
+  const params = useParams()
+  const { currentSession } = useStore()
+  const userId = params.user || ''
+  const sessionId = params.session || ''
+  const [target, setTarget] = useState('')
+
+  useEffect(() => {
+    if (!sessionId) {
+      setTarget(homePath(userId))
+      return
+    }
+    let cancelled = false
+    const resolveTarget = (session: any) => {
+      if (cancelled) return
+      setTarget(buildNormalModeTargetUrl({
+        user: userId,
+        projectId: session?.project_id,
+        issueId: session?.issue_id,
+        researchId: session?.research_id,
+        scopeType: session?.scope_type === 'research' || session?.research_id ? 'research' : 'issue',
+        sessionId,
+      }))
+    }
+    if (currentSession?.session_id === sessionId) {
+      resolveTarget(currentSession)
+      return () => { cancelled = true }
+    }
+    api(`/api/tasks/${encodeURIComponent(sessionId)}`)
+      .then(resolveTarget)
+      .catch(() => { if (!cancelled) setTarget(homePath(userId)) })
+    return () => { cancelled = true }
+  }, [currentSession, sessionId, userId])
+
+  return target ? <Navigate to={target} replace /> : <RouteFallback />
+}
+
 function AuthenticatedApp() {
   const { user, assistantBubbleEnabled } = useStore()
   const location = useLocation()
+  const clientRuntime = detectClientRuntime()
   const layoutMode = useLayoutMode()
 
   useEffect(() => startTextRedactionRuntime(), [])
@@ -372,7 +505,7 @@ function AuthenticatedApp() {
   if (!user) return null
   // 兼容旧链接：根路径或未匹配路由 → 默认进我的项目页
   if (location.pathname === '/' || location.pathname === '') {
-    return <Navigate to={`/u/${user.id}`} replace />
+    return <Navigate to={homePath(user.id)} replace />
   }
   const modeTarget = layoutModeTargetPath(location.pathname)
   if (modeTarget && !layoutMode) {
@@ -383,25 +516,43 @@ function AuthenticatedApp() {
       </>
     )
   }
-  if (modeTarget && layoutMode === 'easy_mode') {
-    return <Navigate to={`/u/${modeTarget.user}/easy_mode${location.search}${location.hash}`} replace />
-  }
   return (
     <>
       <StaleChunkErrorBoundary>
         <Suspense fallback={<RouteFallback />}>
-          <Routes>
-            <Route path="/" element={<RootRedirect />} />
-            <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
-            <Route path="/u/:user" element={<UserPage />} />
-            <Route path="/u/:user/easy_mode" element={<EasyModePage />} />
-            <Route path="/u/:user/mobius_overview" element={<MobiusOverviewPage />} />
-            <Route path="/u/:user/mobius_overview_cluster" element={<MobiusOverviewClusterPage />} />
-            <Route path="/u/:user/p/:project" element={<ProjectPage />} />
-            <Route path="/u/:user/p/:project/i/:issue" element={<IssuePage />} />
-            <Route path="/u/:user/p/:project/r/:research" element={<ResearchPage />} />
-            <Route path="*" element={<RootRedirect />} />
-          </Routes>
+          {layoutMode === 'easy_mode' ? (
+            <Routes>
+              <Route path="/" element={<RootRedirect />} />
+              <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
+              <Route path="/u/:user" element={<WorkbenchRouteLayout />}>
+                <Route index element={<UserPage />} />
+                <Route path="s/:session" element={<WorkPage />} />
+                <Route path="p/:project/i/:issue" element={<IssueRouteCompatibility />} />
+              </Route>
+              <Route path="/easy_mode" element={<EasyModeCompatibility />} />
+              <Route path="/u/:user/easy_mode" element={<EasyModePage />} />
+              <Route path="/u/:user/mobius_overview" element={<MobiusOverviewPage />} />
+              <Route path="/u/:user/mobius_overview_cluster" element={<MobiusOverviewClusterPage />} />
+              <Route path="/u/:user/p/:project" element={<ProjectPage />} />
+              <Route path="/u/:user/p/:project/r/:research" element={<ResearchPage />} />
+              <Route path="*" element={<RootRedirect />} />
+            </Routes>
+          ) : (
+            <Routes>
+              <Route path="/" element={<RootRedirect />} />
+              <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
+              <Route path="/easy_mode" element={<EasyModeCompatibility />} />
+              <Route path="/u/:user/easy_mode" element={<EasyModePage />} />
+              <Route path="/u/:user" element={<UserPage />} />
+              <Route path="/u/:user/s/:session" element={<NormalSessionRedirect />} />
+              <Route path="/u/:user/mobius_overview" element={<MobiusOverviewPage />} />
+              <Route path="/u/:user/mobius_overview_cluster" element={<MobiusOverviewClusterPage />} />
+              <Route path="/u/:user/p/:project" element={<ProjectPage />} />
+              <Route path="/u/:user/p/:project/i/:issue" element={<IssuePage />} />
+              <Route path="/u/:user/p/:project/r/:research" element={<ResearchPage />} />
+              <Route path="*" element={<RootRedirect />} />
+            </Routes>
+          )}
         </Suspense>
       </StaleChunkErrorBoundary>
       <SelfIterationToast />
@@ -414,9 +565,12 @@ function AuthenticatedApp() {
           <AssistantChat />
         </Suspense>
       ) : null}
-      <Suspense fallback={null}>
-        <DesktopTabBar />
-      </Suspense>
+      {clientRuntime === 'desktop' ? (
+        <Suspense fallback={null}>
+          <DesktopTabBar />
+        </Suspense>
+      ) : null}
+      <AdminOverlayHost />
     </>
   )
 }

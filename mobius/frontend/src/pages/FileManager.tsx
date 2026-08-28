@@ -117,7 +117,7 @@ export default function FileManager({ onClose, onSendToChat }: {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)' }}>
           <div className="flex items-center gap-3 min-w-0">
-            <svg className="w-5 h-5 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-[var(--accent-primary)] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
             <span className="text-[14px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>文件浏览器</span>
@@ -136,7 +136,7 @@ export default function FileManager({ onClose, onSendToChat }: {
           <div className="flex items-center gap-2">
             {viewFile && (
               <button onClick={() => onSendToChat(`请查看文件 ${viewFile.path} 的内容:\n\`\`\`${extToLang(viewFile.ext)}\n${viewFile.content.slice(0, 2000)}\n\`\`\``)}
-                className="h-7 px-3 text-[11px] bg-blue-500/15 text-blue-400 rounded-lg hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5">
+                className="h-7 px-3 text-[11px] bg-[var(--surface-active)] text-[var(--accent-primary)] rounded-lg hover:bg-[var(--accent-soft)] transition-colors border border-[var(--accent-border)] flex items-center gap-1.5">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
                 发送给 Claude
               </button>
@@ -165,7 +165,7 @@ export default function FileManager({ onClose, onSendToChat }: {
             ) : entries.map(entry => (
               <button key={entry.name} onClick={() => openEntry(entry)}
                 className={`w-full flex items-center gap-3 px-4 py-2 hover:bg-[var(--bg-card-hover)] transition-colors text-left ${
-                  viewFile?.path?.endsWith('/' + entry.name) ? 'bg-blue-500/10 border-l-2 border-blue-500' : ''
+                  viewFile?.path?.endsWith('/' + entry.name) ? 'bg-[var(--surface-active)] border-l-2 border-[var(--accent-primary)]' : ''
                 }`}>
                 <span className="text-[13px] flex-shrink-0">{getFileIcon(entry.name, entry.type)}</span>
                 <span className="text-[13px] truncate flex-1" style={{ color: isDark ? '#d1d5db' : '#374151' }}>{entry.name}</span>

@@ -20,9 +20,6 @@ export function setLayoutMode(mode: LayoutMode) {
   window.dispatchEvent(new CustomEvent(LAYOUT_MODE_CHANGE_EVENT, { detail: mode }))
 }
 
-// 从简易模式切回正常模式时, 根据当前选中的会话构造应回到的目标 URL.
-// 优先回到该会话在正常模式下的 Issue/Research 页 (保留 session 参数, 命中后 IssuePage
-// 会用 ?session= 自动选中同一会话); 缺少项目/任务上下文时回退到用户主页, 与旧行为一致.
 export function buildNormalModeTargetUrl(args: {
   user?: string | null
   projectId?: string | null
@@ -32,7 +29,6 @@ export function buildNormalModeTargetUrl(args: {
   sessionId?: string | null
 }): string {
   const { user, projectId, issueId, researchId, scopeType, sessionId } = args
-  // 路由参数理论上一定存在; 缺失时回退到根路径, 由 App 重定向到当前用户主页.
   if (!user) return '/'
   const search = sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''
   if (scopeType === 'research' && projectId && researchId) {
@@ -44,8 +40,6 @@ export function buildNormalModeTargetUrl(args: {
   if (projectId && researchId) {
     return `/u/${user}/p/${projectId}/r/${researchId}${search}`
   }
-  // 有项目上下文但拿不到具体 Issue/Research 时, 回到项目页而非用户首页,
-  // 至少把用户留在原项目范围内, 避免"切个模式就被踢回总首页"的断裂感.
   if (projectId) {
     return `/u/${user}/p/${projectId}`
   }

@@ -67,8 +67,8 @@ export default function ContextPanel({ onClose }: { onClose: () => void }) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor }}>
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-              <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-8 h-8 rounded-lg bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center">
+              <svg className="w-4 h-4 text-[var(--accent-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
@@ -87,11 +87,9 @@ export default function ContextPanel({ onClose }: { onClose: () => void }) {
           {/* 注入状态横幅 */}
           {currentSession && (
             <div className="rounded-lg p-3 text-[11px] leading-relaxed" style={{
-              background: preview?.applied
-                ? (isDark ? 'rgba(34,197,94,0.08)' : 'rgba(34,197,94,0.06)')
-                : (isDark ? 'rgba(234,179,8,0.08)' : 'rgba(234,179,8,0.06)'),
-              border: `1px solid ${preview?.applied ? (isDark ? 'rgba(34,197,94,0.3)' : 'rgba(34,197,94,0.25)') : (isDark ? 'rgba(234,179,8,0.3)' : 'rgba(234,179,8,0.25)')}`,
-              color: preview?.applied ? (isDark ? '#86efac' : '#15803d') : (isDark ? '#fde68a' : '#a16207'),
+              background: preview?.applied ? 'var(--status-success-soft)' : 'var(--status-waiting-soft)',
+              border: `1px solid ${preview?.applied ? 'var(--status-success-border)' : 'var(--status-waiting-border)'}`,
+              color: preview?.applied ? 'var(--status-success)' : 'var(--status-waiting)',
             }}>
               {loading && '加载快照中...'}
               {!loading && preview?.applied && (
@@ -100,7 +98,7 @@ export default function ContextPanel({ onClose }: { onClose: () => void }) {
               {!loading && preview && !preview.applied && (
                 <>本会话还未发过首轮消息, 下次发送时会注入下方创建时定型的上下文快照. 修改 Skill/Memory 仅对新建会话生效.</>
               )}
-              {!loading && error && <span style={{ color: '#ef4444' }}>{error}</span>}
+              {!loading && error && <span style={{ color: 'var(--status-danger)' }}>{error}</span>}
             </div>
           )}
 
@@ -117,7 +115,7 @@ export default function ContextPanel({ onClose }: { onClose: () => void }) {
               </div>
               <div className="flex justify-between text-[11px]">
                 <span style={{ color: textMuted }}>角色</span>
-                <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.12)', color: isDark ? '#60a5fa' : '#2563eb' }}>
+                <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: 'var(--surface-active)', color: 'var(--accent-primary)' }}>
                   {user?.role === 'admin' ? '管理员' : '成员'}
                 </span>
               </div>
@@ -232,7 +230,7 @@ export default function ContextPanel({ onClose }: { onClose: () => void }) {
                     navigator.clipboard.writeText(preview.body).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
                   }}
                   className="ml-2 text-[10px] px-2 py-0.5 rounded border transition-colors"
-                  style={{ borderColor, color: copied ? '#22c55e' : textMuted }}>
+                  style={{ borderColor, color: copied ? 'var(--status-success)' : textMuted }}>
                   {copied ? '✓ 已复制' : '复制'}
                 </button>
               </div>

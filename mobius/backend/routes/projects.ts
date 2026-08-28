@@ -1435,7 +1435,9 @@ function discoverNestedGitRepo(root: string): string | null {
       const top = runGit(resolved, ['rev-parse', '--show-toplevel']);
       if (top.ok && top.stdout.trim()) {
         const repoPath = path.resolve(top.stdout.trim());
-        if (isWithinPath(root, repoPath)) return repoPath;
+        if (isWithinPath(canonicalizePathWithMissingTail(root), canonicalizePathWithMissingTail(repoPath))) {
+          return repoPath;
+        }
       }
     }
 
@@ -1559,6 +1561,162 @@ function parseGitCommits(stdout: unknown): GitCommitInfo[] {
       };
     })
     .filter((commit) => commit.hash);
+}
+
+interface ResolvedReadonlyGitFile {
+  project_path: string;
+  repo_path: string;
+}
+
+function canonicalizePathWithMissingTail(inputPath: string): string {
+  let current = path.resolve(inputPath);
+  const missingTail: string[] = [];
+  while (true) {
+    try {
+      return path.resolve(fs.realpathSync(current), ...missingTail.reverse());
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return path.resolve(inputPath);
+      missingTail.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+function gitReadonlyError(message: string, statusCode = 400): HttpError {
+  return Object.assign(new Error(message), { statusCode }) as HttpError;
+}
+
+function requireReadonlyGitSha(raw: unknown, field: 'sha' | 'cursor'): string {
+  const hash = normalizeRollbackHash(raw);
+  if (!hash) {
+    throw gitReadonlyError(`${field} 必须是 7-40 位十六进制 commit hash`);
+  }
+  return hash;
+}
+
+function resolveReadonlyGitFile(
+  project: any,
+  repoPath: string,
+  rawFile: unknown,
+): ResolvedReadonlyGitFile | null {
+  if (rawFile === undefined || rawFile === null || rawFile === '') return null;
+  if (typeof rawFile !== 'string' || rawFile.includes('\0')) {
+    throw gitReadonlyError('file 必须是项目内的单个文件路径');
+  }
+  const normalizedInput = rawFile.replace(/\\/g, '/');
+  if (normalizedInput.includes('..')) {
+    throw gitReadonlyError('file 不得包含路径穿越');
+  }
+
+  const resolved = resolveProjectPath(project.bind_path, normalizedInput);
+  if ('error' in resolved) throw gitReadonlyError(resolved.error);
+  const canonicalRepoPath = canonicalizePathWithMissingTail(repoPath);
+  const canonicalFilePath = canonicalizePathWithMissingTail(resolved.absPath);
+  if (!isWithinPath(canonicalRepoPath, canonicalFilePath)) {
+    throw gitReadonlyError('file 必须位于当前 Git 仓库内');
+  }
+
+  const repoFile = path.relative(canonicalRepoPath, canonicalFilePath).replace(/\\/g, '/');
+  if (!repoFile || repoFile === '.') {
+    throw gitReadonlyError('file 必须指向仓库内路径');
+  }
+  return {
+    project_path: resolved.relPath.replace(/^\/+/, ''),
+    repo_path: repoFile,
+  };
+}
+
+function requireReadonlyGitRepo(project: any): DiscoveredGitRepo & { repo_path: string } {
+  const discovered = discoverGitRepo(project.bind_path);
+  if (!discovered.available || !discovered.repo_path) {
+    throw gitReadonlyError(discovered.reason || '绑定路径下未检测到 Git 仓库', 409);
+  }
+  return discovered as DiscoveredGitRepo & { repo_path: string };
+}
+
+function isEmptyGitHistoryError(error: unknown): boolean {
+  return /does not have any commits|bad default revision/i.test(String(error || ''));
+}
+
+function readProjectGitHistory(project: any, query: express.Request['query']): any {
+  const limit = normalizeCommitLimit(query.limit);
+  const requestedCursor = query.cursor === undefined || query.cursor === ''
+    ? ''
+    : requireReadonlyGitSha(query.cursor, 'cursor');
+  const discovered = requireReadonlyGitRepo(project);
+  let cursor = '';
+  if (requestedCursor) {
+    const verified = runGit(discovered.repo_path, ['rev-parse', '--verify', `${requestedCursor}^{commit}`]);
+    if (!verified.ok || !verified.stdout.trim()) {
+      throw gitReadonlyError('cursor 对应的 commit 不存在', 404);
+    }
+    cursor = verified.stdout.trim();
+  }
+  const file = resolveReadonlyGitFile(project, discovered.repo_path, query.file);
+  const args = [
+    ...(file ? ['--literal-pathspecs'] : []),
+    'log',
+    ...(file ? ['--follow'] : []),
+    `--max-count=${limit + 1}`,
+    ...(cursor ? ['--skip=1'] : []),
+    '--date=iso-strict',
+    `--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%ar%x1f%s%x1f%D%x1e`,
+    ...(cursor ? [cursor] : []),
+    '--',
+    ...(file ? [file.repo_path] : []),
+  ];
+  const log = runGit(discovered.repo_path, args, { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 });
+  if (!log.ok && !isEmptyGitHistoryError(log.error)) {
+    throw gitReadonlyError(log.error || '读取提交历史失败', 500);
+  }
+
+  const parsed = log.ok ? parseGitCommits(log.stdout) : [];
+  const hasMore = parsed.length > limit;
+  const commits = parsed.slice(0, limit);
+  return {
+    source: 'git',
+    repo_path: discovered.repo_path,
+    repo_name: path.basename(discovered.repo_path),
+    file: file?.project_path || null,
+    limit,
+    cursor: cursor || null,
+    next_cursor: hasMore ? commits[commits.length - 1]?.hash || null : null,
+    has_more: hasMore,
+    commits,
+  };
+}
+
+function readProjectGitCommitDiff(project: any, rawSha: unknown, rawFile: unknown): any {
+  const requestedSha = requireReadonlyGitSha(rawSha, 'sha');
+  const discovered = requireReadonlyGitRepo(project);
+  const file = resolveReadonlyGitFile(project, discovered.repo_path, rawFile);
+  const verified = runGit(discovered.repo_path, ['rev-parse', '--verify', `${requestedSha}^{commit}`]);
+  if (!verified.ok || !verified.stdout.trim()) {
+    throw gitReadonlyError('commit 不存在', 404);
+  }
+  const sha = verified.stdout.trim();
+  const shown = runGit(discovered.repo_path, [
+    ...(file ? ['--literal-pathspecs'] : []),
+    'show',
+    '--format=',
+    '--find-renames',
+    '--no-ext-diff',
+    '--no-textconv',
+    sha,
+    '--',
+    ...(file ? [file.repo_path] : []),
+  ], { timeout: 10_000, maxBuffer: 8 * 1024 * 1024 });
+  if (!shown.ok) {
+    throw gitReadonlyError(shown.error || '读取 commit diff 失败', 500);
+  }
+  return {
+    source: 'git',
+    sha,
+    short_sha: sha.slice(0, 7),
+    file: file?.project_path || null,
+    diff: shown.stdout,
+  };
 }
 
 function readProjectGitTracking(project: any, rawLimit: unknown): any {
@@ -2657,6 +2815,28 @@ router.get('/:id/git-tracking', auth, (req: express.Request, res: express.Respon
     res.json(readProjectGitTracking(project, req.query.limit));
   } catch (e) {
     res.status(500).json({ error: (e as Error).message || '读取 Git 追踪信息失败' });
+  }
+});
+
+router.get('/:id/git-history', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  try {
+    res.json(readProjectGitHistory(project, req.query));
+  } catch (e) {
+    const err = e as HttpError;
+    res.status(err.statusCode || 500).json({ error: err.message || '读取 Git 历史失败' });
+  }
+});
+
+router.get('/:id/git-history/:sha/diff', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  try {
+    res.json(readProjectGitCommitDiff(project, req.params.sha, req.query.file));
+  } catch (e) {
+    const err = e as HttpError;
+    res.status(err.statusCode || 500).json({ error: err.message || '读取 commit diff 失败' });
   }
 });
 

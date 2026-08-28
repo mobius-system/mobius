@@ -28,7 +28,7 @@ router.get('/', auth, (req: express.Request, res: express.Response) => {
 router.get('/recent', auth, (req: express.Request, res: express.Response) => {
   const user = (req as any).user;
   const rawLimit = Number(req.query.limit || 12);
-  const limit = Math.max(1, Math.min(50, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 12));
+  const limit = Math.max(1, Math.min(100, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 12));
   res.json(Sessions.listRecentForUser(user.id, limit));
 });
 

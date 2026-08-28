@@ -12,7 +12,9 @@ function loadBackgroundFlowEnabled() {
 
 function loadAssistantBubbleEnabled() {
   const stored = localStorage.getItem(ASSISTANT_BUBBLE_STORAGE_KEY)
-  return stored == null ? true : stored !== '0'
+  // 新用户默认只看到项目会话，不再同时挂载第二套全局聊天入口。
+  // 已明确开启过的用户继续沿用旧偏好。
+  return stored === '1'
 }
 
 // 工作区布局模式:

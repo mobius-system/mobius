@@ -7,8 +7,18 @@
 //
 // 搜索为用户主动触发 (非轮询); 前端 450ms 防抖 + 最短 2 字符, 避免抖打的后端压力.
 // =====================================================================
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useStore } from '../store'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { api, useStore } from '../store'
+import {
+  sessionNavigation,
+  type WorkbenchNavigate,
+} from '../services/workbench-navigation'
+import {
+  resolvedSessionId,
+  searchInputIntent,
+  sessionLookupErrorMessage,
+  SESSION_UNAVAILABLE_MESSAGE,
+} from '../services/search-session-intent'
 import {
   Search, X, ChevronRight, Folder, CircleDot, FlaskConical,
   MessagesSquare, Loader2, AlertCircle, FileSearch, ArrowUpRight, Copy,
@@ -32,12 +42,16 @@ type SearchResult = {
 
 type SelectedSearchFragment = { result: SearchResult; fragment: Fragment }
 
+type SearchRetryAction =
+  | { kind: 'keyword'; query: string; range: RangeKey; caseSensitive: boolean; wholeWord: boolean }
+  | { kind: 'session'; query: string; sessionId: string; match?: string; timestamp?: string }
+
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
-  user: { label: '用户', color: '#60a5fa', bg: 'rgba(59,130,246,0.15)' },
+  user: { label: '用户', color: 'var(--accent-primary)', bg: 'var(--accent-soft)' },
   assistant: { label: '助手', color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
   tool: { label: '工具', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
   thinking: { label: '思考', color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
-  error: { label: '错误', color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+  error: { label: '错误', color: 'var(--status-danger)', bg: 'var(--status-danger-soft)' },
   system: { label: '系统', color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' },
 }
 function roleMeta(role: string) {
@@ -91,7 +105,7 @@ function relativeTime(iso: string | null): string {
   return new Date(iso).toLocaleDateString('zh-CN')
 }
 
-// 时间范围过滤选项: 默认仅扫描 7 天内活跃的会话以加速搜索 (后端按 last_active 过滤候选集).
+// 时间范围过滤选项: 默认仅扫描 7 天内创建的会话以加速搜索 (后端按 created_at 过滤候选集).
 type RangeKey = '1d' | '7d' | '30d' | 'all'
 const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
   { value: '1d', label: '1天内' },
@@ -100,7 +114,15 @@ const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
   { value: 'all', label: '全部' },
 ]
 
-export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNavigate: (path: string) => void }) {
+export function SearchModal({
+  onClose,
+  onNavigate,
+  returnFocusRef,
+}: {
+  onClose: () => void
+  onNavigate: WorkbenchNavigate
+  returnFocusRef?: RefObject<HTMLElement | null>
+}) {
   const { theme, user } = useStore()
   const dark = theme !== 'light'
   const [q, setQ] = useState('')
@@ -114,7 +136,14 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
   const reqId = useRef(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const errorRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const initialFocusRef = useRef<HTMLElement | null>(null)
+  const navigationSucceededRef = useRef(false)
+  const navigationAttemptRef = useRef(0)
+  const [openingSessionId, setOpeningSessionId] = useState('')
+  const [retryAction, setRetryAction] = useState<SearchRetryAction | null>(null)
   // 匹配选项: caseSensitive 区分大小写, wholeWord 全字匹配 (与后端 /api/search 的 case/word 参数同口径).
   const [caseSensitive, setCaseSensitive] = useState(false)
   const [wholeWord, setWholeWord] = useState(false)
@@ -125,12 +154,73 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
   const optsRef = useRef({ caseSensitive, wholeWord, range })
   optsRef.current = { caseSensitive, wholeWord, range }
 
-  useEffect(() => { inputRef.current?.focus() }, [])
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+    initialFocusRef.current = returnFocusRef?.current
+      || (document.activeElement instanceof HTMLElement ? document.activeElement : null)
+    const frame = window.requestAnimationFrame(() => inputRef.current?.focus())
+    return () => {
+      window.cancelAnimationFrame(frame)
+      if (navigationSucceededRef.current) return
+      const requested = returnFocusRef?.current
+      const target = requested?.isConnected ? requested : initialFocusRef.current
+      window.requestAnimationFrame(() => { if (target?.isConnected) target.focus() })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!err) return
+    window.requestAnimationFrame(() => errorRef.current?.focus())
+  }, [err])
+
+  const closeFragmentPreview = () => {
+    const sessionId = selectedFragment?.result.session_id
+    navigationAttemptRef.current += 1
+    if (openingSessionId) {
+      reqId.current += 1
+      abortRef.current?.abort()
+      setLoading(false)
+    }
+    setOpeningSessionId('')
+    setSelectedFragment(null)
+    window.requestAnimationFrame(() => {
+      if (!sessionId) return inputRef.current?.focus()
+      Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('[data-search-result]') || [])
+        .find(element => element.dataset.searchResult === sessionId)
+        ?.focus()
+    })
+  }
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+        if (selectedFragment) closeFragmentPreview()
+        else onClose()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const scope = selectedFragment
+        ? document.querySelector<HTMLElement>('[data-search-fragment-preview]')
+        : dialogRef.current
+      const focusable = Array.from(scope?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) || []).filter(element => element.getClientRects().length > 0)
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && (document.activeElement === first || !scope?.contains(document.activeElement))) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (document.activeElement === last || !scope?.contains(document.activeElement))) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [selectedFragment, onClose])
 
   // 流式搜索: GET /api/search?stream=1 走 SSE, result 事件随扫描完成逐条下发, 前端增量渲染.
   // 不能用 EventSource (无法带 Authorization 头), 改用 fetch + ReadableStream 手解 SSE 帧.
@@ -138,7 +228,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
     const t = term.trim()
     if (t.length < 2) {
       abortRef.current?.abort()
-      setResults([]); setMeta(null); setLoading(false); setErr(''); setSearched(false)
+      setResults([]); setMeta(null); setLoading(false); setErr(''); setSearched(false); setRetryAction(null)
       return
     }
     const id = ++reqId.current
@@ -146,7 +236,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
-    setLoading(true); setErr(''); setResults([]); setSearched(true); setMeta(null)
+    setLoading(true); setErr(''); setResults([]); setSearched(true); setMeta(null); setRetryAction(null)
     const params = new URLSearchParams({ q: t, limit: '50', range: rangeArg, stream: '1' })
     if (cs) params.set('case', '1')
     if (ww) params.set('word', '1')
@@ -169,6 +259,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
           setMeta({ scanned: payload?.scanned_sessions, candidates: payload?.candidate_sessions, truncated: !!payload?.truncated })
           setLoading(false)
         } else if (event === 'error') {
+          setRetryAction({ kind: 'keyword', query: t, range: rangeArg, caseSensitive: cs, wholeWord: ww })
           setErr(payload?.error || '搜索失败'); setLoading(false)
         }
       }
@@ -200,43 +291,119 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
     }).catch((e: any) => {
       if (e?.name === 'AbortError') return
       if (id !== reqId.current) return
+      setRetryAction({ kind: 'keyword', query: t, range: rangeArg, caseSensitive: cs, wholeWord: ww })
       setErr(e?.message || '搜索失败'); setLoading(false)
     })
   }
 
-  const onType = (v: string) => {
-    setQ(v)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => runSearch(v), 450)
-  }
-  useEffect(() => () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
+  const openSessionId = async ({
+    query,
+    sessionId,
+    match,
+    timestamp,
+    fromExactInput = false,
+  }: {
+    query: string
+    sessionId: string
+    match?: string
+    timestamp?: string
+    fromExactInput?: boolean
+  }) => {
+    const attempt = ++navigationAttemptRef.current
+    const request = ++reqId.current
     abortRef.current?.abort()
-  }, [])
-
-  // 切换时间范围 / 大小写 / 全字: 用当前关键词立即重搜 (显式动作, 不防抖; 空关键词不触发).
-  useEffect(() => {
-    if (q.trim().length < 2) return
-    runSearch(q)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, caseSensitive, wholeWord])
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    const retry: SearchRetryAction = { kind: 'session', query, sessionId, match, timestamp }
+    setOpeningSessionId(sessionId)
+    setLoading(true)
+    setErr('')
+    setRetryAction(null)
+    if (fromExactInput) {
+      setResults([])
+      setMeta(null)
+      setSearched(true)
+      setSelectedFragment(null)
+    }
+    try {
+      const session = await api(`/api/tasks/${encodeURIComponent(sessionId)}`, { signal: ctrl.signal })
+      if (attempt !== navigationAttemptRef.current) return
+      const verifiedSessionId = resolvedSessionId(sessionId, session)
+      if (!verifiedSessionId) throw new Error(SESSION_UNAVAILABLE_MESSAGE)
+      const destination = sessionNavigation(user?.id || '', verifiedSessionId, { match, timestamp })
+      onNavigate(destination.path, { state: destination.state })
+      navigationSucceededRef.current = true
+      onClose()
+    } catch (reason) {
+      if ((reason as { name?: string })?.name === 'AbortError') return
+      if (attempt !== navigationAttemptRef.current) return
+      setSelectedFragment(null)
+      setRetryAction(retry)
+      setErr(sessionLookupErrorMessage(reason))
+    } finally {
+      if (attempt === navigationAttemptRef.current && request === reqId.current) {
+        setOpeningSessionId('')
+        setLoading(false)
+      }
+    }
+  }
 
   // 次级预览确认后 → 进入该 Session 并跳到指定命中片段所属的卡片.
   // 优先用片段 uuid (claude entry.uuid / codex entry.id), 缺失则用 timestamp 区间兜底 (见 JsonlView).
   const openSession = (r: SearchResult, frag?: Fragment) => {
     const first = frag || r.fragments[0]
-    const base = `/u/${user?.id}/p/${r.project_id}`
-    const mid = r.scope_type === 'research' ? `/r/${r.research_id}` : `/i/${r.issue_id}`
-    let url = `${base}${mid}?session=${r.session_id}`
-    if (first) {
-      const parts: string[] = []
-      if (first.uuid) parts.push(`match=${encodeURIComponent(first.uuid)}`)
-      if (first.timestamp) parts.push(`ts=${encodeURIComponent(first.timestamp)}`)
-      if (parts.length) url += '&' + parts.join('&')
-    }
-    onNavigate(url)
-    onClose()
+    return openSessionId({
+      query: q,
+      sessionId: r.session_id,
+      match: first?.uuid || undefined,
+      timestamp: first?.timestamp || undefined,
+    })
   }
+
+  const submitSearch = (value: string) => {
+    const intent = searchInputIntent(value)
+    if (intent.kind === 'session') {
+      void openSessionId({ query: intent.query, sessionId: intent.sessionId, fromExactInput: true })
+      return
+    }
+    runSearch(intent.query)
+  }
+
+  const retryLastAction = () => {
+    if (retryAction?.kind === 'session') {
+      void openSessionId(retryAction)
+      return
+    }
+    if (retryAction?.kind === 'keyword') {
+      runSearch(retryAction.query, retryAction.range, retryAction.caseSensitive, retryAction.wholeWord)
+      return
+    }
+    submitSearch(q)
+  }
+
+  const onType = (v: string) => {
+    setQ(v)
+    setErr('')
+    setRetryAction(null)
+    setOpeningSessionId('')
+    navigationAttemptRef.current += 1
+    reqId.current += 1
+    abortRef.current?.abort()
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => submitSearch(v), 450)
+  }
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    abortRef.current?.abort()
+    navigationAttemptRef.current += 1
+  }, [])
+
+  // 切换时间范围 / 大小写 / 全字: 用当前输入立即重试其对应动作 (显式动作, 不防抖).
+  useEffect(() => {
+    if (q.trim().length < 2) return
+    submitSearch(q)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range, caseSensitive, wholeWord])
 
   const openFragmentPreview = (r: SearchResult, frag?: Fragment) => {
     const target = frag || r.fragments[0]
@@ -244,9 +411,9 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center pt-[8vh] px-4">
+    <div className="workbench-layer-modal fixed inset-0 flex items-start justify-center pt-[8vh] px-4" role="dialog" aria-modal="true" aria-label="全局搜索">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full flex flex-col rounded-2xl shadow-2xl max-h-[calc(100vh-16vh-32px)]"
+      <div ref={dialogRef} className="relative w-full flex flex-col rounded-2xl shadow-2xl max-h-[calc(100vh-16vh-32px)]"
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxWidth: 'min(680px, calc(100vw - 32px))' }}>
         {/* 头部: 关键词输入 */}
         <div className="flex items-center gap-2 px-4 py-3 border-b shrink-0" style={{ borderColor: 'var(--border-color)' }}>
@@ -255,8 +422,8 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
             ref={inputRef}
             value={q}
             onChange={e => onType(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { if (debounceRef.current) clearTimeout(debounceRef.current); runSearch(q) } }}
-            placeholder="搜索所有会话内容 (项目 → 任务/研究 → 会话 → 命中片段)…"
+            onKeyDown={e => { if (e.key === 'Enter') { if (debounceRef.current) clearTimeout(debounceRef.current); submitSearch(q) } }}
+            placeholder="搜索会话内容，或粘贴 Session ID…"
             className="flex-1 bg-transparent text-[13px] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
             style={{ color: dark ? '#f1f5f9' : '#1e293b' }}
           />
@@ -268,9 +435,9 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
             aria-pressed={caseSensitive}
             className="flex-shrink-0 rounded-md border text-[11px] font-semibold w-7 h-7 cursor-pointer transition-colors"
             style={{
-              color: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)',
-              borderColor: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)',
-              background: caseSensitive ? 'rgba(96,165,250,0.12)' : 'transparent',
+              color: caseSensitive ? 'var(--accent-primary)' : 'var(--text-muted)',
+              borderColor: caseSensitive ? 'var(--accent-border)' : 'var(--border-color)',
+              background: caseSensitive ? 'var(--surface-active)' : 'transparent',
             }}
           >Aa</button>
           <button
@@ -280,12 +447,12 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
             aria-pressed={wholeWord}
             className="flex-shrink-0 rounded-md border text-[11px] font-semibold w-7 h-7 cursor-pointer transition-colors"
             style={{
-              color: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)',
-              borderColor: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)',
-              background: wholeWord ? 'rgba(96,165,250,0.12)' : 'transparent',
+              color: wholeWord ? 'var(--accent-primary)' : 'var(--text-muted)',
+              borderColor: wholeWord ? 'var(--accent-border)' : 'var(--border-color)',
+              background: wholeWord ? 'var(--surface-active)' : 'transparent',
             }}
           >W</button>
-          {/* 时间范围过滤 (默认 7 天内活跃的会话): 缩小候选集加速扫描 */}
+          {/* 时间范围过滤 (默认 7 天内创建的会话): 缩小候选集加速扫描 */}
           <select
             value={range}
             onChange={e => setRange(e.target.value as RangeKey)}
@@ -299,7 +466,14 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
           </select>
           {loading && <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
           {q && !loading && (
-            <button type="button" onClick={() => { setQ(''); setResults([]); setMeta(null); setSearched(false); inputRef.current?.focus() }}
+            <button type="button" onClick={() => {
+              if (debounceRef.current) clearTimeout(debounceRef.current)
+              abortRef.current?.abort()
+              navigationAttemptRef.current += 1
+              reqId.current += 1
+              setQ(''); setResults([]); setMeta(null); setSearched(false); setErr(''); setRetryAction(null); setOpeningSessionId(''); setLoading(false)
+              inputRef.current?.focus()
+            }}
               className="flex-shrink-0 rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
               <X className="w-4 h-4" />
             </button>
@@ -313,20 +487,32 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
         {/* 结果区 */}
         <div className="flex-1 min-h-0 overflow-y-auto">
           {err ? (
-            <div className="px-4 py-8 flex flex-col items-center gap-2 text-center">
-              <AlertCircle className="w-6 h-6" style={{ color: '#ef4444' }} />
+            <div ref={errorRef} role="alert" tabIndex={-1} className="px-4 py-8 flex flex-col items-center gap-2 text-center outline-none">
+              <AlertCircle className="w-6 h-6" style={{ color: 'var(--status-danger)' }} />
               <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{err}</p>
+              <button type="button" onClick={retryLastAction} className="workbench-control-md mt-1 border px-3 text-[12px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>{retryAction?.kind === 'session' ? '重试打开' : '重试搜索'}</button>
+            </div>
+          ) : loading && openingSessionId ? (
+            <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
+              <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--text-muted)' }} />
+              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>正在查找 Session {openingSessionId}…</p>
+            </div>
+          ) : loading && results.length === 0 ? (
+            <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
+              <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--text-muted)' }} />
+              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>正在搜索…</p>
             </div>
           ) : !searched ? (
             <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
               <FileSearch className="w-7 h-7" style={{ color: 'var(--text-muted)' }} />
-              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>输入关键词搜索会话内容</p>
-              <p className="text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{range === 'all' ? '扫描全部会话' : `仅扫描 ${rangeLabel}内活跃的会话`}，命中片段会高亮显示</p>
+              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>输入关键词搜索会话内容，或粘贴完整 Session ID</p>
+              <p className="text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{range === 'all' ? '扫描全部会话' : `仅扫描 ${rangeLabel}创建的会话`}，命中片段会高亮显示</p>
             </div>
           ) : results.length === 0 ? (
             <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
               <Search className="w-6 h-6" style={{ color: 'var(--text-muted)' }} />
               <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>未找到匹配的会话</p>
+              <button type="button" onClick={() => runSearch(q)} className="workbench-control-md mt-1 border px-3 text-[12px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>重新搜索</button>
             </div>
           ) : (
             <div className="py-1.5">
@@ -346,7 +532,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
                       </span>
                       <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                       <span className="inline-flex items-center gap-1 truncate" style={{ color: 'var(--text-secondary)' }}>
-                        <ScopeIcon className="w-3 h-3 flex-shrink-0" style={{ color: isResearch ? '#10b981' : '#60a5fa' }} />
+                        <ScopeIcon className="w-3 h-3 flex-shrink-0" style={{ color: isResearch ? '#10b981' : 'var(--accent-primary)' }} />
                         <span className="truncate max-w-[180px]">{isResearch ? (r.research_title || '(研究)') : (r.issue_title || '(任务)')}</span>
                       </span>
                       <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
@@ -393,7 +579,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
               {` · 范围: ${rangeLabel}`}
               {caseSensitive || wholeWord ? ` · ${[caseSensitive ? '区分大小写' : '', wholeWord ? '全字匹配' : ''].filter(Boolean).join(' / ')}` : ''}
             </span>
-            {meta?.truncated && <span style={{ color: '#f59e0b' }}>部分结果 (已达时间上限, 可缩小时间范围或换词)</span>}
+            {meta?.truncated && <span style={{ color: 'var(--status-waiting)' }}>部分结果 (已达时间上限, 可缩小时间范围或换词)</span>}
           </div>
         )}
       </div>
@@ -406,8 +592,9 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
           caseSensitive={caseSensitive}
           wholeWord={wholeWord}
           dark={dark}
-          onBack={() => setSelectedFragment(null)}
-          onViewInSession={() => openSession(selectedFragment.result, selectedFragment.fragment)}
+          opening={openingSessionId === selectedFragment.result.session_id}
+          onBack={closeFragmentPreview}
+          onViewInSession={() => { void openSession(selectedFragment.result, selectedFragment.fragment) }}
         />
       )}
     </div>
@@ -423,6 +610,7 @@ function SearchFragmentPreviewModal({
   caseSensitive,
   wholeWord,
   dark,
+  opening,
   onBack,
   onViewInSession,
 }: {
@@ -432,6 +620,7 @@ function SearchFragmentPreviewModal({
   caseSensitive: boolean
   wholeWord: boolean
   dark: boolean
+  opening: boolean
   onBack: () => void
   onViewInSession: () => void
 }) {
@@ -439,7 +628,7 @@ function SearchFragmentPreviewModal({
   const ScopeIcon = isResearch ? FlaskConical : CircleDot
   const rm = roleMeta(fragment.role)
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="搜索命中预览" data-search-fragment-preview>
+    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="搜索命中预览" data-search-fragment-preview>
       <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={onBack} />
       <div
         className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl shadow-2xl"
@@ -448,19 +637,19 @@ function SearchFragmentPreviewModal({
         <div className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
           <div className="min-w-0">
             <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>
-              <FileSearch className="h-4 w-4 flex-shrink-0 text-blue-400" />
+              <FileSearch className="h-4 w-4 flex-shrink-0 text-[var(--accent-primary)]" />
               <span>命中片段预览</span>
             </div>
             <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
               <span className="truncate max-w-[150px]">{result.project_name || '(未命名项目)'}</span>
               <ChevronRight className="h-3 w-3 flex-shrink-0" />
-              <ScopeIcon className="h-3 w-3 flex-shrink-0" style={{ color: isResearch ? '#10b981' : '#60a5fa' }} />
+              <ScopeIcon className="h-3 w-3 flex-shrink-0" style={{ color: isResearch ? '#10b981' : 'var(--accent-primary)' }} />
               <span className="truncate max-w-[180px]">{isResearch ? (result.research_title || '(研究)') : (result.issue_title || '(任务)')}</span>
               <ChevronRight className="h-3 w-3 flex-shrink-0" />
               <span className="truncate max-w-[220px]">{result.session_name || '(未命名会话)'}</span>
             </div>
           </div>
-          <button type="button" onClick={onBack} title="返回搜索结果" aria-label="返回搜索结果" className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
+          <button autoFocus type="button" onClick={onBack} title="返回搜索结果" aria-label="返回搜索结果" className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -481,9 +670,9 @@ function SearchFragmentPreviewModal({
 
         <div className="flex items-center justify-between gap-3 border-t px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
           <button type="button" onClick={onBack} className="rounded-lg px-3 py-1.5 text-[12px] hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-secondary)' }}>返回搜索结果</button>
-          <button type="button" onClick={onViewInSession} data-search-view-session className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-3 py-1.5 text-[12px] font-medium text-white shadow-sm transition-colors hover:bg-blue-400">
-            <span>在会话中查看</span>
-            <ArrowUpRight className="h-3.5 w-3.5" />
+          <button type="button" onClick={onViewInSession} disabled={opening} data-search-view-session className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-on-accent)] shadow-sm transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60">
+            <span>{opening ? '正在打开…' : '在会话中查看'}</span>
+            {opening ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
           </button>
         </div>
       </div>

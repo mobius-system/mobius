@@ -5,7 +5,8 @@
  * 管理员导入的 Claude Code 模型来自 model-access.js (settings JSON);
  * 管理员导入的 Codex 模型来自 model-access.js (per-channel TOML, --profile 加载).
  *
- * 没有明确配置文件的模型不进入系统, 也不能启动.
+ * Mobius 专用配置存在时优先使用；否则，已安装且由官方 status 明确认证的本机
+ * Codex / Claude CLI 可作为 native built-in，直接复用同一 HOME 的登录态。
  */
 import * as fs from 'fs'
 import * as os from 'os'
@@ -19,8 +20,13 @@ import {
 } from '../config'
 import adminSettings from './admin-settings'
 import * as modelAccess from './model-access'
+// @ts-ignore — shared detector is CommonJS so tmux .js backends can reuse it directly.
+import providerCliDetection from './provider-cli-detection.cjs'
+// @ts-ignore — app-server catalog is shared with CommonJS startup/tests.
+import codexModelCatalog from './codex-model-catalog.cjs'
 
 const BUILTIN_ORDER = ['codex', 'opus']
+const NATIVE_CODEX_MODEL_PREFIX = 'codex-native:'
 // 内置 Claude (Opus) 在 model-access 表里的 seed key (= settings 文件 mobiusdefault.settings.json).
 const BUILTIN_CLAUDE_KEY = 'mobiusdefault'
 
@@ -74,11 +80,32 @@ function fileExists(file: any): boolean {
   return !!file && fs.existsSync(file)
 }
 
+function builtinProviderForKey(key: string): 'codex' | 'claude' {
+  return key === 'codex' ? 'codex' : 'claude'
+}
+
+function builtinControlRow(key: string): any {
+  if (!modelAccess) return null
+  if (key === 'codex' && typeof modelAccess.findCodexModel === 'function') {
+    const profileKey = (MODEL_OPTIONS as Record<string, any>).codex?.profileKey
+    return profileKey ? modelAccess.findCodexModel(profileKey) : null
+  }
+  if (key === 'opus' && typeof modelAccess.findClaudeCodeModel === 'function') {
+    return modelAccess.findClaudeCodeModel(BUILTIN_CLAUDE_KEY)
+  }
+  return null
+}
+
+function builtinAllowedByAdmin(key: string): boolean {
+  return builtinControlRow(key)?.enabled !== false
+}
+
 function builtinEntryFor(modelOrKey: any): any {
   const key = modelKeyFor(modelOrKey)
   if (!key) return null
   const opt = (MODEL_OPTIONS as Record<string, any>)[key]
   if (!opt) return null
+  if (!builtinAllowedByAdmin(key)) return null
   const settingsPath = opt.backend === 'tmux-claude-code' ? builtinClaudeSettingsPath() : null
   const codexConfigPath = opt.backend === 'tmux-codex' && opt.profileKey ? builtinCodexConfigPath(opt.profileKey) : null
   const configPath = codexConfigPath || settingsPath
@@ -94,6 +121,7 @@ function builtinEntryFor(modelOrKey: any): any {
     sub: subForBuiltin(key),
     backend: opt.backend,
     imported: false,
+    native: false,
     useProxy,
     settingsPath,
     // built-in codex 也必须显式指定渠道.
@@ -105,6 +133,137 @@ function builtinEntryFor(modelOrKey: any): any {
     codexModel: null,
     claudeModel: opt.id,
   }
+}
+
+// native built-in 是同步、纯状态读取：慢速 CLI/status 探测在服务 listen 前预热，
+// 此处只读取已完成的 snapshot，因此 model-options 不会在同步热路径里 spawn CLI。
+function nativeBuiltinEntryFor(modelOrKey: any): any {
+  const key = modelKeyFor(modelOrKey)
+  if (!key) return null
+  // Codex native models come from app-server model/list below. Claude keeps
+  // the existing single built-in mapping because it has no equivalent catalog.
+  if (key === 'codex') return null
+  const opt = (MODEL_OPTIONS as Record<string, any>)[key]
+  if (!opt || !builtinAllowedByAdmin(key)) return null
+  const provider = builtinProviderForKey(key)
+  const nativeSetting = typeof modelAccess?.getNativeProvider === 'function'
+    ? modelAccess.getNativeProvider(provider)
+    : { enabled: false }
+  if (nativeSetting.enabled !== true) return null
+  const status = providerCliDetection.getCachedProviderStatus(provider)
+  if (!status || status.nativeReady !== true || status.authStatus !== 'authenticated') return null
+  const useProxy = modelUseProxy(key, defaultUseProxyForBackend(opt.backend))
+  return {
+    key,
+    value: key,
+    sessionModelValue: opt.id,
+    model: opt.id,
+    label: opt.label,
+    title: titleForBuiltin(key, opt),
+    sub: `${subForBuiltin(key)} · 本机登录`,
+    backend: opt.backend,
+    imported: false,
+    native: true,
+    useProxy,
+    settingsPath: null,
+    codexProfileKey: null,
+    codexChannel: null,
+    codexConfigPath: null,
+    codexSecretEnvKey: null,
+    codexSecretValue: null,
+    codexModel: key === 'codex' ? opt.id : null,
+    claudeModel: key === 'opus' ? opt.id : null,
+  }
+}
+
+function nativeCodexAvailable(): boolean {
+  if (!builtinAllowedByAdmin('codex')) return false
+  const nativeSetting = typeof modelAccess?.getNativeProvider === 'function'
+    ? modelAccess.getNativeProvider('codex')
+    : { enabled: false }
+  if (nativeSetting.enabled !== true) return false
+  const status = providerCliDetection.getCachedProviderStatus('codex')
+  return status?.nativeReady === true && status?.authStatus === 'authenticated'
+}
+
+function nativeCodexModelKey(model: any, forceNativeKey = false): string {
+  return !forceNativeKey && model?.isDefault === true
+    ? 'codex'
+    : `${NATIVE_CODEX_MODEL_PREFIX}${model.id}`
+}
+
+function nativeCodexEntry(model: any, { forceNativeKey = false }: { forceNativeKey?: boolean } = {}): any {
+  if (!model || !nativeCodexAvailable()) return null
+  const key = nativeCodexModelKey(model, forceNativeKey)
+  const description = String(model.description || '').trim()
+  return {
+    key,
+    value: key,
+    // Native sessions persist the stable registry key. In particular the
+    // app-server default remains `codex` even when its concrete model id moves.
+    sessionModelValue: key,
+    model: model.id,
+    label: model.label || model.displayName || model.id,
+    title: model.displayName || model.label || model.id,
+    sub: description || 'Codex · 本机登录',
+    description,
+    backend: 'tmux-codex',
+    imported: false,
+    native: true,
+    useProxy: modelUseProxy(key, false),
+    settingsPath: null,
+    codexProfileKey: null,
+    codexChannel: null,
+    codexConfigPath: null,
+    codexSecretEnvKey: null,
+    codexSecretValue: null,
+    codexModel: model.id,
+    claudeModel: null,
+    isDefault: model.isDefault === true,
+    reasoningEffortsAdvertised: model.reasoningEffortsAdvertised === true,
+    supportedReasoningEfforts: model.supportedReasoningEfforts,
+    defaultReasoningEffort: model.defaultReasoningEffort,
+    speedsAdvertised: model.speedsAdvertised === true,
+    supportedSpeeds: model.supportedSpeeds,
+    defaultSpeed: model.defaultSpeed,
+    supportsImageInput: model.supportsImageInput,
+  }
+}
+
+function cachedNativeCodexModels(): any[] {
+  if (!nativeCodexAvailable()) return []
+  const snapshot = codexModelCatalog.getCachedCatalog()
+  return Array.isArray(snapshot?.models) ? snapshot.models : []
+}
+
+function nativeCodexEntryFor(modelOrKey: any): any {
+  if (!nativeCodexAvailable()) return null
+  const raw = String(modelOrKey || '').trim()
+  const models = cachedNativeCodexModels()
+  if (models.length === 0) return null
+  let model = null
+  let forceNativeKey = false
+  if (raw.startsWith(NATIVE_CODEX_MODEL_PREFIX)) {
+    const id = raw.slice(NATIVE_CODEX_MODEL_PREFIX.length)
+    model = models.find((candidate: any) => candidate.id === id) || null
+    forceNativeKey = true
+  } else if (raw === 'codex') {
+    model = models.find((candidate: any) => candidate.isDefault === true) || models[0]
+  } else {
+    // Preserve old sessions that stored a concrete id (notably gpt-5.5): if
+    // that id is still advertised, launch it rather than silently moving it.
+    model = models.find((candidate: any) => candidate.id === raw) || null
+    forceNativeKey = model?.isDefault !== true
+    if (!model && modelKeyFor(raw) === 'codex') {
+      model = models.find((candidate: any) => candidate.isDefault === true) || models[0]
+    }
+  }
+  return nativeCodexEntry(model, { forceNativeKey })
+}
+
+function resolvedBuiltinEntryFor(modelOrKey: any): any {
+  // 专用 profile/settings 始终优先；不存在时才允许 native fallback。
+  return builtinEntryFor(modelOrKey) || nativeCodexEntryFor(modelOrKey) || nativeBuiltinEntryFor(modelOrKey)
 }
 
 function titleForBuiltin(key: any, opt: any): string {
@@ -137,6 +296,7 @@ function dynamicEntryFor(modelOrKey: any): any {
     sub: 'Claude Code',
     backend: 'tmux-claude-code',
     imported: true,
+    native: false,
     useProxy,
     settingsPath: m.settings_path,
     settingsFile: m.settings_file,
@@ -152,6 +312,9 @@ function dynamicEntryFor(modelOrKey: any): any {
 function dynamicCodexEntryFor(modelOrKey: any): any {
   // 同 dynamicEntryFor: modelAccess 偶发 undefined 时不抛, 返回 null.
   if (!modelAccess || typeof modelAccess.findCodexModel !== 'function') return null
+  // Bare `codex` is the stable native/default key. Administrator channels are
+  // persisted and selected as `codex:<letters>`, so they cannot capture it.
+  if (String(modelOrKey || '').trim() === 'codex') return null
   const m = modelAccess.findCodexModel(modelOrKey, { includeSecret: true })
   if (!m || !m.enabled) return null
   if (!fileExists(m.config_path)) return null
@@ -166,6 +329,7 @@ function dynamicCodexEntryFor(modelOrKey: any): any {
     sub: 'Codex',
     backend: 'tmux-codex',
     imported: true,
+    native: false,
     useProxy,
     settingsPath: null,
     codexConfigPath: m.config_path,
@@ -191,6 +355,7 @@ function dynamicHarnessEntryFor(modelOrKey: any): any {
     sub: 'DeepSeek Harness',
     backend: 'deepseek-harness',
     imported: true,
+    native: false,
     useProxy,
     settingsPath: null,
     harnessProvider: m.provider,
@@ -211,8 +376,9 @@ function resolveSessionModel(modelOrKey: any): any {
   // 3) 管理员导入的 Claude Code 模型.
   const dynamic = dynamicEntryFor(modelOrKey)
   if (dynamic) return dynamic
-  // 4) 内置模型必须有明确配置文件.
-  const builtin = builtinEntryFor(modelOrKey)
+  // 4) 内置/本机模型: 专用配置优先；codex-native:* 始终明确
+  // 指向 app-server 目录项；最后才使用其它 native built-in.
+  const builtin = resolvedBuiltinEntryFor(modelOrKey)
   if (builtin) return builtin
   return null
 }
@@ -241,7 +407,7 @@ function backendNameForSessionModel(modelOrKey: any): any {
   // 真正启动会话的 launchOptionsForSession 仍会抛错, 这里只解决"读已有会话".
   const k = String(modelOrKey || '')
   if (k.startsWith('deepseek-harness:')) return 'deepseek-harness'
-  if (k.startsWith('codex:') || k === 'codex' || k === 'gpt-5.5') return 'tmux-codex'
+  if (k.startsWith('codex:') || k.startsWith(NATIVE_CODEX_MODEL_PREFIX) || k === 'codex' || k === 'gpt-5.5') return 'tmux-codex'
   if (k.startsWith('claude-code:') || k.startsWith('claude-') || k === 'opus') return 'tmux-claude-code'
   return DEFAULT_AGENT_BACKEND
 }
@@ -263,9 +429,9 @@ function isImportedHarnessModel(modelOrKey: any): boolean {
 }
 
 function listSessionModelOptions(): any[] {
-  const builtins = BUILTIN_ORDER
-    .filter((key) => (MODEL_OPTIONS as Record<string, any>)[key])
-    .map((key) => builtinEntryFor(key))
+  const builtinClaudeEntries = BUILTIN_ORDER
+    .filter((key) => key !== 'codex' && (MODEL_OPTIONS as Record<string, any>)[key])
+    .map((key) => resolvedBuiltinEntryFor(key))
     .filter(Boolean)
 
   // 内置 codex 的 profileKey (默认 'mobiusdefault') 已作为兜底 seed 进 model-access 表,
@@ -273,9 +439,8 @@ function listSessionModelOptions(): any[] {
   // 这里读回该 seed 记录, 让 picker 尊重管理员设置:
   //   - enabled=false → 内置 codex 从选择菜单隐藏 (修复"默认 codex 无法隐藏");
   //   - 自定义 label  → 覆盖内置 codex 的 label/title (修复"显示名称不起作用").
-  // 该记录跟内置 codex 共享同一份 ~/.codex/<profileKey>.config.toml, 仍须从 codexDynamics
-  // 剔除避免重复. 覆盖仅作用于 picker, 不改 builtinEntryFor / resolveSessionModel, 故管理员
-  // 隐藏 codex 后已有 codex 会话仍可正常运行.
+  // 该记录跟内置 codex 共享同一份 $CODEX_HOME/<profileKey>.config.toml, 仍须从 codexDynamics
+  // 剔除避免重复。enabled 同时作用于 picker、resolve 和 launch，不能通过直调创建接口绕过。
   // modelAccess 偶发 undefined (tsx/CJS 模块解析竞争) 时降级为空列表, 不要抛.
   const ma = (modelAccess && typeof modelAccess.listCodexModels === 'function') ? modelAccess : null
   const builtinCodexProfileKey = (MODEL_OPTIONS.codex && MODEL_OPTIONS.codex.profileKey) || null
@@ -309,21 +474,27 @@ function listSessionModelOptions(): any[] {
         .filter(Boolean)
     : []
 
-  let builtinCodex = builtins.filter((m) => m.key === 'codex')
+  const configuredBuiltinCodex = builtinEntryFor('codex')
+  const nativeCodexEntries = cachedNativeCodexModels()
+    .map((model: any) => nativeCodexEntry(model, { forceNativeKey: !!configuredBuiltinCodex }))
+    .filter(Boolean)
+  let builtinCodex = configuredBuiltinCodex
+    ? [configuredBuiltinCodex, ...nativeCodexEntries]
+    : nativeCodexEntries
   if (builtinCodexSeed) {
     if (builtinCodexSeed.enabled === false) {
       // 管理员在内置 codex 上取消勾选"启用" → 从选择菜单隐藏.
       builtinCodex = []
     } else {
       // 管理员自定义"显示名称"生效: 用 seed 记录的 label 覆盖内置 codex 的 label/title.
-      builtinCodex = builtinCodex.map((m) => ({
+      builtinCodex = builtinCodex.map((m) => m.key === 'codex' ? ({
         ...m,
         label: builtinCodexSeed.label || m.label,
         title: builtinCodexSeed.label || m.title,
-      }))
+      }) : m)
     }
   }
-  let builtinClaude = builtins.filter((m) => m.key !== 'codex')
+  let builtinClaude = builtinClaudeEntries
   if (builtinClaudeSeed) {
     if (builtinClaudeSeed.enabled === false) {
       // 管理员在内置 Opus 上取消勾选"启用" → 从选择菜单 + 系统设置隐藏.
@@ -348,9 +519,19 @@ function listSessionModelOptions(): any[] {
     sub: m.sub,
     backend: m.backend,
     imported: m.imported,
+    native: m.native === true,
+    description: m.description || null,
+    is_default: m.isDefault === true,
+    reasoning_efforts_advertised: m.reasoningEffortsAdvertised === true,
+    supported_reasoning_efforts: m.supportedReasoningEfforts,
+    default_reasoning_effort: m.defaultReasoningEffort,
+    speeds_advertised: m.speedsAdvertised === true,
+    supported_speeds: m.supportedSpeeds,
+    default_speed: m.defaultSpeed,
+    supports_image_input: m.supportsImageInput,
     use_proxy: m.useProxy === false ? 0 : (m.useProxy === true ? 1 : null),
     codex_config_path: m.codexConfigPath || null,
-    codex_channel: m.codexChannel || (m.backend === 'tmux-codex' ? m.model : null),
+    codex_channel: m.native === true ? null : (m.codexChannel || (m.backend === 'tmux-codex' ? m.model : null)),
     codex_secret_env_key: m.codexSecretEnvKey || null,
     settings_path: m.settingsPath || null,
   }))
@@ -373,6 +554,7 @@ function launchOptionsForSession(session: any): any {
       useProxy: resolved.useProxy,
       forceNoProxy: false,
       imported: true,
+      native: false,
       label: resolved.label,
     }
   }
@@ -389,6 +571,7 @@ function launchOptionsForSession(session: any): any {
       useProxy: resolved.useProxy,                    // 每模型独立, 不再读 admin-settings
       forceNoProxy: false,
       imported: true,
+      native: false,
       label: resolved.label,
     }
   }
@@ -401,10 +584,11 @@ function launchOptionsForSession(session: any): any {
       useProxy: resolved.useProxy,
       forceNoProxy: false,
       imported: true,
+      native: false,
       label: resolved.label,
     }
   }
-  // 内置模型也必须有明确配置文件.
+  // 内置模型可能走 Mobius 专用配置，也可能走不带 profile/settings 的 native 模式。
   return {
     backend: resolved.backend,
     model: resolved.model,
@@ -417,6 +601,7 @@ function launchOptionsForSession(session: any): any {
     codexSecretValue: resolved.codexSecretValue || undefined,
     forceNoProxy: false,
     imported: false,
+    native: resolved.native === true,
     label: resolved.label,
   }
 }

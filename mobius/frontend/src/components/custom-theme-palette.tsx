@@ -55,7 +55,6 @@ type Props = {
 
 export function CustomThemePalette({ onClose, onApplied }: Props) {
   const { theme } = useStore()
-  const isDark = theme !== 'light'
   const [themesMap, setThemesMap] = useState<Record<string, CustomTheme>>({})
   const [activeId, setActiveId] = useState<string | null>(null)
   const [mode, setMode] = useState<'list' | 'edit'>('list')
@@ -201,18 +200,17 @@ export function CustomThemePalette({ onClose, onApplied }: Props) {
   // === 渲染 ===
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={onClose} />
+    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={onClose} />
       <div
-        className="relative w-[640px] max-w-[calc(100vw-32px)] max-h-[calc(100vh-64px)] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
+        className="theme-overlay__panel relative flex max-h-[calc(100vh-64px)] w-[640px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-[var(--radius-modal)] border"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2">
             <PaletteIcon className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-            <h3 className="text-[14px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+            <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
               {mode === 'list' ? '自定义主题' : (edit.id ? '编辑主题' : '新建主题')}
             </h3>
           </div>
@@ -237,12 +235,10 @@ export function CustomThemePalette({ onClose, onApplied }: Props) {
               onEdit={handleEdit}
               onDelete={handleDelete}
               onReset={handleResetToBase}
-              isDark={isDark}
             />
           ) : (
             <EditView
               edit={edit}
-              isDark={isDark}
               err={err}
               onSetBase={handleSetBase}
               onSetName={(v) => setEdit(prev => ({ ...prev, name: v }))}
@@ -265,7 +261,7 @@ export function CustomThemePalette({ onClose, onApplied }: Props) {
                 type="button"
                 onClick={handleNew}
                 className="h-8 px-3 rounded-lg text-[12px] font-medium flex items-center gap-1.5 transition-colors"
-                style={{ background: 'var(--accent-primary)', color: '#0b1220' }}
+                style={{ background: 'var(--accent-primary)', color: 'var(--text-on-accent)' }}
               >
                 <Plus className="w-3.5 h-3.5" />
                 新建主题
@@ -274,7 +270,7 @@ export function CustomThemePalette({ onClose, onApplied }: Props) {
           ) : (
             <>
               {err && (
-                <div className="flex-1 flex items-center gap-1.5 text-[11px] text-red-300">
+                <div className="flex-1 flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--status-danger)' }}>
                   <AlertTriangle className="w-3.5 h-3.5" />
                   {err}
                 </div>
@@ -292,7 +288,7 @@ export function CustomThemePalette({ onClose, onApplied }: Props) {
                 type="button"
                 onClick={handleSave}
                 className="h-8 px-3 rounded-lg text-[12px] font-medium transition-colors"
-                style={{ background: 'var(--accent-primary)', color: '#0b1220' }}
+                style={{ background: 'var(--accent-primary)', color: 'var(--text-on-accent)' }}
               >
                 保存
               </button>
@@ -314,7 +310,6 @@ function ListView({
   onEdit,
   onDelete,
   onReset,
-  isDark,
 }: {
   themes: CustomTheme[]
   activeId: string | null
@@ -322,7 +317,6 @@ function ListView({
   onEdit: (t: CustomTheme) => void
   onDelete: (t: CustomTheme) => void
   onReset: () => void
-  isDark: boolean
 }) {
   return (
     <div className="p-5 space-y-4">
@@ -331,7 +325,7 @@ function ListView({
           type="button"
           onClick={onReset}
           className="w-full rounded-xl px-3 py-2 text-[12px] flex items-center gap-2 transition-colors border"
-          style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: isDark ? '#94a3b8' : '#475569' }}
+          style={{ background: 'var(--surface-control)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
         >
           <RotateCcw className="w-3.5 h-3.5" />
           停用当前自定义主题, 回到基础主题
@@ -362,14 +356,14 @@ function ListView({
                   <span className="flex-1" style={{ background: accent }} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-semibold truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{t.name}</div>
+                  <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{t.name}</div>
                   <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
                     基于「{getBaseOption(t.base).label}」 · {Object.keys(t.overrides).length} 个覆写
                   </div>
                 </div>
                 {selected ? (
                   <span className="flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium"
-                    style={{ background: 'var(--accent-primary)', color: '#0b1220' }}>
+                    style={{ background: 'var(--accent-primary)', color: 'var(--text-on-accent)' }}>
                     <Check className="w-3 h-3" />使用中
                   </span>
                 ) : (
@@ -377,7 +371,7 @@ function ListView({
                     type="button"
                     onClick={() => onApply(t)}
                     className="h-7 px-2.5 rounded-md text-[12px] font-medium transition-colors"
-                    style={{ background: 'var(--accent-primary)', color: '#0b1220' }}
+                    style={{ background: 'var(--accent-primary)', color: 'var(--text-on-accent)' }}
                   >
                     使用
                   </button>
@@ -397,8 +391,8 @@ function ListView({
                   onClick={() => onDelete(t)}
                   aria-label="删除"
                   title="删除"
-                  className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-red-500/15"
-                  style={{ color: '#f87171' }}
+                  className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
+                  style={{ color: 'var(--status-danger)', background: 'var(--status-danger-soft)' }}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -416,7 +410,6 @@ function ListView({
 // =====================================================================
 function EditView({
   edit,
-  isDark,
   err,
   onSetBase,
   onSetName,
@@ -424,7 +417,6 @@ function EditView({
   onClearOverride,
 }: {
   edit: EditState
-  isDark: boolean
   err: string
   onSetBase: (b: ThemeName) => void
   onSetName: (v: string) => void
@@ -453,7 +445,7 @@ function EditView({
           placeholder="例如: 我的深紫"
           maxLength={24}
           className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-primary)]"
-          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: isDark ? '#f1f5f9' : '#1e293b' }}
+          style={{ background: 'var(--surface-control)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)' }}
         />
       </div>
 
@@ -511,7 +503,7 @@ function EditView({
                   aria-label={v.label}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[12px] font-medium truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+                  <div className="text-[12px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                     {v.label}
                     {overridden && <span className="ml-1.5 text-[10px] font-normal" style={{ color: 'var(--accent-primary)' }}>已覆写</span>}
                   </div>
@@ -522,7 +514,7 @@ function EditView({
                   value={current}
                   onChange={e => onOverride(v.key, e.target.value)}
                   className="w-[110px] h-7 px-2 rounded-md text-[11px] font-mono focus:outline-none focus:border-[var(--accent-primary)]"
-                  style={{ background: 'var(--bg-primary)', border: '1px solid var(--input-border)', color: isDark ? '#cbd5e1' : '#334155' }}
+                  style={{ background: 'var(--surface-base)', border: '1px solid var(--border-strong)', color: 'var(--text-secondary)' }}
                   placeholder="#rrggbb"
                 />
                 {overridden && (

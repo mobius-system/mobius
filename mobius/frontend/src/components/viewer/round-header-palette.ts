@@ -18,9 +18,9 @@ export const ROUND_HEADER_PALETTES: readonly RoundHeaderPalette[] = [
     name: '星尘蓝',
     background: 'radial-gradient(circle at 2px 4px, rgba(219, 234, 254, 0.5) 0 0.32px, transparent 0.68px), radial-gradient(circle at 11px 8px, rgba(125, 211, 252, 0.34) 0 0.42px, transparent 0.78px), radial-gradient(circle at 19px 3px, rgba(191, 219, 254, 0.27) 0 0.28px, transparent 0.62px), linear-gradient(100deg, rgba(37, 99, 235, 0.2) 0%, rgba(14, 165, 233, 0.07) 100%)',
     backgroundSize: '29px 23px, 37px 31px, 43px 29px, auto',
-    border: 'rgba(96, 165, 250, 0.28)',
-    borderHover: 'rgba(96, 165, 250, 0.48)',
-    accent: '#60a5fa',
+    border: 'color-mix(in srgb, var(--accent-primary) 28%, transparent)',
+    borderHover: 'color-mix(in srgb, var(--accent-primary) 48%, transparent)',
+    accent: 'var(--accent-primary)',
   },
   {
     id: 'moon-rock',

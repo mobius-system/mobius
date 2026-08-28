@@ -15,15 +15,30 @@ interface SessionWorkspaceRow {
   research_title: string | null;
 }
 
+function isGitProbeTimeout(error: any): boolean {
+  return !!error && (error.code === 'ETIMEDOUT' || /ETIMEDOUT|timed out/i.test(String(error.message || '')));
+}
+
 function gitTopLevel(abs: string): string | null {
-  const r = spawnSync('git', ['-C', abs, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-  if (r.status !== 0) return null;
+  const r = spawnSync('git', ['-C', abs, 'rev-parse', '--show-toplevel'], {
+    encoding: 'utf8',
+    timeout: 5000,
+    maxBuffer: 1024 * 1024,
+  });
+  if (isGitProbeTimeout(r.error)) {
+    throw Object.assign(new Error('检测 Git 仓库超时，请稍后重试'), { code: 'GIT_TIMEOUT' });
+  }
+  if (r.error || r.status !== 0) return null;
   const top = (r.stdout || '').trim();
   return top ? path.resolve(top) : null;
 }
 
 function isGitRepoRoot(abs: string): boolean {
-  return gitTopLevel(abs) === path.resolve(abs);
+  try {
+    return gitTopLevel(abs) === path.resolve(abs);
+  } catch {
+    return false;
+  }
 }
 
 // 解析某 session 下的 CC_WORK_DIR. 调用方必须先完成 Session 权限判断。
@@ -84,7 +99,12 @@ function resolveSessionWorkspace(user: any, sessionId: string): any {
 
   const useWorktree = !!session.use_worktree;
   if (useWorktree) {
-    const resolvedGitRoot = gitTopLevel(abs);
+    let resolvedGitRoot: string | null = null;
+    try {
+      resolvedGitRoot = gitTopLevel(abs);
+    } catch (e) {
+      return { error: (e as Error).message || '检测 Git 仓库超时，请稍后重试', projectRoot: abs };
+    }
     if (resolvedGitRoot !== abs) {
       const branch = ((session.worktree_branch || '').trim() || session.issue_id) as string;
       return {

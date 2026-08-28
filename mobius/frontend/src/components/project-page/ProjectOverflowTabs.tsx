@@ -153,7 +153,7 @@ export function ProjectOverflowTabs({ tabs, onSelect, className = '', style }: P
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-[12px] transition-colors ${
-                activeInOverflow ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'
+                activeInOverflow ? 'bg-[var(--surface-active)] text-[var(--accent-primary)]' : 'hover:bg-[var(--bg-card-hover)]'
               }`}
               style={!activeInOverflow ? { color: 'var(--text-muted)' } : undefined}
             >
@@ -175,7 +175,7 @@ export function ProjectOverflowTabs({ tabs, onSelect, className = '', style }: P
                     title={t.title}
                     onClick={() => { onSelect(t.key); setMenuOpen(false) }}
                     className={`inline-flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                      t.active ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'
+                      t.active ? 'bg-[var(--surface-active)] text-[var(--accent-primary)]' : 'hover:bg-[var(--bg-card-hover)]'
                     }`}
                     style={!t.active ? { color: 'var(--text-secondary)' } : undefined}
                   >

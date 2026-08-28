@@ -76,8 +76,7 @@ const MAX_TEAM_SIZE = 12
 const DEFAULT_MODEL = 'codex'
 const ResearchAgentTeamScene = lazy(() => import('./research-agent-team-scene')
   .then(mod => ({ default: mod.ResearchAgentTeamScene })))
-const FALLBACK_MODEL_OPTIONS: SessionModelOption[] = [
-]
+const EMPTY_MODEL_OPTIONS: SessionModelOption[] = []
 const SCOPE_LABEL: Record<string, string> = { user: '用户级', project: '项目级', builtin: '内置' }
 
 const DEFAULT_TEAM_PRESETS = [
@@ -262,7 +261,6 @@ export function ResearchAgentTeamModal({
   onRefresh: () => void
 }) {
   const { theme } = useStore()
-  const isDark = theme !== 'light'
   // limit 是给 Chief 的软约束: 人工指定创建超限只提醒不阻断; MAX_TEAM_SIZE 仍是绝对硬顶.
   const assistantSoftLimit = Math.max(1, Number(assistantLimit) || 3)
   const maxTeamSize = MAX_TEAM_SIZE + 1
@@ -270,7 +268,7 @@ export function ResearchAgentTeamModal({
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState('')
   const [progress, setProgress] = useState<string[]>([])
-  const [modelOptions, setModelOptions] = useState<SessionModelOption[]>(FALLBACK_MODEL_OPTIONS)
+  const [modelOptions, setModelOptions] = useState<SessionModelOption[]>(EMPTY_MODEL_OPTIONS)
   // 全局默认模型偏好 (管理中心-系统设置): 团队各 agent 默认模型的末级兜底之前一级.
   const [globalDefaultModel, setGlobalDefaultModel] = useState('')
   const [agentSkills, setAgentSkills] = useState<AgentSkill[]>([])
@@ -307,7 +305,7 @@ export function ResearchAgentTeamModal({
       setErr('')
       try {
         const [models, preview, skills, globalDefault] = await Promise.all([
-          api('/api/sessions/model-options').catch(() => FALLBACK_MODEL_OPTIONS),
+          api('/api/sessions/model-options').catch(() => EMPTY_MODEL_OPTIONS),
           api(`/api/researches/${researchId}/context-preview`, {
             method: 'POST',
             body: JSON.stringify({
@@ -328,7 +326,7 @@ export function ResearchAgentTeamModal({
         if (!alive) return
         const defaults = preview?.defaults || null
         setGlobalDefaultModel(globalDefault || '')
-        const nextModels = Array.isArray(models) && models.length > 0 ? models : FALLBACK_MODEL_OPTIONS
+        const nextModels = Array.isArray(models) ? models : EMPTY_MODEL_OPTIONS
         const nextAgentSkills = Array.isArray(skills) ? skills : []
         const skillsAll = Array.isArray(preview?.sources?.skills) ? preview.sources.skills : []
         const memoriesAll = Array.isArray(preview?.sources?.memories) ? preview.sources.memories : []
@@ -690,10 +688,9 @@ export function ResearchAgentTeamModal({
   const panelItems = selectionPanel?.type === 'skill' ? availableSkills : availableMemories
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
-      <div className="relative flex h-[min(820px,calc(100vh-32px))] w-[min(1320px,calc(100vw-32px))] flex-col rounded-2xl border shadow-2xl"
-        style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)' }}>
+    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center p-4">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" />
+      <div className="theme-overlay__panel relative flex h-[min(820px,calc(100vh-32px))] w-[min(1320px,calc(100vw-32px))] flex-col rounded-[var(--radius-modal)] border shadow-2xl">
         <div className="flex h-14 flex-shrink-0 items-center justify-between border-b px-5" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-primary)' }}>
@@ -733,17 +730,18 @@ export function ResearchAgentTeamModal({
                       title={agent.name}
                       className="group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] transition-colors"
                       style={active
-                        ? { borderColor: 'rgba(56,189,248,0.55)', background: isDark ? 'rgba(56,189,248,0.1)' : 'rgba(14,165,233,0.08)', color: 'var(--text-primary)' }
-                        : { borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>
+                        ? { borderColor: 'var(--accent-border)', background: 'var(--accent-soft)', color: 'var(--text-primary)' }
+                        : { borderColor: 'var(--border-default)', background: 'var(--surface-base)', color: 'var(--text-muted)' }}>
                       <span className="inline-flex h-4 w-4 items-center justify-center rounded text-[9px] font-bold"
-                        style={{ background: agent.role === 'chief_researcher' ? 'rgba(16,185,129,0.18)' : 'rgba(59,130,246,0.18)', color: agent.role === 'chief_researcher' ? '#10b981' : '#3b82f6' }}>
+                        style={{ background: agent.role === 'chief_researcher' ? 'var(--status-success-soft)' : 'var(--status-running-soft)', color: agent.role === 'chief_researcher' ? 'var(--status-success)' : 'var(--status-running)' }}>
                         {index + 1}
                       </span>
                       <span className="max-w-[92px] truncate">{agent.name || `Agent ${index + 1}`}</span>
                       {agent.locked && <Lock className="h-3 w-3" style={{ color: 'var(--text-muted)' }} />}
                       {!agent.locked && agent.role !== 'chief_researcher' && (
                         <span role="button" onClick={(e) => { e.stopPropagation(); deleteAgent(agent.id) }}
-                          className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded text-red-400 opacity-0 transition-opacity hover:bg-red-500/10 group-hover:opacity-100">
+                          className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100"
+                          style={{ color: 'var(--status-danger)', background: 'var(--status-danger-soft)' }}>
                           <X className="h-3 w-3" />
                         </span>
                       )}
@@ -754,7 +752,7 @@ export function ResearchAgentTeamModal({
                 <button type="button" onClick={addAssistant} disabled={submitting || agents.length >= maxTeamSize}
                   title={agents.length >= maxTeamSize ? `已达绝对上限 ${MAX_TEAM_SIZE} 个 Assistant` : (overSoftLimit ? '已超过建议 limit，人工指定仍可继续添加' : '添加 Agent')}
                   className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 mb-2.5 text-[12px] font-medium transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-                  style={{ borderColor: 'rgba(16,185,129,0.55)', background: isDark ? 'rgba(16,185,129,0.18)' : 'rgba(16,185,129,0.95)', color: isDark ? '#34d399' : '#ffffff' }}>
+                  style={{ borderColor: 'var(--status-success-border)', background: 'var(--status-success-soft)', color: 'var(--status-success)' }}>
                   <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
                 </button>
               </div>
@@ -764,7 +762,7 @@ export function ResearchAgentTeamModal({
                 {selectedAgent ? (
                   <div className="flex min-h-full flex-col gap-3">
                     <div className="flex items-center gap-2">
-                      <span className="rounded px-2 py-1 text-[12px] font-medium" style={{ background: selectedAgent.role === 'chief_researcher' ? 'rgba(16,185,129,0.12)' : 'rgba(59,130,246,0.12)', color: selectedAgent.role === 'chief_researcher' ? '#10b981' : '#3b82f6' }}>{roleLabel(selectedAgent.role)}</span>
+                      <span className="rounded px-2 py-1 text-[12px] font-medium" style={{ background: selectedAgent.role === 'chief_researcher' ? 'var(--status-success-soft)' : 'var(--status-running-soft)', color: selectedAgent.role === 'chief_researcher' ? 'var(--status-success)' : 'var(--status-running)' }}>{roleLabel(selectedAgent.role)}</span>
                       {selectedAgent.locked && <span className="inline-flex items-center gap-1 text-[12px]" style={{ color: 'var(--text-muted)' }}><Lock className="h-3.5 w-3.5" /> 已创建·锁定</span>}
                       <span className="ml-auto truncate text-[12px]" style={{ color: 'var(--text-muted)' }}>{selectedAgent.status || (selectedAgent.locked ? '已创建' : '待创建')}</span>
                     </div>
@@ -873,7 +871,7 @@ export function ResearchAgentTeamModal({
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400" strokeWidth={1.8} />
+                    <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--status-success)' }} strokeWidth={1.8} />
                     {mode === 'single' ? '单个 Agent 模式：创建并自动启动该 Agent。' : '团队模式：逐个创建并自动启动，已有 Agent 保持锁定。'}
                     {overSoftLimit && <span className="text-amber-400">已超建议 limit ({assistantSoftLimit})，人工指定不受硬限。</span>}
                   </div>
@@ -890,16 +888,16 @@ export function ResearchAgentTeamModal({
             取消
           </button>
           <button onClick={submit} disabled={loadingConfig || submitting}
-            className="inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-500 px-4 text-[13px] text-white transition-colors hover:bg-emerald-600 disabled:opacity-40">
+            className="inline-flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] transition-[filter] hover:brightness-110 disabled:opacity-40"
+            style={{ background: 'var(--status-success)', color: 'var(--text-on-accent)' }}>
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" strokeWidth={1.8} />}
             {submitting ? '创建并启动中...' : (mode === 'single' ? '创建并启动 Agent' : '创建并启动团队')}
           </button>
         </div>
 
         {selectionPanel && panelAgent && (
-          <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
-            <div className="flex max-h-[min(640px,calc(100vh-80px))] w-[min(560px,calc(100vw-48px))] flex-col rounded-2xl border p-4 shadow-2xl"
-              style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)' }}>
+          <div className="theme-overlay__scrim absolute inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="theme-overlay__panel flex max-h-[min(640px,calc(100vh-80px))] w-[min(560px,calc(100vw-48px))] flex-col rounded-[var(--radius-modal)] border p-4 shadow-2xl">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -941,7 +939,7 @@ export function ResearchAgentTeamModal({
                         {item.description && <div className="truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{item.description}</div>}
                       </div>
                       {isMain && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-blue-400 bg-blue-500/10">主Skill</span>}
-                      {isAgentSkill && !isMain && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-red-400 bg-red-500/10">互斥</span>}
+                      {isAgentSkill && !isMain && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ color: 'var(--status-danger)', background: 'var(--status-danger-soft)' }}>互斥</span>}
                       <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>
                         {SCOPE_LABEL[item.scope] || item.scope}
                       </span>

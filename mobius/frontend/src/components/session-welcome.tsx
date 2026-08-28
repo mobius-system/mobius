@@ -1,10 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { BookOpen, Brain, Clock3, Eye, GitBranch, GitFork, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Settings2, Upload, X } from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { BookOpen, Brain, Clock3, Eye, GitBranch, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
 import { api } from '../store'
 import { DevPortsBar } from './dev-ports-bar'
 import { normalizeGithubSkillInput } from './skills'
 import { SkillMarketLink } from './skill-market-link'
-import { ButtonVisibilitySwitchList, type VisibilityOption, UnifiedButton, useUnifiedButtonGroup } from './unified-button-group'
+import { GitChangesViewer } from './code-git/GitChangesViewer'
+import type { CodeArtifactOpenRequest } from './code-artifacts/file-target'
+import { safeToolPathLabel, sanitizeToolError } from './session-tool-context'
 
 const TimeConsumePanel = lazy(() => import('./time-consume-panel'))
 
@@ -319,13 +322,13 @@ interface SelectionSnapshotResponse {
 // =====================================================================
 const ACTIVE_PANEL_STORAGE_KEY = 'mobius:skill-memory-active-panel'
 
-type SessionResourcePanel = 'skill' | 'memory' | 'git' | 'ports' | 'time' | 'display-settings'
+type SessionResourcePanel = 'skill' | 'memory' | 'git' | 'ports' | 'time'
 
 function readStoredActivePanel(): null | SessionResourcePanel | undefined {
   if (typeof window === 'undefined') return undefined
   try {
     const value = window.localStorage.getItem(ACTIVE_PANEL_STORAGE_KEY)
-    if (value === 'skill' || value === 'memory' || value === 'git' || value === 'ports' || value === 'time' || value === 'display-settings') return value
+    if (value === 'skill' || value === 'memory' || value === 'git' || value === 'ports' || value === 'time') return value
     if (value === 'closed') return null
     return undefined
   } catch {
@@ -577,9 +580,13 @@ type GitSource = {
   cache_expires_at?: number
 }
 
-// 资源 tab 由 activePanel 单一状态控制：展开一个 Tab 时其余 Tab 必然收起。
+// 资源 tab 图标的悬浮动效, 模仿 advanced-interaction-btn 的 tilt:
+// 悬浮/键盘聚焦时图标上移 0.5、旋转 -8°、放大 1.1 (transition-transform duration-200)。
+const RESOURCE_TAB_ICON_HOVER = 'inline-flex flex-shrink-0 items-center justify-center transition-transform duration-200 group-hover/resource-tab:-translate-y-0.5 group-hover/resource-tab:rotate-[-8deg] group-hover/resource-tab:scale-110 group-focus-visible/resource-tab:-translate-y-0.5 group-focus-visible/resource-tab:rotate-[-8deg] group-focus-visible/resource-tab:scale-110'
+
+// 资源 tab 按钮: 文字提示沿用 advanced-interaction-btn 的自定义 tooltip —— mouseenter 即时弹出,
+// 替代原生 title (浏览器自带约 1s 延迟); 定位 (下方优先 + 视口 clamp) 与样式与高级交互按钮同款。
 function ResourceTabButton({
-  buttonId,
   label,
   icon,
   active,
@@ -589,7 +596,6 @@ function ResourceTabButton({
   dataTour,
   badge,
 }: {
-  buttonId?: string
   label: string
   icon: ReactNode
   active: boolean
@@ -599,22 +605,105 @@ function ResourceTabButton({
   dataTour?: string
   badge?: ReactNode
 }) {
+  const tooltipId = useId()
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const tooltipRef = useRef<HTMLDivElement | null>(null)
+  const [tooltipOpen, setTooltipOpen] = useState(false)
+  // tooltipPos 为 null 时 tooltip 以 visibility:hidden 渲染并测量; 测量后得到经视口 clamp 的最终坐标, 再可见.
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number; placement: 'top' | 'bottom' } | null>(null)
+
+  const updateTooltipPosition = useCallback(() => {
+    const button = buttonRef.current
+    if (!button || typeof window === 'undefined') return
+    const rect = button.getBoundingClientRect()
+    const gap = 8
+    const margin = 8
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const tip = tooltipRef.current
+    const tw = tip ? tip.offsetWidth : 0
+    const th = tip ? tip.offsetHeight : 0
+    const approxH = th || 30
+    const placement = rect.bottom + gap + approxH <= vh - margin ? 'bottom' : (rect.top - gap - approxH >= margin ? 'top' : 'bottom')
+    const top = placement === 'bottom'
+      ? Math.min(rect.bottom + gap, vh - margin - approxH)
+      : Math.max(margin, rect.top - gap - approxH)
+    const center = rect.left + rect.width / 2
+    const minCenter = margin + tw / 2
+    const maxCenter = vw - margin - tw / 2
+    const left = tw > 0 ? Math.min(Math.max(center, minCenter), maxCenter) : Math.min(Math.max(center, margin), vw - margin)
+    setTooltipPos({ left, top, placement })
+  }, [])
+
+  useEffect(() => {
+    if (!tooltipOpen) return
+    updateTooltipPosition()
+    window.addEventListener('resize', updateTooltipPosition)
+    window.addEventListener('scroll', updateTooltipPosition, true)
+    return () => {
+      window.removeEventListener('resize', updateTooltipPosition)
+      window.removeEventListener('scroll', updateTooltipPosition, true)
+    }
+  }, [tooltipOpen, updateTooltipPosition])
+
+  useLayoutEffect(() => {
+    if (tooltipOpen && tooltipPos === null) {
+      updateTooltipPosition()
+    }
+  }, [tooltipOpen, tooltipPos, updateTooltipPosition])
+
+  const hideTooltip = useCallback(() => {
+    setTooltipOpen(false)
+    setTooltipPos(null)
+  }, [])
+
   return (
-    <UnifiedButton
-      kind="expand-tab"
-      buttonId={buttonId}
-      label={label}
-      tooltip={label}
-      icon={icon}
-      accent={buttonId === 'git' ? 'amber' : buttonId === 'memory' ? 'cyan' : buttonId === 'ports' ? 'emerald' : buttonId === 'time' ? 'blue' : 'blue'}
-      active={active}
-      activeClassName={activeClass}
-      inactiveClassName={idleClass}
-      onClick={onClick}
-      badge={badge}
-      {...(dataTour ? { 'data-tour': dataTour } : {})}
-      style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}
-    />
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        aria-label={label}
+        aria-describedby={tooltipOpen ? tooltipId : undefined}
+        {...(dataTour ? { 'data-tour': dataTour } : {})}
+        onMouseEnter={() => setTooltipOpen(true)}
+        onMouseLeave={hideTooltip}
+        onFocus={() => setTooltipOpen(true)}
+        onBlur={hideTooltip}
+        className={`group/resource-tab min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${active ? activeClass : idleClass}`}
+        style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}
+      >
+        <span className={RESOURCE_TAB_ICON_HOVER}>{icon}</span>
+        {badge}
+      </button>
+      {tooltipOpen && typeof document !== 'undefined'
+        ? createPortal(
+          <div
+            ref={tooltipRef}
+            id={tooltipId}
+            role="tooltip"
+            // tooltipPos 为 null = 首帧渲染用于测量, visibility:hidden 保持布局以读 offsetWidth/Height, 测量完成后再可见.
+            className="pointer-events-none fixed z-[1000] max-w-[220px] whitespace-nowrap rounded-md border border-[var(--border-color)] bg-[var(--modal-bg)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] shadow-xl"
+            style={
+              tooltipPos
+                ? {
+                  left: tooltipPos.left,
+                  top: tooltipPos.top,
+                  transform: tooltipPos.placement === 'bottom'
+                    ? 'translate(-50%, 0)'
+                    : 'translate(-50%, -100%)',
+                  visibility: 'visible',
+                }
+                : { left: 0, top: 0, visibility: 'hidden' }
+            }
+          >
+            {label}
+          </div>,
+          document.body,
+        )
+        : null}
+    </>
   )
 }
 
@@ -623,17 +712,17 @@ export function SessionSkillMemoryEditor({
   projectId,
   initialPanel = null,
   persistActivePanel = false,
-  onOpenKnowledge,
-  leadingControls,
-  visibilityOptions = [],
+  snapshotOnly = false,
+  gitOnly = false,
+  onOpenArtifact,
 }: {
   sessionId?: string
   projectId?: string
   initialPanel?: null | SessionResourcePanel
   persistActivePanel?: boolean
-  onOpenKnowledge?: () => void
-  leadingControls?: ReactNode
-  visibilityOptions?: VisibilityOption[]
+  snapshotOnly?: boolean
+  gitOnly?: boolean
+  onOpenArtifact?: (request: CodeArtifactOpenRequest) => void
 }) {
   const [memories, setMemories] = useState<EditorItem[]>([])
   const [skills, setSkills] = useState<EditorItem[]>([])
@@ -647,8 +736,8 @@ export function SessionSkillMemoryEditor({
   const [gitError, setGitError] = useState('')
   const [gitRefreshKey, setGitRefreshKey] = useState(0)
   const [gitScanMeta, setGitScanMeta] = useState<{ cached: boolean; scannedAt: string }>({ cached: false, scannedAt: '' })
-  const controlsRef = useRef<HTMLDivElement | null>(null)
-  const [controlColumns, setControlColumns] = useState(1)
+  const [selectedGitSourceId, setSelectedGitSourceId] = useState('')
+  const [gitViewerOpen, setGitViewerOpen] = useState(false)
   const [activePanel, setActivePanel] = useState<null | SessionResourcePanel>(() => {
     if (persistActivePanel) {
       const stored = readStoredActivePanel()
@@ -661,34 +750,6 @@ export function SessionSkillMemoryEditor({
     setActivePanel(next)
     if (persistActivePanel) writeStoredActivePanel(next)
   }, [persistActivePanel])
-  const buttonGroup = useUnifiedButtonGroup()
-
-  useLayoutEffect(() => {
-    const controls = controlsRef.current
-    if (!controls) return
-    const updateColumns = () => {
-      const buttonCount = controls.querySelectorAll(':scope > button').length
-      if (buttonCount === 0 || controls.clientWidth === 0) return
-      const gap = Number.parseFloat(window.getComputedStyle(controls).columnGap) || 6
-      const maxColumns = Math.max(1, Math.floor((controls.clientWidth + gap) / (36 + gap)))
-      const rows = Math.ceil(buttonCount / maxColumns)
-      const columns = Math.ceil(buttonCount / rows)
-      setControlColumns(previous => previous === columns ? previous : columns)
-    }
-    const resizeObserver = new ResizeObserver(updateColumns)
-    const mutationObserver = new MutationObserver(updateColumns)
-    resizeObserver.observe(controls)
-    mutationObserver.observe(controls, { childList: true })
-    updateColumns()
-    return () => {
-      resizeObserver.disconnect()
-      mutationObserver.disconnect()
-    }
-  }, [])
-
-  useEffect(() => {
-    if (activePanel && buttonGroup?.hiddenIds.has(activePanel)) setActivePanelAndPersist(null)
-  }, [activePanel, buttonGroup?.hiddenIds, setActivePanelAndPersist])
 
   useEffect(() => {
     if (activePanel !== 'git' || !projectId) return
@@ -706,24 +767,33 @@ export function SessionSkillMemoryEditor({
         scannedAt: typeof res?.scanned_at === 'string' ? res.scanned_at : '',
       }))
     const localRequest = desktop?.isDesktop && typeof desktop.getProjectGitStatus === 'function'
-      ? Promise.resolve(desktop.getProjectGitStatus(projectId)).then((local: any) => local?.available ? [{
+      ? Promise.resolve(desktop.getProjectGitStatus(projectId)).then((local: any) => [{
         id: `local:${projectId}`,
         kind: 'local' as const,
-        available: true,
+        available: !!local?.available,
         label: 'Electron 本地',
-        branch: local.branch || null,
-        head: local.head || null,
-        path: local.path || '',
-        dirty: !!local.dirty,
-        dirty_count: Number(local.dirty_count || 0),
-      }] : [])
+        branch: local?.branch || null,
+        head: local?.head || null,
+        path: local?.path || '',
+        dirty: !!local?.dirty,
+        dirty_count: Number(local?.dirty_count || 0),
+        reason: local?.reason || '',
+      }])
       : Promise.resolve([] as GitSource[])
     Promise.allSettled([hubRequest, localRequest])
       .then(([hubResult, localResult]) => {
         if (cancelled) return
         const hubData = hubResult.status === 'fulfilled' ? hubResult.value : { sources: [], cached: false, scannedAt: '' }
         const localSources = localResult.status === 'fulfilled' ? localResult.value : []
-        setGitSources([...hubData.sources, ...localSources])
+        const nextSources = [...hubData.sources, ...localSources]
+        setGitSources(nextSources)
+        setSelectedGitSourceId(previous => {
+          if (nextSources.some(source => source.id === previous)) return previous
+          return nextSources.find(source => source.kind === 'hub' && source.available)?.id
+            || nextSources.find(source => source.available)?.id
+            || nextSources[0]?.id
+            || ''
+        })
         setGitScanMeta({ cached: hubData.cached, scannedAt: hubData.scannedAt })
         if (hubResult.status === 'rejected' && localResult.status === 'rejected') {
           setGitError('中枢与 Electron 本机 Git 扫描均失败')
@@ -763,9 +833,15 @@ export function SessionSkillMemoryEditor({
       .then((res: SelectionSnapshotResponse) => {
         if (cancelled) return
         const snap = res.snapshot || {}
-        const skillItems = (snap.all_skills && snap.all_skills.length > 0 ? snap.all_skills : snap.skills || [])
+        const skillSource = snapshotOnly
+          ? (snap.skills || [])
+          : (snap.all_skills && snap.all_skills.length > 0 ? snap.all_skills : snap.skills || [])
+        const memorySource = snapshotOnly
+          ? (snap.memories || [])
+          : (snap.all_memories && snap.all_memories.length > 0 ? snap.all_memories : snap.memories || [])
+        const skillItems = skillSource
           .map((it) => ({ ...it, enabled: it.enabled !== false }))
-        const memoryItems = (snap.all_memories && snap.all_memories.length > 0 ? snap.all_memories : snap.memories || [])
+        const memoryItems = memorySource
           .map((it) => ({ ...it, enabled: it.enabled !== false }))
         const sortFn = (a: EditorItem, b: EditorItem) => {
           if (!!a.enabled !== !!b.enabled) return a.enabled ? -1 : 1
@@ -790,7 +866,7 @@ export function SessionSkillMemoryEditor({
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [sessionId, reloadKey])
+  }, [sessionId, reloadKey, snapshotOnly])
 
   const handleEmphasize = useCallback(async (kind: 'skill' | 'memory', itemId: string) => {
     if (!sessionId) return
@@ -888,19 +964,21 @@ export function SessionSkillMemoryEditor({
               >
                 <Eye className="h-3 w-3" strokeWidth={1.9} />
               </button>
-              <button
-                type="button"
-                disabled={btnDisabled}
-                onClick={() => handleEmphasize(kind, it.id)}
-                className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded border transition-colors disabled:opacity-50 disabled:cursor-wait"
-                style={{
-                  color: btnState === 'done' ? '#22c55e' : 'var(--text-primary)',
-                  borderColor: btnState === 'done' ? 'rgba(34,197,94,0.25)' : 'var(--border-color-strong)',
-                  background: btnState === 'done' ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.04)',
-                }}
-              >
-                {btnLabel}
-              </button>
+              {!snapshotOnly && (
+                <button
+                  type="button"
+                  disabled={btnDisabled}
+                  onClick={() => handleEmphasize(kind, it.id)}
+                  className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded border transition-colors disabled:opacity-50 disabled:cursor-wait"
+                  style={{
+                    color: btnState === 'done' ? '#22c55e' : 'var(--text-primary)',
+                    borderColor: btnState === 'done' ? 'rgba(34,197,94,0.25)' : 'var(--border-color-strong)',
+                    background: btnState === 'done' ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.04)',
+                  }}
+                >
+                  {btnLabel}
+                </button>
+              )}
             </div>
           )
         })}
@@ -917,79 +995,72 @@ export function SessionSkillMemoryEditor({
   const gitActive = activePanel === 'git'
   const portsActive = activePanel === 'ports'
   const timeActive = activePanel === 'time'
-  const displaySettingsActive = activePanel === 'display-settings'
   const resourceKind: 'skill' | 'memory' | null = skillActive ? 'skill' : memActive ? 'memory' : null
+  const selectedGitSource = gitSources.find(source => source.id === selectedGitSourceId) || null
 
   return (
     <>
-      <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-3">
-        {/* 所有会话操作共用一个流式按钮带。隐藏按钮或侧栏变窄时，浏览器按真实可用空间自动回填与换行。 */}
-        <div
-          ref={controlsRef}
-          className="advanced-session-actions mobius-chat-input-actions session-resource-tabs session-resource-tabs--balanced flex flex-wrap content-start justify-center gap-1.5"
-          style={{ '--session-control-columns': controlColumns } as CSSProperties}
-          data-testid="advanced-session-actions"
-          aria-label="高级会话按钮组"
-        >
-          {leadingControls}
-          <ResourceTabButton
-            buttonId="skill"
-            label="Skill"
-            icon={<Puzzle className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
-            active={skillActive}
-            activeClass="border-blue-400/60 bg-blue-500/15 text-blue-200 shadow-sm"
-            idleClass="border-transparent"
-            onClick={() => setActivePanelAndPersist(activePanel === 'skill' ? null : 'skill')}
-          />
-          <ResourceTabButton
-            buttonId="memory"
-            label="Memory"
-            icon={<Brain className="h-3.5 w-3.5 text-cyan-400" strokeWidth={1.9} />}
-            active={memActive}
-            activeClass="border-cyan-400/60 bg-cyan-500/15 text-cyan-100 shadow-sm"
-            idleClass="border-transparent"
-            onClick={() => setActivePanelAndPersist(activePanel === 'memory' ? null : 'memory')}
-            dataTour="session-memory-toggle"
-          />
-          <ResourceTabButton
-            buttonId="git"
-            label="Git"
-            icon={<GitFork className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.9} />}
-            active={gitActive}
-            activeClass="border-amber-400/60 bg-amber-500/15 text-amber-100 shadow-sm"
-            idleClass="border-transparent"
-            onClick={() => setActivePanelAndPersist(activePanel === 'git' ? null : 'git')}
-            dataTour="session-git-toggle"
-            badge={gitSources.length > 0 ? <span className="text-[9px] text-amber-300">{gitSources.length}</span> : undefined}
-          />
-          <ResourceTabButton
-            buttonId="ports"
-            label="端口"
-            icon={<MonitorPlay className="h-3.5 w-3.5 text-emerald-400" strokeWidth={1.9} />}
-            active={portsActive}
-            activeClass="border-emerald-400/60 bg-emerald-500/15 text-emerald-100 shadow-sm"
-            idleClass="border-transparent"
-            onClick={() => setActivePanelAndPersist(activePanel === 'ports' ? null : 'ports')}
-            dataTour="session-ports-toggle"
-          />
-          <ResourceTabButton
-            buttonId="time"
-            label="耗时"
-            icon={<Clock3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />}
-            active={timeActive}
-            activeClass="border-sky-400/60 bg-sky-500/15 text-sky-100 shadow-sm"
-            idleClass="border-transparent"
-            onClick={() => setActivePanelAndPersist(activePanel === 'time' ? null : 'time')}
-            dataTour="session-time-toggle"
-          />
-          <ResourceTabButton
-            label="显示设置"
-            icon={<Settings2 className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
-            active={displaySettingsActive}
-            activeClass="border-blue-400/60 bg-blue-500/15 text-blue-100 shadow-sm"
-            idleClass="border-transparent"
-            onClick={() => setActivePanelAndPersist(activePanel === 'display-settings' ? null : 'display-settings')}
-          />
+      <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2">
+        {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
+            五个 tab 始终保持单行并等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
+        <div className={`session-resource-tabs grid ${snapshotOnly ? 'grid-cols-2' : gitOnly ? 'grid-cols-1' : 'grid-cols-[repeat(5,minmax(0,1fr))]'} items-stretch`}>
+          {!gitOnly && (
+            <>
+              <ResourceTabButton
+                label="Skill"
+                icon={<Puzzle className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
+                active={skillActive}
+                activeClass="border-blue-400 font-medium"
+                idleClass="border-transparent hover:bg-blue-500/10"
+                onClick={() => setActivePanelAndPersist(activePanel === 'skill' ? null : 'skill')}
+              />
+              <ResourceTabButton
+                label="Memory"
+                icon={<Brain className="h-3.5 w-3.5 text-cyan-400" strokeWidth={1.9} />}
+                active={memActive}
+                activeClass="border-cyan-400 font-medium"
+                idleClass="border-transparent hover:bg-cyan-500/10"
+                onClick={() => setActivePanelAndPersist(activePanel === 'memory' ? null : 'memory')}
+                dataTour="session-memory-toggle"
+              />
+            </>
+          )}
+          {!snapshotOnly && (
+            <>
+              <ResourceTabButton
+                label="Git"
+                icon={<GitBranch className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.9} />}
+                active={gitActive}
+                activeClass="border-amber-400 font-medium"
+                idleClass="border-transparent hover:bg-amber-500/10"
+                onClick={() => setActivePanelAndPersist(activePanel === 'git' ? null : 'git')}
+                dataTour="session-git-toggle"
+                badge={gitSources.length > 0 ? <span className="text-[9px] text-amber-300">{gitSources.length}</span> : undefined}
+              />
+              {!gitOnly && (
+                <>
+                  <ResourceTabButton
+                    label="端口"
+                    icon={<MonitorPlay className="h-3.5 w-3.5 text-emerald-400" strokeWidth={1.9} />}
+                    active={portsActive}
+                    activeClass="border-emerald-400 font-medium"
+                    idleClass="border-transparent hover:bg-emerald-500/10"
+                    onClick={() => setActivePanelAndPersist(activePanel === 'ports' ? null : 'ports')}
+                    dataTour="session-ports-toggle"
+                  />
+                  <ResourceTabButton
+                    label="耗时"
+                    icon={<Clock3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />}
+                    active={timeActive}
+                    activeClass="border-sky-400 font-medium"
+                    idleClass="border-transparent hover:bg-sky-500/10"
+                    onClick={() => setActivePanelAndPersist(activePanel === 'time' ? null : 'time')}
+                    dataTour="session-time-toggle"
+                  />
+                </>
+              )}
+            </>
+          )}
         </div>
 
         {/* 内联菜单: 直接占据 tab 下方剩余空间, 无独立背景/边框/圆角, 无缝融入侧栏 */}
@@ -999,28 +1070,15 @@ export function SessionSkillMemoryEditor({
                 风格统一(虚线 border 区分其为操作入口, 其余为数据项). 添加成功后 reload() 立即
                 把新条目刷进下方列表, 用户可点"追加/强调"注入当前会话 (对后续对话生效). */}
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
-              {resourceKind && <AddSkillMemoryBar kind={resourceKind} onAdded={reload} />}
-              {memActive && onOpenKnowledge && (
-                <button
-                  type="button"
-                  aria-label="查看当前项目知识/任务知识"
-                  onClick={onOpenKnowledge}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5 text-[11px] transition-colors hover:bg-cyan-500/10"
-                  style={{ borderColor: 'var(--border-color-strong)', color: '#22d3ee' }}
-                >
-                  <BookOpen className="h-3.5 w-3.5" strokeWidth={1.9} />
-                  查看当前项目知识/任务知识
-                </button>
-              )}
-              {skillActive ? renderList(skills, '暂无 Skill', 'skill')
-                : memActive ? renderList(memories, '暂无 Memory', 'memory')
+              {resourceKind && !snapshotOnly && <AddSkillMemoryBar kind={resourceKind} onAdded={reload} />}
+              {skillActive ? renderList(skills, snapshotOnly ? '本会话未使用 Skill' : '暂无 Skill', 'skill')
+                : memActive ? renderList(memories, snapshotOnly ? '本会话未使用 Memory' : '暂无 Memory', 'memory')
                   : portsActive ? <DevPortsBar projectId={projectId} variant="panel" />
                     : timeActive ? (
                       <Suspense fallback={<div className="py-6 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>正在加载耗时面板...</div>}>
                         <TimeConsumePanel sessionId={sessionId} />
                       </Suspense>
                     )
-                    : displaySettingsActive ? <ButtonVisibilitySwitchList options={visibilityOptions} />
                     : (
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2 px-1 py-0.5">
@@ -1050,30 +1108,66 @@ export function SessionSkillMemoryEditor({
                           当前中枢、本机和已登记远程计算机都没有检测到 Git 仓库
                         </div>
                       )}
-                      {!gitLoading && gitSources.map(source => {
-                        const dirtyFresh = !!source.dirty
-                          && typeof source.cache_expires_at === 'number'
-                          && source.cache_expires_at - Date.now() < 10 * 60 * 1000
-                        return (
-                        <div key={source.id} className="rounded-lg border px-2.5 py-2" style={{ borderColor: source.available ? 'var(--border-color)' : 'rgba(148,163,184,0.28)', background: source.available ? 'rgba(245,158,11,0.04)' : 'rgba(148,163,184,0.04)' }}>
-                          <div className="flex min-w-0 items-center gap-2">
-                            <GitBranch className={`h-3.5 w-3.5 flex-shrink-0 ${source.available ? 'text-amber-400' : 'text-slate-400'}`} strokeWidth={1.9} />
-                            <span className="min-w-0 flex-1 truncate text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>{source.label}</span>
-                            {source.available && source.branch && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">{source.branch}</span>}
-                            {!source.available && <span className="flex-shrink-0 rounded border border-slate-400/25 bg-slate-400/10 px-1.5 py-0.5 text-[10px] text-slate-300">无 Git 仓库</span>}
-                            {source.available && !source.branch && source.head && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">游离 HEAD {source.head}</span>}
+                      {!gitLoading && gitSources.length > 0 && (
+                        <>
+                          <div className="px-1 pt-1 text-[10px] font-medium" style={{ color: 'var(--text-secondary)' }}>选择 Git source</div>
+                          <div className="grid grid-cols-1 gap-1" role="radiogroup" aria-label="Git source selector">
+                            {gitSources.map(source => (
+                              <button
+                                key={source.id}
+                                type="button"
+                                role="radio"
+                                aria-checked={selectedGitSourceId === source.id}
+                                onClick={() => setSelectedGitSourceId(source.id)}
+                                className={`git-source-selector__item${selectedGitSourceId === source.id ? ' git-source-selector__item--active' : ''}`}
+                              >
+                                <GitBranch className={`h-3.5 w-3.5 flex-shrink-0 ${source.available ? 'text-amber-400' : 'text-slate-400'}`} strokeWidth={1.9} />
+                                <span className="min-w-0 flex-1 truncate text-left text-[11px] font-medium">{source.label}</span>
+                                <span className="git-source-selector__capability">{source.kind === 'hub' ? '变更与历史' : '仅状态'}</span>
+                              </button>
+                            ))}
                           </div>
-                          <div className="mt-1 truncate font-mono text-[10px]" title={source.path} style={{ color: 'var(--text-muted)' }}>{source.path || '路径未知'}</div>
-                          <div className="mt-1 flex items-center gap-2 text-[9px]" style={{ color: 'var(--text-muted)' }}>
-                            <span>{source.kind === 'hub' ? '中枢仓库' : source.kind === 'local' ? 'Electron 本地仓库' : `远程仓库${source.hostname ? ` · ${source.hostname}` : ''}`}</span>
-                            {dirtyFresh && <span className="text-amber-300">· {source.dirty_count || 0} 项未提交</span>}
-                            {source.status && <span>· {source.status}</span>}
-                            {!source.available && source.reason && <span className="truncate text-slate-400" title={source.reason}>· {source.reason}</span>}
-                            {source.available && !source.branch && !source.head && source.reason && <span className="truncate text-amber-300" title={source.reason}>· {source.reason}</span>}
-                          </div>
-                        </div>
-                        )
-                      })}
+                          {selectedGitSource && (() => {
+                            const source = selectedGitSource
+                            const dirtyFresh = !!source.dirty
+                              && (source.kind === 'local' || (
+                                typeof source.cache_expires_at === 'number'
+                                && source.cache_expires_at - Date.now() < 10 * 60 * 1000
+                              ))
+                            return (
+                              <div className="rounded-lg border px-2.5 py-2" style={{ borderColor: source.available ? 'var(--border-color)' : 'rgba(148,163,184,0.28)', background: source.available ? 'rgba(245,158,11,0.04)' : 'rgba(148,163,184,0.04)' }}>
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>{source.label}</span>
+                                  {source.available && source.branch && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">{source.branch}</span>}
+                                  {!source.available && <span className="flex-shrink-0 rounded border border-slate-400/25 bg-slate-400/10 px-1.5 py-0.5 text-[10px] text-slate-300">无 Git 仓库</span>}
+                                  {source.available && source.kind !== 'hub' && <span className="git-source-selector__capability">仅状态</span>}
+                                  {source.available && !source.branch && source.head && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">游离 HEAD {source.head}</span>}
+                                </div>
+                                <div className="mt-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{source.path ? safeToolPathLabel(source.path) : '路径未知'}</div>
+                                <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px]" style={{ color: 'var(--text-muted)' }}>
+                                  <span>{source.kind === 'hub' ? '中枢仓库' : source.kind === 'local' ? 'Electron 本地仓库' : `AIMUX 远程仓库${source.hostname ? ` · ${source.hostname}` : ''}`}</span>
+                                  {dirtyFresh && <span className="text-amber-300">· {source.dirty_count || 0} 项未提交</span>}
+                                  {source.status && <span>· {source.status}</span>}
+                                  {!source.available && source.reason && <span className="truncate text-slate-400">· {sanitizeToolError(source.reason, '仓库不可用')}</span>}
+                                  {source.available && !source.branch && !source.head && source.reason && <span className="truncate text-amber-300">· {sanitizeToolError(source.reason, '仓库状态不可用')}</span>}
+                                </div>
+                                {source.available && source.kind === 'hub' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setGitViewerOpen(true)}
+                                    className="workbench-control-md mt-2 inline-flex w-full items-center justify-center gap-1.5 border px-3 text-[11px] font-medium"
+                                    style={{ borderColor: 'var(--accent-border)', color: 'var(--accent-primary)', background: 'var(--accent-soft)' }}
+                                  >
+                                    <Eye className="h-3.5 w-3.5" />查看变更与历史
+                                  </button>
+                                ) : source.available ? (
+                                  <p className="mt-2 text-[10px] leading-4 text-[var(--text-muted)]">此 source 当前只提供仓库状态；未提供 commit log/diff API。</p>
+                                ) : null}
+                              </div>
+                            )
+                          })()}
+                        </>
+                      )}
                     </div>
                   )}
             </div>
@@ -1145,6 +1239,15 @@ export function SessionSkillMemoryEditor({
           </div>
         </div>
       )}
+      {gitViewerOpen && projectId && selectedGitSource?.kind === 'hub' && (
+        <GitChangesViewer
+          sessionId={sessionId}
+          projectId={projectId}
+          sourceLabel={selectedGitSource.label}
+          onClose={() => setGitViewerOpen(false)}
+          onOpenArtifact={onOpenArtifact}
+        />
+      )}
     </>
   )
 }
@@ -1154,13 +1257,16 @@ export function SessionSkillMemoryModal({
   projectId,
   initialPanel,
   onClose,
+  onManage,
 }: {
   sessionId?: string
   projectId?: string
   initialPanel: 'skill' | 'memory' | 'git'
   onClose: () => void
+  onManage?: (kind: 'skill' | 'memory') => void
 }) {
-  const title = initialPanel === 'skill' ? '当前会话 Skill' : initialPanel === 'memory' ? '当前会话 Memory' : '当前项目 Git'
+  const snapshotKind = initialPanel === 'skill' || initialPanel === 'memory' ? initialPanel : null
+  const title = initialPanel === 'skill' ? '本会话 Skill 快照' : initialPanel === 'memory' ? '本会话 Memory 快照' : '当前项目 Git'
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
@@ -1195,12 +1301,29 @@ export function SessionSkillMemoryModal({
             <X className="h-4 w-4" />
           </button>
         </header>
+        {snapshotKind && (
+          <div className="flex flex-wrap items-center gap-2 border-b px-5 py-2.5 text-[11px]" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)', color: 'var(--text-secondary)' }}>
+            <span className="min-w-0 flex-1">这里只显示创建本 Session 时定型的快照；管理变更只用于后续新会话。</span>
+            {onManage && (
+              <button
+                type="button"
+                onClick={() => onManage(snapshotKind)}
+                className="workbench-control-md flex-shrink-0 border px-3 text-[11px] font-medium transition-colors hover:bg-[var(--surface-control-hover)]"
+                style={{ borderColor: 'var(--border-default)', color: 'var(--accent-primary)' }}
+              >
+                在 Settings 管理 {snapshotKind === 'skill' ? 'Skills' : 'Memory'}
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex min-h-0 flex-1 flex-col p-3">
           <SessionSkillMemoryEditor
             key={initialPanel}
             sessionId={sessionId}
             projectId={projectId}
             initialPanel={initialPanel}
+            snapshotOnly={!!snapshotKind}
+            gitOnly={initialPanel === 'git'}
           />
         </div>
       </div>

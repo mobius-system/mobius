@@ -18,6 +18,10 @@ import { buildSessionContext, buildSessionSelectionSnapshot, regenerateSessionSe
 import { audit } from '../repositories/audit';
 // @ts-ignore — service 仍是 .js
 import * as modelRegistry from '../services/model-registry';
+// @ts-ignore — CommonJS provider/catalog services are shared with startup and tmux backends.
+import providerCliDetection from '../services/provider-cli-detection.cjs';
+// @ts-ignore — CommonJS provider/catalog services are shared with startup and tmux backends.
+import codexModelCatalog from '../services/codex-model-catalog.cjs';
 // @ts-ignore — service 仍是 .js
 import { useProxyForSession, withSessionProxyState } from '../services/session-proxy-state';
 // @ts-ignore — service 仍是 .js
@@ -83,6 +87,7 @@ import {
 import {
   readJobFlagState,
   safeRemoveRunningFlag,
+  safeWriteFailedFlag,
   safeWriteRunningFlag,
 } from '../utils/session-flags';
 // @ts-ignore — service 仍是 .js
@@ -176,7 +181,18 @@ router.get('/prompt-stats', auth, (req: express.Request, res: express.Response) 
   });
 });
 
-router.get('/model-options', auth, (_req: express.Request, res: express.Response) => {
+router.get('/model-options', auth, async (_req: express.Request, res: express.Response) => {
+  // 正常请求只读启动时预热好的同步快照。若 PM2 的 7 秒 listen 预算先到，
+  // 首个请求等待同一个有硬超时的探测/目录 single-flight，避免前端一次性拿到
+  // 空数组后一直无法自动恢复；后续请求不会重复启动 app-server。
+  if (!providerCliDetection.getCachedProviderStatus('codex')) {
+    try {
+      await providerCliDetection.detectProvider('codex');
+      await codexModelCatalog.getCatalog();
+    } catch {
+      // 冷失败由 detector/catalog 的安全 fallback 表达，模型列表本身仍可正常返回。
+    }
+  }
   res.json(modelRegistry.listSessionModelOptions());
 });
 
@@ -1055,7 +1071,16 @@ function featureWorkspaceForSession(user: AnyUser, sessionId: string): {
   const workspace = resolveSessionWorkspace(user, sessionId);
   if (workspace.error) return { workspace, workDir: null, gitRoot: null, error: workspace.error };
   let gitRoot: string | null = null;
-  try { gitRoot = gitTopLevel(workspace.workDir) as any; } catch {}
+  try {
+    gitRoot = gitTopLevel(workspace.workDir) as any;
+  } catch (e) {
+    return {
+      workspace,
+      workDir: workspace.workDir as any,
+      gitRoot: null,
+      error: (e as Error).message || '检测 Git 仓库超时，请稍后重试',
+    };
+  }
   return { workspace, workDir: workspace.workDir as any, gitRoot, error: null };
 }
 
@@ -1101,6 +1126,7 @@ router.get('/:id/features/files', auth, (req: express.Request, res: express.Resp
       total: files.length,
       appended: scanned.appended,
       scanned_from_offset: scanned.scanned_from_offset,
+      scanned_to_offset: scanned.scanned_to_offset,
       source_jsonl: scanned.source_jsonl,
       feature_jsonl: scanned.feature_jsonl,
       git_root: workspace.gitRoot,
@@ -1155,7 +1181,8 @@ router.get('/:id/features/bash', auth, (req: express.Request, res: express.Respo
   }
 });
 
-// 按文件修改特征清单限定路径, 自动依次读取 git diff; 无 diff 时回退为文件内容.
+// 按文件修改特征清单限定路径，只读查看明确的 unstaged / staged 来源；
+// 当前来源无 diff 时返回当前文件内容，不回退到 commit history。
 router.get('/:id/features/git-diff', auth, (req: express.Request, res: express.Response) => {
   const sessionId = String(req.params.id);
   const user = userOf(req);
@@ -1163,9 +1190,17 @@ router.get('/:id/features/git-diff', auth, (req: express.Request, res: express.R
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
   auditSessionAccess(user, 'read_session_feature_git_diff', session);
 
+  let mode: 'unstaged' | 'staged';
+  try {
+    mode = sessionFeatures.normalizeDiffMode(req.query.mode) as 'unstaged' | 'staged';
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
+    return;
+  }
+
   const jsonlPath = sessionJsonlPath(session, sessionId);
   if (!jsonlPath) {
-    res.json({ session_id: sessionId, mode: null, diff: null, fallback_content: null, diffs: [], files: [] });
+    res.json({ session_id: sessionId, mode, diff: null, fallback_content: null, diffs: [], files: [] });
     return;
   }
 
@@ -1178,26 +1213,19 @@ router.get('/:id/features/git-diff', auth, (req: express.Request, res: express.R
       workDir: workspace.workDir,
       gitRoot: workspace.gitRoot,
     });
-    const allowed = new Map<string, string>();
-    for (const file of files) {
-      allowed.set(file.path, file.path);
-      allowed.set(file.display_path, file.path);
-      for (const original of file.original_paths || []) allowed.set(original, file.path);
-    }
-
     const requested = queryFiles(req.query.file);
-    const targetFiles = requested.length
-      ? requested.map((file) => allowed.get(file)).filter(Boolean)
-      : files.map((file: any) => file.path);
-    if (requested.length && targetFiles.length === 0) {
-      res.status(400).json({ error: '请求的文件不在当前 Session 文件修改清单中' });
+    let targetFiles: string[];
+    try {
+      targetFiles = sessionFeatures.allowlistedDiffFiles(files, requested);
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message || String(e) });
       return;
     }
 
     const result = sessionFeatures.gitDiffForFiles(
       workspace.workDir,
-      [...new Set(targetFiles)],
-      null,
+      targetFiles,
+      mode,
     );
     res.json({
       session_id: sessionId,
@@ -1911,6 +1939,11 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     name_human_edited: nameHumanEdited,
   } as any);
   const pendingMentions = SessionPendingMentions.save(sessionId, req.body?.mentions);
+  const initialMessage = req.body?.initial_message && typeof req.body.initial_message === 'object'
+    ? req.body.initial_message as Record<string, any>
+    : null;
+  const initialMessageContent = typeof initialMessage?.content === 'string' ? initialMessage.content : '';
+  let initialMessageAccepted = false;
   if (sourceSession && transferResult?.paths?.full) {
     try {
       Messages.insertSystem(
@@ -2008,8 +2041,54 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
   }
   recordAdminAuditIfCrossUser(user, 'create_session', 'issue', issue.id, issue.created_by);
   Issues.touchActiveAndIncrement(issueId);
+
+  // 首页快捷创建把首条消息随 Session 一起提交。先预写 running.flag，再调用 runner：
+  // runner 会在第一次 await 之前同步完成用户消息落库，随后才等待 Agent spawn/投递。
+  // 这里故意不 await，让 HTTP 立即返回，前端可以马上进入会话或开启其他任务；
+  // 后台启动失败会通过 failed.flag + 会话错误状态在目标会话里反馈。
+  if (!sourceSession && initialMessageContent.trim()) {
+    let initialFlagRoot: string | null = null;
+    try {
+      const initialProject = Projects.findById(issue.project_id) as any;
+      initialFlagRoot = initialProject?.bind_path ? path.resolve(initialProject.bind_path) : null;
+    } catch {}
+    if (initialFlagRoot) {
+      try { safeWriteRunningFlag(initialFlagRoot, sessionId, { backend: 'session-initial-message' }, 'sessions/create'); } catch {}
+    }
+    const directMentions = Array.isArray(initialMessage?.mentions) ? initialMessage.mentions : [];
+    const effectiveMentions = pendingMentions.length > 0
+      ? [...pendingMentions, ...directMentions]
+      : directMentions;
+    const initialRequestId = typeof initialMessage?.request_id === 'string'
+      ? initialMessage.request_id
+      : `create-${sessionId}-${Date.now()}`;
+    initialMessageAccepted = true;
+    void runSessionMessage({
+      user,
+      sessionId,
+      content: initialMessageContent,
+      requestId: initialRequestId,
+      mentions: effectiveMentions,
+      source: 'http.session.create_initial_message',
+      logger: console,
+    } as any).then(() => {
+      if (pendingMentions.length > 0) {
+        try { SessionPendingMentions.clear(sessionId); } catch {}
+      }
+      try { auditSessionAccess(user, 'send_session_message', Sessions.findById(sessionId) as any); } catch {}
+    }).catch((e) => {
+      const reason = (e as Error).message || '后台启动失败';
+      console.warn(`[sessions] initial message background start failed (${sessionId}): ${reason}`);
+      if (initialFlagRoot) {
+        try { safeRemoveRunningFlag(initialFlagRoot, sessionId, 'sessions/create-cleanup'); } catch {}
+        try { safeWriteFailedFlag(initialFlagRoot, sessionId, { backend: 'session-initial-message', reason }, 'sessions/create'); } catch {}
+      }
+    });
+  }
+
   res.json({
     ...(withSessionProxyState(Sessions.findById(sessionId)) as any),
+    initial_message_accepted: initialMessageAccepted,
     continue_from_session_id: sourceSession?.session_id || null,
     transfer_path: transferResult?.paths?.full || null,
     transfer_paths: transferResult?.paths || null,

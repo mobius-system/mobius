@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  ArrowLeft,
   ArrowUpRight,
   CircleDot,
   FlaskConical,
@@ -20,7 +19,14 @@ import {
 } from 'lucide-react'
 import { api, useStore } from '../store'
 import { TopNav, timeAgoPrecise } from '../components/shell'
+import { AdvancedPageChrome } from '../components/advanced-page-chrome'
 import { pollRecursive } from '../services/polling'
+import {
+  advancedPageReturnNavigation,
+  homePath,
+  navigateToWorkbench,
+  readWorkbenchReturnTo,
+} from '../services/workbench-navigation'
 
 type TimeRangeKey = '24h' | '48h' | '72h' | '7d' | '30d'
 type ClusterMode = 'project' | 'creator'
@@ -256,6 +262,24 @@ function creatorColor(creatorId: string) {
   return PROJECT_COLORS[hashValue(`creator:${creatorId}`) % PROJECT_COLORS.length]
 }
 
+let semanticColorCacheKey = ''
+const semanticColorCache = new Map<string, string>()
+
+function semanticColor(token: string) {
+  if (typeof document === 'undefined') return '#94a3b8'
+  const root = document.documentElement
+  const cacheKey = `${root.className}|${root.getAttribute('style') || ''}`
+  if (cacheKey !== semanticColorCacheKey) {
+    semanticColorCacheKey = cacheKey
+    semanticColorCache.clear()
+  }
+  const cached = semanticColorCache.get(token)
+  if (cached) return cached
+  const color = getComputedStyle(root).getPropertyValue(token).trim() || '#94a3b8'
+  semanticColorCache.set(token, color)
+  return color
+}
+
 function projectCreatorId(project: any) {
   return String(project?.created_by || 'unknown')
 }
@@ -284,10 +308,10 @@ function statusLabel(value: any) {
 }
 
 function sessionColor(session: ClusterSession) {
-  if (session.source?.agent_status === 'running' || session.status === 'running') return '#22c55e'
-  if (session.source?.job_failed || session.status === 'failed') return '#ef4444'
-  if (session.source?.job_accomplished || session.status === 'completed') return '#38bdf8'
-  if (session.status === 'stale') return '#f59e0b'
+  if (session.source?.agent_status === 'running' || session.status === 'running') return semanticColor('--status-running')
+  if (session.source?.job_failed || session.status === 'failed') return semanticColor('--status-danger')
+  if (session.source?.job_accomplished || session.status === 'completed') return semanticColor('--status-success')
+  if (session.status === 'stale') return semanticColor('--status-waiting')
   if (session.kind === 'research_agent') return '#a855f7'
   return '#94a3b8'
 }
@@ -343,10 +367,7 @@ function getSelectionPath(userParam: string, selection: Selection | null) {
   if (selection.kind === 'issue') return `${base}/i/${encodeURIComponent(selection.id)}`
   if (selection.kind === 'research') return `${base}/r/${encodeURIComponent(selection.id)}`
   if (isSessionSelection(selection)) {
-    if (selection.session.parentKind === 'research') {
-      return `${base}/r/${encodeURIComponent(selection.session.parentId)}?session=${encodeURIComponent(selection.id)}`
-    }
-    return `${base}/i/${encodeURIComponent(selection.session.parentId)}?session=${encodeURIComponent(selection.id)}`
+    return `/u/${encodeURIComponent(creatorId || userParam)}/s/${encodeURIComponent(selection.id)}`
   }
   return ''
 }
@@ -1762,11 +1783,13 @@ export default function MobiusOverviewClusterPage() {
     setCurrentTask,
   } = useStore()
   const navigate = useNavigate()
-  // 全屏工具页的出口: 优先回到真正的"上一界面", 直接进入/刷新时兜底回用户主页。
+  const [search] = useSearchParams()
+  const returnTo = readWorkbenchReturnTo(search, homePath(userParam))
+  // 全屏工具页始终返回显式来源；直接进入或刷新时稳定回用户主页。
   const goBack = useCallback(() => {
-    if (window.history.length > 1) navigate(-1)
-    else navigate(`/u/${encodeURIComponent(userParam)}`)
-  }, [navigate, userParam])
+    const destination = advancedPageReturnNavigation(returnTo, homePath(userParam))
+    if (destination) navigateToWorkbench(navigate, destination)
+  }, [navigate, returnTo, userParam])
   const [query, setQuery] = useState('')
   const [clusterMode, setClusterMode] = useState<ClusterMode>(() => {
     try {
@@ -2439,10 +2462,18 @@ export default function MobiusOverviewClusterPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+    <div data-system-visualization="fullscreen" className="advanced-page-surface flex h-screen flex-col" style={{ background: 'var(--surface-base)', color: 'var(--text-primary)' }}>
       <TopNav />
+      <AdvancedPageChrome
+        eyebrow="高级"
+        title="系统会话地图"
+        meta={clusterMode === 'creator' ? '创建者聚集 · 按需全屏视图' : '项目聚集 · 按需全屏视图'}
+        returnTo={returnTo}
+        fallback={homePath(userParam)}
+        autoFocusHeading
+      />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside className="flex w-[292px] flex-shrink-0 flex-col border-r" style={{ borderColor: 'var(--border-color)', background: 'var(--sidebar-bg)' }}>
+        <aside className="flex w-[292px] flex-shrink-0 flex-col border-r" style={{ borderColor: 'var(--border-default, var(--border-color))', background: 'var(--surface-base, var(--bg-primary, #0a0e16))' }}>
           <div className="border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" style={{ color: 'var(--accent-primary)' }} />
@@ -2541,17 +2572,6 @@ export default function MobiusOverviewClusterPage() {
 
         <main className="relative min-w-0 flex-1 overflow-hidden">
           <div className="absolute inset-x-0 top-0 z-10 flex h-[58px] items-center gap-3 border-b px-5" style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--bg-primary) 92%, transparent)' }}>
-            <button
-              type="button"
-              onClick={goBack}
-              title="返回上一页 (Esc)"
-              aria-label="返回上一页"
-              className="group flex h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border pl-2.5 pr-3 text-[12px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
-              style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
-            >
-              <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" style={{ color: 'var(--accent-primary)' }} />
-              返回
-            </button>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[14px] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
               <div className="mt-0.5 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -2601,7 +2621,7 @@ export default function MobiusOverviewClusterPage() {
                 <RotateCcw className="h-3.5 w-3.5" />
               </button>
             </div>
-            {error && <div className="max-w-[360px] truncate text-[12px] text-red-400">{error}</div>}
+            {error && <div className="max-w-[360px] truncate text-[12px] text-[var(--status-danger)]">{error}</div>}
           </div>
 
           <div ref={viewportRef} className="absolute inset-x-0 bottom-0 top-[58px] overflow-hidden">
@@ -2620,8 +2640,8 @@ export default function MobiusOverviewClusterPage() {
                   left: Math.min(sizeRef.current.width - 286, hoverLabel.x + 12),
                   top: Math.max(8, hoverLabel.y + 12),
                   color: 'var(--text-primary)',
-                  borderColor: 'var(--border-color)',
-                  background: 'color-mix(in srgb, var(--modal-bg) 96%, transparent)',
+                  borderColor: 'var(--border-default, var(--border-color, rgba(255,255,255,.08)))',
+                  background: 'color-mix(in srgb, var(--surface-overlay, var(--modal-bg, #111820)) 96%, transparent)',
                 }}
               >
                 <div className="truncate font-semibold">{hoverLabel.title}</div>

@@ -103,14 +103,6 @@ export type JsonlViewItem = {
   readResults?: BashToolResult[]
 }
 
-export type DiffRow = {
-  key: string
-  kind: 'added' | 'removed' | 'same' | 'hunk'
-  oldLine: number | ''
-  newLine: number | ''
-  text: string
-}
-
 export type UnifiedHunkHeader = {
   oldStart: number
   oldCount: number

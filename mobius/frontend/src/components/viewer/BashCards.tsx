@@ -135,8 +135,8 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
         ? 'no output expected'
         : 'ok'
   const stateClass = result.isError || result.interrupted
-    ? 'text-red-300'
-    : 'text-emerald-300'
+    ? 'text-[var(--status-danger)]'
+    : 'text-[var(--status-success)]'
 
   return (
     <div className="border-t border-[var(--border-color)]/70 first:border-t-0">
@@ -185,9 +185,9 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
         <div className="max-h-[34rem] overflow-auto">
           {stdout && stderr ? (
             <div>
-              <div className="border-y border-[var(--border-color)]/60 px-2.5 py-1 text-[10px] font-mono text-emerald-300/90">stdout</div>
+              <div className="border-y border-[var(--border-color)]/60 px-2.5 py-1 text-[10px] font-mono text-[var(--status-success)]">stdout</div>
               <ResultTextPreview text={stdout} />
-              <div className="border-y border-[var(--border-color)]/60 px-2.5 py-1 text-[10px] font-mono text-red-300/90">stderr</div>
+              <div className="border-y border-[var(--border-color)]/60 px-2.5 py-1 text-[10px] font-mono text-[var(--status-danger)]">stderr</div>
               <ResultTextPreview text={stderr} />
             </div>
           ) : (

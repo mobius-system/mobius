@@ -21,6 +21,10 @@ import * as modelAccess from '../services/model-access';
 import modelRegistry from '../services/model-registry';
 // @ts-ignore — service 仍是 .js
 import modelPromptLimits from '../services/model-prompt-limits';
+// @ts-ignore — shared detector is CommonJS so tmux .js backends can reuse it directly.
+import providerCliDetection from '../services/provider-cli-detection.cjs';
+// @ts-ignore — bounded CommonJS app-server catalog.
+import codexModelCatalog from '../services/codex-model-catalog.cjs';
 // @ts-ignore — service 仍是 .js
 import * as skillMemoryMigration from '../services/skill-memory-migration';
 import { Projects } from '../repositories/projects';
@@ -1404,6 +1408,63 @@ router.put('/settings/proxy-files', adminAuth, (req: express.Request, res: expre
     res.json(out);
   } catch (e) {
     res.status(400).json({ error: (e as Error)?.message || String(e) });
+  }
+});
+
+// ── 本机 Provider CLI 状态 (只读；不读取或回传凭据内容) ──
+router.get('/provider-cli-status', adminAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const force = req.query.force === '1' || req.query.force === 'true';
+    const statuses = await providerCliDetection.detectProviders({ force });
+    const catalog = await codexModelCatalog.getCatalog({ force });
+    res.json(statuses.map((status: any) => {
+      const publicStatus = providerCliDetection.toPublicProviderStatus(status);
+      return status?.provider === 'codex'
+        ? { ...publicStatus, modelCatalog: codexModelCatalog.toPublicCatalogSnapshot(catalog) }
+        : publicStatus;
+    }));
+  } catch {
+    res.status(500).json({ error: '本机 CLI 状态检测失败' });
+  }
+});
+
+// 独立的管理员只读目录端点。序列化器只允许规范化模型字段和安全状态元数据，
+// 不会返回 app-server 原始行、stderr、环境变量或认证内容。
+router.get('/codex-model-catalog', adminAuth, async (req: express.Request, res: express.Response) => {
+  const force = req.query.force === '1' || req.query.force === 'true';
+  if (force || !providerCliDetection.getCachedProviderStatus('codex')) {
+    await providerCliDetection.detectProvider('codex', { force });
+  }
+  const catalog = await codexModelCatalog.getCatalog({ force });
+  res.json(codexModelCatalog.toPublicCatalogSnapshot(catalog));
+});
+
+// 仅持久化自动导入开关，不读取/复制 CLI 凭据。关闭后 model-registry 与 launch-time
+// native preflight 都会拒绝，不能通过前端 fallback 或直接调用创建 API 绕过。
+router.put('/provider-cli-native/:provider', adminAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const provider = String(req.params.provider || '');
+    if (!['codex', 'claude'].includes(provider)) {
+      res.status(400).json({ error: '不支持的本机 Provider' });
+      return;
+    }
+    const enabled = req.body?.enabled;
+    const setting = modelAccess.setNativeProviderEnabled(provider, enabled);
+    if (provider === 'codex') codexModelCatalog.invalidateCodexModelCatalog();
+    providerCliDetection.clearProviderCliDetectionCache(provider);
+    const status = await providerCliDetection.detectProvider(provider, { force: true });
+    const publicStatus = providerCliDetection.toPublicProviderStatus(status);
+    const catalog = provider === 'codex'
+      ? await codexModelCatalog.getCatalog({ force: true })
+      : null;
+    res.json({
+      ...setting,
+      status: catalog
+        ? { ...publicStatus, modelCatalog: codexModelCatalog.toPublicCatalogSnapshot(catalog) }
+        : publicStatus,
+    });
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
   }
 });
 

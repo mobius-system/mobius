@@ -70,12 +70,6 @@ type PromptStats = {
   model_usage_limits?: ModelUsageLimits
 }
 
-// API 完全失败时的最小兜底 (仅保证能选到内置模型, 无配额信息)
-const FALLBACK_OPTIONS: SessionModelOption[] = [
-  { key: 'codex', label: 'GPT-5.5', title: 'GPT-5.5', sub: 'Codex · 强力', backend: 'tmux-codex' },
-  { key: 'opus', label: 'Opus', title: 'Opus', sub: 'Claude Code · 强力', backend: 'tmux-claude-code' },
-]
-
 function useResponsiveModelColumns() {
   const [columns, setColumns] = useState(() => (
     typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches ? 3 : 2
@@ -100,7 +94,9 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true,
   /** 折叠态保留几行 (1 = 顶栏快捷菜单只显一行, 其余收进"展开剩余"; 默认 3 对齐传统 NewSessionModal). */
   collapsedRows?: number
 }) {
-  const [options, setOptions] = useState<SessionModelOption[]>(FALLBACK_OPTIONS)
+  const [options, setOptions] = useState<SessionModelOption[]>([])
+  const [optionsLoaded, setOptionsLoaded] = useState(false)
+  const [optionsError, setOptionsError] = useState('')
   const [stats, setStats] = useState<PromptStats | null>(null)
   const [manuallyExpanded, setManuallyExpanded] = useState(false)
   const responsiveColumns = useResponsiveModelColumns()
@@ -108,9 +104,14 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true,
   useEffect(() => {
     let alive = true
     api('/api/sessions/model-options').then((arr: any) => {
-      if (!alive || !Array.isArray(arr) || arr.length === 0) return
-      setOptions(arr as SessionModelOption[])
-    }).catch(() => { /* 保留 FALLBACK_OPTIONS */ })
+      if (!alive) return
+      setOptions(Array.isArray(arr) ? arr as SessionModelOption[] : [])
+      setOptionsError('')
+    }).catch((error: any) => {
+      if (!alive) return
+      setOptions([])
+      setOptionsError(error?.message || '模型列表加载失败')
+    }).finally(() => { if (alive) setOptionsLoaded(true) })
     return () => { alive = false }
   }, [])
 
@@ -194,6 +195,12 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true,
           )
         })}
       </div>
+      {options.length === 0 && (
+        <div className="rounded-xl border border-dashed px-3 py-4 text-center text-[12px]"
+          style={{ borderColor: 'var(--input-border)', color: optionsError ? '#ef4444' : (dark ? '#9ca3af' : '#64748b') }}>
+          {!optionsLoaded ? '正在加载模型…' : optionsError || '暂无管理员启用且配置完整的模型'}
+        </div>
+      )}
       {hasCollapsedOverflow && !expandedForSelection && (
         <button type="button" onClick={() => setManuallyExpanded(v => !v)}
           className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-[12px] transition-colors hover:bg-[var(--bg-hover)]"

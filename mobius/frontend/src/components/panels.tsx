@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom'
 import {
   Activity,
   AlertTriangle,
-  ArrowLeft,
   ArrowDown,
   ArrowUp,
   BarChart3,
@@ -61,6 +60,7 @@ import {
 import { pollRecursive } from '../services/polling'
 import { ToggleSwitch } from './toggle-switch'
 import { SkillMarketLink } from './skill-market-link'
+import { AdvancedPageChrome } from './advanced-page-chrome'
 
 type AdminTmuxContext = {
   session_id: string
@@ -709,7 +709,7 @@ function AdminUsersPanel() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-users">
+      <section className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4" data-tour="admin-section-users">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -769,7 +769,7 @@ function AdminUsersPanel() {
                 const width = row.sessionCount > 0
                   ? `${Math.min(100, Math.max(2, (row.sessionCount / maxCount) * 100))}%`
                   : '0%'
-                const accent = row.role === 'admin' ? '#f59e0b' : row.role === 'developer' ? '#a78bfa' : '#38bdf8'
+                const accent = row.role === 'admin' ? 'var(--status-waiting)' : row.role === 'developer' ? 'var(--accent-primary)' : 'var(--status-running)'
                 return (
                   <div key={row.id} className="grid grid-cols-[minmax(150px,220px)_1fr_88px] items-center gap-3">
                     <div className="min-w-0">
@@ -789,15 +789,15 @@ function AdminUsersPanel() {
                         className="absolute inset-y-0 left-0 rounded-md"
                         style={{
                           width,
-                          background: `linear-gradient(90deg, ${accent}, rgba(16,185,129,0.72))`,
+                          background: `linear-gradient(90deg, ${accent}, var(--status-success))`,
                           opacity: row.sessionCount > 0 ? 0.9 : 0,
                         }}
                       />
                       <div className="relative z-10 flex h-full items-center justify-between gap-2 px-2.5 text-[11px]">
-                        <span className="truncate" style={{ color: row.sessionCount > 0 ? '#f8fafc' : 'var(--text-muted)' }}>
+                        <span className="truncate" style={{ color: row.sessionCount > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                           活跃 {row.activeCount} · 完成 {row.completedCount} · 归档 {row.archivedCount}
                         </span>
-                        <span className="flex-shrink-0 tabular-nums" style={{ color: row.sessionCount > 0 ? '#f8fafc' : 'var(--text-muted)' }}>
+                        <span className="flex-shrink-0 tabular-nums" style={{ color: row.sessionCount > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                           消息 {row.totalMessages}
                         </span>
                       </div>
@@ -818,7 +818,7 @@ function AdminUsersPanel() {
         )}
       </section>
 
-      <section className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+      <section className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -972,7 +972,7 @@ function AdminUsersPanel() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+      <section className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -1163,9 +1163,9 @@ function AdminUsersPanel() {
         </div>
       </section>
       {editingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { if (!savingEdit) setEditingUser(null) }} />
-          <div className="relative w-[460px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center">
+          <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={() => { if (!savingEdit) setEditingUser(null) }} />
+          <div className="theme-overlay__panel relative w-[460px] max-w-[calc(100vw-32px)] rounded-[var(--radius-modal)] border p-6 shadow-2xl">
             <h3 className="mb-4 text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>编辑员工 · {editingUser.display_name || editingUser.id}</h3>
             <div className="space-y-3">
               <div>
@@ -1268,8 +1268,8 @@ function BackendSection({
                 const ctx = win.context
                 const subject = ctx?.subject
                 const sessionHref =
-                  ctx?.user?.id && ctx.project?.id && subject?.id && ctx.session_id
-                    ? `/u/${ctx.user.id}/p/${ctx.project.id}/${subject.type === 'research' ? 'r' : 'i'}/${subject.id}?session=${ctx.session_id}`
+                  ctx?.user?.id && ctx.session_id
+                    ? `/u/${encodeURIComponent(ctx.user.id)}/s/${encodeURIComponent(ctx.session_id)}`
                     : null
                 const closeKey = `${win.backend_key}:${win.session_id}`
                 const closing = closingKey === closeKey
@@ -1379,7 +1379,7 @@ function BackendSection({
                       <div className="mt-1 max-w-[180px] truncate text-[11px]" title={win.agent_session_id || ''} style={{ color: 'var(--text-muted)' }}>
                         agent {compactId(win.agent_session_id)}
                       </div>
-                      <div className="mt-1 text-[11px]" style={{ color: win.tui_agent_alive ? '#34d399' : 'var(--text-muted)' }}>
+                      <div className="mt-1 text-[11px]" style={{ color: win.tui_agent_alive ? 'var(--status-success)' : 'var(--text-muted)' }}>
                         {isHarness
                           ? (win.tui_agent_alive ? 'Runtime 进程存活' : win.tmux_open ? 'Runtime 进程未响应' : 'Runtime 未运行')
                           : (win.tui_agent_alive ? 'tui agent isAlive' : win.tmux_open ? 'tui agent not isAlive' : 'tmux not open')}
@@ -1756,7 +1756,7 @@ function ModelPromptLimitsCard() {
   }
 
   return (
-    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-settings">
+    <section className="rounded-xl border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4" data-tour="admin-section-settings">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>模型创建限制</h3>
@@ -1778,7 +1778,7 @@ function ModelPromptLimitsCard() {
       )}
       {/* 全局默认模型偏好: 新建 Session / 快捷新建 / 小莫 在无项目级默认时回落到此模型 */}
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2.5"
-        style={{ borderColor: 'rgba(59,130,246,0.30)', background: 'rgba(59,130,246,0.06)' }}>
+        style={{ borderColor: 'var(--accent-border)', background: 'var(--accent-soft)' }}>
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>全局默认模型</div>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -1802,10 +1802,10 @@ function ModelPromptLimitsCard() {
         </div>
       </div>
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2.5"
-        style={{ borderColor: autoTitleEnabled ? 'rgba(16,185,129,0.36)' : 'var(--input-border)', background: autoTitleEnabled ? 'rgba(16,185,129,0.08)' : 'var(--input-bg)' }}>
+        style={{ borderColor: autoTitleEnabled ? 'var(--status-success-border)' : 'var(--input-border)', background: autoTitleEnabled ? 'var(--status-success-soft)' : 'var(--input-bg)' }}>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-            <Sparkles className="h-3.5 w-3.5" style={{ color: autoTitleEnabled ? '#10b981' : 'var(--text-muted)' }} />
+            <Sparkles className="h-3.5 w-3.5" style={{ color: autoTitleEnabled ? 'var(--status-success)' : 'var(--text-muted)' }} />
             <span>自动生成会话标题</span>
           </div>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -1818,13 +1818,13 @@ function ModelPromptLimitsCard() {
           loading={savingAutoTitle}
           onChange={toggleAutoGenerateSessionTitle}
           switchPosition="end"
-          activeColor="#10b981"
+          activeColor="var(--status-success)"
           className="flex min-w-[104px] items-center justify-between gap-3 rounded-md border px-2.5 py-1.5"
           style={{
-            background: autoTitleEnabled ? 'rgba(16,185,129,0.10)' : 'var(--bg-card)',
-            borderColor: autoTitleEnabled ? 'rgba(16,185,129,0.40)' : 'var(--input-border)',
+            background: autoTitleEnabled ? 'var(--status-success-soft)' : 'var(--bg-card)',
+            borderColor: autoTitleEnabled ? 'var(--status-success-border)' : 'var(--input-border)',
           }}>
-          <span className="text-[12px]" style={{ color: autoTitleEnabled ? '#16a34a' : 'var(--text-muted)' }}>
+          <span className="text-[12px]" style={{ color: autoTitleEnabled ? 'var(--status-success)' : 'var(--text-muted)' }}>
             {autoTitleEnabled ? '已开启' : '已关闭'}
           </span>
         </ToggleSwitch>
@@ -1846,8 +1846,8 @@ function ModelPromptLimitsCard() {
             <div key={row.key}
               className="rounded-lg border px-3 py-2.5"
               style={{
-                background: configured ? 'rgba(59,130,246,0.08)' : 'var(--input-bg)',
-                borderColor: configured ? 'rgba(59,130,246,0.30)' : 'var(--input-border)',
+                background: configured ? 'var(--accent-soft)' : 'var(--input-bg)',
+                borderColor: configured ? 'var(--accent-border)' : 'var(--input-border)',
               }}>
               <div className="mb-2 flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -1875,7 +1875,7 @@ function ModelPromptLimitsCard() {
                     {savingOrder ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowDown className="h-3.5 w-3.5" />}
                   </button>
                   <span className="rounded border px-1.5 py-0.5 text-[10px]"
-                    style={{ color: configured ? '#3b82f6' : 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+                    style={{ color: configured ? 'var(--status-running)' : 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
                     {configured ? '已配置' : '默认'}
                   </span>
                 </div>
@@ -1907,13 +1907,13 @@ function ModelPromptLimitsCard() {
                 loading={savingProxy}
                 onChange={next => toggleProxy(row, next)}
                 switchPosition="end"
-                activeColor="#10b981"
+                activeColor="var(--status-success)"
                 className="mb-2 flex items-center justify-between gap-3 rounded-md border px-2 py-1.5"
                 style={{
-                  background: useProxy ? 'rgba(16,185,129,0.10)' : 'var(--bg-card)',
-                  borderColor: useProxy ? 'rgba(16,185,129,0.36)' : 'var(--input-border)',
+                  background: useProxy ? 'var(--status-success-soft)' : 'var(--bg-card)',
+                  borderColor: useProxy ? 'var(--status-success-border)' : 'var(--input-border)',
                 }}>
-                <span className="text-[11px]" style={{ color: useProxy ? '#16a34a' : 'var(--text-muted)' }}>
+                <span className="text-[11px]" style={{ color: useProxy ? 'var(--status-success)' : 'var(--text-muted)' }}>
                   {useProxy ? '使用 proxychains' : '直连'}
                 </span>
               </ToggleSwitch>
@@ -1924,13 +1924,13 @@ function ModelPromptLimitsCard() {
                   loading={savingCapture}
                   onChange={next => toggleCapture(row, next)}
                   switchPosition="end"
-                  activeColor="#00ff41"
+                  activeColor="var(--status-success)"
                   className="mb-2 flex items-center justify-between gap-3 rounded-md border px-2 py-1.5"
                   style={{
-                    background: capture ? 'rgba(0,255,65,0.10)' : 'var(--bg-card)',
-                    borderColor: capture ? 'rgba(0,255,65,0.40)' : 'var(--input-border)',
+                    background: capture ? 'var(--status-success-soft)' : 'var(--bg-card)',
+                    borderColor: capture ? 'var(--status-success-border)' : 'var(--input-border)',
                   }}>
-                  <span className="text-[11px]" style={{ color: capture ? '#00ff41' : 'var(--text-muted)' }}>
+                  <span className="text-[11px]" style={{ color: capture ? 'var(--status-success)' : 'var(--text-muted)' }}>
                     {capture ? '捕获实时输出 · 数字雨' : '捕获实时输出'}
                   </span>
                 </ToggleSwitch>
@@ -1944,13 +1944,13 @@ function ModelPromptLimitsCard() {
                 loading={savingCompact}
                 onChange={next => toggleCompact(row, next)}
                 switchPosition="end"
-                activeColor="#f59e0b"
+                activeColor="var(--status-waiting)"
                 className="mb-2 flex items-center justify-between gap-3 rounded-md border px-2 py-1.5"
                 style={{
-                  background: compactEnabled ? 'rgba(245,158,11,0.10)' : 'var(--bg-card)',
-                  borderColor: compactEnabled ? 'rgba(245,158,11,0.40)' : 'var(--input-border)',
+                  background: compactEnabled ? 'var(--status-waiting-soft)' : 'var(--bg-card)',
+                  borderColor: compactEnabled ? 'var(--status-waiting-border)' : 'var(--input-border)',
                 }}>
-                <span className="text-[11px]" style={{ color: compactEnabled ? '#d97706' : 'var(--text-muted)' }}>
+                <span className="text-[11px]" style={{ color: compactEnabled ? 'var(--status-waiting)' : 'var(--text-muted)' }}>
                   {compactEnabled ? '手动上下文限制 · 已开启' : '手动上下文限制'}
                 </span>
               </ToggleSwitch>
@@ -2050,7 +2050,7 @@ function AdminAssistantCallbacksPanel() {
   const enabled = payload?.enabled ?? false
 
   return (
-    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+    <section className="rounded-xl border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>管理员小莫配置</h3>
@@ -2076,11 +2076,11 @@ function AdminAssistantCallbacksPanel() {
         loading={saving}
         onChange={toggle}
         switchPosition="end"
-        activeColor="#10b981"
+        activeColor="var(--status-success)"
         className="flex items-center justify-between gap-3 rounded-lg px-3 py-3"
         style={{
-          background: enabled ? 'rgba(16,185,129,0.10)' : 'var(--input-bg)',
-          border: `1px solid ${enabled ? 'rgba(16,185,129,0.36)' : 'var(--input-border)'}`,
+          background: enabled ? 'var(--status-success-soft)' : 'var(--input-bg)',
+          border: `1px solid ${enabled ? 'var(--status-success-border)' : 'var(--input-border)'}`,
         }}>
         <span className="block min-w-0">
           <span className="block text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -2411,7 +2411,7 @@ function DoubaoSubCard({
           onClick={save}
           disabled={saving || testing}
           className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium text-white disabled:opacity-60"
-          style={{ background: 'var(--accent, #2563eb)' }}
+          style={{ background: 'var(--accent-primary)' }}
         >
           {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
           {savedFlash ? '已保存' : '保存'}
@@ -2428,7 +2428,7 @@ function DoubaoSubCard({
         {testResult && (
           <span
             className="text-[11px]"
-            style={{ color: testResult.ok ? '#10b981' : '#f87171' }}
+            style={{ color: testResult.ok ? 'var(--status-success)' : 'var(--status-danger)' }}
           >
             {testResult.ok ? '✓ ' : '✗ '}{testResult.message}
           </span>
@@ -2497,7 +2497,7 @@ function AdminDoubaoVoiceCard() {
 
   if (!masked) {
     return (
-      <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+      <section className="rounded-xl border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4">
         <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
           {loading ? '加载豆包语音配置…' : (error || '暂无数据')}
         </div>
@@ -2506,7 +2506,7 @@ function AdminDoubaoVoiceCard() {
   }
 
   return (
-    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+    <section className="rounded-xl border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>豆包 ASR / TTS</h3>
@@ -2709,7 +2709,7 @@ function AdminLightModelApiCard() {
     : '填入新的 api_key'
 
   return (
-    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+    <section className="rounded-xl border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -2835,7 +2835,7 @@ function AdminLightModelApiCard() {
         {testResult && (
           <span
             className="text-[11px] break-all"
-            style={{ color: testResult.ok ? '#10b981' : '#f87171' }}
+            style={{ color: testResult.ok ? 'var(--status-success)' : 'var(--status-danger)' }}
           >
             {testResult.ok ? '✓ ' : '✗ '}{testResult.message}
           </span>
@@ -2917,7 +2917,7 @@ function AdminProxyFilesCard() {
   }
 
   return (
-    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+    <section className="rounded-xl border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -3085,6 +3085,142 @@ type HarnessModelForm = {
 
 type AdminModelsBackend = 'claude-code' | 'codex' | 'deepseek-harness'
 
+type ProviderCliStatus = {
+  provider: 'codex' | 'claude'
+  installed: boolean
+  available: boolean
+  launchReady: boolean
+  launchMode: 'configured' | 'native' | null
+  configuredReady: boolean
+  nativeEnabled: boolean
+  nativeModelEnabled: boolean
+  nativeReady: boolean
+  binaryPath: string | null
+  version: string | null
+  authStatus: 'authenticated' | 'required' | 'unknown'
+  reason: string | null
+  checkedAt: string | null
+  candidates: string[]
+  modelCatalog?: {
+    models: Array<{
+      id: string
+      displayName: string
+      label: string
+      isDefault: boolean
+    }>
+    source: 'codex-app-server' | 'last-known-good' | 'compatibility-fallback'
+    fallback: boolean
+    checkedAt: string | null
+    reason: string | null
+  }
+}
+
+function ProviderCliStatusCard({ provider }: { provider: 'codex' | 'claude' }) {
+  const [status, setStatus] = useState<ProviderCliStatus | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [savingNative, setSavingNative] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = async (force = false) => {
+    setLoading(true)
+    try {
+      const rows = await api(`/api/admin/provider-cli-status${force ? '?force=1' : ''}`) as ProviderCliStatus[]
+      const next = Array.isArray(rows) ? rows.find(row => row.provider === provider) || null : null
+      setStatus(next)
+      setError(next ? '' : '未返回 CLI 检测结果')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load(false) }, [provider])
+
+  const setNativeEnabled = async (enabled: boolean) => {
+    setSavingNative(true)
+    try {
+      const result = await api(`/api/admin/provider-cli-native/${provider}`, {
+        method: 'PUT',
+        body: JSON.stringify({ enabled }),
+      }) as { status?: ProviderCliStatus }
+      if (result?.status) setStatus(result.status)
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSavingNative(false)
+    }
+  }
+
+  const authLabel = status?.authStatus === 'authenticated'
+    ? '已认证'
+    : status?.authStatus === 'required'
+      ? '需要登录'
+      : '认证未知'
+  const providerLabel = provider === 'codex' ? 'Codex CLI' : 'Claude Code CLI'
+  const catalog = provider === 'codex' ? status?.modelCatalog : null
+  const catalogDefault = catalog?.models.find(model => model.isDefault) || catalog?.models[0] || null
+
+  return (
+    <div className="mb-4 rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2.5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
+            <Terminal className="h-3.5 w-3.5 text-cyan-400" />
+            <span>{providerLabel}</span>
+            {status && (
+              <>
+                <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ color: status.installed ? 'var(--status-success)' : 'var(--status-danger)', borderColor: 'var(--border-color)' }}>
+                  {status.installed ? '已安装' : '未安装'}
+                </span>
+                <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ color: status.authStatus === 'authenticated' ? 'var(--status-success)' : status.authStatus === 'required' ? 'var(--status-danger)' : 'var(--status-waiting)', borderColor: 'var(--border-color)' }}>
+                  {authLabel}
+                </span>
+                <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ color: status.launchReady ? 'var(--status-success)' : 'var(--status-danger)', borderColor: 'var(--border-color)' }}>
+                  {status.launchReady ? '可启动' : '不可启动'}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="mt-1 text-[11px]" style={{ color: status?.launchReady ? 'var(--text-muted)' : 'var(--status-waiting)' }}>
+            {error || status?.reason || (loading ? '正在检测本机 CLI…' : '尚未检测')}
+          </div>
+          {status?.binaryPath && (
+            <div className="mt-1 truncate font-mono text-[10px]" title={status.binaryPath} style={{ color: 'var(--text-muted)' }}>
+              {status.version ? `v${status.version} · ` : ''}{status.binaryPath}
+              {status.candidates.length > 1 ? ` · ${status.candidates.length} 个候选` : ''}
+            </div>
+          )}
+          {catalog && (
+            <div className="mt-1 text-[10px]" style={{ color: catalog.fallback ? 'var(--status-waiting)' : 'var(--text-muted)' }}>
+              已发现 {catalog.models.length} 个模型
+              {catalogDefault ? ` · 默认 ${catalogDefault.displayName || catalogDefault.id}` : ''}
+              {catalog.fallback ? ` · ${catalog.source === 'last-known-good' ? '沿用上次成功目录' : '兼容回退'}` : ''}
+              {catalog.reason ? ` · ${catalog.reason}` : ''}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {status && (
+            <label className="inline-flex h-8 items-center gap-2 rounded-md border border-[var(--border-color)] px-2.5 text-[11px] text-[var(--text-secondary)]">
+              <input type="checkbox" checked={status.nativeEnabled} disabled={savingNative}
+                onChange={e => setNativeEnabled(e.target.checked)} />
+              自动导入本机登录
+              {savingNative && <Loader2 className="h-3 w-3 animate-spin" />}
+            </label>
+          )}
+          <button type="button" onClick={() => load(true)} disabled={loading}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-60">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function defaultClaudeSettings(model = 'MiniMax-M3') {
   return JSON.stringify({
     env: {
@@ -3159,7 +3295,7 @@ function AdminModelsPanel() {
   const [backend, setBackend] = useState<AdminModelsBackend>('claude-code')
 
   return (
-    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-models">
+    <section className="rounded-xl border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4" data-tour="admin-section-models">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -3195,6 +3331,10 @@ function AdminModelsPanel() {
           })}
         </div>
       </div>
+
+      {backend !== 'deepseek-harness' && (
+        <ProviderCliStatusCard provider={backend === 'codex' ? 'codex' : 'claude'} />
+      )}
 
       {backend === 'claude-code'
         ? <ClaudeCodeModelsSubPanel />
@@ -3341,8 +3481,8 @@ function ClaudeCodeModelsSubPanel() {
                 <div key={row.key}
                   className="group flex items-start justify-between gap-2 rounded-md border px-2.5 py-2 transition-colors"
                   style={{
-                    background: active ? 'rgba(59,130,246,0.10)' : 'transparent',
-                    borderColor: active ? 'rgba(59,130,246,0.35)' : 'var(--border-color)',
+                    background: active ? 'var(--accent-soft)' : 'transparent',
+                    borderColor: active ? 'var(--accent-border)' : 'var(--border-color)',
                   }}>
                   <button type="button" onClick={() => editModel(row.key)} className="min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -3353,10 +3493,10 @@ function ClaudeCodeModelsSubPanel() {
                       {row.session_model}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
-                      <span className="rounded border px-1.5 py-0.5" style={{ color: row.enabled ? '#16a34a' : 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+                      <span className="rounded border px-1.5 py-0.5" style={{ color: row.enabled ? 'var(--status-success)' : 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
                         {row.enabled ? '启用' : '禁用'}
                       </span>
-                      <span className="rounded border px-1.5 py-0.5" style={{ color: row.settings_exists ? '#16a34a' : '#ef4444', borderColor: 'var(--border-color)' }}>
+                      <span className="rounded border px-1.5 py-0.5" style={{ color: row.settings_exists ? 'var(--status-success)' : 'var(--status-danger)', borderColor: 'var(--border-color)' }}>
                         {row.settings_exists ? 'settings 已写入' : 'settings 缺失'}
                       </span>
                     </div>
@@ -3587,8 +3727,8 @@ function CodexModelsSubPanel() {
                 <div key={row.key}
                   className="group flex items-start justify-between gap-2 rounded-md border px-2.5 py-2 transition-colors"
                   style={{
-                    background: active ? 'rgba(59,130,246,0.10)' : 'transparent',
-                    borderColor: active ? 'rgba(59,130,246,0.35)' : 'var(--border-color)',
+                    background: active ? 'var(--accent-soft)' : 'transparent',
+                    borderColor: active ? 'var(--accent-border)' : 'var(--border-color)',
                   }}>
                   <button type="button" onClick={() => editModel(row.key)} className="min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -3599,17 +3739,17 @@ function CodexModelsSubPanel() {
                       {row.session_model} · {row.channel || row.key}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
-                      <span className="rounded border px-1.5 py-0.5" style={{ color: row.enabled ? '#16a34a' : 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+                      <span className="rounded border px-1.5 py-0.5" style={{ color: row.enabled ? 'var(--status-success)' : 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
                         {row.enabled ? '启用' : '禁用'}
                       </span>
                       <span className="rounded border px-1.5 py-0.5" style={{
-                        color: row.config_exists ? '#16a34a' : '#ef4444',
+                        color: row.config_exists ? 'var(--status-success)' : 'var(--status-danger)',
                         borderColor: 'var(--border-color)',
                       }}>
                         {row.config_exists ? 'config 已写入' : 'config 缺失'}
                       </span>
                       <span className="rounded border px-1.5 py-0.5" style={{
-                        color: row.secret_value_set ? '#16a34a' : '#ef4444',
+                        color: row.secret_value_set ? 'var(--status-success)' : 'var(--status-danger)',
                         borderColor: 'var(--border-color)',
                       }}>
                         {row.secret_env_key || '未设秘钥名'}{row.secret_value_set ? ' 已设置' : ' 缺失'}
@@ -3853,8 +3993,8 @@ function HarnessModelsSubPanel() {
               return (
                 <div key={row.key} className="group flex items-start justify-between gap-2 rounded-md border px-2.5 py-2 transition-colors"
                   style={{
-                    background: active ? 'rgba(59,130,246,0.10)' : 'transparent',
-                    borderColor: active ? 'rgba(59,130,246,0.35)' : 'var(--border-color)',
+                    background: active ? 'var(--accent-soft)' : 'transparent',
+                    borderColor: active ? 'var(--accent-border)' : 'var(--border-color)',
                   }}>
                   <button type="button" onClick={() => editModel(row.key)} className="min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -3865,10 +4005,10 @@ function HarnessModelsSubPanel() {
                       {row.session_model} · {row.model}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
-                      <span className="rounded border px-1.5 py-0.5" style={{ color: row.enabled ? '#16a34a' : 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+                      <span className="rounded border px-1.5 py-0.5" style={{ color: row.enabled ? 'var(--status-success)' : 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
                         {row.enabled ? '启用' : '禁用'}
                       </span>
-                      <span className="rounded border px-1.5 py-0.5" style={{ color: row.secret_value_set ? '#16a34a' : '#ef4444', borderColor: 'var(--border-color)' }}>
+                      <span className="rounded border px-1.5 py-0.5" style={{ color: row.secret_value_set ? 'var(--status-success)' : 'var(--status-danger)', borderColor: 'var(--border-color)' }}>
                         {row.secret_value_set ? 'API Key 已设置' : 'API Key 缺失'}
                       </span>
                       <span className="rounded border px-1.5 py-0.5" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
@@ -4023,7 +4163,7 @@ function HiddenExtensionsCard() {
   }
 
   return (
-    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-extensions">
+    <section className="rounded-xl border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4" data-tour="admin-section-extensions">
       <div className="mb-2 flex items-center justify-between">
         <div>
           <h3 className="text-[14px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
@@ -4080,7 +4220,7 @@ function HiddenExtensionsCard() {
                 <button onClick={() => purge(row)} disabled={rowBusy}
                   title="彻底删除该用户在此拓展的数据 (不可恢复)"
                   className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-[11px] font-medium transition-colors disabled:opacity-50 border"
-                  style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.35)', color: '#f87171' }}>
+                  style={{ background: 'var(--status-danger-soft)', borderColor: 'var(--status-danger-border)', color: 'var(--status-danger)' }}>
                   {isPurging ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                   彻底删除
                 </button>
@@ -4173,8 +4313,8 @@ function ChecklistRow({
     <label
       className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 transition-colors"
       style={{
-        background: checked ? 'rgba(59,130,246,0.10)' : 'transparent',
-        border: `1px solid ${checked ? 'rgba(59,130,246,0.36)' : 'var(--border-color)'}`,
+        background: checked ? 'var(--accent-soft)' : 'transparent',
+        border: `1px solid ${checked ? 'var(--accent-border)' : 'var(--border-color)'}`,
       }}
     >
       <input
@@ -4216,7 +4356,7 @@ function ChecklistRow({
 function SkillMemoryMigrationPanel() {
   const [mode, setMode] = useState<'manage' | 'export' | 'import'>('manage')
   return (
-    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+    <section className="rounded-xl border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -4461,8 +4601,8 @@ function MigrationManageTab() {
         key={item.id}
         className="flex items-start gap-2 rounded-md px-2 py-1.5"
         style={{
-          background: selected ? 'rgba(59,130,246,0.10)' : 'transparent',
-          border: `1px solid ${selected ? 'rgba(59,130,246,0.36)' : 'var(--border-color)'}`,
+          background: selected ? 'var(--accent-soft)' : 'transparent',
+          border: `1px solid ${selected ? 'var(--accent-border)' : 'var(--border-color)'}`,
         }}
       >
         <input
@@ -4485,8 +4625,8 @@ function MigrationManageTab() {
               <span
                 className="rounded px-1 py-px text-[10px] font-medium"
                 style={{
-                  background: item.visibility === 'public' ? 'rgba(16,185,129,0.14)' : 'rgba(148,163,184,0.12)',
-                  color: item.visibility === 'public' ? '#34d399' : 'var(--text-muted)',
+                  background: item.visibility === 'public' ? 'var(--status-success-soft)' : 'var(--surface-control)',
+                  color: item.visibility === 'public' ? 'var(--status-success)' : 'var(--text-muted)',
                 }}
               >
                 {item.visibility === 'inherit' ? '继承项目'
@@ -4503,7 +4643,7 @@ function MigrationManageTab() {
             {!canManage && (
               <span
                 className="rounded px-1 py-px text-[10px]"
-                style={{ background: 'rgba(148,163,184,0.16)', color: 'var(--text-muted)' }}
+                style={{ background: 'var(--surface-control)', color: 'var(--text-muted)' }}
               >
                 只读
               </span>
@@ -4568,7 +4708,7 @@ function MigrationManageTab() {
         className="rounded-lg border p-3"
         style={{
           background: 'var(--bg-secondary)',
-          borderColor: editable ? 'rgba(59,130,246,0.35)' : 'var(--border-color)',
+          borderColor: editable ? 'var(--accent-border)' : 'var(--border-color)',
         }}
       >
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -4578,8 +4718,8 @@ function MigrationManageTab() {
               <span
                 className="rounded px-1.5 py-px text-[10px]"
                 style={{
-                  background: editable ? 'rgba(59,130,246,0.16)' : 'rgba(148,163,184,0.16)',
-                  color: editable ? '#60a5fa' : 'var(--text-muted)',
+                  background: editable ? 'var(--accent-soft)' : 'var(--surface-control)',
+                  color: editable ? 'var(--status-running)' : 'var(--text-muted)',
                 }}
               >
                 {editable ? '可编辑' : '只读'}
@@ -4665,7 +4805,7 @@ function MigrationManageTab() {
           <button
             type="button"
             onClick={() => setBatchAccessOpen(true)}
-            className="inline-flex h-7 items-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-card)] px-2 text-[11.5px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="inline-flex h-7 items-center gap-1 rounded border border-[var(--border-strong)] bg-[var(--surface-overlay)] px-2 text-[11.5px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
           >
             <Eye className="h-3.5 w-3.5" />
             批量修改权限
@@ -4673,7 +4813,7 @@ function MigrationManageTab() {
           <button
             type="button"
             onClick={() => setBatchMoveOpen(true)}
-            className="inline-flex h-7 items-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-card)] px-2 text-[11.5px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="inline-flex h-7 items-center gap-1 rounded border border-[var(--border-strong)] bg-[var(--surface-overlay)] px-2 text-[11.5px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
           >
             <FolderOpen className="h-3.5 w-3.5" />
             批量转移
@@ -4927,9 +5067,9 @@ function MigrationItemEditModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="theme-overlay fixed inset-0 z-[80] flex items-center justify-center bg-[var(--surface-scrim)] p-4" onClick={onClose}>
       <div
-        className="flex max-h-[88vh] w-full max-w-2xl flex-col gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4 shadow-2xl"
+        className="flex max-h-[88vh] w-full max-w-2xl flex-col gap-3 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3">
@@ -5001,7 +5141,7 @@ function MigrationItemEditModal({
             onClick={handleSave}
             disabled={saving}
             className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium text-white transition-colors disabled:opacity-50"
-            style={{ background: '#2563eb' }}
+            style={{ background: 'var(--accent-primary)' }}
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
             保存
@@ -5061,9 +5201,9 @@ function MigrationItemAccessModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="theme-overlay fixed inset-0 z-[80] flex items-center justify-center bg-[var(--surface-scrim)] p-4" onClick={onClose}>
       <div
-        className="flex w-full max-w-lg flex-col gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4 shadow-2xl"
+        className="flex w-full max-w-lg flex-col gap-3 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -5092,8 +5232,8 @@ function MigrationItemAccessModal({
               key={opt.value}
               className="flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 transition-colors"
               style={{
-                background: visibility === opt.value ? 'rgba(59,130,246,0.10)' : 'transparent',
-                borderColor: visibility === opt.value ? 'rgba(59,130,246,0.36)' : 'var(--border-color)',
+                background: visibility === opt.value ? 'var(--accent-soft)' : 'transparent',
+                borderColor: visibility === opt.value ? 'var(--accent-border)' : 'var(--border-color)',
               }}
             >
               <input
@@ -5124,7 +5264,7 @@ function MigrationItemAccessModal({
             onClick={handleSave}
             disabled={saving}
             className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium text-white transition-colors disabled:opacity-50"
-            style={{ background: '#2563eb' }}
+            style={{ background: 'var(--accent-primary)' }}
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
             保存权限
@@ -5152,9 +5292,9 @@ function MigrationBatchAccessModal({
     { value: 'allowlist', label: '指定用户', description: '只允许指定用户列表可见' },
   ]
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="theme-overlay fixed inset-0 z-[80] flex items-center justify-center bg-[var(--surface-scrim)] p-4" onClick={onClose}>
       <div
-        className="flex w-full max-w-lg flex-col gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4 shadow-2xl"
+        className="flex w-full max-w-lg flex-col gap-3 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -5178,8 +5318,8 @@ function MigrationBatchAccessModal({
               key={opt.value}
               className="flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 transition-colors"
               style={{
-                background: visibility === opt.value ? 'rgba(59,130,246,0.10)' : 'transparent',
-                borderColor: visibility === opt.value ? 'rgba(59,130,246,0.36)' : 'var(--border-color)',
+                background: visibility === opt.value ? 'var(--accent-soft)' : 'transparent',
+                borderColor: visibility === opt.value ? 'var(--accent-border)' : 'var(--border-color)',
               }}
             >
               <input
@@ -5209,7 +5349,7 @@ function MigrationBatchAccessModal({
             type="button"
             onClick={() => onConfirm(visibility)}
             className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium text-white transition-colors"
-            style={{ background: '#2563eb' }}
+            style={{ background: 'var(--accent-primary)' }}
           >
             <Save className="h-3.5 w-3.5" />
             应用到 {count} 条
@@ -5245,9 +5385,9 @@ function MigrationMoveTargetModal({
     : (item?.name ?? kindLabel)
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="theme-overlay fixed inset-0 z-[80] flex items-center justify-center bg-[var(--surface-scrim)] p-4" onClick={onClose}>
       <div
-        className="flex w-full max-w-lg flex-col gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4 shadow-2xl"
+        className="flex w-full max-w-lg flex-col gap-3 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-overlay)] p-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -5273,8 +5413,8 @@ function MigrationMoveTargetModal({
           <label
             className="flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 transition-colors"
             style={{
-              background: targetScope === 'user' ? 'rgba(59,130,246,0.10)' : 'transparent',
-              borderColor: targetScope === 'user' ? 'rgba(59,130,246,0.36)' : 'var(--border-color)',
+              background: targetScope === 'user' ? 'var(--accent-soft)' : 'transparent',
+              borderColor: targetScope === 'user' ? 'var(--accent-border)' : 'var(--border-color)',
             }}
           >
             <input
@@ -5294,8 +5434,8 @@ function MigrationMoveTargetModal({
           <label
             className="flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 transition-colors"
             style={{
-              background: targetScope === 'project' ? 'rgba(59,130,246,0.10)' : 'transparent',
-              borderColor: targetScope === 'project' ? 'rgba(59,130,246,0.36)' : 'var(--border-color)',
+              background: targetScope === 'project' ? 'var(--accent-soft)' : 'transparent',
+              borderColor: targetScope === 'project' ? 'var(--accent-border)' : 'var(--border-color)',
             }}
           >
             <input
@@ -5339,7 +5479,7 @@ function MigrationMoveTargetModal({
             }}
             disabled={targetScope === 'project' && !projectId}
             className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium text-white transition-colors disabled:opacity-50"
-            style={{ background: '#2563eb' }}
+            style={{ background: 'var(--accent-primary)' }}
           >
             {copiesSource ? <Copy className="h-3.5 w-3.5" /> : <FolderOpen className="h-3.5 w-3.5" />}
             {batchCount ? '转移' : copiesSource ? '复制' : '移动'}
@@ -5533,7 +5673,7 @@ function MigrationExportTab() {
               onClick={handleExport}
               disabled={exporting || totalSelected === 0}
               className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium text-white transition-colors disabled:opacity-50"
-              style={{ background: '#2563eb' }}
+              style={{ background: 'var(--accent-primary)' }}
             >
               {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
               生成 base64 字符串
@@ -5901,7 +6041,7 @@ function MigrationImportTab() {
               onClick={handleImport}
               disabled={importing || selectedIndexes.size === 0}
               className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium text-white transition-colors disabled:opacity-50"
-              style={{ background: '#16a34a' }}
+              style={{ background: 'var(--status-success)' }}
             >
               {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
               5. 导入到 {target.kind === 'user' ? '用户级' : `项目「${target.project_name}」`}
@@ -6128,7 +6268,7 @@ function AdminTextRedactionPanel() {
     <section
       data-text-redaction-ignore="true"
       data-tour="admin-section-redaction"
-      className="overflow-hidden rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)]"
+      className="overflow-hidden rounded-xl border border-[var(--border-strong)] bg-[var(--surface-overlay)]"
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-color)] px-4 py-3">
         <div className="min-w-0">
@@ -6417,7 +6557,15 @@ const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[]
   { key: 'migration', label: 'Skill与Memory管理', icon: <Package className="h-3.5 w-3.5" /> },
 ]
 
-export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initialTab?: AdminPanelTab }) {
+export function AdminPanel({
+  onClose,
+  initialTab,
+  returnTo,
+}: {
+  onClose: () => void
+  initialTab?: AdminPanelTab
+  returnTo?: string
+}) {
   // 初次渲染时取 initialTab (外部 openAdminOverlay(tab) 传入, 通常用于「监控」按钮直接落在「运行监控」tab)
   const [activeTab, setActiveTab] = useState<AdminPanelTab>(initialTab || 'users')
   const [data, setData] = useState<AdminTmuxPayload | null>(null)
@@ -6483,40 +6631,33 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
   const activeTabLabel = ADMIN_PANEL_TABS.find((tab) => tab.key === activeTab)?.label || '管理中心'
 
   return (
-    <div className="flex h-screen min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-secondary)' }}>
-      <div className="flex h-14 flex-shrink-0 items-center justify-between border-b border-[var(--border-color)] px-5">
-        <div className="flex min-w-0 items-center gap-3">
+    <div className="admin-panel advanced-page-surface flex h-screen min-w-0 flex-1 flex-col" style={{ background: 'var(--surface-raised)' }}>
+      <AdvancedPageChrome
+        eyebrow="Admin"
+        title="管理中心"
+        meta={activeTab === 'runtime' ? `${activeTabLabel} · 5s 刷新 · 统计窗口 ${data?.window_hours || 5} 小时` : activeTabLabel}
+        returnTo={returnTo}
+        onBack={onClose}
+        autoFocusHeading
+        dataTour="admin-center-header"
+        actions={activeTab === 'runtime' ? (
           <button
             type="button"
-            title="返回"
-            onClick={onClose}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div className="min-w-0" data-tour="admin-center-header">
-            <h2 className="truncate text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>管理中心</h2>
-            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              {activeTabLabel}{activeTab === 'runtime' ? ` · 5s 刷新 · 统计窗口 ${data?.window_hours || 5} 小时` : ''}
-            </div>
-          </div>
-        </div>
-        {activeTab === 'runtime' && (
-          <button
-            type="button"
-            title="刷新运行监控"
             onClick={() => refresh()}
             disabled={loading}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60"
+            title="刷新运行监控"
+            aria-label="刷新运行监控"
+            className="workbench-control-md inline-flex w-8 items-center justify-center border transition-colors hover:bg-[var(--surface-control-hover)] disabled:opacity-60"
+            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
-        )}
-      </div>
+        ) : null}
+      />
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
         <div className="mx-auto flex max-w-7xl flex-col gap-4">
-          <div className="flex flex-wrap gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-2" data-tour="admin-tab-bar">
+          <div className="flex flex-wrap gap-2 rounded-lg border p-2" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }} data-tour="admin-tab-bar">
             {ADMIN_PANEL_TABS.map((tab) => {
               const active = activeTab === tab.key
               return (
@@ -6527,9 +6668,9 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
                   onClick={() => setActiveTab(tab.key)}
                   className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium transition-colors"
                   style={{
-                    background: active ? 'var(--bg-hover)' : 'transparent',
+                    background: active ? 'var(--surface-active)' : 'transparent',
                     color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    border: `1px solid ${active ? 'var(--border-color)' : 'transparent'}`,
+                    border: `1px solid ${active ? 'var(--accent-border)' : 'transparent'}`,
                   }}
                 >
                   {tab.icon}
@@ -6565,7 +6706,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
           {activeTab === 'migration' && <SkillMemoryMigrationPanel />}
 
           {activeTab === 'runtime' && error && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-[13px] text-red-400">
+            <div className="flex items-start gap-2 rounded-lg border px-4 py-3 text-[13px]" style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)', background: 'var(--status-danger-soft)' }}>
               <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
               <span className="break-all">{error}</span>
             </div>
@@ -6648,7 +6789,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
                 />
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface-overlay)] px-3 py-2">
                 <div className="flex min-w-0 items-center gap-2 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
                   {showClosedWindows ? <Eye className="h-3.5 w-3.5 text-sky-400" /> : <EyeOff className="h-3.5 w-3.5 text-[var(--text-muted)]" />}
                   <span>已关闭实例</span>
@@ -6660,7 +6801,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
                   checked={showClosedWindows}
                   onChange={setShowClosedWindows}
                   switchPosition="end"
-                  activeColor="#0ea5e9"
+                  activeColor="var(--status-running)"
                   className="inline-flex h-8 items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
                   style={{ color: 'var(--text-secondary)' }}
                   title="显示或隐藏已关闭的 Agent 运行实例">
@@ -6670,7 +6811,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
 
               <BackendSection
                 title="Codex"
-                accent="#38bdf8"
+                accent="var(--status-running)"
                 backend={data?.backends?.codex}
                 closingKey={closingKey}
                 showClosedWindows={showClosedWindows}
@@ -6678,7 +6819,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
               />
               <BackendSection
                 title="Claude Code"
-                accent="#a78bfa"
+                accent="var(--accent-primary)"
                 backend={data?.backends?.claude_code}
                 closingKey={closingKey}
                 showClosedWindows={showClosedWindows}
@@ -6686,7 +6827,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
               />
               <BackendSection
                 title="DeepSeek Harness"
-                accent="#34d399"
+                accent="var(--status-success)"
                 backend={data?.backends?.deepseek_harness}
                 closingKey={closingKey}
                 showClosedWindows={showClosedWindows}

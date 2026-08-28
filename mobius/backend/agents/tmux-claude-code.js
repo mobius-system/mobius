@@ -25,6 +25,11 @@ const path = require('path')
 const fs = require('fs')
 const os = require('os')
 const crypto = require('crypto')
+const {
+  resolveProviderExecutable,
+  resolveNativeProviderExecutable,
+} = require('../services/provider-cli-detection.cjs')
+const { buildClaudeCliExec } = require('./provider-cli-command')
 
 const { AgentBackend } = require('./base')
 const {
@@ -46,7 +51,7 @@ const {
   safeRemoveFlagDir,
 } = require('../utils/session-flags')
 const { MOBIUS_DATA_PATH } = require('../config')
-const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
+const { log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
 
 // ── 常量 ────────────────────────────────────────────────
@@ -390,24 +395,6 @@ function pickInitialContextGreeting() {
   const index = Math.floor(Math.random() * INITIAL_CONTEXT_GREETING_CHOICES.length)
   return INITIAL_CONTEXT_GREETING_CHOICES[index]
 }
-
-// ── 启动时 preflight (模块加载时一次性, 缺失硬失败) ────
-;(function preflight() {
-  const missing = []
-  for (const bin of ['tmux', 'claude']) {
-    if (spawnSync('which', [bin]).status !== 0) missing.push(`bin (PATH): ${bin}`)
-  }
-  if (missing.length) {
-    console.error('[tmux-claude-code] ❌ preflight 失败, 拒绝启动:')
-    for (const m of missing) console.error('   - ' + m)
-    process.exit(1)
-  }
-  const proxyMissing = proxyPrereqMissing()
-  if (proxyMissing.length) {
-    console.warn(`[tmux-claude-code] ⚠️  proxychains 依赖不完整; use_proxy=false 的会话仍可直连启动: ${proxyMissing.join(', ')}`)
-  }
-  log(`[tmux-claude-code] ✅ preflight pass (SOCKET=${AGENT_TMUX_SOCKET}, HUB=${HUB})`)
-})()
 
 // ── Backend ────────────────────────────────────────────
 // ── getPendingRequests 辅助: 解析 Claude Code 内存队列的"已入队未消费"请求 ──────
@@ -991,6 +978,11 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   // ── tmux 操作底层 ─────────────────────────────────────
   // 启动一个新的 Claude Code tmux 窗口，并把运行态登记到内存和持久化存储。
   async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }) {
+    const nativeMode = !settingsPath
+    // native 启动时强制复核官方 status 与管理员开关；专用 settings 仍走原渠道。
+    const claudeExecutable = nativeMode
+      ? await resolveNativeProviderExecutable('claude', { force: true })
+      : await resolveProviderExecutable('claude')
     // 确保承载 agent 窗口的 tmux hub session 已经存在。
     ensureHub()
     // 运行标记默认写在 cwd 下；调用方传 flagRoot 时优先使用仓库根等稳定路径。
@@ -1064,10 +1056,10 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       fs.writeFileSync(mcpConfigPath, JSON.stringify({ mcpServers }))
       claudeArgs.push(`--mcp-config ${shellQuote(mcpConfigPath)}`)
     }
-    // settings 参数优先使用调用方指定文件，否则使用默认 Mobius Claude settings。
+    // native 模式不传 --settings，Claude Code 直接使用同一 HOME 的官方登录态/默认配置。
     const settingsArg = finalSettingsPath
       ? `--settings ${shellQuote(finalSettingsPath)}`
-      : `--settings "$HOME/.claude/mobiusdefault.settings.json"`
+      : ''
 
     // bash -lc 链: 按 Session 配置决定是否用 proxychains, 但都清理 IDE IPC 环境。
     // 构造 bash -lc 要执行的命令片段；数组里的 null 会在后面过滤掉。
@@ -1081,9 +1073,13 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       // 根据代理开关选择 proxychains 包裹 claude，或直接 exec claude。
       // settingsArg 两分支都要带: 代理分支此前漏拼 --settings, 导致开代理的 session
       // settings 文件 (channel/key/权限/withproxy.json) 被静默丢弃回退全局默认。
-      finalUseProxy
-        ? `exec proxychains -q -f "$HOME/proxy_claude.conf" claude ${settingsArg} ${claudeArgs.join(' ')}`
-        : `exec claude ${settingsArg} ${claudeArgs.join(' ')}`,
+      buildClaudeCliExec({
+        executable: claudeExecutable,
+        useProxy: finalUseProxy,
+        proxyConfig: PROXY_CONF,
+        settingsArg,
+        claudeArgs,
+      }),
       // 删除空片段，并用 && 保证前一步失败时不继续执行。
     ].filter(Boolean).join(' && ')
 
@@ -1092,11 +1088,12 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     ensureProjectTrusted(cwd)
 
     // 在 hub session 下创建后台 tmux window，并在 cwd 中执行 bash -lc cmd。
-    const r = tmux(['new-window', '-d', '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', cmd])
+    // 显式固定 HOME，避免长寿命 tmux server 保留旧环境；不读取或复制 ~/.claude 凭据。
+    const r = tmux(['new-window', '-d', '-e', `HOME=${HOME}`, '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', cmd])
     // tmux 创建失败时把 stderr 带出，方便定位命令层问题。
     if (r.status !== 0) throw new Error(`tmux new-window 失败: ${r.stderr}`)
     // 记录窗口、目录、Claude 会话、代理和 settings 信息。
-    log(`[tmux-claude-code] started: window=${sessionId} cwd=${cwd} claude_session=${claudeSessionId} use_proxy=${finalUseProxy ? 1 : 0}${finalSettingsPath ? ` settings=${finalSettingsPath}` : ''}`)
+    log(`[tmux-claude-code] started: window=${sessionId} cwd=${cwd} claude_session=${claudeSessionId} use_proxy=${finalUseProxy ? 1 : 0} mode=${nativeMode ? 'native' : 'settings'}${finalSettingsPath ? ` settings=${finalSettingsPath}` : ''}`)
 
     // 等 TUI ready (底栏 "bypass permissions on" 出现)
     // 设置等待 TUI ready 的截止时间。
@@ -1298,4 +1295,5 @@ module.exports = {
   detectDangerPermission,
   isCompactCompletionUserEvent,
   resolveClaudeProxyMode,
+  buildClaudeCliExec,
 }

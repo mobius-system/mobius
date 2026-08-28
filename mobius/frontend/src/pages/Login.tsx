@@ -23,16 +23,37 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [showPw, setShowPw] = useState(false)
+  const [loginRequired, setLoginRequired] = useState<boolean | null>(null)
   const [passwordRequired, setPasswordRequired] = useState(false)
   const { setAuth, theme, backgroundFlowEnabled, branding } = useStore()
   const usernameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setMounted(true)
-    setTimeout(() => usernameRef.current?.focus(), 400)
     api('/api/auth/config')
-      .then((r: { password_required?: boolean }) => setPasswordRequired(!!r.password_required))
-      .catch(() => setPasswordRequired(false))
+      .then(async (r: { login_required?: boolean; password_required?: boolean }) => {
+        // 兼容未返回 login_required 的旧后端：仍显示原登录页。
+        const required = r.login_required !== false
+        setLoginRequired(required)
+        setPasswordRequired(required && !!r.password_required)
+        if (required) {
+          setTimeout(() => usernameRef.current?.focus(), 400)
+          return
+        }
+
+        setLoading(true)
+        const result = await api('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        })
+        setAuth(result.token, result.user)
+      })
+      .catch((e) => {
+        setLoginRequired(true)
+        setPasswordRequired(false)
+        setErr(e instanceof Error ? e.message : '自动进入失败')
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   // Apply theme to document
@@ -45,6 +66,19 @@ export default function Login() {
   useEffect(() => {
     document.documentElement.classList.toggle('mobius-bg-flow', backgroundFlowEnabled)
   }, [backgroundFlowEnabled])
+
+  if (loginRequired !== true) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-secondary)' }}>
+        <div className="text-center">
+          {!branding.hideLogo && <MobiusLogo size={64} />}
+          <p className="mt-6 text-sm" style={{ color: 'var(--text-secondary)' }}>
+            {err || (loading ? '正在进入…' : '正在初始化…')}
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   const login = async () => {
     if (!username.trim()) { setErr('请输入账户名'); return }

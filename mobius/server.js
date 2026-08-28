@@ -37,8 +37,7 @@ function readGitCommit() {
 const GIT_COMMIT = readGitCommit();
 const CODE_VERSION = GIT_COMMIT ? `${VERSION}+${GIT_COMMIT}` : VERSION;
 
-// preflight 已经在 agents/tmux-claude-code.js 模块加载时跑过 (proxy_envs.bash / proxy_claude.conf /
-// tmux / proxychains / claude 缺一不可, 缺则 process.exit(1)). 这里不重复.
+// Provider CLI 在实际创建 tmux window 时按绝对路径解析；缺失只影响对应会话，不阻断服务启动。
 const { db } = require('./db');
 
 // ===== Express =====
@@ -365,7 +364,7 @@ function runBootSelfTest() {
   }, delay).unref();
 }
 
-server.listen(PORT, () => {
+function onServerListening() {
   console.log(`[mobius] MOBIUS Mobius listening on http://0.0.0.0:${PORT}`);
   console.log(`[mobius] health: http://0.0.0.0:${PORT}/api/v2/health`);
   console.log(`[mobius] backend: tmux agents (socket=${AGENT_TMUX_SOCKET}, window-per-session) + jsonl-watcher`);
@@ -416,7 +415,48 @@ server.listen(PORT, () => {
   }
   // 部署后自检(后台 fire-and-forget, 失败不影响 server)。
   runBootSelfTest();
-});
+}
+
+async function startHttpServer() {
+  // CLI discovery/status 命令有硬超时且只在启动阶段异步执行。HTTP 开始接收请求前
+  // 再同步预热 Codex catalog。两段预热共享一个总预算，不能顶穿 PM2 10s listen_timeout；
+  // catalog 即使冷失败也会留下非空 gpt-5.5 compatibility snapshot。
+  const startupWarmup = (async () => {
+    try {
+      const providerCliDetection = require('./backend/services/provider-cli-detection.cjs');
+      const codexModelCatalog = require('./backend/services/codex-model-catalog.cjs');
+      const statusesPromise = providerCliDetection.detectProviders();
+      // Codex/Claude probes run in parallel, but catalog discovery only depends
+      // on Codex and should not wait behind an unrelated slow Claude status.
+      await providerCliDetection.detectProvider('codex');
+      const [statuses, catalog] = await Promise.all([
+        statusesPromise,
+        codexModelCatalog.getCatalog({ force: true }),
+      ]);
+      const summary = statuses
+        .map((status) => `${status.provider}:${status.launchReady ? status.launchMode || 'ready' : 'unavailable'}`)
+        .join(', ');
+      console.log(`[mobius/provider-cli] startup detection complete: ${summary}; codex-models=${catalog.models.length} source=${catalog.source}`);
+    } catch (e) {
+      console.warn('[mobius/provider-cli] startup warmup failed; safe cached/fallback models will be used:', e.message);
+    }
+  })();
+  const warmupBudgetMs = 7000;
+  let warmupTimer;
+  const warmupResult = await Promise.race([
+    startupWarmup.then(() => 'complete'),
+    new Promise((resolve) => {
+      warmupTimer = setTimeout(() => resolve('timeout'), warmupBudgetMs);
+    }),
+  ]);
+  if (warmupTimer) clearTimeout(warmupTimer);
+  if (warmupResult === 'timeout') {
+    console.warn(`[mobius/provider-cli] startup warmup exceeded ${warmupBudgetMs}ms; continuing listen while bounded probes settle`);
+  }
+  server.listen(PORT, onServerListening);
+}
+
+startHttpServer();
 
 // 优雅退出
 let shuttingDown = false

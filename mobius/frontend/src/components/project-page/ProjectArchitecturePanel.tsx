@@ -269,7 +269,7 @@ export function ProjectArchitecturePanel({
             </div>
           </div>
           <button onClick={() => setShowPresetModal(true)}
-            className="h-8 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors inline-flex items-center gap-1.5">
+            className="h-8 px-3 rounded-lg text-[12px] bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors border border-[var(--accent-border)] inline-flex items-center gap-1.5">
             <Settings className="w-3.5 h-3.5" strokeWidth={1.75} />
             预设配置
           </button>
@@ -283,8 +283,8 @@ export function ProjectArchitecturePanel({
           <RefreshCw className={`w-3.5 h-3.5 ${starting ? 'animate-spin' : ''}`} strokeWidth={1.75} />
           {starting ? '创建中...' : '创建或刷新项目结构图'}
         </button>
-        {err && <div className="mt-3 text-[12px] text-red-400">{err}</div>}
-        {notice && <div className="mt-3 text-[12px] text-emerald-400">{notice}</div>}
+        {err && <div className="mt-3 text-[12px] text-[var(--status-danger)]">{err}</div>}
+        {notice && <div className="mt-3 text-[12px] text-[var(--status-success)]">{notice}</div>}
       </div>
 
       <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
@@ -329,7 +329,7 @@ export function ProjectArchitecturePanel({
         {imageLoading ? (
           <div className="text-[12px] py-8 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
         ) : imageErr ? (
-          <div className="text-[12px] py-8 text-center text-red-400">{imageErr}</div>
+          <div className="text-[12px] py-8 text-center text-[var(--status-danger)]">{imageErr}</div>
         ) : imageExists && imageUrl ? (
           figureKind === 'html' ? (
             <iframe

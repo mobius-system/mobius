@@ -1,9 +1,10 @@
 import { forwardRef, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
-type AdvancedInteractionAccent = 'blue' | 'emerald' | 'cyan' | 'violet' | 'amber'
+type AdvancedInteractionAccent = 'neutral' | 'blue' | 'emerald' | 'cyan' | 'violet' | 'amber'
 
 const ACCENT_CLASS: Record<AdvancedInteractionAccent, string> = {
+  neutral: 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]',
   blue: 'text-blue-400 hover:bg-blue-500/10',
   emerald: 'text-emerald-400 hover:bg-emerald-500/10',
   cyan: 'text-cyan-400 hover:bg-cyan-500/10',
