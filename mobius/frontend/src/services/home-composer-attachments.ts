@@ -11,8 +11,6 @@ export const HOME_COMPOSER_IMAGE_EXTENSIONS = [
   '.heif',
 ] as const
 
-export const HOME_COMPOSER_IMAGE_ACCEPT = HOME_COMPOSER_IMAGE_EXTENSIONS.join(',')
-
 export function isImagePath(value: string): boolean {
   const path = String(value || '').trim().toLowerCase().split(/[?#]/, 1)[0]
   return HOME_COMPOSER_IMAGE_EXTENSIONS.some(extension => path.endsWith(extension))
@@ -36,7 +34,7 @@ function appendUniqueFile(target: File[], seen: Set<File>, signatures: Set<strin
   target.push(file)
 }
 
-export function extractClipboardImageFiles(
+export function extractClipboardFiles(
   clipboardData: Pick<DataTransfer, 'files' | 'items'> | null | undefined,
 ): File[] {
   if (!clipboardData) return []
@@ -46,18 +44,18 @@ export function extractClipboardImageFiles(
 
   for (let index = 0; index < clipboardData.files.length; index += 1) {
     const file = clipboardData.files[index]
-    if (file && isImageFile(file)) appendUniqueFile(files, seen, signatures, file)
+    appendUniqueFile(files, seen, signatures, file)
   }
   for (let index = 0; index < clipboardData.items.length; index += 1) {
     const item = clipboardData.items[index]
-    if (!item || !String(item.type || '').toLowerCase().startsWith('image/')) continue
+    if (!item || (item.kind && item.kind !== 'file')) continue
     appendUniqueFile(files, seen, signatures, item.getAsFile())
   }
 
   return files
 }
 
-export function extractDroppedImageFiles(
+export function extractDroppedFiles(
   dataTransfer: Pick<DataTransfer, 'files' | 'items'> | null | undefined,
 ): File[] {
   if (!dataTransfer) return []
@@ -67,13 +65,12 @@ export function extractDroppedImageFiles(
 
   for (let index = 0; index < dataTransfer.files.length; index += 1) {
     const file = dataTransfer.files[index]
-    if (file && isImageFile(file)) appendUniqueFile(files, seen, signatures, file)
+    appendUniqueFile(files, seen, signatures, file)
   }
   for (let index = 0; index < dataTransfer.items.length; index += 1) {
     const item = dataTransfer.items[index]
     if (!item || item.kind !== 'file') continue
-    const file = item.getAsFile()
-    if (file && isImageFile(file)) appendUniqueFile(files, seen, signatures, file)
+    appendUniqueFile(files, seen, signatures, item.getAsFile())
   }
 
   return files

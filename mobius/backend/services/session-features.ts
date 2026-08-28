@@ -3,6 +3,7 @@ import * as path from 'path';
 import { spawnSync } from 'child_process';
 
 const FEATURE_SCHEMA_VERSION = 1;
+const SCAN_CHECKPOINT_FEATURE_TYPE = 'scan_checkpoint';
 const MAX_FEATURE_SOURCE_BYTES = 256 * 1024 * 1024;
 const MAX_GIT_DIFF_BUFFER = 8 * 1024 * 1024;
 
@@ -209,15 +210,17 @@ function readFeatureEntries(featurePath: any): any[] {
   return entries;
 }
 
-function lastFeatureState(entries: any[]): { lastTimestamp: string | null; lastOffset: number } {
+function lastFeatureState(entries: any[]): { lastTimestamp: string | null; lastOffset: number; hasCheckpoint: boolean } {
   let lastTimestamp = null;
   let lastOffset = 0;
+  let hasCheckpoint = false;
   for (const entry of entries) {
-    if (entry?.timestamp) lastTimestamp = entry.timestamp;
+    if (entry?.feature_type === SCAN_CHECKPOINT_FEATURE_TYPE) hasCheckpoint = true;
+    else if (entry?.timestamp) lastTimestamp = entry.timestamp;
     const offset = Number(entry?.source_offset_end);
     if (Number.isFinite(offset) && offset > lastOffset) lastOffset = offset;
   }
-  return { lastTimestamp, lastOffset };
+  return { lastTimestamp, lastOffset, hasCheckpoint };
 }
 
 function appendFeatureEntries(featurePath: string, entries: any[]): void {
@@ -248,6 +251,24 @@ function scanSourceBuffer(buffer: Buffer, sourceJsonl: string, startOffset: numb
   }
 }
 
+function completeJsonlBytes(buffer: Buffer): number {
+  if (buffer.length === 0) return 0;
+  if (buffer[buffer.length - 1] === 10) return buffer.length;
+  const lastNewline = buffer.lastIndexOf(10);
+  return lastNewline >= 0 ? lastNewline + 1 : 0;
+}
+
+function scanCheckpoint(sourceJsonl: string, scannedOffset: number, sourceSize: number): any {
+  return {
+    schema_version: FEATURE_SCHEMA_VERSION,
+    feature_type: SCAN_CHECKPOINT_FEATURE_TYPE,
+    source_jsonl: sourceJsonl,
+    source_offset_start: scannedOffset,
+    source_offset_end: scannedOffset,
+    source_size: sourceSize,
+  };
+}
+
 function scanSessionFeatures(jsonlPath: any): any {
   if (!jsonlPath || !fs.existsSync(jsonlPath)) {
     return {
@@ -262,7 +283,7 @@ function scanSessionFeatures(jsonlPath: any): any {
 
   const featurePath = featureJsonlPathOf(jsonlPath);
   let existing = readFeatureEntries(featurePath);
-  let { lastTimestamp, lastOffset } = lastFeatureState(existing);
+  let { lastTimestamp, lastOffset, hasCheckpoint } = lastFeatureState(existing);
   const stat = fs.statSync(jsonlPath);
   if (stat.size > MAX_FEATURE_SOURCE_BYTES) {
     throw new Error(`jsonl 文件超过特征扫描安全上限: ${stat.size} bytes`);
@@ -273,6 +294,7 @@ function scanSessionFeatures(jsonlPath: any): any {
     existing = [];
     lastTimestamp = null;
     lastOffset = 0;
+    hasCheckpoint = false;
     reset = true;
     if (featurePath) fs.writeFileSync(featurePath, '');
   }
@@ -287,10 +309,16 @@ function scanSessionFeatures(jsonlPath: any): any {
     try { fs.closeSync(fd); } catch {}
   }
 
-  const known = new Set(existing.map(featureKey).concat(existing.map(legacyFeatureKey)));
+  // Codex/Claude 正在追加 JSONL 时，尾行可能尚未写完。检查点只推进到最后一个
+  // 换行符，避免把暂时无法解析的半行永久跳过。
+  const completeLength = completeJsonlBytes(buffer);
+  const scanBuffer = completeLength === buffer.length ? buffer : buffer.subarray(0, completeLength);
+  const scannedToOffset = startOffset + completeLength;
+  const existingFeatures = existing.filter((entry) => entry?.feature_type !== SCAN_CHECKPOINT_FEATURE_TYPE);
+  const known = new Set(existingFeatures.map(featureKey).concat(existingFeatures.map(legacyFeatureKey)));
   const lastMs = timestampMs(lastTimestamp);
   const appended: any[] = [];
-  scanSourceBuffer(buffer, jsonlPath, startOffset, (entry, meta) => {
+  scanSourceBuffer(scanBuffer, jsonlPath, startOffset, (entry, meta) => {
     const entryTs = timestampOf(entry);
     const entryMs = timestampMs(entryTs);
     const fallbackTimestampScan = startOffset === 0 && existing.length > 0 && lastMs !== null && entryMs !== null;
@@ -307,13 +335,19 @@ function scanSessionFeatures(jsonlPath: any): any {
     }
   });
 
-  appendFeatureEntries(featurePath || '', appended);
+  // 扫描进度必须独立于是否识别到 feature。旧实现仅从最后一条 feature 推导 offset，
+  // 无文件改动的会话会永远从 0 开始，而 feature 后的长尾也会被每次重复解析。
+  const checkpointNeeded = !hasCheckpoint || scannedToOffset > startOffset;
+  appendFeatureEntries(featurePath || '', checkpointNeeded
+    ? [...appended, scanCheckpoint(jsonlPath, scannedToOffset, stat.size)]
+    : appended);
   return {
     source_jsonl: jsonlPath,
     feature_jsonl: featurePath,
-    entries: existing.concat(appended),
+    entries: existingFeatures.concat(appended),
     appended: appended.length,
     scanned_from_offset: startOffset,
+    scanned_to_offset: scannedToOffset,
     reset,
   };
 }

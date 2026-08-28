@@ -119,6 +119,33 @@ assert.deepStrictEqual(files.map((file) => file.display_path), ['README.md', 'se
 scanned = scanSessionFeatures(jsonlPath);
 assert.strictEqual(scanned.appended, 0);
 
+const checkpointCacheSize = fs.statSync(featureJsonlPathOf(jsonlPath)).size;
+assert.strictEqual(scanned.scanned_to_offset, fs.statSync(jsonlPath).size, 'scan checkpoint must reach the current JSONL end');
+scanned = scanSessionFeatures(jsonlPath);
+assert.strictEqual(scanned.scanned_from_offset, fs.statSync(jsonlPath).size, 'repeat scan must resume at the persisted checkpoint even when no feature was appended');
+assert.strictEqual(fs.statSync(featureJsonlPathOf(jsonlPath)).size, checkpointCacheSize, 'unchanged JSONL must not append duplicate checkpoints');
+
+const emptyFeatureJsonlPath = path.join(tmp, 'no-features.jsonl');
+appendJsonl(emptyFeatureJsonlPath, {
+  timestamp: '2026-06-14T00:00:04.000Z',
+  type: 'event_msg',
+  payload: { type: 'agent_message', message: 'no file or command feature' },
+});
+let emptyFeatureScan = scanSessionFeatures(emptyFeatureJsonlPath);
+assert.strictEqual(emptyFeatureScan.appended, 0);
+assert.strictEqual(emptyFeatureScan.scanned_from_offset, 0);
+emptyFeatureScan = scanSessionFeatures(emptyFeatureJsonlPath);
+assert.strictEqual(emptyFeatureScan.scanned_from_offset, fs.statSync(emptyFeatureJsonlPath).size, 'zero-feature sessions must not be rescanned from byte zero');
+
+const partialJsonlPath = path.join(tmp, 'partial.jsonl');
+fs.writeFileSync(partialJsonlPath, '{"type":"event_msg"');
+let partialScan = scanSessionFeatures(partialJsonlPath);
+assert.strictEqual(partialScan.scanned_to_offset, 0, 'an incomplete live JSONL line must not advance the checkpoint');
+fs.appendFileSync(partialJsonlPath, ',"payload":{"type":"agent_message"}}\n');
+partialScan = scanSessionFeatures(partialJsonlPath);
+assert.strictEqual(partialScan.scanned_from_offset, 0);
+assert.strictEqual(partialScan.scanned_to_offset, fs.statSync(partialJsonlPath).size, 'checkpoint must advance after the live line is completed');
+
 runGit(projectRoot, ['init']);
 runGit(projectRoot, ['config', 'user.email', 'test@example.com']);
 runGit(projectRoot, ['config', 'user.name', 'Mobius Test']);

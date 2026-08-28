@@ -124,11 +124,11 @@ const homeSurfaceSource = sourceBetween(
   'function AllProjectsView',
   '默认 Home',
 )
-const homeExpandToggleSource = sourceBetween(
+const homeAttachmentButtonSource = sourceBetween(
   homeSurfaceSource,
-  '<button\n                      type="button"\n                      data-home-composer-expand-toggle',
+  '<button\n                      type="button"\n                      data-home-composer-attachment-button',
   '</button>',
-  'Home Composer 展开按钮',
+  'Home Composer 附件按钮',
 )
 const homeSendButtonSource = sourceBetween(
   homeSurfaceSource,
@@ -353,6 +353,7 @@ for (const slot of ['Topbar', 'Preview', 'Right', 'Dock']) {
 assert.match(workPageSource, /data-workbench-chat-host[\s\S]*data-workbench-editor-host[\s\S]*data-workbench-chat-instance="primary"[\s\S]*hidden=\{!activeSessionLoaded\}[\s\S]*<ChatArea[\s\S]*layout="easy"[\s\S]*chrome="shell"[\s\S]*shellChromeActive=\{activeSessionLoaded\}[\s\S]*workspaceEditor=/, '默认 Session 必须把按需编辑器宿主与唯一 easy ChatArea 放在稳定槽位，并在加载期隐藏 shell chrome')
 assert.match(workPageSource, /hidden=\{!activeSessionLoaded\}[\s\S]*className="workbench-session-chat__surface flex/, '切换 Session 时保活的旧 Chat 必须使用不会参与加载期布局的专用 surface')
 assert.match(cssSource, /\.workbench-session-chat__surface\[hidden\]\s*\{[\s\S]*?display:\s*none\s*!important;[\s\S]*?\}/, '隐藏的旧 Chat 必须强制退出 flex 布局，避免与加载占位并排后发生宽度跳变')
+assert.match(chatSource, /if \(toolFilesReady \|\| toolFilesLoading\) return[\s\S]*?void loadToolFiles\(\)/, 'Session 文件抽屉必须把空结果视为已完成，避免无限重复扫描')
 assert.match(easyModePageSource, /<ChatArea[\s\S]*layout="easy"/, 'EasyModePage 必须显式使用 easy ChatArea')
 assert.match(easyIssuePageSource, /<ChatArea layout="easy"/, '简易 Issue 必须显式使用 easy ChatArea')
 assert.match(legacyIssuePageSource, /layout=\{\(useEditorChat \|\| useCodeConversation\) \? 'stacked' : 'default'\}/, '常规 Issue 必须只使用 default / stacked ChatArea')
@@ -382,12 +383,11 @@ assert.match(chatSource, /useComposerInputLayout\(\{[\s\S]*textareaRef: inputRef
 assert.match(chatSource, /data-composer-expand-toggle[\s\S]*inputExpanded \? <ChevronDown[\s\S]*<ChevronUp/, 'easy Session Composer 必须提供内联 chevron 展开/收起按钮')
 assert.match(chatSource, /\{inputExpanded && layout !== 'easy' && \(/, '长文本 modal 只能保留给非 easy 布局')
 assert.match(chatSource, /maxHeight: layout === 'easy' \? easyComposerLayout\.maxHeight : '70vh'/, 'easy Composer 必须使用动态高度，常规 Composer 必须保留原 70vh 上限')
-assert.match(homeSurfaceSource, /useComposerInputLayout\(\{[\s\S]*textareaRef: composerRef,[\s\S]*value: prompt,[\s\S]*expanded: composerExpanded,[\s\S]*isMobile: isComposerMobile/, 'Home Composer 必须复用共享输入高度策略')
-assert.match(homeSurfaceSource, /const \[composerExpanded, setComposerExpanded\] = useState\(false\)/, 'Home Composer 必须默认折叠，避免空态触发 180px 展开下限')
-assert.match(homeSurfaceSource, /data-home-composer-expand-toggle[\s\S]*ChevronDown[\s\S]*ChevronUp/, 'Home Composer 必须提供内联 chevron 展开/收起按钮')
+assert.match(homeSurfaceSource, /useComposerInputLayout\(\{[\s\S]*textareaRef: composerRef,[\s\S]*value: prompt,[\s\S]*expanded: false,[\s\S]*isMobile: isComposerMobile/, 'Home Composer 必须复用共享输入高度策略并保持自动增长')
+assert.doesNotMatch(homeSurfaceSource, /composerExpanded|data-home-composer-expand-toggle|ChevronDown|ChevronUp/, 'Home Composer 不得保留无意义的展开/收起按钮')
+assert.match(homeSurfaceSource, /data-home-composer-attachment-button[\s\S]*aria-label="选择附件"[\s\S]*<Paperclip/, 'Home Composer 必须在发送按钮左侧提供通用附件入口')
 assert.match(homeSurfaceSource, /overflowY: homeComposerLayout\.overflowY[\s\S]*color: 'var\(--text-primary\)'/, 'Home Composer 必须保留共享动态 overflow')
-assert.match(homeExpandToggleSource, /color: 'var\(--text-secondary\)'[\s\S]*borderColor: composerExpanded \? 'var\(--border-strong\)' : 'var\(--border-default\)'/, 'Home 展开按钮必须使用中性文字和边框表达状态')
-assert.doesNotMatch(homeExpandToggleSource, /--accent-primary|--accent-border|--surface-active/, 'Home 展开按钮不得铺高饱和 accent 或 active 表面')
+assert.match(homeAttachmentButtonSource, /onClick=\{openFilePicker\}[\s\S]*title="添加附件"/, 'Home 附件按钮必须打开通用文件选择器')
 assert.match(homeSendButtonSource, /home-composer-send[\s\S]*rounded-full/, 'Home 发送必须使用专用的紧凑圆形主动作')
 assert.doesNotMatch(homeSendButtonSource, /btn-primary|px-4/, 'Home 发送不得继续继承天蓝胶囊主按钮')
 assert.match(homeRecentProjectsSource, /borderColor: project\.id === selectedProjectId \? 'var\(--border-strong\)'[\s\S]*background: project\.id === selectedProjectId \? 'var\(--surface-active\)'/, 'Home 最近项目选中态必须使用中性强边框与 active 表面')

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, ClipboardEvent, DragEvent } from 'react'
-import { LoaderCircle, RefreshCw, X, ZoomIn } from 'lucide-react'
-import { uploadAttachmentFile } from './attachments'
+import { LoaderCircle, Paperclip, RefreshCw, X, ZoomIn } from 'lucide-react'
+import { formatFileSize, uploadAttachmentFile } from './attachments'
 import {
-  extractClipboardImageFiles,
-  extractDroppedImageFiles,
+  extractClipboardFiles,
+  extractDroppedFiles,
   isImageFile,
 } from '../services/home-composer-attachments'
 
@@ -14,6 +14,7 @@ export type HomeComposerAttachment = {
   size: number
   sourceFile: File
   previewUrl: string
+  kind: 'image' | 'file'
   status: 'uploading' | 'done' | 'error'
   remotePath?: string
   error?: string
@@ -46,7 +47,7 @@ export function useHomeComposerAttachments({
   onAttachmentsChanged?: () => void
 }) {
   const [attachments, setAttachments] = useState<HomeComposerAttachment[]>([])
-  const [isDraggingImages, setIsDraggingImages] = useState(false)
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false)
   const attachmentsRef = useRef<HomeComposerAttachment[]>([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -85,17 +86,21 @@ export function useHomeComposerAttachments({
   }, [projectId])
 
   const addFiles = useCallback((values: FileList | File[]) => {
-    const files = Array.from(values).filter(isImageFile)
+    const files = Array.from(values)
     if (files.length === 0) return
     onAttachmentsChanged?.()
-    const next = files.map(file => ({
-      id: makeAttachmentId(),
-      name: file.name || 'image',
-      size: file.size || 0,
-      sourceFile: file,
-      previewUrl: URL.createObjectURL(file),
-      status: 'uploading' as const,
-    }))
+    const next = files.map(file => {
+      const kind = isImageFile(file) ? 'image' as const : 'file' as const
+      return {
+        id: makeAttachmentId(),
+        name: file.name || 'attachment',
+        size: file.size || 0,
+        sourceFile: file,
+        previewUrl: kind === 'image' ? URL.createObjectURL(file) : '',
+        kind,
+        status: 'uploading' as const,
+      }
+    })
     setAttachments(current => {
       const combined = [...current, ...next]
       attachmentsRef.current = combined
@@ -138,7 +143,7 @@ export function useHomeComposerAttachments({
   }, [onAttachmentsChanged])
 
   const handlePaste = useCallback((event: ClipboardEvent<HTMLElement>) => {
-    const files = extractClipboardImageFiles(event.clipboardData)
+    const files = extractClipboardFiles(event.clipboardData)
     if (files.length === 0) return
     event.preventDefault()
     addFiles(files)
@@ -147,19 +152,19 @@ export function useHomeComposerAttachments({
   const handleDragOver = useCallback((event: DragEvent<HTMLElement>) => {
     if (!isFileDrag(event.dataTransfer?.types)) return
     event.preventDefault()
-    setIsDraggingImages(true)
+    setIsDraggingFiles(true)
   }, [])
 
   const handleDragLeave = useCallback((event: DragEvent<HTMLElement>) => {
     const nextTarget = event.relatedTarget
-    if (!nextTarget || !event.currentTarget.contains(nextTarget as Node)) setIsDraggingImages(false)
+    if (!nextTarget || !event.currentTarget.contains(nextTarget as Node)) setIsDraggingFiles(false)
   }, [])
 
   const handleDrop = useCallback((event: DragEvent<HTMLElement>) => {
-    setIsDraggingImages(false)
+    setIsDraggingFiles(false)
     if (!isFileDrag(event.dataTransfer?.types) && event.dataTransfer.files.length === 0) return
     event.preventDefault()
-    const files = extractDroppedImageFiles(event.dataTransfer)
+    const files = extractDroppedFiles(event.dataTransfer)
     if (files.length === 0) return
     addFiles(files)
   }, [addFiles])
@@ -173,7 +178,7 @@ export function useHomeComposerAttachments({
     attachments,
     readyAttachments: attachments.filter(attachment => attachment.status === 'done' && attachment.remotePath),
     anyUploading: attachments.some(attachment => attachment.status === 'uploading'),
-    isDraggingImages,
+    isDraggingFiles,
     fileInputRef,
     openFilePicker: () => fileInputRef.current?.click(),
     handleFileInputChange,
@@ -242,26 +247,44 @@ export function HomeComposerAttachments({
         <div className="mb-1.5 flex max-h-24 flex-wrap items-start gap-2 overflow-y-auto px-2 pt-1" data-home-composer-attachments>
           {attachments.map(attachment => (
             <div key={attachment.id} className="group relative flex items-center gap-1.5" title={attachment.error || attachment.name}>
-              <button
-                type="button"
-                onClick={() => setPreviewId(attachment.id)}
-                className="relative block h-10 w-10 cursor-zoom-in overflow-hidden rounded-[var(--radius-control)] border"
-                style={{ background: 'var(--surface-base)', borderColor: 'var(--border-strong)' }}
-                aria-label={`放大图片 ${attachment.name}`}
-              >
-                <img src={attachment.previewUrl} alt={attachment.name} className="h-full w-full object-cover" />
-                <span className="absolute inset-0 inline-flex items-center justify-center bg-black/35 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                  <ZoomIn className="h-3.5 w-3.5" strokeWidth={2.2} />
-                </span>
-                {attachment.status === 'uploading' && (
-                  <span className="absolute inset-0 inline-flex items-center justify-center bg-black/45 text-white">
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
+              {attachment.kind === 'image' ? (
+                <button
+                  type="button"
+                  onClick={() => setPreviewId(attachment.id)}
+                  className="relative block h-10 w-10 cursor-zoom-in overflow-hidden rounded-[var(--radius-control)] border"
+                  style={{ background: 'var(--surface-base)', borderColor: 'var(--border-strong)' }}
+                  aria-label={`放大图片 ${attachment.name}`}
+                >
+                  <img src={attachment.previewUrl} alt={attachment.name} className="h-full w-full object-cover" />
+                  <span className="absolute inset-0 inline-flex items-center justify-center bg-black/35 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    <ZoomIn className="h-3.5 w-3.5" strokeWidth={2.2} />
                   </span>
-                )}
-                {attachment.status === 'error' && (
-                  <span className="absolute inset-0 inline-flex items-center justify-center bg-black/65 text-[10px] font-medium text-white">失败</span>
-                )}
-              </button>
+                  {attachment.status === 'uploading' && (
+                    <span className="absolute inset-0 inline-flex items-center justify-center bg-black/45 text-white">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    </span>
+                  )}
+                  {attachment.status === 'error' && (
+                    <span className="absolute inset-0 inline-flex items-center justify-center bg-black/65 text-[10px] font-medium text-white">失败</span>
+                  )}
+                </button>
+              ) : (
+                <div
+                  className="flex h-10 min-w-0 max-w-[220px] items-center gap-2 rounded-[var(--radius-control)] border px-2.5"
+                  style={{ color: 'var(--text-secondary)', background: 'var(--surface-base)', borderColor: 'var(--border-strong)' }}
+                  aria-label={`文件附件 ${attachment.name}`}
+                >
+                  {attachment.status === 'uploading'
+                    ? <LoaderCircle className="h-3.5 w-3.5 flex-shrink-0 animate-spin" />
+                    : <Paperclip className="h-3.5 w-3.5 flex-shrink-0" />}
+                  <span className="min-w-0">
+                    <span className="block max-w-[150px] truncate text-[11px] font-medium">{attachment.name}</span>
+                    <span className="block text-[9px]" style={{ color: attachment.status === 'error' ? 'var(--status-danger)' : 'var(--text-muted)' }}>
+                      {attachment.status === 'error' ? '上传失败' : formatFileSize(attachment.size)}
+                    </span>
+                  </span>
+                </div>
+              )}
               {attachment.status === 'error' && (
                 <button
                   type="button"

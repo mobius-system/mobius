@@ -2671,9 +2671,11 @@ export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeAct
 
   useEffect(() => {
     if (!toolDrawerOpen || (activeToolTab !== 'files' && activeToolTab !== 'diff')) return
-    if (toolFiles.length || toolFilesLoading || toolFilesError) return
+    // 空结果也是一次已完成的扫描。若只用 files.length 判断，0 个文件时 finally
+    // 刚把 loading 置回 false 就会再次请求，导致面板永久显示“扫描中”。
+    if (toolFilesReady || toolFilesLoading) return
     void loadToolFiles()
-  }, [activeToolTab, loadToolFiles, toolDrawerOpen, toolFiles.length, toolFilesError, toolFilesLoading])
+  }, [activeToolTab, loadToolFiles, toolDrawerOpen, toolFilesLoading, toolFilesReady])
 
   const selectedToolFile = useMemo(
     () => toolFiles.find(file => sessionFileMatches(file, selectedToolFilePath)) || null,

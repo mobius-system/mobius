@@ -17,6 +17,10 @@ test('有图片附件时拼出与会话输入框一致的附件块', () => {
     composeConversationPrompt('', [{ kind: 'image', path: '/uploads/only-image.webp' }]),
     '[附件]\n- [图片] /uploads/only-image.webp',
   )
+  assert.equal(
+    composeConversationPrompt('分析文档', [{ kind: 'file', path: '/uploads/spec.pdf' }]),
+    '[附件]\n- [文件] /uploads/spec.pdf\n\n分析文档',
+  )
 })
 
 test('无附件时 prompt 行为不变', () => {

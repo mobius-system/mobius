@@ -252,7 +252,7 @@ assert.equal(failedBurst.type, 'burst')
 if (failedBurst.type === 'burst') {
   assert.equal(failedBurst.hasError, true)
   assert.equal(failedBurst.defaultExpanded, true)
-  assert.equal(failedBurst.title, '运行了命令 · 含失败')
+  assert.equal(failedBurst.title, '已读取文件并运行了命令 · 含失败')
 }
 
 const framed = splitEasyUserPrompt('以下信息描述了你正在协助的用户、当前Project、Issue/Research 与 Session.\n\n## 用户\n- 姓名: admin\n\n---\n\n## 用户的问题\n调研婚恋 AI 产品')

@@ -3,18 +3,16 @@ import { useLocation, useParams, useNavigate, useSearchParams } from 'react-rout
 import {
   Activity,
   Brain,
-  ChevronDown,
-  ChevronUp,
   CircleDot,
   Database,
   Eye,
   EyeOff,
   FlaskConical,
   Folder,
-  ImagePlus,
   LoaderCircle,
   MessageSquare,
   MoreHorizontal,
+  Paperclip,
   Plus,
   Search,
   Send,
@@ -37,7 +35,6 @@ import { useLayoutMode } from '../services/layout-mode'
 import { useComposerInputLayout, useComposerMobileLayout } from '../components/useComposerInputLayout'
 import { HomeModelHarnessSelect } from '../components/home-model-harness-select'
 import { HomeComposerAttachments, useHomeComposerAttachments } from '../components/home-composer-attachments'
-import { HOME_COMPOSER_IMAGE_ACCEPT } from '../services/home-composer-attachments'
 import {
   readLastHomeModel,
   readLastHomeProjectId,
@@ -322,7 +319,6 @@ function HomeSurface() {
   const [sendError, setSendError] = useState('')
   const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
-  const [composerExpanded, setComposerExpanded] = useState(false)
   const invalidateComposerCheckpoint = useCallback(() => {
     setSendError('')
     setCheckpoint(null)
@@ -331,7 +327,7 @@ function HomeSurface() {
     attachments,
     readyAttachments,
     anyUploading,
-    isDraggingImages,
+    isDraggingFiles,
     fileInputRef,
     openFilePicker,
     handleFileInputChange,
@@ -350,7 +346,7 @@ function HomeSurface() {
   const homeComposerLayout = useComposerInputLayout({
     textareaRef: composerRef,
     value: prompt,
-    expanded: composerExpanded,
+    expanded: false,
     isMobile: isComposerMobile,
   })
 
@@ -443,7 +439,7 @@ function HomeSurface() {
       const created = await createDefaultConversation({
         projectId: selectedProjectId,
         prompt,
-        attachments: readyAttachments.map(attachment => ({ kind: 'image', path: attachment.remotePath || '' })),
+        attachments: readyAttachments.map(attachment => ({ kind: attachment.kind, path: attachment.remotePath || '' })),
         model: selectedModel,
         checkpoint,
       })
@@ -510,10 +506,10 @@ function HomeSurface() {
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
               >
-                {isDraggingImages && (
+                {isDraggingFiles && (
                   <div className="pointer-events-none absolute inset-0 z-20 rounded-[var(--radius-composer,22px)] p-1" style={{ background: 'var(--surface-composer)' }}>
                     <div className="flex h-full items-center justify-center rounded-[var(--radius-control)] border border-dashed" style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-strong)', background: 'var(--surface-active)' }}>
-                      <span className="text-[12px] font-medium">松开以添加图片</span>
+                      <span className="text-[12px] font-medium">松开以添加附件</span>
                     </div>
                   </div>
                 )}
@@ -521,7 +517,6 @@ function HomeSurface() {
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept={HOME_COMPOSER_IMAGE_ACCEPT}
                   className="hidden"
                   onChange={handleFileInputChange}
                 />
@@ -544,16 +539,6 @@ function HomeSurface() {
                   }} />
                 <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t pt-2" style={{ borderColor: 'color-mix(in srgb, var(--border-default) 72%, transparent)' }}>
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={openFilePicker}
-                      disabled={sending}
-                      className="composer-icon-btn inline-flex h-8 w-8 flex-shrink-0 items-center justify-center disabled:opacity-40"
-                      aria-label="选择图片"
-                      title="添加图片"
-                    >
-                      <ImagePlus className="h-4 w-4" strokeWidth={1.8} />
-                    </button>
                     <label className="home-composer-project-select workbench-control-md flex min-w-0 items-center gap-2 px-2.5 text-[11px]" style={{ color: 'var(--text-muted)', background: 'var(--surface-control)' }}>
                       <Folder className="h-3.5 w-3.5 flex-shrink-0" />
                       <select value={selectedProjectId} onChange={event => selectHomeProject(event.target.value)}
@@ -574,22 +559,14 @@ function HomeSurface() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      data-home-composer-expand-toggle
-                      aria-label={composerExpanded ? '收起输入框' : '展开输入框'}
-                      aria-pressed={composerExpanded}
-                      title={composerExpanded ? '收起输入框' : '展开输入框'}
-                      onClick={() => {
-                        setComposerExpanded(value => !value)
-                        window.requestAnimationFrame(() => composerRef.current?.focus())
-                      }}
-                      className="workbench-control-md inline-flex w-[var(--control-height-md)] items-center justify-center border transition-colors hover:bg-[var(--surface-control-hover)]"
-                      style={{
-                        color: 'var(--text-secondary)',
-                        borderColor: composerExpanded ? 'var(--border-strong)' : 'var(--border-default)',
-                        background: 'var(--surface-control)',
-                      }}
+                      data-home-composer-attachment-button
+                      onClick={openFilePicker}
+                      disabled={sending}
+                      className="composer-icon-btn inline-flex h-8 w-8 flex-shrink-0 items-center justify-center disabled:opacity-40"
+                      aria-label="选择附件"
+                      title="添加附件"
                     >
-                      {composerExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                      <Paperclip className="h-4 w-4" strokeWidth={1.8} />
                     </button>
                     <button type="button" onClick={() => void send()} disabled={!canRequestSend || !selectedModel || sending}
                       aria-label={sending ? '正在开始会话' : anyUploading ? '附件仍在上传' : '发送'}
