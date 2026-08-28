@@ -1532,6 +1532,41 @@ label,
   transition: opacity var(--dur-fast) ease;
 }
 
+/* Home Composer：选择控件保持中性聚焦，唯一发送动作使用紧凑反色圆钮。 */
+.mobius-workbench .home-composer-project-select,
+.mobius-workbench [data-home-model-harness-select] {
+  background: var(--surface-control);
+  transition: border-color var(--dur-fast) ease, background-color var(--dur-fast) ease;
+}
+
+.mobius-workbench .home-composer-project-select:focus-within,
+.mobius-workbench [data-home-model-harness-select]:focus-within {
+  border-color: var(--border-strong) !important;
+  background: var(--surface-control-hover);
+}
+
+.mobius-workbench .home-composer-project-select select:focus-visible,
+.mobius-workbench [data-home-model-harness-select] select:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.mobius-workbench .home-composer-send {
+  color: var(--bg-primary);
+  background: var(--text-primary);
+  transition: opacity var(--dur-fast) ease, background-color var(--dur-fast) ease;
+}
+
+.mobius-workbench .home-composer-send:hover:not(:disabled) {
+  background: var(--text-strong);
+}
+
+.mobius-workbench [data-home-composer-expand-toggle]:focus-visible,
+.mobius-workbench .home-recent-project:focus-visible,
+.mobius-workbench .home-composer-send:focus-visible {
+  outline-color: var(--border-strong);
+}
+
 .workbench-link:hover {
   color: var(--accent-primary) !important;
 }

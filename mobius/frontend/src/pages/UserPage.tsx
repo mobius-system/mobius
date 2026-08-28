@@ -310,7 +310,7 @@ function HomeSurface() {
   const [sendError, setSendError] = useState('')
   const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
-  const [composerExpanded, setComposerExpanded] = useState(true)
+  const [composerExpanded, setComposerExpanded] = useState(false)
   const isComposerMobile = useComposerMobileLayout()
   const homeComposerLayout = useComposerInputLayout({
     textareaRef: composerRef,
@@ -444,7 +444,7 @@ function HomeSurface() {
                 <h1 className="text-[20px] font-semibold tracking-tight" style={{ color: 'var(--text-strong)' }}>想让 Mobius 做什么？</h1>
                 <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>描述目标即可，任务详情和会话会自动创建。</p>
               </div>
-              <div className="workbench-composer p-3">
+              <div className="workbench-composer px-3 py-2.5">
                 <textarea ref={composerRef} data-workbench-composer autoFocus value={prompt} onChange={event => onPromptChange(event.target.value)}
                   onKeyDown={event => {
                     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -461,9 +461,9 @@ function HomeSurface() {
                     overflowY: homeComposerLayout.overflowY,
                     color: 'var(--text-primary)',
                   }} />
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t pt-3" style={{ borderColor: 'var(--border-default)' }}>
+                <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t pt-2" style={{ borderColor: 'color-mix(in srgb, var(--border-default) 72%, transparent)' }}>
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                    <label className="workbench-control-md flex min-w-0 items-center gap-2 border px-2 text-[11px]" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-default)' }}>
+                    <label className="home-composer-project-select workbench-control-md flex min-w-0 items-center gap-2 border px-2 text-[11px]" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-default)' }}>
                       <Folder className="h-3.5 w-3.5 flex-shrink-0" />
                       <select value={selectedProjectId} onChange={event => selectHomeProject(event.target.value)}
                         aria-label="项目"
@@ -492,16 +492,18 @@ function HomeSurface() {
                       }}
                       className="workbench-control-md inline-flex w-[var(--control-height-md)] items-center justify-center border transition-colors hover:bg-[var(--surface-control-hover)]"
                       style={{
-                        color: composerExpanded ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                        borderColor: composerExpanded ? 'var(--accent-border)' : 'var(--border-default)',
-                        background: composerExpanded ? 'var(--surface-active)' : undefined,
+                        color: 'var(--text-secondary)',
+                        borderColor: composerExpanded ? 'var(--border-strong)' : 'var(--border-default)',
+                        background: 'var(--surface-control)',
                       }}
                     >
                       {composerExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                     </button>
                     <button type="button" onClick={() => void send()} disabled={!prompt.trim() || !selectedModel || sending}
-                      className="workbench-control-md flex items-center gap-2 px-4 text-[12px] font-medium btn-primary disabled:opacity-40">
-                      <Send className="h-3.5 w-3.5" /> {sending ? '正在开始…' : '发送'}
+                      aria-label={sending ? '正在开始会话' : '发送'}
+                      title={sending ? '正在开始会话' : '发送'}
+                      className="home-composer-send inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-0 p-0 disabled:opacity-40">
+                      {sending ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                     </button>
                   </div>
                 </div>
@@ -520,8 +522,8 @@ function HomeSurface() {
                 <div className="grid gap-2 sm:grid-cols-3">
                   {usableProjects.slice(0, 3).map((project: any) => (
                     <button key={project.id} type="button" onClick={() => selectHomeProject(project.id)}
-                      className="workbench-panel min-w-0 border px-3 py-3 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
-                      style={{ borderColor: project.id === selectedProjectId ? 'var(--accent-primary)' : 'var(--border-default)', background: project.id === selectedProjectId ? 'var(--surface-active)' : 'var(--surface-card)' }}>
+                      className="home-recent-project workbench-panel min-w-0 border px-3 py-3 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
+                      style={{ borderColor: project.id === selectedProjectId ? 'var(--border-strong)' : 'var(--border-default)', background: project.id === selectedProjectId ? 'var(--surface-active)' : 'var(--surface-card)' }}>
                       <span className="block truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{project.name}</span>
                       <span className="mt-1 block text-[10px]" style={{ color: 'var(--text-muted)' }}>最近活跃 {timeAgo(project.last_session_activity_at || project.last_active)}</span>
                     </button>

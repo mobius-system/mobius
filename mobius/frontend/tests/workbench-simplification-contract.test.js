@@ -90,6 +90,24 @@ const homeSurfaceSource = sourceBetween(
   'function AllProjectsView',
   '默认 Home',
 )
+const homeExpandToggleSource = sourceBetween(
+  homeSurfaceSource,
+  '<button\n                      type="button"\n                      data-home-composer-expand-toggle',
+  '</button>',
+  'Home Composer 展开按钮',
+)
+const homeSendButtonSource = sourceBetween(
+  homeSurfaceSource,
+  'className="home-composer-send',
+  '</button>',
+  'Home Composer 发送按钮',
+)
+const homeRecentProjectsSource = sourceBetween(
+  homeSurfaceSource,
+  '{usableProjects.slice(0, 3)',
+  '</section>',
+  'Home 最近项目',
+)
 const minimalProjectCreateSource = sourceBetween(
   userPageSource,
   'function MinimalProjectCreate',
@@ -177,6 +195,7 @@ const workbenchComposerFocusRule = cssSource.match(/\.workbench-composer:focus-w
 const workbenchComposerTextareaRule = cssSource.match(/\.workbench-composer textarea\s*\{([^}]*)\}/)?.[1] || ''
 const easyChatInputRule = cssSource.match(/\.mobius-chat-body\.mobius-chat-body--easy \.mobius-chat-input\s*\{([^}]*)\}/)?.[1] || ''
 const easyChatInputOcclusionRule = cssSource.match(/\.mobius-chat-body\.mobius-chat-body--easy \.mobius-chat-input::before\s*\{([^}]*)\}/)?.[1] || ''
+const homeComposerSendRule = cssSource.match(/\.mobius-workbench \.home-composer-send\s*\{([^}]*)\}/)?.[1] || ''
 assert.match(workbenchComposerRule, /border:\s*1px solid var\(--border-strong\)/, '共享 Composer 必须使用 --border-strong')
 assert.match(workbenchComposerRule, /border-radius:\s*12px/, '共享 Composer 圆角必须收敛为 12px')
 assert.match(workbenchComposerRule, /background:\s*color-mix\([^;]*var\(--surface-composer\)[^;]*var\(--surface-card\)/, '共享 Composer 必须使用 composer / card surface token')
@@ -188,6 +207,10 @@ assert.match(workbenchComposerTextareaRule, /background:\s*transparent[\s\S]*fon
 assert.match(easyChatInputRule, /background:\s*var\(--surface-messages\)\s*!important/, 'Easy Composer wrapper 必须用不透明消息表面挡住下方内容')
 assert.match(easyChatInputOcclusionRule, /width:\s*100vw[\s\S]*background:\s*linear-gradient\([\s\S]*var\(--surface-messages\)/, 'Easy Composer 必须提供整宽、以 --surface-messages 为实底的底部遮挡层')
 assert.doesNotMatch(easyChatInputRule, /background:\s*transparent\s*!important/, 'Easy Composer wrapper 不得再只有透明背景')
+assert.match(homeComposerSendRule, /color:\s*var\(--bg-primary\)[\s\S]*background:\s*var\(--text-primary\)/, 'Home 发送按钮必须使用主题文字/背景 token 反色，不得回退到天蓝底')
+assert.doesNotMatch(homeComposerSendRule, /--accent-primary|--accent-border/, 'Home 发送按钮不得继承 accent 胶囊外观')
+assert.match(cssSource, /\.mobius-workbench \.home-composer-project-select:focus-within,[\s\S]*?border-color:\s*var\(--border-strong\)\s*!important;/, 'Home 原生项目/模型选择器聚焦必须落在中性强边框')
+assert.match(cssSource, /\[data-home-composer-expand-toggle\]:focus-visible,[\s\S]*?\.home-recent-project:focus-visible,[\s\S]*?outline-color:\s*var\(--border-strong\)/, 'Home 次级控件的键盘焦点不得恢复亮蓝外圈')
 
 const easyPromptRule = easyJsonlCssSource.match(/\.easy-jsonl-prompt\s*\{([^}]*)\}/)?.[1] || ''
 const easyPromptAvatarRule = easyJsonlCssSource.match(/\.easy-jsonl-prompt__avatar\s*\{([^}]*)\}/)?.[1] || ''
@@ -278,8 +301,15 @@ assert.match(chatSource, /data-composer-expand-toggle[\s\S]*inputExpanded \? <Ch
 assert.match(chatSource, /\{inputExpanded && layout !== 'easy' && \(/, '长文本 modal 只能保留给非 easy 布局')
 assert.doesNotMatch(chatSource, /maxHeight:\s*'70vh'/, 'easy Composer 不得再使用 70vh 高度路径')
 assert.match(homeSurfaceSource, /useComposerInputLayout\(\{[\s\S]*textareaRef: composerRef,[\s\S]*value: prompt,[\s\S]*expanded: composerExpanded,[\s\S]*isMobile: isComposerMobile/, 'Home Composer 必须复用共享输入高度策略')
+assert.match(homeSurfaceSource, /const \[composerExpanded, setComposerExpanded\] = useState\(false\)/, 'Home Composer 必须默认折叠，避免空态触发 180px 展开下限')
 assert.match(homeSurfaceSource, /data-home-composer-expand-toggle[\s\S]*ChevronDown[\s\S]*ChevronUp/, 'Home Composer 必须提供内联 chevron 展开/收起按钮')
 assert.match(homeSurfaceSource, /overflowY: homeComposerLayout\.overflowY[\s\S]*color: 'var\(--text-primary\)'/, 'Home Composer 必须保留共享动态 overflow')
+assert.match(homeExpandToggleSource, /color: 'var\(--text-secondary\)'[\s\S]*borderColor: composerExpanded \? 'var\(--border-strong\)' : 'var\(--border-default\)'/, 'Home 展开按钮必须使用中性文字和边框表达状态')
+assert.doesNotMatch(homeExpandToggleSource, /--accent-primary|--accent-border|--surface-active/, 'Home 展开按钮不得铺高饱和 accent 或 active 表面')
+assert.match(homeSendButtonSource, /home-composer-send[\s\S]*rounded-full/, 'Home 发送必须使用专用的紧凑圆形主动作')
+assert.doesNotMatch(homeSendButtonSource, /btn-primary|px-4/, 'Home 发送不得继续继承天蓝胶囊主按钮')
+assert.match(homeRecentProjectsSource, /borderColor: project\.id === selectedProjectId \? 'var\(--border-strong\)'[\s\S]*background: project\.id === selectedProjectId \? 'var\(--surface-active\)'/, 'Home 最近项目选中态必须使用中性强边框与 active 表面')
+assert.doesNotMatch(homeRecentProjectsSource, /--accent-primary|--accent-border/, 'Home 最近项目不得使用整圈 accent 边框')
 assert.doesNotMatch(chatSource, /data-tour="session-chat-input"\s*className="workbench-composer[^"]*"\s*style=/, 'Session Composer 不得用内联表面覆盖共享 .workbench-composer')
 assert.doesNotMatch(cssSource, /\.mobius-chat-body\.mobius-chat-body--easy \.mobius-chat-input textarea \{[\s\S]*?min-height:\s*72px\s*!important;/, 'CSS 不得用 72px !important 覆盖 easy Composer 动态高度')
 assert.match(chatSource, /inert[\s\S]*data-workbench-chat-layer/, '隐藏的 Chat layer 必须 inert')
