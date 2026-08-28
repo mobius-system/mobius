@@ -1682,6 +1682,10 @@ router.post('/:id/messages', auth, async (req: express.Request, res: express.Res
     : directMentions;
 
   try {
+    // dispatchMode='background': 落库 (user 消息 + turn + bridge 收件箱) 完成即返回,
+    // 慢速 backend dispatch (tmux spawn 最长 ~25s ready + paste/Enter 探测) 转后台执行.
+    // 用户点发送立即拿到回执, 可直接切到下一个会话; dispatch 失败走 failed.flag +
+    // system 消息 + SSE 反馈到会话页, 语义与 /continue 的 fire-and-forget 一致.
     const result = await runSessionMessage({
       user,
       sessionId,
@@ -1694,6 +1698,7 @@ router.post('/:id/messages', auth, async (req: express.Request, res: express.Res
       source: 'http.session.messages',
       logger: console,
       urgent: req.body?.urgent === true,
+      dispatchMode: 'background',
     } as any);
     if (req.body?.assistant_human_input === true) {
       const isCompactCommand = String(inputText || content).trim().startsWith('/compact');

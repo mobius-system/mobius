@@ -3,6 +3,23 @@ import { Brain } from 'lucide-react'
 import { api } from '../store'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 
+// 首页 Composer 上次手动选择的模型组合记忆 (localStorage, 按用户隔离).
+// 只在用户主动改选时写入; 读取时若组合已不在可用列表则静默丢弃, 回落到默认解析链.
+const LAST_SELECTION_STORAGE_PREFIX = 'mobius:home-model-harness:last:'
+
+function readLastSelection(userId: string): string {
+  if (!userId || typeof localStorage === 'undefined') return ''
+  try {
+    const raw = localStorage.getItem(LAST_SELECTION_STORAGE_PREFIX + userId)
+    return typeof raw === 'string' && raw.trim() ? raw.trim() : ''
+  } catch { return '' }
+}
+
+function writeLastSelection(userId: string, modelKey: string) {
+  if (!userId || !modelKey || typeof localStorage === 'undefined') return
+  try { localStorage.setItem(LAST_SELECTION_STORAGE_PREFIX + userId, modelKey) } catch {}
+}
+
 type HomeModelOption = {
   key: string
   label?: string
@@ -27,12 +44,14 @@ function optionLabel(option: HomeModelOption) {
 
 export function HomeModelHarnessSelect({
   projectId,
+  userId,
   projectDefaultModel,
   value,
   onChange,
   disabled = false,
 }: {
   projectId: string
+  userId?: string
   projectDefaultModel?: string | null
   value: string
   onChange: (model: string) => void
@@ -67,12 +86,16 @@ export function HomeModelHarnessSelect({
   useEffect(() => {
     if (!projectId || options.length === 0) return
     if (userTouchedProjectRef.current === projectId && options.some(option => option.key === value)) return
+    // 优先级: 该用户上次手动选择 > 项目默认 > 全局默认 > 标记默认 > 第一个.
+    // 上次手动选择必须仍在当前可用组合列表中才生效, 已下线的组合静默回落到默认解析链.
+    const remembered = readLastSelection(userId || '')
     const preferred = resolveDefaultModelKey({ projectDefaultModel, globalDefaultModel })
-    const next = options.find(option => option.key === preferred)
+    const next = (remembered && options.find(option => option.key === remembered))
+      || options.find(option => option.key === preferred)
       || options.find(option => option.is_default)
       || options[0]
     if (next?.key && next.key !== value) onChange(next.key)
-  }, [globalDefaultModel, onChange, options, projectDefaultModel, projectId, value])
+  }, [globalDefaultModel, onChange, options, projectDefaultModel, projectId, userId, value])
 
   const selectedLabel = useMemo(
     () => options.find(option => option.key === value),
@@ -96,6 +119,7 @@ export function HomeModelHarnessSelect({
         value={value}
         onChange={event => {
           userTouchedProjectRef.current = projectId
+          writeLastSelection(userId || '', event.target.value)
           onChange(event.target.value)
         }}
         disabled={disabled || !optionsLoaded || options.length === 0}

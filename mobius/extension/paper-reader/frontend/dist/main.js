@@ -618,8 +618,8 @@ function renderPaper(paper) {
 
 function loadPdfJs() {
   if (!pdfJsPromise) {
-    pdfJsPromise = import('./pdf.min.mjs').then((pdfjs) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.min.mjs', import.meta.url).href;
+    pdfJsPromise = import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs').then((pdfjs) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
       return pdfjs;
     });
   }

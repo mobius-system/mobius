@@ -244,6 +244,7 @@ async function runSessionMessage({
   logger = console,
   urgent = false,
   externalEvent = null,
+  dispatchMode = 'await',
 }: {
   user?: any;
   sessionId?: any;
@@ -257,6 +258,15 @@ async function runSessionMessage({
   logger?: any;
   urgent?: boolean;
   externalEvent?: ExternalSessionEvent | null;
+  /**
+   * dispatchMode:
+   *   - 'await'   (默认, 旧行为): 落库 + dispatch 全部完成后才 resolve, 失败向上抛.
+   *   - 'background': 落库完成后立即 resolve 返回 ack; 慢速 backend dispatch
+   *     (tmux spawn 最长 ~25s ready + paste/Enter 探测) 转后台执行, 失败走
+   *     failed.flag + system 消息反馈 (同 continue-with-model 的既有通道),
+   *     不再阻塞 HTTP 响应 → 前端点发送即刻得到回执, 可直接切走会话.
+   */
+  dispatchMode?: 'await' | 'background';
 } = {}): Promise<any> {
   const normalizedSessionId = String(sessionId || '').trim();
   const normalizedContent = typeof content === 'string' ? content : '';
@@ -490,46 +500,61 @@ async function runSessionMessage({
     }
   }
 
-  try {
-    // 先把双向 @ 的首条消息原子落入收件箱，再启动源 Agent。
-    // 旧顺序在 dispatch 成功后才写库；spawn/网络异常会留下“用户已发送但对端根本收不到”的窗口。
-    for (const kickoff of bridgeKickoffs) {
-      const queued = recordAgentBridgeMessage({
-        channelId: kickoff.channelId,
-        requestId: `initial-${normalizedRequestId || `${normalizedSessionId}-${Date.now()}`}`,
-        fromSessionId: normalizedSessionId,
-        toSessionId: kickoff.targetSession.session_id,
-        content: kickoff.content,
-        batchId: kickoff.batchId,
-        threadId: kickoff.batchId,
-      });
-      kickoff.messageId = queued.id;
-    }
-    const dispatchOpts = {
-      sessionId: normalizedSessionId,
-      prompt: finalContent,
-      cwd: workDir,
-      flagRoot,
-      model: launch.model || undefined,
-      settingsPath: launch.settingsPath,
-      forceNoProxy: launch.forceNoProxy,
-      useProxy: launch.forceNoProxy ? false : launch.useProxy === true,
-      codexProfileKey: launch.codexProfileKey || undefined,
-      codexChannel: launch.codexChannel || undefined,
-      codexConfigPath: launch.codexConfigPath || undefined,
-      codexSecretEnvKey: launch.codexSecretEnvKey || undefined,
-      codexSecretValue: launch.codexSecretValue || undefined,
-      harnessProvider: launch.harnessProvider || undefined,
-      harnessBaseUrl: launch.harnessBaseUrl || undefined,
-      harnessSecretValue: launch.harnessSecretValue || undefined,
-      harnessMaxTokens: launch.harnessMaxTokens || undefined,
-      harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
-      displayName: sess.name,
-      agentSessionId: sess.claude_session_id || undefined,
-      mobiusJsonl,
-      suppressRunningFlag: isExternalEvent,
-      aimuxRemoteName: aimuxRemoteNameFromMeta(sess?.pc_client_metadata),
-    };
+  // 先把双向 @ 的首条消息原子落入收件箱，再启动源 Agent。
+  // 旧顺序在 dispatch 成功后才写库；spawn/网络异常会留下“用户已发送但对端根本收不到”的窗口。
+  for (const kickoff of bridgeKickoffs) {
+    const queued = recordAgentBridgeMessage({
+      channelId: kickoff.channelId,
+      requestId: `initial-${normalizedRequestId || `${normalizedSessionId}-${Date.now()}`}`,
+      fromSessionId: normalizedSessionId,
+      toSessionId: kickoff.targetSession.session_id,
+      content: kickoff.content,
+      batchId: kickoff.batchId,
+      threadId: kickoff.batchId,
+    });
+    kickoff.messageId = queued.id;
+  }
+  const dispatchOpts = {
+    sessionId: normalizedSessionId,
+    prompt: finalContent,
+    cwd: workDir,
+    flagRoot,
+    model: launch.model || undefined,
+    settingsPath: launch.settingsPath,
+    forceNoProxy: launch.forceNoProxy,
+    useProxy: launch.forceNoProxy ? false : launch.useProxy === true,
+    codexProfileKey: launch.codexProfileKey || undefined,
+    codexChannel: launch.codexChannel || undefined,
+    codexConfigPath: launch.codexConfigPath || undefined,
+    codexSecretEnvKey: launch.codexSecretEnvKey || undefined,
+    codexSecretValue: launch.codexSecretValue || undefined,
+    harnessProvider: launch.harnessProvider || undefined,
+    harnessBaseUrl: launch.harnessBaseUrl || undefined,
+    harnessSecretValue: launch.harnessSecretValue || undefined,
+    harnessMaxTokens: launch.harnessMaxTokens || undefined,
+    harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
+    displayName: sess.name,
+    agentSessionId: sess.claude_session_id || undefined,
+    mobiusJsonl,
+    suppressRunningFlag: isExternalEvent,
+    aimuxRemoteName: aimuxRemoteNameFromMeta(sess?.pc_client_metadata),
+  };
+  const ackResult = {
+    ok: true,
+    session_id: normalizedSessionId,
+    turn_number: turnNum,
+    request_id: normalizedRequestId,
+    backend: backend.name,
+    external_messages_queued: bridgeKickoffs.map((kickoff) => ({
+      message_id: kickoff.messageId || null,
+      channel_id: kickoff.channelId,
+      target_session_id: kickoff.targetSession.session_id,
+      delivery: 'queued',
+      batch_id: kickoff.batchId,
+    })),
+  };
+
+  const dispatch = async () => {
     if (urgent) {
       // 加急: 中断当前推理/输出再投递. pauseCurrentAndResumeFromSession 带 prompt =
       // _pauseImpl 的 urgent 分支 (单次 C-c + Alt+Enter 换行 + paste 提交).
@@ -547,24 +572,12 @@ async function runSessionMessage({
         logger?.warn?.(`[sessions/messages] save agent session id: ${e.message}`);
       }
     }
-    return {
-      ok: true,
-      session_id: normalizedSessionId,
-      turn_number: turnNum,
-      request_id: normalizedRequestId,
-      backend: backend.name,
-      external_messages_queued: bridgeKickoffs.map((kickoff) => ({
-        message_id: kickoff.messageId || null,
-        channel_id: kickoff.channelId,
-        target_session_id: kickoff.targetSession.session_id,
-        delivery: 'queued',
-        batch_id: kickoff.batchId,
-      })),
-    };
-  } catch (e) {
+  };
+
+  const handleDispatchFailure = (e: any) => {
     for (const kickoff of bridgeKickoffs) {
       if (kickoff.messageId) {
-        try { updateAgentBridgeMessage(kickoff.messageId, 'failed', (e as Error).message || '源 Session 启动失败'); } catch {}
+        try { updateAgentBridgeMessage(kickoff.messageId, 'failed', e?.message || '源 Session 启动失败'); } catch {}
       }
       try { closeAgentBridgeChannel(kickoff.channelId); } catch {}
     }
@@ -576,7 +589,22 @@ async function runSessionMessage({
     safeWriteFailedFlag(flagRoot, normalizedSessionId, failedFields, 'sessions/messages');
     try { Sessions.setIdle(normalizedSessionId, user.id); } catch {}
     try { Messages.insertSystem(normalizedSessionId, detail, turnNum, '启动失败'); } catch {}
-    throw httpError(detail, 500, 'backend');
+    return httpError(detail, 500, 'backend');
+  };
+
+  if (dispatchMode === 'background') {
+    // 消息已落库 + bridge 收件箱已原子写入, 这里立即 ack; dispatch 转后台.
+    // 失败不抛给调用方 (响应已发出), 走 failed.flag + system 消息 + SSE,
+    // 与 continue-with-model 的 fire-and-forget 失败通道一致.
+    dispatch().catch((e) => { handleDispatchFailure(e); });
+    return { ...ackResult, dispatch: 'background' };
+  }
+
+  try {
+    await dispatch();
+    return ackResult;
+  } catch (e) {
+    throw handleDispatchFailure(e);
   }
 }
 

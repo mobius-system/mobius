@@ -22,6 +22,7 @@ import {
   Sparkles,
   Star,
   X,
+  ZoomIn,
 } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
@@ -363,18 +364,62 @@ async function uploadHomeAttachment(file: File, projectId?: string): Promise<{ p
   return { path: data.path, name: data.name, size: data.size }
 }
 
+// 图片放大预览弹层: 点缩略图打开, Esc/点背景关闭, 与会话页 AttachmentImagePreviewModal 同构.
+function HomeAttachmentImagePreviewModal({ name, src, onClose }: {
+  name: string
+  src: string
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  return (
+    <div className="workbench-layer-modal fixed inset-0 flex flex-col" role="dialog" aria-modal="true" aria-label={`图片预览 ${name}`}
+      style={{ background: 'var(--surface-scrim)', backdropFilter: 'blur(4px)' }}>
+      <button className="absolute inset-0 cursor-zoom-out" type="button" aria-label="关闭图片预览" onClick={onClose} />
+      <div className="relative z-10 flex h-12 items-center justify-between gap-3 border-b px-4 text-[13px] font-medium"
+        style={{ borderColor: 'color-mix(in srgb, var(--border-default) 60%, transparent)', color: 'var(--text-primary)' }}>
+        <div className="min-w-0 truncate">{name}</div>
+        <button type="button" onClick={onClose} title="关闭" aria-label="关闭"
+          className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-colors"
+          style={{ color: 'var(--text-secondary)' }}>
+          <X className="h-4 w-4" strokeWidth={2} />
+        </button>
+      </div>
+      <div className="pointer-events-none relative z-10 flex min-h-0 flex-1 items-center justify-center p-4 sm:p-6">
+        <img src={src} alt={name} className="pointer-events-auto max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+          onClick={event => event.stopPropagation()} />
+      </div>
+    </div>
+  )
+}
+
 // 输入框内的紧凑附件芯片 (缩略图/短标签 + 上传状态 + 悬停移除), 与会话页 AttachmentChip 同款.
-function HomeAttachmentChip({ att, onRemove, onRetry }: {
+function HomeAttachmentChip({ att, onRemove, onRetry, onPreview }: {
   att: HomeAttachment
   onRemove: () => void
   onRetry: () => void
+  onPreview: () => void
 }) {
   const isImage = att.kind === 'image' && att.previewUrl
   return (
     <div className="group relative flex flex-shrink-0 items-center gap-1" title={`${att.name}${att.size ? ` · ${homeFormatFileSize(att.size)}` : ''}`}>
       {isImage ? (
-        <div className="home-attachment-thumb relative h-11 w-11 overflow-hidden rounded-[var(--radius-control)]" style={{ background: 'var(--surface-control)', border: '1px solid var(--border-strong)' }}>
+        <button type="button" onClick={onPreview} disabled={att.status === 'error'}
+          aria-label={`预览图片 ${att.name}`} title={`${att.name} · 点击放大查看`}
+          className="home-attachment-thumb relative h-11 w-11 cursor-zoom-in overflow-hidden rounded-[var(--radius-control)] disabled:cursor-default"
+          style={{ background: 'var(--surface-control)', border: '1px solid var(--border-strong)' }}>
           <img src={att.previewUrl} alt={att.name} className="h-full w-full object-cover" />
+          {att.status !== 'error' && (
+            <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" style={{ background: 'var(--surface-scrim)' }}>
+              <ZoomIn className="h-3.5 w-3.5" style={{ color: 'var(--text-on-accent)' }} strokeWidth={2.2} />
+            </div>
+          )}
           {att.status === 'uploading' && (
             <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'var(--surface-scrim)' }}>
               <LoaderCircle className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--text-on-accent)' }} />
@@ -383,7 +428,7 @@ function HomeAttachmentChip({ att, onRemove, onRetry }: {
           {att.status === 'error' && (
             <div className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold" style={{ color: 'var(--status-danger-foreground)', background: 'var(--status-danger)' }} title={att.error}>失败</div>
           )}
-        </div>
+        </button>
       ) : (
         <div className="home-attachment-thumb relative flex h-11 items-center gap-1.5 rounded-[var(--radius-control)] px-2" style={{ background: 'var(--surface-control)', border: '1px solid var(--border-strong)' }}>
           <Paperclip className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
@@ -427,6 +472,7 @@ function HomeSurface() {
   const [sendError, setSendError] = useState('')
   const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
   const [attachments, setAttachments] = useState<HomeAttachment[]>([])
+  const [attachmentPreview, setAttachmentPreview] = useState<{ id: string; name: string; src: string } | null>(null)
   const [dragOverComposer, setDragOverComposer] = useState(false)
   const homeFileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
@@ -585,12 +631,20 @@ function HomeSurface() {
   }
 
   const removeHomeAttachment = (id: string) => {
+    setAttachmentPreview(prev => prev?.id === id ? null : prev)
     setAttachments(prev => {
       const target = prev.find(a => a.id === id)
       if (target?.previewUrl) { try { URL.revokeObjectURL(target.previewUrl) } catch {} }
       return prev.filter(a => a.id !== id)
     })
   }
+
+  // 预览打开期间附件被外部清空 (新会话/切换项目) 时自动关闭弹层.
+  useEffect(() => {
+    if (!attachmentPreview) return
+    const stillAvailable = attachments.some(a => a.id === attachmentPreview.id && a.previewUrl === attachmentPreview.src)
+    if (!stillAvailable) setAttachmentPreview(null)
+  }, [attachmentPreview, attachments])
 
   const retryHomeAttachment = (id: string) => {
     const target = attachments.find(a => a.id === id)
@@ -650,7 +704,7 @@ function HomeSurface() {
   const selectHomeProject = (nextProjectId: string) => {
     prepareWorkbenchObjectNavigation()
     setSelectedProjectId(nextProjectId)
-    setSelectedModel('')
+    // 不清空 selectedModel: 模型组合选择器会按"上次手动选择 > 项目默认"自行解析, 换项目不打断用户选择.
     setHomeSearch(nextProjectId ? { project: nextProjectId } : {}, { replace: true })
     setCheckpoint(null)
     setSendError('')
@@ -708,6 +762,7 @@ function HomeSurface() {
                         att={att}
                         onRemove={() => removeHomeAttachment(att.id)}
                         onRetry={() => retryHomeAttachment(att.id)}
+                        onPreview={() => setAttachmentPreview({ id: att.id, name: att.name, src: att.previewUrl! })}
                       />
                     ))}
                   </div>
@@ -740,6 +795,7 @@ function HomeSurface() {
                     </label>
                     <HomeModelHarnessSelect
                       projectId={selectedProjectId}
+                      userId={user?.id || userParam}
                       projectDefaultModel={selectedProject?.default_model}
                       value={selectedModel}
                       onChange={setSelectedModel}
@@ -812,6 +868,13 @@ function HomeSurface() {
                 </div>
               </section>
             </div>
+            {attachmentPreview && (
+              <HomeAttachmentImagePreviewModal
+                name={attachmentPreview.name}
+                src={attachmentPreview.src}
+                onClose={() => setAttachmentPreview(null)}
+              />
+            )}
           </div>
         )
 }

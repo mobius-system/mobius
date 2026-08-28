@@ -7970,7 +7970,10 @@ body.mobius-resizing .mobius-resizable-handle {
     right: 0;
     bottom: 0;
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
     height: min(88dvh, 880px);
+    flex: 0 0 100%;
     border-left: 0;
     border-top: 1px solid var(--border-strong);
   }
