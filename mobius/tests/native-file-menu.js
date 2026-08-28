@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { resolveProjectPath } = require('../backend/services/project-path');
-const { validateNewName, assertNoSymlink, isDirEqualOrChild, copyEntryRecursive, FileOpError } = require('../backend/services/project-file-ops');
+const { validateNewName, assertNoSymlink, isDirEqualOrChild, copyEntryRecursive, contentDispositionInline, contentTypeFor, FileOpError } = require('../backend/services/project-file-ops');
 
 // scratch 根不放在 /tmp (避免被 /tmp 放行规则干扰), 放 home 下隐藏目录, finally 整体清掉。
 const scratch = path.join(os.homedir(), '.native-file-menu-test-scratch');
@@ -83,6 +83,13 @@ async function expectCodeAsync(name, fn, code) {
   expectCode('Windows 保留名 CON', () => validateNewName('CON'), 'INVALID_NAME');
   expectCode('Windows 保留名 nul.txt', () => validateNewName('nul.txt'), 'INVALID_NAME');
   expectCode('非字符串', () => validateNewName(123), 'INVALID_NAME');
+
+  // ---------- file preview response metadata ----------
+  console.log('\n[file preview metadata]');
+  eq('AVIF MIME', contentTypeFor('photo.AVIF'), 'image/avif');
+  eq('APNG MIME', contentTypeFor('animation.apng'), 'image/apng');
+  eq('JFIF MIME', contentTypeFor('camera.jfif'), 'image/jpeg');
+  ok('inline disposition', contentDispositionInline('预览 image.png').startsWith('inline; filename='));
 
   // ---------- isDirEqualOrChild (复制到自身/子目录) ----------
   console.log('\n[isDirEqualOrChild]');

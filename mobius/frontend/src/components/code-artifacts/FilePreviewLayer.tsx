@@ -44,6 +44,24 @@ type FilePreviewMeta = {
 }
 
 type LineRange = { start: number; end: number }
+type ImageLoadState = 'loading' | 'ready' | 'error'
+
+const IMAGE_PREVIEW_EXTENSIONS = new Set([
+  'apng', 'avif', 'bmp', 'gif', 'ico', 'jfif', 'jpeg', 'jpg', 'png', 'svg', 'webp',
+])
+
+export function isPreviewableImagePath(path: string) {
+  const cleanPath = String(path || '').split(/[?#]/, 1)[0]
+  const extension = cleanPath.includes('.') ? cleanPath.split('.').pop()?.toLowerCase() || '' : ''
+  return IMAGE_PREVIEW_EXTENSIONS.has(extension)
+}
+
+export function projectFilePreviewUrl(projectId: string, path: string) {
+  const query = new URLSearchParams({ path, inline: '1' })
+  const token = typeof window !== 'undefined' ? localStorage.getItem('cc-token') : ''
+  if (token) query.set('token', token)
+  return `/api/projects/${encodeURIComponent(projectId)}/file/download?${query.toString()}`
+}
 
 type CachedPreview = {
   loading: boolean
@@ -112,6 +130,7 @@ export function FilePreviewLayer({
   const [tabs, setTabs] = useState<CodeArtifactOpenRequest[]>([request])
   const [activeKey, setActiveKey] = useState(() => workspaceTabKey(request.target))
   const [revealDir, setRevealDir] = useState('')
+  const [imageLoadState, setImageLoadState] = useState<ImageLoadState>('loading')
   const headingRef = useRef<HTMLHeadingElement>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const targetLineRef = useRef<HTMLDivElement>(null)
@@ -360,11 +379,19 @@ export function FilePreviewLayer({
     [data, language],
   )
   const currentPath = data?.path || resolvedPath || safeToolPathLabel(activeRequest.target.path)
+  const previewingImage = !!data && isPreviewableImagePath(data.path || data.name)
+  const previewImageSrc = previewingImage && resolvedPath
+    ? projectFilePreviewUrl(projectId, resolvedPath)
+    : ''
   const crumbs = filePathSegments(currentPath)
   const editorFilePath = absoluteFilePath(meta, data, resolvedPath)
   const editorUrl = meta?.vscodeWebUrl && meta.vscodeWorkspacePath && editorFilePath
     ? buildVscodeUrl(meta.vscodeWebUrl, meta.vscodeWorkspacePath, editorFilePath)
     : null
+
+  useEffect(() => {
+    if (previewImageSrc) setImageLoadState('loading')
+  }, [previewImageSrc])
 
   const handleCopyPath = async () => {
     // 未经项目 API 解析的绝对路径不回显也不复制；成功解析后复制项目相对路径。
@@ -516,7 +543,7 @@ export function FilePreviewLayer({
           </header>
         </div>
 
-        {data?.truncated && (
+        {data?.truncated && !previewingImage && (
           <div className="code-artifact-preview__notice">文件超过 1.5MB，当前仅显示服务端返回的前部内容。</div>
         )}
         {targetRange?.clamped && (
@@ -553,10 +580,36 @@ export function FilePreviewLayer({
               </div>
             </div>
           )}
-          {!loading && !error && data?.binary && (
+          {!loading && !error && data && previewingImage && (
+            <div className="code-artifact-preview__image-stage" data-code-artifact-image-preview>
+              {imageLoadState === 'loading' && (
+                <div className="code-artifact-preview__image-status" role="status">
+                  <Loader2 className="h-5 w-5 animate-spin" />正在加载图片…
+                </div>
+              )}
+              {imageLoadState === 'error' && (
+                <div className="code-artifact-preview__image-status code-artifact-preview__image-status--error" role="alert">
+                  <strong>无法预览图片</strong>
+                  <span>当前浏览器无法解码此图片，或文件内容已损坏。</span>
+                  <a className="code-artifact-preview__action" href={previewImageSrc} target="_blank" rel="noreferrer">
+                    <ExternalLink className="h-3.5 w-3.5" />打开原文件
+                  </a>
+                </div>
+              )}
+              <img
+                src={previewImageSrc}
+                alt={`${data.name} 图片预览`}
+                className={`code-artifact-preview__image${imageLoadState === 'ready' ? ' is-ready' : ''}`}
+                decoding="async"
+                onLoad={() => setImageLoadState('ready')}
+                onError={() => setImageLoadState('error')}
+              />
+            </div>
+          )}
+          {!loading && !error && data?.binary && !previewingImage && (
             <div className="code-artifact-preview__state">这是二进制文件，内部预览不显示其内容。</div>
           )}
-          {!loading && !error && data && !data.binary && (
+          {!loading && !error && data && !data.binary && !previewingImage && (
             <div className="code-artifact-preview__lines" data-code-artifact-highlighted role="listbox" aria-label={`${data.name} 文件内容`} aria-multiselectable="true">
               {lines.map((_line, index) => {
                 const lineNumber = index + 1

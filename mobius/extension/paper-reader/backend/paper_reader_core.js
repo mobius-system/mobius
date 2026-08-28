@@ -238,9 +238,31 @@ function safeUserSegment(value) {
 function sha256File(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
+const pythonRuntimeCache = new Map();
+function paperReaderPython(requiredModules = []) {
+  const modules = [...new Set(requiredModules.map(name => txt(name, 80)).filter(Boolean))].sort();
+  const cacheKey = modules.join(",");
+  if (pythonRuntimeCache.has(cacheKey)) return pythonRuntimeCache.get(cacheKey);
+  const configured = txt(process.env.PAPER_READER_PYTHON, 500);
+  const candidates = [...new Set([configured, "/usr/bin/python3", "python3", "python"].filter(Boolean))];
+  const probe = modules.length ? modules.map(name => `import ${name}`).join("; ") : "import sys";
+  const failures = [];
+  for (const executable of candidates) {
+    const result = childProcess.spawnSync(executable, ["-c", probe], {
+      encoding: "utf8", timeout: 5000, windowsHide: true
+    });
+    if (!result.error && result.status === 0) {
+      pythonRuntimeCache.set(cacheKey, executable);
+      return executable;
+    }
+    failures.push(`${executable}: ${txt(result.error?.message || result.stderr || `exit ${result.status}`, 180)}`);
+  }
+  const dependency = modules.length ? modules.join(", ") : "Python 3";
+  throw new Error(`Paper Reader 缺少可用的 Python 运行环境（需要 ${dependency}）。${failures.join("；")}`);
+}
 function parseUploadedPdf(file) {
   const script = path.join(__dirname, "extract_pdf.py");
-  const result = childProcess.spawnSync(process.env.PAPER_READER_PYTHON || "python3", [script, file], {
+  const result = childProcess.spawnSync(paperReaderPython(["fitz"]), [script, file], {
     encoding: "utf8", timeout: int(process.env.PAPER_READER_PARSE_TIMEOUT_MS, 22000, 5000, 28000),
     maxBuffer: 48 * 1024 * 1024, windowsHide: true
   });
@@ -257,6 +279,9 @@ function parseUploadedPdf(file) {
 function uploadedAssetUrl(row) {
   if (!row?.pdf_asset_rel) return "";
   return `/api/extensions/${EXT_NAME}/user-asset/${String(row.pdf_asset_rel).split("/").map(encodeURIComponent).join("/")}`;
+}
+function sharedAssetUrl(rel) {
+  return `/api/extensions/${EXT_NAME}/shared-asset/${String(rel || "").split("/").map(encodeURIComponent).join("/")}`;
 }
 function documentMeta(row) {
   try { return JSON.parse(String(row?.document_json || "{}")) || {}; } catch { return {}; }
@@ -446,7 +471,7 @@ async function startHighPrecisionParse(e, t, user, dir) {
   fs.writeFileSync(configPath, JSON.stringify({ job_id: jobId, source_id: sid, pdf_path: pdfPath,
     status_path: statusPath, output_dir: outputDir }, null, 2), { mode: 0o600 });
   const script = path.join(__dirname, "high_precision_worker.py");
-  const child = childProcess.spawn(process.env.PAPER_READER_PYTHON || "python3", [script, configPath], { detached: true, stdio: "ignore", windowsHide: true });
+  const child = childProcess.spawn(paperReaderPython(["requests"]), [script, configPath], { detached: true, stdio: "ignore", windowsHide: true });
   child.unref();
   const row = e.prepare("SELECT * FROM paper_parse_jobs WHERE id=?").get(jobId);
   return { job: parseJobOut(row), consent_required: true };
@@ -575,7 +600,8 @@ function getPaper(e, t) {
   const row = e.prepare("SELECT * FROM paper_fulltext WHERE source_id=?").get(sid);
   return { item: row ? paperOut(row) : null };
 }
-// 上传论文直接走 paper-reader 用户资产 Range 流；arXiv 论文保留既有缓存/下载路径。
+// PDF.js 统一走带 Range 支持的资产流。公开 arXiv PDF 放在 shared，避免大文件 base64
+// 膨胀和 3.2 MB 以上只能跳出应用的问题；用户上传仍严格留在用户资产目录。
 async function getPaperPdf(e, t, dir, user) {
   const sid = txt(t.source_id || t.arxiv_id || t.id, 200);
   if (!sid) return { ok: false, error: "需要 source_id" };
@@ -588,24 +614,32 @@ async function getPaperPdf(e, t, dir, user) {
     if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return { ok: false, error: "上传论文的原始 PDF 不存在" };
     return { ok: true, stream_url: uploadedAssetUrl(paper), bytes: fs.statSync(file).size, mime: "application/pdf" };
   }
-  const candidates = [path.join(dir, "..", "tianyi-radar", "papers", sid + ".pdf"), path.join(dir, "papers", sid + ".pdf")];
+  const safeName = String(sid).replace(/[^A-Za-z0-9._-]/g, "_");
+  const sharedRel = `papers/${safeName}.pdf`;
+  const sharedFile = path.join(dir, "shared", sharedRel);
+  const candidates = [sharedFile, path.join(dir, "..", "tianyi-radar", "papers", sid + ".pdf"), path.join(dir, "papers", sid + ".pdf")];
   let file = candidates.find(p => { try { return fs.existsSync(p) && fs.statSync(p).isFile(); } catch { return false; } });
   if (!file) {
     try {
       const r = await fetchBinary(`https://arxiv.org/pdf/${sid}`, { timeoutMs: 30e3 });
       if (r.ok && r.buf && r.buf.length > 1000) {
-        fs.mkdirSync(path.join(dir, "papers"), { recursive: true });
-        file = path.join(dir, "papers", sid + ".pdf");
+        fs.mkdirSync(path.dirname(sharedFile), { recursive: true });
+        file = sharedFile;
         fs.writeFileSync(file, r.buf);
       }
     } catch {}
   }
   if (!file) return { ok: false, error: "PDF 不可用（无 arxiv id 或下载失败）" };
-  const buf = fs.readFileSync(file);
-  const MAX = 3.2e6;
-  const isArxiv = /[0-9]{4}\.[0-9]{4,5}/.test(sid);
-  if (buf.length > MAX) return { ok: true, too_large: true, bytes: buf.length, url: isArxiv ? `https://arxiv.org/pdf/${sid}` : "" };
-  return { ok: true, pdf_base64: buf.toString("base64"), bytes: buf.length, mime: "application/pdf" };
+  if (path.resolve(file) !== path.resolve(sharedFile)) {
+    fs.mkdirSync(path.dirname(sharedFile), { recursive: true });
+    if (!fs.existsSync(sharedFile)) {
+      try { fs.linkSync(file, sharedFile); }
+      catch { fs.copyFileSync(file, sharedFile); }
+    }
+    file = sharedFile;
+  }
+  return { ok: true, stream_url: sharedAssetUrl(sharedRel), external_url: `https://arxiv.org/pdf/${encodeURIComponent(sid)}`,
+    bytes: fs.statSync(file).size, mime: "application/pdf" };
 }
 function listRecentPapers(e, user = "") {
   return { items: e.prepare("SELECT source_id,arxiv_id,title,authors,fetched_at,origin,original_filename,page_count,extraction_status FROM paper_fulltext WHERE origin!='upload' OR owner_id=? ORDER BY fetched_at DESC LIMIT 50").all(user) };

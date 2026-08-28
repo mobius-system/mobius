@@ -11,7 +11,10 @@ import sys
 import unicodedata
 from pathlib import Path
 
-import fitz
+try:
+    import fitz
+except ModuleNotFoundError:
+    fitz = None
 
 
 MAX_PAGES = 800
@@ -228,6 +231,8 @@ def infer_authors(first_page_blocks: list[dict], title: str) -> str:
 
 
 def extract(pdf_path: Path) -> dict:
+    if fitz is None:
+        raise RuntimeError("缺少 PyMuPDF 依赖，请为 Paper Reader 的 Python 环境安装 requirements.txt")
     document = fitz.open(pdf_path)
     if document.needs_pass:
         raise ValueError("PDF 已加密，暂时无法解析")

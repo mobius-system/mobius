@@ -188,7 +188,7 @@ export function WorkbenchShell({
 
   return (
     <WorkbenchShellPortalContext.Provider value={targets}>
-      <div className="mobius-workbench workbench-shell h-screen" data-workbench-shell>
+      <div className="mobius-workbench workbench-shell h-screen min-h-0" data-workbench-shell>
         <ConversationRail
           userId={userId}
           activeSessionId={activeSessionId}
