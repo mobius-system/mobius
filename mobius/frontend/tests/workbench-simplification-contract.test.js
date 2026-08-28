@@ -324,6 +324,21 @@ assert.doesNotMatch(workPageSource, /<TopNav|<ConversationRail/, 'Session 不得
 for (const slot of ['header', 'search', 'body', 'bottom']) {
   assert.match(railSource, new RegExp(`data-rail-slot="${slot}"`), `ConversationRail 必须提供 ${slot} 槽`)
 }
+assert.match(
+  railSource,
+  /data-rail-slot="header"[^>]*className="[^"]*flex-shrink-0/,
+  'ConversationRail 顶栏必须固定，不能被超长会话列表挤出视口',
+)
+assert.match(
+  railSource,
+  /data-rail-slot="body"[^>]*className="[^"]*min-h-0[^"]*flex-1[^"]*overflow-y-auto/,
+  'ConversationRail 只能让中间会话列表纵向滚动',
+)
+assert.match(
+  railSource,
+  /data-rail-slot="bottom"[^>]*className="[^"]*flex-shrink-0/,
+  'ConversationRail 底栏必须固定，不能被超长会话列表挤出视口',
+)
 assert.match(railSource, /data-rail-slot="bottom"[\s\S]*aria-label="账户"[\s\S]*aria-label="设置"/, '账户与设置必须位于 Rail bottom')
 assert.match(workbenchShellSource, /returnFocusRef=\{settingsReturnFocusRef\}/, 'Settings 关闭后必须恢复 Rail 触发焦点')
 assert.match(workbenchGlobalTopbarSource, /<LayoutModeSwitch \/>/, '简易 WorkbenchGlobalTopbar 必须挂载共享模式分段控件')
